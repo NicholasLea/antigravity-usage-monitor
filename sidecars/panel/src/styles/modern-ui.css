@@ -249,6 +249,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .status-tag.state-running,
 [data-modern-ui="true"] .status-tag.state-synced,
 [data-modern-ui="true"] .status-tag.state-warn,
+[data-modern-ui="true"] .endpoint-ssh-badge,
 [data-modern-ui="true"] .update-badge-btn,
 [data-modern-ui="true"] .wm-update-btn,
 [data-modern-ui="true"] .wm-hover-update-bar,

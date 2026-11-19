@@ -552,3 +552,97 @@ export async function ensureLsEndpointDiscovered({
   return lsDiscoveryState.inFlight;
 }
 
+const LOCAL_HUB_PORTS_TTL_MS = 4000;
+const localHubPortsCache = {
+  ts: 0,
+  key: '',
+  value: null,
+};
+
+/**
+ * 收集本机活跃 Hub / Language Server 占用的回环端口集合（含 `httpPort`、`httpsPort` 与当前 `lsRuntimeEndpoint`），
+ * 不跳过缺少 `csrfToken` 的存活 `hub_*.json` 文件，供 `window-bridge.mjs` 准确区分本地窗口与 SSH 远端窗口。
+ *
+ * @param {{ daemonDirs?: string[], isPidAliveFn?: (pid: number) => boolean, force?: boolean }} [options]
+ * @returns {{ allPorts: Set<number>, httpPorts: Set<number>, httpsPorts: Set<number>, csrfTokens: Set<string> }}
+ */
+export function getLocalHubPorts({
+  daemonDirs = DAEMON_DIRS,
+  isPidAliveFn = defaultIsLsPidAlive,
+  force = false,
+} = {}) {
+  const dirs = Array.isArray(daemonDirs) ? daemonDirs : [];
+  const cacheKey = `${dirs.join('|')}::${lsRuntimeEndpoint.baseUrl || ''}::${lsRuntimeEndpoint.csrfToken || ''}`;
+  const now = Date.now();
+  if (
+    !force &&
+    localHubPortsCache.value &&
+    localHubPortsCache.key === cacheKey &&
+    now - localHubPortsCache.ts < LOCAL_HUB_PORTS_TTL_MS
+  ) {
+    return localHubPortsCache.value;
+  }
+
+  const allPorts = new Set();
+  const httpPorts = new Set();
+  const httpsPorts = new Set();
+  const csrfTokens = new Set();
+
+  if (lsRuntimeEndpoint.csrfToken) {
+    csrfTokens.add(String(lsRuntimeEndpoint.csrfToken).trim());
+  }
+  if (lsRuntimeEndpoint.baseUrl) {
+    try {
+      const parsed = new URL(lsRuntimeEndpoint.baseUrl);
+      const port = Number(parsed.port || 0);
+      if (Number.isInteger(port) && port > 0 && port <= 65535) {
+        allPorts.add(port);
+        if (parsed.protocol === 'https:') httpsPorts.add(port);
+        else httpPorts.add(port);
+      }
+    } catch {
+      // 忽略非法 URL
+    }
+  }
+
+  for (const dir of dirs) {
+    if (!dir || !existsSync(dir)) continue;
+    let names = [];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!/^hub_.*\.json$/i.test(name)) continue;
+      const fullPath = join(dir, name);
+      try {
+        const parsed = JSON.parse(readFileSync(fullPath, 'utf8'));
+        const pid = Number(parsed?.pid) || 0;
+        if (pid > 0 && !isPidAliveFn(pid)) continue;
+        const csrf = String(parsed?.csrfToken || parsed?.csrf_token || '').trim();
+        if (csrf) csrfTokens.add(csrf);
+        const hPort = Number(parsed?.httpPort || parsed?.port) || 0;
+        const sPort = Number(parsed?.httpsPort) || 0;
+        if (Number.isInteger(hPort) && hPort > 0 && hPort <= 65535) {
+          allPorts.add(hPort);
+          httpPorts.add(hPort);
+        }
+        if (Number.isInteger(sPort) && sPort > 0 && sPort <= 65535) {
+          allPorts.add(sPort);
+          httpsPorts.add(sPort);
+        }
+      } catch {
+        // 忽略损坏或瞬态 daemon 文件
+      }
+    }
+  }
+
+  const snapshot = { allPorts, httpPorts, httpsPorts, csrfTokens };
+  localHubPortsCache.ts = now;
+  localHubPortsCache.key = cacheKey;
+  localHubPortsCache.value = snapshot;
+  return snapshot;
+}
+
+

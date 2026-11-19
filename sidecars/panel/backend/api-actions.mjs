@@ -8,8 +8,14 @@
 
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { BRIDGE_API_ROUTE_DEFS } from '../shared/window-bridge-protocol.mjs';
+import { BRIDGE_API_ROUTE_DEFS, LOCAL_ENDPOINT_ID } from '../shared/window-bridge-protocol.mjs';
 import { handleAccountCredentialAction } from './account-switch.mjs';
+import {
+  clearRemoteEndpointCaches,
+  resolveEndpointContext,
+  trackEndpointRequestEnd,
+  trackEndpointRequestStart,
+} from './endpoint-registry.mjs';
 import { isLocalHostRequest, readLocalAsync } from './http-helpers.mjs';
 import { clearScannerRuntimeMemos } from './local-scanner.mjs';
 import {
@@ -104,11 +110,41 @@ function projectDisplayStep(st) {
   };
 }
 
-const MAX_DISPLAY_STEP_CACHE_ENTRIES = 8;
+const MAX_DISPLAY_STEP_CACHE_ENTRIES = 16;
 const displayStepsCache = new Map();
 const displayStepFields = Object.keys(projectDisplayStep({ anomaly: true, anomalySig: '' })).filter(
   (k) => k !== 'anomaly'
 );
+
+function buildEndpointErrorResponse(epCtx) {
+  return {
+    status: Number(epCtx?.status || 400),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify({
+      error: epCtx?.error || 'Invalid endpointId',
+      ...(epCtx?.retryable ? { retryable: true } : {}),
+    }),
+  };
+}
+
+function resolveActionEndpoint(data, opts) {
+  const rawId =
+    opts && opts.endpointId !== undefined
+      ? opts.endpointId
+      : isPlainObject(data) && data.endpointId !== undefined
+        ? data.endpointId
+        : undefined;
+  return resolveEndpointContext(rawId);
+}
+
+function stripEndpointField(data) {
+  if (!isPlainObject(data) || !Object.prototype.hasOwnProperty.call(data, 'endpointId')) {
+    return data;
+  }
+  const { endpointId: _ignored, ...rest } = data;
+  return rest;
+}
 
 function haveSameDisplaySteps(previous, current) {
   if (!previous || !current) return previous === current;
@@ -126,12 +162,14 @@ function haveSameDisplaySteps(previous, current) {
 function projectDisplayTelemetry(payload, requestedRevision) {
   const active = payload.activeConversation;
   const agents = active.agents;
+  const endpointKey = payload.endpoint?.id || LOCAL_ENDPOINT_ID;
   const sourceSteps = [active.recentSteps, ...agents.map((agent) => agent.recentSteps)];
   let projected;
   let revision;
   if (typeof requestedRevision === 'string') {
-    const cacheKey = active.cascadeId || '__empty__';
+    const cacheKey = `${endpointKey}::${active.cascadeId || '__empty__'}`;
     const scope = [
+      endpointKey,
       payload.account?.status,
       payload.account?.email || payload.account?.name || '',
       active.cascadeId,
@@ -175,17 +213,23 @@ function projectDisplayTelemetry(payload, requestedRevision) {
   };
 }
 
-export async function executeTelemetryAction(data, { onRestart = null } = {}) {
+export async function executeTelemetryAction(data, opts = {}) {
+  const { onRestart = null } = opts || {};
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  const isRemote = epCtx.isRemote;
   const rawConvId = String(
-    data?.conversationId || process.env.ANTIGRAVITY_CONVERSATION_ID || ''
+    data?.conversationId || (isRemote ? '' : process.env.ANTIGRAVITY_CONVERSATION_ID || '')
   ).trim();
   const convId = rawConvId && !/[\\/]|\.\./.test(rawConvId) ? rawConvId : '';
   const force = data?.force === '1' || data?.force === true;
   if (lsRuntimeEndpoint.addr !== 'test.invalid') {
-    if (!lsRuntimeEndpoint.baseUrl) {
+    if (!isRemote && !lsRuntimeEndpoint.baseUrl) {
       await ensureLsEndpointDiscovered({ force: false });
     }
-    if (lsRuntimeEndpoint.baseUrl) {
+    if (isRemote || lsRuntimeEndpoint.baseUrl) {
       if (force && Date.now() - cloudSyncState.lastAttemptMs > 15_000) {
         await Promise.race([
           syncCloudCatalog({ force: true }).catch(() => {}),
@@ -208,8 +252,10 @@ export async function executeTelemetryAction(data, { onRestart = null } = {}) {
     startMs: sanitizePositiveFiniteMs(data?.startMs),
     endMs: sanitizePositiveFiniteMs(data?.endMs),
     ...(scope ? { scope } : {}),
+    endpoint: epCtx.endpoint,
   };
   let payload;
+  trackEndpointRequestStart(epCtx.endpoint);
   try {
     payload = await buildTelemetryPayload(convId, force, filterOpts);
   } catch (err) {
@@ -225,6 +271,8 @@ export async function executeTelemetryAction(data, { onRestart = null } = {}) {
       }
     }
     throw err;
+  } finally {
+    trackEndpointRequestEnd(epCtx.endpoint);
   }
   if (
     bootBundleVersion &&
@@ -258,7 +306,7 @@ function sanitizePositiveSettingNumber(val, fallback) {
 
 export function executeSettingsAction(data) {
   const current = loadSettings();
-  const payload = isPlainObject(data) ? data : {};
+  const payload = isPlainObject(data) ? stripEndpointField(data) : {};
   const nextPluginUpdateMode =
     payload.pluginUpdateMode !== undefined
       ? normalizePluginUpdateMode(payload.pluginUpdateMode)
@@ -353,7 +401,11 @@ export function executeSettingsAction(data) {
   };
 }
 
-export async function executeModelContextWindowAction(data) {
+export async function executeModelContextWindowAction(data, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
   const { modelId, option } = data || {};
   const respond = (status, payload) => ({
     status,
@@ -364,12 +416,44 @@ export async function executeModelContextWindowAction(data) {
   if (!isContextWindowSettingId(modelId) || (option !== null && !isContextWindowOption(option))) {
     return respond(400, { error: 'Invalid model context window' });
   }
+
+  async function loadGroupsForEndpoint(targetEndpoint) {
+    const [{ userStatus }, catalog] = await Promise.all([
+      callLsRpc('GetUserStatus', {}, 5000, targetEndpoint),
+      getContextModelCatalog(targetEndpoint),
+    ]);
+    const configs = userStatus?.cascadeModelConfigData?.clientModelConfigs;
+    if (!Array.isArray(configs) || configs.length === 0) return null;
+    const models = getContextWindowModels(configs, catalog);
+    return getContextWindowGroups(models);
+  }
+
   let group;
+  let verifiedHostConfigs = false;
+  trackEndpointRequestStart(epCtx.endpoint);
   try {
-    const [{ userStatus }, catalog] = await Promise.all([callLsRpc('GetUserStatus'), getContextModelCatalog()]);
-    const models = getContextWindowModels(userStatus?.cascadeModelConfigData?.clientModelConfigs, catalog);
-    group = getContextWindowGroups(models).find(({ id }) => id === modelId);
-  } catch {
+    let groups = null;
+    try {
+      groups = await loadGroupsForEndpoint(epCtx.endpoint);
+    } catch {
+      groups = null;
+    }
+    if (epCtx.isRemote && !groups) {
+      // 仅在远端 RPC 异常或未返回模型配置时安全回退本机校验；远端已成功返回时绝不放宽其档位限制
+      try {
+        groups = await loadGroupsForEndpoint(null);
+      } catch {
+        groups = null;
+      }
+    }
+    if (Array.isArray(groups)) {
+      verifiedHostConfigs = true;
+      group = groups.find(({ id }) => id === modelId);
+    }
+  } finally {
+    trackEndpointRequestEnd(epCtx.endpoint);
+  }
+  if (!verifiedHostConfigs) {
     if (option !== null || modelId.startsWith('model:')) {
       return respond(503, { error: 'Unable to verify the host model configuration' });
     }
@@ -442,8 +526,14 @@ export function executeResetSettingsAction() {
   };
 }
 
-export function executeRebuildCacheAction() {
-  const ok = clearRuntimeCaches();
+export function executeRebuildCacheAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  const ok = epCtx.isRemote
+    ? clearRemoteEndpointCaches(epCtx.id)
+    : clearRuntimeCaches();
   if (!ok) {
     return {
       ok: false,
@@ -453,15 +543,20 @@ export function executeRebuildCacheAction() {
       body: JSON.stringify({ ok: false, error: 'Failed to clear trajectory cache' }),
     };
   }
-  displayStepsCache.clear();
-  clearScannerRuntimeMemos();
-  clearTelemetryBuilderMemo();
+  const cachePrefix = `${epCtx.id}::`;
+  for (const key of Array.from(displayStepsCache.keys())) {
+    if (key.startsWith(cachePrefix)) {
+      displayStepsCache.delete(key);
+    }
+  }
+  clearScannerRuntimeMemos(epCtx.isRemote ? epCtx.id : null);
+  clearTelemetryBuilderMemo(epCtx.id);
   return {
     ok: true,
     status: 200,
     contentType: 'application/json',
     headers: { 'Cache-Control': 'no-store' },
-    body: JSON.stringify({ ok: true, clearedAt: Date.now() }),
+    body: JSON.stringify({ ok: true, endpointId: epCtx.id, clearedAt: Date.now() }),
   };
 }
 
@@ -486,10 +581,23 @@ export async function executePluginUpdateAction() {
   };
 }
 
-export async function executeAccountCredentialAction(data) {
-  const result = await handleAccountCredentialAction(data);
-  if (data?.action === 'switch') {
-    clearTelemetryBuilderMemo();
+export async function executeAccountCredentialAction(data, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ supported: false, accounts: [], error: 'unsupported' }),
+    };
+  }
+  const cleanData = stripEndpointField(data);
+  const result = await handleAccountCredentialAction(cleanData);
+  if (cleanData?.action === 'switch') {
+    clearTelemetryBuilderMemo(LOCAL_ENDPOINT_ID);
   }
   return {
     status: 200,
@@ -531,15 +639,15 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       }
       return executeSettingsAction(data);
     case 'accounts_get':
-      return executeAccountCredentialAction();
+      return executeAccountCredentialAction(undefined, opts);
     case 'accounts_update':
-      return executeAccountCredentialAction(data);
+      return executeAccountCredentialAction(data, opts);
     case 'context_window':
-      return executeModelContextWindowAction(data);
+      return executeModelContextWindowAction(data, opts);
     case 'settings_reset':
       return executeResetSettingsAction();
     case 'cache_rebuild':
-      return executeRebuildCacheAction();
+      return executeRebuildCacheAction(data, opts);
     case 'cloud_sync':
       return executeCloudSyncAction();
     case 'plugin_update':
@@ -585,8 +693,11 @@ export function bootWindowBridgeRuntime({ allowDynamicLs = false, onRestart = nu
   }
 
   return startDefaultWindowBridge({
-    handleApiRequest: (pathname, method, data) =>
-      dispatchBridgeApiRequest(pathname, method, data, { onRestart: triggerRestart }),
+    handleApiRequest: (pathname, method, data, ctx) =>
+      dispatchBridgeApiRequest(pathname, method, data, {
+        onRestart: triggerRestart,
+        ...(ctx?.endpointId !== undefined ? { endpointId: ctx.endpointId } : {}),
+      }),
     readAssetFn: readLocalAsync,
     bootBundleVersion,
     onVersionDrift: triggerRestart,

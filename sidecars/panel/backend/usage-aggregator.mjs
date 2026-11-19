@@ -14,7 +14,8 @@ import {
   finishSpeed,
   parseIsoMs,
 } from '../trajectory-metrics.mjs';
-import { listCachedTrajectoryEntries, roundMetric } from './config.mjs';
+import { roundMetric } from './config.mjs';
+import { getEndpointCacheStore } from './endpoint-registry.mjs';
 import { loadExternalDeepStatsCache } from './local-scanner.mjs';
 import {
   computeStepCost,
@@ -430,7 +431,8 @@ export function buildScopedModelBreakdown(steps, resolveStepModel) {
   return finalizeModelBreakdownMap(perModelStats);
 }
 
-let lastUsageSnapshot = null;
+const MAX_USAGE_SNAPSHOT_ENDPOINTS = 8;
+const lastUsageSnapshotsByEndpoint = new Map();
 let usageSnapshotRevisionSeq = 0;
 const stepsTimeBoundsCache = new WeakMap();
 const MAX_TREND_TIMESTAMP_MS = 8_640_000_000_000_000;
@@ -439,10 +441,15 @@ const USAGE_SOURCE_LABELS = {
   standalone: 'Antigravity App',
   ide: 'Antigravity IDE',
   cli: 'Antigravity CLI',
+  ssh: 'Antigravity SSH',
 };
 
-export function clearUsageAggregatorMemo() {
-  lastUsageSnapshot = null;
+export function clearUsageAggregatorMemo(endpointId = null) {
+  if (endpointId) {
+    lastUsageSnapshotsByEndpoint.delete(String(endpointId));
+  } else {
+    lastUsageSnapshotsByEndpoint.clear();
+  }
   usageSnapshotRevisionSeq += 1;
 }
 
@@ -466,12 +473,14 @@ function getStepsTimeBounds(steps) {
   return bounds;
 }
 
-function collectUsageEntriesToAggregate(familySet) {
-  const externalConvos = loadExternalDeepStatsCache();
+function collectUsageEntriesToAggregate(familySet, endpoint = null) {
+  const isRemote = Boolean(endpoint && endpoint.isRemote);
+  const cacheStore = getEndpointCacheStore(endpoint);
+  const externalConvos = isRemote ? new Map() : loadExternalDeepStatsCache();
 
   // 构建大小写归一化的内存缓存与跨端深层缓存索引，彻底杜绝 `${appSource}:${cascadeId}` 键不匹配导致的双倍重复计费
   const allLiveByLower = new Map();
-  for (const [rawId, entry] of listCachedTrajectoryEntries()) {
+  for (const [rawId, entry] of cacheStore.listCachedTrajectoryEntries()) {
     const cidLower = String(rawId || '').toLowerCase();
     if (!cidLower || !entry || typeof entry !== 'object') continue;
     const prev = allLiveByLower.get(cidLower);
@@ -502,7 +511,7 @@ function collectUsageEntriesToAggregate(familySet) {
     ).toLowerCase();
     allEntriesToAggregate.push({
       cascadeId: groupCascadeId,
-      appSource: entry?.appSource || 'standalone',
+      appSource: isRemote ? 'ssh' : entry?.appSource || 'standalone',
       accountName: entry?.accountName || extMatch?.accountName || '',
       steps: entry?.steps || [],
       isCurrentConv: familySet.has(cidLower),
@@ -1051,7 +1060,10 @@ export function aggregateMultiWindowUsage({
   resolveStepModel,
   quotaPoolsMap = null,
   modelInputs = null,
+  endpoint = null,
 }) {
+  const isRemote = Boolean(endpoint && endpoint.isRemote);
+  const endpointKey = isRemote ? String(endpoint.id || 'remote') : 'local';
   const rawFamilyIds =
     activeFamilyCascadeIds instanceof Set
       ? Array.from(activeFamilyCascadeIds)
@@ -1117,7 +1129,7 @@ export function aggregateMultiWindowUsage({
   }));
 
   const perSourceStats = new Map();
-  const allEntriesToAggregate = collectUsageEntriesToAggregate(familySet);
+  const allEntriesToAggregate = collectUsageEntriesToAggregate(familySet, endpoint);
   const familySig = buildFamilySig(familySet);
 
   const timeZone = modelInputs ? new Intl.DateTimeFormat().resolvedOptions().timeZone : '';
@@ -1126,7 +1138,7 @@ export function aggregateMultiWindowUsage({
     { key: `${key}:week`, startMs: startWkMs, endMs: nowMs },
   ]).flat();
   const windows = [selectedWindow, ...Object.values(presetWindows), ...quotaWindows];
-  const snapshot = lastUsageSnapshot;
+  const snapshot = lastUsageSnapshotsByEndpoint.get(endpointKey) || null;
   const sameSnapshot = modelInputs && snapshot && timeZone === snapshot.timeZone &&
     currentYear === snapshot.currentYear &&
     Boolean(isCustomWeeklyMode) === Boolean(snapshot.isCustomWeeklyMode) &&
@@ -1459,10 +1471,11 @@ export function aggregateMultiWindowUsage({
       : null;
 
   let resolvedUsageRevision = usageSnapshotRevisionSeq;
+  let activeSnap = snapshot;
   if (modelInputs) {
     if (!sameSnapshot) {
       resolvedUsageRevision = ++usageSnapshotRevisionSeq;
-      lastUsageSnapshot = {
+      activeSnap = {
         revision: resolvedUsageRevision,
         timeZone,
         modelInputs,
@@ -1474,8 +1487,14 @@ export function aggregateMultiWindowUsage({
         ranges: new Map(),
         selectedRanges: new Map(),
       };
+      lastUsageSnapshotsByEndpoint.delete(endpointKey);
+      if (lastUsageSnapshotsByEndpoint.size >= MAX_USAGE_SNAPSHOT_ENDPOINTS) {
+        const oldestKey = lastUsageSnapshotsByEndpoint.keys().next().value;
+        if (oldestKey !== undefined) lastUsageSnapshotsByEndpoint.delete(oldestKey);
+      }
+      lastUsageSnapshotsByEndpoint.set(endpointKey, activeSnap);
     } else {
-      resolvedUsageRevision = lastUsageSnapshot.revision;
+      resolvedUsageRevision = activeSnap.revision;
     }
   } else {
     resolvedUsageRevision = ++usageSnapshotRevisionSeq;
@@ -1500,8 +1519,8 @@ export function aggregateMultiWindowUsage({
     poolCycleStats,
     poolsWeeklySummary,
   };
-  if (modelInputs && lastUsageSnapshot) {
-    const { ranges } = lastUsageSnapshot;
+  if (modelInputs && activeSnap) {
+    const { ranges } = activeSnap;
     ranges.delete(selectedWindow.key);
     ranges.set(selectedWindow.key, {
       familySig,
@@ -1536,7 +1555,10 @@ export function aggregateSelectedWindowUsage({
   quotaPoolsMap = null,
   modelInputs = null,
   precollectedEntries = null,
+  endpoint = null,
 }) {
+  const isRemote = Boolean(endpoint && endpoint.isRemote);
+  const endpointKey = isRemote ? String(endpoint.id || 'remote') : 'local';
   const rawFamilyIds =
     activeFamilyCascadeIds instanceof Set
       ? Array.from(activeFamilyCascadeIds)
@@ -1567,12 +1589,12 @@ export function aggregateSelectedWindowUsage({
 
   const allEntriesToAggregate = Array.isArray(precollectedEntries)
     ? precollectedEntries
-    : collectUsageEntriesToAggregate(familySet);
+    : collectUsageEntriesToAggregate(familySet, endpoint);
   const familySig = buildFamilySig(familySet);
   const currentYear = new Date(nowMs).getFullYear();
   const timeZone = modelInputs ? new Intl.DateTimeFormat().resolvedOptions().timeZone : '';
 
-  const snapshot = lastUsageSnapshot;
+  const snapshot = lastUsageSnapshotsByEndpoint.get(endpointKey) || null;
   const sameSnapshot = Boolean(
     modelInputs &&
       snapshot &&
@@ -1885,7 +1907,10 @@ export function aggregateSessionUsageForFamily({
   activeFamilyCascadeIds = null,
   resolveStepModel,
   quotaPoolsMap = null,
+  endpoint = null,
 }) {
+  const isRemote = Boolean(endpoint && endpoint.isRemote);
+  const cacheStore = getEndpointCacheStore(endpoint);
   const rawFamilyIds =
     activeFamilyCascadeIds instanceof Set
       ? Array.from(activeFamilyCascadeIds)
@@ -1912,13 +1937,13 @@ export function aggregateSessionUsageForFamily({
     currentAccountName === null ? null : normalizeOwnerAccount(currentAccountName);
 
   const familyEntries = [];
-  for (const [cid, entry] of listCachedTrajectoryEntries()) {
+  for (const [cid, entry] of cacheStore.listCachedTrajectoryEntries()) {
     if (!entry || !Array.isArray(entry.steps) || entry.steps.length === 0) continue;
     const cidLower = String(cid || '').toLowerCase();
     if (!familySet.has(cidLower)) continue;
     familyEntries.push({
       cascadeId: cid,
-      appSource: entry.appSource || 'standalone',
+      appSource: isRemote ? 'ssh' : entry.appSource || 'standalone',
       accountName: entry.accountName || '',
       steps: entry.steps,
       isCurrentConv: true,
@@ -1943,7 +1968,7 @@ export function aggregateSessionUsageForFamily({
  * 批量预聚合全部 7 个用量页预设区间（复用同一次条目收集与时间剪枝），供前端进入「用量统计」时静默预取实现 0ms 瞬切。
  */
 export function aggregateConsumptionPresetBundle(params) {
-  const { activeCascadeId = null, activeFamilyCascadeIds = null } = params || {};
+  const { activeCascadeId = null, activeFamilyCascadeIds = null, endpoint = null } = params || {};
   const rawFamilyIds =
     activeFamilyCascadeIds instanceof Set
       ? Array.from(activeFamilyCascadeIds)
@@ -1951,7 +1976,7 @@ export function aggregateConsumptionPresetBundle(params) {
         ? [activeCascadeId]
         : [];
   const familySet = new Set(rawFamilyIds.map((id) => String(id || '').toLowerCase()));
-  const precollectedEntries = collectUsageEntriesToAggregate(familySet);
+  const precollectedEntries = collectUsageEntriesToAggregate(familySet, endpoint);
   const ranges = {};
   let usageRevision = usageSnapshotRevisionSeq;
 

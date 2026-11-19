@@ -53,7 +53,12 @@ import {
   normalizeWindowMountMode,
   parseStepTokenComboSegments,
 } from '../../shared/settings-normalization.mjs';
-import { WINDOW_BRIDGE_ROUTE_KEY, readInjectedWindowBridge } from '../../shared/window-bridge-protocol.mjs';
+import {
+  LOCAL_ENDPOINT_ID,
+  WINDOW_BRIDGE_ENDPOINT_KEY,
+  WINDOW_BRIDGE_ROUTE_KEY,
+  readInjectedWindowBridge,
+} from '../../shared/window-bridge-protocol.mjs';
 
 const CASCADE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -149,6 +154,7 @@ let activeBundleVersion = 0;
 let latestRequestSeq = 0;
 let latestConsumptionReqSeq = 0;
 let latestConversationSwitchSeq = 0;
+let endpointSwitchEpoch = 0;
 let activeForceCount = 0;
 let consecutivePollFailures = 0;
 let inFlightTelemetryPoll = null;
@@ -201,10 +207,11 @@ export function clearConversationViewCache() {
 
 function buildConsumptionScopeSig(payload) {
   if (!payload || typeof payload !== 'object') return '';
+  const ep = payload.endpoint || {};
   const acct = payload.account || {};
   const set = payload.settings || {};
   const cloud = payload.cloudStatus || {};
-  return `${String(acct.status || '')}|${String(acct.email || acct.name || '').toLowerCase()}|${String(set.weeklyLimitMode || '')}|${String(cloud.catalogVersion || '')}`;
+  return `${String(ep.id || LOCAL_ENDPOINT_ID)}|${String(acct.status || '')}|${String(acct.email || acct.name || '').toLowerCase()}|${String(set.weeklyLimitMode || '')}|${String(cloud.catalogVersion || '')}`;
 }
 
 function syncConsumptionCacheScope(payload) {
@@ -476,6 +483,13 @@ export function isEquivalentTelemetry(prev, next) {
   if ((pSet?.fontScale ?? 'md') !== (nSet?.fontScale ?? 'md')) return false;
   if (Boolean(pSet?.experimentalModernUi) !== Boolean(nSet?.experimentalModernUi)) return false;
   if ((prev.hostPlatform || '') !== (next.hostPlatform || '')) return false;
+  if (
+    (prev.endpoint?.id || LOCAL_ENDPOINT_ID) !== (next.endpoint?.id || LOCAL_ENDPOINT_ID) ||
+    Boolean(prev.endpoint?.isRemote) !== Boolean(next.endpoint?.isRemote) ||
+    (prev.endpoint?.label || '') !== (next.endpoint?.label || '')
+  ) {
+    return false;
+  }
   if (Boolean(pSet?.contextWindowRiskAccepted) !== Boolean(nSet?.contextWindowRiskAccepted)) {
     return false;
   }
@@ -1014,6 +1028,33 @@ export function isEquivalentTelemetry(prev, next) {
   return true;
 }
 
+export function resetTelemetryForEndpointSwitch() {
+  endpointSwitchEpoch += 1;
+  latestRequestSeq += 1;
+  latestConsumptionReqSeq += 1;
+  latestConversationSwitchSeq += 1;
+  lastReceivedSteps = null;
+  inFlightTelemetryPoll = null;
+  consecutivePollFailures = 0;
+  consumptionCacheScopeSig = '';
+  abortSidecarApiKey('telemetry-poll');
+  abortSidecarApiKey('telemetry-force');
+  abortSidecarApiKey('consumption-range');
+  abortSidecarApiKey('consumption-presets');
+  abortSidecarApiKey('conversation-switch');
+  clearConsumptionRangeCache();
+  clearConversationViewCache();
+  if (feedbackTimer) {
+    clearTimeout(feedbackTimer);
+    feedbackTimer = null;
+  }
+  telemetryStore.setState({
+    selectedConversationId: '',
+    telemetry: null,
+    syncState: 'idle',
+  });
+}
+
 export async function fetchTelemetry({ force = false } = {}) {
   if (!force && activeForceCount > 0) {
     return telemetryStore.getState().telemetry;
@@ -1049,11 +1090,17 @@ export async function fetchTelemetry({ force = false } = {}) {
   }
   const query = params.toString();
   const bridge = overlay ? getWindowBridgeConfig() : null;
+  const endpointId = bridge?.[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID;
   const existing = inFlightTelemetryPoll;
-  if (existing?.query === query && existing.port === bridge?.port && existing.token === bridge?.token) {
+  if (
+    existing?.query === query &&
+    existing.port === bridge?.port &&
+    existing.token === bridge?.token &&
+    existing.endpointId === endpointId
+  ) {
     return existing.promise;
   }
-  const poll = { query, port: bridge?.port, token: bridge?.token, promise: null };
+  const poll = { query, port: bridge?.port, token: bridge?.token, endpointId, promise: null };
   poll.promise = requestTelemetry(params, false).finally(() => {
     if (inFlightTelemetryPoll === poll) inFlightTelemetryPoll = null;
   });
@@ -1240,6 +1287,7 @@ async function fetchConsumptionRangeSlice({
   customStartMs = 0,
   customEndMs = 0,
 } = {}) {
+  const reqEpoch = endpointSwitchEpoch;
   const reqSeq = ++latestConsumptionReqSeq;
   const targetRange = String(range || 'today');
   const current = telemetryStore.getState();
@@ -1258,7 +1306,7 @@ async function fetchConsumptionRangeSlice({
       method: 'GET',
       abortKey: 'consumption-range',
     });
-    if (!payload || typeof payload !== 'object') return null;
+    if (!payload || typeof payload !== 'object' || reqEpoch !== endpointSwitchEpoch) return null;
 
     if (payload.scope === 'consumption' && payload.consumption) {
       const usageRev = Number(payload.usageRevision ?? payload.consumption.revision ?? 0);
@@ -1385,13 +1433,14 @@ export async function selectConversation(
   params.set('stepRevision', cachedSteps?.revision || '');
   params.set('scope', 'conversation');
 
+  const reqEpoch = endpointSwitchEpoch;
   const reqSettingsRev = settingsRevision;
   try {
     const payload = await callSidecarApi(`/api/telemetry?${params}`, {
       method: 'GET',
       abortKey: 'conversation-switch',
     });
-    if (!payload || typeof payload !== 'object') return null;
+    if (!payload || typeof payload !== 'object' || reqEpoch !== endpointSwitchEpoch) return null;
     if (switchSeq !== latestConversationSwitchSeq) return payload;
 
     const latestSt = telemetryStore.getState();
@@ -1550,11 +1599,13 @@ export function prefetchConsumptionPresets() {
   if (effectiveConvId) params.set('conversationId', effectiveConvId);
   params.set('scope', 'consumption-presets');
 
+  const reqEpoch = endpointSwitchEpoch;
   const task = callSidecarApi(`/api/telemetry?${params}`, {
     method: 'GET',
     abortKey: 'consumption-presets',
   })
     .then((payload) => {
+      if (reqEpoch !== endpointSwitchEpoch) return false;
       if (payload?.scope === 'consumption-presets' && payload.ranges && typeof payload.ranges === 'object') {
         const rev = Number(payload.usageRevision || currentRev || 0);
         for (const [rangeKey, entry] of Object.entries(payload.ranges)) {
