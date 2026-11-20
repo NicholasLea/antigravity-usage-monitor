@@ -42,6 +42,7 @@ export {
   normalizeHoverModules,
   normalizeLanguageSetting,
   normalizeModelDisplayMode,
+  normalizeModernUi,
   normalizeOrchestratorIdMode,
   normalizeOverviewMetrics,
   normalizeOverviewModules,

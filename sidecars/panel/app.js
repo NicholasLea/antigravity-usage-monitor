@@ -2,7 +2,7 @@
 'use strict';
 
 // --- shared/settings-normalization.mjs ---
-const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeExperimentalModernUi } = (() => {
+const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, normalizeExperimentalModernUi } = (() => {
 /**
  * @fileoverview 前后端与 CLI 共用的偏好设置枚举常量、默认值与无状态纯函数归一化规则。
  */
@@ -147,19 +147,19 @@ const MAX_POPOVER_WIDTH = 1080;
 const DEFAULT_POPOVER_WIDTH = 580;
 
 /**
- * 归一化界面语言枚举（默认 `'zh-CN'`，支持 `'auto'`/`'system'` 与 `'en-US'`）。
+ * 归一化界面语言枚举（默认 `'auto'`，支持 `'zh-CN'` 及 `'en-US'`）。
  *
  * @param {unknown} lang
  * @returns {'auto'|'zh-CN'|'en-US'}
  */
 function normalizeLanguageSetting(lang) {
   const raw = String(lang ?? '').trim();
-  if (!raw) return 'zh-CN';
+  if (!raw) return 'auto';
   const lower = raw.toLowerCase();
   if (lower === 'auto' || lower === 'system') return 'auto';
   if (lower === 'en' || lower === 'en-us' || lower.startsWith('en-')) return 'en-US';
   if (lower === 'zh' || lower === 'zh-cn' || lower.startsWith('zh')) return 'zh-CN';
-  return 'zh-CN';
+  return 'auto';
 }
 
 /**
@@ -453,7 +453,24 @@ function normalizeStandalonePort(port) {
 }
 
 /**
- * 归一化实验性现代化新 UI 开关（默认 `false`）。
+ * 归一化现代化 UI 开关（默认 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+function normalizeModernUi(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
+  }
+  return Boolean(val);
+}
+
+/**
+ * 归一化旧版实验性新 UI 字段（保留兼容，缺省返回 `false`）。
  *
  * @param {unknown} val
  * @returns {boolean}
@@ -465,7 +482,7 @@ function normalizeExperimentalModernUi(val) {
   }
   return Boolean(val);
 }
-return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeExperimentalModernUi };
+return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, normalizeExperimentalModernUi };
 })();
 
 // --- shared/telemetry-display-rules.mjs ---
@@ -717,9 +734,12 @@ return { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyC
 })();
 
 // --- shared/window-bridge-protocol.mjs ---
-const { WINDOW_BRIDGE_KEY, WINDOW_BRIDGE_ROUTE_KEY, WINDOW_OVERLAY_KEY, CONTEXT_WINDOWS_GLOBAL_KEY, WINDOW_OVERLAY_METHODS, BRIDGE_API_ROUTE_DEFS, BRIDGE_API_PATHS, readInjectedWindowBridge } = (() => {
+const { WINDOW_BRIDGE_KEY, WINDOW_BRIDGE_ROUTE_KEY, WINDOW_BRIDGE_ENDPOINT_KEY, WINDOW_BRIDGE_ENDPOINT_HEADER, LOCAL_ENDPOINT_ID, WINDOW_OVERLAY_KEY, CONTEXT_WINDOWS_GLOBAL_KEY, WINDOW_OVERLAY_METHODS, BRIDGE_API_ROUTE_DEFS, BRIDGE_API_PATHS, readInjectedWindowBridge } = (() => {
 const WINDOW_BRIDGE_KEY = '__AGUsageMonitorBridge';
 const WINDOW_BRIDGE_ROUTE_KEY = 'hostRouteCascadeId';
+const WINDOW_BRIDGE_ENDPOINT_KEY = 'endpointId';
+const WINDOW_BRIDGE_ENDPOINT_HEADER = 'X-Usage-Monitor-Endpoint';
+const LOCAL_ENDPOINT_ID = 'local';
 const WINDOW_OVERLAY_KEY = '__AGUsageMonitorOverlay';
 const CONTEXT_WINDOWS_GLOBAL_KEY = '__AGUsageMonitorContextWindows';
 
@@ -752,7 +772,7 @@ const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path))
 function readInjectedWindowBridge() {
   return typeof window === 'undefined' ? undefined : window[WINDOW_BRIDGE_KEY];
 }
-return { WINDOW_BRIDGE_KEY, WINDOW_BRIDGE_ROUTE_KEY, WINDOW_OVERLAY_KEY, CONTEXT_WINDOWS_GLOBAL_KEY, WINDOW_OVERLAY_METHODS, BRIDGE_API_ROUTE_DEFS, BRIDGE_API_PATHS, readInjectedWindowBridge };
+return { WINDOW_BRIDGE_KEY, WINDOW_BRIDGE_ROUTE_KEY, WINDOW_BRIDGE_ENDPOINT_KEY, WINDOW_BRIDGE_ENDPOINT_HEADER, LOCAL_ENDPOINT_ID, WINDOW_OVERLAY_KEY, CONTEXT_WINDOWS_GLOBAL_KEY, WINDOW_OVERLAY_METHODS, BRIDGE_API_ROUTE_DEFS, BRIDGE_API_PATHS, readInjectedWindowBridge };
 })();
 
 // --- src/icons/svgRegistry.js ---
@@ -1071,7 +1091,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.statusGenerating': '生成中{suffix}',
   'header.statusQuotaCached': '额度缓存',
   'header.statusQuotaOffline': '额度离线',
-  'header.statusLive': '实时 2s',
+  'header.statusLive': '监控中',
 
   // Formatters & Common Labels
   'fmt.pending': '待定',
@@ -1271,7 +1291,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.cacheRead': '缓存读取',
   'cons.savedCost': '节省 {cost}',
   'cons.outputUsage': '输出用量',
-  'cons.replyAndThink': '回复 {resp} · 思考 {think}',
+  'cons.replyAndThink': '思考 {think} · 回复 {resp}',
   'cons.trendTitle': '用量趋势',
   'cons.allTime': '全部时间',
   'cons.trendHeatmapHint': '按日 ({days}天) · 悬停查看',
@@ -1336,7 +1356,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.modelCallsOnly': '{calls}次',
   'steps.modelsSummaryPrefix': '{count} 模型 · ',
   'steps.modelPerfFoot': '均速 {tps} · 首字 {ttft} · 缓存 {cache}%',
-  'steps.modelSplitFoot': '入 {inTok} · 缓 {cacheTok} · 思 {thinkTok} · 正 {respTok}',
+  'steps.modelSplitFoot': '输入 {inTok} · 缓存 {cacheTok} · 思考 {thinkTok} · 输出 {respTok}',
   'steps.fitActiveCardTitle': '{title}（已纳入上方趋势拟合，按住 Ctrl/Shift 点击可多选对比）',
   'steps.fitInactiveCardTitle': '点击在上方拟合图查看 {text}（按住 Ctrl/Shift 点击可多选同图对比）',
   'steps.turnMediaOnly': '[图片/附件提问]',
@@ -1365,6 +1385,10 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.anomalyKind.canceled': '用户取消',
   'steps.anomalyStepTitle': '#{step} · 异常 {count} 次',
   'steps.anomalyDelayPart': '退避 {sec}s',
+  'steps.compactionStepTitle': '#{step} · 自动压缩',
+  'steps.compactionSummaryRow': '输入 {input} → 摘要输出 {output}',
+  'steps.compactionDetailHint': '系统自动触发的上下文压缩步骤，用于折叠历史对话以释放窗口空间',
+  'steps.compactionAnomalyHint': '该步骤同时为系统自动压缩步骤',
   'steps.anomalyTerminalTag': '中止',
   'steps.anomalyModelTitle': '{model} · 异常 {count} 次',
   'steps.anomalyModelSub': '涉及 {steps} 步',
@@ -1481,10 +1505,10 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.gen.fontLg': '大',
   'settings.gen.fontXl': '特大',
   'settings.gen.fontHint': '等比缩放侧边栏与展开面板字号，顶栏及输入框内嵌胶囊保持紧凑定高',
-  'settings.gen.modernUi': '新 UI（实验性）',
+  'settings.gen.modernUi': '现代化 UI',
   'settings.gen.modernUiOff': '关闭',
   'settings.gen.modernUiOn': '开启',
-  'settings.gen.modernUiHint': '去除大部分线框，采用柔和分层底色与更流畅的现代过渡动画',
+  'settings.gen.modernUiHint': '去除大部分线框，采用柔和分层底色及更流畅的现代过渡动画',
   'settings.gen.updateTitle': '版本更新',
   'settings.gen.updateMode': '更新方式',
   'settings.gen.updateManual': '仅提示新版本，手动更新',
@@ -1776,7 +1800,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'header.statusGenerating': 'Running{suffix}',
   'header.statusQuotaCached': 'Quota Cached',
   'header.statusQuotaOffline': 'Quota Offline',
-  'header.statusLive': 'Live 2s',
+  'header.statusLive': 'Monitoring',
 
   // Formatters & Common Labels
   'fmt.pending': 'N/A',
@@ -1976,7 +2000,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.cacheRead': 'Cache Read',
   'cons.savedCost': 'Saved {cost}',
   'cons.outputUsage': 'Output',
-  'cons.replyAndThink': 'Reply {resp} · Think {think}',
+  'cons.replyAndThink': 'Think {think} · Reply {resp}',
   'cons.trendTitle': 'Usage Trend',
   'cons.allTime': 'All Time',
   'cons.trendHeatmapHint': 'Daily ({days}d) · Hover for details',
@@ -2070,6 +2094,10 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.anomalyKind.canceled': 'Canceled by User',
   'steps.anomalyStepTitle': '#{step} · {count} Retries / Errors',
   'steps.anomalyDelayPart': 'Backoff {sec}s',
+  'steps.compactionStepTitle': '#{step} · Auto-Compaction',
+  'steps.compactionSummaryRow': 'Input {input} → Summary {output}',
+  'steps.compactionDetailHint': 'Automatic context compaction step triggered to summarize history and free window space',
+  'steps.compactionAnomalyHint': 'This step is also an auto-compaction step',
   'steps.anomalyTerminalTag': 'Stopped',
   'steps.anomalyModelTitle': '{model} · {count} Retries / Errors',
   'steps.anomalyModelSub': '{steps} steps affected',
@@ -2186,7 +2214,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.gen.fontLg': 'Large',
   'settings.gen.fontXl': 'XL',
   'settings.gen.fontHint': 'Scales sidebar and popover typography while keeping the inline capsule compact',
-  'settings.gen.modernUi': 'Modern UI (Experimental)',
+  'settings.gen.modernUi': 'Modern UI',
   'settings.gen.modernUiOff': 'Off',
   'settings.gen.modernUiOn': 'On',
   'settings.gen.modernUiHint': 'Removes most borders in favor of soft tonal surfaces and smoother animations',
@@ -2475,8 +2503,8 @@ function detectHostSystemLocale() {
 }
 
 const i18nStore = createReactiveStore({
-  language: 'zh-CN',
-  locale: 'zh-CN',
+  language: 'auto',
+  locale: detectHostSystemLocale(),
 });
 
 function setI18nLanguage(rawLang) {
@@ -2517,7 +2545,7 @@ return { I18N_DICTIONARIES, normalizeI18nLanguage, detectHostSystemLocale, i18nS
 })();
 
 // --- src/core/appearance.js ---
-const { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normalizeClientThemeAccent, normalizeClientFontScale, normalizeClientModernUi, isModernUiActiveForElement, parseCssColorLuminance, detectHostColorScheme, applyAppearanceToRoot } = (() => {
+const { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normalizeClientThemeAccent, normalizeClientFontScale, normalizeClientModernUi, resolveSettingsModernUi, isModernUiActiveForElement, parseCssColorLuminance, detectHostColorScheme, applyAppearanceToRoot } = (() => {
 /**
  * @fileoverview Theme accent palette & panel font-scale appearance engine.
  * Applies CSS custom properties cleanly to Sidebar `:root` and Shadow DOM hosts,
@@ -2559,11 +2587,25 @@ function normalizeClientFontScale(raw) {
 }
 
 function normalizeClientModernUi(raw) {
+  if (raw === undefined || raw === null || raw === '') return true;
   if (typeof raw === 'string') {
     const lower = raw.trim().toLowerCase();
-    return lower === 'true' || lower === '1' || lower === 'on';
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
   }
   return Boolean(raw);
+}
+
+function resolveSettingsModernUi(settings) {
+  if (!settings || typeof settings !== 'object') return true;
+  if (settings.modernUi !== undefined) {
+    return normalizeClientModernUi(settings.modernUi);
+  }
+  if (settings.experimentalModernUi !== undefined) {
+    return normalizeClientModernUi(settings.experimentalModernUi);
+  }
+  return true;
 }
 
 /**
@@ -2916,7 +2958,7 @@ function applyAppearanceToRoot(targetEl, settings, { includeFontScale = true } =
   const colorScheme = detectHostColorScheme(targetEl);
   setAttrIfChanged(targetEl, 'data-color-scheme', colorScheme);
 
-  const isModernUi = normalizeClientModernUi(settings?.experimentalModernUi);
+  const isModernUi = resolveSettingsModernUi(settings);
   if (isModernUi) {
     setAttrIfChanged(targetEl, 'data-modern-ui', 'true');
   } else {
@@ -2936,7 +2978,7 @@ function applyAppearanceToRoot(targetEl, settings, { includeFontScale = true } =
     removeAttrIfPresent(targetEl, 'data-font-scale');
   }
 }
-return { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normalizeClientThemeAccent, normalizeClientFontScale, normalizeClientModernUi, isModernUiActiveForElement, parseCssColorLuminance, detectHostColorScheme, applyAppearanceToRoot };
+return { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normalizeClientThemeAccent, normalizeClientFontScale, normalizeClientModernUi, resolveSettingsModernUi, isModernUiActiveForElement, parseCssColorLuminance, detectHostColorScheme, applyAppearanceToRoot };
 })();
 
 // --- src/core/domPatch.js ---
@@ -3265,7 +3307,22 @@ function positionAnchoredPopup(
   popupEl.style.maxHeight = '';
 
   const availWidth = Math.max(120, Math.floor(bound.width - margin * 2));
-  popupEl.style.maxWidth = `${availWidth}px`;
+  let cssMaxW = NaN;
+  if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+    try {
+      const rawMaxW = window.getComputedStyle(popupEl)?.maxWidth;
+      if (rawMaxW && rawMaxW !== 'none') {
+        cssMaxW = Number.parseFloat(rawMaxW);
+      }
+    } catch {
+      // 忽略 Mock DOM 样式查询异常
+    }
+  }
+  const effectiveMaxW =
+    Number.isFinite(cssMaxW) && cssMaxW > 0
+      ? Math.max(120, Math.min(availWidth, Math.floor(cssMaxW)))
+      : availWidth;
+  popupEl.style.maxWidth = `${effectiveMaxW}px`;
 
   const rawRect = popupEl.getBoundingClientRect?.();
   // 优先读取 offsetWidth，避免入场动画 scale(0.975) 导致测宽偏小
@@ -3273,10 +3330,13 @@ function positionAnchoredPopup(
     Number(popupEl.offsetWidth || 0),
     Math.ceil(Number(rawRect?.width || 0))
   );
-  if (naturalW > availWidth) {
+  if (naturalW > effectiveMaxW) {
     popupEl.style.minWidth = '0px';
   }
-  const popupW = Math.min(availWidth, naturalW > 0 ? naturalW : Math.max(triggerRect.width, 210));
+  const popupW = Math.min(
+    effectiveMaxW,
+    naturalW > 0 ? naturalW : Math.max(triggerRect.width, 210)
+  );
 
   const safeLeft = bound.left + margin;
   const safeRight = bound.right - margin;
@@ -3419,7 +3479,7 @@ return { defineComponent };
 })();
 
 // --- src/core/formatters.js ---
-const { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
+const { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
 /**
  * @fileoverview Pure formatting utilities for speed metrics, token counts,
  * USD estimates, countdown timers, and custom datetime displays.
@@ -3632,6 +3692,42 @@ function buildStepAnomalyDiagnostic(st) {
   };
 }
 
+function buildStepCompactionDiagnostic(st, displaySettings = {}) {
+  if (!st || typeof st !== 'object') return null;
+  const disp = resolveModelDisplayInfo(st, displaySettings, { fallback: '' });
+  const promptTok =
+    Math.max(0, Number(st.inputTokens || 0)) + Math.max(0, Number(st.cacheReadTokens || 0));
+  const outTok = Math.max(0, Number(st.outputTokens || 0));
+  const title = t('steps.compactionStepTitle', { step: Number(st.stepIndex ?? 0) });
+  const rows =
+    promptTok > 0 || outTok > 0
+      ? [
+          {
+            text: t('steps.compactionSummaryRow', {
+              input: formatTokens(promptTok),
+              output: formatTokens(outTok),
+            }),
+            detail: t('steps.compactionDetailHint'),
+            mono: false,
+            danger: false,
+          },
+        ]
+      : [
+          {
+            text: t('steps.compactionDetailHint'),
+            detail: '',
+            danger: false,
+          },
+        ];
+  return {
+    title,
+    sub: disp.baseText || '',
+    rows,
+    hint: '',
+    severity: 'compaction',
+  };
+}
+
 function buildModelAnomalyDiagnostic(m) {
   const sum = resolveModelAnomalySummary(m);
   if (!sum) return null;
@@ -3726,8 +3822,8 @@ const normalizeOrchestratorIdDisplayMode = normalizeOrchestratorIdMode;
  * 统一解析步骤、会话摘要或模型汇总行面向用户的模型显示文本与悬停提示。
  *
  * 规则：
- * - Orchestrator 系列（`Orchestrator (Carbon)`、`Orchestrator (Argon)`、`gemini-flash-worker-agy` / `M669`）
- *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-carbon` / `orchestrator-argon` / `worker-agy-hydrogen`；
+ * - Orchestrator 系列（`Orchestrator (Carbon)`、`Orchestrator (Argon)`、`Orchestrator (Neon)`、`gemini-flash-worker-agy` / `M669`）
+ *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-carbon` / `orchestrator-argon` / `orchestrator-neon` / `worker-agy-hydrogen`；
  *   `'full'` 显示带括号标注的完整上游 ID），不受普通模型显示模式影响；
  * - 其余普通模型遵循 `modelDisplayMode`（`'short'` | `'upstream_compact'` | `'upstream'`，兼容旧版布尔 `showUpstreamModel`）；
  * - 独立拆分 `baseText` 与 `compactionSuffix`（`·压缩`），供步骤表单独保护压缩尾标永不截断。
@@ -3800,37 +3896,71 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     /\bMODEL_PLACEHOLDER_M669\b|\b[a-z0-9.-]*worker-agy\b|\bworker-agy-hydrogen\b|\bOrchestrator\s+Worker\b/i.test(
       combined
     );
+  const isKnownOrchCarbonPh = /\bMODEL_PLACEHOLDER_M667\b/i.test(combined);
+  const isKnownOrchArgonPh = /\bMODEL_PLACEHOLDER_M681\b/i.test(combined);
+  const isKnownOrchNeonPh = /\bMODEL_PLACEHOLDER_M537\b/i.test(combined);
+  const dynamicOrchVariantMatch =
+    combined.match(/\bOrchestrator\s*\(\s*([a-z0-9-]+)\s*\)/i) ||
+    combined.match(/\bgemini-pro-orchestrator-([a-z0-9-]+)\b/i) ||
+    combined.match(/\b(?:orchestrator|orch)-([a-z0-9]+)(?=·|\s|$)/i);
+  const dynamicOrchVariant =
+    dynamicOrchVariantMatch && dynamicOrchVariantMatch[1].toLowerCase() !== 'worker'
+      ? dynamicOrchVariantMatch[1].toLowerCase()
+      : '';
+  const hasBareProOrch = /\bgemini-pro-orchestrator\b(?![-_][a-z0-9])/i.test(combined);
   const isOrchSeries =
     isOrchWorker ||
-    /\bgemini-pro-orchestrator(?:-argon)?\b|\borchestrator-(?:carbon|argon)\b|\borch-(?:carbon|argon)(?:·压缩)?(?=\s|$)|Orchestrator\s*\((?:Carbon|Argon)\)|\bMODEL_PLACEHOLDER_M(?:667|681)\b/i.test(
-      combined
-    );
+    Boolean(dynamicOrchVariant) ||
+    isKnownOrchNeonPh ||
+    isKnownOrchArgonPh ||
+    isKnownOrchCarbonPh ||
+    hasBareProOrch;
 
   if (isOrchSeries) {
-    let compactId = 'orchestrator-carbon';
-    let fullId = 'gemini-pro-orchestrator (carbon-4)';
+    let compactId = '';
+    let fullId = '';
     if (isOrchWorker) {
       compactId = 'worker-agy-hydrogen';
       fullId = 'gemini-flash-worker-agy (hydrogen-4)';
-    } else if (/\bargon\b|\bMODEL_PLACEHOLDER_M681\b|\borch-argon\b/i.test(combined)) {
+    } else if (isKnownOrchNeonPh || dynamicOrchVariant === 'neon') {
+      compactId = 'orchestrator-neon';
+      fullId = 'gemini-pro-orchestrator-neon (neon-4)';
+    } else if (isKnownOrchArgonPh || dynamicOrchVariant === 'argon') {
       compactId = 'orchestrator-argon';
       fullId = 'gemini-pro-orchestrator-argon (argon-4)';
+    } else if (
+      isKnownOrchCarbonPh ||
+      dynamicOrchVariant === 'carbon' ||
+      (hasBareProOrch && !dynamicOrchVariant)
+    ) {
+      compactId = 'orchestrator-carbon';
+      fullId = 'gemini-pro-orchestrator (carbon-4)';
+    } else if (dynamicOrchVariant) {
+      compactId = `orchestrator-${dynamicOrchVariant}`;
+      const cleanUpstream = stripCompactionMarker(upstreamText || responseText || '').trim();
+      fullId = cleanUpstream
+        ? cleanUpstream.toLowerCase().includes(dynamicOrchVariant)
+          ? cleanUpstream
+          : `${cleanUpstream} (${dynamicOrchVariant})`
+        : `gemini-pro-orchestrator-${dynamicOrchVariant}`;
     }
-    const baseText = orchestratorMode === 'full' ? fullId : compactId;
-    const text = `${baseText}${compactionSuffix}`;
-    const multiUpstream =
-      Array.isArray(target.upstreamModels) && target.upstreamModels.length > 1
-        ? target.upstreamModels.join(' / ')
-        : '';
-    const title = multiUpstream || `${fullId}${compactionSuffix}`;
-    return {
-      text,
-      baseText,
-      compactionSuffix,
-      isCompaction,
-      title,
-      isOrchestratorSeries: true,
-    };
+    if (compactId) {
+      const baseText = orchestratorMode === 'full' ? fullId : compactId;
+      const text = `${baseText}${compactionSuffix}`;
+      const multiUpstream =
+        Array.isArray(target.upstreamModels) && target.upstreamModels.length > 1
+          ? target.upstreamModels.join(' / ')
+          : '';
+      const title = multiUpstream || `${fullId}${compactionSuffix}`;
+      return {
+        text,
+        baseText,
+        compactionSuffix,
+        isCompaction,
+        title,
+        isOrchestratorSeries: true,
+      };
+    }
   }
 
   const rawSelected =
@@ -4407,7 +4537,7 @@ function buildDeterministicModelColorMap(models = []) {
 
   return colorMap;
 }
-return { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+return { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
 })();
 
 // --- src/core/httpClient.js ---
@@ -4543,7 +4673,10 @@ function callViaCdpBridge(bridge, path, { method, body, signal, cdpTimeoutMs }) 
 
 async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTimeoutMs = 3500 } = {}) {
   const upperMethod = method.toUpperCase();
-  const dedupKey = upperMethod === 'GET' && !abortKey ? path : '';
+  const activeEndpointId =
+    String(getWindowBridgeConfig()?.[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID).trim() ||
+    LOCAL_ENDPOINT_ID;
+  const dedupKey = upperMethod === 'GET' && !abortKey ? `${activeEndpointId}::${path}` : '';
 
   if (dedupKey && inFlightGets.has(dedupKey)) {
     return inFlightGets.get(dedupKey);
@@ -4561,7 +4694,20 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
     signal = requestController.signal;
   }
 
+  const ensureEndpointUnchanged = (targetBridge) => {
+    if (!targetBridge) return;
+    const currentEndpointId =
+      String(targetBridge[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID).trim() ||
+      LOCAL_ENDPOINT_ID;
+    if (currentEndpointId !== activeEndpointId) {
+      const switchErr = new Error('Bridge endpoint switched');
+      switchErr.name = 'AbortError';
+      throw switchErr;
+    }
+  };
+
   const execHttpOnce = async (activeBridge) => {
+    ensureEndpointUnchanged(activeBridge);
     const sidecar = typeof window !== 'undefined' ? window.sidecar : null;
     const fetchFn = sidecar?.fetch
       ? sidecar.fetch.bind(sidecar)
@@ -4575,6 +4721,10 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
     }
     if (activeBridge) {
       headers['X-Usage-Monitor-Token'] = activeBridge.token;
+      const epId = String(activeBridge[WINDOW_BRIDGE_ENDPOINT_KEY] || '').trim();
+      if (epId && epId !== LOCAL_ENDPOINT_ID) {
+        headers[WINDOW_BRIDGE_ENDPOINT_HEADER] = epId;
+      }
     }
     const res = await fetchFn(requestUrl, {
       method: upperMethod,
@@ -4594,7 +4744,10 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
       throw abortErr;
     }
     if (!res.ok) {
-      throw new Error(data.error || `HTTP ${res.status}`);
+      const httpErr = new Error(data.error || `HTTP ${res.status}`);
+      httpErr.httpStatus = res.status;
+      httpErr.retryable = Boolean(data?.retryable);
+      throw httpErr;
     }
     if (activeBridge) {
       activeBridge.transportMode = 'http';
@@ -4615,8 +4768,10 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
       if (signal?.aborted || cdpErr?.name === 'AbortError') {
         throw cdpErr;
       }
-      // 热更新或守护重启期间若 CDP 尚未轮询投递，自动重置回 HTTP 并用最新桥接端口重试一次
+      // 热更新或守护重启期间若 CDP 尚未轮询投递，自动重置回 HTTP 并用最新桥接端口重试一次；
+      // 但若端点已切换（例如本地 <-> SSH），绝不将旧端点请求重放至新端点
       const latestBridge = getWindowBridgeConfig() || initialBridge;
+      ensureEndpointUnchanged(latestBridge);
       latestBridge.transportMode = 'http';
       return execHttpOnce(latestBridge);
     }
@@ -4645,7 +4800,11 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
         }
         throw fetchErr;
       }
-      // 当宿主环境的 CSP connect-src、混合内容策略或瞬态端口切换阻断直连时，切至带 HTTP 自愈恢复的 CDP 通道
+      // 仅在网络/CORS 阻断（无 HTTP 状态码）或桥接令牌失配（403）时切换至 CDP 兜底；
+      // 业务/初始化状态码（如 503 Remote endpoint initializing、400、500）保持 HTTP 通道等待正常重试。
+      if (fetchErr?.httpStatus && fetchErr.httpStatus !== 403) {
+        throw fetchErr;
+      }
       return fallbackViaCdpWithRecovery(bridge);
     }
   };
@@ -4700,7 +4859,7 @@ return { getViewTabs, uiStore, getVisibleMonitorView };
 })();
 
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 /**
  * @fileoverview Reactive telemetry store with async non-overlapping poll scheduler
  * and granular slice updates.
@@ -4801,6 +4960,7 @@ let activeBundleVersion = 0;
 let latestRequestSeq = 0;
 let latestConsumptionReqSeq = 0;
 let latestConversationSwitchSeq = 0;
+let endpointSwitchEpoch = 0;
 let activeForceCount = 0;
 let consecutivePollFailures = 0;
 let inFlightTelemetryPoll = null;
@@ -4853,10 +5013,11 @@ function clearConversationViewCache() {
 
 function buildConsumptionScopeSig(payload) {
   if (!payload || typeof payload !== 'object') return '';
+  const ep = payload.endpoint || {};
   const acct = payload.account || {};
   const set = payload.settings || {};
   const cloud = payload.cloudStatus || {};
-  return `${String(acct.status || '')}|${String(acct.email || acct.name || '').toLowerCase()}|${String(set.weeklyLimitMode || '')}|${String(cloud.catalogVersion || '')}`;
+  return `${String(ep.id || LOCAL_ENDPOINT_ID)}|${String(acct.status || '')}|${String(acct.email || acct.name || '').toLowerCase()}|${String(set.weeklyLimitMode || '')}|${String(cloud.catalogVersion || '')}`;
 }
 
 function syncConsumptionCacheScope(payload) {
@@ -5123,11 +5284,18 @@ function isEquivalentTelemetry(prev, next) {
   const pSet = prev.settings;
   const nSet = next.settings;
 
-  if ((pSet?.language ?? 'zh-CN') !== (nSet?.language ?? 'zh-CN')) return false;
+  if ((pSet?.language ?? 'auto') !== (nSet?.language ?? 'auto')) return false;
   if ((pSet?.themeAccent ?? 'host') !== (nSet?.themeAccent ?? 'host')) return false;
   if ((pSet?.fontScale ?? 'md') !== (nSet?.fontScale ?? 'md')) return false;
-  if (Boolean(pSet?.experimentalModernUi) !== Boolean(nSet?.experimentalModernUi)) return false;
+  if (resolveSettingsModernUi(pSet) !== resolveSettingsModernUi(nSet)) return false;
   if ((prev.hostPlatform || '') !== (next.hostPlatform || '')) return false;
+  if (
+    (prev.endpoint?.id || LOCAL_ENDPOINT_ID) !== (next.endpoint?.id || LOCAL_ENDPOINT_ID) ||
+    Boolean(prev.endpoint?.isRemote) !== Boolean(next.endpoint?.isRemote) ||
+    (prev.endpoint?.label || '') !== (next.endpoint?.label || '')
+  ) {
+    return false;
+  }
   if (Boolean(pSet?.contextWindowRiskAccepted) !== Boolean(nSet?.contextWindowRiskAccepted)) {
     return false;
   }
@@ -5666,6 +5834,33 @@ function isEquivalentTelemetry(prev, next) {
   return true;
 }
 
+function resetTelemetryForEndpointSwitch() {
+  endpointSwitchEpoch += 1;
+  latestRequestSeq += 1;
+  latestConsumptionReqSeq += 1;
+  latestConversationSwitchSeq += 1;
+  lastReceivedSteps = null;
+  inFlightTelemetryPoll = null;
+  consecutivePollFailures = 0;
+  consumptionCacheScopeSig = '';
+  abortSidecarApiKey('telemetry-poll');
+  abortSidecarApiKey('telemetry-force');
+  abortSidecarApiKey('consumption-range');
+  abortSidecarApiKey('consumption-presets');
+  abortSidecarApiKey('conversation-switch');
+  clearConsumptionRangeCache();
+  clearConversationViewCache();
+  if (feedbackTimer) {
+    clearTimeout(feedbackTimer);
+    feedbackTimer = null;
+  }
+  telemetryStore.setState({
+    selectedConversationId: '',
+    telemetry: null,
+    syncState: 'idle',
+  });
+}
+
 async function fetchTelemetry({ force = false } = {}) {
   if (!force && activeForceCount > 0) {
     return telemetryStore.getState().telemetry;
@@ -5701,11 +5896,17 @@ async function fetchTelemetry({ force = false } = {}) {
   }
   const query = params.toString();
   const bridge = overlay ? getWindowBridgeConfig() : null;
+  const endpointId = bridge?.[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID;
   const existing = inFlightTelemetryPoll;
-  if (existing?.query === query && existing.port === bridge?.port && existing.token === bridge?.token) {
+  if (
+    existing?.query === query &&
+    existing.port === bridge?.port &&
+    existing.token === bridge?.token &&
+    existing.endpointId === endpointId
+  ) {
     return existing.promise;
   }
-  const poll = { query, port: bridge?.port, token: bridge?.token, promise: null };
+  const poll = { query, port: bridge?.port, token: bridge?.token, endpointId, promise: null };
   poll.promise = requestTelemetry(params, false).finally(() => {
     if (inFlightTelemetryPoll === poll) inFlightTelemetryPoll = null;
   });
@@ -5892,6 +6093,7 @@ async function fetchConsumptionRangeSlice({
   customStartMs = 0,
   customEndMs = 0,
 } = {}) {
+  const reqEpoch = endpointSwitchEpoch;
   const reqSeq = ++latestConsumptionReqSeq;
   const targetRange = String(range || 'today');
   const current = telemetryStore.getState();
@@ -5910,7 +6112,7 @@ async function fetchConsumptionRangeSlice({
       method: 'GET',
       abortKey: 'consumption-range',
     });
-    if (!payload || typeof payload !== 'object') return null;
+    if (!payload || typeof payload !== 'object' || reqEpoch !== endpointSwitchEpoch) return null;
 
     if (payload.scope === 'consumption' && payload.consumption) {
       const usageRev = Number(payload.usageRevision ?? payload.consumption.revision ?? 0);
@@ -6037,13 +6239,14 @@ async function selectConversation(
   params.set('stepRevision', cachedSteps?.revision || '');
   params.set('scope', 'conversation');
 
+  const reqEpoch = endpointSwitchEpoch;
   const reqSettingsRev = settingsRevision;
   try {
     const payload = await callSidecarApi(`/api/telemetry?${params}`, {
       method: 'GET',
       abortKey: 'conversation-switch',
     });
-    if (!payload || typeof payload !== 'object') return null;
+    if (!payload || typeof payload !== 'object' || reqEpoch !== endpointSwitchEpoch) return null;
     if (switchSeq !== latestConversationSwitchSeq) return payload;
 
     const latestSt = telemetryStore.getState();
@@ -6202,11 +6405,13 @@ function prefetchConsumptionPresets() {
   if (effectiveConvId) params.set('conversationId', effectiveConvId);
   params.set('scope', 'consumption-presets');
 
+  const reqEpoch = endpointSwitchEpoch;
   const task = callSidecarApi(`/api/telemetry?${params}`, {
     method: 'GET',
     abortKey: 'consumption-presets',
   })
     .then((payload) => {
+      if (reqEpoch !== endpointSwitchEpoch) return false;
       if (payload?.scope === 'consumption-presets' && payload.ranges && typeof payload.ranges === 'object') {
         const rev = Number(payload.usageRevision || currentRev || 0);
         for (const [rangeKey, entry] of Object.entries(payload.ranges)) {
@@ -6246,7 +6451,11 @@ async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'fontScale')) {
     safePatch.fontScale = normalizeClientFontScale(safePatch.fontScale);
   }
-  if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalModernUi')) {
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'modernUi')) {
+    const normModern = normalizeClientModernUi(safePatch.modernUi);
+    safePatch.modernUi = normModern;
+    safePatch.experimentalModernUi = normModern;
+  } else if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalModernUi')) {
     safePatch.experimentalModernUi = normalizeClientModernUi(safePatch.experimentalModernUi);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'weeklyLimitMode')) {
@@ -6772,7 +6981,7 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
@@ -6945,6 +7154,7 @@ const CustomSelect = defineComponent({
   setup({ getProps, setProps, emit, onCleanup }) {
     let isOpen = false;
     let focusedIndex = -1;
+    let lastOpenMenuLayoutSig = '';
 
     const initialIcon = getProps().icon;
     const leadIcon = createSvgIcon(initialIcon || 'bolt', { size: 13 });
@@ -7023,6 +7233,15 @@ const CustomSelect = defineComponent({
       }
     }
 
+    function buildMenuLayoutSig(options = [], labelText = '') {
+      let sig = `${labelText}|${options.length}`;
+      for (let i = 0; i < options.length; i++) {
+        const o = options[i];
+        sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.meta ?? ''}`;
+      }
+      return sig;
+    }
+
     function toggleOpen(nextOpen) {
       isOpen = Boolean(nextOpen);
       if (isOpen) {
@@ -7033,6 +7252,9 @@ const CustomSelect = defineComponent({
           opts.findIndex((o) => selSet.has(o.value))
         );
         renderMenuOptions();
+        lastOpenMenuLayoutSig = buildMenuLayoutSig(opts, triggerLabel.textContent || '');
+      } else {
+        lastOpenMenuLayoutSig = '';
       }
       patchClasses(rootEl, { 'is-open': isOpen });
       patchAttr(triggerBtn, 'aria-expanded', isOpen ? 'true' : 'false');
@@ -7232,7 +7454,11 @@ const CustomSelect = defineComponent({
       patchAttr(triggerBtn, 'title', titleText);
       if (isOpen) {
         renderMenuOptions();
-        positionMenu();
+        const nextLayoutSig = buildMenuLayoutSig(options, labelText);
+        if (nextLayoutSig !== lastOpenMenuLayoutSig) {
+          lastOpenMenuLayoutSig = nextLayoutSig;
+          positionMenu();
+        }
       }
     }
 
@@ -8216,8 +8442,8 @@ return { ContextSegmentMeter };
 const { createFourSegmentBar } = (() => {
 /**
  * @fileoverview 通用 4 段式 Token 构成比例条组件 (FourSegmentBar).
- * 用于在消费概览、热门模型明细及数据来源明细中直观展示：
- * 直接输入 (Input)、缓存读取 (Cached)、内容生成 (Output) 与思考推理 (Thinking) 的 Token 占比。
+ * 用于在消费概览、热门模型明细及模型总览卡片中直观展示：
+ * 直接输入 (Input)、缓存读取 (Cached)、思考推理 (Thinking)、内容生成 (Output) 的 Token 占比。
  */
 
 
@@ -8233,18 +8459,18 @@ const { createFourSegmentBar } = (() => {
  *     responseTokens?: number,
  *     thinkingTokens?: number
  *   }) => void
- * }} 组件根元素与增量更新方法
+ * }} 组件根元素及增量更新方法
  */
 function createFourSegmentBar() {
   const segInput = h('div', { className: 'progress-seg seg-input' });
   const segCached = h('div', { className: 'progress-seg seg-cached' });
-  const segOutput = h('div', { className: 'progress-seg seg-output' });
   const segThinking = h('div', { className: 'progress-seg seg-thinking' });
+  const segOutput = h('div', { className: 'progress-seg seg-output' });
   const el = h('div', { className: 'progress-track cons-seg-bar' }, [
     segInput,
     segCached,
-    segOutput,
     segThinking,
+    segOutput,
   ]);
 
   /**
@@ -8596,7 +8822,17 @@ function createTrendAreaChart() {
   const tipCallsEl = h('span', { className: 'trend-tip-calls text-mono' });
   const tipTokensEl = h('strong', { className: 'trend-tip-tokens text-mono' });
   const tipCostEl = h('span', { className: 'trend-tip-cost text-mono' });
-  const tipSubEl = h('div', { className: 'trend-tip-sub text-mono', hidden: true });
+  const tipInLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legInput') });
+  const tipInValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipCacheLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legCache') });
+  const tipCacheValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipOutLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legOutput') });
+  const tipOutValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipSubEl = h('div', { className: 'trend-tip-sub is-grid', hidden: true }, [
+    h('div', { className: 'trend-tip-stat' }, [tipInLabelEl, tipInValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipCacheLabelEl, tipCacheValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipOutLabelEl, tipOutValEl]),
+  ]);
   const tipModelsEl = h('div', { className: 'cons-pop-models', hidden: true });
 
   const tooltipEl = h(
@@ -8727,14 +8963,12 @@ function createTrendAreaChart() {
         slot.outputTokens !== undefined);
     patchAttr(tipSubEl, 'hidden', !hasSubBreakdown);
     if (hasSubBreakdown) {
-      patchText(
-        tipSubEl,
-        t('chart.step.ioSplit', {
-          inTok: formatTokensPrecise(safeSlotTokens(slot.inputTokens)),
-          cacheTok: formatTokensPrecise(safeSlotTokens(slot.cacheReadTokens)),
-          outTok: formatTokensPrecise(safeSlotTokens(slot.outputTokens)),
-        })
-      );
+      patchText(tipInLabelEl, t('cons.legInput'));
+      patchText(tipCacheLabelEl, t('cons.legCache'));
+      patchText(tipOutLabelEl, t('cons.legOutput'));
+      patchText(tipInValEl, formatTokensPrecise(safeSlotTokens(slot.inputTokens)));
+      patchText(tipCacheValEl, formatTokensPrecise(safeSlotTokens(slot.cacheReadTokens)));
+      patchText(tipOutValEl, formatTokensPrecise(safeSlotTokens(slot.outputTokens)));
     }
 
     const modelSegs = Array.isArray(slot.modelSegments) ? slot.modelSegments : [];
@@ -10139,11 +10373,23 @@ function createSessionLineChart() {
   const tipHeadRight = h('span', { className: 'trend-tip-calls text-mono' });
   const tipMainLeft = h('strong', { className: 'trend-tip-tokens text-mono' });
   const tipMainRight = h('span', { className: 'trend-tip-cost text-mono' });
+  const tipInLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legInput') });
+  const tipInValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipCacheLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legCache') });
+  const tipCacheValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipOutLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legOutput') });
+  const tipOutValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipIoGrid = h('div', { className: 'trend-tip-sub is-grid', hidden: true }, [
+    h('div', { className: 'trend-tip-stat' }, [tipInLabelEl, tipInValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipCacheLabelEl, tipCacheValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipOutLabelEl, tipOutValEl]),
+  ]);
   const tipSub = h('div', { className: 'trend-tip-sub text-mono', hidden: true });
   const tipAnomaly = h('div', { className: 'trend-tip-anomaly text-mono', hidden: true });
   const tooltipEl = h('div', { className: 'trend-tooltip', hidden: true }, [
     h('div', { className: 'trend-tip-head' }, [tipHeadLeft, tipHeadRight]),
     h('div', { className: 'trend-tip-main' }, [tipMainLeft, tipMainRight]),
+    tipIoGrid,
     tipSub,
     tipAnomaly,
   ]);
@@ -10220,8 +10466,18 @@ function createSessionLineChart() {
       pt.valid ? formatChartMetricValue(currentMetric, pt.value) : t('chart.step.excluded')
     );
     patchText(tipMainRight, pt.secondaryRight || '');
-    patchAttr(tipSub, 'hidden', !pt.subDetail);
-    if (pt.subDetail) {
+    const hasIoParts = Boolean(pt.ioParts);
+    patchAttr(tipIoGrid, 'hidden', !hasIoParts);
+    if (hasIoParts) {
+      patchText(tipInLabelEl, t('cons.legInput'));
+      patchText(tipCacheLabelEl, t('cons.legCache'));
+      patchText(tipOutLabelEl, t('cons.legOutput'));
+      patchText(tipInValEl, pt.ioParts.inTok);
+      patchText(tipCacheValEl, pt.ioParts.cacheTok);
+      patchText(tipOutValEl, pt.ioParts.outTok);
+    }
+    patchAttr(tipSub, 'hidden', hasIoParts || !pt.subDetail);
+    if (!hasIoParts && pt.subDetail) {
       patchText(tipSub, pt.subDetail);
     }
     patchAttr(tipAnomaly, 'hidden', !pt.anomalySummary);
@@ -10464,15 +10720,17 @@ function createSessionLineChart() {
       let value = 0;
       let secondaryRight = '';
       let subDetail = '';
+      let ioParts = null;
 
       if (metric === 'totalTokens') {
         value = isMultiCompare ? modelCumTok : runningTokens;
         secondaryRight = t('chart.step.stepAdd', { tokens: formatTokens(stepTotalTok) });
-        subDetail = t('chart.step.ioSplit', {
+        ioParts = {
           inTok: formatTokens(inTok),
           cacheTok: formatTokens(cacheTok),
           outTok: formatTokens(outTok),
-        });
+        };
+        subDetail = t('chart.step.ioSplit', ioParts);
       } else if (metric === 'context') {
         value = ctxTok;
         if (hasPrevCtx) {
@@ -10555,6 +10813,7 @@ function createSessionLineChart() {
         value,
         secondaryRight,
         subDetail,
+        ioParts,
         anomalySummary,
         anomalySeverity: st.anomaly?.severity || '',
       };
@@ -14554,7 +14813,7 @@ return { OVERVIEW_WIDGET_KEYS, OVERVIEW_WIDGET_REGISTRY, getOverviewModuleOption
 })();
 
 // --- src/registries/stepColumnRegistry.js ---
-const { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, STEP_COLUMN_REGISTRY, getStepColumnOptions } = (() => {
+const { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions } = (() => {
 /**
  * @fileoverview Decoupled Step Table Column Registry (`stepColumnRegistry.js`).
  * Defines all 12 customizable columns for `StepsDetailView` ("按步查看"),
@@ -14649,6 +14908,13 @@ function formatStepClockTime(createdAtMs) {
   return { text: hhmmss, title: full };
 }
 
+function isCompactionStepItem(st) {
+  if (!st || typeof st !== 'object') return false;
+  if (st.isCompactionStep) return true;
+  const raw = `${st.activeModelShort ?? st.modelShort ?? ''} ${st.activeModelLabel ?? st.modelLabel ?? ''} ${st.activeModelUpstream ?? st.modelUpstream ?? ''}`;
+  return /·(?:压缩|compact)(?=\s|$)|\[自动压缩\]/iu.test(raw);
+}
+
 const STEP_COLUMN_REGISTRY = Object.freeze({
   step: {
     key: 'step',
@@ -14688,21 +14954,17 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.model.opt'),
     sigPart: (st, ctx) => {
       const disp = resolveModelDisplayInfo(st, ctx.displaySettings, { fallback: '—' });
-      return `${disp.baseText}:${disp.compactionSuffix}:${disp.title}`;
+      return `${disp.baseText}:${disp.title}`;
     },
     createCell: () => {
       const nameEl = h('span', { className: 'step-model-name' });
-      const compactEl = h('span', { className: 'step-model-compact', hidden: true });
-      const wrapEl = h('span', { className: 'step-model-cell' }, [nameEl, compactEl]);
+      const wrapEl = h('span', { className: 'step-model-cell' }, [nameEl]);
       const td = h('td', {}, [wrapEl]);
-      return { td, refs: { td, wrapEl, nameEl, compactEl } };
+      return { td, refs: { td, wrapEl, nameEl } };
     },
     updateCell: (refs, st, ctx) => {
       const modelDisplay = resolveModelDisplayInfo(st, ctx.displaySettings, { fallback: '—' });
       patchText(refs.nameEl, modelDisplay.baseText);
-      const suffix = modelDisplay.compactionSuffix || '';
-      patchText(refs.compactEl, suffix);
-      patchAttr(refs.compactEl, 'hidden', !suffix);
       patchAttr(refs.td, 'title', modelDisplay.title);
     },
   },
@@ -14971,7 +15233,7 @@ function getStepColumnOptions(
     label: STEP_COLUMN_REGISTRY[key].optLabel(ctx),
   }));
 }
-return { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, STEP_COLUMN_REGISTRY, getStepColumnOptions };
+return { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions };
 })();
 
 // --- src/components/widgets/CapsuleBarWidget.js ---
@@ -15064,6 +15326,7 @@ function patchCapsuleOdometerText(
 
   if (!isModern || !/\d/.test(nextStr)) {
     if (prev?.active) {
+      el.textContent = '';
       while (el.firstChild) el.removeChild(el.firstChild);
       patchAttr(el, 'data-od-active', null);
       patchAttr(el, 'data-od-value', null);
@@ -15080,6 +15343,7 @@ function patchCapsuleOdometerText(
 
   let nodes;
   if (!prev?.active || prev.resetKey !== resetKey || !(prev.nodes instanceof Map)) {
+    el.textContent = '';
     while (el.firstChild) el.removeChild(el.firstChild);
     nodes = new Map();
   } else {
@@ -15438,10 +15702,6 @@ const CapsuleBarWidget = defineComponent({
       'div',
       { className: 'preview-host-left is-composer', hidden: true },
       [
-        h('span', { className: 'preview-composer-chip' }, [
-          h('span', { text: 'Auto' }),
-          createSvgIcon('chevron-down', { size: 10 }),
-        ]),
         h('span', { className: 'preview-composer-chip' }, [
           h('span', { text: 'Carbon (High)' }),
           createSvgIcon('chevron-down', { size: 10 }),
@@ -15847,7 +16107,7 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
     let bestModelObj = firstStep;
     for (const cand of modelCandidates.values()) {
       const disp = resolveModelDisplayInfo(cand, cellCtx?.displaySettings, { fallback: '—' });
-      const len = (disp.baseText?.length || 0) + (disp.compactionSuffix?.length || 0);
+      const len = disp.baseText?.length || 0;
       if (len > bestModelLen) {
         bestModelLen = len;
         bestModelObj = cand;
@@ -16027,7 +16287,10 @@ const StepTableWidget = defineComponent({
         return;
       }
       hideTurnTip();
-      patchClasses(anomalyTipEl, { 'is-danger': diag.severity === 'danger' });
+      patchClasses(anomalyTipEl, {
+        'is-danger': diag.severity === 'danger',
+        'is-compaction': diag.severity === 'compaction',
+      });
       patchText(anomalyTipTitleEl, diag.title);
       patchAttr(anomalyTipSubEl, 'hidden', !diag.sub);
       if (diag.sub) patchText(anomalyTipSubEl, diag.sub);
@@ -16045,7 +16308,10 @@ const StepTableWidget = defineComponent({
         if (row.detail) {
           itemChildren.push(
             h('div', {
-              className: 'step-anomaly-tip-detail text-mono',
+              className:
+                row.mono === false
+                  ? 'step-anomaly-tip-detail'
+                  : 'step-anomaly-tip-detail text-mono',
               text: row.detail,
             })
           );
@@ -16197,16 +16463,35 @@ const StepTableWidget = defineComponent({
       if (event?.target === badge) hideTurnTip();
     }
 
+    function buildStepRowDiagnostic(st, displaySettings, hasStepAnomaly, isCompactionRow) {
+      if (hasStepAnomaly) {
+        const diag = buildStepAnomalyDiagnostic(st);
+        if (diag && isCompactionRow) {
+          return {
+            ...diag,
+            hint: diag.hint
+              ? `${diag.hint} · ${t('steps.compactionAnomalyHint')}`
+              : t('steps.compactionAnomalyHint'),
+          };
+        }
+        return diag;
+      }
+      if (isCompactionRow) {
+        return buildStepCompactionDiagnostic(st, displaySettings);
+      }
+      return null;
+    }
+
     function moveAlongTurnRail(event) {
-      const { badge, prompt, anomalyStep } = hoverRows.get(this);
+      const { badge, prompt, rowDiagGetter } = hoverRows.get(this);
       const rect = this.getBoundingClientRect?.();
       const relX = rect ? (event?.clientX ?? 0) - rect.left : 0;
       if (event?.target !== badge && relX <= 18) {
         showTurnTip(this, prompt);
       } else {
         hideTurnTip();
-        if (anomalyStep) {
-          showAnomalyTip(this, buildStepAnomalyDiagnostic(anomalyStep));
+        if (rowDiagGetter) {
+          showAnomalyTip(this, rowDiagGetter());
         }
       }
     }
@@ -16214,8 +16499,8 @@ const StepTableWidget = defineComponent({
     function leaveStepCell(event) {
       const entry = hoverRows.get(this);
       hideTurnTip();
-      if (entry?.anomalyStep && entry.tr && event?.relatedTarget && entry.tr.contains?.(event.relatedTarget)) {
-        showAnomalyTip(this, buildStepAnomalyDiagnostic(entry.anomalyStep));
+      if (entry?.rowDiagGetter && entry.tr && event?.relatedTarget && entry.tr.contains?.(event.relatedTarget)) {
+        showAnomalyTip(this, entry.rowDiagGetter());
       }
     }
 
@@ -16509,7 +16794,8 @@ const StepTableWidget = defineComponent({
             : '';
           const stripeSig = isVirtualized ? (item.isStripeEven ? 'E' : 'O') : 'N';
           const anomalySig = st.anomalySig || '';
-          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
+          const compactSig = isCompactionStepItem(st) ? 'C' : '';
+          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${compactSig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
         },
         createRow: (item) => {
           if (item.isSizer) {
@@ -16754,14 +17040,20 @@ const StepTableWidget = defineComponent({
           const hasStepAnomaly = Boolean(st?.anomaly && Number(st.anomaly.count) > 0);
           const isAnomalyDanger = Boolean(hasStepAnomaly && st.anomaly.severity === 'danger');
           const isAnomalyWarn = Boolean(hasStepAnomaly && !isAnomalyDanger);
+          const isCompactionRow = isCompactionStepItem(st);
+          const hasRowTip = hasStepAnomaly || isCompactionRow;
+          const rowDiagGetter = hasRowTip
+            ? () => buildStepRowDiagnostic(st, cellCtx.displaySettings, hasStepAnomaly, isCompactionRow)
+            : null;
           patchClasses(tr, {
+            'is-compaction': isCompactionRow,
             'is-anomaly-warn': isAnomalyWarn,
             'is-anomaly-danger': isAnomalyDanger,
           });
-          if (hasStepAnomaly) {
+          if (hasRowTip) {
             const anchorEl = firstTd || tr;
             tr.onmouseenter = () => {
-              showAnomalyTip(anchorEl, buildStepAnomalyDiagnostic(st));
+              showAnomalyTip(anchorEl, rowDiagGetter());
             };
             tr.onmouseleave = hideAnomalyTip;
           } else {
@@ -16786,10 +17078,10 @@ const StepTableWidget = defineComponent({
             hoverRows.set(hoverTd, {
               badge: refs.agentBadgeEl,
               prompt,
-              anomalyStep: hasStepAnomaly ? st : null,
+              rowDiagGetter,
               tr,
             });
-            const useWholeCellTurnTip = firstColKey === 'step' && !hasStepAnomaly;
+            const useWholeCellTurnTip = firstColKey === 'step' && !hasRowTip;
             hoverTd.onmouseenter = useWholeCellTurnTip ? enterStepCell : null;
             hoverTd.onmousemove = useWholeCellTurnTip ? moveInStepCell : moveAlongTurnRail;
             hoverTd.onmouseleave = leaveStepCell;
@@ -16817,6 +17109,7 @@ const StepTableWidget = defineComponent({
             patchClasses(tr, {
               'is-stripe-even': false,
               'is-step-entering': false,
+              'is-compaction': false,
               'is-anomaly-warn': false,
               'is-anomaly-danger': false,
             });
@@ -18630,9 +18923,9 @@ const { SettingsGeneralTab } = (() => {
 
 function getLanguageOptions() {
   return [
+    { value: 'auto', label: t('settings.gen.langAuto') },
     { value: 'zh-CN', label: t('settings.gen.langZh') },
     { value: 'en-US', label: t('settings.gen.langEn') },
-    { value: 'auto', label: t('settings.gen.langAuto') },
   ];
 }
 
@@ -18647,8 +18940,8 @@ function getFontScaleOptions() {
 
 function getModernUiOptions() {
   return [
-    { value: 'off', label: t('settings.gen.modernUiOff') },
     { value: 'on', label: t('settings.gen.modernUiOn') },
+    { value: 'off', label: t('settings.gen.modernUiOff') },
   ];
 }
 
@@ -18676,10 +18969,10 @@ function formatCloudSyncTimeText(tsMs, updatedAt) {
 const SettingsGeneralTab = defineComponent({
   name: 'SettingsGeneralTab',
   setup({ props, onCleanup }) {
-    let draftLanguage = 'zh-CN';
+    let draftLanguage = 'auto';
     let draftThemeAccent = 'host';
     let draftFontScale = 'md';
-    let draftModernUi = false;
+    let draftModernUi = true;
     let draftPluginUpdateMode = 'manual';
     let latestSettings = null;
     let latestCloudStatus = null;
@@ -18821,10 +19114,10 @@ const SettingsGeneralTab = defineComponent({
 
     const modernUiSwitch = SegmentedControl({
       ariaLabel: t('settings.gen.modernUi'),
-      modelValue: 'off',
+      modelValue: 'on',
       options: getModernUiOptions(),
       onUpdateModelValue: async (val) => {
-        const nextModernUi = val === 'on';
+        const nextModernUi = val !== 'off';
         draftModernUi = nextModernUi;
         modernUiSwitch.setValue(nextModernUi ? 'on' : 'off');
         if (!isWindowOverlayMode() && typeof document !== 'undefined' && document.documentElement) {
@@ -18834,6 +19127,7 @@ const SettingsGeneralTab = defineComponent({
               ...(latestSettings || {}),
               themeAccent: draftThemeAccent,
               fontScale: draftFontScale,
+              modernUi: nextModernUi,
               experimentalModernUi: nextModernUi,
             },
             { includeFontScale: true }
@@ -18842,7 +19136,7 @@ const SettingsGeneralTab = defineComponent({
         const saveToken = ++appearanceSaveSeq;
         showAppearanceFeedback(t('settings.saving'), 0);
         try {
-          await saveSettingsPatch({ experimentalModernUi: nextModernUi });
+          await saveSettingsPatch({ modernUi: nextModernUi });
           if (saveToken === appearanceSaveSeq) {
             showAppearanceFeedback(t('settings.saved'), 1500);
           }
@@ -19026,7 +19320,7 @@ const SettingsGeneralTab = defineComponent({
       draftLanguage = normalizeI18nLanguage(settings.language);
       draftThemeAccent = normalizeClientThemeAccent(settings.themeAccent);
       draftFontScale = normalizeClientFontScale(settings.fontScale);
-      draftModernUi = normalizeClientModernUi(settings.experimentalModernUi);
+      draftModernUi = resolveSettingsModernUi(settings);
       draftPluginUpdateMode = normalizeClientUpdateMode(
         settings.pluginUpdateMode,
         settings.autoUpdatePlugin
@@ -20772,7 +21066,7 @@ const SettingsOtherTab = defineComponent({
           showMaintFeedback(t('settings.oth.resettingBtn'), 0);
           try {
             const res = await resetAllSettings();
-            setI18nLanguage(res?.settings?.language || 'zh-CN');
+            setI18nLanguage(res?.settings?.language || 'auto');
             showMaintFeedback(t('settings.oth.resetAllDone'), 2800);
           } catch {
             showMaintFeedback(t('settings.saveFailed'), 2800);
@@ -20966,6 +21260,12 @@ const TopSessionHeader = defineComponent({
       [updateBtnIcon, updateBtnText]
     );
 
+    const sshBadge = h('span', {
+      className: 'endpoint-ssh-badge',
+      hidden: true,
+      text: 'SSH',
+    });
+
     const statusIcon = createSvgIcon('pulse', { size: 12 });
     const statusText = h('span', { text: t('header.statusLive') });
     const statusTag = h('span', { className: 'status-tag' }, [statusIcon, statusText]);
@@ -20983,7 +21283,7 @@ const TopSessionHeader = defineComponent({
 
     const headerRowEl = h('div', { className: 'session-header' }, [
       h('div', { className: 'session-left' }, [convSelect.el]),
-      h('div', { className: 'session-right' }, [updateBtn, statusTag, refreshBtn]),
+      h('div', { className: 'session-right' }, [sshBadge, updateBtn, statusTag, refreshBtn]),
     ]);
 
     const headerEl = h('header', { className: 'top-session-stack' }, [headerRowEl]);
@@ -21051,6 +21351,14 @@ const TopSessionHeader = defineComponent({
 
       patchAttr(updateBtn, 'aria-label', t('header.ariaUpdate'));
       patchAttr(refreshBtn, 'aria-label', t('header.ariaRefresh'));
+
+      const ep = telemetry?.endpoint;
+      const isRemoteEndpoint = Boolean(ep?.isRemote);
+      patchAttr(sshBadge, 'hidden', !isRemoteEndpoint);
+      if (isRemoteEndpoint) {
+        const epLabel = String(ep?.label || 'SSH').trim();
+        patchAttr(sshBadge, 'title', epLabel && epLabel !== 'SSH' ? `SSH · ${epLabel}` : 'SSH');
+      }
 
       const actConv = telemetry?.activeConversation;
       const convs = telemetry?.conversations || [];
@@ -21430,6 +21738,22 @@ function getConsumptionTimeRangeOptions() {
   ];
 }
 
+function floorToStartOfMinuteMs(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return 0;
+  const d = new Date(n);
+  d.setSeconds(0, 0);
+  return d.getTime();
+}
+
+function ceilToEndOfMinuteMs(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return 0;
+  const d = new Date(n);
+  d.setSeconds(59, 999);
+  return d.getTime();
+}
+
 const ConsumptionView = defineComponent({
   name: 'ConsumptionView',
   setup({ onCleanup }) {
@@ -21437,6 +21761,7 @@ const ConsumptionView = defineComponent({
     let draftStartMs = telemetryStore.getState().customStartMs;
     let draftEndMs = telemetryStore.getState().customEndMs;
     let hasUncommittedCustomDraft = false;
+    let hasCommittedCustomRange = false;
 
     const timeFilterSwitch = SegmentedControl({
       ariaLabel: t('cons.rangeAria'),
@@ -21445,6 +21770,19 @@ const ConsumptionView = defineComponent({
       onUpdateModelValue: (nextRange) => {
         if (nextRange === 'custom') {
           const st = telemetryStore.getState();
+          if (!hasCommittedCustomRange && st.selectedTimeRange !== 'custom') {
+            const nowMs = Date.now();
+            draftStartMs = floorToStartOfMinuteMs(nowMs - 24 * 3600 * 1000);
+            draftEndMs = ceilToEndOfMinuteMs(nowMs);
+            hasUncommittedCustomDraft = false;
+            startPicker.setValue(draftStartMs);
+            endPicker.setValue(draftEndMs);
+            selectConsumptionTimeRange('custom', {
+              customStartMs: draftStartMs,
+              customEndMs: draftEndMs,
+            });
+            return;
+          }
           draftStartMs = st.customStartMs;
           draftEndMs = st.customEndMs;
           hasUncommittedCustomDraft = false;
@@ -21485,11 +21823,14 @@ const ConsumptionView = defineComponent({
         onClick: () => {
           const sMs = Number(draftStartMs || 0);
           const eMs = Number(draftEndMs || 0);
-          const minMs = sMs > 0 && eMs > 0 ? Math.min(sMs, eMs) : sMs;
-          const maxMs = sMs > 0 && eMs > 0 ? Math.max(sMs, eMs) : eMs;
+          const rawMinMs = sMs > 0 && eMs > 0 ? Math.min(sMs, eMs) : sMs;
+          const rawMaxMs = sMs > 0 && eMs > 0 ? Math.max(sMs, eMs) : eMs;
+          const minMs = floorToStartOfMinuteMs(rawMinMs);
+          const maxMs = ceilToEndOfMinuteMs(rawMaxMs);
           draftStartMs = minMs;
           draftEndMs = maxMs;
           hasUncommittedCustomDraft = false;
+          hasCommittedCustomRange = true;
           startPicker.setValue(minMs);
           endPicker.setValue(maxMs);
           selectConsumptionTimeRange('custom', {
@@ -21954,12 +22295,11 @@ const ConsumptionView = defineComponent({
     }
 
     /**
-     * 创建热门模型单行 DOM 结构（模型名称后附专属颜色圆点 + 按总占比缩放的 4 段比例条 + 底部分项脚标）。
+     * 创建热门模型单行 DOM 结构（模型名称 + 按总占比缩放的 4 段比例条 + 底部分项脚标）。
      */
     function createBreakdownItemRow() {
       const nameTextEl = h('span', { className: 'cons-row-title-text' });
-      const modelDotEl = h('span', { className: 'dot-swatch cons-model-dot cons-title-model-dot' });
-      const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl, modelDotEl]);
+      const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl]);
       const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
       const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
       const costEl = h('strong', { className: 'cons-row-cost text-mono' });
@@ -21999,14 +22339,14 @@ const ConsumptionView = defineComponent({
             cacheVal,
           ]),
           h('span', { className: 'legend-left' }, [
-            h('span', { className: 'dot-swatch seg-output' }),
-            outLbl,
-            outVal,
-          ]),
-          h('span', { className: 'legend-left' }, [
             h('span', { className: 'dot-swatch seg-thinking' }),
             thinkLbl,
             thinkVal,
+          ]),
+          h('span', { className: 'legend-left' }, [
+            h('span', { className: 'dot-swatch seg-output' }),
+            outLbl,
+            outVal,
           ]),
           h('span', { className: 'legend-left' }, [
             callsLbl,
@@ -22020,7 +22360,6 @@ const ConsumptionView = defineComponent({
         refs: {
           nameEl,
           nameTextEl,
-          modelDotEl,
           pctBadge,
           totalTokEl,
           costEl,
@@ -22040,9 +22379,9 @@ const ConsumptionView = defineComponent({
     }
 
     /**
-     * 增量更新热门模型单行的指标文本、名称后的专属颜色圆点与按总占比缩放的 4 段比例条宽度。
+     * 增量更新热门模型单行的指标文本与按总占比缩放的 4 段比例条宽度。
      */
-    function updateBreakdownItemRow(refs, item, grandTotalTokens, modelColor = '') {
+    function updateBreakdownItemRow(refs, item, grandTotalTokens) {
       patchText(refs.inLbl, t('cons.footInput'));
       patchText(refs.cacheLbl, t('cons.footCache'));
       patchText(refs.outLbl, t('cons.footOutput'));
@@ -22051,10 +22390,6 @@ const ConsumptionView = defineComponent({
       const displayLabel = item.label || item.name || item.shortName || '—';
       patchText(refs.nameTextEl, displayLabel);
       patchAttr(refs.nameEl, 'title', item.title || displayLabel);
-      patchAttr(refs.modelDotEl, 'hidden', !modelColor);
-      if (modelColor) {
-        patchStyleVar(refs.modelDotEl, '--dot-color', modelColor);
-      }
       const total = Number(item.totalTokens || 0);
       const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
       const scaleRatio =
@@ -22537,23 +22872,17 @@ const ConsumptionView = defineComponent({
       });
       trendChart.update(enrichedTrendSeries);
 
-      // 3. 同步热门模型列表（名称后带专属颜色圆点 + 4 段条按总占比缩放长度）
+      // 3. 同步热门模型列表（4 段条按总占比缩放长度）
       patchKeyedList(modelsListEl, models, {
         keyFn: (m) => m.displayText || m.label || m.shortName,
-        sigFn: (m) => {
-          const seed = getCanonicalModelColorSeed(m);
-          const color = modelColorMap.get(seed) || resolveDeterministicModelColor(seed);
-          return `${localeSig}:${m.displayText}:${m.displayTitle}:${color}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${modelsTotalTok}`;
-        },
+        sigFn: (m) =>
+          `${localeSig}:${m.displayText}:${m.displayTitle}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${modelsTotalTok}`,
         createRow: createBreakdownItemRow,
         updateRow: (refs, m) => {
-          const seed = getCanonicalModelColorSeed(m);
-          const color = modelColorMap.get(seed) || resolveDeterministicModelColor(seed);
           updateBreakdownItemRow(
             refs,
             { ...m, label: m.displayText, title: m.displayTitle },
-            modelsTotalTok,
-            color
+            modelsTotalTok
           );
         },
       });
@@ -23205,7 +23534,11 @@ const StepsDetailView = defineComponent({
     });
     modelsScroll.el.setAttribute('hidden', '');
 
-    const panelTitleTextEl = h('span', { text: t('steps.title') });
+    const headerFiltersEl = h('div', { className: 'steps-header-filters', hidden: true }, [
+      inlineScopeSelect.el,
+      stepsModelSelect.el,
+    ]);
+
     const panelEl = h(
       'section',
       {
@@ -23214,14 +23547,9 @@ const StepsDetailView = defineComponent({
       },
       [
         h('div', { className: 'panel-header steps-panel-header' }, [
-          h('span', { className: 'panel-title steps-panel-title' }, [
-            createSvgIcon('table', { size: 13 }),
-            panelTitleTextEl,
-          ]),
           h('div', { className: 'steps-header-controls' }, [
-            inlineScopeSelect.el,
-            stepsModelSelect.el,
             subTabSwitch.el,
+            headerFiltersEl,
           ]),
         ]),
         anomalyFilterBarEl,
@@ -23294,7 +23622,6 @@ const StepsDetailView = defineComponent({
     }
 
     function refreshStaticLocaleLabels() {
-      patchText(panelTitleTextEl, t('steps.title'));
       patchText(lineTitleEl, t('steps.lineTitle'));
       patchText(fitTitleEl, t('steps.fitTitle'));
       patchText(modelsSectionTitleEl, t('steps.modelsTitle'));
@@ -23514,6 +23841,7 @@ const StepsDetailView = defineComponent({
       );
       const showStepsModelFilter = uiSt.stepsSubTab === 'steps' && hasMultipleModels;
       patchAttr(stepsModelSelect.el, 'hidden', !showStepsModelFilter);
+      patchAttr(headerFiltersEl, 'hidden', !hasSubagents && !showStepsModelFilter);
       if (hasMultipleModels) {
         stepsModelSelect.setProps({
           modelValue: selectedTableModels,
@@ -23880,8 +24208,37 @@ const StepsDetailView = defineComponent({
           const segBar = createFourSegmentBar();
           segBar.el.classList.add('smodel-seg-bar');
 
+          const inLbl = h('span', { text: t('cons.footInput') });
+          const cacheLbl = h('span', { text: t('cons.footCache') });
+          const thinkLbl = h('span', { text: t('cons.footThinking') });
+          const outLbl = h('span', { text: t('cons.footOutput') });
+          const inVal = h('strong', { className: 'text-mono' });
+          const cacheVal = h('strong', { className: 'text-mono' });
+          const thinkVal = h('strong', { className: 'text-mono' });
+          const outVal = h('strong', { className: 'text-mono' });
+          const splitEl = h('div', { className: 'smodel-split' }, [
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-input' }),
+              inLbl,
+              inVal,
+            ]),
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-cached' }),
+              cacheLbl,
+              cacheVal,
+            ]),
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-thinking' }),
+              thinkLbl,
+              thinkVal,
+            ]),
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-output' }),
+              outLbl,
+              outVal,
+            ]),
+          ]);
           const perfEl = h('span', { className: 'smodel-perf text-mono' });
-          const splitEl = h('span', { className: 'smodel-split text-mono' });
 
           const cardEl = h('div', { className: 'smodel-card' }, [
             h('div', { className: 'smodel-head' }, [
@@ -23889,7 +24246,7 @@ const StepsDetailView = defineComponent({
               h('div', { className: 'smodel-totals' }, [tokEl, costEl]),
             ]),
             segBar.el,
-            h('div', { className: 'smodel-foot' }, [perfEl, splitEl]),
+            h('div', { className: 'smodel-foot' }, [splitEl, perfEl]),
           ]);
 
           return {
@@ -23903,6 +24260,14 @@ const StepsDetailView = defineComponent({
               segBar,
               perfEl,
               splitEl,
+              inLbl,
+              cacheLbl,
+              thinkLbl,
+              outLbl,
+              inVal,
+              cacheVal,
+              thinkVal,
+              outVal,
               cardTitle: '',
               isHoveringAnomaly: false,
             },
@@ -23973,7 +24338,7 @@ const StepsDetailView = defineComponent({
               ? Math.max(0, Number(m.responseTokens))
               : Math.max(0, outTok - thinkTok);
 
-          patchText(refs.tokEl, formatTokens(m.totalTokens || 0));
+          patchText(refs.tokEl, formatTokensPrecise(m.totalTokens || 0));
           const costNum = Number(m.costUsd || 0);
           const isAllUnpriced =
             calls > 0 && Number(m.unpricedCalls || 0) >= calls && !(costNum > 0);
@@ -24004,21 +24369,21 @@ const StepsDetailView = defineComponent({
                 ? +((cacheTok / promptTok) * 100).toFixed(1)
                 : 0;
 
+          patchText(refs.inLbl, t('cons.footInput'));
+          patchText(refs.cacheLbl, t('cons.footCache'));
+          patchText(refs.thinkLbl, t('cons.footThinking'));
+          patchText(refs.outLbl, t('cons.footOutput'));
+          patchText(refs.inVal, formatTokensPrecise(inTok));
+          patchText(refs.cacheVal, formatTokensPrecise(cacheTok));
+          patchText(refs.thinkVal, formatTokensPrecise(thinkTok));
+          patchText(refs.outVal, formatTokensPrecise(respTok));
+
           patchText(
             refs.perfEl,
             t('steps.modelPerfFoot', {
               tps: formatSpeedMetric(m.avgTokPerSec, ' tok/s'),
               ttft: formatMetric(resolvedAvgTtft, 's'),
               cache: resolvedCachePct,
-            })
-          );
-          patchText(
-            refs.splitEl,
-            t('steps.modelSplitFoot', {
-              inTok: formatTokens(inTok),
-              cacheTok: formatTokens(cacheTok),
-              thinkTok: formatTokens(thinkTok),
-              respTok: formatTokens(respTok),
             })
           );
 
@@ -24102,7 +24467,7 @@ const StepsDetailView = defineComponent({
           st.telemetry?.settings?.stepTokenComboFormat
         ),
         stepTableColumns: st.telemetry?.settings?.stepTableColumns,
-        experimentalModernUi: Boolean(st.telemetry?.settings?.experimentalModernUi),
+        experimentalModernUi: resolveSettingsModernUi(st.telemetry?.settings),
       }),
       (slice) => {
         latestSlice = slice;
@@ -24705,7 +25070,7 @@ function findHostTitlebar() {
 const COMPOSER_EXCLUDED_ANCESTOR_SELECTOR =
   '.part.titlebar, .part.statusbar, .quick-input-widget, .suggest-widget, .find-widget, .scm-editor, .search-view, [class*="@container/titlebar"]';
 const COMPOSER_MODEL_LABEL_RE =
-  /\b(?:gemini|claude|gpt|argon|carbon|hydrogen|helix|flash|sonnet|opus|haiku|orchestrator|llama|deepseek|qwen|mistral|model_placeholder|placeholder_m\d+|o[134](?:-\w+)?)\b/i;
+  /\b(?:gemini|claude|gpt|argon|carbon|neon|hydrogen|helix|flash|sonnet|opus|haiku|orchestrator|llama|deepseek|qwen|mistral|model_placeholder|placeholder_m\d+|o[134](?:-\w+)?)\b/i;
 const COMPOSER_MODEL_ATTR_RE =
   /\bmodel[-_\s]?(?:select|picker|switch|selector|menu|name)\b|选择模型|切换模型/i;
 const COMPOSER_MODE_EXACT_RE = /^(?:auto|自动)$/i;
@@ -25497,10 +25862,18 @@ function mountWindowOverlay() {
   const bridgeConfig = getWindowBridgeConfig();
   const bundleVersion = String(bridgeConfig?.bundleVersion || '');
   const stylesCss = String(bridgeConfig?.stylesCss || '');
+  const activeBridgeEndpointId = String(
+    bridgeConfig?.[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID
+  );
+  const reusableCarryOver =
+    carryOverTelemetry &&
+    String(carryOverTelemetry?.endpoint?.id || LOCAL_ENDPOINT_ID) === activeBridgeEndpointId
+      ? carryOverTelemetry
+      : null;
   const seedTelemetry =
     (bridgeConfig?.initialTelemetry && typeof bridgeConfig.initialTelemetry === 'object'
       ? bridgeConfig.initialTelemetry
-      : null) || carryOverTelemetry;
+      : null) || reusableCarryOver;
   if (bridgeConfig?.initialTelemetry) {
     delete bridgeConfig.initialTelemetry;
   }
@@ -25996,7 +26369,7 @@ function mountWindowOverlay() {
     applyAppearanceToRoot(capsuleHost, settings, { includeFontScale: false });
     applyAppearanceToRoot(portalHost, settings, { includeFontScale: true });
     const scaleKey = normalizeClientFontScale(settings?.fontScale);
-    const isModernUi = normalizeClientModernUi(settings?.experimentalModernUi);
+    const isModernUi = resolveSettingsModernUi(settings);
     const colorScheme = portalHost.getAttribute?.('data-color-scheme') || 'light';
     for (const el of [popoverEl, hoverTipEl, multiPanelEl]) {
       if (el.getAttribute?.('data-font-scale') !== scaleKey) {
@@ -27280,14 +27653,49 @@ function mountWindowOverlay() {
       const token = String(nextBridge.token || '');
       if (!Number.isInteger(port) || port <= 0 || !token) return false;
       const cur = readInjectedWindowBridge() || {};
+      const prevEndpointId = String(cur[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID);
+      const nextEndpointId =
+        nextBridge[WINDOW_BRIDGE_ENDPOINT_KEY] !== undefined
+          ? String(nextBridge[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID)
+          : prevEndpointId;
       const portChanged = Number(cur.port || 0) !== port || String(cur.token || '') !== token;
+      const endpointChanged = prevEndpointId !== nextEndpointId;
       cur.port = port;
       cur.token = token;
-      if (portChanged) {
+      cur[WINDOW_BRIDGE_ENDPOINT_KEY] = nextEndpointId;
+      if (nextBridge.isRemoteEndpoint !== undefined) {
+        cur.isRemoteEndpoint = Boolean(nextBridge.isRemoteEndpoint);
+      }
+      if (nextBridge.endpointLabel !== undefined) {
+        cur.endpointLabel = String(nextBridge.endpointLabel || '');
+      }
+      if (portChanged || endpointChanged) {
         cur.transportMode = 'http';
       }
+      if (endpointChanged) {
+        if (Array.isArray(cur.rpcQueue)) {
+          cur.rpcQueue.length = 0;
+        }
+        if (cur.rpcPending instanceof Map) {
+          for (const pending of cur.rpcPending.values()) {
+            try {
+              const switchErr = new Error('Bridge endpoint switched');
+              switchErr.name = 'AbortError';
+              pending?.reject?.(switchErr);
+            } catch {
+              // 忽略旧端点回调异常
+            }
+          }
+          cur.rpcPending.clear();
+        }
+      }
       window[WINDOW_BRIDGE_KEY] = cur;
-      void fetchTelemetry({ force: false });
+      if (endpointChanged) {
+        resetTelemetryForEndpointSwitch();
+        void fetchTelemetry({ force: true });
+      } else {
+        void fetchTelemetry({ force: false });
+      }
       return true;
     },
     getTelemetrySnapshot() {

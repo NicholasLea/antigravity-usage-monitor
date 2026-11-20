@@ -19,6 +19,14 @@
   background: var(--surface-panel);
 }
 
+.panel > .table-scroll-host {
+  margin-right: calc(-1 * var(--space-5) + 2px);
+}
+
+.panel > .table-scroll-host > .custom-scroll-content {
+  padding-right: calc(var(--space-5) - 2px);
+}
+
 .table-viewport {
   flex: 1;
   min-height: 0;
@@ -127,57 +135,69 @@
   flex: 0 1 auto;
 }
 
-.step-model-compact {
-  flex-shrink: 0;
-  white-space: nowrap;
-  color: var(--accent-primary);
-  font-weight: 500;
-}
-
-.step-model-compact[hidden] {
-  display: none !important;
-}
-
 .steps-panel-header {
   flex-wrap: wrap;
   row-gap: 6px;
 }
 
-.steps-panel-title {
-  flex: 0 0 auto;
-}
-
 .steps-header-controls {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  flex: 1 1 280px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  flex: 1 1 100%;
   min-width: 0;
 }
 
 .steps-header-controls .segmented {
-  flex-shrink: 0;
+  flex: 0 0 auto;
+}
+
+.steps-header-filters {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+  flex: 1 1 156px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.steps-header-filters[hidden] {
+  display: none !important;
 }
 
 .steps-inline-scope-select,
 .steps-inline-model-select {
-  flex: 0 1 165px;
-  min-width: 72px;
-  max-width: 175px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 148px;
 }
 
 .steps-inline-scope-select .select-trigger,
 .steps-inline-model-select .select-trigger {
-  min-height: calc(22px * var(--ui-font-scale, 1));
+  min-height: calc(25px * var(--ui-font-scale, 1));
   height: auto;
-  padding: 2px 6px;
-  gap: 4px;
+  padding: 2px 10px;
+  gap: 6px;
   min-width: 0;
   overflow: hidden;
   font-size: var(--fs-md);
-  border: 1px solid var(--border-hairline);
-  background: var(--surface-subtle);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text-primary) 7.5%, var(--surface-panel));
+}
+
+.steps-inline-scope-select .select-trigger:hover,
+.steps-inline-model-select .select-trigger:hover {
+  background: color-mix(in srgb, var(--text-primary) 11.5%, var(--surface-panel));
+}
+
+.steps-inline-scope-select.is-open .select-trigger,
+.steps-inline-model-select.is-open .select-trigger {
+  background: color-mix(in srgb, var(--text-primary) 14%, var(--surface-panel));
 }
 
 /* --- 2.5 极简对话轮次导轨与起点圆点 (Minimalist Turn Rail & Prompt Preview) --- */
@@ -295,7 +315,24 @@
   animation: anim-popover-in var(--dur-instant) var(--ease-fast);
 }
 
-/* --- 2.6 单步异常整行语义着色、模型汇总微标、筛选条与悬停诊断卡 --- */
+/* --- 2.6 单步压缩 / 异常整行语义着色、模型汇总微标、筛选条与悬停诊断卡 --- */
+.data-table tbody tr.is-compaction {
+  background: color-mix(in srgb, var(--accent-primary) 11%, transparent);
+}
+
+.data-table tbody tr.is-compaction:hover {
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+}
+
+.data-table tbody tr.is-compaction td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent-primary);
+}
+
+.data-table tbody tr.is-compaction td:first-child > span:not(.agent-badge):not(.turn-rail) {
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
 .data-table tbody tr.is-anomaly-warn {
   background: color-mix(in srgb, var(--metric-warn) 11%, transparent);
 }
@@ -399,6 +436,10 @@
   border-color: color-mix(in srgb, var(--metric-danger) 46%, var(--border-strong));
 }
 
+.step-anomaly-tip.is-compaction {
+  border-color: color-mix(in srgb, var(--accent-primary) 46%, var(--border-strong));
+}
+
 .step-anomaly-tip[hidden],
 .step-anomaly-tip-sub[hidden],
 .step-anomaly-tip-list[hidden],
@@ -421,6 +462,10 @@
 
 .step-anomaly-tip.is-danger .step-anomaly-tip-title {
   color: var(--metric-danger);
+}
+
+.step-anomaly-tip.is-compaction .step-anomaly-tip-title {
+  color: var(--accent-primary);
 }
 
 .step-anomaly-tip-sub {
@@ -542,7 +587,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-3) 0 2px;
+  padding-top: var(--space-3);
+  padding-bottom: 2px;
+  padding-left: 0;
 }
 
 .sstep-card {
@@ -599,15 +646,24 @@
 }
 
 .sstep-fit-model-select .select-trigger {
-  min-height: calc(22px * var(--ui-font-scale, 1));
+  min-height: calc(24px * var(--ui-font-scale, 1));
   height: auto;
-  padding: 2px 6px;
-  gap: 4px;
+  padding: 2px 10px;
+  gap: 6px;
   min-width: 0;
   overflow: hidden;
   font-size: var(--fs-sm);
-  border: 1px solid var(--border-hairline);
-  background: var(--surface-subtle);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text-primary) 7.5%, var(--surface-panel));
+}
+
+.sstep-fit-model-select .select-trigger:hover {
+  background: color-mix(in srgb, var(--text-primary) 11.5%, var(--surface-panel));
+}
+
+.sstep-fit-model-select.is-open .select-trigger {
+  background: color-mix(in srgb, var(--text-primary) 14%, var(--surface-panel));
 }
 
 .sstep-chart-wrap {
@@ -783,9 +839,11 @@
 }
 
 .trend-tip-anomaly {
-  margin-top: 3px;
-  padding-top: 3px;
-  border-top: 1px solid var(--border-hairline);
+  margin-top: 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--metric-warn) 11%, transparent);
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--metric-warn);
@@ -794,6 +852,7 @@
 
 .trend-tip-anomaly.is-danger {
   color: var(--metric-danger);
+  background: color-mix(in srgb, var(--metric-danger) 12%, transparent);
 }
 
 .trend-tip-anomaly[hidden] {
@@ -1034,17 +1093,27 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 2px 10px;
-  font-size: var(--fs-sm);
+  gap: 4px 10px;
+  font-size: var(--fs-md);
   color: var(--text-secondary);
-}
-
-.smodel-perf {
-  color: var(--text-secondary);
-  white-space: nowrap;
 }
 
 .smodel-split {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--text-secondary);
+}
+
+.smodel-split strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.smodel-perf {
+  margin-left: auto;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   white-space: nowrap;
 }

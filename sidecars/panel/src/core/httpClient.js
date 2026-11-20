@@ -4,7 +4,12 @@
  * (Sidecar Webview `window.sidecar.fetch` + Main Window Loopback Bridge).
  */
 
-import { readInjectedWindowBridge } from '../../shared/window-bridge-protocol.mjs';
+import {
+  LOCAL_ENDPOINT_ID,
+  WINDOW_BRIDGE_ENDPOINT_HEADER,
+  WINDOW_BRIDGE_ENDPOINT_KEY,
+  readInjectedWindowBridge,
+} from '../../shared/window-bridge-protocol.mjs';
 
 const inFlightGets = new Map();
 const activeControllers = new Map();
@@ -130,7 +135,10 @@ function callViaCdpBridge(bridge, path, { method, body, signal, cdpTimeoutMs }) 
 
 export async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTimeoutMs = 3500 } = {}) {
   const upperMethod = method.toUpperCase();
-  const dedupKey = upperMethod === 'GET' && !abortKey ? path : '';
+  const activeEndpointId =
+    String(getWindowBridgeConfig()?.[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID).trim() ||
+    LOCAL_ENDPOINT_ID;
+  const dedupKey = upperMethod === 'GET' && !abortKey ? `${activeEndpointId}::${path}` : '';
 
   if (dedupKey && inFlightGets.has(dedupKey)) {
     return inFlightGets.get(dedupKey);
@@ -148,7 +156,20 @@ export async function callSidecarApi(path, { method = 'GET', body, abortKey = ''
     signal = requestController.signal;
   }
 
+  const ensureEndpointUnchanged = (targetBridge) => {
+    if (!targetBridge) return;
+    const currentEndpointId =
+      String(targetBridge[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID).trim() ||
+      LOCAL_ENDPOINT_ID;
+    if (currentEndpointId !== activeEndpointId) {
+      const switchErr = new Error('Bridge endpoint switched');
+      switchErr.name = 'AbortError';
+      throw switchErr;
+    }
+  };
+
   const execHttpOnce = async (activeBridge) => {
+    ensureEndpointUnchanged(activeBridge);
     const sidecar = typeof window !== 'undefined' ? window.sidecar : null;
     const fetchFn = sidecar?.fetch
       ? sidecar.fetch.bind(sidecar)
@@ -162,6 +183,10 @@ export async function callSidecarApi(path, { method = 'GET', body, abortKey = ''
     }
     if (activeBridge) {
       headers['X-Usage-Monitor-Token'] = activeBridge.token;
+      const epId = String(activeBridge[WINDOW_BRIDGE_ENDPOINT_KEY] || '').trim();
+      if (epId && epId !== LOCAL_ENDPOINT_ID) {
+        headers[WINDOW_BRIDGE_ENDPOINT_HEADER] = epId;
+      }
     }
     const res = await fetchFn(requestUrl, {
       method: upperMethod,
@@ -181,7 +206,10 @@ export async function callSidecarApi(path, { method = 'GET', body, abortKey = ''
       throw abortErr;
     }
     if (!res.ok) {
-      throw new Error(data.error || `HTTP ${res.status}`);
+      const httpErr = new Error(data.error || `HTTP ${res.status}`);
+      httpErr.httpStatus = res.status;
+      httpErr.retryable = Boolean(data?.retryable);
+      throw httpErr;
     }
     if (activeBridge) {
       activeBridge.transportMode = 'http';
@@ -202,8 +230,10 @@ export async function callSidecarApi(path, { method = 'GET', body, abortKey = ''
       if (signal?.aborted || cdpErr?.name === 'AbortError') {
         throw cdpErr;
       }
-      // 热更新或守护重启期间若 CDP 尚未轮询投递，自动重置回 HTTP 并用最新桥接端口重试一次
+      // 热更新或守护重启期间若 CDP 尚未轮询投递，自动重置回 HTTP 并用最新桥接端口重试一次；
+      // 但若端点已切换（例如本地 <-> SSH），绝不将旧端点请求重放至新端点
       const latestBridge = getWindowBridgeConfig() || initialBridge;
+      ensureEndpointUnchanged(latestBridge);
       latestBridge.transportMode = 'http';
       return execHttpOnce(latestBridge);
     }
@@ -232,7 +262,11 @@ export async function callSidecarApi(path, { method = 'GET', body, abortKey = ''
         }
         throw fetchErr;
       }
-      // 当宿主环境的 CSP connect-src、混合内容策略或瞬态端口切换阻断直连时，切至带 HTTP 自愈恢复的 CDP 通道
+      // 仅在网络/CORS 阻断（无 HTTP 状态码）或桥接令牌失配（403）时切换至 CDP 兜底；
+      // 业务/初始化状态码（如 503 Remote endpoint initializing、400、500）保持 HTTP 通道等待正常重试。
+      if (fetchErr?.httpStatus && fetchErr.httpStatus !== 403) {
+        throw fetchErr;
+      }
       return fallbackViaCdpWithRecovery(bridge);
     }
   };

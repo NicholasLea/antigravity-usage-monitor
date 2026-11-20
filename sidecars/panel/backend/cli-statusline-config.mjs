@@ -749,11 +749,29 @@ function cliRenderSingleSlot(metricKey, slotCtx, { isEn = false, useColor = true
  * }} [options]
  * @returns {string}
  */
+function detectCliHostLanguageIsEn() {
+  const envLang = String(
+    process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || ''
+  ).trim();
+  if (envLang) {
+    return !envLang.toLowerCase().startsWith('zh');
+  }
+  try {
+    const navLang = globalThis.navigator?.language;
+    if (navLang) {
+      return !String(navLang).toLowerCase().startsWith('zh');
+    }
+  } catch {
+    // 忽略无 navigator 环境
+  }
+  return false;
+}
+
 export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
   const slots = normalizeTopbarCapsuleSlots(options.slots);
   const showMulti = options.showMultiSession !== false;
   const normLang = normalizeLanguageSetting(options.language);
-  const isEn = normLang === 'en-US';
+  const isEn = normLang === 'auto' ? detectCliHostLanguageIsEn() : normLang === 'en-US';
   const useColor = options.color !== false;
   const slotSet = new Set(slots);
 

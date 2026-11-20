@@ -3,7 +3,8 @@ import {
 } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
-let lastWrite = null;
+const MAX_TRACKED_CACHE_FILES = 16;
+const lastWritesByPath = new Map();
 
 function isSameFile(a, b) {
   return b.ino !== 0n && a.dev === b.dev && a.ino === b.ino &&
@@ -29,7 +30,7 @@ function readReusableBytes(filePath, expected) {
 
 // 只复用上次确认写入的步骤字节。扫描器用新数组替换变更步骤，每次仍重新序列化会话元数据。
 export function writeTrajectoryCacheFile(filePath, data) {
-  const previous = lastWrite?.filePath === filePath ? lastWrite : null;
+  const previous = lastWritesByPath.get(filePath) || null;
   const bytes = previous ? readReusableBytes(filePath, previous.file) : null;
   const ranges = new WeakMap();
   const parts = [];
@@ -72,7 +73,14 @@ export function writeTrajectoryCacheFile(filePath, data) {
     const written = statSync(temporaryPath, { bigint: true });
     renameSync(temporaryPath, filePath);
     const file = statSync(filePath, { bigint: true });
-    lastWrite = isSameFile(written, file) ? { filePath, file, ranges } : null;
+    lastWritesByPath.delete(filePath);
+    if (isSameFile(written, file)) {
+      if (lastWritesByPath.size >= MAX_TRACKED_CACHE_FILES) {
+        const oldestPath = lastWritesByPath.keys().next().value;
+        if (oldestPath !== undefined) lastWritesByPath.delete(oldestPath);
+      }
+      lastWritesByPath.set(filePath, { filePath, file, ranges });
+    }
   } finally {
     try { unlinkSync(temporaryPath); } catch {}
   }

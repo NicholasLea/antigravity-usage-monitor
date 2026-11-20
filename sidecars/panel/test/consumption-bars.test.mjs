@@ -103,6 +103,10 @@ test('FourSegmentBar supports percentage scaling while keeping 100% default for 
       thinkingTokens: 100,
     });
     const segsFull = barFull.el.querySelectorAll('.progress-seg');
+    assert.deepEqual(
+      segsFull.map((el) => el.className.split(/\s+/).find((c) => c.startsWith('seg-'))),
+      ['seg-input', 'seg-cached', 'seg-thinking', 'seg-output']
+    );
     const sumFull = segsFull.reduce((acc, el) => acc + parsePctVar(el), 0);
     assert.ok(Math.abs(sumFull - 100) < 0.05);
 
@@ -412,11 +416,8 @@ test('ConsumptionView: Top Models color dot + % bar, clutter-free Client Sources
   assert.equal(modelRows.length, 6);
   assert.equal(sourceRows.length, 2);
 
-  // 1. Top Models: colored dot appears right after model name & 4-segment bar scales to 50% (not 100%)
-  const argonTitleDot = modelRows[0].querySelector('.cons-title-model-dot');
-  assert.ok(argonTitleDot && !argonTitleDot.hasAttribute('hidden'));
-  const argonDotColor = argonTitleDot.style.getPropertyValue('--dot-color');
-  assert.match(argonDotColor, /^hsl\(/);
+  // 1. Top Models: no color dot next to model name & 4-segment bar scales to 50% (not 100%)
+  assert.equal(modelRows[0].querySelector('.cons-title-model-dot'), null);
 
   const argonSegSum = modelRows[0]
     .querySelectorAll('.progress-seg')
@@ -429,7 +430,8 @@ test('ConsumptionView: Top Models color dot + % bar, clutter-free Client Sources
   assert.equal(appTopItems.length, 3, 'Should show top 3 non-other models in single-line footer');
   assert.equal(appTopItems[0].querySelector('.cons-source-top-name')?.textContent, '4-argon');
   assert.equal(appTopItems[0].querySelector('.cons-source-top-pct')?.textContent, '50%');
-  assert.equal(appTopItems[0].querySelector('.cons-source-top-dot')?.style.getPropertyValue('--dot-color'), argonDotColor);
+  const argonDotColor = appTopItems[0].querySelector('.cons-source-top-dot')?.style.getPropertyValue('--dot-color');
+  assert.match(argonDotColor, /^hsl\(/);
   assert.equal(appTopItems[1].querySelector('.cons-source-top-name')?.textContent, '4-carbon');
   assert.equal(appTopItems[1].querySelector('.cons-source-top-pct')?.textContent, '31%');
   assert.equal(appTopItems[2].querySelector('.cons-source-top-name')?.textContent, '3.8-flash-n');

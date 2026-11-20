@@ -29,8 +29,8 @@ export function detectHostSystemLocale() {
 }
 
 export const i18nStore = createReactiveStore({
-  language: 'zh-CN',
-  locale: 'zh-CN',
+  language: 'auto',
+  locale: detectHostSystemLocale(),
 });
 
 export function setI18nLanguage(rawLang) {

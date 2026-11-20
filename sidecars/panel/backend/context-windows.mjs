@@ -121,18 +121,19 @@ export async function syncHostContextWindows(
   rules,
   bootId,
   key = '__AGUsageMonitorContextWindows',
-  fallbackRules = {}
+  fallbackRules = {},
+  allowRemoteHost = false
 ) {
   let state = window[key];
   const appConfig = window.__APP_CONFIG__;
-  const csrfToken = appConfig?.csrfToken;
+  const csrfToken = appConfig?.csrfToken || state?.observedCsrfToken || '';
   const hasPrefs = Boolean(rules && Object.keys(rules).length > 0);
   const safeFallback =
     fallbackRules && typeof fallbackRules === 'object' && !Array.isArray(fallbackRules)
       ? fallbackRules
       : {};
   const hasFallback = Object.keys(safeFallback).length > 0;
-  if (!hasPrefs || appConfig?.isRemoteControl || (!csrfToken && !hasFallback)) {
+  if (!hasPrefs || (!allowRemoteHost && appConfig?.isRemoteControl) || (!csrfToken && !hasFallback)) {
     state?.dispose();
     return { attached: false, ruleCount: 0 };
   }
@@ -207,10 +208,17 @@ export async function syncHostContextWindows(
               : '';
         if (rawUrl && init?.method === 'POST') {
           const url = new URL(rawUrl, window.location.href);
-          if (url.origin === window.location.origin && isTargetProcedure(url.pathname)) {
-            const type = new Headers(init.headers).get('content-type')?.split(';')[0].trim();
-            const body = rewriteBody(init.body, type);
-            if (body !== init.body) nextInit = { ...init, body };
+          if (url.origin === window.location.origin && url.pathname.startsWith(servicePath)) {
+            const hdrs = new Headers(init.headers);
+            const seenCsrf = hdrs.get('x-codeium-csrf-token')?.trim();
+            if (seenCsrf && state) {
+              state.observedCsrfToken = seenCsrf;
+            }
+            if (isTargetProcedure(url.pathname)) {
+              const type = hdrs.get('content-type')?.split(';')[0].trim();
+              const body = rewriteBody(init.body, type);
+              if (body !== init.body) nextInit = { ...init, body };
+            }
           }
         }
       } catch {
@@ -312,7 +320,12 @@ export async function syncHostContextWindows(
   return { attached: Boolean(state.isAttached?.()), ruleCount: Object.keys(state.rules).length };
 }
 
-export function createContextWindowSyncExpression(preferences, bootId, fallbackRules = {}) {
+export function createContextWindowSyncExpression(
+  preferences,
+  bootId,
+  fallbackRules = {},
+  allowRemoteHost = false
+) {
   return `(() => {
     ${isContextWindowModelId.toString()}
     ${isContextWindowSettingId.toString()}
@@ -321,6 +334,6 @@ export function createContextWindowSyncExpression(preferences, bootId, fallbackR
     ${getContextWindowGroups.toString()}
     ${resolveContextWindowOption.toString()}
     ${resolveContextWindowRules.toString()}
-    return (${syncHostContextWindows.toString()})(${JSON.stringify(preferences)}, ${JSON.stringify(bootId)}, ${JSON.stringify(CONTEXT_WINDOWS_GLOBAL_KEY)}, ${JSON.stringify(fallbackRules || {})});
+    return (${syncHostContextWindows.toString()})(${JSON.stringify(preferences)}, ${JSON.stringify(bootId)}, ${JSON.stringify(CONTEXT_WINDOWS_GLOBAL_KEY)}, ${JSON.stringify(fallbackRules || {})}, ${JSON.stringify(Boolean(allowRemoteHost))});
   })()`;
 }

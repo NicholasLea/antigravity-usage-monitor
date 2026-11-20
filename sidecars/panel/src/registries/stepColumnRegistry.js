@@ -114,6 +114,13 @@ function formatStepClockTime(createdAtMs) {
   return { text: hhmmss, title: full };
 }
 
+export function isCompactionStepItem(st) {
+  if (!st || typeof st !== 'object') return false;
+  if (st.isCompactionStep) return true;
+  const raw = `${st.activeModelShort ?? st.modelShort ?? ''} ${st.activeModelLabel ?? st.modelLabel ?? ''} ${st.activeModelUpstream ?? st.modelUpstream ?? ''}`;
+  return /·(?:压缩|compact)(?=\s|$)|\[自动压缩\]/iu.test(raw);
+}
+
 export const STEP_COLUMN_REGISTRY = Object.freeze({
   step: {
     key: 'step',
@@ -153,21 +160,17 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.model.opt'),
     sigPart: (st, ctx) => {
       const disp = resolveModelDisplayInfo(st, ctx.displaySettings, { fallback: '—' });
-      return `${disp.baseText}:${disp.compactionSuffix}:${disp.title}`;
+      return `${disp.baseText}:${disp.title}`;
     },
     createCell: () => {
       const nameEl = h('span', { className: 'step-model-name' });
-      const compactEl = h('span', { className: 'step-model-compact', hidden: true });
-      const wrapEl = h('span', { className: 'step-model-cell' }, [nameEl, compactEl]);
+      const wrapEl = h('span', { className: 'step-model-cell' }, [nameEl]);
       const td = h('td', {}, [wrapEl]);
-      return { td, refs: { td, wrapEl, nameEl, compactEl } };
+      return { td, refs: { td, wrapEl, nameEl } };
     },
     updateCell: (refs, st, ctx) => {
       const modelDisplay = resolveModelDisplayInfo(st, ctx.displaySettings, { fallback: '—' });
       patchText(refs.nameEl, modelDisplay.baseText);
-      const suffix = modelDisplay.compactionSuffix || '';
-      patchText(refs.compactEl, suffix);
-      patchAttr(refs.compactEl, 'hidden', !suffix);
       patchAttr(refs.td, 'title', modelDisplay.title);
     },
   },

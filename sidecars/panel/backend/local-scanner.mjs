@@ -14,6 +14,7 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   extractLiveActivity,
   extractModelSteps,
+  extractSwarmMetaFromSteps,
   getMaxMeaningfulStepIndex,
   isParkedOnSwarmWait,
   parseIsoMs,
@@ -27,15 +28,10 @@ import {
   CONVERSATIONS_DIR,
   CONVERSATION_DIRS,
   DEEP_STATS_CACHE_CANDIDATES,
-  getCachedTrajectory,
-  hasPendingTrajectoryCacheSave,
-  listCachedTrajectoryEntries,
   externalDeepStatsMemo,
   loadJson,
-  persistTrajectoryCacheIfNeeded,
-  removeCachedTrajectory,
-  setCachedTrajectory,
 } from './config.mjs';
+import { getEndpointCacheStore, getRegisteredRemoteEndpoint } from './endpoint-registry.mjs';
 import {
   computeSqliteWalSig,
   hasBuiltinNodeSqlite,
@@ -364,7 +360,15 @@ const liveActivityMemo = new Map();
 const transcriptTailMemo = new Map();
 const swarmManifestMemo = new Map();
 
-export function clearScannerRuntimeMemos() {
+export function clearScannerRuntimeMemos(endpointId = null) {
+  if (endpointId && endpointId !== 'local') {
+    const ep = getRegisteredRemoteEndpoint(endpointId);
+    if (ep) {
+      ep.failedFetchCooldownMap.clear();
+      ep.liveActivityMemo.clear();
+    }
+    return;
+  }
   failedFetchCooldownMap.clear();
   liveActivityMemo.clear();
   transcriptTailMemo.clear();
@@ -1192,11 +1196,17 @@ function scoreLiveActivitySpecificity(act) {
   return 1;
 }
 
-function resolveBestLiveActivity(cascadeId, rpcRawSteps, isRunning, fallbackMs) {
+function resolveBestLiveActivity(
+  cascadeId,
+  rpcRawSteps,
+  isRunning,
+  fallbackMs,
+  { isRemote = false, liveActivityMemoMap = liveActivityMemo } = {}
+) {
   if (!isRunning) return null;
   const hasRpcSteps = Array.isArray(rpcRawSteps) && rpcRawSteps.length > 0;
   const rpcAct = hasRpcSteps ? extractLiveActivity(rpcRawSteps, true, fallbackMs) : null;
-  const transcriptSteps = readTranscriptTailSteps(cascadeId);
+  const transcriptSteps = isRemote ? [] : readTranscriptTailSteps(cascadeId);
   const transcriptAct =
     transcriptSteps.length > 0 ? extractLiveActivity(transcriptSteps, true, fallbackMs) : null;
 
@@ -1226,7 +1236,7 @@ function resolveBestLiveActivity(cascadeId, rpcRawSteps, isRunning, fallbackMs) 
   return (
     transcriptAct ||
     rpcAct ||
-    liveActivityMemo.get(String(cascadeId || '').toLowerCase()) ||
+    liveActivityMemoMap.get(String(cascadeId || '').toLowerCase()) ||
     extractLiveActivity([], true, fallbackMs)
   );
 }
@@ -1385,22 +1395,35 @@ export async function enumerateAndSyncConversations({
   currentAccountName = '',
   requestedConvId = '',
   forceRefresh = false,
+  endpoint = null,
 }) {
+  const isRemote = Boolean(endpoint && endpoint.isRemote);
+  const cacheStore = getEndpointCacheStore(endpoint);
+  const getEntry = cacheStore.getCachedTrajectory;
+  const setEntry = cacheStore.setCachedTrajectory;
+  const removeEntry = cacheStore.removeCachedTrajectory;
+  const listEntries = cacheStore.listCachedTrajectoryEntries;
+  const hasPendingSave = cacheStore.hasPendingTrajectoryCacheSave;
+  const persistCacheIfNeeded = cacheStore.persistTrajectoryCacheIfNeeded;
+  const activeCooldownMap = isRemote ? endpoint.failedFetchCooldownMap : failedFetchCooldownMap;
+  const activeLiveActivityMemo = isRemote ? endpoint.liveActivityMemo : liveActivityMemo;
+  const maxConcurrentRpc = isRemote ? 2 : MAX_CONCURRENT_RPC;
+
   const nowSweepMs = Date.now();
   if (forceRefresh) {
-    failedFetchCooldownMap.clear();
+    activeCooldownMap.clear();
   } else {
-    for (const [k, rec] of failedFetchCooldownMap.entries()) {
+    for (const [k, rec] of activeCooldownMap.entries()) {
       const failedAt = typeof rec === 'number' ? rec : rec?.failedAt || 0;
       const cooldownMs = typeof rec === 'number' ? FAILED_RPC_COOLDOWN_MS : rec?.cooldownMs || FAILED_RPC_COOLDOWN_MS;
       if (nowSweepMs - failedAt >= cooldownMs) {
-        failedFetchCooldownMap.delete(k);
+        activeCooldownMap.delete(k);
       }
     }
   }
 
-  let cacheDirty = hasPendingTrajectoryCacheSave();
-  const diskConvMap = discoverLocalConversationFiles();
+  let cacheDirty = hasPendingSave();
+  const diskConvMap = isRemote ? new Map() : discoverLocalConversationFiles();
 
   // 构建大小写不敏感索引，将同一会话的不同大小写键合并至唯一规范键（优先保留 summariesObj 中的原始键以兼容 RPC）
   const mergedSideQuestionParents = { ...(sideQuestionParents || {}) };
@@ -1449,7 +1472,7 @@ export async function enumerateAndSyncConversations({
     }
   }
 
-  for (const [rawCacheKey] of listCachedTrajectoryEntries()) {
+  for (const [rawCacheKey] of listEntries()) {
     const lower = String(rawCacheKey || '').trim().toLowerCase();
     if (!lower) continue;
     const existingCanon = canonicalIdByLower.get(lower);
@@ -1457,18 +1480,18 @@ export async function enumerateAndSyncConversations({
       // 标准 UUID 统一收敛为小写键，避免大小写分裂产生双份条目
       const normalizedKey = UUID_RE.test(rawCacheKey) ? lower : rawCacheKey;
       if (normalizedKey !== rawCacheKey) {
-        setCachedTrajectory(normalizedKey, getCachedTrajectory(rawCacheKey));
-        removeCachedTrajectory(rawCacheKey);
+        setEntry(normalizedKey, getEntry(rawCacheKey));
+        removeEntry(rawCacheKey);
         cacheDirty = true;
       }
       canonicalIdByLower.set(lower, normalizedKey);
     } else if (existingCanon !== rawCacheKey) {
-      const targetEntry = getCachedTrajectory(existingCanon);
-      const dupEntry = getCachedTrajectory(rawCacheKey);
+      const targetEntry = getEntry(existingCanon);
+      const dupEntry = getEntry(rawCacheKey);
       if (!targetEntry || (dupEntry?.steps?.length || 0) > (targetEntry?.steps?.length || 0)) {
-        setCachedTrajectory(existingCanon, dupEntry);
+        setEntry(existingCanon, dupEntry);
       }
-      removeCachedTrajectory(rawCacheKey);
+      removeEntry(rawCacheKey);
       cacheDirty = true;
     }
   }
@@ -1480,7 +1503,7 @@ export async function enumerateAndSyncConversations({
   }
 
   // 从所有本地缓存会话收集 subagentRefs，确保跨账号切换时历史会话与派生子代理均不丢失
-  for (const [, entry] of listCachedTrajectoryEntries()) {
+  for (const [, entry] of listEntries()) {
     for (const ref of entry?.subagentRefs || []) {
       const refCid = String(ref?.cascadeId || '').trim().toLowerCase();
       if (refCid && !canonicalIdByLower.has(refCid)) {
@@ -1489,15 +1512,15 @@ export async function enumerateAndSyncConversations({
     }
   }
 
-  const localSummaryByLower = readLocalSummaryIndex();
-  const sqliteAvailable = hasBuiltinNodeSqlite();
+  const localSummaryByLower = isRemote ? new Map() : readLocalSummaryIndex();
+  const sqliteAvailable = isRemote ? false : hasBuiltinNodeSqlite();
   const STALE_LOCAL_RUNNING_MAX_AGE_MS = 10 * 60_000;
   const reqLower = String(requestedConvId || '').trim().toLowerCase();
   const rawConversations = [];
   for (const [cidLower, cascadeId] of canonicalIdByLower.entries()) {
     const item = summariesByLower.get(cidLower);
     const localSum = item ? null : localSummaryByLower.get(cidLower) || null;
-    const cached = getCachedTrajectory(cascadeId);
+    const cached = getEntry(cascadeId);
     const diskFiles = diskConvMap.get(cidLower) || [];
     const sqliteDbInfo = sqliteAvailable ? resolveBestSqliteDbInfo(diskFiles) : null;
     const dbPath = sqliteDbInfo?.dbPath || '';
@@ -1508,11 +1531,13 @@ export async function enumerateAndSyncConversations({
     const diskMtimeMs = sqliteDbInfo
       ? Math.max(rawDiskMtimeMs || 0, sqliteDbInfo.mtimeMs || 0)
       : rawDiskMtimeMs;
-    const appSource = inferAppSourceFromSummary(
-      item?.source || '',
-      diskFiles,
-      cached?.appSource || 'standalone'
-    );
+    const appSource = isRemote
+      ? 'ssh'
+      : inferAppSourceFromSummary(
+          item?.source || '',
+          diskFiles,
+          cached?.appSource || 'standalone'
+        );
 
     const sqParentInfo = mergedSideQuestionParents[cidLower] || null;
     const isSideQuestion = Boolean(
@@ -1707,12 +1732,12 @@ export async function enumerateAndSyncConversations({
   function isFetchInCooldown(conv, sig) {
     if (forceRefresh) return false;
     const key = `${conv.cascadeId.toLowerCase()}::${sig}`;
-    const rec = failedFetchCooldownMap.get(key);
+    const rec = activeCooldownMap.get(key);
     if (!rec) return false;
     const failedAt = typeof rec === 'number' ? rec : rec.failedAt;
     const cooldownMs = typeof rec === 'number' ? FAILED_RPC_COOLDOWN_MS : rec.cooldownMs;
     if (nowPollMs - failedAt >= cooldownMs) {
-      failedFetchCooldownMap.delete(key);
+      activeCooldownMap.delete(key);
       return false;
     }
     return true;
@@ -1765,15 +1790,15 @@ export async function enumerateAndSyncConversations({
     for (const c of targetConvs) {
       attemptedFetchIds.add(c.cascadeId.toLowerCase());
     }
-    for (let i = 0; i < targetConvs.length; i += MAX_CONCURRENT_RPC) {
-      const batch = targetConvs.slice(i, i + MAX_CONCURRENT_RPC);
+    for (let i = 0; i < targetConvs.length; i += maxConcurrentRpc) {
+      const batch = targetConvs.slice(i, i + maxConcurrentRpc);
       await Promise.all(
         batch.map(async (conv) => {
           const sig = buildConvSig(conv);
           const cooldownKey = `${conv.cascadeId.toLowerCase()}::${sig}`;
           const isRunning = conv.status === 'CASCADE_RUN_STATUS_RUNNING';
           const isReq = Boolean(reqLower && conv.cascadeId.toLowerCase() === reqLower);
-          const prev = getCachedTrajectory(conv.cascadeId);
+          const prev = getEntry(conv.cascadeId);
           let partialTailSteps = [];
           let hasTailStepInfo = false;
           try {
@@ -1781,7 +1806,7 @@ export async function enumerateAndSyncConversations({
             let trajRes = null;
             let loadedViaSqlite = false;
             let transcriptFirstTitle = '';
-            if (conv.dbPath && sqliteAvailable) {
+            if (!isRemote && conv.dbPath && sqliteAvailable) {
               const sqlRes = readLocalSqliteTrajectory(conv.dbPath, {
                 cascadeId: conv.cascadeId,
                 isRunning,
@@ -1797,7 +1822,12 @@ export async function enumerateAndSyncConversations({
               }
             }
             if (!trajRes) {
-              trajRes = await callLsRpc('GetCascadeTrajectory', { cascadeId: conv.cascadeId });
+              trajRes = await callLsRpc(
+                'GetCascadeTrajectory',
+                { cascadeId: conv.cascadeId },
+                5000,
+                endpoint
+              );
             }
             if (!Array.isArray(trajRes?.trajectory?.steps)) {
               throw new Error('Trajectory steps unavailable');
@@ -1813,7 +1843,7 @@ export async function enumerateAndSyncConversations({
               }
               throw new Error('Incomplete trajectory; retaining cached usage');
             }
-            failedFetchCooldownMap.delete(cooldownKey);
+            activeCooldownMap.delete(cooldownKey);
             const rawGenMeta = trajRes?.trajectory?.generatorMetadata || [];
             const { steps: rawSteps, generatorMeta } = loadedViaSqlite
               ? { steps: rawStepsUnfiltered, generatorMeta: rawGenMeta }
@@ -1885,7 +1915,7 @@ export async function enumerateAndSyncConversations({
                 Boolean(
                   conv.rootConversationId && conv.rootConversationId !== cidLower
                 );
-              if (!nonShortTitle(conv.title)) {
+              if (!isRemote && !nonShortTitle(conv.title)) {
                 const annTitle = nonShortTitle(readAnnotationTitleForCascade(cidLower));
                 const resolvedFallbackTitle =
                   annTitle || trajRes?.firstOwnUserPrompt || transcriptFirstTitle;
@@ -1899,7 +1929,9 @@ export async function enumerateAndSyncConversations({
             }
 
             const subagentRefs = extractSubagentRefsFromSteps(rawSteps);
-            const ownSwarmManifest = !conv.isSubagent ? readSwarmManifestForCascade(cidLower) : null;
+            const rpcSwarmMeta = extractSwarmMetaFromSteps(rawSteps);
+            const ownSwarmManifest =
+              !isRemote && !conv.isSubagent ? readSwarmManifestForCascade(cidLower) : null;
             if (ownSwarmManifest?.workerRefs?.length) {
               const seenRefCids = new Set(subagentRefs.map((r) => r.cascadeId));
               for (const wRef of ownSwarmManifest.workerRefs) {
@@ -1908,9 +1940,12 @@ export async function enumerateAndSyncConversations({
                   subagentRefs.push(wRef);
                 }
               }
-              if (!nonShortTitle(conv.title) && ownSwarmManifest.title) {
-                conv.title = ownSwarmManifest.title;
-              }
+            }
+            const resolvedSwarmTitle = !conv.isSubagent
+              ? String(ownSwarmManifest?.title || rpcSwarmMeta?.title || '').trim()
+              : '';
+            if (!nonShortTitle(conv.title) && resolvedSwarmTitle) {
+              conv.title = resolvedSwarmTitle;
             }
             conv.subagentRefs = subagentRefs;
 
@@ -1920,7 +1955,8 @@ export async function enumerateAndSyncConversations({
             conv.stepCount = steps.length;
             const finalSig = buildConvSig(conv);
 
-            const effectiveIsRunning = isRunning && !isParkedOnSwarmWait(rawSteps);
+            const isParkedSwarm = isParkedOnSwarmWait(rawSteps);
+            const effectiveIsRunning = isRunning && !isParkedSwarm;
             if (!effectiveIsRunning && conv.status === 'CASCADE_RUN_STATUS_RUNNING') {
               conv.status = 'IDLE';
             }
@@ -1929,20 +1965,21 @@ export async function enumerateAndSyncConversations({
               conv.cascadeId,
               rawSteps,
               effectiveIsRunning,
-              resolvedLastModMs || conv.createdTimeMs || 0
+              resolvedLastModMs || conv.createdTimeMs || 0,
+              { isRemote, liveActivityMemoMap: activeLiveActivityMemo }
             );
             if (liveAct && liveAct.actionKey !== 'swarm_wait') {
               conv.liveActivity = liveAct;
-              liveActivityMemo.set(cidLower, liveAct);
+              activeLiveActivityMemo.set(cidLower, liveAct);
             } else {
               if (liveAct?.actionKey === 'swarm_wait') {
                 conv.status = 'IDLE';
               }
               conv.liveActivity = null;
-              liveActivityMemo.delete(cidLower);
+              activeLiveActivityMemo.delete(cidLower);
             }
 
-            const entryAccountName = prev ? prev.accountName || '' : currentAccountName || '';
+            const entryAccountName = prev?.accountName || currentAccountName || '';
             const stepsWithOwners = attachStepAccountOwners(
               steps,
               prev,
@@ -1967,6 +2004,8 @@ export async function enumerateAndSyncConversations({
               steps: stepsWithOwners,
               subagentRefs,
             };
+            if (rpcSwarmMeta) cacheEntry.swarmMeta = rpcSwarmMeta;
+            if (isParkedSwarm) cacheEntry.parkedOnSwarmWait = true;
             if (conv.diskFileSig) cacheEntry.diskFileSig = conv.diskFileSig;
             if (conv.appSource && conv.appSource !== 'standalone') {
               cacheEntry.appSource = conv.appSource;
@@ -1986,13 +2025,15 @@ export async function enumerateAndSyncConversations({
             const metaChanged =
               !Array.isArray(prev?.subagentRefs) ||
               JSON.stringify(prev?.subagentRefs) !== JSON.stringify(subagentRefs) ||
+              !isDeepStrictEqual(prev?.swarmMeta || null, cacheEntry.swarmMeta || null) ||
+              Boolean(prev?.parkedOnSwarmWait) !== Boolean(cacheEntry.parkedOnSwarmWait) ||
               (prev?.rootConversationId || '') !== (cacheEntry.rootConversationId || '') ||
               Boolean(prev?.isSideQuestion) !== Boolean(cacheEntry.isSideQuestion);
             const stepsChanged =
               !prev ||
               Boolean(prev.offlineTranscriptFallback) ||
               prev.signature !== finalSig ||
-              Boolean(prev.wasRunning) !== isRunning ||
+              Boolean(prev.wasRunning) !== Boolean(cacheEntry.wasRunning) ||
               !prev.contextLimitTelemetry ||
               !prev.speedClearedTelemetry ||
               !prev.turnRailTelemetry ||
@@ -2002,13 +2043,13 @@ export async function enumerateAndSyncConversations({
               !isDeepStrictEqual(prev.steps, stepsWithOwners);
 
             if (!stepsChanged) cacheEntry.steps = prev.steps;
-            setCachedTrajectory(conv.cascadeId, cacheEntry);
+            setEntry(conv.cascadeId, cacheEntry);
             if (stepsChanged) {
               cacheDirty = true;
             }
           } catch (err) {
             let offlineRecovered = false;
-            if (!conv.inSummaries && (!prev || prev.offlineTranscriptFallback)) {
+            if (!isRemote && !conv.inSummaries && (!prev || prev.offlineTranscriptFallback)) {
               if (!lazyExternalByLower) {
                 lazyExternalByLower = new Map();
                 for (const ext of loadExternalDeepStatsCache().values()) {
@@ -2044,9 +2085,8 @@ export async function enumerateAndSyncConversations({
                   Boolean(conv.parentConversationId) ||
                   Boolean(conv.rootConversationId && conv.rootConversationId !== cidLower);
                 const resolvedDiskMtime = conv.diskMtimeMs ?? readConversationMtime(diskFiles);
-                const offlineAccountName = prev
-                  ? prev.accountName || offlineFallback.accountName || ''
-                  : offlineFallback.accountName || currentAccountName || '';
+                const offlineAccountName =
+                  prev?.accountName || offlineFallback.accountName || currentAccountName || '';
                 const offlineStepsWithOwners = attachStepAccountOwners(
                   offlineFallback.steps,
                   prev,
@@ -2087,7 +2127,7 @@ export async function enumerateAndSyncConversations({
                   Boolean(prev.offlineSqliteTelemetry) !== Boolean(offlineEntry.offlineSqliteTelemetry) ||
                   !isDeepStrictEqual(prev.steps, offlineEntry.steps);
                 if (!changed) offlineEntry.steps = prev.steps;
-                setCachedTrajectory(conv.cascadeId, offlineEntry);
+                setEntry(conv.cascadeId, offlineEntry);
                 if (changed) {
                   cacheDirty = true;
                 }
@@ -2107,30 +2147,45 @@ export async function enumerateAndSyncConversations({
             if (!(isRunning && (hasTailStepInfo || offlineRecovered))) {
               const cooldownMs =
                 isRunning || isReq ? ACTIVE_FAILED_RPC_COOLDOWN_MS : FAILED_RPC_COOLDOWN_MS;
-              failedFetchCooldownMap.set(cooldownKey, { failedAt: nowPollMs, cooldownMs });
+              activeCooldownMap.set(cooldownKey, { failedAt: nowPollMs, cooldownMs });
             }
-            if (!isRunning) {
-              liveActivityMemo.delete(conv.cascadeId.toLowerCase());
+            const tailStepsOnErr =
+              partialTailSteps.length > 0
+                ? partialTailSteps
+                : isRemote
+                  ? []
+                  : readTranscriptTailSteps(conv.cascadeId);
+            const parkedOnErr =
+              tailStepsOnErr.length > 0
+                ? isParkedOnSwarmWait(tailStepsOnErr)
+                : Boolean(prev?.parkedOnSwarmWait) && prev.signature === sig;
+            if (!isRunning || (!offlineRecovered && parkedOnErr)) {
+              if (isRunning) {
+                conv.status = 'IDLE';
+                conv.liveActivity = null;
+              }
+              activeLiveActivityMemo.delete(conv.cascadeId.toLowerCase());
             } else {
               const fallbackLive = resolveBestLiveActivity(
                 conv.cascadeId,
                 partialTailSteps,
                 true,
-                conv.lastModifiedMs || conv.createdTimeMs || 0
+                conv.lastModifiedMs || conv.createdTimeMs || 0,
+                { isRemote, liveActivityMemoMap: activeLiveActivityMemo }
               );
               conv.liveActivity = fallbackLive;
               if (fallbackLive) {
-                liveActivityMemo.set(conv.cascadeId.toLowerCase(), fallbackLive);
+                activeLiveActivityMemo.set(conv.cascadeId.toLowerCase(), fallbackLive);
               }
             }
             if (
               !offlineRecovered &&
               prev &&
-              getCachedTrajectory(conv.cascadeId) === prev &&
+              getEntry(conv.cascadeId) === prev &&
               String(prev.signature || '').startsWith(`${CACHE_SCHEMA_VERSION}:`) &&
               !Array.isArray(prev.subagentRefs)
             ) {
-              setCachedTrajectory(conv.cascadeId, { ...prev, subagentRefs: [] });
+              setEntry(conv.cascadeId, { ...prev, subagentRefs: [] });
               cacheDirty = true;
             }
           }
@@ -2188,7 +2243,7 @@ export async function enumerateAndSyncConversations({
     const sig = buildConvSig(conv);
     if (isFetchInCooldown(conv, sig)) return false;
     const isRunning = conv.status === 'CASCADE_RUN_STATUS_RUNNING';
-    const cached = getCachedTrajectory(conv.cascadeId);
+    const cached = getEntry(conv.cascadeId);
     if (!cached || conv.needsInitialLoad) return true;
     const lowerCid = conv.cascadeId.toLowerCase();
     const isSelectedFamily =
@@ -2277,11 +2332,12 @@ export async function enumerateAndSyncConversations({
       const missingSubagentsToFetch = [];
 
       for (const parentConv of [...rawConversations]) {
-        const parentCached = getCachedTrajectory(parentConv.cascadeId);
+        const parentCached = getEntry(parentConv.cascadeId);
         const baseRefs = parentConv.subagentRefs || parentCached?.subagentRefs || [];
-        const swarmManifest = !parentConv.isSubagent
-          ? readSwarmManifestForCascade(parentConv.cascadeId)
-          : null;
+        const swarmManifest =
+          !isRemote && !parentConv.isSubagent
+            ? readSwarmManifestForCascade(parentConv.cascadeId)
+            : null;
         let refs = baseRefs;
         if (swarmManifest?.workerRefs?.length) {
           const merged = Array.isArray(baseRefs) ? baseRefs.slice() : [];
@@ -2310,7 +2366,7 @@ export async function enumerateAndSyncConversations({
           const canonSubId = canonicalIdByLower.get(subCid) || subCid;
           canonicalIdByLower.set(subCid, canonSubId);
           let subConv = byLowerId.get(subCid);
-          const subCached = getCachedTrajectory(subConv?.cascadeId || canonSubId);
+          const subCached = getEntry(subConv?.cascadeId || canonSubId);
           if (!subConv) {
             const subDiskFiles = diskConvMap.get(subCid) || [];
             const subDbInfo = sqliteAvailable ? resolveBestSqliteDbInfo(subDiskFiles) : null;
@@ -2336,7 +2392,9 @@ export async function enumerateAndSyncConversations({
               diskMtimeMs,
               dbPath: subDbInfo?.dbPath || '',
               diskFileSig: subDbInfo?.sig || '',
-              appSource: inferAppSourceFromSummary('', subDiskFiles, subCached?.appSource || 'standalone'),
+              appSource: isRemote
+                ? 'ssh'
+                : inferAppSourceFromSummary('', subDiskFiles, subCached?.appSource || 'standalone'),
               inSummaries: false,
               needsInitialLoad: !subCached,
               isSubagent: true,
@@ -2368,7 +2426,7 @@ export async function enumerateAndSyncConversations({
           }
 
           const targetCacheKey = subConv.cascadeId;
-          const existingSubCache = getCachedTrajectory(targetCacheKey);
+          const existingSubCache = getEntry(targetCacheKey);
           const isSelectedSubFamily = rootId === selectedRootId;
           const hasValidSubCache =
             existingSubCache &&
@@ -2417,7 +2475,7 @@ export async function enumerateAndSyncConversations({
               updatedMetadata.subagentRefs = [];
             }
             if (Object.keys(updatedMetadata).length > 0) {
-              setCachedTrajectory(targetCacheKey, { ...existingSubCache, ...updatedMetadata });
+              setEntry(targetCacheKey, { ...existingSubCache, ...updatedMetadata });
               cacheDirty = true;
             }
           } else {
@@ -2443,7 +2501,7 @@ export async function enumerateAndSyncConversations({
       if (attemptedFetchIds.has(c.cascadeId.toLowerCase()) || isFetchInCooldown(c, sig)) {
         return false;
       }
-      const cached = getCachedTrajectory(c.cascadeId);
+      const cached = getEntry(c.cascadeId);
       return cached && !Array.isArray(cached.subagentRefs);
     })
     .slice(0, LEGACY_MIGRATION_BATCH_SIZE);
@@ -2477,9 +2535,9 @@ export async function enumerateAndSyncConversations({
     }
     if (candidate && candidate !== conv.rootConversationId) {
       conv.rootConversationId = candidate;
-      const cached = getCachedTrajectory(conv.cascadeId);
+      const cached = getEntry(conv.cascadeId);
       if (cached && cached.rootConversationId !== candidate) {
-        setCachedTrajectory(conv.cascadeId, { ...cached, rootConversationId: candidate });
+        setEntry(conv.cascadeId, { ...cached, rootConversationId: candidate });
         cacheDirty = true;
       }
     }
@@ -2488,41 +2546,49 @@ export async function enumerateAndSyncConversations({
   const hasRunningSessions = rawConversations.some(
     (c) => c.status === 'CASCADE_RUN_STATUS_RUNNING'
   );
-  if (cacheDirty || (hasPendingTrajectoryCacheSave() && !hasRunningSessions)) {
-    persistTrajectoryCacheIfNeeded({ hasRunningSessions });
+  if (cacheDirty || (hasPendingSave() && !hasRunningSessions)) {
+    persistCacheIfNeeded({ hasRunningSessions });
   }
 
   // 确保所有处于 RUNNING 状态的会话（含本轮未触发 RPC 拉取的会话）都同步了最新的实时动作摘要，并剔除已进入 swarm_wait 待命的假运行态
   for (const conv of rawConversations) {
     if (conv.status === 'CASCADE_RUN_STATUS_RUNNING') {
       if (!conv.liveActivity) {
-        const tailSteps = readTranscriptTailSteps(conv.cascadeId);
-        if (isParkedOnSwarmWait(tailSteps)) {
+        const cachedConv = getEntry(conv.cascadeId);
+        const parkedByCache =
+          Boolean(cachedConv?.parkedOnSwarmWait) &&
+          cachedConv.signature === buildConvSig(conv);
+        const tailSteps = isRemote ? [] : readTranscriptTailSteps(conv.cascadeId);
+        const isParked = tailSteps.length > 0 ? isParkedOnSwarmWait(tailSteps) : parkedByCache;
+        if (isParked) {
           conv.status = 'IDLE';
           conv.liveActivity = null;
-          liveActivityMemo.delete(conv.cascadeId.toLowerCase());
+          activeLiveActivityMemo.delete(conv.cascadeId.toLowerCase());
           continue;
         }
         const fallbackMs = conv.lastModifiedMs || conv.createdTimeMs || 0;
-        const resolved = resolveBestLiveActivity(conv.cascadeId, [], true, fallbackMs);
+        const resolved = resolveBestLiveActivity(conv.cascadeId, [], true, fallbackMs, {
+          isRemote,
+          liveActivityMemoMap: activeLiveActivityMemo,
+        });
         if (resolved?.actionKey === 'swarm_wait') {
           conv.status = 'IDLE';
           conv.liveActivity = null;
-          liveActivityMemo.delete(conv.cascadeId.toLowerCase());
+          activeLiveActivityMemo.delete(conv.cascadeId.toLowerCase());
           continue;
         }
         conv.liveActivity = resolved;
         if (resolved) {
-          liveActivityMemo.set(conv.cascadeId.toLowerCase(), resolved);
+          activeLiveActivityMemo.set(conv.cascadeId.toLowerCase(), resolved);
         }
       } else if (conv.liveActivity.actionKey === 'swarm_wait') {
         conv.status = 'IDLE';
         conv.liveActivity = null;
-        liveActivityMemo.delete(conv.cascadeId.toLowerCase());
+        activeLiveActivityMemo.delete(conv.cascadeId.toLowerCase());
       }
     } else {
       conv.liveActivity = null;
-      liveActivityMemo.delete(conv.cascadeId.toLowerCase());
+      activeLiveActivityMemo.delete(conv.cascadeId.toLowerCase());
     }
   }
 
@@ -2564,8 +2630,9 @@ export async function enumerateAndSyncConversations({
 
   for (const rootConv of conversations) {
     const cid = rootConv.cascadeId.toLowerCase();
-    const swarmManifest = readSwarmManifestForCascade(cid);
-    const swarmTitle = String(swarmManifest?.title || '').trim();
+    const rootCached = getEntry(rootConv.cascadeId);
+    const swarmManifest = isRemote ? null : readSwarmManifestForCascade(cid);
+    const swarmTitle = String(swarmManifest?.title || rootCached?.swarmMeta?.title || '').trim();
     if (swarmTitle) {
       rootConv.swarmTitle = swarmTitle;
       const curTitle = String(rootConv.title || '').trim();
@@ -2579,11 +2646,29 @@ export async function enumerateAndSyncConversations({
     }
 
     const subs = subagentsByRoot.get(cid) || [];
+    const rpcKilledByMember = new Map();
+    const mergeRpcKilled = (killedMap) => {
+      if (!killedMap || typeof killedMap !== 'object') return;
+      for (const [memberKey, killMs] of Object.entries(killedMap)) {
+        const normMember = String(memberKey || '').trim().toLowerCase();
+        if (!normMember) continue;
+        const numMs = Number(killMs || 0);
+        const prevMs = rpcKilledByMember.get(normMember);
+        if (prevMs === undefined || numMs > prevMs) {
+          rpcKilledByMember.set(normMember, numMs);
+        }
+      }
+    };
+    mergeRpcKilled(rootCached?.swarmMeta?.killedMembers);
+    for (const s of subs) {
+      mergeRpcKilled(getEntry(s.cascadeId)?.swarmMeta?.killedMembers);
+    }
+
     let swarmCount = 0;
     for (const s of subs) {
       const subLower = s.cascadeId.toLowerCase();
       const mEntry = swarmManifest?.membersByCid.get(subLower) || null;
-      const subCached = getCachedTrajectory(s.cascadeId);
+      const subCached = getEntry(s.cascadeId);
       const parsedSwarm = !s.isSideQuestion
         ? parseSwarmWorkerRole({
             role: s.subagentSpec?.role || subCached?.subagentSpec?.role || '',
@@ -2597,11 +2682,27 @@ export async function enumerateAndSyncConversations({
         s.isSwarmWorker = true;
         s.swarmMemberName = parsedSwarm.memberName;
         s.isSwarmAuxiliary = Boolean(parsedSwarm.isAuxiliary);
-        s.killed = Boolean(s.killed || mEntry?.killed);
+        const memberKey = String(parsedSwarm.memberName || '').trim().toLowerCase();
+        const rpcKilledAtMs =
+          memberKey && rpcKilledByMember.has(memberKey)
+            ? rpcKilledByMember.get(memberKey)
+            : undefined;
+        const subCreatedMs =
+          s.createdTimeMs || subCached?.createdTimeMs || subCached?.steps?.[0]?.createdAtMs || 0;
+        const subLastStepMs =
+          subCached?.steps?.[subCached.steps.length - 1]?.createdAtMs || 0;
+        const killedByRpc =
+          rpcKilledAtMs !== undefined &&
+          !(
+            rpcKilledAtMs > 0 &&
+            ((subCreatedMs > 0 && subCreatedMs > rpcKilledAtMs) ||
+              subLastStepMs > rpcKilledAtMs)
+          );
+        s.killed = Boolean(s.killed || (mEntry ? mEntry.killed : killedByRpc));
         if (s.killed) {
           s.status = 'IDLE';
           s.liveActivity = null;
-          liveActivityMemo.delete(subLower);
+          activeLiveActivityMemo.delete(subLower);
           s.swarmState = 'killed';
         } else if (s.status === 'CASCADE_RUN_STATUS_RUNNING') {
           const parkedInManifest =
@@ -2611,7 +2712,7 @@ export async function enumerateAndSyncConversations({
           if (s.liveActivity?.actionKey === 'swarm_wait' || parkedInManifest) {
             s.status = 'IDLE';
             s.liveActivity = null;
-            liveActivityMemo.delete(subLower);
+            activeLiveActivityMemo.delete(subLower);
             s.swarmState = 'waiting';
           } else {
             s.swarmState = 'working';
@@ -2639,12 +2740,12 @@ export async function enumerateAndSyncConversations({
       }
       const aStart =
         a.createdTimeMs ||
-        getCachedTrajectory(a.cascadeId)?.steps?.[0]?.createdAtMs ||
+        getEntry(a.cascadeId)?.steps?.[0]?.createdAtMs ||
         a.lastModifiedMs ||
         0;
       const bStart =
         b.createdTimeMs ||
-        getCachedTrajectory(b.cascadeId)?.steps?.[0]?.createdAtMs ||
+        getEntry(b.cascadeId)?.steps?.[0]?.createdAtMs ||
         b.lastModifiedMs ||
         0;
       return aStart - bStart || String(a.cascadeId).localeCompare(String(b.cascadeId));

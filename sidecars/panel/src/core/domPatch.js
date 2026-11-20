@@ -322,7 +322,22 @@ export function positionAnchoredPopup(
   popupEl.style.maxHeight = '';
 
   const availWidth = Math.max(120, Math.floor(bound.width - margin * 2));
-  popupEl.style.maxWidth = `${availWidth}px`;
+  let cssMaxW = NaN;
+  if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+    try {
+      const rawMaxW = window.getComputedStyle(popupEl)?.maxWidth;
+      if (rawMaxW && rawMaxW !== 'none') {
+        cssMaxW = Number.parseFloat(rawMaxW);
+      }
+    } catch {
+      // 忽略 Mock DOM 样式查询异常
+    }
+  }
+  const effectiveMaxW =
+    Number.isFinite(cssMaxW) && cssMaxW > 0
+      ? Math.max(120, Math.min(availWidth, Math.floor(cssMaxW)))
+      : availWidth;
+  popupEl.style.maxWidth = `${effectiveMaxW}px`;
 
   const rawRect = popupEl.getBoundingClientRect?.();
   // 优先读取 offsetWidth，避免入场动画 scale(0.975) 导致测宽偏小
@@ -330,10 +345,13 @@ export function positionAnchoredPopup(
     Number(popupEl.offsetWidth || 0),
     Math.ceil(Number(rawRect?.width || 0))
   );
-  if (naturalW > availWidth) {
+  if (naturalW > effectiveMaxW) {
     popupEl.style.minWidth = '0px';
   }
-  const popupW = Math.min(availWidth, naturalW > 0 ? naturalW : Math.max(triggerRect.width, 210));
+  const popupW = Math.min(
+    effectiveMaxW,
+    naturalW > 0 ? naturalW : Math.max(triggerRect.width, 210)
+  );
 
   const safeLeft = bound.left + margin;
   const safeRight = bound.right - margin;

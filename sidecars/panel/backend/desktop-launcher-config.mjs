@@ -2005,10 +2005,11 @@ export async function triggerDesktopHostRelaunch({
       bundleDerivedName || (hostInfo.kind === 'ide' ? 'Antigravity IDE' : 'Antigravity');
     const shScript = [
       'sleep 0.45',
-      'if osascript -e \'on run argv\' -e \'tell application (item 1 of argv) to quit\' -e \'end run\' -- "$AGY_APP_NAME" >/dev/null 2>&1; then i=0; while [ $i -lt 25 ] && pgrep -x "$AGY_APP_NAME" >/dev/null 2>&1; do sleep 0.2; i=$((i+1)); done; fi',
-      'if pgrep -x "$AGY_APP_NAME" >/dev/null 2>&1; then pkill -TERM -x "$AGY_APP_NAME" >/dev/null 2>&1 || killall -TERM "$AGY_APP_NAME" >/dev/null 2>&1 || true; j=0; while [ $j -lt 20 ] && pgrep -x "$AGY_APP_NAME" >/dev/null 2>&1; do sleep 0.2; j=$((j+1)); done; fi',
-      'if pgrep -x "$AGY_APP_NAME" >/dev/null 2>&1; then pkill -KILL -x "$AGY_APP_NAME" >/dev/null 2>&1 || killall -KILL "$AGY_APP_NAME" >/dev/null 2>&1 || true; k=0; while [ $k -lt 15 ] && pgrep -x "$AGY_APP_NAME" >/dev/null 2>&1; do sleep 0.2; k=$((k+1)); done; fi',
+      'if osascript -e \'on run argv\' -e \'tell application (item 1 of argv) to quit\' -e \'end run\' -- "$AGY_APP_NAME" >/dev/null 2>&1; then i=0; while [ $i -lt 25 ] && pgrep -ax "$AGY_APP_NAME" >/dev/null 2>&1; do sleep 0.2; i=$((i+1)); done; fi',
+      'if pgrep -ax "$AGY_APP_NAME" >/dev/null 2>&1; then pkill -TERM -ax "$AGY_APP_NAME" >/dev/null 2>&1 || killall -TERM "$AGY_APP_NAME" >/dev/null 2>&1 || true; j=0; while [ $j -lt 20 ] && pgrep -ax "$AGY_APP_NAME" >/dev/null 2>&1; do sleep 0.2; j=$((j+1)); done; fi',
+      'if pgrep -ax "$AGY_APP_NAME" >/dev/null 2>&1; then pkill -KILL -ax "$AGY_APP_NAME" >/dev/null 2>&1 || killall -KILL "$AGY_APP_NAME" >/dev/null 2>&1 || true; k=0; while [ $k -lt 15 ] && pgrep -ax "$AGY_APP_NAME" >/dev/null 2>&1; do sleep 0.2; k=$((k+1)); done; fi',
       'old_ifs="$IFS"; set -f; IFS=":"; for f in $AGY_STALE_PORT_FILES; do [ -n "$f" ] && rm -f "$f"; done; set +f; IFS="$old_ifs"',
+      'sleep 0.4',
       'open -a "$AGY_RELAUNCH_APP" --args --remote-debugging-port=0 >/dev/null 2>&1',
     ].join('; ');
     await spawner('/bin/sh', ['-c', shScript], {

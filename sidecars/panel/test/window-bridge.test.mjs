@@ -1234,10 +1234,12 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
         capsuleHost.shadowRoot.children.indexOf(capsuleBtn),
       'Multi-session button sits immediately to the left of telemetry capsule'
     );
+    assert.equal(capsuleHost.getAttribute('data-modern-ui'), 'true', 'Modern UI enabled out-of-the-box');
+    const readCapVal = (el) => el.getAttribute('data-od-value') ?? el.textContent;
     assert.equal(multiBtn.querySelector('.svg-icon'), null, 'Multi-session button has zero SVG clutter');
     assert.equal(multiBtn.classList.contains('is-running'), true);
     const multiLabelEl = multiBtn.querySelector('.wm-multi-label');
-    assert.equal(multiLabelEl.textContent, '2 运行 · 1 子');
+    assert.equal(readCapVal(multiLabelEl), '2 运行 · 1 子');
 
     // Verify capsule reactive text (default order: 92.4 t/s without bolt SVG, 0.85s TTFT, 50% context)
     const defaultCapSlots = capsuleHost.shadowRoot.querySelectorAll('.wm-cap-slot');
@@ -1248,9 +1250,9 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(defaultCapSlots[2].getAttribute('data-metric'), 'context');
     assert.equal(speedSegEl.children.length, 1, 'Speed segment has no lightning bolt SVG');
     assert.equal(speedSegEl.querySelector('.svg-icon'), null);
-    assert.ok(speedSegEl.children[0].textContent.includes('92.4 t/s'));
-    assert.equal(defaultCapSlots[1].children[0].textContent, '0.85s');
-    assert.equal(ctxPctEl.textContent, '50%');
+    assert.ok(readCapVal(speedSegEl.children[0]).includes('92.4 t/s'));
+    assert.equal(readCapVal(defaultCapSlots[1].children[0]), '0.85s');
+    assert.equal(readCapVal(ctxPctEl), '50%');
 
     // Verify hovering left multi-session button opens .wm-multi-panel with live tasks, subagents, and recent sessions
     const multiPanelEl = portalHost.shadowRoot.querySelector('.wm-multi-panel');
@@ -1411,22 +1413,28 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const langBtns = generalSegControls[0].querySelectorAll('.seg-btn');
     const fontScaleBtns = generalSegControls[1].querySelectorAll('.seg-btn');
     const modernUiBtns = generalSegControls[2].querySelectorAll('.seg-btn');
-    assert.equal(modernUiBtns.length, 2, 'Experimental Modern UI switch has 关闭 / 开启');
+    assert.equal(modernUiBtns.length, 2, 'Modern UI switch has 开启 / 关闭');
+    assert.equal(modernUiBtns[0].textContent, '开启');
+    assert.equal(modernUiBtns[1].textContent, '关闭');
 
     modernUiBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.modernUi, false);
+    assert.equal(mockSettings.experimentalModernUi, false);
+    assert.equal(portalHost.hasAttribute('data-modern-ui'), false);
+    assert.equal(popoverEl.hasAttribute('data-modern-ui'), false);
+    modernUiBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.modernUi, true);
     assert.equal(mockSettings.experimentalModernUi, true);
     assert.equal(portalHost.getAttribute('data-modern-ui'), 'true');
     assert.equal(capsuleHost.getAttribute('data-modern-ui'), 'true');
     assert.equal(popoverEl.getAttribute('data-modern-ui'), 'true');
-    modernUiBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
-    await new Promise((r) => setTimeout(r, 30));
-    assert.equal(mockSettings.experimentalModernUi, false);
-    assert.equal(portalHost.hasAttribute('data-modern-ui'), false);
-    assert.equal(popoverEl.hasAttribute('data-modern-ui'), false);
-    assert.equal(langBtns.length, 3, 'Language switch has 简体中文 / English / 跟随宿主');
-    assert.equal(langBtns[0].textContent, '简体中文');
-    assert.equal(langBtns[0].classList.contains('is-active'), true, 'Default language is zh-CN');
+    assert.equal(langBtns.length, 3, 'Language switch has 跟随系统 / 简体中文 / English');
+    assert.equal(langBtns[0].textContent, '跟随系统');
+    assert.equal(langBtns[1].textContent, '简体中文');
+    assert.equal(langBtns[2].textContent, 'English');
+    assert.equal(langBtns[1].classList.contains('is-active'), true, 'mockSettings language zh-CN selects index 1');
     const generalSelects = generalPane.querySelectorAll('.custom-select');
     assert.equal(generalSelects.length, 1, 'General tab has Update Mode select');
     const updateModeSelectEl = generalSelects[0];
@@ -1466,8 +1474,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(portalHost.getAttribute('data-font-scale'), 'md');
     assert.equal(popoverEl.getAttribute('data-font-scale'), 'md');
 
-    // Live i18n switch: zh-CN -> en-US -> zh-CN without page reload
-    langBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+    // Live i18n switch: zh-CN -> en-US (index 2) -> auto (index 0) -> zh-CN (index 1) without page reload
+    langBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.language, 'en-US');
     assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, 'Live');
@@ -1476,6 +1484,9 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(subNavBtns[1].textContent, 'Structure');
     assert.equal(subNavBtns[2].textContent, 'Other');
     langBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.language, 'auto');
+    langBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.language, 'zh-CN');
     assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, '实时监控');
@@ -1570,10 +1581,15 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.ok(previewCapsuleBar, 'Pane 0 mounts real CapsuleBarWidget preview');
     assert.equal(previewCapsuleBar.querySelector('.preview-win-controls'), null, 'No redundant 3 window dots after capsule');
     assert.equal(previewCapsuleSlots.length, 5, 'Preview CapsuleBarWidget mounts real 5 capsule slots');
-    assert.equal(previewCapsuleSlots[0].children[0].textContent, '68.4 t/s', 'Preview slot 0 renders simulated speed');
+    assert.equal(readCapVal(previewCapsuleSlots[0].children[0]), '68.4 t/s', 'Preview slot 0 renders simulated speed');
     assert.equal(previewCapsuleSlots[0].classList.contains('tone-good'), true, 'Preview capsule 68.4 t/s shares tone-good green with cards');
-    assert.equal(previewCapsuleSlots[1].children[0].textContent, '1.1s', 'Preview slot 1 renders simulated TTFT');
-    assert.equal(previewCapsuleSlots[2].querySelector('.wm-ctx-pct').textContent, '56%', 'Preview slot 2 renders simulated context %');
+    assert.equal(readCapVal(previewCapsuleSlots[1].children[0]), '1.1s', 'Preview slot 1 renders simulated TTFT');
+    assert.equal(readCapVal(previewCapsuleSlots[2].querySelector('.wm-ctx-pct')), '56%', 'Preview slot 2 renders simulated context %');
+    assert.deepEqual(
+      previewCapsuleBar.querySelectorAll('.preview-composer-chip').map((c) => c.textContent.trim()),
+      ['Carbon (High)'],
+      'Composer preview bar shows only Carbon (High) chip without Auto'
+    );
     const mountSelectEl = sec0.querySelectorAll('.custom-select')[0];
 
     // Toggle windowMountSelect: dual -> composer -> sidebar -> dual (updating both live host & preview bar)
@@ -1664,26 +1680,26 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     capRowSelects[0].querySelectorAll('.select-option')[9].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(capSlots[0].getAttribute('data-metric'), 'gemini_5h');
-    assert.equal(capSlots[0].children[0].textContent, '余 44%');
+    assert.equal(readCapVal(capSlots[0].children[0]), '余 44%');
     assert.equal(previewCapsuleSlots[0].getAttribute('data-metric'), 'gemini_5h', 'Preview slot 0 mirrors gemini_5h');
-    assert.equal(previewCapsuleSlots[0].children[0].textContent, '余 64%', 'Preview slot 0 renders simulated gemini_5h');
+    assert.equal(readCapVal(previewCapsuleSlots[0].children[0]), '余 64%', 'Preview slot 0 renders simulated gemini_5h');
     assert.equal(capSlots[1].getAttribute('data-metric'), 'ttft');
-    assert.equal(capSlots[1].children[0].textContent, '0.85s');
+    assert.equal(readCapVal(capSlots[1].children[0]), '0.85s');
 
     capRowSelects[2].querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
     capRowSelects[2].querySelectorAll('.select-option')[4].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(capSlots[2].getAttribute('data-metric'), 'cost');
     assert.equal(capSlots[2].children.length, 1, 'Ring SVG detached cleanly when slot leaves context');
-    assert.equal(capSlots[2].children[0].textContent, '$0.040');
+    assert.equal(readCapVal(capSlots[2].children[0]), '$0.040');
     assert.deepEqual(mockSettings.topbarCapsuleSlots, ['gemini_5h', 'ttft', 'cost']);
 
     // Move Row 1 up (left): each row has [up, down, remove], so Row 1 up is index 3
     capSlotWrap.querySelectorAll('.slot-move-btn')[3].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.deepEqual(mockSettings.topbarCapsuleSlots, ['ttft', 'gemini_5h', 'cost']);
-    assert.equal(capSlots[0].children[0].textContent, '0.85s');
-    assert.equal(capSlots[1].children[0].textContent, '余 44%');
+    assert.equal(readCapVal(capSlots[0].children[0]), '0.85s');
+    assert.equal(readCapVal(capSlots[1].children[0]), '余 44%');
 
     // Mouse drag-and-drop reorder: drag Row 0 ('ttft') down below Row 2 ('cost') -> ['gemini_5h', 'cost', 'ttft']
     const capSlotListEl = capSlotWrap.querySelector('.editable-slot-list');
@@ -1755,7 +1771,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(capSlots[1].getAttribute('data-metric'), 'ttft');
     assert.equal(capSlots[2].getAttribute('data-metric'), 'context');
     assert.equal(capSlots[2].children.length, 2, 'Ring SVG re-attached on Slot 2');
-    assert.equal(capSlots[2].querySelector('.wm-ctx-pct').textContent, '50%');
+    assert.equal(readCapVal(capSlots[2].querySelector('.wm-ctx-pct')), '50%');
 
     // Pane 1 (3rd-level tab 'hover'): Hover Popup Modules (0..4) + real hover UI preview
     const sec1 = accordionSections[1];
@@ -2064,7 +2080,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       'Consumption sub-label renders CNY approx instead of 步费用待定'
     );
     assert.ok(popoverEl.querySelector('.steps-panel-header'), 'Steps header flex wrapper present');
-    assert.ok(popoverEl.querySelector('.steps-panel-title'), 'Steps title non-shrinking class present');
+    assert.equal(popoverEl.querySelector('.steps-panel-title'), null, 'Redundant steps header title removed');
 
     // Verify <=90d renders flush edge-to-edge SVG line chart, while >90d ('all' = 120 days) switches to GitHub-style daily heatmap grid
     const plotStageEl = popoverEl.querySelector('.trend-plot-stage');
@@ -2093,8 +2109,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.match(stylesCss, /\.app-shell\s*\{[^}]*max-width:\s*none;/, 'Sidecar .app-shell removes 560px width cap');
     assert.match(
       stylesCss,
-      /\.models-analytics-pane\s*\{[^}]*padding:\s*var\(--space-3\)\s+0\s+2px;/,
-      'Models analytics pane eliminates nested horizontal double-padding'
+      /\.models-analytics-pane\s*\{[^}]*padding-left:\s*0;/,
+      'Models analytics pane eliminates nested left double-padding while preserving right scrollbar clearance'
     );
     assert.doesNotMatch(
       stylesCss,
@@ -2325,7 +2341,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(smodelCards[0].querySelector('.smodel-name').textContent, 'gemini-4-hydrogen');
     assert.equal(smodelCards[0].querySelector('.smodel-calls-pill').textContent, '1次 · 50%');
     assert.match(smodelCards[0].querySelector('.smodel-perf').textContent, /均速 92\.3 tok\/s · 首字 5\.6s · 缓存 93\.3%/);
-    assert.match(smodelCards[0].querySelector('.smodel-split').textContent, /入 2\.5k · 缓 34\.6k · 思 420 · 正 265/);
+    assert.match(smodelCards[0].querySelector('.smodel-split').textContent, /输入 2\.5k.*缓存 34\.6k.*思考 420.*输出 265/);
 
     // Simulate live telemetry poll where a subagent spawns on 'Gemini 3 Flash' (changing activeModelLabel)
     // while the user remains inside 总汇总 -> fit model MUST NOT jump!
@@ -2644,13 +2660,13 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(delivered, 1);
     await new Promise((r) => setTimeout(r, 20));
     assert.equal(
-      defaultCapSlots[2].querySelector('.wm-ctx-pct').textContent,
+      readCapVal(defaultCapSlots[2].querySelector('.wm-ctx-pct')),
       '25%',
       'CDP relay delivered live telemetry without HTTP'
     );
-    assert.equal(defaultCapSlots[0].children[0].textContent, '121 t/s');
+    assert.equal(readCapVal(defaultCapSlots[0].children[0]), '121 t/s');
     assert.equal(defaultCapSlots[1].hasAttribute('hidden'), false, 'TTFT slot stays pre-reserved even when latestTtftSec is absent');
-    assert.equal(defaultCapSlots[1].children[0].textContent, '--s');
+    assert.equal(readCapVal(defaultCapSlots[1].children[0]), '--s');
     assert.equal(
       hoverLegendGrid.children[0],
       firstLegendSlotBefore,
@@ -4526,7 +4542,7 @@ test('v1.5 feedback E2E: sticky bridge port/token across hot-reloads, CDP->HTTP 
   // 2. Verify frontend formatters, non-truncating compaction cell, custom token combo, trimmed model ID, adaptive width & CDP recovery
   const appJs = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   const stylesCss = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
-  assert.match(stylesCss, /\.step-model-compact\s*\{[^}]*flex-shrink:\s*0;/, 'Compaction suffix never shrinks/truncates');
+  assert.match(stylesCss, /\.data-table\s+tbody\s+tr\.is-compaction\s*\{[^}]*--accent-primary/, 'Compaction row uses whole-row host accent tint');
   assert.match(stylesCss, /\.wm-popover-panel\s*\{[^}]*--wm-popover-w,\s*540px/, 'Popover supports dynamic CSS width variable');
 
   const savedSettings = {
@@ -4729,20 +4745,20 @@ test('v1.5 feedback E2E: sticky bridge port/token across hot-reloads, CDP->HTTP 
     // Adaptive width expands popover to fit wide 660px table (+ 34px chrome + 4px buffer = 698px)
     assert.equal(popEl.style.width, '698px', 'Popover adaptively widens on wide step table to eliminate horizontal scroll');
 
-    // Verify trimmed raw IDs (hiding gemini-, claude-, gpt-) AND non-truncating compaction suffix
+    // Verify trimmed raw IDs (hiding gemini-, claude-, gpt-) AND whole-row compaction tint (no inline ·压缩)
     const bodyRows = stepTable.querySelector('tbody').querySelectorAll('tr');
     assert.equal(bodyRows.length, 3);
 
     const row0ModelName = bodyRows[0].querySelector('.step-model-name').textContent;
-    const row0Compact = bodyRows[0].querySelector('.step-model-compact');
     assert.equal(row0ModelName, '4-hydrogen', 'Strips gemini- prefix from gemini-4-hydrogen');
-    assert.equal(row0Compact.hasAttribute('hidden'), false, 'Compaction badge visible as dedicated flex-shrink:0 span');
-    assert.equal(row0Compact.textContent, '·压缩', 'Compaction suffix never merged into ellipsized span');
+    assert.equal(bodyRows[0].querySelector('.step-model-compact'), null, 'No inline ·压缩 span inside model cell');
+    assert.equal(bodyRows[0].classList.contains('is-compaction'), true, 'Compaction step receives whole-row is-compaction class');
     assert.equal(bodyRows[0].children[1].getAttribute('title'), 'gemini-4-hydrogen·压缩', 'Hover title keeps full upstream ID');
 
     assert.equal(bodyRows[1].querySelector('.step-model-name').textContent, 'sonnet-4-6', 'Strips claude- prefix');
-    assert.equal(bodyRows[1].querySelector('.step-model-compact').hasAttribute('hidden'), true);
+    assert.equal(bodyRows[1].classList.contains('is-compaction'), false);
     assert.equal(bodyRows[2].querySelector('.step-model-name').textContent, '5.4-mini', 'Strips gpt- prefix');
+    assert.equal(bodyRows[2].classList.contains('is-compaction'), false);
 
     // Verify In / Out / Cache column & Custom Combo column ('context:in:cache')
     const ths = stepTable.querySelector('thead').querySelectorAll('th');
@@ -5504,9 +5520,9 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
     assert.equal(relaunchMacRes.ok, true);
     assert.equal(macSpawnArgs.env.AGY_RELAUNCH_APP, '/Applications/Antigravity.app');
     assert.equal(macSpawnArgs.env.AGY_APP_NAME, 'Antigravity');
-    assert.match(macSpawnArgs.args[1], /if osascript .* then .* fi/);
-    assert.match(macSpawnArgs.args[1], /pkill -TERM -x "\$AGY_APP_NAME"/);
-    assert.match(macSpawnArgs.args[1], /pkill -KILL -x "\$AGY_APP_NAME"/);
+    assert.match(macSpawnArgs.args[1], /if osascript .* then .* pgrep -ax "\$AGY_APP_NAME".* fi/);
+    assert.match(macSpawnArgs.args[1], /pkill -TERM -ax "\$AGY_APP_NAME"/);
+    assert.match(macSpawnArgs.args[1], /pkill -KILL -ax "\$AGY_APP_NAME"/);
     assert.match(macSpawnArgs.args[1], /open -a "\$AGY_RELAUNCH_APP" --args --remote-debugging-port=0/);
 
     // macOS TCC-blocked osascript falls back to ps -axo comm= and derives custom .app name

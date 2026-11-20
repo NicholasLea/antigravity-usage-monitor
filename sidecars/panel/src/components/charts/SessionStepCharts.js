@@ -782,11 +782,23 @@ export function createSessionLineChart() {
   const tipHeadRight = h('span', { className: 'trend-tip-calls text-mono' });
   const tipMainLeft = h('strong', { className: 'trend-tip-tokens text-mono' });
   const tipMainRight = h('span', { className: 'trend-tip-cost text-mono' });
+  const tipInLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legInput') });
+  const tipInValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipCacheLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legCache') });
+  const tipCacheValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipOutLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legOutput') });
+  const tipOutValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipIoGrid = h('div', { className: 'trend-tip-sub is-grid', hidden: true }, [
+    h('div', { className: 'trend-tip-stat' }, [tipInLabelEl, tipInValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipCacheLabelEl, tipCacheValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipOutLabelEl, tipOutValEl]),
+  ]);
   const tipSub = h('div', { className: 'trend-tip-sub text-mono', hidden: true });
   const tipAnomaly = h('div', { className: 'trend-tip-anomaly text-mono', hidden: true });
   const tooltipEl = h('div', { className: 'trend-tooltip', hidden: true }, [
     h('div', { className: 'trend-tip-head' }, [tipHeadLeft, tipHeadRight]),
     h('div', { className: 'trend-tip-main' }, [tipMainLeft, tipMainRight]),
+    tipIoGrid,
     tipSub,
     tipAnomaly,
   ]);
@@ -863,8 +875,18 @@ export function createSessionLineChart() {
       pt.valid ? formatChartMetricValue(currentMetric, pt.value) : t('chart.step.excluded')
     );
     patchText(tipMainRight, pt.secondaryRight || '');
-    patchAttr(tipSub, 'hidden', !pt.subDetail);
-    if (pt.subDetail) {
+    const hasIoParts = Boolean(pt.ioParts);
+    patchAttr(tipIoGrid, 'hidden', !hasIoParts);
+    if (hasIoParts) {
+      patchText(tipInLabelEl, t('cons.legInput'));
+      patchText(tipCacheLabelEl, t('cons.legCache'));
+      patchText(tipOutLabelEl, t('cons.legOutput'));
+      patchText(tipInValEl, pt.ioParts.inTok);
+      patchText(tipCacheValEl, pt.ioParts.cacheTok);
+      patchText(tipOutValEl, pt.ioParts.outTok);
+    }
+    patchAttr(tipSub, 'hidden', hasIoParts || !pt.subDetail);
+    if (!hasIoParts && pt.subDetail) {
       patchText(tipSub, pt.subDetail);
     }
     patchAttr(tipAnomaly, 'hidden', !pt.anomalySummary);
@@ -1107,15 +1129,17 @@ export function createSessionLineChart() {
       let value = 0;
       let secondaryRight = '';
       let subDetail = '';
+      let ioParts = null;
 
       if (metric === 'totalTokens') {
         value = isMultiCompare ? modelCumTok : runningTokens;
         secondaryRight = t('chart.step.stepAdd', { tokens: formatTokens(stepTotalTok) });
-        subDetail = t('chart.step.ioSplit', {
+        ioParts = {
           inTok: formatTokens(inTok),
           cacheTok: formatTokens(cacheTok),
           outTok: formatTokens(outTok),
-        });
+        };
+        subDetail = t('chart.step.ioSplit', ioParts);
       } else if (metric === 'context') {
         value = ctxTok;
         if (hasPrevCtx) {
@@ -1198,6 +1222,7 @@ export function createSessionLineChart() {
         value,
         secondaryRight,
         subDetail,
+        ioParts,
         anomalySummary,
         anomalySeverity: st.anomaly?.severity || '',
       };

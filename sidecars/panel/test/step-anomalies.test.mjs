@@ -11,6 +11,7 @@ import { i18nStore } from '../src/i18n/index.js';
 import {
   buildModelAnomalyDiagnostic,
   buildStepAnomalyDiagnostic,
+  buildStepCompactionDiagnostic,
   formatAnomalyTagText,
   formatMetric,
   formatSpeedMetric,
@@ -420,6 +421,15 @@ test('formatSpeedMetric drops decimals at >= 100 tok/s and STEP_COLUMN_REGISTRY.
     STEP_COLUMN_REGISTRY.duration.updateCell(durCell.refs, { totalDurationSec: 42.3 });
     assert.equal(durCell.refs.valEl.textContent, '42.3s');
 
+    // Compaction steps keep normal TTFT formatting ("—" when null) instead of overriding the cell
+    const compactTtftCell = STEP_COLUMN_REGISTRY.ttft.createCell();
+    i18nStore.setState({ locale: 'zh-CN' });
+    STEP_COLUMN_REGISTRY.ttft.updateCell(compactTtftCell.refs, { isCompactionStep: true, ttftSec: null });
+    assert.equal(compactTtftCell.refs.valEl.textContent, '—');
+    assert.notEqual(compactTtftCell.refs.valEl.getAttribute('class'), 'step-ttft-compaction');
+    STEP_COLUMN_REGISTRY.ttft.updateCell(compactTtftCell.refs, { isCompactionStep: false, ttftSec: 5.2 });
+    assert.equal(compactTtftCell.refs.valEl.textContent, '5.2s');
+
     // ContextSegmentMeter renders crisp separated blocks (.ctx-segment-meter + .is-active + .has-sep)
     const meter = ContextSegmentMeter({
       context: {
@@ -509,6 +519,47 @@ test('StepTableWidget tints entire anomaly rows with zero extra column width and
         ttftSec: 1.4,
         anomalySig: '',
       },
+      {
+        stepIndex: 4918,
+        modelShort: '4-neon',
+        modelLabel: '4-neon',
+        isCompactionStep: true,
+        inputTokens: 120000,
+        cacheReadTokens: 400000,
+        outputTokens: 4400,
+        tokPerSec: 86.6,
+        ttftSec: null,
+        anomalySig: '',
+      },
+      {
+        stepIndex: 4916,
+        modelShort: '4-neon',
+        modelLabel: '4-neon',
+        isCompactionStep: true,
+        inputTokens: 100000,
+        cacheReadTokens: 300000,
+        outputTokens: 2100,
+        tokPerSec: null,
+        selectedSpeedReason: 'error',
+        ttftSec: null,
+        anomalySig: 'timeout:1:w:1.5',
+        anomaly: {
+          count: 1,
+          primaryKind: 'timeout',
+          severity: 'warn',
+          totalDelaySec: 1.5,
+          kinds: { timeout: 1 },
+          events: [
+            {
+              attempt: 1,
+              kind: 'timeout',
+              delaySec: 1.5,
+              terminal: false,
+              message: 'compaction stream idle timeout',
+            },
+          ],
+        },
+      },
     ];
 
     widget.refs.renderStepTable(steps, 'cid-1', colKeys, 'zh-CN', {
@@ -520,7 +571,7 @@ test('StepTableWidget tints entire anomaly rows with zero extra column width and
     // Zero extra columns and zero inline text badges added to table cells
     assert.equal(widget.refs.stepsTheadRow.children.length, colKeys.length);
     const rows = widget.refs.stepsTbody.children;
-    assert.equal(rows.length, 3);
+    assert.equal(rows.length, 5);
     assert.equal(rows[0].children.length, colKeys.length);
     assert.equal(rows[0].querySelector('.step-anomaly-tag'), null, 'No inline tag widening the #step column');
 
@@ -533,16 +584,24 @@ test('StepTableWidget tints entire anomaly rows with zero extra column width and
     assert.equal(rows[1].classList.contains('is-anomaly-danger'), true);
     assert.equal(rows[1].classList.contains('is-anomaly-warn'), false);
 
-    // Row 2: normal step has NO anomaly row classes and keeps 1 decimal < 100 tok/s
+    // Row 2: normal step has NO anomaly/compaction row classes and keeps 1 decimal < 100 tok/s
     assert.equal(rows[2].classList.contains('is-anomaly-warn'), false);
     assert.equal(rows[2].classList.contains('is-anomaly-danger'), false);
+    assert.equal(rows[2].classList.contains('is-compaction'), false);
     assert.equal(rows[2].children[2].textContent, '65.7 tok/s');
+
+    // Row 3: pure compaction step uses host-accent row tint, keeps TTFT as "—", and shows compaction hover popover
+    assert.equal(rows[3].classList.contains('is-compaction'), true);
+    assert.equal(rows[3].classList.contains('is-anomaly-warn'), false);
+    assert.equal(rows[3].classList.contains('is-anomaly-danger'), false);
+    assert.equal(rows[3].children[3].textContent, '—');
 
     // Hovering the tinted row expands the structured diagnostic popover
     const tipEl = widget.refs.anomalyTipEl;
     assert.equal(tipEl.hasAttribute('hidden'), true);
     rows[0].onmouseenter();
     assert.equal(tipEl.hasAttribute('hidden'), false);
+    assert.equal(tipEl.classList.contains('is-compaction'), false);
     assert.match(tipEl.querySelector('.step-anomaly-tip-title').textContent, /#4924.*异常 1 次/);
     assert.equal(tipEl.querySelector('.step-anomaly-tip-sub').textContent, '退避 2.5s');
     assert.match(tipEl.querySelector('.step-anomaly-tip-detail').textContent, /stream idle timeout/);
@@ -550,12 +609,36 @@ test('StepTableWidget tints entire anomaly rows with zero extra column width and
     rows[0].onmouseleave();
     assert.equal(tipEl.hasAttribute('hidden'), true);
 
-    // Hovering danger row sets danger style on tooltip
+    // Hovering compaction row displays host-accent compaction popover matching warning popover structure
+    rows[3].onmouseenter();
+    assert.equal(tipEl.hasAttribute('hidden'), false);
+    assert.equal(tipEl.classList.contains('is-compaction'), true);
+    assert.equal(tipEl.classList.contains('is-danger'), false);
+    assert.match(tipEl.querySelector('.step-anomaly-tip-title').textContent, /#4918.*自动压缩/);
+    assert.equal(tipEl.querySelector('.step-anomaly-tip-sub').textContent, '4-neon');
+    assert.match(tipEl.querySelector('.step-anomaly-tip-row').textContent, /输入 520\.0k → 摘要输出 4\.4k/);
+    assert.equal(tipEl.querySelector('.step-anomaly-tip-detail').classList.contains('text-mono'), false);
+    rows[3].onmouseleave();
+    assert.equal(tipEl.hasAttribute('hidden'), true);
+
+    // Hovering danger row sets danger style and clears compaction style on tooltip
     rows[1].onmouseenter();
     assert.equal(tipEl.hasAttribute('hidden'), false);
     assert.equal(tipEl.classList.contains('is-danger'), true);
+    assert.equal(tipEl.classList.contains('is-compaction'), false);
     assert.match(tipEl.querySelector('.step-anomaly-tip-detail').textContent, /429 RESOURCE_EXHAUSTED/);
     rows[1].onmouseleave();
+    assert.equal(tipEl.hasAttribute('hidden'), true);
+
+    // Row 4: hybrid compaction + anomaly keeps anomaly diagnostic and appends compaction hint
+    assert.equal(rows[4].classList.contains('is-compaction'), true);
+    assert.equal(rows[4].classList.contains('is-anomaly-warn'), true);
+    rows[4].onmouseenter();
+    assert.equal(tipEl.hasAttribute('hidden'), false);
+    assert.equal(tipEl.classList.contains('is-compaction'), false);
+    assert.match(tipEl.querySelector('.step-anomaly-tip-title').textContent, /#4916.*异常 1 次/);
+    assert.match(tipEl.querySelector('.step-anomaly-tip-hint').textContent, /自动压缩/);
+    rows[4].onmouseleave();
     assert.equal(tipEl.hasAttribute('hidden'), true);
 
     // Verify helper outputs cleanly
@@ -563,6 +646,7 @@ test('StepTableWidget tints entire anomaly rows with zero extra column width and
     assert.equal(formatAnomalyTagText('capacity', 3), '503×3');
     assert.ok(buildStepAnomalyDiagnostic(steps[0]));
     assert.equal(buildStepAnomalyDiagnostic(steps[2]), null);
+    assert.equal(buildStepCompactionDiagnostic(steps[3]).severity, 'compaction');
   } finally {
     widget.destroy();
     env.restore();
@@ -810,15 +894,31 @@ test('Compiled styles.css centers odometer capsule slot text and ships both clas
     'Context percentage slot stays left-aligned next to its progress ring'
   );
 
-  // Universal Classic + Modern UI anomaly styling
+  // Universal Classic + Modern UI compaction & anomaly styling (anomaly overrides compaction if both occur)
+  const classicCompactIdx = builtCss.indexOf('tr.is-compaction {');
+  const classicWarnIdx = builtCss.indexOf('tr.is-anomaly-warn {');
+  assert.ok(classicCompactIdx > 0 && classicWarnIdx > classicCompactIdx, 'Classic tr.is-compaction precedes tr.is-anomaly-warn');
+  assert.match(builtCss, /tr\.is-compaction\s*\{[^}]*var\(--accent-primary\)/);
+  assert.match(builtCss, /\[data-modern-ui="true"\][\s\S]*?tr\.is-compaction[\s\S]*?var\(--accent-primary\)/);
+  assert.match(builtCss, /\.step-anomaly-tip\.is-compaction[\s\S]*?var\(--accent-primary\)/);
+  assert.doesNotMatch(builtCss, /\.step-ttft-compaction/);
   assert.match(builtCss, /tr\.is-anomaly-warn\s*\{/);
   assert.match(builtCss, /tr\.is-anomaly-danger\s*\{/);
   assert.match(builtCss, /\[data-modern-ui="true"\][\s\S]*?tr\.is-anomaly-warn/);
+  assert.match(builtCss, /\.form-row\s*>\s*\.custom-select\s*>\s*\.select-trigger\s*\{[^}]*border:\s*none;[^}]*border-radius:\s*var\(--radius-pill\)/s);
+  assert.match(builtCss, /\.steps-header-filters\s*\{[\s\S]*?justify-content:\s*flex-end;[\s\S]*?margin-left:\s*auto;/);
+  assert.match(builtCss, /\.steps-inline-scope-select,\s*\.steps-inline-model-select\s*\{[\s\S]*?flex:\s*0\s+1\s+auto;/);
+  assert.match(builtCss, /\.steps-inline-scope-select\s+\.select-trigger[\s\S]*?border-radius:\s*var\(--radius-pill\)/);
+  assert.match(builtCss, /\[data-modern-ui="true"\]\s*\.form-row\s*>\s*\.custom-select\s*>\s*\.select-trigger,[\s\S]*?\.steps-inline-scope-select\s+\.select-trigger[\s\S]*?border-radius:\s*var\(--radius-pill\)[\s\S]*?var\(--modern-pill-select-bg\)/);
   assert.match(builtCss, /\.step-anomaly-tag\s*\{/);
   assert.match(builtCss, /\.step-anomaly-tip\s*\{/);
   assert.match(builtCss, /\.steps-anomaly-strip\s*\{/);
   assert.match(builtCss, /\.steps-anomaly-filterbar\s*\{/);
   assert.match(builtCss, /\.sstep-anomaly-dot/);
+  assert.match(builtCss, /\.panel\s*>\s*\.table-scroll-host\s*\{[\s\S]*?margin-right:\s*calc\(-1\s*\*\s*var\(--space-5\)\s*\+\s*2px\)/);
+  assert.match(builtCss, /\.panel\s*>\s*\.table-scroll-host\s*>\s*\.custom-scroll-content\s*\{[\s\S]*?padding-right:\s*calc\(var\(--space-5\)\s*-\s*2px\)/);
+  assert.doesNotMatch(builtCss, /\.models-analytics-pane\s*\{[^}]*padding:\s*var\(--space-3\)\s+0\s+2px/);
+  assert.match(builtCss, /\.trend-tip-sub\.is-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(builtCss, /\.trend-tip-anomaly/);
   assert.match(builtCss, /\[data-modern-ui="true"\]\s*\.step-anomaly-tip/);
   assert.match(builtCss, /\.progress-track\.ctx-segment-meter\s*\{[\s\S]*?height:\s*6px;/);

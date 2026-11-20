@@ -21,6 +21,9 @@
   --modern-surface-card: color-mix(in srgb, var(--surface-panel) 95.2%, #ffffff 4.8%);
   --modern-surface-subtle: color-mix(in srgb, var(--text-primary) 5.2%, transparent);
   --modern-surface-hover: color-mix(in srgb, var(--accent-primary) 11%, color-mix(in srgb, var(--text-primary) 4%, transparent));
+  --modern-pill-select-bg: color-mix(in srgb, var(--text-primary) 8.5%, var(--modern-surface-card));
+  --modern-pill-select-hover: color-mix(in srgb, var(--text-primary) 12.5%, var(--modern-surface-card));
+  --modern-pill-select-open: color-mix(in srgb, var(--text-primary) 15%, var(--modern-surface-card));
   --modern-card-shadow: none;
   --modern-nav-track-bg: var(--modern-surface-card);
   --modern-inline-track-bg: color-mix(in srgb, var(--text-primary) 4.2%, transparent);
@@ -42,6 +45,9 @@
   --modern-surface-card: #ffffff;
   --modern-surface-subtle: hsl(216 42% 97.2%);
   --modern-surface-hover: hsl(216 56% 94.4%);
+  --modern-pill-select-bg: hsl(220 14% 94%);
+  --modern-pill-select-hover: hsl(220 14% 90.5%);
+  --modern-pill-select-open: hsl(220 14% 88.5%);
   --modern-card-shadow: 0 1px 3px rgb(15 23 42 / 0.045), 0 4px 14px rgb(15 23 42 / 0.028);
   --modern-nav-track-bg: hsl(216 28% 94.2%);
   --modern-inline-track-bg: hsl(216 32% 96.2%);
@@ -249,6 +255,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .status-tag.state-running,
 [data-modern-ui="true"] .status-tag.state-synced,
 [data-modern-ui="true"] .status-tag.state-warn,
+[data-modern-ui="true"] .endpoint-ssh-badge,
 [data-modern-ui="true"] .update-badge-btn,
 [data-modern-ui="true"] .wm-update-btn,
 [data-modern-ui="true"] .wm-hover-update-bar,
@@ -463,10 +470,12 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"] .trend-tip-sub,
-[data-modern-ui="true"] .trend-tip-anomaly,
+[data-modern-ui="true"] .trend-tip-cost {
+  background: transparent;
+}
+
 [data-modern-ui="true"] .cons-pop-models {
-  border-top: none;
-  padding-top: 3px;
+  border-top-color: var(--modern-surface-hover);
 }
 
 [data-modern-ui="true"] .cons-source-bar-hit:hover .cons-source-model-bar,
@@ -524,6 +533,17 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: var(--modern-surface-hover);
 }
 
+[data-modern-ui="true"] .data-table tbody tr.is-compaction,
+[data-modern-ui="true"] .data-table:not(.is-virtualized) tbody tr.is-compaction:nth-child(even),
+[data-modern-ui="true"] .data-table.is-virtualized tbody tr.is-stripe-even.is-compaction {
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+}
+
+[data-modern-ui="true"] .data-table tbody tr.is-compaction:hover,
+[data-modern-ui="true"] .data-table.is-virtualized tbody tr.is-stripe-even.is-compaction:hover {
+  background: color-mix(in srgb, var(--accent-primary) 19%, transparent);
+}
+
 [data-modern-ui="true"] .data-table tbody tr.is-anomaly-warn,
 [data-modern-ui="true"] .data-table:not(.is-virtualized) tbody tr.is-anomaly-warn:nth-child(even),
 [data-modern-ui="true"] .data-table.is-virtualized tbody tr.is-stripe-even.is-anomaly-warn {
@@ -546,11 +566,28 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: color-mix(in srgb, var(--metric-danger) 21%, transparent);
 }
 
+[data-modern-ui="true"] .form-row > .custom-select > .select-trigger,
 [data-modern-ui="true"] .steps-inline-scope-select .select-trigger,
 [data-modern-ui="true"] .steps-inline-model-select .select-trigger,
 [data-modern-ui="true"] .sstep-fit-model-select .select-trigger {
   border: none;
-  background: var(--modern-surface-subtle);
+  box-shadow: none;
+  border-radius: var(--radius-pill);
+  background: var(--modern-pill-select-bg);
+}
+
+[data-modern-ui="true"] .form-row > .custom-select > .select-trigger:hover,
+[data-modern-ui="true"] .steps-inline-scope-select .select-trigger:hover,
+[data-modern-ui="true"] .steps-inline-model-select .select-trigger:hover,
+[data-modern-ui="true"] .sstep-fit-model-select .select-trigger:hover {
+  background: var(--modern-pill-select-hover);
+}
+
+[data-modern-ui="true"] .form-row > .custom-select.is-open > .select-trigger,
+[data-modern-ui="true"] .steps-inline-scope-select.is-open .select-trigger,
+[data-modern-ui="true"] .steps-inline-model-select.is-open .select-trigger,
+[data-modern-ui="true"] .sstep-fit-model-select.is-open .select-trigger {
+  background: var(--modern-pill-select-open);
 }
 
 [data-modern-ui="true"] .sstep-card,
@@ -666,12 +703,12 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   border: none;
   background: var(--modern-surface-card);
   box-shadow: var(--shadow-popover);
-  animation: anim-modern-pop-in 150ms var(--ease-modern);
+  animation: anim-modern-tip-fade 120ms var(--ease-modern);
 }
 
 [data-modern-ui="true"] .select-menu.is-above,
 [data-modern-ui="true"] .dt-popover.is-above {
-  animation-name: anim-modern-pop-in-up;
+  transform-origin: bottom right;
 }
 
 [data-modern-ui="true"] .trend-tooltip,

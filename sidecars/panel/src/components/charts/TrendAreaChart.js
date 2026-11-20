@@ -324,7 +324,17 @@ export function createTrendAreaChart() {
   const tipCallsEl = h('span', { className: 'trend-tip-calls text-mono' });
   const tipTokensEl = h('strong', { className: 'trend-tip-tokens text-mono' });
   const tipCostEl = h('span', { className: 'trend-tip-cost text-mono' });
-  const tipSubEl = h('div', { className: 'trend-tip-sub text-mono', hidden: true });
+  const tipInLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legInput') });
+  const tipInValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipCacheLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legCache') });
+  const tipCacheValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipOutLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legOutput') });
+  const tipOutValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipSubEl = h('div', { className: 'trend-tip-sub is-grid', hidden: true }, [
+    h('div', { className: 'trend-tip-stat' }, [tipInLabelEl, tipInValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipCacheLabelEl, tipCacheValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipOutLabelEl, tipOutValEl]),
+  ]);
   const tipModelsEl = h('div', { className: 'cons-pop-models', hidden: true });
 
   const tooltipEl = h(
@@ -455,14 +465,12 @@ export function createTrendAreaChart() {
         slot.outputTokens !== undefined);
     patchAttr(tipSubEl, 'hidden', !hasSubBreakdown);
     if (hasSubBreakdown) {
-      patchText(
-        tipSubEl,
-        t('chart.step.ioSplit', {
-          inTok: formatTokensPrecise(safeSlotTokens(slot.inputTokens)),
-          cacheTok: formatTokensPrecise(safeSlotTokens(slot.cacheReadTokens)),
-          outTok: formatTokensPrecise(safeSlotTokens(slot.outputTokens)),
-        })
-      );
+      patchText(tipInLabelEl, t('cons.legInput'));
+      patchText(tipCacheLabelEl, t('cons.legCache'));
+      patchText(tipOutLabelEl, t('cons.legOutput'));
+      patchText(tipInValEl, formatTokensPrecise(safeSlotTokens(slot.inputTokens)));
+      patchText(tipCacheValEl, formatTokensPrecise(safeSlotTokens(slot.cacheReadTokens)));
+      patchText(tipOutValEl, formatTokensPrecise(safeSlotTokens(slot.outputTokens)));
     }
 
     const modelSegs = Array.isArray(slot.modelSegments) ? slot.modelSegments : [];

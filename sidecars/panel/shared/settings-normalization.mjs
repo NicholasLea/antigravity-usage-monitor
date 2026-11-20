@@ -142,19 +142,19 @@ export const MAX_POPOVER_WIDTH = 1080;
 export const DEFAULT_POPOVER_WIDTH = 580;
 
 /**
- * 归一化界面语言枚举（默认 `'zh-CN'`，支持 `'auto'`/`'system'` 与 `'en-US'`）。
+ * 归一化界面语言枚举（默认 `'auto'`，支持 `'zh-CN'` 及 `'en-US'`）。
  *
  * @param {unknown} lang
  * @returns {'auto'|'zh-CN'|'en-US'}
  */
 export function normalizeLanguageSetting(lang) {
   const raw = String(lang ?? '').trim();
-  if (!raw) return 'zh-CN';
+  if (!raw) return 'auto';
   const lower = raw.toLowerCase();
   if (lower === 'auto' || lower === 'system') return 'auto';
   if (lower === 'en' || lower === 'en-us' || lower.startsWith('en-')) return 'en-US';
   if (lower === 'zh' || lower === 'zh-cn' || lower.startsWith('zh')) return 'zh-CN';
-  return 'zh-CN';
+  return 'auto';
 }
 
 /**
@@ -448,7 +448,24 @@ export function normalizeStandalonePort(port) {
 }
 
 /**
- * 归一化实验性现代化新 UI 开关（默认 `false`）。
+ * 归一化现代化 UI 开关（默认 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+export function normalizeModernUi(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
+  }
+  return Boolean(val);
+}
+
+/**
+ * 归一化旧版实验性新 UI 字段（保留兼容，缺省返回 `false`）。
  *
  * @param {unknown} val
  * @returns {boolean}
