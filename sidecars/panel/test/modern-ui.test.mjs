@@ -1147,7 +1147,11 @@ test('Capsule odometer digit rolling (0.15s) and color transition (0.1s) stay st
 
   // 4. Compiled CSS strictly scopes 150ms roll & 100ms color transition under [data-modern-ui="true"]
   const builtStyles = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
-  assert.match(builtStyles, /\.steps-inline-scope-select\s+\.select-menu[\s\S]*?left:\s*0;\s*right:\s*auto;/);
+  assert.match(builtStyles, /\.steps-inline-scope-select\s+\.select-menu[\s\S]*?left:\s*auto;\s*right:\s*0;/);
+  assert.match(
+    builtStyles,
+    /\[data-modern-ui="true"\]\s+\.select-menu,[\s\S]*?animation:\s*anim-modern-tip-fade\s+120ms/
+  );
   assert.match(builtStyles, /\[data-modern-ui="true"\]\s+\.select-menu\.is-above/);
   assert.match(
     builtStyles,

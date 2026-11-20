@@ -27,7 +27,6 @@ import {
   resolveModelAnomalySummary,
   resolveModelDisplayInfo,
 } from '../core/formatters.js';
-import { createSvgIcon } from '../icons/SvgIcon.js';
 import { getEffectiveLocale, i18nStore, t } from '../i18n/index.js';
 import {
   formatAgentLabel,
@@ -477,7 +476,11 @@ export const StepsDetailView = defineComponent({
     });
     modelsScroll.el.setAttribute('hidden', '');
 
-    const panelTitleTextEl = h('span', { text: t('steps.title') });
+    const headerFiltersEl = h('div', { className: 'steps-header-filters', hidden: true }, [
+      inlineScopeSelect.el,
+      stepsModelSelect.el,
+    ]);
+
     const panelEl = h(
       'section',
       {
@@ -486,14 +489,9 @@ export const StepsDetailView = defineComponent({
       },
       [
         h('div', { className: 'panel-header steps-panel-header' }, [
-          h('span', { className: 'panel-title steps-panel-title' }, [
-            createSvgIcon('table', { size: 13 }),
-            panelTitleTextEl,
-          ]),
           h('div', { className: 'steps-header-controls' }, [
-            inlineScopeSelect.el,
-            stepsModelSelect.el,
             subTabSwitch.el,
+            headerFiltersEl,
           ]),
         ]),
         anomalyFilterBarEl,
@@ -566,7 +564,6 @@ export const StepsDetailView = defineComponent({
     }
 
     function refreshStaticLocaleLabels() {
-      patchText(panelTitleTextEl, t('steps.title'));
       patchText(lineTitleEl, t('steps.lineTitle'));
       patchText(fitTitleEl, t('steps.fitTitle'));
       patchText(modelsSectionTitleEl, t('steps.modelsTitle'));
@@ -786,6 +783,7 @@ export const StepsDetailView = defineComponent({
       );
       const showStepsModelFilter = uiSt.stepsSubTab === 'steps' && hasMultipleModels;
       patchAttr(stepsModelSelect.el, 'hidden', !showStepsModelFilter);
+      patchAttr(headerFiltersEl, 'hidden', !hasSubagents && !showStepsModelFilter);
       if (hasMultipleModels) {
         stepsModelSelect.setProps({
           modelValue: selectedTableModels,

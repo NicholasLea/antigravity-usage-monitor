@@ -15,6 +15,7 @@ import {
 } from '../../core/domPatch.js';
 import {
   buildStepAnomalyDiagnostic,
+  buildStepCompactionDiagnostic,
   resolveModelDisplayInfo,
   speedReasonText,
 } from '../../core/formatters.js';
@@ -22,6 +23,7 @@ import { getEffectiveLocale, t } from '../../i18n/index.js';
 import {
   DEFAULT_STEP_COLUMN_KEYS,
   STEP_COLUMN_REGISTRY,
+  isCompactionStepItem,
 } from '../../registries/stepColumnRegistry.js';
 import {
   formatAgentBadgeText,
@@ -329,7 +331,7 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
     let bestModelObj = firstStep;
     for (const cand of modelCandidates.values()) {
       const disp = resolveModelDisplayInfo(cand, cellCtx?.displaySettings, { fallback: '—' });
-      const len = (disp.baseText?.length || 0) + (disp.compactionSuffix?.length || 0);
+      const len = disp.baseText?.length || 0;
       if (len > bestModelLen) {
         bestModelLen = len;
         bestModelObj = cand;
@@ -509,7 +511,10 @@ export const StepTableWidget = defineComponent({
         return;
       }
       hideTurnTip();
-      patchClasses(anomalyTipEl, { 'is-danger': diag.severity === 'danger' });
+      patchClasses(anomalyTipEl, {
+        'is-danger': diag.severity === 'danger',
+        'is-compaction': diag.severity === 'compaction',
+      });
       patchText(anomalyTipTitleEl, diag.title);
       patchAttr(anomalyTipSubEl, 'hidden', !diag.sub);
       if (diag.sub) patchText(anomalyTipSubEl, diag.sub);
@@ -527,7 +532,10 @@ export const StepTableWidget = defineComponent({
         if (row.detail) {
           itemChildren.push(
             h('div', {
-              className: 'step-anomaly-tip-detail text-mono',
+              className:
+                row.mono === false
+                  ? 'step-anomaly-tip-detail'
+                  : 'step-anomaly-tip-detail text-mono',
               text: row.detail,
             })
           );
@@ -679,16 +687,35 @@ export const StepTableWidget = defineComponent({
       if (event?.target === badge) hideTurnTip();
     }
 
+    function buildStepRowDiagnostic(st, displaySettings, hasStepAnomaly, isCompactionRow) {
+      if (hasStepAnomaly) {
+        const diag = buildStepAnomalyDiagnostic(st);
+        if (diag && isCompactionRow) {
+          return {
+            ...diag,
+            hint: diag.hint
+              ? `${diag.hint} · ${t('steps.compactionAnomalyHint')}`
+              : t('steps.compactionAnomalyHint'),
+          };
+        }
+        return diag;
+      }
+      if (isCompactionRow) {
+        return buildStepCompactionDiagnostic(st, displaySettings);
+      }
+      return null;
+    }
+
     function moveAlongTurnRail(event) {
-      const { badge, prompt, anomalyStep } = hoverRows.get(this);
+      const { badge, prompt, rowDiagGetter } = hoverRows.get(this);
       const rect = this.getBoundingClientRect?.();
       const relX = rect ? (event?.clientX ?? 0) - rect.left : 0;
       if (event?.target !== badge && relX <= 18) {
         showTurnTip(this, prompt);
       } else {
         hideTurnTip();
-        if (anomalyStep) {
-          showAnomalyTip(this, buildStepAnomalyDiagnostic(anomalyStep));
+        if (rowDiagGetter) {
+          showAnomalyTip(this, rowDiagGetter());
         }
       }
     }
@@ -696,8 +723,8 @@ export const StepTableWidget = defineComponent({
     function leaveStepCell(event) {
       const entry = hoverRows.get(this);
       hideTurnTip();
-      if (entry?.anomalyStep && entry.tr && event?.relatedTarget && entry.tr.contains?.(event.relatedTarget)) {
-        showAnomalyTip(this, buildStepAnomalyDiagnostic(entry.anomalyStep));
+      if (entry?.rowDiagGetter && entry.tr && event?.relatedTarget && entry.tr.contains?.(event.relatedTarget)) {
+        showAnomalyTip(this, entry.rowDiagGetter());
       }
     }
 
@@ -991,7 +1018,8 @@ export const StepTableWidget = defineComponent({
             : '';
           const stripeSig = isVirtualized ? (item.isStripeEven ? 'E' : 'O') : 'N';
           const anomalySig = st.anomalySig || '';
-          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
+          const compactSig = isCompactionStepItem(st) ? 'C' : '';
+          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${compactSig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
         },
         createRow: (item) => {
           if (item.isSizer) {
@@ -1236,14 +1264,20 @@ export const StepTableWidget = defineComponent({
           const hasStepAnomaly = Boolean(st?.anomaly && Number(st.anomaly.count) > 0);
           const isAnomalyDanger = Boolean(hasStepAnomaly && st.anomaly.severity === 'danger');
           const isAnomalyWarn = Boolean(hasStepAnomaly && !isAnomalyDanger);
+          const isCompactionRow = isCompactionStepItem(st);
+          const hasRowTip = hasStepAnomaly || isCompactionRow;
+          const rowDiagGetter = hasRowTip
+            ? () => buildStepRowDiagnostic(st, cellCtx.displaySettings, hasStepAnomaly, isCompactionRow)
+            : null;
           patchClasses(tr, {
+            'is-compaction': isCompactionRow,
             'is-anomaly-warn': isAnomalyWarn,
             'is-anomaly-danger': isAnomalyDanger,
           });
-          if (hasStepAnomaly) {
+          if (hasRowTip) {
             const anchorEl = firstTd || tr;
             tr.onmouseenter = () => {
-              showAnomalyTip(anchorEl, buildStepAnomalyDiagnostic(st));
+              showAnomalyTip(anchorEl, rowDiagGetter());
             };
             tr.onmouseleave = hideAnomalyTip;
           } else {
@@ -1268,10 +1302,10 @@ export const StepTableWidget = defineComponent({
             hoverRows.set(hoverTd, {
               badge: refs.agentBadgeEl,
               prompt,
-              anomalyStep: hasStepAnomaly ? st : null,
+              rowDiagGetter,
               tr,
             });
-            const useWholeCellTurnTip = firstColKey === 'step' && !hasStepAnomaly;
+            const useWholeCellTurnTip = firstColKey === 'step' && !hasRowTip;
             hoverTd.onmouseenter = useWholeCellTurnTip ? enterStepCell : null;
             hoverTd.onmousemove = useWholeCellTurnTip ? moveInStepCell : moveAlongTurnRail;
             hoverTd.onmouseleave = leaveStepCell;
@@ -1299,6 +1333,7 @@ export const StepTableWidget = defineComponent({
             patchClasses(tr, {
               'is-stripe-even': false,
               'is-step-entering': false,
+              'is-compaction': false,
               'is-anomaly-warn': false,
               'is-anomaly-danger': false,
             });

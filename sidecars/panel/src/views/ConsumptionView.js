@@ -586,12 +586,11 @@ export const ConsumptionView = defineComponent({
     }
 
     /**
-     * 创建热门模型单行 DOM 结构（模型名称后附专属颜色圆点 + 按总占比缩放的 4 段比例条 + 底部分项脚标）。
+     * 创建热门模型单行 DOM 结构（模型名称 + 按总占比缩放的 4 段比例条 + 底部分项脚标）。
      */
     function createBreakdownItemRow() {
       const nameTextEl = h('span', { className: 'cons-row-title-text' });
-      const modelDotEl = h('span', { className: 'dot-swatch cons-model-dot cons-title-model-dot' });
-      const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl, modelDotEl]);
+      const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl]);
       const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
       const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
       const costEl = h('strong', { className: 'cons-row-cost text-mono' });
@@ -652,7 +651,6 @@ export const ConsumptionView = defineComponent({
         refs: {
           nameEl,
           nameTextEl,
-          modelDotEl,
           pctBadge,
           totalTokEl,
           costEl,
@@ -672,9 +670,9 @@ export const ConsumptionView = defineComponent({
     }
 
     /**
-     * 增量更新热门模型单行的指标文本、名称后的专属颜色圆点与按总占比缩放的 4 段比例条宽度。
+     * 增量更新热门模型单行的指标文本与按总占比缩放的 4 段比例条宽度。
      */
-    function updateBreakdownItemRow(refs, item, grandTotalTokens, modelColor = '') {
+    function updateBreakdownItemRow(refs, item, grandTotalTokens) {
       patchText(refs.inLbl, t('cons.footInput'));
       patchText(refs.cacheLbl, t('cons.footCache'));
       patchText(refs.outLbl, t('cons.footOutput'));
@@ -683,10 +681,6 @@ export const ConsumptionView = defineComponent({
       const displayLabel = item.label || item.name || item.shortName || '—';
       patchText(refs.nameTextEl, displayLabel);
       patchAttr(refs.nameEl, 'title', item.title || displayLabel);
-      patchAttr(refs.modelDotEl, 'hidden', !modelColor);
-      if (modelColor) {
-        patchStyleVar(refs.modelDotEl, '--dot-color', modelColor);
-      }
       const total = Number(item.totalTokens || 0);
       const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
       const scaleRatio =
@@ -1169,23 +1163,17 @@ export const ConsumptionView = defineComponent({
       });
       trendChart.update(enrichedTrendSeries);
 
-      // 3. 同步热门模型列表（名称后带专属颜色圆点 + 4 段条按总占比缩放长度）
+      // 3. 同步热门模型列表（4 段条按总占比缩放长度）
       patchKeyedList(modelsListEl, models, {
         keyFn: (m) => m.displayText || m.label || m.shortName,
-        sigFn: (m) => {
-          const seed = getCanonicalModelColorSeed(m);
-          const color = modelColorMap.get(seed) || resolveDeterministicModelColor(seed);
-          return `${localeSig}:${m.displayText}:${m.displayTitle}:${color}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${modelsTotalTok}`;
-        },
+        sigFn: (m) =>
+          `${localeSig}:${m.displayText}:${m.displayTitle}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${modelsTotalTok}`,
         createRow: createBreakdownItemRow,
         updateRow: (refs, m) => {
-          const seed = getCanonicalModelColorSeed(m);
-          const color = modelColorMap.get(seed) || resolveDeterministicModelColor(seed);
           updateBreakdownItemRow(
             refs,
             { ...m, label: m.displayText, title: m.displayTitle },
-            modelsTotalTok,
-            color
+            modelsTotalTok
           );
         },
       });

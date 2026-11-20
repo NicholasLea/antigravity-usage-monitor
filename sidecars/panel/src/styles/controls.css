@@ -31,8 +31,8 @@
 
 .steps-inline-scope-select .select-menu,
 .steps-inline-model-select .select-menu {
-  left: 0;
-  right: auto;
+  left: auto;
+  right: 0;
   min-width: 220px;
   max-width: min(320px, calc(100vw - 24px));
 }
@@ -306,12 +306,41 @@
   font-size: var(--fs-base);
   cursor: pointer;
   text-align: left;
-  transition: background-color var(--dur-instant) var(--ease-fast);
+  transition:
+    background-color var(--dur-instant) var(--ease-fast),
+    border-color var(--dur-instant) var(--ease-fast),
+    box-shadow var(--dur-instant) var(--ease-fast);
+}
+
+.select-trigger .svg-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
 }
 
 .select-trigger:hover,
 .custom-select.is-open .select-trigger {
   background: var(--surface-hover);
+}
+
+.form-row > .custom-select > .select-trigger {
+  min-height: calc(28px * var(--ui-font-scale, 1));
+  padding: 3px 12px;
+  background: color-mix(in srgb, var(--text-primary) 7.5%, var(--surface-panel));
+  border: none;
+  border-radius: var(--radius-pill);
+}
+
+.form-row > .custom-select > .select-trigger:hover {
+  background: color-mix(in srgb, var(--text-primary) 11.5%, var(--surface-panel));
+}
+
+.form-row > .custom-select.is-open > .select-trigger {
+  background: color-mix(in srgb, var(--text-primary) 14%, var(--surface-panel));
+}
+
+.form-row > .custom-select > .select-trigger:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
 }
 
 .select-label {

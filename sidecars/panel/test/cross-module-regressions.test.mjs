@@ -963,8 +963,8 @@ test('post-compaction context preserves static channels + checkpoint summary, ca
   const stylesCss = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
   assert.match(stylesCss, /\.wm-ctx-seg\s*\{[^}]*width:\s*58px;/);
   assert.match(stylesCss, /\.wm-ctx-pct\s*\{[^}]*max-width:\s*none;[^}]*overflow:\s*visible;[^}]*text-overflow:\s*clip;/s);
-  assert.match(stylesCss, /\.step-model-compact\s*\{[^}]*color:\s*var\(--accent-primary\);/);
-  assert.doesNotMatch(stylesCss, /\.step-model-compact\s*\{[^}]*--metric-info/);
+  assert.match(stylesCss, /\.data-table\s+tbody\s+tr\.is-compaction\s*\{[^}]*var\(--accent-primary\)/);
+  assert.doesNotMatch(stylesCss, /\.data-table\s+tbody\s+tr\.is-compaction\s*\{[^}]*--metric-info/);
   assert.match(stylesCss, /\.long-pill-nav\s*\{[^}]*container-type:\s*inline-size;[^}]*minmax\(0,\s*1fr\)[^}]*overflow:\s*hidden;/s);
   assert.match(stylesCss, /\.pill-tab\s*\{[^}]*min-width:\s*0;/s);
   assert.match(stylesCss, /@container\s*\(max-width:\s*30em\)\s*\{[\s\S]*?\.pill-tab-badge\s*\{\s*display:\s*none\s*!important;/);

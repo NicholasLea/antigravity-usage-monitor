@@ -56,6 +56,7 @@ export const CustomSelect = defineComponent({
   setup({ getProps, setProps, emit, onCleanup }) {
     let isOpen = false;
     let focusedIndex = -1;
+    let lastOpenMenuLayoutSig = '';
 
     const initialIcon = getProps().icon;
     const leadIcon = createSvgIcon(initialIcon || 'bolt', { size: 13 });
@@ -134,6 +135,15 @@ export const CustomSelect = defineComponent({
       }
     }
 
+    function buildMenuLayoutSig(options = [], labelText = '') {
+      let sig = `${labelText}|${options.length}`;
+      for (let i = 0; i < options.length; i++) {
+        const o = options[i];
+        sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.meta ?? ''}`;
+      }
+      return sig;
+    }
+
     function toggleOpen(nextOpen) {
       isOpen = Boolean(nextOpen);
       if (isOpen) {
@@ -144,6 +154,9 @@ export const CustomSelect = defineComponent({
           opts.findIndex((o) => selSet.has(o.value))
         );
         renderMenuOptions();
+        lastOpenMenuLayoutSig = buildMenuLayoutSig(opts, triggerLabel.textContent || '');
+      } else {
+        lastOpenMenuLayoutSig = '';
       }
       patchClasses(rootEl, { 'is-open': isOpen });
       patchAttr(triggerBtn, 'aria-expanded', isOpen ? 'true' : 'false');
@@ -343,7 +356,11 @@ export const CustomSelect = defineComponent({
       patchAttr(triggerBtn, 'title', titleText);
       if (isOpen) {
         renderMenuOptions();
-        positionMenu();
+        const nextLayoutSig = buildMenuLayoutSig(options, labelText);
+        if (nextLayoutSig !== lastOpenMenuLayoutSig) {
+          lastOpenMenuLayoutSig = nextLayoutSig;
+          positionMenu();
+        }
       }
     }
 

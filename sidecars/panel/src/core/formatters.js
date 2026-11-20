@@ -222,6 +222,42 @@ export function buildStepAnomalyDiagnostic(st) {
   };
 }
 
+export function buildStepCompactionDiagnostic(st, displaySettings = {}) {
+  if (!st || typeof st !== 'object') return null;
+  const disp = resolveModelDisplayInfo(st, displaySettings, { fallback: '' });
+  const promptTok =
+    Math.max(0, Number(st.inputTokens || 0)) + Math.max(0, Number(st.cacheReadTokens || 0));
+  const outTok = Math.max(0, Number(st.outputTokens || 0));
+  const title = t('steps.compactionStepTitle', { step: Number(st.stepIndex ?? 0) });
+  const rows =
+    promptTok > 0 || outTok > 0
+      ? [
+          {
+            text: t('steps.compactionSummaryRow', {
+              input: formatTokens(promptTok),
+              output: formatTokens(outTok),
+            }),
+            detail: t('steps.compactionDetailHint'),
+            mono: false,
+            danger: false,
+          },
+        ]
+      : [
+          {
+            text: t('steps.compactionDetailHint'),
+            detail: '',
+            danger: false,
+          },
+        ];
+  return {
+    title,
+    sub: disp.baseText || '',
+    rows,
+    hint: '',
+    severity: 'compaction',
+  };
+}
+
 export function buildModelAnomalyDiagnostic(m) {
   const sum = resolveModelAnomalySummary(m);
   if (!sum) return null;

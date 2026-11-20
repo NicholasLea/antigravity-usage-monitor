@@ -1368,6 +1368,10 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.anomalyKind.canceled': '用户取消',
   'steps.anomalyStepTitle': '#{step} · 异常 {count} 次',
   'steps.anomalyDelayPart': '退避 {sec}s',
+  'steps.compactionStepTitle': '#{step} · 自动压缩',
+  'steps.compactionSummaryRow': '输入 {input} → 摘要输出 {output}',
+  'steps.compactionDetailHint': '系统自动触发的上下文压缩步骤，用于折叠历史对话以释放窗口空间',
+  'steps.compactionAnomalyHint': '该步骤同时为系统自动压缩步骤',
   'steps.anomalyTerminalTag': '中止',
   'steps.anomalyModelTitle': '{model} · 异常 {count} 次',
   'steps.anomalyModelSub': '涉及 {steps} 步',
@@ -2073,6 +2077,10 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.anomalyKind.canceled': 'Canceled by User',
   'steps.anomalyStepTitle': '#{step} · {count} Retries / Errors',
   'steps.anomalyDelayPart': 'Backoff {sec}s',
+  'steps.compactionStepTitle': '#{step} · Auto-Compaction',
+  'steps.compactionSummaryRow': 'Input {input} → Summary {output}',
+  'steps.compactionDetailHint': 'Automatic context compaction step triggered to summarize history and free window space',
+  'steps.compactionAnomalyHint': 'This step is also an auto-compaction step',
   'steps.anomalyTerminalTag': 'Stopped',
   'steps.anomalyModelTitle': '{model} · {count} Retries / Errors',
   'steps.anomalyModelSub': '{steps} steps affected',
@@ -3268,7 +3276,22 @@ function positionAnchoredPopup(
   popupEl.style.maxHeight = '';
 
   const availWidth = Math.max(120, Math.floor(bound.width - margin * 2));
-  popupEl.style.maxWidth = `${availWidth}px`;
+  let cssMaxW = NaN;
+  if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+    try {
+      const rawMaxW = window.getComputedStyle(popupEl)?.maxWidth;
+      if (rawMaxW && rawMaxW !== 'none') {
+        cssMaxW = Number.parseFloat(rawMaxW);
+      }
+    } catch {
+      // 忽略 Mock DOM 样式查询异常
+    }
+  }
+  const effectiveMaxW =
+    Number.isFinite(cssMaxW) && cssMaxW > 0
+      ? Math.max(120, Math.min(availWidth, Math.floor(cssMaxW)))
+      : availWidth;
+  popupEl.style.maxWidth = `${effectiveMaxW}px`;
 
   const rawRect = popupEl.getBoundingClientRect?.();
   // 优先读取 offsetWidth，避免入场动画 scale(0.975) 导致测宽偏小
@@ -3276,10 +3299,13 @@ function positionAnchoredPopup(
     Number(popupEl.offsetWidth || 0),
     Math.ceil(Number(rawRect?.width || 0))
   );
-  if (naturalW > availWidth) {
+  if (naturalW > effectiveMaxW) {
     popupEl.style.minWidth = '0px';
   }
-  const popupW = Math.min(availWidth, naturalW > 0 ? naturalW : Math.max(triggerRect.width, 210));
+  const popupW = Math.min(
+    effectiveMaxW,
+    naturalW > 0 ? naturalW : Math.max(triggerRect.width, 210)
+  );
 
   const safeLeft = bound.left + margin;
   const safeRight = bound.right - margin;
@@ -3422,7 +3448,7 @@ return { defineComponent };
 })();
 
 // --- src/core/formatters.js ---
-const { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
+const { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
 /**
  * @fileoverview Pure formatting utilities for speed metrics, token counts,
  * USD estimates, countdown timers, and custom datetime displays.
@@ -3632,6 +3658,42 @@ function buildStepAnomalyDiagnostic(st) {
     rows,
     hint: '',
     severity: a.severity === 'danger' ? 'danger' : 'warn',
+  };
+}
+
+function buildStepCompactionDiagnostic(st, displaySettings = {}) {
+  if (!st || typeof st !== 'object') return null;
+  const disp = resolveModelDisplayInfo(st, displaySettings, { fallback: '' });
+  const promptTok =
+    Math.max(0, Number(st.inputTokens || 0)) + Math.max(0, Number(st.cacheReadTokens || 0));
+  const outTok = Math.max(0, Number(st.outputTokens || 0));
+  const title = t('steps.compactionStepTitle', { step: Number(st.stepIndex ?? 0) });
+  const rows =
+    promptTok > 0 || outTok > 0
+      ? [
+          {
+            text: t('steps.compactionSummaryRow', {
+              input: formatTokens(promptTok),
+              output: formatTokens(outTok),
+            }),
+            detail: t('steps.compactionDetailHint'),
+            mono: false,
+            danger: false,
+          },
+        ]
+      : [
+          {
+            text: t('steps.compactionDetailHint'),
+            detail: '',
+            danger: false,
+          },
+        ];
+  return {
+    title,
+    sub: disp.baseText || '',
+    rows,
+    hint: '',
+    severity: 'compaction',
   };
 }
 
@@ -4444,7 +4506,7 @@ function buildDeterministicModelColorMap(models = []) {
 
   return colorMap;
 }
-return { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+return { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
 })();
 
 // --- src/core/httpClient.js ---
@@ -7057,6 +7119,7 @@ const CustomSelect = defineComponent({
   setup({ getProps, setProps, emit, onCleanup }) {
     let isOpen = false;
     let focusedIndex = -1;
+    let lastOpenMenuLayoutSig = '';
 
     const initialIcon = getProps().icon;
     const leadIcon = createSvgIcon(initialIcon || 'bolt', { size: 13 });
@@ -7135,6 +7198,15 @@ const CustomSelect = defineComponent({
       }
     }
 
+    function buildMenuLayoutSig(options = [], labelText = '') {
+      let sig = `${labelText}|${options.length}`;
+      for (let i = 0; i < options.length; i++) {
+        const o = options[i];
+        sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.meta ?? ''}`;
+      }
+      return sig;
+    }
+
     function toggleOpen(nextOpen) {
       isOpen = Boolean(nextOpen);
       if (isOpen) {
@@ -7145,6 +7217,9 @@ const CustomSelect = defineComponent({
           opts.findIndex((o) => selSet.has(o.value))
         );
         renderMenuOptions();
+        lastOpenMenuLayoutSig = buildMenuLayoutSig(opts, triggerLabel.textContent || '');
+      } else {
+        lastOpenMenuLayoutSig = '';
       }
       patchClasses(rootEl, { 'is-open': isOpen });
       patchAttr(triggerBtn, 'aria-expanded', isOpen ? 'true' : 'false');
@@ -7344,7 +7419,11 @@ const CustomSelect = defineComponent({
       patchAttr(triggerBtn, 'title', titleText);
       if (isOpen) {
         renderMenuOptions();
-        positionMenu();
+        const nextLayoutSig = buildMenuLayoutSig(options, labelText);
+        if (nextLayoutSig !== lastOpenMenuLayoutSig) {
+          lastOpenMenuLayoutSig = nextLayoutSig;
+          positionMenu();
+        }
       }
     }
 
@@ -8708,7 +8787,17 @@ function createTrendAreaChart() {
   const tipCallsEl = h('span', { className: 'trend-tip-calls text-mono' });
   const tipTokensEl = h('strong', { className: 'trend-tip-tokens text-mono' });
   const tipCostEl = h('span', { className: 'trend-tip-cost text-mono' });
-  const tipSubEl = h('div', { className: 'trend-tip-sub text-mono', hidden: true });
+  const tipInLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legInput') });
+  const tipInValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipCacheLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legCache') });
+  const tipCacheValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipOutLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legOutput') });
+  const tipOutValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipSubEl = h('div', { className: 'trend-tip-sub is-grid', hidden: true }, [
+    h('div', { className: 'trend-tip-stat' }, [tipInLabelEl, tipInValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipCacheLabelEl, tipCacheValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipOutLabelEl, tipOutValEl]),
+  ]);
   const tipModelsEl = h('div', { className: 'cons-pop-models', hidden: true });
 
   const tooltipEl = h(
@@ -8839,14 +8928,12 @@ function createTrendAreaChart() {
         slot.outputTokens !== undefined);
     patchAttr(tipSubEl, 'hidden', !hasSubBreakdown);
     if (hasSubBreakdown) {
-      patchText(
-        tipSubEl,
-        t('chart.step.ioSplit', {
-          inTok: formatTokensPrecise(safeSlotTokens(slot.inputTokens)),
-          cacheTok: formatTokensPrecise(safeSlotTokens(slot.cacheReadTokens)),
-          outTok: formatTokensPrecise(safeSlotTokens(slot.outputTokens)),
-        })
-      );
+      patchText(tipInLabelEl, t('cons.legInput'));
+      patchText(tipCacheLabelEl, t('cons.legCache'));
+      patchText(tipOutLabelEl, t('cons.legOutput'));
+      patchText(tipInValEl, formatTokensPrecise(safeSlotTokens(slot.inputTokens)));
+      patchText(tipCacheValEl, formatTokensPrecise(safeSlotTokens(slot.cacheReadTokens)));
+      patchText(tipOutValEl, formatTokensPrecise(safeSlotTokens(slot.outputTokens)));
     }
 
     const modelSegs = Array.isArray(slot.modelSegments) ? slot.modelSegments : [];
@@ -10251,11 +10338,23 @@ function createSessionLineChart() {
   const tipHeadRight = h('span', { className: 'trend-tip-calls text-mono' });
   const tipMainLeft = h('strong', { className: 'trend-tip-tokens text-mono' });
   const tipMainRight = h('span', { className: 'trend-tip-cost text-mono' });
+  const tipInLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legInput') });
+  const tipInValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipCacheLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legCache') });
+  const tipCacheValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipOutLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legOutput') });
+  const tipOutValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
+  const tipIoGrid = h('div', { className: 'trend-tip-sub is-grid', hidden: true }, [
+    h('div', { className: 'trend-tip-stat' }, [tipInLabelEl, tipInValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipCacheLabelEl, tipCacheValEl]),
+    h('div', { className: 'trend-tip-stat' }, [tipOutLabelEl, tipOutValEl]),
+  ]);
   const tipSub = h('div', { className: 'trend-tip-sub text-mono', hidden: true });
   const tipAnomaly = h('div', { className: 'trend-tip-anomaly text-mono', hidden: true });
   const tooltipEl = h('div', { className: 'trend-tooltip', hidden: true }, [
     h('div', { className: 'trend-tip-head' }, [tipHeadLeft, tipHeadRight]),
     h('div', { className: 'trend-tip-main' }, [tipMainLeft, tipMainRight]),
+    tipIoGrid,
     tipSub,
     tipAnomaly,
   ]);
@@ -10332,8 +10431,18 @@ function createSessionLineChart() {
       pt.valid ? formatChartMetricValue(currentMetric, pt.value) : t('chart.step.excluded')
     );
     patchText(tipMainRight, pt.secondaryRight || '');
-    patchAttr(tipSub, 'hidden', !pt.subDetail);
-    if (pt.subDetail) {
+    const hasIoParts = Boolean(pt.ioParts);
+    patchAttr(tipIoGrid, 'hidden', !hasIoParts);
+    if (hasIoParts) {
+      patchText(tipInLabelEl, t('cons.legInput'));
+      patchText(tipCacheLabelEl, t('cons.legCache'));
+      patchText(tipOutLabelEl, t('cons.legOutput'));
+      patchText(tipInValEl, pt.ioParts.inTok);
+      patchText(tipCacheValEl, pt.ioParts.cacheTok);
+      patchText(tipOutValEl, pt.ioParts.outTok);
+    }
+    patchAttr(tipSub, 'hidden', hasIoParts || !pt.subDetail);
+    if (!hasIoParts && pt.subDetail) {
       patchText(tipSub, pt.subDetail);
     }
     patchAttr(tipAnomaly, 'hidden', !pt.anomalySummary);
@@ -10576,15 +10685,17 @@ function createSessionLineChart() {
       let value = 0;
       let secondaryRight = '';
       let subDetail = '';
+      let ioParts = null;
 
       if (metric === 'totalTokens') {
         value = isMultiCompare ? modelCumTok : runningTokens;
         secondaryRight = t('chart.step.stepAdd', { tokens: formatTokens(stepTotalTok) });
-        subDetail = t('chart.step.ioSplit', {
+        ioParts = {
           inTok: formatTokens(inTok),
           cacheTok: formatTokens(cacheTok),
           outTok: formatTokens(outTok),
-        });
+        };
+        subDetail = t('chart.step.ioSplit', ioParts);
       } else if (metric === 'context') {
         value = ctxTok;
         if (hasPrevCtx) {
@@ -10667,6 +10778,7 @@ function createSessionLineChart() {
         value,
         secondaryRight,
         subDetail,
+        ioParts,
         anomalySummary,
         anomalySeverity: st.anomaly?.severity || '',
       };
@@ -14666,7 +14778,7 @@ return { OVERVIEW_WIDGET_KEYS, OVERVIEW_WIDGET_REGISTRY, getOverviewModuleOption
 })();
 
 // --- src/registries/stepColumnRegistry.js ---
-const { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, STEP_COLUMN_REGISTRY, getStepColumnOptions } = (() => {
+const { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions } = (() => {
 /**
  * @fileoverview Decoupled Step Table Column Registry (`stepColumnRegistry.js`).
  * Defines all 12 customizable columns for `StepsDetailView` ("按步查看"),
@@ -14761,6 +14873,13 @@ function formatStepClockTime(createdAtMs) {
   return { text: hhmmss, title: full };
 }
 
+function isCompactionStepItem(st) {
+  if (!st || typeof st !== 'object') return false;
+  if (st.isCompactionStep) return true;
+  const raw = `${st.activeModelShort ?? st.modelShort ?? ''} ${st.activeModelLabel ?? st.modelLabel ?? ''} ${st.activeModelUpstream ?? st.modelUpstream ?? ''}`;
+  return /·(?:压缩|compact)(?=\s|$)|\[自动压缩\]/iu.test(raw);
+}
+
 const STEP_COLUMN_REGISTRY = Object.freeze({
   step: {
     key: 'step',
@@ -14800,21 +14919,17 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.model.opt'),
     sigPart: (st, ctx) => {
       const disp = resolveModelDisplayInfo(st, ctx.displaySettings, { fallback: '—' });
-      return `${disp.baseText}:${disp.compactionSuffix}:${disp.title}`;
+      return `${disp.baseText}:${disp.title}`;
     },
     createCell: () => {
       const nameEl = h('span', { className: 'step-model-name' });
-      const compactEl = h('span', { className: 'step-model-compact', hidden: true });
-      const wrapEl = h('span', { className: 'step-model-cell' }, [nameEl, compactEl]);
+      const wrapEl = h('span', { className: 'step-model-cell' }, [nameEl]);
       const td = h('td', {}, [wrapEl]);
-      return { td, refs: { td, wrapEl, nameEl, compactEl } };
+      return { td, refs: { td, wrapEl, nameEl } };
     },
     updateCell: (refs, st, ctx) => {
       const modelDisplay = resolveModelDisplayInfo(st, ctx.displaySettings, { fallback: '—' });
       patchText(refs.nameEl, modelDisplay.baseText);
-      const suffix = modelDisplay.compactionSuffix || '';
-      patchText(refs.compactEl, suffix);
-      patchAttr(refs.compactEl, 'hidden', !suffix);
       patchAttr(refs.td, 'title', modelDisplay.title);
     },
   },
@@ -15083,7 +15198,7 @@ function getStepColumnOptions(
     label: STEP_COLUMN_REGISTRY[key].optLabel(ctx),
   }));
 }
-return { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, STEP_COLUMN_REGISTRY, getStepColumnOptions };
+return { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions };
 })();
 
 // --- src/components/widgets/CapsuleBarWidget.js ---
@@ -15959,7 +16074,7 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
     let bestModelObj = firstStep;
     for (const cand of modelCandidates.values()) {
       const disp = resolveModelDisplayInfo(cand, cellCtx?.displaySettings, { fallback: '—' });
-      const len = (disp.baseText?.length || 0) + (disp.compactionSuffix?.length || 0);
+      const len = disp.baseText?.length || 0;
       if (len > bestModelLen) {
         bestModelLen = len;
         bestModelObj = cand;
@@ -16139,7 +16254,10 @@ const StepTableWidget = defineComponent({
         return;
       }
       hideTurnTip();
-      patchClasses(anomalyTipEl, { 'is-danger': diag.severity === 'danger' });
+      patchClasses(anomalyTipEl, {
+        'is-danger': diag.severity === 'danger',
+        'is-compaction': diag.severity === 'compaction',
+      });
       patchText(anomalyTipTitleEl, diag.title);
       patchAttr(anomalyTipSubEl, 'hidden', !diag.sub);
       if (diag.sub) patchText(anomalyTipSubEl, diag.sub);
@@ -16157,7 +16275,10 @@ const StepTableWidget = defineComponent({
         if (row.detail) {
           itemChildren.push(
             h('div', {
-              className: 'step-anomaly-tip-detail text-mono',
+              className:
+                row.mono === false
+                  ? 'step-anomaly-tip-detail'
+                  : 'step-anomaly-tip-detail text-mono',
               text: row.detail,
             })
           );
@@ -16309,16 +16430,35 @@ const StepTableWidget = defineComponent({
       if (event?.target === badge) hideTurnTip();
     }
 
+    function buildStepRowDiagnostic(st, displaySettings, hasStepAnomaly, isCompactionRow) {
+      if (hasStepAnomaly) {
+        const diag = buildStepAnomalyDiagnostic(st);
+        if (diag && isCompactionRow) {
+          return {
+            ...diag,
+            hint: diag.hint
+              ? `${diag.hint} · ${t('steps.compactionAnomalyHint')}`
+              : t('steps.compactionAnomalyHint'),
+          };
+        }
+        return diag;
+      }
+      if (isCompactionRow) {
+        return buildStepCompactionDiagnostic(st, displaySettings);
+      }
+      return null;
+    }
+
     function moveAlongTurnRail(event) {
-      const { badge, prompt, anomalyStep } = hoverRows.get(this);
+      const { badge, prompt, rowDiagGetter } = hoverRows.get(this);
       const rect = this.getBoundingClientRect?.();
       const relX = rect ? (event?.clientX ?? 0) - rect.left : 0;
       if (event?.target !== badge && relX <= 18) {
         showTurnTip(this, prompt);
       } else {
         hideTurnTip();
-        if (anomalyStep) {
-          showAnomalyTip(this, buildStepAnomalyDiagnostic(anomalyStep));
+        if (rowDiagGetter) {
+          showAnomalyTip(this, rowDiagGetter());
         }
       }
     }
@@ -16326,8 +16466,8 @@ const StepTableWidget = defineComponent({
     function leaveStepCell(event) {
       const entry = hoverRows.get(this);
       hideTurnTip();
-      if (entry?.anomalyStep && entry.tr && event?.relatedTarget && entry.tr.contains?.(event.relatedTarget)) {
-        showAnomalyTip(this, buildStepAnomalyDiagnostic(entry.anomalyStep));
+      if (entry?.rowDiagGetter && entry.tr && event?.relatedTarget && entry.tr.contains?.(event.relatedTarget)) {
+        showAnomalyTip(this, entry.rowDiagGetter());
       }
     }
 
@@ -16621,7 +16761,8 @@ const StepTableWidget = defineComponent({
             : '';
           const stripeSig = isVirtualized ? (item.isStripeEven ? 'E' : 'O') : 'N';
           const anomalySig = st.anomalySig || '';
-          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
+          const compactSig = isCompactionStepItem(st) ? 'C' : '';
+          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${compactSig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
         },
         createRow: (item) => {
           if (item.isSizer) {
@@ -16866,14 +17007,20 @@ const StepTableWidget = defineComponent({
           const hasStepAnomaly = Boolean(st?.anomaly && Number(st.anomaly.count) > 0);
           const isAnomalyDanger = Boolean(hasStepAnomaly && st.anomaly.severity === 'danger');
           const isAnomalyWarn = Boolean(hasStepAnomaly && !isAnomalyDanger);
+          const isCompactionRow = isCompactionStepItem(st);
+          const hasRowTip = hasStepAnomaly || isCompactionRow;
+          const rowDiagGetter = hasRowTip
+            ? () => buildStepRowDiagnostic(st, cellCtx.displaySettings, hasStepAnomaly, isCompactionRow)
+            : null;
           patchClasses(tr, {
+            'is-compaction': isCompactionRow,
             'is-anomaly-warn': isAnomalyWarn,
             'is-anomaly-danger': isAnomalyDanger,
           });
-          if (hasStepAnomaly) {
+          if (hasRowTip) {
             const anchorEl = firstTd || tr;
             tr.onmouseenter = () => {
-              showAnomalyTip(anchorEl, buildStepAnomalyDiagnostic(st));
+              showAnomalyTip(anchorEl, rowDiagGetter());
             };
             tr.onmouseleave = hideAnomalyTip;
           } else {
@@ -16898,10 +17045,10 @@ const StepTableWidget = defineComponent({
             hoverRows.set(hoverTd, {
               badge: refs.agentBadgeEl,
               prompt,
-              anomalyStep: hasStepAnomaly ? st : null,
+              rowDiagGetter,
               tr,
             });
-            const useWholeCellTurnTip = firstColKey === 'step' && !hasStepAnomaly;
+            const useWholeCellTurnTip = firstColKey === 'step' && !hasRowTip;
             hoverTd.onmouseenter = useWholeCellTurnTip ? enterStepCell : null;
             hoverTd.onmousemove = useWholeCellTurnTip ? moveInStepCell : moveAlongTurnRail;
             hoverTd.onmouseleave = leaveStepCell;
@@ -16929,6 +17076,7 @@ const StepTableWidget = defineComponent({
             patchClasses(tr, {
               'is-stripe-even': false,
               'is-step-entering': false,
+              'is-compaction': false,
               'is-anomaly-warn': false,
               'is-anomaly-danger': false,
             });
@@ -22080,12 +22228,11 @@ const ConsumptionView = defineComponent({
     }
 
     /**
-     * 创建热门模型单行 DOM 结构（模型名称后附专属颜色圆点 + 按总占比缩放的 4 段比例条 + 底部分项脚标）。
+     * 创建热门模型单行 DOM 结构（模型名称 + 按总占比缩放的 4 段比例条 + 底部分项脚标）。
      */
     function createBreakdownItemRow() {
       const nameTextEl = h('span', { className: 'cons-row-title-text' });
-      const modelDotEl = h('span', { className: 'dot-swatch cons-model-dot cons-title-model-dot' });
-      const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl, modelDotEl]);
+      const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl]);
       const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
       const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
       const costEl = h('strong', { className: 'cons-row-cost text-mono' });
@@ -22146,7 +22293,6 @@ const ConsumptionView = defineComponent({
         refs: {
           nameEl,
           nameTextEl,
-          modelDotEl,
           pctBadge,
           totalTokEl,
           costEl,
@@ -22166,9 +22312,9 @@ const ConsumptionView = defineComponent({
     }
 
     /**
-     * 增量更新热门模型单行的指标文本、名称后的专属颜色圆点与按总占比缩放的 4 段比例条宽度。
+     * 增量更新热门模型单行的指标文本与按总占比缩放的 4 段比例条宽度。
      */
-    function updateBreakdownItemRow(refs, item, grandTotalTokens, modelColor = '') {
+    function updateBreakdownItemRow(refs, item, grandTotalTokens) {
       patchText(refs.inLbl, t('cons.footInput'));
       patchText(refs.cacheLbl, t('cons.footCache'));
       patchText(refs.outLbl, t('cons.footOutput'));
@@ -22177,10 +22323,6 @@ const ConsumptionView = defineComponent({
       const displayLabel = item.label || item.name || item.shortName || '—';
       patchText(refs.nameTextEl, displayLabel);
       patchAttr(refs.nameEl, 'title', item.title || displayLabel);
-      patchAttr(refs.modelDotEl, 'hidden', !modelColor);
-      if (modelColor) {
-        patchStyleVar(refs.modelDotEl, '--dot-color', modelColor);
-      }
       const total = Number(item.totalTokens || 0);
       const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
       const scaleRatio =
@@ -22663,23 +22805,17 @@ const ConsumptionView = defineComponent({
       });
       trendChart.update(enrichedTrendSeries);
 
-      // 3. 同步热门模型列表（名称后带专属颜色圆点 + 4 段条按总占比缩放长度）
+      // 3. 同步热门模型列表（4 段条按总占比缩放长度）
       patchKeyedList(modelsListEl, models, {
         keyFn: (m) => m.displayText || m.label || m.shortName,
-        sigFn: (m) => {
-          const seed = getCanonicalModelColorSeed(m);
-          const color = modelColorMap.get(seed) || resolveDeterministicModelColor(seed);
-          return `${localeSig}:${m.displayText}:${m.displayTitle}:${color}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${modelsTotalTok}`;
-        },
+        sigFn: (m) =>
+          `${localeSig}:${m.displayText}:${m.displayTitle}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${modelsTotalTok}`,
         createRow: createBreakdownItemRow,
         updateRow: (refs, m) => {
-          const seed = getCanonicalModelColorSeed(m);
-          const color = modelColorMap.get(seed) || resolveDeterministicModelColor(seed);
           updateBreakdownItemRow(
             refs,
             { ...m, label: m.displayText, title: m.displayTitle },
-            modelsTotalTok,
-            color
+            modelsTotalTok
           );
         },
       });
@@ -23331,7 +23467,11 @@ const StepsDetailView = defineComponent({
     });
     modelsScroll.el.setAttribute('hidden', '');
 
-    const panelTitleTextEl = h('span', { text: t('steps.title') });
+    const headerFiltersEl = h('div', { className: 'steps-header-filters', hidden: true }, [
+      inlineScopeSelect.el,
+      stepsModelSelect.el,
+    ]);
+
     const panelEl = h(
       'section',
       {
@@ -23340,14 +23480,9 @@ const StepsDetailView = defineComponent({
       },
       [
         h('div', { className: 'panel-header steps-panel-header' }, [
-          h('span', { className: 'panel-title steps-panel-title' }, [
-            createSvgIcon('table', { size: 13 }),
-            panelTitleTextEl,
-          ]),
           h('div', { className: 'steps-header-controls' }, [
-            inlineScopeSelect.el,
-            stepsModelSelect.el,
             subTabSwitch.el,
+            headerFiltersEl,
           ]),
         ]),
         anomalyFilterBarEl,
@@ -23420,7 +23555,6 @@ const StepsDetailView = defineComponent({
     }
 
     function refreshStaticLocaleLabels() {
-      patchText(panelTitleTextEl, t('steps.title'));
       patchText(lineTitleEl, t('steps.lineTitle'));
       patchText(fitTitleEl, t('steps.fitTitle'));
       patchText(modelsSectionTitleEl, t('steps.modelsTitle'));
@@ -23640,6 +23774,7 @@ const StepsDetailView = defineComponent({
       );
       const showStepsModelFilter = uiSt.stepsSubTab === 'steps' && hasMultipleModels;
       patchAttr(stepsModelSelect.el, 'hidden', !showStepsModelFilter);
+      patchAttr(headerFiltersEl, 'hidden', !hasSubagents && !showStepsModelFilter);
       if (hasMultipleModels) {
         stepsModelSelect.setProps({
           modelValue: selectedTableModels,

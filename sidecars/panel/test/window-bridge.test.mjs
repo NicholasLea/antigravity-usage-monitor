@@ -2064,7 +2064,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       'Consumption sub-label renders CNY approx instead of 步费用待定'
     );
     assert.ok(popoverEl.querySelector('.steps-panel-header'), 'Steps header flex wrapper present');
-    assert.ok(popoverEl.querySelector('.steps-panel-title'), 'Steps title non-shrinking class present');
+    assert.equal(popoverEl.querySelector('.steps-panel-title'), null, 'Redundant steps header title removed');
 
     // Verify <=90d renders flush edge-to-edge SVG line chart, while >90d ('all' = 120 days) switches to GitHub-style daily heatmap grid
     const plotStageEl = popoverEl.querySelector('.trend-plot-stage');
@@ -2093,8 +2093,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.match(stylesCss, /\.app-shell\s*\{[^}]*max-width:\s*none;/, 'Sidecar .app-shell removes 560px width cap');
     assert.match(
       stylesCss,
-      /\.models-analytics-pane\s*\{[^}]*padding:\s*var\(--space-3\)\s+0\s+2px;/,
-      'Models analytics pane eliminates nested horizontal double-padding'
+      /\.models-analytics-pane\s*\{[^}]*padding-left:\s*0;/,
+      'Models analytics pane eliminates nested left double-padding while preserving right scrollbar clearance'
     );
     assert.doesNotMatch(
       stylesCss,
@@ -4526,7 +4526,7 @@ test('v1.5 feedback E2E: sticky bridge port/token across hot-reloads, CDP->HTTP 
   // 2. Verify frontend formatters, non-truncating compaction cell, custom token combo, trimmed model ID, adaptive width & CDP recovery
   const appJs = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   const stylesCss = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
-  assert.match(stylesCss, /\.step-model-compact\s*\{[^}]*flex-shrink:\s*0;/, 'Compaction suffix never shrinks/truncates');
+  assert.match(stylesCss, /\.data-table\s+tbody\s+tr\.is-compaction\s*\{[^}]*--accent-primary/, 'Compaction row uses whole-row host accent tint');
   assert.match(stylesCss, /\.wm-popover-panel\s*\{[^}]*--wm-popover-w,\s*540px/, 'Popover supports dynamic CSS width variable');
 
   const savedSettings = {
@@ -4729,20 +4729,20 @@ test('v1.5 feedback E2E: sticky bridge port/token across hot-reloads, CDP->HTTP 
     // Adaptive width expands popover to fit wide 660px table (+ 34px chrome + 4px buffer = 698px)
     assert.equal(popEl.style.width, '698px', 'Popover adaptively widens on wide step table to eliminate horizontal scroll');
 
-    // Verify trimmed raw IDs (hiding gemini-, claude-, gpt-) AND non-truncating compaction suffix
+    // Verify trimmed raw IDs (hiding gemini-, claude-, gpt-) AND whole-row compaction tint (no inline ·压缩)
     const bodyRows = stepTable.querySelector('tbody').querySelectorAll('tr');
     assert.equal(bodyRows.length, 3);
 
     const row0ModelName = bodyRows[0].querySelector('.step-model-name').textContent;
-    const row0Compact = bodyRows[0].querySelector('.step-model-compact');
     assert.equal(row0ModelName, '4-hydrogen', 'Strips gemini- prefix from gemini-4-hydrogen');
-    assert.equal(row0Compact.hasAttribute('hidden'), false, 'Compaction badge visible as dedicated flex-shrink:0 span');
-    assert.equal(row0Compact.textContent, '·压缩', 'Compaction suffix never merged into ellipsized span');
+    assert.equal(bodyRows[0].querySelector('.step-model-compact'), null, 'No inline ·压缩 span inside model cell');
+    assert.equal(bodyRows[0].classList.contains('is-compaction'), true, 'Compaction step receives whole-row is-compaction class');
     assert.equal(bodyRows[0].children[1].getAttribute('title'), 'gemini-4-hydrogen·压缩', 'Hover title keeps full upstream ID');
 
     assert.equal(bodyRows[1].querySelector('.step-model-name').textContent, 'sonnet-4-6', 'Strips claude- prefix');
-    assert.equal(bodyRows[1].querySelector('.step-model-compact').hasAttribute('hidden'), true);
+    assert.equal(bodyRows[1].classList.contains('is-compaction'), false);
     assert.equal(bodyRows[2].querySelector('.step-model-name').textContent, '5.4-mini', 'Strips gpt- prefix');
+    assert.equal(bodyRows[2].classList.contains('is-compaction'), false);
 
     // Verify In / Out / Cache column & Custom Combo column ('context:in:cache')
     const ths = stepTable.querySelector('thead').querySelectorAll('th');
