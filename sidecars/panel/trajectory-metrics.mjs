@@ -887,7 +887,7 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
     if (
       typeof execModel === 'string' &&
       execModel.trim() &&
-      /orchestrator|MODEL_PLACEHOLDER_M(?:667|681)\b/i.test(
+      /orchestrator|MODEL_PLACEHOLDER_M(?:667|681|537)\b/i.test(
         `${pc?.modelName || ''} ${pc?.planModel || ''}`
       )
     ) {

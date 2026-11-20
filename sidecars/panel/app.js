@@ -3729,8 +3729,8 @@ const normalizeOrchestratorIdDisplayMode = normalizeOrchestratorIdMode;
  * 统一解析步骤、会话摘要或模型汇总行面向用户的模型显示文本与悬停提示。
  *
  * 规则：
- * - Orchestrator 系列（`Orchestrator (Carbon)`、`Orchestrator (Argon)`、`gemini-flash-worker-agy` / `M669`）
- *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-carbon` / `orchestrator-argon` / `worker-agy-hydrogen`；
+ * - Orchestrator 系列（`Orchestrator (Carbon)`、`Orchestrator (Argon)`、`Orchestrator (Neon)`、`gemini-flash-worker-agy` / `M669`）
+ *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-carbon` / `orchestrator-argon` / `orchestrator-neon` / `worker-agy-hydrogen`；
  *   `'full'` 显示带括号标注的完整上游 ID），不受普通模型显示模式影响；
  * - 其余普通模型遵循 `modelDisplayMode`（`'short'` | `'upstream_compact'` | `'upstream'`，兼容旧版布尔 `showUpstreamModel`）；
  * - 独立拆分 `baseText` 与 `compactionSuffix`（`·压缩`），供步骤表单独保护压缩尾标永不截断。
@@ -3803,37 +3803,71 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     /\bMODEL_PLACEHOLDER_M669\b|\b[a-z0-9.-]*worker-agy\b|\bworker-agy-hydrogen\b|\bOrchestrator\s+Worker\b/i.test(
       combined
     );
+  const isKnownOrchCarbonPh = /\bMODEL_PLACEHOLDER_M667\b/i.test(combined);
+  const isKnownOrchArgonPh = /\bMODEL_PLACEHOLDER_M681\b/i.test(combined);
+  const isKnownOrchNeonPh = /\bMODEL_PLACEHOLDER_M537\b/i.test(combined);
+  const dynamicOrchVariantMatch =
+    combined.match(/\bOrchestrator\s*\(\s*([a-z0-9-]+)\s*\)/i) ||
+    combined.match(/\bgemini-pro-orchestrator-([a-z0-9-]+)\b/i) ||
+    combined.match(/\b(?:orchestrator|orch)-([a-z0-9]+)(?=·|\s|$)/i);
+  const dynamicOrchVariant =
+    dynamicOrchVariantMatch && dynamicOrchVariantMatch[1].toLowerCase() !== 'worker'
+      ? dynamicOrchVariantMatch[1].toLowerCase()
+      : '';
+  const hasBareProOrch = /\bgemini-pro-orchestrator\b(?![-_][a-z0-9])/i.test(combined);
   const isOrchSeries =
     isOrchWorker ||
-    /\bgemini-pro-orchestrator(?:-argon)?\b|\borchestrator-(?:carbon|argon)\b|\borch-(?:carbon|argon)(?:·压缩)?(?=\s|$)|Orchestrator\s*\((?:Carbon|Argon)\)|\bMODEL_PLACEHOLDER_M(?:667|681)\b/i.test(
-      combined
-    );
+    Boolean(dynamicOrchVariant) ||
+    isKnownOrchNeonPh ||
+    isKnownOrchArgonPh ||
+    isKnownOrchCarbonPh ||
+    hasBareProOrch;
 
   if (isOrchSeries) {
-    let compactId = 'orchestrator-carbon';
-    let fullId = 'gemini-pro-orchestrator (carbon-4)';
+    let compactId = '';
+    let fullId = '';
     if (isOrchWorker) {
       compactId = 'worker-agy-hydrogen';
       fullId = 'gemini-flash-worker-agy (hydrogen-4)';
-    } else if (/\bargon\b|\bMODEL_PLACEHOLDER_M681\b|\borch-argon\b/i.test(combined)) {
+    } else if (isKnownOrchNeonPh || dynamicOrchVariant === 'neon') {
+      compactId = 'orchestrator-neon';
+      fullId = 'gemini-pro-orchestrator-neon (neon-4)';
+    } else if (isKnownOrchArgonPh || dynamicOrchVariant === 'argon') {
       compactId = 'orchestrator-argon';
       fullId = 'gemini-pro-orchestrator-argon (argon-4)';
+    } else if (
+      isKnownOrchCarbonPh ||
+      dynamicOrchVariant === 'carbon' ||
+      (hasBareProOrch && !dynamicOrchVariant)
+    ) {
+      compactId = 'orchestrator-carbon';
+      fullId = 'gemini-pro-orchestrator (carbon-4)';
+    } else if (dynamicOrchVariant) {
+      compactId = `orchestrator-${dynamicOrchVariant}`;
+      const cleanUpstream = stripCompactionMarker(upstreamText || responseText || '').trim();
+      fullId = cleanUpstream
+        ? cleanUpstream.toLowerCase().includes(dynamicOrchVariant)
+          ? cleanUpstream
+          : `${cleanUpstream} (${dynamicOrchVariant})`
+        : `gemini-pro-orchestrator-${dynamicOrchVariant}`;
     }
-    const baseText = orchestratorMode === 'full' ? fullId : compactId;
-    const text = `${baseText}${compactionSuffix}`;
-    const multiUpstream =
-      Array.isArray(target.upstreamModels) && target.upstreamModels.length > 1
-        ? target.upstreamModels.join(' / ')
-        : '';
-    const title = multiUpstream || `${fullId}${compactionSuffix}`;
-    return {
-      text,
-      baseText,
-      compactionSuffix,
-      isCompaction,
-      title,
-      isOrchestratorSeries: true,
-    };
+    if (compactId) {
+      const baseText = orchestratorMode === 'full' ? fullId : compactId;
+      const text = `${baseText}${compactionSuffix}`;
+      const multiUpstream =
+        Array.isArray(target.upstreamModels) && target.upstreamModels.length > 1
+          ? target.upstreamModels.join(' / ')
+          : '';
+      const title = multiUpstream || `${fullId}${compactionSuffix}`;
+      return {
+        text,
+        baseText,
+        compactionSuffix,
+        isCompaction,
+        title,
+        isOrchestratorSeries: true,
+      };
+    }
   }
 
   const rawSelected =
@@ -24797,7 +24831,7 @@ function findHostTitlebar() {
 const COMPOSER_EXCLUDED_ANCESTOR_SELECTOR =
   '.part.titlebar, .part.statusbar, .quick-input-widget, .suggest-widget, .find-widget, .scm-editor, .search-view, [class*="@container/titlebar"]';
 const COMPOSER_MODEL_LABEL_RE =
-  /\b(?:gemini|claude|gpt|argon|carbon|hydrogen|helix|flash|sonnet|opus|haiku|orchestrator|llama|deepseek|qwen|mistral|model_placeholder|placeholder_m\d+|o[134](?:-\w+)?)\b/i;
+  /\b(?:gemini|claude|gpt|argon|carbon|neon|hydrogen|helix|flash|sonnet|opus|haiku|orchestrator|llama|deepseek|qwen|mistral|model_placeholder|placeholder_m\d+|o[134](?:-\w+)?)\b/i;
 const COMPOSER_MODEL_ATTR_RE =
   /\bmodel[-_\s]?(?:select|picker|switch|selector|menu|name)\b|选择模型|切换模型/i;
 const COMPOSER_MODE_EXACT_RE = /^(?:auto|自动)$/i;
