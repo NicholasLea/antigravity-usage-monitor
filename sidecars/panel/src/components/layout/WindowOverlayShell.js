@@ -9,6 +9,8 @@
  */
 
 import {
+  LOCAL_ENDPOINT_ID,
+  WINDOW_BRIDGE_ENDPOINT_KEY,
   WINDOW_BRIDGE_KEY,
   WINDOW_OVERLAY_KEY,
   WINDOW_OVERLAY_METHODS,
@@ -51,6 +53,7 @@ import {
   normalizeClientTopbarSlots,
   normalizeClientUpdateMode,
   normalizeClientWindowMountMode,
+  resetTelemetryForEndpointSwitch,
   resolveScopedConversation,
   selectConversation,
   startAsyncTelemetryLoop,
@@ -958,10 +961,18 @@ export function mountWindowOverlay() {
   const bridgeConfig = getWindowBridgeConfig();
   const bundleVersion = String(bridgeConfig?.bundleVersion || '');
   const stylesCss = String(bridgeConfig?.stylesCss || '');
+  const activeBridgeEndpointId = String(
+    bridgeConfig?.[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID
+  );
+  const reusableCarryOver =
+    carryOverTelemetry &&
+    String(carryOverTelemetry?.endpoint?.id || LOCAL_ENDPOINT_ID) === activeBridgeEndpointId
+      ? carryOverTelemetry
+      : null;
   const seedTelemetry =
     (bridgeConfig?.initialTelemetry && typeof bridgeConfig.initialTelemetry === 'object'
       ? bridgeConfig.initialTelemetry
-      : null) || carryOverTelemetry;
+      : null) || reusableCarryOver;
   if (bridgeConfig?.initialTelemetry) {
     delete bridgeConfig.initialTelemetry;
   }
@@ -2741,14 +2752,49 @@ export function mountWindowOverlay() {
       const token = String(nextBridge.token || '');
       if (!Number.isInteger(port) || port <= 0 || !token) return false;
       const cur = readInjectedWindowBridge() || {};
+      const prevEndpointId = String(cur[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID);
+      const nextEndpointId =
+        nextBridge[WINDOW_BRIDGE_ENDPOINT_KEY] !== undefined
+          ? String(nextBridge[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID)
+          : prevEndpointId;
       const portChanged = Number(cur.port || 0) !== port || String(cur.token || '') !== token;
+      const endpointChanged = prevEndpointId !== nextEndpointId;
       cur.port = port;
       cur.token = token;
-      if (portChanged) {
+      cur[WINDOW_BRIDGE_ENDPOINT_KEY] = nextEndpointId;
+      if (nextBridge.isRemoteEndpoint !== undefined) {
+        cur.isRemoteEndpoint = Boolean(nextBridge.isRemoteEndpoint);
+      }
+      if (nextBridge.endpointLabel !== undefined) {
+        cur.endpointLabel = String(nextBridge.endpointLabel || '');
+      }
+      if (portChanged || endpointChanged) {
         cur.transportMode = 'http';
       }
+      if (endpointChanged) {
+        if (Array.isArray(cur.rpcQueue)) {
+          cur.rpcQueue.length = 0;
+        }
+        if (cur.rpcPending instanceof Map) {
+          for (const pending of cur.rpcPending.values()) {
+            try {
+              const switchErr = new Error('Bridge endpoint switched');
+              switchErr.name = 'AbortError';
+              pending?.reject?.(switchErr);
+            } catch {
+              // 忽略旧端点回调异常
+            }
+          }
+          cur.rpcPending.clear();
+        }
+      }
       window[WINDOW_BRIDGE_KEY] = cur;
-      void fetchTelemetry({ force: false });
+      if (endpointChanged) {
+        resetTelemetryForEndpointSwitch();
+        void fetchTelemetry({ force: true });
+      } else {
+        void fetchTelemetry({ force: false });
+      }
       return true;
     },
     getTelemetrySnapshot() {

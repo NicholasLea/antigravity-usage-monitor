@@ -717,9 +717,12 @@ return { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyC
 })();
 
 // --- shared/window-bridge-protocol.mjs ---
-const { WINDOW_BRIDGE_KEY, WINDOW_BRIDGE_ROUTE_KEY, WINDOW_OVERLAY_KEY, CONTEXT_WINDOWS_GLOBAL_KEY, WINDOW_OVERLAY_METHODS, BRIDGE_API_ROUTE_DEFS, BRIDGE_API_PATHS, readInjectedWindowBridge } = (() => {
+const { WINDOW_BRIDGE_KEY, WINDOW_BRIDGE_ROUTE_KEY, WINDOW_BRIDGE_ENDPOINT_KEY, WINDOW_BRIDGE_ENDPOINT_HEADER, LOCAL_ENDPOINT_ID, WINDOW_OVERLAY_KEY, CONTEXT_WINDOWS_GLOBAL_KEY, WINDOW_OVERLAY_METHODS, BRIDGE_API_ROUTE_DEFS, BRIDGE_API_PATHS, readInjectedWindowBridge } = (() => {
 const WINDOW_BRIDGE_KEY = '__AGUsageMonitorBridge';
 const WINDOW_BRIDGE_ROUTE_KEY = 'hostRouteCascadeId';
+const WINDOW_BRIDGE_ENDPOINT_KEY = 'endpointId';
+const WINDOW_BRIDGE_ENDPOINT_HEADER = 'X-Usage-Monitor-Endpoint';
+const LOCAL_ENDPOINT_ID = 'local';
 const WINDOW_OVERLAY_KEY = '__AGUsageMonitorOverlay';
 const CONTEXT_WINDOWS_GLOBAL_KEY = '__AGUsageMonitorContextWindows';
 
@@ -752,7 +755,7 @@ const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path))
 function readInjectedWindowBridge() {
   return typeof window === 'undefined' ? undefined : window[WINDOW_BRIDGE_KEY];
 }
-return { WINDOW_BRIDGE_KEY, WINDOW_BRIDGE_ROUTE_KEY, WINDOW_OVERLAY_KEY, CONTEXT_WINDOWS_GLOBAL_KEY, WINDOW_OVERLAY_METHODS, BRIDGE_API_ROUTE_DEFS, BRIDGE_API_PATHS, readInjectedWindowBridge };
+return { WINDOW_BRIDGE_KEY, WINDOW_BRIDGE_ROUTE_KEY, WINDOW_BRIDGE_ENDPOINT_KEY, WINDOW_BRIDGE_ENDPOINT_HEADER, LOCAL_ENDPOINT_ID, WINDOW_OVERLAY_KEY, CONTEXT_WINDOWS_GLOBAL_KEY, WINDOW_OVERLAY_METHODS, BRIDGE_API_ROUTE_DEFS, BRIDGE_API_PATHS, readInjectedWindowBridge };
 })();
 
 // --- src/icons/svgRegistry.js ---
@@ -4543,7 +4546,10 @@ function callViaCdpBridge(bridge, path, { method, body, signal, cdpTimeoutMs }) 
 
 async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTimeoutMs = 3500 } = {}) {
   const upperMethod = method.toUpperCase();
-  const dedupKey = upperMethod === 'GET' && !abortKey ? path : '';
+  const activeEndpointId =
+    String(getWindowBridgeConfig()?.[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID).trim() ||
+    LOCAL_ENDPOINT_ID;
+  const dedupKey = upperMethod === 'GET' && !abortKey ? `${activeEndpointId}::${path}` : '';
 
   if (dedupKey && inFlightGets.has(dedupKey)) {
     return inFlightGets.get(dedupKey);
@@ -4561,7 +4567,20 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
     signal = requestController.signal;
   }
 
+  const ensureEndpointUnchanged = (targetBridge) => {
+    if (!targetBridge) return;
+    const currentEndpointId =
+      String(targetBridge[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID).trim() ||
+      LOCAL_ENDPOINT_ID;
+    if (currentEndpointId !== activeEndpointId) {
+      const switchErr = new Error('Bridge endpoint switched');
+      switchErr.name = 'AbortError';
+      throw switchErr;
+    }
+  };
+
   const execHttpOnce = async (activeBridge) => {
+    ensureEndpointUnchanged(activeBridge);
     const sidecar = typeof window !== 'undefined' ? window.sidecar : null;
     const fetchFn = sidecar?.fetch
       ? sidecar.fetch.bind(sidecar)
@@ -4575,6 +4594,10 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
     }
     if (activeBridge) {
       headers['X-Usage-Monitor-Token'] = activeBridge.token;
+      const epId = String(activeBridge[WINDOW_BRIDGE_ENDPOINT_KEY] || '').trim();
+      if (epId && epId !== LOCAL_ENDPOINT_ID) {
+        headers[WINDOW_BRIDGE_ENDPOINT_HEADER] = epId;
+      }
     }
     const res = await fetchFn(requestUrl, {
       method: upperMethod,
@@ -4594,7 +4617,10 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
       throw abortErr;
     }
     if (!res.ok) {
-      throw new Error(data.error || `HTTP ${res.status}`);
+      const httpErr = new Error(data.error || `HTTP ${res.status}`);
+      httpErr.httpStatus = res.status;
+      httpErr.retryable = Boolean(data?.retryable);
+      throw httpErr;
     }
     if (activeBridge) {
       activeBridge.transportMode = 'http';
@@ -4615,8 +4641,10 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
       if (signal?.aborted || cdpErr?.name === 'AbortError') {
         throw cdpErr;
       }
-      // 热更新或守护重启期间若 CDP 尚未轮询投递，自动重置回 HTTP 并用最新桥接端口重试一次
+      // 热更新或守护重启期间若 CDP 尚未轮询投递，自动重置回 HTTP 并用最新桥接端口重试一次；
+      // 但若端点已切换（例如本地 <-> SSH），绝不将旧端点请求重放至新端点
       const latestBridge = getWindowBridgeConfig() || initialBridge;
+      ensureEndpointUnchanged(latestBridge);
       latestBridge.transportMode = 'http';
       return execHttpOnce(latestBridge);
     }
@@ -4645,7 +4673,11 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
         }
         throw fetchErr;
       }
-      // 当宿主环境的 CSP connect-src、混合内容策略或瞬态端口切换阻断直连时，切至带 HTTP 自愈恢复的 CDP 通道
+      // 仅在网络/CORS 阻断（无 HTTP 状态码）或桥接令牌失配（403）时切换至 CDP 兜底；
+      // 业务/初始化状态码（如 503 Remote endpoint initializing、400、500）保持 HTTP 通道等待正常重试。
+      if (fetchErr?.httpStatus && fetchErr.httpStatus !== 403) {
+        throw fetchErr;
+      }
       return fallbackViaCdpWithRecovery(bridge);
     }
   };
@@ -4700,7 +4732,7 @@ return { getViewTabs, uiStore, getVisibleMonitorView };
 })();
 
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 /**
  * @fileoverview Reactive telemetry store with async non-overlapping poll scheduler
  * and granular slice updates.
@@ -4801,6 +4833,7 @@ let activeBundleVersion = 0;
 let latestRequestSeq = 0;
 let latestConsumptionReqSeq = 0;
 let latestConversationSwitchSeq = 0;
+let endpointSwitchEpoch = 0;
 let activeForceCount = 0;
 let consecutivePollFailures = 0;
 let inFlightTelemetryPoll = null;
@@ -4853,10 +4886,11 @@ function clearConversationViewCache() {
 
 function buildConsumptionScopeSig(payload) {
   if (!payload || typeof payload !== 'object') return '';
+  const ep = payload.endpoint || {};
   const acct = payload.account || {};
   const set = payload.settings || {};
   const cloud = payload.cloudStatus || {};
-  return `${String(acct.status || '')}|${String(acct.email || acct.name || '').toLowerCase()}|${String(set.weeklyLimitMode || '')}|${String(cloud.catalogVersion || '')}`;
+  return `${String(ep.id || LOCAL_ENDPOINT_ID)}|${String(acct.status || '')}|${String(acct.email || acct.name || '').toLowerCase()}|${String(set.weeklyLimitMode || '')}|${String(cloud.catalogVersion || '')}`;
 }
 
 function syncConsumptionCacheScope(payload) {
@@ -5128,6 +5162,13 @@ function isEquivalentTelemetry(prev, next) {
   if ((pSet?.fontScale ?? 'md') !== (nSet?.fontScale ?? 'md')) return false;
   if (Boolean(pSet?.experimentalModernUi) !== Boolean(nSet?.experimentalModernUi)) return false;
   if ((prev.hostPlatform || '') !== (next.hostPlatform || '')) return false;
+  if (
+    (prev.endpoint?.id || LOCAL_ENDPOINT_ID) !== (next.endpoint?.id || LOCAL_ENDPOINT_ID) ||
+    Boolean(prev.endpoint?.isRemote) !== Boolean(next.endpoint?.isRemote) ||
+    (prev.endpoint?.label || '') !== (next.endpoint?.label || '')
+  ) {
+    return false;
+  }
   if (Boolean(pSet?.contextWindowRiskAccepted) !== Boolean(nSet?.contextWindowRiskAccepted)) {
     return false;
   }
@@ -5666,6 +5707,33 @@ function isEquivalentTelemetry(prev, next) {
   return true;
 }
 
+function resetTelemetryForEndpointSwitch() {
+  endpointSwitchEpoch += 1;
+  latestRequestSeq += 1;
+  latestConsumptionReqSeq += 1;
+  latestConversationSwitchSeq += 1;
+  lastReceivedSteps = null;
+  inFlightTelemetryPoll = null;
+  consecutivePollFailures = 0;
+  consumptionCacheScopeSig = '';
+  abortSidecarApiKey('telemetry-poll');
+  abortSidecarApiKey('telemetry-force');
+  abortSidecarApiKey('consumption-range');
+  abortSidecarApiKey('consumption-presets');
+  abortSidecarApiKey('conversation-switch');
+  clearConsumptionRangeCache();
+  clearConversationViewCache();
+  if (feedbackTimer) {
+    clearTimeout(feedbackTimer);
+    feedbackTimer = null;
+  }
+  telemetryStore.setState({
+    selectedConversationId: '',
+    telemetry: null,
+    syncState: 'idle',
+  });
+}
+
 async function fetchTelemetry({ force = false } = {}) {
   if (!force && activeForceCount > 0) {
     return telemetryStore.getState().telemetry;
@@ -5701,11 +5769,17 @@ async function fetchTelemetry({ force = false } = {}) {
   }
   const query = params.toString();
   const bridge = overlay ? getWindowBridgeConfig() : null;
+  const endpointId = bridge?.[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID;
   const existing = inFlightTelemetryPoll;
-  if (existing?.query === query && existing.port === bridge?.port && existing.token === bridge?.token) {
+  if (
+    existing?.query === query &&
+    existing.port === bridge?.port &&
+    existing.token === bridge?.token &&
+    existing.endpointId === endpointId
+  ) {
     return existing.promise;
   }
-  const poll = { query, port: bridge?.port, token: bridge?.token, promise: null };
+  const poll = { query, port: bridge?.port, token: bridge?.token, endpointId, promise: null };
   poll.promise = requestTelemetry(params, false).finally(() => {
     if (inFlightTelemetryPoll === poll) inFlightTelemetryPoll = null;
   });
@@ -5892,6 +5966,7 @@ async function fetchConsumptionRangeSlice({
   customStartMs = 0,
   customEndMs = 0,
 } = {}) {
+  const reqEpoch = endpointSwitchEpoch;
   const reqSeq = ++latestConsumptionReqSeq;
   const targetRange = String(range || 'today');
   const current = telemetryStore.getState();
@@ -5910,7 +5985,7 @@ async function fetchConsumptionRangeSlice({
       method: 'GET',
       abortKey: 'consumption-range',
     });
-    if (!payload || typeof payload !== 'object') return null;
+    if (!payload || typeof payload !== 'object' || reqEpoch !== endpointSwitchEpoch) return null;
 
     if (payload.scope === 'consumption' && payload.consumption) {
       const usageRev = Number(payload.usageRevision ?? payload.consumption.revision ?? 0);
@@ -6037,13 +6112,14 @@ async function selectConversation(
   params.set('stepRevision', cachedSteps?.revision || '');
   params.set('scope', 'conversation');
 
+  const reqEpoch = endpointSwitchEpoch;
   const reqSettingsRev = settingsRevision;
   try {
     const payload = await callSidecarApi(`/api/telemetry?${params}`, {
       method: 'GET',
       abortKey: 'conversation-switch',
     });
-    if (!payload || typeof payload !== 'object') return null;
+    if (!payload || typeof payload !== 'object' || reqEpoch !== endpointSwitchEpoch) return null;
     if (switchSeq !== latestConversationSwitchSeq) return payload;
 
     const latestSt = telemetryStore.getState();
@@ -6202,11 +6278,13 @@ function prefetchConsumptionPresets() {
   if (effectiveConvId) params.set('conversationId', effectiveConvId);
   params.set('scope', 'consumption-presets');
 
+  const reqEpoch = endpointSwitchEpoch;
   const task = callSidecarApi(`/api/telemetry?${params}`, {
     method: 'GET',
     abortKey: 'consumption-presets',
   })
     .then((payload) => {
+      if (reqEpoch !== endpointSwitchEpoch) return false;
       if (payload?.scope === 'consumption-presets' && payload.ranges && typeof payload.ranges === 'object') {
         const rev = Number(payload.usageRevision || currentRev || 0);
         for (const [rangeKey, entry] of Object.entries(payload.ranges)) {
@@ -6772,7 +6850,7 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
@@ -20966,6 +21044,12 @@ const TopSessionHeader = defineComponent({
       [updateBtnIcon, updateBtnText]
     );
 
+    const sshBadge = h('span', {
+      className: 'endpoint-ssh-badge',
+      hidden: true,
+      text: 'SSH',
+    });
+
     const statusIcon = createSvgIcon('pulse', { size: 12 });
     const statusText = h('span', { text: t('header.statusLive') });
     const statusTag = h('span', { className: 'status-tag' }, [statusIcon, statusText]);
@@ -20983,7 +21067,7 @@ const TopSessionHeader = defineComponent({
 
     const headerRowEl = h('div', { className: 'session-header' }, [
       h('div', { className: 'session-left' }, [convSelect.el]),
-      h('div', { className: 'session-right' }, [updateBtn, statusTag, refreshBtn]),
+      h('div', { className: 'session-right' }, [sshBadge, updateBtn, statusTag, refreshBtn]),
     ]);
 
     const headerEl = h('header', { className: 'top-session-stack' }, [headerRowEl]);
@@ -21051,6 +21135,14 @@ const TopSessionHeader = defineComponent({
 
       patchAttr(updateBtn, 'aria-label', t('header.ariaUpdate'));
       patchAttr(refreshBtn, 'aria-label', t('header.ariaRefresh'));
+
+      const ep = telemetry?.endpoint;
+      const isRemoteEndpoint = Boolean(ep?.isRemote);
+      patchAttr(sshBadge, 'hidden', !isRemoteEndpoint);
+      if (isRemoteEndpoint) {
+        const epLabel = String(ep?.label || 'SSH').trim();
+        patchAttr(sshBadge, 'title', epLabel && epLabel !== 'SSH' ? `SSH · ${epLabel}` : 'SSH');
+      }
 
       const actConv = telemetry?.activeConversation;
       const convs = telemetry?.conversations || [];
@@ -25497,10 +25589,18 @@ function mountWindowOverlay() {
   const bridgeConfig = getWindowBridgeConfig();
   const bundleVersion = String(bridgeConfig?.bundleVersion || '');
   const stylesCss = String(bridgeConfig?.stylesCss || '');
+  const activeBridgeEndpointId = String(
+    bridgeConfig?.[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID
+  );
+  const reusableCarryOver =
+    carryOverTelemetry &&
+    String(carryOverTelemetry?.endpoint?.id || LOCAL_ENDPOINT_ID) === activeBridgeEndpointId
+      ? carryOverTelemetry
+      : null;
   const seedTelemetry =
     (bridgeConfig?.initialTelemetry && typeof bridgeConfig.initialTelemetry === 'object'
       ? bridgeConfig.initialTelemetry
-      : null) || carryOverTelemetry;
+      : null) || reusableCarryOver;
   if (bridgeConfig?.initialTelemetry) {
     delete bridgeConfig.initialTelemetry;
   }
@@ -27280,14 +27380,49 @@ function mountWindowOverlay() {
       const token = String(nextBridge.token || '');
       if (!Number.isInteger(port) || port <= 0 || !token) return false;
       const cur = readInjectedWindowBridge() || {};
+      const prevEndpointId = String(cur[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID);
+      const nextEndpointId =
+        nextBridge[WINDOW_BRIDGE_ENDPOINT_KEY] !== undefined
+          ? String(nextBridge[WINDOW_BRIDGE_ENDPOINT_KEY] || LOCAL_ENDPOINT_ID)
+          : prevEndpointId;
       const portChanged = Number(cur.port || 0) !== port || String(cur.token || '') !== token;
+      const endpointChanged = prevEndpointId !== nextEndpointId;
       cur.port = port;
       cur.token = token;
-      if (portChanged) {
+      cur[WINDOW_BRIDGE_ENDPOINT_KEY] = nextEndpointId;
+      if (nextBridge.isRemoteEndpoint !== undefined) {
+        cur.isRemoteEndpoint = Boolean(nextBridge.isRemoteEndpoint);
+      }
+      if (nextBridge.endpointLabel !== undefined) {
+        cur.endpointLabel = String(nextBridge.endpointLabel || '');
+      }
+      if (portChanged || endpointChanged) {
         cur.transportMode = 'http';
       }
+      if (endpointChanged) {
+        if (Array.isArray(cur.rpcQueue)) {
+          cur.rpcQueue.length = 0;
+        }
+        if (cur.rpcPending instanceof Map) {
+          for (const pending of cur.rpcPending.values()) {
+            try {
+              const switchErr = new Error('Bridge endpoint switched');
+              switchErr.name = 'AbortError';
+              pending?.reject?.(switchErr);
+            } catch {
+              // 忽略旧端点回调异常
+            }
+          }
+          cur.rpcPending.clear();
+        }
+      }
       window[WINDOW_BRIDGE_KEY] = cur;
-      void fetchTelemetry({ force: false });
+      if (endpointChanged) {
+        resetTelemetryForEndpointSwitch();
+        void fetchTelemetry({ force: true });
+      } else {
+        void fetchTelemetry({ force: false });
+      }
       return true;
     },
     getTelemetrySnapshot() {

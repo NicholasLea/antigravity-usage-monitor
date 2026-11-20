@@ -442,6 +442,23 @@ html[data-standalone="true"] .app-shell {
   flex-shrink: 0;
 }
 
+.endpoint-ssh-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 5px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--accent-primary-border);
+  background: var(--accent-primary-soft);
+  color: var(--accent-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .status-tag {
   display: inline-flex;
   align-items: center;
@@ -6149,6 +6166,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .status-tag.state-running,
 [data-modern-ui="true"] .status-tag.state-synced,
 [data-modern-ui="true"] .status-tag.state-warn,
+[data-modern-ui="true"] .endpoint-ssh-badge,
 [data-modern-ui="true"] .update-badge-btn,
 [data-modern-ui="true"] .wm-update-btn,
 [data-modern-ui="true"] .wm-hover-update-bar,

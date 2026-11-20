@@ -10,6 +10,7 @@
  */
 
 import { isDeepStrictEqual } from 'node:util';
+import { LOCAL_ENDPOINT_ID } from '../shared/window-bridge-protocol.mjs';
 import { scaleBucketsExact } from '../shared/telemetry-display-rules.mjs';
 import {
   extractLiveActivity,
@@ -22,14 +23,13 @@ import {
 import {
   CLI_STATUS_SNAPSHOT_FILE,
   computeRuntimeCodeVersion,
-  getCachedTrajectory,
   inFlightRequests,
-  listCachedTrajectoryEntries,
   loadSettings,
   lsRuntimeEndpoint,
   roundMetric,
   saveJson,
 } from './config.mjs';
+import { getEndpointCacheStore } from './endpoint-registry.mjs';
 import { getContextWindowGroups, getContextWindowModels } from './context-windows.mjs';
 import { readLocalSummarySnapshot } from './cli-sqlite-reader.mjs';
 import { enumerateAndSyncConversations } from './local-scanner.mjs';
@@ -57,17 +57,30 @@ import {
 
 const MAX_RECENT_CONVERSATIONS = 30;
 const MAX_CONVERSATION_ASSEMBLY_CACHE = 8;
+const MAX_TELEMETRY_SNAPSHOT_ENDPOINTS = 8;
 const POOL_PRIORITY_ORDER = ['Gemini', 'Argon', 'Carbon', 'Claude & GPT'];
 const inFlightTelemetrySources = new Map();
 const trajectoryModelFacts = new WeakMap();
 let agentStepPrepCache = new WeakMap();
 const conversationAssemblyCache = new Map();
-let lastCompletedTelemetrySnapshot = null;
+const lastCompletedTelemetrySnapshotsByEndpoint = new Map();
 
-export function clearTelemetryBuilderMemo() {
+export function clearTelemetryBuilderMemo(endpointId = null) {
+  if (endpointId) {
+    const epKey = String(endpointId);
+    lastCompletedTelemetrySnapshotsByEndpoint.delete(epKey);
+    const prefix = `${epKey}::`;
+    for (const key of Array.from(conversationAssemblyCache.keys())) {
+      if (key.startsWith(prefix)) {
+        conversationAssemblyCache.delete(key);
+      }
+    }
+    clearUsageAggregatorMemo(epKey);
+    return;
+  }
   agentStepPrepCache = new WeakMap();
   conversationAssemblyCache.clear();
-  lastCompletedTelemetrySnapshot = null;
+  lastCompletedTelemetrySnapshotsByEndpoint.clear();
   clearUsageAggregatorMemo();
 }
 
@@ -76,12 +89,13 @@ function roundSessionCost(val) {
   return val < 0.01 ? +val.toFixed(4) : +val.toFixed(2);
 }
 
-function findTrajectoryCacheEntry(cascadeId) {
+function findTrajectoryCacheEntry(cascadeId, cacheStore = null) {
   if (!cascadeId) return null;
-  const entry = getCachedTrajectory(cascadeId);
+  const store = cacheStore || getEndpointCacheStore(null);
+  const entry = store.getCachedTrajectory(cascadeId);
   if (entry) return entry;
   const targetLower = String(cascadeId).toLowerCase();
-  for (const [k, v] of listCachedTrajectoryEntries()) {
+  for (const [k, v] of store.listCachedTrajectoryEntries()) {
     if (k.toLowerCase() === targetLower) return v;
   }
   return null;
@@ -120,9 +134,10 @@ function readTrajectoryModelFacts(steps) {
 }
 
 /** 合并各会话的上游模型与上下文上限，步骤数组更新后重新提取对应会话的数据。 */
-function buildKnownUpstreamModelMap(contextLimits) {
+function buildKnownUpstreamModelMap(contextLimits, cacheStore = null) {
+  const store = cacheStore || getEndpointCacheStore(null);
   const knownUpstreamByModelKey = new Map();
-  for (const [, entry] of listCachedTrajectoryEntries()) {
+  for (const [, entry] of store.listCachedTrajectoryEntries()) {
     if (!entry?.steps?.length) continue;
     const facts = readTrajectoryModelFacts(entry.steps);
     for (const [key, model] of facts.upstream) knownUpstreamByModelKey.set(key, model);
@@ -736,14 +751,24 @@ export function buildAgentUnitTelemetry({
   };
 }
 
-async function readTelemetrySources(requestedConvId, forceQuotaRefresh, currentAccountName, accountScope, userStatus) {
-  const localSummaries = readLocalSummarySnapshot(undefined, { forceRefresh: forceQuotaRefresh });
+async function readTelemetrySources(
+  requestedConvId,
+  forceQuotaRefresh,
+  currentAccountName,
+  accountScope,
+  userStatus,
+  endpoint = null
+) {
+  const isRemote = Boolean(endpoint && endpoint.isRemote);
+  const localSummaries = isRemote
+    ? { available: false, summariesObj: {}, sideQuestionParents: {} }
+    : readLocalSummarySnapshot(undefined, { forceRefresh: forceQuotaRefresh });
   const [allTrajRes, officialQuotaInfo, contextModelCatalog] = await Promise.all([
     localSummaries.available
       ? Promise.resolve(null)
-      : callLsRpc('GetAllCascadeTrajectories', {}).catch(() => ({})),
-    userStatus ? getOfficialQuotaSummary(forceQuotaRefresh, currentAccountName) : null,
-    getContextModelCatalog(),
+      : callLsRpc('GetAllCascadeTrajectories', {}, 5000, endpoint).catch(() => ({})),
+    userStatus ? getOfficialQuotaSummary(forceQuotaRefresh, currentAccountName, endpoint) : null,
+    getContextModelCatalog(endpoint),
   ]);
 
   const sessions = await enumerateAndSyncConversations({
@@ -754,16 +779,25 @@ async function readTelemetrySources(requestedConvId, forceQuotaRefresh, currentA
     currentAccountName: accountScope,
     requestedConvId,
     forceRefresh: forceQuotaRefresh,
+    endpoint,
   });
   return { officialQuotaInfo, contextModelCatalog, sessions };
 }
 
-function getTelemetrySources(requestedConvId, forceQuotaRefresh, currentAccountName, accountScope, userStatus) {
+function getTelemetrySources(
+  requestedConvId,
+  forceQuotaRefresh,
+  currentAccountName,
+  accountScope,
+  userStatus,
+  endpoint = null
+) {
+  const endpointKey = endpoint?.isRemote ? String(endpoint.id || 'remote') : LOCAL_ENDPOINT_ID;
   const read = () => readTelemetrySources(
-    requestedConvId, forceQuotaRefresh, currentAccountName, accountScope, userStatus
+    requestedConvId, forceQuotaRefresh, currentAccountName, accountScope, userStatus, endpoint
   );
   if (forceQuotaRefresh) return read();
-  const key = JSON.stringify([requestedConvId || '', accountScope, Boolean(userStatus)]);
+  const key = JSON.stringify([endpointKey, requestedConvId || '', accountScope, Boolean(userStatus)]);
   const existing = inFlightTelemetrySources.get(key);
   if (existing) return existing;
   const pending = read().finally(() => {
@@ -781,12 +815,17 @@ function buildActiveConversationAssembly({
   knownUpstreamByModelKey,
   modelInputs,
   accountScope,
+  endpointId = LOCAL_ENDPOINT_ID,
+  cacheStore = null,
 }) {
   const activeSteps = activeEntry?.steps || [];
   const subagentSummaries = activeConvSummary?.subagents || [];
-  const cacheKey = String(activeCascadeId || '__empty__').toLowerCase();
+  const epKey = String(endpointId || LOCAL_ENDPOINT_ID);
+  const cacheKey = `${epKey}::${String(activeCascadeId || '__empty__').toLowerCase()}`;
 
-  const subEntries = subagentSummaries.map((subSum) => findTrajectoryCacheEntry(subSum.cascadeId));
+  const subEntries = subagentSummaries.map((subSum) =>
+    findTrajectoryCacheEntry(subSum.cascadeId, cacheStore)
+  );
   const subRawStepsList = subEntries.map((entry) => entry?.steps || []);
   const combinedFallbackKeys = new Set();
   for (const k of readTrajectoryModelFacts(activeSteps).fallbackModelKeys) {
@@ -849,7 +888,7 @@ function buildActiveConversationAssembly({
     return cachedAssembly.result;
   }
 
-  const agentReuseInputs = { ...modelInputs, activeCascadeId, accountScope };
+  const agentReuseInputs = { ...modelInputs, endpointId: epKey, activeCascadeId, accountScope };
   const mainUnit = buildAgentUnitTelemetry({
     agentId: 'main',
     cascadeId: activeCascadeId,
@@ -1492,7 +1531,7 @@ function buildActivePoolAndWeeklyQuotas({
  *
  * @param {string} requestedConvId 请求指定的会话 ID（为空时自动选定最近活跃会话）
  * @param {boolean} [forceQuotaRefresh=false] 是否强制穿透官方配额缓存与失败退避
- * @param {{ range?: string, startMs?: number, endMs?: number }} [filterOpts={}] 时间范围筛选选项
+ * @param {{ range?: string, startMs?: number, endMs?: number, endpoint?: object|null }} [filterOpts={}] 时间范围筛选选项与可选远端端点
  * @returns {Promise<object>}
  */
 export async function buildTelemetryPayloadInternal(
@@ -1500,11 +1539,18 @@ export async function buildTelemetryPayloadInternal(
   forceQuotaRefresh = false,
   filterOpts = {}
 ) {
+  const endpoint = filterOpts?.endpoint && filterOpts.endpoint.isRemote ? filterOpts.endpoint : null;
+  const isRemote = Boolean(endpoint);
+  const endpointId = isRemote ? String(endpoint.id || 'remote') : LOCAL_ENDPOINT_ID;
+  const endpointLabel = isRemote ? String(endpoint.label || 'SSH') : '';
+  const cacheStore = getEndpointCacheStore(endpoint);
+
   const settings = loadSettings();
-  let userStatus = await callLsRpc('GetUserStatus', {})
+  let userStatus = await callLsRpc('GetUserStatus', {}, 5000, endpoint)
     .then((data) => data?.userStatus)
     .catch(() => null);
   if (
+    !isRemote &&
     !userStatus &&
     lsRuntimeEndpoint.addr !== 'test.invalid' &&
     (!lsRuntimeEndpoint.baseUrl || lsRuntimeEndpoint.isDynamic)
@@ -1529,7 +1575,7 @@ export async function buildTelemetryPayloadInternal(
     userStatus && !userStatus.userTier && !userStatus.planStatus ? 'signedOut' : 'unknown';
   const accountScope = accountStatus === 'signedOut' ? null : currentAccountName;
   const { officialQuotaInfo, contextModelCatalog, sessions } = await getTelemetrySources(
-    requestedConvId, forceQuotaRefresh, currentAccountName, accountScope, userStatus
+    requestedConvId, forceQuotaRefresh, currentAccountName, accountScope, userStatus, endpoint
   );
   const { conversations, activeConvSummary, activeCascadeId } = sessions;
 
@@ -1546,8 +1592,8 @@ export async function buildTelemetryPayloadInternal(
 
   // 3. 计算当前活跃根会话及其子代理的步骤指标、10 通道上下文拆解与按模型汇总
   const reportedContextLimits = new Map();
-  const knownUpstreamByModelKey = buildKnownUpstreamModelMap(reportedContextLimits);
-  const activeEntry = findTrajectoryCacheEntry(activeCascadeId);
+  const knownUpstreamByModelKey = buildKnownUpstreamModelMap(reportedContextLimits, cacheStore);
+  const activeEntry = findTrajectoryCacheEntry(activeCascadeId, cacheStore);
   const modelInputs = {
     catalogRevision: pricingCatalogRevision,
     phaseEpoch: getPricingPhaseEpoch(),
@@ -1565,6 +1611,8 @@ export async function buildTelemetryPayloadInternal(
     knownUpstreamByModelKey,
     modelInputs,
     accountScope,
+    endpointId,
+    cacheStore,
   });
 
   // 4. 识别当前活跃会话家族绑定的模型池（与 quota-pools.mjs 保持一致，将 Other 第三方模型归入 Claude & GPT）
@@ -1623,6 +1671,7 @@ export async function buildTelemetryPayloadInternal(
     resolveStepModel,
     quotaPoolsMap,
     modelInputs,
+    endpoint,
   });
 
   for (const [pk, poolObj] of quotaPoolsMap.entries()) {
@@ -1665,7 +1714,7 @@ export async function buildTelemetryPayloadInternal(
     if (cidKey && quickStatsMemo.has(cidKey)) {
       return quickStatsMemo.get(cidKey);
     }
-    const rootEntry = findTrajectoryCacheEntry(rootConv?.cascadeId);
+    const rootEntry = findTrajectoryCacheEntry(rootConv?.cascadeId, cacheStore);
     const rootSteps = rootEntry?.steps || [];
     const rawSubs = Array.isArray(rootConv?.subagents) ? rootConv.subagents : [];
 
@@ -1686,7 +1735,7 @@ export async function buildTelemetryPayloadInternal(
     let bestMetricRunning = rootConv?.status === 'CASCADE_RUN_STATUS_RUNNING' && Boolean(lastRootStep);
 
     for (const subSum of rawSubs) {
-      const subEntry = findTrajectoryCacheEntry(subSum?.cascadeId);
+      const subEntry = findTrajectoryCacheEntry(subSum?.cascadeId, cacheStore);
       const subSteps = subEntry?.steps || [];
       if (subSteps.length === 0) continue;
       accumulateStepsCost(subSteps);
@@ -1752,7 +1801,7 @@ export async function buildTelemetryPayloadInternal(
       continue;
     }
 
-    const rootEntry = findTrajectoryCacheEntry(rootConv.cascadeId);
+    const rootEntry = findTrajectoryCacheEntry(rootConv.cascadeId, cacheStore);
     const rootFallbackMs =
       rootConv.lastModifiedMs || rootEntry?.lastModifiedMs || rootConv.createdTimeMs || 0;
 
@@ -1761,7 +1810,7 @@ export async function buildTelemetryPayloadInternal(
     let runSideIdx = 0;
     const subItems = rawSubs.map((subSum, idx) => {
       const subCid = subSum.cascadeId;
-      const subEntry = findTrajectoryCacheEntry(subCid);
+      const subEntry = findTrajectoryCacheEntry(subCid, cacheStore);
       const subSpec = subSum.subagentSpec || subEntry?.subagentSpec || null;
       const isSideQ = Boolean(
         subSum.isSideQuestion || subEntry?.isSideQuestion || subSpec?.typeName === 'side_question'
@@ -2016,6 +2065,11 @@ export async function buildTelemetryPayloadInternal(
   const finalPayload = {
     timestamp: new Date().toISOString(),
     hostPlatform: process.platform || 'unknown',
+    endpoint: {
+      id: endpointId,
+      isRemote,
+      label: endpointLabel,
+    },
     uiBundleVersion,
     windowBridge: getDefaultWindowBridgeStatus(),
     settings: loadSettings(),
@@ -2104,8 +2158,20 @@ export async function buildTelemetryPayloadInternal(
     modelBreakdown,
   };
 
-  lastCompletedTelemetrySnapshot = {
-    lsAddr: String(lsRuntimeEndpoint.addr || ''),
+  const endpointSig = isRemote
+    ? `${Number(endpoint?.instanceId || 0)}|${String(endpoint?.baseUrl || '')}|${String(endpoint?.csrfToken || '')}`
+    : String(lsRuntimeEndpoint.addr || '');
+  lastCompletedTelemetrySnapshotsByEndpoint.delete(endpointId);
+  if (lastCompletedTelemetrySnapshotsByEndpoint.size >= MAX_TELEMETRY_SNAPSHOT_ENDPOINTS) {
+    const oldestKey = lastCompletedTelemetrySnapshotsByEndpoint.keys().next().value;
+    if (oldestKey !== undefined) {
+      lastCompletedTelemetrySnapshotsByEndpoint.delete(oldestKey);
+    }
+  }
+  lastCompletedTelemetrySnapshotsByEndpoint.set(endpointId, {
+    endpointId,
+    isRemote,
+    endpointSig,
     weeklyLimitMode: settings.weeklyLimitMode,
     weeklyTokenBudget: settings.weeklyTokenBudget,
     weeklyCostBudget: settings.weeklyCostBudget,
@@ -2132,10 +2198,11 @@ export async function buildTelemetryPayloadInternal(
       resolveStepModel,
       quotaPoolsMap,
       modelInputs,
+      endpoint,
     },
-  };
+  });
 
-  if (lsRuntimeEndpoint.addr !== 'test.invalid') {
+  if (!isRemote && lsRuntimeEndpoint.addr !== 'test.invalid') {
     try {
       saveJson(CLI_STATUS_SNAPSHOT_FILE, buildCliStatusSnapshot(finalPayload, Date.now()));
     } catch {
@@ -2146,10 +2213,15 @@ export async function buildTelemetryPayloadInternal(
   return finalPayload;
 }
 
-function resolveValidFastSnapshot() {
-  const snap = lastCompletedTelemetrySnapshot;
+function resolveValidFastSnapshot(endpoint = null) {
+  const isRemote = Boolean(endpoint?.isRemote);
+  const endpointId = isRemote ? String(endpoint.id || 'remote') : LOCAL_ENDPOINT_ID;
+  const snap = lastCompletedTelemetrySnapshotsByEndpoint.get(endpointId);
   if (!snap || !snap.basePayload || !snap.aggContext) return null;
-  if (snap.lsAddr !== String(lsRuntimeEndpoint.addr || '')) return null;
+  const expectedSig = isRemote
+    ? `${Number(endpoint?.instanceId || 0)}|${String(endpoint?.baseUrl || '')}|${String(endpoint?.csrfToken || '')}`
+    : String(lsRuntimeEndpoint.addr || '');
+  if (snap.endpointSig !== expectedSig) return null;
   if (
     snap.catalogRevision !== pricingCatalogRevision ||
     snap.phaseEpoch !== getPricingPhaseEpoch()
@@ -2177,7 +2249,10 @@ function entryNeedsLazyTelemetryUpgrade(entry) {
 }
 
 function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
-  const snap = resolveValidFastSnapshot();
+  const endpoint = filterOpts?.endpoint && filterOpts.endpoint.isRemote ? filterOpts.endpoint : null;
+  const endpointId = endpoint ? String(endpoint.id || 'remote') : LOCAL_ENDPOINT_ID;
+  const cacheStore = getEndpointCacheStore(endpoint);
+  const snap = resolveValidFastSnapshot(endpoint);
   if (!snap || !Array.isArray(snap.sessions?.conversations)) return null;
 
   const convList = snap.sessions.conversations;
@@ -2192,7 +2267,7 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
   if (!activeConvSummary?.cascadeId) return null;
 
   const activeCascadeId = activeConvSummary.cascadeId;
-  const activeEntry = findTrajectoryCacheEntry(activeCascadeId);
+  const activeEntry = findTrajectoryCacheEntry(activeCascadeId, cacheStore);
   if (!activeEntry) return null;
 
   const subagentSummaries = Array.isArray(activeConvSummary.subagents)
@@ -2207,7 +2282,7 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
         needsBackgroundSync = true;
         break;
       }
-      const subEntry = findTrajectoryCacheEntry(subSum?.cascadeId);
+      const subEntry = findTrajectoryCacheEntry(subSum?.cascadeId, cacheStore);
       if (!subEntry || entryNeedsLazyTelemetryUpgrade(subEntry)) {
         needsBackgroundSync = true;
         break;
@@ -2228,6 +2303,8 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
     knownUpstreamByModelKey: snap.knownUpstreamByModelKey,
     modelInputs: snap.aggContext.modelInputs,
     accountScope: snap.aggContext.currentAccountName,
+    endpointId,
+    cacheStore,
   });
 
   const { activePoolKey, activeLive5h, activeLiveWeekly } = resolveActivePoolKeyFromStep(
@@ -2255,11 +2332,13 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
     activeFamilyCascadeIds,
     resolveStepModel: snap.aggContext.resolveStepModel,
     quotaPoolsMap: snap.quotaContext.quotaPoolsMap,
+    endpoint,
   });
 
   return {
     scope: 'conversation',
     timestamp: new Date().toISOString(),
+    endpoint: snap.basePayload.endpoint,
     uiBundleVersion: snap.basePayload.uiBundleVersion || computeRuntimeCodeVersion(),
     account: snap.basePayload.account,
     activeCascadeId,
@@ -2277,15 +2356,18 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
 }
 
 function tryBuildFastConsumptionPayload(filterOpts = {}) {
-  const snap = resolveValidFastSnapshot();
+  const endpoint = filterOpts?.endpoint && filterOpts.endpoint.isRemote ? filterOpts.endpoint : null;
+  const snap = resolveValidFastSnapshot(endpoint);
   if (!snap) return null;
   const agg = aggregateSelectedWindowUsage({
     filterOpts,
     ...snap.aggContext,
+    endpoint,
   });
   return {
     scope: 'consumption',
     timestamp: new Date().toISOString(),
+    endpoint: snap.basePayload.endpoint,
     uiBundleVersion: snap.basePayload.uiBundleVersion || computeRuntimeCodeVersion(),
     usageRevision: agg.usageRevision,
     consumption: {
@@ -2305,13 +2387,18 @@ function tryBuildFastConsumptionPayload(filterOpts = {}) {
   };
 }
 
-function tryBuildConsumptionPresetsPayload() {
-  const snap = resolveValidFastSnapshot();
+function tryBuildConsumptionPresetsPayload(filterOpts = {}) {
+  const endpoint = filterOpts?.endpoint && filterOpts.endpoint.isRemote ? filterOpts.endpoint : null;
+  const snap = resolveValidFastSnapshot(endpoint);
   if (!snap) return null;
-  const bundle = aggregateConsumptionPresetBundle(snap.aggContext);
+  const bundle = aggregateConsumptionPresetBundle({
+    ...snap.aggContext,
+    endpoint,
+  });
   return {
     scope: 'consumption-presets',
     timestamp: new Date().toISOString(),
+    endpoint: snap.basePayload.endpoint,
     uiBundleVersion: snap.basePayload.uiBundleVersion || computeRuntimeCodeVersion(),
     usageRevision: bundle.usageRevision,
     ranges: bundle.ranges,
@@ -2370,6 +2457,9 @@ export function buildTelemetryPayload(
   forceQuotaRefresh = false,
   filterOpts = {}
 ) {
+  const endpointKey = filterOpts?.endpoint?.isRemote
+    ? String(filterOpts.endpoint.id || 'remote')
+    : LOCAL_ENDPOINT_ID;
   if (!forceQuotaRefresh) {
     if (filterOpts?.scope === 'conversation') {
       const convPayload = tryBuildFastConversationPayload(requestedConvId, filterOpts);
@@ -2378,16 +2468,19 @@ export function buildTelemetryPayload(
       }
     }
     if (filterOpts?.scope === 'consumption-presets') {
-      const presetsPayload = tryBuildConsumptionPresetsPayload();
+      const presetsPayload = tryBuildConsumptionPresetsPayload(filterOpts);
       if (presetsPayload) {
         return Promise.resolve(presetsPayload);
       }
-      const key = `${requestedConvId || '__auto__'}::presets-cold`;
+      const key = `${endpointKey}::${requestedConvId || '__auto__'}::presets-cold`;
       if (inFlightRequests.has(key)) {
         return inFlightRequests.get(key);
       }
-      const p = buildTelemetryPayloadInternal(requestedConvId, false, { range: 'today' })
-        .then(() => tryBuildConsumptionPresetsPayload())
+      const coldFilterOpts = filterOpts?.endpoint
+        ? { range: 'today', endpoint: filterOpts.endpoint }
+        : { range: 'today' };
+      const p = buildTelemetryPayloadInternal(requestedConvId, false, coldFilterOpts)
+        .then(() => tryBuildConsumptionPresetsPayload(filterOpts))
         .finally(() => {
           inFlightRequests.delete(key);
         });
@@ -2402,7 +2495,7 @@ export function buildTelemetryPayload(
     }
   }
   const rangeSig = `${filterOpts.range || 'all'}:${filterOpts.startMs || 0}:${filterOpts.endMs || 0}`;
-  const key = `${requestedConvId || '__auto__'}::${forceQuotaRefresh ? 'force' : 'normal'}::${rangeSig}`;
+  const key = `${endpointKey}::${requestedConvId || '__auto__'}::${forceQuotaRefresh ? 'force' : 'normal'}::${rangeSig}`;
   if (inFlightRequests.has(key)) {
     return inFlightRequests.get(key);
   }

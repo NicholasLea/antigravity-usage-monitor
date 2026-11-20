@@ -76,6 +76,12 @@ export const TopSessionHeader = defineComponent({
       [updateBtnIcon, updateBtnText]
     );
 
+    const sshBadge = h('span', {
+      className: 'endpoint-ssh-badge',
+      hidden: true,
+      text: 'SSH',
+    });
+
     const statusIcon = createSvgIcon('pulse', { size: 12 });
     const statusText = h('span', { text: t('header.statusLive') });
     const statusTag = h('span', { className: 'status-tag' }, [statusIcon, statusText]);
@@ -93,7 +99,7 @@ export const TopSessionHeader = defineComponent({
 
     const headerRowEl = h('div', { className: 'session-header' }, [
       h('div', { className: 'session-left' }, [convSelect.el]),
-      h('div', { className: 'session-right' }, [updateBtn, statusTag, refreshBtn]),
+      h('div', { className: 'session-right' }, [sshBadge, updateBtn, statusTag, refreshBtn]),
     ]);
 
     const headerEl = h('header', { className: 'top-session-stack' }, [headerRowEl]);
@@ -161,6 +167,14 @@ export const TopSessionHeader = defineComponent({
 
       patchAttr(updateBtn, 'aria-label', t('header.ariaUpdate'));
       patchAttr(refreshBtn, 'aria-label', t('header.ariaRefresh'));
+
+      const ep = telemetry?.endpoint;
+      const isRemoteEndpoint = Boolean(ep?.isRemote);
+      patchAttr(sshBadge, 'hidden', !isRemoteEndpoint);
+      if (isRemoteEndpoint) {
+        const epLabel = String(ep?.label || 'SSH').trim();
+        patchAttr(sshBadge, 'title', epLabel && epLabel !== 'SSH' ? `SSH · ${epLabel}` : 'SSH');
+      }
 
       const actConv = telemetry?.activeConversation;
       const convs = telemetry?.conversations || [];
