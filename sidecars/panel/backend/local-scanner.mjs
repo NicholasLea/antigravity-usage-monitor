@@ -1979,7 +1979,7 @@ export async function enumerateAndSyncConversations({
               activeLiveActivityMemo.delete(cidLower);
             }
 
-            const entryAccountName = prev ? prev.accountName || '' : currentAccountName || '';
+            const entryAccountName = prev?.accountName || currentAccountName || '';
             const stepsWithOwners = attachStepAccountOwners(
               steps,
               prev,
@@ -2085,9 +2085,8 @@ export async function enumerateAndSyncConversations({
                   Boolean(conv.parentConversationId) ||
                   Boolean(conv.rootConversationId && conv.rootConversationId !== cidLower);
                 const resolvedDiskMtime = conv.diskMtimeMs ?? readConversationMtime(diskFiles);
-                const offlineAccountName = prev
-                  ? prev.accountName || offlineFallback.accountName || ''
-                  : offlineFallback.accountName || currentAccountName || '';
+                const offlineAccountName =
+                  prev?.accountName || offlineFallback.accountName || currentAccountName || '';
                 const offlineStepsWithOwners = attachStepAccountOwners(
                   offlineFallback.steps,
                   prev,

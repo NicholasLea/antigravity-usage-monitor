@@ -30,6 +30,7 @@ import {
   lsRuntimeEndpoint,
   normalizeFullSettings,
   normalizeModelDisplayMode,
+  normalizeModernUi,
   normalizePluginUpdateMode,
   normalizeWindowMountMode,
   saveJson,
@@ -333,9 +334,16 @@ export function executeSettingsAction(data) {
           ? 'upstream'
           : 'short'
         : normalizeModelDisplayMode(current.modelDisplayMode, current.showUpstreamModel);
+  const nextModernUi =
+    payload.modernUi !== undefined
+      ? normalizeModernUi(payload.modernUi)
+      : payload.experimentalModernUi !== undefined
+        ? normalizeModernUi(payload.experimentalModernUi)
+        : normalizeModernUi(current.modernUi);
   const updated = normalizeFullSettings({
     ...current,
     ...payload,
+    modernUi: nextModernUi,
     modelContextWindows: current.modelContextWindows,
     weeklyTokenBudget: sanitizePositiveSettingNumber(
       payload.weeklyTokenBudget ?? payload.weeklyTokenLimit,

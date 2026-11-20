@@ -1054,12 +1054,24 @@ test('saving preferences sends the same legacy values normalized by the backend'
 });
 
 test('preferences schema defaults match pre-refactor UI, migrate legacy none slots, and support reset & cache rebuild', async () => {
-  // 1. Default schema matches pre-refactor out-of-box UI 100%
+  // 1. Default schema matches v1.5.3 out-of-box UI (language='auto', modernUi=true)
   const hDefault = backendHarness({});
   const def = hDefault.loadSettings();
-  assert.equal(def.language, 'zh-CN');
+  assert.equal(def.language, 'auto');
   assert.equal(def.themeAccent, 'host');
   assert.equal(def.fontScale, 'md');
+  assert.equal(def.modernUi, true);
+  assert.equal(def.experimentalModernUi, true);
+
+  // Upgrading from v1.5.2 settings.json (with experimentalModernUi: false and no modernUi key) enables modernUi=true
+  const hFrom152 = backendHarness({ settings: { language: 'zh-CN', experimentalModernUi: false } });
+  const loadedFrom152 = hFrom152.loadSettings();
+  assert.equal(loadedFrom152.modernUi, true);
+  assert.equal(loadedFrom152.experimentalModernUi, true);
+  const optOutRes = hFrom152.executeSettingsAction({ modernUi: false });
+  assert.equal(optOutRes.ok, true);
+  assert.equal(optOutRes.updated.modernUi, false);
+  assert.equal(hFrom152.loadSettings().modernUi, false);
   assert.equal(def.pluginUpdateMode, 'manual');
   assert.equal(def.windowMountMode, 'dual');
   assert.equal(def.enableWindowOverlay, true);
@@ -1147,7 +1159,8 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   // 6. executeResetSettingsAction restores full defaults cleanly
   const resetRes = hDefault.executeResetSettingsAction();
   assert.equal(resetRes.ok, true);
-  assert.equal(resetRes.updated.language, 'zh-CN');
+  assert.equal(resetRes.updated.language, 'auto');
+  assert.equal(resetRes.updated.modernUi, true);
   assert.equal(resetRes.updated.themeAccent, 'host');
   assert.equal(resetRes.updated.enableCliStatusLine, true);
   assert.equal(resetRes.updated.showStepTurnRail, false);

@@ -23,6 +23,7 @@ import {
   normalizeClientFontScale,
   normalizeClientModernUi,
   normalizeClientThemeAccent,
+  resolveSettingsModernUi,
 } from '../core/appearance.js';
 import {
   DEFAULT_HOVER_MODULES,
@@ -478,10 +479,10 @@ export function isEquivalentTelemetry(prev, next) {
   const pSet = prev.settings;
   const nSet = next.settings;
 
-  if ((pSet?.language ?? 'zh-CN') !== (nSet?.language ?? 'zh-CN')) return false;
+  if ((pSet?.language ?? 'auto') !== (nSet?.language ?? 'auto')) return false;
   if ((pSet?.themeAccent ?? 'host') !== (nSet?.themeAccent ?? 'host')) return false;
   if ((pSet?.fontScale ?? 'md') !== (nSet?.fontScale ?? 'md')) return false;
-  if (Boolean(pSet?.experimentalModernUi) !== Boolean(nSet?.experimentalModernUi)) return false;
+  if (resolveSettingsModernUi(pSet) !== resolveSettingsModernUi(nSet)) return false;
   if ((prev.hostPlatform || '') !== (next.hostPlatform || '')) return false;
   if (
     (prev.endpoint?.id || LOCAL_ENDPOINT_ID) !== (next.endpoint?.id || LOCAL_ENDPOINT_ID) ||
@@ -1645,7 +1646,11 @@ export async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'fontScale')) {
     safePatch.fontScale = normalizeClientFontScale(safePatch.fontScale);
   }
-  if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalModernUi')) {
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'modernUi')) {
+    const normModern = normalizeClientModernUi(safePatch.modernUi);
+    safePatch.modernUi = normModern;
+    safePatch.experimentalModernUi = normModern;
+  } else if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalModernUi')) {
     safePatch.experimentalModernUi = normalizeClientModernUi(safePatch.experimentalModernUi);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'weeklyLimitMode')) {

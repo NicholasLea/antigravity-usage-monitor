@@ -35,6 +35,29 @@ function normalizeOwnerAccount(val) {
   return typeof val === 'string' ? val.trim().toLowerCase() : '';
 }
 
+const COMPACTION_QUOTA_SETTLE_MAX_MS = 180_000;
+const STEP_QUOTA_DURATION_CAP_SEC = 600;
+
+/**
+ * 解析单步用于官方配额周期窗口（`5h` / `weekly` / `cycle`）边界比对的结算时间戳：
+ * 服务端配额桶的 `resetTime` 锚定在周期内首笔请求完成扣费时刻（而非 `createdAt` 发起时刻），
+ * 使用完成时刻（无流式计时的自动压缩 `CHECKPOINT` 步按合理结算上限及下一步发起时刻封顶）避免漏计开启新周期的首步。
+ */
+function resolveStepQuotaBillingMs(st, nextStep, nowMs) {
+  const tMs = Number(st?.createdAtMs) > 0 ? Number(st.createdAtMs) : 0;
+  if (!(tMs > 0) || tMs > nowMs) return tMs;
+  const durSec = Number(st?.totalDurationSec);
+  if (Number.isFinite(durSec) && durSec > 0) {
+    const endMs = tMs + Math.round(Math.min(durSec, STEP_QUOTA_DURATION_CAP_SEC) * 1000);
+    return Math.min(nowMs, endMs);
+  }
+  if (st?.isCompactionStep) {
+    const nextMs = Number(nextStep?.createdAtMs) > tMs ? Number(nextStep.createdAtMs) : Infinity;
+    return Math.min(nowMs, nextMs, tMs + COMPACTION_QUOTA_SETTLE_MAX_MS);
+  }
+  return tMs;
+}
+
 /**
  * 获取本地当日 00:00:00.000 的毫秒时间戳。
  *
@@ -900,13 +923,16 @@ function computeFamilySessionBuckets({
     const cidLower = String(entry?.cascadeId || '').toLowerCase();
     if (!cidLower || !familySet.has(cidLower)) continue;
     const entryOwner = normalizeOwnerAccount(entry.accountName);
-    for (const st of entry.steps || []) {
+    const entrySteps = entry.steps || [];
+    for (let sIdx = 0; sIdx < entrySteps.length; sIdx++) {
+      const st = entrySteps[sIdx];
       if (!st || typeof st !== 'object') continue;
+      const nextSt = entrySteps[sIdx + 1] || null;
       const stepOwner = normalizeOwnerAccount(st.accountName) || entryOwner;
       const includeInQuotaPools =
         normalizedQuotaAccount === null
           ? false
-          : normalizedQuotaAccount === ''
+          : normalizedQuotaAccount === '' || stepOwner === ''
             ? true
             : stepOwner === normalizedQuotaAccount;
       const mInfo = resolveStepModel(st);
@@ -923,6 +949,7 @@ function computeFamilySessionBuckets({
       const resolvedCost = Number.isFinite(stepCost) ? stepCost : 0;
       const unpriced = stepCost === null ? 1 : 0;
       const tMs = Number(st.createdAtMs) > 0 ? Number(st.createdAtMs) : 0;
+      const qMs = resolveStepQuotaBillingMs(st, nextSt, nowMs);
       const savedCost = mInfo.pricing
         ? (cacheTok / 1_000_000) * Math.max(0, mInfo.pricing.input - mInfo.pricing.cache)
         : 0;
@@ -951,39 +978,42 @@ function computeFamilySessionBuckets({
           : null;
 
       let inCurrentCycle = false;
-      if (tMs > 0 && tMs <= nowMs) {
+      if (qMs > 0 && qMs <= nowMs) {
         if (isCustomWeeklyMode) {
           inCurrentCycle = tMs >= effectiveWeekStartMs;
         } else if (poolCycleBuckets.size > 0) {
           const effCycleStartMs = poolBucketEntry
             ? poolBucketEntry.startWkMs
             : cycleStartFallbackMs;
-          inCurrentCycle = includeInQuotaPools && tMs >= effCycleStartMs;
+          inCurrentCycle = includeInQuotaPools && qMs >= effCycleStartMs;
         } else {
-          inCurrentCycle = includeInQuotaPools && tMs >= cycleStartFallbackMs;
+          inCurrentCycle = includeInQuotaPools && qMs >= cycleStartFallbackMs;
         }
       }
 
       for (const k of presetKeys) {
         const w = presetWindows[k];
+        const cmpMs = k === '5h' || k === 'week' ? qMs : tMs;
         const matchesPreset =
           k === 'all'
             ? true
             : k === 'cycle'
               ? inCurrentCycle
-              : tMs > 0 && tMs >= w.startMs && tMs <= w.endMs;
+              : cmpMs > 0 && cmpMs >= w.startMs && cmpMs <= w.endMs;
         if (matchesPreset) {
           accumulateStepIntoBucket(sessionBuckets[k], stepUsage, entry.cascadeId);
         }
       }
 
       if (selectedWindow && (!sessionBuckets[selectedWindow.key] || selectedWindow.key === 'custom')) {
+        const selCmpMs =
+          selectedWindow.key === '5h' || selectedWindow.key === 'week' ? qMs : tMs;
         const inSelectedWindow =
           selectedWindow.key === 'all'
             ? true
             : selectedWindow.key === 'cycle'
               ? inCurrentCycle
-              : tMs > 0 && tMs >= selectedWindow.startMs && tMs <= selectedWindow.endMs;
+              : selCmpMs > 0 && selCmpMs >= selectedWindow.startMs && selCmpMs <= selectedWindow.endMs;
         if (inSelectedWindow) {
           accumulateStepIntoBucket(selectedSessionBucket, stepUsage, entry.cascadeId);
         }
@@ -1024,16 +1054,33 @@ function usageTimestampBoundary(dates, value, inclusive) {
   return start;
 }
 
-function sameUsageWindows(previous, current, dates) {
+function sortedQuotaBillingTimestamps(entries, nowMs) {
+  const dates = new Float64Array(entries.reduce((sum, entry) => sum + entry.steps.length, 0));
+  let count = 0;
+  for (const { steps } of entries) {
+    for (let i = 0; i < steps.length; i++) {
+      const qMs = resolveStepQuotaBillingMs(steps[i], steps[i + 1] || null, nowMs);
+      if (qMs > 0) dates[count++] = qMs;
+    }
+  }
+  return dates.subarray(0, count).sort();
+}
+
+function isQuotaAnchoredWindowKey(key) {
+  return key === '5h' || key === 'week' || key === 'cycle' || String(key || '').includes(':');
+}
+
+function sameUsageWindows(previous, current, dates, quotaDates = dates) {
   return previous.length === current.length && current.every((window, index) => {
     const before = previous[index];
+    const refDates = isQuotaAnchoredWindowKey(window.key) ? quotaDates : dates;
     return before.key === window.key && before.label === window.label &&
       (before.startMs === window.startMs ||
-        usageTimestampBoundary(dates, before.startMs, false) ===
-          usageTimestampBoundary(dates, window.startMs, false)) &&
+        usageTimestampBoundary(refDates, before.startMs, false) ===
+          usageTimestampBoundary(refDates, window.startMs, false)) &&
       (before.endMs === window.endMs ||
-        usageTimestampBoundary(dates, before.endMs, true) ===
-          usageTimestampBoundary(dates, window.endMs, true));
+        usageTimestampBoundary(refDates, before.endMs, true) ===
+          usageTimestampBoundary(refDates, window.endMs, true));
   });
 }
 
@@ -1157,8 +1204,12 @@ export function aggregateMultiWindowUsage({
     if (
       trend.hourly === previous.trend.hourly && trend.first === previous.trend.first &&
       trend.last === previous.trend.last &&
-      sameUsageWindows(previous.windows, windows,
-        snapshot.dates ??= sortedUsageTimestamps(allEntriesToAggregate))
+      sameUsageWindows(
+        previous.windows,
+        windows,
+        (snapshot.dates ??= sortedUsageTimestamps(allEntriesToAggregate)),
+        (snapshot.quotaDates ??= sortedQuotaBillingTimestamps(allEntriesToAggregate, nowMs))
+      )
     ) {
       snapshot.ranges.delete(selectedWindow.key);
       snapshot.ranges.set(selectedWindow.key, previous);
@@ -1210,13 +1261,16 @@ export function aggregateMultiWindowUsage({
     const srcKey = entry.appSource || 'standalone';
     const srcName = USAGE_SOURCE_LABELS[srcKey] || `Antigravity (${srcKey})`;
 
-    for (const st of entry.steps || []) {
+    const entrySteps = entry.steps || [];
+    for (let sIdx = 0; sIdx < entrySteps.length; sIdx++) {
+      const st = entrySteps[sIdx];
       if (!st || typeof st !== 'object') continue;
+      const nextSt = entrySteps[sIdx + 1] || null;
       const stepOwner = normalizeOwnerAccount(st.accountName) || entryOwner;
       const includeInQuotaPools =
         normalizedQuotaAccount === null
           ? false
-          : normalizedQuotaAccount === ''
+          : normalizedQuotaAccount === '' || stepOwner === ''
             ? true
             : stepOwner === normalizedQuotaAccount;
       const mInfo = resolveStepModel(st);
@@ -1233,6 +1287,7 @@ export function aggregateMultiWindowUsage({
       const resolvedCost = Number.isFinite(stepCost) ? stepCost : 0;
       const unpriced = stepCost === null ? 1 : 0;
       const tMs = Number(st.createdAtMs) > 0 ? Number(st.createdAtMs) : 0;
+      const qMs = resolveStepQuotaBillingMs(st, nextSt, nowMs);
       const savedCost = mInfo.pricing
         ? (cacheTok / 1_000_000) * Math.max(0, mInfo.pricing.input - mInfo.pricing.cache)
         : 0;
@@ -1270,37 +1325,38 @@ export function aggregateMultiWindowUsage({
         hasDedicatedArgonPool
       );
 
-      if (includeInQuotaPools && poolBucketEntry && tMs > 0 && tMs <= nowMs) {
-        if (tMs >= poolBucketEntry.start5hMs) {
+      if (includeInQuotaPools && poolBucketEntry && qMs > 0 && qMs <= nowMs) {
+        if (qMs >= poolBucketEntry.start5hMs) {
           accumulateStepIntoBucket(poolBucketEntry.b5h, stepUsage, cascadeId);
         }
-        if (tMs >= poolBucketEntry.startWkMs) {
+        if (qMs >= poolBucketEntry.startWkMs) {
           accumulateStepIntoBucket(poolBucketEntry.bWk, stepUsage, cascadeId);
         }
       }
 
       let inCurrentCycle = false;
-      if (tMs > 0 && tMs <= nowMs) {
+      if (qMs > 0 && qMs <= nowMs) {
         if (isCustomWeeklyMode) {
           inCurrentCycle = tMs >= presetWindows.week.startMs;
         } else if (poolCycleBuckets.size > 0) {
           const effCycleStartMs = poolBucketEntry
             ? poolBucketEntry.startWkMs
             : presetWindows.cycle.startMs;
-          inCurrentCycle = includeInQuotaPools && tMs >= effCycleStartMs;
+          inCurrentCycle = includeInQuotaPools && qMs >= effCycleStartMs;
         } else {
-          inCurrentCycle = includeInQuotaPools && tMs >= presetWindows.cycle.startMs;
+          inCurrentCycle = includeInQuotaPools && qMs >= presetWindows.cycle.startMs;
         }
       }
 
       for (const k of presetKeys) {
         const w = presetWindows[k];
+        const cmpMs = k === '5h' || k === 'week' ? qMs : tMs;
         const matchesPreset =
           k === 'all'
             ? true
             : k === 'cycle'
               ? inCurrentCycle
-              : tMs > 0 && tMs >= w.startMs && tMs <= w.endMs;
+              : cmpMs > 0 && cmpMs >= w.startMs && cmpMs <= w.endMs;
         if (matchesPreset) {
           accumulateStepIntoBucket(accountBuckets[k], stepUsage, cascadeId);
           if (isCurrentConv) {
@@ -1312,12 +1368,14 @@ export function aggregateMultiWindowUsage({
         }
       }
 
+      const selCmpMs =
+        selectedWindow.key === '5h' || selectedWindow.key === 'week' ? qMs : tMs;
       const inSelectedWindow =
         selectedWindow.key === 'all'
           ? true
           : selectedWindow.key === 'cycle'
             ? inCurrentCycle
-            : tMs > 0 && tMs >= selectedWindow.startMs && tMs <= selectedWindow.endMs;
+            : selCmpMs > 0 && selCmpMs >= selectedWindow.startMs && selCmpMs <= selectedWindow.endMs;
 
       if (inSelectedWindow) {
         if (
@@ -1626,7 +1684,8 @@ export function aggregateSelectedWindowUsage({
         sameUsageWindows(
           [prevWin],
           [selectedWindow],
-          (snapshot.dates ??= sortedUsageTimestamps(allEntriesToAggregate))
+          (snapshot.dates ??= sortedUsageTimestamps(allEntriesToAggregate)),
+          (snapshot.quotaDates ??= sortedQuotaBillingTimestamps(allEntriesToAggregate, nowMs))
         )
       ) {
         const res = candidate.result;
@@ -1661,6 +1720,10 @@ export function aggregateSelectedWindowUsage({
     }
   }
 
+  const maxSettlementSlackMs = Math.max(
+    COMPACTION_QUOTA_SETTLE_MAX_MS,
+    STEP_QUOTA_DURATION_CAP_SEC * 1000
+  );
   let minCutoffMs = 0;
   let maxCutoffMs = Infinity;
   let canPruneByTime = false;
@@ -1674,9 +1737,14 @@ export function aggregateSelectedWindowUsage({
       for (const entry of poolCycleBuckets.values()) {
         if (entry.startWkMs < minCutoffMs) minCutoffMs = entry.startWkMs;
       }
+      minCutoffMs = Math.max(0, minCutoffMs - maxSettlementSlackMs);
     } else {
-      minCutoffMs = selectedWindow.startMs;
+      minCutoffMs = Math.max(0, selectedWindow.startMs - maxSettlementSlackMs);
     }
+  } else if (selectedWindow.key === '5h' || selectedWindow.key === 'week') {
+    canPruneByTime = true;
+    minCutoffMs = Math.max(0, selectedWindow.startMs - maxSettlementSlackMs);
+    maxCutoffMs = selectedWindow.endMs;
   } else if (selectedWindow.key !== 'all') {
     canPruneByTime = true;
     minCutoffMs = selectedWindow.startMs;
@@ -1706,10 +1774,24 @@ export function aggregateSelectedWindowUsage({
     const srcKey = entry.appSource || 'standalone';
     const srcName = USAGE_SOURCE_LABELS[srcKey] || `Antigravity (${srcKey})`;
 
-    for (const st of steps) {
+    for (let sIdx = 0; sIdx < steps.length; sIdx++) {
+      const st = steps[sIdx];
       if (!st || typeof st !== 'object') continue;
+      const nextSt = steps[sIdx + 1] || null;
       const tMs = Number(st.createdAtMs) > 0 ? Number(st.createdAtMs) : 0;
-      if (canPruneByTime && (tMs <= 0 || tMs < minCutoffMs || tMs > maxCutoffMs)) {
+      const qMs = resolveStepQuotaBillingMs(st, nextSt, nowMs);
+      const isQuotaWin =
+        selectedWindow.key === 'cycle' ||
+        selectedWindow.key === '5h' ||
+        selectedWindow.key === 'week';
+      const effStepMs = isQuotaWin && !(selectedWindow.key === 'cycle' && isCustomWeeklyMode) ? qMs : tMs;
+      if (canPruneByTime && (effStepMs <= 0 || effStepMs < minCutoffMs || effStepMs > maxCutoffMs)) {
+        continue;
+      }
+      if (
+        (selectedWindow.key === '5h' || selectedWindow.key === 'week') &&
+        effStepMs < selectedWindow.startMs
+      ) {
         continue;
       }
 
@@ -1720,7 +1802,7 @@ export function aggregateSelectedWindowUsage({
         const includeInQuotaPools =
           normalizedQuotaAccount === null
             ? false
-            : normalizedQuotaAccount === ''
+            : normalizedQuotaAccount === '' || stepOwner === ''
               ? true
               : stepOwner === normalizedQuotaAccount;
         let inCurrentCycle = false;
@@ -1740,9 +1822,9 @@ export function aggregateSelectedWindowUsage({
           const effCycleStartMs = poolBucketEntry
             ? poolBucketEntry.startWkMs
             : selectedWindow.startMs;
-          inCurrentCycle = tMs >= effCycleStartMs;
+          inCurrentCycle = qMs >= effCycleStartMs;
         } else {
-          inCurrentCycle = includeInQuotaPools && tMs >= selectedWindow.startMs;
+          inCurrentCycle = includeInQuotaPools && qMs >= selectedWindow.startMs;
         }
         if (!inCurrentCycle) continue;
         if (

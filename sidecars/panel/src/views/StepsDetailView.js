@@ -5,6 +5,7 @@
  * - 总汇总视图提供会话线性走势图、多模型同图趋势拟合曲线与极简高密度模型总览卡片。
  */
 
+import { resolveSettingsModernUi } from '../core/appearance.js';
 import { defineComponent } from '../core/component.js';
 import {
   h,
@@ -1372,7 +1373,7 @@ export const StepsDetailView = defineComponent({
           st.telemetry?.settings?.stepTokenComboFormat
         ),
         stepTableColumns: st.telemetry?.settings?.stepTableColumns,
-        experimentalModernUi: Boolean(st.telemetry?.settings?.experimentalModernUi),
+        experimentalModernUi: resolveSettingsModernUi(st.telemetry?.settings),
       }),
       (slice) => {
         latestSlice = slice;

@@ -62,6 +62,22 @@ function getConsumptionTimeRangeOptions() {
   ];
 }
 
+function floorToStartOfMinuteMs(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return 0;
+  const d = new Date(n);
+  d.setSeconds(0, 0);
+  return d.getTime();
+}
+
+function ceilToEndOfMinuteMs(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return 0;
+  const d = new Date(n);
+  d.setSeconds(59, 999);
+  return d.getTime();
+}
+
 export const ConsumptionView = defineComponent({
   name: 'ConsumptionView',
   setup({ onCleanup }) {
@@ -69,6 +85,7 @@ export const ConsumptionView = defineComponent({
     let draftStartMs = telemetryStore.getState().customStartMs;
     let draftEndMs = telemetryStore.getState().customEndMs;
     let hasUncommittedCustomDraft = false;
+    let hasCommittedCustomRange = false;
 
     const timeFilterSwitch = SegmentedControl({
       ariaLabel: t('cons.rangeAria'),
@@ -77,6 +94,19 @@ export const ConsumptionView = defineComponent({
       onUpdateModelValue: (nextRange) => {
         if (nextRange === 'custom') {
           const st = telemetryStore.getState();
+          if (!hasCommittedCustomRange && st.selectedTimeRange !== 'custom') {
+            const nowMs = Date.now();
+            draftStartMs = floorToStartOfMinuteMs(nowMs - 24 * 3600 * 1000);
+            draftEndMs = ceilToEndOfMinuteMs(nowMs);
+            hasUncommittedCustomDraft = false;
+            startPicker.setValue(draftStartMs);
+            endPicker.setValue(draftEndMs);
+            selectConsumptionTimeRange('custom', {
+              customStartMs: draftStartMs,
+              customEndMs: draftEndMs,
+            });
+            return;
+          }
           draftStartMs = st.customStartMs;
           draftEndMs = st.customEndMs;
           hasUncommittedCustomDraft = false;
@@ -117,11 +147,14 @@ export const ConsumptionView = defineComponent({
         onClick: () => {
           const sMs = Number(draftStartMs || 0);
           const eMs = Number(draftEndMs || 0);
-          const minMs = sMs > 0 && eMs > 0 ? Math.min(sMs, eMs) : sMs;
-          const maxMs = sMs > 0 && eMs > 0 ? Math.max(sMs, eMs) : eMs;
+          const rawMinMs = sMs > 0 && eMs > 0 ? Math.min(sMs, eMs) : sMs;
+          const rawMaxMs = sMs > 0 && eMs > 0 ? Math.max(sMs, eMs) : eMs;
+          const minMs = floorToStartOfMinuteMs(rawMinMs);
+          const maxMs = ceilToEndOfMinuteMs(rawMaxMs);
           draftStartMs = minMs;
           draftEndMs = maxMs;
           hasUncommittedCustomDraft = false;
+          hasCommittedCustomRange = true;
           startPicker.setValue(minMs);
           endPicker.setValue(maxMs);
           selectConsumptionTimeRange('custom', {

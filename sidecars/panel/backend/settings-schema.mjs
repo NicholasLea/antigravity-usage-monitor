@@ -31,6 +31,7 @@ import {
   normalizeHoverModules,
   normalizeLanguageSetting,
   normalizeModelDisplayMode,
+  normalizeModernUi,
   normalizeOrchestratorIdMode,
   normalizeOverviewMetrics,
   normalizeOverviewModules,
@@ -73,6 +74,7 @@ export {
   normalizeHoverModules,
   normalizeLanguageSetting,
   normalizeModelDisplayMode,
+  normalizeModernUi,
   normalizeOrchestratorIdMode,
   normalizeOverviewMetrics,
   normalizeOverviewModules,
@@ -107,10 +109,11 @@ export function normalizeModelContextWindows(value) {
 }
 
 export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
-  language: 'zh-CN',
+  language: 'auto',
   themeAccent: 'host',
   fontScale: 'md',
-  experimentalModernUi: false,
+  modernUi: true,
+  experimentalModernUi: true,
   weeklyTokenBudget: 150000000,
   weeklyCostBudget: 100,
   weeklyLimitMode: 'official',
@@ -173,11 +176,14 @@ export function normalizeFullSettings(rawInput) {
     safeRaw.modelDisplayMode,
     safeRaw.showUpstreamModel
   );
+  const modernUi =
+    safeRaw.modernUi !== undefined ? normalizeModernUi(safeRaw.modernUi) : true;
   return {
     language: normalizeLanguageSetting(safeRaw.language),
     themeAccent: normalizeThemeAccent(safeRaw.themeAccent),
     fontScale: normalizeFontScale(safeRaw.fontScale),
-    experimentalModernUi: normalizeExperimentalModernUi(safeRaw.experimentalModernUi),
+    modernUi,
+    experimentalModernUi: modernUi,
     weeklyTokenBudget: schemaSanitizePositiveNum(
       safeRaw.weeklyTokenBudget ?? safeRaw.weeklyTokenLimit,
       DEFAULT_SETTINGS_SCHEMA.weeklyTokenBudget

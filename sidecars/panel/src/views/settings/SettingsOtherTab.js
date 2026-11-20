@@ -458,7 +458,7 @@ export const SettingsOtherTab = defineComponent({
           showMaintFeedback(t('settings.oth.resettingBtn'), 0);
           try {
             const res = await resetAllSettings();
-            setI18nLanguage(res?.settings?.language || 'zh-CN');
+            setI18nLanguage(res?.settings?.language || 'auto');
             showMaintFeedback(t('settings.oth.resetAllDone'), 2800);
           } catch {
             showMaintFeedback(t('settings.saveFailed'), 2800);

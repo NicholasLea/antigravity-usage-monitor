@@ -6,6 +6,7 @@ import {
   DEFAULT_SETTINGS_SCHEMA,
   normalizeExperimentalModernUi,
   normalizeFullSettings,
+  normalizeModernUi,
 } from '../backend/settings-schema.mjs';
 import {
   applyAppearanceToRoot,
@@ -38,27 +39,44 @@ import { StepsDetailView } from '../src/views/StepsDetailView.js';
 import { SettingsGeneralTab } from '../src/views/settings/SettingsGeneralTab.js';
 import { SettingsStructureTab } from '../src/views/settings/SettingsStructureTab.js';
 
-test('experimentalModernUi schema normalization defaults to false and coerces boolean/string values cleanly', () => {
-  assert.equal(DEFAULT_SETTINGS_SCHEMA.experimentalModernUi, false);
+test('modernUi schema normalization defaults to true, upgrades 1.5.2 settings without modernUi key to true, and respects explicit false', () => {
+  assert.equal(DEFAULT_SETTINGS_SCHEMA.language, 'auto');
+  assert.equal(DEFAULT_SETTINGS_SCHEMA.modernUi, true);
+  assert.equal(DEFAULT_SETTINGS_SCHEMA.experimentalModernUi, true);
+  assert.equal(normalizeModernUi(undefined), true);
+  assert.equal(normalizeModernUi(false), false);
+  assert.equal(normalizeModernUi('off'), false);
+  assert.equal(normalizeModernUi(true), true);
+  assert.equal(normalizeModernUi('true'), true);
+  assert.equal(normalizeModernUi('on'), true);
   assert.equal(normalizeExperimentalModernUi(undefined), false);
-  assert.equal(normalizeExperimentalModernUi(false), false);
-  assert.equal(normalizeExperimentalModernUi('off'), false);
-  assert.equal(normalizeExperimentalModernUi(true), true);
-  assert.equal(normalizeExperimentalModernUi('true'), true);
-  assert.equal(normalizeExperimentalModernUi('on'), true);
+  assert.equal(normalizeClientModernUi(undefined), true);
   assert.equal(normalizeClientModernUi('on'), true);
   assert.equal(normalizeClientModernUi(false), false);
+  assert.equal(normalizeClientModernUi('off'), false);
 
-  assert.equal(normalizeFullSettings({}).experimentalModernUi, false);
-  assert.equal(normalizeFullSettings({ experimentalModernUi: true }).experimentalModernUi, true);
+  // Fresh 1.5.3 install -> language='auto', modernUi=true
+  assert.equal(normalizeFullSettings({}).language, 'auto');
+  assert.equal(normalizeFullSettings({}).modernUi, true);
+  assert.equal(normalizeFullSettings({}).experimentalModernUi, true);
+
+  // 1.5.2 persisted settings.json (where experimentalModernUi: false was written by default, no modernUi key) -> upgrades to true!
+  const upgradedFrom152 = normalizeFullSettings({ experimentalModernUi: false });
+  assert.equal(upgradedFrom152.modernUi, true);
+  assert.equal(upgradedFrom152.experimentalModernUi, true);
+
+  // Explicit 1.5.3 user opt-out (`modernUi: false`) -> stays false!
+  const explicitOff153 = normalizeFullSettings({ modernUi: false, experimentalModernUi: true });
+  assert.equal(explicitOff153.modernUi, false);
+  assert.equal(explicitOff153.experimentalModernUi, false);
 
   assert.equal(
     isEquivalentTelemetry(
-      { settings: { experimentalModernUi: false } },
-      { settings: { experimentalModernUi: true } }
+      { settings: { modernUi: false } },
+      { settings: { modernUi: true } }
     ),
     false,
-    'isEquivalentTelemetry must detect experimentalModernUi changes'
+    'isEquivalentTelemetry must detect modernUi changes'
   );
 });
 
@@ -182,29 +200,41 @@ test('applyAppearanceToRoot and SettingsGeneralTab toggle data-modern-ui + data-
   assert.equal(document.documentElement.hasAttribute('data-modern-ui'), false);
   assert.equal(document.documentElement.getAttribute('data-color-scheme'), 'light');
 
-  // 2. SettingsGeneralTab renders '新 UI（实验性）' switch and toggles data-modern-ui immediately
+  // 2. SettingsGeneralTab renders '现代化 UI' (开启 / 关闭) and Language (跟随系统 / 简体中文 / English)
   tab = SettingsGeneralTab({});
   document.body.appendChild(tab.el);
   tab.refs.renderSettings({
-    language: 'zh-CN',
+    language: 'auto',
     themeAccent: 'host',
     fontScale: 'md',
+    modernUi: false,
     experimentalModernUi: false,
     pluginUpdateMode: 'manual',
   });
 
-  assert.match(tab.el.textContent, /新 UI（实验性）/);
-  const modernBtns = tab.refs.modernUiSwitch.el.querySelectorAll('.seg-btn');
-  assert.equal(modernBtns.length, 2);
-  assert.equal(modernBtns[0].classList.contains('is-active'), true);
+  assert.match(tab.el.textContent, /现代化 UI/);
+  assert.doesNotMatch(tab.el.textContent, /实验性/);
+  const langSegBtns = tab.refs.languageSwitch.el.querySelectorAll('.seg-btn');
+  assert.deepEqual(
+    langSegBtns.map((b) => b.textContent),
+    ['跟随系统', '简体中文', 'English']
+  );
+  assert.equal(langSegBtns[0].classList.contains('is-active'), true);
 
-  // Click '开启' (index 1)
-  modernBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+  const modernBtns = tab.refs.modernUiSwitch.el.querySelectorAll('.seg-btn');
+  assert.deepEqual(
+    modernBtns.map((b) => b.textContent),
+    ['开启', '关闭']
+  );
+  assert.equal(modernBtns[1].classList.contains('is-active'), true);
+
+  // Click '开启' (index 0)
+  modernBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
   await new Promise((r) => setTimeout(r, 15));
 
   assert.equal(document.documentElement.getAttribute('data-modern-ui'), 'true');
   assert.equal(savedPatches.length, 1);
-  assert.equal(savedPatches[0].experimentalModernUi, true);
+  assert.equal(savedPatches[0].modernUi, true);
 
   // 3. Built styles.css contains modern-ui borderless, sliding glider, and crisp pure-white light-mode rules
   const builtStyles = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');

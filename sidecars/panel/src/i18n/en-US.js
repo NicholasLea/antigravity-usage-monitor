@@ -31,7 +31,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'header.statusGenerating': 'Running{suffix}',
   'header.statusQuotaCached': 'Quota Cached',
   'header.statusQuotaOffline': 'Quota Offline',
-  'header.statusLive': 'Live 2s',
+  'header.statusLive': 'Monitoring',
 
   // Formatters & Common Labels
   'fmt.pending': 'N/A',
@@ -445,7 +445,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.gen.fontLg': 'Large',
   'settings.gen.fontXl': 'XL',
   'settings.gen.fontHint': 'Scales sidebar and popover typography while keeping the inline capsule compact',
-  'settings.gen.modernUi': 'Modern UI (Experimental)',
+  'settings.gen.modernUi': 'Modern UI',
   'settings.gen.modernUiOff': 'Off',
   'settings.gen.modernUiOn': 'On',
   'settings.gen.modernUiHint': 'Removes most borders in favor of soft tonal surfaces and smoother animations',

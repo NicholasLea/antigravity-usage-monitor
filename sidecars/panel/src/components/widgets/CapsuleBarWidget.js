@@ -98,6 +98,7 @@ export function patchCapsuleOdometerText(
 
   if (!isModern || !/\d/.test(nextStr)) {
     if (prev?.active) {
+      el.textContent = '';
       while (el.firstChild) el.removeChild(el.firstChild);
       patchAttr(el, 'data-od-active', null);
       patchAttr(el, 'data-od-value', null);
@@ -114,6 +115,7 @@ export function patchCapsuleOdometerText(
 
   let nodes;
   if (!prev?.active || prev.resetKey !== resetKey || !(prev.nodes instanceof Map)) {
+    el.textContent = '';
     while (el.firstChild) el.removeChild(el.firstChild);
     nodes = new Map();
   } else {
@@ -472,10 +474,6 @@ export const CapsuleBarWidget = defineComponent({
       'div',
       { className: 'preview-host-left is-composer', hidden: true },
       [
-        h('span', { className: 'preview-composer-chip' }, [
-          h('span', { text: 'Auto' }),
-          createSvgIcon('chevron-down', { size: 10 }),
-        ]),
         h('span', { className: 'preview-composer-chip' }, [
           h('span', { text: 'Carbon (High)' }),
           createSvgIcon('chevron-down', { size: 10 }),

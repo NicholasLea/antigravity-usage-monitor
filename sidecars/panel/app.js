@@ -2,7 +2,7 @@
 'use strict';
 
 // --- shared/settings-normalization.mjs ---
-const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeExperimentalModernUi } = (() => {
+const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, normalizeExperimentalModernUi } = (() => {
 /**
  * @fileoverview 前后端与 CLI 共用的偏好设置枚举常量、默认值与无状态纯函数归一化规则。
  */
@@ -147,19 +147,19 @@ const MAX_POPOVER_WIDTH = 1080;
 const DEFAULT_POPOVER_WIDTH = 580;
 
 /**
- * 归一化界面语言枚举（默认 `'zh-CN'`，支持 `'auto'`/`'system'` 与 `'en-US'`）。
+ * 归一化界面语言枚举（默认 `'auto'`，支持 `'zh-CN'` 及 `'en-US'`）。
  *
  * @param {unknown} lang
  * @returns {'auto'|'zh-CN'|'en-US'}
  */
 function normalizeLanguageSetting(lang) {
   const raw = String(lang ?? '').trim();
-  if (!raw) return 'zh-CN';
+  if (!raw) return 'auto';
   const lower = raw.toLowerCase();
   if (lower === 'auto' || lower === 'system') return 'auto';
   if (lower === 'en' || lower === 'en-us' || lower.startsWith('en-')) return 'en-US';
   if (lower === 'zh' || lower === 'zh-cn' || lower.startsWith('zh')) return 'zh-CN';
-  return 'zh-CN';
+  return 'auto';
 }
 
 /**
@@ -453,7 +453,24 @@ function normalizeStandalonePort(port) {
 }
 
 /**
- * 归一化实验性现代化新 UI 开关（默认 `false`）。
+ * 归一化现代化 UI 开关（默认 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+function normalizeModernUi(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
+  }
+  return Boolean(val);
+}
+
+/**
+ * 归一化旧版实验性新 UI 字段（保留兼容，缺省返回 `false`）。
  *
  * @param {unknown} val
  * @returns {boolean}
@@ -465,7 +482,7 @@ function normalizeExperimentalModernUi(val) {
   }
   return Boolean(val);
 }
-return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeExperimentalModernUi };
+return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, normalizeExperimentalModernUi };
 })();
 
 // --- shared/telemetry-display-rules.mjs ---
@@ -1074,7 +1091,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.statusGenerating': '生成中{suffix}',
   'header.statusQuotaCached': '额度缓存',
   'header.statusQuotaOffline': '额度离线',
-  'header.statusLive': '实时 2s',
+  'header.statusLive': '监控中',
 
   // Formatters & Common Labels
   'fmt.pending': '待定',
@@ -1488,10 +1505,10 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.gen.fontLg': '大',
   'settings.gen.fontXl': '特大',
   'settings.gen.fontHint': '等比缩放侧边栏与展开面板字号，顶栏及输入框内嵌胶囊保持紧凑定高',
-  'settings.gen.modernUi': '新 UI（实验性）',
+  'settings.gen.modernUi': '现代化 UI',
   'settings.gen.modernUiOff': '关闭',
   'settings.gen.modernUiOn': '开启',
-  'settings.gen.modernUiHint': '去除大部分线框，采用柔和分层底色与更流畅的现代过渡动画',
+  'settings.gen.modernUiHint': '去除大部分线框，采用柔和分层底色及更流畅的现代过渡动画',
   'settings.gen.updateTitle': '版本更新',
   'settings.gen.updateMode': '更新方式',
   'settings.gen.updateManual': '仅提示新版本，手动更新',
@@ -1783,7 +1800,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'header.statusGenerating': 'Running{suffix}',
   'header.statusQuotaCached': 'Quota Cached',
   'header.statusQuotaOffline': 'Quota Offline',
-  'header.statusLive': 'Live 2s',
+  'header.statusLive': 'Monitoring',
 
   // Formatters & Common Labels
   'fmt.pending': 'N/A',
@@ -2197,7 +2214,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.gen.fontLg': 'Large',
   'settings.gen.fontXl': 'XL',
   'settings.gen.fontHint': 'Scales sidebar and popover typography while keeping the inline capsule compact',
-  'settings.gen.modernUi': 'Modern UI (Experimental)',
+  'settings.gen.modernUi': 'Modern UI',
   'settings.gen.modernUiOff': 'Off',
   'settings.gen.modernUiOn': 'On',
   'settings.gen.modernUiHint': 'Removes most borders in favor of soft tonal surfaces and smoother animations',
@@ -2486,8 +2503,8 @@ function detectHostSystemLocale() {
 }
 
 const i18nStore = createReactiveStore({
-  language: 'zh-CN',
-  locale: 'zh-CN',
+  language: 'auto',
+  locale: detectHostSystemLocale(),
 });
 
 function setI18nLanguage(rawLang) {
@@ -2528,7 +2545,7 @@ return { I18N_DICTIONARIES, normalizeI18nLanguage, detectHostSystemLocale, i18nS
 })();
 
 // --- src/core/appearance.js ---
-const { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normalizeClientThemeAccent, normalizeClientFontScale, normalizeClientModernUi, isModernUiActiveForElement, parseCssColorLuminance, detectHostColorScheme, applyAppearanceToRoot } = (() => {
+const { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normalizeClientThemeAccent, normalizeClientFontScale, normalizeClientModernUi, resolveSettingsModernUi, isModernUiActiveForElement, parseCssColorLuminance, detectHostColorScheme, applyAppearanceToRoot } = (() => {
 /**
  * @fileoverview Theme accent palette & panel font-scale appearance engine.
  * Applies CSS custom properties cleanly to Sidebar `:root` and Shadow DOM hosts,
@@ -2570,11 +2587,25 @@ function normalizeClientFontScale(raw) {
 }
 
 function normalizeClientModernUi(raw) {
+  if (raw === undefined || raw === null || raw === '') return true;
   if (typeof raw === 'string') {
     const lower = raw.trim().toLowerCase();
-    return lower === 'true' || lower === '1' || lower === 'on';
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
   }
   return Boolean(raw);
+}
+
+function resolveSettingsModernUi(settings) {
+  if (!settings || typeof settings !== 'object') return true;
+  if (settings.modernUi !== undefined) {
+    return normalizeClientModernUi(settings.modernUi);
+  }
+  if (settings.experimentalModernUi !== undefined) {
+    return normalizeClientModernUi(settings.experimentalModernUi);
+  }
+  return true;
 }
 
 /**
@@ -2927,7 +2958,7 @@ function applyAppearanceToRoot(targetEl, settings, { includeFontScale = true } =
   const colorScheme = detectHostColorScheme(targetEl);
   setAttrIfChanged(targetEl, 'data-color-scheme', colorScheme);
 
-  const isModernUi = normalizeClientModernUi(settings?.experimentalModernUi);
+  const isModernUi = resolveSettingsModernUi(settings);
   if (isModernUi) {
     setAttrIfChanged(targetEl, 'data-modern-ui', 'true');
   } else {
@@ -2947,7 +2978,7 @@ function applyAppearanceToRoot(targetEl, settings, { includeFontScale = true } =
     removeAttrIfPresent(targetEl, 'data-font-scale');
   }
 }
-return { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normalizeClientThemeAccent, normalizeClientFontScale, normalizeClientModernUi, isModernUiActiveForElement, parseCssColorLuminance, detectHostColorScheme, applyAppearanceToRoot };
+return { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normalizeClientThemeAccent, normalizeClientFontScale, normalizeClientModernUi, resolveSettingsModernUi, isModernUiActiveForElement, parseCssColorLuminance, detectHostColorScheme, applyAppearanceToRoot };
 })();
 
 // --- src/core/domPatch.js ---
@@ -5253,10 +5284,10 @@ function isEquivalentTelemetry(prev, next) {
   const pSet = prev.settings;
   const nSet = next.settings;
 
-  if ((pSet?.language ?? 'zh-CN') !== (nSet?.language ?? 'zh-CN')) return false;
+  if ((pSet?.language ?? 'auto') !== (nSet?.language ?? 'auto')) return false;
   if ((pSet?.themeAccent ?? 'host') !== (nSet?.themeAccent ?? 'host')) return false;
   if ((pSet?.fontScale ?? 'md') !== (nSet?.fontScale ?? 'md')) return false;
-  if (Boolean(pSet?.experimentalModernUi) !== Boolean(nSet?.experimentalModernUi)) return false;
+  if (resolveSettingsModernUi(pSet) !== resolveSettingsModernUi(nSet)) return false;
   if ((prev.hostPlatform || '') !== (next.hostPlatform || '')) return false;
   if (
     (prev.endpoint?.id || LOCAL_ENDPOINT_ID) !== (next.endpoint?.id || LOCAL_ENDPOINT_ID) ||
@@ -6420,7 +6451,11 @@ async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'fontScale')) {
     safePatch.fontScale = normalizeClientFontScale(safePatch.fontScale);
   }
-  if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalModernUi')) {
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'modernUi')) {
+    const normModern = normalizeClientModernUi(safePatch.modernUi);
+    safePatch.modernUi = normModern;
+    safePatch.experimentalModernUi = normModern;
+  } else if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalModernUi')) {
     safePatch.experimentalModernUi = normalizeClientModernUi(safePatch.experimentalModernUi);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'weeklyLimitMode')) {
@@ -15291,6 +15326,7 @@ function patchCapsuleOdometerText(
 
   if (!isModern || !/\d/.test(nextStr)) {
     if (prev?.active) {
+      el.textContent = '';
       while (el.firstChild) el.removeChild(el.firstChild);
       patchAttr(el, 'data-od-active', null);
       patchAttr(el, 'data-od-value', null);
@@ -15307,6 +15343,7 @@ function patchCapsuleOdometerText(
 
   let nodes;
   if (!prev?.active || prev.resetKey !== resetKey || !(prev.nodes instanceof Map)) {
+    el.textContent = '';
     while (el.firstChild) el.removeChild(el.firstChild);
     nodes = new Map();
   } else {
@@ -15665,10 +15702,6 @@ const CapsuleBarWidget = defineComponent({
       'div',
       { className: 'preview-host-left is-composer', hidden: true },
       [
-        h('span', { className: 'preview-composer-chip' }, [
-          h('span', { text: 'Auto' }),
-          createSvgIcon('chevron-down', { size: 10 }),
-        ]),
         h('span', { className: 'preview-composer-chip' }, [
           h('span', { text: 'Carbon (High)' }),
           createSvgIcon('chevron-down', { size: 10 }),
@@ -18890,9 +18923,9 @@ const { SettingsGeneralTab } = (() => {
 
 function getLanguageOptions() {
   return [
+    { value: 'auto', label: t('settings.gen.langAuto') },
     { value: 'zh-CN', label: t('settings.gen.langZh') },
     { value: 'en-US', label: t('settings.gen.langEn') },
-    { value: 'auto', label: t('settings.gen.langAuto') },
   ];
 }
 
@@ -18907,8 +18940,8 @@ function getFontScaleOptions() {
 
 function getModernUiOptions() {
   return [
-    { value: 'off', label: t('settings.gen.modernUiOff') },
     { value: 'on', label: t('settings.gen.modernUiOn') },
+    { value: 'off', label: t('settings.gen.modernUiOff') },
   ];
 }
 
@@ -18936,10 +18969,10 @@ function formatCloudSyncTimeText(tsMs, updatedAt) {
 const SettingsGeneralTab = defineComponent({
   name: 'SettingsGeneralTab',
   setup({ props, onCleanup }) {
-    let draftLanguage = 'zh-CN';
+    let draftLanguage = 'auto';
     let draftThemeAccent = 'host';
     let draftFontScale = 'md';
-    let draftModernUi = false;
+    let draftModernUi = true;
     let draftPluginUpdateMode = 'manual';
     let latestSettings = null;
     let latestCloudStatus = null;
@@ -19081,10 +19114,10 @@ const SettingsGeneralTab = defineComponent({
 
     const modernUiSwitch = SegmentedControl({
       ariaLabel: t('settings.gen.modernUi'),
-      modelValue: 'off',
+      modelValue: 'on',
       options: getModernUiOptions(),
       onUpdateModelValue: async (val) => {
-        const nextModernUi = val === 'on';
+        const nextModernUi = val !== 'off';
         draftModernUi = nextModernUi;
         modernUiSwitch.setValue(nextModernUi ? 'on' : 'off');
         if (!isWindowOverlayMode() && typeof document !== 'undefined' && document.documentElement) {
@@ -19094,6 +19127,7 @@ const SettingsGeneralTab = defineComponent({
               ...(latestSettings || {}),
               themeAccent: draftThemeAccent,
               fontScale: draftFontScale,
+              modernUi: nextModernUi,
               experimentalModernUi: nextModernUi,
             },
             { includeFontScale: true }
@@ -19102,7 +19136,7 @@ const SettingsGeneralTab = defineComponent({
         const saveToken = ++appearanceSaveSeq;
         showAppearanceFeedback(t('settings.saving'), 0);
         try {
-          await saveSettingsPatch({ experimentalModernUi: nextModernUi });
+          await saveSettingsPatch({ modernUi: nextModernUi });
           if (saveToken === appearanceSaveSeq) {
             showAppearanceFeedback(t('settings.saved'), 1500);
           }
@@ -19286,7 +19320,7 @@ const SettingsGeneralTab = defineComponent({
       draftLanguage = normalizeI18nLanguage(settings.language);
       draftThemeAccent = normalizeClientThemeAccent(settings.themeAccent);
       draftFontScale = normalizeClientFontScale(settings.fontScale);
-      draftModernUi = normalizeClientModernUi(settings.experimentalModernUi);
+      draftModernUi = resolveSettingsModernUi(settings);
       draftPluginUpdateMode = normalizeClientUpdateMode(
         settings.pluginUpdateMode,
         settings.autoUpdatePlugin
@@ -21032,7 +21066,7 @@ const SettingsOtherTab = defineComponent({
           showMaintFeedback(t('settings.oth.resettingBtn'), 0);
           try {
             const res = await resetAllSettings();
-            setI18nLanguage(res?.settings?.language || 'zh-CN');
+            setI18nLanguage(res?.settings?.language || 'auto');
             showMaintFeedback(t('settings.oth.resetAllDone'), 2800);
           } catch {
             showMaintFeedback(t('settings.saveFailed'), 2800);
@@ -21704,6 +21738,22 @@ function getConsumptionTimeRangeOptions() {
   ];
 }
 
+function floorToStartOfMinuteMs(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return 0;
+  const d = new Date(n);
+  d.setSeconds(0, 0);
+  return d.getTime();
+}
+
+function ceilToEndOfMinuteMs(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return 0;
+  const d = new Date(n);
+  d.setSeconds(59, 999);
+  return d.getTime();
+}
+
 const ConsumptionView = defineComponent({
   name: 'ConsumptionView',
   setup({ onCleanup }) {
@@ -21711,6 +21761,7 @@ const ConsumptionView = defineComponent({
     let draftStartMs = telemetryStore.getState().customStartMs;
     let draftEndMs = telemetryStore.getState().customEndMs;
     let hasUncommittedCustomDraft = false;
+    let hasCommittedCustomRange = false;
 
     const timeFilterSwitch = SegmentedControl({
       ariaLabel: t('cons.rangeAria'),
@@ -21719,6 +21770,19 @@ const ConsumptionView = defineComponent({
       onUpdateModelValue: (nextRange) => {
         if (nextRange === 'custom') {
           const st = telemetryStore.getState();
+          if (!hasCommittedCustomRange && st.selectedTimeRange !== 'custom') {
+            const nowMs = Date.now();
+            draftStartMs = floorToStartOfMinuteMs(nowMs - 24 * 3600 * 1000);
+            draftEndMs = ceilToEndOfMinuteMs(nowMs);
+            hasUncommittedCustomDraft = false;
+            startPicker.setValue(draftStartMs);
+            endPicker.setValue(draftEndMs);
+            selectConsumptionTimeRange('custom', {
+              customStartMs: draftStartMs,
+              customEndMs: draftEndMs,
+            });
+            return;
+          }
           draftStartMs = st.customStartMs;
           draftEndMs = st.customEndMs;
           hasUncommittedCustomDraft = false;
@@ -21759,11 +21823,14 @@ const ConsumptionView = defineComponent({
         onClick: () => {
           const sMs = Number(draftStartMs || 0);
           const eMs = Number(draftEndMs || 0);
-          const minMs = sMs > 0 && eMs > 0 ? Math.min(sMs, eMs) : sMs;
-          const maxMs = sMs > 0 && eMs > 0 ? Math.max(sMs, eMs) : eMs;
+          const rawMinMs = sMs > 0 && eMs > 0 ? Math.min(sMs, eMs) : sMs;
+          const rawMaxMs = sMs > 0 && eMs > 0 ? Math.max(sMs, eMs) : eMs;
+          const minMs = floorToStartOfMinuteMs(rawMinMs);
+          const maxMs = ceilToEndOfMinuteMs(rawMaxMs);
           draftStartMs = minMs;
           draftEndMs = maxMs;
           hasUncommittedCustomDraft = false;
+          hasCommittedCustomRange = true;
           startPicker.setValue(minMs);
           endPicker.setValue(maxMs);
           selectConsumptionTimeRange('custom', {
@@ -24363,7 +24430,7 @@ const StepsDetailView = defineComponent({
           st.telemetry?.settings?.stepTokenComboFormat
         ),
         stepTableColumns: st.telemetry?.settings?.stepTableColumns,
-        experimentalModernUi: Boolean(st.telemetry?.settings?.experimentalModernUi),
+        experimentalModernUi: resolveSettingsModernUi(st.telemetry?.settings),
       }),
       (slice) => {
         latestSlice = slice;
@@ -26265,7 +26332,7 @@ function mountWindowOverlay() {
     applyAppearanceToRoot(capsuleHost, settings, { includeFontScale: false });
     applyAppearanceToRoot(portalHost, settings, { includeFontScale: true });
     const scaleKey = normalizeClientFontScale(settings?.fontScale);
-    const isModernUi = normalizeClientModernUi(settings?.experimentalModernUi);
+    const isModernUi = resolveSettingsModernUi(settings);
     const colorScheme = portalHost.getAttribute?.('data-color-scheme') || 'light';
     for (const el of [popoverEl, hoverTipEl, multiPanelEl]) {
       if (el.getAttribute?.('data-font-scale') !== scaleKey) {

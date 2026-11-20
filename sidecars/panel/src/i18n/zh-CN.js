@@ -31,7 +31,7 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.statusGenerating': '生成中{suffix}',
   'header.statusQuotaCached': '额度缓存',
   'header.statusQuotaOffline': '额度离线',
-  'header.statusLive': '实时 2s',
+  'header.statusLive': '监控中',
 
   // Formatters & Common Labels
   'fmt.pending': '待定',
@@ -445,10 +445,10 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.gen.fontLg': '大',
   'settings.gen.fontXl': '特大',
   'settings.gen.fontHint': '等比缩放侧边栏与展开面板字号，顶栏及输入框内嵌胶囊保持紧凑定高',
-  'settings.gen.modernUi': '新 UI（实验性）',
+  'settings.gen.modernUi': '现代化 UI',
   'settings.gen.modernUiOff': '关闭',
   'settings.gen.modernUiOn': '开启',
-  'settings.gen.modernUiHint': '去除大部分线框，采用柔和分层底色与更流畅的现代过渡动画',
+  'settings.gen.modernUiHint': '去除大部分线框，采用柔和分层底色及更流畅的现代过渡动画',
   'settings.gen.updateTitle': '版本更新',
   'settings.gen.updateMode': '更新方式',
   'settings.gen.updateManual': '仅提示新版本，手动更新',

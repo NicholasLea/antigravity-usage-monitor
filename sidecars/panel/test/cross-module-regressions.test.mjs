@@ -1376,3 +1376,119 @@ test('P2 audit fixes: standalone sqlite/proto-wire primitives, structured liveAc
     globalThis.window = prevWin;
   }
 });
+
+test('5h quota cycle includes cycle-opening compaction CHECKPOINT and cross-boundary steps plus unattributed cold-boot cache entries', async () => {
+  const nowMs = Date.now();
+  const start5hMs = nowMs - 2 * 3600_000;
+  const reset5hIso = new Date(start5hMs + 5 * 3600_000).toISOString();
+  const resetWkIso = new Date(nowMs + 5 * 24 * 3600_000).toISOString();
+
+  // 1. Old step from expired previous cycle (2.5h before start5hMs) -> must be excluded from 5h
+  const oldCycleStep = {
+    type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      sourceTrajectoryStepInfo: { stepIndex: 1 },
+      createdAt: new Date(start5hMs - 2.5 * 3600_000).toISOString(),
+      completedAt: new Date(start5hMs - 2.5 * 3600_000 + 8_000).toISOString(),
+      modelUsage: {
+        model: 'MODEL_PLACEHOLDER_M429',
+        inputTokens: '100000',
+        cacheReadTokens: '0',
+        outputTokens: '5000',
+      },
+    },
+  };
+
+  // 2. Untimed /compact CHECKPOINT started 70s BEFORE start5hMs that settled & opened the 5h bucket -> must be included!
+  const compactOpeningStep = {
+    type: 'CORTEX_STEP_TYPE_CHECKPOINT',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      sourceTrajectoryStepInfo: { stepIndex: 2 },
+      createdAt: new Date(start5hMs - 70_000).toISOString(),
+      modelUsage: {
+        model: 'MODEL_PLACEHOLDER_M429',
+        inputTokens: '300000',
+        cacheReadTokens: '0',
+        outputTokens: '4000',
+      },
+    },
+  };
+
+  // 3. Normal step after compaction inside 5h window
+  const postCompactStep = {
+    type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      sourceTrajectoryStepInfo: { stepIndex: 3 },
+      createdAt: new Date(start5hMs + 120_000).toISOString(),
+      completedAt: new Date(start5hMs + 135_000).toISOString(),
+      modelUsage: {
+        model: 'MODEL_PLACEHOLDER_M429',
+        inputTokens: '6000',
+        cacheReadTokens: '80000',
+        outputTokens: '2000',
+      },
+    },
+  };
+
+  // 4. Cold-boot cached conversation initially saved with accountName: '' before email loaded -> included for Alice, while Bob stays excluded
+  const coldBootStep = {
+    type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      sourceTrajectoryStepInfo: { stepIndex: 1 },
+      createdAt: new Date(start5hMs - 40_000).toISOString(),
+      completedAt: new Date(start5hMs + 10_000).toISOString(),
+      modelUsage: {
+        model: 'MODEL_PLACEHOLDER_M429',
+        inputTokens: '10000',
+        cacheReadTokens: '0',
+        outputTokens: '1000',
+      },
+    },
+  };
+
+  const h = backendHarness({
+    userStatus: { email: 'alice@example.com', userTier: { name: 'Google AI Ultra' } },
+    quotaSummary: {
+      groups: [
+        {
+          displayName: 'Gemini Models',
+          buckets: [
+            { bucketId: 'gemini-5h', window: '5h', remainingFraction: 0.929, resetTime: reset5hIso },
+            { bucketId: 'gemini-weekly', window: 'weekly', remainingFraction: 0.395, resetTime: resetWkIso },
+          ],
+        },
+      ],
+    },
+    cache: {
+      'cold-boot-conv': {
+        accountName: '',
+        signature: 'v10-model-identity:cold',
+        steps: extractModelSteps([coldBootStep]),
+      },
+      'bob-conv': {
+        accountName: 'bob@example.com',
+        signature: 'v10-model-identity:bob',
+        steps: extractModelSteps([postCompactStep]),
+      },
+    },
+    summaries: {
+      'main-conv': { stepCount: 3, lastModifiedTime: new Date(nowMs - 10_000).toISOString(), status: 'IDLE' },
+    },
+    trajectories: {
+      'main-conv': { trajectory: { steps: [oldCycleStep, compactOpeningStep, postCompactStep] } },
+    },
+  });
+
+  const payload = await h.buildTelemetryPayloadInternal('main-conv', false, { range: '5h' });
+  const geminiPool = payload.quotas.pools.find((p) => p.poolKey === 'Gemini');
+  // Includes compactOpeningStep (304,000) + postCompactStep (88,000) + coldBootStep (11,000) = 403,000 tokens (3 calls)
+  assert.equal(geminiPool.cycle5h.calls, 3);
+  assert.equal(geminiPool.cycle5h.tokens, 403_000);
+  // Preset 5h account bucket includes Alice's 3 calls (403k) + Bob's 1 call (88k), excluding oldCycleStep (105k)
+  assert.equal(payload.consumption.account.calls, 4);
+  assert.equal(payload.consumption.account.totalTokens, 491_000);
+});

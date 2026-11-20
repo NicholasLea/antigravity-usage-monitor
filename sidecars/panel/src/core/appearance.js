@@ -39,11 +39,25 @@ export function normalizeClientFontScale(raw) {
 }
 
 export function normalizeClientModernUi(raw) {
+  if (raw === undefined || raw === null || raw === '') return true;
   if (typeof raw === 'string') {
     const lower = raw.trim().toLowerCase();
-    return lower === 'true' || lower === '1' || lower === 'on';
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
   }
   return Boolean(raw);
+}
+
+export function resolveSettingsModernUi(settings) {
+  if (!settings || typeof settings !== 'object') return true;
+  if (settings.modernUi !== undefined) {
+    return normalizeClientModernUi(settings.modernUi);
+  }
+  if (settings.experimentalModernUi !== undefined) {
+    return normalizeClientModernUi(settings.experimentalModernUi);
+  }
+  return true;
 }
 
 /**
@@ -396,7 +410,7 @@ export function applyAppearanceToRoot(targetEl, settings, { includeFontScale = t
   const colorScheme = detectHostColorScheme(targetEl);
   setAttrIfChanged(targetEl, 'data-color-scheme', colorScheme);
 
-  const isModernUi = normalizeClientModernUi(settings?.experimentalModernUi);
+  const isModernUi = resolveSettingsModernUi(settings);
   if (isModernUi) {
     setAttrIfChanged(targetEl, 'data-modern-ui', 'true');
   } else {

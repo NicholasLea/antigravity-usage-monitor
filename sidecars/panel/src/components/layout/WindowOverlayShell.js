@@ -21,7 +21,7 @@ import {
   PANEL_SCALE_FACTORS,
   applyAppearanceToRoot,
   normalizeClientFontScale,
-  normalizeClientModernUi,
+  resolveSettingsModernUi,
 } from '../../core/appearance.js';
 import {
   h,
@@ -1468,7 +1468,7 @@ export function mountWindowOverlay() {
     applyAppearanceToRoot(capsuleHost, settings, { includeFontScale: false });
     applyAppearanceToRoot(portalHost, settings, { includeFontScale: true });
     const scaleKey = normalizeClientFontScale(settings?.fontScale);
-    const isModernUi = normalizeClientModernUi(settings?.experimentalModernUi);
+    const isModernUi = resolveSettingsModernUi(settings);
     const colorScheme = portalHost.getAttribute?.('data-color-scheme') || 'light';
     for (const el of [popoverEl, hoverTipEl, multiPanelEl]) {
       if (el.getAttribute?.('data-font-scale') !== scaleKey) {
