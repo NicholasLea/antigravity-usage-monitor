@@ -281,6 +281,18 @@ test('applyAppearanceToRoot and SettingsGeneralTab toggle data-modern-ui + data-
   );
   assert.match(
     builtStyles,
+    /\.trend-tip-sub\s*\{[^}]*background:\s*transparent;/
+  );
+  assert.match(
+    builtStyles,
+    /\.trend-tip-cost\s*\{[^}]*background:\s*transparent;/
+  );
+  assert.match(
+    builtStyles,
+    /\[data-modern-ui="true"\]\s+\.trend-tip-sub,\s*\[data-modern-ui="true"\]\s+\.trend-tip-cost\s*\{[^}]*background:\s*transparent;/
+  );
+  assert.match(
+    builtStyles,
     /\[data-modern-ui="true"\]\.wm-multi-panel\s+\.live-task-card[\s\S]*?background:\s*transparent;/
   );
   assert.match(

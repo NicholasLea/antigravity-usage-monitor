@@ -1093,17 +1093,27 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 2px 10px;
-  font-size: var(--fs-sm);
+  gap: 4px 10px;
+  font-size: var(--fs-md);
   color: var(--text-secondary);
-}
-
-.smodel-perf {
-  color: var(--text-secondary);
-  white-space: nowrap;
 }
 
 .smodel-split {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--text-secondary);
+}
+
+.smodel-split strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.smodel-perf {
+  margin-left: auto;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   white-space: nowrap;
 }

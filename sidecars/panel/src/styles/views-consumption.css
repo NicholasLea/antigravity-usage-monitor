@@ -403,13 +403,13 @@
 }
 
 .trend-tip-cost {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
   font-weight: 600;
   line-height: 1.2;
-  padding: 2px 7px;
-  border-radius: var(--radius-xs);
+  padding: 0;
+  border-radius: 0;
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  background: transparent;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -419,10 +419,10 @@
 }
 
 .trend-tip-sub {
-  padding: 5px 8px;
+  padding: 2px 0;
   border: none;
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--text-primary) 4.2%, transparent);
+  border-radius: 0;
+  background: transparent;
   font-size: var(--fs-xs);
   line-height: 1.3;
   color: var(--text-secondary);
@@ -438,8 +438,8 @@
 .trend-tip-sub.is-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 10px;
+  padding: 2px 0;
   white-space: normal;
   overflow: visible;
 }
@@ -881,7 +881,7 @@
 
 .trend-tip-sub:not([hidden]) + .cons-pop-models {
   border-top: none;
-  padding-top: 1px;
+  padding-top: 2px;
   margin-top: 0;
 }
 

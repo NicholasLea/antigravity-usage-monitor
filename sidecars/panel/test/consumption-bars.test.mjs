@@ -103,6 +103,10 @@ test('FourSegmentBar supports percentage scaling while keeping 100% default for 
       thinkingTokens: 100,
     });
     const segsFull = barFull.el.querySelectorAll('.progress-seg');
+    assert.deepEqual(
+      segsFull.map((el) => el.className.split(/\s+/).find((c) => c.startsWith('seg-'))),
+      ['seg-input', 'seg-cached', 'seg-thinking', 'seg-output']
+    );
     const sumFull = segsFull.reduce((acc, el) => acc + parsePctVar(el), 0);
     assert.ok(Math.abs(sumFull - 100) < 0.05);
 

@@ -21,6 +21,7 @@ import {
   formatMetric,
   formatSpeedMetric,
   formatTokens,
+  formatTokensPrecise,
   formatUsd,
   mergeModelsByDisplayName,
   normalizeModelDisplayMode,
@@ -1151,8 +1152,37 @@ export const StepsDetailView = defineComponent({
           const segBar = createFourSegmentBar();
           segBar.el.classList.add('smodel-seg-bar');
 
+          const inLbl = h('span', { text: t('cons.footInput') });
+          const cacheLbl = h('span', { text: t('cons.footCache') });
+          const thinkLbl = h('span', { text: t('cons.footThinking') });
+          const outLbl = h('span', { text: t('cons.footOutput') });
+          const inVal = h('strong', { className: 'text-mono' });
+          const cacheVal = h('strong', { className: 'text-mono' });
+          const thinkVal = h('strong', { className: 'text-mono' });
+          const outVal = h('strong', { className: 'text-mono' });
+          const splitEl = h('div', { className: 'smodel-split' }, [
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-input' }),
+              inLbl,
+              inVal,
+            ]),
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-cached' }),
+              cacheLbl,
+              cacheVal,
+            ]),
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-thinking' }),
+              thinkLbl,
+              thinkVal,
+            ]),
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-output' }),
+              outLbl,
+              outVal,
+            ]),
+          ]);
           const perfEl = h('span', { className: 'smodel-perf text-mono' });
-          const splitEl = h('span', { className: 'smodel-split text-mono' });
 
           const cardEl = h('div', { className: 'smodel-card' }, [
             h('div', { className: 'smodel-head' }, [
@@ -1160,7 +1190,7 @@ export const StepsDetailView = defineComponent({
               h('div', { className: 'smodel-totals' }, [tokEl, costEl]),
             ]),
             segBar.el,
-            h('div', { className: 'smodel-foot' }, [perfEl, splitEl]),
+            h('div', { className: 'smodel-foot' }, [splitEl, perfEl]),
           ]);
 
           return {
@@ -1174,6 +1204,14 @@ export const StepsDetailView = defineComponent({
               segBar,
               perfEl,
               splitEl,
+              inLbl,
+              cacheLbl,
+              thinkLbl,
+              outLbl,
+              inVal,
+              cacheVal,
+              thinkVal,
+              outVal,
               cardTitle: '',
               isHoveringAnomaly: false,
             },
@@ -1244,7 +1282,7 @@ export const StepsDetailView = defineComponent({
               ? Math.max(0, Number(m.responseTokens))
               : Math.max(0, outTok - thinkTok);
 
-          patchText(refs.tokEl, formatTokens(m.totalTokens || 0));
+          patchText(refs.tokEl, formatTokensPrecise(m.totalTokens || 0));
           const costNum = Number(m.costUsd || 0);
           const isAllUnpriced =
             calls > 0 && Number(m.unpricedCalls || 0) >= calls && !(costNum > 0);
@@ -1275,21 +1313,21 @@ export const StepsDetailView = defineComponent({
                 ? +((cacheTok / promptTok) * 100).toFixed(1)
                 : 0;
 
+          patchText(refs.inLbl, t('cons.footInput'));
+          patchText(refs.cacheLbl, t('cons.footCache'));
+          patchText(refs.thinkLbl, t('cons.footThinking'));
+          patchText(refs.outLbl, t('cons.footOutput'));
+          patchText(refs.inVal, formatTokensPrecise(inTok));
+          patchText(refs.cacheVal, formatTokensPrecise(cacheTok));
+          patchText(refs.thinkVal, formatTokensPrecise(thinkTok));
+          patchText(refs.outVal, formatTokensPrecise(respTok));
+
           patchText(
             refs.perfEl,
             t('steps.modelPerfFoot', {
               tps: formatSpeedMetric(m.avgTokPerSec, ' tok/s'),
               ttft: formatMetric(resolvedAvgTtft, 's'),
               cache: resolvedCachePct,
-            })
-          );
-          patchText(
-            refs.splitEl,
-            t('steps.modelSplitFoot', {
-              inTok: formatTokens(inTok),
-              cacheTok: formatTokens(cacheTok),
-              thinkTok: formatTokens(thinkTok),
-              respTok: formatTokens(respTok),
             })
           );
 

@@ -1,7 +1,7 @@
 /**
  * @fileoverview 通用 4 段式 Token 构成比例条组件 (FourSegmentBar).
- * 用于在消费概览、热门模型明细及数据来源明细中直观展示：
- * 直接输入 (Input)、缓存读取 (Cached)、内容生成 (Output) 与思考推理 (Thinking) 的 Token 占比。
+ * 用于在消费概览、热门模型明细及模型总览卡片中直观展示：
+ * 直接输入 (Input)、缓存读取 (Cached)、思考推理 (Thinking)、内容生成 (Output) 的 Token 占比。
  */
 
 import { h, patchStyleVar } from '../../core/domPatch.js';
@@ -18,18 +18,18 @@ import { h, patchStyleVar } from '../../core/domPatch.js';
  *     responseTokens?: number,
  *     thinkingTokens?: number
  *   }) => void
- * }} 组件根元素与增量更新方法
+ * }} 组件根元素及增量更新方法
  */
 export function createFourSegmentBar() {
   const segInput = h('div', { className: 'progress-seg seg-input' });
   const segCached = h('div', { className: 'progress-seg seg-cached' });
-  const segOutput = h('div', { className: 'progress-seg seg-output' });
   const segThinking = h('div', { className: 'progress-seg seg-thinking' });
+  const segOutput = h('div', { className: 'progress-seg seg-output' });
   const el = h('div', { className: 'progress-track cons-seg-bar' }, [
     segInput,
     segCached,
-    segOutput,
     segThinking,
+    segOutput,
   ]);
 
   /**

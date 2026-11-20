@@ -469,12 +469,9 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   border: none;
 }
 
-[data-modern-ui="true"] .trend-tip-sub {
-  background: var(--modern-surface-subtle);
-}
-
+[data-modern-ui="true"] .trend-tip-sub,
 [data-modern-ui="true"] .trend-tip-cost {
-  background: var(--modern-surface-subtle);
+  background: transparent;
 }
 
 [data-modern-ui="true"] .cons-pop-models {

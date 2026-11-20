@@ -1291,7 +1291,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.cacheRead': '缓存读取',
   'cons.savedCost': '节省 {cost}',
   'cons.outputUsage': '输出用量',
-  'cons.replyAndThink': '回复 {resp} · 思考 {think}',
+  'cons.replyAndThink': '思考 {think} · 回复 {resp}',
   'cons.trendTitle': '用量趋势',
   'cons.allTime': '全部时间',
   'cons.trendHeatmapHint': '按日 ({days}天) · 悬停查看',
@@ -1356,7 +1356,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.modelCallsOnly': '{calls}次',
   'steps.modelsSummaryPrefix': '{count} 模型 · ',
   'steps.modelPerfFoot': '均速 {tps} · 首字 {ttft} · 缓存 {cache}%',
-  'steps.modelSplitFoot': '入 {inTok} · 缓 {cacheTok} · 思 {thinkTok} · 正 {respTok}',
+  'steps.modelSplitFoot': '输入 {inTok} · 缓存 {cacheTok} · 思考 {thinkTok} · 输出 {respTok}',
   'steps.fitActiveCardTitle': '{title}（已纳入上方趋势拟合，按住 Ctrl/Shift 点击可多选对比）',
   'steps.fitInactiveCardTitle': '点击在上方拟合图查看 {text}（按住 Ctrl/Shift 点击可多选同图对比）',
   'steps.turnMediaOnly': '[图片/附件提问]',
@@ -2000,7 +2000,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.cacheRead': 'Cache Read',
   'cons.savedCost': 'Saved {cost}',
   'cons.outputUsage': 'Output',
-  'cons.replyAndThink': 'Reply {resp} · Think {think}',
+  'cons.replyAndThink': 'Think {think} · Reply {resp}',
   'cons.trendTitle': 'Usage Trend',
   'cons.allTime': 'All Time',
   'cons.trendHeatmapHint': 'Daily ({days}d) · Hover for details',
@@ -8442,8 +8442,8 @@ return { ContextSegmentMeter };
 const { createFourSegmentBar } = (() => {
 /**
  * @fileoverview 通用 4 段式 Token 构成比例条组件 (FourSegmentBar).
- * 用于在消费概览、热门模型明细及数据来源明细中直观展示：
- * 直接输入 (Input)、缓存读取 (Cached)、内容生成 (Output) 与思考推理 (Thinking) 的 Token 占比。
+ * 用于在消费概览、热门模型明细及模型总览卡片中直观展示：
+ * 直接输入 (Input)、缓存读取 (Cached)、思考推理 (Thinking)、内容生成 (Output) 的 Token 占比。
  */
 
 
@@ -8459,18 +8459,18 @@ const { createFourSegmentBar } = (() => {
  *     responseTokens?: number,
  *     thinkingTokens?: number
  *   }) => void
- * }} 组件根元素与增量更新方法
+ * }} 组件根元素及增量更新方法
  */
 function createFourSegmentBar() {
   const segInput = h('div', { className: 'progress-seg seg-input' });
   const segCached = h('div', { className: 'progress-seg seg-cached' });
-  const segOutput = h('div', { className: 'progress-seg seg-output' });
   const segThinking = h('div', { className: 'progress-seg seg-thinking' });
+  const segOutput = h('div', { className: 'progress-seg seg-output' });
   const el = h('div', { className: 'progress-track cons-seg-bar' }, [
     segInput,
     segCached,
-    segOutput,
     segThinking,
+    segOutput,
   ]);
 
   /**
@@ -22339,14 +22339,14 @@ const ConsumptionView = defineComponent({
             cacheVal,
           ]),
           h('span', { className: 'legend-left' }, [
-            h('span', { className: 'dot-swatch seg-output' }),
-            outLbl,
-            outVal,
-          ]),
-          h('span', { className: 'legend-left' }, [
             h('span', { className: 'dot-swatch seg-thinking' }),
             thinkLbl,
             thinkVal,
+          ]),
+          h('span', { className: 'legend-left' }, [
+            h('span', { className: 'dot-swatch seg-output' }),
+            outLbl,
+            outVal,
           ]),
           h('span', { className: 'legend-left' }, [
             callsLbl,
@@ -24208,8 +24208,37 @@ const StepsDetailView = defineComponent({
           const segBar = createFourSegmentBar();
           segBar.el.classList.add('smodel-seg-bar');
 
+          const inLbl = h('span', { text: t('cons.footInput') });
+          const cacheLbl = h('span', { text: t('cons.footCache') });
+          const thinkLbl = h('span', { text: t('cons.footThinking') });
+          const outLbl = h('span', { text: t('cons.footOutput') });
+          const inVal = h('strong', { className: 'text-mono' });
+          const cacheVal = h('strong', { className: 'text-mono' });
+          const thinkVal = h('strong', { className: 'text-mono' });
+          const outVal = h('strong', { className: 'text-mono' });
+          const splitEl = h('div', { className: 'smodel-split' }, [
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-input' }),
+              inLbl,
+              inVal,
+            ]),
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-cached' }),
+              cacheLbl,
+              cacheVal,
+            ]),
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-thinking' }),
+              thinkLbl,
+              thinkVal,
+            ]),
+            h('span', { className: 'legend-left' }, [
+              h('span', { className: 'dot-swatch seg-output' }),
+              outLbl,
+              outVal,
+            ]),
+          ]);
           const perfEl = h('span', { className: 'smodel-perf text-mono' });
-          const splitEl = h('span', { className: 'smodel-split text-mono' });
 
           const cardEl = h('div', { className: 'smodel-card' }, [
             h('div', { className: 'smodel-head' }, [
@@ -24217,7 +24246,7 @@ const StepsDetailView = defineComponent({
               h('div', { className: 'smodel-totals' }, [tokEl, costEl]),
             ]),
             segBar.el,
-            h('div', { className: 'smodel-foot' }, [perfEl, splitEl]),
+            h('div', { className: 'smodel-foot' }, [splitEl, perfEl]),
           ]);
 
           return {
@@ -24231,6 +24260,14 @@ const StepsDetailView = defineComponent({
               segBar,
               perfEl,
               splitEl,
+              inLbl,
+              cacheLbl,
+              thinkLbl,
+              outLbl,
+              inVal,
+              cacheVal,
+              thinkVal,
+              outVal,
               cardTitle: '',
               isHoveringAnomaly: false,
             },
@@ -24301,7 +24338,7 @@ const StepsDetailView = defineComponent({
               ? Math.max(0, Number(m.responseTokens))
               : Math.max(0, outTok - thinkTok);
 
-          patchText(refs.tokEl, formatTokens(m.totalTokens || 0));
+          patchText(refs.tokEl, formatTokensPrecise(m.totalTokens || 0));
           const costNum = Number(m.costUsd || 0);
           const isAllUnpriced =
             calls > 0 && Number(m.unpricedCalls || 0) >= calls && !(costNum > 0);
@@ -24332,21 +24369,21 @@ const StepsDetailView = defineComponent({
                 ? +((cacheTok / promptTok) * 100).toFixed(1)
                 : 0;
 
+          patchText(refs.inLbl, t('cons.footInput'));
+          patchText(refs.cacheLbl, t('cons.footCache'));
+          patchText(refs.thinkLbl, t('cons.footThinking'));
+          patchText(refs.outLbl, t('cons.footOutput'));
+          patchText(refs.inVal, formatTokensPrecise(inTok));
+          patchText(refs.cacheVal, formatTokensPrecise(cacheTok));
+          patchText(refs.thinkVal, formatTokensPrecise(thinkTok));
+          patchText(refs.outVal, formatTokensPrecise(respTok));
+
           patchText(
             refs.perfEl,
             t('steps.modelPerfFoot', {
               tps: formatSpeedMetric(m.avgTokPerSec, ' tok/s'),
               ttft: formatMetric(resolvedAvgTtft, 's'),
               cache: resolvedCachePct,
-            })
-          );
-          patchText(
-            refs.splitEl,
-            t('steps.modelSplitFoot', {
-              inTok: formatTokens(inTok),
-              cacheTok: formatTokens(cacheTok),
-              thinkTok: formatTokens(thinkTok),
-              respTok: formatTokens(respTok),
             })
           );
 

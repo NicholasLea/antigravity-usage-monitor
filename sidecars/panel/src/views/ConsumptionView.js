@@ -663,14 +663,14 @@ export const ConsumptionView = defineComponent({
             cacheVal,
           ]),
           h('span', { className: 'legend-left' }, [
-            h('span', { className: 'dot-swatch seg-output' }),
-            outLbl,
-            outVal,
-          ]),
-          h('span', { className: 'legend-left' }, [
             h('span', { className: 'dot-swatch seg-thinking' }),
             thinkLbl,
             thinkVal,
+          ]),
+          h('span', { className: 'legend-left' }, [
+            h('span', { className: 'dot-swatch seg-output' }),
+            outLbl,
+            outVal,
           ]),
           h('span', { className: 'legend-left' }, [
             callsLbl,

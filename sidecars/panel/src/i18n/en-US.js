@@ -231,7 +231,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.cacheRead': 'Cache Read',
   'cons.savedCost': 'Saved {cost}',
   'cons.outputUsage': 'Output',
-  'cons.replyAndThink': 'Reply {resp} · Think {think}',
+  'cons.replyAndThink': 'Think {think} · Reply {resp}',
   'cons.trendTitle': 'Usage Trend',
   'cons.allTime': 'All Time',
   'cons.trendHeatmapHint': 'Daily ({days}d) · Hover for details',
