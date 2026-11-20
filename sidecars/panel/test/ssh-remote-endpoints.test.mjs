@@ -1634,4 +1634,635 @@ test('Fast snapshot invalidates when a remote endpoint is pruned and re-register
   assert.equal(afterReReg.consumption.account.totalTokens, 900);
 });
 
+test('extractSwarmMetaFromSteps parses pure-RPC swarm title & kill calls and ignores failed/canceled calls', async () => {
+  const { extractSwarmMetaFromSteps } = await import('../trajectory-metrics.mjs');
+
+  assert.equal(extractSwarmMetaFromSteps([]), null);
+  assert.equal(
+    extractSwarmMetaFromSteps([
+      {
+        type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+        status: 'CORTEX_STEP_STATUS_DONE',
+        plannerResponse: { toolCalls: [{ id: 't0', name: 'read_file', argumentsJson: '{}' }] },
+      },
+    ]),
+    null
+  );
+
+  const t1 = '2026-11-20T10:00:00Z';
+  const t2 = '2026-11-20T10:01:00Z';
+  const t3 = '2026-11-20T10:02:00Z';
+  const t4 = '2026-11-20T10:03:00Z';
+  const meta = extractSwarmMetaFromSteps([
+    {
+      type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: { createdAt: t1 },
+      plannerResponse: {
+        toolCalls: [
+          {
+            id: 'call-title-1',
+            name: 'default_api:swarm',
+            argumentsJson: JSON.stringify({ action: 'title', title: 'Initial Swarm' }),
+          },
+          {
+            id: 'call-kill-fail',
+            name: 'swarm',
+            argumentsJson: JSON.stringify({ action: 'kill', name: '@survivor' }),
+          },
+        ],
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_ERROR',
+      metadata: {
+        createdAt: t2,
+        toolCall: {
+          id: 'call-kill-fail',
+          name: 'swarm',
+          argumentsJson: JSON.stringify({ action: 'kill', name: '@survivor' }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        completedAt: t3,
+        toolCall: {
+          id: 'call-title-2',
+          name: 'swarm',
+          argumentsJson: JSON.stringify({ action: 'title', title: 'Final GPU Swarm' }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        completedAt: t4,
+        toolCall: {
+          id: 'call-kill-ok',
+          name: 'default_api:swarm',
+          argumentsJson: JSON.stringify({ action: 'kill', name: '@Verifier-FE' }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_CANCELED',
+      metadata: {
+        completedAt: t4,
+        toolCall: {
+          id: 'call-title-canceled',
+          name: 'swarm',
+          argumentsJson: JSON.stringify({ action: 'title', title: 'Canceled Title' }),
+        },
+      },
+    },
+  ]);
+
+  assert.deepEqual(meta, {
+    title: 'Final GPU Swarm',
+    killedMembers: {
+      'verifier-fe': Date.parse(t4),
+    },
+  });
+});
+
+test('SSH remote Swarm recovers swarmTitle, worker killed state (including helper kills & re-added names), and parked swarm_wait across transient RPC errors without remote disk access', async () => {
+  const baseMs = Date.parse('2026-11-20T10:00:00Z');
+  const isoAt = (sec) => new Date(baseMs + sec * 1000).toISOString();
+
+  const rootCid = 'aaaa1111-1111-4111-8111-111111111111';
+  const deadOldCid = 'bbbb2222-2222-4222-8222-222222222222';
+  const respawnedCid = 'cccc3333-3333-4333-8333-333333333333';
+  const parkedCid = 'dddd4444-4444-4444-8444-444444444444';
+  const parentWorkerCid = 'eeee5555-5555-4555-8555-555555555555';
+  const killedHelperCid = 'ffff6666-6666-4666-8666-666666666666';
+
+  const makeModelStep = (idx, sec, inTok, outTok) => ({
+    type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      createdAt: isoAt(sec),
+      completedAt: isoAt(sec + 1),
+      sourceTrajectoryStepInfo: { stepIndex: idx },
+      modelUsage: {
+        model: 'MODEL_PLACEHOLDER_M37',
+        inputTokens: String(inTok),
+        cacheReadTokens: '0',
+        outputTokens: String(outTok),
+      },
+    },
+  });
+
+  let failParkedFetch = false;
+  const h = backendHarness({
+    clock: () => baseMs + 120_000,
+    userStatus: { email: 'ssh-swarm@example.com' },
+    // Intentionally put conflicting local swarmMembers for the same rootCid to ensure SSH ignores local disk
+    swarmMembers: {
+      [rootCid]: {
+        title: 'LOCAL DISK SWARM MUST NOT BE READ',
+        members: {},
+      },
+    },
+  });
+
+  const ep = h.registerRemoteEndpoint({
+    origin: 'https://127.0.0.1:64301',
+    baseUrl: 'https://127.0.0.1:64301',
+    csrfToken: '',
+    wsUrl: 'ws://127.0.0.1:9222/devtools/page/ssh-swarm',
+    label: 'gpu-swarm',
+    stableHostKey: 'gpu-swarm',
+  });
+
+  const remoteTrajectories = {
+    [rootCid]: {
+      trajectory: {
+        steps: [
+          makeModelStep(0, 1, 500, 100),
+          {
+            type: 'CORTEX_STEP_TYPE_GENERIC',
+            status: 'CORTEX_STEP_STATUS_DONE',
+            metadata: {
+              completedAt: isoAt(5),
+              toolCall: {
+                id: 'sw-title',
+                name: 'swarm',
+                argumentsJson: JSON.stringify({
+                  action: 'title',
+                  title: 'Remote GPU Swarm Audit',
+                }),
+              },
+            },
+          },
+          {
+            type: 'CORTEX_STEP_TYPE_GENERIC',
+            status: 'CORTEX_STEP_STATUS_DONE',
+            metadata: {
+              completedAt: isoAt(30),
+              toolCall: {
+                id: 'sw-kill-dead',
+                name: 'swarm',
+                argumentsJson: JSON.stringify({ action: 'kill', name: 'dead-bee' }),
+              },
+            },
+          },
+        ],
+      },
+    },
+    [deadOldCid]: {
+      trajectory: { steps: [makeModelStep(0, 10, 300, 50)] },
+    },
+    [respawnedCid]: {
+      trajectory: { steps: [makeModelStep(0, 45, 400, 80)] },
+    },
+    [parkedCid]: {
+      trajectory: {
+        steps: [
+          makeModelStep(0, 15, 250, 40),
+          {
+            type: 'CORTEX_STEP_TYPE_GENERIC',
+            status: 'CORTEX_STEP_STATUS_DONE',
+            metadata: {
+              completedAt: isoAt(18),
+              toolCall: { name: 'swarm_wait', argumentsJson: '{"since":5}' },
+            },
+          },
+        ],
+      },
+    },
+    [parentWorkerCid]: {
+      trajectory: {
+        steps: [
+          makeModelStep(0, 12, 200, 30),
+          {
+            type: 'CORTEX_STEP_TYPE_GENERIC',
+            status: 'CORTEX_STEP_STATUS_DONE',
+            metadata: {
+              completedAt: isoAt(35),
+              toolCall: {
+                id: 'sw-kill-helper',
+                name: 'swarm',
+                argumentsJson: JSON.stringify({ action: 'kill', name: 'helper-bee' }),
+              },
+            },
+          },
+        ],
+      },
+    },
+    [killedHelperCid]: {
+      trajectory: { steps: [makeModelStep(0, 20, 150, 20)] },
+    },
+  };
+
+  h.setRemoteWindowRpcInvoker(async (_ep, method, body) => {
+    if (method === 'GetUserStatus') return { userStatus: { email: 'ssh-swarm@example.com' } };
+    if (method === 'RetrieveUserQuotaSummary') return { response: { groups: [] } };
+    if (method === 'GetAllCascadeTrajectories') {
+      return {
+        trajectorySummaries: {
+          [rootCid]: {
+            annotations: { title: '' },
+            stepCount: 3,
+            createdTime: isoAt(0),
+            lastModifiedTime: isoAt(30),
+            status: 'CASCADE_RUN_STATUS_IDLE',
+          },
+          [deadOldCid]: {
+            stepCount: 1,
+            createdTime: isoAt(10),
+            lastModifiedTime: isoAt(12),
+            status: 'CASCADE_RUN_STATUS_IDLE',
+            trajectoryMetadata: {
+              parentConversationId: rootCid,
+              subagentSpec: { typeName: 'worker', role: 'Swarm Worker (dead-bee)' },
+            },
+          },
+          [respawnedCid]: {
+            stepCount: 1,
+            createdTime: isoAt(40), // Created AFTER kill at t=30 -> must stay alive
+            lastModifiedTime: isoAt(46),
+            status: 'CASCADE_RUN_STATUS_IDLE',
+            trajectoryMetadata: {
+              parentConversationId: rootCid,
+              subagentSpec: { typeName: 'worker', role: 'Swarm Worker (dead-bee)' },
+            },
+          },
+          [parkedCid]: {
+            stepCount: 2,
+            createdTime: isoAt(14),
+            lastModifiedTime: isoAt(18),
+            status: 'CASCADE_RUN_STATUS_RUNNING', // Parked on swarm_wait -> must downgrade!
+            trajectoryMetadata: {
+              parentConversationId: rootCid,
+              subagentSpec: { typeName: 'worker', role: 'Swarm Worker (parked-bee)' },
+            },
+          },
+          [parentWorkerCid]: {
+            stepCount: 2,
+            createdTime: isoAt(11),
+            lastModifiedTime: isoAt(35),
+            status: 'CASCADE_RUN_STATUS_IDLE',
+            trajectoryMetadata: {
+              parentConversationId: rootCid,
+              subagentSpec: { typeName: 'worker', role: 'Swarm Worker (lead-bee)' },
+            },
+          },
+          [killedHelperCid]: {
+            stepCount: 1,
+            createdTime: isoAt(19),
+            lastModifiedTime: isoAt(21),
+            status: 'CASCADE_RUN_STATUS_IDLE',
+            trajectoryMetadata: {
+              parentConversationId: parentWorkerCid,
+              subagentSpec: { typeName: 'worker', role: 'Swarm Worker (helper-bee)' },
+            },
+          },
+        },
+      };
+    }
+    if (method === 'GetCascadeTrajectory') {
+      if (failParkedFetch && body?.cascadeId === parkedCid) {
+        throw new Error('transient SSH RPC timeout');
+      }
+      return remoteTrajectories[body?.cascadeId] || {};
+    }
+    return {};
+  });
+
+  // Poll 1: Full RPC fetch recovers swarmTitle, killed states, and downgrades parked-bee
+  const res1 = await h.executeTelemetryAction(
+    { conversationId: rootCid, range: 'today' },
+    { endpointId: ep.id }
+  );
+  assert.equal(res1.status, 200);
+  const p1 = JSON.parse(res1.body);
+  assert.equal(p1.activeConversation.swarmTitle, 'Remote GPU Swarm Audit');
+  assert.equal(p1.activeConversation.title, 'Remote GPU Swarm Audit');
+  assert.equal(p1.runningConversations.length, 0);
+
+  const byCid = new Map(p1.activeConversation.agents.map((a) => [a.cascadeId, a]));
+  assert.equal(byCid.get(deadOldCid)?.swarmState, 'killed');
+  assert.equal(byCid.get(respawnedCid)?.swarmState, 'waiting');
+  assert.equal(byCid.get(parkedCid)?.swarmState, 'waiting');
+  assert.equal(byCid.get(parkedCid)?.isRunning, false);
+  assert.equal(byCid.get(killedHelperCid)?.swarmState, 'killed');
+
+  // Poll 2: Transient RPC failure on parked-bee with unchanged signature MUST NOT flicker it back to RUNNING
+  failParkedFetch = true;
+  const res2 = await h.executeTelemetryAction(
+    { conversationId: rootCid, range: 'today' },
+    { endpointId: ep.id }
+  );
+  assert.equal(res2.status, 200);
+  const p2 = JSON.parse(res2.body);
+  assert.equal(p2.runningConversations.length, 0);
+  const byCid2 = new Map(p2.activeConversation.agents.map((a) => [a.cascadeId, a]));
+  assert.equal(byCid2.get(parkedCid)?.swarmState, 'waiting');
+  assert.equal(byCid2.get(parkedCid)?.isRunning, false);
+  assert.equal(byCid2.get(deadOldCid)?.swarmState, 'killed');
+
+  // Poll 3: Fast scope=conversation preserves RPC-derived swarmTitle & killed states
+  const convRes = await h.executeTelemetryAction(
+    { scope: 'conversation', conversationId: rootCid, range: 'today' },
+    { endpointId: ep.id }
+  );
+  const convPayload = JSON.parse(convRes.body);
+  assert.equal(convPayload.scope, 'conversation');
+  assert.equal(convPayload.activeConversation.swarmTitle, 'Remote GPU Swarm Audit');
+  const byCid3 = new Map(convPayload.activeConversation.agents.map((a) => [a.cascadeId, a]));
+  assert.equal(byCid3.get(deadOldCid)?.swarmState, 'killed');
+  assert.equal(byCid3.get(killedHelperCid)?.swarmState, 'killed');
+});
+
+test('extractSwarmMetaFromSteps guards prototype keys, non-string args, pending/waiting calls, and ID-less failed calls', async () => {
+  const { isDeepStrictEqual } = await import('node:util');
+  const { extractSwarmMetaFromSteps } = await import('../trajectory-metrics.mjs');
+
+  const t1 = '2026-11-20T11:00:00Z';
+  const t2 = '2026-11-20T11:01:00Z';
+  const t3 = '2026-11-20T11:02:00Z';
+  const meta = extractSwarmMetaFromSteps([
+    // Non-string malformed fields must be ignored (never coerced to '[object Object]')
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        completedAt: t1,
+        toolCall: {
+          id: 'bad-args-1',
+          name: 'swarm',
+          argumentsJson: JSON.stringify({ action: 'title', title: { bad: 1 } }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        completedAt: t1,
+        toolCall: {
+          id: 'bad-args-2',
+          name: 'swarm',
+          argumentsJson: JSON.stringify({ action: 'kill', name: ['not-a-string'] }),
+        },
+      },
+    },
+    // Pending / waiting execution steps (both with ID and without ID) must NOT be applied
+    {
+      type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: { createdAt: t1 },
+      plannerResponse: {
+        toolCalls: [
+          {
+            id: 'pending-id',
+            name: 'swarm',
+            argumentsJson: JSON.stringify({ action: 'kill', name: 'still-running' }),
+          },
+          {
+            name: 'swarm',
+            argumentsJson: JSON.stringify({ action: 'kill', name: 'idless-failed' }),
+          },
+          {
+            name: 'swarm',
+            argumentsJson: JSON.stringify({ action: 'title', title: 'Pending Title' }),
+          },
+        ],
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_WAITING',
+      metadata: {
+        createdAt: t2,
+        toolCall: {
+          id: 'pending-id',
+          name: 'swarm',
+          argumentsJson: JSON.stringify({ action: 'kill', name: 'still-running' }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_ERROR',
+      metadata: {
+        createdAt: t2,
+        toolCall: {
+          name: 'swarm',
+          argumentsJson: JSON.stringify({ action: 'kill', name: 'idless-failed' }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_RUNNING',
+      metadata: {
+        createdAt: t2,
+        toolCall: {
+          name: 'swarm',
+          argumentsJson: JSON.stringify({ action: 'title', title: 'Pending Title' }),
+        },
+      },
+    },
+    // Prototype-colliding member names ('constructor', 'toString', '__proto__') must work safely
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        completedAt: t3,
+        toolCall: {
+          id: 'proto-1',
+          name: 'swarm',
+          argumentsJson: JSON.stringify({ action: 'kill', name: 'constructor' }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        completedAt: t3,
+        toolCall: {
+          id: 'proto-2',
+          name: 'swarm',
+          argumentsJson: JSON.stringify({ action: 'kill', name: 'toString' }),
+        },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        completedAt: t3,
+        toolCall: {
+          id: 'proto-3',
+          name: 'swarm',
+          argumentsJson: JSON.stringify({ action: 'kill', name: '__proto__' }),
+        },
+      },
+    },
+  ]);
+
+  assert.ok(meta);
+  assert.equal(meta.title, undefined);
+  assert.equal(Object.getPrototypeOf(meta.killedMembers), Object.prototype);
+  assert.equal(meta.killedMembers.constructor, Date.parse(t3));
+  assert.equal(meta.killedMembers.tostring, Date.parse(t3));
+  assert.equal(Object.getOwnPropertyDescriptor(meta.killedMembers, '__proto__')?.value, Date.parse(t3));
+  assert.equal(meta.killedMembers['still-running'], undefined);
+  assert.equal(meta.killedMembers['idless-failed'], undefined);
+  // JSON round-trip preserves exact structural equality (no NaN -> null corruption)
+  const roundTripped = JSON.parse(JSON.stringify(meta));
+  assert.equal(isDeepStrictEqual(meta, roundTripped), true);
+});
+
+test('Local Swarm ground truth (members.json killed=false & live transcript.jsonl wakeup) takes precedence over RPC/cache fallbacks', async () => {
+  const baseMs = Date.parse('2026-11-20T12:00:00Z');
+  const isoAt = (sec) => new Date(baseMs + sec * 1000).toISOString();
+
+  const rootCid = '10101010-1111-4111-8111-111111111111';
+  const aliveCid = '20202020-2222-4222-8222-222222222222';
+  const wakingCid = '30303030-3333-4333-8333-333333333333';
+
+  const makeModelStep = (idx, sec) => ({
+    type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      createdAt: isoAt(sec),
+      completedAt: isoAt(sec + 1),
+      sourceTrajectoryStepInfo: { stepIndex: idx },
+      modelUsage: {
+        model: 'MODEL_PLACEHOLDER_M37',
+        inputTokens: '200',
+        cacheReadTokens: '0',
+        outputTokens: '50',
+      },
+    },
+  });
+
+  const h = backendHarness({
+    clock: () => baseMs + 120_000,
+    userStatus: { email: 'local-swarm@example.com' },
+    swarmMembers: {
+      [rootCid]: {
+        title: 'Local Manifest Title',
+        members: {
+          'reused-bee': {
+            conversation_id: aliveCid,
+            role: 'Swarm Worker (reused-bee)',
+            killed: false,
+          },
+          'waking-bee': {
+            conversation_id: wakingCid,
+            role: 'Swarm Worker (waking-bee)',
+            killed: false,
+          },
+        },
+      },
+    },
+    summaries: {
+      [rootCid]: {
+        stepCount: 2,
+        createdTime: isoAt(0),
+        lastModifiedTime: isoAt(30),
+        status: 'CASCADE_RUN_STATUS_IDLE',
+      },
+      [aliveCid]: {
+        stepCount: 1,
+        // Intentionally omit createdTime & use earlier step time to test mEntry.killed=false precedence
+        lastModifiedTime: isoAt(10),
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        trajectoryMetadata: {
+          parentConversationId: rootCid,
+          subagentSpec: { typeName: 'worker', role: 'Swarm Worker (reused-bee)' },
+        },
+      },
+      [wakingCid]: {
+        stepCount: 2,
+        createdTime: isoAt(12),
+        lastModifiedTime: isoAt(18),
+        status: 'CASCADE_RUN_STATUS_RUNNING',
+        trajectoryMetadata: {
+          parentConversationId: rootCid,
+          subagentSpec: { typeName: 'worker', role: 'Swarm Worker (waking-bee)' },
+        },
+      },
+    },
+    trajectories: {
+      [rootCid]: {
+        trajectory: {
+          steps: [
+            makeModelStep(0, 1),
+            {
+              type: 'CORTEX_STEP_TYPE_GENERIC',
+              status: 'CORTEX_STEP_STATUS_DONE',
+              metadata: {
+                completedAt: isoAt(30),
+                toolCall: {
+                  id: 'kill-reused',
+                  name: 'swarm',
+                  argumentsJson: JSON.stringify({ action: 'kill', name: 'reused-bee' }),
+                },
+              },
+            },
+          ],
+        },
+      },
+      [aliveCid]: { trajectory: { steps: [makeModelStep(0, 5)] } },
+      [wakingCid]: {
+        trajectory: {
+          steps: [
+            makeModelStep(0, 15),
+            {
+              type: 'CORTEX_STEP_TYPE_GENERIC',
+              status: 'CORTEX_STEP_STATUS_DONE',
+              metadata: {
+                completedAt: isoAt(18),
+                toolCall: { name: 'swarm_wait', argumentsJson: '{"since":1}' },
+              },
+            },
+          ],
+        },
+      },
+    },
+    transcripts: {},
+  });
+
+  // Poll 1: wakingCid is parked on swarm_wait; aliveCid has mEntry.killed=false despite RPC kill
+  const p1 = await h.buildTelemetryPayloadInternal(rootCid, false, { range: 'today' });
+  const byCid1 = new Map(p1.activeConversation.agents.map((a) => [a.cascadeId, a]));
+  assert.equal(p1.activeConversation.swarmTitle, 'Local Manifest Title');
+  assert.equal(byCid1.get(aliveCid)?.swarmState, 'waiting');
+  assert.equal(byCid1.get(wakingCid)?.swarmState, 'waiting');
+  assert.equal(byCid1.get(wakingCid)?.isRunning, false);
+
+  // Poll 2: Simulate wakingCid RPC failing (enters cooldown / skips fetch) WHILE local transcript.jsonl records a wakeup!
+  h.state.trajectories[wakingCid] = new Error('transient local RPC stall');
+  h.state.transcripts[wakingCid] = [
+    {
+      type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE',
+      content: '[swarm] new board message #9',
+      created_at: isoAt(60),
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+      status: 'CORTEX_STEP_STATUS_RUNNING',
+      tool_calls: [{ name: 'read_file', argumentsJson: '{"Path":"main.mjs"}' }],
+      created_at: isoAt(61),
+    },
+  ];
+  h.state.transcriptMtimeMs = 2;
+
+  const p2 = await h.buildTelemetryPayloadInternal(rootCid, false, { range: 'today' });
+  const byCid2 = new Map(p2.activeConversation.agents.map((a) => [a.cascadeId, a]));
+  assert.equal(byCid2.get(wakingCid)?.isRunning, true);
+  assert.equal(byCid2.get(wakingCid)?.swarmState, 'working');
+});
+
 

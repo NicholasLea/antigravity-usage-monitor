@@ -3042,4 +3042,200 @@ export function isParkedOnSwarmWait(rawSteps = []) {
   return false;
 }
 
+function parseSwarmToolArgs(rawToolCall) {
+  if (!rawToolCall || typeof rawToolCall !== 'object') return null;
+  const direct = rawToolCall.args || rawToolCall.arguments;
+  if (direct && typeof direct === 'object' && !Array.isArray(direct)) {
+    return direct;
+  }
+  const rawJson =
+    typeof rawToolCall.argumentsJson === 'string'
+      ? rawToolCall.argumentsJson
+      : typeof direct === 'string'
+        ? direct
+        : typeof rawToolCall.function?.arguments === 'string'
+          ? rawToolCall.function.arguments
+          : '';
+  if (!rawJson.trim()) return null;
+  try {
+    const parsed = JSON.parse(rawJson);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeSwarmToolName(rawToolCall) {
+  return String(
+    rawToolCall?.name || rawToolCall?.toolName || rawToolCall?.function?.name || ''
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/^default_api:/, '');
+}
+
+function isSwarmStepCompletedSuccess(step) {
+  const st = typeof step?.status === 'string' ? step.status.trim().toUpperCase() : '';
+  if (st) {
+    if (!LIVE_TERMINAL_STATUSES.has(st)) {
+      return false;
+    }
+    if (st.includes('ERROR') || st.includes('CANCEL') || st.includes('FAIL')) {
+      return false;
+    }
+  }
+  const tcSt =
+    typeof step?.metadata?.toolCall?.status === 'string'
+      ? step.metadata.toolCall.status.trim().toUpperCase()
+      : '';
+  if (tcSt) {
+    if (
+      tcSt.includes('ERROR') ||
+      tcSt.includes('CANCEL') ||
+      tcSt.includes('FAIL') ||
+      /(?:WAIT|PEND|RUN|GENERAT|IN_PROGRESS|STREAM)/i.test(tcSt)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function extractSwarmCallIntent(rawToolCall) {
+  const args = parseSwarmToolArgs(rawToolCall);
+  if (!args || typeof args.action !== 'string') return null;
+  const action = args.action.trim().toLowerCase();
+  if (action === 'title') {
+    if (typeof args.title !== 'string') return null;
+    const nextTitle = args.title.trim();
+    if (!nextTitle) return null;
+    return { action: 'title', value: nextTitle, sig: `title:${nextTitle}` };
+  }
+  if (action === 'kill') {
+    if (typeof args.name !== 'string') return null;
+    const member = args.name.trim().replace(/^@+/, '').toLowerCase();
+    if (!member) return null;
+    return { action: 'kill', value: member, sig: `kill:${member}` };
+  }
+  return null;
+}
+
+/**
+ * 从原始轨迹 RPC 步骤中提取 Native Swarm 元数据（纯 RPC 解析，无需读取远端磁盘 `members.json`）：
+ * - `title`：最后一次成功调用 `swarm(action: "title")` 设置的蜂群标题；
+ * - `killedMembers`：被 `swarm(action: "kill")` 终止的工蜂成员名（小写去 `@`）及其终止时间戳映射。
+ *
+ * @param {Array<object>} [rawSteps=[]]
+ * @returns {{ title?: string, killedMembers?: Record<string, number> } | null}
+ */
+export function extractSwarmMetaFromSteps(rawSteps = []) {
+  if (!Array.isArray(rawSteps) || rawSteps.length === 0) return null;
+
+  const executedToolCallIds = new Set();
+  for (const st of rawSteps) {
+    const tc = st?.metadata?.toolCall;
+    if (!tc || normalizeSwarmToolName(tc) !== 'swarm') continue;
+    const tcId = String(tc.id || tc.toolCallId || '').trim();
+    if (tcId) {
+      executedToolCallIds.add(tcId);
+    }
+  }
+
+  let title = '';
+  const killedMap = new Map();
+
+  const applyIntent = (intent, stepMs) => {
+    if (!intent) return;
+    if (intent.action === 'title') {
+      title = intent.value;
+    } else if (intent.action === 'kill') {
+      const prevMs = killedMap.get(intent.value);
+      killedMap.set(intent.value, prevMs === undefined ? stepMs : Math.max(prevMs, stepMs));
+    }
+  };
+
+  for (let i = 0; i < rawSteps.length; i++) {
+    const st = rawSteps[i];
+    if (!st || typeof st !== 'object') continue;
+    const stepMs =
+      parseIsoMs(st?.metadata?.completedAt || st?.metadata?.createdAt || st?.created_at) || 0;
+
+    const execTc = st?.metadata?.toolCall;
+    if (execTc && normalizeSwarmToolName(execTc) === 'swarm') {
+      if (isSwarmStepCompletedSuccess(st)) {
+        applyIntent(extractSwarmCallIntent(execTc), stepMs);
+      }
+      continue;
+    }
+
+    if (!isSwarmStepCompletedSuccess(st)) continue;
+    const plannerCalls = getStepPlannerToolCalls(st);
+    if (plannerCalls.length === 0) continue;
+
+    // 收集同一轮次内无 toolCall.id 的执行步骤签名，防止失败或进行中的无 ID 执行步骤回落误触发 planner 提案
+    let turnIdlessExecCounts = null;
+    for (const tc of plannerCalls) {
+      if (normalizeSwarmToolName(tc) !== 'swarm') continue;
+      const tcId = String(tc?.id || tc?.toolCallId || '').trim();
+      if (tcId && executedToolCallIds.has(tcId)) {
+        continue;
+      }
+      const intent = extractSwarmCallIntent(tc);
+      if (!intent) continue;
+      if (!tcId) {
+        if (!turnIdlessExecCounts) {
+          turnIdlessExecCounts = new Map();
+          for (let j = i + 1; j < rawSteps.length; j++) {
+            const nextSt = rawSteps[j];
+            if (!nextSt || typeof nextSt !== 'object') continue;
+            const nt = String(nextSt.type || '').trim().toUpperCase();
+            if (
+              isPlannerStep(nextSt) ||
+              nt.includes('USER_INPUT') ||
+              nt.includes('SYSTEM_MESSAGE') ||
+              isCheckpointStep(nextSt)
+            ) {
+              break;
+            }
+            const nextExecTc = nextSt?.metadata?.toolCall;
+            if (!nextExecTc || normalizeSwarmToolName(nextExecTc) !== 'swarm') continue;
+            const nextExecId = String(nextExecTc.id || nextExecTc.toolCallId || '').trim();
+            if (nextExecId) continue;
+            const nextIntent = extractSwarmCallIntent(nextExecTc);
+            if (!nextIntent) continue;
+            turnIdlessExecCounts.set(
+              nextIntent.sig,
+              (turnIdlessExecCounts.get(nextIntent.sig) || 0) + 1
+            );
+          }
+        }
+        const matchedCount = turnIdlessExecCounts.get(intent.sig) || 0;
+        if (matchedCount > 0) {
+          turnIdlessExecCounts.set(intent.sig, matchedCount - 1);
+          continue;
+        }
+      }
+      applyIntent(intent, stepMs);
+    }
+  }
+
+  if (!title && killedMap.size === 0) return null;
+  let killedMembers = null;
+  if (killedMap.size > 0) {
+    killedMembers = {};
+    for (const [member, killMs] of killedMap.entries()) {
+      Object.defineProperty(killedMembers, member, {
+        value: killMs,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+  }
+  return {
+    ...(title ? { title } : {}),
+    ...(killedMembers ? { killedMembers } : {}),
+  };
+}
+
 
