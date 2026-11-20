@@ -5504,9 +5504,9 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
     assert.equal(relaunchMacRes.ok, true);
     assert.equal(macSpawnArgs.env.AGY_RELAUNCH_APP, '/Applications/Antigravity.app');
     assert.equal(macSpawnArgs.env.AGY_APP_NAME, 'Antigravity');
-    assert.match(macSpawnArgs.args[1], /if osascript .* then .* fi/);
-    assert.match(macSpawnArgs.args[1], /pkill -TERM -x "\$AGY_APP_NAME"/);
-    assert.match(macSpawnArgs.args[1], /pkill -KILL -x "\$AGY_APP_NAME"/);
+    assert.match(macSpawnArgs.args[1], /if osascript .* then .* pgrep -ax "\$AGY_APP_NAME".* fi/);
+    assert.match(macSpawnArgs.args[1], /pkill -TERM -ax "\$AGY_APP_NAME"/);
+    assert.match(macSpawnArgs.args[1], /pkill -KILL -ax "\$AGY_APP_NAME"/);
     assert.match(macSpawnArgs.args[1], /open -a "\$AGY_RELAUNCH_APP" --args --remote-debugging-port=0/);
 
     // macOS TCC-blocked osascript falls back to ps -axo comm= and derives custom .app name
