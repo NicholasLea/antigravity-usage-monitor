@@ -16,6 +16,8 @@ import {
 import {
   buildStepAnomalyDiagnostic,
   buildStepCompactionDiagnostic,
+  buildStepTimingDiagnostic,
+  hasStepTimingData,
   resolveModelDisplayInfo,
   speedReasonText,
 } from '../../core/formatters.js';
@@ -573,6 +575,7 @@ export const StepTableWidget = defineComponent({
       patchClasses(anomalyTipEl, {
         'is-danger': diag.severity === 'danger',
         'is-compaction': diag.severity === 'compaction',
+        'is-timing': diag.severity === 'timing',
       });
       patchText(anomalyTipTitleEl, diag.title);
       patchAttr(anomalyTipSubEl, 'hidden', !diag.sub);
@@ -583,10 +586,23 @@ export const StepTableWidget = defineComponent({
       }
       const rows = Array.isArray(diag.rows) ? diag.rows : [];
       for (const row of rows) {
-        const lineEl = h('div', {
-          className: `step-anomaly-tip-row${row.danger ? ' is-danger' : ''}`,
-          text: row.text,
-        });
+        const hasKvValue = row.value !== undefined && row.value !== null && row.value !== '';
+        const lineEl = hasKvValue
+          ? h(
+              'div',
+              { className: `step-anomaly-tip-row is-kv${row.danger ? ' is-danger' : ''}` },
+              [
+                h('span', { className: 'step-anomaly-tip-k', text: row.text }),
+                h('span', {
+                  className: `step-anomaly-tip-v text-mono${row.toneClass ? ` ${row.toneClass}` : ''}`,
+                  text: row.value,
+                }),
+              ]
+            )
+          : h('div', {
+              className: `step-anomaly-tip-row${row.danger ? ' is-danger' : ''}`,
+              text: row.text,
+            });
         const itemChildren = [lineEl];
         if (row.detail) {
           itemChildren.push(
@@ -611,6 +627,7 @@ export const StepTableWidget = defineComponent({
     }
 
     const hoverRows = new WeakMap();
+    const timingHoverRows = new WeakMap();
     let lastRenderedRows = null;
     let lastRenderOptions = '';
     let trackedCascadeId = null;
@@ -766,15 +783,18 @@ export const StepTableWidget = defineComponent({
     }
 
     function moveAlongTurnRail(event) {
-      const { badge, prompt, rowDiagGetter } = hoverRows.get(this);
+      const { badge, prompt, rowDiagGetter, timingDiagGetter } = hoverRows.get(this);
       const rect = this.getBoundingClientRect?.();
       const relX = rect ? (event?.clientX ?? 0) - rect.left : 0;
       if (event?.target !== badge && relX <= 18) {
         showTurnTip(this, prompt);
       } else {
         hideTurnTip();
-        if (rowDiagGetter) {
-          showAnomalyTip(this, rowDiagGetter());
+        const diag = timingDiagGetter?.() || rowDiagGetter?.();
+        if (diag) {
+          showAnomalyTip(this, diag);
+        } else {
+          hideAnomalyTip();
         }
       }
     }
@@ -783,7 +803,9 @@ export const StepTableWidget = defineComponent({
       const entry = hoverRows.get(this);
       hideTurnTip();
       if (entry?.rowDiagGetter && entry.tr && event?.relatedTarget && entry.tr.contains?.(event.relatedTarget)) {
-        showAnomalyTip(this, entry.rowDiagGetter());
+        showAnomalyTip(entry.rowAnchorEl || this, entry.rowDiagGetter());
+      } else if (entry?.timingDiagGetter) {
+        hideAnomalyTip();
       }
     }
 
@@ -792,6 +814,43 @@ export const StepTableWidget = defineComponent({
       cell.onmouseenter = null;
       cell.onmousemove = null;
       cell.onmouseleave = null;
+    }
+
+    function enterTimingCell() {
+      const entry = timingHoverRows.get(this);
+      if (!entry) return;
+      const diag = entry.timingDiagGetter?.();
+      if (diag) {
+        showAnomalyTip(this, diag);
+      }
+    }
+
+    function leaveTimingCell(event) {
+      const entry = timingHoverRows.get(this);
+      if (
+        entry?.rowDiagGetter &&
+        entry.tr &&
+        event?.relatedTarget &&
+        entry.tr.contains?.(event.relatedTarget)
+      ) {
+        showAnomalyTip(entry.rowAnchorEl || entry.tr, entry.rowDiagGetter());
+        return;
+      }
+      hideAnomalyTip();
+    }
+
+    function clearTimingCellHover(cell) {
+      if (!cell || !timingHoverRows.delete(cell)) return;
+      cell.onmouseenter = null;
+      cell.onmouseleave = null;
+    }
+
+    function clearRowTimingHovers(refs) {
+      if (!refs?.timingHoverTds) return;
+      for (const td of refs.timingHoverTds) {
+        clearTimingCellHover(td);
+      }
+      refs.timingHoverTds.clear();
     }
 
     function calibrateRowHeights() {
@@ -1116,6 +1175,7 @@ export const StepTableWidget = defineComponent({
               railEl: null,
               agentBadgeEl: null,
               hoverTd: null,
+              timingHoverTds: new Set(),
             },
           };
         },
@@ -1198,6 +1258,7 @@ export const StepTableWidget = defineComponent({
               clearCellHover(refs.hoverTd);
               refs.hoverTd = null;
             }
+            clearRowTimingHovers(refs);
             for (const [oldColKey, entry] of refs.cellMap) {
               if (!wantedSet.has(oldColKey)) {
                 if (refs.railEl?.parentNode === entry.td) {
@@ -1354,6 +1415,10 @@ export const StepTableWidget = defineComponent({
             );
           }
 
+          const hasTimingTip = hasStepTimingData(st);
+          const timingDiagGetter = hasTimingTip ? () => buildStepTimingDiagnostic(st) : null;
+          const isFirstTimingCol = firstColKey === 'ttft' || firstColKey === 'duration';
+
           const hoverTd = showRowRail && prompt ? firstTd : null;
           if (refs.hoverTd !== hoverTd) clearCellHover(refs.hoverTd);
           refs.hoverTd = hoverTd;
@@ -1361,7 +1426,9 @@ export const StepTableWidget = defineComponent({
             hoverRows.set(hoverTd, {
               badge: refs.agentBadgeEl,
               prompt,
+              rowAnchorEl: firstTd || tr,
               rowDiagGetter,
+              timingDiagGetter: isFirstTimingCol ? timingDiagGetter : null,
               tr,
             });
             const useWholeCellTurnTip = firstColKey === 'step' && !hasRowTip;
@@ -1369,6 +1436,30 @@ export const StepTableWidget = defineComponent({
             hoverTd.onmousemove = useWholeCellTurnTip ? moveInStepCell : moveAlongTurnRail;
             hoverTd.onmouseleave = leaveStepCell;
           }
+
+          if (!refs.timingHoverTds) refs.timingHoverTds = new Set();
+          const nextTimingTds = new Set();
+          if (timingDiagGetter) {
+            for (const timingColKey of ['ttft', 'duration']) {
+              const timingTd = refs.cellMap.get(timingColKey)?.td || null;
+              if (!timingTd || timingTd === hoverTd) continue;
+              nextTimingTds.add(timingTd);
+              timingHoverRows.set(timingTd, {
+                tr,
+                rowAnchorEl: firstTd || tr,
+                rowDiagGetter,
+                timingDiagGetter,
+              });
+              timingTd.onmouseenter = enterTimingCell;
+              timingTd.onmouseleave = leaveTimingCell;
+            }
+          }
+          for (const prevTd of refs.timingHoverTds) {
+            if (!nextTimingTds.has(prevTd)) {
+              clearTimingCellHover(prevTd);
+            }
+          }
+          refs.timingHoverTds = nextTimingTds;
 
           if (enteringRowKeys?.has(item.rowKey)) {
             clearRowEnterState(tr);
@@ -1387,6 +1478,7 @@ export const StepTableWidget = defineComponent({
             clearCellHover(refs.hoverTd);
             refs.hoverTd = null;
           }
+          clearRowTimingHovers(refs);
           clearRowEnterState(tr);
           if (!refs?.isSpacer && !refs?.isSizer && tr) {
             patchClasses(tr, {

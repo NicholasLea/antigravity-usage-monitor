@@ -240,7 +240,8 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     key: 'ttft',
     thLabel: () => t('stepCol.ttft.th'),
     optLabel: () => t('stepCol.ttft.opt'),
-    sigPart: (st) => `${st.ttftSec}`,
+    sigPart: (st) =>
+      `${st.ttftSec ?? ''}:${st.totalDurationSec ?? ''}:${st.nativeStreamSec ?? ''}:${st.thinkingDurationSec ?? ''}:${st.hasToolCalls ? 1 : 0}`,
     sortValue: (st) => finiteSortNum(st?.ttftSec),
     createCell: () => {
       const valEl = h('span');
@@ -258,7 +259,8 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     key: 'duration',
     thLabel: () => t('stepCol.duration.th'),
     optLabel: () => t('stepCol.duration.opt'),
-    sigPart: (st) => `${st.totalDurationSec ?? st.streamDurationSec ?? ''}`,
+    sigPart: (st) =>
+      `${st.totalDurationSec ?? st.streamDurationSec ?? ''}:${st.ttftSec ?? ''}:${st.nativeStreamSec ?? ''}:${st.thinkingDurationSec ?? ''}:${st.hasToolCalls ? 1 : 0}`,
     sortValue: (st) => finiteSortNum(st?.totalDurationSec ?? st?.streamDurationSec),
     createCell: () => {
       const valEl = h('span');

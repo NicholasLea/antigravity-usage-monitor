@@ -3976,6 +3976,10 @@ html[data-standalone="true"] .app-shell {
   border-color: color-mix(in srgb, var(--accent-primary) 46%, var(--border-strong));
 }
 
+.step-anomaly-tip.is-timing {
+  border-color: var(--border-strong);
+}
+
 .step-anomaly-tip[hidden],
 .step-anomaly-tip-sub[hidden],
 .step-anomaly-tip-list[hidden],
@@ -4004,6 +4008,10 @@ html[data-standalone="true"] .app-shell {
   color: var(--accent-primary);
 }
 
+.step-anomaly-tip.is-timing .step-anomaly-tip-title {
+  color: var(--text-primary);
+}
+
 .step-anomaly-tip-sub {
   font-size: var(--fs-xs);
   color: var(--text-secondary);
@@ -4028,6 +4036,26 @@ html[data-standalone="true"] .app-shell {
   font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--text-primary);
+}
+
+.step-anomaly-tip-row.is-kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  font-weight: 400;
+}
+
+.step-anomaly-tip-k {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.step-anomaly-tip-v {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  text-align: right;
 }
 
 .step-anomaly-tip-row.is-danger {

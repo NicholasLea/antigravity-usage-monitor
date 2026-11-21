@@ -1425,6 +1425,17 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.compactionSummaryRow': '输入 {input} → 摘要输出 {output}',
   'steps.compactionDetailHint': '系统自动触发的上下文压缩步骤，用于折叠历史对话以释放窗口空间',
   'steps.compactionAnomalyHint': '该步骤同时为系统自动压缩步骤',
+  'steps.timingStepTitle': '#{step} · 耗时拆解',
+  'steps.timingTotalSub': '总计 {sec}',
+  'steps.timingTtftLabel': '首字等待 (TTFT)',
+  'steps.timingStreamLabel': '流式返回',
+  'steps.timingAfterTtftLabel': '首字后耗时',
+  'steps.timingThinkLabel': '原生思考计时',
+  'steps.timingTotalLabel': '端到端总耗时',
+  'steps.timingOverlapHint': '原生思考计时可能重叠首字或流式阶段，不可直接相加',
+  'steps.timingToolBufferedHint': '含工具调用，缓冲返回时流式耗时较短',
+  'steps.timingAnomalyHint': '含 {count} 次异常',
+  'steps.timingAnomalyDelayHint': '含 {count} 次异常 · 退避 {sec}s',
   'steps.anomalyTerminalTag': '中止',
   'steps.anomalyModelTitle': '{model} · 异常 {count} 次',
   'steps.anomalyModelSub': '涉及 {steps} 步',
@@ -2166,6 +2177,17 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.compactionSummaryRow': 'Input {input} → Summary {output}',
   'steps.compactionDetailHint': 'Automatic context compaction step triggered to summarize history and free window space',
   'steps.compactionAnomalyHint': 'This step is also an auto-compaction step',
+  'steps.timingStepTitle': '#{step} · Timing Breakdown',
+  'steps.timingTotalSub': 'Total {sec}',
+  'steps.timingTtftLabel': 'First Token (TTFT)',
+  'steps.timingStreamLabel': 'Streaming',
+  'steps.timingAfterTtftLabel': 'After First Token',
+  'steps.timingThinkLabel': 'Native Thinking',
+  'steps.timingTotalLabel': 'Total Duration',
+  'steps.timingOverlapHint': 'Native thinking timing may overlap TTFT/streaming; not additive',
+  'steps.timingToolBufferedHint': 'Tool call step (buffered return yields short stream)',
+  'steps.timingAnomalyHint': '{count} retries/errors',
+  'steps.timingAnomalyDelayHint': '{count} retries/errors · backoff {sec}s',
   'steps.anomalyTerminalTag': 'Stopped',
   'steps.anomalyModelTitle': '{model} · {count} Retries / Errors',
   'steps.anomalyModelSub': '{steps} steps affected',
@@ -3555,7 +3577,7 @@ return { defineComponent };
 })();
 
 // --- src/core/formatters.js ---
-const { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
+const { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
 /**
  * @fileoverview Pure formatting utilities for speed metrics, token counts,
  * USD estimates, countdown timers, and custom datetime displays.
@@ -3801,6 +3823,123 @@ function buildStepCompactionDiagnostic(st, displaySettings = {}) {
     rows,
     hint: '',
     severity: 'compaction',
+  };
+}
+
+function finiteNonNegativeSec(val) {
+  if (val === null || val === undefined || val === '') return null;
+  const num = Number(val);
+  return Number.isFinite(num) && num >= 0 ? num : null;
+}
+
+function formatTimingDetailSec(sec) {
+  const num = finiteNonNegativeSec(sec);
+  if (num === null) return '—';
+  if (num > 0 && num < 0.01) return '<0.01s';
+  if (num >= 10) return `${num.toFixed(1)}s`;
+  return `${num.toFixed(2)}s`;
+}
+
+function hasStepTimingData(st) {
+  if (!st || typeof st !== 'object') return false;
+  return (
+    finiteNonNegativeSec(st.nativeTtftSec ?? st.ttftSec) !== null ||
+    finiteNonNegativeSec(st.totalDurationSec ?? st.streamDurationSec) !== null ||
+    finiteNonNegativeSec(st.nativeStreamSec) !== null ||
+    finiteNonNegativeSec(st.thinkingDurationSec) !== null
+  );
+}
+
+function buildStepTimingDiagnostic(st) {
+  if (!st || typeof st !== 'object') return null;
+  const ttft = finiteNonNegativeSec(st.nativeTtftSec ?? st.ttftSec);
+  const total = finiteNonNegativeSec(st.totalDurationSec ?? st.streamDurationSec);
+  const nativeStream = finiteNonNegativeSec(st.nativeStreamSec);
+  const think = finiteNonNegativeSec(st.thinkingDurationSec);
+  if (ttft === null && total === null && nativeStream === null && think === null) {
+    return null;
+  }
+
+  const afterTtft =
+    nativeStream === null && total !== null && ttft !== null && total >= ttft
+      ? +(total - ttft).toFixed(6)
+      : null;
+
+  const rows = [];
+  if (ttft !== null) {
+    let valText = formatTimingDetailSec(ttft);
+    if (total !== null && total > 0 && ttft <= total + 0.01) {
+      const pct = Math.min(100, Math.max(0, Math.round((ttft / total) * 100)));
+      valText = `${valText} (${pct}%)`;
+    }
+    rows.push({
+      text: t('steps.timingTtftLabel'),
+      value: valText,
+      toneClass: getTtftToneClass(ttft),
+    });
+  }
+  if (nativeStream !== null) {
+    rows.push({
+      text: t('steps.timingStreamLabel'),
+      value: formatTimingDetailSec(nativeStream),
+    });
+  } else if (afterTtft !== null) {
+    rows.push({
+      text: t('steps.timingAfterTtftLabel'),
+      value: formatTimingDetailSec(afterTtft),
+    });
+  }
+  if (think !== null) {
+    rows.push({
+      text: t('steps.timingThinkLabel'),
+      value: formatTimingDetailSec(think),
+    });
+  }
+
+  const showTotalInSub = total !== null && rows.length > 0;
+  if (total !== null && !showTotalInSub) {
+    rows.push({
+      text: t('steps.timingTotalLabel'),
+      value: formatTimingDetailSec(total),
+    });
+  }
+
+  const hints = [];
+  const hasOverlap =
+    think !== null &&
+    total !== null &&
+    ((ttft !== null && ttft + think > total + 0.05) ||
+      (nativeStream !== null && ttft !== null && ttft + nativeStream + think > total + 0.05) ||
+      think > total + 0.05);
+  if (hasOverlap) {
+    hints.push(t('steps.timingOverlapHint'));
+  }
+  const streamForToolCheck = nativeStream ?? afterTtft;
+  if (
+    st.hasToolCalls &&
+    streamForToolCheck !== null &&
+    streamForToolCheck < 0.5 &&
+    ttft !== null &&
+    ttft >= 2
+  ) {
+    hints.push(t('steps.timingToolBufferedHint'));
+  }
+  const anomalyCount = Math.max(0, Number(st.anomaly?.count || 0));
+  if (anomalyCount > 0) {
+    const delaySec = Number(st.anomaly?.totalDelaySec || 0);
+    hints.push(
+      delaySec > 0
+        ? t('steps.timingAnomalyDelayHint', { count: anomalyCount, sec: delaySec })
+        : t('steps.timingAnomalyHint', { count: anomalyCount })
+    );
+  }
+
+  return {
+    title: t('steps.timingStepTitle', { step: Number(st.stepIndex ?? 0) }),
+    sub: showTotalInSub ? t('steps.timingTotalSub', { sec: formatTimingDetailSec(total) }) : '',
+    rows,
+    hint: hints.join(' · '),
+    severity: 'timing',
   };
 }
 
@@ -4742,7 +4881,7 @@ function buildDeterministicModelColorMap(models = []) {
 
   return colorMap;
 }
-return { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+return { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
 })();
 
 // --- src/core/settingsBackup.js ---
@@ -5956,6 +6095,9 @@ function isEquivalentTelemetry(prev, next) {
         bs?.createdAtMs !== as?.createdAtMs ||
         bs?.totalDurationSec !== as?.totalDurationSec ||
         bs?.streamDurationSec !== as?.streamDurationSec ||
+        bs?.nativeStreamSec !== as?.nativeStreamSec ||
+        bs?.thinkingDurationSec !== as?.thinkingDurationSec ||
+        Boolean(bs?.hasToolCalls) !== Boolean(as?.hasToolCalls) ||
         bs?.modelKey !== as?.modelKey ||
         bs?.modelShort !== as?.modelShort ||
         bs?.modelLabel !== as?.modelLabel ||
@@ -6013,6 +6155,9 @@ function isEquivalentTelemetry(prev, next) {
       before.createdAtMs !== after.createdAtMs ||
       before.totalDurationSec !== after.totalDurationSec ||
       before.streamDurationSec !== after.streamDurationSec ||
+      before.nativeStreamSec !== after.nativeStreamSec ||
+      before.thinkingDurationSec !== after.thinkingDurationSec ||
+      Boolean(before.hasToolCalls) !== Boolean(after.hasToolCalls) ||
       before.modelKey !== after.modelKey ||
       before.modelShort !== after.modelShort ||
       before.modelLabel !== after.modelLabel ||
@@ -15950,7 +16095,8 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     key: 'ttft',
     thLabel: () => t('stepCol.ttft.th'),
     optLabel: () => t('stepCol.ttft.opt'),
-    sigPart: (st) => `${st.ttftSec}`,
+    sigPart: (st) =>
+      `${st.ttftSec ?? ''}:${st.totalDurationSec ?? ''}:${st.nativeStreamSec ?? ''}:${st.thinkingDurationSec ?? ''}:${st.hasToolCalls ? 1 : 0}`,
     sortValue: (st) => finiteSortNum(st?.ttftSec),
     createCell: () => {
       const valEl = h('span');
@@ -15968,7 +16114,8 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     key: 'duration',
     thLabel: () => t('stepCol.duration.th'),
     optLabel: () => t('stepCol.duration.opt'),
-    sigPart: (st) => `${st.totalDurationSec ?? st.streamDurationSec ?? ''}`,
+    sigPart: (st) =>
+      `${st.totalDurationSec ?? st.streamDurationSec ?? ''}:${st.ttftSec ?? ''}:${st.nativeStreamSec ?? ''}:${st.thinkingDurationSec ?? ''}:${st.hasToolCalls ? 1 : 0}`,
     sortValue: (st) => finiteSortNum(st?.totalDurationSec ?? st?.streamDurationSec),
     createCell: () => {
       const valEl = h('span');
@@ -17344,6 +17491,7 @@ const StepTableWidget = defineComponent({
       patchClasses(anomalyTipEl, {
         'is-danger': diag.severity === 'danger',
         'is-compaction': diag.severity === 'compaction',
+        'is-timing': diag.severity === 'timing',
       });
       patchText(anomalyTipTitleEl, diag.title);
       patchAttr(anomalyTipSubEl, 'hidden', !diag.sub);
@@ -17354,10 +17502,23 @@ const StepTableWidget = defineComponent({
       }
       const rows = Array.isArray(diag.rows) ? diag.rows : [];
       for (const row of rows) {
-        const lineEl = h('div', {
-          className: `step-anomaly-tip-row${row.danger ? ' is-danger' : ''}`,
-          text: row.text,
-        });
+        const hasKvValue = row.value !== undefined && row.value !== null && row.value !== '';
+        const lineEl = hasKvValue
+          ? h(
+              'div',
+              { className: `step-anomaly-tip-row is-kv${row.danger ? ' is-danger' : ''}` },
+              [
+                h('span', { className: 'step-anomaly-tip-k', text: row.text }),
+                h('span', {
+                  className: `step-anomaly-tip-v text-mono${row.toneClass ? ` ${row.toneClass}` : ''}`,
+                  text: row.value,
+                }),
+              ]
+            )
+          : h('div', {
+              className: `step-anomaly-tip-row${row.danger ? ' is-danger' : ''}`,
+              text: row.text,
+            });
         const itemChildren = [lineEl];
         if (row.detail) {
           itemChildren.push(
@@ -17382,6 +17543,7 @@ const StepTableWidget = defineComponent({
     }
 
     const hoverRows = new WeakMap();
+    const timingHoverRows = new WeakMap();
     let lastRenderedRows = null;
     let lastRenderOptions = '';
     let trackedCascadeId = null;
@@ -17537,15 +17699,18 @@ const StepTableWidget = defineComponent({
     }
 
     function moveAlongTurnRail(event) {
-      const { badge, prompt, rowDiagGetter } = hoverRows.get(this);
+      const { badge, prompt, rowDiagGetter, timingDiagGetter } = hoverRows.get(this);
       const rect = this.getBoundingClientRect?.();
       const relX = rect ? (event?.clientX ?? 0) - rect.left : 0;
       if (event?.target !== badge && relX <= 18) {
         showTurnTip(this, prompt);
       } else {
         hideTurnTip();
-        if (rowDiagGetter) {
-          showAnomalyTip(this, rowDiagGetter());
+        const diag = timingDiagGetter?.() || rowDiagGetter?.();
+        if (diag) {
+          showAnomalyTip(this, diag);
+        } else {
+          hideAnomalyTip();
         }
       }
     }
@@ -17554,7 +17719,9 @@ const StepTableWidget = defineComponent({
       const entry = hoverRows.get(this);
       hideTurnTip();
       if (entry?.rowDiagGetter && entry.tr && event?.relatedTarget && entry.tr.contains?.(event.relatedTarget)) {
-        showAnomalyTip(this, entry.rowDiagGetter());
+        showAnomalyTip(entry.rowAnchorEl || this, entry.rowDiagGetter());
+      } else if (entry?.timingDiagGetter) {
+        hideAnomalyTip();
       }
     }
 
@@ -17563,6 +17730,43 @@ const StepTableWidget = defineComponent({
       cell.onmouseenter = null;
       cell.onmousemove = null;
       cell.onmouseleave = null;
+    }
+
+    function enterTimingCell() {
+      const entry = timingHoverRows.get(this);
+      if (!entry) return;
+      const diag = entry.timingDiagGetter?.();
+      if (diag) {
+        showAnomalyTip(this, diag);
+      }
+    }
+
+    function leaveTimingCell(event) {
+      const entry = timingHoverRows.get(this);
+      if (
+        entry?.rowDiagGetter &&
+        entry.tr &&
+        event?.relatedTarget &&
+        entry.tr.contains?.(event.relatedTarget)
+      ) {
+        showAnomalyTip(entry.rowAnchorEl || entry.tr, entry.rowDiagGetter());
+        return;
+      }
+      hideAnomalyTip();
+    }
+
+    function clearTimingCellHover(cell) {
+      if (!cell || !timingHoverRows.delete(cell)) return;
+      cell.onmouseenter = null;
+      cell.onmouseleave = null;
+    }
+
+    function clearRowTimingHovers(refs) {
+      if (!refs?.timingHoverTds) return;
+      for (const td of refs.timingHoverTds) {
+        clearTimingCellHover(td);
+      }
+      refs.timingHoverTds.clear();
     }
 
     function calibrateRowHeights() {
@@ -17887,6 +18091,7 @@ const StepTableWidget = defineComponent({
               railEl: null,
               agentBadgeEl: null,
               hoverTd: null,
+              timingHoverTds: new Set(),
             },
           };
         },
@@ -17969,6 +18174,7 @@ const StepTableWidget = defineComponent({
               clearCellHover(refs.hoverTd);
               refs.hoverTd = null;
             }
+            clearRowTimingHovers(refs);
             for (const [oldColKey, entry] of refs.cellMap) {
               if (!wantedSet.has(oldColKey)) {
                 if (refs.railEl?.parentNode === entry.td) {
@@ -18125,6 +18331,10 @@ const StepTableWidget = defineComponent({
             );
           }
 
+          const hasTimingTip = hasStepTimingData(st);
+          const timingDiagGetter = hasTimingTip ? () => buildStepTimingDiagnostic(st) : null;
+          const isFirstTimingCol = firstColKey === 'ttft' || firstColKey === 'duration';
+
           const hoverTd = showRowRail && prompt ? firstTd : null;
           if (refs.hoverTd !== hoverTd) clearCellHover(refs.hoverTd);
           refs.hoverTd = hoverTd;
@@ -18132,7 +18342,9 @@ const StepTableWidget = defineComponent({
             hoverRows.set(hoverTd, {
               badge: refs.agentBadgeEl,
               prompt,
+              rowAnchorEl: firstTd || tr,
               rowDiagGetter,
+              timingDiagGetter: isFirstTimingCol ? timingDiagGetter : null,
               tr,
             });
             const useWholeCellTurnTip = firstColKey === 'step' && !hasRowTip;
@@ -18140,6 +18352,30 @@ const StepTableWidget = defineComponent({
             hoverTd.onmousemove = useWholeCellTurnTip ? moveInStepCell : moveAlongTurnRail;
             hoverTd.onmouseleave = leaveStepCell;
           }
+
+          if (!refs.timingHoverTds) refs.timingHoverTds = new Set();
+          const nextTimingTds = new Set();
+          if (timingDiagGetter) {
+            for (const timingColKey of ['ttft', 'duration']) {
+              const timingTd = refs.cellMap.get(timingColKey)?.td || null;
+              if (!timingTd || timingTd === hoverTd) continue;
+              nextTimingTds.add(timingTd);
+              timingHoverRows.set(timingTd, {
+                tr,
+                rowAnchorEl: firstTd || tr,
+                rowDiagGetter,
+                timingDiagGetter,
+              });
+              timingTd.onmouseenter = enterTimingCell;
+              timingTd.onmouseleave = leaveTimingCell;
+            }
+          }
+          for (const prevTd of refs.timingHoverTds) {
+            if (!nextTimingTds.has(prevTd)) {
+              clearTimingCellHover(prevTd);
+            }
+          }
+          refs.timingHoverTds = nextTimingTds;
 
           if (enteringRowKeys?.has(item.rowKey)) {
             clearRowEnterState(tr);
@@ -18158,6 +18394,7 @@ const StepTableWidget = defineComponent({
             clearCellHover(refs.hoverTd);
             refs.hoverTd = null;
           }
+          clearRowTimingHovers(refs);
           clearRowEnterState(tr);
           if (!refs?.isSpacer && !refs?.isSizer && tr) {
             patchClasses(tr, {

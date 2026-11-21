@@ -258,6 +258,123 @@ export function buildStepCompactionDiagnostic(st, displaySettings = {}) {
   };
 }
 
+function finiteNonNegativeSec(val) {
+  if (val === null || val === undefined || val === '') return null;
+  const num = Number(val);
+  return Number.isFinite(num) && num >= 0 ? num : null;
+}
+
+export function formatTimingDetailSec(sec) {
+  const num = finiteNonNegativeSec(sec);
+  if (num === null) return '—';
+  if (num > 0 && num < 0.01) return '<0.01s';
+  if (num >= 10) return `${num.toFixed(1)}s`;
+  return `${num.toFixed(2)}s`;
+}
+
+export function hasStepTimingData(st) {
+  if (!st || typeof st !== 'object') return false;
+  return (
+    finiteNonNegativeSec(st.nativeTtftSec ?? st.ttftSec) !== null ||
+    finiteNonNegativeSec(st.totalDurationSec ?? st.streamDurationSec) !== null ||
+    finiteNonNegativeSec(st.nativeStreamSec) !== null ||
+    finiteNonNegativeSec(st.thinkingDurationSec) !== null
+  );
+}
+
+export function buildStepTimingDiagnostic(st) {
+  if (!st || typeof st !== 'object') return null;
+  const ttft = finiteNonNegativeSec(st.nativeTtftSec ?? st.ttftSec);
+  const total = finiteNonNegativeSec(st.totalDurationSec ?? st.streamDurationSec);
+  const nativeStream = finiteNonNegativeSec(st.nativeStreamSec);
+  const think = finiteNonNegativeSec(st.thinkingDurationSec);
+  if (ttft === null && total === null && nativeStream === null && think === null) {
+    return null;
+  }
+
+  const afterTtft =
+    nativeStream === null && total !== null && ttft !== null && total >= ttft
+      ? +(total - ttft).toFixed(6)
+      : null;
+
+  const rows = [];
+  if (ttft !== null) {
+    let valText = formatTimingDetailSec(ttft);
+    if (total !== null && total > 0 && ttft <= total + 0.01) {
+      const pct = Math.min(100, Math.max(0, Math.round((ttft / total) * 100)));
+      valText = `${valText} (${pct}%)`;
+    }
+    rows.push({
+      text: t('steps.timingTtftLabel'),
+      value: valText,
+      toneClass: getTtftToneClass(ttft),
+    });
+  }
+  if (nativeStream !== null) {
+    rows.push({
+      text: t('steps.timingStreamLabel'),
+      value: formatTimingDetailSec(nativeStream),
+    });
+  } else if (afterTtft !== null) {
+    rows.push({
+      text: t('steps.timingAfterTtftLabel'),
+      value: formatTimingDetailSec(afterTtft),
+    });
+  }
+  if (think !== null) {
+    rows.push({
+      text: t('steps.timingThinkLabel'),
+      value: formatTimingDetailSec(think),
+    });
+  }
+
+  const showTotalInSub = total !== null && rows.length > 0;
+  if (total !== null && !showTotalInSub) {
+    rows.push({
+      text: t('steps.timingTotalLabel'),
+      value: formatTimingDetailSec(total),
+    });
+  }
+
+  const hints = [];
+  const hasOverlap =
+    think !== null &&
+    total !== null &&
+    ((ttft !== null && ttft + think > total + 0.05) ||
+      (nativeStream !== null && ttft !== null && ttft + nativeStream + think > total + 0.05) ||
+      think > total + 0.05);
+  if (hasOverlap) {
+    hints.push(t('steps.timingOverlapHint'));
+  }
+  const streamForToolCheck = nativeStream ?? afterTtft;
+  if (
+    st.hasToolCalls &&
+    streamForToolCheck !== null &&
+    streamForToolCheck < 0.5 &&
+    ttft !== null &&
+    ttft >= 2
+  ) {
+    hints.push(t('steps.timingToolBufferedHint'));
+  }
+  const anomalyCount = Math.max(0, Number(st.anomaly?.count || 0));
+  if (anomalyCount > 0) {
+    const delaySec = Number(st.anomaly?.totalDelaySec || 0);
+    hints.push(
+      delaySec > 0
+        ? t('steps.timingAnomalyDelayHint', { count: anomalyCount, sec: delaySec })
+        : t('steps.timingAnomalyHint', { count: anomalyCount })
+    );
+  }
+
+  return {
+    title: t('steps.timingStepTitle', { step: Number(st.stepIndex ?? 0) }),
+    sub: showTotalInSub ? t('steps.timingTotalSub', { sec: formatTimingDetailSec(total) }) : '',
+    rows,
+    hint: hints.join(' · '),
+    severity: 'timing',
+  };
+}
+
 export function buildModelAnomalyDiagnostic(m) {
   const sum = resolveModelAnomalySummary(m);
   if (!sum) return null;

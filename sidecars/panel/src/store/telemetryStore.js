@@ -724,6 +724,9 @@ export function isEquivalentTelemetry(prev, next) {
         bs?.createdAtMs !== as?.createdAtMs ||
         bs?.totalDurationSec !== as?.totalDurationSec ||
         bs?.streamDurationSec !== as?.streamDurationSec ||
+        bs?.nativeStreamSec !== as?.nativeStreamSec ||
+        bs?.thinkingDurationSec !== as?.thinkingDurationSec ||
+        Boolean(bs?.hasToolCalls) !== Boolean(as?.hasToolCalls) ||
         bs?.modelKey !== as?.modelKey ||
         bs?.modelShort !== as?.modelShort ||
         bs?.modelLabel !== as?.modelLabel ||
@@ -781,6 +784,9 @@ export function isEquivalentTelemetry(prev, next) {
       before.createdAtMs !== after.createdAtMs ||
       before.totalDurationSec !== after.totalDurationSec ||
       before.streamDurationSec !== after.streamDurationSec ||
+      before.nativeStreamSec !== after.nativeStreamSec ||
+      before.thinkingDurationSec !== after.thinkingDurationSec ||
+      Boolean(before.hasToolCalls) !== Boolean(after.hasToolCalls) ||
       before.modelKey !== after.modelKey ||
       before.modelShort !== after.modelShort ||
       before.modelLabel !== after.modelLabel ||

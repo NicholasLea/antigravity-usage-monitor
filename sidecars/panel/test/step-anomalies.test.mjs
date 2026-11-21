@@ -7,14 +7,16 @@ import { readLocalSqliteTrajectory } from '../backend/cli-sqlite-reader.mjs';
 import { classifyStepAnomalyError, extractModelSteps } from '../trajectory-metrics.mjs';
 import { buildScopedModelBreakdown } from '../backend/usage-aggregator.mjs';
 import { createMockDom } from './mock-dom.mjs';
-import { i18nStore } from '../src/i18n/index.js';
+import { i18nStore, setI18nLanguage } from '../src/i18n/index.js';
 import {
   buildModelAnomalyDiagnostic,
   buildStepAnomalyDiagnostic,
   buildStepCompactionDiagnostic,
+  buildStepTimingDiagnostic,
   formatAnomalyTagText,
   formatMetric,
   formatSpeedMetric,
+  hasStepTimingData,
 } from '../src/core/formatters.js';
 import { ContextSegmentMeter } from '../src/components/ui/ContextSegmentMeter.js';
 import { STEP_COLUMN_REGISTRY } from '../src/registries/stepColumnRegistry.js';
@@ -924,4 +926,199 @@ test('Compiled styles.css centers odometer capsule slot text and ships both clas
   assert.match(builtCss, /\.progress-track\.ctx-segment-meter\s*\{[\s\S]*?height:\s*6px;/);
   assert.match(builtCss, /\.progress-track\.ctx-segment-meter\s+\.progress-seg\s*\{[\s\S]*?border-radius:\s*2px;/);
   assert.match(builtCss, /\.progress-track\.ctx-segment-meter\s+\.progress-seg\.is-active\.has-sep\s*\{[\s\S]*?margin-left:\s*2px;/);
+  assert.match(builtCss, /\.step-anomaly-tip\.is-timing\s*\{/);
+  assert.match(builtCss, /\.step-anomaly-tip-row\.is-kv\s*\{[\s\S]*?justify-content:\s*space-between;/);
+});
+
+test('buildStepTimingDiagnostic and StepTableWidget TTFT/duration hover tooltips render stage breakdown and coexist cleanly with anomaly rows', () => {
+  const env = installMockBrowser();
+  const prevLang = i18nStore.getState().language;
+  let widget = null;
+  try {
+    setI18nLanguage('zh-CN');
+
+    // 1. Slow buffered tool-call step with overlapping native thinking timing
+    const slowToolStep = {
+      stepIndex: 101,
+      modelLabel: 'Gemini 4 Neon',
+      modelShort: '4-neon',
+      tokPerSec: 2.3,
+      ttftSec: 119.167,
+      nativeTtftSec: 119.167,
+      nativeStreamSec: 0.203,
+      thinkingDurationSec: 119.266,
+      totalDurationSec: 119.37,
+      hasToolCalls: true,
+      contextTokens: 45300,
+      inputTokens: 45030,
+      cacheReadTokens: 0,
+      outputTokens: 270,
+      thinkingTokens: 180,
+      responseTokens: 90,
+      cacheHitPct: 0,
+      costUsd: 0.14,
+    };
+    assert.equal(hasStepTimingData(slowToolStep), true);
+    const slowDiag = buildStepTimingDiagnostic(slowToolStep);
+    assert.equal(slowDiag.severity, 'timing');
+    assert.equal(slowDiag.title, '#101 · 耗时拆解');
+    assert.equal(slowDiag.sub, '总计 119.4s');
+    assert.equal(slowDiag.rows.length, 3);
+    assert.equal(slowDiag.rows[0].value, '119.2s (100%)');
+    assert.equal(slowDiag.rows[0].toneClass, 'tone-danger');
+    assert.equal(slowDiag.rows[1].value, '0.20s');
+    assert.equal(slowDiag.rows[2].value, '119.3s');
+    assert.match(slowDiag.hint, /重叠/);
+    assert.match(slowDiag.hint, /工具调用/);
+
+    // 2. Legacy step without nativeStreamSec derives after-TTFT cleanly; inconsistent timing avoids bogus share
+    const legacyDiag = buildStepTimingDiagnostic({
+      stepIndex: 102,
+      ttftSec: 1.25,
+      totalDurationSec: 5.0,
+    });
+    assert.equal(legacyDiag.rows.length, 2);
+    assert.equal(legacyDiag.rows[0].value, '1.25s (25%)');
+    assert.equal(legacyDiag.rows[1].text, '首字后耗时');
+    assert.equal(legacyDiag.rows[1].value, '3.75s');
+    assert.equal(legacyDiag.hint, '');
+
+    const inconsistentDiag = buildStepTimingDiagnostic({
+      stepIndex: 103,
+      ttftSec: 20,
+      totalDurationSec: 10,
+    });
+    assert.equal(inconsistentDiag.rows.length, 1);
+    assert.equal(inconsistentDiag.rows[0].value, '20.0s');
+
+    // 3. Step with zero timing metadata produces null
+    assert.equal(hasStepTimingData({ stepIndex: 104, ttftSec: null, totalDurationSec: null }), false);
+    assert.equal(buildStepTimingDiagnostic({ stepIndex: 104, ttftSec: null, totalDurationSec: null }), null);
+
+    // 4. Anomaly row + normal row + compaction row in StepTableWidget
+    const anomalyStep = {
+      stepIndex: 105,
+      modelLabel: 'Claude Opus 4.6 (Thinking)',
+      modelShort: 'opus-4.6',
+      tokPerSec: 42.0,
+      ttftSec: 14.01,
+      nativeTtftSec: 14.01,
+      nativeStreamSec: 1.08,
+      thinkingDurationSec: 14.36,
+      totalDurationSec: 15.09,
+      hasToolCalls: false,
+      anomaly: {
+        count: 1,
+        primaryKind: 'timeout',
+        severity: 'warn',
+        totalDelaySec: 2.5,
+        kinds: { timeout: 1 },
+        events: [{ attempt: 1, kind: 'timeout', delaySec: 2.5, message: 'stream idle timeout' }],
+      },
+      anomalySig: 'timeout:1:warn:2.5:timeout=1',
+    };
+    const compactionStep = {
+      stepIndex: 106,
+      isCompactionStep: true,
+      modelLabel: 'Gemini 4 Neon [自动压缩]',
+      modelShort: '4-neon·压缩',
+      tokPerSec: null,
+      ttftSec: null,
+      totalDurationSec: null,
+      inputTokens: 120000,
+      outputTokens: 3200,
+    };
+
+    widget = StepTableWidget({ standalone: true });
+    widget.refs.renderStepTable(
+      [slowToolStep, anomalyStep, compactionStep],
+      'conv-timing-tip',
+      ['step', 'model', 'ttft', 'duration', 'cost'],
+      'zh-CN',
+      { hasSubagents: false, showStepAgentBadge: false, showStepTurnRail: false }
+    );
+
+    const rows = Array.from(widget.refs.stepsTbody.children);
+    assert.equal(rows.length, 3);
+    const tipEl = widget.refs.anomalyTipEl;
+    assert.equal(tipEl.hasAttribute('hidden'), true);
+
+    // Hovering TTFT cell on normal row opens neutral timing popover
+    const slowTtftTd = rows[0].children[2];
+    const slowDurTd = rows[0].children[3];
+    assert.equal(typeof slowTtftTd.onmouseenter, 'function');
+    assert.equal(typeof slowDurTd.onmouseenter, 'function');
+    slowTtftTd.onmouseenter();
+    assert.equal(tipEl.hasAttribute('hidden'), false);
+    assert.equal(tipEl.classList.contains('is-timing'), true);
+    assert.equal(tipEl.classList.contains('is-danger'), false);
+    assert.equal(tipEl.classList.contains('is-compaction'), false);
+    assert.equal(tipEl.querySelector('.step-anomaly-tip-title').textContent, '#101 · 耗时拆解');
+    assert.equal(tipEl.querySelector('.step-anomaly-tip-sub').textContent, '总计 119.4s');
+    const kvKeys = Array.from(tipEl.querySelectorAll('.step-anomaly-tip-k')).map((el) => el.textContent);
+    const kvVals = Array.from(tipEl.querySelectorAll('.step-anomaly-tip-v')).map((el) => el.textContent);
+    assert.deepEqual(kvKeys, ['首字等待 (TTFT)', '流式返回', '原生思考计时']);
+    assert.deepEqual(kvVals, ['119.2s (100%)', '0.20s', '119.3s']);
+
+    slowTtftTd.onmouseleave({});
+    assert.equal(tipEl.hasAttribute('hidden'), true);
+
+    // Hovering duration cell also opens the timing popover
+    slowDurTd.onmouseenter();
+    assert.equal(tipEl.hasAttribute('hidden'), false);
+    assert.equal(tipEl.classList.contains('is-timing'), true);
+    slowDurTd.onmouseleave({});
+    assert.equal(tipEl.hasAttribute('hidden'), true);
+
+    // Anomaly row: hovering TTFT switches to timing tip with anomaly hint, leaving to another cell in same row restores anomaly tip
+    const anomModelTd = rows[1].children[1];
+    const anomTtftTd = rows[1].children[2];
+    rows[1].onmouseenter();
+    assert.equal(tipEl.classList.contains('is-timing'), false);
+    assert.match(tipEl.querySelector('.step-anomaly-tip-title').textContent, /#105.*异常 1 次/);
+
+    anomTtftTd.onmouseenter();
+    assert.equal(tipEl.classList.contains('is-timing'), true);
+    assert.equal(tipEl.querySelector('.step-anomaly-tip-title').textContent, '#105 · 耗时拆解');
+    assert.match(tipEl.querySelector('.step-anomaly-tip-hint').textContent, /含 1 次异常 · 退避 2\.5s/);
+
+    anomTtftTd.onmouseleave({ relatedTarget: anomModelTd });
+    assert.equal(tipEl.hasAttribute('hidden'), false);
+    assert.equal(tipEl.classList.contains('is-timing'), false);
+    assert.match(tipEl.querySelector('.step-anomaly-tip-title').textContent, /#105.*异常 1 次/);
+
+    rows[1].onmouseleave();
+    assert.equal(tipEl.hasAttribute('hidden'), true);
+
+    // Compaction row without timing data does not bind timing hover on TTFT/duration cells
+    assert.equal(rows[2].children[2].onmouseenter ?? null, null);
+    assert.equal(rows[2].children[3].onmouseenter ?? null, null);
+
+    // Updating row data updates timing popover content dynamically (including en-US locale)
+    setI18nLanguage('en-US');
+    const updatedStep = { ...slowToolStep, ttftSec: 2.4, nativeTtftSec: 2.4, nativeStreamSec: 1.6, thinkingDurationSec: null, totalDurationSec: 4.0, hasToolCalls: false };
+    widget.refs.renderStepTable(
+      [updatedStep],
+      'conv-timing-tip',
+      ['step', 'model', 'ttft', 'duration', 'cost'],
+      'en-US',
+      { hasSubagents: false, showStepAgentBadge: false, showStepTurnRail: false }
+    );
+    const refreshedTtftTd = widget.refs.stepsTbody.children[0].children[2];
+    refreshedTtftTd.onmouseenter();
+    assert.equal(tipEl.querySelector('.step-anomaly-tip-title').textContent, '#101 · Timing Breakdown');
+    assert.equal(tipEl.querySelector('.step-anomaly-tip-sub').textContent, 'Total 4.00s');
+    assert.deepEqual(
+      Array.from(tipEl.querySelectorAll('.step-anomaly-tip-k')).map((el) => el.textContent),
+      ['First Token (TTFT)', 'Streaming']
+    );
+    assert.deepEqual(
+      Array.from(tipEl.querySelectorAll('.step-anomaly-tip-v')).map((el) => el.textContent),
+      ['2.40s (60%)', '1.60s']
+    );
+  } finally {
+    widget?.destroy();
+    setI18nLanguage(prevLang);
+    env.restore();
+  }
 });
