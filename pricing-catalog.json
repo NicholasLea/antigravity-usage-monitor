@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "catalogVersion": "2026.11.21.1",
-  "updatedAt": "2026-11-21T00:35:00+09:00",
-  "latestPluginVersion": "1.5.3",
+  "catalogVersion": "2026.11.21.2",
+  "updatedAt": "2026-11-21T13:45:00+09:00",
+  "latestPluginVersion": "1.5.4",
   "releaseUrl": "https://github.com/yuhuan-dev/antigravity-usage-monitor/releases/latest",
   "downloadUrl": "https://github.com/yuhuan-dev/antigravity-usage-monitor/releases/latest/download/usage-monitor.zip",
   "archiveFallbackUrl": "https://codeload.github.com/yuhuan-dev/antigravity-usage-monitor/zip/refs/heads/main",
