@@ -3894,15 +3894,105 @@ function stripCompactionMarker(rawText) {
 
 const normalizeOrchestratorIdDisplayMode = normalizeOrchestratorIdMode;
 
+function normalizeOrchVariantToken(raw = '') {
+  let s = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!s || /^worker(?:$|-)/.test(s)) return '';
+  s = s.replace(/([a-z]-)(\d+)-(\d+)(?=$|-)/g, '$1$2.$3');
+  s = s
+    .replace(/^(?:claude|anthropic|openai)-(?=.+)/, '')
+    .replace(/^gemini-(?:4-)?(?=(?:carbon|argon|neon|hydrogen|helix)(?:$|-))/, '');
+  return s;
+}
+
+function extractOrchWorkerVariant(fields = [], combinedText = '') {
+  for (const rawField of fields) {
+    const field = String(rawField || '').trim();
+    if (!field) continue;
+    const parenMatch = field.match(/\bOrchestrator\s+Worker\s*\(\s*([^)]+?)\s*\)/i);
+    if (parenMatch) {
+      const v = normalizeOrchVariantToken(parenMatch[1]);
+      if (v) return v;
+    }
+    const compactMatch = field.match(/\bworker-agy-([a-z0-9]+(?:[.-][a-z0-9]+)*)(?=·|\s|$)/i);
+    if (compactMatch) {
+      const v = normalizeOrchVariantToken(compactMatch[1]);
+      if (v) return v;
+    }
+  }
+  if (/\bMODEL_PLACEHOLDER_M669\b|\bgemini-flash-worker-agy\b/i.test(combinedText)) {
+    return 'hydrogen';
+  }
+  const upstreamMatch = combinedText.match(/\b([a-z0-9][a-z0-9.-]*?)-worker-agy\b/i);
+  if (upstreamMatch) {
+    const rawPrefix = upstreamMatch[1].toLowerCase();
+    if (rawPrefix === 'gemini-flash') return 'hydrogen';
+    if (/^gemini-(?:4-)?neon$/i.test(rawPrefix)) return 'neon';
+    if (/^gemini-(?:4-)?argon$/i.test(rawPrefix)) return 'argon';
+    if (/^gemini-(?:4-)?carbon$/i.test(rawPrefix)) return 'carbon';
+    const v = normalizeOrchVariantToken(rawPrefix);
+    if (v && v !== 'gemini-pro') return v;
+  }
+  if (/\bneon\b/i.test(combinedText)) return 'neon';
+  if (/\bhydrogen\b/i.test(combinedText)) return 'hydrogen';
+  if (/\bargon\b/i.test(combinedText)) return 'argon';
+  if (/\bcarbon\b/i.test(combinedText)) return 'carbon';
+  return '';
+}
+
+function extractDynamicOrchVariant(fields = []) {
+  for (const rawField of fields) {
+    const field = String(rawField || '').trim();
+    if (!field) continue;
+    const parenAfter = field.match(/\bOrchestrator\s*\(\s*([^)]+?)\s*\)/i);
+    if (parenAfter) {
+      const v = normalizeOrchVariantToken(parenAfter[1]);
+      if (v) return v;
+    }
+    const parenBefore = field.match(
+      /^([a-z0-9][a-z0-9.\s-]{0,40}?)\s*\(\s*Orchestrator\s*\)(?:\s*\[[^\]]+\])?$/i
+    );
+    if (parenBefore) {
+      const v = normalizeOrchVariantToken(parenBefore[1]);
+      if (v) return v;
+    }
+    const geminiProSlug = field.match(
+      /\bgemini-pro-orchestrator-([a-z0-9]+(?:[.-][a-z0-9]+)*)(?=·|\s|$)/i
+    );
+    if (geminiProSlug) {
+      const v = normalizeOrchVariantToken(geminiProSlug[1]);
+      if (v) return v;
+    }
+    const prefixSlug = field.match(
+      /\b(?:orchestrator|orch)-([a-z0-9]+(?:[.-][a-z0-9]+)*)(?=·|\s|$)/i
+    );
+    if (prefixSlug) {
+      const v = normalizeOrchVariantToken(prefixSlug[1]);
+      if (v) return v;
+    }
+    const suffixSlug = field.match(/\b([a-z0-9]+(?:[.-][a-z0-9]+)*)-orchestrator(?=·|\s|$)/i);
+    if (suffixSlug && !/^gemini-pro$/i.test(suffixSlug[1])) {
+      const v = normalizeOrchVariantToken(suffixSlug[1]);
+      if (v) return v;
+    }
+  }
+  return '';
+}
+
 /**
- * 统一解析步骤、会话摘要或模型汇总行面向用户的模型显示文本与悬停提示。
+ * 统一解析步骤、会话摘要或模型汇总行面向用户的模型显示文本及悬停提示。
  *
  * 规则：
- * - Orchestrator 系列（`Orchestrator (Carbon)`、`Orchestrator (Argon)`、`Orchestrator (Neon)`、`gemini-flash-worker-agy` / `M669`）
- *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-carbon` / `orchestrator-argon` / `orchestrator-neon` / `worker-agy-hydrogen`；
+ * - Orchestrator 系列（如 `Orchestrator (Carbon / Argon / Neon / Opus 5.5)`、`Orchestrator Worker (Hydrogen / Neon / ...)`）
+ *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-<variant>` / `worker-agy-<variant>`；
  *   `'full'` 显示带括号标注的完整上游 ID），不受普通模型显示模式影响；
  * - 其余普通模型遵循 `modelDisplayMode`（`'short'` | `'upstream_compact'` | `'upstream'`，兼容旧版布尔 `showUpstreamModel`）；
- * - 独立拆分 `baseText` 与 `compactionSuffix`（`·压缩`），供步骤表单独保护压缩尾标永不截断。
+ * - 独立拆分 `baseText` 及 `compactionSuffix`（`·压缩`），供步骤表单独保护压缩尾标永不截断。
  *
  * @param {object|null|undefined} target
  * @param {{ modelDisplayMode?: string, showUpstreamModel?: boolean, orchestratorIdMode?: string }|boolean} [settings]
@@ -3967,22 +4057,16 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
 
   const compactionSuffix = isCompaction ? t('fmt.compactionSuffix') : '';
 
+  const fields = [labelText, shortText, upstreamText, responseText, modelKeyText];
   const combined = `${modelKeyText} ${shortText} ${labelText} ${upstreamText} ${responseText}`;
   const isOrchWorker =
-    /\bMODEL_PLACEHOLDER_M669\b|\b[a-z0-9.-]*worker-agy\b|\bworker-agy-hydrogen\b|\bOrchestrator\s+Worker\b/i.test(
+    /\bMODEL_PLACEHOLDER_M669\b|\b[a-z0-9.-]*worker-agy\b|\bworker-agy-[a-z0-9.-]+\b|\bOrchestrator\s+Worker\b/i.test(
       combined
     );
   const isKnownOrchCarbonPh = /\bMODEL_PLACEHOLDER_M667\b/i.test(combined);
   const isKnownOrchArgonPh = /\bMODEL_PLACEHOLDER_M681\b/i.test(combined);
   const isKnownOrchNeonPh = /\bMODEL_PLACEHOLDER_M537\b/i.test(combined);
-  const dynamicOrchVariantMatch =
-    combined.match(/\bOrchestrator\s*\(\s*([a-z0-9-]+)\s*\)/i) ||
-    combined.match(/\bgemini-pro-orchestrator-([a-z0-9-]+)\b/i) ||
-    combined.match(/\b(?:orchestrator|orch)-([a-z0-9]+)(?=·|\s|$)/i);
-  const dynamicOrchVariant =
-    dynamicOrchVariantMatch && dynamicOrchVariantMatch[1].toLowerCase() !== 'worker'
-      ? dynamicOrchVariantMatch[1].toLowerCase()
-      : '';
+  const dynamicOrchVariant = isOrchWorker ? '' : extractDynamicOrchVariant(fields);
   const hasBareProOrch = /\bgemini-pro-orchestrator\b(?![-_][a-z0-9])/i.test(combined);
   const isOrchSeries =
     isOrchWorker ||
@@ -3996,8 +4080,41 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     let compactId = '';
     let fullId = '';
     if (isOrchWorker) {
-      compactId = 'worker-agy-hydrogen';
-      fullId = 'gemini-flash-worker-agy (hydrogen-4)';
+      const workerVariant = extractOrchWorkerVariant(fields, combined);
+      const cleanUpstream = stripCompactionMarker(upstreamText || responseText || '').trim();
+      if (workerVariant === 'hydrogen') {
+        compactId = 'worker-agy-hydrogen';
+        fullId = 'gemini-flash-worker-agy (hydrogen-4)';
+      } else if (workerVariant === 'neon') {
+        compactId = 'worker-agy-neon';
+        if (cleanUpstream) {
+          if (/\([^)]+\)\s*$/.test(cleanUpstream)) {
+            fullId = cleanUpstream;
+          } else if (/(?:worker-agy)/i.test(cleanUpstream)) {
+            fullId = `${cleanUpstream} (neon-4)`;
+          } else if (/\bneon\b/i.test(cleanUpstream)) {
+            fullId = cleanUpstream;
+          } else {
+            fullId = `${cleanUpstream} (neon-4)`;
+          }
+        } else {
+          fullId = 'gemini-neon-worker-agy (neon-4)';
+        }
+      } else if (workerVariant) {
+        compactId = `worker-agy-${workerVariant}`;
+        const variantDashed = workerVariant.replace(/\./g, '-');
+        const upstreamLower = cleanUpstream.toLowerCase();
+        const mentionsVariant =
+          upstreamLower.includes(workerVariant) || upstreamLower.includes(variantDashed);
+        fullId = cleanUpstream
+          ? mentionsVariant || /\([^)]+\)\s*$/.test(cleanUpstream)
+            ? cleanUpstream
+            : `${cleanUpstream} (${workerVariant})`
+          : `worker-agy-${workerVariant}`;
+      } else {
+        compactId = 'worker-agy';
+        fullId = cleanUpstream || 'worker-agy';
+      }
     } else if (isKnownOrchNeonPh || dynamicOrchVariant === 'neon') {
       compactId = 'orchestrator-neon';
       fullId = 'gemini-pro-orchestrator-neon (neon-4)';
@@ -4014,11 +4131,23 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     } else if (dynamicOrchVariant) {
       compactId = `orchestrator-${dynamicOrchVariant}`;
       const cleanUpstream = stripCompactionMarker(upstreamText || responseText || '').trim();
-      fullId = cleanUpstream
-        ? cleanUpstream.toLowerCase().includes(dynamicOrchVariant)
-          ? cleanUpstream
-          : `${cleanUpstream} (${dynamicOrchVariant})`
-        : `gemini-pro-orchestrator-${dynamicOrchVariant}`;
+      const variantDashed = dynamicOrchVariant.replace(/\./g, '-');
+      const upstreamLower = cleanUpstream.toLowerCase();
+      const mentionsVariant =
+        upstreamLower.includes(dynamicOrchVariant) || upstreamLower.includes(variantDashed);
+      if (cleanUpstream) {
+        fullId =
+          mentionsVariant || /\([^)]+\)\s*$/.test(cleanUpstream)
+            ? cleanUpstream
+            : `${cleanUpstream} (${dynamicOrchVariant})`;
+      } else {
+        const isNonGeminiOrch = /\b(?:claude|anthropic|opus|sonnet|haiku|fable|gpt|openai)\b/i.test(
+          `${combined} ${dynamicOrchVariant}`
+        );
+        fullId = isNonGeminiOrch
+          ? `orchestrator-${dynamicOrchVariant}`
+          : `gemini-pro-orchestrator-${dynamicOrchVariant}`;
+      }
     }
     if (compactId) {
       const baseText = orchestratorMode === 'full' ? fullId : compactId;

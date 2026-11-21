@@ -19,15 +19,21 @@ import { MODEL_PRICING, PLACEHOLDER_MAP } from './pricing-catalog.mjs';
  * @param {string} [rawModelKey=''] 原始模型键名或占位符
  * @param {string} [modelId=''] 规范化模型 ID
  * @param {string} [apiProvider=''] 上游 API 提供商枚举字符串
+ * @param {string} [displayLabel=''] 已解析的模型展示标签
  * @returns {'Gemini'|'Claude'|'GPT'|'Other'}
  */
-function inferFamilyFromProviderOrKey(rawModelKey = '', modelId = '', apiProvider = '') {
+function inferFamilyFromProviderOrKey(
+  rawModelKey = '',
+  modelId = '',
+  apiProvider = '',
+  displayLabel = ''
+) {
   const prov = String(apiProvider || '').toUpperCase();
   if (prov.includes('ANTHROPIC') || prov.includes('CLAUDE')) return 'Claude';
   if (prov.includes('OPENAI') || prov.includes('GPT')) return 'GPT';
   if (prov.includes('GEMINI') || prov.includes('GOOGLE')) return 'Gemini';
 
-  const combined = `${rawModelKey} ${modelId}`.toUpperCase();
+  const combined = `${rawModelKey} ${modelId} ${displayLabel}`.toUpperCase();
   if (
     combined.includes('ANTHROPIC') ||
     combined.includes('CLAUDE') ||
@@ -96,18 +102,62 @@ export function isArgonModelIdentifier(...parts) {
 }
 
 /**
- * 从一组标识字段中提取显式的非通用 Orchestrator 变体代号（如 `Orchestrator (Xenon)` -> `'xenon'`、
- * `gemini-pro-orchestrator-neon` -> `'neon'`）。未命中时返回空字符串。
+ * 将 Orchestrator 变体标签或路由后缀归一化为紧凑代号（如 `"Claude Opus 5.5"` -> `"opus-5.5"`、`"Xenon"` -> `"xenon"`）。
  *
- * @param {string} text
+ * @param {string} [raw='']
  * @returns {string}
  */
-function extractExplicitOrchestratorVariant(text = '') {
-  const parenMatch = text.match(/\bOrchestrator\s*\(\s*([a-z0-9-]+)\s*\)/i);
-  if (parenMatch) return parenMatch[1].toLowerCase();
-  const slugMatch = text.match(/\b(?:gemini-pro-orchestrator|orchestrator|orch)-([a-z0-9]+)\b/i);
-  if (slugMatch && slugMatch[1].toLowerCase() !== 'worker') {
-    return slugMatch[1].toLowerCase();
+function normalizeOrchestratorVariantSlug(raw = '') {
+  let s = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!s || /^worker(?:$|-)/.test(s)) return '';
+  s = s.replace(/([a-z]-)(\d+)-(\d+)(?=$|-)/g, '$1$2.$3');
+  s = s
+    .replace(/^(?:claude|anthropic|openai)-(?=.+)/, '')
+    .replace(/^gemini-(?:4-)?(?=(?:carbon|argon|neon|hydrogen|helix)(?:$|-))/, '');
+  return s;
+}
+
+/**
+ * 从一组标识字段中提取显式的非通用 Orchestrator 变体代号（如 `Orchestrator (Opus 5.5)` -> `'opus-5.5'`、
+ * `Orchestrator (Xenon)` -> `'xenon'`、`claude-opus-5-5-orchestrator` -> `'opus-5.5'`）。未命中时返回空字符串。
+ *
+ * @param {...string} parts
+ * @returns {string}
+ */
+function extractExplicitOrchestratorVariant(...parts) {
+  for (const rawPart of parts) {
+    const part = String(rawPart || '').trim();
+    if (!part) continue;
+    const parenAfter = part.match(/\bOrchestrator\s*\(\s*([^)]+?)\s*\)/i);
+    if (parenAfter) {
+      const v = normalizeOrchestratorVariantSlug(parenAfter[1]);
+      if (v) return v;
+    }
+    const parenBefore = part.match(
+      /^([a-z0-9][a-z0-9.\s-]{0,40}?)\s*\(\s*Orchestrator\s*\)(?:\s*\[[^\]]+\])?$/i
+    );
+    if (parenBefore) {
+      const v = normalizeOrchestratorVariantSlug(parenBefore[1]);
+      if (v) return v;
+    }
+    const prefixSlug = part.match(
+      /\b(?:gemini-pro-orchestrator|orchestrator|orch)-([a-z0-9]+(?:[.-][a-z0-9]+)*)(?=·|\s|$)/i
+    );
+    if (prefixSlug) {
+      const v = normalizeOrchestratorVariantSlug(prefixSlug[1]);
+      if (v) return v;
+    }
+    const suffixSlug = part.match(/\b([a-z0-9]+(?:[.-][a-z0-9]+)*)-orchestrator(?=·|\s|$)/i);
+    if (suffixSlug && !/^gemini-pro$/i.test(suffixSlug[1])) {
+      const v = normalizeOrchestratorVariantSlug(suffixSlug[1]);
+      if (v) return v;
+    }
   }
   return '';
 }
@@ -128,11 +178,13 @@ export function isCarbonModelIdentifier(...parts) {
   if (
     /\bhydrogen\b|\bgemini-flash-worker-agy\b|MODEL_PLACEHOLDER_M(?:669|52[5678])\b/i.test(text) ||
     /\bneon\b|gemini-(?:4-)?neon|MODEL_PLACEHOLDER_M53[57]\b/i.test(text) ||
-    /\bargon\b|MODEL_PLACEHOLDER_M(?:41[789]|681)\b/i.test(text)
+    /\bargon\b|MODEL_PLACEHOLDER_M(?:41[789]|681)\b/i.test(text) ||
+    /\b(?:claude|anthropic|opus|sonnet|haiku|fable|gpt|openai)\b/i.test(text) ||
+    /\bOrchestrator\s+Worker\b|-worker-agy\b/i.test(text)
   ) {
     return false;
   }
-  const explicitVariant = extractExplicitOrchestratorVariant(text);
+  const explicitVariant = extractExplicitOrchestratorVariant(...parts);
   if (explicitVariant && explicitVariant !== 'carbon') {
     return false;
   }
@@ -205,8 +257,14 @@ export function formatGenericModelSlug(slug = '') {
       orchVariantMatch[1].charAt(0).toUpperCase() + orchVariantMatch[1].slice(1).toLowerCase();
     return `Orchestrator (${variant})`;
   }
+  if (/^(?:claude-opus-5[.-]5-orchestrator|orchestrator-(?:claude-)?opus-5[.-]5)$/i.test(s)) {
+    return 'Orchestrator (Opus 5.5)';
+  }
   if (/^gemini-flash-worker-agy$/i.test(s)) {
     return 'Orchestrator Worker (Hydrogen)';
+  }
+  if (/^gemini-(?:4-)?neon-worker-agy$/i.test(s)) {
+    return 'Orchestrator Worker (Neon)';
   }
   return '';
 }
@@ -305,20 +363,26 @@ function resolveModelCatalogEntry(
     responseModel && responseModel !== 'unknown' ? String(responseModel).trim() : '';
   const cleanRawFallback =
     rawModelKey && rawModelKey !== 'unknown' ? rawModelKey : cleanResponseModel;
-  const isWorkerSlot =
+  const isHydrogenWorkerSlot =
     rawModelKey === 'MODEL_PLACEHOLDER_M669' ||
     /^gemini-flash-worker-agy$/i.test(cleanResponseModel);
+  const isNeonWorkerSlot = /^gemini-(?:4-)?neon-worker-agy$/i.test(cleanResponseModel);
   const isVagueGenericDisplay = Boolean(
     modelDisplayName &&
       (/^gemini\s+(?:flash|pro)(?:\s+worker)?$/i.test(modelDisplayName.trim()) ||
-        (isWorkerSlot && /^gemini\s+4\s+hydrogen$/i.test(modelDisplayName.trim())))
+        (isHydrogenWorkerSlot && /^gemini\s+4\s+hydrogen$/i.test(modelDisplayName.trim())) ||
+        (isNeonWorkerSlot && /^gemini\s+(?:4\s+)?neon$/i.test(modelDisplayName.trim())))
+  );
+  const isNamedWorkerDisplay = Boolean(
+    modelDisplayName && /\bOrchestrator\s+Worker\s*\([^)]+\)/i.test(modelDisplayName)
   );
   const effectiveDisplayName =
     modelDisplayName &&
     ((mergedLabel &&
-      (/\borchestrator\b/i.test(modelDisplayName) || isVagueGenericDisplay) &&
+      ((/\borchestrator\b/i.test(modelDisplayName) && !isNamedWorkerDisplay) ||
+        isVagueGenericDisplay) &&
       !/\borchestrator\b/i.test(mergedLabel)) ||
-      (isVagueGenericDisplay && /^gemini-flash-worker-agy$/i.test(cleanResponseModel)))
+      (isVagueGenericDisplay && (isHydrogenWorkerSlot || isNeonWorkerSlot)))
       ? ''
       : modelDisplayName;
   const derivedDisplay =
@@ -341,10 +405,33 @@ function resolveModelCatalogEntry(
   const baseLabel = getBaseModelLabel(derivedDisplay);
   const canonicalSlug = baseLabel.toLowerCase().replace(/\s+/g, '-');
   const dashedSlug = canonicalSlug.replace(/\./g, '-');
+  const baseTierlessSlug = baseLabel
+    .toLowerCase()
+    .replace(/[()]/g, ' ')
+    .trim()
+    .replace(/[^a-z0-9.]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const baseTierlessDashedSlug = baseTierlessSlug.replace(/\./g, '-');
   const modelId =
     mergedModelId ||
     (rawModelKey && rawModelKey !== 'unknown' ? rawModelKey : cleanResponseModel) ||
     'unknown';
+
+  const isExplicitOrchestratorDisplay = /\borchestrator\b/i.test(derivedDisplay);
+  const orchEffortStrippedSlug = isExplicitOrchestratorDisplay
+    ? tieredDashedSlug.replace(
+        /-(?:max|xhigh|high|medium|low|thinking|extra-low|tiered|preview)$/,
+        ''
+      )
+    : '';
+  const displayOrchestratorPricing = isExplicitOrchestratorDisplay
+    ? MODEL_PRICING[tieredSlug] ||
+      MODEL_PRICING[tieredDashedSlug] ||
+      MODEL_PRICING[baseTierlessSlug] ||
+      MODEL_PRICING[baseTierlessDashedSlug] ||
+      (orchEffortStrippedSlug ? MODEL_PRICING[orchEffortStrippedSlug] : null) ||
+      null
+    : null;
 
   const isOpaqueOrchestratorResp = Boolean(
     cleanResponseModel && /\borchestrator\b/i.test(cleanResponseModel)
@@ -357,6 +444,7 @@ function resolveModelCatalogEntry(
   const explicitPricing =
     MODEL_PRICING[modelId] ||
     MODEL_PRICING[rawModelKey] ||
+    displayOrchestratorPricing ||
     (cleanResponseModel && !isOpaqueOrchestratorResp
       ? MODEL_PRICING[cleanResponseModel]
       : null) ||
@@ -364,6 +452,8 @@ function resolveModelCatalogEntry(
     MODEL_PRICING[tieredDashedSlug] ||
     MODEL_PRICING[canonicalSlug] ||
     MODEL_PRICING[dashedSlug] ||
+    MODEL_PRICING[baseTierlessSlug] ||
+    MODEL_PRICING[baseTierlessDashedSlug] ||
     (allowOpaqueOrchestratorFallback ? MODEL_PRICING[cleanResponseModel] : null);
 
   if (explicitPricing) {
@@ -382,7 +472,12 @@ function resolveModelCatalogEntry(
     };
   }
 
-  const inferredFamily = inferFamilyFromProviderOrKey(rawModelKey, modelId, apiProvider);
+  const inferredFamily = inferFamilyFromProviderOrKey(
+    rawModelKey,
+    modelId,
+    apiProvider,
+    derivedDisplay
+  );
   return {
     catalogPricing: null,
     info: {
@@ -531,6 +626,9 @@ export function formatUpstreamModelId(rawUpstream = '', mInfo = null) {
   }
   if (isCarbonModelIdentifier(mInfo?.rawModel, mInfo?.modelId, mInfo?.label, s)) {
     return `${s} (carbon-4)`;
+  }
+  if (/\bopus(?:[\s_-]*5[.-]5)\b/i.test(metaText)) {
+    return `${s} (opus-5.5)`;
   }
   return s;
 }

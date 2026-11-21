@@ -884,14 +884,18 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
   const orchestratorExecModels = new Set();
   const collectOrchestratorExecModel = (pc) => {
     const execModel = pc?.planExecuteConfig?.executionModel;
+    if (typeof execModel !== 'string' || !execModel.trim()) {
+      return;
+    }
+    const cleanExec = execModel.trim();
+    const cleanPlan = String(pc?.planModel || '').trim();
     if (
-      typeof execModel === 'string' &&
-      execModel.trim() &&
       /orchestrator|MODEL_PLACEHOLDER_M(?:667|681|537)\b/i.test(
-        `${pc?.modelName || ''} ${pc?.planModel || ''}`
-      )
+        `${pc?.modelName || ''} ${cleanPlan}`
+      ) ||
+      (cleanPlan && cleanExec !== cleanPlan)
     ) {
-      orchestratorExecModels.add(execModel.trim());
+      orchestratorExecModels.add(cleanExec);
     }
   };
   let latestBreakdownChat = null;
@@ -1319,17 +1323,31 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
     ].find(isValidModelValue);
 
     const resolvedModelKey = identity ? identity[1].trim() : 'unknown';
-    const rawDisplayName = chat?.modelDisplayName || '';
+    const rawDisplayName = String(chat?.modelDisplayName || '').trim();
+    const isExplicitNamedWorker = /\bOrchestrator\s+Worker\s*\([^)]+\)/i.test(rawDisplayName);
+    const isLeakedPlannerOrchDisplay =
+      Boolean(rawDisplayName) &&
+      /\borchestrator\b/i.test(rawDisplayName) &&
+      !isExplicitNamedWorker;
     const isGenericWorkerDisplay =
       !rawDisplayName ||
-      /\borchestrator\b/i.test(rawDisplayName) ||
-      /^gemini\s+(?:flash|pro)(?:\s+worker)?$/i.test(rawDisplayName.trim());
-    const resolvedDisplayName =
-      (orchestratorExecModels.has(resolvedModelKey) ||
-        /^gemini-flash-worker-agy$/i.test(rawResponseModel || '')) &&
-      isGenericWorkerDisplay
-        ? 'Orchestrator Worker (Hydrogen)'
-        : rawDisplayName;
+      isLeakedPlannerOrchDisplay ||
+      /^gemini\s+(?:flash|pro)(?:\s+worker)?$/i.test(rawDisplayName);
+    const isHydrogenWorkerStep =
+      resolvedModelKey === 'MODEL_PLACEHOLDER_M669' ||
+      /^gemini-flash-worker-agy$/i.test(rawResponseModel || '');
+    const isNeonWorkerStep = /^gemini-(?:4-)?neon-worker-agy$/i.test(rawResponseModel || '');
+    const isExecWorkerStep = orchestratorExecModels.has(resolvedModelKey);
+
+    let resolvedDisplayName = rawDisplayName;
+    if (isHydrogenWorkerStep && isGenericWorkerDisplay) {
+      resolvedDisplayName = 'Orchestrator Worker (Hydrogen)';
+    } else if (isNeonWorkerStep && isGenericWorkerDisplay) {
+      resolvedDisplayName = 'Orchestrator Worker (Neon)';
+    } else if (isExecWorkerStep && isLeakedPlannerOrchDisplay) {
+      // 非 Hydrogen 执行模型（如 Neon / Claude Worker）若继承了主编排器展示名，清空以交由自身模型身份解析
+      resolvedDisplayName = '';
+    }
 
     const anomalyRec = buildStepAnomalyRecord(s, m, chat, stepPendingErrors);
 
