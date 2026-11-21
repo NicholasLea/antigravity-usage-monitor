@@ -1,6 +1,6 @@
 /**
  * @fileoverview 跨端会话按需迁移设置卡片 (`SessionMigrationCard.js`)。
- * 仅当本机检测到 ≥2 个 Antigravity 客户端目录时展示，支持自由勾选根会话以新 UUID 无损克隆到目标端。
+ * 仅当本机检测到 ≥2 个 Antigravity 客户端目录时展示，支持自由勾选根会话以完整迁移或克隆副本到目标端。
  */
 
 import { defineComponent } from '../../core/component.js';
@@ -12,7 +12,9 @@ import {
   executeSessionMigration,
   fetchSessionMigrationCatalog,
 } from '../../store/telemetryStore.js';
+import { CustomScrollbar } from '../ui/CustomScrollbar.js';
 import { CustomSelect } from '../ui/CustomSelect.js';
+import { SegmentedControl } from '../ui/SegmentedControl.js';
 
 const SMIG_OUTSIDE_PROJECT_ID = 'outside-of-project';
 
@@ -45,6 +47,13 @@ function smigGetClientLabel(clientId) {
   if (clientId === 'cli') return t('settings.oth.migClientCli');
   if (clientId === 'ide_legacy') return t('settings.oth.migClientIdeLegacy');
   return t('settings.oth.migClientDesktop');
+}
+
+function smigGetModeOptions() {
+  return [
+    { value: 'move', label: t('settings.oth.migModeMove') },
+    { value: 'clone', label: t('settings.oth.migModeClone') },
+  ];
 }
 
 function smigFormatAge(epochMs) {
@@ -92,8 +101,7 @@ export const SessionMigrationCard = defineComponent({
     let sourceLabelEl = null;
     let targetLabelEl = null;
     let modeLabelEl = null;
-    let modeMoveBtn = null;
-    let modeCloneBtn = null;
+    let modeSeg = null;
     let modeHintEl = null;
     let projectLabelEl = null;
     let sourceSelect = null;
@@ -101,9 +109,11 @@ export const SessionMigrationCard = defineComponent({
     let projectSelect = null;
     let projectFieldWrap = null;
     let searchInput = null;
+    let searchClearBtn = null;
     let toggleAllBtn = null;
     let selectedCountEl = null;
     let listEl = null;
+    let listScrollbar = null;
     let migrateBtnText = null;
     let migrateBtn = null;
     let resultBoxEl = null;
@@ -115,7 +125,7 @@ export const SessionMigrationCard = defineComponent({
       bodyMounted = true;
 
       titleEl = h('span', { text: t('settings.oth.migTitle') });
-      descEl = h('p', { className: 'smig-desc', text: t('settings.oth.migDesc') });
+      descEl = h('p', { className: 'settings-hint-text smig-desc', text: t('settings.oth.migDesc') });
       refreshBtnText = h('span', { text: t('settings.oth.migRefreshBtn') });
       refreshBtn = h(
         'button',
@@ -129,38 +139,27 @@ export const SessionMigrationCard = defineComponent({
         [createSvgIcon('refresh', { size: 12 }), refreshBtnText]
       );
 
-      sourceLabelEl = h('span', { className: 'smig-field-label', text: t('settings.oth.migSourceLabel') });
-      targetLabelEl = h('span', { className: 'smig-field-label', text: t('settings.oth.migTargetLabel') });
-      modeLabelEl = h('span', { className: 'smig-field-label', text: t('settings.oth.migModeLabel') });
-      modeMoveBtn = h('button', {
-        type: 'button',
-        className: 'smig-mode-btn is-active',
-        text: t('settings.oth.migModeMove'),
-        onClick: () => {
-          if (migrationMode === 'move') return;
-          migrationMode = 'move';
+      sourceLabelEl = h('span', { className: 'form-label', text: t('settings.oth.migSourceLabel') });
+      targetLabelEl = h('span', { className: 'form-label', text: t('settings.oth.migTargetLabel') });
+      modeLabelEl = h('span', { className: 'form-label', text: t('settings.oth.migModeLabel') });
+      modeSeg = SegmentedControl({
+        ariaLabel: t('settings.oth.migModeLabel'),
+        modelValue: migrationMode,
+        options: smigGetModeOptions(),
+        onUpdateModelValue: (val) => {
+          if (!val || val === migrationMode) return;
+          migrationMode = val;
           lastResult = null;
           syncModeControls();
           renderResultBox();
         },
       });
-      modeCloneBtn = h('button', {
-        type: 'button',
-        className: 'smig-mode-btn',
-        text: t('settings.oth.migModeClone'),
-        onClick: () => {
-          if (migrationMode === 'clone') return;
-          migrationMode = 'clone';
-          lastResult = null;
-          syncModeControls();
-          renderResultBox();
-        },
-      });
+      modeSeg.el.classList?.add('smig-mode-seg');
       modeHintEl = h('span', {
-        className: 'smig-mode-hint',
+        className: 'settings-hint-text smig-mode-hint',
         text: t('settings.oth.migModeMoveHint'),
       });
-      projectLabelEl = h('span', { className: 'smig-field-label', text: t('settings.oth.migProjectLabel') });
+      projectLabelEl = h('span', { className: 'form-label', text: t('settings.oth.migProjectLabel') });
 
       sourceSelect = CustomSelect({
         ariaLabel: t('settings.oth.migSourceLabel'),
@@ -198,21 +197,46 @@ export const SessionMigrationCard = defineComponent({
         },
       });
 
-      projectFieldWrap = h('div', { className: 'smig-field' }, [
+      projectFieldWrap = h('div', { className: 'form-row smig-field' }, [
         projectLabelEl,
         projectSelect.el,
       ]);
 
       searchInput = h('input', {
         type: 'text',
-        className: 'settings-text-input smig-search-input',
+        className: 'smig-search-input',
+        autocomplete: 'off',
+        spellcheck: 'false',
         placeholder: t('settings.oth.migSearchPlaceholder'),
         value: '',
       });
+      searchClearBtn = h(
+        'button',
+        {
+          type: 'button',
+          className: 'smig-search-clear',
+          hidden: true,
+          'aria-label': t('select.clearSearch'),
+          onClick: () => {
+            searchQuery = '';
+            searchInput.value = '';
+            patchAttr(searchClearBtn, 'hidden', true);
+            renderSessionList();
+            searchInput.focus?.();
+          },
+        },
+        [createSvgIcon('close', { size: 10 })]
+      );
       searchInput.addEventListener?.('input', () => {
         searchQuery = String(searchInput.value || '').trim();
+        patchAttr(searchClearBtn, 'hidden', !searchQuery);
         renderSessionList();
       });
+      const searchWrap = h('div', { className: 'smig-search-wrap' }, [
+        createSvgIcon('search', { size: 12, className: 'smig-search-icon' }),
+        searchInput,
+        searchClearBtn,
+      ]);
 
       toggleAllBtn = h('button', {
         type: 'button',
@@ -233,6 +257,10 @@ export const SessionMigrationCard = defineComponent({
 
       selectedCountEl = h('span', { className: 'smig-count-meta', text: '' });
       listEl = h('div', { className: 'smig-list', role: 'list' });
+      listScrollbar = CustomScrollbar({
+        className: 'smig-scroll-host',
+        contentEl: listEl,
+      });
 
       migrateBtnText = h('span', {
         text: t('settings.oth.migActionBtn', { count: 0 }),
@@ -241,7 +269,7 @@ export const SessionMigrationCard = defineComponent({
         'button',
         {
           type: 'button',
-          className: 'btn-secondary smig-migrate-btn',
+          className: 'btn-primary smig-migrate-btn',
           disabled: true,
           onClick: () => {
             void handleMigrate();
@@ -262,21 +290,23 @@ export const SessionMigrationCard = defineComponent({
         ]),
         descEl,
         h('div', { className: 'smig-direction-grid' }, [
-          h('div', { className: 'smig-field' }, [sourceLabelEl, sourceSelect.el]),
-          h('div', { className: 'smig-field' }, [targetLabelEl, targetSelect.el]),
+          h('div', { className: 'form-row smig-field' }, [sourceLabelEl, sourceSelect.el]),
+          h('div', { className: 'form-row smig-field' }, [targetLabelEl, targetSelect.el]),
         ]),
-        h('div', { className: 'smig-field' }, [
-          modeLabelEl,
-          h('div', { className: 'smig-mode-bar' }, [modeMoveBtn, modeCloneBtn]),
+        h('div', { className: 'smig-mode-block' }, [
+          h('div', { className: 'settings-inline-row smig-mode-row' }, [
+            modeLabelEl,
+            modeSeg.el,
+          ]),
           modeHintEl,
         ]),
         projectFieldWrap,
         h('div', { className: 'smig-toolbar' }, [
-          searchInput,
+          searchWrap,
           toggleAllBtn,
           selectedCountEl,
         ]),
-        listEl,
+        listScrollbar.el,
         h('div', { className: 'smig-footer' }, [migrateBtn]),
         resultBoxEl,
       ];
@@ -357,8 +387,11 @@ export const SessionMigrationCard = defineComponent({
 
     function syncModeControls() {
       if (!bodyMounted) return;
-      patchClasses(modeMoveBtn, { 'is-active': migrationMode === 'move' });
-      patchClasses(modeCloneBtn, { 'is-active': migrationMode === 'clone' });
+      modeSeg?.setProps({
+        ariaLabel: t('settings.oth.migModeLabel'),
+        modelValue: migrationMode,
+        options: smigGetModeOptions(),
+      });
       patchText(
         modeHintEl,
         migrationMode === 'clone'
@@ -468,13 +501,18 @@ export const SessionMigrationCard = defineComponent({
       } else {
         for (const item of filtered) {
           const checked = selectedIds.has(item.cascadeId);
-          const checkboxEl = h('input', {
-            type: 'checkbox',
-            className: 'smig-checkbox',
-            checked,
-            disabled: Boolean(item.isRunning || isMigrating),
-          });
-          checkboxEl.checked = checked;
+          const disabled = Boolean(item.isRunning || isMigrating);
+          const checkIcon = createSvgIcon('check', { size: 10 });
+          patchAttr(checkIcon, 'hidden', !checked);
+          const checkboxEl = h(
+            'span',
+            {
+              className: `select-checkbox smig-checkbox${checked ? ' is-checked' : ''}`,
+              'aria-hidden': 'true',
+            },
+            [checkIcon]
+          );
+
           const toggleItem = () => {
             if (item.isRunning || isMigrating) return;
             if (selectedIds.has(item.cascadeId)) {
@@ -484,7 +522,6 @@ export const SessionMigrationCard = defineComponent({
             }
             renderSessionList();
           };
-          checkboxEl.addEventListener?.('change', toggleItem);
 
           const metaParts = [t('settings.oth.migStepsUnit', { count: item.stepCount })];
           const age = smigFormatAge(item.lastModifiedMs);
@@ -510,19 +547,19 @@ export const SessionMigrationCard = defineComponent({
           }
 
           const rowEl = h(
-            'div',
+            'button',
             {
+              type: 'button',
+              role: 'checkbox',
+              'aria-checked': checked ? 'true' : 'false',
+              disabled,
               className: `smig-item${checked ? ' is-selected' : ''}${item.isRunning ? ' is-running' : ''}`,
-              role: 'listitem',
-              onClick: (ev) => {
-                if (ev?.target === checkboxEl) return;
-                toggleItem();
-              },
+              onClick: toggleItem,
             },
             [
               checkboxEl,
-              h('div', { className: 'smig-item-body' }, [
-                h('div', { className: 'smig-item-top' }, [
+              h('span', { className: 'smig-item-body' }, [
+                h('span', { className: 'smig-item-top' }, [
                   h('span', {
                     className: 'smig-item-title',
                     text: item.title || item.cascadeId.slice(0, 8),
@@ -531,7 +568,7 @@ export const SessionMigrationCard = defineComponent({
                   h('span', { className: 'smig-item-meta', text: metaParts.join(' · ') }),
                 ]),
                 ...(subChildren.length > 0
-                  ? [h('div', { className: 'smig-item-sub' }, subChildren)]
+                  ? [h('span', { className: 'smig-item-sub' }, subChildren)]
                   : []),
               ]),
             ]
@@ -539,6 +576,8 @@ export const SessionMigrationCard = defineComponent({
           listEl.appendChild(rowEl);
         }
       }
+
+      listScrollbar?.methods?.refresh?.();
 
       patchAttr(migrateBtn, 'disabled', isMigrating || selectedIds.size === 0 || !targetClient);
       patchText(
@@ -717,11 +756,10 @@ export const SessionMigrationCard = defineComponent({
       patchText(sourceLabelEl, t('settings.oth.migSourceLabel'));
       patchText(targetLabelEl, t('settings.oth.migTargetLabel'));
       patchText(modeLabelEl, t('settings.oth.migModeLabel'));
-      patchText(modeMoveBtn, t('settings.oth.migModeMove'));
-      patchText(modeCloneBtn, t('settings.oth.migModeClone'));
       syncModeControls();
       patchText(projectLabelEl, t('settings.oth.migProjectLabel'));
       patchAttr(searchInput, 'placeholder', t('settings.oth.migSearchPlaceholder'));
+      patchAttr(searchClearBtn, 'aria-label', t('select.clearSearch'));
       if (catalog?.available) {
         syncControlsAndList();
       }
@@ -733,6 +771,8 @@ export const SessionMigrationCard = defineComponent({
         clearTimeout(copiedTimer);
         copiedTimer = null;
       }
+      modeSeg?.destroy?.();
+      listScrollbar?.destroy?.();
       sourceSelect?.destroy?.();
       targetSelect?.destroy?.();
       projectSelect?.destroy?.();

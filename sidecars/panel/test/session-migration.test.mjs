@@ -610,6 +610,16 @@ test('SessionMigrationCard stays hidden for single-client hosts and renders mult
     await card.refs.ensureLoaded();
     assert.equal(card.el.hasAttribute('hidden'), false, 'Card becomes visible when >=2 clients detected');
 
+    // Verify Modern UI & design-system alignment: zero native checkboxes, pill form-row selects, SegmentedControl
+    assert.equal(
+      card.el.querySelectorAll('input[type="checkbox"]').length,
+      0,
+      'Must use bespoke .select-checkbox instead of native browser checkbox'
+    );
+    assert.equal(card.el.querySelectorAll('.form-row > .custom-select').length, 3);
+    assert.ok(card.el.querySelector('.smig-mode-seg.segmented'));
+    assert.ok(card.el.querySelector('.smig-scroll-host.custom-scroll-host'));
+
     const rows = card.el.querySelectorAll('.smig-item');
     assert.equal(rows.length, 2);
     const migrateBtn = card.el.querySelector('.smig-migrate-btn');
@@ -619,9 +629,12 @@ test('SessionMigrationCard stays hidden for single-client hosts and renders mult
     rows[1].dispatchEvent({ type: 'click', target: rows[1] });
     assert.equal(migrateBtn.hasAttribute('disabled'), true);
 
-    // Clicking idle session selects it and enables Migrate button
+    // Clicking idle session selects it, checks bespoke checkbox, and enables Migrate button
     rows[0].dispatchEvent({ type: 'click', target: rows[0] });
     assert.equal(migrateBtn.hasAttribute('disabled'), false);
+    const updatedRow0 = card.el.querySelectorAll('.smig-item')[0];
+    assert.equal(updatedRow0.getAttribute('aria-checked'), 'true');
+    assert.ok(updatedRow0.querySelector('.select-checkbox.is-checked'));
 
     // Trigger migration (defaults to full move mode)
     await migrateBtn.dispatchEvent({ type: 'click', target: migrateBtn });
@@ -634,10 +647,10 @@ test('SessionMigrationCard stays hidden for single-client hosts and renders mult
       targetProjectId: '99a28d35-a873-4c32-b8d1-81a62e23c33d',
     });
 
-    // Switch to clone mode and verify payload reflects mode: 'clone'
-    const modeBtns = card.el.querySelectorAll('.smig-mode-btn');
+    // Switch to clone mode via SegmentedControl and verify payload reflects mode: 'clone'
+    const modeBtns = card.el.querySelectorAll('.smig-mode-seg .seg-btn');
     assert.equal(modeBtns.length, 2);
-    modeBtns[1].dispatchEvent({ type: 'click', target: modeBtns[1] });
+    modeBtns[1].dispatchEvent({ type: 'click', target: modeBtns[1], stopPropagation() {} });
     const rows2 = card.el.querySelectorAll('.smig-item');
     rows2[0].dispatchEvent({ type: 'click', target: rows2[0] });
     await migrateBtn.dispatchEvent({ type: 'click', target: migrateBtn });
@@ -648,6 +661,16 @@ test('SessionMigrationCard stays hidden for single-client hosts and renders mult
     assert.equal(resultBox.hasAttribute('hidden'), false);
     assert.ok(resultBox.textContent.includes('Ctrl+R'));
     card.destroy();
+
+    // Verify built CSS contains zero undefined --border-default / --metric-good tokens and has modern-ui rules
+    const builtCss = readFileSync(
+      new URL('../styles.css', import.meta.url),
+      'utf8'
+    );
+    assert.equal(builtCss.includes('--border-default'), false, 'Zero undefined --border-default tokens');
+    assert.equal(builtCss.includes('--metric-good'), false, 'Zero undefined --metric-good tokens');
+    assert.match(builtCss, /\[data-modern-ui="true"\]\s+\.smig-scroll-host/);
+    assert.match(builtCss, /\[data-modern-ui="true"\]\s+\.smig-item:hover:not\(:disabled\)/);
   } finally {
     globalThis.document = prevDoc;
     globalThis.window = prevWin;
