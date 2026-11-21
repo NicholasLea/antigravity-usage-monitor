@@ -667,7 +667,7 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.migModeLabel': '迁移方式',
   'settings.oth.migModeMove': '完整迁移（推荐）',
   'settings.oth.migModeClone': '克隆副本',
-  'settings.oth.migModeMoveHint': '保留原 ID 和全部历史步序明细，备份后移出源端（零重复计费）',
+  'settings.oth.migModeMoveHint': '分配目标端独立会话 ID 并完整保留全部历史步序明细，备份后移出源端（零重复计费；迁移前建议先关闭源端该会话）',
   'settings.oth.migModeCloneHint': '保留源会话并生成新 ID，新副本仅统计迁入后的新步骤',
   'settings.oth.migProjectLabel': '绑定目标项目',
   'settings.oth.migProjectOutside': '独立会话（无所属项目）',

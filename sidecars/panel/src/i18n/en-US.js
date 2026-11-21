@@ -667,7 +667,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.migModeLabel': 'Migration Mode',
   'settings.oth.migModeMove': 'Full Move (Recommended)',
   'settings.oth.migModeClone': 'Clone Copy',
-  'settings.oth.migModeMoveHint': 'Preserves original ID and full historical steps/details; archives source backup before moving',
+  'settings.oth.migModeMoveHint': 'Assigns an isolated target ID while preserving all historical steps/details; archives source backup before moving (close source session first)',
   'settings.oth.migModeCloneHint': 'Keeps source intact with a fresh UUID; only counts new steps generated after cloning',
   'settings.oth.migProjectLabel': 'Target Project',
   'settings.oth.migProjectOutside': 'Standalone (No Project)',

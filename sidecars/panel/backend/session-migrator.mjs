@@ -2,9 +2,10 @@
  * @fileoverview 跨端会话按需迁移器 (`session-migrator.mjs`)。
  *
  * 支持两种显式模式：
- * 1. `move`（默认「完整迁移」）：保留原 `cascade_id` 和 `trajectory_id`，先将源 `.db` 一致性快照备份归档，
- *    再安全移入目标端并清理源端 `.db` 及摘要行——迁入后完整保留全部历史步序（#1/#3/#5…）、上下文和调用明细，
- *    且全局仅存一份天然零重复计费；若源 `.db` 正被原客户端锁住（`EBUSY`/`EPERM`），安全回滚并提示关闭原端；
+ * 1. `move`（默认「完整迁移」）：为目标端分配独立的新 `cascade_id` / `trajectory_id`（避免撞上桌面端/CLI
+ *    跨端摘要镜像同步导致被自动删行或覆盖），先将源 `.db` 一致性快照备份归档，再把目标库中属于源会话的步骤
+ *    `sourceTrajectoryStepInfo.cascadeId` 及 `gen_metadata` 归属 ID 结构化改写为新 ID，随后安全移出源端
+ *    `.db` 及摘要行——迁入后完整保留全部历史步序（#1/#3/#5…）、上下文和调用明细，且全局仅存一份天然零重复计费；
  * 2. `clone`（可选「克隆副本」）：生成全新 UUID，源端 100% 保持不动；保留历史步骤原有的 `originCascadeId`，
  *    由 `cli-sqlite-reader.mjs` 自动跳过克隆历史步，仅统计迁入后新产生的步骤（避免跨端双倍计费）。
  *
@@ -767,7 +768,10 @@ function migratorBuildWorkspaceSubmessage(rawUri, targetClientId) {
   return Buffer.concat([encodeProtoStringField(1, rawUri), encodeProtoStringField(2, rawUri)]);
 }
 
-function migratorBuildSummaryMetaBlob(sourceMetaBlob, { newCid, targetClientId, targetProjectId, rawUri, encodedUri }) {
+function migratorBuildSummaryMetaBlob(
+  sourceMetaBlob,
+  { srcCid = '', newCid, targetClientId, targetProjectId, rawUri, encodedUri }
+) {
   const wsBytes = migratorBuildWorkspaceSubmessage(rawUri, targetClientId);
   const primaryUri = targetClientId === 'cli' ? rawUri : encodedUri;
   const replacements = new Map([
@@ -778,6 +782,12 @@ function migratorBuildSummaryMetaBlob(sourceMetaBlob, { newCid, targetClientId, 
     [18, encodeProtoStringField(18, targetProjectId)],
   ]);
   if (sourceMetaBlob && sourceMetaBlob.byteLength > 0) {
+    if (srcCid) {
+      const fn8 = splitProtoRawFields(sourceMetaBlob).find((f) => f.fn === 8 && f.wt === 2);
+      if (fn8 && fn8.payload.toString('utf8').trim().toLowerCase() === srcCid) {
+        replacements.set(8, encodeProtoStringField(8, newCid));
+      }
+    }
     return patchProtoMessageFields(sourceMetaBlob, replacements);
   }
   const parts = [];
@@ -788,9 +798,107 @@ function migratorBuildSummaryMetaBlob(sourceMetaBlob, { newCid, targetClientId, 
   return Buffer.concat(parts);
 }
 
+/**
+ * 在「完整迁移」模式下，仅定向改写单步 `metadata` 中的 `sourceTrajectoryStepInfo`（`fn 20`）
+ * 的 `cascadeId`（`fn 4`）及 `trajectoryId`（`fn 1`），绝不触碰工具参数路径或外部父会话 ID。
+ *
+ * @param {Uint8Array | Buffer} rawBlob
+ * @param {{ srcCid: string, newCid: string, srcTid?: string, newTid?: string }} ids
+ * @returns {Buffer | null} 若无需改写则返回 `null`
+ */
+function migratorPatchStepMetadataOwnership(rawBlob, { srcCid, newCid, srcTid = '', newTid = '' }) {
+  const u8 = toUint8Array(rawBlob);
+  if (!u8 || u8.byteLength === 0) return null;
+  const buf = Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength);
+  const hasCid = srcCid && buf.includes(srcCid);
+  const hasTid = srcTid && newTid && buf.includes(srcTid);
+  if (!hasCid && !hasTid) return null;
+
+  const topFields = splitProtoRawFields(buf);
+  const fn20 = topFields.find((f) => f.fn === 20 && f.wt === 2);
+  if (!fn20) return null;
+
+  const subFields = splitProtoRawFields(fn20.payload);
+  const subReplacements = new Map();
+  for (const sf of subFields) {
+    if (sf.fn === 4 && sf.wt === 2 && srcCid) {
+      if (sf.payload.toString('utf8').trim().toLowerCase() === srcCid) {
+        subReplacements.set(4, encodeProtoStringField(4, newCid));
+      }
+    } else if (sf.fn === 1 && sf.wt === 2 && srcTid && newTid) {
+      if (sf.payload.toString('utf8').trim().toLowerCase() === srcTid) {
+        subReplacements.set(1, encodeProtoStringField(1, newTid));
+      }
+    }
+  }
+  if (subReplacements.size === 0) return null;
+
+  const patchedSub = patchProtoMessageFields(fn20.payload, subReplacements);
+  return patchProtoMessageFields(buf, new Map([[20, encodeProtoBytesField(20, patchedSub)]]));
+}
+
+/**
+ * 在「完整迁移」模式下，仅定向改写 `gen_metadata.data` 中 `chatModel`（`fn 1`）的 `extraMeta`
+ * 重复映射字段（`fn 20`）里 `cascade_id` / `root_cascade_id` 等于 `srcCid` 的值，保留其余全部字段和提示词原文。
+ *
+ * @param {Uint8Array | Buffer} rawBlob
+ * @param {string} srcCid
+ * @param {string} newCid
+ * @returns {Buffer | null} 若无需改写则返回 `null`
+ */
+function migratorPatchGenMetadataOwnership(rawBlob, srcCid, newCid) {
+  const u8 = toUint8Array(rawBlob);
+  if (!u8 || u8.byteLength === 0 || !srcCid) return null;
+  const buf = Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength);
+  if (!buf.includes(srcCid)) return null;
+
+  const topFields = splitProtoRawFields(buf);
+  let topChanged = false;
+  const rebuiltTop = [];
+
+  for (const field of topFields) {
+    if (field.fn === 1 && field.wt === 2 && field.payload.includes(srcCid)) {
+      const chatFields = splitProtoRawFields(field.payload);
+      let chatChanged = false;
+      const rebuiltChat = [];
+      for (const cf of chatFields) {
+        if (cf.fn === 20 && cf.wt === 2 && cf.payload.includes(srcCid)) {
+          const kvFields = splitProtoRawFields(cf.payload);
+          const keyField = kvFields.find((item) => item.fn === 1 && item.wt === 2);
+          const valField = kvFields.find((item) => item.fn === 2 && item.wt === 2);
+          const keyStr = keyField ? keyField.payload.toString('utf8').trim() : '';
+          const valStr = valField ? valField.payload.toString('utf8').trim().toLowerCase() : '';
+          if (
+            (keyStr === 'cascade_id' || keyStr === 'root_cascade_id') &&
+            valStr === srcCid
+          ) {
+            const patchedEntry = patchProtoMessageFields(
+              cf.payload,
+              new Map([[2, encodeProtoStringField(2, newCid)]])
+            );
+            rebuiltChat.push(encodeProtoBytesField(20, patchedEntry));
+            chatChanged = true;
+            continue;
+          }
+        }
+        rebuiltChat.push(cf.raw);
+      }
+      if (chatChanged) {
+        rebuiltTop.push(encodeProtoBytesField(1, Buffer.concat(rebuiltChat)));
+        topChanged = true;
+        continue;
+      }
+    }
+    rebuiltTop.push(field.raw);
+  }
+
+  return topChanged ? Buffer.concat(rebuiltTop) : null;
+}
+
 function migratorBuildPatchedRawSummary({
   sourceRawSummary,
   sourceMetaBlob,
+  srcCid = '',
   newCid,
   newTid,
   title,
@@ -816,6 +924,7 @@ function migratorBuildPatchedRawSummary({
     const rawFields = splitProtoRawFields(sourceRawSummary);
     const fn17 = rawFields.find((f) => f.fn === 17 && f.wt === 2);
     const patchedFn17 = migratorBuildSummaryMetaBlob(fn17?.payload || sourceMetaBlob, {
+      srcCid,
       newCid,
       targetClientId,
       targetProjectId,
@@ -836,6 +945,7 @@ function migratorBuildPatchedRawSummary({
         [20, null], // 清除来源覆盖标记，交由目标端原生识别
         [21, null], // 清除未空闲标志
         [23, null], // 清除终止标志
+        [26, null], // 清除运行中附加状态标志
       ])
     );
   }
@@ -844,6 +954,7 @@ function migratorBuildPatchedRawSummary({
   const createdTsBytes = encodeProtoTimestamp(createdMs || nowMs);
   const lastUiTsBytes = encodeProtoTimestamp(lastUserInputMs || nowMs);
   const synthMeta = migratorBuildSummaryMetaBlob(sourceMetaBlob, {
+    srcCid,
     newCid,
     targetClientId,
     targetProjectId,
@@ -1100,14 +1211,11 @@ export function migrateSessions(params = {}, options = {}) {
     const rawUri = migratorToRawFileUri(effectiveWsInput);
     const encodedUri = migratorToDesktopEncodedUri(effectiveWsInput);
 
-    const newCid = mode === 'move' ? srcCid : randomUUID();
+    // 两种模式统一分配全新 UUID：Antigravity 桌面端和 CLI 会互相镜像对方的 conversation_summaries.db，
+    // 复用原 UUID 会在移除源摘要行时触发目标端 language_server 将同 ID 行反手删掉或覆盖回 CLI 镜像。
+    const newCid = randomUUID();
+    const newTid = randomUUID();
     const dstDbPath = join(dstConvDir, `${newCid}.db`);
-    if (mode === 'move' && existsSync(dstDbPath)) {
-      results.push({ ok: false, sourceCascadeId: srcCid, error: 'target_already_exists' });
-      continue;
-    }
-
-    let newTid = randomUUID();
     const itemNowMs = baseNowMs + i;
     const itemNowSql = migratorFormatSqliteUtcTime(itemNowMs);
     const dstBrainDir = join(dstRoot, 'brain', newCid);
@@ -1128,43 +1236,88 @@ export function migrateSessions(params = {}, options = {}) {
         srcDb.exec(`VACUUM INTO '${escapedDst}'`);
       });
 
-      // 2. 在目标库中改写 trajectory_meta 和 trajectory_metadata_blob
-      //    移动模式保留原 trajectory_id 和 cascade_id，使所有历史步序（#1/#3/#5…）在目标端完整连贯呈现
+      // 2. 在目标库中改写 trajectory_meta 和 trajectory_metadata_blob；
+      //    移动模式同步把属于源会话的历史步 metadata 及 gen_metadata 归属 ID 重写为 newCid，
+      //    使迁入后的全部历史步序（#1/#3/#5…）在目标端完整连贯呈现且不撞跨端摘要镜像。
       let sourceMetaBlob = null;
       migratorOpenWritableDbWithRetry(dstDbPath, (dstDb) => {
-        if (mode === 'move') {
-          const origMeta = dstDb.prepare('SELECT trajectory_id FROM trajectory_meta LIMIT 1').get();
-          if (origMeta?.trajectory_id) {
-            newTid = String(origMeta.trajectory_id).trim();
-          }
-          dstDb
-            .prepare('UPDATE trajectory_meta SET source = ?')
-            .run(dstDef.trajectorySourceNum);
-        } else {
+        const origMeta = dstDb.prepare('SELECT trajectory_id FROM trajectory_meta LIMIT 1').get();
+        const srcTid = String(origMeta?.trajectory_id || '').trim().toLowerCase();
+
+        dstDb.exec('BEGIN IMMEDIATE');
+        try {
           dstDb
             .prepare('UPDATE trajectory_meta SET trajectory_id = ?, cascade_id = ?, source = ?')
             .run(newTid, newCid, dstDef.trajectorySourceNum);
-        }
 
-        const metaRow = dstDb
-          .prepare("SELECT data FROM trajectory_metadata_blob WHERE id = 'main' LIMIT 1")
-          .get();
-        if (metaRow?.data) {
-          sourceMetaBlob = Buffer.from(metaRow.data);
-          const wsBytes = migratorBuildWorkspaceSubmessage(rawUri, dstDef.id);
-          const primaryMetaUri = dstDef.id === 'cli' ? rawUri : encodedUri;
-          const patchedMeta = patchProtoMessageFields(
-            sourceMetaBlob,
-            new Map([
+          const metaRow = dstDb
+            .prepare("SELECT data FROM trajectory_metadata_blob WHERE id = 'main' LIMIT 1")
+            .get();
+          if (metaRow?.data) {
+            sourceMetaBlob = Buffer.from(metaRow.data);
+            const wsBytes = migratorBuildWorkspaceSubmessage(rawUri, dstDef.id);
+            const primaryMetaUri = dstDef.id === 'cli' ? rawUri : encodedUri;
+            const metaReplacements = new Map([
               [1, wsBytes.length > 0 ? encodeProtoBytesField(1, wsBytes) : null],
               [6, encodeProtoStringField(6, newCid)],
               [7, primaryMetaUri ? encodeProtoStringField(7, primaryMetaUri) : null],
               [18, encodeProtoStringField(18, resolvedProjectId)],
-            ])
-          );
-          dstDb
-            .prepare("UPDATE trajectory_metadata_blob SET data = ? WHERE id = 'main'")
-            .run(patchedMeta);
+            ]);
+            const fn8 = splitProtoRawFields(sourceMetaBlob).find((f) => f.fn === 8 && f.wt === 2);
+            if (fn8 && fn8.payload.toString('utf8').trim().toLowerCase() === srcCid) {
+              metaReplacements.set(8, encodeProtoStringField(8, newCid));
+            }
+            const patchedMeta = patchProtoMessageFields(sourceMetaBlob, metaReplacements);
+            dstDb
+              .prepare("UPDATE trajectory_metadata_blob SET data = ? WHERE id = 'main'")
+              .run(patchedMeta);
+          }
+
+          if (mode === 'move') {
+            try {
+              const stepRows = dstDb
+                .prepare('SELECT idx, metadata FROM steps WHERE metadata IS NOT NULL')
+                .all();
+              const updStep = dstDb.prepare('UPDATE steps SET metadata = ? WHERE idx = ?');
+              for (const row of stepRows || []) {
+                const patched = migratorPatchStepMetadataOwnership(row.metadata, {
+                  srcCid,
+                  newCid,
+                  srcTid,
+                  newTid,
+                });
+                if (patched) {
+                  updStep.run(patched, row.idx);
+                }
+              }
+            } catch {
+              // 兼容不含 steps 表的最小结构
+            }
+
+            try {
+              const genRows = dstDb
+                .prepare('SELECT idx, data FROM gen_metadata WHERE data IS NOT NULL')
+                .all();
+              const updGen = dstDb.prepare('UPDATE gen_metadata SET data = ?, size = ? WHERE idx = ?');
+              for (const row of genRows || []) {
+                const patched = migratorPatchGenMetadataOwnership(row.data, srcCid, newCid);
+                if (patched) {
+                  updGen.run(patched, patched.length, row.idx);
+                }
+              }
+            } catch {
+              // 兼容不含 gen_metadata 表的最小结构
+            }
+          }
+
+          dstDb.exec('COMMIT');
+        } catch (txErr) {
+          try {
+            dstDb.exec('ROLLBACK');
+          } catch {
+            // 忽略回滚异常
+          }
+          throw txErr;
         }
       });
 
@@ -1228,6 +1381,7 @@ export function migrateSessions(params = {}, options = {}) {
       const patchedRawSummary = migratorBuildPatchedRawSummary({
         sourceRawSummary: srcSummary?.raw_summary || null,
         sourceMetaBlob,
+        srcCid,
         newCid,
         newTid,
         title: finalTitle,

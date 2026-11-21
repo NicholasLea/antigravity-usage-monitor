@@ -108,13 +108,46 @@ function createConvDb(dbPath, { cid, tid, source = 17, projectId = 'default-cli-
       encodeProtoVarintField(2, i),
       encodeProtoStringField(4, cid),
     ]);
-    const stepMeta = encodeProtoBytesField(20, srcInfo);
+    // 模拟真实步骤：在 fn 4 (toolCall.argumentsJson) 中携带含源 cid 的文件路径，验证改写归属时绝不误伤路径
+    const toolCallSub = Buffer.concat([
+      encodeProtoStringField(1, `tc-${i}`),
+      encodeProtoStringField(2, 'read_file'),
+      encodeProtoStringField(3, `{"Path":"C:/Users/Test/.gemini/antigravity-cli/brain/${cid}/note.md"}`),
+    ]);
+    const stepMeta = Buffer.concat([
+      encodeProtoBytesField(4, toolCallSub),
+      encodeProtoBytesField(20, srcInfo),
+    ]);
     const stepPayload = isUser
       ? encodeProtoBytesField(19, encodeProtoStringField(2, promptText))
       : encodeProtoBytesField(20, encodeProtoStringField(1, 'ok reply'));
     db.prepare(
       'INSERT INTO steps (idx, step_type, status, metadata, step_payload) VALUES (?, ?, 3, ?, ?)'
     ).run(i, isUser ? 14 : 15, stepMeta, stepPayload);
+  }
+
+  // 写入带重复 fn 20 extraMeta 映射和含源 cid 路径提示词的 gen_metadata，验证定向改写归属 ID 而不破坏其他 map 项
+  if (stepCount > 0) {
+    const mapEntry = (k, v) =>
+      encodeProtoBytesField(
+        20,
+        Buffer.concat([encodeProtoStringField(1, k), encodeProtoStringField(2, v)])
+      );
+    const chatModelSub = Buffer.concat([
+      encodeProtoStringField(1, `prompt referencing brain/${cid}/shot.png`),
+      mapEntry('model_enum', 'MODEL_PLACEHOLDER_M37'),
+      mapEntry('cascade_id', cid),
+      mapEntry('root_cascade_id', cid),
+      mapEntry('used_claude', 'false'),
+    ]);
+    const genBlob = Buffer.concat([
+      encodeProtoBytesField(1, chatModelSub),
+      encodeProtoVarintField(2, 1),
+    ]);
+    db.prepare('INSERT INTO gen_metadata (idx, data, size) VALUES (0, ?, ?)').run(
+      genBlob,
+      genBlob.length
+    );
   }
   db.close();
 }
@@ -356,7 +389,7 @@ test('Cross-client session migration clones CLI/Legacy-IDE/Desktop SQLite sessio
     assert.ok(cat.desktopProjects.some((p) => p.projectId === projId && p.name === 'antigravity-usage-monitor'));
     assert.ok(cat.desktopProjects.some((p) => p.projectId === 'outside-of-project' && p.isOutsideProject));
 
-    // 3. Default FULL MOVE mode: CLI -> Desktop (1 idle + 1 running -> idle moves with original UUID & ALL historical steps!)
+    // 3. Default FULL MOVE mode: CLI -> Desktop (1 idle + 1 running -> idle moves with isolated fresh UUID & ALL historical steps!)
     const migRes = migrateSessions(
       {
         sourceClient: 'cli',
@@ -376,7 +409,11 @@ test('Cross-client session migration clones CLI/Legacy-IDE/Desktop SQLite sessio
     const okItem = migRes.results.find((r) => r.ok);
     const runErr = migRes.results.find((r) => !r.ok);
     assert.equal(runErr.error, 'session_running');
-    assert.equal(okItem.newCascadeId, cliIdleCid, 'Full move preserves original cascadeId so historical steps stay intact');
+    assert.notEqual(
+      okItem.newCascadeId,
+      cliIdleCid,
+      'Full move assigns a fresh target cascadeId to avoid Desktop/CLI cross-mirror summary deletion'
+    );
     assert.ok(
       okItem.archivedSourcePath && existsSync(okItem.archivedSourcePath),
       'Archives source DB snapshot before removing from source client'
@@ -402,15 +439,15 @@ test('Cross-client session migration clones CLI/Legacy-IDE/Desktop SQLite sessio
     const annText = readFileSync(join(deskRoot, 'annotations', `${okItem.newCascadeId}.pbtxt`), 'utf8');
     assert.ok(annText.includes('Fix Braille progress bar width'));
 
-    // Inspect moved DB metadata & unknown field 15 preservation
+    // Inspect moved DB metadata, ownership rewrite, tool-path preservation, & unknown field 15 preservation
     const movedDb = new DatabaseSync(movedDbPath, { readOnly: true });
     const metaRow = movedDb.prepare('SELECT * FROM trajectory_meta').get();
-    assert.equal(metaRow.cascade_id, cliIdleCid);
-    assert.equal(metaRow.trajectory_id, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1');
+    assert.equal(metaRow.cascade_id, okItem.newCascadeId);
+    assert.notEqual(metaRow.trajectory_id, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1');
     assert.equal(metaRow.source, 1);
     const blobRow = movedDb.prepare("SELECT data FROM trajectory_metadata_blob WHERE id = 'main'").get();
     const blobFields = splitProtoRawFields(blobRow.data);
-    assert.equal(blobFields.find((f) => f.fn === 6)?.payload.toString('utf8'), cliIdleCid);
+    assert.equal(blobFields.find((f) => f.fn === 6)?.payload.toString('utf8'), okItem.newCascadeId);
     assert.equal(blobFields.find((f) => f.fn === 7)?.payload.toString('utf8'), projWsEnc);
     assert.equal(blobFields.find((f) => f.fn === 18)?.payload.toString('utf8'), projId);
     assert.deepEqual(
@@ -418,29 +455,63 @@ test('Cross-client session migration clones CLI/Legacy-IDE/Desktop SQLite sessio
       Buffer.from([0xde, 0xad, 0xbe, 0xef]),
       'Preserves unknown protobuf fields byte-for-byte'
     );
+
+    // Verify step toolCall file path still references original brain/<cliIdleCid> while fn20.fn4 is rewritten to newCascadeId
+    const step0Meta = movedDb.prepare('SELECT metadata FROM steps WHERE idx = 0').get().metadata;
+    const step0Fields = splitProtoRawFields(step0Meta);
+    const step0ToolStr = step0Fields.find((f) => f.fn === 4)?.payload.toString('utf8') || '';
+    assert.ok(
+      step0ToolStr.includes(`brain/${cliIdleCid}/note.md`),
+      'Does not corrupt historical file paths inside toolCall arguments'
+    );
+    const step0SrcInfo = splitProtoRawFields(step0Fields.find((f) => f.fn === 20).payload);
+    assert.equal(step0SrcInfo.find((f) => f.fn === 4)?.payload.toString('utf8'), okItem.newCascadeId);
+    assert.equal(step0SrcInfo.find((f) => f.fn === 1)?.payload.toString('utf8'), metaRow.trajectory_id);
+
+    // Verify gen_metadata preserves prompt text path + other map entries while rewriting cascade_id/root_cascade_id
+    const gen0Blob = movedDb.prepare('SELECT data FROM gen_metadata WHERE idx = 0').get().data;
+    const gen0Chat = splitProtoRawFields(splitProtoRawFields(gen0Blob).find((f) => f.fn === 1).payload);
+    assert.equal(
+      gen0Chat.find((f) => f.fn === 1)?.payload.toString('utf8'),
+      `prompt referencing brain/${cliIdleCid}/shot.png`
+    );
+    const extraEntries = new Map();
+    for (const cf of gen0Chat.filter((f) => f.fn === 20)) {
+      const kv = splitProtoRawFields(cf.payload);
+      extraEntries.set(
+        kv.find((x) => x.fn === 1)?.payload.toString('utf8'),
+        kv.find((x) => x.fn === 2)?.payload.toString('utf8')
+      );
+    }
+    assert.equal(extraEntries.get('model_enum'), 'MODEL_PLACEHOLDER_M37');
+    assert.equal(extraEntries.get('used_claude'), 'false');
+    assert.equal(extraEntries.get('cascade_id'), okItem.newCascadeId);
+    assert.equal(extraEntries.get('root_cascade_id'), okItem.newCascadeId);
     movedDb.close();
 
-    // Verify ALL historical steps (#0..#5, including #1/#3/#5 planner responses) are preserved in telemetry!
-    const decodedMoved = readLocalSqliteTrajectory(movedDbPath, { cascadeId: cliIdleCid });
+    // Verify ALL historical steps (#0..#5, including #1/#3/#5 planner responses) and gen_metadata stay intact in telemetry!
+    const decodedMoved = readLocalSqliteTrajectory(movedDbPath, { cascadeId: okItem.newCascadeId });
     assert.ok(decodedMoved, 'Moved session decodes cleanly via cli-sqlite-reader');
     assert.equal(decodedMoved.numTotalSteps, 6, 'All 6 historical steps (#0..#5) stay intact after full move');
+    assert.equal(decodedMoved.generatorMetadata.length, 1, 'Rewritten gen_metadata remains owned by target session');
     assert.deepEqual(
       decodedMoved.steps.map((s) => s.idx),
       [0, 1, 2, 3, 4, 5],
       'Historical step numbering remains continuous without jumping'
     );
 
-    // Verify target summary DB row & stripped fn 20 CLI source tag
+    // Verify target summary DB row under newCascadeId & stripped fn 20 CLI source tag
     const checkSumDb = new DatabaseSync(join(deskRoot, 'conversation_summaries.db'), { readOnly: true });
     const sumRow = checkSumDb
       .prepare('SELECT * FROM conversation_summaries WHERE conversation_id = ?')
-      .get(cliIdleCid);
+      .get(okItem.newCascadeId);
     assert.equal(sumRow.project_id, projId);
     assert.equal(sumRow.source, '');
     assert.equal(sumRow.app_data_dir, 'antigravity');
     assert.equal(sumRow.workspace_uris, JSON.stringify([projWsEnc]));
     const rawSumFields = splitProtoRawFields(sumRow.raw_summary);
     assert.equal(rawSumFields.some((f) => f.fn === 20), false, 'Strips CLI source enum from raw_summary');
+    assert.equal(rawSumFields.some((f) => f.fn === 26), false, 'Strips running state flag from raw_summary');
     checkSumDb.close();
 
     // 4. Optional CLONE mode: Desktop -> CLI (fresh UUID, source untouched, zero double-billing)
