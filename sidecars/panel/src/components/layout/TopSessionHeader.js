@@ -31,6 +31,9 @@ export const TopSessionHeader = defineComponent({
     const convSelect = CustomSelect({
       modelValue: telemetryStore.getState().selectedConversationId,
       placeholder: t('header.followLatest'),
+      searchable: true,
+      searchThreshold: 6,
+      searchPlaceholder: t('header.searchSessionPlaceholder'),
       options: [{ value: '', label: t('header.followLatest') }],
       onUpdateModelValue: (nextConvId) => {
         uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
@@ -236,6 +239,7 @@ export const TopSessionHeader = defineComponent({
       convSelect.setProps({
         modelValue: telSt.selectedConversationId,
         placeholder: t('header.followLatest'),
+        searchPlaceholder: t('header.searchSessionPlaceholder'),
         options,
       });
 

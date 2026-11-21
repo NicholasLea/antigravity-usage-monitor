@@ -93,6 +93,18 @@ export const SVG_ICON_DEFS = Object.freeze({
     { tag: 'rect', attrs: { x: '5.2', y: '5.2', width: '8.3', height: '8.3', rx: '1.3' } },
     { tag: 'path', attrs: { d: 'M3.5 10.8H2.8a1.3 1.3 0 0 1-1.3-1.3V3.3A1.3 1.3 0 0 1 2.8 2h6.2a1.3 1.3 0 0 1 1.3 1.3v.7' } },
   ],
+  search: [
+    { tag: 'circle', attrs: { cx: '7.2', cy: '7.2', r: '4.5' } },
+    { tag: 'path', attrs: { d: 'M10.6 10.6L14 14' } },
+  ],
+  download: [
+    { tag: 'path', attrs: { d: 'M8 2.4v7.6M5 7.2L8 10.2l3-3' } },
+    { tag: 'path', attrs: { d: 'M2.6 11.4v1.4a1 1 0 0 0 1 1h8.8a1 1 0 0 0 1-1v-1.4' } },
+  ],
+  upload: [
+    { tag: 'path', attrs: { d: 'M8 10.2V2.6M5 5.4L8 2.4l3 3' } },
+    { tag: 'path', attrs: { d: 'M2.6 11.4v1.4a1 1 0 0 0 1 1h8.8a1 1 0 0 0 1-1v-1.4' } },
+  ],
   grip: [
     { tag: 'circle', attrs: { cx: '6', cy: '4', r: '1.05', fill: 'currentColor', stroke: 'none' } },
     { tag: 'circle', attrs: { cx: '10', cy: '4', r: '1.05', fill: 'currentColor', stroke: 'none' } },

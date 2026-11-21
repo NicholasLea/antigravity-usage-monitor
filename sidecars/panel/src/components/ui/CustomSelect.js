@@ -51,12 +51,36 @@ function sameStringArray(a, b) {
   return true;
 }
 
+export function filterSelectOptionsByQuery(options = [], rawQuery = '') {
+  const q = String(rawQuery || '').trim().toLowerCase();
+  if (!q) return options;
+  const terms = q.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return options;
+  const out = [];
+  for (let i = 0; i < options.length; i++) {
+    const opt = options[i];
+    if (!opt) continue;
+    const haystack =
+      `${opt.label || ''} ${opt.meta || ''} ${opt.title || ''} ${opt.value || ''}`.toLowerCase();
+    let matched = true;
+    for (let k = 0; k < terms.length; k++) {
+      if (!haystack.includes(terms[k])) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) out.push(opt);
+  }
+  return out;
+}
+
 export const CustomSelect = defineComponent({
   name: 'CustomSelect',
   setup({ getProps, setProps, emit, onCleanup }) {
     let isOpen = false;
     let focusedIndex = -1;
     let lastOpenMenuLayoutSig = '';
+    let searchQuery = '';
 
     const initialIcon = getProps().icon;
     const leadIcon = createSvgIcon(initialIcon || 'bolt', { size: 13 });
@@ -81,11 +105,61 @@ export const CustomSelect = defineComponent({
       [leadIcon, triggerLabel, chevronIcon]
     );
 
-    const menuEl = h('div', {
-      className: 'select-menu',
-      role: 'listbox',
-      hidden: true,
+    const searchIcon = createSvgIcon('search', { size: 12, className: 'select-search-icon' });
+    const searchInput = h('input', {
+      type: 'text',
+      className: 'select-search-input',
+      autocomplete: 'off',
+      spellcheck: 'false',
+      placeholder: getProps().searchPlaceholder || t('select.searchPlaceholder'),
+      onClick: (e) => e.stopPropagation(),
+      onInput: (e) => {
+        searchQuery = String(e?.target?.value ?? searchInput.value ?? '');
+        focusedIndex = 0;
+        renderMenuOptions();
+      },
+      onKeydown: handleKeydown,
     });
+    const searchClearBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'select-search-clear',
+        hidden: true,
+        'aria-label': t('select.clearSearch'),
+        onClick: (e) => {
+          e.stopPropagation();
+          clearSearchQuery(true);
+        },
+      },
+      [createSvgIcon('close', { size: 10 })]
+    );
+    const searchWrap = h(
+      'div',
+      {
+        className: 'select-search-wrap',
+        hidden: true,
+        onClick: (e) => e.stopPropagation(),
+      },
+      [searchIcon, searchInput, searchClearBtn]
+    );
+
+    const optionsListEl = h('div', { className: 'select-options-list' });
+    const emptyHintEl = h('div', {
+      className: 'select-empty text-muted',
+      hidden: true,
+      text: t('select.noMatches'),
+    });
+
+    const menuEl = h(
+      'div',
+      {
+        className: 'select-menu',
+        role: 'listbox',
+        hidden: true,
+      },
+      [searchWrap, optionsListEl, emptyHintEl]
+    );
 
     const initialClass = [
       'custom-select',
@@ -95,6 +169,28 @@ export const CustomSelect = defineComponent({
       .filter(Boolean)
       .join(' ');
     const rootEl = h('div', { className: initialClass }, [triggerBtn, menuEl]);
+
+    function isSearchActiveForOptions(options) {
+      const { searchable = false, searchThreshold = 6 } = getProps();
+      return Boolean(searchable) && options.length >= Math.max(1, Number(searchThreshold) || 6);
+    }
+
+    function getVisibleOptions() {
+      const opts = getProps().options || [];
+      if (!isSearchActiveForOptions(opts) || !searchQuery.trim()) return opts;
+      return filterSelectOptionsByQuery(opts, searchQuery);
+    }
+
+    function clearSearchQuery(refocus = false) {
+      if (!searchQuery && !searchInput.value) return;
+      searchQuery = '';
+      searchInput.value = '';
+      focusedIndex = 0;
+      renderMenuOptions();
+      if (refocus && typeof searchInput.focus === 'function') {
+        searchInput.focus();
+      }
+    }
 
     function getSelectedSet() {
       const { multiple, modelValue, options = [], allValue = '' } = getProps();
@@ -109,7 +205,7 @@ export const CustomSelect = defineComponent({
       positionAnchoredPopup(rootEl, triggerBtn, menuEl, {
         margin: 6,
         gap: 4,
-        maxHeight: 220,
+        maxHeight: isSearchActiveForOptions(getProps().options || []) ? 268 : 220,
         minFlipSpace: 140,
       });
     }
@@ -117,7 +213,7 @@ export const CustomSelect = defineComponent({
     let boundReposition = false;
     function handleViewportChange(e) {
       if (!isOpen) return;
-      if (e?.type === 'scroll' && e.target === menuEl) return;
+      if (e?.type === 'scroll' && (e.target === menuEl || e.target === optionsListEl)) return;
       positionMenu();
     }
 
@@ -136,7 +232,8 @@ export const CustomSelect = defineComponent({
     }
 
     function buildMenuLayoutSig(options = [], labelText = '') {
-      let sig = `${labelText}|${options.length}`;
+      const searchShown = isSearchActiveForOptions(options) ? 1 : 0;
+      let sig = `${labelText}|${searchShown}|${searchQuery}|${options.length}`;
       for (let i = 0; i < options.length; i++) {
         const o = options[i];
         sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.meta ?? ''}`;
@@ -144,9 +241,11 @@ export const CustomSelect = defineComponent({
       return sig;
     }
 
-    function toggleOpen(nextOpen) {
+    function toggleOpen(nextOpen, { focusSearch = false } = {}) {
       isOpen = Boolean(nextOpen);
       if (isOpen) {
+        searchQuery = '';
+        searchInput.value = '';
         const opts = getProps().options || [];
         const selSet = getSelectedSet();
         focusedIndex = Math.max(
@@ -156,6 +255,8 @@ export const CustomSelect = defineComponent({
         renderMenuOptions();
         lastOpenMenuLayoutSig = buildMenuLayoutSig(opts, triggerLabel.textContent || '');
       } else {
+        searchQuery = '';
+        searchInput.value = '';
         lastOpenMenuLayoutSig = '';
       }
       patchClasses(rootEl, { 'is-open': isOpen });
@@ -165,6 +266,13 @@ export const CustomSelect = defineComponent({
       setRepositionListeners(isOpen);
       if (isOpen) {
         positionMenu();
+        if (focusSearch && isSearchActiveForOptions(getProps().options || [])) {
+          queueMicrotask(() => {
+            if (isOpen && typeof searchInput.focus === 'function') {
+              searchInput.focus();
+            }
+          });
+        }
       }
     }
 
@@ -216,42 +324,69 @@ export const CustomSelect = defineComponent({
     }
 
     function handleKeydown(e) {
-      const opts = getProps().options || [];
-      if (!opts.length) return;
+      const fromSearchInput = e?.target === searchInput;
+      const visibleOpts = getVisibleOptions();
 
       if (e.key === 'ArrowDown') {
+        if (!visibleOpts.length && isOpen) return;
         e.preventDefault();
         if (!isOpen) {
           toggleOpen(true);
-        } else {
-          focusedIndex = (focusedIndex + 1) % opts.length;
+        } else if (visibleOpts.length > 0) {
+          focusedIndex = (focusedIndex + 1) % visibleOpts.length;
           renderMenuOptions();
-          menuEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
+          optionsListEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
         }
       } else if (e.key === 'ArrowUp') {
+        if (!visibleOpts.length && isOpen) return;
         e.preventDefault();
         if (!isOpen) {
           toggleOpen(true);
-        } else {
-          focusedIndex = (focusedIndex - 1 + opts.length) % opts.length;
+        } else if (visibleOpts.length > 0) {
+          focusedIndex = (focusedIndex - 1 + visibleOpts.length) % visibleOpts.length;
           renderMenuOptions();
-          menuEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
+          optionsListEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
         }
-      } else if ((e.key === 'Enter' || (e.key === ' ' && isOpen && getProps().multiple)) && isOpen) {
+      } else if (
+        (e.key === 'Enter' || (!fromSearchInput && e.key === ' ' && isOpen && getProps().multiple)) &&
+        isOpen
+      ) {
+        if (!visibleOpts.length) return;
         e.preventDefault();
-        const target = opts[focusedIndex];
+        const target = visibleOpts[focusedIndex] || visibleOpts[0];
         if (target) chooseOption(target);
       } else if (e.key === 'Escape' && isOpen) {
         e.preventDefault();
-        toggleOpen(false);
+        if (fromSearchInput && searchQuery) {
+          clearSearchQuery(true);
+        } else {
+          toggleOpen(false);
+          if (fromSearchInput && typeof triggerBtn.focus === 'function') {
+            triggerBtn.focus();
+          }
+        }
       }
     }
 
     function renderMenuOptions() {
-      const { options = [], multiple = false } = getProps();
+      const { options = [], multiple = false, searchPlaceholder } = getProps();
+      const showSearch = isSearchActiveForOptions(options);
+      const visibleOpts = getVisibleOptions();
+      if (focusedIndex >= visibleOpts.length) {
+        focusedIndex = visibleOpts.length > 0 ? 0 : -1;
+      }
+      patchAttr(searchWrap, 'hidden', !showSearch);
+      patchClasses(menuEl, { 'has-search': showSearch });
+      if (showSearch) {
+        patchAttr(searchInput, 'placeholder', searchPlaceholder || t('select.searchPlaceholder'));
+        patchAttr(searchClearBtn, 'hidden', !searchQuery);
+        patchAttr(searchClearBtn, 'aria-label', t('select.clearSearch'));
+      }
+      patchText(emptyHintEl, t('select.noMatches'));
+      patchAttr(emptyHintEl, 'hidden', !showSearch || visibleOpts.length > 0);
       const selSet = getSelectedSet();
       patchAttr(menuEl, 'aria-multiselectable', multiple ? 'true' : null);
-      patchKeyedList(menuEl, options, {
+      patchKeyedList(optionsListEl, visibleOpts, {
         keyFn: (opt) => opt.value,
         sigFn: (opt, idx) =>
           `${multiple}::${opt.value}::${opt.label}::${opt.meta || ''}::${Boolean(opt.disabled)}::${selSet.has(opt.value)}::${idx === focusedIndex}`,
@@ -384,10 +519,12 @@ export const CustomSelect = defineComponent({
 
     return {
       el: rootEl,
-      refs: { triggerBtn, triggerLabel, menuEl },
+      refs: { triggerBtn, triggerLabel, menuEl, searchInput, optionsListEl },
       onPropsChange: syncTriggerAndMenu,
       methods: {
         close: () => toggleOpen(false),
+        open: () => toggleOpen(true),
+        openAndFocusSearch: () => toggleOpen(true, { focusSearch: true }),
       },
     };
   },

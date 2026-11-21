@@ -354,6 +354,7 @@ function recordConsumptionSliceToCache(
     account: cons.account,
     trendSeries: Array.isArray(cons.trendSeries) ? cons.trendSeries : [],
     sourcesBreakdown: Array.isArray(cons.sourcesBreakdown) ? cons.sourcesBreakdown : [],
+    topConversations: Array.isArray(cons.topConversations) ? cons.topConversations : [],
     modelBreakdown: Array.isArray(modelBreakdown) ? modelBreakdown : [],
   });
 }
@@ -371,6 +372,9 @@ function applyCachedConsumptionSlice(baseTelemetry, cachedEntry, targetRevision 
       account: cachedEntry.account ?? prevCons.account,
       trendSeries: cachedEntry.trendSeries,
       sourcesBreakdown: cachedEntry.sourcesBreakdown,
+      topConversations: Array.isArray(cachedEntry.topConversations)
+        ? cachedEntry.topConversations
+        : [],
     },
     modelBreakdown: cachedEntry.modelBreakdown,
   };
@@ -847,7 +851,14 @@ export function isEquivalentTelemetry(prev, next) {
         a[k]?.costUsd !== b[k]?.costUsd ||
         a[k]?.unpricedCalls !== b[k]?.unpricedCalls ||
         a[k]?.totalTokens !== b[k]?.totalTokens ||
+        a[k]?.inputTokens !== b[k]?.inputTokens ||
+        a[k]?.cacheReadTokens !== b[k]?.cacheReadTokens ||
+        a[k]?.thinkingTokens !== b[k]?.thinkingTokens ||
+        a[k]?.responseTokens !== b[k]?.responseTokens ||
         a[k]?.calls !== b[k]?.calls ||
+        (a[k]?.avgTokPerSec ?? null) !== (b[k]?.avgTokPerSec ?? null) ||
+        (a[k]?.avgTtftSec ?? null) !== (b[k]?.avgTtftSec ?? null) ||
+        (a[k]?.cacheHitPct ?? null) !== (b[k]?.cacheHitPct ?? null) ||
         Number(a[k]?.anomalyCount || 0) !== Number(b[k]?.anomalyCount || 0) ||
         Number(a[k]?.anomalySteps || 0) !== Number(b[k]?.anomalySteps || 0)
       ) {
@@ -863,6 +874,10 @@ export function isEquivalentTelemetry(prev, next) {
   for (let i = 0; i < pTrend.length; i++) {
     if (
       pTrend[i]?.tokens !== nTrend[i]?.tokens ||
+      pTrend[i]?.inputTokens !== nTrend[i]?.inputTokens ||
+      pTrend[i]?.cacheReadTokens !== nTrend[i]?.cacheReadTokens ||
+      pTrend[i]?.thinkingTokens !== nTrend[i]?.thinkingTokens ||
+      pTrend[i]?.responseTokens !== nTrend[i]?.responseTokens ||
       pTrend[i]?.calls !== nTrend[i]?.calls ||
       pTrend[i]?.label !== nTrend[i]?.label ||
       pTrend[i]?.fullLabel !== nTrend[i]?.fullLabel ||
@@ -906,6 +921,22 @@ export function isEquivalentTelemetry(prev, next) {
       pSources[i]?.totalTokens !== nSources[i]?.totalTokens ||
       pSources[i]?.calls !== nSources[i]?.calls ||
       !areModelSlicesEqual(pSources[i]?.models, nSources[i]?.models)
+    ) {
+      return false;
+    }
+  }
+
+  const pTopConvs = prev.consumption?.topConversations || [];
+  const nTopConvs = next.consumption?.topConversations || [];
+  if (pTopConvs.length !== nTopConvs.length) return false;
+  for (let i = 0; i < pTopConvs.length; i++) {
+    if (
+      pTopConvs[i]?.cascadeId !== nTopConvs[i]?.cascadeId ||
+      pTopConvs[i]?.title !== nTopConvs[i]?.title ||
+      pTopConvs[i]?.totalTokens !== nTopConvs[i]?.totalTokens ||
+      pTopConvs[i]?.costUsd !== nTopConvs[i]?.costUsd ||
+      pTopConvs[i]?.calls !== nTopConvs[i]?.calls ||
+      !areModelSlicesEqual(pTopConvs[i]?.models, nTopConvs[i]?.models)
     ) {
       return false;
     }
@@ -1223,6 +1254,7 @@ async function requestTelemetry(params, force) {
             account: latestSt.telemetry.consumption.account,
             trendSeries: latestSt.telemetry.consumption.trendSeries,
             sourcesBreakdown: latestSt.telemetry.consumption.sourcesBreakdown,
+            topConversations: latestSt.telemetry.consumption.topConversations,
           },
           modelBreakdown: latestSt.telemetry.modelBreakdown,
         };

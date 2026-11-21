@@ -872,6 +872,18 @@ const SVG_ICON_DEFS = Object.freeze({
     { tag: 'rect', attrs: { x: '5.2', y: '5.2', width: '8.3', height: '8.3', rx: '1.3' } },
     { tag: 'path', attrs: { d: 'M3.5 10.8H2.8a1.3 1.3 0 0 1-1.3-1.3V3.3A1.3 1.3 0 0 1 2.8 2h6.2a1.3 1.3 0 0 1 1.3 1.3v.7' } },
   ],
+  search: [
+    { tag: 'circle', attrs: { cx: '7.2', cy: '7.2', r: '4.5' } },
+    { tag: 'path', attrs: { d: 'M10.6 10.6L14 14' } },
+  ],
+  download: [
+    { tag: 'path', attrs: { d: 'M8 2.4v7.6M5 7.2L8 10.2l3-3' } },
+    { tag: 'path', attrs: { d: 'M2.6 11.4v1.4a1 1 0 0 0 1 1h8.8a1 1 0 0 0 1-1v-1.4' } },
+  ],
+  upload: [
+    { tag: 'path', attrs: { d: 'M8 10.2V2.6M5 5.4L8 2.4l3 3' } },
+    { tag: 'path', attrs: { d: 'M2.6 11.4v1.4a1 1 0 0 0 1 1h8.8a1 1 0 0 0 1-1v-1.4' } },
+  ],
   grip: [
     { tag: 'circle', attrs: { cx: '6', cy: '4', r: '1.05', fill: 'currentColor', stroke: 'none' } },
     { tag: 'circle', attrs: { cx: '10', cy: '4', r: '1.05', fill: 'currentColor', stroke: 'none' } },
@@ -1092,6 +1104,10 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.statusQuotaCached': '额度缓存',
   'header.statusQuotaOffline': '额度离线',
   'header.statusLive': '监控中',
+  'header.searchSessionPlaceholder': '搜索会话标题或 ID…',
+  'select.searchPlaceholder': '输入关键词筛选…',
+  'select.noMatches': '没有匹配的选项',
+  'select.clearSearch': '清空搜索',
 
   // Formatters & Common Labels
   'fmt.pending': '待定',
@@ -1313,6 +1329,26 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.footOutput': '输出 ',
   'cons.footThinking': '思考 ',
   'cons.footCalls': '调用 ',
+  'cons.rankTabAria': '排行视图切换',
+  'cons.rankTabModelsCount': '模型排行 ({count})',
+  'cons.rankTabSessions': '会话排行',
+  'cons.rankTabSessionsCount': '会话排行 ({count})',
+  'cons.topConvsEmpty': '当前时间范围暂无会话消耗记录',
+  'cons.topConvsSortAria': '会话排行排序方式',
+  'cons.topConvsSortCost': '费用',
+  'cons.topConvsSortTokens': 'Token',
+  'cons.topConvCacheMeta': '缓存 {pct}%',
+  'cons.topConvJumpTip': '点击跳转到该会话调用记录',
+  'cons.modelsSortAria': '模型排行排序方式',
+  'cons.modelsSortTokens': 'Token',
+  'cons.modelsSortCost': '费用',
+  'cons.modelsSortSpeed': '均速',
+  'cons.modelsSortCalls': '调用',
+  'cons.modelUnitCost': '均价 {cost}/1M',
+  'cons.speedRelTip': '相对本时段最快模型的均速比例',
+  'cons.focusTtft': '首字 {ttft}',
+  'cons.focusSpeedMeta': '首字 {ttft} · 缓存 {cache}% · 输出 {out}',
+  'cons.focusCallsMeta': '单次均耗 {avgTok} · 费用 {cost}',
 
   // Steps Detail View & Step Column Registry
   'steps.title': '调用记录',
@@ -1397,6 +1433,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.anomalySummaryMeta': '异常 {count} 次（{steps} 步）',
   'steps.anomalyFilterLabel': '仅看异常 ({count})',
   'steps.anomalyFilterAll': '返回全部步骤',
+  'steps.sortClickTip': '点击按「{col}」排序',
 
   // Step Table Columns (Headers & Option Labels)
   'stepCol.step.th': '步序',
@@ -1666,6 +1703,13 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.resetConfirmBtn': '再次点击确认重置',
   'settings.oth.resettingBtn': '重置中…',
   'settings.oth.resetAllDone': '已恢复全部默认设置',
+  'settings.oth.backupLabel': '配置备份及恢复',
+  'settings.oth.backupDesc': '导出或导入外观、胶囊、列配置等便携偏好 JSON（不含账号凭证）',
+  'settings.oth.exportJsonBtn': '导出 JSON',
+  'settings.oth.importJsonBtn': '导入 JSON',
+  'settings.oth.exportDone': '配置 JSON 已导出',
+  'settings.oth.importDone': '已恢复 {count} 项偏好设置',
+  'settings.oth.importInvalid': '导入失败：JSON 无效或未包含可识别的偏好项',
 
   // Structured Live Activity Actions
   'live.act.run_command': '执行命令',
@@ -1801,6 +1845,10 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'header.statusQuotaCached': 'Quota Cached',
   'header.statusQuotaOffline': 'Quota Offline',
   'header.statusLive': 'Monitoring',
+  'header.searchSessionPlaceholder': 'Search sessions by title or ID…',
+  'select.searchPlaceholder': 'Filter options…',
+  'select.noMatches': 'No matching items',
+  'select.clearSearch': 'Clear search',
 
   // Formatters & Common Labels
   'fmt.pending': 'N/A',
@@ -2022,6 +2070,26 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.footOutput': 'Out ',
   'cons.footThinking': 'Think ',
   'cons.footCalls': 'Calls ',
+  'cons.rankTabAria': 'Switch ranking view',
+  'cons.rankTabModelsCount': 'Models ({count})',
+  'cons.rankTabSessions': 'Sessions',
+  'cons.rankTabSessionsCount': 'Sessions ({count})',
+  'cons.topConvsEmpty': 'No session usage in this range',
+  'cons.topConvsSortAria': 'Sort sessions ranking',
+  'cons.topConvsSortCost': 'Cost',
+  'cons.topConvsSortTokens': 'Tokens',
+  'cons.topConvCacheMeta': 'Cache {pct}%',
+  'cons.topConvJumpTip': 'Click to inspect this session in Steps',
+  'cons.modelsSortAria': 'Sort models ranking',
+  'cons.modelsSortTokens': 'Tokens',
+  'cons.modelsSortCost': 'Cost',
+  'cons.modelsSortSpeed': 'Speed',
+  'cons.modelsSortCalls': 'Calls',
+  'cons.modelUnitCost': 'Eff. {cost}/1M',
+  'cons.speedRelTip': 'Speed relative to fastest model in this range',
+  'cons.focusTtft': 'TTFT {ttft}',
+  'cons.focusSpeedMeta': 'TTFT {ttft} · Cache {cache}% · Out {out}',
+  'cons.focusCallsMeta': 'Avg {avgTok}/call · Cost {cost}',
 
   // Steps Detail View & Step Column Registry
   'steps.title': 'Step Records',
@@ -2106,6 +2174,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.anomalySummaryMeta': '{count} retries/errors ({steps} steps)',
   'steps.anomalyFilterLabel': 'Anomalies Only ({count})',
   'steps.anomalyFilterAll': 'Show All Steps',
+  'steps.sortClickTip': 'Click to sort by {col}',
 
   // Step Table Columns (Headers & Option Labels)
   'stepCol.step.th': 'Step',
@@ -2375,6 +2444,13 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.resetConfirmBtn': 'Click Again to Confirm',
   'settings.oth.resettingBtn': 'Resetting…',
   'settings.oth.resetAllDone': 'All preferences restored to defaults',
+  'settings.oth.backupLabel': 'Preferences Backup & Restore',
+  'settings.oth.backupDesc': 'Export or import portable UI, capsule, and table preferences as JSON (excludes credentials)',
+  'settings.oth.exportJsonBtn': 'Export JSON',
+  'settings.oth.importJsonBtn': 'Import JSON',
+  'settings.oth.exportDone': 'Preferences JSON exported',
+  'settings.oth.importDone': 'Restored {count} preference settings',
+  'settings.oth.importInvalid': 'Import failed: invalid JSON or no recognized settings',
 
   // Structured Live Activity Actions
   'live.act.run_command': 'Run Command',
@@ -4540,6 +4616,228 @@ function buildDeterministicModelColorMap(models = []) {
 return { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
 })();
 
+// --- src/core/settingsBackup.js ---
+const { triggerTextFileDownload, buildExportableSettingsJson, parseImportedSettingsJson } = (() => {
+/**
+ * @fileoverview 偏好设置便携 JSON 备份及恢复工具 (`settingsBackup.js`).
+ * 仅处理经过白名单归一化的用户界面偏好项，不包含账号凭证及高风险上下文窗口覆盖。
+ */
+
+
+const SETTINGS_BACKUP_SCHEMA = 'antigravity-usage-monitor.settings';
+const MAX_SETTINGS_IMPORT_BYTES = 128 * 1024;
+
+function sanitizePositiveBudgetNum(val) {
+  const num = Number(val);
+  return Number.isFinite(num) && num > 0 ? num : null;
+}
+
+/**
+ * 在浏览器端通过内存 Blob 触发文件下载（零本地磁盘外部写入）。
+ *
+ * @param {string} filename
+ * @param {string} content
+ * @param {string} [mimeType]
+ * @returns {boolean}
+ */
+function triggerTextFileDownload(
+  filename,
+  content,
+  mimeType = 'application/json;charset=utf-8'
+) {
+  try {
+    if (
+      typeof Blob === 'undefined' ||
+      typeof URL === 'undefined' ||
+      typeof URL.createObjectURL !== 'function' ||
+      typeof document === 'undefined'
+    ) {
+      return false;
+    }
+    const blob = new Blob([String(content ?? '')], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', String(filename || 'export.json'));
+    a.style.display = 'none';
+    document.body?.appendChild?.(a);
+    a.click?.();
+    a.remove?.();
+    setTimeout(() => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
+    }, 1000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 将当前用户偏好设置序列化为跨设备可迁移的安全 JSON 备份文本（仅包含便携偏好项，不包含凭证或高风险覆盖开关）。
+ *
+ * @param {object} [settings={}]
+ * @returns {string}
+ */
+function buildExportableSettingsJson(settings = {}) {
+  const src = settings && typeof settings === 'object' ? settings : {};
+  const modelDisplayMode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
+  const modernUi = src.modernUi !== undefined ? normalizeModernUi(src.modernUi) : true;
+  const payload = {
+    schema: SETTINGS_BACKUP_SCHEMA,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    settings: {
+      language: normalizeLanguageSetting(src.language),
+      themeAccent: normalizeThemeAccent(src.themeAccent),
+      fontScale: normalizeFontScale(src.fontScale),
+      modernUi,
+      weeklyLimitMode: normalizeWeeklyLimitMode(src.weeklyLimitMode),
+      weeklyTokenBudget: sanitizePositiveBudgetNum(src.weeklyTokenBudget) ?? 150000000,
+      weeklyCostBudget: sanitizePositiveBudgetNum(src.weeklyCostBudget) ?? 100,
+      modelDisplayMode,
+      showUpstreamModel: modelDisplayMode !== 'short',
+      orchestratorIdMode: normalizeOrchestratorIdMode(src.orchestratorIdMode),
+      pluginUpdateMode: normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin),
+      windowMountMode: normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay),
+      popoverWidthMode: normalizePopoverWidthMode(src.popoverWidthMode),
+      popoverWidth: normalizePopoverWidth(src.popoverWidth),
+      enableCliStatusLine: src.enableCliStatusLine !== false,
+      standalonePort: normalizeStandalonePort(src.standalonePort),
+      showTopbarMultiSession: src.showTopbarMultiSession !== false,
+      topbarCapsuleSlots: normalizeTopbarCapsuleSlots(src.topbarCapsuleSlots),
+      hoverModules: normalizeHoverModules(src.hoverModules),
+      overviewModules: normalizeOverviewModules(src.overviewModules),
+      overviewMetrics: normalizeOverviewMetrics(src.overviewMetrics),
+      showStepTurnRail: src.showStepTurnRail === true,
+      showStepAgentBadge: src.showStepAgentBadge !== false,
+      showStepSpeedColor: src.showStepSpeedColor === true,
+      stepTokenComboFormat: normalizeStepTokenComboFormat(src.stepTokenComboFormat),
+      stepTableColumns: normalizeStepTableColumns(src.stepTableColumns),
+    },
+  };
+  return `${JSON.stringify(payload, null, 2)}\n`;
+}
+
+/**
+ * 校验并解析导入的偏好设置 JSON，仅提取并归一化白名单内的便携配置项。
+ *
+ * @param {string} rawText
+ * @returns {{ ok: true, patch: object, appliedCount: number } | { ok: false, errorCode: string }}
+ */
+function parseImportedSettingsJson(rawText) {
+  if (typeof rawText !== 'string' || !rawText.trim() || rawText.length > MAX_SETTINGS_IMPORT_BYTES) {
+    return { ok: false, errorCode: 'invalid_json' };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch {
+    return { ok: false, errorCode: 'invalid_json' };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, errorCode: 'invalid_json' };
+  }
+
+  const hasWrappedSettings =
+    parsed.settings && typeof parsed.settings === 'object' && !Array.isArray(parsed.settings);
+  if (parsed.schema !== undefined && parsed.schema !== SETTINGS_BACKUP_SCHEMA) {
+    return { ok: false, errorCode: 'invalid_schema' };
+  }
+  const src = hasWrappedSettings ? parsed.settings : parsed;
+  const hasKey = (k) => Object.prototype.hasOwnProperty.call(src, k);
+  const patch = {};
+
+  if (hasKey('language')) patch.language = normalizeLanguageSetting(src.language);
+  if (hasKey('themeAccent')) patch.themeAccent = normalizeThemeAccent(src.themeAccent);
+  if (hasKey('fontScale')) patch.fontScale = normalizeFontScale(src.fontScale);
+  if (hasKey('modernUi')) {
+    const val = normalizeModernUi(src.modernUi);
+    patch.modernUi = val;
+    patch.experimentalModernUi = val;
+  }
+  if (hasKey('weeklyLimitMode')) {
+    patch.weeklyLimitMode = normalizeWeeklyLimitMode(src.weeklyLimitMode);
+  }
+  if (hasKey('weeklyTokenBudget')) {
+    const num = sanitizePositiveBudgetNum(src.weeklyTokenBudget);
+    if (num !== null) patch.weeklyTokenBudget = num;
+  }
+  if (hasKey('weeklyCostBudget')) {
+    const num = sanitizePositiveBudgetNum(src.weeklyCostBudget);
+    if (num !== null) patch.weeklyCostBudget = num;
+  }
+  if (hasKey('modelDisplayMode') || hasKey('showUpstreamModel')) {
+    const mode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
+    patch.modelDisplayMode = mode;
+    patch.showUpstreamModel = mode !== 'short';
+  }
+  if (hasKey('orchestratorIdMode')) {
+    patch.orchestratorIdMode = normalizeOrchestratorIdMode(src.orchestratorIdMode);
+  }
+  if (hasKey('pluginUpdateMode') || hasKey('autoUpdatePlugin')) {
+    const mode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);
+    patch.pluginUpdateMode = mode;
+    patch.autoUpdatePlugin = mode === 'auto';
+  }
+  if (hasKey('windowMountMode') || hasKey('enableWindowOverlay')) {
+    const mode = normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay);
+    patch.windowMountMode = mode;
+    patch.enableWindowOverlay = mode !== 'sidebar';
+  }
+  if (hasKey('popoverWidthMode')) {
+    patch.popoverWidthMode = normalizePopoverWidthMode(src.popoverWidthMode);
+  }
+  if (hasKey('popoverWidth')) {
+    patch.popoverWidth = normalizePopoverWidth(src.popoverWidth);
+  }
+  if (hasKey('enableCliStatusLine') && typeof src.enableCliStatusLine === 'boolean') {
+    patch.enableCliStatusLine = src.enableCliStatusLine;
+  }
+  if (hasKey('standalonePort')) {
+    patch.standalonePort = normalizeStandalonePort(src.standalonePort);
+  }
+  if (hasKey('showTopbarMultiSession') && typeof src.showTopbarMultiSession === 'boolean') {
+    patch.showTopbarMultiSession = src.showTopbarMultiSession;
+  }
+  if (hasKey('topbarCapsuleSlots') && Array.isArray(src.topbarCapsuleSlots)) {
+    patch.topbarCapsuleSlots = normalizeTopbarCapsuleSlots(src.topbarCapsuleSlots);
+  }
+  if (hasKey('hoverModules') && Array.isArray(src.hoverModules)) {
+    patch.hoverModules = normalizeHoverModules(src.hoverModules);
+  }
+  if (hasKey('overviewModules') && Array.isArray(src.overviewModules)) {
+    patch.overviewModules = normalizeOverviewModules(src.overviewModules);
+  }
+  if (hasKey('overviewMetrics') && Array.isArray(src.overviewMetrics)) {
+    patch.overviewMetrics = normalizeOverviewMetrics(src.overviewMetrics);
+  }
+  if (hasKey('showStepTurnRail') && typeof src.showStepTurnRail === 'boolean') {
+    patch.showStepTurnRail = src.showStepTurnRail;
+  }
+  if (hasKey('showStepAgentBadge') && typeof src.showStepAgentBadge === 'boolean') {
+    patch.showStepAgentBadge = src.showStepAgentBadge;
+  }
+  if (hasKey('showStepSpeedColor') && typeof src.showStepSpeedColor === 'boolean') {
+    patch.showStepSpeedColor = src.showStepSpeedColor;
+  }
+  if (hasKey('stepTokenComboFormat')) {
+    patch.stepTokenComboFormat = normalizeStepTokenComboFormat(src.stepTokenComboFormat);
+  }
+  if (hasKey('stepTableColumns') && Array.isArray(src.stepTableColumns)) {
+    patch.stepTableColumns = normalizeStepTableColumns(src.stepTableColumns);
+  }
+
+  const appliedCount = Object.keys(patch).length;
+  if (appliedCount === 0) {
+    return { ok: false, errorCode: 'empty_patch' };
+  }
+  return { ok: true, patch, appliedCount };
+}
+return { triggerTextFileDownload, buildExportableSettingsJson, parseImportedSettingsJson };
+})();
+
 // --- src/core/httpClient.js ---
 const { abortSidecarApiKey, getWindowBridgeConfig, isWindowOverlayMode, deliverCdpBridgeResponses, callSidecarApi } = (() => {
 /**
@@ -5159,6 +5457,7 @@ function recordConsumptionSliceToCache(
     account: cons.account,
     trendSeries: Array.isArray(cons.trendSeries) ? cons.trendSeries : [],
     sourcesBreakdown: Array.isArray(cons.sourcesBreakdown) ? cons.sourcesBreakdown : [],
+    topConversations: Array.isArray(cons.topConversations) ? cons.topConversations : [],
     modelBreakdown: Array.isArray(modelBreakdown) ? modelBreakdown : [],
   });
 }
@@ -5176,6 +5475,9 @@ function applyCachedConsumptionSlice(baseTelemetry, cachedEntry, targetRevision 
       account: cachedEntry.account ?? prevCons.account,
       trendSeries: cachedEntry.trendSeries,
       sourcesBreakdown: cachedEntry.sourcesBreakdown,
+      topConversations: Array.isArray(cachedEntry.topConversations)
+        ? cachedEntry.topConversations
+        : [],
     },
     modelBreakdown: cachedEntry.modelBreakdown,
   };
@@ -5652,7 +5954,14 @@ function isEquivalentTelemetry(prev, next) {
         a[k]?.costUsd !== b[k]?.costUsd ||
         a[k]?.unpricedCalls !== b[k]?.unpricedCalls ||
         a[k]?.totalTokens !== b[k]?.totalTokens ||
+        a[k]?.inputTokens !== b[k]?.inputTokens ||
+        a[k]?.cacheReadTokens !== b[k]?.cacheReadTokens ||
+        a[k]?.thinkingTokens !== b[k]?.thinkingTokens ||
+        a[k]?.responseTokens !== b[k]?.responseTokens ||
         a[k]?.calls !== b[k]?.calls ||
+        (a[k]?.avgTokPerSec ?? null) !== (b[k]?.avgTokPerSec ?? null) ||
+        (a[k]?.avgTtftSec ?? null) !== (b[k]?.avgTtftSec ?? null) ||
+        (a[k]?.cacheHitPct ?? null) !== (b[k]?.cacheHitPct ?? null) ||
         Number(a[k]?.anomalyCount || 0) !== Number(b[k]?.anomalyCount || 0) ||
         Number(a[k]?.anomalySteps || 0) !== Number(b[k]?.anomalySteps || 0)
       ) {
@@ -5668,6 +5977,10 @@ function isEquivalentTelemetry(prev, next) {
   for (let i = 0; i < pTrend.length; i++) {
     if (
       pTrend[i]?.tokens !== nTrend[i]?.tokens ||
+      pTrend[i]?.inputTokens !== nTrend[i]?.inputTokens ||
+      pTrend[i]?.cacheReadTokens !== nTrend[i]?.cacheReadTokens ||
+      pTrend[i]?.thinkingTokens !== nTrend[i]?.thinkingTokens ||
+      pTrend[i]?.responseTokens !== nTrend[i]?.responseTokens ||
       pTrend[i]?.calls !== nTrend[i]?.calls ||
       pTrend[i]?.label !== nTrend[i]?.label ||
       pTrend[i]?.fullLabel !== nTrend[i]?.fullLabel ||
@@ -5711,6 +6024,22 @@ function isEquivalentTelemetry(prev, next) {
       pSources[i]?.totalTokens !== nSources[i]?.totalTokens ||
       pSources[i]?.calls !== nSources[i]?.calls ||
       !areModelSlicesEqual(pSources[i]?.models, nSources[i]?.models)
+    ) {
+      return false;
+    }
+  }
+
+  const pTopConvs = prev.consumption?.topConversations || [];
+  const nTopConvs = next.consumption?.topConversations || [];
+  if (pTopConvs.length !== nTopConvs.length) return false;
+  for (let i = 0; i < pTopConvs.length; i++) {
+    if (
+      pTopConvs[i]?.cascadeId !== nTopConvs[i]?.cascadeId ||
+      pTopConvs[i]?.title !== nTopConvs[i]?.title ||
+      pTopConvs[i]?.totalTokens !== nTopConvs[i]?.totalTokens ||
+      pTopConvs[i]?.costUsd !== nTopConvs[i]?.costUsd ||
+      pTopConvs[i]?.calls !== nTopConvs[i]?.calls ||
+      !areModelSlicesEqual(pTopConvs[i]?.models, nTopConvs[i]?.models)
     ) {
       return false;
     }
@@ -6028,6 +6357,7 @@ async function requestTelemetry(params, force) {
             account: latestSt.telemetry.consumption.account,
             trendSeries: latestSt.telemetry.consumption.trendSeries,
             sourcesBreakdown: latestSt.telemetry.consumption.sourcesBreakdown,
+            topConversations: latestSt.telemetry.consumption.topConversations,
           },
           modelBreakdown: latestSt.telemetry.modelBreakdown,
         };
@@ -7107,7 +7437,7 @@ return { TopLongPillNav };
 })();
 
 // --- src/components/ui/CustomSelect.js ---
-const { CustomSelect } = (() => {
+const { filterSelectOptionsByQuery, CustomSelect } = (() => {
 /**
  * @fileoverview Bespoke CustomSelect dropdown component replacing native <select> / <option>.
  * Supports both single-select and multi-select (`multiple: true`) modes, with incremental
@@ -7149,12 +7479,36 @@ function sameStringArray(a, b) {
   return true;
 }
 
+function filterSelectOptionsByQuery(options = [], rawQuery = '') {
+  const q = String(rawQuery || '').trim().toLowerCase();
+  if (!q) return options;
+  const terms = q.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return options;
+  const out = [];
+  for (let i = 0; i < options.length; i++) {
+    const opt = options[i];
+    if (!opt) continue;
+    const haystack =
+      `${opt.label || ''} ${opt.meta || ''} ${opt.title || ''} ${opt.value || ''}`.toLowerCase();
+    let matched = true;
+    for (let k = 0; k < terms.length; k++) {
+      if (!haystack.includes(terms[k])) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) out.push(opt);
+  }
+  return out;
+}
+
 const CustomSelect = defineComponent({
   name: 'CustomSelect',
   setup({ getProps, setProps, emit, onCleanup }) {
     let isOpen = false;
     let focusedIndex = -1;
     let lastOpenMenuLayoutSig = '';
+    let searchQuery = '';
 
     const initialIcon = getProps().icon;
     const leadIcon = createSvgIcon(initialIcon || 'bolt', { size: 13 });
@@ -7179,11 +7533,61 @@ const CustomSelect = defineComponent({
       [leadIcon, triggerLabel, chevronIcon]
     );
 
-    const menuEl = h('div', {
-      className: 'select-menu',
-      role: 'listbox',
-      hidden: true,
+    const searchIcon = createSvgIcon('search', { size: 12, className: 'select-search-icon' });
+    const searchInput = h('input', {
+      type: 'text',
+      className: 'select-search-input',
+      autocomplete: 'off',
+      spellcheck: 'false',
+      placeholder: getProps().searchPlaceholder || t('select.searchPlaceholder'),
+      onClick: (e) => e.stopPropagation(),
+      onInput: (e) => {
+        searchQuery = String(e?.target?.value ?? searchInput.value ?? '');
+        focusedIndex = 0;
+        renderMenuOptions();
+      },
+      onKeydown: handleKeydown,
     });
+    const searchClearBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'select-search-clear',
+        hidden: true,
+        'aria-label': t('select.clearSearch'),
+        onClick: (e) => {
+          e.stopPropagation();
+          clearSearchQuery(true);
+        },
+      },
+      [createSvgIcon('close', { size: 10 })]
+    );
+    const searchWrap = h(
+      'div',
+      {
+        className: 'select-search-wrap',
+        hidden: true,
+        onClick: (e) => e.stopPropagation(),
+      },
+      [searchIcon, searchInput, searchClearBtn]
+    );
+
+    const optionsListEl = h('div', { className: 'select-options-list' });
+    const emptyHintEl = h('div', {
+      className: 'select-empty text-muted',
+      hidden: true,
+      text: t('select.noMatches'),
+    });
+
+    const menuEl = h(
+      'div',
+      {
+        className: 'select-menu',
+        role: 'listbox',
+        hidden: true,
+      },
+      [searchWrap, optionsListEl, emptyHintEl]
+    );
 
     const initialClass = [
       'custom-select',
@@ -7193,6 +7597,28 @@ const CustomSelect = defineComponent({
       .filter(Boolean)
       .join(' ');
     const rootEl = h('div', { className: initialClass }, [triggerBtn, menuEl]);
+
+    function isSearchActiveForOptions(options) {
+      const { searchable = false, searchThreshold = 6 } = getProps();
+      return Boolean(searchable) && options.length >= Math.max(1, Number(searchThreshold) || 6);
+    }
+
+    function getVisibleOptions() {
+      const opts = getProps().options || [];
+      if (!isSearchActiveForOptions(opts) || !searchQuery.trim()) return opts;
+      return filterSelectOptionsByQuery(opts, searchQuery);
+    }
+
+    function clearSearchQuery(refocus = false) {
+      if (!searchQuery && !searchInput.value) return;
+      searchQuery = '';
+      searchInput.value = '';
+      focusedIndex = 0;
+      renderMenuOptions();
+      if (refocus && typeof searchInput.focus === 'function') {
+        searchInput.focus();
+      }
+    }
 
     function getSelectedSet() {
       const { multiple, modelValue, options = [], allValue = '' } = getProps();
@@ -7207,7 +7633,7 @@ const CustomSelect = defineComponent({
       positionAnchoredPopup(rootEl, triggerBtn, menuEl, {
         margin: 6,
         gap: 4,
-        maxHeight: 220,
+        maxHeight: isSearchActiveForOptions(getProps().options || []) ? 268 : 220,
         minFlipSpace: 140,
       });
     }
@@ -7215,7 +7641,7 @@ const CustomSelect = defineComponent({
     let boundReposition = false;
     function handleViewportChange(e) {
       if (!isOpen) return;
-      if (e?.type === 'scroll' && e.target === menuEl) return;
+      if (e?.type === 'scroll' && (e.target === menuEl || e.target === optionsListEl)) return;
       positionMenu();
     }
 
@@ -7234,7 +7660,8 @@ const CustomSelect = defineComponent({
     }
 
     function buildMenuLayoutSig(options = [], labelText = '') {
-      let sig = `${labelText}|${options.length}`;
+      const searchShown = isSearchActiveForOptions(options) ? 1 : 0;
+      let sig = `${labelText}|${searchShown}|${searchQuery}|${options.length}`;
       for (let i = 0; i < options.length; i++) {
         const o = options[i];
         sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.meta ?? ''}`;
@@ -7242,9 +7669,11 @@ const CustomSelect = defineComponent({
       return sig;
     }
 
-    function toggleOpen(nextOpen) {
+    function toggleOpen(nextOpen, { focusSearch = false } = {}) {
       isOpen = Boolean(nextOpen);
       if (isOpen) {
+        searchQuery = '';
+        searchInput.value = '';
         const opts = getProps().options || [];
         const selSet = getSelectedSet();
         focusedIndex = Math.max(
@@ -7254,6 +7683,8 @@ const CustomSelect = defineComponent({
         renderMenuOptions();
         lastOpenMenuLayoutSig = buildMenuLayoutSig(opts, triggerLabel.textContent || '');
       } else {
+        searchQuery = '';
+        searchInput.value = '';
         lastOpenMenuLayoutSig = '';
       }
       patchClasses(rootEl, { 'is-open': isOpen });
@@ -7263,6 +7694,13 @@ const CustomSelect = defineComponent({
       setRepositionListeners(isOpen);
       if (isOpen) {
         positionMenu();
+        if (focusSearch && isSearchActiveForOptions(getProps().options || [])) {
+          queueMicrotask(() => {
+            if (isOpen && typeof searchInput.focus === 'function') {
+              searchInput.focus();
+            }
+          });
+        }
       }
     }
 
@@ -7314,42 +7752,69 @@ const CustomSelect = defineComponent({
     }
 
     function handleKeydown(e) {
-      const opts = getProps().options || [];
-      if (!opts.length) return;
+      const fromSearchInput = e?.target === searchInput;
+      const visibleOpts = getVisibleOptions();
 
       if (e.key === 'ArrowDown') {
+        if (!visibleOpts.length && isOpen) return;
         e.preventDefault();
         if (!isOpen) {
           toggleOpen(true);
-        } else {
-          focusedIndex = (focusedIndex + 1) % opts.length;
+        } else if (visibleOpts.length > 0) {
+          focusedIndex = (focusedIndex + 1) % visibleOpts.length;
           renderMenuOptions();
-          menuEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
+          optionsListEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
         }
       } else if (e.key === 'ArrowUp') {
+        if (!visibleOpts.length && isOpen) return;
         e.preventDefault();
         if (!isOpen) {
           toggleOpen(true);
-        } else {
-          focusedIndex = (focusedIndex - 1 + opts.length) % opts.length;
+        } else if (visibleOpts.length > 0) {
+          focusedIndex = (focusedIndex - 1 + visibleOpts.length) % visibleOpts.length;
           renderMenuOptions();
-          menuEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
+          optionsListEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
         }
-      } else if ((e.key === 'Enter' || (e.key === ' ' && isOpen && getProps().multiple)) && isOpen) {
+      } else if (
+        (e.key === 'Enter' || (!fromSearchInput && e.key === ' ' && isOpen && getProps().multiple)) &&
+        isOpen
+      ) {
+        if (!visibleOpts.length) return;
         e.preventDefault();
-        const target = opts[focusedIndex];
+        const target = visibleOpts[focusedIndex] || visibleOpts[0];
         if (target) chooseOption(target);
       } else if (e.key === 'Escape' && isOpen) {
         e.preventDefault();
-        toggleOpen(false);
+        if (fromSearchInput && searchQuery) {
+          clearSearchQuery(true);
+        } else {
+          toggleOpen(false);
+          if (fromSearchInput && typeof triggerBtn.focus === 'function') {
+            triggerBtn.focus();
+          }
+        }
       }
     }
 
     function renderMenuOptions() {
-      const { options = [], multiple = false } = getProps();
+      const { options = [], multiple = false, searchPlaceholder } = getProps();
+      const showSearch = isSearchActiveForOptions(options);
+      const visibleOpts = getVisibleOptions();
+      if (focusedIndex >= visibleOpts.length) {
+        focusedIndex = visibleOpts.length > 0 ? 0 : -1;
+      }
+      patchAttr(searchWrap, 'hidden', !showSearch);
+      patchClasses(menuEl, { 'has-search': showSearch });
+      if (showSearch) {
+        patchAttr(searchInput, 'placeholder', searchPlaceholder || t('select.searchPlaceholder'));
+        patchAttr(searchClearBtn, 'hidden', !searchQuery);
+        patchAttr(searchClearBtn, 'aria-label', t('select.clearSearch'));
+      }
+      patchText(emptyHintEl, t('select.noMatches'));
+      patchAttr(emptyHintEl, 'hidden', !showSearch || visibleOpts.length > 0);
       const selSet = getSelectedSet();
       patchAttr(menuEl, 'aria-multiselectable', multiple ? 'true' : null);
-      patchKeyedList(menuEl, options, {
+      patchKeyedList(optionsListEl, visibleOpts, {
         keyFn: (opt) => opt.value,
         sigFn: (opt, idx) =>
           `${multiple}::${opt.value}::${opt.label}::${opt.meta || ''}::${Boolean(opt.disabled)}::${selSet.has(opt.value)}::${idx === focusedIndex}`,
@@ -7482,15 +7947,17 @@ const CustomSelect = defineComponent({
 
     return {
       el: rootEl,
-      refs: { triggerBtn, triggerLabel, menuEl },
+      refs: { triggerBtn, triggerLabel, menuEl, searchInput, optionsListEl },
       onPropsChange: syncTriggerAndMenu,
       methods: {
         close: () => toggleOpen(false),
+        open: () => toggleOpen(true),
+        openAndFocusSearch: () => toggleOpen(true, { focusSearch: true }),
       },
     };
   },
 });
-return { CustomSelect };
+return { filterSelectOptionsByQuery, CustomSelect };
 })();
 
 // --- src/components/ui/CustomNumberInput.js ---
@@ -8505,6 +8972,256 @@ function createFourSegmentBar() {
 return { createFourSegmentBar };
 })();
 
+// --- src/components/ui/ConsumptionTooltipContent.js ---
+const { createConsumptionBreakdownContent } = (() => {
+/**
+ * @fileoverview 消耗统计统一悬浮详情内容组件 (ConsumptionTooltipContent).
+ * 供历史趋势（折线/热力图）、客户端来源、会话排行及月度统计悬浮卡片复用：
+ * 1. 顶部标题/日期行 + 右侧调用次数；
+ * 2. 核心大字总量 (`TOKEN`) + 右侧预估费用；
+ * 3. 分模型明细行（模型名/Token/占比 + 同「模型排行」Token 模式一致的四段构成进度条，不显示多余分组标题）；
+ * 4. 底部四通道汇总（输入 / 缓存 / 思考 / 输出）。
+ */
+
+
+function safeNonNeg(val) {
+  const n = Number(val);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function resolveSegmentChannels(seg) {
+  const inputTokens = safeNonNeg(seg?.inputTokens);
+  const cacheReadTokens = safeNonNeg(seg?.cacheReadTokens);
+  const thinkingTokens = safeNonNeg(seg?.thinkingTokens);
+  const responseTokens =
+    seg?.responseTokens != null
+      ? safeNonNeg(seg.responseTokens)
+      : Math.max(0, safeNonNeg(seg?.outputTokens) - thinkingTokens);
+  return { inputTokens, cacheReadTokens, thinkingTokens, responseTokens };
+}
+
+/**
+ * 创建可增量更新的消耗统计悬浮详情内容结构。
+ *
+ * @param {{ showModelDot?: boolean, monoTitle?: boolean }} [options]
+ * @returns {{
+ *   children: HTMLElement[],
+ *   update: (payload: {
+ *     title?: string,
+ *     calls?: number,
+ *     totalTokens?: number,
+ *     costText?: string,
+ *     inputTokens?: number,
+ *     cacheReadTokens?: number,
+ *     thinkingTokens?: number,
+ *     responseTokens?: number,
+ *     outputTokens?: number,
+ *     segments?: Array<object>,
+ *   }) => void,
+ * }}
+ */
+function createConsumptionBreakdownContent({
+  showModelDot = false,
+  monoTitle = false,
+} = {}) {
+  const titleEl = h('span', {
+    className: monoTitle ? 'trend-tip-time text-mono' : 'trend-tip-time',
+  });
+  const callsEl = h('span', { className: 'trend-tip-calls text-mono' });
+  const headEl = h('div', { className: 'trend-tip-head cons-tip-head' }, [titleEl, callsEl]);
+
+  const heroNumEl = h('span', { className: 'cons-tip-hero-num', text: '0' });
+  const heroUnitEl = h('span', { className: 'cons-tip-hero-unit', text: ' TOKEN' });
+  const tokensEl = h('strong', { className: 'trend-tip-tokens cons-tip-hero text-mono' }, [
+    heroNumEl,
+    heroUnitEl,
+  ]);
+  const costEl = h('span', { className: 'trend-tip-cost text-mono' });
+  const mainEl = h('div', { className: 'trend-tip-main cons-tip-main' }, [tokensEl, costEl]);
+
+  function createModelRow() {
+    const dotEl = h('span', {
+      className: 'dot-swatch cons-model-dot',
+      hidden: !showModelDot,
+    });
+    const nameEl = h('span', { className: 'cons-pop-model-name' });
+    const tokEl = h('span', { className: 'cons-pop-model-tok' });
+    const pctEl = h('strong', { className: 'cons-pop-model-pct' });
+    const segBar = createFourSegmentBar();
+    const rowEl = h('div', { className: 'cons-pop-model-row' }, [
+      h('div', { className: 'cons-pop-model-head' }, [
+        h('span', { className: 'cons-pop-model-left' }, [dotEl, nameEl]),
+        h('span', { className: 'cons-pop-model-right text-mono' }, [tokEl, pctEl]),
+      ]),
+      segBar.el,
+    ]);
+    return {
+      el: rowEl,
+      refs: { rowEl, dotEl, nameEl, tokEl, pctEl, segBar },
+    };
+  }
+
+  const modelsEl = h('div', { className: 'cons-pop-models', hidden: true });
+
+  const inLabelEl = h('span', { className: 'cons-pop-chan-label', text: t('cons.legInput') });
+  const inValEl = h('strong', { className: 'cons-pop-chan-val text-mono', text: '0' });
+  const cacheLabelEl = h('span', { className: 'cons-pop-chan-label', text: t('cons.legCache') });
+  const cacheValEl = h('strong', { className: 'cons-pop-chan-val text-mono', text: '0' });
+  const thinkLabelEl = h('span', { className: 'cons-pop-chan-label', text: t('cons.legThinking') });
+  const thinkValEl = h('strong', { className: 'cons-pop-chan-val text-mono', text: '0' });
+  const outLabelEl = h('span', { className: 'cons-pop-chan-label', text: t('cons.legOutput') });
+  const outValEl = h('strong', { className: 'cons-pop-chan-val text-mono', text: '0' });
+
+  const channelsEl = h('div', { className: 'cons-pop-channels', hidden: true }, [
+    h('div', { className: 'cons-pop-chan' }, [
+      h('span', { className: 'cons-pop-chan-head' }, [
+        h('span', { className: 'dot-swatch seg-input' }),
+        inLabelEl,
+      ]),
+      inValEl,
+    ]),
+    h('div', { className: 'cons-pop-chan' }, [
+      h('span', { className: 'cons-pop-chan-head' }, [
+        h('span', { className: 'dot-swatch seg-cached' }),
+        cacheLabelEl,
+      ]),
+      cacheValEl,
+    ]),
+    h('div', { className: 'cons-pop-chan' }, [
+      h('span', { className: 'cons-pop-chan-head' }, [
+        h('span', { className: 'dot-swatch seg-thinking' }),
+        thinkLabelEl,
+      ]),
+      thinkValEl,
+    ]),
+    h('div', { className: 'cons-pop-chan' }, [
+      h('span', { className: 'cons-pop-chan-head' }, [
+        h('span', { className: 'dot-swatch seg-output' }),
+        outLabelEl,
+      ]),
+      outValEl,
+    ]),
+  ]);
+
+  function update(payload = {}) {
+    patchText(titleEl, payload.title || '--');
+    patchText(
+      callsEl,
+      t('cons.callsCount', { calls: Math.max(0, Math.floor(Number(payload.calls) || 0)) })
+    );
+    const totalTokens = safeNonNeg(payload.totalTokens);
+    patchText(heroNumEl, formatTokensPrecise(totalTokens));
+    patchText(heroUnitEl, ' TOKEN');
+    patchText(costEl, payload.costText || '');
+
+    const rows = Array.isArray(payload.segments) ? payload.segments : [];
+    patchAttr(modelsEl, 'hidden', rows.length === 0);
+    patchKeyedList(modelsEl, rows, {
+      keyFn: (r) => r.key,
+      sigFn: (r) =>
+        `${showModelDot ? 1 : 0}:${r.key}:${r.label}:${r.color || ''}:${r.tokText}:${r.pctText}:${r.isOther ? 1 : 0}:${r.tok || 0}:${r.inputTokens || 0}:${r.cacheReadTokens || 0}:${r.thinkingTokens || 0}:${r.responseTokens ?? ''}:${r.outputTokens ?? ''}`,
+      createRow: createModelRow,
+      updateRow: (rRefs, r) => {
+        patchClasses(rRefs.rowEl, { 'is-other': Boolean(r.isOther) });
+        patchAttr(rRefs.dotEl, 'hidden', !showModelDot);
+        if (showModelDot) {
+          patchStyleVar(rRefs.dotEl, '--dot-color', r.color);
+        }
+        patchText(rRefs.nameEl, r.label);
+        patchText(rRefs.tokEl, r.tokText);
+        patchText(rRefs.pctEl, r.pctText);
+
+        const segTok = safeNonNeg(r.tok);
+        const pct = Math.max(0, Math.min(100, Number(r.pct) || 0));
+        const scaleRatio = segTok > 0 ? Math.min(1, Math.max(0.008, pct / 100)) : 0;
+        const ch = resolveSegmentChannels(r);
+        const chSum = ch.inputTokens + ch.cacheReadTokens + ch.thinkingTokens + ch.responseTokens;
+        if (chSum > 0) {
+          rRefs.segBar.update({
+            inputTokens: ch.inputTokens,
+            cacheReadTokens: ch.cacheReadTokens,
+            thinkingTokens: ch.thinkingTokens,
+            responseTokens: ch.responseTokens,
+            scaleRatio,
+          });
+        } else if (segTok > 0) {
+          rRefs.segBar.update({
+            inputTokens: 0,
+            cacheReadTokens: segTok,
+            thinkingTokens: 0,
+            responseTokens: 0,
+            scaleRatio,
+          });
+        } else {
+          rRefs.segBar.update({
+            inputTokens: 0,
+            cacheReadTokens: 0,
+            thinkingTokens: 0,
+            responseTokens: 0,
+            scaleRatio: 0,
+          });
+        }
+      },
+    });
+
+    const hasExplicitChannels =
+      payload.inputTokens !== undefined ||
+      payload.cacheReadTokens !== undefined ||
+      payload.thinkingTokens !== undefined ||
+      payload.responseTokens !== undefined ||
+      payload.outputTokens !== undefined;
+    let inTok = safeNonNeg(payload.inputTokens);
+    let cacheTok = safeNonNeg(payload.cacheReadTokens);
+    let thinkTok = safeNonNeg(payload.thinkingTokens);
+    let respTok =
+      payload.responseTokens != null
+        ? safeNonNeg(payload.responseTokens)
+        : Math.max(0, safeNonNeg(payload.outputTokens) - thinkTok);
+    let hasChannels = hasExplicitChannels;
+
+    if (!hasChannels && rows.length > 0) {
+      let segIn = 0;
+      let segCache = 0;
+      let segThink = 0;
+      let segResp = 0;
+      for (const seg of rows) {
+        const ch = resolveSegmentChannels(seg);
+        segIn += ch.inputTokens;
+        segCache += ch.cacheReadTokens;
+        segThink += ch.thinkingTokens;
+        segResp += ch.responseTokens;
+      }
+      if (segIn + segCache + segThink + segResp > 0) {
+        inTok = segIn;
+        cacheTok = segCache;
+        thinkTok = segThink;
+        respTok = segResp;
+        hasChannels = true;
+      }
+    }
+
+    const showChannels = totalTokens > 0 && hasChannels;
+    patchAttr(channelsEl, 'hidden', !showChannels);
+    if (showChannels) {
+      patchText(inLabelEl, t('cons.legInput'));
+      patchText(cacheLabelEl, t('cons.legCache'));
+      patchText(thinkLabelEl, t('cons.legThinking'));
+      patchText(outLabelEl, t('cons.legOutput'));
+      patchText(inValEl, formatTokensPrecise(inTok));
+      patchText(cacheValEl, formatTokensPrecise(cacheTok));
+      patchText(thinkValEl, formatTokensPrecise(thinkTok));
+      patchText(outValEl, formatTokensPrecise(respTok));
+    }
+  }
+
+  return {
+    children: [headEl, mainEl, modelsEl, channelsEl],
+    update,
+  };
+}
+return { createConsumptionBreakdownContent };
+})();
+
 // --- src/components/charts/TrendAreaChart.js ---
 const { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart } = (() => {
 /**
@@ -8694,12 +9411,14 @@ function buildHeatmapMonthTicks(slots, firstDow, totalWeeks) {
 /**
  * 创建交互式历史趋势组件（<=90 天为 SVG 平滑曲线图，>90 天自动切换为类 GitHub 每日小格子热力图）。
  *
+ * @param {{ onSelectSlot?: (slot: object) => void }} [options]
  * @returns {{
  *   el: HTMLElement,
- *   update: (series?: Array<object>) => void
+ *   update: (series?: Array<object>) => void,
+ *   destroy: () => void
  * }}
  */
-function createTrendAreaChart() {
+function createTrendAreaChart({ onSelectSlot = null } = {}) {
   const DEFAULT_VIEW_W = 460;
   const VIEW_H = 184;
   const TOP_Y = 26;
@@ -8802,53 +9521,25 @@ function createTrendAreaChart() {
 
   const peakPill = h('span', { className: 'trend-peak-pill text-mono', text: '0' });
 
-  function createTooltipModelRow() {
-    const dotEl = h('span', { className: 'dot-swatch cons-model-dot' });
-    const nameEl = h('span', { className: 'cons-pop-model-name' });
-    const tokEl = h('span', { className: 'cons-pop-model-tok' });
-    const pctEl = h('strong', { className: 'cons-pop-model-pct' });
-    const rowEl = h('div', { className: 'cons-pop-model-row' }, [
-      h('span', { className: 'cons-pop-model-left' }, [dotEl, nameEl]),
-      h('span', { className: 'cons-pop-model-right text-mono' }, [tokEl, pctEl]),
-    ]);
-    return {
-      el: rowEl,
-      refs: { rowEl, dotEl, nameEl, tokEl, pctEl },
-    };
-  }
-
-  // 共享悬停详情浮层卡片（曲线图与热力格子图共用，含该时段分模型占比明细）
-  const tipTimeEl = h('span', { className: 'trend-tip-time text-mono' });
-  const tipCallsEl = h('span', { className: 'trend-tip-calls text-mono' });
-  const tipTokensEl = h('strong', { className: 'trend-tip-tokens text-mono' });
-  const tipCostEl = h('span', { className: 'trend-tip-cost text-mono' });
-  const tipInLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legInput') });
-  const tipInValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
-  const tipCacheLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legCache') });
-  const tipCacheValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
-  const tipOutLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legOutput') });
-  const tipOutValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
-  const tipSubEl = h('div', { className: 'trend-tip-sub is-grid', hidden: true }, [
-    h('div', { className: 'trend-tip-stat' }, [tipInLabelEl, tipInValEl]),
-    h('div', { className: 'trend-tip-stat' }, [tipCacheLabelEl, tipCacheValEl]),
-    h('div', { className: 'trend-tip-stat' }, [tipOutLabelEl, tipOutValEl]),
-  ]);
-  const tipModelsEl = h('div', { className: 'cons-pop-models', hidden: true });
+  // 共享悬停详情浮层卡片（曲线图和热力格子图共用，含分模型四段进度条及底部四通道明细）
+  const tooltipContent = createConsumptionBreakdownContent({
+    showModelDot: false,
+    monoTitle: true,
+  });
 
   const tooltipEl = h(
     'div',
-    { className: 'trend-tooltip', hidden: true },
-    [
-      h('div', { className: 'trend-tip-head' }, [tipTimeEl, tipCallsEl]),
-      h('div', { className: 'trend-tip-main' }, [tipTokensEl, tipCostEl]),
-      tipSubEl,
-      tipModelsEl,
-    ]
+    { className: 'trend-tooltip is-rich-breakdown', hidden: true },
+    tooltipContent.children
   );
 
   // 底部对齐刻度轴（曲线模式）
   const xAxisEl = h('div', { className: 'trend-x-axis' });
-  const plotStage = h('div', { className: 'trend-plot-stage' }, [peakPill, svg]);
+  const plotStage = h(
+    'div',
+    { className: `trend-plot-stage${typeof onSelectSlot === 'function' ? ' is-clickable' : ''}` },
+    [peakPill, svg]
+  );
 
   // 类 GitHub 每日小格子热力图容器（> 90 天模式）
   const wdayMonEl = h('span', { className: 'trend-hm-wday', text: t('chart.trend.wdayMon') });
@@ -8910,6 +9601,7 @@ function createTrendAreaChart() {
   let tickElsByIdx = new Map();
   let hoveredIdx = -1;
   let hoveredCellEl = null;
+  let lastPointer = null;
   let lastRenderSig = '';
   let tipTrackRaf = 0;
 
@@ -8941,102 +9633,133 @@ function createTrendAreaChart() {
   }
 
   function populateTooltipContent(slot) {
-    patchText(tipTimeEl, slot.fullLabel || slot.label || '--');
-    patchText(
-      tipCallsEl,
-      t('cons.callsCount', { calls: Math.max(0, Math.floor(Number(slot.calls) || 0)) })
-    );
     const slotTok = safeSlotTokens(slot.tokens);
-    patchText(tipTokensEl, `${formatTokensPrecise(slotTok)} tok`);
     const slotCost = Number.isFinite(Number(slot.costUsd)) ? Math.max(0, Number(slot.costUsd)) : 0;
-    patchText(
-      tipCostEl,
-      formatUsd(slotCost, {
+    tooltipContent.update({
+      title: slot.fullLabel || slot.label || '--',
+      calls: slot.calls,
+      totalTokens: slotTok,
+      costText: formatUsd(slotCost, {
         precise: slotCost > 0 && slotCost < 0.1,
-      })
-    );
-
-    const hasSubBreakdown =
-      slotTok > 0 &&
-      (slot.inputTokens !== undefined ||
-        slot.cacheReadTokens !== undefined ||
-        slot.outputTokens !== undefined);
-    patchAttr(tipSubEl, 'hidden', !hasSubBreakdown);
-    if (hasSubBreakdown) {
-      patchText(tipInLabelEl, t('cons.legInput'));
-      patchText(tipCacheLabelEl, t('cons.legCache'));
-      patchText(tipOutLabelEl, t('cons.legOutput'));
-      patchText(tipInValEl, formatTokensPrecise(safeSlotTokens(slot.inputTokens)));
-      patchText(tipCacheValEl, formatTokensPrecise(safeSlotTokens(slot.cacheReadTokens)));
-      patchText(tipOutValEl, formatTokensPrecise(safeSlotTokens(slot.outputTokens)));
-    }
-
-    const modelSegs = Array.isArray(slot.modelSegments) ? slot.modelSegments : [];
-    patchAttr(tipModelsEl, 'hidden', modelSegs.length === 0);
-    patchKeyedList(tipModelsEl, modelSegs, {
-      keyFn: (r) => r.key,
-      sigFn: (r) => `${r.key}:${r.label}:${r.color}:${r.tokText}:${r.pctText}:${r.isOther}`,
-      createRow: createTooltipModelRow,
-      updateRow: (rRefs, r) => {
-        patchClasses(rRefs.rowEl, { 'is-other': Boolean(r.isOther) });
-        patchStyleVar(rRefs.dotEl, '--dot-color', r.color);
-        patchText(rRefs.nameEl, r.label);
-        patchText(rRefs.tokEl, r.tokText);
-        patchText(rRefs.pctEl, r.pctText);
-      },
+      }),
+      inputTokens: slot.inputTokens,
+      cacheReadTokens: slot.cacheReadTokens,
+      thinkingTokens: slot.thinkingTokens,
+      responseTokens: slot.responseTokens,
+      outputTokens: slot.outputTokens,
+      segments: Array.isArray(slot.modelSegments) ? slot.modelSegments : [],
     });
   }
 
-  function showLineHoverAtIndex(idx) {
+  function positionTooltipNearAnchor(fallbackX, fallbackY, pointer = null) {
+    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
+    const wrapH =
+      wrapRect && wrapRect.height > 0
+        ? wrapRect.height
+        : Number(chartWrap.offsetHeight || VIEW_H);
+
+    const tipRect = tooltipEl.getBoundingClientRect?.() || null;
+    const tipW =
+      Number(tooltipEl.offsetWidth || 0) ||
+      (tipRect && tipRect.width > 0 ? tipRect.width : 216);
+    const tipH =
+      Number(tooltipEl.offsetHeight || 0) ||
+      (tipRect && tipRect.height > 0 ? tipRect.height : 104);
+
+    const hasPointer =
+      pointer &&
+      Number.isFinite(Number(pointer.clientX)) &&
+      Number.isFinite(Number(pointer.clientY)) &&
+      wrapRect &&
+      wrapRect.width > 0 &&
+      wrapRect.height > 0;
+
+    const anchorX = hasPointer ? Number(pointer.clientX) - wrapRect.left : fallbackX;
+    const anchorY = hasPointer ? Number(pointer.clientY) - wrapRect.top : fallbackY;
+
+    const clipEl = chartWrap.closest?.('.view-pane, .cons-view-stage') || null;
+    const clipRect = clipEl?.getBoundingClientRect?.() || null;
+    const hasClip = Boolean(
+      clipRect && clipRect.height > 0 && wrapRect && wrapRect.height > 0
+    );
+    const minY = hasClip ? clipRect.top - wrapRect.top + 6 : -tipH - 16;
+    const maxY = hasClip ? clipRect.bottom - wrapRect.top - tipH - 6 : wrapH + 16;
+
+    const maxLeft = Math.max(4, wrapW - tipW - 4);
+    let leftPx = Math.max(4, Math.min(maxLeft, anchorX - tipW / 2));
+    const aboveY = anchorY - tipH - 14;
+    let topPx;
+
+    if (aboveY >= minY) {
+      topPx = Math.min(maxY, aboveY);
+    } else if (anchorX + 16 + tipW <= wrapW - 4) {
+      leftPx = anchorX + 16;
+      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
+    } else if (anchorX - 16 - tipW >= 4) {
+      leftPx = anchorX - 16 - tipW;
+      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
+    } else {
+      topPx = Math.max(minY, Math.min(maxY, anchorY + 18));
+    }
+
+    patchStyleVar(tooltipEl, '--tip-x', `${Math.round(leftPx)}px`);
+    patchStyleVar(tooltipEl, '--tip-shift', '0px');
+    patchStyleVar(tooltipEl, '--tip-y', `${Math.round(topPx)}px`);
+  }
+
+  function showLineHoverAtIndex(idx, pointer = null) {
     if (currentIsHeatmap || idx < 0 || idx >= currentSlots.length || !currentPts[idx]) {
       clearHover();
       return;
     }
     const wasHidden = tooltipEl.hasAttribute('hidden');
+    const changedIdx = idx !== hoveredIdx;
     hoveredIdx = idx;
+    if (pointer) {
+      lastPointer = pointer;
+    }
     const slot = currentSlots[idx];
     const pt = currentPts[idx];
 
-    patchAttr(hoverLine, 'hidden', false);
-    patchAttr(hoverLine, 'x1', pt.x.toFixed(1));
-    patchAttr(hoverLine, 'x2', pt.x.toFixed(1));
+    if (wasHidden || changedIdx) {
+      patchAttr(hoverLine, 'hidden', false);
+      patchAttr(hoverLine, 'x1', pt.x.toFixed(1));
+      patchAttr(hoverLine, 'x2', pt.x.toFixed(1));
 
-    patchAttr(hoverDot, 'hidden', false);
-    patchAttr(hoverDot, 'cx', pt.x.toFixed(1));
-    patchAttr(hoverDot, 'cy', pt.y.toFixed(1));
+      patchAttr(hoverDot, 'hidden', false);
+      patchAttr(hoverDot, 'cx', pt.x.toFixed(1));
+      patchAttr(hoverDot, 'cy', pt.y.toFixed(1));
 
-    const isLineLow = pt.y < Math.round((TOP_Y + BOTTOM_Y) / 2);
-    patchAttr(peakPill, 'hidden', true);
-    patchClasses(tooltipEl, {
-      'is-hm-bottom': false,
-      'is-hm-top': false,
-      'is-line-low': isLineLow,
-    });
-    patchAttr(tooltipEl, 'hidden', false);
-    populateTooltipContent(slot);
+      patchAttr(peakPill, 'hidden', true);
+      patchClasses(tooltipEl, {
+        'is-hm-bottom': false,
+        'is-hm-top': false,
+        'is-line-low': false,
+      });
+      patchAttr(tooltipEl, 'hidden', false);
+      populateTooltipContent(slot);
 
-    let tipY = 0;
-    if (isLineLow) {
-      const wrapH = Number(chartWrap.offsetHeight || 0);
-      const tipH = Number(tooltipEl.offsetHeight || 0);
-      if (wrapH > 0 && tipH > 0) {
-        tipY = Math.max(0, wrapH - tipH - 22);
+      for (const [tIdx, el] of tickElsByIdx.entries()) {
+        patchClasses(el, { 'is-hovered': tIdx === idx });
       }
     }
 
-    const rawPct = (pt.x / viewW) * 100;
-    const clampedPct = Math.max(1, Math.min(99, rawPct));
-    patchStyleVar(tooltipEl, '--tip-x', `${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-shift', `-${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-y', `${Math.round(tipY)}px`);
+    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
+    const fallbackX = (pt.x / Math.max(1, viewW)) * wrapW;
+    const fallbackY = pt.y + 6;
+    positionTooltipNearAnchor(fallbackX, fallbackY, pointer || lastPointer);
     armTooltipTracking(wasHidden);
-
-    for (const [tIdx, el] of tickElsByIdx.entries()) {
-      patchClasses(el, { 'is-hovered': tIdx === idx });
-    }
   }
 
-  function showHeatmapHoverAtIndex(idx, cellEl) {
+  function showHeatmapHoverAtIndex(idx, cellEl, pointer = null) {
     if (!currentIsHeatmap || idx < 0 || idx >= currentSlots.length) {
       clearHover();
       return;
@@ -9046,7 +9769,12 @@ function createTrendAreaChart() {
       clearHover();
       return;
     }
+    const wasHidden = tooltipEl.hasAttribute('hidden');
+    const changedCell = idx !== hoveredIdx || hoveredCellEl !== targetCell;
     hoveredIdx = idx;
+    if (pointer) {
+      lastPointer = pointer;
+    }
     if (hoveredCellEl && hoveredCellEl !== targetCell) {
       patchClasses(hoveredCellEl, { 'is-hovered': false });
     }
@@ -9057,19 +9785,25 @@ function createTrendAreaChart() {
     const row = Number(targetCell.getAttribute('data-hm-row') || 0);
     const col = Number(targetCell.getAttribute('data-hm-col') || 0);
 
-    const wasHidden = tooltipEl.hasAttribute('hidden');
-    // 上半区（周一~周四）浮层停靠热力图下方，下半区（周五~周日）停靠热力图上方，互不遮挡被悬停格子且永不越界裁剪
-    patchClasses(tooltipEl, {
-      'is-hm-bottom': row <= 3,
-      'is-hm-top': row > 3,
-      'is-line-low': false,
-    });
-    patchAttr(tooltipEl, 'hidden', false);
-    populateTooltipContent(slot);
+    if (wasHidden || changedCell) {
+      patchClasses(tooltipEl, {
+        'is-hm-bottom': false,
+        'is-hm-top': false,
+        'is-line-low': false,
+      });
+      patchAttr(tooltipEl, 'hidden', false);
+      populateTooltipContent(slot);
+    }
 
-    const wrapRect = chartWrap.getBoundingClientRect();
-    const cellRect = targetCell.getBoundingClientRect();
-    let rawPct = 50;
+    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const cellRect = targetCell.getBoundingClientRect?.() || null;
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
+    let fallbackX =
+      currentHeatmapWeeks > 0 ? ((col + 0.5) / currentHeatmapWeeks) * wrapW : wrapW / 2;
+    let fallbackY = 20 + row * 14;
     if (
       wrapRect &&
       wrapRect.width > 0 &&
@@ -9077,20 +9811,18 @@ function createTrendAreaChart() {
       cellRect.width > 0 &&
       cellRect.width < wrapRect.width
     ) {
-      rawPct = ((cellRect.left + cellRect.width / 2 - wrapRect.left) / wrapRect.width) * 100;
-    } else if (currentHeatmapWeeks > 0) {
-      rawPct = ((col + 0.5) / currentHeatmapWeeks) * 100;
+      fallbackX = cellRect.left + cellRect.width / 2 - wrapRect.left;
+      fallbackY = cellRect.top + cellRect.height / 2 - wrapRect.top;
     }
-    const clampedPct = Math.max(1, Math.min(99, rawPct));
-    patchStyleVar(tooltipEl, '--tip-x', `${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-shift', `-${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-y', '0px');
+
+    positionTooltipNearAnchor(fallbackX, fallbackY, pointer || lastPointer);
     armTooltipTracking(wasHidden);
   }
 
   function clearHover() {
     cancelTipTrackRaf();
     hoveredIdx = -1;
+    lastPointer = null;
     patchAttr(hoverLine, 'hidden', true);
     patchAttr(hoverDot, 'hidden', true);
     patchAttr(tooltipEl, 'hidden', true);
@@ -9143,7 +9875,11 @@ function createTrendAreaChart() {
       0,
       Math.min(currentSlots.length - 1, Math.round(ratio * (currentSlots.length - 1)))
     );
-    showLineHoverAtIndex(idx);
+    const pointer =
+      Number.isFinite(Number(e?.clientX)) && Number.isFinite(Number(e?.clientY))
+        ? { clientX: Number(e.clientX), clientY: Number(e.clientY) }
+        : null;
+    showLineHoverAtIndex(idx, pointer);
   }
 
   function findDirectHeatmapCell(e) {
@@ -9261,8 +9997,12 @@ function createTrendAreaChart() {
       clearHover();
       return;
     }
-    if (hit.idx !== hoveredIdx || hit.cellEl !== hoveredCellEl) {
-      showHeatmapHoverAtIndex(hit.idx, hit.cellEl);
+    const pointer =
+      Number.isFinite(Number(e?.clientX)) && Number.isFinite(Number(e?.clientY))
+        ? { clientX: Number(e.clientX), clientY: Number(e.clientY) }
+        : null;
+    if (hit.idx !== hoveredIdx || hit.cellEl !== hoveredCellEl || pointer) {
+      showHeatmapHoverAtIndex(hit.idx, hit.cellEl, pointer);
     }
   }
 
@@ -9282,12 +10022,43 @@ function createTrendAreaChart() {
     }
   }
 
+  function handleLineClick(e) {
+    if (currentIsHeatmap || !currentSlots.length || typeof onSelectSlot !== 'function') return;
+    let idx = hoveredIdx;
+    const rect = svg.getBoundingClientRect?.();
+    if (rect && rect.width > 0 && Number.isFinite(Number(e?.clientX))) {
+      const relX = ((e.clientX - rect.left) / rect.width) * viewW;
+      const { leftX, spanX } = resolvePlotBounds(viewW);
+      const ratio = (relX - leftX) / Math.max(1, spanX);
+      idx = Math.max(
+        0,
+        Math.min(currentSlots.length - 1, Math.round(ratio * (currentSlots.length - 1)))
+      );
+    }
+    const slot = currentSlots[idx];
+    if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
+      onSelectSlot(slot);
+    }
+  }
+
+  function handleHeatmapClick(e) {
+    handleHeatmapPointer(e);
+    if (!currentIsHeatmap || !currentSlots.length || typeof onSelectSlot !== 'function') return;
+    const hit = resolveHeatmapCellFromPointer(e);
+    if (!hit || !Number.isFinite(hit.idx)) return;
+    const slot = currentSlots[hit.idx];
+    if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
+      onSelectSlot(slot);
+    }
+  }
+
   plotStage.addEventListener('mousemove', handlePointerMove);
+  plotStage.addEventListener('click', handleLineClick);
   plotStage.addEventListener('mouseleave', clearHover);
 
   hmGridEl.addEventListener('mouseover', handleHeatmapPointer);
   hmGridEl.addEventListener('mousemove', handleHeatmapPointer);
-  hmGridEl.addEventListener('click', handleHeatmapPointer);
+  hmGridEl.addEventListener('click', handleHeatmapClick);
   hmGridEl.addEventListener('mouseleave', clearHover);
   hmScrollEl.addEventListener('wheel', handleHeatmapWheel);
 
@@ -9313,6 +10084,14 @@ function createTrendAreaChart() {
 
   function destroy() {
     cancelTipTrackRaf();
+    plotStage.removeEventListener('mousemove', handlePointerMove);
+    plotStage.removeEventListener('click', handleLineClick);
+    plotStage.removeEventListener('mouseleave', clearHover);
+    hmGridEl.removeEventListener('mouseover', handleHeatmapPointer);
+    hmGridEl.removeEventListener('mousemove', handleHeatmapPointer);
+    hmGridEl.removeEventListener('click', handleHeatmapClick);
+    hmGridEl.removeEventListener('mouseleave', clearHover);
+    hmScrollEl.removeEventListener('wheel', handleHeatmapWheel);
     resizeObs?.disconnect();
     resizeObs = null;
     if (onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
@@ -9385,9 +10164,14 @@ function createTrendAreaChart() {
       slots
         .map((s) => {
           const mSig = Array.isArray(s?.modelSegments)
-            ? s.modelSegments.map((m) => `${m.key}:${m.color}:${m.pctText}`).join(',')
+            ? s.modelSegments
+                .map(
+                  (m) =>
+                    `${m.key}:${m.color}:${m.pctText}:${m.inputTokens || 0}:${m.cacheReadTokens || 0}:${m.thinkingTokens || 0}:${m.responseTokens || 0}`
+                )
+                .join(',')
             : '';
-          return `${s?.startMs || ''}:${s?.label || ''}:${s?.fullLabel || ''}:${safeSlotTokens(s?.tokens)}:${Number(s?.costUsd || 0)}:${Number(s?.calls || 0)}:${mSig}`;
+          return `${s?.startMs || ''}:${s?.label || ''}:${s?.fullLabel || ''}:${safeSlotTokens(s?.tokens)}:${safeSlotTokens(s?.inputTokens)}:${safeSlotTokens(s?.cacheReadTokens)}:${safeSlotTokens(s?.thinkingTokens)}:${safeSlotTokens(s?.responseTokens)}:${Number(s?.costUsd || 0)}:${Number(s?.calls || 0)}:${mSig}`;
         })
         .join('|');
 
@@ -9487,7 +10271,7 @@ function createTrendAreaChart() {
       if (hoveredIdx >= slots.length) {
         clearHover();
       } else if (hoveredIdx >= 0) {
-        showHeatmapHoverAtIndex(hoveredIdx, currentCellEls[hoveredIdx]);
+        showHeatmapHoverAtIndex(hoveredIdx, currentCellEls[hoveredIdx], lastPointer);
       }
       return;
     }
@@ -9553,7 +10337,10 @@ function createTrendAreaChart() {
           title: slot.fullLabel || slot.label || '',
         });
         patchStyleVar(tickEl, '--tick-x', `${pct.toFixed(2)}%`);
-        tickEl.onclick = () => showLineHoverAtIndex(tIdx);
+        tickEl.onclick = () => {
+          lastPointer = null;
+          showLineHoverAtIndex(tIdx);
+        };
         xAxisEl.appendChild(tickEl);
         tickElsByIdx.set(tIdx, tickEl);
       }
@@ -9592,7 +10379,7 @@ function createTrendAreaChart() {
     if (hoveredIdx >= slots.length) {
       clearHover();
     } else if (hoveredIdx >= 0) {
-      showLineHoverAtIndex(hoveredIdx);
+      showLineHoverAtIndex(hoveredIdx, lastPointer);
     }
   }
 
@@ -14813,7 +15600,7 @@ return { OVERVIEW_WIDGET_KEYS, OVERVIEW_WIDGET_REGISTRY, getOverviewModuleOption
 })();
 
 // --- src/registries/stepColumnRegistry.js ---
-const { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions } = (() => {
+const { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, resolveStepTokenParts, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions, sortStepsByColumn } = (() => {
 /**
  * @fileoverview Decoupled Step Table Column Registry (`stepColumnRegistry.js`).
  * Defines all 12 customizable columns for `StepsDetailView` ("按步查看"),
@@ -14840,6 +15627,14 @@ function resolveStepTokenParts(st) {
   const totalTok = inTok + cacheTok + outTok;
   const ctxTok = Math.max(0, Number(st?.contextTokens ?? totalTok));
   return { inTok, cacheTok, outTok, thinkTok, respTok, totalTok, ctxTok };
+}
+
+function finiteSortNum(val, { allowZero = true } = {}) {
+  if (val == null || val === '') return null;
+  const num = Number(val);
+  if (!Number.isFinite(num)) return null;
+  if (!allowZero && !(num > 0)) return null;
+  return num;
 }
 
 function formatPartWithOptionalCost(tokCount, costVal) {
@@ -14921,6 +15716,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.step.th'),
     optLabel: () => t('stepCol.step.opt'),
     sigPart: (st) => `${st.stepIndex}`,
+    sortValue: (st) => finiteSortNum(st?.stepIndex),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -14936,6 +15732,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.time.th'),
     optLabel: () => t('stepCol.time.opt'),
     sigPart: (st) => `${st.createdAtMs || 0}`,
+    sortValue: (st) => finiteSortNum(st?.createdAtMs, { allowZero: false }),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', { className: 'text-muted' }, [valEl]);
@@ -14952,9 +15749,14 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     key: 'model',
     thLabel: () => t('stepCol.model.th'),
     optLabel: () => t('stepCol.model.opt'),
+    defaultSortDir: 'asc',
     sigPart: (st, ctx) => {
       const disp = resolveModelDisplayInfo(st, ctx.displaySettings, { fallback: '—' });
       return `${disp.baseText}:${disp.title}`;
+    },
+    sortValue: (st, ctx) => {
+      const disp = resolveModelDisplayInfo(st, ctx?.displaySettings, { fallback: '' });
+      return String(disp.baseText || '').toLowerCase() || null;
     },
     createCell: () => {
       const nameEl = h('span', { className: 'step-model-name' });
@@ -14975,6 +15777,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.tps.opt'),
     sigPart: (st, ctx) =>
       `${st.tokPerSec}:${st.selectedSpeedReason || ''}:${ctx?.showStepSpeedColor === true ? 1 : 0}`,
+    sortValue: (st) => finiteSortNum(st?.tokPerSec, { allowZero: false }),
     createCell: () => {
       const speedMain = h('strong', {
         className: 'cell-value tone-muted',
@@ -15019,6 +15822,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.ttft.th'),
     optLabel: () => t('stepCol.ttft.opt'),
     sigPart: (st) => `${st.ttftSec}`,
+    sortValue: (st) => finiteSortNum(st?.ttftSec),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15036,6 +15840,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.duration.th'),
     optLabel: () => t('stepCol.duration.opt'),
     sigPart: (st) => `${st.totalDurationSec ?? st.streamDurationSec ?? ''}`,
+    sortValue: (st) => finiteSortNum(st?.totalDurationSec ?? st?.streamDurationSec),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15053,6 +15858,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.tokens_combo.opt'),
     sigPart: (st) =>
       `${st.contextTokens}:${st.outputTokens}:${st.thinkingTokens}:${st.responseTokens}`,
+    sortValue: (st) => resolveStepTokenParts(st).ctxTok,
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15082,6 +15888,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.tokens_io_cache.opt'),
     sigPart: (st) =>
       `${st.inputTokens || 0}:${st.outputTokens || 0}:${st.cacheReadTokens || 0}:${st.inCostUsd ?? ''}:${st.outCostUsd ?? ''}:${st.cacheCostUsd ?? ''}`,
+    sortValue: (st) => resolveStepTokenParts(st).totalTok,
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15114,6 +15921,19 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
       }),
     sigPart: (st, ctx) =>
       `${normalizeClientStepTokenComboFormat(ctx?.stepTokenComboFormat)}:${st.contextTokens || 0}:${st.inputTokens || 0}:${st.cacheReadTokens || 0}:${st.outputTokens || 0}:${st.thinkingTokens || 0}:${st.responseTokens ?? ''}:${st.costUsd ?? ''}`,
+    sortValue: (st, ctx) => {
+      const firstSeg = parseClientStepTokenComboSegments(ctx?.stepTokenComboFormat)[0] || 'total';
+      const parts = resolveStepTokenParts(st);
+      switch (firstSeg) {
+        case 'context': return parts.ctxTok;
+        case 'in': return parts.inTok;
+        case 'out': return parts.outTok;
+        case 'cache': return parts.cacheTok;
+        case 'think': return parts.thinkTok;
+        case 'reply': return parts.respTok;
+        default: return parts.totalTok;
+      }
+    },
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15140,6 +15960,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.input_tokens.th'),
     optLabel: () => t('stepCol.input_tokens.opt'),
     sigPart: (st) => `${st.inputTokens || 0}`,
+    sortValue: (st) => finiteSortNum(st?.inputTokens ?? 0),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15155,6 +15976,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.cache_tokens.th'),
     optLabel: () => t('stepCol.cache_tokens.opt'),
     sigPart: (st) => `${st.cacheReadTokens || 0}`,
+    sortValue: (st) => finiteSortNum(st?.cacheReadTokens ?? 0),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15170,6 +15992,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.output_tokens.th'),
     optLabel: () => t('stepCol.output_tokens.opt'),
     sigPart: (st) => `${st.outputTokens || 0}`,
+    sortValue: (st) => finiteSortNum(st?.outputTokens ?? 0),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15186,6 +16009,10 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.cache.opt'),
     sigPart: (st) =>
       `${st.cacheHitPct ?? 0}:${(st.inputTokens || 0) + (st.cacheReadTokens || 0) > 0 ? 1 : 0}`,
+    sortValue: (st) => {
+      const prompt = Number(st?.inputTokens || 0) + Number(st?.cacheReadTokens || 0);
+      return prompt > 0 ? finiteSortNum(st?.cacheHitPct ?? 0) : null;
+    },
     createCell: () => {
       const valEl = h('span', {
         className: 'cell-value tone-muted',
@@ -15210,6 +16037,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.cost.th'),
     optLabel: () => t('stepCol.cost.opt'),
     sigPart: (st) => `${st.costUsd}`,
+    sortValue: (st) => finiteSortNum(st?.costUsd),
     createCell: () => {
       const valEl = h('span', { style: 'font-weight: 600;' });
       const td = h('td', {}, [valEl]);
@@ -15233,7 +16061,46 @@ function getStepColumnOptions(
     label: STEP_COLUMN_REGISTRY[key].optLabel(ctx),
   }));
 }
-return { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions };
+
+/**
+ * 按指定列对步骤数组进行稳定排序（空值/不可用测速值始终置底）。
+ *
+ * @param {Array<object>} steps
+ * @param {string} sortKey
+ * @param {'asc'|'desc'|''} sortDir
+ * @param {object} [ctx]
+ * @returns {Array<object>}
+ */
+function sortStepsByColumn(steps, sortKey, sortDir, ctx = {}) {
+  if (!Array.isArray(steps) || steps.length <= 1 || !sortKey || !sortDir) {
+    return Array.isArray(steps) ? steps : [];
+  }
+  const col = STEP_COLUMN_REGISTRY[sortKey];
+  if (!col || typeof col.sortValue !== 'function') return steps;
+  const mul = sortDir === 'asc' ? 1 : -1;
+  const decorated = steps.map((st, origIdx) => ({
+    st,
+    origIdx,
+    val: col.sortValue(st, ctx),
+  }));
+  decorated.sort((a, b) => {
+    const aNull = a.val === null || a.val === undefined;
+    const bNull = b.val === null || b.val === undefined;
+    if (aNull && bNull) return a.origIdx - b.origIdx;
+    if (aNull) return 1;
+    if (bNull) return -1;
+    let cmp = 0;
+    if (typeof a.val === 'string' || typeof b.val === 'string') {
+      cmp = String(a.val).localeCompare(String(b.val));
+    } else {
+      cmp = Number(a.val) - Number(b.val);
+    }
+    if (cmp !== 0) return cmp * mul;
+    return a.origIdx - b.origIdx;
+  });
+  return decorated.map((d) => d.st);
+}
+return { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, resolveStepTokenParts, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions, sortStepsByColumn };
 })();
 
 // --- src/components/widgets/CapsuleBarWidget.js ---
@@ -16165,6 +17032,8 @@ const StepTableWidget = defineComponent({
       typeof props.onSelectAgentScopes === 'function' ? props.onSelectAgentScopes : null;
     const onVirtualHeightChange =
       typeof props.onVirtualHeightChange === 'function' ? props.onVirtualHeightChange : null;
+    const onSortChange =
+      typeof props.onSortChange === 'function' ? props.onSortChange : null;
 
     const stepsTheadRow = h('tr');
     const stepsThead = h('thead', {}, [stepsTheadRow]);
@@ -16173,16 +17042,72 @@ const StepTableWidget = defineComponent({
     function syncTableHeaderColumns(colKeys, headerCtx = {}) {
       const locale = getEffectiveLocale();
       const fmtKey = normalizeClientStepTokenComboFormat(headerCtx?.stepTokenComboFormat);
+      const activeSortKey = String(headerCtx?.sortKey || '');
+      const activeSortDir = headerCtx?.sortDir === 'asc' || headerCtx?.sortDir === 'desc'
+        ? headerCtx.sortDir
+        : '';
       const ctx = { stepTokenComboFormat: fmtKey };
       patchKeyedList(stepsTheadRow, colKeys, {
         keyFn: (colKey) => colKey,
-        sigFn: (colKey) => `${locale}:${colKey}:${fmtKey}:${STEP_COLUMN_REGISTRY[colKey].thLabel(ctx)}`,
+        sigFn: (colKey) => {
+          const isSorted = activeSortKey === colKey && Boolean(activeSortDir);
+          return `${locale}:${colKey}:${fmtKey}:${STEP_COLUMN_REGISTRY[colKey].thLabel(ctx)}:${onSortChange ? 1 : 0}:${isSorted ? activeSortDir : ''}`;
+        },
         createRow: (colKey) => {
-          const th = h('th', { text: STEP_COLUMN_REGISTRY[colKey].thLabel(ctx) });
-          return { el: th, refs: { th } };
+          const labelSpan = h('span', {
+            className: 'step-th-label',
+            text: STEP_COLUMN_REGISTRY[colKey].thLabel(ctx),
+          });
+          const sortIcon = createSvgIcon('chevron-down', {
+            size: 10,
+            className: 'step-sort-icon',
+          });
+          patchAttr(sortIcon, 'hidden', true);
+          const innerWrap = h('span', { className: 'step-th-inner' }, [labelSpan, sortIcon]);
+          const th = h('th', {}, [innerWrap]);
+          return { el: th, refs: { th, labelSpan, sortIcon } };
         },
         updateRow: (refs, colKey) => {
-          patchText(refs.th, STEP_COLUMN_REGISTRY[colKey].thLabel(ctx));
+          const labelText = STEP_COLUMN_REGISTRY[colKey].thLabel(ctx);
+          patchText(refs.labelSpan, labelText);
+          const sortable = Boolean(
+            onSortChange && typeof STEP_COLUMN_REGISTRY[colKey]?.sortValue === 'function'
+          );
+          const isSorted = sortable && activeSortKey === colKey && Boolean(activeSortDir);
+          patchClasses(refs.th, {
+            'is-sortable': sortable,
+            'is-sorted': isSorted,
+          });
+          patchAttr(
+            refs.th,
+            'aria-sort',
+            isSorted ? (activeSortDir === 'asc' ? 'ascending' : 'descending') : sortable ? 'none' : null
+          );
+          patchAttr(
+            refs.th,
+            'title',
+            sortable ? t('steps.sortClickTip', { col: labelText }) : null
+          );
+          patchAttr(refs.sortIcon, 'hidden', !isSorted);
+          if (isSorted) {
+            patchSvgIcon(refs.sortIcon, activeSortDir === 'asc' ? 'chevron-up' : 'chevron-down');
+          }
+          refs.th.onclick = sortable
+            ? () => {
+                const defaultDir = STEP_COLUMN_REGISTRY[colKey]?.defaultSortDir || 'desc';
+                let nextKey = colKey;
+                let nextDir = defaultDir;
+                if (activeSortKey === colKey) {
+                  if (activeSortDir === defaultDir) {
+                    nextDir = defaultDir === 'desc' ? 'asc' : 'desc';
+                  } else {
+                    nextKey = '';
+                    nextDir = '';
+                  }
+                }
+                onSortChange(nextKey, nextDir);
+              }
+            : null;
         },
       });
     }
@@ -17190,6 +18115,8 @@ const StepTableWidget = defineComponent({
         displaySettings = {},
         allConversationSteps = null,
         allowNewRowFade = false,
+        sortKey = '',
+        sortDir = '',
       } = {}
     ) {
       const normCascadeId = String(cascadeId || '');
@@ -17252,11 +18179,15 @@ const StepTableWidget = defineComponent({
 
       const colOrderSig = colKeys.join(',');
       const normTokenFmt = normalizeClientStepTokenComboFormat(stepTokenComboFormat);
+      const normSortKey = String(sortKey || '');
+      const normSortDir = sortDir === 'asc' || sortDir === 'desc' ? sortDir : '';
+      const isCustomSorted = Boolean(normSortKey && normSortDir);
+      const effectiveTurnRail = Boolean(showStepTurnRail && !isCustomSorted);
       const renderOptions = JSON.stringify([
         cascadeId, locale, colOrderSig, effectiveScopes, hasSubagents, isMergedMultiAgents,
-        showStepTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
+        effectiveTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
         displaySettings.modelDisplayMode, displaySettings.showUpstreamModel,
-        displaySettings.orchestratorIdMode,
+        displaySettings.orchestratorIdMode, normSortKey, normSortDir,
       ]);
       if (
         lastRenderOptions === renderOptions &&
@@ -17273,7 +18204,11 @@ const StepTableWidget = defineComponent({
 
       syncFontScaleIfChanged();
       const wantedSet = new Set(colKeys);
-      syncTableHeaderColumns(colKeys, { stepTokenComboFormat: normTokenFmt });
+      syncTableHeaderColumns(colKeys, {
+        stepTokenComboFormat: normTokenFmt,
+        sortKey: normSortKey,
+        sortDir: normSortDir,
+      });
 
       const showAgentBadge = Boolean(hasSubagents && showStepAgentBadge);
       const cellCtx = {
@@ -17289,7 +18224,7 @@ const StepTableWidget = defineComponent({
 
       const useRootTurn = Boolean(hasSubagents && isMergedMultiAgents);
       let railActive = false;
-      if (showStepTurnRail) {
+      if (effectiveTurnRail) {
         for (let i = 0; i < tableSteps.length; i++) {
           const st = tableSteps[i];
           const tIdx = useRootTurn ? (st?.rootTurnIndex ?? st?.turnIndex) : st?.turnIndex;
@@ -17342,7 +18277,7 @@ const StepTableWidget = defineComponent({
         cellCtx,
         railActive,
         showAgentBadge,
-        showStepTurnRail,
+        showStepTurnRail: effectiveTurnRail,
         useRootTurn,
         isVirtualized,
         hasReasonFlags,
@@ -20774,6 +21709,8 @@ const SettingsOtherTab = defineComponent({
     const ctxStatus = h('span', { className: 'text-muted', role: 'status' });
     const ctxModelSelect = CustomSelect({
       className: 'settings-context-model',
+      searchable: true,
+      searchThreshold: 8,
       options: [],
       onUpdateModelValue: (id) => {
         if (!draftContextRiskAccepted || savingContextWindow) return;
@@ -21080,6 +22017,102 @@ const SettingsOtherTab = defineComponent({
       [resetBtnText]
     );
 
+    const backupLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.backupLabel'),
+    });
+    const backupDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.backupDesc'),
+    });
+    const exportJsonBtnText = h('span', { text: t('settings.oth.exportJsonBtn') });
+    const importJsonBtnText = h('span', { text: t('settings.oth.importJsonBtn') });
+    let isImportingSettings = false;
+
+    async function applyImportedSettingsText(rawText) {
+      const parsed = parseImportedSettingsJson(rawText);
+      if (!parsed.ok) {
+        showMaintFeedback(t('settings.oth.importInvalid'), 3200);
+        return false;
+      }
+      isImportingSettings = true;
+      patchAttr(importJsonBtn, 'disabled', true);
+      showMaintFeedback(t('settings.saving'), 0);
+      try {
+        await saveSettingsPatch(parsed.patch);
+        if (parsed.patch.language) {
+          setI18nLanguage(parsed.patch.language);
+        }
+        showMaintFeedback(
+          t('settings.oth.importDone', { count: parsed.appliedCount }),
+          2800
+        );
+        return true;
+      } catch {
+        showMaintFeedback(t('settings.saveFailed'), 2800);
+        return false;
+      } finally {
+        isImportingSettings = false;
+        patchAttr(importJsonBtn, 'disabled', false);
+      }
+    }
+
+    const importFileInput = h('input', {
+      type: 'file',
+      accept: '.json,application/json',
+      className: 'settings-hidden-file-input',
+      hidden: true,
+    });
+    importFileInput.addEventListener?.('change', async () => {
+      const file = importFileInput.files?.[0];
+      importFileInput.value = '';
+      if (!file || isImportingSettings) return;
+      try {
+        const text =
+          typeof file.text === 'function' ? await file.text() : String(file.content || '');
+        await applyImportedSettingsText(text);
+      } catch {
+        showMaintFeedback(t('settings.oth.importInvalid'), 3200);
+      }
+    });
+
+    const exportJsonBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: () => {
+          const json = buildExportableSettingsJson(latestSettings || {});
+          triggerTextFileDownload(
+            'antigravity-usage-monitor-settings.json',
+            json,
+            'application/json;charset=utf-8'
+          );
+          showMaintFeedback(t('settings.oth.exportDone'), 2400);
+        },
+      },
+      [createSvgIcon('download', { size: 12 }), exportJsonBtnText]
+    );
+
+    const importJsonBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: () => {
+          if (isImportingSettings) return;
+          importFileInput.click?.();
+        },
+      },
+      [createSvgIcon('upload', { size: 12 }), importJsonBtnText]
+    );
+
+    const backupActionsWrap = h('div', { className: 'settings-backup-actions' }, [
+      exportJsonBtn,
+      importJsonBtn,
+      importFileInput,
+    ]);
+
     const maintPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
@@ -21095,6 +22128,10 @@ const SettingsOtherTab = defineComponent({
       h('div', { className: 'settings-action-block' }, [
         h('div', { className: 'settings-action-info' }, [resetLabelEl, resetDescEl]),
         resetAllBtn,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [backupLabelEl, backupDescEl]),
+        backupActionsWrap,
       ]),
     ]);
 
@@ -21141,6 +22178,10 @@ const SettingsOtherTab = defineComponent({
       patchText(baselineTitleEl, t('settings.oth.baselineTitle'));
       renderContextWindows();
       patchText(maintTitleEl, t('settings.oth.maintTitle'));
+      patchText(backupLabelEl, t('settings.oth.backupLabel'));
+      patchText(backupDescEl, t('settings.oth.backupDesc'));
+      patchText(exportJsonBtnText, t('settings.oth.exportJsonBtn'));
+      patchText(importJsonBtnText, t('settings.oth.importJsonBtn'));
       patchText(cacheLabelEl, t('settings.oth.cacheLabel'));
       patchText(cacheDescEl, t('settings.oth.cacheDesc'));
       patchText(resetLabelEl, t('settings.oth.resetLabel'));
@@ -21187,6 +22228,10 @@ const SettingsOtherTab = defineComponent({
         ctxWindowSelect,
         rebuildCacheBtn,
         resetAllBtn,
+        exportJsonBtn,
+        importJsonBtn,
+        importFileInput,
+        applyImportedSettingsText,
         renderSettings,
         refreshLabels,
       },
@@ -21215,6 +22260,9 @@ const TopSessionHeader = defineComponent({
     const convSelect = CustomSelect({
       modelValue: telemetryStore.getState().selectedConversationId,
       placeholder: t('header.followLatest'),
+      searchable: true,
+      searchThreshold: 6,
+      searchPlaceholder: t('header.searchSessionPlaceholder'),
       options: [{ value: '', label: t('header.followLatest') }],
       onUpdateModelValue: (nextConvId) => {
         uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
@@ -21420,6 +22468,7 @@ const TopSessionHeader = defineComponent({
       convSelect.setProps({
         modelValue: telSt.selectedConversationId,
         placeholder: t('header.followLatest'),
+        searchPlaceholder: t('header.searchSessionPlaceholder'),
         options,
       });
 
@@ -21954,7 +23003,24 @@ const ConsumptionView = defineComponent({
       overviewSegBar.el,
     ]);
 
-    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 + 悬停精确日期/小时浮层 + 多刻度时间轴) ---
+    function drillDownToTimeRange(startMs, endMs) {
+      const minMs = floorToStartOfMinuteMs(startMs);
+      const maxMs = ceilToEndOfMinuteMs(endMs);
+      if (!(minMs > 0) || !(maxMs > minMs)) return;
+      hideBreakdownPopover();
+      draftStartMs = minMs;
+      draftEndMs = maxMs;
+      hasUncommittedCustomDraft = false;
+      hasCommittedCustomRange = true;
+      startPicker.setValue(minMs);
+      endPicker.setValue(maxMs);
+      selectConsumptionTimeRange('custom', {
+        customStartMs: minMs,
+        customEndMs: maxMs,
+      });
+    }
+
+    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 + 悬停精确日期/小时浮层 + 点击时段下钻) ---
     const trendTitleSpan = h('span', { text: t('cons.trendTitle') });
     const trendRangeBadge = h('span', { className: 'cons-badge', text: t('cons.allTime') });
     const trendGranularityHint = h('span', {
@@ -21962,7 +23028,13 @@ const ConsumptionView = defineComponent({
       style: 'font-size: var(--fs-sm);',
       text: t('cons.trendPointsHintHourly', { points: 0 }),
     });
-    const trendChart = createTrendAreaChart();
+    const trendChart = createTrendAreaChart({
+      onSelectSlot: (slot) => {
+        if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
+          drillDownToTimeRange(slot.startMs, slot.endMs);
+        }
+      },
+    });
 
     const trendPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
@@ -21975,14 +23047,110 @@ const ConsumptionView = defineComponent({
       trendChart.el,
     ]);
 
-    // --- Section 3: 模型排行列表 ---
-    const modelsTitleSpan = h('span', { className: 'panel-title', text: t('cons.topModels') });
+    // --- Section 3: 统一排行卡片（分段切换「模型排行 | 会话排行」，右侧联动对应排序切换） ---
+    let activeRankingTab = 'models';
+    let modelsSortBy = 'tokens';
+    let topConvsSortBy = 'cost';
+    let lastModelsCount = 0;
+    let lastConvsCount = 0;
+
+    function getRankingTabOptions(modelsCount = lastModelsCount, convsCount = lastConvsCount) {
+      return [
+        {
+          value: 'models',
+          label:
+            modelsCount > 0
+              ? t('cons.rankTabModelsCount', { count: modelsCount })
+              : t('cons.topModels'),
+        },
+        {
+          value: 'sessions',
+          label:
+            convsCount > 0
+              ? t('cons.rankTabSessionsCount', { count: convsCount })
+              : t('cons.rankTabSessions'),
+        },
+      ];
+    }
+
+    function getModelsSortOptions() {
+      return [
+        { value: 'tokens', label: t('cons.modelsSortTokens') },
+        { value: 'cost', label: t('cons.modelsSortCost') },
+        { value: 'speed', label: t('cons.modelsSortSpeed') },
+        { value: 'calls', label: t('cons.modelsSortCalls') },
+      ];
+    }
+
+    function getTopConvsSortOptions() {
+      return [
+        { value: 'cost', label: t('cons.topConvsSortCost') },
+        { value: 'tokens', label: t('cons.topConvsSortTokens') },
+      ];
+    }
+
+    const rankingTabSwitch = SegmentedControl({
+      ariaLabel: t('cons.rankTabAria'),
+      modelValue: activeRankingTab,
+      options: getRankingTabOptions(0, 0),
+      onUpdateModelValue: (nextTab) => {
+        if (nextTab !== 'models' && nextTab !== 'sessions') return;
+        activeRankingTab = nextTab;
+        rankingTabSwitch.setValue(nextTab);
+        if (latestSlice) {
+          renderConsumptionData(latestSlice);
+        }
+      },
+    });
+
+    const modelsSortSwitch = SegmentedControl({
+      ariaLabel: t('cons.modelsSortAria'),
+      modelValue: modelsSortBy,
+      options: getModelsSortOptions(),
+      onUpdateModelValue: (nextSort) => {
+        if (!['tokens', 'cost', 'speed', 'calls'].includes(nextSort)) return;
+        modelsSortBy = nextSort;
+        modelsSortSwitch.setValue(nextSort);
+        if (latestSlice) {
+          renderConsumptionData(latestSlice);
+        }
+      },
+    });
+
+    const topConvsSortSwitch = SegmentedControl({
+      ariaLabel: t('cons.topConvsSortAria'),
+      modelValue: topConvsSortBy,
+      options: getTopConvsSortOptions(),
+      onUpdateModelValue: (nextSort) => {
+        if (nextSort !== 'cost' && nextSort !== 'tokens') return;
+        topConvsSortBy = nextSort;
+        topConvsSortSwitch.setValue(nextSort);
+        if (latestSlice) {
+          renderConsumptionData(latestSlice);
+        }
+      },
+    });
+    patchAttr(topConvsSortSwitch.el, 'hidden', true);
+
+    const rankingSortWrap = h('div', { className: 'cons-ranking-sort-wrap' }, [
+      modelsSortSwitch.el,
+      topConvsSortSwitch.el,
+    ]);
     const modelsListEl = h('div', { className: 'cons-item-list' });
-    const modelsPanel = h('section', { className: 'panel' }, [
-      h('div', { className: 'panel-header' }, [
-        modelsTitleSpan,
+    const topConvsListEl = h('div', { className: 'cons-item-list', hidden: true });
+    const topConvsEmptyEl = h('div', {
+      className: 'cons-ranking-empty text-muted',
+      hidden: true,
+      text: t('cons.topConvsEmpty'),
+    });
+    const rankingPanel = h('section', { className: 'panel cons-ranking-panel' }, [
+      h('div', { className: 'panel-header cons-ranking-head' }, [
+        rankingTabSwitch.el,
+        rankingSortWrap,
       ]),
       modelsListEl,
+      topConvsListEl,
+      topConvsEmptyEl,
     ]);
 
     // --- Section 4: 客户端来源列表 ---
@@ -22012,34 +23180,14 @@ const ConsumptionView = defineComponent({
 
     let activeHoverTargetEl = null;
 
-    function createPopoverModelRow() {
-      const dotEl = h('span', { className: 'dot-swatch cons-model-dot' });
-      const nameEl = h('span', { className: 'cons-pop-model-name' });
-      const tokEl = h('span', { className: 'cons-pop-model-tok' });
-      const pctEl = h('strong', { className: 'cons-pop-model-pct' });
-      const rowEl = h('div', { className: 'cons-pop-model-row' }, [
-        h('span', { className: 'cons-pop-model-left' }, [dotEl, nameEl]),
-        h('span', { className: 'cons-pop-model-right text-mono' }, [tokEl, pctEl]),
-      ]);
-      return {
-        el: rowEl,
-        refs: { rowEl, dotEl, nameEl, tokEl, pctEl },
-      };
-    }
-
-    const popTitleEl = h('span', { className: 'trend-tip-time' });
-    const popCallsEl = h('span', { className: 'trend-tip-calls text-mono' });
-    const popTokensEl = h('strong', { className: 'trend-tip-tokens text-mono' });
-    const popCostEl = h('span', { className: 'trend-tip-cost text-mono' });
-    const popListEl = h('div', { className: 'cons-pop-models' });
+    const popoverContent = createConsumptionBreakdownContent({
+      showModelDot: true,
+      monoTitle: false,
+    });
     const breakdownPopoverEl = h(
       'div',
-      { className: 'cons-breakdown-popover', hidden: true },
-      [
-        h('div', { className: 'trend-tip-head' }, [popTitleEl, popCallsEl]),
-        h('div', { className: 'trend-tip-main' }, [popTokensEl, popCostEl]),
-        popListEl,
-      ]
+      { className: 'cons-breakdown-popover is-rich-breakdown', hidden: true },
+      popoverContent.children
     );
 
     function hideBreakdownPopover() {
@@ -22051,7 +23199,7 @@ const ConsumptionView = defineComponent({
       patchClasses(breakdownPopoverEl, { 'is-tracking': false });
     }
 
-    function positionBreakdownPopover(anchorEl, pointerClientX = null) {
+    function positionBreakdownPopover(anchorEl, pointerClientX = null, pointerClientY = null) {
       const rootRect = rootEl.getBoundingClientRect?.() || {
         left: 0,
         top: 0,
@@ -22066,34 +23214,52 @@ const ConsumptionView = defineComponent({
         height: 0,
       };
       const tipRect = breakdownPopoverEl.getBoundingClientRect?.() || {
-        width: 220,
-        height: 120,
+        width: 216,
+        height: 108,
       };
       const rootW = rootRect.width > 0 ? rootRect.width : 360;
       const rootH = rootRect.height > 0 ? rootRect.height : 600;
-      const tipW = tipRect.width > 0 ? tipRect.width : 220;
-      const tipH = tipRect.height > 0 ? tipRect.height : 120;
+      const tipW = tipRect.width > 0 ? tipRect.width : 216;
+      const tipH = tipRect.height > 0 ? tipRect.height : 108;
 
-      const centerX =
-        Number.isFinite(pointerClientX) && pointerClientX > 0 && rootRect.width > 0
-          ? pointerClientX - rootRect.left
-          : anchorRect.left - rootRect.left + anchorRect.width / 2;
+      const hasPointerX = Number.isFinite(pointerClientX) && pointerClientX > 0 && rootRect.width > 0;
+      const hasPointerY = Number.isFinite(pointerClientY) && pointerClientY > 0 && rootRect.height > 0;
+
+      const centerX = hasPointerX
+        ? pointerClientX - rootRect.left
+        : anchorRect.left - rootRect.left + anchorRect.width / 2;
+      const anchorY = hasPointerY
+        ? pointerClientY - rootRect.top
+        : anchorRect.top - rootRect.top;
 
       const maxLeft = Math.max(8, rootW - tipW - 8);
-      const leftPx = Math.max(8, Math.min(maxLeft, centerX - tipW / 2));
+      let leftPx = Math.max(8, Math.min(maxLeft, centerX - tipW / 2));
 
-      const aboveTop = anchorRect.top - rootRect.top - tipH - 8;
-      const belowTop = anchorRect.bottom - rootRect.top + 8;
-      const topPx =
-        aboveTop >= 6
-          ? aboveTop
-          : Math.min(Math.max(6, rootH - tipH - 6), Math.max(6, belowTop));
+      const aboveTop = anchorY - tipH - (hasPointerY ? 14 : 8);
+      const belowTop = hasPointerY ? anchorY + 18 : anchorRect.bottom - rootRect.top + 8;
+      let topPx;
+      if (aboveTop >= 6) {
+        topPx = Math.min(Math.max(6, rootH - tipH - 6), aboveTop);
+      } else if (hasPointerX && centerX + 16 + tipW <= rootW - 8) {
+        leftPx = centerX + 16;
+        topPx = Math.max(6, Math.min(Math.max(6, rootH - tipH - 6), anchorY - tipH / 2));
+      } else if (hasPointerX && centerX - 16 - tipW >= 8) {
+        leftPx = centerX - 16 - tipW;
+        topPx = Math.max(6, Math.min(Math.max(6, rootH - tipH - 6), anchorY - tipH / 2));
+      } else {
+        topPx = Math.min(Math.max(6, rootH - tipH - 6), Math.max(6, belowTop));
+      }
 
       patchStyleVar(breakdownPopoverEl, '--pop-x', `${Math.round(leftPx)}px`);
       patchStyleVar(breakdownPopoverEl, '--pop-y', `${Math.round(topPx)}px`);
     }
 
-    function showBreakdownPopover(anchorEl, payload, pointerClientX = null) {
+    function showBreakdownPopover(
+      anchorEl,
+      payload,
+      pointerClientX = null,
+      pointerClientY = null
+    ) {
       if (!payload || !(payload.totalTokens > 0 || payload.calls > 0)) {
         hideBreakdownPopover();
         return;
@@ -22104,29 +23270,22 @@ const ConsumptionView = defineComponent({
       activeHoverTargetEl = anchorEl;
       patchClasses(anchorEl, { 'is-hovered': true });
 
-      patchText(popTitleEl, payload.title || '—');
-      patchText(popCallsEl, t('cons.callsCount', { calls: payload.calls || 0 }));
-      patchText(popTokensEl, `${formatTokensPrecise(payload.totalTokens || 0)} tok`);
-      patchText(popCostEl, payload.costText || '$0.00');
-
-      const rows = Array.isArray(payload.segments) ? payload.segments : [];
-      patchAttr(popListEl, 'hidden', rows.length === 0);
-      patchKeyedList(popListEl, rows, {
-        keyFn: (r) => r.key,
-        sigFn: (r) => `${r.key}:${r.label}:${r.color}:${r.tokText}:${r.pctText}:${r.isOther}`,
-        createRow: createPopoverModelRow,
-        updateRow: (rRefs, r) => {
-          patchClasses(rRefs.rowEl, { 'is-other': Boolean(r.isOther) });
-          patchStyleVar(rRefs.dotEl, '--dot-color', r.color);
-          patchText(rRefs.nameEl, r.label);
-          patchText(rRefs.tokEl, r.tokText);
-          patchText(rRefs.pctEl, r.pctText);
-        },
+      popoverContent.update({
+        title: payload.title || '—',
+        calls: payload.calls || 0,
+        totalTokens: payload.totalTokens || 0,
+        costText: payload.costText || '$0.00',
+        inputTokens: payload.inputTokens,
+        cacheReadTokens: payload.cacheReadTokens,
+        thinkingTokens: payload.thinkingTokens,
+        responseTokens: payload.responseTokens,
+        outputTokens: payload.outputTokens,
+        segments: Array.isArray(payload.segments) ? payload.segments : [],
       });
 
       const wasHidden = breakdownPopoverEl.hasAttribute('hidden');
       patchAttr(breakdownPopoverEl, 'hidden', false);
-      positionBreakdownPopover(anchorEl, pointerClientX);
+      positionBreakdownPopover(anchorEl, pointerClientX, pointerClientY);
       if (wasHidden) {
         patchClasses(breakdownPopoverEl, { 'is-tracking': false });
         void breakdownPopoverEl.offsetWidth;
@@ -22154,16 +23313,31 @@ const ConsumptionView = defineComponent({
       const monthLabel = h('span', { className: 'month-label', text: t('cons.monthLabel', { m: idx + 1 }) });
       const tokText = h('span', { className: 'month-tok text-mono', text: '' });
 
-      const colState = { hoverPayload: null };
+      const colState = { hoverPayload: null, monthRange: null };
       const colEl = h(
         'div',
         {
           className: 'month-col',
+          onClick: () => {
+            if (colState.monthRange) {
+              drillDownToTimeRange(colState.monthRange.startMs, colState.monthRange.endMs);
+            }
+          },
           onMouseEnter: (e) => {
             if (colState.hoverPayload) {
-              showBreakdownPopover(colEl, colState.hoverPayload, null);
+              showBreakdownPopover(
+                colEl,
+                colState.hoverPayload,
+                e?.clientX ?? null,
+                e?.clientY ?? null
+              );
             } else {
               e?.stopPropagation?.();
+            }
+          },
+          onMouseMove: (e) => {
+            if (colState.hoverPayload && activeHoverTargetEl === colEl) {
+              positionBreakdownPopover(colEl, e?.clientX ?? null, e?.clientY ?? null);
             }
           },
           onMouseLeave: () => {
@@ -22211,7 +23385,7 @@ const ConsumptionView = defineComponent({
       [
         overviewPanel,
         trendPanel,
-        modelsPanel,
+        rankingPanel,
         sourcesPanel,
         monthlyPanel,
       ]
@@ -22263,11 +23437,23 @@ const ConsumptionView = defineComponent({
         const tok = Number(m.totalTokens || 0);
         const pct = sumTok > 0 ? (tok / sumTok) * 100 : 0;
         const label = m.displayText || m.label || m.shortName || '—';
+        const inputTokens = Math.max(0, Number(m.inputTokens || 0));
+        const cacheReadTokens = Math.max(0, Number(m.cacheReadTokens || 0));
+        const thinkingTokens = Math.max(0, Number(m.thinkingTokens || 0));
+        const responseTokens =
+          m.responseTokens != null
+            ? Math.max(0, Number(m.responseTokens))
+            : Math.max(0, Number(m.outputTokens || 0) - thinkingTokens);
         return {
           key: label,
           label,
           tok,
           pct,
+          inputTokens,
+          cacheReadTokens,
+          thinkingTokens,
+          responseTokens,
+          outputTokens: responseTokens + thinkingTokens,
           tokText: formatTokensPrecise(tok),
           pctText: `${pct.toFixed(1)}%`,
           color,
@@ -22276,7 +23462,23 @@ const ConsumptionView = defineComponent({
       });
 
       if (tailModels.length >= 2) {
-        const otherTok = tailModels.reduce((sum, m) => sum + Number(m.totalTokens || 0), 0);
+        let otherTok = 0;
+        let otherIn = 0;
+        let otherCache = 0;
+        let otherThink = 0;
+        let otherResp = 0;
+        for (const m of tailModels) {
+          const mt = Math.max(0, Number(m.thinkingTokens || 0));
+          const mr =
+            m.responseTokens != null
+              ? Math.max(0, Number(m.responseTokens))
+              : Math.max(0, Number(m.outputTokens || 0) - mt);
+          otherTok += Number(m.totalTokens || 0);
+          otherIn += Math.max(0, Number(m.inputTokens || 0));
+          otherCache += Math.max(0, Number(m.cacheReadTokens || 0));
+          otherThink += mt;
+          otherResp += mr;
+        }
         const otherPct = sumTok > 0 ? (otherTok / sumTok) * 100 : 0;
         const otherLabel = t('cons.otherModelsCount', { count: tailModels.length });
         out.push({
@@ -22284,6 +23486,11 @@ const ConsumptionView = defineComponent({
           label: otherLabel,
           tok: otherTok,
           pct: otherPct,
+          inputTokens: otherIn,
+          cacheReadTokens: otherCache,
+          thinkingTokens: otherThink,
+          responseTokens: otherResp,
+          outputTokens: otherResp + otherThink,
           tokText: formatTokensPrecise(otherTok),
           pctText: `${otherPct.toFixed(1)}%`,
           color: 'var(--cons-other-seg)',
@@ -22316,6 +23523,51 @@ const ConsumptionView = defineComponent({
       const outVal = h('strong', { className: 'text-mono' });
       const thinkVal = h('strong', { className: 'text-mono' });
       const callsVal = h('strong', { className: 'text-mono' });
+      const metricBarFillEl = h('div', { className: 'progress-seg cons-metric-fill' });
+      const metricBarEl = h(
+        'div',
+        { className: 'progress-track cons-seg-bar cons-metric-bar', hidden: true },
+        [metricBarFillEl]
+      );
+      const tokenFootEl = h('div', { className: 'cons-item-foot' }, [
+        h('span', { className: 'legend-left' }, [
+          h('span', { className: 'dot-swatch seg-input' }),
+          inLbl,
+          inVal,
+        ]),
+        h('span', { className: 'legend-left' }, [
+          h('span', { className: 'dot-swatch seg-cached' }),
+          cacheLbl,
+          cacheVal,
+        ]),
+        h('span', { className: 'legend-left' }, [
+          h('span', { className: 'dot-swatch seg-thinking' }),
+          thinkLbl,
+          thinkVal,
+        ]),
+        h('span', { className: 'legend-left' }, [
+          h('span', { className: 'dot-swatch seg-output' }),
+          outLbl,
+          outVal,
+        ]),
+        h('span', { className: 'legend-left' }, [
+          callsLbl,
+          callsVal,
+        ]),
+      ]);
+      const perfMainEl = h('span', { className: 'cons-model-perf-main text-mono' });
+      const perfUnitCostEl = h('span', { className: 'cons-model-unit-cost text-mono', hidden: true });
+      const perfFootEl = h('div', { className: 'cons-model-perf-foot', hidden: true }, [
+        perfMainEl,
+        perfUnitCostEl,
+      ]);
+      const focusLeftEl = h('span', { className: 'cons-model-focus-left text-mono' });
+      const focusRightEl = h('span', { className: 'cons-model-focus-right text-mono' });
+      const focusFootEl = h(
+        'div',
+        { className: 'cons-item-foot cons-model-focus-foot', hidden: true },
+        [focusLeftEl, focusRightEl]
+      );
 
       const rowEl = h('div', { className: 'cons-item-row' }, [
         h('div', { className: 'panel-header' }, [
@@ -22327,32 +23579,10 @@ const ConsumptionView = defineComponent({
           ]),
         ]),
         segBar.el,
-        h('div', { className: 'cons-item-foot' }, [
-          h('span', { className: 'legend-left' }, [
-            h('span', { className: 'dot-swatch seg-input' }),
-            inLbl,
-            inVal,
-          ]),
-          h('span', { className: 'legend-left' }, [
-            h('span', { className: 'dot-swatch seg-cached' }),
-            cacheLbl,
-            cacheVal,
-          ]),
-          h('span', { className: 'legend-left' }, [
-            h('span', { className: 'dot-swatch seg-thinking' }),
-            thinkLbl,
-            thinkVal,
-          ]),
-          h('span', { className: 'legend-left' }, [
-            h('span', { className: 'dot-swatch seg-output' }),
-            outLbl,
-            outVal,
-          ]),
-          h('span', { className: 'legend-left' }, [
-            callsLbl,
-            callsVal,
-          ]),
-        ]),
+        metricBarEl,
+        tokenFootEl,
+        perfFootEl,
+        focusFootEl,
       ]);
 
       return {
@@ -22364,6 +23594,9 @@ const ConsumptionView = defineComponent({
           totalTokEl,
           costEl,
           segBar,
+          metricBarEl,
+          metricBarFillEl,
+          tokenFootEl,
           inLbl,
           cacheLbl,
           outLbl,
@@ -22374,38 +23607,187 @@ const ConsumptionView = defineComponent({
           outVal,
           thinkVal,
           callsVal,
+          perfFootEl,
+          perfMainEl,
+          perfUnitCostEl,
+          focusFootEl,
+          focusLeftEl,
+          focusRightEl,
         },
       };
     }
 
     /**
-     * 增量更新热门模型单行的指标文本与按总占比缩放的 4 段比例条宽度。
+     * 增量更新模型排行单行：
+     * - `tokens` 模式展示完整四段 Token 构成及效率副行；
+     * - `cost` / `speed` / `calls` 模式切换对应占比百分比、进度条尺度及聚焦单行脚标。
      */
-    function updateBreakdownItemRow(refs, item, grandTotalTokens) {
+    function updateBreakdownItemRow(refs, item, totalsCtx, sortMode = 'tokens') {
+      const displayLabel = item.label || item.name || item.shortName || '—';
+      patchText(refs.nameTextEl, displayLabel);
+      patchAttr(refs.nameEl, 'title', item.title || displayLabel);
+
+      const total = Number(item.totalTokens || 0);
+      const costVal = Number(item.costUsd || 0);
+      const callsCount = Number(item.calls || 0);
+      const isAllUnpriced =
+        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
+      const costText = formatUsd(isAllUnpriced ? null : costVal, {
+        precise: costVal > 0 && costVal < 0.1,
+      });
+
+      const avgTps =
+        item.avgTokPerSec != null &&
+        Number.isFinite(Number(item.avgTokPerSec)) &&
+        Number(item.avgTokPerSec) > 0
+          ? Number(item.avgTokPerSec)
+          : null;
+      const avgTtft =
+        item.avgTtftSec != null &&
+        Number.isFinite(Number(item.avgTtftSec)) &&
+        Number(item.avgTtftSec) >= 0
+          ? Number(item.avgTtftSec)
+          : null;
+      const hasExplicitCachePct =
+        item.cacheHitPct != null && Number.isFinite(Number(item.cacheHitPct));
+      const promptTok = Number(item.inputTokens || 0) + Number(item.cacheReadTokens || 0);
+      const cachePctVal = hasExplicitCachePct
+        ? Number(item.cacheHitPct)
+        : promptTok > 0 && Number(item.cacheReadTokens || 0) > 0
+          ? +((Number(item.cacheReadTokens || 0) / promptTok) * 100).toFixed(1)
+          : 0;
+      const cachePctStr = cachePctVal.toFixed(1);
+      const effCostPer1M =
+        !isAllUnpriced && costVal > 0 && total >= 1000 ? costVal / (total / 1_000_000) : null;
+      const outTok = Number(
+        item.outputTokens ??
+          Number(item.responseTokens || 0) + Number(item.thinkingTokens || 0)
+      );
+
+      if (sortMode === 'cost') {
+        const costBase = Number(totalsCtx?.totalCost || 0);
+        const costShare = costBase > 0 ? +((costVal / costBase) * 100).toFixed(1) : 0;
+        const barPct = costBase > 0 && costVal > 0 ? Math.min(100, Math.max(1, (costVal / costBase) * 100)) : 0;
+        patchAttr(refs.pctBadge, 'hidden', false);
+        patchAttr(refs.pctBadge, 'title', null);
+        patchText(refs.pctBadge, `${costShare.toFixed(1)}%`);
+        patchText(refs.totalTokEl, isAllUnpriced ? '' : formatCnyApprox(costVal));
+        patchText(refs.costEl, costText);
+
+        patchAttr(refs.segBar.el, 'hidden', true);
+        patchAttr(refs.metricBarEl, 'hidden', false);
+        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${barPct.toFixed(2)}%`);
+        patchClasses(refs.metricBarFillEl, {
+          'tone-cost': true,
+          'tone-speed': false,
+          'tone-calls': false,
+        });
+
+        patchAttr(refs.tokenFootEl, 'hidden', true);
+        patchAttr(refs.perfFootEl, 'hidden', true);
+        patchAttr(refs.focusFootEl, 'hidden', false);
+        const unitPart =
+          effCostPer1M !== null
+            ? t('cons.modelUnitCost', {
+                cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
+              })
+            : '';
+        const cachePart = t('cons.topConvCacheMeta', { pct: cachePctStr });
+        patchText(refs.focusLeftEl, unitPart ? `${unitPart} · ${cachePart}` : cachePart);
+        patchText(
+          refs.focusRightEl,
+          `${formatTokensPrecise(total)} · ${t('cons.callsCount', { calls: callsCount })}`
+        );
+        return;
+      }
+
+      if (sortMode === 'speed') {
+        const maxTps = Number(totalsCtx?.maxAvgTps || 0);
+        const speedPct =
+          maxTps > 0 && avgTps !== null ? Math.min(100, Math.max(2, (avgTps / maxTps) * 100)) : 0;
+        patchAttr(refs.pctBadge, 'hidden', avgTps === null);
+        patchAttr(refs.pctBadge, 'title', avgTps !== null ? t('cons.speedRelTip') : null);
+        patchText(refs.pctBadge, avgTps !== null ? `${Math.round(speedPct)}%` : '');
+        patchText(
+          refs.totalTokEl,
+          avgTtft !== null ? t('cons.focusTtft', { ttft: formatMetric(avgTtft, 's') }) : ''
+        );
+        patchText(refs.costEl, formatSpeedMetric(avgTps, ' tok/s'));
+
+        patchAttr(refs.segBar.el, 'hidden', true);
+        patchAttr(refs.metricBarEl, 'hidden', false);
+        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${speedPct.toFixed(2)}%`);
+        patchClasses(refs.metricBarFillEl, {
+          'tone-cost': false,
+          'tone-speed': true,
+          'tone-calls': false,
+        });
+
+        patchAttr(refs.tokenFootEl, 'hidden', true);
+        patchAttr(refs.perfFootEl, 'hidden', true);
+        patchAttr(refs.focusFootEl, 'hidden', false);
+        patchText(
+          refs.focusLeftEl,
+          t('cons.focusSpeedMeta', {
+            ttft: formatMetric(avgTtft, 's'),
+            cache: cachePctStr,
+            out: formatTokensPrecise(outTok),
+          })
+        );
+        patchText(refs.focusRightEl, t('cons.callsCount', { calls: callsCount }));
+        return;
+      }
+
+      if (sortMode === 'calls') {
+        const callsBase = Number(totalsCtx?.totalCalls || 0);
+        const callsShare = callsBase > 0 ? +((callsCount / callsBase) * 100).toFixed(1) : 0;
+        const barPct =
+          callsBase > 0 && callsCount > 0 ? Math.min(100, Math.max(1, (callsCount / callsBase) * 100)) : 0;
+        patchAttr(refs.pctBadge, 'hidden', false);
+        patchAttr(refs.pctBadge, 'title', null);
+        patchText(refs.pctBadge, `${callsShare.toFixed(1)}%`);
+        patchText(refs.totalTokEl, formatTokensPrecise(total));
+        patchText(refs.costEl, t('cons.callsCount', { calls: callsCount }));
+
+        patchAttr(refs.segBar.el, 'hidden', true);
+        patchAttr(refs.metricBarEl, 'hidden', false);
+        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${barPct.toFixed(2)}%`);
+        patchClasses(refs.metricBarFillEl, {
+          'tone-cost': false,
+          'tone-speed': false,
+          'tone-calls': true,
+        });
+
+        patchAttr(refs.tokenFootEl, 'hidden', true);
+        patchAttr(refs.perfFootEl, 'hidden', true);
+        patchAttr(refs.focusFootEl, 'hidden', false);
+        const avgPerCall = callsCount > 0 ? total / callsCount : 0;
+        patchText(
+          refs.focusLeftEl,
+          t('cons.focusCallsMeta', {
+            avgTok: formatTokensPrecise(avgPerCall),
+            cost: costText,
+          })
+        );
+        patchText(refs.focusRightEl, t('cons.topConvCacheMeta', { pct: cachePctStr }));
+        return;
+      }
+
+      // 默认 Token 模式：展示全部四段 Token 构成及效率副行
       patchText(refs.inLbl, t('cons.footInput'));
       patchText(refs.cacheLbl, t('cons.footCache'));
       patchText(refs.outLbl, t('cons.footOutput'));
       patchText(refs.thinkLbl, t('cons.footThinking'));
       patchText(refs.callsLbl, t('cons.footCalls'));
-      const displayLabel = item.label || item.name || item.shortName || '—';
-      patchText(refs.nameTextEl, displayLabel);
-      patchAttr(refs.nameEl, 'title', item.title || displayLabel);
-      const total = Number(item.totalTokens || 0);
+      const grandTotalTokens = Number(totalsCtx?.totalTokens || 0);
       const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
       const scaleRatio =
         grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.008, total / grandTotalTokens)) : 0;
+      patchAttr(refs.pctBadge, 'hidden', false);
+      patchAttr(refs.pctBadge, 'title', null);
       patchText(refs.pctBadge, `${share.toFixed(1)}%`);
       patchText(refs.totalTokEl, formatTokensPrecise(total));
-      const costVal = Number(item.costUsd || 0);
-      const callsCount = Number(item.calls || 0);
-      const isAllUnpriced =
-        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
-      patchText(
-        refs.costEl,
-        formatUsd(isAllUnpriced ? null : costVal, {
-          precise: costVal > 0 && costVal < 0.1,
-        })
-      );
+      patchText(refs.costEl, costText);
 
       const responseTok =
         item.responseTokens != null
@@ -22413,6 +23795,8 @@ const ConsumptionView = defineComponent({
           : Math.max(0, Number(item.outputTokens || 0) - Number(item.thinkingTokens || 0));
       const thinkingTok = Number(item.thinkingTokens || 0);
 
+      patchAttr(refs.segBar.el, 'hidden', false);
+      patchAttr(refs.metricBarEl, 'hidden', true);
       refs.segBar.update({
         inputTokens: Number(item.inputTokens || 0),
         cacheReadTokens: Number(item.cacheReadTokens || 0),
@@ -22421,11 +23805,39 @@ const ConsumptionView = defineComponent({
         scaleRatio,
       });
 
+      patchAttr(refs.tokenFootEl, 'hidden', false);
+      patchAttr(refs.focusFootEl, 'hidden', true);
       patchText(refs.inVal, formatTokensPrecise(item.inputTokens || 0));
       patchText(refs.cacheVal, formatTokensPrecise(item.cacheReadTokens || 0));
       patchText(refs.outVal, formatTokensPrecise(responseTok));
       patchText(refs.thinkVal, formatTokensPrecise(thinkingTok));
-      patchText(refs.callsVal, String(Number(item.calls || 0)));
+      patchText(refs.callsVal, String(callsCount));
+
+      const hasPerfMeta = avgTps !== null || avgTtft !== null || effCostPer1M !== null;
+      patchAttr(refs.perfFootEl, 'hidden', !hasPerfMeta);
+      if (hasPerfMeta) {
+        if (avgTps !== null || avgTtft !== null) {
+          patchText(
+            refs.perfMainEl,
+            t('steps.modelPerfFoot', {
+              tps: formatSpeedMetric(avgTps, ' tok/s'),
+              ttft: formatMetric(avgTtft, 's'),
+              cache: cachePctStr,
+            })
+          );
+        } else {
+          patchText(refs.perfMainEl, t('cons.topConvCacheMeta', { pct: cachePctStr }));
+        }
+        patchAttr(refs.perfUnitCostEl, 'hidden', effCostPer1M === null);
+        patchText(
+          refs.perfUnitCostEl,
+          effCostPer1M !== null
+            ? t('cons.modelUnitCost', {
+                cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
+              })
+            : ''
+        );
+      }
     }
 
     function createSourceModelSegment() {
@@ -22462,12 +23874,17 @@ const ConsumptionView = defineComponent({
       const bindPopoverHover = (targetEl) => ({
         onMouseEnter: (e) => {
           if (rowState.hoverPayload) {
-            showBreakdownPopover(targetEl, rowState.hoverPayload, e?.clientX ?? null);
+            showBreakdownPopover(
+              targetEl,
+              rowState.hoverPayload,
+              e?.clientX ?? null,
+              e?.clientY ?? null
+            );
           }
         },
         onMouseMove: (e) => {
           if (rowState.hoverPayload && activeHoverTargetEl === targetEl) {
-            positionBreakdownPopover(targetEl, e?.clientX ?? null);
+            positionBreakdownPopover(targetEl, e?.clientX ?? null, e?.clientY ?? null);
           }
         },
         onMouseLeave: () => {
@@ -22617,6 +24034,246 @@ const ConsumptionView = defineComponent({
               calls: callsCount,
               totalTokens: total,
               costText,
+              inputTokens: item.inputTokens,
+              cacheReadTokens: item.cacheReadTokens,
+              thinkingTokens: item.thinkingTokens,
+              responseTokens: item.responseTokens,
+              outputTokens: item.outputTokens,
+              segments: partitioned,
+            }
+          : null;
+    }
+
+    function createTopConversationRow() {
+      const titleTextEl = h('span', { className: 'cons-row-title-text' });
+      const titleEl = h('strong', { className: 'cons-row-title cons-top-conv-title' }, [
+        titleTextEl,
+      ]);
+      const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
+      const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
+      const costEl = h('strong', { className: 'cons-row-cost text-mono' });
+      const trackEl = h('div', { className: 'progress-track cons-seg-bar cons-source-model-bar' });
+      const rowState = { cascadeId: '', canJump: false, hoverPayload: null };
+
+      const bindPopoverHover = (targetEl) => ({
+        onMouseEnter: (e) => {
+          if (rowState.hoverPayload) {
+            showBreakdownPopover(
+              targetEl,
+              rowState.hoverPayload,
+              e?.clientX ?? null,
+              e?.clientY ?? null
+            );
+          }
+        },
+        onMouseMove: (e) => {
+          if (rowState.hoverPayload && activeHoverTargetEl === targetEl) {
+            positionBreakdownPopover(targetEl, e?.clientX ?? null, e?.clientY ?? null);
+          }
+        },
+        onMouseLeave: () => {
+          if (activeHoverTargetEl === targetEl) hideBreakdownPopover();
+        },
+      });
+
+      const barHitEl = h('div', { className: 'cons-source-bar-hit' }, [trackEl]);
+      const barHandlers = bindPopoverHover(barHitEl);
+      barHitEl.addEventListener('mouseenter', barHandlers.onMouseEnter);
+      barHitEl.addEventListener('mousemove', barHandlers.onMouseMove);
+      barHitEl.addEventListener('mouseleave', barHandlers.onMouseLeave);
+
+      const topModelsEl = h('div', { className: 'cons-source-top-models', hidden: true });
+      const topHandlers = bindPopoverHover(topModelsEl);
+      topModelsEl.addEventListener('mouseenter', topHandlers.onMouseEnter);
+      topModelsEl.addEventListener('mousemove', topHandlers.onMouseMove);
+      topModelsEl.addEventListener('mouseleave', topHandlers.onMouseLeave);
+
+      const fallbackMetaEl = h('span', { className: 'cons-top-conv-meta', hidden: true });
+      const callsLbl = h('span', { text: t('cons.footCalls') });
+      const callsVal = h('strong', { className: 'text-mono' });
+
+      const rowEl = h(
+        'div',
+        {
+          className: 'cons-top-conv-row',
+          onClick: () => {
+            if (!rowState.cascadeId) return;
+            hideBreakdownPopover();
+            selectConversation(rowState.cascadeId);
+            uiStore.setState({
+              activeView: 'steps',
+              stepsSubTab: 'steps',
+              selectedAgentScope: 'all',
+              ctxInspectorAgentId: 'auto',
+            });
+          },
+        },
+        [
+          h('div', { className: 'panel-header' }, [
+            titleEl,
+            h('span', { className: 'cons-row-metrics' }, [
+              pctBadge,
+              totalTokEl,
+              costEl,
+            ]),
+          ]),
+          barHitEl,
+          h('div', { className: 'cons-item-foot cons-source-foot' }, [
+            topModelsEl,
+            fallbackMetaEl,
+            h('span', { className: 'legend-left cons-calls-stat' }, [
+              callsLbl,
+              callsVal,
+            ]),
+          ]),
+        ]
+      );
+
+      return {
+        el: rowEl,
+        refs: {
+          rowEl,
+          titleEl,
+          titleTextEl,
+          pctBadge,
+          totalTokEl,
+          costEl,
+          barHitEl,
+          trackEl,
+          topModelsEl,
+          fallbackMetaEl,
+          callsLbl,
+          callsVal,
+          rowState,
+        },
+      };
+    }
+
+    function updateTopConversationRow(refs, item, bases, modelColorMap, sortMode = 'cost') {
+      patchText(refs.callsLbl, t('cons.footCalls'));
+      const title = String(item.title || item.cascadeId || '—').trim();
+      refs.rowState.cascadeId = String(item.cascadeId || '');
+      refs.rowState.canJump = item.canJump !== false && Boolean(refs.rowState.cascadeId);
+      patchClasses(refs.rowEl, { 'is-jumpable': refs.rowState.canJump });
+      patchAttr(
+        refs.rowEl,
+        'title',
+        refs.rowState.canJump ? `${title} — ${t('cons.topConvJumpTip')}` : title
+      );
+      patchText(refs.titleTextEl, title);
+
+      const total = Number(item.totalTokens || 0);
+      const costVal = Number(item.costUsd || 0);
+      const callsCount = Number(item.calls || 0);
+      const isAllUnpriced =
+        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
+      const costText = formatUsd(isAllUnpriced ? null : costVal, {
+        precise: costVal > 0 && costVal < 0.1,
+      });
+
+      const tokBase = Number(bases?.tokens || 0);
+      const costBase = Number(bases?.cost || 0);
+      const useCostBasis = sortMode === 'cost' && costBase > 0;
+      const share = useCostBasis
+        ? +((costVal / costBase) * 100).toFixed(1)
+        : tokBase > 0
+          ? +((total / tokBase) * 100).toFixed(1)
+          : 0;
+      const scaleRatio = useCostBasis
+        ? costVal > 0
+          ? Math.min(1, Math.max(0.01, costVal / costBase))
+          : 0
+        : tokBase > 0 && total > 0
+          ? Math.min(1, Math.max(0.01, total / tokBase))
+          : 0;
+
+      patchText(refs.pctBadge, `${share.toFixed(1)}%`);
+      if (sortMode === 'tokens') {
+        patchText(refs.totalTokEl, costText);
+        patchText(refs.costEl, formatTokensPrecise(total));
+      } else {
+        patchText(refs.totalTokEl, formatTokensPrecise(total));
+        patchText(refs.costEl, costText);
+      }
+      patchText(refs.callsVal, String(callsCount));
+
+      // 复用客户端来源同款按模型配色分段进度条、Top 2-3 模型速览及共享悬浮详情浮层
+      const convModels = Array.isArray(item.mergedModels) ? item.mergedModels : [];
+      const partitioned = partitionModelSegments(convModels, modelColorMap, {
+        maxMain: 5,
+        minSharePct: 1.5,
+      });
+      const barItems =
+        partitioned.length > 0
+          ? partitioned.map((seg) => ({
+              key: seg.key,
+              segPct: scaleRatio > 0 ? seg.pct * scaleRatio : 0,
+              color: seg.color,
+            }))
+          : scaleRatio > 0
+            ? [
+                {
+                  key: '__conv_fallback__',
+                  segPct: scaleRatio * 100,
+                  color: 'var(--accent-primary)',
+                },
+              ]
+            : [];
+
+      patchKeyedList(refs.trackEl, barItems, {
+        keyFn: (seg) => seg.key,
+        sigFn: (seg) => `${seg.key}:${seg.segPct.toFixed(2)}:${seg.color}`,
+        createRow: createSourceModelSegment,
+        updateRow: (segRefs, seg) => {
+          patchStyleVar(segRefs.segEl, '--seg-w', `${seg.segPct.toFixed(2)}%`);
+          patchStyleVar(segRefs.segEl, '--seg-color', seg.color);
+        },
+      });
+
+      const topModels = partitioned
+        .filter((seg) => !seg.isOther)
+        .slice(0, 3)
+        .map((seg) => ({
+          key: seg.key,
+          label: seg.label,
+          pctText: formatCompactSourceSharePct(seg.pct),
+          color: seg.color,
+        }));
+      patchAttr(refs.topModelsEl, 'hidden', topModels.length === 0);
+      patchKeyedList(refs.topModelsEl, topModels, {
+        keyFn: (m) => m.key,
+        sigFn: (m) => `${m.key}:${m.label}:${m.pctText}:${m.color}`,
+        createRow: createSourceTopModelItem,
+        updateRow: (mRefs, m) => {
+          patchStyleVar(mRefs.dotEl, '--dot-color', m.color);
+          patchText(mRefs.nameEl, m.label);
+          patchText(mRefs.pctEl, m.pctText);
+          patchAttr(mRefs.itemEl, 'title', `${m.label} (${m.pctText})`);
+        },
+      });
+
+      const showFallbackMeta = topModels.length === 0;
+      patchAttr(refs.fallbackMetaEl, 'hidden', !showFallbackMeta);
+      if (showFallbackMeta) {
+        const srcLabel = item.sourceName || item.appSource || '';
+        const cacheLabel = t('cons.topConvCacheMeta', {
+          pct: Number(item.cacheHitPct ?? 0).toFixed(1),
+        });
+        patchText(refs.fallbackMetaEl, srcLabel ? `${srcLabel} · ${cacheLabel}` : cacheLabel);
+      }
+
+      refs.rowState.hoverPayload =
+        partitioned.length > 0 && (total > 0 || callsCount > 0)
+          ? {
+              title,
+              calls: callsCount,
+              totalTokens: total,
+              costText,
+              inputTokens: item.inputTokens,
+              cacheReadTokens: item.cacheReadTokens,
+              thinkingTokens: item.thinkingTokens,
+              responseTokens: item.responseTokens,
+              outputTokens: item.outputTokens,
               segments: partitioned,
             }
           : null;
@@ -22686,6 +24343,10 @@ const ConsumptionView = defineComponent({
         acct,
         cons.trendSeries,
         slice.modelBreakdown,
+        activeRankingTab,
+        modelsSortBy,
+        cons.topConversations,
+        topConvsSortBy,
         cons.sourcesBreakdown,
         monthlyYear,
         currentMonthIdx,
@@ -22782,8 +24443,43 @@ const ConsumptionView = defineComponent({
 
       const models = mergeModelsByDisplayName(slice.modelBreakdown || [], displaySettings, {
         preferLabelInShort: true,
-      }).sort((a, b) => (b.totalTokens || 0) - (a.totalTokens || 0));
+      }).sort((a, b) => {
+        if (modelsSortBy === 'cost') {
+          return (b.costUsd || 0) - (a.costUsd || 0) || (b.totalTokens || 0) - (a.totalTokens || 0);
+        }
+        if (modelsSortBy === 'speed') {
+          const sa = Number(a.avgTokPerSec) > 0 ? Number(a.avgTokPerSec) : -1;
+          const sb = Number(b.avgTokPerSec) > 0 ? Number(b.avgTokPerSec) : -1;
+          return sb - sa || (b.totalTokens || 0) - (a.totalTokens || 0);
+        }
+        if (modelsSortBy === 'calls') {
+          return (b.calls || 0) - (a.calls || 0) || (b.totalTokens || 0) - (a.totalTokens || 0);
+        }
+        return (b.totalTokens || 0) - (a.totalTokens || 0) || (b.calls || 0) - (a.calls || 0);
+      });
       const modelsTotalTok = models.reduce((s, m) => s + Number(m.totalTokens || 0), 0);
+      const modelsTotalCost = models.reduce((s, m) => s + Math.max(0, Number(m.costUsd || 0)), 0);
+      const modelsTotalCalls = models.reduce((s, m) => s + Math.max(0, Number(m.calls || 0)), 0);
+      const modelsMaxAvgTps = models.reduce((mx, m) => {
+        const v = Number(m.avgTokPerSec || 0);
+        return Number.isFinite(v) && v > mx ? v : mx;
+      }, 0);
+      const modelsTotalsCtx = {
+        totalTokens: modelsTotalTok,
+        totalCost: modelsTotalCost,
+        totalCalls: modelsTotalCalls,
+        maxAvgTps: modelsMaxAvgTps,
+      };
+
+      const rawTopConvs = Array.isArray(cons.topConversations) ? cons.topConversations : [];
+      const allTopConvMergedModels = [];
+      const topConvsWithModels = rawTopConvs.map((c) => {
+        const mergedModels = mergeAndSortBucketModels(c.models);
+        for (const m of mergedModels) {
+          allTopConvMergedModels.push(m);
+        }
+        return { ...c, mergedModels };
+      });
 
       const rawSources = cons.sourcesBreakdown || [];
       const sourcesTotalTok = rawSources.reduce((s, x) => s + Number(x.totalTokens || 0), 0);
@@ -22837,6 +24533,7 @@ const ConsumptionView = defineComponent({
       const modelColorMap = buildDeterministicModelColorMap([
         ...models,
         ...allSourceMergedModels,
+        ...allTopConvMergedModels,
         ...allMonthMergedModels,
         ...allTrendMergedModels,
       ]);
@@ -22872,19 +24569,65 @@ const ConsumptionView = defineComponent({
       });
       trendChart.update(enrichedTrendSeries);
 
-      // 3. 同步热门模型列表（4 段条按总占比缩放长度）
+      // 3. 同步统一排行卡片（分段切换「模型排行 | 会话排行」及对应排序控制）
+      const sortedTopConvs = [...topConvsWithModels].sort((a, b) =>
+        topConvsSortBy === 'tokens'
+          ? (b.totalTokens || 0) - (a.totalTokens || 0) || (b.costUsd || 0) - (a.costUsd || 0)
+          : (b.costUsd || 0) - (a.costUsd || 0) || (b.totalTokens || 0) - (a.totalTokens || 0)
+      );
+      lastModelsCount = models.length;
+      lastConvsCount = sortedTopConvs.length;
+      rankingTabSwitch.setProps({
+        ariaLabel: t('cons.rankTabAria'),
+        modelValue: activeRankingTab,
+        options: getRankingTabOptions(models.length, sortedTopConvs.length),
+      });
+      const showSessionsTab = activeRankingTab === 'sessions';
+      patchAttr(modelsSortSwitch.el, 'hidden', showSessionsTab);
+      patchAttr(topConvsSortSwitch.el, 'hidden', !showSessionsTab || sortedTopConvs.length === 0);
+      patchAttr(modelsListEl, 'hidden', showSessionsTab);
+      patchAttr(topConvsListEl, 'hidden', !showSessionsTab || sortedTopConvs.length === 0);
+      patchAttr(topConvsEmptyEl, 'hidden', !showSessionsTab || sortedTopConvs.length > 0);
+      patchText(topConvsEmptyEl, t('cons.topConvsEmpty'));
+
       patchKeyedList(modelsListEl, models, {
         keyFn: (m) => m.displayText || m.label || m.shortName,
         sigFn: (m) =>
-          `${localeSig}:${m.displayText}:${m.displayTitle}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${modelsTotalTok}`,
+          `${localeSig}:${modelsSortBy}:${m.displayText}:${m.displayTitle}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${m.avgTokPerSec ?? ''}:${m.avgTtftSec ?? ''}:${m.cacheHitPct ?? ''}:${modelsTotalTok}:${modelsTotalCost.toFixed(4)}:${modelsTotalCalls}:${modelsMaxAvgTps}`,
         createRow: createBreakdownItemRow,
         updateRow: (refs, m) => {
           updateBreakdownItemRow(
             refs,
             { ...m, label: m.displayText, title: m.displayTitle },
-            modelsTotalTok
+            modelsTotalsCtx,
+            modelsSortBy
           );
         },
+      });
+
+      const topConvsBaseTokens =
+        totalTokens > 0
+          ? totalTokens
+          : sortedTopConvs.reduce((s, c) => s + Number(c.totalTokens || 0), 0);
+      const topConvsBaseCost =
+        costUsd > 0
+          ? costUsd
+          : sortedTopConvs.reduce((s, c) => s + Math.max(0, Number(c.costUsd || 0)), 0);
+      const topConvsBases = { tokens: topConvsBaseTokens, cost: topConvsBaseCost };
+      patchKeyedList(topConvsListEl, sortedTopConvs, {
+        keyFn: (c) => c.cascadeId,
+        sigFn: (c) => {
+          const modelsSig = c.mergedModels
+            .map((m) => {
+              const seed = getCanonicalModelColorSeed(m);
+              return `${m.displayText}:${m.totalTokens}:${m.inputTokens || 0}:${m.cacheReadTokens || 0}:${m.thinkingTokens || 0}:${m.responseTokens || 0}:${m.calls}:${modelColorMap.get(seed) || ''}`;
+            })
+            .join('|');
+          return `${localeSig}:${topConvsSortBy}:${c.cascadeId}:${c.title}:${c.totalTokens}:${c.inputTokens || 0}:${c.cacheReadTokens || 0}:${c.thinkingTokens || 0}:${c.responseTokens || 0}:${c.costUsd}:${c.unpricedCalls}:${c.calls}:${c.cacheHitPct}:${c.sourceName}:${c.canJump ? 1 : 0}:${topConvsBaseTokens}:${topConvsBaseCost.toFixed(4)}:${modelsSig}`;
+        },
+        createRow: createTopConversationRow,
+        updateRow: (refs, c) =>
+          updateTopConversationRow(refs, c, topConvsBases, modelColorMap, topConvsSortBy),
       });
 
       // 4. 同步客户端来源列表（长尾合并分段配色 + 右侧总调用数 + 悬停进度条弹出明细浮层）
@@ -22894,10 +24637,10 @@ const ConsumptionView = defineComponent({
           const modelsSig = s.mergedModels
             .map((m) => {
               const seed = getCanonicalModelColorSeed(m);
-              return `${m.displayText}:${m.totalTokens}:${m.calls}:${modelColorMap.get(seed) || ''}`;
+              return `${m.displayText}:${m.totalTokens}:${m.inputTokens || 0}:${m.cacheReadTokens || 0}:${m.thinkingTokens || 0}:${m.responseTokens || 0}:${m.calls}:${modelColorMap.get(seed) || ''}`;
             })
             .join('|');
-          return `${localeSig}:${s.name}:${s.totalTokens}:${s.costUsd}:${s.unpricedCalls}:${s.calls}:${sourcesTotalTok}:${modelsSig}`;
+          return `${localeSig}:${s.name}:${s.totalTokens}:${s.inputTokens || 0}:${s.cacheReadTokens || 0}:${s.thinkingTokens || 0}:${s.responseTokens || 0}:${s.costUsd}:${s.unpricedCalls}:${s.calls}:${sourcesTotalTok}:${modelsSig}`;
         },
         createRow: createSourceBreakdownRow,
         updateRow: (refs, s) => updateSourceBreakdownRow(refs, s, sourcesTotalTok, modelColorMap),
@@ -22926,6 +24669,7 @@ const ConsumptionView = defineComponent({
           patchText(col.costText, '');
           patchText(col.tokText, '');
           col.colState.hoverPayload = null;
+          col.colState.monthRange = null;
           patchKeyedList(col.stackWrap, [], {
             keyFn: (x) => x.key,
             sigFn: (x) => x.key,
@@ -22966,6 +24710,10 @@ const ConsumptionView = defineComponent({
             },
           });
 
+          col.colState.monthRange = {
+            startMs: new Date(monthlyYear, i, 1, 0, 0, 0, 0).getTime(),
+            endMs: new Date(monthlyYear, i + 1, 0, 23, 59, 59, 999).getTime(),
+          };
           col.colState.hoverPayload = {
             title: t('cons.monthFullLabel', { year: monthlyYear, m: i + 1 }),
             calls: mCalls,
@@ -22973,6 +24721,11 @@ const ConsumptionView = defineComponent({
             costText: formatUsd(isMonthUnpriced ? null : cVal, {
               precise: cVal > 0 && cVal < 0.1,
             }),
+            inputTokens: m.inputTokens,
+            cacheReadTokens: m.cacheReadTokens,
+            thinkingTokens: m.thinkingTokens,
+            responseTokens: m.responseTokens,
+            outputTokens: m.outputTokens,
             segments: barPartitioned,
           };
         }
@@ -23053,7 +24806,20 @@ const ConsumptionView = defineComponent({
       patchText(cacheReadLabel, t('cons.cacheRead'));
       patchText(outputUsageLabel, t('cons.outputUsage'));
       patchText(trendTitleSpan, t('cons.trendTitle'));
-      patchText(modelsTitleSpan, t('cons.topModels'));
+      rankingTabSwitch.setProps({
+        ariaLabel: t('cons.rankTabAria'),
+        modelValue: activeRankingTab,
+        options: getRankingTabOptions(),
+      });
+      modelsSortSwitch.setProps({
+        ariaLabel: t('cons.modelsSortAria'),
+        options: getModelsSortOptions(),
+      });
+      topConvsSortSwitch.setProps({
+        ariaLabel: t('cons.topConvsSortAria'),
+        options: getTopConvsSortOptions(),
+      });
+      patchText(topConvsEmptyEl, t('cons.topConvsEmpty'));
       patchText(sourcesTitleSpan, t('cons.clientSources'));
       patchText(sourcesHoverHint, t('cons.hoverModelsHint'));
       patchText(monthlyTitleSpan, t('cons.monthlyTitle'));
@@ -23082,6 +24848,9 @@ const ConsumptionView = defineComponent({
       unsubView();
       unsubI18n();
       trendChart.destroy?.();
+      rankingTabSwitch.destroy();
+      modelsSortSwitch.destroy();
+      topConvsSortSwitch.destroy();
       timeFilterSwitch.destroy();
       startPicker.destroy();
       endPicker.destroy();
@@ -23285,6 +25054,11 @@ const StepsDetailView = defineComponent({
     let selectedLineModels = ['__all__'];
     let onlyAnomalies = false;
     let anomalyKindFilter = '';
+    let sortKey = '';
+    let sortDir = '';
+    let cachedSortSrc = null;
+    let cachedSortSig = '';
+    let cachedSortedOut = [];
 
     function applyAgentScopesSelection(nextScopes) {
       selectedAgentScopes = nextScopes;
@@ -23352,6 +25126,11 @@ const StepsDetailView = defineComponent({
     const stepTableWidget = StepTableWidget({
       onSelectAgentScopes: applyAgentScopesSelection,
       onVirtualHeightChange: () => stepsScroll?.refresh(),
+      onSortChange: (nextKey, nextDir) => {
+        sortKey = nextKey || '';
+        sortDir = nextDir || '';
+        if (latestSlice) renderStepsData(latestSlice);
+      },
     });
     const {
       stepsTablePane,
@@ -23663,6 +25442,8 @@ const StepsDetailView = defineComponent({
           selectedLineModels = ['__all__'];
           onlyAnomalies = false;
           anomalyKindFilter = '';
+          sortKey = '';
+          sortDir = '';
         }
         fitLockedCascadeId = currentCid;
         fitUserPicked = false;
@@ -23860,16 +25641,37 @@ const StepsDetailView = defineComponent({
       const modelFilteredSteps = tableModelFilterSet
         ? steps.filter((st) => tableModelFilterSet.has(getStepModelGroupKey(st)))
         : steps;
-      const tableSteps = onlyAnomalies
-        ? modelFilteredSteps.filter((st) => {
-            const a = st?.anomaly;
-            if (!a || !(Number(a.count) > 0)) return false;
-            if (anomalyKindFilter) {
-              return Number(a.kinds?.[anomalyKindFilter] || 0) > 0;
-            }
-            return true;
-          })
-        : modelFilteredSteps;
+
+      let filteredTableSteps = modelFilteredSteps;
+      if (onlyAnomalies) {
+        filteredTableSteps = modelFilteredSteps.filter((st) => {
+          const a = st?.anomaly;
+          if (!a || !(Number(a.count) > 0)) return false;
+          if (anomalyKindFilter && !(Number(a.kinds?.[anomalyKindFilter] || 0) > 0)) return false;
+          return true;
+        });
+      }
+
+      const normTokenFmt = normalizeClientStepTokenComboFormat(slice.stepTokenComboFormat);
+      const sortSig = `${sortKey}:${sortDir}:${normTokenFmt}:${displaySettings.modelDisplayMode}:${displaySettings.showUpstreamModel ? 1 : 0}:${displaySettings.orchestratorIdMode}`;
+      let tableSteps = filteredTableSteps;
+      if (sortKey && sortDir) {
+        if (cachedSortSrc === filteredTableSteps && cachedSortSig === sortSig) {
+          tableSteps = cachedSortedOut;
+        } else {
+          tableSteps = sortStepsByColumn(filteredTableSteps, sortKey, sortDir, {
+            stepTokenComboFormat: normTokenFmt,
+            displaySettings,
+          });
+          cachedSortSrc = filteredTableSteps;
+          cachedSortSig = sortSig;
+          cachedSortedOut = tableSteps;
+        }
+      } else {
+        cachedSortSrc = null;
+        cachedSortSig = '';
+        cachedSortedOut = [];
+      }
 
       const showAnomalyFilterBar = !showModels && onlyAnomalies;
       patchAttr(anomalyFilterBarEl, 'hidden', !showAnomalyFilterBar);
@@ -23915,6 +25717,8 @@ const StepsDetailView = defineComponent({
           displaySettings,
           allConversationSteps,
           allowNewRowFade: shouldAnimateNewRows,
+          sortKey,
+          sortDir,
         });
         stepsScroll.refresh();
         fitPinnedWhileVisible = false;
@@ -24193,7 +25997,7 @@ const StepsDetailView = defineComponent({
           const anomSig = anomSum
             ? `${anomSum.count}:${anomSum.steps}:${anomSum.primaryKind}:${anomSum.severity}:${anomSum.totalDelaySec}`
             : '';
-          return `${locale}:${m.displayText}:${m.displayTitle}:${m.calls}:${sumCalls}:${displayModels.length}:${m.avgTokPerSec}:${avgTtft}:${m.cacheHitPct}:${m.inputTokens}:${m.cacheReadTokens}:${m.thinkingTokens}:${m.responseTokens}:${m.totalTokens}:${m.costUsd}:${m.unpricedCalls}:${isActiveFit}:${hasMultipleModels}:${anomSig}`;
+          return `${locale}:${m.displayText}:${m.displayTitle}:${m.calls}:${sumCalls}:${sumTokens}:${displayModels.length}:${m.avgTokPerSec}:${avgTtft}:${m.cacheHitPct}:${m.inputTokens}:${m.cacheReadTokens}:${m.thinkingTokens}:${m.responseTokens}:${m.totalTokens}:${m.costUsd}:${m.unpricedCalls}:${isActiveFit}:${hasMultipleModels}:${anomSig}`;
         },
         createRow: () => {
           const nameEl = h('strong', { className: 'smodel-name' });
@@ -24239,6 +26043,8 @@ const StepsDetailView = defineComponent({
             ]),
           ]);
           const perfEl = h('span', { className: 'smodel-perf text-mono' });
+          const unitCostEl = h('span', { className: 'smodel-unit-cost text-mono', hidden: true });
+          const perfFootEl = h('div', { className: 'smodel-perf-foot' }, [perfEl, unitCostEl]);
 
           const cardEl = h('div', { className: 'smodel-card' }, [
             h('div', { className: 'smodel-head' }, [
@@ -24246,7 +26052,8 @@ const StepsDetailView = defineComponent({
               h('div', { className: 'smodel-totals' }, [tokEl, costEl]),
             ]),
             segBar.el,
-            h('div', { className: 'smodel-foot' }, [splitEl, perfEl]),
+            h('div', { className: 'smodel-foot' }, [splitEl]),
+            perfFootEl,
           ]);
 
           return {
@@ -24259,6 +26066,7 @@ const StepsDetailView = defineComponent({
               costEl,
               segBar,
               perfEl,
+              unitCostEl,
               splitEl,
               inLbl,
               cacheLbl,
@@ -24338,7 +26146,8 @@ const StepsDetailView = defineComponent({
               ? Math.max(0, Number(m.responseTokens))
               : Math.max(0, outTok - thinkTok);
 
-          patchText(refs.tokEl, formatTokensPrecise(m.totalTokens || 0));
+          const modelTok = Math.max(0, Number(m.totalTokens || 0));
+          patchText(refs.tokEl, formatTokensPrecise(modelTok));
           const costNum = Number(m.costUsd || 0);
           const isAllUnpriced =
             calls > 0 && Number(m.unpricedCalls || 0) >= calls && !(costNum > 0);
@@ -24347,11 +26156,16 @@ const StepsDetailView = defineComponent({
             formatUsd(isAllUnpriced ? null : costNum, { precise: costNum > 0 && costNum < 0.1 })
           );
 
+          const scaleRatio =
+            displayModels.length > 1 && sumTokens > 0 && modelTok > 0
+              ? Math.min(1, Math.max(0.008, modelTok / sumTokens))
+              : 1;
           refs.segBar.update({
             inputTokens: inTok,
             cacheReadTokens: cacheTok,
             responseTokens: respTok,
             thinkingTokens: thinkTok,
+            scaleRatio,
           });
 
           const fbTtft = stepTtftFallbackMap.get(gk);
@@ -24385,6 +26199,19 @@ const StepsDetailView = defineComponent({
               ttft: formatMetric(resolvedAvgTtft, 's'),
               cache: resolvedCachePct,
             })
+          );
+          const effCostPer1M =
+            !isAllUnpriced && costNum > 0 && modelTok >= 1000
+              ? costNum / (modelTok / 1_000_000)
+              : null;
+          patchAttr(refs.unitCostEl, 'hidden', effCostPer1M === null);
+          patchText(
+            refs.unitCostEl,
+            effCostPer1M !== null
+              ? t('cons.modelUnitCost', {
+                  cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
+                })
+              : ''
           );
 
           const isActiveFit =
@@ -24781,6 +26608,27 @@ const { App } = (() => {
  */
 
 
+const APP_VIEW_SHORTCUT_MAP = Object.freeze({
+  1: 'overview',
+  2: 'consumption',
+  3: 'steps',
+  4: 'settings',
+});
+
+function isEditableKeyTarget(e) {
+  const path = typeof e?.composedPath === 'function' ? e.composedPath() : null;
+  const target = (Array.isArray(path) && path[0]) || e?.target;
+  if (!target || typeof target !== 'object') return false;
+  const tag = String(target.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (target.isContentEditable) return true;
+  if (typeof target.getAttribute === 'function') {
+    const ce = target.getAttribute('contenteditable');
+    if (ce === '' || ce === 'true') return true;
+  }
+  return false;
+}
+
 const App = defineComponent({
   name: 'App',
   setup({ onCleanup }) {
@@ -24842,11 +26690,40 @@ const App = defineComponent({
       settingsView.el,
     ]);
 
-    const shellEl = h('main', { className: 'app-shell' }, [
-      h('div', { className: 'top-deck' }, [sessionHeader.el, topPillNav.el]),
-      bannerSlotEl,
-      stageEl,
-    ]);
+    const shellEl = h(
+      'main',
+      {
+        className: 'app-shell',
+        tabIndex: -1,
+        onKeydown: (e) => {
+          if (!e || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+          if (isEditableKeyTarget(e)) return;
+          const key = String(e.key || '');
+          const mappedView = APP_VIEW_SHORTCUT_MAP[key];
+          if (mappedView) {
+            e.preventDefault();
+            if (uiStore.getState().activeView !== mappedView) {
+              uiStore.setState({ activeView: mappedView });
+            }
+            return;
+          }
+          if (key === 'r' || key === 'R') {
+            e.preventDefault();
+            void fetchTelemetry({ force: true });
+            return;
+          }
+          if (key === '/') {
+            e.preventDefault();
+            sessionHeader.refs?.convSelect?.openAndFocusSearch?.();
+          }
+        },
+      },
+      [
+        h('div', { className: 'top-deck' }, [sessionHeader.el, topPillNav.el]),
+        bannerSlotEl,
+        stageEl,
+      ]
+    );
 
     function syncStepsBadge() {
       const uiSt = uiStore.getState();

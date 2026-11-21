@@ -1847,6 +1847,9 @@ test('Antigravity CLI annotations.pbtxt + SQLite trajectory reader recovers titl
         env: {
           ...process.env,
           ANTIGRAVITY_GEMINI_DIR: tempRoot,
+          ANTIGRAVITY_APP_DATA_DIR: '',
+          USAGE_MONITOR_APP_DATA_DIR: '',
+          ANTIGRAVITY_EXECUTABLE_DATA_DIR: '',
           USAGE_MONITOR_DATA_DIR: join(tempRoot, 'data'),
           ANTIGRAVITY_LS_ADDRESS: 'test.invalid',
           ANTIGRAVITY_CSRF_TOKEN: 'test',
@@ -2063,6 +2066,9 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
     const installEnv = {
       ...process.env,
       ANTIGRAVITY_GEMINI_DIR: tempRoot,
+      ANTIGRAVITY_APP_DATA_DIR: '',
+      USAGE_MONITOR_APP_DATA_DIR: '',
+      ANTIGRAVITY_EXECUTABLE_DATA_DIR: '',
       USAGE_MONITOR_DATA_DIR: dataDir,
       USAGE_MONITOR_ALLOW_TEST_CLI_SETTINGS: '1',
     };
@@ -2392,6 +2398,9 @@ test('v1.5 feedback settings schema: custom token combo DSL, 3-way model display
       ...process.env,
       USAGE_MONITOR_DATA_DIR: workerTemp,
       ANTIGRAVITY_GEMINI_DIR: workerTemp,
+      ANTIGRAVITY_APP_DATA_DIR: '',
+      USAGE_MONITOR_APP_DATA_DIR: '',
+      ANTIGRAVITY_EXECUTABLE_DATA_DIR: '',
       ANTIGRAVITY_LS_ADDRESS: 'test.invalid',
     },
   });

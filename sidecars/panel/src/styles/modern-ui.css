@@ -474,8 +474,8 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: transparent;
 }
 
-[data-modern-ui="true"] .cons-pop-models {
-  border-top-color: var(--modern-surface-hover);
+[data-modern-ui="true"] .cons-pop-channels {
+  border-top-color: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
 [data-modern-ui="true"] .cons-source-bar-hit:hover .cons-source-model-bar,
@@ -706,6 +706,15 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   animation: anim-modern-tip-fade 120ms var(--ease-modern);
 }
 
+[data-modern-ui="true"] .select-search-wrap {
+  border: none;
+  background: var(--modern-surface-subtle);
+}
+
+[data-modern-ui="true"] .select-search-wrap:focus-within {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent-primary) 50%, transparent);
+}
+
 [data-modern-ui="true"] .select-menu.is-above,
 [data-modern-ui="true"] .dt-popover.is-above {
   transform-origin: bottom right;
@@ -730,6 +739,12 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   top: 2px;
   bottom: auto;
   transform: translate3d(var(--tip-shift, -50%), var(--tip-y, 0px), 0);
+}
+
+[data-modern-ui="true"] .trend-tooltip.is-rich-breakdown {
+  top: 0;
+  bottom: auto;
+  transform: translate3d(var(--tip-shift, 0px), var(--tip-y, 0px), 0);
 }
 
 [data-modern-ui="true"] .trend-tooltip.is-tracking {

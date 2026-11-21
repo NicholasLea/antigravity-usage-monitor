@@ -32,6 +32,10 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'header.statusQuotaCached': 'Quota Cached',
   'header.statusQuotaOffline': 'Quota Offline',
   'header.statusLive': 'Monitoring',
+  'header.searchSessionPlaceholder': 'Search sessions by title or ID…',
+  'select.searchPlaceholder': 'Filter options…',
+  'select.noMatches': 'No matching items',
+  'select.clearSearch': 'Clear search',
 
   // Formatters & Common Labels
   'fmt.pending': 'N/A',
@@ -253,6 +257,26 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.footOutput': 'Out ',
   'cons.footThinking': 'Think ',
   'cons.footCalls': 'Calls ',
+  'cons.rankTabAria': 'Switch ranking view',
+  'cons.rankTabModelsCount': 'Models ({count})',
+  'cons.rankTabSessions': 'Sessions',
+  'cons.rankTabSessionsCount': 'Sessions ({count})',
+  'cons.topConvsEmpty': 'No session usage in this range',
+  'cons.topConvsSortAria': 'Sort sessions ranking',
+  'cons.topConvsSortCost': 'Cost',
+  'cons.topConvsSortTokens': 'Tokens',
+  'cons.topConvCacheMeta': 'Cache {pct}%',
+  'cons.topConvJumpTip': 'Click to inspect this session in Steps',
+  'cons.modelsSortAria': 'Sort models ranking',
+  'cons.modelsSortTokens': 'Tokens',
+  'cons.modelsSortCost': 'Cost',
+  'cons.modelsSortSpeed': 'Speed',
+  'cons.modelsSortCalls': 'Calls',
+  'cons.modelUnitCost': 'Eff. {cost}/1M',
+  'cons.speedRelTip': 'Speed relative to fastest model in this range',
+  'cons.focusTtft': 'TTFT {ttft}',
+  'cons.focusSpeedMeta': 'TTFT {ttft} · Cache {cache}% · Out {out}',
+  'cons.focusCallsMeta': 'Avg {avgTok}/call · Cost {cost}',
 
   // Steps Detail View & Step Column Registry
   'steps.title': 'Step Records',
@@ -337,6 +361,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.anomalySummaryMeta': '{count} retries/errors ({steps} steps)',
   'steps.anomalyFilterLabel': 'Anomalies Only ({count})',
   'steps.anomalyFilterAll': 'Show All Steps',
+  'steps.sortClickTip': 'Click to sort by {col}',
 
   // Step Table Columns (Headers & Option Labels)
   'stepCol.step.th': 'Step',
@@ -606,6 +631,13 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.resetConfirmBtn': 'Click Again to Confirm',
   'settings.oth.resettingBtn': 'Resetting…',
   'settings.oth.resetAllDone': 'All preferences restored to defaults',
+  'settings.oth.backupLabel': 'Preferences Backup & Restore',
+  'settings.oth.backupDesc': 'Export or import portable UI, capsule, and table preferences as JSON (excludes credentials)',
+  'settings.oth.exportJsonBtn': 'Export JSON',
+  'settings.oth.importJsonBtn': 'Import JSON',
+  'settings.oth.exportDone': 'Preferences JSON exported',
+  'settings.oth.importDone': 'Restored {count} preference settings',
+  'settings.oth.importInvalid': 'Import failed: invalid JSON or no recognized settings',
 
   // Structured Live Activity Actions
   'live.act.run_command': 'Run Command',

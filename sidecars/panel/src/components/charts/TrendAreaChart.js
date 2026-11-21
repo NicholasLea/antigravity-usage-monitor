@@ -10,13 +10,13 @@ import {
   h,
   patchAttr,
   patchClasses,
-  patchKeyedList,
   patchStyleVar,
   patchText,
 } from '../../core/domPatch.js';
 import { formatTokensPrecise, formatUsd } from '../../core/formatters.js';
 import { SVG_NS } from '../../icons/SvgIcon.js';
 import { getEffectiveLocale, t } from '../../i18n/index.js';
+import { createConsumptionBreakdownContent } from '../ui/ConsumptionTooltipContent.js';
 
 /** 超过该自然日天数（> 90 天）时，趋势图切换为类 GitHub 每日小格子热力图 */
 export const HEATMAP_DAYS_THRESHOLD = 90;
@@ -196,12 +196,14 @@ function buildHeatmapMonthTicks(slots, firstDow, totalWeeks) {
 /**
  * 创建交互式历史趋势组件（<=90 天为 SVG 平滑曲线图，>90 天自动切换为类 GitHub 每日小格子热力图）。
  *
+ * @param {{ onSelectSlot?: (slot: object) => void }} [options]
  * @returns {{
  *   el: HTMLElement,
- *   update: (series?: Array<object>) => void
+ *   update: (series?: Array<object>) => void,
+ *   destroy: () => void
  * }}
  */
-export function createTrendAreaChart() {
+export function createTrendAreaChart({ onSelectSlot = null } = {}) {
   const DEFAULT_VIEW_W = 460;
   const VIEW_H = 184;
   const TOP_Y = 26;
@@ -304,53 +306,25 @@ export function createTrendAreaChart() {
 
   const peakPill = h('span', { className: 'trend-peak-pill text-mono', text: '0' });
 
-  function createTooltipModelRow() {
-    const dotEl = h('span', { className: 'dot-swatch cons-model-dot' });
-    const nameEl = h('span', { className: 'cons-pop-model-name' });
-    const tokEl = h('span', { className: 'cons-pop-model-tok' });
-    const pctEl = h('strong', { className: 'cons-pop-model-pct' });
-    const rowEl = h('div', { className: 'cons-pop-model-row' }, [
-      h('span', { className: 'cons-pop-model-left' }, [dotEl, nameEl]),
-      h('span', { className: 'cons-pop-model-right text-mono' }, [tokEl, pctEl]),
-    ]);
-    return {
-      el: rowEl,
-      refs: { rowEl, dotEl, nameEl, tokEl, pctEl },
-    };
-  }
-
-  // 共享悬停详情浮层卡片（曲线图与热力格子图共用，含该时段分模型占比明细）
-  const tipTimeEl = h('span', { className: 'trend-tip-time text-mono' });
-  const tipCallsEl = h('span', { className: 'trend-tip-calls text-mono' });
-  const tipTokensEl = h('strong', { className: 'trend-tip-tokens text-mono' });
-  const tipCostEl = h('span', { className: 'trend-tip-cost text-mono' });
-  const tipInLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legInput') });
-  const tipInValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
-  const tipCacheLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legCache') });
-  const tipCacheValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
-  const tipOutLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legOutput') });
-  const tipOutValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
-  const tipSubEl = h('div', { className: 'trend-tip-sub is-grid', hidden: true }, [
-    h('div', { className: 'trend-tip-stat' }, [tipInLabelEl, tipInValEl]),
-    h('div', { className: 'trend-tip-stat' }, [tipCacheLabelEl, tipCacheValEl]),
-    h('div', { className: 'trend-tip-stat' }, [tipOutLabelEl, tipOutValEl]),
-  ]);
-  const tipModelsEl = h('div', { className: 'cons-pop-models', hidden: true });
+  // 共享悬停详情浮层卡片（曲线图和热力格子图共用，含分模型四段进度条及底部四通道明细）
+  const tooltipContent = createConsumptionBreakdownContent({
+    showModelDot: false,
+    monoTitle: true,
+  });
 
   const tooltipEl = h(
     'div',
-    { className: 'trend-tooltip', hidden: true },
-    [
-      h('div', { className: 'trend-tip-head' }, [tipTimeEl, tipCallsEl]),
-      h('div', { className: 'trend-tip-main' }, [tipTokensEl, tipCostEl]),
-      tipSubEl,
-      tipModelsEl,
-    ]
+    { className: 'trend-tooltip is-rich-breakdown', hidden: true },
+    tooltipContent.children
   );
 
   // 底部对齐刻度轴（曲线模式）
   const xAxisEl = h('div', { className: 'trend-x-axis' });
-  const plotStage = h('div', { className: 'trend-plot-stage' }, [peakPill, svg]);
+  const plotStage = h(
+    'div',
+    { className: `trend-plot-stage${typeof onSelectSlot === 'function' ? ' is-clickable' : ''}` },
+    [peakPill, svg]
+  );
 
   // 类 GitHub 每日小格子热力图容器（> 90 天模式）
   const wdayMonEl = h('span', { className: 'trend-hm-wday', text: t('chart.trend.wdayMon') });
@@ -412,6 +386,7 @@ export function createTrendAreaChart() {
   let tickElsByIdx = new Map();
   let hoveredIdx = -1;
   let hoveredCellEl = null;
+  let lastPointer = null;
   let lastRenderSig = '';
   let tipTrackRaf = 0;
 
@@ -443,102 +418,133 @@ export function createTrendAreaChart() {
   }
 
   function populateTooltipContent(slot) {
-    patchText(tipTimeEl, slot.fullLabel || slot.label || '--');
-    patchText(
-      tipCallsEl,
-      t('cons.callsCount', { calls: Math.max(0, Math.floor(Number(slot.calls) || 0)) })
-    );
     const slotTok = safeSlotTokens(slot.tokens);
-    patchText(tipTokensEl, `${formatTokensPrecise(slotTok)} tok`);
     const slotCost = Number.isFinite(Number(slot.costUsd)) ? Math.max(0, Number(slot.costUsd)) : 0;
-    patchText(
-      tipCostEl,
-      formatUsd(slotCost, {
+    tooltipContent.update({
+      title: slot.fullLabel || slot.label || '--',
+      calls: slot.calls,
+      totalTokens: slotTok,
+      costText: formatUsd(slotCost, {
         precise: slotCost > 0 && slotCost < 0.1,
-      })
-    );
-
-    const hasSubBreakdown =
-      slotTok > 0 &&
-      (slot.inputTokens !== undefined ||
-        slot.cacheReadTokens !== undefined ||
-        slot.outputTokens !== undefined);
-    patchAttr(tipSubEl, 'hidden', !hasSubBreakdown);
-    if (hasSubBreakdown) {
-      patchText(tipInLabelEl, t('cons.legInput'));
-      patchText(tipCacheLabelEl, t('cons.legCache'));
-      patchText(tipOutLabelEl, t('cons.legOutput'));
-      patchText(tipInValEl, formatTokensPrecise(safeSlotTokens(slot.inputTokens)));
-      patchText(tipCacheValEl, formatTokensPrecise(safeSlotTokens(slot.cacheReadTokens)));
-      patchText(tipOutValEl, formatTokensPrecise(safeSlotTokens(slot.outputTokens)));
-    }
-
-    const modelSegs = Array.isArray(slot.modelSegments) ? slot.modelSegments : [];
-    patchAttr(tipModelsEl, 'hidden', modelSegs.length === 0);
-    patchKeyedList(tipModelsEl, modelSegs, {
-      keyFn: (r) => r.key,
-      sigFn: (r) => `${r.key}:${r.label}:${r.color}:${r.tokText}:${r.pctText}:${r.isOther}`,
-      createRow: createTooltipModelRow,
-      updateRow: (rRefs, r) => {
-        patchClasses(rRefs.rowEl, { 'is-other': Boolean(r.isOther) });
-        patchStyleVar(rRefs.dotEl, '--dot-color', r.color);
-        patchText(rRefs.nameEl, r.label);
-        patchText(rRefs.tokEl, r.tokText);
-        patchText(rRefs.pctEl, r.pctText);
-      },
+      }),
+      inputTokens: slot.inputTokens,
+      cacheReadTokens: slot.cacheReadTokens,
+      thinkingTokens: slot.thinkingTokens,
+      responseTokens: slot.responseTokens,
+      outputTokens: slot.outputTokens,
+      segments: Array.isArray(slot.modelSegments) ? slot.modelSegments : [],
     });
   }
 
-  function showLineHoverAtIndex(idx) {
+  function positionTooltipNearAnchor(fallbackX, fallbackY, pointer = null) {
+    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
+    const wrapH =
+      wrapRect && wrapRect.height > 0
+        ? wrapRect.height
+        : Number(chartWrap.offsetHeight || VIEW_H);
+
+    const tipRect = tooltipEl.getBoundingClientRect?.() || null;
+    const tipW =
+      Number(tooltipEl.offsetWidth || 0) ||
+      (tipRect && tipRect.width > 0 ? tipRect.width : 216);
+    const tipH =
+      Number(tooltipEl.offsetHeight || 0) ||
+      (tipRect && tipRect.height > 0 ? tipRect.height : 104);
+
+    const hasPointer =
+      pointer &&
+      Number.isFinite(Number(pointer.clientX)) &&
+      Number.isFinite(Number(pointer.clientY)) &&
+      wrapRect &&
+      wrapRect.width > 0 &&
+      wrapRect.height > 0;
+
+    const anchorX = hasPointer ? Number(pointer.clientX) - wrapRect.left : fallbackX;
+    const anchorY = hasPointer ? Number(pointer.clientY) - wrapRect.top : fallbackY;
+
+    const clipEl = chartWrap.closest?.('.view-pane, .cons-view-stage') || null;
+    const clipRect = clipEl?.getBoundingClientRect?.() || null;
+    const hasClip = Boolean(
+      clipRect && clipRect.height > 0 && wrapRect && wrapRect.height > 0
+    );
+    const minY = hasClip ? clipRect.top - wrapRect.top + 6 : -tipH - 16;
+    const maxY = hasClip ? clipRect.bottom - wrapRect.top - tipH - 6 : wrapH + 16;
+
+    const maxLeft = Math.max(4, wrapW - tipW - 4);
+    let leftPx = Math.max(4, Math.min(maxLeft, anchorX - tipW / 2));
+    const aboveY = anchorY - tipH - 14;
+    let topPx;
+
+    if (aboveY >= minY) {
+      topPx = Math.min(maxY, aboveY);
+    } else if (anchorX + 16 + tipW <= wrapW - 4) {
+      leftPx = anchorX + 16;
+      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
+    } else if (anchorX - 16 - tipW >= 4) {
+      leftPx = anchorX - 16 - tipW;
+      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
+    } else {
+      topPx = Math.max(minY, Math.min(maxY, anchorY + 18));
+    }
+
+    patchStyleVar(tooltipEl, '--tip-x', `${Math.round(leftPx)}px`);
+    patchStyleVar(tooltipEl, '--tip-shift', '0px');
+    patchStyleVar(tooltipEl, '--tip-y', `${Math.round(topPx)}px`);
+  }
+
+  function showLineHoverAtIndex(idx, pointer = null) {
     if (currentIsHeatmap || idx < 0 || idx >= currentSlots.length || !currentPts[idx]) {
       clearHover();
       return;
     }
     const wasHidden = tooltipEl.hasAttribute('hidden');
+    const changedIdx = idx !== hoveredIdx;
     hoveredIdx = idx;
+    if (pointer) {
+      lastPointer = pointer;
+    }
     const slot = currentSlots[idx];
     const pt = currentPts[idx];
 
-    patchAttr(hoverLine, 'hidden', false);
-    patchAttr(hoverLine, 'x1', pt.x.toFixed(1));
-    patchAttr(hoverLine, 'x2', pt.x.toFixed(1));
+    if (wasHidden || changedIdx) {
+      patchAttr(hoverLine, 'hidden', false);
+      patchAttr(hoverLine, 'x1', pt.x.toFixed(1));
+      patchAttr(hoverLine, 'x2', pt.x.toFixed(1));
 
-    patchAttr(hoverDot, 'hidden', false);
-    patchAttr(hoverDot, 'cx', pt.x.toFixed(1));
-    patchAttr(hoverDot, 'cy', pt.y.toFixed(1));
+      patchAttr(hoverDot, 'hidden', false);
+      patchAttr(hoverDot, 'cx', pt.x.toFixed(1));
+      patchAttr(hoverDot, 'cy', pt.y.toFixed(1));
 
-    const isLineLow = pt.y < Math.round((TOP_Y + BOTTOM_Y) / 2);
-    patchAttr(peakPill, 'hidden', true);
-    patchClasses(tooltipEl, {
-      'is-hm-bottom': false,
-      'is-hm-top': false,
-      'is-line-low': isLineLow,
-    });
-    patchAttr(tooltipEl, 'hidden', false);
-    populateTooltipContent(slot);
+      patchAttr(peakPill, 'hidden', true);
+      patchClasses(tooltipEl, {
+        'is-hm-bottom': false,
+        'is-hm-top': false,
+        'is-line-low': false,
+      });
+      patchAttr(tooltipEl, 'hidden', false);
+      populateTooltipContent(slot);
 
-    let tipY = 0;
-    if (isLineLow) {
-      const wrapH = Number(chartWrap.offsetHeight || 0);
-      const tipH = Number(tooltipEl.offsetHeight || 0);
-      if (wrapH > 0 && tipH > 0) {
-        tipY = Math.max(0, wrapH - tipH - 22);
+      for (const [tIdx, el] of tickElsByIdx.entries()) {
+        patchClasses(el, { 'is-hovered': tIdx === idx });
       }
     }
 
-    const rawPct = (pt.x / viewW) * 100;
-    const clampedPct = Math.max(1, Math.min(99, rawPct));
-    patchStyleVar(tooltipEl, '--tip-x', `${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-shift', `-${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-y', `${Math.round(tipY)}px`);
+    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
+    const fallbackX = (pt.x / Math.max(1, viewW)) * wrapW;
+    const fallbackY = pt.y + 6;
+    positionTooltipNearAnchor(fallbackX, fallbackY, pointer || lastPointer);
     armTooltipTracking(wasHidden);
-
-    for (const [tIdx, el] of tickElsByIdx.entries()) {
-      patchClasses(el, { 'is-hovered': tIdx === idx });
-    }
   }
 
-  function showHeatmapHoverAtIndex(idx, cellEl) {
+  function showHeatmapHoverAtIndex(idx, cellEl, pointer = null) {
     if (!currentIsHeatmap || idx < 0 || idx >= currentSlots.length) {
       clearHover();
       return;
@@ -548,7 +554,12 @@ export function createTrendAreaChart() {
       clearHover();
       return;
     }
+    const wasHidden = tooltipEl.hasAttribute('hidden');
+    const changedCell = idx !== hoveredIdx || hoveredCellEl !== targetCell;
     hoveredIdx = idx;
+    if (pointer) {
+      lastPointer = pointer;
+    }
     if (hoveredCellEl && hoveredCellEl !== targetCell) {
       patchClasses(hoveredCellEl, { 'is-hovered': false });
     }
@@ -559,19 +570,25 @@ export function createTrendAreaChart() {
     const row = Number(targetCell.getAttribute('data-hm-row') || 0);
     const col = Number(targetCell.getAttribute('data-hm-col') || 0);
 
-    const wasHidden = tooltipEl.hasAttribute('hidden');
-    // 上半区（周一~周四）浮层停靠热力图下方，下半区（周五~周日）停靠热力图上方，互不遮挡被悬停格子且永不越界裁剪
-    patchClasses(tooltipEl, {
-      'is-hm-bottom': row <= 3,
-      'is-hm-top': row > 3,
-      'is-line-low': false,
-    });
-    patchAttr(tooltipEl, 'hidden', false);
-    populateTooltipContent(slot);
+    if (wasHidden || changedCell) {
+      patchClasses(tooltipEl, {
+        'is-hm-bottom': false,
+        'is-hm-top': false,
+        'is-line-low': false,
+      });
+      patchAttr(tooltipEl, 'hidden', false);
+      populateTooltipContent(slot);
+    }
 
-    const wrapRect = chartWrap.getBoundingClientRect();
-    const cellRect = targetCell.getBoundingClientRect();
-    let rawPct = 50;
+    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const cellRect = targetCell.getBoundingClientRect?.() || null;
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
+    let fallbackX =
+      currentHeatmapWeeks > 0 ? ((col + 0.5) / currentHeatmapWeeks) * wrapW : wrapW / 2;
+    let fallbackY = 20 + row * 14;
     if (
       wrapRect &&
       wrapRect.width > 0 &&
@@ -579,20 +596,18 @@ export function createTrendAreaChart() {
       cellRect.width > 0 &&
       cellRect.width < wrapRect.width
     ) {
-      rawPct = ((cellRect.left + cellRect.width / 2 - wrapRect.left) / wrapRect.width) * 100;
-    } else if (currentHeatmapWeeks > 0) {
-      rawPct = ((col + 0.5) / currentHeatmapWeeks) * 100;
+      fallbackX = cellRect.left + cellRect.width / 2 - wrapRect.left;
+      fallbackY = cellRect.top + cellRect.height / 2 - wrapRect.top;
     }
-    const clampedPct = Math.max(1, Math.min(99, rawPct));
-    patchStyleVar(tooltipEl, '--tip-x', `${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-shift', `-${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-y', '0px');
+
+    positionTooltipNearAnchor(fallbackX, fallbackY, pointer || lastPointer);
     armTooltipTracking(wasHidden);
   }
 
   function clearHover() {
     cancelTipTrackRaf();
     hoveredIdx = -1;
+    lastPointer = null;
     patchAttr(hoverLine, 'hidden', true);
     patchAttr(hoverDot, 'hidden', true);
     patchAttr(tooltipEl, 'hidden', true);
@@ -645,7 +660,11 @@ export function createTrendAreaChart() {
       0,
       Math.min(currentSlots.length - 1, Math.round(ratio * (currentSlots.length - 1)))
     );
-    showLineHoverAtIndex(idx);
+    const pointer =
+      Number.isFinite(Number(e?.clientX)) && Number.isFinite(Number(e?.clientY))
+        ? { clientX: Number(e.clientX), clientY: Number(e.clientY) }
+        : null;
+    showLineHoverAtIndex(idx, pointer);
   }
 
   function findDirectHeatmapCell(e) {
@@ -763,8 +782,12 @@ export function createTrendAreaChart() {
       clearHover();
       return;
     }
-    if (hit.idx !== hoveredIdx || hit.cellEl !== hoveredCellEl) {
-      showHeatmapHoverAtIndex(hit.idx, hit.cellEl);
+    const pointer =
+      Number.isFinite(Number(e?.clientX)) && Number.isFinite(Number(e?.clientY))
+        ? { clientX: Number(e.clientX), clientY: Number(e.clientY) }
+        : null;
+    if (hit.idx !== hoveredIdx || hit.cellEl !== hoveredCellEl || pointer) {
+      showHeatmapHoverAtIndex(hit.idx, hit.cellEl, pointer);
     }
   }
 
@@ -784,12 +807,43 @@ export function createTrendAreaChart() {
     }
   }
 
+  function handleLineClick(e) {
+    if (currentIsHeatmap || !currentSlots.length || typeof onSelectSlot !== 'function') return;
+    let idx = hoveredIdx;
+    const rect = svg.getBoundingClientRect?.();
+    if (rect && rect.width > 0 && Number.isFinite(Number(e?.clientX))) {
+      const relX = ((e.clientX - rect.left) / rect.width) * viewW;
+      const { leftX, spanX } = resolvePlotBounds(viewW);
+      const ratio = (relX - leftX) / Math.max(1, spanX);
+      idx = Math.max(
+        0,
+        Math.min(currentSlots.length - 1, Math.round(ratio * (currentSlots.length - 1)))
+      );
+    }
+    const slot = currentSlots[idx];
+    if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
+      onSelectSlot(slot);
+    }
+  }
+
+  function handleHeatmapClick(e) {
+    handleHeatmapPointer(e);
+    if (!currentIsHeatmap || !currentSlots.length || typeof onSelectSlot !== 'function') return;
+    const hit = resolveHeatmapCellFromPointer(e);
+    if (!hit || !Number.isFinite(hit.idx)) return;
+    const slot = currentSlots[hit.idx];
+    if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
+      onSelectSlot(slot);
+    }
+  }
+
   plotStage.addEventListener('mousemove', handlePointerMove);
+  plotStage.addEventListener('click', handleLineClick);
   plotStage.addEventListener('mouseleave', clearHover);
 
   hmGridEl.addEventListener('mouseover', handleHeatmapPointer);
   hmGridEl.addEventListener('mousemove', handleHeatmapPointer);
-  hmGridEl.addEventListener('click', handleHeatmapPointer);
+  hmGridEl.addEventListener('click', handleHeatmapClick);
   hmGridEl.addEventListener('mouseleave', clearHover);
   hmScrollEl.addEventListener('wheel', handleHeatmapWheel);
 
@@ -815,6 +869,14 @@ export function createTrendAreaChart() {
 
   function destroy() {
     cancelTipTrackRaf();
+    plotStage.removeEventListener('mousemove', handlePointerMove);
+    plotStage.removeEventListener('click', handleLineClick);
+    plotStage.removeEventListener('mouseleave', clearHover);
+    hmGridEl.removeEventListener('mouseover', handleHeatmapPointer);
+    hmGridEl.removeEventListener('mousemove', handleHeatmapPointer);
+    hmGridEl.removeEventListener('click', handleHeatmapClick);
+    hmGridEl.removeEventListener('mouseleave', clearHover);
+    hmScrollEl.removeEventListener('wheel', handleHeatmapWheel);
     resizeObs?.disconnect();
     resizeObs = null;
     if (onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
@@ -887,9 +949,14 @@ export function createTrendAreaChart() {
       slots
         .map((s) => {
           const mSig = Array.isArray(s?.modelSegments)
-            ? s.modelSegments.map((m) => `${m.key}:${m.color}:${m.pctText}`).join(',')
+            ? s.modelSegments
+                .map(
+                  (m) =>
+                    `${m.key}:${m.color}:${m.pctText}:${m.inputTokens || 0}:${m.cacheReadTokens || 0}:${m.thinkingTokens || 0}:${m.responseTokens || 0}`
+                )
+                .join(',')
             : '';
-          return `${s?.startMs || ''}:${s?.label || ''}:${s?.fullLabel || ''}:${safeSlotTokens(s?.tokens)}:${Number(s?.costUsd || 0)}:${Number(s?.calls || 0)}:${mSig}`;
+          return `${s?.startMs || ''}:${s?.label || ''}:${s?.fullLabel || ''}:${safeSlotTokens(s?.tokens)}:${safeSlotTokens(s?.inputTokens)}:${safeSlotTokens(s?.cacheReadTokens)}:${safeSlotTokens(s?.thinkingTokens)}:${safeSlotTokens(s?.responseTokens)}:${Number(s?.costUsd || 0)}:${Number(s?.calls || 0)}:${mSig}`;
         })
         .join('|');
 
@@ -989,7 +1056,7 @@ export function createTrendAreaChart() {
       if (hoveredIdx >= slots.length) {
         clearHover();
       } else if (hoveredIdx >= 0) {
-        showHeatmapHoverAtIndex(hoveredIdx, currentCellEls[hoveredIdx]);
+        showHeatmapHoverAtIndex(hoveredIdx, currentCellEls[hoveredIdx], lastPointer);
       }
       return;
     }
@@ -1055,7 +1122,10 @@ export function createTrendAreaChart() {
           title: slot.fullLabel || slot.label || '',
         });
         patchStyleVar(tickEl, '--tick-x', `${pct.toFixed(2)}%`);
-        tickEl.onclick = () => showLineHoverAtIndex(tIdx);
+        tickEl.onclick = () => {
+          lastPointer = null;
+          showLineHoverAtIndex(tIdx);
+        };
         xAxisEl.appendChild(tickEl);
         tickElsByIdx.set(tIdx, tickEl);
       }
@@ -1094,7 +1164,7 @@ export function createTrendAreaChart() {
     if (hoveredIdx >= slots.length) {
       clearHover();
     } else if (hoveredIdx >= 0) {
-      showLineHoverAtIndex(hoveredIdx);
+      showLineHoverAtIndex(hoveredIdx, lastPointer);
     }
   }
 

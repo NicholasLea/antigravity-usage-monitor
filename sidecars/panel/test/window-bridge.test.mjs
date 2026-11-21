@@ -2148,7 +2148,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const trendTooltipEl = popoverEl.querySelector('.trend-tooltip');
     assert.equal(trendTooltipEl.hasAttribute('hidden'), false, 'Tooltip opens on heatmap cell hover');
     assert.equal(activeCell.classList.contains('is-hovered'), true);
-    assert.match(trendTooltipEl.querySelector('.trend-tip-tokens').textContent, /100\.0k tok/);
+    assert.match(trendTooltipEl.querySelector('.trend-tip-tokens').textContent, /100\.0k TOKEN/);
 
     // Crossing 2px inter-cell gaps keeps highlight/tooltip steady without flickering, and fast jumps snap to nearest cell
     const hmBodyEl = heatmapStageEl.querySelector('.trend-heatmap-body');

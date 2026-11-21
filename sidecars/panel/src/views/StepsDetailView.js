@@ -50,6 +50,7 @@ import { CustomSelect } from '../components/ui/CustomSelect.js';
 import { createFourSegmentBar } from '../components/ui/FourSegmentBar.js';
 import { SegmentedControl } from '../components/ui/SegmentedControl.js';
 import { StepTableWidget } from '../components/widgets/StepTableWidget.js';
+import { sortStepsByColumn } from '../registries/stepColumnRegistry.js';
 
 function mergeSelectedAgentUnits(units) {
   const combinedSteps = [];
@@ -229,6 +230,11 @@ export const StepsDetailView = defineComponent({
     let selectedLineModels = ['__all__'];
     let onlyAnomalies = false;
     let anomalyKindFilter = '';
+    let sortKey = '';
+    let sortDir = '';
+    let cachedSortSrc = null;
+    let cachedSortSig = '';
+    let cachedSortedOut = [];
 
     function applyAgentScopesSelection(nextScopes) {
       selectedAgentScopes = nextScopes;
@@ -296,6 +302,11 @@ export const StepsDetailView = defineComponent({
     const stepTableWidget = StepTableWidget({
       onSelectAgentScopes: applyAgentScopesSelection,
       onVirtualHeightChange: () => stepsScroll?.refresh(),
+      onSortChange: (nextKey, nextDir) => {
+        sortKey = nextKey || '';
+        sortDir = nextDir || '';
+        if (latestSlice) renderStepsData(latestSlice);
+      },
     });
     const {
       stepsTablePane,
@@ -607,6 +618,8 @@ export const StepsDetailView = defineComponent({
           selectedLineModels = ['__all__'];
           onlyAnomalies = false;
           anomalyKindFilter = '';
+          sortKey = '';
+          sortDir = '';
         }
         fitLockedCascadeId = currentCid;
         fitUserPicked = false;
@@ -804,16 +817,37 @@ export const StepsDetailView = defineComponent({
       const modelFilteredSteps = tableModelFilterSet
         ? steps.filter((st) => tableModelFilterSet.has(getStepModelGroupKey(st)))
         : steps;
-      const tableSteps = onlyAnomalies
-        ? modelFilteredSteps.filter((st) => {
-            const a = st?.anomaly;
-            if (!a || !(Number(a.count) > 0)) return false;
-            if (anomalyKindFilter) {
-              return Number(a.kinds?.[anomalyKindFilter] || 0) > 0;
-            }
-            return true;
-          })
-        : modelFilteredSteps;
+
+      let filteredTableSteps = modelFilteredSteps;
+      if (onlyAnomalies) {
+        filteredTableSteps = modelFilteredSteps.filter((st) => {
+          const a = st?.anomaly;
+          if (!a || !(Number(a.count) > 0)) return false;
+          if (anomalyKindFilter && !(Number(a.kinds?.[anomalyKindFilter] || 0) > 0)) return false;
+          return true;
+        });
+      }
+
+      const normTokenFmt = normalizeClientStepTokenComboFormat(slice.stepTokenComboFormat);
+      const sortSig = `${sortKey}:${sortDir}:${normTokenFmt}:${displaySettings.modelDisplayMode}:${displaySettings.showUpstreamModel ? 1 : 0}:${displaySettings.orchestratorIdMode}`;
+      let tableSteps = filteredTableSteps;
+      if (sortKey && sortDir) {
+        if (cachedSortSrc === filteredTableSteps && cachedSortSig === sortSig) {
+          tableSteps = cachedSortedOut;
+        } else {
+          tableSteps = sortStepsByColumn(filteredTableSteps, sortKey, sortDir, {
+            stepTokenComboFormat: normTokenFmt,
+            displaySettings,
+          });
+          cachedSortSrc = filteredTableSteps;
+          cachedSortSig = sortSig;
+          cachedSortedOut = tableSteps;
+        }
+      } else {
+        cachedSortSrc = null;
+        cachedSortSig = '';
+        cachedSortedOut = [];
+      }
 
       const showAnomalyFilterBar = !showModels && onlyAnomalies;
       patchAttr(anomalyFilterBarEl, 'hidden', !showAnomalyFilterBar);
@@ -859,6 +893,8 @@ export const StepsDetailView = defineComponent({
           displaySettings,
           allConversationSteps,
           allowNewRowFade: shouldAnimateNewRows,
+          sortKey,
+          sortDir,
         });
         stepsScroll.refresh();
         fitPinnedWhileVisible = false;
@@ -1137,7 +1173,7 @@ export const StepsDetailView = defineComponent({
           const anomSig = anomSum
             ? `${anomSum.count}:${anomSum.steps}:${anomSum.primaryKind}:${anomSum.severity}:${anomSum.totalDelaySec}`
             : '';
-          return `${locale}:${m.displayText}:${m.displayTitle}:${m.calls}:${sumCalls}:${displayModels.length}:${m.avgTokPerSec}:${avgTtft}:${m.cacheHitPct}:${m.inputTokens}:${m.cacheReadTokens}:${m.thinkingTokens}:${m.responseTokens}:${m.totalTokens}:${m.costUsd}:${m.unpricedCalls}:${isActiveFit}:${hasMultipleModels}:${anomSig}`;
+          return `${locale}:${m.displayText}:${m.displayTitle}:${m.calls}:${sumCalls}:${sumTokens}:${displayModels.length}:${m.avgTokPerSec}:${avgTtft}:${m.cacheHitPct}:${m.inputTokens}:${m.cacheReadTokens}:${m.thinkingTokens}:${m.responseTokens}:${m.totalTokens}:${m.costUsd}:${m.unpricedCalls}:${isActiveFit}:${hasMultipleModels}:${anomSig}`;
         },
         createRow: () => {
           const nameEl = h('strong', { className: 'smodel-name' });
@@ -1183,6 +1219,8 @@ export const StepsDetailView = defineComponent({
             ]),
           ]);
           const perfEl = h('span', { className: 'smodel-perf text-mono' });
+          const unitCostEl = h('span', { className: 'smodel-unit-cost text-mono', hidden: true });
+          const perfFootEl = h('div', { className: 'smodel-perf-foot' }, [perfEl, unitCostEl]);
 
           const cardEl = h('div', { className: 'smodel-card' }, [
             h('div', { className: 'smodel-head' }, [
@@ -1190,7 +1228,8 @@ export const StepsDetailView = defineComponent({
               h('div', { className: 'smodel-totals' }, [tokEl, costEl]),
             ]),
             segBar.el,
-            h('div', { className: 'smodel-foot' }, [splitEl, perfEl]),
+            h('div', { className: 'smodel-foot' }, [splitEl]),
+            perfFootEl,
           ]);
 
           return {
@@ -1203,6 +1242,7 @@ export const StepsDetailView = defineComponent({
               costEl,
               segBar,
               perfEl,
+              unitCostEl,
               splitEl,
               inLbl,
               cacheLbl,
@@ -1282,7 +1322,8 @@ export const StepsDetailView = defineComponent({
               ? Math.max(0, Number(m.responseTokens))
               : Math.max(0, outTok - thinkTok);
 
-          patchText(refs.tokEl, formatTokensPrecise(m.totalTokens || 0));
+          const modelTok = Math.max(0, Number(m.totalTokens || 0));
+          patchText(refs.tokEl, formatTokensPrecise(modelTok));
           const costNum = Number(m.costUsd || 0);
           const isAllUnpriced =
             calls > 0 && Number(m.unpricedCalls || 0) >= calls && !(costNum > 0);
@@ -1291,11 +1332,16 @@ export const StepsDetailView = defineComponent({
             formatUsd(isAllUnpriced ? null : costNum, { precise: costNum > 0 && costNum < 0.1 })
           );
 
+          const scaleRatio =
+            displayModels.length > 1 && sumTokens > 0 && modelTok > 0
+              ? Math.min(1, Math.max(0.008, modelTok / sumTokens))
+              : 1;
           refs.segBar.update({
             inputTokens: inTok,
             cacheReadTokens: cacheTok,
             responseTokens: respTok,
             thinkingTokens: thinkTok,
+            scaleRatio,
           });
 
           const fbTtft = stepTtftFallbackMap.get(gk);
@@ -1329,6 +1375,19 @@ export const StepsDetailView = defineComponent({
               ttft: formatMetric(resolvedAvgTtft, 's'),
               cache: resolvedCachePct,
             })
+          );
+          const effCostPer1M =
+            !isAllUnpriced && costNum > 0 && modelTok >= 1000
+              ? costNum / (modelTok / 1_000_000)
+              : null;
+          patchAttr(refs.unitCostEl, 'hidden', effCostPer1M === null);
+          patchText(
+            refs.unitCostEl,
+            effCostPer1M !== null
+              ? t('cons.modelUnitCost', {
+                  cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
+                })
+              : ''
           );
 
           const isActiveFit =

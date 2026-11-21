@@ -550,6 +550,104 @@ function extractOfflineUserTitle(rawContent) {
   return firstLine.length > 48 ? `${firstLine.slice(0, 47)}…` : firstLine;
 }
 
+const MAX_TITLE_PROBE_CACHE = 2000;
+const titleProbeCache = new Map();
+
+function isMeaningfulTitle(rawTitle, cidLower = '') {
+  const clean = String(rawTitle || '').trim();
+  if (!clean) return false;
+  const low = clean.toLowerCase();
+  if (cidLower && (low === cidLower || low === cidLower.slice(0, 8))) return false;
+  if (UUID_RE.test(clean)) return false;
+  return true;
+}
+
+function pickFirstMeaningfulTitle(cidLower, candidates = []) {
+  for (const cand of candidates) {
+    if (isMeaningfulTitle(cand, cidLower)) {
+      return String(cand).trim();
+    }
+  }
+  return '';
+}
+
+function extractFirstStepTurnTitle(steps) {
+  if (!Array.isArray(steps) || steps.length === 0) return '';
+  for (let i = 0; i < steps.length; i++) {
+    const st = steps[i];
+    if (!st) continue;
+    const raw = st.turnPromptClean || st.turnPrompt || '';
+    if (!raw) continue;
+    const title = extractOfflineUserTitle(raw);
+    if (title) return title;
+  }
+  return '';
+}
+
+function readLocalTranscriptHeadTitle(cidLower) {
+  if (!cidLower || !UUID_RE.test(cidLower)) return '';
+  const transcriptPath = findTranscriptPath(cidLower);
+  if (!transcriptPath || !existsSync(transcriptPath)) return '';
+  try {
+    const fd = openSync(transcriptPath, 'r');
+    let chunk = '';
+    try {
+      const buf = Buffer.allocUnsafe(32768);
+      const bytesRead = readSync(fd, buf, 0, buf.length, 0);
+      if (bytesRead > 0) chunk = buf.toString('utf8', 0, bytesRead);
+    } finally {
+      closeSync(fd);
+    }
+    if (!chunk) return '';
+    for (const rawLine of chunk.split(/\r?\n/)) {
+      const trimmed = rawLine.trim();
+      if (!trimmed || !trimmed.startsWith('{')) continue;
+      let parsed = null;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+      const upperType = String(parsed?.type || '').toUpperCase();
+      if (
+        upperType === 'USER_INPUT' ||
+        upperType === 'CORTEX_STEP_TYPE_USER_INPUT' ||
+        (parsed?.userInput && typeof parsed.userInput === 'object')
+      ) {
+        const title = extractOfflineUserTitle(
+          typeof parsed.content === 'string'
+            ? parsed.content
+            : parsed.userInput?.userResponse || ''
+        );
+        if (title) return title;
+      }
+    }
+  } catch {
+    // 忽略单文件头部读取异常
+  }
+  return '';
+}
+
+function probeLocalFallbackTitle(cidLower, mtimeSig = 0) {
+  if (!cidLower) return '';
+  const sig = Number(mtimeSig) || 0;
+  const cached = titleProbeCache.get(cidLower);
+  if (cached && cached.sig === sig) {
+    return cached.title;
+  }
+  const annTitle = readAnnotationTitleForCascade(cidLower);
+  const resolved = isMeaningfulTitle(annTitle, cidLower)
+    ? String(annTitle).trim()
+    : readLocalTranscriptHeadTitle(cidLower);
+  const finalTitle = isMeaningfulTitle(resolved, cidLower) ? String(resolved).trim() : '';
+  if (titleProbeCache.size >= MAX_TITLE_PROBE_CACHE && !titleProbeCache.has(cidLower)) {
+    const oldestKey = titleProbeCache.keys().next().value;
+    if (oldestKey !== undefined) titleProbeCache.delete(oldestKey);
+  }
+  titleProbeCache.set(cidLower, { sig, title: finalTitle });
+  return finalTitle;
+}
+
 function hasLocalSqliteDb(diskFiles = []) {
   return Array.isArray(diskFiles) && diskFiles.some((f) => /\.db$/i.test(String(f || '')));
 }
@@ -1519,7 +1617,7 @@ export async function enumerateAndSyncConversations({
   const rawConversations = [];
   for (const [cidLower, cascadeId] of canonicalIdByLower.entries()) {
     const item = summariesByLower.get(cidLower);
-    const localSum = item ? null : localSummaryByLower.get(cidLower) || null;
+    const localSum = localSummaryByLower.get(cidLower) || null;
     const cached = getEntry(cascadeId);
     const diskFiles = diskConvMap.get(cidLower) || [];
     const sqliteDbInfo = sqliteAvailable ? resolveBestSqliteDbInfo(diskFiles) : null;
@@ -1621,11 +1719,13 @@ export async function enumerateAndSyncConversations({
       rawConversations.push({
         cascadeId,
         title:
-          sqParentInfo?.title ||
-          item?.annotations?.title ||
-          item?.summary ||
-          cached?.title ||
-          (isSideQuestion ? '旁路提问' : cascadeId.slice(0, 8)),
+          pickFirstMeaningfulTitle(cidLower, [
+            sqParentInfo?.title,
+            item?.annotations?.title,
+            item?.summary,
+            localSum?.title,
+            cached?.title,
+          ]) || (isSideQuestion ? '旁路提问' : cascadeId.slice(0, 8)),
         stepCount: modelStepCount,
         rawStepCount: rawSummaryStepCount,
         status: isKilled ? 'IDLE' : item?.status || '',
@@ -1653,10 +1753,11 @@ export async function enumerateAndSyncConversations({
       rawConversations.push({
         cascadeId,
         title:
-          sqParentInfo?.title ||
-          localSum?.title ||
-          cached.title ||
-          (isSideQuestion ? '旁路提问' : cascadeId.slice(0, 8)),
+          pickFirstMeaningfulTitle(cidLower, [
+            sqParentInfo?.title,
+            localSum?.title,
+            cached.title,
+          ]) || (isSideQuestion ? '旁路提问' : cascadeId.slice(0, 8)),
         stepCount: cachedStepCount,
         rawStepCount: localSum?.stepCount || cached.rawStepCount || cachedStepCount,
         status: localStatus,
@@ -1687,9 +1788,10 @@ export async function enumerateAndSyncConversations({
       rawConversations.push({
         cascadeId,
         title:
-          sqParentInfo?.title ||
-          localSum?.title ||
-          (isSideQuestion ? '旁路提问' : cascadeId.slice(0, 8)),
+          pickFirstMeaningfulTitle(cidLower, [
+            sqParentInfo?.title,
+            localSum?.title,
+          ]) || (isSideQuestion ? '旁路提问' : cascadeId.slice(0, 8)),
         stepCount: 0,
         rawStepCount: localSum?.stepCount || 0,
         status: localStatus,
@@ -2628,6 +2730,7 @@ export async function enumerateAndSyncConversations({
     }
   }
 
+  let titleBackfillDirty = false;
   for (const rootConv of conversations) {
     const cid = rootConv.cascadeId.toLowerCase();
     const rootCached = getEntry(rootConv.cascadeId);
@@ -2635,9 +2738,30 @@ export async function enumerateAndSyncConversations({
     const swarmTitle = String(swarmManifest?.title || rootCached?.swarmMeta?.title || '').trim();
     if (swarmTitle) {
       rootConv.swarmTitle = swarmTitle;
-      const curTitle = String(rootConv.title || '').trim();
-      if (!curTitle || curTitle.toLowerCase() === cid.slice(0, 8)) {
+      if (!isMeaningfulTitle(rootConv.title, cid)) {
         rootConv.title = swarmTitle;
+      }
+    }
+    if (!isMeaningfulTitle(rootConv.title, cid)) {
+      const localSumTitle = localSummaryByLower.get(cid)?.title || '';
+      const stepTurnTitle = extractFirstStepTurnTitle(rootCached?.steps);
+      let recoveredTitle = pickFirstMeaningfulTitle(cid, [
+        localSumTitle,
+        rootCached?.title,
+        stepTurnTitle,
+      ]);
+      if (!recoveredTitle && !isRemote) {
+        recoveredTitle = probeLocalFallbackTitle(
+          cid,
+          rootConv.diskMtimeMs || rootConv.lastModifiedMs || 0
+        );
+      }
+      if (recoveredTitle) {
+        rootConv.title = recoveredTitle;
+        if (rootCached && rootCached.title !== recoveredTitle) {
+          setEntry(rootConv.cascadeId, { ...rootCached, title: recoveredTitle });
+          titleBackfillDirty = true;
+        }
       }
     }
     if (swarmManifest?.coordinator?.killed || rootConv.killed) {
@@ -2758,6 +2882,13 @@ export async function enumerateAndSyncConversations({
       subs.reduce((sum, s) => sum + Number(s.stepCount || 0), 0);
     const maxSubModMs = subs.reduce((m, s) => Math.max(m, s.lastModifiedMs || 0), 0);
     rootConv.groupLastModifiedMs = Math.max(rootConv.lastModifiedMs || 0, maxSubModMs);
+  }
+
+  if (titleBackfillDirty) {
+    const hasRunningSessions = rawConversations.some(
+      (c) => c.status === 'CASCADE_RUN_STATUS_RUNNING'
+    );
+    persistCacheIfNeeded({ hasRunningSessions });
   }
 
   conversations.sort(

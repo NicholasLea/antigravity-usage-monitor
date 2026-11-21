@@ -9,6 +9,11 @@ import { h, patchAttr, patchClasses, patchText } from '../../core/domPatch.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 import { setI18nLanguage, t } from '../../i18n/index.js';
 import {
+  buildExportableSettingsJson,
+  parseImportedSettingsJson,
+  triggerTextFileDownload,
+} from '../../core/settingsBackup.js';
+import {
   normalizeClientModelDisplayMode,
   normalizeClientOrchestratorIdMode,
   rebuildTrajectoryCache,
@@ -166,6 +171,8 @@ export const SettingsOtherTab = defineComponent({
     const ctxStatus = h('span', { className: 'text-muted', role: 'status' });
     const ctxModelSelect = CustomSelect({
       className: 'settings-context-model',
+      searchable: true,
+      searchThreshold: 8,
       options: [],
       onUpdateModelValue: (id) => {
         if (!draftContextRiskAccepted || savingContextWindow) return;
@@ -472,6 +479,102 @@ export const SettingsOtherTab = defineComponent({
       [resetBtnText]
     );
 
+    const backupLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.backupLabel'),
+    });
+    const backupDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.backupDesc'),
+    });
+    const exportJsonBtnText = h('span', { text: t('settings.oth.exportJsonBtn') });
+    const importJsonBtnText = h('span', { text: t('settings.oth.importJsonBtn') });
+    let isImportingSettings = false;
+
+    async function applyImportedSettingsText(rawText) {
+      const parsed = parseImportedSettingsJson(rawText);
+      if (!parsed.ok) {
+        showMaintFeedback(t('settings.oth.importInvalid'), 3200);
+        return false;
+      }
+      isImportingSettings = true;
+      patchAttr(importJsonBtn, 'disabled', true);
+      showMaintFeedback(t('settings.saving'), 0);
+      try {
+        await saveSettingsPatch(parsed.patch);
+        if (parsed.patch.language) {
+          setI18nLanguage(parsed.patch.language);
+        }
+        showMaintFeedback(
+          t('settings.oth.importDone', { count: parsed.appliedCount }),
+          2800
+        );
+        return true;
+      } catch {
+        showMaintFeedback(t('settings.saveFailed'), 2800);
+        return false;
+      } finally {
+        isImportingSettings = false;
+        patchAttr(importJsonBtn, 'disabled', false);
+      }
+    }
+
+    const importFileInput = h('input', {
+      type: 'file',
+      accept: '.json,application/json',
+      className: 'settings-hidden-file-input',
+      hidden: true,
+    });
+    importFileInput.addEventListener?.('change', async () => {
+      const file = importFileInput.files?.[0];
+      importFileInput.value = '';
+      if (!file || isImportingSettings) return;
+      try {
+        const text =
+          typeof file.text === 'function' ? await file.text() : String(file.content || '');
+        await applyImportedSettingsText(text);
+      } catch {
+        showMaintFeedback(t('settings.oth.importInvalid'), 3200);
+      }
+    });
+
+    const exportJsonBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: () => {
+          const json = buildExportableSettingsJson(latestSettings || {});
+          triggerTextFileDownload(
+            'antigravity-usage-monitor-settings.json',
+            json,
+            'application/json;charset=utf-8'
+          );
+          showMaintFeedback(t('settings.oth.exportDone'), 2400);
+        },
+      },
+      [createSvgIcon('download', { size: 12 }), exportJsonBtnText]
+    );
+
+    const importJsonBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: () => {
+          if (isImportingSettings) return;
+          importFileInput.click?.();
+        },
+      },
+      [createSvgIcon('upload', { size: 12 }), importJsonBtnText]
+    );
+
+    const backupActionsWrap = h('div', { className: 'settings-backup-actions' }, [
+      exportJsonBtn,
+      importJsonBtn,
+      importFileInput,
+    ]);
+
     const maintPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
@@ -487,6 +590,10 @@ export const SettingsOtherTab = defineComponent({
       h('div', { className: 'settings-action-block' }, [
         h('div', { className: 'settings-action-info' }, [resetLabelEl, resetDescEl]),
         resetAllBtn,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [backupLabelEl, backupDescEl]),
+        backupActionsWrap,
       ]),
     ]);
 
@@ -533,6 +640,10 @@ export const SettingsOtherTab = defineComponent({
       patchText(baselineTitleEl, t('settings.oth.baselineTitle'));
       renderContextWindows();
       patchText(maintTitleEl, t('settings.oth.maintTitle'));
+      patchText(backupLabelEl, t('settings.oth.backupLabel'));
+      patchText(backupDescEl, t('settings.oth.backupDesc'));
+      patchText(exportJsonBtnText, t('settings.oth.exportJsonBtn'));
+      patchText(importJsonBtnText, t('settings.oth.importJsonBtn'));
       patchText(cacheLabelEl, t('settings.oth.cacheLabel'));
       patchText(cacheDescEl, t('settings.oth.cacheDesc'));
       patchText(resetLabelEl, t('settings.oth.resetLabel'));
@@ -579,6 +690,10 @@ export const SettingsOtherTab = defineComponent({
         ctxWindowSelect,
         rebuildCacheBtn,
         resetAllBtn,
+        exportJsonBtn,
+        importJsonBtn,
+        importFileInput,
+        applyImportedSettingsText,
         renderSettings,
         refreshLabels,
       },

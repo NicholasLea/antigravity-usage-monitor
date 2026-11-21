@@ -81,6 +81,40 @@
   font-weight: 600;
 }
 
+.data-table th.is-sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--dur-instant) var(--ease-fast);
+}
+
+.data-table th.is-sortable:hover {
+  color: var(--text-primary);
+}
+
+.data-table th.is-sorted {
+  color: var(--accent-primary);
+}
+
+.step-th-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  vertical-align: middle;
+}
+
+.data-table th:last-child .step-th-inner {
+  justify-content: flex-end;
+}
+
+.step-sort-icon {
+  flex-shrink: 0;
+  color: var(--accent-primary);
+}
+
+.step-sort-icon[hidden] {
+  display: none !important;
+}
+
 .data-table tbody tr:not(.step-vspacer):not(.step-vsizer):hover {
   background: var(--surface-hover);
 }
@@ -1085,13 +1119,13 @@
 }
 
 .smodel-seg-bar {
-  height: 3.5px;
+  height: 5px;
 }
 
 .smodel-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 4px 10px;
   font-size: var(--fs-md);
@@ -1111,9 +1145,32 @@
   font-weight: 600;
 }
 
+.smodel-perf-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  color: var(--text-muted);
+  margin-top: -1px;
+}
+
 .smodel-perf {
-  margin-left: auto;
   font-size: var(--fs-sm);
   color: var(--text-muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.smodel-unit-cost {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.smodel-unit-cost[hidden] {
+  display: none !important;
 }

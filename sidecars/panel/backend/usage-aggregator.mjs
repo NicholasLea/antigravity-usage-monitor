@@ -532,8 +532,13 @@ function collectUsageEntriesToAggregate(familySet, endpoint = null) {
     const groupCascadeId = String(
       entry?.rootConversationId || entry?.parentConversationId || cidLower
     ).toLowerCase();
+    const rootLive = allLiveByLower.get(groupCascadeId);
+    const entryTitle = String(
+      rootLive?.title || entry?.title || extMatch?.title || ''
+    ).trim();
     allEntriesToAggregate.push({
       cascadeId: groupCascadeId,
+      title: entryTitle,
       appSource: isRemote ? 'ssh' : entry?.appSource || 'standalone',
       accountName: entry?.accountName || extMatch?.accountName || '',
       steps: entry?.steps || [],
@@ -548,6 +553,7 @@ function collectUsageEntriesToAggregate(familySet, endpoint = null) {
     }
     allEntriesToAggregate.push({
       cascadeId: extCidLower,
+      title: String(ext.title || liveEntry?.title || '').trim(),
       appSource: ext.appSource || 'ide',
       accountName: ext.accountName || liveEntry?.accountName || '',
       steps: ext.steps || [],
@@ -556,6 +562,87 @@ function collectUsageEntriesToAggregate(familySet, endpoint = null) {
   }
 
   return allEntriesToAggregate;
+}
+
+const MAX_TOP_CONVERSATIONS_LIMIT = 10;
+
+function accumulateStepIntoConversationMap(
+  perConvMap,
+  entry,
+  srcKey,
+  srcName,
+  stepUsage,
+  tMs,
+  st = null,
+  mInfo = null,
+  stepCost = null
+) {
+  const cid = String(entry?.cascadeId || '').trim();
+  if (!cid) return;
+  let acc = perConvMap.get(cid);
+  if (!acc) {
+    acc = {
+      cascadeId: cid,
+      title: String(entry?.title || '').trim(),
+      appSource: srcKey,
+      sourceName: srcName,
+      calls: 0,
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      responseTokens: 0,
+      thinkingTokens: 0,
+      totalTokens: 0,
+      costUsd: 0,
+      unpricedCalls: 0,
+      lastTimestampMs: 0,
+      perModelStats: new Map(),
+    };
+    perConvMap.set(cid, acc);
+  }
+  if (!acc.title && entry?.title) {
+    acc.title = String(entry.title).trim();
+  }
+  acc.calls += 1;
+  acc.inputTokens += stepUsage.inTok;
+  acc.cacheReadTokens += stepUsage.cacheTok;
+  acc.responseTokens += stepUsage.respTok;
+  acc.thinkingTokens += stepUsage.thinkTok;
+  acc.totalTokens += stepUsage.stepTotalTokens;
+  acc.costUsd += stepUsage.resolvedCost;
+  acc.unpricedCalls += stepUsage.unpriced;
+  if (tMs > acc.lastTimestampMs) {
+    acc.lastTimestampMs = tMs;
+  }
+  if (st && mInfo) {
+    accumulateStepIntoModelMap(acc.perModelStats, st, mInfo, stepCost);
+  }
+}
+
+function finalizeTopConversationsMap(perConvMap, maxItems = MAX_TOP_CONVERSATIONS_LIMIT) {
+  return Array.from(perConvMap.values())
+    .filter((c) => c.totalTokens > 0 || c.calls > 0)
+    .sort((a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens || b.calls - a.calls)
+    .slice(0, maxItems)
+    .map((c) => {
+      const promptTokens = c.inputTokens + c.cacheReadTokens;
+      return {
+        cascadeId: c.cascadeId,
+        title: c.title,
+        appSource: c.appSource,
+        sourceName: c.sourceName,
+        calls: c.calls,
+        inputTokens: c.inputTokens,
+        cacheReadTokens: c.cacheReadTokens,
+        responseTokens: c.responseTokens,
+        thinkingTokens: c.thinkingTokens,
+        totalTokens: c.totalTokens,
+        costUsd: +c.costUsd.toFixed(6),
+        unpricedCalls: c.unpricedCalls,
+        cacheHitPct: promptTokens > 0 ? +((c.cacheReadTokens / promptTokens) * 100).toFixed(1) : 0,
+        lastTimestampMs: c.lastTimestampMs,
+        models: finalizeModelBreakdownMap(c.perModelStats),
+      };
+    });
 }
 
 function buildQuotaPoolCycleMap(quotaPoolsMap, nowMs) {
@@ -688,6 +775,8 @@ function buildUsageTrendSeries(
         inputTokens: 0,
         cacheReadTokens: 0,
         outputTokens: 0,
+        thinkingTokens: 0,
+        responseTokens: 0,
         costUsd: 0,
         unpricedCalls: 0,
         calls: 0,
@@ -740,6 +829,8 @@ function buildUsageTrendSeries(
         inputTokens: 0,
         cacheReadTokens: 0,
         outputTokens: 0,
+        thinkingTokens: 0,
+        responseTokens: 0,
         costUsd: 0,
         unpricedCalls: 0,
         calls: 0,
@@ -781,6 +872,8 @@ function buildUsageTrendSeries(
       bucket.inputTokens += item.inputTokens || 0;
       bucket.cacheReadTokens += item.cacheReadTokens || 0;
       bucket.outputTokens += item.outputTokens || 0;
+      bucket.thinkingTokens += item.thinkingTokens || 0;
+      bucket.responseTokens += item.responseTokens || 0;
       bucket.costUsd += item.costUsd;
       bucket.unpricedCalls = (bucket.unpricedCalls || 0) + item.unpricedCalls;
       bucket.calls += 1;
@@ -801,6 +894,11 @@ function buildUsageTrendSeries(
             upstreamModelCounts: new Map(),
             family: mInfo.family,
             calls: 0,
+            inputTokens: 0,
+            cacheReadTokens: 0,
+            outputTokens: 0,
+            thinkingTokens: 0,
+            responseTokens: 0,
             totalTokens: 0,
             costUsd: 0,
             unpricedCalls: 0,
@@ -815,6 +913,11 @@ function buildUsageTrendSeries(
           );
         }
         bModel.calls += 1;
+        bModel.inputTokens += item.inputTokens || 0;
+        bModel.cacheReadTokens += item.cacheReadTokens || 0;
+        bModel.outputTokens += item.outputTokens || 0;
+        bModel.thinkingTokens += item.thinkingTokens || 0;
+        bModel.responseTokens += item.responseTokens || 0;
         bModel.totalTokens += item.tokens;
         bModel.costUsd += item.costUsd;
         bModel.unpricedCalls += item.unpricedCalls || 0;
@@ -1150,6 +1253,7 @@ export function aggregateMultiWindowUsage({
   const selectedAccountBucket = accountBuckets[selectedWindow.key] || createUsageBucket();
   const selectedSessionBucket = sessionBuckets[selectedWindow.key] || createUsageBucket();
   const perModelStats = new Map();
+  const perConvStats = new Map();
   const selectedWindowSteps = [];
   let earliestSelectedStepMs = Infinity;
   let latestSelectedStepMs = 0;
@@ -1401,6 +1505,8 @@ export function aggregateMultiWindowUsage({
             inputTokens: inTok,
             cacheReadTokens: cacheTok,
             outputTokens: outTok,
+            thinkingTokens: thinkTok,
+            responseTokens: respTok,
             costUsd: resolvedCost,
             unpricedCalls: unpriced,
             mInfo,
@@ -1433,6 +1539,17 @@ export function aggregateMultiWindowUsage({
         accumulateStepIntoModelMap(sAgg.perModelStats, st, mInfo, stepCost);
 
         accumulateStepIntoModelMap(perModelStats, st, mInfo, stepCost);
+        accumulateStepIntoConversationMap(
+          perConvStats,
+          entry,
+          srcKey,
+          srcName,
+          stepUsage,
+          tMs,
+          st,
+          mInfo,
+          stepCost
+        );
       }
     }
   }
@@ -1489,6 +1606,7 @@ export function aggregateMultiWindowUsage({
   const weekBucket = finalizedPresets.week.account;
   const finalizedQuotaWeekBucket = finalizeUsageBucket(quotaWeekBucket);
   const modelBreakdown = finalizeModelBreakdownMap(perModelStats);
+  const topConversations = finalizeTopConversationsMap(perConvStats);
 
   const formatCycleSummary = (b) => {
     const fin = finalizeUsageBucket(b);
@@ -1574,6 +1692,7 @@ export function aggregateMultiWindowUsage({
     weekBucket,
     quotaWeekBucket: finalizedQuotaWeekBucket,
     modelBreakdown,
+    topConversations,
     poolCycleStats,
     poolsWeeklySummary,
   };
@@ -1715,6 +1834,7 @@ export function aggregateSelectedWindowUsage({
           trendSeries: res.trendSeries,
           sourcesBreakdown: res.sourcesBreakdown,
           modelBreakdown: res.modelBreakdown,
+          topConversations: res.topConversations || [],
         };
       }
     }
@@ -1755,6 +1875,7 @@ export function aggregateSelectedWindowUsage({
   const selectedSessionBucket = createUsageBucket();
   const perModelStats = new Map();
   const perSourceStats = new Map();
+  const perConvStats = new Map();
   const selectedWindowSteps = [];
   let earliestSelectedStepMs = Infinity;
   let latestSelectedStepMs = 0;
@@ -1878,6 +1999,8 @@ export function aggregateSelectedWindowUsage({
           inputTokens: inTok,
           cacheReadTokens: cacheTok,
           outputTokens: outTok,
+          thinkingTokens: thinkTok,
+          responseTokens: respTok,
           costUsd: resolvedCost,
           unpricedCalls: unpriced,
           mInfo,
@@ -1910,6 +2033,17 @@ export function aggregateSelectedWindowUsage({
       accumulateStepIntoModelMap(sAgg.perModelStats, st, mInfo, stepCost);
 
       accumulateStepIntoModelMap(perModelStats, st, mInfo, stepCost);
+      accumulateStepIntoConversationMap(
+        perConvStats,
+        entry,
+        srcKey,
+        srcName,
+        stepUsage,
+        tMs,
+        st,
+        mInfo,
+        stepCost
+      );
     }
   }
 
@@ -1943,6 +2077,7 @@ export function aggregateSelectedWindowUsage({
     }))
     .sort((a, b) => b.totalTokens - a.totalTokens || b.calls - a.calls);
   const modelBreakdown = finalizeModelBreakdownMap(perModelStats);
+  const topConversations = finalizeTopConversationsMap(perConvStats);
 
   const sliceResult = {
     usageRevision: sameSnapshot ? snapshot.revision : usageSnapshotRevisionSeq,
@@ -1954,6 +2089,7 @@ export function aggregateSelectedWindowUsage({
     trendSeries,
     sourcesBreakdown,
     modelBreakdown,
+    topConversations,
   };
 
   if (sameSnapshot) {
@@ -2081,6 +2217,7 @@ export function aggregateConsumptionPresetBundle(params) {
       trendSeries: agg.trendSeries,
       sourcesBreakdown: agg.sourcesBreakdown,
       modelBreakdown: agg.modelBreakdown,
+      topConversations: agg.topConversations || [],
     };
   }
 

@@ -55,7 +55,7 @@ import {
   getNextMondayResetIso,
 } from './usage-aggregator.mjs';
 
-const MAX_RECENT_CONVERSATIONS = 30;
+const MAX_RECENT_QUICK_STATS = 30;
 const MAX_CONVERSATION_ASSEMBLY_CACHE = 8;
 const MAX_TELEMETRY_SNAPSHOT_ENDPOINTS = 8;
 const POOL_PRIORITY_ORDER = ['Gemini', 'Argon', 'Carbon', 'Claude & GPT'];
@@ -1659,6 +1659,7 @@ export async function buildTelemetryPayloadInternal(
     weekBucket,
     quotaWeekBucket,
     modelBreakdown,
+    topConversations,
     poolCycleStats,
     poolsWeeklySummary,
   } = aggregateMultiWindowUsage({
@@ -2091,10 +2092,16 @@ export async function buildTelemetryPayloadInternal(
       totalConversations: conversations.length,
     },
     runningConversations,
-    conversations: conversations.slice(0, MAX_RECENT_CONVERSATIONS).map((c) => {
-      const qStats = getConversationQuickStats(c);
+    conversations: conversations.map((c, idx) => {
       const rawSubs = Array.isArray(c.subagents) ? c.subagents : [];
       const runningSubCount = rawSubs.filter((s) => s.status === 'CASCADE_RUN_STATUS_RUNNING').length;
+      const isConvRunning = c.status === 'CASCADE_RUN_STATUS_RUNNING' || runningSubCount > 0;
+      const includeQuickStats =
+        idx < MAX_RECENT_QUICK_STATS ||
+        isConvRunning ||
+        (Boolean(activeCascadeId) &&
+          String(c.cascadeId || '').toLowerCase() === String(activeCascadeId).toLowerCase());
+      const qStats = includeQuickStats ? getConversationQuickStats(c) : null;
       const cSwarmCount = Number(c.swarmCount ?? rawSubs.filter((s) => s.isSwarmWorker).length);
       const cSideCount = rawSubs.filter((s) => s.isSideQuestion).length;
       const cNormalSubCount = Math.max(0, rawSubs.length - cSwarmCount - cSideCount);
@@ -2110,16 +2117,20 @@ export async function buildTelemetryPayloadInternal(
         runningSubagentCount: runningSubCount,
         totalStepCount: c.totalStepCount || c.stepCount || 0,
         ...(rawSubs.length > 0 ? { memberCascadeIds: rawSubs.map((s) => s.cascadeId) } : {}),
-        isRunning: c.status === 'CASCADE_RUN_STATUS_RUNNING' || runningSubCount > 0,
+        isRunning: isConvRunning,
         status: c.status,
         lastModifiedTime: c.lastModifiedTime,
         lastModifiedMs: c.groupLastModifiedMs || c.lastModifiedMs,
-        modelShort: qStats.modelShort,
-        modelUpstream: qStats.modelUpstream,
-        latestTokPerSec: qStats.latestTokPerSec,
-        contextUsedPct: qStats.contextUsedPct,
-        sessionCostUsd: qStats.sessionCostUsd,
-        sessionUnpricedCalls: qStats.sessionUnpricedCalls,
+        ...(qStats
+          ? {
+              modelShort: qStats.modelShort,
+              modelUpstream: qStats.modelUpstream,
+              latestTokPerSec: qStats.latestTokPerSec,
+              contextUsedPct: qStats.contextUsedPct,
+              sessionCostUsd: qStats.sessionCostUsd,
+              sessionUnpricedCalls: qStats.sessionUnpricedCalls,
+            }
+          : {}),
       };
     }),
     activeConversation: assembledActiveConversation,
@@ -2136,6 +2147,7 @@ export async function buildTelemetryPayloadInternal(
       presets: finalizedPresets,
       trendSeries,
       sourcesBreakdown,
+      topConversations: enrichTopConversationTitles(topConversations, conversations),
       monthlyYear: currentYear,
       monthlySeries,
     },
@@ -2355,6 +2367,40 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
   };
 }
 
+function enrichTopConversationTitles(topList, convSummaries) {
+  if (!Array.isArray(topList) || topList.length === 0) return [];
+  const titleMap = new Map();
+  if (Array.isArray(convSummaries)) {
+    for (const c of convSummaries) {
+      const cid = String(c?.cascadeId || '').toLowerCase();
+      const title = String(c?.title || '').trim();
+      if (cid && title && !titleMap.has(cid)) {
+        titleMap.set(cid, title);
+      }
+      if (Array.isArray(c?.subagents)) {
+        for (const sub of c.subagents) {
+          const sid = String(sub?.cascadeId || '').toLowerCase();
+          if (sid && title && !titleMap.has(sid)) {
+            titleMap.set(sid, title);
+          }
+        }
+      }
+    }
+  }
+  return topList.map((item) => {
+    if (!item || typeof item !== 'object') return item;
+    const cidLower = String(item.cascadeId || '').toLowerCase();
+    const fallbackTitle = titleMap.get(cidLower) || '';
+    const existingTitle = String(item.title || '').trim();
+    const resolvedTitle = existingTitle || fallbackTitle || (item.cascadeId ? item.cascadeId.slice(0, 8) : '—');
+    return {
+      ...item,
+      title: resolvedTitle,
+      canJump: titleMap.has(cidLower),
+    };
+  });
+}
+
 function tryBuildFastConsumptionPayload(filterOpts = {}) {
   const endpoint = filterOpts?.endpoint && filterOpts.endpoint.isRemote ? filterOpts.endpoint : null;
   const snap = resolveValidFastSnapshot(endpoint);
@@ -2382,6 +2428,10 @@ function tryBuildFastConsumptionPayload(filterOpts = {}) {
       account: agg.finalizedSelectedAccount,
       trendSeries: agg.trendSeries,
       sourcesBreakdown: agg.sourcesBreakdown,
+      topConversations: enrichTopConversationTitles(
+        agg.topConversations,
+        snap.sessions?.conversations
+      ),
     },
     modelBreakdown: agg.modelBreakdown,
   };
@@ -2395,13 +2445,23 @@ function tryBuildConsumptionPresetsPayload(filterOpts = {}) {
     ...snap.aggContext,
     endpoint,
   });
+  const enrichedRanges = {};
+  for (const [rangeKey, entry] of Object.entries(bundle.ranges || {})) {
+    enrichedRanges[rangeKey] = {
+      ...entry,
+      topConversations: enrichTopConversationTitles(
+        entry?.topConversations,
+        snap.sessions?.conversations
+      ),
+    };
+  }
   return {
     scope: 'consumption-presets',
     timestamp: new Date().toISOString(),
     endpoint: snap.basePayload.endpoint,
     uiBundleVersion: snap.basePayload.uiBundleVersion || computeRuntimeCodeVersion(),
     usageRevision: bundle.usageRevision,
-    ranges: bundle.ranges,
+    ranges: enrichedRanges,
   };
 }
 

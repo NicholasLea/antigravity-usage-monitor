@@ -34,7 +34,7 @@ const DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT = DEFAULT_STEP_TOKEN_COMBO_FORMAT;
 const normalizeClientStepTokenComboFormat = normalizeStepTokenComboFormat;
 const parseClientStepTokenComboSegments = parseStepTokenComboSegments;
 
-function resolveStepTokenParts(st) {
+export function resolveStepTokenParts(st) {
   const inTok = Math.max(0, Number(st?.inputTokens || 0));
   const cacheTok = Math.max(0, Number(st?.cacheReadTokens || 0));
   const outTok = Math.max(0, Number(st?.outputTokens || 0));
@@ -46,6 +46,14 @@ function resolveStepTokenParts(st) {
   const totalTok = inTok + cacheTok + outTok;
   const ctxTok = Math.max(0, Number(st?.contextTokens ?? totalTok));
   return { inTok, cacheTok, outTok, thinkTok, respTok, totalTok, ctxTok };
+}
+
+function finiteSortNum(val, { allowZero = true } = {}) {
+  if (val == null || val === '') return null;
+  const num = Number(val);
+  if (!Number.isFinite(num)) return null;
+  if (!allowZero && !(num > 0)) return null;
+  return num;
 }
 
 function formatPartWithOptionalCost(tokCount, costVal) {
@@ -127,6 +135,7 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.step.th'),
     optLabel: () => t('stepCol.step.opt'),
     sigPart: (st) => `${st.stepIndex}`,
+    sortValue: (st) => finiteSortNum(st?.stepIndex),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -142,6 +151,7 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.time.th'),
     optLabel: () => t('stepCol.time.opt'),
     sigPart: (st) => `${st.createdAtMs || 0}`,
+    sortValue: (st) => finiteSortNum(st?.createdAtMs, { allowZero: false }),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', { className: 'text-muted' }, [valEl]);
@@ -158,9 +168,14 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     key: 'model',
     thLabel: () => t('stepCol.model.th'),
     optLabel: () => t('stepCol.model.opt'),
+    defaultSortDir: 'asc',
     sigPart: (st, ctx) => {
       const disp = resolveModelDisplayInfo(st, ctx.displaySettings, { fallback: '—' });
       return `${disp.baseText}:${disp.title}`;
+    },
+    sortValue: (st, ctx) => {
+      const disp = resolveModelDisplayInfo(st, ctx?.displaySettings, { fallback: '' });
+      return String(disp.baseText || '').toLowerCase() || null;
     },
     createCell: () => {
       const nameEl = h('span', { className: 'step-model-name' });
@@ -181,6 +196,7 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.tps.opt'),
     sigPart: (st, ctx) =>
       `${st.tokPerSec}:${st.selectedSpeedReason || ''}:${ctx?.showStepSpeedColor === true ? 1 : 0}`,
+    sortValue: (st) => finiteSortNum(st?.tokPerSec, { allowZero: false }),
     createCell: () => {
       const speedMain = h('strong', {
         className: 'cell-value tone-muted',
@@ -225,6 +241,7 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.ttft.th'),
     optLabel: () => t('stepCol.ttft.opt'),
     sigPart: (st) => `${st.ttftSec}`,
+    sortValue: (st) => finiteSortNum(st?.ttftSec),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -242,6 +259,7 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.duration.th'),
     optLabel: () => t('stepCol.duration.opt'),
     sigPart: (st) => `${st.totalDurationSec ?? st.streamDurationSec ?? ''}`,
+    sortValue: (st) => finiteSortNum(st?.totalDurationSec ?? st?.streamDurationSec),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -259,6 +277,7 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.tokens_combo.opt'),
     sigPart: (st) =>
       `${st.contextTokens}:${st.outputTokens}:${st.thinkingTokens}:${st.responseTokens}`,
+    sortValue: (st) => resolveStepTokenParts(st).ctxTok,
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -288,6 +307,7 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.tokens_io_cache.opt'),
     sigPart: (st) =>
       `${st.inputTokens || 0}:${st.outputTokens || 0}:${st.cacheReadTokens || 0}:${st.inCostUsd ?? ''}:${st.outCostUsd ?? ''}:${st.cacheCostUsd ?? ''}`,
+    sortValue: (st) => resolveStepTokenParts(st).totalTok,
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -320,6 +340,19 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
       }),
     sigPart: (st, ctx) =>
       `${normalizeClientStepTokenComboFormat(ctx?.stepTokenComboFormat)}:${st.contextTokens || 0}:${st.inputTokens || 0}:${st.cacheReadTokens || 0}:${st.outputTokens || 0}:${st.thinkingTokens || 0}:${st.responseTokens ?? ''}:${st.costUsd ?? ''}`,
+    sortValue: (st, ctx) => {
+      const firstSeg = parseClientStepTokenComboSegments(ctx?.stepTokenComboFormat)[0] || 'total';
+      const parts = resolveStepTokenParts(st);
+      switch (firstSeg) {
+        case 'context': return parts.ctxTok;
+        case 'in': return parts.inTok;
+        case 'out': return parts.outTok;
+        case 'cache': return parts.cacheTok;
+        case 'think': return parts.thinkTok;
+        case 'reply': return parts.respTok;
+        default: return parts.totalTok;
+      }
+    },
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -346,6 +379,7 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.input_tokens.th'),
     optLabel: () => t('stepCol.input_tokens.opt'),
     sigPart: (st) => `${st.inputTokens || 0}`,
+    sortValue: (st) => finiteSortNum(st?.inputTokens ?? 0),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -361,6 +395,7 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.cache_tokens.th'),
     optLabel: () => t('stepCol.cache_tokens.opt'),
     sigPart: (st) => `${st.cacheReadTokens || 0}`,
+    sortValue: (st) => finiteSortNum(st?.cacheReadTokens ?? 0),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -376,6 +411,7 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.output_tokens.th'),
     optLabel: () => t('stepCol.output_tokens.opt'),
     sigPart: (st) => `${st.outputTokens || 0}`,
+    sortValue: (st) => finiteSortNum(st?.outputTokens ?? 0),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -392,6 +428,10 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.cache.opt'),
     sigPart: (st) =>
       `${st.cacheHitPct ?? 0}:${(st.inputTokens || 0) + (st.cacheReadTokens || 0) > 0 ? 1 : 0}`,
+    sortValue: (st) => {
+      const prompt = Number(st?.inputTokens || 0) + Number(st?.cacheReadTokens || 0);
+      return prompt > 0 ? finiteSortNum(st?.cacheHitPct ?? 0) : null;
+    },
     createCell: () => {
       const valEl = h('span', {
         className: 'cell-value tone-muted',
@@ -416,6 +456,7 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.cost.th'),
     optLabel: () => t('stepCol.cost.opt'),
     sigPart: (st) => `${st.costUsd}`,
+    sortValue: (st) => finiteSortNum(st?.costUsd),
     createCell: () => {
       const valEl = h('span', { style: 'font-weight: 600;' });
       const td = h('td', {}, [valEl]);
@@ -438,4 +479,43 @@ export function getStepColumnOptions(
     value: key,
     label: STEP_COLUMN_REGISTRY[key].optLabel(ctx),
   }));
+}
+
+/**
+ * 按指定列对步骤数组进行稳定排序（空值/不可用测速值始终置底）。
+ *
+ * @param {Array<object>} steps
+ * @param {string} sortKey
+ * @param {'asc'|'desc'|''} sortDir
+ * @param {object} [ctx]
+ * @returns {Array<object>}
+ */
+export function sortStepsByColumn(steps, sortKey, sortDir, ctx = {}) {
+  if (!Array.isArray(steps) || steps.length <= 1 || !sortKey || !sortDir) {
+    return Array.isArray(steps) ? steps : [];
+  }
+  const col = STEP_COLUMN_REGISTRY[sortKey];
+  if (!col || typeof col.sortValue !== 'function') return steps;
+  const mul = sortDir === 'asc' ? 1 : -1;
+  const decorated = steps.map((st, origIdx) => ({
+    st,
+    origIdx,
+    val: col.sortValue(st, ctx),
+  }));
+  decorated.sort((a, b) => {
+    const aNull = a.val === null || a.val === undefined;
+    const bNull = b.val === null || b.val === undefined;
+    if (aNull && bNull) return a.origIdx - b.origIdx;
+    if (aNull) return 1;
+    if (bNull) return -1;
+    let cmp = 0;
+    if (typeof a.val === 'string' || typeof b.val === 'string') {
+      cmp = String(a.val).localeCompare(String(b.val));
+    } else {
+      cmp = Number(a.val) - Number(b.val);
+    }
+    if (cmp !== 0) return cmp * mul;
+    return a.origIdx - b.origIdx;
+  });
+  return decorated.map((d) => d.st);
 }

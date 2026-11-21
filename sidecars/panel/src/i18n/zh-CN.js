@@ -32,6 +32,10 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.statusQuotaCached': '额度缓存',
   'header.statusQuotaOffline': '额度离线',
   'header.statusLive': '监控中',
+  'header.searchSessionPlaceholder': '搜索会话标题或 ID…',
+  'select.searchPlaceholder': '输入关键词筛选…',
+  'select.noMatches': '没有匹配的选项',
+  'select.clearSearch': '清空搜索',
 
   // Formatters & Common Labels
   'fmt.pending': '待定',
@@ -253,6 +257,26 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.footOutput': '输出 ',
   'cons.footThinking': '思考 ',
   'cons.footCalls': '调用 ',
+  'cons.rankTabAria': '排行视图切换',
+  'cons.rankTabModelsCount': '模型排行 ({count})',
+  'cons.rankTabSessions': '会话排行',
+  'cons.rankTabSessionsCount': '会话排行 ({count})',
+  'cons.topConvsEmpty': '当前时间范围暂无会话消耗记录',
+  'cons.topConvsSortAria': '会话排行排序方式',
+  'cons.topConvsSortCost': '费用',
+  'cons.topConvsSortTokens': 'Token',
+  'cons.topConvCacheMeta': '缓存 {pct}%',
+  'cons.topConvJumpTip': '点击跳转到该会话调用记录',
+  'cons.modelsSortAria': '模型排行排序方式',
+  'cons.modelsSortTokens': 'Token',
+  'cons.modelsSortCost': '费用',
+  'cons.modelsSortSpeed': '均速',
+  'cons.modelsSortCalls': '调用',
+  'cons.modelUnitCost': '均价 {cost}/1M',
+  'cons.speedRelTip': '相对本时段最快模型的均速比例',
+  'cons.focusTtft': '首字 {ttft}',
+  'cons.focusSpeedMeta': '首字 {ttft} · 缓存 {cache}% · 输出 {out}',
+  'cons.focusCallsMeta': '单次均耗 {avgTok} · 费用 {cost}',
 
   // Steps Detail View & Step Column Registry
   'steps.title': '调用记录',
@@ -337,6 +361,7 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.anomalySummaryMeta': '异常 {count} 次（{steps} 步）',
   'steps.anomalyFilterLabel': '仅看异常 ({count})',
   'steps.anomalyFilterAll': '返回全部步骤',
+  'steps.sortClickTip': '点击按「{col}」排序',
 
   // Step Table Columns (Headers & Option Labels)
   'stepCol.step.th': '步序',
@@ -606,6 +631,13 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.resetConfirmBtn': '再次点击确认重置',
   'settings.oth.resettingBtn': '重置中…',
   'settings.oth.resetAllDone': '已恢复全部默认设置',
+  'settings.oth.backupLabel': '配置备份及恢复',
+  'settings.oth.backupDesc': '导出或导入外观、胶囊、列配置等便携偏好 JSON（不含账号凭证）',
+  'settings.oth.exportJsonBtn': '导出 JSON',
+  'settings.oth.importJsonBtn': '导入 JSON',
+  'settings.oth.exportDone': '配置 JSON 已导出',
+  'settings.oth.importDone': '已恢复 {count} 项偏好设置',
+  'settings.oth.importInvalid': '导入失败：JSON 无效或未包含可识别的偏好项',
 
   // Structured Live Activity Actions
   'live.act.run_command': '执行命令',

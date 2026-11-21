@@ -9,6 +9,7 @@ import { h, patchAttr } from './core/domPatch.js';
 import { isWindowOverlayMode } from './core/httpClient.js';
 import { i18nStore } from './i18n/index.js';
 import {
+  fetchTelemetry,
   normalizeClientWindowMountMode,
   resolveScopedConversation,
   telemetryStore,
@@ -21,6 +22,27 @@ import { LiveOverviewView } from './views/LiveOverviewView.js';
 import { ConsumptionView } from './views/ConsumptionView.js';
 import { StepsDetailView } from './views/StepsDetailView.js';
 import { SettingsView } from './views/SettingsView.js';
+
+const APP_VIEW_SHORTCUT_MAP = Object.freeze({
+  1: 'overview',
+  2: 'consumption',
+  3: 'steps',
+  4: 'settings',
+});
+
+function isEditableKeyTarget(e) {
+  const path = typeof e?.composedPath === 'function' ? e.composedPath() : null;
+  const target = (Array.isArray(path) && path[0]) || e?.target;
+  if (!target || typeof target !== 'object') return false;
+  const tag = String(target.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (target.isContentEditable) return true;
+  if (typeof target.getAttribute === 'function') {
+    const ce = target.getAttribute('contenteditable');
+    if (ce === '' || ce === 'true') return true;
+  }
+  return false;
+}
 
 export const App = defineComponent({
   name: 'App',
@@ -83,11 +105,40 @@ export const App = defineComponent({
       settingsView.el,
     ]);
 
-    const shellEl = h('main', { className: 'app-shell' }, [
-      h('div', { className: 'top-deck' }, [sessionHeader.el, topPillNav.el]),
-      bannerSlotEl,
-      stageEl,
-    ]);
+    const shellEl = h(
+      'main',
+      {
+        className: 'app-shell',
+        tabIndex: -1,
+        onKeydown: (e) => {
+          if (!e || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+          if (isEditableKeyTarget(e)) return;
+          const key = String(e.key || '');
+          const mappedView = APP_VIEW_SHORTCUT_MAP[key];
+          if (mappedView) {
+            e.preventDefault();
+            if (uiStore.getState().activeView !== mappedView) {
+              uiStore.setState({ activeView: mappedView });
+            }
+            return;
+          }
+          if (key === 'r' || key === 'R') {
+            e.preventDefault();
+            void fetchTelemetry({ force: true });
+            return;
+          }
+          if (key === '/') {
+            e.preventDefault();
+            sessionHeader.refs?.convSelect?.openAndFocusSearch?.();
+          }
+        },
+      },
+      [
+        h('div', { className: 'top-deck' }, [sessionHeader.el, topPillNav.el]),
+        bannerSlotEl,
+        stageEl,
+      ]
+    );
 
     function syncStepsBadge() {
       const uiSt = uiStore.getState();
