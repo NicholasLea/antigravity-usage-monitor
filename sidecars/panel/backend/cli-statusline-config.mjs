@@ -33,7 +33,7 @@ import {
   resolveCapsuleQuotaSlotPct,
 } from '../shared/telemetry-display-rules.mjs';
 
-// 24-bit ANSI 前景 SGR 调色板（透明底色，与桌面端四档语义色阶及 CLI 原生底栏色调对齐，无任何背景填充或非 SGR 控制符）
+// 24-bit ANSI SGR 调色板（和桌面端语义色阶及 CLI 原生底栏对齐；上下文和配额槽位采用 24-bit 底色胶囊填充，零 OSC 序列）
 const SGR_RESET = '\x1b[0m';
 const SGR_BOLD = '\x1b[1m';
 const SGR_FG_BRIGHT = '\x1b[38;2;226;232;240m';
@@ -44,13 +44,26 @@ const SGR_FG_CHROME = '\x1b[38;2;136;142;150m';
 const SGR_FG_SEP = '\x1b[38;2;110;122;140m';
 const SGR_FG_DOT_IDLE = '\x1b[38;2;100;116;139m';
 const SGR_FG_ACCENT = '\x1b[38;2;96;165;250m';
-const SGR_FG_TEAL = '\x1b[38;2;45;212;191m';
 const SGR_FG_GOOD = '\x1b[38;2;52;211;153m';
 const SGR_FG_INFO = '\x1b[38;2;56;189;248m';
 const SGR_FG_WARN = '\x1b[38;2;251;191;36m';
 const SGR_FG_DANGER = '\x1b[38;2;248;113;113m';
 const SGR_FG_MODE_AUTO = '\x1b[38;2;234;179;8m';
 const SGR_FG_MODE_VIOLET = '\x1b[38;2;192;132;252m';
+
+// 底色胶囊专用 24-bit 背景和前景对比色（深灰暗轨 + 四档低刺眼饱和填充底色 + 亮白数字）
+const SGR_BG_PILL_TRACK = '\x1b[48;2;36;40;50m';
+const SGR_BG_PILL_BLUE = '\x1b[48;2;36;72;128m';
+const SGR_BG_PILL_GREEN = '\x1b[48;2;24;96;68m';
+const SGR_BG_PILL_WARN = '\x1b[48;2;116;84;22m';
+const SGR_BG_PILL_DANGER = '\x1b[48;2;124;42;48m';
+const SGR_FG_PILL_LABEL_TRACK = '\x1b[38;2;176;186;202m';
+const SGR_FG_PILL_VAL_TRACK = `${SGR_BOLD}\x1b[38;2;238;242;248m`;
+const SGR_FG_PILL_LABEL_BLUE = '\x1b[38;2;216;230;250m';
+const SGR_FG_PILL_LABEL_GREEN = '\x1b[38;2;210;244;228m';
+const SGR_FG_PILL_LABEL_WARN = '\x1b[38;2;254;240;199m';
+const SGR_FG_PILL_LABEL_DANGER = '\x1b[38;2;254;222;224m';
+const SGR_FG_PILL_VAL_FILLED = `${SGR_BOLD}\x1b[38;2;248;250;252m`;
 
 function isCliStatusPlainObject(v) {
   return Boolean(v) && typeof v === 'object' && !Array.isArray(v);
@@ -691,24 +704,71 @@ function cliComposeBalancedThreeColumn(leftStr, centerStr, rightStr, maxWidth) {
   return cw <= maxWidth ? centerStr : '';
 }
 
-function cliBuildMiniProgressBar(
+/**
+ * 将标签和百分比渲染为从左往右按占比填充背景的 24-bit 底色胶囊（如 ` 上下文 17% ` / ` G5h 83% `）。
+ * 百分比按 3-4 列右对齐以防数值变化引起整行抖动，CJK 全角字符按 2 列中点判定归属。
+ */
+function cliBuildPillGauge(
+  label,
   pct,
-  { width = 8, fillSgr = SGR_FG_TEAL, emptyChar = '⢕', useColor = true } = {}
+  {
+    fillBg = SGR_BG_PILL_BLUE,
+    fillLabelFg = SGR_FG_PILL_LABEL_BLUE,
+    fillValFg = SGR_FG_PILL_VAL_FILLED,
+    trackBg = SGR_BG_PILL_TRACK,
+    trackLabelFg = SGR_FG_PILL_LABEL_TRACK,
+    trackValFg = SGR_FG_PILL_VAL_TRACK,
+  } = {}
 ) {
-  if (!(width > 0)) return '';
-  const clamped = Math.max(0, Math.min(100, Number(pct)));
-  let filled = Math.round((clamped / 100) * width);
-  if (clamped > 0 && filled === 0) filled = 1;
-  if (clamped < 95 && filled >= width) filled = Math.max(0, width - 1);
-  const empty = Math.max(0, width - filled);
-  const filledStr = '█'.repeat(filled);
-  const emptyStr = emptyChar.repeat(empty);
-  if (!useColor) {
-    return `${filledStr}${emptyStr}`;
+  const clamped = Math.max(0, Math.min(100, Number(pct) || 0));
+  const valStr = `${Math.round(clamped)}%`.padStart(3, ' ');
+  const prefixText = ` ${label} `;
+  const valText = `${valStr} `;
+
+  const cells = [];
+  let totalCols = 0;
+  for (const ch of prefixText) {
+    const w = cliDisplayWidth(ch) || 1;
+    cells.push({ ch, w, col: totalCols, isVal: false });
+    totalCols += w;
   }
-  const fillPart = filledStr ? `${fillSgr}${filledStr}` : '';
-  const emptyPart = emptyStr ? `${SGR_FG_DIM}${emptyStr}` : '';
-  return `${fillPart}${emptyPart}${SGR_RESET}`;
+  for (const ch of valText) {
+    const w = cliDisplayWidth(ch) || 1;
+    cells.push({ ch, w, col: totalCols, isVal: true });
+    totalCols += w;
+  }
+
+  const exactFill = (clamped / 100) * totalCols;
+  const lastIdx = cells.length - 1;
+  let out = '';
+  let curStyle = '';
+
+  for (let i = 0; i < cells.length; i += 1) {
+    const cell = cells[i];
+    let isFilled = clamped > 0 && cell.col + cell.w / 2 <= exactFill;
+    if (i === 0 && clamped > 0) isFilled = true;
+    if (i === lastIdx && clamped < 96) isFilled = false;
+    if (clamped >= 100) isFilled = true;
+
+    const bg = isFilled ? fillBg : trackBg;
+    const fg = isFilled
+      ? cell.isVal
+        ? fillValFg
+        : fillLabelFg
+      : cell.isVal
+        ? trackValFg
+        : trackLabelFg;
+    const style = `${bg}${fg}`;
+    if (style !== curStyle) {
+      // 切换样式时若此前带粗体而目标不带粗体，先重置再写入避免粗体残留
+      const prevBold = curStyle.includes(SGR_BOLD);
+      const nextBold = style.includes(SGR_BOLD);
+      out += prevBold && !nextBold ? `${SGR_RESET}${style}` : style;
+      curStyle = style;
+    }
+    out += cell.ch;
+  }
+  return `${out}${SGR_RESET}`;
 }
 
 function cliResolveQuotaSlotPrefix(metricKey, isEn) {
@@ -720,12 +780,12 @@ function cliResolveQuotaSlotPrefix(metricKey, isEn) {
 }
 
 /**
- * 将单槽位指标格式化为纯文本及无背景前景语义 SGR 片段。
+ * 将单槽位指标格式化为纯文本及 24-bit 终端语义 SGR 片段（上下文和配额支持底色胶囊填充）。
  */
 function cliRenderSingleSlot(
   metricKey,
   slotCtx,
-  { isEn = false, useColor = true, slotSet, barWidth = 8 } = {}
+  { isEn = false, useColor = true, slotSet, usePill = true } = {}
 ) {
   const hasTelemetry = slotCtx.hasTelemetry !== false;
 
@@ -734,24 +794,23 @@ function cliRenderSingleSlot(
     const pctNum = valid ? Math.max(0, Math.min(100, Math.round(Number(slotCtx.usedPct)))) : null;
     const label = isEn ? 'Ctx' : '上下文';
     const textVal = pctNum != null ? `${pctNum}%` : '--%';
+    if (!useColor) {
+      return `${label} ${textVal}`;
+    }
     const isDanger = pctNum != null && pctNum >= 88;
     const isWarn = !isDanger && pctNum != null && pctNum >= 70;
-    const isMid = !isDanger && !isWarn && pctNum != null && pctNum >= 50;
-    const barColor = isDanger
-      ? SGR_FG_DANGER
-      : isWarn
-        ? SGR_FG_WARN
-        : isMid
-          ? SGR_FG_ACCENT
-          : pctNum != null
-            ? SGR_FG_TEAL
-            : SGR_FG_MUTED;
-    const barSegment =
-      barWidth > 0 && pctNum != null
-        ? `${cliBuildMiniProgressBar(pctNum, { width: barWidth, fillSgr: barColor, emptyChar: '⢕', useColor })} `
-        : '';
-    if (!useColor) {
-      return `${label} ${barSegment}${textVal}`;
+    if (usePill && pctNum != null) {
+      const fillBg = isDanger
+        ? SGR_BG_PILL_DANGER
+        : isWarn
+          ? SGR_BG_PILL_WARN
+          : SGR_BG_PILL_BLUE;
+      const fillLabelFg = isDanger
+        ? SGR_FG_PILL_LABEL_DANGER
+        : isWarn
+          ? SGR_FG_PILL_LABEL_WARN
+          : SGR_FG_PILL_LABEL_BLUE;
+      return cliBuildPillGauge(label, pctNum, { fillBg, fillLabelFg });
     }
     const valColor = isDanger
       ? `${SGR_BOLD}${SGR_FG_DANGER}`
@@ -760,7 +819,7 @@ function cliRenderSingleSlot(
         : pctNum != null
           ? `${SGR_BOLD}${SGR_FG_BRIGHT}`
           : SGR_FG_MUTED;
-    return `${SGR_FG_MUTED}${label} ${barSegment}${valColor}${textVal}${SGR_RESET}`;
+    return `${SGR_FG_MUTED}${label} ${valColor}${textVal}${SGR_RESET}`;
   }
 
   if (metricKey === 'tps') {
@@ -854,20 +913,12 @@ function cliRenderSingleSlot(
   const prefix = cliResolveQuotaSlotPrefix(metricKey, isEn);
   const isDanger = quotaPct != null && quotaPct <= 15;
   const isWarn = !isDanger && quotaPct != null && quotaPct <= 30;
-  const isMid = !isDanger && !isWarn && quotaPct != null && quotaPct <= 60;
-  const fillSgr = isDanger
-    ? SGR_FG_DANGER
-    : isWarn
-      ? SGR_FG_WARN
-      : isMid
-        ? SGR_FG_INFO
-        : SGR_FG_GOOD;
   const pctSgr = isDanger
     ? `${SGR_BOLD}${SGR_FG_DANGER}`
     : isWarn
       ? `${SGR_BOLD}${SGR_FG_WARN}`
       : quotaPct != null
-        ? SGR_FG_NORMAL
+        ? SGR_FG_GOOD
         : SGR_FG_MUTED;
 
   if (quotaPct == null) {
@@ -876,27 +927,25 @@ function cliRenderSingleSlot(
     return useColor ? `${SGR_FG_MUTED}${emptyText}${SGR_RESET}` : emptyText;
   }
 
-  if (barWidth > 0) {
-    const bar = cliBuildMiniProgressBar(quotaPct, {
-      width: barWidth,
-      fillSgr,
-      emptyChar: '⣿',
-      useColor,
-    });
-    if (!useColor) {
-      return `${prefix} ${bar} ${quotaPct}%`;
-    }
-    return `${SGR_FG_MUTED}${prefix} ${bar} ${pctSgr}${quotaPct}%${SGR_RESET}`;
+  if (!useColor) {
+    return `${prefix} ${quotaPct}%`;
   }
 
-  const compactText =
-    metricKey === 'quota_auto'
-      ? isEn
-        ? `${quotaPct}% left`
-        : `余 ${quotaPct}%`
-      : `${prefix} ${quotaPct}%`;
-  if (!useColor) return compactText;
-  return `${pctSgr}${compactText}${SGR_RESET}`;
+  if (usePill) {
+    const fillBg = isDanger
+      ? SGR_BG_PILL_DANGER
+      : isWarn
+        ? SGR_BG_PILL_WARN
+        : SGR_BG_PILL_GREEN;
+    const fillLabelFg = isDanger
+      ? SGR_FG_PILL_LABEL_DANGER
+      : isWarn
+        ? SGR_FG_PILL_LABEL_WARN
+        : SGR_FG_PILL_LABEL_GREEN;
+    return cliBuildPillGauge(prefix, quotaPct, { fillBg, fillLabelFg });
+  }
+
+  return `${SGR_FG_MUTED}${prefix} ${pctSgr}${quotaPct}%${SGR_RESET}`;
 }
 
 /**
@@ -1110,12 +1159,12 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
     ? cliStatusFormatAnomalyTag(slotCtx.latestAnomaly, { isEn, useColor })
     : '';
 
-  const defaultBarWidth = options.showProgressBars === false ? 0 : 8;
+  const defaultUsePill = options.showProgressBars !== false;
 
-  const buildCapsulesForSlots = (slotList, includeAnomaly = true, barWidth = defaultBarWidth) => {
+  const buildCapsulesForSlots = (slotList, includeAnomaly = true, usePill = defaultUsePill) => {
     const slotSet = new Set(slotList);
     const rendered = slotList.map((key) =>
-      cliRenderSingleSlot(key, slotCtx, { isEn, useColor, slotSet, barWidth })
+      cliRenderSingleSlot(key, slotCtx, { isEn, useColor, slotSet, usePill })
     );
     if (includeAnomaly && anomalyBadge) {
       rendered.push(anomalyBadge);
@@ -1128,7 +1177,7 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
     };
   };
 
-  const baseCapsules = buildCapsulesForSlots(activeSlots, true, defaultBarWidth);
+  const baseCapsules = buildCapsulesForSlots(activeSlots, true, defaultUsePill);
   const rawWidth = Number(options.terminalWidth);
   if (!Number.isFinite(rawWidth) || rawWidth <= 0) {
     return baseCapsules.fullCapsule;
@@ -1167,44 +1216,32 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
   );
   if (fullPrimary) return fullPrimary;
 
-  // 中等终端优先把进度条从 8 格微缩至 5 格以保住左右完整原生提示，再逐级收缩左右栏和槽位
-  if (defaultBarWidth > 5) {
-    const compactBarCapsules = buildCapsulesForSlots(activeSlots, true, 5);
-    const fullCompactBar = cliComposeBalancedThreeColumn(
-      fullLeft,
-      compactBarCapsules.fullCapsule,
-      fullRight,
-      maxWidth
-    );
-    if (fullCompactBar) return fullCompactBar;
-  }
-
   const primaryComposed = tryCompose(baseCapsules);
   if (primaryComposed) return primaryComposed;
 
-  if (defaultBarWidth > 5) {
-    const compactBarCapsules = buildCapsulesForSlots(activeSlots, true, 5);
-    const compactBarComposed = tryCompose(compactBarCapsules);
-    if (compactBarComposed) return compactBarComposed;
-  }
-  if (defaultBarWidth > 0) {
-    const noBarCapsules = buildCapsulesForSlots(activeSlots, true, 0);
-    const noBarComposed = tryCompose(noBarCapsules);
-    if (noBarComposed) return noBarComposed;
+  if (defaultUsePill) {
+    const noPillCapsules = buildCapsulesForSlots(activeSlots, true, false);
+    const noPillComposed = tryCompose(noPillCapsules);
+    if (noPillComposed) return noPillComposed;
   }
 
   let reducedSlots = [...activeSlots];
   while (reducedSlots.length > 1) {
     reducedSlots = cliStatusShedLowestPrioritySlot(reducedSlots);
-    const reducedCap = buildCapsulesForSlots(reducedSlots, true, 0);
+    const reducedCap = buildCapsulesForSlots(reducedSlots, true, defaultUsePill);
     const composed = tryCompose(reducedCap);
     if (composed) return composed;
+    if (defaultUsePill) {
+      const reducedPlain = buildCapsulesForSlots(reducedSlots, true, false);
+      const composedPlain = tryCompose(reducedPlain);
+      if (composedPlain) return composedPlain;
+    }
   }
 
   if (cliDisplayWidth(baseCapsules.fullCapsule) <= maxWidth) {
     return baseCapsules.fullCapsule;
   }
-  const minimalCap = buildCapsulesForSlots(reducedSlots, false, 0);
+  const minimalCap = buildCapsulesForSlots(reducedSlots, false, false);
   if (cliDisplayWidth(minimalCap.fullCapsule) <= maxWidth) {
     return minimalCap.fullCapsule;
   }

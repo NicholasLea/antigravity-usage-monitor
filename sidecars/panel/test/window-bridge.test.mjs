@@ -5927,9 +5927,13 @@ test('SettingsStructureTab CLI statusLine controls stay hidden unless CLI is det
         .querySelectorAll('.cli-preview-slot')
         .filter((el) => !el.hasAttribute('hidden'))
         .map((el) => el.textContent);
-    assert.deepEqual(visibleSlots(), ['68.4 t/s', '1.1s', '$0.42', '余 █████⣿⣿⣿ 64%', '上下文 ████⢕⢕⢕⢕ 56%']);
+    assert.deepEqual(visibleSlots(), ['68.4 t/s', '1.1s', '$0.42', '余 64%', '上下文 56%']);
+    const pillSlots1 = previewEl
+      .querySelectorAll('.cli-preview-slot.is-pill')
+      .filter((el) => !el.hasAttribute('hidden'));
+    assert.equal(pillSlots1.length, 2, 'Quota and context slots render as background-filled pills');
 
-    // 3. Dedicated 5h / weekly / context slots render distinct mini progress bars in live preview
+    // 3. Dedicated 5h / weekly / context slots render distinct pill gauges in live preview
     strTab.refs.renderSettings(
       {
         enableCliStatusLine: true,
@@ -5940,12 +5944,16 @@ test('SettingsStructureTab CLI statusLine controls stay hidden unless CLI is det
       { installed: true, configured: true, preservedCustom: false, managedFlags: '' }
     );
     assert.deepEqual(visibleSlots(), [
-      'G5h █████⣿⣿⣿ 64%',
-      'G周 ███████⣿ 88%',
-      'C5h ████████ 96%',
-      'C周 ████████ 99%',
-      '上下文 ████⢕⢕⢕⢕ 56%',
+      'G5h 64%',
+      'G周 88%',
+      'C5h 96%',
+      'C周 99%',
+      '上下文 56%',
     ]);
+    const pillSlots2 = previewEl
+      .querySelectorAll('.cli-preview-slot.is-pill')
+      .filter((el) => !el.hasAttribute('hidden'));
+    assert.equal(pillSlots2.length, 5);
 
     // 4. Turning CLI statusLine off collapses detail panel
     strTab.refs.renderSettings(

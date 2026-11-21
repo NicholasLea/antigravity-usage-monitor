@@ -1948,7 +1948,7 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
     effort: 'high',
   });
 
-  // Capsule formatting in NO_COLOR and 24-bit ANSI modes uses transparent background (zero 48;...m SGR)
+  // Capsule formatting: NO_COLOR renders compact plain text; 24-bit ANSI renders inline pill gauges (48;2;...m) with zero OSC
   const plainCapsule = h.formatCliStatusLineCapsule(
     {
       hasTelemetry: true,
@@ -1966,7 +1966,7 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       color: false,
     }
   );
-  assert.equal(plainCapsule, '● 0 运行中   11.8s | 38.1 t/s | 余 █████⣿⣿⣿ 57% | 上下文 █⢕⢕⢕⢕⢕⢕⢕ 17%');
+  assert.equal(plainCapsule, '● 0 运行中   11.8s | 38.1 t/s | 余 57% | 上下文 17%');
 
   const ansiCapsule = h.formatCliStatusLineCapsule(
     {
@@ -1985,14 +1985,15 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       color: true,
     }
   );
-  assert.equal(/\x1b\[48;/.test(ansiCapsule), false, 'Emits zero background SGR codes');
+  assert.equal(/\x1b\[48;2;116;84;22m/.test(ansiCapsule), true, 'Emits warm amber 24-bit pill fill for warn quota/context');
+  assert.equal(/\x1b\[48;2;36;40;50m/.test(ansiCapsule), true, 'Emits dark slate unfilled pill track');
   assert.equal(/\x1b\]/.test(ansiCapsule), false, 'Contains zero OSC sequences so Bubble Tea width never breaks');
   assert.equal(
     ansiCapsule.replace(/\x1b\[[0-9;]*m/g, ''),
-    '● 2 运行中 · 1 子   1.3s | 68.4 t/s | 余 ██⣿⣿⣿⣿⣿⣿ 22% | 上下文 ██████⢕⢕ 75%'
+    '● 2 运行中 · 1 子   1.3s | 68.4 t/s |  余 22%  |  上下文 75% '
   );
 
-  // Full 3-column single-line bar with left shortcuts, centered metrics, and right mode/model/effort
+  // Full 3-column single-line bar with left shortcuts, centered pill metrics, and right mode/model/effort
   const inlineBar120 = h.formatCliStatusLineCapsule(
     {
       hasTelemetry: true,
@@ -2014,18 +2015,19 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       modelEffort: 'medium',
     }
   );
-  assert.equal(/\x1b\[48;/.test(inlineBar120), false, 'Inline 3-column bar has zero background SGR');
+  assert.equal(/\x1b\[48;2;24;96;68m/.test(inlineBar120), true, 'Quota normal pill uses deep emerald fill');
+  assert.equal(/\x1b\[48;2;36;72;128m/.test(inlineBar120), true, 'Context normal pill uses slate-blue fill');
   const plainBar120 = inlineBar120.replace(/\x1b\[[0-9;]*m/g, '');
   assert.ok(plainBar120.startsWith('? for shortcuts  '), 'Keeps ? for shortcuts on the left');
   assert.ok(
-    plainBar120.includes('● 2 运行中   5.6s | 22.0 t/s | 余 ████⣿⣿⣿⣿ 54% | 上下文 █⢕⢕⢕⢕⢕⢕⢕ 2%'),
-    'Keeps full 8-cell Braille bars and full chrome when 4 slots fit in 120 columns'
+    plainBar120.includes('● 2 运行中   5.6s | 22.0 t/s |  余 54%  |  上下文  2% '),
+    'Keeps compact pill gauges with right-aligned percentage and full chrome in 120 columns'
   );
   assert.ok(plainBar120.endsWith('  auto · Gemini 4 Hydrogen · medium'), 'Renders deduplicated mode · model · effort on the right');
   assert.equal(h.cliDisplayWidth(inlineBar120), 119, 'Fits cleanly within terminalWidth - 1 without wrapping');
 
-  // Mid-width 115-column terminal steps down 8-cell bars to 5-cell bars before trimming chrome
-  const inlineBar115 = h.formatCliStatusLineCapsule(
+  // Compact 108-column terminal still fits full 3-column chrome AND pill gauges cleanly (saves ~12 cols over Braille bars)
+  const inlineBar108 = h.formatCliStatusLineCapsule(
     {
       hasTelemetry: true,
       runningCount: 2,
@@ -2040,20 +2042,20 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       showMultiSession: true,
       language: 'zh-CN',
       color: true,
-      terminalWidth: 115,
+      terminalWidth: 108,
       cycleMode: 'auto',
       modelDisplayName: 'Gemini 4 Hydrogen (Medium)',
       modelEffort: 'medium',
     }
   );
-  const plainBar115 = inlineBar115.replace(/\x1b\[[0-9;]*m/g, '');
-  assert.ok(plainBar115.startsWith('? for shortcuts  '), 'Keeps ? for shortcuts when stepping down to 5-cell bars');
+  const plainBar108 = inlineBar108.replace(/\x1b\[[0-9;]*m/g, '');
+  assert.ok(plainBar108.startsWith('? for shortcuts  '), 'Keeps ? for shortcuts at 108 columns');
   assert.ok(
-    plainBar115.includes('● 2 运行中   5.6s | 22.0 t/s | 余 ███⣿⣿ 54% | 上下文 █⢕⢕⢕⢕ 2%'),
-    'Gracefully steps down 8-cell bars to 5-cell bars on 115-col terminal while keeping full chrome'
+    plainBar108.includes('● 2 运行中   5.6s | 22.0 t/s |  余 54%  |  上下文  2% '),
+    'Fits compact pill gauges and full chrome even at 108 columns'
   );
-  assert.ok(plainBar115.endsWith('  auto · Gemini 4 Hydrogen · medium'), 'Keeps full right chrome on 115-col terminal');
-  assert.equal(h.cliDisplayWidth(inlineBar115), 114, '115-col bar fits cleanly within terminalWidth - 1');
+  assert.ok(plainBar108.endsWith('  auto · Gemini 4 Hydrogen · medium'), 'Keeps full right chrome at 108 columns');
+  assert.equal(h.cliDisplayWidth(inlineBar108), 107, '108-col bar fits cleanly within terminalWidth - 1');
 
   // Narrow 80-column terminal gracefully compacts without wrapping
   const inlineBar80 = h.formatCliStatusLineCapsule(
@@ -2227,7 +2229,7 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       input: stdinPayload,
       encoding: 'utf8',
     }).trim();
-    assert.equal(capsuleOut, '● 0 运行中   1.8s | 38.1 t/s | 余 █████⣿⣿⣿ 57% | 上下文 █⢕⢕⢕⢕⢕⢕⢕ 17%');
+    assert.equal(capsuleOut, '● 0 运行中   1.8s | 38.1 t/s | 余 57% | 上下文 17%');
 
     // Full 3-column single-line E2E with terminal_width + cycle_mode + model + native stdin quota fallback
     const emptySnapDir = join(tempRoot, 'empty-data');
@@ -2262,10 +2264,10 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       input: fullLineStdin,
       encoding: 'utf8',
     }).replace(/\r?\n$/, '');
-    assert.equal(/\x1b\[48;/.test(fullLineOut), false, 'E2E ANSI output has zero background fill');
+    assert.equal(/\x1b\[48;2;/.test(fullLineOut), true, 'E2E ANSI output renders 24-bit pill background fill');
     const plainFullLine = fullLineOut.replace(/\x1b\[[0-9;]*m/g, '');
     assert.ok(plainFullLine.startsWith('? for shortcuts  '));
-    assert.ok(plainFullLine.includes('● 1 运行中   1.8s | 38.1 t/s | 余 ████⣿⣿⣿⣿ 54% | 上下文 █⢕⢕⢕⢕⢕⢕⢕ 2%'));
+    assert.ok(plainFullLine.includes('● 1 运行中   1.8s | 38.1 t/s |  余 54%  |  上下文  2% '));
     assert.ok(plainFullLine.endsWith('  auto · Gemini 4 Hydrogen · medium'));
     assert.equal(h.cliDisplayWidth(fullLineOut), 129);
 
@@ -2276,7 +2278,7 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
         input: stdinPayload,
         encoding: 'utf8',
       }).trim();
-      assert.equal(cmdCapsuleOut, '● 0 运行中   1.8s | 38.1 t/s | 余 █████⣿⣿⣿ 57% | 上下文 █⢕⢕⢕⢕⢕⢕⢕ 17%');
+      assert.equal(cmdCapsuleOut, '● 0 运行中   1.8s | 38.1 t/s | 余 57% | 上下文 17%');
 
       const spaceDir = join(tempRoot, 'Dir With Spaces');
       mkdirSync(spaceDir, { recursive: true });
@@ -2292,7 +2294,7 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
         input: stdinPayload,
         encoding: 'utf8',
       }).trim();
-      assert.equal(autorunOut, '● 0 运行中   1.8s | 38.1 t/s | 余 █████⣿⣿⣿ 57% | 上下文 █⢕⢕⢕⢕⢕⢕⢕ 17%');
+      assert.equal(autorunOut, '● 0 运行中   1.8s | 38.1 t/s | 余 57% | 上下文 17%');
     }
 
     // Verify compaction-line precedence: when local trajectory reports maxContextTokens (e.g. 512k),
@@ -2355,10 +2357,17 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       encoding: 'utf8',
     }).trim();
     assert.ok(
-      limitOut.includes('上下文 ███████⢕ 92%'),
+      limitOut.includes('上下文 92%'),
       `expected compaction-limit 92% instead of physical 42%, got: ${limitOut}`
     );
     assert.equal(limitOut.includes('42%'), false);
+    const limitAnsiOut = execFileSync(process.execPath, [statusLineScript], {
+      env: installEnv,
+      input: limitStdin,
+      encoding: 'utf8',
+    }).trim();
+    assert.equal(/\x1b\[48;2;124;42;48m/.test(limitAnsiOut), true, '92% compaction limit uses danger crimson pill');
+    assert.ok(limitAnsiOut.replace(/\x1b\[[0-9;]*m/g, '').includes(' 上下文 92% '));
 
     // Verify real non-test.invalid buildTelemetryPayload writes cli-status-snapshot.json cleanly without throwing
     const builderUrl = new URL('../backend/telemetry-builder.mjs', import.meta.url).href;
@@ -2508,9 +2517,9 @@ test('CLI statusLine v1.5.4 upgrades: /statusline inline flags, preserved manage
       color: false,
     }
   );
-  assert.equal(freshBar, '● 0 运行中   空闲 | 余 ████████ 98% | 上下文 █⢕⢕⢕⢕⢕⢕⢕ 16%');
+  assert.equal(freshBar, '● 0 运行中   空闲 | 余 98% | 上下文 16%');
 
-  // 5b. Dedicated 5h / weekly / context 8-cell mini progress bars in zh-CN & en-US
+  // 5b. Dedicated 5h / weekly / context slots in NO_COLOR and pill ANSI modes (zh-CN & en-US)
   const quotaBarCtx = {
     hasTelemetry: true,
     stepCount: 3,
@@ -2529,7 +2538,20 @@ test('CLI statusLine v1.5.4 upgrades: /statusline inline flags, preserved manage
       language: 'zh-CN',
       color: false,
     }),
-    'G5h █████⣿⣿⣿ 64% | G周 ███████⣿ 88% | C5h ████████ 96% | C周 █⣿⣿⣿⣿⣿⣿⣿ 14% | 上下文 ████⢕⢕⢕⢕ 56%'
+    'G5h 64% | G周 88% | C5h 96% | C周 14% | 上下文 56%'
+  );
+  const quotaPillAnsi = h.formatCliStatusLineCapsule(quotaBarCtx, {
+    slots: ['gemini_5h', 'claude_weekly', 'context'],
+    showMultiSession: false,
+    language: 'zh-CN',
+    color: true,
+  });
+  assert.equal(/\x1b\[48;2;24;96;68m/.test(quotaPillAnsi), true, '64% quota uses green pill fill');
+  assert.equal(/\x1b\[48;2;124;42;48m/.test(quotaPillAnsi), true, '14% quota uses danger red pill fill');
+  assert.equal(/\x1b\[48;2;36;72;128m/.test(quotaPillAnsi), true, '56% context uses blue pill fill');
+  assert.equal(
+    quotaPillAnsi.replace(/\x1b\[[0-9;]*m/g, ''),
+    ' G5h 64%  |  C周 14%  |  上下文 56% '
   );
   assert.equal(
     h.formatCliStatusLineCapsule(quotaBarCtx, {
@@ -2538,7 +2560,7 @@ test('CLI statusLine v1.5.4 upgrades: /statusline inline flags, preserved manage
       language: 'en-US',
       color: false,
     }),
-    'Gw ███████⣿ 88% | Cw █⣿⣿⣿⣿⣿⣿⣿ 14% | Ctx ████⢕⢕⢕⢕ 56%'
+    'Gw 88% | Cw 14% | Ctx 56%'
   );
 
   // 5c. Local SQLite WAITING step immediately turns CLI dot amber even while Desktop snapshot is still false
@@ -2592,7 +2614,7 @@ test('CLI statusLine v1.5.4 upgrades: /statusline inline flags, preserved manage
   });
   assert.equal(resumedFromLocalDb.hasWaiting, false);
 
-  // 6. Anomaly badge (toggleable via showAnomaly) + zero background SGR / OSC
+  // 6. Anomaly badge (toggleable via showAnomaly) + pill SGR & zero OSC
   const withAnom = h.formatCliStatusLineCapsule(
     {
       hasTelemetry: true,
@@ -2609,9 +2631,9 @@ test('CLI statusLine v1.5.4 upgrades: /statusline inline flags, preserved manage
       color: true,
     }
   );
-  assert.equal(/\x1b\[48;/.test(withAnom), false);
+  assert.equal(/\x1b\[48;2;36;72;128m/.test(withAnom), true);
   assert.equal(/\x1b\]/.test(withAnom), false);
-  assert.equal(withAnom.replace(/\x1b\[[0-9;]*m/g, ''), '● 1 运行中   44.2 t/s | 2.1s | 上下文 ███⢕⢕⢕⢕⢕ 35% | ! 503');
+  assert.equal(withAnom.replace(/\x1b\[[0-9;]*m/g, ''), '● 1 运行中   44.2 t/s | 2.1s |  上下文 35%  | ! 503');
 
   const withoutAnom = h.formatCliStatusLineCapsule(
     {
@@ -2630,7 +2652,7 @@ test('CLI statusLine v1.5.4 upgrades: /statusline inline flags, preserved manage
       color: false,
     }
   );
-  assert.equal(withoutAnom, '● 1 运行中   44.2 t/s | 2.1s | 上下文 ███⢕⢕⢕⢕⢕ 35%');
+  assert.equal(withoutAnom, '● 1 运行中   44.2 t/s | 2.1s | 上下文 35%');
 
   // 7. Narrow 72-column terminal progressively sheds lower-priority slots without wrapping
   const narrow72 = h.formatCliStatusLineCapsule(
@@ -2707,7 +2729,7 @@ test('CLI statusLine v1.5.4 upgrades: /statusline inline flags, preserved manage
         encoding: 'utf8',
       }
     ).trim();
-    assert.equal(inlineOut, 'Idle | 5h ███████⣿ 91% | Ctx ██⢕⢕⢕⢕⢕⢕ 19%');
+    assert.equal(inlineOut, 'Idle | 5h 91% | Ctx 19%');
 
     // 9. Runtime CLI installation & status detection (strictly gated on antigravity-cli dir) + forceReplaceCustom recovery
     const { ensureCliStatusLineConfigured, getCliStatusLineRuntimeStatus } = await import(

@@ -103,87 +103,74 @@ function isSameList(a, b) {
   return true;
 }
 
-function buildCliPreviewMiniBar(pct, width = 8, emptyChar = '⢕') {
-  const clamped = Math.max(0, Math.min(100, Number(pct)));
-  let filled = Math.round((clamped / 100) * width);
-  if (clamped > 0 && filled === 0) filled = 1;
-  if (clamped < 95 && filled >= width) filled = Math.max(0, width - 1);
-  return {
-    barFilled: '█'.repeat(filled),
-    barEmpty: emptyChar.repeat(Math.max(0, width - filled)),
-  };
-}
-
 function formatCliPreviewSlot(slotKey, isEn) {
   switch (slotKey) {
     case 'tps':
-      return { prefix: '', barFilled: '', barEmpty: '', text: '68.4 t/s', tone: 'good' };
+      return { prefix: '', text: '68.4 t/s', tone: 'good', pillPct: null };
     case 'avg_tps':
       return {
         prefix: '',
-        barFilled: '',
-        barEmpty: '',
         text: isEn ? 'avg 54.0' : '均 54.0',
         tone: 'info',
+        pillPct: null,
       };
     case 'ttft':
-      return { prefix: '', barFilled: '', barEmpty: '', text: '1.1s', tone: 'good' };
+      return { prefix: '', text: '1.1s', tone: 'good', pillPct: null };
     case 'cost':
-      return { prefix: '', barFilled: '', barEmpty: '', text: '$0.040', tone: 'normal' };
+      return { prefix: '', text: '$0.040', tone: 'normal', pillPct: null };
     case 'session_cost':
-      return { prefix: '', barFilled: '', barEmpty: '', text: '$0.42', tone: 'normal' };
+      return { prefix: '', text: '$0.42', tone: 'normal', pillPct: null };
     case 'cache_hit':
       return {
         prefix: '',
-        barFilled: '',
-        barEmpty: '',
         text: isEn ? 'cache 92%' : '缓 92%',
         tone: 'good',
+        pillPct: null,
       };
     case 'session_tokens':
-      return { prefix: '', barFilled: '', barEmpty: '', text: '142K tok', tone: 'muted' };
+      return { prefix: '', text: '142K tok', tone: 'muted', pillPct: null };
     case 'quota_auto':
       return {
         prefix: isEn ? '5h ' : '余 ',
-        ...buildCliPreviewMiniBar(64, 8, '⣿'),
-        text: ' 64%',
+        text: '64%',
         tone: 'good',
+        pillPct: 64,
       };
     case 'gemini_5h':
       return {
         prefix: 'G5h ',
-        ...buildCliPreviewMiniBar(64, 8, '⣿'),
-        text: ' 64%',
+        text: '64%',
         tone: 'good',
+        pillPct: 64,
       };
     case 'gemini_weekly':
       return {
         prefix: isEn ? 'Gw ' : 'G周 ',
-        ...buildCliPreviewMiniBar(88, 8, '⣿'),
-        text: ' 88%',
+        text: '88%',
         tone: 'good',
+        pillPct: 88,
       };
     case 'claude_5h':
       return {
         prefix: 'C5h ',
-        ...buildCliPreviewMiniBar(96, 8, '⣿'),
-        text: ' 96%',
+        text: '96%',
         tone: 'good',
+        pillPct: 96,
       };
     case 'claude_weekly':
       return {
         prefix: isEn ? 'Cw ' : 'C周 ',
-        ...buildCliPreviewMiniBar(99, 8, '⣿'),
-        text: ' 99%',
+        text: '99%',
         tone: 'good',
+        pillPct: 99,
       };
     case 'context':
     default:
       return {
         prefix: isEn ? 'Ctx ' : '上下文 ',
-        ...buildCliPreviewMiniBar(56),
-        text: ' 56%',
+        text: '56%',
         tone: 'accent',
+        pillPct: 56,
       };
   }
 }
@@ -503,16 +490,12 @@ export const SettingsStructureTab = defineComponent({
         cliPreviewChildren.push(sepEl);
       }
       const prefixEl = h('span', { className: 'cli-preview-prefix' });
-      const barFillEl = h('span', { className: 'cli-preview-bar-fill' });
-      const barEmptyEl = h('span', { className: 'cli-preview-bar-empty' });
       const valueEl = h('span', { className: 'cli-preview-val' });
       const slotEl = h('span', { className: 'cli-preview-slot' }, [
         prefixEl,
-        barFillEl,
-        barEmptyEl,
         valueEl,
       ]);
-      cliPreviewSlotParts.push({ slotEl, prefixEl, barFillEl, barEmptyEl, valueEl });
+      cliPreviewSlotParts.push({ slotEl, prefixEl, valueEl });
       cliPreviewChildren.push(slotEl);
     }
     const cliPreviewEl = h('div', { className: 'cli-status-preview' }, cliPreviewChildren);
@@ -645,12 +628,13 @@ export const SettingsStructureTab = defineComponent({
         if (sepEl) patchAttr(sepEl, 'hidden', !visible);
         if (visible) {
           const item = formatCliPreviewSlot(key, isEn);
+          const isPill = Number.isFinite(item.pillPct);
           patchAttr(parts.slotEl, 'data-metric', key);
           patchText(parts.prefixEl, item.prefix || '');
-          patchText(parts.barFillEl, item.barFilled || '');
-          patchText(parts.barEmptyEl, item.barEmpty || '');
           patchText(parts.valueEl, item.text || '');
+          patchStyleVar(parts.slotEl, '--cli-pill-pct', isPill ? `${item.pillPct}%` : '');
           patchClasses(parts.slotEl, {
+            'is-pill': isPill,
             'tone-good': item.tone === 'good',
             'tone-info': item.tone === 'info',
             'tone-accent': item.tone === 'accent',
