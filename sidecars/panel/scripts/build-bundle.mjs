@@ -558,6 +558,7 @@ export function buildBundle(panelDir = PANEL_DIR) {
     'src/components/settings/EditableSlotList.js',
     'src/components/settings/ThemeColorPicker.js',
     'src/components/settings/BridgeStatusNotice.js',
+    'src/components/settings/SessionMigrationCard.js',
     'src/views/settings/SettingsGeneralTab.js',
     'src/views/settings/SettingsStructureTab.js',
     'src/views/settings/SettingsOtherTab.js',

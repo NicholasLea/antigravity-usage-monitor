@@ -31,6 +31,7 @@ const BACKEND_MODULE_FILES = [
   '../backend/proto-wire.mjs',
   '../backend/cli-sqlite-reader.mjs',
   '../backend/cli-statusline-config.mjs',
+  '../backend/session-migrator.mjs',
   '../backend/ls-discovery.mjs',
   '../backend/pricing-catalog.mjs',
   '../backend/plugin-updater.mjs',

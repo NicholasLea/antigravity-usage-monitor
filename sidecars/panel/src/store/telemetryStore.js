@@ -1997,6 +1997,36 @@ export async function triggerCliStatusLineAction(action) {
   return res;
 }
 
+export async function fetchSessionMigrationCatalog() {
+  try {
+    return await callSidecarApi('/api/session-migration/catalog', { method: 'GET' });
+  } catch {
+    return callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __sessionMigrationAction: 'catalog' },
+    });
+  }
+}
+
+export async function executeSessionMigration(payload) {
+  let res;
+  try {
+    res = await callSidecarApi('/api/session-migration/migrate', {
+      method: 'POST',
+      body: payload || {},
+    });
+  } catch {
+    res = await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __sessionMigrationAction: 'migrate', payload: payload || {} },
+    });
+  }
+  if (res?.migratedCount > 0) {
+    void fetchTelemetry({ force: true }).catch(() => {});
+  }
+  return res;
+}
+
 export async function triggerPluginUpdate() {
   const res = await callSidecarApi('/api/plugin-update', { method: 'POST', body: {} });
   if (res?.ok && res?.restarting) {

@@ -63,6 +63,7 @@ import {
   resolveDevToolsPortCandidates,
   startDefaultWindowBridge,
 } from './window-bridge.mjs';
+import { getSessionMigrationCatalog, migrateSessions } from './session-migrator.mjs';
 import {
   ensureCliStatusLineConfigured,
   getCliStatusLineRuntimeStatus,
@@ -678,6 +679,62 @@ export function executeCliStatusLineAction(rawAction) {
   };
 }
 
+export function executeSessionMigrationCatalogAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        available: false,
+        sqliteSupported: false,
+        clients: [],
+        sessionsByClient: {},
+        desktopProjects: [],
+        error: 'unsupported_remote',
+      }),
+    };
+  }
+  const catalog = getSessionMigrationCatalog();
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(catalog),
+  };
+}
+
+export function executeSessionMigrationMigrateAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'unsupported_remote', results: [] }),
+    };
+  }
+  const cleanData = stripEndpointField(data);
+  const result = migrateSessions(cleanData);
+  if (result.migratedCount > 0) {
+    clearScannerRuntimeMemos(LOCAL_ENDPOINT_ID);
+    clearTelemetryBuilderMemo(LOCAL_ENDPOINT_ID);
+  }
+  return {
+    status: Number(result.status || (result.ok ? 200 : 400)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
 const BRIDGE_ROUTE_LOOKUP = new Map(
   BRIDGE_API_ROUTE_DEFS.map((r) => [`${r.method}:${r.path}`, r.action])
 );
@@ -693,6 +750,12 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       }
       if (isPlainObject(data) && typeof data.__cliStatusLineAction === 'string') {
         return executeCliStatusLineAction(data.__cliStatusLineAction);
+      }
+      if (isPlainObject(data) && data.__sessionMigrationAction === 'catalog') {
+        return executeSessionMigrationCatalogAction(data, opts);
+      }
+      if (isPlainObject(data) && data.__sessionMigrationAction === 'migrate') {
+        return executeSessionMigrationMigrateAction(data.payload || data, opts);
       }
       return executeSettingsAction(data);
     case 'accounts_get':
@@ -711,6 +774,10 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executePluginUpdateAction();
     case 'bridge_relaunch':
       return executeBridgeRelaunchAction();
+    case 'session_migration_catalog':
+      return executeSessionMigrationCatalogAction(data, opts);
+    case 'session_migration_migrate':
+      return executeSessionMigrationMigrateAction(data, opts);
     default:
       return {
         status: 404,

@@ -23,6 +23,7 @@ import {
 } from '../../store/telemetryStore.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
 import { BridgeStatusNotice } from '../../components/settings/BridgeStatusNotice.js';
+import { SessionMigrationCard } from '../../components/settings/SessionMigrationCard.js';
 
 function getStepModelDisplayOptions() {
   return [
@@ -597,10 +598,17 @@ export const SettingsOtherTab = defineComponent({
       ]),
     ]);
 
+    const sessionMigrationCard = SessionMigrationCard({
+      onLayoutChange: () => {
+        getProps()?.onLayoutChange?.();
+      },
+    });
+
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       modelPanel,
       baselinePanel,
       maintPanel,
+      sessionMigrationCard.el,
     ]);
 
     function renderSettings(
@@ -631,6 +639,7 @@ export const SettingsOtherTab = defineComponent({
         options: getOrchestratorIdDisplayOptions(),
       });
       renderContextWindows();
+      void sessionMigrationCard.refs.ensureLoaded();
     }
 
     function refreshLabels() {
@@ -667,6 +676,7 @@ export const SettingsOtherTab = defineComponent({
         modelValue: draftOrchestratorIdMode,
         options: getOrchestratorIdDisplayOptions(),
       });
+      sessionMigrationCard.refs.refreshLabels();
     }
 
     onCleanup(() => {
@@ -678,6 +688,7 @@ export const SettingsOtherTab = defineComponent({
       ctxBridgeNotice.destroy();
       ctxModelSelect.destroy();
       ctxWindowSelect.destroy();
+      sessionMigrationCard.destroy();
     });
 
     return {
@@ -688,6 +699,7 @@ export const SettingsOtherTab = defineComponent({
         ctxBridgeNotice,
         ctxModelSelect,
         ctxWindowSelect,
+        sessionMigrationCard,
         rebuildCacheBtn,
         resetAllBtn,
         exportJsonBtn,

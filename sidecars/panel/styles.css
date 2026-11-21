@@ -5704,6 +5704,334 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
+/* --- 其他页：跨端会话按需迁移卡片 (.smig-panel) --- */
+.smig-panel[hidden] {
+  display: none !important;
+}
+
+.smig-desc {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-sm);
+  line-height: 1.48;
+  color: var(--text-secondary);
+}
+
+.smig-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+}
+
+.smig-direction-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.smig-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin-bottom: var(--space-2);
+}
+
+.smig-direction-grid .smig-field {
+  margin-bottom: 0;
+}
+
+.smig-field[hidden] {
+  display: none !important;
+}
+
+.smig-field-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.smig-mode-bar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.smig-mode-btn {
+  min-height: calc(26px * var(--ui-font-scale, 1));
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-instant) var(--ease-fast),
+    background-color var(--dur-instant) var(--ease-fast),
+    color var(--dur-instant) var(--ease-fast);
+}
+
+.smig-mode-btn:hover {
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+.smig-mode-btn.is-active {
+  border-color: var(--accent-primary-border);
+  background: var(--accent-primary-soft);
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.smig-mode-hint {
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.smig-project-select .select-option-meta {
+  max-width: 58%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smig-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.smig-search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.smig-toggle-all-btn {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+}
+
+.smig-count-meta {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.smig-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-subtle);
+}
+
+.smig-empty {
+  padding: var(--space-4) var(--space-2);
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.smig-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  background: var(--surface-panel);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-instant) var(--ease-fast),
+    background-color var(--dur-instant) var(--ease-fast);
+}
+
+.smig-item:hover:not(.is-running) {
+  border-color: var(--border-default);
+}
+
+.smig-item.is-selected {
+  border-color: var(--accent-primary-border);
+  background: var(--accent-primary-soft);
+}
+
+.smig-item.is-running {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.smig-checkbox {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--accent-primary);
+  cursor: inherit;
+}
+
+.smig-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.smig-item-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.smig-item-title {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.smig-item-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.smig-item-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.smig-item-ws {
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.smig-item-running {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--metric-warn);
+  background: color-mix(in srgb, var(--metric-warn) 14%, transparent);
+}
+
+.smig-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.smig-migrate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.smig-result {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.smig-result[hidden] {
+  display: none !important;
+}
+
+.smig-result.is-ok {
+  border-color: color-mix(in srgb, var(--metric-good) 42%, var(--border-hairline));
+  background: color-mix(in srgb, var(--surface-panel) 90%, var(--metric-good) 7%);
+}
+
+.smig-result.is-err {
+  border-color: color-mix(in srgb, var(--metric-danger) 42%, var(--border-hairline));
+  background: color-mix(in srgb, var(--surface-panel) 90%, var(--metric-danger) 7%);
+}
+
+.smig-result-msg {
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.smig-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.smig-result-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+}
+
+.smig-cmd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.smig-cmd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-hairline);
+}
+
+.smig-cmd-code {
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.smig-cmd-copy {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+}
+
 /* --- Antigravity CLI 底部状态胶囊专属配置块（仅检测到 CLI 时展示） --- */
 .cli-statusline-group {
   display: flex;

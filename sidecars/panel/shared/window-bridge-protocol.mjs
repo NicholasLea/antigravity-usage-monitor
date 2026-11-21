@@ -28,6 +28,16 @@ export const BRIDGE_API_ROUTE_DEFS = Object.freeze([
   Object.freeze({ path: '/api/cloud-sync', method: 'POST', action: 'cloud_sync' }),
   Object.freeze({ path: '/api/plugin-update', method: 'POST', action: 'plugin_update' }),
   Object.freeze({ path: '/api/bridge/relaunch', method: 'POST', action: 'bridge_relaunch' }),
+  Object.freeze({
+    path: '/api/session-migration/catalog',
+    method: 'GET',
+    action: 'session_migration_catalog',
+  }),
+  Object.freeze({
+    path: '/api/session-migration/migrate',
+    method: 'POST',
+    action: 'session_migration_migrate',
+  }),
 ]);
 
 export const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path));
