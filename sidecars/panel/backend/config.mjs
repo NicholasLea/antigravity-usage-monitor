@@ -17,6 +17,8 @@ import { writeTrajectoryCacheFile } from './trajectory-cache-file.mjs';
 import { normalizeFullSettings } from './settings-schema.mjs';
 
 export {
+  CLI_STATUSLINE_PRESETS,
+  DEFAULT_CLI_STATUSLINE_SLOTS,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -26,8 +28,10 @@ export {
   DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_TOPBAR_SLOTS,
   FONT_SCALE_KEYS,
+  MAX_CLI_STATUSLINE_SLOTS,
   MAX_POPOVER_WIDTH,
   MAX_TOPBAR_SLOTS,
+  MIN_CLI_STATUSLINE_SLOTS,
   MIN_POPOVER_WIDTH,
   MIN_TOPBAR_SLOTS,
   OVERVIEW_METRIC_KEYS,
@@ -37,6 +41,7 @@ export {
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
   createDefaultSettingsObject,
+  normalizeCliStatusLineSlots,
   normalizeFontScale,
   normalizeFullSettings,
   normalizeHoverModules,
@@ -57,6 +62,7 @@ export {
   normalizeWeeklyLimitMode,
   normalizeWindowMountMode,
   parseStepTokenComboSegments,
+  resolveEffectiveCliStatusLineSlots,
 } from './settings-schema.mjs';
 
 /**

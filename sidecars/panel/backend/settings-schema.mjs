@@ -6,6 +6,8 @@
 
 import { isContextWindowSettingId, isContextWindowOption } from './context-windows.mjs';
 import {
+  CLI_STATUSLINE_PRESETS,
+  DEFAULT_CLI_STATUSLINE_SLOTS,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -14,8 +16,10 @@ import {
   DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_TOPBAR_SLOTS,
   FONT_SCALE_KEYS,
+  MAX_CLI_STATUSLINE_SLOTS,
   MAX_POPOVER_WIDTH,
   MAX_TOPBAR_SLOTS,
+  MIN_CLI_STATUSLINE_SLOTS,
   MIN_POPOVER_WIDTH,
   MIN_TOPBAR_SLOTS,
   OVERVIEW_METRIC_KEYS,
@@ -26,6 +30,7 @@ import {
   SUPPORTED_LANGUAGES,
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
+  normalizeCliStatusLineSlots,
   normalizeExperimentalModernUi,
   normalizeFontScale,
   normalizeHoverModules,
@@ -46,9 +51,12 @@ import {
   normalizeWeeklyLimitMode,
   normalizeWindowMountMode,
   parseStepTokenComboSegments,
+  resolveEffectiveCliStatusLineSlots,
 } from '../shared/settings-normalization.mjs';
 
 export {
+  CLI_STATUSLINE_PRESETS,
+  DEFAULT_CLI_STATUSLINE_SLOTS,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -57,8 +65,10 @@ export {
   DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_TOPBAR_SLOTS,
   FONT_SCALE_KEYS,
+  MAX_CLI_STATUSLINE_SLOTS,
   MAX_POPOVER_WIDTH,
   MAX_TOPBAR_SLOTS,
+  MIN_CLI_STATUSLINE_SLOTS,
   MIN_POPOVER_WIDTH,
   MIN_TOPBAR_SLOTS,
   OVERVIEW_METRIC_KEYS,
@@ -69,6 +79,7 @@ export {
   SUPPORTED_LANGUAGES,
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
+  normalizeCliStatusLineSlots,
   normalizeExperimentalModernUi,
   normalizeFontScale,
   normalizeHoverModules,
@@ -89,6 +100,7 @@ export {
   normalizeWeeklyLimitMode,
   normalizeWindowMountMode,
   parseStepTokenComboSegments,
+  resolveEffectiveCliStatusLineSlots,
 };
 
 function isSchemaPlainObject(v) {
@@ -127,6 +139,7 @@ export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
   popoverWidthMode: 'auto',
   popoverWidth: DEFAULT_POPOVER_WIDTH,
   enableCliStatusLine: true,
+  cliStatusLineSlots: null,
   standalonePort: 0,
   showTopbarMultiSession: true,
   topbarCapsuleSlots: DEFAULT_TOPBAR_SLOTS,
@@ -203,6 +216,7 @@ export function normalizeFullSettings(rawInput) {
     popoverWidthMode: normalizePopoverWidthMode(safeRaw.popoverWidthMode),
     popoverWidth: normalizePopoverWidth(safeRaw.popoverWidth),
     enableCliStatusLine: safeRaw.enableCliStatusLine !== false,
+    cliStatusLineSlots: normalizeCliStatusLineSlots(safeRaw.cliStatusLineSlots),
     standalonePort: normalizeStandalonePort(safeRaw.standalonePort),
     showTopbarMultiSession: safeRaw.showTopbarMultiSession !== false,
     topbarCapsuleSlots: normalizeTopbarCapsuleSlots(safeRaw.topbarCapsuleSlots),

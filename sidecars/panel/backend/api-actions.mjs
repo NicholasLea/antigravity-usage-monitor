@@ -63,7 +63,10 @@ import {
   resolveDevToolsPortCandidates,
   startDefaultWindowBridge,
 } from './window-bridge.mjs';
-import { ensureCliStatusLineConfigured } from './cli-statusline-config.mjs';
+import {
+  ensureCliStatusLineConfigured,
+  getCliStatusLineRuntimeStatus,
+} from './cli-statusline-config.mjs';
 
 export const bootBundleVersion = computeRuntimeCodeVersion();
 
@@ -632,6 +635,49 @@ export async function executeBridgeRelaunchAction() {
   };
 }
 
+export function executeCliStatusLineAction(rawAction) {
+  const action = String(rawAction || '').trim();
+  if (action !== 'force_install' && action !== 'clear_flags') {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'Unsupported CLI statusLine action' }),
+    };
+  }
+
+  let current = loadSettings();
+  if (action === 'force_install' && current.enableCliStatusLine === false) {
+    const nextSettings = normalizeFullSettings({
+      ...current,
+      enableCliStatusLine: true,
+    });
+    if (saveJson(SETTINGS_FILE, nextSettings)) {
+      current = nextSettings;
+    }
+  }
+
+  const result = ensureCliStatusLineConfigured({
+    enabled: true,
+    forceReplaceCustom: action === 'force_install',
+    preserveManagedFlags: false,
+  });
+  const cliStatusLine = getCliStatusLineRuntimeStatus();
+  const ok = Boolean(result?.updated || result?.alreadyConfigured || cliStatusLine.configured);
+  return {
+    status: ok ? 200 : 500,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify({
+      ok,
+      action,
+      result,
+      cliStatusLine,
+      settings: current,
+    }),
+  };
+}
+
 const BRIDGE_ROUTE_LOOKUP = new Map(
   BRIDGE_API_ROUTE_DEFS.map((r) => [`${r.method}:${r.path}`, r.action])
 );
@@ -644,6 +690,9 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
     case 'settings':
       if (isPlainObject(data) && data.__bridgeAction === 'relaunch') {
         return executeBridgeRelaunchAction();
+      }
+      if (isPlainObject(data) && typeof data.__cliStatusLineAction === 'string') {
+        return executeCliStatusLineAction(data.__cliStatusLineAction);
       }
       return executeSettingsAction(data);
     case 'accounts_get':

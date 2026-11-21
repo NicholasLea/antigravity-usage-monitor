@@ -26,6 +26,8 @@ import {
   resolveSettingsModernUi,
 } from '../core/appearance.js';
 import {
+  CLI_STATUSLINE_PRESETS,
+  DEFAULT_CLI_STATUSLINE_SLOTS,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -39,6 +41,7 @@ import {
   OVERVIEW_MODULE_KEYS,
   STEP_TABLE_COLUMN_KEYS,
   TOPBAR_SLOT_KEYS,
+  normalizeCliStatusLineSlots,
   normalizeHoverModules,
   normalizeModelDisplayMode,
   normalizeOrchestratorIdMode,
@@ -53,6 +56,7 @@ import {
   normalizeWeeklyLimitMode,
   normalizeWindowMountMode,
   parseStepTokenComboSegments,
+  resolveEffectiveCliStatusLineSlots,
 } from '../../shared/settings-normalization.mjs';
 import {
   LOCAL_ENDPOINT_ID,
@@ -438,6 +442,8 @@ function reconcileIncomingTelemetrySettings(payload, reqSettingsRev) {
 
 export const CLIENT_TOPBAR_SLOT_KEYS = TOPBAR_SLOT_KEYS;
 export const DEFAULT_CLIENT_TOPBAR_SLOTS = DEFAULT_TOPBAR_SLOTS;
+export const CLIENT_CLI_STATUSLINE_PRESETS = CLI_STATUSLINE_PRESETS;
+export const DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS = DEFAULT_CLI_STATUSLINE_SLOTS;
 export const CLIENT_OVERVIEW_MODULE_KEYS = OVERVIEW_MODULE_KEYS;
 export const DEFAULT_CLIENT_OVERVIEW_MODULES = DEFAULT_OVERVIEW_MODULES;
 export const DEFAULT_CLIENT_HOVER_MODULES = DEFAULT_HOVER_MODULES;
@@ -456,6 +462,8 @@ export const normalizeClientPopoverWidthMode = normalizePopoverWidthMode;
 export const normalizeClientPopoverWidth = normalizePopoverWidth;
 export const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 export const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
+export const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
+export const resolveEffectiveClientCliStatusLineSlots = resolveEffectiveCliStatusLineSlots;
 export const normalizeClientHoverModules = normalizeHoverModules;
 export const normalizeClientOverviewModules = normalizeOverviewModules;
 export const normalizeClientOverviewMetrics = normalizeOverviewMetrics;
@@ -544,6 +552,7 @@ export function isEquivalentTelemetry(prev, next) {
   if ((pSet?.enableCliStatusLine !== false) !== (nSet?.enableCliStatusLine !== false)) {
     return false;
   }
+  if (!sameArr(pSet?.cliStatusLineSlots, nSet?.cliStatusLineSlots)) return false;
   if ((pSet?.showTopbarMultiSession !== false) !== (nSet?.showTopbarMultiSession !== false)) {
     return false;
   }
@@ -572,6 +581,16 @@ export function isEquivalentTelemetry(prev, next) {
     Boolean(pWb?.launcherConfigured) !== Boolean(nWb?.launcherConfigured) ||
     Boolean(pWb?.canRelaunch) !== Boolean(nWb?.canRelaunch) ||
     Number(pWb?.aliveCount || 0) !== Number(nWb?.aliveCount || 0)
+  ) {
+    return false;
+  }
+  const pCli = prev.cliStatusLine;
+  const nCli = next.cliStatusLine;
+  if (
+    Boolean(pCli?.installed) !== Boolean(nCli?.installed) ||
+    Boolean(pCli?.configured) !== Boolean(nCli?.configured) ||
+    Boolean(pCli?.preservedCustom) !== Boolean(nCli?.preservedCustom) ||
+    String(pCli?.managedFlags || '') !== String(nCli?.managedFlags || '')
   ) {
     return false;
   }
@@ -1712,6 +1731,9 @@ export async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'topbarCapsuleSlots')) {
     safePatch.topbarCapsuleSlots = normalizeClientTopbarSlots(safePatch.topbarCapsuleSlots);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'cliStatusLineSlots')) {
+    safePatch.cliStatusLineSlots = normalizeClientCliStatusLineSlots(safePatch.cliStatusLineSlots);
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverModules')) {
     safePatch.hoverModules = normalizeClientHoverModules(safePatch.hoverModules);
   }
@@ -1955,6 +1977,24 @@ export async function triggerBridgeHostRelaunch() {
       body: { __bridgeAction: 'relaunch' },
     });
   }
+}
+
+export async function triggerCliStatusLineAction(action) {
+  const res = await callSidecarApi('/api/settings', {
+    method: 'POST',
+    body: { __cliStatusLineAction: String(action || 'force_install') },
+  });
+  const cur = telemetryStore.getState().telemetry;
+  if (cur && res && typeof res === 'object') {
+    const nextTelemetry = {
+      ...cur,
+      ...(res.cliStatusLine ? { cliStatusLine: res.cliStatusLine } : {}),
+      ...(res.settings ? { settings: { ...cur.settings, ...res.settings } } : {}),
+    };
+    telemetryStore.setState({ telemetry: nextTelemetry });
+  }
+  void fetchTelemetry({ force: true }).catch(() => {});
+  return res;
 }
 
 export async function triggerPluginUpdate() {

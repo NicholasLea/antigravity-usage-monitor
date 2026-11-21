@@ -15,7 +15,13 @@ import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 
 import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { HERE, lsRuntimeEndpoint, normalizeLanguageSetting, normalizeTopbarCapsuleSlots } from './config.mjs';
+import {
+  HERE,
+  lsRuntimeEndpoint,
+  normalizeCliStatusLineSlots,
+  normalizeLanguageSetting,
+  normalizeTopbarCapsuleSlots,
+} from './config.mjs';
 import {
   classifyCacheTier,
   classifySpeedTier,
@@ -35,9 +41,10 @@ const SGR_FG_NORMAL = '\x1b[38;2;203;213;225m';
 const SGR_FG_MUTED = '\x1b[38;2;148;163;184m';
 const SGR_FG_DIM = '\x1b[38;2;120;133;155m';
 const SGR_FG_CHROME = '\x1b[38;2;136;142;150m';
-const SGR_FG_SEP = '\x1b[38;2;90;100;116m';
+const SGR_FG_SEP = '\x1b[38;2;110;122;140m';
 const SGR_FG_DOT_IDLE = '\x1b[38;2;100;116;139m';
 const SGR_FG_ACCENT = '\x1b[38;2;96;165;250m';
+const SGR_FG_TEAL = '\x1b[38;2;45;212;191m';
 const SGR_FG_GOOD = '\x1b[38;2;52;211;153m';
 const SGR_FG_INFO = '\x1b[38;2;56;189;248m';
 const SGR_FG_WARN = '\x1b[38;2;251;191;36m';
@@ -149,24 +156,29 @@ export function buildCliStatusLineCommand(
     platform = process.platform,
     execPath = process.execPath,
     nodeOnPath = true,
+    extraFlags = '',
   } = {}
 ) {
   const normScript = String(scriptPath || '').trim().replace(/\\/g, '/');
+  const cleanFlags = String(extraFlags || '').trim().replace(/"/g, '');
   if (platform === 'win32') {
     const normExec = String(execPath || 'node').trim().replace(/\\/g, '/');
     const runner = nodeOnPath || /\s/.test(normExec) ? 'node' : normExec;
     if (!/\s/.test(normScript)) {
-      return `${runner} ${normScript}`;
+      return cleanFlags ? `${runner} ${normScript} ${cleanFlags}` : `${runner} ${normScript}`;
     }
     const fileUrl = toPercentEncodedFileUrl(normScript).replace(/'/g, '%27');
-    return `${runner} --input-type=module -e import('${fileUrl}')`;
+    const base = `${runner} --input-type=module -e import('${fileUrl}')`;
+    return cleanFlags ? `${base} -- ${cleanFlags}` : base;
   }
   if (nodeOnPath) {
-    return `node "${normScript.replace(/"/g, '\\"')}"`;
+    const base = `node "${normScript.replace(/"/g, '\\"')}"`;
+    return cleanFlags ? `${base} ${cleanFlags}` : base;
   }
   const escapedExec = String(execPath || 'node').replace(/"/g, '\\"');
   const escapedScript = normScript.replace(/"/g, '\\"');
-  return `"${escapedExec}" "${escapedScript}"`;
+  const base = `"${escapedExec}" "${escapedScript}"`;
+  return cleanFlags ? `${base} ${cleanFlags}` : base;
 }
 
 /**
@@ -183,21 +195,107 @@ export function isManagedCliStatusLineCommand(cmd) {
 }
 
 /**
- * 在纯对象层面更新或移除本插件托管的 `statusLine` 配置，绝不覆盖用户自定义的第三方脚本。
+ * 提取用户通过 `/statusline` 追加在托管命令末尾的参数（如 `--slots tps,cost,context --no-multi`）。
+ *
+ * @param {unknown} cmd
+ * @returns {string}
+ */
+export function extractManagedCliStatusLineFlags(cmd) {
+  if (!isManagedCliStatusLineCommand(cmd)) return '';
+  const trimmed = String(cmd || '').trim();
+  const m = trimmed.match(/cli-statusline\.mjs(?:#autorun)?(?:["')]+)?\s+(--[\s\S]+)$/i);
+  if (!m) return '';
+  return m[1].replace(/^--\s+/, '').trim();
+}
+
+/**
+ * 探测本机是否已安装并初始化 Antigravity CLI（`~/.gemini/antigravity-cli`），
+ * 及当前 CLI `settings.json` 中的 `statusLine` 托管状态（零子进程、纯本地文件探测）。
+ *
+ * @param {{ env?: Record<string, string|undefined>, homeDir?: string }} [options]
+ * @returns {{ installed: boolean, configured: boolean, preservedCustom: boolean, managedFlags: string }}
+ */
+export function getCliStatusLineRuntimeStatus({
+  env = process.env,
+  homeDir = homedir(),
+} = {}) {
+  const settingsPath = resolveCliSettingsPath(env, homeDir);
+  const cliDir = dirname(settingsPath);
+  let installed = false;
+  try {
+    installed = existsSync(cliDir);
+  } catch {
+    installed = false;
+  }
+  if (!installed) {
+    return {
+      installed: false,
+      configured: false,
+      preservedCustom: false,
+      managedFlags: '',
+    };
+  }
+
+  let configured = false;
+  let preservedCustom = false;
+  let managedFlags = '';
+  try {
+    if (existsSync(settingsPath)) {
+      const raw = readFileSync(settingsPath, 'utf8').replace(/^\uFEFF/, '').trim();
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const sl = parsed?.statusLine;
+        if (isCliStatusPlainObject(sl)) {
+          const cmd = typeof sl.command === 'string' ? sl.command.trim() : '';
+          if (cmd) {
+            if (isManagedCliStatusLineCommand(cmd)) {
+              configured = sl.enabled !== false;
+              managedFlags = extractManagedCliStatusLineFlags(cmd);
+            } else {
+              preservedCustom = true;
+            }
+          }
+        } else if (sl !== undefined && sl !== null) {
+          preservedCustom = true;
+        }
+      }
+    }
+  } catch {
+    // 忽略损坏或无权限读取的 CLI settings.json
+  }
+
+  return {
+    installed: true,
+    configured,
+    preservedCustom,
+    managedFlags,
+  };
+}
+
+/**
+ * 在纯对象层面更新或移除本插件托管的 `statusLine` 配置，绝不覆盖用户自定义的第三方脚本，
+ * 并在未显式覆盖参数时保留用户在 `/statusline` 命令末尾附加的定制参数。
  *
  * @param {unknown} rawObj
- * @param {{ enabled?: boolean, command?: string, stackWithDefault?: boolean }} [options]
+ * @param {{ enabled?: boolean, command?: string, stackWithDefault?: boolean, preserveManagedFlags?: boolean }} [options]
  */
 export function applyCliStatusLineToSettingsObject(
   rawObj,
-  { enabled = true, command = '', stackWithDefault = false } = {}
+  {
+    enabled = true,
+    command = '',
+    stackWithDefault = false,
+    preserveManagedFlags = true,
+    forceReplaceCustom = false,
+  } = {}
 ) {
   const baseObj = isCliStatusPlainObject(rawObj) ? rawObj : {};
   const existing = baseObj.statusLine;
+  let existingCmd = '';
 
   if (isCliStatusPlainObject(existing)) {
-    const existingCmd = typeof existing.command === 'string' ? existing.command.trim() : '';
-    if (existingCmd && !isManagedCliStatusLineCommand(existingCmd)) {
+    existingCmd = typeof existing.command === 'string' ? existing.command.trim() : '';
+    if (existingCmd && !isManagedCliStatusLineCommand(existingCmd) && !forceReplaceCustom) {
       return {
         changed: false,
         preservedCustom: true,
@@ -205,7 +303,7 @@ export function applyCliStatusLineToSettingsObject(
         object: baseObj,
       };
     }
-  } else if (existing !== undefined && existing !== null) {
+  } else if (existing !== undefined && existing !== null && !forceReplaceCustom) {
     return {
       changed: false,
       preservedCustom: true,
@@ -231,13 +329,20 @@ export function applyCliStatusLineToSettingsObject(
     };
   }
 
-  const cleanCmd = String(command || '').trim();
+  let cleanCmd = String(command || '').trim();
   if (!cleanCmd) {
     return {
       changed: false,
       reason: 'empty_command',
       object: baseObj,
     };
+  }
+  if (preserveManagedFlags && !extractManagedCliStatusLineFlags(cleanCmd)) {
+    const prevFlags = extractManagedCliStatusLineFlags(existingCmd);
+    if (prevFlags) {
+      const isAutorun = cleanCmd.includes('--input-type=module -e import(');
+      cleanCmd = isAutorun ? `${cleanCmd} -- ${prevFlags}` : `${cleanCmd} ${prevFlags}`;
+    }
   }
 
   const prevBlock = isCliStatusPlainObject(existing) ? existing : {};
@@ -301,6 +406,9 @@ export function ensureCliStatusLineConfigured({
   platform = process.platform,
   execPath = process.execPath,
   nodeOnPath,
+  extraFlags = '',
+  preserveManagedFlags = true,
+  forceReplaceCustom = false,
 } = {}) {
   if (
     lsRuntimeEndpoint.addr === 'test.invalid' &&
@@ -346,9 +454,15 @@ export function ensureCliStatusLineConfigured({
       platform,
       execPath,
       nodeOnPath: hasNodePath,
+      extraFlags,
     });
 
-    const applied = applyCliStatusLineToSettingsObject(currentObj, { enabled, command });
+    const applied = applyCliStatusLineToSettingsObject(currentObj, {
+      enabled,
+      command,
+      preserveManagedFlags: extraFlags ? false : preserveManagedFlags,
+      forceReplaceCustom,
+    });
     if (!applied.changed) {
       return {
         checked: true,
@@ -577,28 +691,68 @@ function cliComposeBalancedThreeColumn(leftStr, centerStr, rightStr, maxWidth) {
   return cw <= maxWidth ? centerStr : '';
 }
 
+function cliBuildMiniProgressBar(
+  pct,
+  { width = 8, fillSgr = SGR_FG_TEAL, emptyChar = '⢕', useColor = true } = {}
+) {
+  if (!(width > 0)) return '';
+  const clamped = Math.max(0, Math.min(100, Number(pct)));
+  let filled = Math.round((clamped / 100) * width);
+  if (clamped > 0 && filled === 0) filled = 1;
+  if (clamped < 95 && filled >= width) filled = Math.max(0, width - 1);
+  const empty = Math.max(0, width - filled);
+  const filledStr = '█'.repeat(filled);
+  const emptyStr = emptyChar.repeat(empty);
+  if (!useColor) {
+    return `${filledStr}${emptyStr}`;
+  }
+  const fillPart = filledStr ? `${fillSgr}${filledStr}` : '';
+  const emptyPart = emptyStr ? `${SGR_FG_DIM}${emptyStr}` : '';
+  return `${fillPart}${emptyPart}${SGR_RESET}`;
+}
+
+function cliResolveQuotaSlotPrefix(metricKey, isEn) {
+  if (metricKey === 'gemini_5h') return 'G5h';
+  if (metricKey === 'gemini_weekly') return isEn ? 'Gw' : 'G周';
+  if (metricKey === 'claude_5h') return 'C5h';
+  if (metricKey === 'claude_weekly') return isEn ? 'Cw' : 'C周';
+  return isEn ? '5h' : '余';
+}
+
 /**
- * 将单槽位指标格式化为纯文本与无背景前景语义 SGR 片段。
+ * 将单槽位指标格式化为纯文本及无背景前景语义 SGR 片段。
  */
-function cliRenderSingleSlot(metricKey, slotCtx, { isEn = false, useColor = true, slotSet } = {}) {
+function cliRenderSingleSlot(
+  metricKey,
+  slotCtx,
+  { isEn = false, useColor = true, slotSet, barWidth = 8 } = {}
+) {
   const hasTelemetry = slotCtx.hasTelemetry !== false;
 
   if (metricKey === 'context') {
     const valid = hasTelemetry && slotCtx.usedPct != null && Number.isFinite(Number(slotCtx.usedPct));
     const pctNum = valid ? Math.max(0, Math.min(100, Math.round(Number(slotCtx.usedPct)))) : null;
+    const label = isEn ? 'Ctx' : '上下文';
     const textVal = pctNum != null ? `${pctNum}%` : '--%';
-    if (!useColor) {
-      return `◎ ${textVal}`;
-    }
     const isDanger = pctNum != null && pctNum >= 88;
     const isWarn = !isDanger && pctNum != null && pctNum >= 70;
-    const ringColor = isDanger
+    const isMid = !isDanger && !isWarn && pctNum != null && pctNum >= 50;
+    const barColor = isDanger
       ? SGR_FG_DANGER
       : isWarn
         ? SGR_FG_WARN
-        : pctNum != null
+        : isMid
           ? SGR_FG_ACCENT
-          : SGR_FG_MUTED;
+          : pctNum != null
+            ? SGR_FG_TEAL
+            : SGR_FG_MUTED;
+    const barSegment =
+      barWidth > 0 && pctNum != null
+        ? `${cliBuildMiniProgressBar(pctNum, { width: barWidth, fillSgr: barColor, emptyChar: '⢕', useColor })} `
+        : '';
+    if (!useColor) {
+      return `${label} ${barSegment}${textVal}`;
+    }
     const valColor = isDanger
       ? `${SGR_BOLD}${SGR_FG_DANGER}`
       : isWarn
@@ -606,7 +760,7 @@ function cliRenderSingleSlot(metricKey, slotCtx, { isEn = false, useColor = true
         : pctNum != null
           ? `${SGR_BOLD}${SGR_FG_BRIGHT}`
           : SGR_FG_MUTED;
-    return `${ringColor}◎ ${valColor}${textVal}${SGR_RESET}`;
+    return `${SGR_FG_MUTED}${label} ${barSegment}${valColor}${textVal}${SGR_RESET}`;
   }
 
   if (metricKey === 'tps') {
@@ -697,23 +851,52 @@ function cliRenderSingleSlot(metricKey, slotCtx, { isEn = false, useColor = true
   }
 
   const quotaPct = hasTelemetry ? cliResolveQuotaPct(slotCtx.quotas, metricKey) : null;
-  const textVal =
-    quotaPct != null
-      ? isEn
-        ? `${quotaPct}% left`
-        : `余 ${quotaPct}%`
-      : isEn
-        ? 'Quota --'
-        : '余 --%';
-  if (!useColor) return textVal;
+  const prefix = cliResolveQuotaSlotPrefix(metricKey, isEn);
   const isDanger = quotaPct != null && quotaPct <= 15;
   const isWarn = !isDanger && quotaPct != null && quotaPct <= 30;
-  const color = isDanger
+  const isMid = !isDanger && !isWarn && quotaPct != null && quotaPct <= 60;
+  const fillSgr = isDanger
+    ? SGR_FG_DANGER
+    : isWarn
+      ? SGR_FG_WARN
+      : isMid
+        ? SGR_FG_INFO
+        : SGR_FG_GOOD;
+  const pctSgr = isDanger
     ? `${SGR_BOLD}${SGR_FG_DANGER}`
     : isWarn
       ? `${SGR_BOLD}${SGR_FG_WARN}`
-      : SGR_FG_MUTED;
-  return `${color}${textVal}${SGR_RESET}`;
+      : quotaPct != null
+        ? SGR_FG_NORMAL
+        : SGR_FG_MUTED;
+
+  if (quotaPct == null) {
+    const emptyText =
+      metricKey === 'quota_auto' && isEn ? 'Quota --' : `${prefix} --%`;
+    return useColor ? `${SGR_FG_MUTED}${emptyText}${SGR_RESET}` : emptyText;
+  }
+
+  if (barWidth > 0) {
+    const bar = cliBuildMiniProgressBar(quotaPct, {
+      width: barWidth,
+      fillSgr,
+      emptyChar: '⣿',
+      useColor,
+    });
+    if (!useColor) {
+      return `${prefix} ${bar} ${quotaPct}%`;
+    }
+    return `${SGR_FG_MUTED}${prefix} ${bar} ${pctSgr}${quotaPct}%${SGR_RESET}`;
+  }
+
+  const compactText =
+    metricKey === 'quota_auto'
+      ? isEn
+        ? `${quotaPct}% left`
+        : `余 ${quotaPct}%`
+      : `${prefix} ${quotaPct}%`;
+  if (!useColor) return compactText;
+  return `${pctSgr}${compactText}${SGR_RESET}`;
 }
 
 /**
@@ -767,13 +950,128 @@ function detectCliHostLanguageIsEn() {
   return false;
 }
 
+const CLI_STATUS_SLOT_KEEP_PRIORITY = Object.freeze({
+  context: 100,
+  tps: 90,
+  quota_auto: 80,
+  gemini_5h: 78,
+  claude_5h: 76,
+  ttft: 70,
+  session_cost: 60,
+  cost: 58,
+  cache_hit: 50,
+  avg_tps: 45,
+  session_tokens: 40,
+  gemini_weekly: 35,
+  claude_weekly: 30,
+});
+
+function cliStatusHasRenderableValue(metricKey, slotCtx) {
+  if (slotCtx.hasTelemetry === false) return false;
+  if (metricKey === 'context') {
+    return slotCtx.usedPct != null && Number.isFinite(Number(slotCtx.usedPct));
+  }
+  if (metricKey === 'tps') {
+    return Number.isFinite(Number(slotCtx.tps)) && Number(slotCtx.tps) > 0;
+  }
+  if (metricKey === 'avg_tps') {
+    return Number.isFinite(Number(slotCtx.avgTps)) && Number(slotCtx.avgTps) > 0;
+  }
+  if (metricKey === 'ttft') {
+    return (
+      slotCtx.ttft != null &&
+      Number.isFinite(Number(slotCtx.ttft)) &&
+      Number(slotCtx.ttft) >= 0
+    );
+  }
+  if (metricKey === 'cost') {
+    return slotCtx.stepCost != null && Number.isFinite(Number(slotCtx.stepCost));
+  }
+  if (metricKey === 'session_cost') {
+    return slotCtx.sessionCost != null && Number.isFinite(Number(slotCtx.sessionCost));
+  }
+  if (metricKey === 'cache_hit') {
+    return slotCtx.cacheHitPct != null && Number.isFinite(Number(slotCtx.cacheHitPct));
+  }
+  if (metricKey === 'session_tokens') {
+    return (
+      slotCtx.sessionTokens != null &&
+      Number.isFinite(Number(slotCtx.sessionTokens)) &&
+      Number(slotCtx.sessionTokens) >= 0
+    );
+  }
+  return cliResolveQuotaPct(slotCtx.quotas, metricKey) != null;
+}
+
+function cliStatusFormatAnomalyTag(anomaly, { isEn = false, useColor = true } = {}) {
+  if (!anomaly || !(Number(anomaly.count) > 0)) return '';
+  const n = Math.max(1, Math.floor(Number(anomaly.count) || 1));
+  const kind = String(anomaly.primaryKind || 'error');
+  let label = '';
+  if (isEn) {
+    if (kind === 'capacity') label = n === 1 ? '503' : `503x${n}`;
+    else if (kind === 'upstream') label = n === 1 ? '500' : `500x${n}`;
+    else if (kind === 'rate_limit') label = `429x${n}`;
+    else if (kind === 'timeout') label = `TO${n}`;
+    else if (kind === 'disconnect') label = `Drop${n}`;
+    else if (kind === 'model_output') label = `Fix${n}`;
+    else if (kind === 'safety') label = `Safe${n}`;
+    else if (kind === 'mixed') label = `Warn${n}`;
+    else label = `Err${n}`;
+  } else {
+    if (kind === 'capacity') label = n === 1 ? '503' : `503×${n}`;
+    else if (kind === 'upstream') label = n === 1 ? '500' : `500×${n}`;
+    else if (kind === 'rate_limit') label = `限流${n}`;
+    else if (kind === 'timeout') label = `超时${n}`;
+    else if (kind === 'disconnect') label = `断连${n}`;
+    else if (kind === 'model_output') label = `纠偏${n}`;
+    else if (kind === 'safety') label = `过滤${n}`;
+    else if (kind === 'auth_or_model') label = `受限${n}`;
+    else if (kind === 'mixed') label = `异常${n}`;
+    else label = `报错${n}`;
+  }
+  const plain = `! ${label}`;
+  if (!useColor) return plain;
+  const color =
+    anomaly.severity === 'danger' || kind === 'rate_limit' || kind === 'auth_or_model'
+      ? `${SGR_BOLD}${SGR_FG_DANGER}`
+      : `${SGR_BOLD}${SGR_FG_WARN}`;
+  return `${color}${plain}${SGR_RESET}`;
+}
+
+function cliStatusShedLowestPrioritySlot(slotKeys) {
+  if (!Array.isArray(slotKeys) || slotKeys.length <= 1) return slotKeys;
+  let dropIdx = slotKeys.length - 1;
+  let lowestPrio = Infinity;
+  for (let i = 0; i < slotKeys.length; i += 1) {
+    const prio = CLI_STATUS_SLOT_KEEP_PRIORITY[slotKeys[i]] ?? 50;
+    if (prio <= lowestPrio) {
+      lowestPrio = prio;
+      dropIdx = i;
+    }
+  }
+  return slotKeys.filter((_, idx) => idx !== dropIdx);
+}
+
 export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
-  const slots = normalizeTopbarCapsuleSlots(options.slots);
+  const normalizedCliSlots = normalizeCliStatusLineSlots(options.slots);
+  const rawSlots = normalizedCliSlots || normalizeTopbarCapsuleSlots(options.slots);
   const showMulti = options.showMultiSession !== false;
+  const showAnomaly = options.showAnomaly !== false;
   const normLang = normalizeLanguageSetting(options.language);
   const isEn = normLang === 'auto' ? detectCliHostLanguageIsEn() : normLang === 'en-US';
   const useColor = options.color !== false;
-  const slotSet = new Set(slots);
+
+  // 新会话尚无任何完成步骤（stepCount === 0）时，隐藏纯占位性的 "--s" / "--" 槽位，避免刚启动显得满屏缺数据
+  let activeSlots = rawSlots;
+  if (slotCtx.stepCount === 0) {
+    const filtered = rawSlots.filter(
+      (key) => key === 'tps' || cliStatusHasRenderableValue(key, slotCtx)
+    );
+    if (filtered.length > 0) {
+      activeSlots = filtered;
+    }
+  }
 
   const runningCount = Math.max(0, Math.floor(Number(slotCtx.runningCount) || 0));
   const runningSubCount = Math.max(0, Math.floor(Number(slotCtx.runningSubCount) || 0));
@@ -807,21 +1105,37 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
     }
   }
 
-  const renderedSlots = slots.map((key) =>
-    cliRenderSingleSlot(key, slotCtx, { isEn, useColor, slotSet })
-  );
   const sep = useColor ? `${SGR_FG_SEP} | ${SGR_RESET}` : ' | ';
-  const slotsBody = renderedSlots.join(sep);
-  const fullCapsule = multiCore ? `${multiCore}   ${slotsBody}` : slotsBody;
+  const anomalyBadge = showAnomaly
+    ? cliStatusFormatAnomalyTag(slotCtx.latestAnomaly, { isEn, useColor })
+    : '';
 
+  const defaultBarWidth = options.showProgressBars === false ? 0 : 8;
+
+  const buildCapsulesForSlots = (slotList, includeAnomaly = true, barWidth = defaultBarWidth) => {
+    const slotSet = new Set(slotList);
+    const rendered = slotList.map((key) =>
+      cliRenderSingleSlot(key, slotCtx, { isEn, useColor, slotSet, barWidth })
+    );
+    if (includeAnomaly && anomalyBadge) {
+      rendered.push(anomalyBadge);
+    }
+    const body = rendered.join(sep);
+    return {
+      slotsBody: body,
+      fullCapsule: multiCore ? `${multiCore}   ${body}` : body,
+      compactCapsule: multiCore ? `${multiCore}  ${body}` : body,
+    };
+  };
+
+  const baseCapsules = buildCapsulesForSlots(activeSlots, true, defaultBarWidth);
   const rawWidth = Number(options.terminalWidth);
   if (!Number.isFinite(rawWidth) || rawWidth <= 0) {
-    return fullCapsule;
+    return baseCapsules.fullCapsule;
   }
 
-  // 预留右侧 1 列安全边距，与 `agy` 原生底栏右边缘对齐并避免 Windows `conhost`/`cmd.exe` 末列自动折行
+  // 预留右侧 1 列安全边距，和 `agy` 原生底栏右边缘对齐并避免 Windows `conhost`/`cmd.exe` 末列自动折行
   const maxWidth = Math.max(1, Math.floor(rawWidth) - 1);
-  const compactCapsule = multiCore ? `${multiCore}  ${slotsBody}` : slotsBody;
   const fullLeft = cliBuildLeftSegment({ vimMode: options.vimMode, short: false, useColor });
   const shortLeft = cliBuildLeftSegment({ vimMode: '', short: true, useColor });
   const fullRight = cliBuildRightSegment({
@@ -839,20 +1153,60 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
     useColor,
   });
 
-  const tier1 = cliComposeBalancedThreeColumn(fullLeft, fullCapsule, fullRight, maxWidth);
-  if (tier1) return tier1;
+  const tryCompose = (cap) =>
+    cliComposeBalancedThreeColumn(fullLeft, cap.fullCapsule, fullRight, maxWidth) ||
+    cliComposeBalancedThreeColumn(shortLeft, cap.fullCapsule, fullRight, maxWidth) ||
+    cliComposeBalancedThreeColumn(shortLeft, cap.compactCapsule, compactRight, maxWidth) ||
+    cliComposeBalancedThreeColumn('', cap.compactCapsule, compactRight, maxWidth);
 
-  const tier2 = cliComposeBalancedThreeColumn(shortLeft, fullCapsule, fullRight, maxWidth);
-  if (tier2) return tier2;
+  const fullPrimary = cliComposeBalancedThreeColumn(
+    fullLeft,
+    baseCapsules.fullCapsule,
+    fullRight,
+    maxWidth
+  );
+  if (fullPrimary) return fullPrimary;
 
-  const tier3 = cliComposeBalancedThreeColumn(shortLeft, compactCapsule, compactRight, maxWidth);
-  if (tier3) return tier3;
-
-  const tier4 = cliComposeBalancedThreeColumn('', compactCapsule, compactRight, maxWidth);
-  if (tier4) return tier4;
-
-  if (cliDisplayWidth(fullCapsule) <= maxWidth) {
-    return fullCapsule;
+  // 中等终端优先把进度条从 8 格微缩至 5 格以保住左右完整原生提示，再逐级收缩左右栏和槽位
+  if (defaultBarWidth > 5) {
+    const compactBarCapsules = buildCapsulesForSlots(activeSlots, true, 5);
+    const fullCompactBar = cliComposeBalancedThreeColumn(
+      fullLeft,
+      compactBarCapsules.fullCapsule,
+      fullRight,
+      maxWidth
+    );
+    if (fullCompactBar) return fullCompactBar;
   }
-  return slotsBody;
+
+  const primaryComposed = tryCompose(baseCapsules);
+  if (primaryComposed) return primaryComposed;
+
+  if (defaultBarWidth > 5) {
+    const compactBarCapsules = buildCapsulesForSlots(activeSlots, true, 5);
+    const compactBarComposed = tryCompose(compactBarCapsules);
+    if (compactBarComposed) return compactBarComposed;
+  }
+  if (defaultBarWidth > 0) {
+    const noBarCapsules = buildCapsulesForSlots(activeSlots, true, 0);
+    const noBarComposed = tryCompose(noBarCapsules);
+    if (noBarComposed) return noBarComposed;
+  }
+
+  let reducedSlots = [...activeSlots];
+  while (reducedSlots.length > 1) {
+    reducedSlots = cliStatusShedLowestPrioritySlot(reducedSlots);
+    const reducedCap = buildCapsulesForSlots(reducedSlots, true, 0);
+    const composed = tryCompose(reducedCap);
+    if (composed) return composed;
+  }
+
+  if (cliDisplayWidth(baseCapsules.fullCapsule) <= maxWidth) {
+    return baseCapsules.fullCapsule;
+  }
+  const minimalCap = buildCapsulesForSlots(reducedSlots, false, 0);
+  if (cliDisplayWidth(minimalCap.fullCapsule) <= maxWidth) {
+    return minimalCap.fullCapsule;
+  }
+  return minimalCap.slotsBody;
 }

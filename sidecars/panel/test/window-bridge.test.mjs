@@ -5841,3 +5841,158 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
     });
   }
 });
+
+test('SettingsStructureTab CLI statusLine controls stay hidden unless CLI is detected, render progress-bar previews without preset bloat, and support one-click restore', async () => {
+  const { SettingsStructureTab } = await import('../src/views/settings/SettingsStructureTab.js');
+  const { setI18nLanguage } = await import('../src/i18n/index.js');
+
+  const prevDoc = globalThis.document;
+  const prevFetch = globalThis.fetch;
+  const savedPatches = [];
+  const { document: mockDoc } = createMockDom();
+  globalThis.document = mockDoc;
+  globalThis.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/api/settings') && opts.method === 'POST') {
+      const patch = JSON.parse(opts.body);
+      savedPatches.push(patch);
+      if (patch.__cliStatusLineAction === 'force_install') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            cliStatusLine: {
+              installed: true,
+              configured: true,
+              preservedCustom: false,
+              managedFlags: '',
+            },
+            settings: { enableCliStatusLine: true },
+          }),
+        };
+      }
+      if (patch.__cliStatusLineAction === 'clear_flags') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            cliStatusLine: {
+              installed: true,
+              configured: true,
+              preservedCustom: false,
+              managedFlags: '',
+            },
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => patch };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+
+  try {
+    setI18nLanguage('zh-CN');
+    const strTab = SettingsStructureTab({ onLayoutChange: () => {} });
+    const groupEl = strTab.refs.cliStatusGroupEl;
+    const detailEl = strTab.refs.cliStatusDetailEl;
+    const previewEl = strTab.refs.cliPreviewEl;
+    const hintEl = strTab.refs.cliStatusHintEl;
+    const actionBtn = strTab.refs.cliStatusActionBtn;
+
+    // 1. Default / CLI not detected -> entire CLI group stays hidden, zero redundant preset buttons
+    assert.equal(groupEl.hasAttribute('hidden'), true, 'CLI controls hidden before detection');
+    assert.equal(groupEl.querySelectorAll('.cli-preset-btn').length, 0, 'No redundant preset button row');
+    strTab.refs.renderSettings(
+      { enableCliStatusLine: true, cliStatusLineSlots: null, topbarCapsuleSlots: ['tps', 'ttft', 'context'] },
+      { state: 'active' },
+      'win32',
+      { installed: false, configured: false, preservedCustom: false, managedFlags: '' }
+    );
+    assert.equal(groupEl.hasAttribute('hidden'), true, 'CLI controls stay hidden when CLI is not installed');
+
+    // 2. CLI detected -> group becomes visible with 5 default slots + mini progress bars on quota & context
+    strTab.refs.renderSettings(
+      { enableCliStatusLine: true, cliStatusLineSlots: null, topbarCapsuleSlots: ['tps', 'ttft', 'context'] },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: true, preservedCustom: false, managedFlags: '' }
+    );
+    assert.equal(groupEl.hasAttribute('hidden'), false, 'CLI controls appear once CLI is detected');
+    assert.equal(detailEl.hasAttribute('hidden'), false, 'CLI detail shown when enabled');
+    assert.equal(strTab.refs.cliStatusFooterEl.hasAttribute('hidden'), true, 'No idle sync hint footer when healthy');
+    assert.equal(actionBtn.hasAttribute('hidden'), true, 'No recovery button when healthy');
+    const visibleSlots = () =>
+      previewEl
+        .querySelectorAll('.cli-preview-slot')
+        .filter((el) => !el.hasAttribute('hidden'))
+        .map((el) => el.textContent);
+    assert.deepEqual(visibleSlots(), ['68.4 t/s', '1.1s', '$0.42', '余 █████⣿⣿⣿ 64%', '上下文 ████⢕⢕⢕⢕ 56%']);
+
+    // 3. Dedicated 5h / weekly / context slots render distinct mini progress bars in live preview
+    strTab.refs.renderSettings(
+      {
+        enableCliStatusLine: true,
+        cliStatusLineSlots: ['gemini_5h', 'gemini_weekly', 'claude_5h', 'claude_weekly', 'context'],
+      },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: true, preservedCustom: false, managedFlags: '' }
+    );
+    assert.deepEqual(visibleSlots(), [
+      'G5h █████⣿⣿⣿ 64%',
+      'G周 ███████⣿ 88%',
+      'C5h ████████ 96%',
+      'C周 ████████ 99%',
+      '上下文 ████⢕⢕⢕⢕ 56%',
+    ]);
+
+    // 4. Turning CLI statusLine off collapses detail panel
+    strTab.refs.renderSettings(
+      { enableCliStatusLine: false, cliStatusLineSlots: ['tps', 'ttft', 'context'] },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: false, preservedCustom: false, managedFlags: '' }
+    );
+    assert.equal(groupEl.hasAttribute('hidden'), false, 'Toggle itself remains reachable while CLI is installed');
+    assert.equal(detailEl.hasAttribute('hidden'), true, 'Slot controls hide when CLI statusLine is turned off');
+
+    // 5. Custom/broken third-party command shows amber notice + one-click restore button
+    strTab.refs.renderSettings(
+      { enableCliStatusLine: true, cliStatusLineSlots: null },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: false, preservedCustom: true, managedFlags: '' }
+    );
+    assert.equal(hintEl.classList.contains('is-warn'), true);
+    assert.match(hintEl.textContent, /自定义 statusLine/);
+    assert.equal(actionBtn.hasAttribute('hidden'), false);
+    assert.equal(actionBtn.classList.contains('is-warn'), true);
+    assert.equal(actionBtn.textContent, '一键接管并恢复');
+
+    // Clicking one-click restore sends __cliStatusLineAction: 'force_install' and clears warning
+    actionBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(savedPatches[savedPatches.length - 1]?.__cliStatusLineAction, 'force_install');
+    assert.equal(actionBtn.hasAttribute('hidden'), true, 'Recovery button hides once restored');
+    assert.equal(hintEl.classList.contains('is-warn'), false);
+
+    // 6. Inline CLI launch flags override notice + clear button
+    strTab.refs.renderSettings(
+      { enableCliStatusLine: true, cliStatusLineSlots: null },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: true, preservedCustom: false, managedFlags: '--preset full' }
+    );
+    assert.equal(hintEl.classList.contains('is-warn'), false);
+    assert.match(hintEl.textContent, /命令行参数将优先/);
+    assert.equal(actionBtn.hasAttribute('hidden'), false);
+    assert.equal(actionBtn.textContent, '清除命令行覆盖');
+
+    strTab.destroy();
+  } finally {
+    setI18nLanguage('zh-CN');
+    globalThis.document = prevDoc;
+    globalThis.fetch = prevFetch;
+  }
+});

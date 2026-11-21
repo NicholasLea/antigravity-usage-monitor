@@ -4,6 +4,7 @@
  */
 
 import {
+  normalizeCliStatusLineSlots,
   normalizeFontScale,
   normalizeHoverModules,
   normalizeLanguageSetting,
@@ -104,6 +105,7 @@ export function buildExportableSettingsJson(settings = {}) {
       popoverWidthMode: normalizePopoverWidthMode(src.popoverWidthMode),
       popoverWidth: normalizePopoverWidth(src.popoverWidth),
       enableCliStatusLine: src.enableCliStatusLine !== false,
+      cliStatusLineSlots: normalizeCliStatusLineSlots(src.cliStatusLineSlots),
       standalonePort: normalizeStandalonePort(src.standalonePort),
       showTopbarMultiSession: src.showTopbarMultiSession !== false,
       topbarCapsuleSlots: normalizeTopbarCapsuleSlots(src.topbarCapsuleSlots),
@@ -194,6 +196,9 @@ export function parseImportedSettingsJson(rawText) {
   }
   if (hasKey('enableCliStatusLine') && typeof src.enableCliStatusLine === 'boolean') {
     patch.enableCliStatusLine = src.enableCliStatusLine;
+  }
+  if (hasKey('cliStatusLineSlots')) {
+    patch.cliStatusLineSlots = normalizeCliStatusLineSlots(src.cliStatusLineSlots);
   }
   if (hasKey('standalonePort')) {
     patch.standalonePort = normalizeStandalonePort(src.standalonePort);

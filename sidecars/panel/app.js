@@ -2,7 +2,7 @@
 'use strict';
 
 // --- shared/settings-normalization.mjs ---
-const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, normalizeExperimentalModernUi } = (() => {
+const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, normalizeExperimentalModernUi } = (() => {
 /**
  * @fileoverview 前后端与 CLI 共用的偏好设置枚举常量、默认值与无状态纯函数归一化规则。
  */
@@ -40,6 +40,21 @@ const TOPBAR_SLOT_KEYS = Object.freeze([
 const DEFAULT_TOPBAR_SLOTS = Object.freeze(['tps', 'ttft', 'context']);
 const MIN_TOPBAR_SLOTS = 1;
 const MAX_TOPBAR_SLOTS = 5;
+
+const DEFAULT_CLI_STATUSLINE_SLOTS = Object.freeze([
+  'tps',
+  'ttft',
+  'session_cost',
+  'quota_auto',
+  'context',
+]);
+const MIN_CLI_STATUSLINE_SLOTS = 1;
+const MAX_CLI_STATUSLINE_SLOTS = 6;
+const CLI_STATUSLINE_PRESETS = Object.freeze({
+  compact: Object.freeze(['tps', 'ttft', 'context']),
+  balanced: DEFAULT_CLI_STATUSLINE_SLOTS,
+  full: Object.freeze(['tps', 'ttft', 'cache_hit', 'session_cost', 'quota_auto', 'context']),
+});
 
 const OVERVIEW_MODULE_KEYS = Object.freeze([
   'metrics',
@@ -342,6 +357,69 @@ function normalizeTopbarCapsuleSlots(raw) {
 }
 
 /**
+ * 归一化 CLI 底部状态栏独立槽位配置（`null` 表示自动跟随宽屏默认或自定义顶栏槽位；
+ * 支持预设名 `compact` / `balanced` / `full`、逗号分隔列表或数组，保留 1~6 个去重合法槽位）。
+ *
+ * @param {unknown} raw
+ * @returns {string[]|null}
+ */
+function normalizeCliStatusLineSlots(raw) {
+  if (raw === undefined || raw === null) return null;
+  let items = null;
+  if (typeof raw === 'string') {
+    const clean = raw.trim();
+    const lower = clean.toLowerCase();
+    if (!clean || lower === 'auto' || lower === 'default') {
+      return null;
+    }
+    if (Object.prototype.hasOwnProperty.call(CLI_STATUSLINE_PRESETS, lower)) {
+      return [...CLI_STATUSLINE_PRESETS[lower]];
+    }
+    items = clean.split(/[\s,|:]+/);
+  } else if (Array.isArray(raw)) {
+    items = raw;
+  } else {
+    return null;
+  }
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    const val = String(item ?? '').trim();
+    if (!val || val === 'none') continue;
+    const mapped = val === 'step_cost' ? 'cost' : val;
+    if (!TOPBAR_SLOT_KEYS.includes(mapped) || seen.has(mapped)) continue;
+    seen.add(mapped);
+    out.push(mapped);
+    if (out.length >= MAX_CLI_STATUSLINE_SLOTS) break;
+  }
+  return out.length >= MIN_CLI_STATUSLINE_SLOTS ? out : null;
+}
+
+/**
+ * 解析当前生效的 CLI 底栏槽位列表：
+ * 1. 若用户显式设置了 `cliStatusLineSlots`，优先使用；
+ * 2. 若用户自定义了非默认 `topbarCapsuleSlots`，沿用其自定义顺序保持兼容；
+ * 3. 否则采用面向宽终端的 5 槽默认组合（速度 / 首字 / 费用 / 配额 / 上下文）。
+ *
+ * @param {object|null|undefined} settings
+ * @returns {string[]}
+ */
+function resolveEffectiveCliStatusLineSlots(settings) {
+  const customCli = normalizeCliStatusLineSlots(settings?.cliStatusLineSlots);
+  if (customCli && customCli.length > 0) {
+    return customCli;
+  }
+  const topbar = normalizeTopbarCapsuleSlots(settings?.topbarCapsuleSlots);
+  const isDefaultTopbar =
+    topbar.length === DEFAULT_TOPBAR_SLOTS.length &&
+    topbar.every((k, i) => k === DEFAULT_TOPBAR_SLOTS[i]);
+  if (!isDefaultTopbar) {
+    return topbar;
+  }
+  return [...DEFAULT_CLI_STATUSLINE_SLOTS];
+}
+
+/**
  * 归一化实时监控第一行指标矩阵的槽位与顺序（1~4 项，默认 4 项）。
  *
  * @param {unknown} raw
@@ -482,7 +560,7 @@ function normalizeExperimentalModernUi(val) {
   }
   return Boolean(val);
 }
-return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, normalizeExperimentalModernUi };
+return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, normalizeExperimentalModernUi };
 })();
 
 // --- shared/telemetry-display-rules.mjs ---
@@ -1631,6 +1709,16 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.popoverWidthHint': '自适应模式下在调用明细等宽表格视图自动撑宽免水平滚动；指定宽度范围 440~1080 px',
   'settings.str.multiToggle': '实时运行会话入口',
   'settings.str.cliCapsuleToggle': 'CLI 底部状态胶囊',
+  'settings.str.cliSlotsLabel': 'CLI 槽位顺序 (左 → 右，1~6 项，可拖拽)',
+  'settings.str.addCliSlot': '添加 CLI 槽位 ({count}/{max})',
+  'settings.str.cliCustomCmdHint': '检测到自定义 statusLine 命令，为避免误覆盖默认不会自动改写',
+  'settings.str.cliPausedHint': 'CLI 端当前已暂停或未写入 statusLine 配置',
+  'settings.str.cliFlagsOverrideHint': '检测到 CLI 启动参数包含显式槽位覆盖，命令行参数将优先于此处配置',
+  'settings.str.cliRestoreBtn': '一键接管并恢复',
+  'settings.str.cliEnableBtn': '重新写入并启用',
+  'settings.str.cliClearFlagsBtn': '清除命令行覆盖',
+  'settings.str.cliRestoringBtn': '正在写入...',
+  'settings.str.cliPreviewRunning': '{count} 运行中',
   'settings.str.show': '显示',
   'settings.str.hide': '隐藏',
   'settings.str.on': '开启',
@@ -2383,6 +2471,16 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.popoverWidthHint': 'Auto Fit widens wide tables like Step Records to avoid horizontal scroll; Custom accepts 440–1080 px',
   'settings.str.multiToggle': 'Active Sessions Pill',
   'settings.str.cliCapsuleToggle': 'CLI Bottom Capsule',
+  'settings.str.cliSlotsLabel': 'CLI Slot Order (Left → Right, 1–6, draggable)',
+  'settings.str.addCliSlot': 'Add CLI Slot ({count}/{max})',
+  'settings.str.cliCustomCmdHint': 'Custom statusLine command detected; preserved automatically unless you take over',
+  'settings.str.cliPausedHint': 'CLI statusLine is currently paused or not yet configured',
+  'settings.str.cliFlagsOverrideHint': 'Explicit CLI launch flags (--slots / --preset) detected and take precedence over these slots',
+  'settings.str.cliRestoreBtn': 'Take Over & Restore',
+  'settings.str.cliEnableBtn': 'Re-enable in CLI',
+  'settings.str.cliClearFlagsBtn': 'Clear Flag Override',
+  'settings.str.cliRestoringBtn': 'Applying...',
+  'settings.str.cliPreviewRunning': '{count} active',
   'settings.str.show': 'Show',
   'settings.str.hide': 'Hide',
   'settings.str.on': 'On',
@@ -4972,6 +5070,7 @@ function buildExportableSettingsJson(settings = {}) {
       popoverWidthMode: normalizePopoverWidthMode(src.popoverWidthMode),
       popoverWidth: normalizePopoverWidth(src.popoverWidth),
       enableCliStatusLine: src.enableCliStatusLine !== false,
+      cliStatusLineSlots: normalizeCliStatusLineSlots(src.cliStatusLineSlots),
       standalonePort: normalizeStandalonePort(src.standalonePort),
       showTopbarMultiSession: src.showTopbarMultiSession !== false,
       topbarCapsuleSlots: normalizeTopbarCapsuleSlots(src.topbarCapsuleSlots),
@@ -5062,6 +5161,9 @@ function parseImportedSettingsJson(rawText) {
   }
   if (hasKey('enableCliStatusLine') && typeof src.enableCliStatusLine === 'boolean') {
     patch.enableCliStatusLine = src.enableCliStatusLine;
+  }
+  if (hasKey('cliStatusLineSlots')) {
+    patch.cliStatusLineSlots = normalizeCliStatusLineSlots(src.cliStatusLineSlots);
   }
   if (hasKey('standalonePort')) {
     patch.standalonePort = normalizeStandalonePort(src.standalonePort);
@@ -5425,7 +5527,7 @@ return { getViewTabs, uiStore, getVisibleMonitorView };
 })();
 
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientCliStatusLineSlots, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 /**
  * @fileoverview Reactive telemetry store with async non-overlapping poll scheduler
  * and granular slice updates.
@@ -5809,6 +5911,8 @@ function reconcileIncomingTelemetrySettings(payload, reqSettingsRev) {
 
 const CLIENT_TOPBAR_SLOT_KEYS = TOPBAR_SLOT_KEYS;
 const DEFAULT_CLIENT_TOPBAR_SLOTS = DEFAULT_TOPBAR_SLOTS;
+const CLIENT_CLI_STATUSLINE_PRESETS = CLI_STATUSLINE_PRESETS;
+const DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS = DEFAULT_CLI_STATUSLINE_SLOTS;
 const CLIENT_OVERVIEW_MODULE_KEYS = OVERVIEW_MODULE_KEYS;
 const DEFAULT_CLIENT_OVERVIEW_MODULES = DEFAULT_OVERVIEW_MODULES;
 const DEFAULT_CLIENT_HOVER_MODULES = DEFAULT_HOVER_MODULES;
@@ -5827,6 +5931,8 @@ const normalizeClientPopoverWidthMode = normalizePopoverWidthMode;
 const normalizeClientPopoverWidth = normalizePopoverWidth;
 const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
+const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
+const resolveEffectiveClientCliStatusLineSlots = resolveEffectiveCliStatusLineSlots;
 const normalizeClientHoverModules = normalizeHoverModules;
 const normalizeClientOverviewModules = normalizeOverviewModules;
 const normalizeClientOverviewMetrics = normalizeOverviewMetrics;
@@ -5915,6 +6021,7 @@ function isEquivalentTelemetry(prev, next) {
   if ((pSet?.enableCliStatusLine !== false) !== (nSet?.enableCliStatusLine !== false)) {
     return false;
   }
+  if (!sameArr(pSet?.cliStatusLineSlots, nSet?.cliStatusLineSlots)) return false;
   if ((pSet?.showTopbarMultiSession !== false) !== (nSet?.showTopbarMultiSession !== false)) {
     return false;
   }
@@ -5943,6 +6050,16 @@ function isEquivalentTelemetry(prev, next) {
     Boolean(pWb?.launcherConfigured) !== Boolean(nWb?.launcherConfigured) ||
     Boolean(pWb?.canRelaunch) !== Boolean(nWb?.canRelaunch) ||
     Number(pWb?.aliveCount || 0) !== Number(nWb?.aliveCount || 0)
+  ) {
+    return false;
+  }
+  const pCli = prev.cliStatusLine;
+  const nCli = next.cliStatusLine;
+  if (
+    Boolean(pCli?.installed) !== Boolean(nCli?.installed) ||
+    Boolean(pCli?.configured) !== Boolean(nCli?.configured) ||
+    Boolean(pCli?.preservedCustom) !== Boolean(nCli?.preservedCustom) ||
+    String(pCli?.managedFlags || '') !== String(nCli?.managedFlags || '')
   ) {
     return false;
   }
@@ -7083,6 +7200,9 @@ async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'topbarCapsuleSlots')) {
     safePatch.topbarCapsuleSlots = normalizeClientTopbarSlots(safePatch.topbarCapsuleSlots);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'cliStatusLineSlots')) {
+    safePatch.cliStatusLineSlots = normalizeClientCliStatusLineSlots(safePatch.cliStatusLineSlots);
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverModules')) {
     safePatch.hoverModules = normalizeClientHoverModules(safePatch.hoverModules);
   }
@@ -7326,6 +7446,24 @@ async function triggerBridgeHostRelaunch() {
       body: { __bridgeAction: 'relaunch' },
     });
   }
+}
+
+async function triggerCliStatusLineAction(action) {
+  const res = await callSidecarApi('/api/settings', {
+    method: 'POST',
+    body: { __cliStatusLineAction: String(action || 'force_install') },
+  });
+  const cur = telemetryStore.getState().telemetry;
+  if (cur && res && typeof res === 'object') {
+    const nextTelemetry = {
+      ...cur,
+      ...(res.cliStatusLine ? { cliStatusLine: res.cliStatusLine } : {}),
+      ...(res.settings ? { settings: { ...cur.settings, ...res.settings } } : {}),
+    };
+    telemetryStore.setState({ telemetry: nextTelemetry });
+  }
+  void fetchTelemetry({ force: true }).catch(() => {});
+  return res;
 }
 
 async function triggerPluginUpdate() {
@@ -7585,7 +7723,7 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientCliStatusLineSlots, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
@@ -20825,6 +20963,91 @@ function isSameList(a, b) {
   return true;
 }
 
+function buildCliPreviewMiniBar(pct, width = 8, emptyChar = '⢕') {
+  const clamped = Math.max(0, Math.min(100, Number(pct)));
+  let filled = Math.round((clamped / 100) * width);
+  if (clamped > 0 && filled === 0) filled = 1;
+  if (clamped < 95 && filled >= width) filled = Math.max(0, width - 1);
+  return {
+    barFilled: '█'.repeat(filled),
+    barEmpty: emptyChar.repeat(Math.max(0, width - filled)),
+  };
+}
+
+function formatCliPreviewSlot(slotKey, isEn) {
+  switch (slotKey) {
+    case 'tps':
+      return { prefix: '', barFilled: '', barEmpty: '', text: '68.4 t/s', tone: 'good' };
+    case 'avg_tps':
+      return {
+        prefix: '',
+        barFilled: '',
+        barEmpty: '',
+        text: isEn ? 'avg 54.0' : '均 54.0',
+        tone: 'info',
+      };
+    case 'ttft':
+      return { prefix: '', barFilled: '', barEmpty: '', text: '1.1s', tone: 'good' };
+    case 'cost':
+      return { prefix: '', barFilled: '', barEmpty: '', text: '$0.040', tone: 'normal' };
+    case 'session_cost':
+      return { prefix: '', barFilled: '', barEmpty: '', text: '$0.42', tone: 'normal' };
+    case 'cache_hit':
+      return {
+        prefix: '',
+        barFilled: '',
+        barEmpty: '',
+        text: isEn ? 'cache 92%' : '缓 92%',
+        tone: 'good',
+      };
+    case 'session_tokens':
+      return { prefix: '', barFilled: '', barEmpty: '', text: '142K tok', tone: 'muted' };
+    case 'quota_auto':
+      return {
+        prefix: isEn ? '5h ' : '余 ',
+        ...buildCliPreviewMiniBar(64, 8, '⣿'),
+        text: ' 64%',
+        tone: 'good',
+      };
+    case 'gemini_5h':
+      return {
+        prefix: 'G5h ',
+        ...buildCliPreviewMiniBar(64, 8, '⣿'),
+        text: ' 64%',
+        tone: 'good',
+      };
+    case 'gemini_weekly':
+      return {
+        prefix: isEn ? 'Gw ' : 'G周 ',
+        ...buildCliPreviewMiniBar(88, 8, '⣿'),
+        text: ' 88%',
+        tone: 'good',
+      };
+    case 'claude_5h':
+      return {
+        prefix: 'C5h ',
+        ...buildCliPreviewMiniBar(96, 8, '⣿'),
+        text: ' 96%',
+        tone: 'good',
+      };
+    case 'claude_weekly':
+      return {
+        prefix: isEn ? 'Cw ' : 'C周 ',
+        ...buildCliPreviewMiniBar(99, 8, '⣿'),
+        text: ' 99%',
+        tone: 'good',
+      };
+    case 'context':
+    default:
+      return {
+        prefix: isEn ? 'Ctx ' : '上下文 ',
+        ...buildCliPreviewMiniBar(56),
+        text: ' 56%',
+        tone: 'accent',
+      };
+  }
+}
+
 const SettingsStructureTab = defineComponent({
   name: 'SettingsStructureTab',
   setup({ props, onCleanup }) {
@@ -20833,6 +21056,7 @@ const SettingsStructureTab = defineComponent({
     let draftPopoverWidthMode = 'auto';
     let draftPopoverWidth = DEFAULT_CLIENT_POPOVER_WIDTH;
     let draftEnableCliStatusLine = true;
+    let draftCliStatusLineSlots = null;
     let draftShowTopbarMulti = true;
     let draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
     let draftHoverModules = [...DEFAULT_CLIENT_HOVER_MODULES];
@@ -20846,7 +21070,15 @@ const SettingsStructureTab = defineComponent({
     let draftStepColumns = [...DEFAULT_CLIENT_STEP_COLUMNS];
     let latestSettings = null;
     let latestWindowBridge = null;
+    let latestCliStatusLine = null;
     let latestHostPlatform = 'win32';
+
+    function getEffectiveDraftCliSlots() {
+      return resolveEffectiveClientCliStatusLineSlots({
+        cliStatusLineSlots: draftCliStatusLineSlots,
+        topbarCapsuleSlots: draftTopbarSlots,
+      });
+    }
 
     function isStructureVisible() {
       const st = uiStore.getState();
@@ -20979,6 +21211,50 @@ const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.cliCapsuleToggle'),
     });
+    const cliSlotsLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.cliSlotsLabel'),
+    });
+    const cliStatusHintEl = h('span', {
+      className: 'settings-hint-text cli-status-hint',
+    });
+    let cliActionBusy = false;
+    let activeCliStatusAction = '';
+    const cliStatusActionBtn = h('button', {
+      type: 'button',
+      className: 'cli-status-action-btn',
+      hidden: true,
+      text: t('settings.str.cliRestoreBtn'),
+      onClick: async () => {
+        if (cliActionBusy || !activeCliStatusAction) return;
+        cliActionBusy = true;
+        const actionToRun = activeCliStatusAction;
+        patchAttr(cliStatusActionBtn, 'disabled', true);
+        patchText(cliStatusActionBtn, t('settings.str.cliRestoringBtn'));
+        mountSection.refs.showStatus(t('settings.saving'), 0);
+        try {
+          const res = await triggerCliStatusLineAction(actionToRun);
+          if (res?.cliStatusLine) {
+            latestCliStatusLine = res.cliStatusLine;
+          }
+          if (res?.settings && typeof res.settings === 'object') {
+            latestSettings = { ...(latestSettings || {}), ...res.settings };
+            draftEnableCliStatusLine = latestSettings.enableCliStatusLine !== false;
+          }
+          mountSection.refs.showStatus(
+            res?.ok === false ? t('settings.saveFailed') : t('settings.saved'),
+            1800
+          );
+        } catch {
+          mountSection.refs.showStatus(t('settings.saveFailed'), 2500);
+        } finally {
+          cliActionBusy = false;
+          patchAttr(cliStatusActionBtn, 'disabled', false);
+          syncMountSectionMeta();
+          props.onLayoutChange?.();
+        }
+      },
+    });
     const capsuleSlotsLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.capsuleSlotsLabel'),
@@ -21059,11 +21335,84 @@ const SettingsStructureTab = defineComponent({
       onUpdateModelValue: (val) => {
         draftEnableCliStatusLine = val !== 'off';
         syncMountSectionMeta();
+        props.onLayoutChange?.();
         void persistStructurePatch(mountSection, {
           enableCliStatusLine: draftEnableCliStatusLine,
         });
       },
     });
+
+    const cliPreviewMultiTextEl = h('span', {
+      text: t('settings.str.cliPreviewRunning', { count: 2 }),
+    });
+    const cliPreviewMultiEl = h('span', { className: 'cli-preview-multi' }, [
+      h('span', { className: 'cli-preview-dot', 'aria-hidden': 'true', text: '●' }),
+      cliPreviewMultiTextEl,
+    ]);
+    const cliPreviewSlotParts = [];
+    const cliPreviewSepEls = [];
+    const cliPreviewChildren = [cliPreviewMultiEl];
+    for (let i = 0; i < 6; i += 1) {
+      if (i > 0) {
+        const sepEl = h('span', {
+          className: 'cli-preview-sep',
+          'aria-hidden': 'true',
+          text: '|',
+        });
+        cliPreviewSepEls.push(sepEl);
+        cliPreviewChildren.push(sepEl);
+      }
+      const prefixEl = h('span', { className: 'cli-preview-prefix' });
+      const barFillEl = h('span', { className: 'cli-preview-bar-fill' });
+      const barEmptyEl = h('span', { className: 'cli-preview-bar-empty' });
+      const valueEl = h('span', { className: 'cli-preview-val' });
+      const slotEl = h('span', { className: 'cli-preview-slot' }, [
+        prefixEl,
+        barFillEl,
+        barEmptyEl,
+        valueEl,
+      ]);
+      cliPreviewSlotParts.push({ slotEl, prefixEl, barFillEl, barEmptyEl, valueEl });
+      cliPreviewChildren.push(slotEl);
+    }
+    const cliPreviewEl = h('div', { className: 'cli-status-preview' }, cliPreviewChildren);
+
+    const cliSlotsList = EditableSlotList({
+      items: getEffectiveDraftCliSlots(),
+      options: getCapsuleMetricOptions(),
+      minItems: 1,
+      maxItems: 6,
+      addBtnTextFn: (count, max) => t('settings.str.addCliSlot', { count, max }),
+      onPreview: (previewItems) => {
+        draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(previewItems);
+        refreshCliPreview();
+      },
+      onChange: (nextItems) => {
+        draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(nextItems);
+        syncMountSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(mountSection, {
+          cliStatusLineSlots: draftCliStatusLineSlots,
+        });
+      },
+    });
+
+    const cliStatusFooterEl = h('div', { className: 'cli-status-footer', hidden: true }, [
+      cliStatusHintEl,
+      cliStatusActionBtn,
+    ]);
+
+    const cliStatusDetailEl = h('div', { className: 'cli-statusline-detail' }, [
+      cliPreviewEl,
+      h('div', { className: 'form-row' }, [cliSlotsLabelEl, cliSlotsList.el]),
+      cliStatusFooterEl,
+    ]);
+
+    const cliStatusGroupEl = h('div', { className: 'cli-statusline-group', hidden: true }, [
+      h('div', { className: 'settings-divider' }),
+      h('div', { className: 'settings-inline-row' }, [cliCapsuleLabelEl, cliCapsuleToggle.el]),
+      cliStatusDetailEl,
+    ]);
 
     const topbarSlotsList = EditableSlotList({
       items: draftTopbarSlots,
@@ -21098,6 +21447,7 @@ const SettingsStructureTab = defineComponent({
         draftPopoverWidth = DEFAULT_CLIENT_POPOVER_WIDTH;
         popoverWidthStepper.setProps({ modelValue: DEFAULT_CLIENT_POPOVER_WIDTH });
         draftEnableCliStatusLine = true;
+        draftCliStatusLineSlots = null;
         draftShowTopbarMulti = true;
         draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
         syncMountSectionMeta();
@@ -21110,6 +21460,7 @@ const SettingsStructureTab = defineComponent({
             popoverWidthMode: 'auto',
             popoverWidth: DEFAULT_CLIENT_POPOVER_WIDTH,
             enableCliStatusLine: true,
+            cliStatusLineSlots: null,
             showTopbarMultiSession: true,
             topbarCapsuleSlots: [...DEFAULT_CLIENT_TOPBAR_SLOTS],
           },
@@ -21135,17 +21486,44 @@ const SettingsStructureTab = defineComponent({
           multiToggleLabelEl,
           multiSessionToggle.el,
         ]),
-        h('div', { className: 'settings-inline-row' }, [
-          cliCapsuleLabelEl,
-          cliCapsuleToggle.el,
-        ]),
         h('div', { className: 'form-row' }, [capsuleSlotsLabelEl, topbarSlotsList.el]),
+        cliStatusGroupEl,
       ],
     });
+
+    function refreshCliPreview() {
+      const effectiveSlots = getEffectiveDraftCliSlots();
+      const isEn = getEffectiveLocale() === 'en-US';
+      patchAttr(cliPreviewMultiEl, 'hidden', !draftShowTopbarMulti);
+      patchText(cliPreviewMultiTextEl, t('settings.str.cliPreviewRunning', { count: 2 }));
+      for (let i = 0; i < cliPreviewSlotParts.length; i += 1) {
+        const parts = cliPreviewSlotParts[i];
+        const sepEl = i > 0 ? cliPreviewSepEls[i - 1] : null;
+        const key = effectiveSlots[i];
+        const visible = Boolean(key);
+        patchAttr(parts.slotEl, 'hidden', !visible);
+        if (sepEl) patchAttr(sepEl, 'hidden', !visible);
+        if (visible) {
+          const item = formatCliPreviewSlot(key, isEn);
+          patchAttr(parts.slotEl, 'data-metric', key);
+          patchText(parts.prefixEl, item.prefix || '');
+          patchText(parts.barFillEl, item.barFilled || '');
+          patchText(parts.barEmptyEl, item.barEmpty || '');
+          patchText(parts.valueEl, item.text || '');
+          patchClasses(parts.slotEl, {
+            'tone-good': item.tone === 'good',
+            'tone-info': item.tone === 'info',
+            'tone-accent': item.tone === 'accent',
+            'tone-muted': item.tone === 'muted',
+          });
+        }
+      }
+    }
 
     function refreshMountPreview() {
       if (!isStructureVisible() || activeThirdTab !== 'mount') return;
       capsulePreviewWidget.refs.update({ data: buildDraftTelemetry() });
+      refreshCliPreview();
     }
 
     function syncMountSectionMeta() {
@@ -21173,10 +21551,53 @@ const SettingsStructureTab = defineComponent({
         modelValue: draftShowTopbarMulti ? 'show' : 'hide',
         options: getMultiToggleOptions(),
       });
+      const cliInstalled = Boolean(latestCliStatusLine?.installed);
+      patchAttr(cliStatusGroupEl, 'hidden', !cliInstalled);
       cliCapsuleToggle.setProps({
         modelValue: draftEnableCliStatusLine ? 'on' : 'off',
         options: getEnableToggleOptions(),
       });
+      patchAttr(cliStatusDetailEl, 'hidden', !draftEnableCliStatusLine);
+      const effectiveCliSlots = getEffectiveDraftCliSlots();
+      cliSlotsList.refs.setProps({
+        items: effectiveCliSlots,
+        options: getCapsuleMetricOptions(),
+        addBtnTextFn: (count, max) => t('settings.str.addCliSlot', { count, max }),
+      });
+      const preservedCustom = Boolean(latestCliStatusLine?.preservedCustom);
+      const isConfigured = Boolean(latestCliStatusLine?.configured);
+      const hasInlineSlotFlags = /(?:^|\s)--(?:slots|preset)(?:=|\s|$)/i.test(
+        String(latestCliStatusLine?.managedFlags || '')
+      );
+      const isPausedInCli = cliInstalled && !preservedCustom && !isConfigured && draftEnableCliStatusLine;
+      const cliHintText = preservedCustom
+        ? t('settings.str.cliCustomCmdHint')
+        : isPausedInCli
+          ? t('settings.str.cliPausedHint')
+          : hasInlineSlotFlags
+            ? t('settings.str.cliFlagsOverrideHint')
+            : '';
+      patchAttr(cliStatusFooterEl, 'hidden', !cliHintText);
+      patchClasses(cliStatusHintEl, { 'is-warn': preservedCustom || isPausedInCli });
+      patchText(cliStatusHintEl, cliHintText);
+      activeCliStatusAction = preservedCustom || isPausedInCli
+        ? 'force_install'
+        : hasInlineSlotFlags
+          ? 'clear_flags'
+          : '';
+      patchAttr(cliStatusActionBtn, 'hidden', !activeCliStatusAction);
+      patchClasses(cliStatusActionBtn, { 'is-warn': preservedCustom });
+      if (!cliActionBusy && activeCliStatusAction) {
+        patchText(
+          cliStatusActionBtn,
+          preservedCustom
+            ? t('settings.str.cliRestoreBtn')
+            : isPausedInCli
+              ? t('settings.str.cliEnableBtn')
+              : t('settings.str.cliClearFlagsBtn')
+        );
+      }
+      refreshCliPreview();
       topbarSlotsList.refs.setProps({
         items: draftTopbarSlots,
         options: getCapsuleMetricOptions(),
@@ -21190,6 +21611,7 @@ const SettingsStructureTab = defineComponent({
         draftPopoverWidthMode === 'auto' &&
         draftPopoverWidth === DEFAULT_CLIENT_POPOVER_WIDTH &&
         draftEnableCliStatusLine === true &&
+        draftCliStatusLineSlots === null &&
         draftShowTopbarMulti === true &&
         isSameList(draftTopbarSlots, DEFAULT_CLIENT_TOPBAR_SLOTS);
       mountSection.refs.setResetDisabled(isDefault);
@@ -21755,12 +22177,14 @@ const SettingsStructureTab = defineComponent({
     function renderSettings(
       settings,
       windowBridge = latestWindowBridge,
-      hostPlatform = latestHostPlatform
+      hostPlatform = latestHostPlatform,
+      cliStatusLine = latestCliStatusLine
     ) {
       if (!settings) return;
       latestSettings = settings;
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
+      if (cliStatusLine !== undefined) latestCliStatusLine = cliStatusLine;
       draftWindowMountMode = normalizeClientWindowMountMode(
         settings.windowMountMode,
         settings.enableWindowOverlay
@@ -21768,6 +22192,7 @@ const SettingsStructureTab = defineComponent({
       draftPopoverWidthMode = normalizeClientPopoverWidthMode(settings.popoverWidthMode);
       draftPopoverWidth = normalizeClientPopoverWidth(settings.popoverWidth);
       draftEnableCliStatusLine = settings.enableCliStatusLine !== false;
+      draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(settings.cliStatusLineSlots);
       draftShowTopbarMulti = settings.showTopbarMultiSession !== false;
       draftTopbarSlots = normalizeClientTopbarSlots(settings.topbarCapsuleSlots);
       draftHoverModules = normalizeClientHoverModules(settings.hoverModules);
@@ -21802,6 +22227,7 @@ const SettingsStructureTab = defineComponent({
       popoverWidthStepper.setProps({ ariaLabel: t('settings.str.popoverWidthLabel') });
       patchText(multiToggleLabelEl, t('settings.str.multiToggle'));
       patchText(cliCapsuleLabelEl, t('settings.str.cliCapsuleToggle'));
+      patchText(cliSlotsLabelEl, t('settings.str.cliSlotsLabel'));
       patchText(capsuleSlotsLabelEl, t('settings.str.capsuleSlotsLabel'));
 
       hoverSection.refs.setTitle(t('settings.str.hoverSection'));
@@ -21872,6 +22298,7 @@ const SettingsStructureTab = defineComponent({
       popoverWidthModeToggle.destroy();
       multiSessionToggle.destroy();
       cliCapsuleToggle.destroy();
+      cliSlotsList.destroy();
       topbarSlotsList.destroy();
       hoverModulesList.destroy();
       overviewModulesList.destroy();
@@ -21898,6 +22325,13 @@ const SettingsStructureTab = defineComponent({
         windowMountSelect,
         multiSessionToggle,
         cliCapsuleToggle,
+        cliStatusGroupEl,
+        cliStatusDetailEl,
+        cliPreviewEl,
+        cliSlotsList,
+        cliStatusFooterEl,
+        cliStatusHintEl,
+        cliStatusActionBtn,
         topbarSlotsList,
         hoverModulesList,
         overviewModulesList,
@@ -26870,7 +27304,8 @@ const SettingsView = defineComponent({
           structureTab.refs.renderSettings(
             settings,
             telemetry?.windowBridge,
-            telemetry?.hostPlatform
+            telemetry?.hostPlatform,
+            telemetry?.cliStatusLine
           );
         }
       } else if (settingsSubTab === 'other') {
@@ -26895,6 +27330,7 @@ const SettingsView = defineComponent({
       (st) => ({
         settings: st.telemetry?.settings,
         windowBridge: st.telemetry?.windowBridge,
+        cliStatusLine: st.telemetry?.cliStatusLine,
         hostPlatform: st.telemetry?.hostPlatform,
         cloudStatus: st.telemetry?.cloudStatus,
         contextWindowModels: st.telemetry?.contextWindowModels,

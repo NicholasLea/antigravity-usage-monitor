@@ -107,7 +107,8 @@ export const SettingsView = defineComponent({
           structureTab.refs.renderSettings(
             settings,
             telemetry?.windowBridge,
-            telemetry?.hostPlatform
+            telemetry?.hostPlatform,
+            telemetry?.cliStatusLine
           );
         }
       } else if (settingsSubTab === 'other') {
@@ -132,6 +133,7 @@ export const SettingsView = defineComponent({
       (st) => ({
         settings: st.telemetry?.settings,
         windowBridge: st.telemetry?.windowBridge,
+        cliStatusLine: st.telemetry?.cliStatusLine,
         hostPlatform: st.telemetry?.hostPlatform,
         cloudStatus: st.telemetry?.cloudStatus,
         contextWindowModels: st.telemetry?.contextWindowModels,

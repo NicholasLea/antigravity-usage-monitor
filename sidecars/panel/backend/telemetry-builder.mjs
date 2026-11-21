@@ -31,6 +31,7 @@ import {
 } from './config.mjs';
 import { getEndpointCacheStore } from './endpoint-registry.mjs';
 import { getContextWindowGroups, getContextWindowModels } from './context-windows.mjs';
+import { getCliStatusLineRuntimeStatus } from './cli-statusline-config.mjs';
 import { readLocalSummarySnapshot } from './cli-sqlite-reader.mjs';
 import { enumerateAndSyncConversations } from './local-scanner.mjs';
 import { ensureLsEndpointDiscovered } from './ls-discovery.mjs';
@@ -2073,6 +2074,7 @@ export async function buildTelemetryPayloadInternal(
     },
     uiBundleVersion,
     windowBridge: getDefaultWindowBridgeStatus(),
+    cliStatusLine: getCliStatusLineRuntimeStatus(),
     settings: loadSettings(),
     contextWindowModels: getContextWindowGroups(getContextWindowModels(clientConfigs, contextModelCatalog)).map((group) => {
       const latest = group.members.reduce((previous, id) => {
@@ -2477,6 +2479,34 @@ export function buildCliStatusSnapshot(finalPayload, updatedAtMs = Date.now()) {
   const runningList = Array.isArray(finalPayload?.runningConversations)
     ? finalPayload.runningConversations
     : [];
+  const activeSteps = Array.isArray(ac.recentSteps) ? ac.recentSteps : [];
+  let sessionAnomalyCount = 0;
+  let latestAnomaly = null;
+  for (let i = 0; i < activeSteps.length; i += 1) {
+    const a = activeSteps[i]?.anomaly;
+    if (a && Number(a.count) > 0) {
+      sessionAnomalyCount += Number(a.count);
+    }
+  }
+  const lastStepAnomaly = activeSteps.length > 0 ? activeSteps[activeSteps.length - 1]?.anomaly : null;
+  if (lastStepAnomaly && Number(lastStepAnomaly.count) > 0) {
+    latestAnomaly = {
+      primaryKind: String(lastStepAnomaly.primaryKind || 'error'),
+      count: Number(lastStepAnomaly.count),
+      severity: lastStepAnomaly.severity === 'danger' ? 'danger' : 'warn',
+      totalDelaySec: Number(lastStepAnomaly.totalDelaySec || 0),
+    };
+  }
+
+  const waitingCascadeIds = runningList
+    .filter(
+      (item) =>
+        item?.mainActivity?.phase === 'waiting' ||
+        (Array.isArray(item?.subagents) &&
+          item.subagents.some((sub) => sub?.isRunning && sub?.liveActivity?.phase === 'waiting'))
+    )
+    .map((item) => String(item?.cascadeId || '').toLowerCase())
+    .filter(Boolean);
 
   return {
     updatedAtMs,
@@ -2485,7 +2515,8 @@ export function buildCliStatusSnapshot(finalPayload, updatedAtMs = Date.now()) {
       (acc, item) => acc + Number(item?.runningSubagentCount || 0),
       0
     ),
-    hasWaiting: runningList.some((item) => item?.mainActivity?.phase === 'waiting'),
+    hasWaiting: waitingCascadeIds.length > 0,
+    waitingCascadeIds,
     quotas: finalPayload?.quotas || null,
     activeConversation: {
       cascadeId: ac.cascadeId || '',
@@ -2500,6 +2531,8 @@ export function buildCliStatusSnapshot(finalPayload, updatedAtMs = Date.now()) {
       latestCacheHitPct: capSource.latestCacheHitPct ?? ac.latestCacheHitPct ?? null,
       latestPromptTokens: Number(capSource.latestPromptTokens ?? ac.latestPromptTokens ?? 0),
       totalTokens: Number(capSource.totalTokens ?? ac.totalTokens ?? 0),
+      ...(latestAnomaly ? { latestAnomaly } : {}),
+      ...(sessionAnomalyCount > 0 ? { sessionAnomalyCount } : {}),
     },
   };
 }

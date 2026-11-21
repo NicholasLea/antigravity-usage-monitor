@@ -9,8 +9,13 @@
  * 2. 联动用户偏好设置中的胶囊槽位顺序（`topbarCapsuleSlots`）与开关（`enableCliStatusLine`），
  *    向 `stdout` 输出单行 24-bit ANSI 状态胶囊。
  *
- * 同时支持手动管理命令：
- * - `node sidecars/panel/cli-statusline.mjs --install`
+ * 同时支持直接在 `/statusline` 命令末尾传入定制参数，及手动管理命令：
+ * - `--slots tps,ttft,cache_hit,session_cost,quota_auto,context`（支持预设名 `compact` / `balanced` / `full` / `auto`）
+ * - `--preset compact|balanced|full`
+ * - `--multi` / `--no-multi`（开关多会话计数指示）
+ * - `--anomaly` / `--no-anomaly`（开关最近一步异常角标）
+ * - `--lang zh-CN|en-US|auto`、`--no-color`
+ * - `node sidecars/panel/cli-statusline.mjs --install [--preset full --no-multi ...]`
  * - `node sidecars/panel/cli-statusline.mjs --uninstall`
  */
 
@@ -19,6 +24,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  extractLiveActivity,
   extractModelSteps,
   speedMetric,
   summarizeSpeed,
@@ -35,8 +41,12 @@ import {
 } from './backend/cli-statusline-config.mjs';
 import {
   CLI_STATUS_SNAPSHOT_FILE,
+  CLI_STATUSLINE_PRESETS,
+  TOPBAR_SLOT_KEYS,
   loadJson,
   loadSettings,
+  normalizeCliStatusLineSlots,
+  resolveEffectiveCliStatusLineSlots,
 } from './backend/config.mjs';
 import { computeStepCost, createStepModelResolver } from './backend/model-pricing.mjs';
 import { isThirdPartyPoolText } from './shared/telemetry-display-rules.mjs';
@@ -192,14 +202,18 @@ export function resolveCliLocalSessionMetrics({
 
   let runningRootCount = 0;
   let runningSubCount = 0;
-  for (const summary of summariesMap.values()) {
+  const freshRunningRootIds = [];
+  for (const [cidKey, summary] of summariesMap.entries()) {
     const isFreshRunning =
       summary.status === 'CASCADE_RUN_STATUS_RUNNING' &&
       summary.lastModifiedMs > 0 &&
       nowMs - summary.lastModifiedMs <= CLI_RUNNING_STALE_MS;
     if (!isFreshRunning) continue;
     if (summary.parentConversationId) runningSubCount += 1;
-    else runningRootCount += 1;
+    else {
+      runningRootCount += 1;
+      freshRunningRootIds.push(String(cidKey || '').toLowerCase());
+    }
   }
 
   if (!existsSync(convDir)) {
@@ -211,8 +225,13 @@ export function resolveCliLocalSessionMetrics({
   }
 
   let targetCid = extractConversationIdFromStdin(stdinData);
-  if (!targetCid && stdinData?.cwd) {
-    const ftsCid = findConversationIdByWorkspaceFts(cliRoot, stdinData.cwd);
+  const effectiveCwd =
+    stdinData?.cwd ||
+    stdinData?.workspace?.current_dir ||
+    stdinData?.workspace?.project_dir ||
+    '';
+  if (!targetCid && effectiveCwd) {
+    const ftsCid = findConversationIdByWorkspaceFts(cliRoot, effectiveCwd);
     if (ftsCid && existsSync(join(convDir, `${ftsCid}.db`))) {
       targetCid = ftsCid;
     }
@@ -268,18 +287,73 @@ export function resolveCliLocalSessionMetrics({
       const rootTraj = readLocalSqliteTrajectory(rootDb);
       if (rootTraj) {
         targetCid = traj.rootConversationId || traj.parentConversationId;
+        dbPath = rootDb;
         traj = rootTraj;
       }
     }
+  }
+
+  let dbMtimeMs = 0;
+  try {
+    dbMtimeMs = Math.max(dbMtimeMs, statSync(dbPath).mtimeMs || 0);
+  } catch {
+    // 忽略 stat 异常
+  }
+  try {
+    const walPath = `${dbPath}-wal`;
+    if (existsSync(walPath)) {
+      dbMtimeMs = Math.max(dbMtimeMs, statSync(walPath).mtimeMs || 0);
+    }
+  } catch {
+    // 忽略 WAL stat 异常
   }
 
   if (!traj || !Array.isArray(traj.steps) || traj.steps.length === 0) {
     return {
       found: false,
       cascadeId: targetCid,
+      dbMtimeMs,
       runningRootCount,
       runningSubCount,
+      targetIsRunning: freshRunningRootIds.includes(String(targetCid || '').toLowerCase()),
+      targetIsWaiting: false,
+      targetWaitingApprovalFresh: false,
+      otherLocalWaiting: false,
     };
+  }
+
+  const targetLower = String(targetCid || '').toLowerCase();
+  const targetIsRunning = freshRunningRootIds.includes(targetLower);
+  const targetLiveAct = extractLiveActivity(traj.steps, true);
+  const targetIsWaiting = Boolean(
+    targetLiveAct?.phase === 'waiting' || targetLiveAct?.waitingApproval
+  );
+  const targetWaitingApprovalFresh = Boolean(
+    targetLiveAct?.waitingApproval &&
+      dbMtimeMs > 0 &&
+      nowMs - dbMtimeMs <= CLI_RUNNING_STALE_MS
+  );
+
+  let otherLocalWaiting = false;
+  let checkedOthers = 0;
+  for (const runCid of freshRunningRootIds) {
+    if (!runCid || runCid === targetLower) continue;
+    if (checkedOthers >= 3) break;
+    const otherDb = join(convDir, `${runCid}.db`);
+    if (!existsSync(otherDb)) continue;
+    checkedOthers += 1;
+    try {
+      const otherTraj = readLocalSqliteTrajectory(otherDb);
+      if (otherTraj && Array.isArray(otherTraj.steps) && otherTraj.steps.length > 0) {
+        const otherAct = extractLiveActivity(otherTraj.steps, true);
+        if (otherAct?.phase === 'waiting' || otherAct?.waitingApproval) {
+          otherLocalWaiting = true;
+          break;
+        }
+      }
+    } catch {
+      // 忽略单会话读取异常
+    }
   }
 
   const steps = extractModelSteps(traj.steps, traj.generatorMetadata || []);
@@ -287,8 +361,13 @@ export function resolveCliLocalSessionMetrics({
     return {
       found: false,
       cascadeId: targetCid,
+      dbMtimeMs,
       runningRootCount,
       runningSubCount,
+      targetIsRunning,
+      targetIsWaiting,
+      targetWaitingApprovalFresh,
+      otherLocalWaiting,
     };
   }
 
@@ -305,6 +384,9 @@ export function resolveCliLocalSessionMetrics({
   let latestLimitTokens = 0;
   let latestTps = null;
   let latestTtft = null;
+  let sessionAnomalyCount = 0;
+  let latestAnomaly = null;
+  let latestModelHint = '';
 
   for (const step of steps) {
     const inTok = Math.max(0, Number(step.inputTokens || 0));
@@ -316,7 +398,16 @@ export function resolveCliLocalSessionMetrics({
     totalCacheReadTokens += cacheTok;
     totalOutputTokens += outTok;
 
+    if (step.anomaly && Number(step.anomaly.count) > 0) {
+      sessionAnomalyCount += Number(step.anomaly.count);
+    }
+
     const modelInfo = resolveStepModel(step);
+    if (modelInfo?.label || step.modelDisplayName || step.responseModel) {
+      latestModelHint = String(
+        modelInfo?.label || step.modelDisplayName || step.responseModel || ''
+      ).trim();
+    }
     const stepUsd = computeStepCost(step, modelInfo?.pricing || null);
     if (stepUsd !== null && Number.isFinite(stepUsd)) {
       sessionCostUsd += stepUsd;
@@ -349,6 +440,16 @@ export function resolveCliLocalSessionMetrics({
     }
   }
 
+  const lastStep = steps[steps.length - 1];
+  if (lastStep?.anomaly && Number(lastStep.anomaly.count) > 0) {
+    latestAnomaly = {
+      primaryKind: String(lastStep.anomaly.primaryKind || 'error'),
+      count: Number(lastStep.anomaly.count),
+      severity: lastStep.anomaly.severity === 'danger' ? 'danger' : 'warn',
+      totalDelaySec: Number(lastStep.anomaly.totalDelaySec || 0),
+    };
+  }
+
   const speedSum = summarizeSpeed(steps);
   const ttftSum = summarizeTtft(steps);
   const totalPromptAll = totalInputTokens + totalCacheReadTokens;
@@ -358,9 +459,14 @@ export function resolveCliLocalSessionMetrics({
   return {
     found: true,
     cascadeId: targetCid,
+    dbMtimeMs,
     stepCount: steps.length,
     runningRootCount,
     runningSubCount,
+    targetIsRunning,
+    targetIsWaiting,
+    targetWaitingApprovalFresh,
+    otherLocalWaiting,
     tps: latestTps,
     avgTps: speedSum?.avgTokPerSec != null ? +speedSum.avgTokPerSec.toFixed(1) : null,
     ttft: latestTtft ?? ttftSum?.avgSec ?? null,
@@ -369,6 +475,9 @@ export function resolveCliLocalSessionMetrics({
     cacheHitPct: latestCacheHitPct ?? sessionCacheHitPct,
     latestPromptTokens,
     sessionTokens: totalInputTokens + totalCacheReadTokens + totalOutputTokens,
+    latestAnomaly,
+    sessionAnomalyCount,
+    latestModelHint,
     usedPct:
       latestLimitTokens > 0 && latestContextTokens > 0
         ? Math.min(100, +((latestContextTokens / latestLimitTokens) * 100).toFixed(1))
@@ -410,8 +519,130 @@ function buildStdinFallbackQuotas(stdinData) {
   };
 }
 
+function selectCliActiveQuotaPool(quotas, modelHint = '') {
+  if (!quotas || typeof quotas !== 'object') return quotas || null;
+  const pools = Array.isArray(quotas.pools) ? quotas.pools : [];
+  const hint = String(modelHint || '').trim();
+  if (!hint || pools.length <= 1) return quotas;
+
+  const hintLower = hint.toLowerCase();
+  const baseHint = hintLower.replace(/\s*\([^)]*\)\s*$/, '').trim();
+
+  // 1. 优先按配额池内置模型清单精确/前缀匹配
+  const exactPool = pools.find((p) => {
+    const models = Array.isArray(p?.models) ? p.models : [];
+    return models.some((m) => {
+      const ml = String(m || '').trim().toLowerCase();
+      return ml === hintLower || (baseHint && ml.startsWith(baseHint));
+    });
+  });
+  if (exactPool) {
+    return { ...quotas, activePool: exactPool };
+  }
+
+  // 2. 按模型家族匹配（Claude & GPT / Carbon / Argon / Gemini）
+  const wantThirdParty = isThirdPartyPoolText(hint);
+  const familyMatched = pools.filter((p) => {
+    const pk = String(p?.poolKey || p?.poolLabel || p?.family || '').toLowerCase();
+    if (wantThirdParty) return isThirdPartyPoolText(pk);
+    if (/\bcarbon\b/i.test(hint) && pk.includes('carbon')) return true;
+    if (/\bargon\b/i.test(hint) && pk.includes('argon')) return true;
+    return !isThirdPartyPoolText(pk) && (pk.includes('gemini') || pk === 'default');
+  });
+  if (familyMatched.length > 0) {
+    const activePool = familyMatched.reduce((minP, cur) =>
+      Number(cur?.remainingPct ?? 100) < Number(minP?.remainingPct ?? 100) ? cur : minP
+    );
+    return { ...quotas, activePool };
+  }
+  return quotas;
+}
+
 /**
- * 融合 `stdin` (`StatusLineData`)、本地 CLI SQLite 步骤指标与后台守护配额快照，生成胶囊上下文。
+ * 解析通过 `/statusline` 传入 `cli-statusline.mjs` 的命令行参数。
+ *
+ * @param {string[]} [argv]
+ */
+export function parseCliStatusLineArgs(argv = []) {
+  const out = {
+    install: false,
+    uninstall: false,
+    help: false,
+    resetFlags: false,
+    slotsRaw: null,
+    preset: '',
+    showMultiSession: null,
+    showAnomaly: null,
+    language: '',
+    noColor: false,
+  };
+  for (let i = 0; i < argv.length; i += 1) {
+    const raw = String(argv[i] || '').trim();
+    if (!raw || raw === '--') continue;
+    const eqIdx = raw.indexOf('=');
+    const flag = eqIdx > 0 ? raw.slice(0, eqIdx) : raw;
+    const readVal = () => {
+      if (eqIdx > 0) return raw.slice(eqIdx + 1).trim();
+      if (i + 1 < argv.length && !String(argv[i + 1]).startsWith('-')) {
+        i += 1;
+        return String(argv[i] || '').trim();
+      }
+      return '';
+    };
+    if (flag === '--install') out.install = true;
+    else if (flag === '--uninstall') out.uninstall = true;
+    else if (flag === '--help' || flag === '-h') out.help = true;
+    else if (flag === '--reset-flags') out.resetFlags = true;
+    else if (flag === '--slots') out.slotsRaw = readVal();
+    else if (flag === '--preset') out.preset = readVal().toLowerCase();
+    else if (flag === '--multi' || flag === '--show-multi') out.showMultiSession = true;
+    else if (flag === '--no-multi' || flag === '--hide-multi') out.showMultiSession = false;
+    else if (flag === '--anomaly' || flag === '--show-anomaly') out.showAnomaly = true;
+    else if (flag === '--no-anomaly' || flag === '--hide-anomaly') out.showAnomaly = false;
+    else if (flag === '--lang') out.language = readVal();
+    else if (flag === '--no-color') out.noColor = true;
+  }
+  return out;
+}
+
+function buildPersistableStatusLineFlags(parsed) {
+  const parts = [];
+  if (parsed.slotsRaw && parsed.slotsRaw.toLowerCase() !== 'auto') {
+    const norm = normalizeCliStatusLineSlots(parsed.slotsRaw);
+    if (norm && norm.length > 0) parts.push(`--slots ${norm.join(',')}`);
+  } else if (
+    parsed.preset &&
+    Object.prototype.hasOwnProperty.call(CLI_STATUSLINE_PRESETS, parsed.preset)
+  ) {
+    parts.push(`--preset ${parsed.preset}`);
+  }
+  if (parsed.showMultiSession === false) parts.push('--no-multi');
+  else if (parsed.showMultiSession === true) parts.push('--multi');
+  if (parsed.showAnomaly === false) parts.push('--no-anomaly');
+  else if (parsed.showAnomaly === true) parts.push('--anomaly');
+  if (parsed.language) parts.push(`--lang ${parsed.language}`);
+  if (parsed.noColor) parts.push('--no-color');
+  return parts.join(' ');
+}
+
+function formatCliStatusLineHelp() {
+  return [
+    'Antigravity Usage Monitor - CLI statusLine options:',
+    '  --slots <list|auto>         Custom 1-6 slots (e.g. tps,ttft,session_cost,quota_auto,context)',
+    '  --preset compact|balanced|full',
+    '                              Built-in slot presets (3 / 5 / 6 slots)',
+    '  --multi / --no-multi        Show or hide running sessions indicator',
+    '  --anomaly / --no-anomaly    Show or hide latest-step anomaly badge (! 503 / ! 429)',
+    '  --lang zh-CN|en-US|auto     Override display language',
+    '  --no-color                  Disable ANSI colors',
+    '  --install [flags...]        Install into ~/.gemini/antigravity-cli/settings.json',
+    '  --uninstall                 Remove managed statusLine from CLI settings',
+    `Available slot keys: ${TOPBAR_SLOT_KEYS.join(', ')}`,
+  ].join('\n');
+}
+
+/**
+ * 融合 `stdin` (`StatusLineData`)、本地 CLI SQLite 步骤指标及后台守护配额快照，生成胶囊上下文。
  */
 export function buildMergedCliCapsuleContext({
   stdinData = null,
@@ -420,12 +651,30 @@ export function buildMergedCliCapsuleContext({
   nowMs = Date.now(),
 } = {}) {
   const agentState = String(stdinData?.agent_state || '').trim().toLowerCase();
+  const stdinIsWaiting =
+    agentState.includes('wait') ||
+    agentState.includes('approv') ||
+    agentState.includes('confirm') ||
+    agentState.includes('permission') ||
+    agentState.includes('consent') ||
+    agentState.includes('review') ||
+    agentState === 'ask' ||
+    agentState === 'pending_user' ||
+    Boolean(
+      stdinData?.waiting_for_approval ||
+        stdinData?.awaiting_approval ||
+        stdinData?.has_pending_approval
+    );
   const stdinIsRunning =
-    agentState === 'running' ||
-    agentState === 'streaming' ||
-    agentState === 'executing' ||
-    agentState === 'thinking';
-  const stdinIsWaiting = agentState === 'waiting' || agentState === 'awaiting_approval';
+    !stdinIsWaiting &&
+    (agentState === 'running' ||
+      agentState === 'streaming' ||
+      agentState === 'executing' ||
+      agentState === 'thinking' ||
+      agentState === 'working' ||
+      agentState === 'tool_use' ||
+      agentState === 'tool_executing' ||
+      agentState === 'generating');
 
   const stdinSubagents = Array.isArray(stdinData?.subagents)
     ? stdinData.subagents.filter((s) => {
@@ -444,14 +693,43 @@ export function buildMergedCliCapsuleContext({
   const baseRunning = snapLiveFresh
     ? Math.max(0, Number(snapshot?.runningCount || 0))
     : Math.max(0, Number(localMetrics?.runningRootCount || 0));
-  const runningCount =
-    stdinIsRunning || stdinIsWaiting ? Math.max(1, baseRunning) : baseRunning;
+  const localActiveRunning =
+    stdinIsRunning ||
+    stdinIsWaiting ||
+    Boolean(localMetrics?.targetIsRunning) ||
+    Boolean(localMetrics?.targetWaitingApprovalFresh);
+  const runningCount = localActiveRunning ? Math.max(1, baseRunning) : baseRunning;
 
   const baseSubRunning = snapLiveFresh
     ? Math.max(0, Number(snapshot?.runningSubCount || 0))
     : Math.max(0, Number(localMetrics?.runningSubCount || 0));
   const runningSubCount = Math.max(stdinSubagents, baseSubRunning);
-  const hasWaiting = stdinIsWaiting || Boolean(snapLiveFresh && snapshot?.hasWaiting);
+
+  const localTargetWaiting = Boolean(
+    localMetrics?.targetWaitingApprovalFresh ||
+      (localMetrics?.targetIsWaiting && localActiveRunning)
+  );
+  const localOtherWaiting = Boolean(localMetrics?.otherLocalWaiting);
+  const localCidLower = String(localMetrics?.cascadeId || '').toLowerCase();
+  const localDbNewerThanSnap =
+    Number(localMetrics?.dbMtimeMs || 0) > Number(snapshot?.updatedAtMs || 0);
+  let snapHasWaiting = false;
+  if (snapLiveFresh) {
+    if (
+      Array.isArray(snapshot?.waitingCascadeIds) &&
+      localCidLower &&
+      localMetrics?.found &&
+      localDbNewerThanSnap
+    ) {
+      // 本地 SQLite WAL 更新晚于桌面端快照时，当前 CLI 会话以本地 WAL 为准（恢复运行秒变绿），同时保留桌面端其他会话的等待态
+      snapHasWaiting = snapshot.waitingCascadeIds.some(
+        (id) => String(id || '').toLowerCase() && String(id || '').toLowerCase() !== localCidLower
+      );
+    } else {
+      snapHasWaiting = Boolean(snapshot?.hasWaiting);
+    }
+  }
+  const hasWaiting = stdinIsWaiting || localTargetWaiting || localOtherWaiting || snapHasWaiting;
 
   const stdinUsedPct = stdinData?.context_window?.used_percentage;
   const usedPct =
@@ -481,15 +759,27 @@ export function buildMergedCliCapsuleContext({
       ? snapshot.activeConversation
       : null;
 
-  const mergedQuotas =
+  const activeModelHint = String(
+    stdinData?.model?.display_name || stdinData?.model?.id || localMetrics?.latestModelHint || ''
+  ).trim();
+  const rawQuotas =
     (snapQuotaFresh && snapshot?.quotas) || buildStdinFallbackQuotas(stdinData) || null;
+  const mergedQuotas = selectCliActiveQuotaPool(rawQuotas, activeModelHint);
 
   const hasTelemetry = Boolean(
     stdinData || localMetrics?.found || snapActive || mergedQuotas
   );
+  const resolvedStepCount = localMetrics?.found
+    ? Number(localMetrics.stepCount || 0)
+    : snapActive?.stepCount != null
+      ? Number(snapActive.stepCount)
+      : stdinData
+        ? 0
+        : undefined;
 
   return {
     hasTelemetry,
+    stepCount: resolvedStepCount,
     isRunning: stdinIsRunning || stdinIsWaiting,
     hasWaiting,
     runningCount,
@@ -504,17 +794,30 @@ export function buildMergedCliCapsuleContext({
     latestPromptTokens: localMetrics?.latestPromptTokens ?? snapActive?.latestPromptTokens ?? null,
     sessionTokens:
       localMetrics?.sessionTokens ?? stdinSessionTokens ?? snapActive?.totalTokens ?? null,
+    latestAnomaly: localMetrics?.latestAnomaly ?? snapActive?.latestAnomaly ?? null,
+    sessionAnomalyCount:
+      localMetrics?.sessionAnomalyCount ?? snapActive?.sessionAnomalyCount ?? 0,
     quotas: mergedQuotas,
   };
 }
 
 export async function runCliStatusLineMain(argv = process.argv.slice(2)) {
-  if (argv.includes('--install')) {
-    const res = ensureCliStatusLineConfigured({ enabled: true });
+  const cliArgs = parseCliStatusLineArgs(argv);
+  if (cliArgs.help) {
+    process.stdout.write(`${formatCliStatusLineHelp()}\n`);
+    return;
+  }
+  if (cliArgs.install) {
+    const extraFlags = buildPersistableStatusLineFlags(cliArgs);
+    const res = ensureCliStatusLineConfigured({
+      enabled: true,
+      extraFlags,
+      preserveManagedFlags: !cliArgs.resetFlags && !extraFlags && cliArgs.slotsRaw !== 'auto',
+    });
     process.stdout.write(`${JSON.stringify(res)}\n`);
     return;
   }
-  if (argv.includes('--uninstall')) {
+  if (cliArgs.uninstall) {
     const res = ensureCliStatusLineConfigured({ enabled: false });
     process.stdout.write(`${JSON.stringify(res)}\n`);
     return;
@@ -556,12 +859,34 @@ export async function runCliStatusLineMain(argv = process.argv.slice(2)) {
   }
 
   const useColor =
-    !Object.prototype.hasOwnProperty.call(process.env, 'NO_COLOR') ||
-    String(process.env.NO_COLOR || '') === '';
+    !cliArgs.noColor &&
+    (!Object.prototype.hasOwnProperty.call(process.env, 'NO_COLOR') ||
+      String(process.env.NO_COLOR || '') === '');
+
+  let effectiveSlots = null;
+  if (cliArgs.slotsRaw !== null) {
+    effectiveSlots =
+      cliArgs.slotsRaw.toLowerCase() === 'auto'
+        ? resolveEffectiveCliStatusLineSlots(settings)
+        : normalizeCliStatusLineSlots(cliArgs.slotsRaw) ||
+          resolveEffectiveCliStatusLineSlots(settings);
+  } else if (
+    cliArgs.preset &&
+    Object.prototype.hasOwnProperty.call(CLI_STATUSLINE_PRESETS, cliArgs.preset)
+  ) {
+    effectiveSlots = [...CLI_STATUSLINE_PRESETS[cliArgs.preset]];
+  } else {
+    effectiveSlots = resolveEffectiveCliStatusLineSlots(settings);
+  }
+
   const line = formatCliStatusLineCapsule(slotCtx, {
-    slots: settings?.topbarCapsuleSlots,
-    showMultiSession: settings?.showTopbarMultiSession !== false,
-    language: settings?.language,
+    slots: effectiveSlots,
+    showMultiSession:
+      cliArgs.showMultiSession !== null
+        ? cliArgs.showMultiSession
+        : settings?.showTopbarMultiSession !== false,
+    showAnomaly: cliArgs.showAnomaly !== null ? cliArgs.showAnomaly : true,
+    language: cliArgs.language || settings?.language,
     color: useColor,
     terminalWidth: Number.isFinite(terminalWidth) && terminalWidth > 0 ? terminalWidth : 0,
     cycleMode: typeof stdinData?.cycle_mode === 'string' ? stdinData.cycle_mode : '',
