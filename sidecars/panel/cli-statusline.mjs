@@ -382,6 +382,7 @@ export function resolveCliLocalSessionMetrics({
   let latestPromptTokens = null;
   let latestContextTokens = 0;
   let latestLimitTokens = 0;
+  let hasReportedLimit = false;
   let latestTps = null;
   let latestTtft = null;
   let sessionAnomalyCount = 0;
@@ -421,11 +422,19 @@ export function resolveCliLocalSessionMetrics({
       latestCacheHitPct = +((cacheTok / promptTok) * 100).toFixed(1);
     }
     latestPromptTokens = promptTok;
-    latestContextTokens =
-      Number(step.estimatedContextTokens || 0) > 0
-        ? Number(step.estimatedContextTokens)
-        : promptTok + outTok;
-    if (Number(step.maxContextBudgetTokens || 0) > 0) {
+    if (step.isCompactionStep) {
+      if (Number(step.estimatedContextTokens || 0) > 0) {
+        latestContextTokens = Number(step.estimatedContextTokens);
+      }
+    } else if (promptTok > 0) {
+      latestContextTokens = promptTok + outTok;
+    } else if (Number(step.estimatedContextTokens || 0) > 0) {
+      latestContextTokens = Number(step.estimatedContextTokens);
+    }
+    if (Number(step.reportedContextLimitTokens || 0) > 0) {
+      latestLimitTokens = Number(step.reportedContextLimitTokens);
+      hasReportedLimit = true;
+    } else if (!step.isCompactionStep && !hasReportedLimit && Number(step.maxContextBudgetTokens || 0) > 0) {
       latestLimitTokens = Number(step.maxContextBudgetTokens);
     }
 
@@ -478,6 +487,7 @@ export function resolveCliLocalSessionMetrics({
     latestAnomaly,
     sessionAnomalyCount,
     latestModelHint,
+    hasReportedLimit,
     usedPct:
       latestLimitTokens > 0 && latestContextTokens > 0
         ? Math.min(100, +((latestContextTokens / latestLimitTokens) * 100).toFixed(1))
@@ -732,10 +742,14 @@ export function buildMergedCliCapsuleContext({
   const hasWaiting = stdinIsWaiting || localTargetWaiting || localOtherWaiting || snapHasWaiting;
 
   const stdinUsedPct = stdinData?.context_window?.used_percentage;
+  // 优先采用本地轨迹里语言服务器官方上报的有效压缩上限（如 512k 压缩线），
+  // 避免 agy stdin 按模型物理上限（如 1M）算出的占比和桌面端监控面板脱节
   const usedPct =
-    stdinUsedPct != null && Number.isFinite(Number(stdinUsedPct))
-      ? Math.max(0, Math.min(100, Number(stdinUsedPct)))
-      : localMetrics?.usedPct ?? (snapLiveFresh ? snapshot?.activeConversation?.usedPct ?? null : null);
+    localMetrics?.hasReportedLimit && localMetrics?.usedPct != null
+      ? localMetrics.usedPct
+      : stdinUsedPct != null && Number.isFinite(Number(stdinUsedPct))
+        ? Math.max(0, Math.min(100, Number(stdinUsedPct)))
+        : localMetrics?.usedPct ?? (snapLiveFresh ? snapshot?.activeConversation?.usedPct ?? null : null);
 
   const stdinTotalUsd = stdinData?.cost?.total_usd;
   const sessionCost =

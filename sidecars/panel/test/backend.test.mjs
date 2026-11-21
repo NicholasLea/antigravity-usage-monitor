@@ -2295,6 +2295,71 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       assert.equal(autorunOut, '● 0 运行中   1.8s | 38.1 t/s | 余 █████⣿⣿⣿ 57% | 上下文 █⢕⢕⢕⢕⢕⢕⢕ 17%');
     }
 
+    // Verify compaction-line precedence: when local trajectory reports maxContextTokens (e.g. 512k),
+    // statusLine aligns with Desktop App's compaction-limit percentage instead of agy's physical 1M used_percentage.
+    const cidLimit = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const limitUsageBuf = Buffer.concat([
+      encodeProtoFieldVarint(1, 1535), // MODEL_PLACEHOLDER_M535 (Gemini 4 Neon)
+      encodeProtoFieldVarint(2, 10040), // inputTokens
+      encodeProtoFieldVarint(3, 1000), // outputTokens
+      encodeProtoFieldVarint(5, 460000), // cacheReadTokens => prompt + output = 471,040
+      encodeProtoFieldVarint(6, 24), // API_PROVIDER_GOOGLE_GEMINI
+    ]);
+    const limitStepMetaBuf = Buffer.concat([
+      encodeProtoFieldBytes(1, encodeProtoFieldVarint(1, 1794762101)),
+      encodeProtoFieldBytes(6, encodeProtoFieldVarint(1, 1794762111)),
+      encodeProtoFieldBytes(7, encodeProtoFieldVarint(1, 1794762111)),
+      encodeProtoFieldBytes(9, limitUsageBuf),
+      encodeProtoFieldBytes(20, encodeProtoFieldVarint(2, 1)),
+    ]);
+    const ctxWinMetaBuf = Buffer.concat([
+      encodeProtoFieldVarint(1, 450000), // estimatedTokensUsed
+      encodeProtoFieldVarint(4, 512000), // maxContextTokens (official compaction threshold)
+    ]);
+    const limitChatModelBuf = Buffer.concat([
+      encodeProtoFieldVarint(3, 1535),
+      encodeProtoFieldBytes(4, limitUsageBuf),
+      encodeProtoFieldBytes(9, encodeProtoFieldBytes(10, ctxWinMetaBuf)), // chatStartMetadata.contextWindowMetadata
+      encodeProtoFieldBytes(
+        11,
+        Buffer.concat([encodeProtoFieldVarint(1, 1), encodeProtoFieldVarint(2, 800000000)])
+      ),
+      encodeProtoFieldBytes(12, encodeProtoFieldVarint(1, 10)),
+    ]);
+    const limitGenMetaBuf = Buffer.concat([
+      encodeProtoFieldBytes(2, Buffer.from([1])),
+      encodeProtoFieldBytes(1, limitChatModelBuf),
+    ]);
+    const limitConvDb = new DatabaseSync(join(convDir, `${cidLimit}.db`));
+    limitConvDb.exec(`
+      CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);
+      CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+    `);
+    limitConvDb.prepare('INSERT INTO steps (idx, step_type, status, metadata) VALUES (?, ?, ?, ?)').run(0, 14, 3, null);
+    limitConvDb
+      .prepare('INSERT INTO steps (idx, step_type, status, metadata) VALUES (?, ?, ?, ?)')
+      .run(1, 15, 3, limitStepMetaBuf);
+    limitConvDb.prepare('INSERT INTO gen_metadata (idx, data) VALUES (?, ?)').run(0, limitGenMetaBuf);
+    limitConvDb.close();
+
+    const limitStdin = JSON.stringify({
+      session_id: cidLimit,
+      agent_state: 'idle',
+      cwd: 'C:\\Work\\MyProject',
+      // agy reports physical 1M ratio (~42%), while compaction limit 471,040 / 512,000 = 92.0%
+      context_window: { used_percentage: 42, total_input_tokens: 470040, total_output_tokens: 1000 },
+    });
+    const limitOut = execFileSync(process.execPath, [statusLineScript], {
+      env: { ...installEnv, NO_COLOR: '1' },
+      input: limitStdin,
+      encoding: 'utf8',
+    }).trim();
+    assert.ok(
+      limitOut.includes('上下文 ███████⢕ 92%'),
+      `expected compaction-limit 92% instead of physical 42%, got: ${limitOut}`
+    );
+    assert.equal(limitOut.includes('42%'), false);
+
     // Verify real non-test.invalid buildTelemetryPayload writes cli-status-snapshot.json cleanly without throwing
     const builderUrl = new URL('../backend/telemetry-builder.mjs', import.meta.url).href;
     execFileSync(
