@@ -28,6 +28,7 @@ import {
 import {
   CLI_STATUSLINE_PRESETS,
   DEFAULT_CLI_STATUSLINE_SLOTS,
+  DEFAULT_CONTEXT_AGENT_MODE,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -42,6 +43,7 @@ import {
   STEP_TABLE_COLUMN_KEYS,
   TOPBAR_SLOT_KEYS,
   normalizeCliStatusLineSlots,
+  normalizeContextAgentMode,
   normalizeHoverModules,
   normalizeModelDisplayMode,
   normalizeOrchestratorIdMode,
@@ -444,6 +446,7 @@ function reconcileIncomingTelemetrySettings(payload, reqSettingsRev) {
 
 export const CLIENT_TOPBAR_SLOT_KEYS = TOPBAR_SLOT_KEYS;
 export const DEFAULT_CLIENT_TOPBAR_SLOTS = DEFAULT_TOPBAR_SLOTS;
+export const DEFAULT_CLIENT_CONTEXT_AGENT_MODE = DEFAULT_CONTEXT_AGENT_MODE;
 export const CLIENT_CLI_STATUSLINE_PRESETS = CLI_STATUSLINE_PRESETS;
 export const DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS = DEFAULT_CLI_STATUSLINE_SLOTS;
 export const CLIENT_OVERVIEW_MODULE_KEYS = OVERVIEW_MODULE_KEYS;
@@ -464,7 +467,34 @@ export const normalizeClientPopoverWidthMode = normalizePopoverWidthMode;
 export const normalizeClientPopoverWidth = normalizePopoverWidth;
 export const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 export const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
+export const normalizeClientContextAgentMode = normalizeContextAgentMode;
 export const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
+
+/**
+ * 根据偏好设置返回默认上下文代理目标（`'main'` 锁定主代理，`'auto'` 跟随活跃）。
+ *
+ * @param {Record<string, any>|null|undefined} settings
+ * @returns {'main'|'auto'}
+ */
+export function getDefaultCtxInspectorAgentId(settings) {
+  return normalizeContextAgentMode(settings?.contextAgentMode) === 'auto' ? 'auto' : 'main';
+}
+
+/**
+ * 计算顶栏挂载胶囊及悬停速览浮窗应使用的上下文代理目标：
+ * - 当 `contextAgentMode === 'main'`（默认）时始终锁定 `'main'`，不被后台子代理或面板临时点选带偏；
+ * - 当 `contextAgentMode === 'auto'` 时跟随面板当前 `ctxInspectorAgentId`（含手动点选 `主`）。
+ *
+ * @param {Record<string, any>|null|undefined} telemetry
+ * @param {string} [ctxInspectorAgentId='auto']
+ * @returns {string}
+ */
+export function resolveOverlayCtxInspectorAgentId(telemetry, ctxInspectorAgentId = 'auto') {
+  if (normalizeContextAgentMode(telemetry?.settings?.contextAgentMode) === 'main') {
+    return 'main';
+  }
+  return ctxInspectorAgentId || 'auto';
+}
 export const resolveEffectiveClientCliStatusLineSlots = resolveEffectiveCliStatusLineSlots;
 export const normalizeClientHoverModules = normalizeHoverModules;
 export const normalizeClientOverviewModules = normalizeOverviewModules;
@@ -556,6 +586,12 @@ export function isEquivalentTelemetry(prev, next) {
   }
   if (!sameArr(pSet?.cliStatusLineSlots, nSet?.cliStatusLineSlots)) return false;
   if ((pSet?.showTopbarMultiSession !== false) !== (nSet?.showTopbarMultiSession !== false)) {
+    return false;
+  }
+  if (
+    normalizeClientContextAgentMode(pSet?.contextAgentMode) !==
+    normalizeClientContextAgentMode(nSet?.contextAgentMode)
+  ) {
     return false;
   }
   if (Boolean(pSet?.showStepTurnRail) !== Boolean(nSet?.showStepTurnRail)) {
@@ -1742,6 +1778,9 @@ export async function saveSettingsPatch(patch) {
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showTopbarMultiSession')) {
     safePatch.showTopbarMultiSession = Boolean(safePatch.showTopbarMultiSession);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'contextAgentMode')) {
+    safePatch.contextAgentMode = normalizeClientContextAgentMode(safePatch.contextAgentMode);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepTurnRail')) {
     safePatch.showStepTurnRail = Boolean(safePatch.showStepTurnRail);

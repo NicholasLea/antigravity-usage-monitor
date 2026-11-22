@@ -18,7 +18,9 @@ import { normalizeFullSettings } from './settings-schema.mjs';
 
 export {
   CLI_STATUSLINE_PRESETS,
+  CONTEXT_AGENT_MODES,
   DEFAULT_CLI_STATUSLINE_SLOTS,
+  DEFAULT_CONTEXT_AGENT_MODE,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -42,6 +44,7 @@ export {
   TOPBAR_SLOT_KEYS,
   createDefaultSettingsObject,
   normalizeCliStatusLineSlots,
+  normalizeContextAgentMode,
   normalizeFontScale,
   normalizeFullSettings,
   normalizeHoverModules,

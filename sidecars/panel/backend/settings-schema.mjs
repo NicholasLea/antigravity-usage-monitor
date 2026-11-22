@@ -7,7 +7,9 @@
 import { isContextWindowSettingId, isContextWindowOption } from './context-windows.mjs';
 import {
   CLI_STATUSLINE_PRESETS,
+  CONTEXT_AGENT_MODES,
   DEFAULT_CLI_STATUSLINE_SLOTS,
+  DEFAULT_CONTEXT_AGENT_MODE,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -31,6 +33,7 @@ import {
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
   normalizeCliStatusLineSlots,
+  normalizeContextAgentMode,
   normalizeExperimentalModernUi,
   normalizeFontScale,
   normalizeHoverModules,
@@ -56,7 +59,9 @@ import {
 
 export {
   CLI_STATUSLINE_PRESETS,
+  CONTEXT_AGENT_MODES,
   DEFAULT_CLI_STATUSLINE_SLOTS,
+  DEFAULT_CONTEXT_AGENT_MODE,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -80,6 +85,7 @@ export {
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
   normalizeCliStatusLineSlots,
+  normalizeContextAgentMode,
   normalizeExperimentalModernUi,
   normalizeFontScale,
   normalizeHoverModules,
@@ -142,6 +148,7 @@ export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
   cliStatusLineSlots: null,
   standalonePort: 0,
   showTopbarMultiSession: true,
+  contextAgentMode: DEFAULT_CONTEXT_AGENT_MODE,
   topbarCapsuleSlots: DEFAULT_TOPBAR_SLOTS,
   hoverModules: DEFAULT_HOVER_MODULES,
   overviewModules: DEFAULT_OVERVIEW_MODULES,
@@ -220,6 +227,7 @@ export function normalizeFullSettings(rawInput) {
     cliStatusLineSlots: normalizeCliStatusLineSlots(safeRaw.cliStatusLineSlots),
     standalonePort: normalizeStandalonePort(safeRaw.standalonePort),
     showTopbarMultiSession: safeRaw.showTopbarMultiSession !== false,
+    contextAgentMode: normalizeContextAgentMode(safeRaw.contextAgentMode),
     topbarCapsuleSlots: normalizeTopbarCapsuleSlots(safeRaw.topbarCapsuleSlots),
     hoverModules: normalizeHoverModules(safeRaw.hoverModules),
     overviewModules: normalizeOverviewModules(safeRaw.overviewModules),

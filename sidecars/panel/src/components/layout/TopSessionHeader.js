@@ -12,6 +12,7 @@ import {
   fetchTelemetry,
   formatAgentBadgeText,
   formatConversationMeta,
+  getDefaultCtxInspectorAgentId,
   normalizeClientUpdateMode,
   resolveHostRouteMatch,
   selectConversation,
@@ -125,6 +126,7 @@ export const TopSessionHeader = defineComponent({
 
     let lastActiveCascadeId = '';
     let lastAppliedHostChildRouteId = '';
+    let preChildCtxInspectorAgentId = '';
 
     function syncSessionScopeOnCascadeChange(telemetry, telSlice = telemetryStore.getState()) {
       const currentCascadeId = telemetry?.activeConversation?.cascadeId || '';
@@ -133,15 +135,22 @@ export const TopSessionHeader = defineComponent({
       const selectedId = String(telSlice?.selectedConversationId || '').trim();
       const hostRouteId = String(telSlice?.hostRouteConversationId || '').trim();
       const hostRouteLower = hostRouteId.toLowerCase();
+      const defaultCtxId = getDefaultCtxInspectorAgentId(telemetry?.settings);
 
       if (!selectedId && hostRouteLower) {
         const routeMatch = resolveHostRouteMatch(telemetry, hostRouteId);
         if (routeMatch?.isChildRoute && routeMatch.childAgent?.agentId) {
           lastActiveCascadeId = currentCascadeId;
           if (lastAppliedHostChildRouteId !== hostRouteLower) {
+            const uiSt = uiStore.getState();
+            if (!lastAppliedHostChildRouteId) {
+              preChildCtxInspectorAgentId =
+                uiSt.ctxInspectorAgentId === 'main' || uiSt.ctxInspectorAgentId === 'auto'
+                  ? uiSt.ctxInspectorAgentId
+                  : defaultCtxId;
+            }
             lastAppliedHostChildRouteId = hostRouteLower;
             const targetAgentId = routeMatch.childAgent.agentId;
-            const uiSt = uiStore.getState();
             if (
               uiSt.selectedAgentScope !== targetAgentId ||
               uiSt.ctxInspectorAgentId !== targetAgentId
@@ -155,23 +164,30 @@ export const TopSessionHeader = defineComponent({
           return;
         }
         if (lastAppliedHostChildRouteId && !routeMatch?.isChildRoute) {
+          const restoreCtxId =
+            preChildCtxInspectorAgentId === 'main' || preChildCtxInspectorAgentId === 'auto'
+              ? preChildCtxInspectorAgentId
+              : defaultCtxId;
           lastAppliedHostChildRouteId = '';
+          preChildCtxInspectorAgentId = '';
           const uiSt = uiStore.getState();
-          if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== 'auto') {
-            uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
+          if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== restoreCtxId) {
+            uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: restoreCtxId });
           }
           lastActiveCascadeId = currentCascadeId;
           return;
         }
       } else if (lastAppliedHostChildRouteId) {
         lastAppliedHostChildRouteId = '';
+        preChildCtxInspectorAgentId = '';
       }
 
       if (lastActiveCascadeId && currentCascadeId !== lastActiveCascadeId) {
         lastActiveCascadeId = currentCascadeId;
+        preChildCtxInspectorAgentId = '';
         const uiSt = uiStore.getState();
-        if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== 'auto') {
-          uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
+        if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== defaultCtxId) {
+          uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: defaultCtxId });
         }
       } else {
         lastActiveCascadeId = currentCascadeId;

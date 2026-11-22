@@ -542,6 +542,20 @@ export function normalizeModernUi(val) {
   return Boolean(val);
 }
 
+export const CONTEXT_AGENT_MODES = Object.freeze(['main', 'auto']);
+export const DEFAULT_CONTEXT_AGENT_MODE = 'main';
+
+/**
+ * 归一化顶栏胶囊及悬停速览浮窗的上下文代理来源（默认 `'main'` 锁定主代理，可选 `'auto'` 跟随活跃）。
+ *
+ * @param {unknown} raw
+ * @returns {'main'|'auto'}
+ */
+export function normalizeContextAgentMode(raw) {
+  const val = String(raw || '').trim().toLowerCase();
+  return val === 'auto' ? 'auto' : 'main';
+}
+
 /**
  * 归一化旧版实验性新 UI 字段（保留兼容，缺省返回 `false`）。
  *

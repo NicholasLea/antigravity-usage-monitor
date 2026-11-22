@@ -56,6 +56,7 @@ import { ActionMenu } from '../components/ui/ActionMenu.js';
 import { getEffectiveLocale, i18nStore, t } from '../i18n/index.js';
 import {
   formatAgentLabel,
+  getDefaultCtxInspectorAgentId,
   normalizeClientStepColumns,
   normalizeClientStepTokenComboFormat,
   resolveScopedConversation,
@@ -274,9 +275,18 @@ export const StepsDetailView = defineComponent({
       const prevUiScope = uiStore.getState().selectedAgentScope;
       lastSyncedUiScope = mappedSingle;
       if (prevUiScope !== mappedSingle) {
+        const curCtxId = uiStore.getState().ctxInspectorAgentId;
+        const shouldResetSubCtx =
+          mappedSingle === 'all' && curCtxId && curCtxId !== 'main' && curCtxId !== 'auto';
         uiStore.setState({
           selectedAgentScope: mappedSingle,
-          ...(mappedSingle === 'all' ? { ctxInspectorAgentId: 'auto' } : {}),
+          ...(shouldResetSubCtx
+            ? {
+                ctxInspectorAgentId: getDefaultCtxInspectorAgentId(
+                  telemetryStore.getState().telemetry?.settings
+                ),
+              }
+            : {}),
         });
       } else if (latestSlice) {
         renderStepsData(latestSlice);

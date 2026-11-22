@@ -47,6 +47,7 @@ import { i18nStore, isEnglishLocale, t } from '../i18n/index.js';
 import { createSvgIcon } from '../icons/SvgIcon.js';
 import { ActionMenu } from '../components/ui/ActionMenu.js';
 import {
+  getDefaultCtxInspectorAgentId,
   prefetchConsumptionPresets,
   selectConsumptionTimeRange,
   selectConversation,
@@ -1463,7 +1464,9 @@ export const ConsumptionView = defineComponent({
               activeView: 'steps',
               stepsSubTab: 'steps',
               selectedAgentScope: 'all',
-              ctxInspectorAgentId: 'auto',
+              ctxInspectorAgentId: getDefaultCtxInspectorAgentId(
+                telemetryStore.getState().telemetry?.settings
+              ),
             });
           },
         },

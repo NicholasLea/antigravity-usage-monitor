@@ -21,7 +21,7 @@ export const uiStore = createReactiveStore({
   settingsSubTab: 'general', // 'general' | 'structure' | 'account' | 'other'
   settingsStructureTab: 'mount', // 'mount' | 'hover' | 'overview' | 'steps'
   selectedAgentScope: 'all', // 'all' | 'main' | <subagent cascadeId>
-  ctxInspectorAgentId: 'auto', // 'auto' | 'main' | <subagent cascadeId>
+  ctxInspectorAgentId: 'main', // 'main' | 'auto' | <subagent cascadeId>
   toast: null, // { id, message, detail, actionLabel, onAction, tone, durationMs }
 });
 

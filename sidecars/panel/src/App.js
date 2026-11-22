@@ -11,6 +11,7 @@ import { createSvgIcon } from './icons/SvgIcon.js';
 import { i18nStore, t } from './i18n/index.js';
 import {
   fetchTelemetry,
+  getDefaultCtxInspectorAgentId,
   normalizeClientWindowMountMode,
   resolveScopedConversation,
   telemetryStore,
@@ -293,6 +294,24 @@ export const App = defineComponent({
       }
     );
 
+    let syncedSettingsCtxMode = null;
+
+    function syncContextAgentModeFromSettings(settings) {
+      if (!settings || typeof settings !== 'object') return;
+      const nextMode = getDefaultCtxInspectorAgentId(settings);
+      if (nextMode === syncedSettingsCtxMode) return;
+      const prevSynced = syncedSettingsCtxMode;
+      syncedSettingsCtxMode = nextMode;
+      const curCtx = uiStore.getState().ctxInspectorAgentId;
+      if (prevSynced !== null || curCtx === 'main' || curCtx === 'auto') {
+        if (curCtx !== nextMode) {
+          uiStore.setState({ ctxInspectorAgentId: nextMode });
+        }
+      }
+    }
+
+    syncContextAgentModeFromSettings(telemetryStore.getState().telemetry?.settings);
+
     const unsubStepCount = telemetryStore.subscribe(
       (st) => ({
         stepCount: st.telemetry?.activeConversation?.stepCount ?? 0,
@@ -300,11 +319,13 @@ export const App = defineComponent({
         subagentCount: st.telemetry?.activeConversation?.subagentCount ?? 0,
         windowMountMode: st.telemetry?.settings?.windowMountMode,
         enableWindowOverlay: st.telemetry?.settings?.enableWindowOverlay,
+        contextAgentMode: st.telemetry?.settings?.contextAgentMode,
         modelContextWindows: st.telemetry?.settings?.modelContextWindows,
         windowBridge: st.telemetry?.windowBridge,
         hostPlatform: st.telemetry?.hostPlatform,
       }),
       () => {
+        syncContextAgentModeFromSettings(telemetryStore.getState().telemetry?.settings);
         syncStepsBadge();
         syncGlobalBridgeBanner();
       }

@@ -5,6 +5,7 @@
 
 import {
   normalizeCliStatusLineSlots,
+  normalizeContextAgentMode,
   normalizeFontScale,
   normalizeHoverModules,
   normalizeLanguageSetting,
@@ -108,6 +109,7 @@ export function buildExportableSettingsJson(settings = {}) {
       cliStatusLineSlots: normalizeCliStatusLineSlots(src.cliStatusLineSlots),
       standalonePort: normalizeStandalonePort(src.standalonePort),
       showTopbarMultiSession: src.showTopbarMultiSession !== false,
+      contextAgentMode: normalizeContextAgentMode(src.contextAgentMode),
       topbarCapsuleSlots: normalizeTopbarCapsuleSlots(src.topbarCapsuleSlots),
       hoverModules: normalizeHoverModules(src.hoverModules),
       overviewModules: normalizeOverviewModules(src.overviewModules),
@@ -206,6 +208,9 @@ export function parseImportedSettingsJson(rawText) {
   }
   if (hasKey('showTopbarMultiSession') && typeof src.showTopbarMultiSession === 'boolean') {
     patch.showTopbarMultiSession = src.showTopbarMultiSession;
+  }
+  if (hasKey('contextAgentMode')) {
+    patch.contextAgentMode = normalizeContextAgentMode(src.contextAgentMode);
   }
   if (hasKey('topbarCapsuleSlots') && Array.isArray(src.topbarCapsuleSlots)) {
     patch.topbarCapsuleSlots = normalizeTopbarCapsuleSlots(src.topbarCapsuleSlots);

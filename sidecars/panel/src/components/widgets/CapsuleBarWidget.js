@@ -13,6 +13,7 @@ import { resolveCapsuleMetricPresentation } from '../../registries/metricRegistr
 import {
   normalizeClientTopbarSlots,
   normalizeClientWindowMountMode,
+  resolveOverlayCtxInspectorAgentId,
   resolveScopedConversation,
 } from '../../store/telemetryStore.js';
 import { buildFallbackRunningConversations } from './LiveActivityWidget.js';
@@ -536,7 +537,7 @@ export const CapsuleBarWidget = defineComponent({
       const { agents, scopedConv, ctxAgent, aggregated } = resolveScopedConversation(
         data,
         'all',
-        'auto'
+        resolveOverlayCtxInspectorAgentId(data, 'auto')
       );
       const slotCtx = buildCapsuleSlotContext(data, { scopedConv, ctxAgent, aggregated });
       const { runningCount, hasWaiting, multiBtnText } = resolveMultiSessionCapsuleState(data, {

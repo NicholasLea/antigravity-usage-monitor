@@ -78,23 +78,33 @@ export function createDynamicWidgetHost({
   preview = false,
   isVisibleFn = () => true,
   initialModuleKeys = [],
+  getCtxAgentId: customGetCtxAgentId = undefined,
+  setCtxAgentId: customSetCtxAgentId = undefined,
 }) {
   const instances = new Map();
   let currentKeys = [];
-  let previewCtxAgentId = 'auto';
+  let previewCtxAgentId = 'main';
   let latestUpdatePayload = null;
 
-  const getCtxAgentId = preview ? () => previewCtxAgentId : undefined;
-  const setCtxAgentId = preview
-    ? (nextId) => {
-        previewCtxAgentId = String(nextId || 'auto');
-        if (latestUpdatePayload) {
-          for (const key of currentKeys) {
-            instances.get(key)?.refs?.update?.(latestUpdatePayload);
+  const getCtxAgentId =
+    typeof customGetCtxAgentId === 'function'
+      ? customGetCtxAgentId
+      : preview
+        ? () => previewCtxAgentId
+        : undefined;
+  const setCtxAgentId =
+    typeof customSetCtxAgentId === 'function'
+      ? customSetCtxAgentId
+      : preview
+        ? (nextId) => {
+            previewCtxAgentId = String(nextId || 'main');
+            if (latestUpdatePayload) {
+              for (const key of currentKeys) {
+                instances.get(key)?.refs?.update?.(latestUpdatePayload);
+              }
+            }
           }
-        }
-      }
-    : undefined;
+        : undefined;
 
   function syncModules(nextKeys) {
     const validKeys = [];

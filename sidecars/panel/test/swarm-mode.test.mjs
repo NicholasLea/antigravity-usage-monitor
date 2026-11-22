@@ -1276,4 +1276,15 @@ test('Frontend Swarm formatters, bilingual i18n, LiveActivityWidget priority sor
   await Promise.resolve();
   assert.equal(uiStore.getState().selectedAgentScope, 'all');
   assert.equal(uiStore.getState().ctxInspectorAgentId, 'auto');
+
+  // Issue #35: Manual `'main'` lock before entering child route `/c/<w2>` must be restored on return to `/c/<rootId>`
+  uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'main' }, { sync: true });
+  telemetryStore.setState({ hostRouteConversationId: w2 });
+  await Promise.resolve();
+  assert.equal(uiStore.getState().selectedAgentScope, w2);
+  assert.equal(uiStore.getState().ctxInspectorAgentId, w2);
+  telemetryStore.setState({ hostRouteConversationId: rootId });
+  await Promise.resolve();
+  assert.equal(uiStore.getState().selectedAgentScope, 'all');
+  assert.equal(uiStore.getState().ctxInspectorAgentId, 'main');
 });

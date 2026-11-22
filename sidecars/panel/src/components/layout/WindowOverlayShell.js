@@ -46,6 +46,7 @@ import {
   DEFAULT_CLIENT_HOVER_MODULES,
   extractHostRouteCascadeId,
   fetchTelemetry,
+  getDefaultCtxInspectorAgentId,
   isMacHostPlatform,
   normalizeClientHoverModules,
   normalizeClientPopoverWidth,
@@ -54,6 +55,8 @@ import {
   normalizeClientUpdateMode,
   normalizeClientWindowMountMode,
   resetTelemetryForEndpointSwitch,
+  resolveHostRouteMatch,
+  resolveOverlayCtxInspectorAgentId,
   resolveScopedConversation,
   selectConversation,
   startAsyncTelemetryLoop,
@@ -1096,7 +1099,9 @@ export function mountWindowOverlay() {
     uiStore.setState({
       activeView: 'overview',
       selectedAgentScope: 'all',
-      ctxInspectorAgentId: 'auto',
+      ctxInspectorAgentId: getDefaultCtxInspectorAgentId(
+        telemetryStore.getState().telemetry?.settings
+      ),
     });
     void selectConversation(cascadeId);
     setMultiOpen(false);
@@ -1375,6 +1380,11 @@ export function mountWindowOverlay() {
     mode: 'hover',
     isVisibleFn: () => Boolean(tooltipOpen && !disposed),
     initialModuleKeys: DEFAULT_CLIENT_HOVER_MODULES,
+    getCtxAgentId: () =>
+      resolveOverlayCtxInspectorAgentId(
+        telemetryStore.getState().telemetry,
+        uiStore.getState().ctxInspectorAgentId
+      ),
   });
 
   const hoverTipEl = h(
@@ -2403,12 +2413,16 @@ export function mountWindowOverlay() {
       return;
     }
 
+    const overlayCtxAgentId = resolveOverlayCtxInspectorAgentId(
+      telemetry,
+      uiSt.ctxInspectorAgentId
+    );
     const { agents, scopedConv: overviewScopedConv, ctxAgent, aggregated } =
-      resolveScopedConversation(telemetry, 'all', uiSt.ctxInspectorAgentId);
+      resolveScopedConversation(telemetry, 'all', overlayCtxAgentId);
     const { scopedConv: capsuleScopedConv } = resolveScopedConversation(
       telemetry,
       uiSt.selectedAgentScope,
-      uiSt.ctxInspectorAgentId
+      overlayCtxAgentId
     );
     const overviewActive = overviewScopedConv || telemetry.activeConversation || {};
     const slotCtx = buildCapsuleSlotContext(telemetry, {
@@ -2578,11 +2592,26 @@ export function mountWindowOverlay() {
     if (currentRouteId === lastObservedRouteId) return;
     lastObservedRouteId = currentRouteId;
     const st = telemetryStore.getState();
+    const activeCascadeId = String(st.telemetry?.activeConversation?.cascadeId || '').trim();
+    const isSameActiveRoot =
+      Boolean(activeCascadeId) &&
+      Boolean(currentRouteId) &&
+      currentRouteId.toLowerCase() === activeCascadeId.toLowerCase();
+    const isChildOfActiveRoot =
+      Boolean(currentRouteId) &&
+      Boolean(resolveHostRouteMatch(st.telemetry, currentRouteId)?.isChildRoute);
+    const shouldPreserveSameSession =
+      !currentRouteId || isSameActiveRoot || isChildOfActiveRoot;
     const nextSelectedId =
       currentRouteId && st.selectedConversationId && st.selectedConversationId !== currentRouteId
         ? ''
         : st.selectedConversationId;
-    uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
+    if (!shouldPreserveSameSession) {
+      uiStore.setState({
+        selectedAgentScope: 'all',
+        ctxInspectorAgentId: getDefaultCtxInspectorAgentId(st.telemetry?.settings),
+      });
+    }
     void selectConversation(nextSelectedId, { hostRouteConversationId: currentRouteId });
   }
 

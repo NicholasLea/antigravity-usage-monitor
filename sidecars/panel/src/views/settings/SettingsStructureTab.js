@@ -20,6 +20,7 @@ import {
   getOverviewModuleOptions,
 } from '../../registries/widgetRegistry.js';
 import {
+  DEFAULT_CLIENT_CONTEXT_AGENT_MODE,
   DEFAULT_CLIENT_HOVER_MODULES,
   DEFAULT_CLIENT_OVERVIEW_METRICS,
   DEFAULT_CLIENT_OVERVIEW_MODULES,
@@ -30,6 +31,7 @@ import {
   MAX_CLIENT_POPOVER_WIDTH,
   MIN_CLIENT_POPOVER_WIDTH,
   normalizeClientCliStatusLineSlots,
+  normalizeClientContextAgentMode,
   normalizeClientHoverModules,
   normalizeClientOverviewMetrics,
   normalizeClientOverviewModules,
@@ -40,6 +42,7 @@ import {
   normalizeClientTopbarSlots,
   normalizeClientWindowMountMode,
   resolveEffectiveClientCliStatusLineSlots,
+  resolveOverlayCtxInspectorAgentId,
   saveSettingsPatch,
   triggerCliStatusLineAction,
 } from '../../store/telemetryStore.js';
@@ -92,6 +95,13 @@ function getPopoverWidthModeOptions() {
   return [
     { value: 'auto', label: t('settings.str.popoverWidthAuto') },
     { value: 'custom', label: t('settings.str.popoverWidthCustom') },
+  ];
+}
+
+function getContextAgentModeOptions() {
+  return [
+    { value: 'main', label: t('settings.str.contextAgentMain') },
+    { value: 'auto', label: t('settings.str.contextAgentAuto') },
   ];
 }
 
@@ -185,6 +195,7 @@ export const SettingsStructureTab = defineComponent({
     let draftEnableCliStatusLine = true;
     let draftCliStatusLineSlots = null;
     let draftShowTopbarMulti = true;
+    let draftContextAgentMode = DEFAULT_CLIENT_CONTEXT_AGENT_MODE;
     let draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
     let draftHoverModules = [...DEFAULT_CLIENT_HOVER_MODULES];
     let draftOverviewModules = [...DEFAULT_CLIENT_OVERVIEW_MODULES];
@@ -221,6 +232,7 @@ export const SettingsStructureTab = defineComponent({
         popoverWidth: draftPopoverWidth,
         enableCliStatusLine: draftEnableCliStatusLine,
         showTopbarMultiSession: draftShowTopbarMulti,
+        contextAgentMode: draftContextAgentMode,
         topbarCapsuleSlots: draftTopbarSlots,
         hoverModules: draftHoverModules,
         overviewModules: draftOverviewModules,
@@ -335,6 +347,14 @@ export const SettingsStructureTab = defineComponent({
     const multiToggleLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.multiToggle'),
+    });
+    const contextAgentModeLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.contextAgentModeLabel'),
+    });
+    const contextAgentModeHintEl = h('span', {
+      className: 'settings-hint-text',
+      text: t('settings.str.contextAgentModeHint'),
     });
     const cliCapsuleLabelEl = h('span', {
       className: 'form-label',
@@ -457,6 +477,22 @@ export const SettingsStructureTab = defineComponent({
       },
     });
 
+    const contextAgentModeToggle = SegmentedControl({
+      ariaLabel: t('settings.str.contextAgentModeLabel'),
+      modelValue: draftContextAgentMode,
+      options: getContextAgentModeOptions(),
+      onUpdateModelValue: (val) => {
+        const nextMode = normalizeClientContextAgentMode(val);
+        draftContextAgentMode = nextMode;
+        uiStore.setState({ ctxInspectorAgentId: nextMode });
+        syncMountSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(mountSection, {
+          contextAgentMode: nextMode,
+        });
+      },
+    });
+
     const cliCapsuleToggle = SegmentedControl({
       ariaLabel: t('settings.str.cliCapsuleToggle'),
       modelValue: 'on',
@@ -574,7 +610,9 @@ export const SettingsStructureTab = defineComponent({
         draftEnableCliStatusLine = true;
         draftCliStatusLineSlots = null;
         draftShowTopbarMulti = true;
+        draftContextAgentMode = DEFAULT_CLIENT_CONTEXT_AGENT_MODE;
         draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
+        uiStore.setState({ ctxInspectorAgentId: DEFAULT_CLIENT_CONTEXT_AGENT_MODE });
         syncMountSectionMeta();
         props.onLayoutChange?.();
         void persistStructurePatch(
@@ -587,6 +625,7 @@ export const SettingsStructureTab = defineComponent({
             enableCliStatusLine: true,
             cliStatusLineSlots: null,
             showTopbarMultiSession: true,
+            contextAgentMode: DEFAULT_CLIENT_CONTEXT_AGENT_MODE,
             topbarCapsuleSlots: [...DEFAULT_CLIENT_TOPBAR_SLOTS],
           },
           'settings.resetDone'
@@ -610,6 +649,13 @@ export const SettingsStructureTab = defineComponent({
         h('div', { className: 'settings-inline-row' }, [
           multiToggleLabelEl,
           multiSessionToggle.el,
+        ]),
+        h('div', { className: 'form-row' }, [
+          h('div', { className: 'settings-inline-row' }, [
+            contextAgentModeLabelEl,
+            contextAgentModeToggle.el,
+          ]),
+          contextAgentModeHintEl,
         ]),
         h('div', { className: 'form-row' }, [capsuleSlotsLabelEl, topbarSlotsList.el]),
         cliStatusGroupEl,
@@ -677,6 +723,11 @@ export const SettingsStructureTab = defineComponent({
         modelValue: draftShowTopbarMulti ? 'show' : 'hide',
         options: getMultiToggleOptions(),
       });
+      contextAgentModeToggle.setProps({
+        modelValue: draftContextAgentMode,
+        options: getContextAgentModeOptions(),
+        ariaLabel: t('settings.str.contextAgentModeLabel'),
+      });
       const cliInstalled = Boolean(latestCliStatusLine?.installed);
       patchAttr(cliStatusGroupEl, 'hidden', !cliInstalled);
       cliCapsuleToggle.setProps({
@@ -739,6 +790,7 @@ export const SettingsStructureTab = defineComponent({
         draftEnableCliStatusLine === true &&
         draftCliStatusLineSlots === null &&
         draftShowTopbarMulti === true &&
+        draftContextAgentMode === DEFAULT_CLIENT_CONTEXT_AGENT_MODE &&
         isSameList(draftTopbarSlots, DEFAULT_CLIENT_TOPBAR_SLOTS);
       mountSection.refs.setResetDisabled(isDefault);
       refreshMountPreview();
@@ -760,6 +812,11 @@ export const SettingsStructureTab = defineComponent({
       preview: true,
       isVisibleFn: () => isStructureVisible() && activeThirdTab === 'hover',
       initialModuleKeys: [],
+      getCtxAgentId: () =>
+        resolveOverlayCtxInspectorAgentId(
+          { settings: { contextAgentMode: draftContextAgentMode } },
+          'auto'
+        ),
     });
     const hoverPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       hoverPreviewTipEl,
@@ -1348,6 +1405,7 @@ export const SettingsStructureTab = defineComponent({
       draftEnableCliStatusLine = settings.enableCliStatusLine !== false;
       draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(settings.cliStatusLineSlots);
       draftShowTopbarMulti = settings.showTopbarMultiSession !== false;
+      draftContextAgentMode = normalizeClientContextAgentMode(settings.contextAgentMode);
       draftTopbarSlots = normalizeClientTopbarSlots(settings.topbarCapsuleSlots);
       draftHoverModules = normalizeClientHoverModules(settings.hoverModules);
       draftOverviewModules = normalizeClientOverviewModules(settings.overviewModules);
@@ -1381,6 +1439,8 @@ export const SettingsStructureTab = defineComponent({
       patchText(popoverWidthHintEl, t('settings.str.popoverWidthHint'));
       popoverWidthStepper.setProps({ ariaLabel: t('settings.str.popoverWidthLabel') });
       patchText(multiToggleLabelEl, t('settings.str.multiToggle'));
+      patchText(contextAgentModeLabelEl, t('settings.str.contextAgentModeLabel'));
+      patchText(contextAgentModeHintEl, t('settings.str.contextAgentModeHint'));
       patchText(cliCapsuleLabelEl, t('settings.str.cliCapsuleToggle'));
       patchText(cliSlotsLabelEl, t('settings.str.cliSlotsLabel'));
       patchText(capsuleSlotsLabelEl, t('settings.str.capsuleSlotsLabel'));
@@ -1454,6 +1514,7 @@ export const SettingsStructureTab = defineComponent({
       popoverWidthStepper.destroy();
       popoverWidthModeToggle.destroy();
       multiSessionToggle.destroy();
+      contextAgentModeToggle.destroy();
       cliCapsuleToggle.destroy();
       cliSlotsList.destroy();
       topbarSlotsList.destroy();
@@ -1482,6 +1543,7 @@ export const SettingsStructureTab = defineComponent({
         stepTablePreview,
         windowMountSelect,
         multiSessionToggle,
+        contextAgentModeToggle,
         cliCapsuleToggle,
         cliStatusGroupEl,
         cliStatusDetailEl,

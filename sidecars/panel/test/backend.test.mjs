@@ -1076,6 +1076,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.equal(def.windowMountMode, 'dual');
   assert.equal(def.enableWindowOverlay, true);
   assert.equal(def.showTopbarMultiSession, true);
+  assert.equal(def.contextAgentMode, 'main');
   assert.equal(def.enableCliStatusLine, true);
   assert.deepEqual([...def.topbarCapsuleSlots], ['tps', 'ttft', 'context']);
   assert.deepEqual([...def.hoverModules], ['metrics', 'context', 'quotas']);
@@ -1105,12 +1106,16 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.deepEqual([...hDefault.normalizeOverviewModules([])], ['metrics']);
   assert.deepEqual([...hDefault.normalizeOverviewMetrics([])], ['tps']);
   assert.deepEqual([...hDefault.normalizeStepTableColumns(['cost'])], ['cost', 'step']);
+  assert.equal(hDefault.normalizeContextAgentMode('auto'), 'auto');
+  assert.equal(hDefault.normalizeContextAgentMode('main'), 'main');
+  assert.equal(hDefault.normalizeContextAgentMode('unknown'), 'main');
 
   // 4. Updating preferences must not apply legacy global limits or bulk model updates
   const saveRes = hDefault.executeSettingsAction({
     language: 'en-US',
     themeAccent: 'emerald',
     fontScale: 'lg',
+    contextAgentMode: 'auto',
     topbarCapsuleSlots: ['context', 'tps', 'ttft', 'cost'],
     hoverModules: ['metrics', 'context'],
     overviewModules: ['quotas', 'metrics'],
@@ -1128,6 +1133,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.equal(saveRes.updated.language, 'en-US');
   assert.equal(saveRes.updated.themeAccent, 'emerald');
   assert.equal(saveRes.updated.fontScale, 'lg');
+  assert.equal(saveRes.updated.contextAgentMode, 'auto');
   assert.equal(saveRes.updated.topbarCapsuleSlots.length, 4);
   assert.deepEqual([...saveRes.updated.hoverModules], ['metrics', 'context']);
   assert.deepEqual([...saveRes.updated.overviewModules], ['quotas', 'metrics']);
@@ -1165,6 +1171,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.equal(resetRes.updated.language, 'auto');
   assert.equal(resetRes.updated.modernUi, true);
   assert.equal(resetRes.updated.themeAccent, 'host');
+  assert.equal(resetRes.updated.contextAgentMode, 'main');
   assert.equal(resetRes.updated.enableCliStatusLine, true);
   assert.equal(resetRes.updated.showStepTurnRail, false);
   assert.equal(resetRes.updated.showStepAgentBadge, true);

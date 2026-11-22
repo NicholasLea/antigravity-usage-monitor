@@ -651,6 +651,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     windowMountMode: 'dual',
     enableWindowOverlay: true,
     showTopbarMultiSession: true,
+    contextAgentMode: 'main',
     enableCliStatusLine: true,
     topbarCapsuleSlots: ['tps', 'ttft', 'context'],
     hoverModules: ['metrics', 'context', 'quotas'],
@@ -1622,9 +1623,9 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(mockSettings.enableWindowOverlay, true, 'enableWindowOverlay persisted back to true');
     assert.equal(previewCapsuleBar.getAttribute('data-mount-mode'), 'dual');
 
-    // Toggle popover width mode (auto -> custom 640px -> step +10px -> auto), topbar multi-session switch (show -> hide -> show), and CLI bottom capsule switch (on -> off -> on)
+    // Toggle popover width mode (auto -> custom 640px -> step +10px -> auto), topbar multi-session switch, capsule/hover context agent mode (main -> auto -> main), and CLI bottom capsule switch
     const topbarSegBtns = sec0.querySelectorAll('.seg-btn');
-    assert.equal(topbarSegBtns.length, 6, 'Popover width + Topbar multi-session + CLI bottom capsule toggles render 6 buttons');
+    assert.equal(topbarSegBtns.length, 8, 'Popover width + Topbar multi-session + Capsule/Hover context mode + CLI bottom capsule toggles render 8 buttons');
     const popWidthInput = sec0.querySelector('.num-field');
     const popWidthStepBtns = sec0.querySelectorAll('.num-step-btn');
     assert.ok(popWidthInput, 'CustomNumberInput field exists without native <input type="number">');
@@ -1659,8 +1660,15 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
 
     topbarSegBtns[5].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
-    assert.equal(mockSettings.enableCliStatusLine, false, 'CLI bottom capsule toggle turns off enableCliStatusLine');
+    assert.equal(mockSettings.contextAgentMode, 'auto', 'Capsule/Hover context mode switches to follow active (auto)');
     topbarSegBtns[4].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.contextAgentMode, 'main', 'Capsule/Hover context mode switches back to lock main agent');
+
+    topbarSegBtns[7].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.enableCliStatusLine, false, 'CLI bottom capsule toggle turns off enableCliStatusLine');
+    topbarSegBtns[6].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.enableCliStatusLine, true, 'CLI bottom capsule toggle restores enableCliStatusLine');
 
@@ -6013,5 +6021,287 @@ test('SettingsStructureTab CLI statusLine controls stay hidden unless CLI is det
     setI18nLanguage('zh-CN');
     globalThis.document = prevDoc;
     globalThis.fetch = prevFetch;
+  }
+});
+
+test('Issue #35: topbar capsule and hover HUD lock to main agent by default, toggle cleanly to follow-active, and preserve manual main selection', async () => {
+  const {
+    buildExportableSettingsJson,
+    parseImportedSettingsJson,
+  } = await import('../src/core/settingsBackup.js');
+
+  // 1. Settings backup exports and re-imports contextAgentMode cleanly
+  const exported = buildExportableSettingsJson({ contextAgentMode: 'auto' });
+  const parsedBackup = parseImportedSettingsJson(exported);
+  assert.equal(parsedBackup.ok, true);
+  assert.equal(parsedBackup.patch.contextAgentMode, 'auto');
+
+  // 2. Compiled app.js E2E with Main Agent (44.3%) vs active running Subagent (63.7%)
+  const appJs = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const stylesCss = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  const rootUuid = '11111111-2222-3333-4444-555555555555';
+  const subUuid = 'sub-worker-5';
+
+  const { document: mockDocument, body, makeElement } = createMockDom({
+    defaultRect: { left: 900, right: 1080, top: 6, bottom: 32, width: 180, height: 26 },
+  });
+  const titlebar = makeElement('div');
+  titlebar.className = 'flex items-center @container/titlebar';
+  const titleRight = makeElement('div');
+  titleRight.className = 'flex items-center gap-1';
+  titlebar.appendChild(titleRight);
+  body.appendChild(titlebar);
+
+  const mockSettings = {
+    language: 'zh-CN',
+    themeAccent: 'host',
+    fontScale: 'md',
+    modernUi: true,
+    windowMountMode: 'dual',
+    enableWindowOverlay: true,
+    showTopbarMultiSession: true,
+    contextAgentMode: 'main',
+    topbarCapsuleSlots: ['tps', 'ttft', 'context'],
+    hoverModules: ['metrics', 'context'],
+    overviewModules: ['metrics', 'context'],
+    overviewMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+    stepTableColumns: ['step', 'model', 'tps', 'ttft', 'tokens_combo', 'cache', 'cost'],
+  };
+
+  const mainContext = {
+    totalTokens: 113408,
+    limitTokens: 256000,
+    compactionLimitTokens: 256000,
+    usedPct: 44.3,
+    messagesTokens: 90000,
+    toolResultsTokens: 54000,
+    assistantTokens: 22000,
+    userInputTokens: 14000,
+    systemPromptTokens: 10000,
+    systemToolsTokens: 13408,
+  };
+  const subContext = {
+    totalTokens: 163072,
+    limitTokens: 256000,
+    compactionLimitTokens: 256000,
+    usedPct: 63.7,
+    messagesTokens: 138000,
+    toolResultsTokens: 96000,
+    assistantTokens: 30000,
+    userInputTokens: 12000,
+    systemPromptTokens: 11000,
+    systemToolsTokens: 14072,
+  };
+
+  const buildPayload = () => ({
+    bundleVersion: 'ver-issue35',
+    settings: { ...mockSettings },
+    quotas: { pools: [] },
+    conversations: [
+      {
+        cascadeId: rootUuid,
+        title: 'Main Task With Active Subagent',
+        isRunning: true,
+        stepCount: 12,
+        subagentCount: 1,
+        contextUsedPct: 44.3,
+      },
+    ],
+    runningConversations: [],
+    activeConversation: {
+      cascadeId: rootUuid,
+      title: 'Main Task With Active Subagent',
+      isRunning: true,
+      hasSubagents: true,
+      subagentCount: 1,
+      stepCount: 12,
+      latestTokPerSec: 65,
+      avgTokPerSec: 60,
+      latestTtftSec: 1.1,
+      context: mainContext,
+      agents: [
+        {
+          agentId: 'main',
+          cascadeId: rootUuid,
+          isMain: true,
+          agentKind: 'main',
+          index: 0,
+          badgeText: '主',
+          role: '主代理',
+          isRunning: false,
+          stepCount: 8,
+          latestTokPerSec: 65,
+          avgTokPerSec: 60,
+          latestTtftSec: 1.1,
+          context: mainContext,
+          recentSteps: [],
+        },
+        {
+          agentId: subUuid,
+          cascadeId: subUuid,
+          isMain: false,
+          agentKind: 'subagent',
+          agentOrdinal: 1,
+          index: 1,
+          badgeText: '子1',
+          shortLabel: '子代理 #1',
+          role: 'Subagent Worker',
+          isRunning: true,
+          stepCount: 4,
+          latestTokPerSec: 88,
+          avgTokPerSec: 80,
+          latestTtftSec: 0.7,
+          context: subContext,
+          recentSteps: [],
+        },
+      ],
+      aggregated: {
+        agentId: 'all',
+        isRunning: true,
+        stepCount: 12,
+        activeAgentId: subUuid,
+        activeAgentKind: 'subagent',
+        activeAgentOrdinal: 1,
+        activeAgentBadge: '子1',
+        latestTokPerSec: 88,
+        avgTokPerSec: 70,
+        latestTtftSec: 0.7,
+        context: subContext,
+      },
+    },
+    consumption: { range: '7d', summary: {}, trendSeries: [], topModels: [], topConversations: [] },
+  });
+
+  const mockLocation = { pathname: `/c/${rootUuid}`, href: `http://localhost/c/${rootUuid}` };
+  const mockWindow = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    location: mockLocation,
+    document: mockDocument,
+    __AGUsageMonitorBridge: { port: 49235, token: 'tok-35', version: 'ver-issue35', platform: 'win32' },
+    addEventListener() {},
+    removeEventListener() {},
+    getComputedStyle: () => ({ display: 'flex', flexDirection: 'row', visibility: 'visible' }),
+    requestAnimationFrame: (cb) => setTimeout(cb, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+    fetch: async (url, opts = {}) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/styles.css')) {
+        return { ok: true, status: 200, text: async () => stylesCss };
+      }
+      if (urlStr.includes('/api/settings') && String(opts.method || '').toUpperCase() === 'POST') {
+        Object.assign(mockSettings, JSON.parse(opts.body || '{}'));
+        return { ok: true, status: 200, json: async () => ({ ok: true, settings: { ...mockSettings } }) };
+      }
+      return { ok: true, status: 200, json: async () => buildPayload() };
+    },
+  };
+  mockWindow.window = mockWindow;
+  mockWindow.globalThis = mockWindow;
+
+  const sandbox = vm.createContext({
+    window: mockWindow,
+    globalThis: mockWindow,
+    document: mockDocument,
+    location: mockLocation,
+    navigator: {},
+    URLSearchParams,
+    AbortController,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    queueMicrotask,
+    fetch: mockWindow.fetch,
+    console,
+  });
+
+  const readVal = (el) => el?.getAttribute?.('data-od-value') || el?.textContent || '';
+
+  vm.runInContext(appJs, sandbox);
+  await new Promise((r) => setTimeout(r, 50));
+
+  const ov = mockWindow.__AGUsageMonitorOverlay;
+  try {
+    assert.ok(ov, 'Overlay initialized');
+    const capsuleHost = mockDocument.getElementById('ag-usage-monitor-capsule');
+    const portalHost = mockDocument.getElementById('ag-usage-monitor-portal');
+    const capsuleBtn = capsuleHost.shadowRoot.querySelector('.wm-capsule-btn');
+    const ctxPctEl = capsuleHost.shadowRoot.querySelector('.wm-ctx-pct');
+    const hoverTipEl = portalHost.shadowRoot.querySelector('.wm-hover-tip');
+
+    // A. Default contextAgentMode === 'main': topbar capsule & hover HUD lock to Main (44% / 44.3%)
+    assert.equal(readVal(ctxPctEl), '44%', 'Topbar capsule locks to Main Agent (44%) despite active subagent (64%)');
+    capsuleBtn.dispatchEvent({ type: 'mouseenter', clientX: 960, clientY: 18 });
+    await new Promise((r) => setTimeout(r, 20));
+    const hoverCtxPanel = hoverTipEl.querySelector('.ctx-legend-grid')?.parentNode;
+    assert.ok(hoverCtxPanel, 'Hover HUD context panel rendered');
+    assert.match(hoverCtxPanel.textContent, /44\.3%/, 'Hover HUD locks to Main Agent 44.3%');
+    assert.match(hoverCtxPanel.textContent, /主代理/, 'Hover HUD shows Main Agent badge');
+
+    // B. Full panel defaults to Main, and clicking subagent pill inside panel does NOT hijack capsule/hover
+    ov.open();
+    await new Promise((r) => setTimeout(r, 25));
+    const popoverEl = portalHost.shadowRoot.querySelector('.wm-popover-panel');
+    const overviewCtxPanel = popoverEl.querySelector('.overview-modules-host .ctx-legend-grid')?.parentNode;
+    assert.ok(overviewCtxPanel, 'Overview context panel rendered');
+    const subPill = overviewCtxPanel.querySelector(`.ctx-agent-pill[data-pill-key="${subUuid}"]`);
+    const mainPill = overviewCtxPanel.querySelector('.ctx-agent-pill[data-pill-key="main"]');
+    assert.equal(mainPill.classList.contains('is-active'), true, 'Full panel defaults to Main Agent pill');
+    assert.match(overviewCtxPanel.textContent, /44\.3%/);
+
+    subPill.onclick({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(subPill.classList.contains('is-active'), true, 'Full panel can still inspect subagent on demand');
+    assert.match(overviewCtxPanel.textContent, /63\.7%/, 'Full panel shows inspected subagent 63.7%');
+    assert.equal(readVal(ctxPctEl), '44%', 'Topbar capsule stays locked to Main Agent (44%) while panel inspects subagent');
+    ov.close();
+    capsuleBtn.dispatchEvent({ type: 'mouseenter', clientX: 960, clientY: 18 });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.match(hoverCtxPanel.textContent, /44\.3%/, 'Hover HUD stays locked to Main Agent (44.3%)');
+
+    // C. Switching toggle to 'auto' (跟随活跃) makes capsule & hover follow active subagent (64% / 63.7%)
+    ov.open();
+    await new Promise((r) => setTimeout(r, 20));
+    const navTabs = popoverEl.querySelectorAll('.pill-tab');
+    navTabs[navTabs.length - 1].dispatchEvent({ type: 'click', stopPropagation() {} }); // Settings
+    await new Promise((r) => setTimeout(r, 20));
+    const settingsRoot = popoverEl.querySelector('.settings-view-root');
+    const subTabs = settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn');
+    subTabs[1].dispatchEvent({ type: 'click', stopPropagation() {} }); // Structure
+    await new Promise((r) => setTimeout(r, 25));
+    const [, structurePane] = settingsRoot.querySelectorAll('.settings-tab-stack');
+    const autoBtn = Array.from(structurePane.querySelectorAll('.seg-btn')).find(
+      (b) => b.textContent.trim() === '跟随活跃'
+    );
+    assert.ok(autoBtn, 'Context agent mode toggle renders 跟随活跃 option');
+    autoBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(mockSettings.contextAgentMode, 'auto');
+    assert.equal(readVal(ctxPctEl), '64%', 'Topbar capsule follows active subagent (64%) when switched to auto');
+    ov.close();
+    capsuleBtn.dispatchEvent({ type: 'mouseenter', clientX: 960, clientY: 18 });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.match(hoverCtxPanel.textContent, /63\.7%/, 'Hover HUD follows active subagent (63.7%) when switched to auto');
+
+    // D. Manual '主' lock in auto mode survives same-session syncHostRoute() without resetting to 'auto'
+    ov.open();
+    await new Promise((r) => setTimeout(r, 20));
+    navTabs[0].dispatchEvent({ type: 'click', stopPropagation() {} }); // Overview
+    await new Promise((r) => setTimeout(r, 20));
+    const mainPillAfterAuto = overviewCtxPanel.querySelector('.ctx-agent-pill[data-pill-key="main"]');
+    mainPillAfterAuto.onclick({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(readVal(ctxPctEl), '44%', 'Manual main pill updates topbar capsule to 44% in auto mode');
+
+    // Simulate host route refresh on the same root conversation (e.g. focus/subagent jitter)
+    mockLocation.pathname = '/';
+    ov.syncHostRoute();
+    mockLocation.pathname = `/c/${rootUuid}`;
+    ov.syncHostRoute();
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(readVal(ctxPctEl), '44%', 'Same-session route refresh preserves manual main lock instead of resetting to auto');
+  } finally {
+    ov?.dispose?.();
   }
 });
