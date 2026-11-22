@@ -376,12 +376,16 @@ export function executeSettingsAction(data) {
     current.windowMountMode,
     current.enableWindowOverlay
   );
+  const contextWindowScopeChanged =
+    (updated.contextWindowMainEnabled !== false) !== (current.contextWindowMainEnabled !== false) ||
+    (updated.contextWindowSwarmEnabled === true) !== (current.contextWindowSwarmEnabled === true);
   const affectsBackendTelemetry =
     updated.weeklyLimitMode !== current.weeklyLimitMode ||
     updated.weeklyTokenBudget !== current.weeklyTokenBudget ||
     updated.weeklyCostBudget !== current.weeklyCostBudget ||
     updated.enableWindowOverlay !== (current.enableWindowOverlay !== false) ||
-    updated.windowMountMode !== prevMountMode;
+    updated.windowMountMode !== prevMountMode ||
+    contextWindowScopeChanged;
   inFlightRequests.clear();
   if (affectsBackendTelemetry) {
     clearTelemetryBuilderMemo();
@@ -391,6 +395,8 @@ export function executeSettingsAction(data) {
     updated.windowMountMode !== prevMountMode
   ) {
     void notifyWindowOverlaySetting(updated.enableWindowOverlay);
+  } else if (contextWindowScopeChanged) {
+    void notifyModelContextWindowsChanged();
   }
   if ((updated.enableCliStatusLine !== false) !== (current.enableCliStatusLine !== false)) {
     ensureCliStatusLineConfigured({ enabled: updated.enableCliStatusLine !== false });
@@ -514,7 +520,11 @@ export function executeResetSettingsAction() {
     updated.windowMountMode !== prevMountMode
   ) {
     void notifyWindowOverlaySetting(updated.enableWindowOverlay);
-  } else if (Object.keys(current.modelContextWindows).length) {
+  } else if (
+    Object.keys(current.modelContextWindows).length ||
+    current.contextWindowMainEnabled === false ||
+    current.contextWindowSwarmEnabled === true
+  ) {
     void notifyModelContextWindowsChanged();
   }
   if ((updated.enableCliStatusLine !== false) !== (current.enableCliStatusLine !== false)) {

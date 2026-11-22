@@ -46,6 +46,7 @@ import {
 import { getCloudStatus, getPricingPhaseEpoch, pricingCatalogRevision } from './pricing-catalog.mjs';
 import { buildOfficialQuotaPools } from './quota-pools.mjs';
 import { updatePoolQuotaReservationEstimates } from './quota-reservation.mjs';
+import { getDefaultCloudCodeProxyStatus } from './cloudcode-proxy.mjs';
 import { getDefaultWindowBridgeStatus } from './window-bridge.mjs';
 import {
   aggregateConsumptionPresetBundle,
@@ -2112,6 +2113,7 @@ export async function buildTelemetryPayloadInternal(
     },
     uiBundleVersion,
     windowBridge: getDefaultWindowBridgeStatus(),
+    cloudCodeProxy: getDefaultCloudCodeProxyStatus(),
     cliStatusLine: getCliStatusLineRuntimeStatus(),
     settings: loadSettings(),
     contextWindowModels: getContextWindowGroups(getContextWindowModels(clientConfigs, contextModelCatalog)).map((group) => {

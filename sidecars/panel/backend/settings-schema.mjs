@@ -163,6 +163,8 @@ export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
   stepTableColumns: DEFAULT_STEP_TABLE_COLUMNS,
   experimentalQuotaReservation: false,
   contextWindowRiskAccepted: false,
+  contextWindowMainEnabled: true,
+  contextWindowSwarmEnabled: false,
   modelContextWindows: Object.freeze({}),
 });
 
@@ -245,6 +247,8 @@ export function normalizeFullSettings(rawInput) {
       safeRaw.experimentalQuotaReservation
     ),
     contextWindowRiskAccepted: safeRaw.contextWindowRiskAccepted === true,
+    contextWindowMainEnabled: safeRaw.contextWindowMainEnabled !== false,
+    contextWindowSwarmEnabled: safeRaw.contextWindowSwarmEnabled === true,
     modelContextWindows: normalizeModelContextWindows(safeRaw.modelContextWindows),
   };
 }

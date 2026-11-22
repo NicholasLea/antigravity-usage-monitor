@@ -1955,6 +1955,9 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.ctxRiskBody': 'Google 官方并未授权在 Antigravity App / IDE 中修改模型上下文上限。擅自修改可能导致 Antigravity 或 GCP 服务被禁用，甚至触发账号封禁；启用该功能即默认由你自行承担全部风险。你最好清楚自己在做什么！',
   'settings.oth.ctxRiskAcceptBtn': '我已知晓风险，继续使用',
   'settings.oth.ctxModel': '模型',
+  'settings.oth.ctxMainLabel': '主代理',
+  'settings.oth.ctxSwarmLabel': '子代理与蜂群',
+  'settings.oth.ctxSwarmError': '本地同步异常：{error}',
   'settings.oth.ctxBaselineLabel': '上下文窗口上限',
   'settings.oth.ctxChooseModel': '选择模型',
   'settings.oth.ctxDefault': '跟随宿主设置',
@@ -2833,6 +2836,9 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.ctxRiskBody': 'Google has not authorized modifying model context limits in Antigravity App / IDE. Altering context limits may get your Antigravity access, GCP services, or Google account disabled or banned; enabling this feature means you assume all associated risks. Make sure you know what you are doing!',
   'settings.oth.ctxRiskAcceptBtn': 'I Understand the Risk, Unlock',
   'settings.oth.ctxModel': 'Model',
+  'settings.oth.ctxMainLabel': 'Main Agent',
+  'settings.oth.ctxSwarmLabel': 'Subagents & Swarm',
+  'settings.oth.ctxSwarmError': 'Local sync failed: {error}',
   'settings.oth.ctxBaselineLabel': 'Context Window Limit',
   'settings.oth.ctxChooseModel': 'Choose a model',
   'settings.oth.ctxDefault': 'Follow host settings',
@@ -9212,6 +9218,20 @@ function isEquivalentTelemetry(prev, next) {
     return false;
   }
   if (
+    (pSet?.contextWindowMainEnabled !== false) !== (nSet?.contextWindowMainEnabled !== false) ||
+    Boolean(pSet?.contextWindowSwarmEnabled) !== Boolean(nSet?.contextWindowSwarmEnabled)
+  ) {
+    return false;
+  }
+  if (
+    (prev.cloudCodeProxy?.state || 'disabled') !== (next.cloudCodeProxy?.state || 'disabled') ||
+    Number(prev.cloudCodeProxy?.ruleCount || 0) !== Number(next.cloudCodeProxy?.ruleCount || 0) ||
+    String(prev.cloudCodeProxy?.error || '') !== String(next.cloudCodeProxy?.error || '') ||
+    Number(prev.cloudCodeProxy?.syncedAtMs || 0) !== Number(next.cloudCodeProxy?.syncedAtMs || 0)
+  ) {
+    return false;
+  }
+  if (
     JSON.stringify(pSet?.modelContextWindows) !== JSON.stringify(nSet?.modelContextWindows) ||
     JSON.stringify(prev.contextWindowModels) !== JSON.stringify(next.contextWindowModels)
   ) {
@@ -10526,6 +10546,12 @@ async function saveSettingsPatch(patch) {
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowRiskAccepted')) {
     safePatch.contextWindowRiskAccepted = Boolean(safePatch.contextWindowRiskAccepted);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowMainEnabled')) {
+    safePatch.contextWindowMainEnabled = Boolean(safePatch.contextWindowMainEnabled);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowSwarmEnabled')) {
+    safePatch.contextWindowSwarmEnabled = Boolean(safePatch.contextWindowSwarmEnabled);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'orchestratorIdMode')) {
     safePatch.orchestratorIdMode = normalizeClientOrchestratorIdMode(safePatch.orchestratorIdMode);
@@ -27065,8 +27091,12 @@ const SettingsOtherTab = defineComponent({
     let draftExperimentalQuotaReservation = false;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
+    let draftContextMainEnabled = true;
+    let draftContextSwarmEnabled = false;
+    let savingContextScope = false;
     let latestSettings = null;
     let latestWindowBridge = null;
+    let latestCloudCodeProxy = null;
     let latestHostPlatform = 'win32';
     let contextWindowModels = [];
     let contextModelId = '';
@@ -27346,10 +27376,79 @@ const SettingsOtherTab = defineComponent({
       },
     });
     const ctxBridgeNotice = BridgeStatusNotice({ contextMode: true });
+    const ctxMainLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.oth.ctxMainLabel'),
+    });
+    const ctxMainToggle = SegmentedControl({
+      modelValue: 'on',
+      ariaLabel: t('settings.oth.ctxMainLabel'),
+      options: getEnableToggleOptions(),
+      onUpdateModelValue: async (val) => {
+        if (!draftContextRiskAccepted || savingContextScope) return;
+        const nextEnabled = val === 'on';
+        const prevEnabled = draftContextMainEnabled;
+        savingContextScope = true;
+        draftContextMainEnabled = nextEnabled;
+        latestSettings = { ...(latestSettings || {}), contextWindowMainEnabled: nextEnabled };
+        contextFeedback = 'settings.saving';
+        renderContextWindows();
+        try {
+          await saveSettingsPatch({ contextWindowMainEnabled: nextEnabled });
+          contextFeedback = 'settings.saved';
+        } catch {
+          draftContextMainEnabled = prevEnabled;
+          latestSettings = { ...(latestSettings || {}), contextWindowMainEnabled: prevEnabled };
+          contextFeedback = 'settings.saveFailed';
+        } finally {
+          savingContextScope = false;
+          renderContextWindows();
+        }
+      },
+    });
+    const ctxSwarmLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.oth.ctxSwarmLabel'),
+    });
+    const ctxSwarmToggle = SegmentedControl({
+      modelValue: 'off',
+      ariaLabel: t('settings.oth.ctxSwarmLabel'),
+      options: getEnableToggleOptions(),
+      onUpdateModelValue: async (val) => {
+        if (!draftContextRiskAccepted || savingContextScope) return;
+        const nextEnabled = val === 'on';
+        const prevEnabled = draftContextSwarmEnabled;
+        savingContextScope = true;
+        draftContextSwarmEnabled = nextEnabled;
+        latestSettings = { ...(latestSettings || {}), contextWindowSwarmEnabled: nextEnabled };
+        contextFeedback = 'settings.saving';
+        renderContextWindows();
+        try {
+          await saveSettingsPatch({ contextWindowSwarmEnabled: nextEnabled });
+          contextFeedback = 'settings.saved';
+        } catch {
+          draftContextSwarmEnabled = prevEnabled;
+          latestSettings = { ...(latestSettings || {}), contextWindowSwarmEnabled: prevEnabled };
+          contextFeedback = 'settings.saveFailed';
+        } finally {
+          savingContextScope = false;
+          renderContextWindows();
+        }
+      },
+    });
+    const ctxMainRow = h('div', { className: 'form-row' }, [ctxMainLabelEl, ctxMainToggle.el]);
+    const ctxSwarmRow = h('div', { className: 'form-row' }, [ctxSwarmLabelEl, ctxSwarmToggle.el]);
+    const ctxSyncStatusEl = h('span', {
+      className: 'settings-hint-text ctx-sync-status is-error',
+      hidden: true,
+    });
     const ctxModelRow = h('div', { className: 'form-row' }, [ctxModelLabel, ctxModelSelect.el]);
     const ctxWindowRow = h('div', { className: 'form-row' }, [ctxWindowLabel, ctxWindowSelect.el]);
     const ctxControlsBody = h('div', { className: 'ctx-controls-body is-locked' }, [
       ctxBridgeNotice.el,
+      ctxMainRow,
+      ctxSwarmRow,
+      ctxSyncStatusEl,
       ctxModelRow,
       ctxWindowRow,
       h('div', { className: 'form-row' }, [ctxHint]),
@@ -27428,8 +27527,31 @@ const SettingsOtherTab = defineComponent({
       const saved = latestSettings?.modelContextWindows || {};
       const wbState = String(latestWindowBridge?.state || '').trim();
       const isBridgeMissing = wbState === 'no_devtools_port' || wbState === 'cdp_unreachable';
+      const proxyState = String(latestCloudCodeProxy?.state || 'disabled');
+      const isProxyActive = Boolean(latestCloudCodeProxy?.active && proxyState === 'active');
+
+      patchText(ctxMainLabelEl, t('settings.oth.ctxMainLabel'));
+      ctxMainToggle.setProps({
+        modelValue: draftContextMainEnabled ? 'on' : 'off',
+        options: getEnableToggleOptions(),
+        ariaLabel: t('settings.oth.ctxMainLabel'),
+      });
+      patchText(ctxSwarmLabelEl, t('settings.oth.ctxSwarmLabel'));
+      ctxSwarmToggle.setProps({
+        modelValue: draftContextSwarmEnabled ? 'on' : 'off',
+        options: getEnableToggleOptions(),
+        ariaLabel: t('settings.oth.ctxSwarmLabel'),
+      });
+
+      const syncErrorText =
+        draftContextSwarmEnabled && proxyState === 'error' && latestCloudCodeProxy?.error
+          ? t('settings.oth.ctxSwarmError', { error: latestCloudCodeProxy.error })
+          : '';
+      patchAttr(ctxSyncStatusEl, 'hidden', !syncErrorText);
+      patchText(ctxSyncStatusEl, syncErrorText);
+
       ctxBridgeNotice.refs.update({
-        visible: unlocked,
+        visible: unlocked && draftContextMainEnabled,
         windowBridge: latestWindowBridge,
         hostPlatform: latestHostPlatform,
       });
@@ -27477,7 +27599,13 @@ const SettingsOtherTab = defineComponent({
             else if (value) {
               const name = formatLimit(value);
               if (!isAvailable(model, value)) meta = t('settings.oth.ctxUnavailable', { name });
-              else if (isBridgeMissing) meta = t('settings.oth.ctxPendingBridge', { name });
+              else if (
+                isBridgeMissing &&
+                draftContextMainEnabled &&
+                !(draftContextSwarmEnabled && isProxyActive)
+              ) {
+                meta = t('settings.oth.ctxPendingBridge', { name });
+              }
               else if (/^\d+$/.test(value) && model.reportedLimitTokens && Number(value) !== model.reportedLimitTokens) {
                 meta = t('settings.oth.ctxConfiguredReported', {
                   name,
@@ -27765,13 +27893,15 @@ const SettingsOtherTab = defineComponent({
       settings,
       models = contextWindowModels,
       windowBridge = latestWindowBridge,
-      hostPlatform = latestHostPlatform
+      hostPlatform = latestHostPlatform,
+      cloudCodeProxy = latestCloudCodeProxy
     ) {
       if (!settings) return;
       latestSettings = settings;
       contextWindowModels = models;
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
+      if (cloudCodeProxy !== undefined) latestCloudCodeProxy = cloudCodeProxy;
       draftModelDisplayMode = normalizeClientModelDisplayMode(
         settings.modelDisplayMode,
         settings.showUpstreamModel
@@ -27782,6 +27912,10 @@ const SettingsOtherTab = defineComponent({
       );
       if (!acceptingContextRisk) {
         draftContextRiskAccepted = Boolean(settings.contextWindowRiskAccepted);
+      }
+      if (!savingContextScope) {
+        draftContextMainEnabled = settings.contextWindowMainEnabled !== false;
+        draftContextSwarmEnabled = settings.contextWindowSwarmEnabled === true;
       }
       stepModelSelect.setProps({
         modelValue: draftModelDisplayMode,
@@ -27858,6 +27992,8 @@ const SettingsOtherTab = defineComponent({
       orchestratorIdSelect.destroy();
       quotaReserveToggle.destroy();
       ctxBridgeNotice.destroy();
+      ctxMainToggle.destroy();
+      ctxSwarmToggle.destroy();
       ctxModelSelect.destroy();
       ctxWindowSelect.destroy();
       sessionMigrationCard.destroy();
@@ -27871,6 +28007,8 @@ const SettingsOtherTab = defineComponent({
         quotaReserveToggle,
         exportReserveLogBtn,
         ctxBridgeNotice,
+        ctxMainToggle,
+        ctxSwarmToggle,
         ctxModelSelect,
         ctxWindowSelect,
         sessionMigrationCard,
@@ -32899,7 +33037,8 @@ const SettingsView = defineComponent({
             settings,
             telemetry.contextWindowModels || [],
             telemetry?.windowBridge,
-            telemetry?.hostPlatform
+            telemetry?.hostPlatform,
+            telemetry?.cloudCodeProxy
           );
         }
       } else if (accountTab && settingsSubTab === 'account') {
@@ -32915,6 +33054,7 @@ const SettingsView = defineComponent({
       (st) => ({
         settings: st.telemetry?.settings,
         windowBridge: st.telemetry?.windowBridge,
+        cloudCodeProxy: st.telemetry?.cloudCodeProxy,
         cliStatusLine: st.telemetry?.cliStatusLine,
         hostPlatform: st.telemetry?.hostPlatform,
         cloudStatus: st.telemetry?.cloudStatus,

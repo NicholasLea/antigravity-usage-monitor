@@ -77,8 +77,12 @@ export const SettingsOtherTab = defineComponent({
     let draftExperimentalQuotaReservation = false;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
+    let draftContextMainEnabled = true;
+    let draftContextSwarmEnabled = false;
+    let savingContextScope = false;
     let latestSettings = null;
     let latestWindowBridge = null;
+    let latestCloudCodeProxy = null;
     let latestHostPlatform = 'win32';
     let contextWindowModels = [];
     let contextModelId = '';
@@ -358,10 +362,79 @@ export const SettingsOtherTab = defineComponent({
       },
     });
     const ctxBridgeNotice = BridgeStatusNotice({ contextMode: true });
+    const ctxMainLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.oth.ctxMainLabel'),
+    });
+    const ctxMainToggle = SegmentedControl({
+      modelValue: 'on',
+      ariaLabel: t('settings.oth.ctxMainLabel'),
+      options: getEnableToggleOptions(),
+      onUpdateModelValue: async (val) => {
+        if (!draftContextRiskAccepted || savingContextScope) return;
+        const nextEnabled = val === 'on';
+        const prevEnabled = draftContextMainEnabled;
+        savingContextScope = true;
+        draftContextMainEnabled = nextEnabled;
+        latestSettings = { ...(latestSettings || {}), contextWindowMainEnabled: nextEnabled };
+        contextFeedback = 'settings.saving';
+        renderContextWindows();
+        try {
+          await saveSettingsPatch({ contextWindowMainEnabled: nextEnabled });
+          contextFeedback = 'settings.saved';
+        } catch {
+          draftContextMainEnabled = prevEnabled;
+          latestSettings = { ...(latestSettings || {}), contextWindowMainEnabled: prevEnabled };
+          contextFeedback = 'settings.saveFailed';
+        } finally {
+          savingContextScope = false;
+          renderContextWindows();
+        }
+      },
+    });
+    const ctxSwarmLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.oth.ctxSwarmLabel'),
+    });
+    const ctxSwarmToggle = SegmentedControl({
+      modelValue: 'off',
+      ariaLabel: t('settings.oth.ctxSwarmLabel'),
+      options: getEnableToggleOptions(),
+      onUpdateModelValue: async (val) => {
+        if (!draftContextRiskAccepted || savingContextScope) return;
+        const nextEnabled = val === 'on';
+        const prevEnabled = draftContextSwarmEnabled;
+        savingContextScope = true;
+        draftContextSwarmEnabled = nextEnabled;
+        latestSettings = { ...(latestSettings || {}), contextWindowSwarmEnabled: nextEnabled };
+        contextFeedback = 'settings.saving';
+        renderContextWindows();
+        try {
+          await saveSettingsPatch({ contextWindowSwarmEnabled: nextEnabled });
+          contextFeedback = 'settings.saved';
+        } catch {
+          draftContextSwarmEnabled = prevEnabled;
+          latestSettings = { ...(latestSettings || {}), contextWindowSwarmEnabled: prevEnabled };
+          contextFeedback = 'settings.saveFailed';
+        } finally {
+          savingContextScope = false;
+          renderContextWindows();
+        }
+      },
+    });
+    const ctxMainRow = h('div', { className: 'form-row' }, [ctxMainLabelEl, ctxMainToggle.el]);
+    const ctxSwarmRow = h('div', { className: 'form-row' }, [ctxSwarmLabelEl, ctxSwarmToggle.el]);
+    const ctxSyncStatusEl = h('span', {
+      className: 'settings-hint-text ctx-sync-status is-error',
+      hidden: true,
+    });
     const ctxModelRow = h('div', { className: 'form-row' }, [ctxModelLabel, ctxModelSelect.el]);
     const ctxWindowRow = h('div', { className: 'form-row' }, [ctxWindowLabel, ctxWindowSelect.el]);
     const ctxControlsBody = h('div', { className: 'ctx-controls-body is-locked' }, [
       ctxBridgeNotice.el,
+      ctxMainRow,
+      ctxSwarmRow,
+      ctxSyncStatusEl,
       ctxModelRow,
       ctxWindowRow,
       h('div', { className: 'form-row' }, [ctxHint]),
@@ -440,8 +513,31 @@ export const SettingsOtherTab = defineComponent({
       const saved = latestSettings?.modelContextWindows || {};
       const wbState = String(latestWindowBridge?.state || '').trim();
       const isBridgeMissing = wbState === 'no_devtools_port' || wbState === 'cdp_unreachable';
+      const proxyState = String(latestCloudCodeProxy?.state || 'disabled');
+      const isProxyActive = Boolean(latestCloudCodeProxy?.active && proxyState === 'active');
+
+      patchText(ctxMainLabelEl, t('settings.oth.ctxMainLabel'));
+      ctxMainToggle.setProps({
+        modelValue: draftContextMainEnabled ? 'on' : 'off',
+        options: getEnableToggleOptions(),
+        ariaLabel: t('settings.oth.ctxMainLabel'),
+      });
+      patchText(ctxSwarmLabelEl, t('settings.oth.ctxSwarmLabel'));
+      ctxSwarmToggle.setProps({
+        modelValue: draftContextSwarmEnabled ? 'on' : 'off',
+        options: getEnableToggleOptions(),
+        ariaLabel: t('settings.oth.ctxSwarmLabel'),
+      });
+
+      const syncErrorText =
+        draftContextSwarmEnabled && proxyState === 'error' && latestCloudCodeProxy?.error
+          ? t('settings.oth.ctxSwarmError', { error: latestCloudCodeProxy.error })
+          : '';
+      patchAttr(ctxSyncStatusEl, 'hidden', !syncErrorText);
+      patchText(ctxSyncStatusEl, syncErrorText);
+
       ctxBridgeNotice.refs.update({
-        visible: unlocked,
+        visible: unlocked && draftContextMainEnabled,
         windowBridge: latestWindowBridge,
         hostPlatform: latestHostPlatform,
       });
@@ -489,7 +585,13 @@ export const SettingsOtherTab = defineComponent({
             else if (value) {
               const name = formatLimit(value);
               if (!isAvailable(model, value)) meta = t('settings.oth.ctxUnavailable', { name });
-              else if (isBridgeMissing) meta = t('settings.oth.ctxPendingBridge', { name });
+              else if (
+                isBridgeMissing &&
+                draftContextMainEnabled &&
+                !(draftContextSwarmEnabled && isProxyActive)
+              ) {
+                meta = t('settings.oth.ctxPendingBridge', { name });
+              }
               else if (/^\d+$/.test(value) && model.reportedLimitTokens && Number(value) !== model.reportedLimitTokens) {
                 meta = t('settings.oth.ctxConfiguredReported', {
                   name,
@@ -777,13 +879,15 @@ export const SettingsOtherTab = defineComponent({
       settings,
       models = contextWindowModels,
       windowBridge = latestWindowBridge,
-      hostPlatform = latestHostPlatform
+      hostPlatform = latestHostPlatform,
+      cloudCodeProxy = latestCloudCodeProxy
     ) {
       if (!settings) return;
       latestSettings = settings;
       contextWindowModels = models;
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
+      if (cloudCodeProxy !== undefined) latestCloudCodeProxy = cloudCodeProxy;
       draftModelDisplayMode = normalizeClientModelDisplayMode(
         settings.modelDisplayMode,
         settings.showUpstreamModel
@@ -794,6 +898,10 @@ export const SettingsOtherTab = defineComponent({
       );
       if (!acceptingContextRisk) {
         draftContextRiskAccepted = Boolean(settings.contextWindowRiskAccepted);
+      }
+      if (!savingContextScope) {
+        draftContextMainEnabled = settings.contextWindowMainEnabled !== false;
+        draftContextSwarmEnabled = settings.contextWindowSwarmEnabled === true;
       }
       stepModelSelect.setProps({
         modelValue: draftModelDisplayMode,
@@ -870,6 +978,8 @@ export const SettingsOtherTab = defineComponent({
       orchestratorIdSelect.destroy();
       quotaReserveToggle.destroy();
       ctxBridgeNotice.destroy();
+      ctxMainToggle.destroy();
+      ctxSwarmToggle.destroy();
       ctxModelSelect.destroy();
       ctxWindowSelect.destroy();
       sessionMigrationCard.destroy();
@@ -883,6 +993,8 @@ export const SettingsOtherTab = defineComponent({
         quotaReserveToggle,
         exportReserveLogBtn,
         ctxBridgeNotice,
+        ctxMainToggle,
+        ctxSwarmToggle,
         ctxModelSelect,
         ctxWindowSelect,
         sessionMigrationCard,

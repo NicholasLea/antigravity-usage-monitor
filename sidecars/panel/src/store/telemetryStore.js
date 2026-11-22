@@ -541,6 +541,20 @@ export function isEquivalentTelemetry(prev, next) {
     return false;
   }
   if (
+    (pSet?.contextWindowMainEnabled !== false) !== (nSet?.contextWindowMainEnabled !== false) ||
+    Boolean(pSet?.contextWindowSwarmEnabled) !== Boolean(nSet?.contextWindowSwarmEnabled)
+  ) {
+    return false;
+  }
+  if (
+    (prev.cloudCodeProxy?.state || 'disabled') !== (next.cloudCodeProxy?.state || 'disabled') ||
+    Number(prev.cloudCodeProxy?.ruleCount || 0) !== Number(next.cloudCodeProxy?.ruleCount || 0) ||
+    String(prev.cloudCodeProxy?.error || '') !== String(next.cloudCodeProxy?.error || '') ||
+    Number(prev.cloudCodeProxy?.syncedAtMs || 0) !== Number(next.cloudCodeProxy?.syncedAtMs || 0)
+  ) {
+    return false;
+  }
+  if (
     JSON.stringify(pSet?.modelContextWindows) !== JSON.stringify(nSet?.modelContextWindows) ||
     JSON.stringify(prev.contextWindowModels) !== JSON.stringify(next.contextWindowModels)
   ) {
@@ -1855,6 +1869,12 @@ export async function saveSettingsPatch(patch) {
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowRiskAccepted')) {
     safePatch.contextWindowRiskAccepted = Boolean(safePatch.contextWindowRiskAccepted);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowMainEnabled')) {
+    safePatch.contextWindowMainEnabled = Boolean(safePatch.contextWindowMainEnabled);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowSwarmEnabled')) {
+    safePatch.contextWindowSwarmEnabled = Boolean(safePatch.contextWindowSwarmEnabled);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'orchestratorIdMode')) {
     safePatch.orchestratorIdMode = normalizeClientOrchestratorIdMode(safePatch.orchestratorIdMode);

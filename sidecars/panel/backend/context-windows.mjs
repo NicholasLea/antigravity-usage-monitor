@@ -122,18 +122,29 @@ export async function syncHostContextWindows(
   bootId,
   key = '__AGUsageMonitorContextWindows',
   fallbackRules = {},
-  allowRemoteHost = false
+  allowRemoteHost = false,
+  overrideRules = null
 ) {
   let state = window[key];
   const appConfig = window.__APP_CONFIG__;
   const csrfToken = appConfig?.csrfToken || state?.observedCsrfToken || '';
-  const hasPrefs = Boolean(rules && Object.keys(rules).length > 0);
+  const hasOverrideMode = Boolean(
+    overrideRules && typeof overrideRules === 'object' && !Array.isArray(overrideRules)
+  );
+  const safeOverride = hasOverrideMode ? overrideRules : null;
+  const hasPrefs = hasOverrideMode
+    ? Object.keys(safeOverride).length > 0
+    : Boolean(rules && Object.keys(rules).length > 0);
   const safeFallback =
     fallbackRules && typeof fallbackRules === 'object' && !Array.isArray(fallbackRules)
       ? fallbackRules
       : {};
   const hasFallback = Object.keys(safeFallback).length > 0;
-  if (!hasPrefs || (!allowRemoteHost && appConfig?.isRemoteControl) || (!csrfToken && !hasFallback)) {
+  if (
+    !hasPrefs ||
+    (!allowRemoteHost && appConfig?.isRemoteControl) ||
+    (!hasOverrideMode && !csrfToken && !hasFallback)
+  ) {
     state?.dispose();
     return { attached: false, ruleCount: 0 };
   }
@@ -274,6 +285,11 @@ export async function syncHostContextWindows(
   clearTimeout(state.timer);
   state.timer = setTimeout(() => state.dispose(), 15000);
 
+  if (hasOverrideMode) {
+    state.rules = { ...safeOverride };
+    return { attached: Boolean(state.isAttached?.()), ruleCount: Object.keys(state.rules).length };
+  }
+
   if (!csrfToken) {
     state.rules = { ...safeFallback };
     return { attached: Boolean(state.isAttached?.()), ruleCount: Object.keys(state.rules).length };
@@ -324,8 +340,13 @@ export function createContextWindowSyncExpression(
   preferences,
   bootId,
   fallbackRules = {},
-  allowRemoteHost = false
+  allowRemoteHost = false,
+  overrideRules = null
 ) {
+  const safeOverride =
+    overrideRules && typeof overrideRules === 'object' && !Array.isArray(overrideRules)
+      ? overrideRules
+      : null;
   return `(() => {
     ${isContextWindowModelId.toString()}
     ${isContextWindowSettingId.toString()}
@@ -334,6 +355,6 @@ export function createContextWindowSyncExpression(
     ${getContextWindowGroups.toString()}
     ${resolveContextWindowOption.toString()}
     ${resolveContextWindowRules.toString()}
-    return (${syncHostContextWindows.toString()})(${JSON.stringify(preferences)}, ${JSON.stringify(bootId)}, ${JSON.stringify(CONTEXT_WINDOWS_GLOBAL_KEY)}, ${JSON.stringify(fallbackRules || {})}, ${JSON.stringify(Boolean(allowRemoteHost))});
+    return (${syncHostContextWindows.toString()})(${JSON.stringify(preferences)}, ${JSON.stringify(bootId)}, ${JSON.stringify(CONTEXT_WINDOWS_GLOBAL_KEY)}, ${JSON.stringify(fallbackRules || {})}, ${JSON.stringify(Boolean(allowRemoteHost))}, ${JSON.stringify(safeOverride)});
   })()`;
 }

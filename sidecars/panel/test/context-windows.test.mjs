@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import test from 'node:test';
 import vm from 'node:vm';
 import { createContextWindowSyncExpression } from '../backend/context-windows.mjs';
+import {
+  createCloudCodeProxyController,
+  extractUpstreamCheckpointDefaults,
+  isValidUpstreamCloudCodeUrl,
+  rewriteFetchAvailableModelsPayload,
+} from '../backend/cloudcode-proxy.mjs';
+import { createWindowBridgeController } from '../backend/window-bridge.mjs';
 import { backendHarness } from './backend-harness.mjs';
+import { createMockDom } from './mock-dom.mjs';
 
 const argon = 'MODEL_PLACEHOLDER_M430';
 const flash = 'MODEL_PLACEHOLDER_M431';
@@ -303,4 +312,475 @@ test('Issue #27: syncHostContextWindows falls back to backend pre-resolved rules
     await vm.runInContext(createContextWindowSyncExpression({}, 'boot-233', {}), context);
   }
   assert.equal(window.fetch, nativeFetch);
+});
+
+test('cloudcode-proxy validates upstream URLs and rewrites checkpointer experiments cleanly', () => {
+  assert.equal(isValidUpstreamCloudCodeUrl('https://daily-cloudcode-pa.googleapis.com'), true);
+  assert.equal(isValidUpstreamCloudCodeUrl('https://cloudcode-pa.googleapis.com'), true);
+  assert.equal(isValidUpstreamCloudCodeUrl('http://127.0.0.1:18148'), false);
+  assert.equal(isValidUpstreamCloudCodeUrl('https://127.0.0.1:18148'), false);
+  assert.equal(isValidUpstreamCloudCodeUrl('https://localhost:443'), false);
+  assert.equal(isValidUpstreamCloudCodeUrl('http://daily-cloudcode-pa.googleapis.com'), false);
+
+  const payload = {
+    models: {
+      'gemini-4-carbon-high': {
+        model: carbon,
+        maxTokens: 1048576,
+        maxOutputTokens: 32768,
+        ignoreExperiments: ['CASCADE_USE_EXPERIMENT_CHECKPOINTER', 'checkpoint-variant', 'unrelated-flag'],
+        modelExperiments: {
+          experiments: {
+            CASCADE_USE_EXPERIMENT_CHECKPOINTER: {
+              stringValue: JSON.stringify({
+                strategy: 'CHECKPOINT_STRATEGY_SAME_MODEL',
+                max_token_limit: '512000',
+                max_output_tokens: '32768',
+              }),
+            },
+            'CASCADE_USE_EXPERIMENT_CHECKPOINTER/claude-1m_840k': {
+              stringValue: JSON.stringify({ max_token_limit: '840000' }),
+            },
+          },
+        },
+      },
+      'argon-named': {
+        model: argon,
+        maxTokens: 1048576,
+        maxOutputTokens: 32768,
+        modelExperiments: {
+          experiments: {
+            CASCADE_USE_EXPERIMENT_CHECKPOINTER: {
+              stringValue: JSON.stringify({ max_token_limit: '256000' }),
+            },
+            'CASCADE_USE_EXPERIMENT_CHECKPOINTER/context-window_900K': {
+              stringValue: JSON.stringify({ max_token_limit: '900000', enabled: true }),
+            },
+          },
+        },
+      },
+      'untouched-flash': {
+        model: flash,
+        maxTokens: 1048576,
+        modelExperiments: {
+          experiments: {
+            CASCADE_USE_EXPERIMENT_CHECKPOINTER: {
+              stringValue: JSON.stringify({ max_token_limit: '128000' }),
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const beforeDefaults = extractUpstreamCheckpointDefaults(payload.models);
+  assert.deepEqual(beforeDefaults, { [carbon]: 512000, [argon]: 256000, [flash]: 128000 });
+
+  const res = rewriteFetchAvailableModelsPayload(payload, { [carbon]: 300000, [argon]: '900K' });
+  assert.equal(res.modified, true);
+  assert.equal(res.applied.length, 2);
+  assert.deepEqual(res.defaultsByModelId, { [carbon]: 512000, [argon]: 256000, [flash]: 128000 });
+
+  const carbonMain = JSON.parse(
+    payload.models['gemini-4-carbon-high'].modelExperiments.experiments.CASCADE_USE_EXPERIMENT_CHECKPOINTER
+      .stringValue
+  );
+  const carbonVariant = JSON.parse(
+    payload.models['gemini-4-carbon-high'].modelExperiments.experiments[
+      'CASCADE_USE_EXPERIMENT_CHECKPOINTER/claude-1m_840k'
+    ].stringValue
+  );
+  assert.equal(carbonMain.max_token_limit, '300000');
+  assert.equal(carbonMain.strategy, 'CHECKPOINT_STRATEGY_SAME_MODEL');
+  assert.equal(carbonVariant.max_token_limit, '300000');
+  assert.equal(payload.models['gemini-4-carbon-high'].maxTokens, 1048576);
+  assert.deepEqual(payload.models['gemini-4-carbon-high'].ignoreExperiments, ['unrelated-flag']);
+
+  const argonMain = JSON.parse(
+    payload.models['argon-named'].modelExperiments.experiments.CASCADE_USE_EXPERIMENT_CHECKPOINTER.stringValue
+  );
+  assert.equal(argonMain.max_token_limit, '900000');
+  assert.equal(argonMain.enabled, true);
+
+  const flashMain = JSON.parse(
+    payload.models['untouched-flash'].modelExperiments.experiments.CASCADE_USE_EXPERIMENT_CHECKPOINTER.stringValue
+  );
+  assert.equal(flashMain.max_token_limit, '128000');
+});
+
+test('createCloudCodeProxyController proxies fetchAvailableModels, streams passthrough, and restores SetCloudCodeURL cleanly', async () => {
+  const upstreamHits = [];
+  const upstreamServer = http.createServer((req, res) => {
+    upstreamHits.push(req.url);
+    if (req.url?.includes('fetchAvailableModels')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          models: {
+            'gemini-4-carbon-high': {
+              model: carbon,
+              maxTokens: 1048576,
+              modelExperiments: {
+                experiments: {
+                  CASCADE_USE_EXPERIMENT_CHECKPOINTER: {
+                    stringValue: JSON.stringify({ max_token_limit: '512000' }),
+                  },
+                },
+              },
+            },
+          },
+        })
+      );
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.write('chunk-1:');
+    res.end('chunk-2');
+  });
+  await new Promise((resolve) => upstreamServer.listen(0, '127.0.0.1', resolve));
+  const upstreamPort = upstreamServer.address().port;
+  const upstreamUrl = `http://127.0.0.1:${upstreamPort}`;
+
+  const rpcCalls = [];
+  let failSetUrl = false;
+  const proxy = createCloudCodeProxyController({
+    allowHttpUpstream: true,
+    allowTestEndpoint: true,
+    retryCooldownMs: 5000,
+    detectUpstreamFn: () => upstreamUrl,
+    detectProxyFn: async () => '',
+    getEndpointFn: () => ({ addr: '127.0.0.1:44444', baseUrl: 'http://127.0.0.1:44444', csrfToken: 'tok-1' }),
+    callRpcFn: async (method, body) => {
+      rpcCalls.push({ method, body });
+      if (failSetUrl && method === 'SetCloudCodeURL') {
+        throw new Error('enterprise gateway pinned');
+      }
+      return {};
+    },
+  });
+
+  try {
+    // 1. Enable with rule -> starts proxy & calls SetCloudCodeURL
+    const st1 = await proxy.reconcile({ enabled: true, rulesByModelId: { [carbon]: 300000 } });
+    assert.equal(st1.state, 'active');
+    assert.equal(st1.active, true);
+    assert.equal(st1.ruleCount, 1);
+    assert.equal(rpcCalls.length, 1);
+    assert.equal(rpcCalls[0].method, 'SetCloudCodeURL');
+    assert.equal(rpcCalls[0].body.url, st1.localUrl);
+
+    // 2. Fetch through proxy: /v1internal:fetchAvailableModels rewritten + upstream default captured
+    const modelsRes = await fetch(`${st1.localUrl}/v1internal:fetchAvailableModels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    assert.equal(modelsRes.status, 200);
+    const modelsJson = await modelsRes.json();
+    const rewrittenLimit = JSON.parse(
+      modelsJson.models['gemini-4-carbon-high'].modelExperiments.experiments.CASCADE_USE_EXPERIMENT_CHECKPOINTER
+        .stringValue
+    ).max_token_limit;
+    assert.equal(rewrittenLimit, '300000');
+    assert.deepEqual(proxy.getUpstreamDefaults(), { [carbon]: 512000 });
+
+    // 3. Non-intercepted path passes through verbatim
+    const streamRes = await fetch(`${st1.localUrl}/v1internal:streamGenerateContent`, {
+      method: 'POST',
+      body: '{}',
+    });
+    assert.equal(await streamRes.text(), 'chunk-1:chunk-2');
+
+    // 4. Same reconcile is idempotent (no redundant SetCloudCodeURL)
+    await proxy.reconcile({ enabled: true, rulesByModelId: { [carbon]: 300000 } });
+    assert.equal(rpcCalls.length, 1);
+
+    // 5. Rule change re-triggers SetCloudCodeURL to flush LS cache
+    await proxy.reconcile({ enabled: true, rulesByModelId: { [carbon]: 256000 } });
+    assert.equal(rpcCalls.length, 2);
+    assert.equal(rpcCalls[1].body.url, st1.localUrl);
+
+    // 6. Disabling restores upstream URL and closes proxy
+    const stOff = await proxy.reconcile({ enabled: false, rulesByModelId: { [carbon]: 256000 } });
+    assert.equal(stOff.state, 'disabled');
+    assert.equal(stOff.active, false);
+    assert.equal(rpcCalls.length, 3);
+    assert.equal(rpcCalls[2].body.url, upstreamUrl);
+
+    // 7. Error handling & cooldown
+    failSetUrl = true;
+    const stErr = await proxy.reconcile({ enabled: true, rulesByModelId: { [carbon]: 256000 } });
+    assert.equal(stErr.state, 'error');
+    assert.match(stErr.error, /enterprise gateway pinned/);
+    assert.equal(rpcCalls.length, 4);
+    await proxy.reconcile({ enabled: true, rulesByModelId: { [carbon]: 256000 } });
+    assert.equal(rpcCalls.length, 4, 'cooldown skips immediate retry');
+  } finally {
+    failSetUrl = false;
+    await proxy.stop();
+    await new Promise((resolve) => upstreamServer.close(() => resolve()));
+  }
+  assert.ok(upstreamHits.some((u) => u.includes('fetchAvailableModels')));
+  assert.ok(upstreamHits.some((u) => u.includes('streamGenerateContent')));
+});
+
+test('independent Main Agent & Subagents/Swarm switches persist, pin back main defaults, and reconcile across all 4 combos', async () => {
+  // 1. Settings defaults, persistence, telemetry exposure, and factory reset
+  const h = backendHarness({
+    availableModels,
+    userStatus: { cascadeModelConfigData: { clientModelConfigs: carbonModels } },
+  });
+  const initSettings = h.loadSettings();
+  assert.equal(initSettings.contextWindowMainEnabled, true);
+  assert.equal(initSettings.contextWindowSwarmEnabled, false);
+
+  const patchRes = h.executeSettingsAction({
+    contextWindowMainEnabled: false,
+    contextWindowSwarmEnabled: true,
+  });
+  assert.equal(patchRes.status, 200);
+  assert.equal(h.loadSettings().contextWindowMainEnabled, false);
+  assert.equal(h.loadSettings().contextWindowSwarmEnabled, true);
+
+  const tele = await h.buildTelemetryPayloadInternal('');
+  assert.equal(tele.settings.contextWindowMainEnabled, false);
+  assert.equal(tele.settings.contextWindowSwarmEnabled, true);
+  assert.equal(tele.cloudCodeProxy.state, 'disabled');
+
+  h.executeResetSettingsAction();
+  assert.equal(h.loadSettings().contextWindowMainEnabled, true);
+  assert.equal(h.loadSettings().contextWindowSwarmEnabled, false);
+
+  // 2. syncHostContextWindows pin-back mode overrides preferences with upstream default even when csrfToken exists
+  const sendPath = '/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage';
+  const host = 'https://127.0.0.1:26195';
+  const nativeFetch = async (_url, init) => init;
+  class WebSocket {
+    constructor(url) {
+      this.url = url;
+    }
+    send(data) {
+      return data;
+    }
+  }
+  const win = {
+    location: new URL(host),
+    fetch: nativeFetch,
+    WebSocket,
+    __APP_CONFIG__: { csrfToken: 'pin-test-token' },
+  };
+  const ctx = vm.createContext({
+    window: win,
+    URL,
+    TextEncoder,
+    TextDecoder,
+    Headers,
+    Uint8Array,
+    AbortSignal,
+    setTimeout,
+    clearTimeout,
+  });
+  try {
+    const syncOut = await vm.runInContext(
+      createContextWindowSyncExpression(
+        { [carbonGroup]: '300000' },
+        'pin-boot',
+        { [carbon]: 512000 },
+        true,
+        { [carbon]: 512000 }
+      ),
+      ctx
+    );
+    assert.deepEqual({ ...syncOut }, { attached: true, ruleCount: 1 });
+    const reqPayload = {
+      cascadeConfig: {
+        plannerConfig: { planModel: carbon },
+        checkpointConfig: {},
+      },
+    };
+    const out = await win.fetch(host + sendPath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reqPayload),
+    });
+    assert.equal(
+      JSON.parse(out.body).cascadeConfig.checkpointConfig.maxTokenLimit,
+      512000,
+      'pin-back mode forces main agent back to upstream default limit'
+    );
+  } finally {
+    await vm.runInContext(createContextWindowSyncExpression({}, 'pin-boot', {}, true, null), ctx);
+  }
+  assert.equal(win.fetch, nativeFetch);
+
+  // 3. Window bridge reconciles CloudCode proxy even without CDP ports when Swarm toggle is enabled
+  const proxyLog = [];
+  let proxyStopped = false;
+  let currentSettings = {
+    enableWindowOverlay: false,
+    windowMountMode: 'sidebar',
+    modelContextWindows: { [carbonGroup]: '300000' },
+    contextWindowMainEnabled: false,
+    contextWindowSwarmEnabled: true,
+  };
+  const mockCloudCodeProxy = {
+    async reconcile(opts) {
+      proxyLog.push(opts);
+      return { state: opts.enabled ? 'active' : 'disabled', active: Boolean(opts.enabled) };
+    },
+    getUpstreamDefaults: () => ({ [carbon]: 512000 }),
+    async stop() {
+      proxyStopped = true;
+    },
+  };
+  const bridgeCtrl = createWindowBridgeController({
+    handleApiRequest: async () => ({ status: 200, body: '{}' }),
+    readAssetFn: async () => '',
+    getSettingsFn: () => currentSettings,
+    env: {},
+    homeDir: '/nonexistent-home-for-test',
+    autoConfigureIdeArgv: false,
+    cloudCodeProxy: mockCloudCodeProxy,
+    resolveLocalContextRulesFn: async () => ({
+      verified: true,
+      rules: { [carbon]: 300000 },
+      catalog: availableModels,
+    }),
+  });
+  await bridgeCtrl.syncAllWindows();
+  assert.equal(proxyLog.length, 1);
+  assert.equal(proxyLog[0].enabled, true);
+  assert.deepEqual(proxyLog[0].rulesByModelId, { [carbon]: 300000 });
+
+  // Turning off Swarm switch disables CloudCode proxy
+  currentSettings = { ...currentSettings, contextWindowSwarmEnabled: false };
+  await bridgeCtrl.syncAllWindows();
+  assert.equal(proxyLog.length, 2);
+  assert.equal(proxyLog[1].enabled, false);
+
+  await bridgeCtrl.stop();
+  assert.equal(proxyStopped, true);
+});
+
+test('SettingsOtherTab renders independent Main Agent and Subagents/Swarm switches with live sync feedback', async () => {
+  const { document } = createMockDom();
+  const origDocument = globalThis.document;
+  const origWindow = globalThis.window;
+  const origFetch = globalThis.fetch;
+  const savedPatches = [];
+
+  globalThis.document = document;
+  globalThis.window = {
+    location: { origin: 'http://127.0.0.1:41234', href: 'http://127.0.0.1:41234/' },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes('/api/settings') && init.method === 'POST') {
+      const patch = JSON.parse(init.body || '{}');
+      savedPatches.push(patch);
+      return { ok: true, json: async () => ({ ...patch }) };
+    }
+    return { ok: true, json: async () => ({}) };
+  };
+
+  try {
+    const [{ setI18nLanguage }, { SettingsOtherTab }] = await Promise.all([
+      import('../src/i18n/index.js'),
+      import('../src/views/settings/SettingsOtherTab.js'),
+    ]);
+    setI18nLanguage('zh-CN');
+    const tab = SettingsOtherTab({ onLayoutChange: () => {} });
+    const mockModels = [
+      {
+        id: carbonGroup,
+        label: 'Gemini 4 Carbon',
+        members: [carbon],
+        capacity: 786432,
+        options: [{ name: '300000', tokens: 300000 }],
+      },
+    ];
+    tab.refs.renderSettings(
+      {
+        contextWindowRiskAccepted: true,
+        contextWindowMainEnabled: true,
+        contextWindowSwarmEnabled: true,
+        modelContextWindows: { [carbonGroup]: '300000' },
+      },
+      mockModels,
+      { state: 'active' },
+      'win32',
+      { state: 'active', active: true, ruleCount: 1, error: '' }
+    );
+
+    const statusEl = tab.el.querySelector('.ctx-sync-status');
+    assert.ok(statusEl);
+    assert.equal(statusEl.hasAttribute('hidden'), true, 'no extra status clutter when active');
+
+    // Toggle Main Agent off -> persists patch
+    const mainOffBtn = tab.refs.ctxMainToggle.el.querySelectorAll('button')[1];
+    mainOffBtn.dispatchEvent({
+      type: 'click',
+      target: mainOffBtn,
+      currentTarget: mainOffBtn,
+      stopPropagation() {},
+      preventDefault() {},
+    });
+    await new Promise((r) => setTimeout(r, 15));
+    assert.deepEqual(savedPatches[0], { contextWindowMainEnabled: false });
+
+    // Toggle Subagents & Swarm off -> persists patch
+    const swarmOffBtn = tab.refs.ctxSwarmToggle.el.querySelectorAll('button')[1];
+    swarmOffBtn.dispatchEvent({
+      type: 'click',
+      target: swarmOffBtn,
+      currentTarget: swarmOffBtn,
+      stopPropagation() {},
+      preventDefault() {},
+    });
+    await new Promise((r) => setTimeout(r, 15));
+    assert.deepEqual(savedPatches[1], { contextWindowSwarmEnabled: false });
+
+    // Error state surfaces cleanly
+    tab.refs.renderSettings(
+      {
+        contextWindowRiskAccepted: true,
+        contextWindowMainEnabled: false,
+        contextWindowSwarmEnabled: true,
+        modelContextWindows: { [carbonGroup]: '300000' },
+      },
+      mockModels,
+      { state: 'no_devtools_port' },
+      'win32',
+      { state: 'error', active: false, ruleCount: 1, error: 'gateway pinned' }
+    );
+    assert.equal(statusEl.hasAttribute('hidden'), false);
+    assert.match(statusEl.textContent, /gateway pinned/);
+
+    // English labels refresh cleanly
+    setI18nLanguage('en-US');
+    tab.refs.refreshLabels();
+    assert.match(statusEl.textContent, /Local sync failed: gateway pinned/);
+
+    // Both off -> stays clean without extra small-text clutter
+    tab.refs.renderSettings(
+      {
+        contextWindowRiskAccepted: true,
+        contextWindowMainEnabled: false,
+        contextWindowSwarmEnabled: false,
+        modelContextWindows: { [carbonGroup]: '300000' },
+      },
+      mockModels,
+      { state: 'active' },
+      'win32',
+      { state: 'disabled', active: false, ruleCount: 0, error: '' }
+    );
+    assert.equal(statusEl.hasAttribute('hidden'), true);
+
+    tab.destroy();
+  } finally {
+    globalThis.document = origDocument;
+    globalThis.window = origWindow;
+    globalThis.fetch = origFetch;
+  }
 });

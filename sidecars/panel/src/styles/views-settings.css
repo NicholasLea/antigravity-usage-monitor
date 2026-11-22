@@ -793,6 +793,14 @@
   user-select: none;
 }
 
+.ctx-sync-status {
+  margin: -4px 0 2px;
+}
+
+.ctx-sync-status.is-error {
+  color: var(--metric-warn);
+}
+
 .ctx-risk-mask {
   grid-area: 1 / 1;
   z-index: 5;
