@@ -115,6 +115,7 @@ export function buildExportableSettingsJson(settings = {}) {
       showStepTurnRail: src.showStepTurnRail === true,
       showStepAgentBadge: src.showStepAgentBadge !== false,
       showStepSpeedColor: src.showStepSpeedColor === true,
+      showStepFilterToolbar: src.showStepFilterToolbar === true,
       stepTokenComboFormat: normalizeStepTokenComboFormat(src.stepTokenComboFormat),
       stepTableColumns: normalizeStepTableColumns(src.stepTableColumns),
     },
@@ -226,6 +227,9 @@ export function parseImportedSettingsJson(rawText) {
   }
   if (hasKey('showStepSpeedColor') && typeof src.showStepSpeedColor === 'boolean') {
     patch.showStepSpeedColor = src.showStepSpeedColor;
+  }
+  if (hasKey('showStepFilterToolbar') && typeof src.showStepFilterToolbar === 'boolean') {
+    patch.showStepFilterToolbar = src.showStepFilterToolbar;
   }
   if (hasKey('stepTokenComboFormat')) {
     patch.stepTokenComboFormat = normalizeStepTokenComboFormat(src.stepTokenComboFormat);

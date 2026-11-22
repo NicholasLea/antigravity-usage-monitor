@@ -567,6 +567,9 @@ export function isEquivalentTelemetry(prev, next) {
   if (Boolean(pSet?.showStepSpeedColor) !== Boolean(nSet?.showStepSpeedColor)) {
     return false;
   }
+  if (Boolean(pSet?.showStepFilterToolbar) !== Boolean(nSet?.showStepFilterToolbar)) {
+    return false;
+  }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
   if (!sameArr(pSet?.hoverModules, nSet?.hoverModules)) return false;
   if (!sameArr(pSet?.overviewModules, nSet?.overviewModules)) return false;
@@ -1748,6 +1751,9 @@ export async function saveSettingsPatch(patch) {
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepSpeedColor')) {
     safePatch.showStepSpeedColor = Boolean(safePatch.showStepSpeedColor);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepFilterToolbar')) {
+    safePatch.showStepFilterToolbar = Boolean(safePatch.showStepFilterToolbar);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'topbarCapsuleSlots')) {
     safePatch.topbarCapsuleSlots = normalizeClientTopbarSlots(safePatch.topbarCapsuleSlots);

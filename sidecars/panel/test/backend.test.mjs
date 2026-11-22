@@ -1084,6 +1084,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.equal(def.showStepTurnRail, false);
   assert.equal(def.showStepAgentBadge, true);
   assert.equal(def.showStepSpeedColor, false);
+  assert.equal(def.showStepFilterToolbar, false);
   assert.deepEqual([...def.stepTableColumns], ['step', 'model', 'tps', 'ttft', 'tokens_combo', 'cache', 'cost']);
   assert.deepEqual({ ...def.modelContextWindows }, {});
 
@@ -1118,6 +1119,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
     showStepTurnRail: true,
     showStepAgentBadge: false,
     showStepSpeedColor: true,
+    showStepFilterToolbar: true,
     stepTableColumns: ['step', 'time', 'model', 'duration', 'input_tokens', 'output_tokens', 'cost'],
     contextLimitOverrideTokens: 128000,
     modelContextWindows: { MODEL_PLACEHOLDER_M418: '900K' },
@@ -1134,6 +1136,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.equal(saveRes.updated.showStepTurnRail, true);
   assert.equal(saveRes.updated.showStepAgentBadge, false);
   assert.equal(saveRes.updated.showStepSpeedColor, true);
+  assert.equal(saveRes.updated.showStepFilterToolbar, true);
   assert.equal(saveRes.updated.contextLimitOverrideTokens, undefined);
   assert.deepEqual({ ...saveRes.updated.modelContextWindows }, {});
 
@@ -1166,6 +1169,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.equal(resetRes.updated.showStepTurnRail, false);
   assert.equal(resetRes.updated.showStepAgentBadge, true);
   assert.equal(resetRes.updated.showStepSpeedColor, false);
+  assert.equal(resetRes.updated.showStepFilterToolbar, false);
   assert.deepEqual([...resetRes.updated.topbarCapsuleSlots], ['tps', 'ttft', 'context']);
 });
 

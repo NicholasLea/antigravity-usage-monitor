@@ -507,10 +507,11 @@ export const StepsDetailView = defineComponent({
         },
       ],
     });
+    stepsExportMenu.refs.setHidden(true);
     const stepsFilterToolbarEl = h(
       'div',
       { className: 'steps-filter-toolbar', hidden: true },
-      [stepSearchWrapEl, stepQuickChipsEl, stepsExportMenu.el]
+      [stepSearchWrapEl, stepQuickChipsEl]
     );
 
     // --- 点击行展开的单步透视诊断抽屉 ---
@@ -955,7 +956,10 @@ export const StepsDetailView = defineComponent({
         h('div', { className: 'panel-header steps-panel-header' }, [
           h('div', { className: 'steps-header-controls' }, [
             subTabSwitch.el,
-            headerFiltersEl,
+            h('div', { className: 'steps-header-right' }, [
+              headerFiltersEl,
+              stepsExportMenu.el,
+            ]),
           ]),
         ]),
         stepsFilterToolbarEl,
@@ -1291,10 +1295,26 @@ export const StepsDetailView = defineComponent({
         ? steps.filter((st) => tableModelFilterSet.has(getStepModelGroupKey(st)))
         : steps;
 
+      const filterToolbarEnabled = slice.showStepFilterToolbar === true;
+      if (!filterToolbarEnabled) {
+        if (stepSearchQuery) {
+          stepSearchQuery = '';
+          stepSearchInput.value = '';
+          patchAttr(stepSearchClearBtn, 'hidden', true);
+        }
+        if (stepQuickChip && stepQuickChip !== 'anomaly') {
+          stepQuickChip = '';
+        }
+      }
       const chipCounts = computeStepQuickChipCounts(modelFilteredSteps);
-      const effectiveQuickChip = onlyAnomalies ? 'anomaly' : stepQuickChip;
-      const showFilterToolbar = !showModels && steps.length > 0;
+      const effectiveQuickChip = onlyAnomalies
+        ? 'anomaly'
+        : filterToolbarEnabled
+          ? stepQuickChip
+          : '';
+      const showFilterToolbar = filterToolbarEnabled && !showModels && steps.length > 0;
       patchAttr(stepsFilterToolbarEl, 'hidden', !showFilterToolbar);
+      stepsExportMenu.refs.setHidden(showModels || steps.length === 0);
       if (showFilterToolbar) {
         let visibleChipsCount = 0;
         for (const { def, btn } of quickChipBtns) {
@@ -1314,7 +1334,7 @@ export const StepsDetailView = defineComponent({
       }
 
       const filteredTableSteps = filterStepsBySearchAndChip(modelFilteredSteps, {
-        query: stepSearchQuery,
+        query: filterToolbarEnabled ? stepSearchQuery : '',
         quickChip: effectiveQuickChip,
         anomalyKindFilter: onlyAnomalies ? anomalyKindFilter : '',
         displaySettings,
@@ -1934,7 +1954,13 @@ export const StepsDetailView = defineComponent({
         hideAnomalyTip();
         subTabSwitch.setValue(tab);
         patchAttr(anomalyFilterBarEl, 'hidden', tab !== 'steps' || !onlyAnomalies);
-        patchAttr(stepsFilterToolbarEl, 'hidden', tab !== 'steps' || currentTableSteps.length === 0 && !stepSearchQuery && !stepQuickChip);
+        const toolbarAllowed = latestSlice?.showStepFilterToolbar === true;
+        patchAttr(
+          stepsFilterToolbarEl,
+          'hidden',
+          tab !== 'steps' || !toolbarAllowed || (currentTableSteps.length === 0 && !stepSearchQuery && !stepQuickChip)
+        );
+        stepsExportMenu.refs.setHidden(tab !== 'steps' || currentAllConvSteps.length === 0);
         patchAttr(stepInspectorDrawerEl, 'hidden', tab !== 'steps' || !selectedStepKey);
         patchAttr(stepsScroll.el, 'hidden', tab !== 'steps');
         patchAttr(modelsScroll.el, 'hidden', tab !== 'models');
@@ -1966,6 +1992,7 @@ export const StepsDetailView = defineComponent({
         showStepTurnRail: st.telemetry?.settings?.showStepTurnRail === true,
         showStepAgentBadge: st.telemetry?.settings?.showStepAgentBadge !== false,
         showStepSpeedColor: st.telemetry?.settings?.showStepSpeedColor === true,
+        showStepFilterToolbar: st.telemetry?.settings?.showStepFilterToolbar === true,
         stepTokenComboFormat: normalizeClientStepTokenComboFormat(
           st.telemetry?.settings?.stepTokenComboFormat
         ),

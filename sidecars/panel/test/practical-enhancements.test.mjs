@@ -1374,7 +1374,27 @@ test('Feature 10: StepsDetailView live search, dynamic diagnostic chips, and cli
   view = StepsDetailView();
   document.body.appendChild(view.el);
 
-  // Filter toolbar visible with all 4 diagnostic chips
+  // Filter toolbar is OFF by default, while compact export ActionMenu stays accessible in header
+  assert.equal(view.refs.stepsFilterToolbarEl.hasAttribute('hidden'), true);
+  assert.equal(view.refs.stepsExportMenu.el.hasAttribute('hidden'), false);
+  assert.ok(
+    view.el.querySelector('.steps-panel-header .steps-export-menu .action-menu-trigger'),
+    'Compact 3-dot export menu stays accessible in Steps header even when filter bar is off'
+  );
+
+  // Enabling showStepFilterToolbar in settings reveals search bar + all 4 diagnostic chips
+  telemetryStore.setState(
+    {
+      telemetry: {
+        ...telemetryStore.getState().telemetry,
+        settings: {
+          stepTableColumns: ['step', 'model', 'tps', 'cost'],
+          showStepFilterToolbar: true,
+        },
+      },
+    },
+    { sync: true }
+  );
   assert.equal(view.refs.stepsFilterToolbarEl.hasAttribute('hidden'), false);
   const chipBtns = view.refs.stepQuickChipsEl.querySelectorAll('.steps-chip-btn');
   assert.equal(chipBtns.length, 4);
@@ -1398,10 +1418,25 @@ test('Feature 10: StepsDetailView live search, dynamic diagnostic chips, and cli
   assert.equal(rows.length, 1);
   assert.equal(rows[0].children[0].textContent, '#2');
 
-  // Clear search -> click row #4 -> opens inspector drawer with prompt, waterfall, and delta
-  view.refs.stepSearchInput.value = '';
-  view.refs.stepSearchInput.dispatchEvent({ type: 'input', target: view.refs.stepSearchInput });
+  // Turning showStepFilterToolbar back off clears active search and restores all 3 rows
+  telemetryStore.setState(
+    {
+      telemetry: {
+        ...telemetryStore.getState().telemetry,
+        settings: {
+          stepTableColumns: ['step', 'model', 'tps', 'cost'],
+          showStepFilterToolbar: false,
+        },
+      },
+    },
+    { sync: true }
+  );
+  assert.equal(view.refs.stepsFilterToolbarEl.hasAttribute('hidden'), true);
+  assert.equal(view.refs.stepSearchInput.value, '');
   rows = view.el.querySelectorAll('tbody tr');
+  assert.equal(rows.length, 3);
+
+  // Click row #4 -> opens inspector drawer with prompt, waterfall, and delta
   assert.equal(view.refs.stepInspectorDrawerEl.hasAttribute('hidden'), true);
 
   rows[0].onclick();

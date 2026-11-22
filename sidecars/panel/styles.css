@@ -3934,13 +3934,23 @@ html[data-standalone="true"] .app-shell {
   flex: 0 0 auto;
 }
 
-.steps-header-filters {
+.steps-header-right {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
   margin-left: auto;
-  flex: 1 1 156px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.steps-header-filters {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
 }
@@ -5046,7 +5056,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 .steps-export-menu {
-  margin-left: auto;
   flex-shrink: 0;
 }
 

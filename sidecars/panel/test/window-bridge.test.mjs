@@ -660,6 +660,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     showStepTurnRail: false,
     showStepAgentBadge: true,
     showStepSpeedColor: false,
+    showStepFilterToolbar: false,
     showUpstreamModel: false,
     orchestratorIdMode: 'compact',
     weeklyLimitMode: 'official',
@@ -1886,8 +1887,9 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.ok(sec3SettingLabels.includes('对话轮次导轨'), 'Turn rail switch rendered in 调用明细字段');
     assert.ok(sec3SettingLabels.includes('主/子代理标识'), 'Main/Sub agent badge switch rendered in 调用明细字段');
     assert.ok(sec3SettingLabels.includes('输出速度多色分级'), 'Speed multi-color switch rendered in 调用明细字段');
+    assert.ok(sec3SettingLabels.includes('搜索及诊断筛选栏'), 'Search & filter toolbar switch rendered in 调用明细字段');
     const sec3SegControls = sec3.querySelectorAll('.segmented');
-    assert.equal(sec3SegControls.length, 3, 'Three independent switches rendered in 调用明细字段');
+    assert.equal(sec3SegControls.length, 4, 'Four independent switches rendered in 调用明细字段');
     const getRowSpeedClasses = (tableEl) =>
       Array.from(tableEl.children[1].children).map(
         (tr) => tr.children[2].querySelector('.cell-value')?.getAttribute('class') || ''
@@ -1925,6 +1927,9 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       true,
       'Preview step table enables multi-color speed tones immediately when showStepSpeedColor is true'
     );
+    sec3SegControls[3].querySelectorAll('.seg-btn')[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(mockSettings.showStepFilterToolbar, true, 'Filter toolbar switch updates showStepFilterToolbar to true');
 
     const stepColWrap = sec3.querySelector('.editable-slot-wrap');
     stepColWrap.querySelector('.slot-add-btn').dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -1935,6 +1940,11 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(previewStepTable.children[0].children[0].children.length, 9, 'Preview step table expands to 9 columns live');
     pillTabs[2].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
+    assert.equal(
+      allPanes[2].querySelector('.steps-filter-toolbar').hasAttribute('hidden'),
+      false,
+      'StepsDetailView shows filter toolbar when showStepFilterToolbar is true'
+    );
     const stepTableWhileCustomOn = allPanes[2].querySelector('.data-table');
     assert.equal(
       stepTableWhileCustomOn.classList.contains('has-turn-rail'),
@@ -1960,6 +1970,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(mockSettings.showStepTurnRail, false, 'Section reset restores showStepTurnRail to false');
     assert.equal(mockSettings.showStepAgentBadge, true, 'Section reset restores showStepAgentBadge to true');
     assert.equal(mockSettings.showStepSpeedColor, false, 'Section reset restores showStepSpeedColor to false');
+    assert.equal(mockSettings.showStepFilterToolbar, false, 'Section reset restores showStepFilterToolbar to false');
     assert.equal(previewStepTable.classList.contains('has-turn-rail'), false, 'Section reset hides turn rail in preview step table');
     assert.equal(
       getRowSpeedClasses(previewStepTable).every((cls) => cls === 'cell-value'),

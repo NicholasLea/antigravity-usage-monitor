@@ -652,6 +652,7 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.stepTurnRailToggle': '对话轮次导轨',
   'settings.str.stepAgentBadgeToggle': '主/子代理标识',
   'settings.str.stepSpeedColorToggle': '输出速度多色分级',
+  'settings.str.stepFilterToolbarToggle': '搜索及诊断筛选栏',
   'settings.str.stepTokenComboLabel': '自定义 Token 组合格式',
   'settings.str.stepTokenComboPlaceholder': '例如 context:new:cache 或 in:out:cache',
   'settings.str.stepTokenComboHint': '可用字段：context(上下文)、in/new(新输入)、out(输出)、cache(缓存)、think(思考)、reply(正文)、total(总计)，以 : 或 / 分隔（1~4 项）',

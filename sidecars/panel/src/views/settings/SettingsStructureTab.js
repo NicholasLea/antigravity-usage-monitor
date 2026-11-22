@@ -192,6 +192,7 @@ export const SettingsStructureTab = defineComponent({
     let draftShowStepTurnRail = false;
     let draftShowStepAgentBadge = true;
     let draftShowStepSpeedColor = false;
+    let draftShowStepFilterToolbar = false;
     let draftStepTokenComboFormat = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
     let rawStepTokenComboText = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
     let draftStepColumns = [...DEFAULT_CLIENT_STEP_COLUMNS];
@@ -227,6 +228,7 @@ export const SettingsStructureTab = defineComponent({
         showStepTurnRail: draftShowStepTurnRail,
         showStepAgentBadge: draftShowStepAgentBadge,
         showStepSpeedColor: draftShowStepSpeedColor,
+        showStepFilterToolbar: draftShowStepFilterToolbar,
         stepTokenComboFormat: draftStepTokenComboFormat,
         stepTableColumns: draftStepColumns,
       });
@@ -1000,6 +1002,10 @@ export const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.stepSpeedColorToggle'),
     });
+    const stepFilterToolbarLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.stepFilterToolbarToggle'),
+    });
     const stepTokenComboLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.stepTokenComboLabel'),
@@ -1048,6 +1054,19 @@ export const SettingsStructureTab = defineComponent({
         syncStepsSectionMeta();
         void persistStructurePatch(stepsSection, {
           showStepSpeedColor: draftShowStepSpeedColor,
+        });
+      },
+    });
+
+    const stepFilterToolbarToggle = SegmentedControl({
+      ariaLabel: t('settings.str.stepFilterToolbarToggle'),
+      modelValue: 'off',
+      options: getEnableToggleOptions(),
+      onUpdateModelValue: (val) => {
+        draftShowStepFilterToolbar = val !== 'off';
+        syncStepsSectionMeta();
+        void persistStructurePatch(stepsSection, {
+          showStepFilterToolbar: draftShowStepFilterToolbar,
         });
       },
     });
@@ -1135,6 +1154,7 @@ export const SettingsStructureTab = defineComponent({
         draftShowStepTurnRail = false;
         draftShowStepAgentBadge = true;
         draftShowStepSpeedColor = false;
+        draftShowStepFilterToolbar = false;
         draftStepTokenComboFormat = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
         rawStepTokenComboText = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
         stepTokenComboInput.value = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
@@ -1147,6 +1167,7 @@ export const SettingsStructureTab = defineComponent({
             showStepTurnRail: false,
             showStepAgentBadge: true,
             showStepSpeedColor: false,
+            showStepFilterToolbar: false,
             stepTokenComboFormat: DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT,
             stepTableColumns: [...DEFAULT_CLIENT_STEP_COLUMNS],
           },
@@ -1167,6 +1188,10 @@ export const SettingsStructureTab = defineComponent({
         h('div', { className: 'settings-inline-row' }, [
           stepSpeedColorLabelEl,
           stepSpeedColorToggle.el,
+        ]),
+        h('div', { className: 'settings-inline-row' }, [
+          stepFilterToolbarLabelEl,
+          stepFilterToolbarToggle.el,
         ]),
         h('div', { className: 'settings-divider' }),
         h('div', { className: 'form-row' }, [
@@ -1225,6 +1250,10 @@ export const SettingsStructureTab = defineComponent({
         modelValue: draftShowStepSpeedColor ? 'on' : 'off',
         options: getEnableToggleOptions(),
       });
+      stepFilterToolbarToggle.setProps({
+        modelValue: draftShowStepFilterToolbar ? 'on' : 'off',
+        options: getEnableToggleOptions(),
+      });
       if (document?.activeElement !== stepTokenComboInput) {
         stepTokenComboInput.value = rawStepTokenComboText;
       }
@@ -1238,6 +1267,7 @@ export const SettingsStructureTab = defineComponent({
         draftShowStepTurnRail === false &&
         draftShowStepAgentBadge === true &&
         draftShowStepSpeedColor === false &&
+        draftShowStepFilterToolbar === false &&
         draftStepTokenComboFormat === DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT &&
         isSameList(draftStepColumns, DEFAULT_CLIENT_STEP_COLUMNS);
       stepsSection.refs.setResetDisabled(isDefault);
@@ -1325,6 +1355,7 @@ export const SettingsStructureTab = defineComponent({
       draftShowStepTurnRail = settings.showStepTurnRail === true;
       draftShowStepAgentBadge = settings.showStepAgentBadge !== false;
       draftShowStepSpeedColor = settings.showStepSpeedColor === true;
+      draftShowStepFilterToolbar = settings.showStepFilterToolbar === true;
       draftStepTokenComboFormat = normalizeClientStepTokenComboFormat(
         settings.stepTokenComboFormat
       );
@@ -1369,6 +1400,8 @@ export const SettingsStructureTab = defineComponent({
       patchText(stepTurnRailLabelEl, t('settings.str.stepTurnRailToggle'));
       patchText(stepAgentBadgeLabelEl, t('settings.str.stepAgentBadgeToggle'));
       patchText(stepSpeedColorLabelEl, t('settings.str.stepSpeedColorToggle'));
+      patchText(stepFilterToolbarLabelEl, t('settings.str.stepFilterToolbarToggle'));
+      stepFilterToolbarToggle.setProps({ ariaLabel: t('settings.str.stepFilterToolbarToggle') });
       patchText(stepTokenComboLabelEl, t('settings.str.stepTokenComboLabel'));
       patchText(stepTokenComboHintEl, t('settings.str.stepTokenComboHint'));
       patchAttr(stepTokenComboInput, 'placeholder', t('settings.str.stepTokenComboPlaceholder'));
@@ -1430,6 +1463,7 @@ export const SettingsStructureTab = defineComponent({
       stepTurnRailToggle.destroy();
       stepAgentBadgeToggle.destroy();
       stepSpeedColorToggle.destroy();
+      stepFilterToolbarToggle.destroy();
       stepColumnsList.destroy();
       mountSection.destroy();
       hoverSection.destroy();
@@ -1463,6 +1497,7 @@ export const SettingsStructureTab = defineComponent({
         stepTurnRailToggle,
         stepAgentBadgeToggle,
         stepSpeedColorToggle,
+        stepFilterToolbarToggle,
         stepColumnsList,
         mountSection,
         hoverSection,

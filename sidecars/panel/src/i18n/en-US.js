@@ -652,6 +652,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.stepTurnRailToggle': 'Turn Rail & Preview',
   'settings.str.stepAgentBadgeToggle': 'Main/Sub Agent Badge',
   'settings.str.stepSpeedColorToggle': 'Speed Multi-Color',
+  'settings.str.stepFilterToolbarToggle': 'Search & Filter Bar',
   'settings.str.stepTokenComboLabel': 'Custom Token Combo Format',
   'settings.str.stepTokenComboPlaceholder': 'e.g. context:new:cache or in:out:cache',
   'settings.str.stepTokenComboHint': 'Tokens: context, in/new, out, cache, think, reply, total — separated by : or / (1–4 items)',
