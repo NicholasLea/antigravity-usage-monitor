@@ -38,6 +38,8 @@ export const BRIDGE_API_ROUTE_DEFS = Object.freeze([
     method: 'POST',
     action: 'session_migration_migrate',
   }),
+  Object.freeze({ path: '/api/export-file', method: 'POST', action: 'export_file' }),
+  Object.freeze({ path: '/api/reveal-file', method: 'POST', action: 'reveal_file' }),
 ]);
 
 export const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path));

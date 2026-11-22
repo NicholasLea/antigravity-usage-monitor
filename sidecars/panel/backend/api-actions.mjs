@@ -17,6 +17,7 @@ import {
   trackEndpointRequestStart,
 } from './endpoint-registry.mjs';
 import { isLocalHostRequest, readLocalAsync } from './http-helpers.mjs';
+import { revealLocalExportFile, writeLocalExportFile } from './file-exporter.mjs';
 import { clearScannerRuntimeMemos } from './local-scanner.mjs';
 import {
   SETTINGS_FILE,
@@ -735,6 +736,33 @@ export function executeSessionMigrationMigrateAction(data = undefined, opts = {}
   };
 }
 
+export function executeExportFileAction(data, opts = {}) {
+  const result = writeLocalExportFile(data || {}, {
+    ...(opts?.exportDir ? { overrideDir: opts.exportDir } : {}),
+    ...(opts?.homeDir ? { homeDir: opts.homeDir } : {}),
+    ...(opts?.fallbackDataDir ? { fallbackDataDir: opts.fallbackDataDir } : {}),
+  });
+  return {
+    status: Number(result.status || (result.ok ? 200 : 400)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+export function executeRevealFileAction(data, opts = {}) {
+  const result = revealLocalExportFile(data?.filePath, {
+    ...(opts?.platform ? { platform: opts.platform } : {}),
+    ...(typeof opts?.spawnFn === 'function' ? { spawnFn: opts.spawnFn } : {}),
+  });
+  return {
+    status: Number(result.status || (result.ok ? 200 : 400)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
 const BRIDGE_ROUTE_LOOKUP = new Map(
   BRIDGE_API_ROUTE_DEFS.map((r) => [`${r.method}:${r.path}`, r.action])
 );
@@ -757,6 +785,12 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       if (isPlainObject(data) && data.__sessionMigrationAction === 'migrate') {
         return executeSessionMigrationMigrateAction(data.payload || data, opts);
       }
+      if (isPlainObject(data) && data.__exportFileAction === 'save') {
+        return executeExportFileAction(data.payload || data, opts);
+      }
+      if (isPlainObject(data) && data.__exportFileAction === 'reveal') {
+        return executeRevealFileAction(data.payload || data, opts);
+      }
       return executeSettingsAction(data);
     case 'accounts_get':
       return executeAccountCredentialAction(undefined, opts);
@@ -778,6 +812,10 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executeSessionMigrationCatalogAction(data, opts);
     case 'session_migration_migrate':
       return executeSessionMigrationMigrateAction(data, opts);
+    case 'export_file':
+      return executeExportFileAction(data, opts);
+    case 'reveal_file':
+      return executeRevealFileAction(data, opts);
     default:
       return {
         status: 404,

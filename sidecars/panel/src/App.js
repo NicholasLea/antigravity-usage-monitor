@@ -5,16 +5,17 @@
  */
 
 import { defineComponent } from './core/component.js';
-import { h, patchAttr } from './core/domPatch.js';
+import { h, patchAttr, patchClasses, patchText } from './core/domPatch.js';
 import { isWindowOverlayMode } from './core/httpClient.js';
-import { i18nStore } from './i18n/index.js';
+import { createSvgIcon } from './icons/SvgIcon.js';
+import { i18nStore, t } from './i18n/index.js';
 import {
   fetchTelemetry,
   normalizeClientWindowMountMode,
   resolveScopedConversation,
   telemetryStore,
 } from './store/telemetryStore.js';
-import { getViewTabs, uiStore } from './store/uiStore.js';
+import { dismissUiToast, getViewTabs, uiStore } from './store/uiStore.js';
 import { BridgeStatusNotice } from './components/settings/BridgeStatusNotice.js';
 import { TopSessionHeader } from './components/layout/TopSessionHeader.js';
 import { TopLongPillNav } from './components/ui/TopLongPillNav.js';
@@ -105,6 +106,116 @@ export const App = defineComponent({
       settingsView.el,
     ]);
 
+    const toastMsgEl = h('span', { className: 'app-toast-msg' });
+    const toastDetailEl = h('span', { className: 'app-toast-detail text-mono', hidden: true });
+    let activeToastAction = null;
+    let activeToastId = 0;
+    let toastAutoTimer = null;
+    let toastRemainingMs = 0;
+    let toastStartedAt = 0;
+
+    function clearToastTimer() {
+      if (toastAutoTimer) {
+        clearTimeout(toastAutoTimer);
+        toastAutoTimer = null;
+      }
+    }
+
+    function scheduleToastAutoClose(toastId, delayMs) {
+      clearToastTimer();
+      if (!(delayMs > 0)) return;
+      toastRemainingMs = delayMs;
+      toastStartedAt = Date.now();
+      toastAutoTimer = setTimeout(() => {
+        toastAutoTimer = null;
+        dismissUiToast(toastId);
+      }, delayMs);
+    }
+
+    const toastActionLabelEl = h('span');
+    const toastActionBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'app-toast-action',
+        hidden: true,
+        onclick: () => {
+          const fn = activeToastAction;
+          if (typeof fn === 'function') fn();
+        },
+      },
+      [createSvgIcon('folder', { size: 12 }), toastActionLabelEl]
+    );
+    const toastCloseBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'app-toast-close',
+        'aria-label': t('export.closeToast'),
+        title: t('export.closeToast'),
+        onclick: () => dismissUiToast(activeToastId),
+      },
+      [createSvgIcon('close', { size: 11 })]
+    );
+    const toastEl = h(
+      'div',
+      {
+        className: 'app-toast',
+        role: 'status',
+        'aria-live': 'polite',
+        hidden: true,
+        onMouseenter: () => {
+          if (toastAutoTimer) {
+            const elapsed = Date.now() - toastStartedAt;
+            toastRemainingMs = Math.max(800, toastRemainingMs - elapsed);
+            clearToastTimer();
+          }
+        },
+        onMouseleave: () => {
+          if (activeToastId && toastRemainingMs > 0 && !toastAutoTimer) {
+            scheduleToastAutoClose(activeToastId, toastRemainingMs);
+          }
+        },
+      },
+      [
+        h('div', { className: 'app-toast-body' }, [toastMsgEl, toastDetailEl]),
+        toastActionBtn,
+        toastCloseBtn,
+      ]
+    );
+
+    function syncToastState(toast) {
+      if (!toast || !toast.message) {
+        clearToastTimer();
+        activeToastId = 0;
+        activeToastAction = null;
+        toastRemainingMs = 0;
+        patchAttr(toastEl, 'hidden', true);
+        return;
+      }
+      activeToastId = toast.id;
+      activeToastAction = toast.onAction;
+      patchText(toastMsgEl, toast.message);
+      const hasDetail = Boolean(toast.detail);
+      patchAttr(toastDetailEl, 'hidden', !hasDetail);
+      if (hasDetail) {
+        patchText(toastDetailEl, toast.detail);
+        patchAttr(toastDetailEl, 'title', toast.detail);
+      }
+      const hasAction = Boolean(toast.actionLabel && typeof toast.onAction === 'function');
+      patchAttr(toastActionBtn, 'hidden', !hasAction);
+      if (hasAction) {
+        patchText(toastActionLabelEl, toast.actionLabel);
+      }
+      patchClasses(toastEl, {
+        'tone-ok': toast.tone === 'ok',
+        'tone-info': toast.tone === 'info',
+        'tone-warn': toast.tone === 'warn',
+      });
+      patchAttr(toastEl, 'hidden', false);
+      scheduleToastAutoClose(toast.id, toast.durationMs);
+    }
+
     const shellEl = h(
       'main',
       {
@@ -137,6 +248,7 @@ export const App = defineComponent({
         h('div', { className: 'top-deck' }, [sessionHeader.el, topPillNav.el]),
         bannerSlotEl,
         stageEl,
+        toastEl,
       ]
     );
 
@@ -203,19 +315,29 @@ export const App = defineComponent({
       () => syncStepsBadge()
     );
 
+    const unsubToast = uiStore.subscribe(
+      (st) => st.toast,
+      (toast) => syncToastState(toast)
+    );
+    syncToastState(uiStore.getState().toast);
+
     const unsubI18n = i18nStore.subscribe(
       (st) => st.locale,
       () => {
         syncStepsBadge();
         globalBridgeNotice.refs.refreshLabels();
         patchAttr(bannerSlotEl, 'hidden', globalBridgeNotice.el.hasAttribute('hidden'));
+        patchAttr(toastCloseBtn, 'aria-label', t('export.closeToast'));
+        patchAttr(toastCloseBtn, 'title', t('export.closeToast'));
       }
     );
 
     onCleanup(() => {
+      clearToastTimer();
       unsubUi();
       unsubStepCount();
       unsubScopeBadge();
+      unsubToast();
       unsubI18n();
       globalBridgeNotice.destroy();
       sessionHeader.destroy();
@@ -232,6 +354,8 @@ export const App = defineComponent({
         sessionHeader,
         topPillNav,
         globalBridgeNotice,
+        toastEl,
+        toastActionBtn,
         overviewView,
         consumptionView,
         stepsView,

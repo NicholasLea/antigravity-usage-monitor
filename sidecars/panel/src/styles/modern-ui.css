@@ -776,12 +776,24 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 
 /* --- 7. 全景悬浮窗与工具提示浮层：零边框 + 空气阴影 + 0.15s 平滑跟随过渡 --- */
 [data-modern-ui="true"] .select-menu,
+[data-modern-ui="true"] .action-menu-popover,
+[data-modern-ui="true"] .app-toast,
 [data-modern-ui="true"] .dt-popover,
 [data-modern-ui="true"] .sstep-tooltip {
   border: none;
   background: var(--modern-surface-card);
   box-shadow: var(--shadow-popover);
   animation: anim-modern-tip-fade 120ms var(--ease-modern);
+}
+
+[data-modern-ui="true"] .action-menu-trigger:hover,
+[data-modern-ui="true"] .action-menu.is-open .action-menu-trigger,
+[data-modern-ui="true"] .action-menu-item:hover:not(:disabled) {
+  background: var(--modern-surface-hover);
+}
+
+[data-modern-ui="true"] .app-toast-action {
+  border: none;
 }
 
 [data-modern-ui="true"] .select-search-wrap {

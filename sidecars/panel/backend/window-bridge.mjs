@@ -71,6 +71,7 @@ const overlayMethods = Object.fromEntries(
 );
 
 const BRIDGE_MAX_BODY_BYTES = 64 * 1024;
+const BRIDGE_MAX_EXPORT_BODY_BYTES = 8 * 1024 * 1024;
 const ALLOWED_BRIDGE_PATHS = new Set(BRIDGE_API_PATHS);
 
 /**
@@ -1342,12 +1343,16 @@ export function createWindowBridgeController(options) {
           return;
         }
 
+        const maxBodyBytes =
+          parsedUrl.pathname === '/api/export-file'
+            ? BRIDGE_MAX_EXPORT_BODY_BYTES
+            : BRIDGE_MAX_BODY_BYTES;
         const chunks = [];
         let totalBytes = 0;
         let aborted = false;
         req.on('data', (chunk) => {
           totalBytes += chunk.length;
-          if (totalBytes > BRIDGE_MAX_BODY_BYTES) {
+          if (totalBytes > maxBodyBytes) {
             aborted = true;
             res.writeHead(413, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Payload too large' }));

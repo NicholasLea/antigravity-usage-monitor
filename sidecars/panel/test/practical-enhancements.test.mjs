@@ -1221,100 +1221,6 @@ test('Feature 9: workspace/project cost aggregation (full + fast paths) and Proj
   assert.equal(telemetryStore.getState().selectedConversationId, 'ws-conv-b1');
 });
 
-test('Feature 13: TopSessionHeader exposes project/workspace tags on sessions and filters by workspace name', async (t) => {
-  const { TopSessionHeader } = await import('../src/components/layout/TopSessionHeader.js');
-  const now = Date.now();
-  const harn = backendHarness({
-    cache: {
-      'proj-conv-1': {
-        cascadeId: 'proj-conv-1',
-        title: 'Fix auth bug',
-        workspaceUri: 'file:///F%3A/repos/billing-service',
-        steps: [{ stepIndex: 1, modelKey: 'MODEL_PLACEHOLDER_M18', inputTokens: 1000, outputTokens: 100, createdAtMs: now - 5000 }],
-      },
-      'proj-conv-2': {
-        cascadeId: 'proj-conv-2',
-        title: 'Fix auth bug',
-        workspaceUri: 'file:///F%3A/repos/web-dashboard',
-        steps: [{ stepIndex: 1, modelKey: 'MODEL_PLACEHOLDER_M18', inputTokens: 1000, outputTokens: 100, createdAtMs: now - 10000 }],
-      },
-    },
-    summaries: {
-      'proj-conv-1': { summary: 'Fix auth bug', stepCount: 1, lastModifiedTime: new Date(now - 5000).toISOString() },
-      'proj-conv-2': { summary: 'Fix auth bug', stepCount: 1, lastModifiedTime: new Date(now - 10000).toISOString() },
-    },
-  });
-
-  const payload = await harn.buildTelemetryPayloadInternal('proj-conv-1');
-  const convById = new Map((payload.conversations || []).map((c) => [c.cascadeId, c]));
-  assert.equal(convById.get('proj-conv-1')?.workspaceName, 'billing-service');
-  assert.equal(convById.get('proj-conv-2')?.workspaceName, 'web-dashboard');
-
-  const prevDoc = globalThis.document;
-  const prevWin = globalThis.window;
-  const prevLocale = i18nStore.getState().locale;
-  const prevUi = uiStore.getState();
-  const prevTel = telemetryStore.getState();
-
-  const { document } = createMockDom();
-  globalThis.document = document;
-  globalThis.window = {
-    innerWidth: 960,
-    innerHeight: 720,
-    addEventListener() {},
-    removeEventListener() {},
-  };
-
-  let header = null;
-  t.after(() => {
-    header?.destroy?.();
-    setI18nLanguage(prevLocale);
-    uiStore.setState(prevUi, { sync: true });
-    telemetryStore.setState(prevTel, { sync: true });
-    globalThis.document = prevDoc;
-    globalThis.window = prevWin;
-  });
-
-  setI18nLanguage('zh-CN');
-  uiStore.setState({ activeView: 'overview', monitorVisible: true }, { sync: true });
-  telemetryStore.setState(
-    {
-      selectedConversationId: '',
-      telemetry: {
-        ...payload,
-        conversations: [
-          ...payload.conversations,
-          ...Array.from({ length: 6 }, (_, i) => ({
-            cascadeId: `pad-${i}`,
-            title: `Other session ${i}`,
-            stepCount: 2,
-            workspaceName: 'misc-repo',
-          })),
-        ],
-      },
-    },
-    { sync: true }
-  );
-
-  header = TopSessionHeader();
-  document.body.appendChild(header.el);
-  header.refs.convSelect.open();
-
-  const optionEls = header.refs.convSelect.el.querySelectorAll('.select-option');
-  const billingOpt = optionEls.find((el) => (el.textContent || '').includes('billing-service'));
-  assert.ok(billingOpt, 'Session dropdown option displays workspaceName tag');
-
-  const searchInput = header.refs.convSelect.el.querySelector('.select-search-input');
-  assert.ok(searchInput, 'Search input present for >6 sessions');
-  searchInput.value = 'web-dashboard';
-  searchInput.dispatchEvent({ type: 'input', target: searchInput });
-  const visibleOpts = header.refs.convSelect.el
-    .querySelectorAll('.select-option')
-    .filter((el) => !el.hasAttribute('hidden'));
-  assert.equal(visibleOpts.length, 1);
-  assert.match(visibleOpts[0].textContent, /web-dashboard/);
-});
-
 test('Feature 10: StepsDetailView live search, dynamic diagnostic chips, and click-to-inspect step drawer', async (t) => {
   const {
     computeStepQuickChipCounts,
@@ -1507,4 +1413,510 @@ test('Feature 10: StepsDetailView live search, dynamic diagnostic chips, and cli
   // Close drawer cleanly by clicking same row again
   rows[0].onclick();
   assert.equal(view.refs.stepInspectorDrawerEl.hasAttribute('hidden'), true);
+});
+
+test('Feature 11: RFC-4180 formula-safe CSV and Markdown report export for Steps and Consumption views', async () => {
+  const {
+    escapeCsvCell,
+    sanitizeExportFilename,
+    buildStepsCsv,
+    buildStepsMarkdownReport,
+    buildConsumptionCsv,
+    buildConsumptionMarkdownReport,
+  } = await import('../src/core/reportExporter.js');
+
+  // 1. Formula injection neutralization and RFC-4180 quoting
+  assert.equal(escapeCsvCell('=CMD("calc")'), `"'=CMD(""calc"")"` );
+  assert.equal(escapeCsvCell('+SUM(A1:A2)'), `'+SUM(A1:A2)`);
+  assert.equal(escapeCsvCell('@evil'), `'@evil`);
+  assert.equal(escapeCsvCell('-12.5'), '-12.5'); // genuine signed numbers preserved
+  assert.equal(escapeCsvCell('hello, "world"\nline2'), '"hello, ""world""\nline2"');
+
+  const fname = sanitizeExportFilename('my:bad/title*name?', 'csv', Date.UTC(2026, 10, 22, 8, 5));
+  assert.match(fname, /^my-bad-title-name-\d{8}-\d{4}\.csv$/);
+
+  // 2. Steps CSV (UTF-8 BOM + safe cells) & Markdown report
+  const sampleSteps = [
+    {
+      stepIndex: 2,
+      createdAtMs: Date.UTC(2026, 10, 22, 9, 0, 0),
+      modelShort: '4-neon',
+      modelLabel: 'Gemini 4 Neon',
+      rawModelId: 'gemini-4-neon',
+      tokPerSec: 55.2,
+      ttftSec: 2.4,
+      durationSec: 6.8,
+      inputTokens: 10_000,
+      cacheReadTokens: 90_000,
+      outputTokens: 500,
+      thinkingTokens: 300,
+      responseTokens: 200,
+      contextTokens: 100_500,
+      cacheHitPct: 90,
+      costUsd: 0.145,
+      turnPrompt: '=HYPERLINK("http://x"), "test"',
+    },
+  ];
+  const stepsCsv = buildStepsCsv(sampleSteps);
+  assert.equal(stepsCsv.startsWith('\uFEFFstep,timestamp,'), true);
+  assert.match(stepsCsv, /"'=HYPERLINK\(""http:\/\/x""\), ""test"""/);
+  assert.match(stepsCsv, /0\.145000/);
+
+  const stepsMd = buildStepsMarkdownReport(sampleSteps, {
+    title: 'Perf Audit',
+    cascadeId: 'cid-export-1',
+  });
+  assert.match(stepsMd, /# Perf Audit/);
+  assert.match(stepsMd, /## Model Breakdown/);
+  assert.match(stepsMd, /## Top Costliest Steps/);
+  assert.match(stepsMd, /#2/);
+
+  // 3. Consumption CSV & Markdown report (including models + projects + sessions)
+  const cons = {
+    selectedRange: { key: '7d', label: '近7天' },
+    account: {
+      calls: 12,
+      inputTokens: 100_000,
+      cacheReadTokens: 800_000,
+      outputTokens: 50_000,
+      totalTokens: 950_000,
+      cacheHitPct: 88.9,
+      costUsd: 2.35,
+      savedCostUsd: 1.45,
+    },
+    topWorkspaces: [
+      {
+        label: 'usage-monitor',
+        sessionCount: 3,
+        calls: 12,
+        inputTokens: 100_000,
+        cacheReadTokens: 800_000,
+        responseTokens: 30_000,
+        thinkingTokens: 20_000,
+        totalTokens: 950_000,
+        cacheHitPct: 88.9,
+        costUsd: 2.35,
+      },
+    ],
+    topConversations: [
+      {
+        cascadeId: 'cid-1',
+        title: 'Refactor',
+        sourceName: 'CLI',
+        calls: 12,
+        inputTokens: 100_000,
+        cacheReadTokens: 800_000,
+        responseTokens: 30_000,
+        thinkingTokens: 20_000,
+        totalTokens: 950_000,
+        cacheHitPct: 88.9,
+        costUsd: 2.35,
+      },
+    ],
+    trendSeries: [
+      { label: '11/22', fullLabel: '2026-11-22', calls: 12, tokens: 950_000, costUsd: 2.35 },
+    ],
+  };
+  const models = [
+    {
+      label: '4-neon',
+      shortName: '4-neon',
+      calls: 12,
+      inputTokens: 100_000,
+      cacheReadTokens: 800_000,
+      outputTokens: 50_000,
+      totalTokens: 950_000,
+      cacheHitPct: 88.9,
+      avgTokPerSec: 52.1,
+      costUsd: 2.35,
+    },
+  ];
+  const consCsv = buildConsumptionCsv(cons, models);
+  assert.equal(consCsv.startsWith('\uFEFFsection,name,'), true);
+  assert.match(consCsv, /project,usage-monitor,12,/);
+  assert.match(consCsv, /trend,2026-11-22,12,/);
+
+  const consMd = buildConsumptionMarkdownReport(cons, models);
+  assert.match(consMd, /# Usage Report · 近7天/);
+  assert.match(consMd, /## Models/);
+  assert.match(consMd, /## Projects/);
+  assert.match(consMd, /usage-monitor/);
+  assert.match(consMd, /## Top Sessions/);
+});
+
+test('Feature 13: TopSessionHeader exposes project/workspace tags on sessions and filters by workspace name', async (t) => {
+  const { TopSessionHeader } = await import('../src/components/layout/TopSessionHeader.js');
+  const now = Date.now();
+  const harn = backendHarness({
+    cache: {
+      'proj-conv-1': {
+        cascadeId: 'proj-conv-1',
+        title: 'Fix auth bug',
+        workspaceUri: 'file:///F%3A/repos/billing-service',
+        steps: [{ stepIndex: 1, modelKey: 'MODEL_PLACEHOLDER_M18', inputTokens: 1000, outputTokens: 100, createdAtMs: now - 5000 }],
+      },
+      'proj-conv-2': {
+        cascadeId: 'proj-conv-2',
+        title: 'Fix auth bug',
+        workspaceUri: 'file:///F%3A/repos/web-dashboard',
+        steps: [{ stepIndex: 1, modelKey: 'MODEL_PLACEHOLDER_M18', inputTokens: 1000, outputTokens: 100, createdAtMs: now - 10000 }],
+      },
+    },
+    summaries: {
+      'proj-conv-1': { summary: 'Fix auth bug', stepCount: 1, lastModifiedTime: new Date(now - 5000).toISOString() },
+      'proj-conv-2': { summary: 'Fix auth bug', stepCount: 1, lastModifiedTime: new Date(now - 10000).toISOString() },
+    },
+  });
+
+  const payload = await harn.buildTelemetryPayloadInternal('proj-conv-1');
+  const convById = new Map((payload.conversations || []).map((c) => [c.cascadeId, c]));
+  assert.equal(convById.get('proj-conv-1')?.workspaceName, 'billing-service');
+  assert.equal(convById.get('proj-conv-2')?.workspaceName, 'web-dashboard');
+
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevLocale = i18nStore.getState().locale;
+  const prevUi = uiStore.getState();
+  const prevTel = telemetryStore.getState();
+
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 960,
+    innerHeight: 720,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+
+  let header = null;
+  t.after(() => {
+    header?.destroy?.();
+    setI18nLanguage(prevLocale);
+    uiStore.setState(prevUi, { sync: true });
+    telemetryStore.setState(prevTel, { sync: true });
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  });
+
+  setI18nLanguage('zh-CN');
+  uiStore.setState({ activeView: 'overview', monitorVisible: true }, { sync: true });
+  telemetryStore.setState(
+    {
+      selectedConversationId: '',
+      telemetry: {
+        ...payload,
+        conversations: [
+          ...payload.conversations,
+          ...Array.from({ length: 6 }, (_, i) => ({
+            cascadeId: `pad-${i}`,
+            title: `Other session ${i}`,
+            stepCount: 2,
+            workspaceName: 'misc-repo',
+          })),
+        ],
+      },
+    },
+    { sync: true }
+  );
+
+  header = TopSessionHeader();
+  document.body.appendChild(header.el);
+  header.refs.convSelect.open();
+
+  const optionEls = header.refs.convSelect.el.querySelectorAll('.select-option');
+  const billingOpt = optionEls.find((el) => (el.textContent || '').includes('billing-service'));
+  assert.ok(billingOpt, 'Session dropdown option displays workspaceName tag');
+
+  const searchInput = header.refs.convSelect.el.querySelector('.select-search-input');
+  assert.ok(searchInput, 'Search input present for >6 sessions');
+  searchInput.value = 'web-dashboard';
+  searchInput.dispatchEvent({ type: 'input', target: searchInput });
+  const visibleOpts = header.refs.convSelect.el
+    .querySelectorAll('.select-option')
+    .filter((el) => !el.hasAttribute('hidden'));
+  assert.equal(visibleOpts.length, 1);
+  assert.match(visibleOpts[0].textContent, /web-dashboard/);
+});
+
+test('Feature 14: compact vertical ActionMenu replaces export bars, backend exports files safely with reveal whitelist and toast feedback', async (t) => {
+  const { mkdtempSync, readFileSync, rmSync } = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const {
+    sanitizeLocalExportFilename,
+    writeLocalExportFile,
+    revealLocalExportFile,
+  } = await import('../backend/file-exporter.mjs');
+  const { dispatchBridgeApiRequest } = await import('../backend/api-actions.mjs');
+  const { dismissUiToast } = await import('../src/store/uiStore.js');
+
+  // 1. Filename sanitization blocks traversal and enforces allowlist extensions
+  const safe1 = sanitizeLocalExportFilename('../../evil<script>.exe', 'text/csv');
+  assert.equal(safe1.ext, '.csv');
+  assert.equal(safe1.fileName.includes('..'), false);
+  assert.equal(safe1.fileName.includes('/'), false);
+
+  // 2. Backend write avoids overwrite collisions and enforces reveal whitelist
+  const tempExportDir = mkdtempSync(path.join(os.tmpdir(), 'ag-export-test-'));
+  t.after(() => {
+    try {
+      rmSync(tempExportDir, { recursive: true, force: true });
+    } catch {}
+  });
+
+  const exp1 = writeLocalExportFile(
+    { filename: 'usage-today.csv', content: 'a,b\n1,2\n', mimeType: 'text/csv' },
+    { overrideDir: tempExportDir }
+  );
+  assert.equal(exp1.ok, true);
+  assert.equal(exp1.fileName, 'usage-today.csv');
+  assert.equal(readFileSync(exp1.filePath, 'utf8'), 'a,b\n1,2\n');
+
+  const exp2 = writeLocalExportFile(
+    { filename: 'usage-today.csv', content: 'a,b\n3,4\n', mimeType: 'text/csv' },
+    { overrideDir: tempExportDir }
+  );
+  assert.equal(exp2.ok, true);
+  assert.equal(exp2.fileName, 'usage-today (1).csv');
+
+  // Unauthorized arbitrary path must be rejected (403)
+  const denied = revealLocalExportFile(path.join(tempExportDir, 'not-exported.txt'), {
+    platform: 'win32',
+    spawnFn: () => {
+      throw new Error('Should never spawn for unauthorized path');
+    },
+  });
+  assert.equal(denied.ok, false);
+  assert.equal(denied.status, 403);
+
+  // Authorized exported path spawns explorer /select,"<path>" cleanly
+  const spawnCalls = [];
+  const revealed = revealLocalExportFile(exp1.filePath, {
+    platform: 'win32',
+    spawnFn: (cmd, args, opts) => {
+      spawnCalls.push({ cmd, args, opts });
+      return { on() {}, unref() {} };
+    },
+  });
+  assert.equal(revealed.ok, true);
+  assert.equal(spawnCalls.length, 1);
+  assert.equal(spawnCalls[0].cmd, 'explorer.exe');
+  assert.equal(spawnCalls[0].args[0], `/select,"${exp1.filePath}"`);
+
+  // 3. Bridge API dispatch handles /api/export-file and /api/reveal-file
+  const apiSave = await dispatchBridgeApiRequest(
+    '/api/export-file',
+    'POST',
+    { filename: 'prefs.json', content: '{"ok":true}\n', mimeType: 'application/json' },
+    { exportDir: tempExportDir }
+  );
+  assert.equal(apiSave.status, 200);
+  const apiSaveBody = JSON.parse(apiSave.body);
+  assert.equal(apiSaveBody.ok, true);
+  assert.equal(apiSaveBody.fileName, 'prefs.json');
+
+  const apiReveal = await dispatchBridgeApiRequest(
+    '/api/reveal-file',
+    'POST',
+    { filePath: apiSaveBody.filePath },
+    {
+      platform: 'win32',
+      spawnFn: (cmd, args) => {
+        spawnCalls.push({ cmd, args });
+        return { on() {}, unref() {} };
+      },
+    }
+  );
+  assert.equal(apiReveal.status, 200);
+  assert.equal(spawnCalls.length, 2);
+
+  // 4. Frontend ConsumptionView places ActionMenu in overview header (no bottom .cons-export-strip) and shows path toast
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevFetch = globalThis.fetch;
+  const prevLocale = i18nStore.getState().locale;
+  const prevUi = { ...uiStore.getState() };
+  const prevTel = { ...telemetryStore.getState() };
+
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    requestAnimationFrame: (cb) => {
+      cb();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  };
+
+  const apiCalls = [];
+  globalThis.fetch = async (url, init) => {
+    const parsedBody = init?.body ? JSON.parse(init.body) : {};
+    apiCalls.push({ url, method: init?.method || 'GET', body: parsedBody });
+    if (String(url).includes('/api/export-file')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          filePath: apiSaveBody.filePath,
+          dirPath: tempExportDir,
+          fileName: 'usage-7d.csv',
+        }),
+      };
+    }
+    if (String(url).includes('/api/reveal-file')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, filePath: parsedBody.filePath }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+
+  let view = null;
+  t.after(() => {
+    view?.destroy?.();
+    dismissUiToast();
+    setI18nLanguage(prevLocale);
+    uiStore.setState(prevUi, { sync: true });
+    telemetryStore.setState(prevTel, { sync: true });
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.fetch = prevFetch;
+  });
+
+  setI18nLanguage('zh-CN');
+  uiStore.setState({ activeView: 'consumption', monitorVisible: true, toast: null }, { sync: true });
+  telemetryStore.setState(
+    {
+      selectedTimeRange: '7d',
+      customStartMs: 0,
+      customEndMs: 0,
+      telemetry: {
+        settings: {},
+        consumption: {
+          revision: 31,
+          selectedRange: { key: '7d', label: '近7天' },
+          account: {
+            calls: 5,
+            totalTokens: 500_000,
+            inputTokens: 100_000,
+            cacheReadTokens: 380_000,
+            outputTokens: 20_000,
+            responseTokens: 12_000,
+            thinkingTokens: 8_000,
+            costUsd: 1.2,
+            savedCostUsd: 0.8,
+            cacheHitPct: 79.2,
+          },
+          topConversations: [],
+          topWorkspaces: [],
+          trendSeries: [],
+          sourcesBreakdown: [],
+          monthlyYear: 2026,
+          monthlySeries: [],
+        },
+        modelBreakdown: [],
+      },
+    },
+    { sync: true }
+  );
+
+  view = ConsumptionView();
+  document.body.appendChild(view.el);
+
+  assert.equal(view.el.querySelectorAll('.cons-export-strip').length, 0, 'Bottom export strip removed');
+  assert.ok(
+    view.el.querySelector('.cons-overview-head .cons-export-menu .action-menu-trigger'),
+    'Compact vertical 3-dot trigger lives inside overview header'
+  );
+
+  const menu = view.refs.consExportMenu;
+  assert.equal(menu.refs.isOpen(), false);
+  menu.refs.triggerBtn.dispatchEvent({ type: 'click', stopPropagation: () => {} });
+  assert.equal(menu.refs.isOpen(), true);
+
+  const csvItem = menu.refs.getItemBtn('csv');
+  assert.ok(csvItem);
+  csvItem.dispatchEvent({ type: 'click', stopPropagation: () => {} });
+  assert.equal(menu.refs.isOpen(), false);
+
+  await new Promise((r) => setTimeout(r, 15));
+  const toast = uiStore.getState().toast;
+  assert.ok(toast, 'Export displays global toast');
+  assert.match(toast.message, /usage-7d\.csv/);
+  assert.equal(toast.detail, apiSaveBody.filePath);
+  assert.equal(toast.actionLabel, '打开位置');
+  assert.equal(typeof toast.onAction, 'function');
+
+  // Clicking toast action calls /api/reveal-file with exact saved path
+  toast.onAction();
+  await new Promise((r) => setTimeout(r, 15));
+  const revealCall = apiCalls.find((c) => String(c.url).includes('/api/reveal-file'));
+  assert.ok(revealCall, 'Open Folder action invokes /api/reveal-file');
+  assert.equal(revealCall.body.filePath, apiSaveBody.filePath);
+
+  // 5. Fallback via POST /api/settings (__exportFileAction) when sticky main.mjs returns 404 for new routes
+  const { exportTextFileWithFeedback, revealExportedFile } = await import(
+    '../src/core/fileExportClient.js'
+  );
+  const fallbackCalls = [];
+  globalThis.window.sidecar = {
+    fetch: async (url, init) => {
+      const parsedBody = init?.body ? JSON.parse(init.body) : {};
+      fallbackCalls.push({ url, body: parsedBody });
+      if (String(url).includes('/api/export-file') || String(url).includes('/api/reveal-file')) {
+        return { ok: false, status: 404, json: async () => ({ error: 'Not found' }) };
+      }
+      if (String(url).includes('/api/settings') && parsedBody.__exportFileAction === 'save') {
+        const out = await dispatchBridgeApiRequest('/api/settings', 'POST', parsedBody, {
+          exportDir: tempExportDir,
+        });
+        return { ok: out.status === 200, status: out.status, json: async () => JSON.parse(out.body) };
+      }
+      if (String(url).includes('/api/settings') && parsedBody.__exportFileAction === 'reveal') {
+        const out = await dispatchBridgeApiRequest('/api/settings', 'POST', parsedBody, {
+          platform: 'win32',
+          spawnFn: (cmd, args) => {
+            spawnCalls.push({ cmd, args });
+            return { on() {}, unref() {} };
+          },
+        });
+        return { ok: out.status === 200, status: out.status, json: async () => JSON.parse(out.body) };
+      }
+      return { ok: false, status: 500, json: async () => ({ error: 'Unexpected' }) };
+    },
+  };
+
+  const fallbackRes = await exportTextFileWithFeedback(
+    'hotreload-settings.json',
+    '{"theme":"blue"}\n',
+    'application/json;charset=utf-8'
+  );
+  assert.equal(fallbackRes.ok, true);
+  assert.equal(fallbackRes.mode, 'local');
+  assert.equal(fallbackRes.fileName, 'hotreload-settings.json');
+  assert.equal(readFileSync(fallbackRes.filePath, 'utf8'), '{"theme":"blue"}\n');
+  assert.ok(
+    fallbackCalls.some((c) => c.url === '/api/settings' && c.body.__exportFileAction === 'save'),
+    'Falls back to POST /api/settings when sticky main.mjs returns 404'
+  );
+
+  const revealFallbackOk = await revealExportedFile(fallbackRes.filePath);
+  assert.equal(revealFallbackOk, true);
+  assert.ok(
+    fallbackCalls.some((c) => c.url === '/api/settings' && c.body.__exportFileAction === 'reveal')
+  );
+
+  // 6. Inside host embedded Webview, total backend failure never fakes a browser download toast
+  globalThis.window.sidecar = {
+    fetch: async () => ({ ok: false, status: 500, json: async () => ({ error: 'Down' }) }),
+  };
+  const failedRes = await exportTextFileWithFeedback('broken.csv', 'a,b\n', 'text/csv');
+  assert.equal(failedRes.ok, false);
+  assert.equal(failedRes.mode, 'failed');
+  assert.equal(uiStore.getState().toast?.tone, 'warn');
 });

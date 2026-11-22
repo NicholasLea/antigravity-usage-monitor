@@ -41,7 +41,17 @@ import {
   findPrevAgentContextTokens,
   getStepSelectionKey,
 } from '../core/stepInspector.js';
+import {
+  buildStepsCsv,
+  buildStepsMarkdownReport,
+  sanitizeExportFilename,
+} from '../core/reportExporter.js';
+import {
+  copyTextWithFeedback,
+  exportTextFileWithFeedback,
+} from '../core/fileExportClient.js';
 import { createSvgIcon, patchSvgIcon } from '../icons/SvgIcon.js';
+import { ActionMenu } from '../components/ui/ActionMenu.js';
 import { getEffectiveLocale, i18nStore, t } from '../i18n/index.js';
 import {
   formatAgentLabel,
@@ -453,10 +463,49 @@ export const StepsDetailView = defineComponent({
       { className: 'steps-quick-chips', hidden: true },
       quickChipBtns.map((c) => c.btn)
     );
+    const stepsExportMenu = ActionMenu({
+      ariaLabel: t('steps.exportMenuAria'),
+      className: 'steps-export-menu',
+      items: [
+        {
+          key: 'csv',
+          icon: 'download',
+          label: t('steps.exportCsv'),
+          title: t('steps.exportCsvTip'),
+          onSelect: () => {
+            if (currentTableSteps.length === 0) return;
+            const csv = buildStepsCsv(currentTableSteps, {
+              displaySettings: currentDisplaySettings,
+            });
+            const title = latestSlice?.activeConversation?.title || latestSlice?.cascadeId || 'steps';
+            void exportTextFileWithFeedback(
+              sanitizeExportFilename(`steps-${title}`, 'csv'),
+              csv,
+              'text/csv;charset=utf-8'
+            );
+          },
+        },
+        {
+          key: 'md',
+          icon: 'copy',
+          label: t('steps.exportMd'),
+          title: t('steps.exportMdTip'),
+          onSelect: () => {
+            if (currentTableSteps.length === 0) return;
+            const md = buildStepsMarkdownReport(currentTableSteps, {
+              title: latestSlice?.activeConversation?.title || '',
+              cascadeId: latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || '',
+              displaySettings: currentDisplaySettings,
+            });
+            void copyTextWithFeedback(md, t('steps.exportMdDone'));
+          },
+        },
+      ],
+    });
     const stepsFilterToolbarEl = h(
       'div',
       { className: 'steps-filter-toolbar', hidden: true },
-      [stepSearchWrapEl, stepQuickChipsEl]
+      [stepSearchWrapEl, stepQuickChipsEl, stepsExportMenu.el]
     );
 
     // --- 点击行展开的单步透视诊断抽屉 ---
@@ -991,6 +1040,11 @@ export const StepsDetailView = defineComponent({
       patchAttr(inspCloseBtn, 'aria-label', t('steps.inspCloseAria'));
       patchAttr(inspCloseBtn, 'title', t('steps.inspCloseAria'));
       if (!inspCopyTimer) patchText(inspCopyLabel, t('steps.inspCopy'));
+      stepsExportMenu.refs.setAriaLabel(t('steps.exportMenuAria'));
+      stepsExportMenu.refs.updateItemLabels({
+        csv: { label: t('steps.exportCsv'), title: t('steps.exportCsvTip') },
+        md: { label: t('steps.exportMd'), title: t('steps.exportMdTip') },
+      });
       lastAnomalyStripSig = '';
       lineMetricSwitch.setProps({
         modelValue: selectedLineMetric,
@@ -1997,6 +2051,7 @@ export const StepsDetailView = defineComponent({
         clearTimeout(inspCopyTimer);
         inspCopyTimer = null;
       }
+      stepsExportMenu.destroy();
       panelEl.removeEventListener?.('keydown', onPanelKeydown);
       modelsAnalyticsPane.removeEventListener('scroll', onModelsPaneScroll);
       unsubUi();
@@ -2029,6 +2084,7 @@ export const StepsDetailView = defineComponent({
         stepsFilterToolbarEl,
         stepSearchInput,
         stepQuickChipsEl,
+        stepsExportMenu,
         stepInspectorDrawerEl,
         modelsAnomalyStripEl,
         modelsListEl,

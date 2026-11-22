@@ -853,6 +853,8 @@ const BRIDGE_API_ROUTE_DEFS = Object.freeze([
     method: 'POST',
     action: 'session_migration_migrate',
   }),
+  Object.freeze({ path: '/api/export-file', method: 'POST', action: 'export_file' }),
+  Object.freeze({ path: '/api/reveal-file', method: 'POST', action: 'reveal_file' }),
 ]);
 
 const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path));
@@ -971,6 +973,19 @@ const SVG_ICON_DEFS = Object.freeze({
   upload: [
     { tag: 'path', attrs: { d: 'M8 10.2V2.6M5 5.4L8 2.4l3 3' } },
     { tag: 'path', attrs: { d: 'M2.6 11.4v1.4a1 1 0 0 0 1 1h8.8a1 1 0 0 0 1-1v-1.4' } },
+  ],
+  'more-vertical': [
+    { tag: 'circle', attrs: { cx: '8', cy: '3.6', r: '1.15', fill: 'currentColor', stroke: 'none' } },
+    { tag: 'circle', attrs: { cx: '8', cy: '8', r: '1.15', fill: 'currentColor', stroke: 'none' } },
+    { tag: 'circle', attrs: { cx: '8', cy: '12.4', r: '1.15', fill: 'currentColor', stroke: 'none' } },
+  ],
+  folder: [
+    {
+      tag: 'path',
+      attrs: {
+        d: 'M2.2 4.3a1.3 1.3 0 0 1 1.3-1.3h3l1.3 1.5h4.7a1.3 1.3 0 0 1 1.3 1.3v5.9a1.3 1.3 0 0 1-1.3 1.3H3.5a1.3 1.3 0 0 1-1.3-1.3V4.3z',
+      },
+    },
   ],
   grip: [
     { tag: 'circle', attrs: { cx: '6', cy: '4', r: '1.05', fill: 'currentColor', stroke: 'none' } },
@@ -1426,6 +1441,13 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.workspaceUnbound': '未绑定工作区',
   'cons.workspaceSessions': '{count} 会话',
   'cons.workspaceJumpTip': '点击跳转到该项目最近会话',
+  'cons.exportMenuAria': '导出及报告选项',
+  'cons.exportCsv': '导出 CSV',
+  'cons.exportCsvTip': '导出当前统计区间用量明细为 CSV',
+  'cons.exportCsvDone': '已导出',
+  'cons.exportMd': '复制 Markdown 报告',
+  'cons.exportMdTip': '复制当前统计区间 Markdown 汇总报告',
+  'cons.exportMdDone': '已复制用量 Markdown 报告',
   'cons.topConvsEmpty': '当前时间范围暂无会话消耗记录',
   'cons.topConvsSortAria': '会话排行排序方式',
   'cons.topConvsSortCost': '费用',
@@ -1562,6 +1584,25 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.inspContextCostLabel': '上下文 / 费用',
   'steps.inspPromptTitle': '本轮提问',
   'steps.inspRowClickTip': '点击查看单步详情',
+  'steps.exportMenuAria': '导出及报告选项',
+  'steps.exportCsv': '导出 CSV',
+  'steps.exportCsvTip': '导出当前步骤明细为 CSV 文件',
+  'steps.exportCsvDone': '已导出',
+  'steps.exportMd': '复制 Markdown 报告',
+  'steps.exportMdTip': '复制当前步骤 Markdown 诊断报告',
+  'steps.exportMdDone': '已复制步骤 Markdown 报告',
+
+  // Export & Toast Feedback
+  'export.savedLocal': '已导出 {file}',
+  'export.savedPicked': '已保存 {file}',
+  'export.savedBrowser': '已下载 {file}',
+  'export.savedBrowserHint': '文件已交给浏览器默认下载目录',
+  'export.openFolder': '打开位置',
+  'export.failed': '导出失败，请稍后重试',
+  'export.hostUnavailable': '本机导出通道暂未就绪，请重启 Antigravity 后重试',
+  'export.copied': '已复制到剪贴板',
+  'export.copyFailed': '复制失败，请检查剪贴板权限',
+  'export.closeToast': '关闭提示',
 
   // Step Table Columns (Headers & Option Labels)
   'stepCol.step.th': '步序',
@@ -2252,6 +2293,13 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.workspaceUnbound': 'Unbound Workspace',
   'cons.workspaceSessions': '{count} sessions',
   'cons.workspaceJumpTip': 'Click to inspect latest session in this project',
+  'cons.exportMenuAria': 'Export and report actions',
+  'cons.exportCsv': 'Export CSV',
+  'cons.exportCsvTip': 'Export current usage range as CSV',
+  'cons.exportCsvDone': 'Exported',
+  'cons.exportMd': 'Copy Markdown Report',
+  'cons.exportMdTip': 'Copy Markdown summary report for current range',
+  'cons.exportMdDone': 'Usage Markdown report copied',
   'cons.topConvsEmpty': 'No session usage in this range',
   'cons.topConvsSortAria': 'Sort sessions ranking',
   'cons.topConvsSortCost': 'Cost',
@@ -2388,6 +2436,25 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.inspContextCostLabel': 'Context / Cost',
   'steps.inspPromptTitle': 'Turn Prompt',
   'steps.inspRowClickTip': 'Click row to inspect step details',
+  'steps.exportMenuAria': 'Export and report actions',
+  'steps.exportCsv': 'Export CSV',
+  'steps.exportCsvTip': 'Export current steps table as CSV',
+  'steps.exportCsvDone': 'Exported',
+  'steps.exportMd': 'Copy Markdown Report',
+  'steps.exportMdTip': 'Copy Markdown diagnostic report for current steps',
+  'steps.exportMdDone': 'Steps Markdown report copied',
+
+  // Export & Toast Feedback
+  'export.savedLocal': 'Exported {file}',
+  'export.savedPicked': 'Saved {file}',
+  'export.savedBrowser': 'Downloaded {file}',
+  'export.savedBrowserHint': 'Saved via browser default Downloads folder',
+  'export.openFolder': 'Show in Folder',
+  'export.failed': 'Export failed, please retry',
+  'export.hostUnavailable': 'Local export channel unavailable; please restart Antigravity and retry',
+  'export.copied': 'Copied to clipboard',
+  'export.copyFailed': 'Copy failed, check clipboard permissions',
+  'export.closeToast': 'Dismiss notification',
 
   // Step Table Columns (Headers & Option Labels)
   'stepCol.step.th': 'Step',
@@ -5675,6 +5742,526 @@ function parseImportedSettingsJson(rawText) {
 return { triggerTextFileDownload, buildExportableSettingsJson, parseImportedSettingsJson };
 })();
 
+// --- src/core/reportExporter.js ---
+const { escapeCsvCell, sanitizeExportFilename, buildStepsCsv, buildStepsMarkdownReport, buildConsumptionCsv, buildConsumptionMarkdownReport } = (() => {
+/**
+ * @fileoverview RFC-4180 防公式注入 CSV 导出及 Markdown 诊断报告生成纯函数模块 (`reportExporter.js`)。
+ * 零外部依赖、单遍 O(N) 拼接，供「按步查看」和「用量统计」视图复用。
+ */
+
+
+const PLAIN_SIGNED_NUMBER_RE = /^[+-]?\d+(\.\d+)?$/;
+
+/**
+ * RFC-4180 安全转义单个 CSV 单元格，并防御电子表格公式注入（`=`, `+`, `-`, `@`, `\t`, `\r`）。
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function escapeCsvCell(value) {
+  if (value === null || value === undefined) return '';
+  let str = String(value);
+  if (str.length > 0) {
+    const first = str[0];
+    if (
+      (first === '=' ||
+        first === '@' ||
+        first === '\t' ||
+        first === '\r' ||
+        ((first === '+' || first === '-') && !PLAIN_SIGNED_NUMBER_RE.test(str.trim())))
+    ) {
+      str = `'${str}`;
+    }
+  }
+  if (/[",\r\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function csvRow(cells) {
+  return cells.map(escapeCsvCell).join(',');
+}
+
+/**
+ * 生成安全跨平台导出文件名（剔除非法路径字符并附加 `YYYYMMDD-HHmm` 时间戳）。
+ *
+ * @param {string} baseName
+ * @param {string} ext
+ * @param {number} [nowMs]
+ * @returns {string}
+ */
+function sanitizeExportFilename(baseName, ext = 'csv', nowMs = Date.now()) {
+  const cleanBase = String(baseName || 'usage-report')
+    .replace(/[\\/:*?"<>|\r\n\t]+/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48) || 'usage-report';
+  const d = new Date(Number.isFinite(nowMs) ? nowMs : Date.now());
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+  const cleanExt = String(ext || 'csv').replace(/^\.+/, '');
+  return `${cleanBase}-${stamp}.${cleanExt}`;
+}
+
+function escapeMdCell(value) {
+  return String(value ?? '—')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\|/g, '\\|')
+    .trim();
+}
+
+/**
+ * 将当前步骤列表导出为带 UTF-8 BOM 的 RFC-4180 安全 CSV 字符串（Excel 打开中文零乱码）。
+ *
+ * @param {Array<object>} steps
+ * @param {{ displaySettings?: object, includeBom?: boolean }} [opts]
+ * @returns {string}
+ */
+function buildStepsCsv(steps, { displaySettings = {}, includeBom = true } = {}) {
+  const list = Array.isArray(steps) ? steps : [];
+  const header = csvRow([
+    'step',
+    'timestamp',
+    'agent',
+    'model',
+    'raw_model_id',
+    'tok_per_sec',
+    'ttft_sec',
+    'duration_sec',
+    'input_tokens',
+    'cache_read_tokens',
+    'output_tokens',
+    'thinking_tokens',
+    'response_tokens',
+    'context_tokens',
+    'cache_hit_pct',
+    'cost_usd',
+    'compaction',
+    'anomaly_count',
+    'anomalies',
+    'prompt',
+  ]);
+
+  const rows = [header];
+  for (let i = 0; i < list.length; i += 1) {
+    const st = list[i];
+    if (!st) continue;
+    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const inTok = Number(st.inputTokens || 0);
+    const cacheTok = Number(st.cacheReadTokens || 0);
+    const outTok = Number(st.outputTokens || 0);
+    const thinkTok = Number(st.thinkingTokens || 0);
+    const replyTok =
+      st.responseTokens != null ? Number(st.responseTokens) : Math.max(0, outTok - thinkTok);
+    const promptTok = inTok + cacheTok;
+    const cachePct =
+      st.cacheHitPct != null && Number.isFinite(Number(st.cacheHitPct))
+        ? Number(st.cacheHitPct).toFixed(1)
+        : promptTok > 0
+          ? ((cacheTok / promptTok) * 100).toFixed(1)
+          : '0.0';
+    const ctxTok = Number(st.contextTokens || promptTok + outTok);
+    const anomCount = Number(st.anomaly?.count || 0);
+    const anomDesc =
+      anomCount > 0
+        ? Object.entries(st.anomaly?.kinds || {})
+            .map(([k, v]) => `${k}:${v}`)
+            .join(';') || String(st.anomaly?.primaryKind || 'error')
+        : '';
+    rows.push(
+      csvRow([
+        st.stepIndex ?? '',
+        st.createdAtMs ? new Date(st.createdAtMs).toISOString() : '',
+        st.agentLabel || st.agentBadge || (st.isSubagent ? st.agentId || 'subagent' : 'main'),
+        mInfo.text,
+        st.rawModelId || st.modelKey || '',
+        st.tokPerSec != null && Number.isFinite(Number(st.tokPerSec))
+          ? Number(st.tokPerSec).toFixed(2)
+          : '',
+        st.ttftSec != null && Number.isFinite(Number(st.ttftSec))
+          ? Number(st.ttftSec).toFixed(3)
+          : '',
+        st.durationSec != null && Number.isFinite(Number(st.durationSec))
+          ? Number(st.durationSec).toFixed(3)
+          : '',
+        inTok,
+        cacheTok,
+        outTok,
+        thinkTok,
+        replyTok,
+        ctxTok,
+        cachePct,
+        st.costUsd != null && Number.isFinite(Number(st.costUsd))
+          ? Number(st.costUsd).toFixed(6)
+          : '',
+        st.isCompactionStep ? 'true' : 'false',
+        anomCount,
+        anomDesc,
+        String(st.turnPrompt || st.rootTurnPrompt || '').replace(/\r?\n/g, ' ').trim(),
+      ])
+    );
+  }
+  return `${includeBom ? '\uFEFF' : ''}${rows.join('\r\n')}\r\n`;
+}
+
+/**
+ * 生成当前会话（或筛选后步骤子集）的可分享 Markdown 诊断报告。
+ *
+ * @param {Array<object>} steps
+ * @param {{ title?: string, cascadeId?: string, displaySettings?: object, filterNote?: string }} [opts]
+ * @returns {string}
+ */
+function buildStepsMarkdownReport(
+  steps,
+  { title = '', cascadeId = '', displaySettings = {}, filterNote = '' } = {}
+) {
+  const list = Array.isArray(steps) ? steps : [];
+  let sumIn = 0;
+  let sumCache = 0;
+  let sumOut = 0;
+  let sumCost = 0;
+  let tpsSum = 0;
+  let tpsCnt = 0;
+  let ttftSum = 0;
+  let ttftCnt = 0;
+  let anomSteps = 0;
+  let anomTotal = 0;
+  let compactionCount = 0;
+  const byModel = new Map();
+
+  for (let i = 0; i < list.length; i += 1) {
+    const st = list[i];
+    if (!st) continue;
+    const inTok = Number(st.inputTokens || 0);
+    const cacheTok = Number(st.cacheReadTokens || 0);
+    const outTok = Number(st.outputTokens || 0);
+    const cost = Number(st.costUsd || 0);
+    sumIn += inTok;
+    sumCache += cacheTok;
+    sumOut += outTok;
+    if (Number.isFinite(cost) && cost > 0) sumCost += cost;
+    if (!st.isCompactionStep && Number.isFinite(Number(st.tokPerSec)) && Number(st.tokPerSec) > 0) {
+      tpsSum += Number(st.tokPerSec);
+      tpsCnt += 1;
+    }
+    if (!st.isCompactionStep && Number.isFinite(Number(st.ttftSec)) && Number(st.ttftSec) >= 0) {
+      ttftSum += Number(st.ttftSec);
+      ttftCnt += 1;
+    }
+    if (st.isCompactionStep) compactionCount += 1;
+    const ac = Number(st.anomaly?.count || 0);
+    if (ac > 0) {
+      anomSteps += 1;
+      anomTotal += ac;
+    }
+
+    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const mKey = mInfo.text || 'Unknown';
+    let mAcc = byModel.get(mKey);
+    if (!mAcc) {
+      mAcc = {
+        label: mKey,
+        calls: 0,
+        inTok: 0,
+        cacheTok: 0,
+        outTok: 0,
+        cost: 0,
+        tpsSum: 0,
+        tpsCnt: 0,
+      };
+      byModel.set(mKey, mAcc);
+    }
+    mAcc.calls += 1;
+    mAcc.inTok += inTok;
+    mAcc.cacheTok += cacheTok;
+    mAcc.outTok += outTok;
+    if (Number.isFinite(cost) && cost > 0) mAcc.cost += cost;
+    if (!st.isCompactionStep && Number.isFinite(Number(st.tokPerSec)) && Number(st.tokPerSec) > 0) {
+      mAcc.tpsSum += Number(st.tokPerSec);
+      mAcc.tpsCnt += 1;
+    }
+  }
+
+  const totalTok = sumIn + sumCache + sumOut;
+  const promptTok = sumIn + sumCache;
+  const cacheHitPct = promptTok > 0 ? ((sumCache / promptTok) * 100).toFixed(1) : '0.0';
+  const avgTps = tpsCnt > 0 ? formatSpeedMetric(tpsSum / tpsCnt, ' tok/s') : '—';
+  const avgTtft = ttftCnt > 0 ? formatMetric(ttftSum / ttftCnt, 's') : '—';
+  const heading = title ? `# ${title}` : '# Session Telemetry Report';
+
+  const lines = [
+    heading,
+    '',
+    ...(cascadeId ? [`- **Session ID**: \`${cascadeId}\``] : []),
+    ...(filterNote ? [`- **Scope**: ${filterNote}`] : []),
+    `- **Steps**: ${list.length}${compactionCount > 0 ? ` (${compactionCount} compaction)` : ''}${anomTotal > 0 ? ` · **Anomalies**: ${anomTotal} across ${anomSteps} steps` : ''}`,
+    `- **Total Tokens**: ${formatTokensPrecise(totalTok)} (Input ${formatTokensPrecise(sumIn)} / Cache ${formatTokensPrecise(sumCache)} · ${cacheHitPct}% / Output ${formatTokensPrecise(sumOut)})`,
+    `- **Est. Cost**: ${formatUsd(sumCost, { precise: sumCost > 0 && sumCost < 0.1 })} · **Avg Speed**: ${avgTps} · **Avg TTFT**: ${avgTtft}`,
+  ];
+
+  const sortedModels = Array.from(byModel.values()).sort(
+    (a, b) => b.cost - a.cost || b.inTok + b.cacheTok + b.outTok - (a.inTok + a.cacheTok + a.outTok)
+  );
+  if (sortedModels.length > 0) {
+    lines.push(
+      '',
+      '## Model Breakdown',
+      '',
+      '| Model | Calls | Total Tokens | Cache Hit | Avg Speed | Est. Cost |',
+      '| --- | ---: | ---: | ---: | ---: | ---: |'
+    );
+    for (const m of sortedModels) {
+      const mTotal = m.inTok + m.cacheTok + m.outTok;
+      const mPrompt = m.inTok + m.cacheTok;
+      const mCache = mPrompt > 0 ? `${((m.cacheTok / mPrompt) * 100).toFixed(1)}%` : '0.0%';
+      const mTps = m.tpsCnt > 0 ? formatSpeedMetric(m.tpsSum / m.tpsCnt, ' tok/s') : '—';
+      lines.push(
+        `| ${escapeMdCell(m.label)} | ${m.calls} | ${formatTokensPrecise(mTotal)} | ${mCache} | ${mTps} | ${formatUsd(m.cost, { precise: m.cost > 0 && m.cost < 0.1 })} |`
+      );
+    }
+  }
+
+  const topCostly = list
+    .filter((st) => Number(st?.costUsd || 0) > 0)
+    .slice()
+    .sort((a, b) => Number(b.costUsd || 0) - Number(a.costUsd || 0))
+    .slice(0, 5);
+  if (topCostly.length > 0) {
+    lines.push(
+      '',
+      '## Top Costliest Steps',
+      '',
+      '| Step | Time | Model | Speed | TTFT | Context | Cost |',
+      '| ---: | --- | --- | ---: | ---: | ---: | ---: |'
+    );
+    for (const st of topCostly) {
+      const mInfo = resolveModelDisplayInfo(st, displaySettings);
+      const timeStr = st.createdAtMs ? formatCompactDateTime(st.createdAtMs) : '—';
+      const ctxTok = Number(
+        st.contextTokens ||
+          Number(st.inputTokens || 0) + Number(st.cacheReadTokens || 0) + Number(st.outputTokens || 0)
+      );
+      lines.push(
+        `| #${st.stepIndex ?? '—'} | ${timeStr} | ${escapeMdCell(mInfo.text)} | ${formatSpeedMetric(st.tokPerSec, ' tok/s')} | ${formatMetric(st.ttftSec, 's')} | ${formatTokensPrecise(ctxTok)} | ${formatUsd(st.costUsd, { precise: true })} |`
+      );
+    }
+  }
+
+  if (anomTotal > 0) {
+    const anomKindTotals = new Map();
+    for (const st of list) {
+      if (!st?.anomaly?.kinds) continue;
+      for (const [k, v] of Object.entries(st.anomaly.kinds)) {
+        const n = Number(v || 0);
+        if (n > 0) anomKindTotals.set(k, (anomKindTotals.get(k) || 0) + n);
+      }
+    }
+    if (anomKindTotals.size > 0) {
+      const summary = Array.from(anomKindTotals.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${formatAnomalyKindLabel(k)} ×${v}`)
+        .join(', ');
+      lines.push('', `**Anomaly Summary**: ${summary}`);
+    }
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+/**
+ * 将历史用量统计视图当前区间数据导出为结构化 CSV（含摘要、模型、项目、会话及趋势明细）。
+ *
+ * @param {object} consumption
+ * @param {Array<object>} modelBreakdown
+ * @param {{ displaySettings?: object, includeBom?: boolean }} [opts]
+ * @returns {string}
+ */
+function buildConsumptionCsv(
+  consumption,
+  modelBreakdown = [],
+  { displaySettings = {}, includeBom = true } = {}
+) {
+  const cons = consumption || {};
+  const acc = cons.account || {};
+  const range = cons.selectedRange || {};
+  const models = mergeModelsByDisplayName(modelBreakdown || [], displaySettings, {
+    preferLabelInShort: true,
+  });
+  const workspaces = Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [];
+  const sessions = Array.isArray(cons.topConversations) ? cons.topConversations : [];
+  const trend = Array.isArray(cons.trendSeries) ? cons.trendSeries : [];
+
+  const rows = [
+    csvRow(['section', 'name', 'calls', 'input_tokens', 'cache_read_tokens', 'output_tokens', 'total_tokens', 'cache_hit_pct', 'cost_usd', 'extra']),
+    csvRow([
+      'summary',
+      range.label || range.key || 'all',
+      Number(acc.calls || 0),
+      Number(acc.inputTokens || 0),
+      Number(acc.cacheReadTokens || 0),
+      Number(acc.outputTokens || 0),
+      Number(acc.totalTokens || 0),
+      Number(acc.cacheHitPct || 0).toFixed(1),
+      Number(acc.costUsd || 0).toFixed(4),
+      `saved_usd=${Number(acc.savedCostUsd || 0).toFixed(4)}`,
+    ]),
+  ];
+
+  for (const m of models) {
+    rows.push(
+      csvRow([
+        'model',
+        m.displayText || m.label || m.shortName || '—',
+        Number(m.calls || 0),
+        Number(m.inputTokens || 0),
+        Number(m.cacheReadTokens || 0),
+        Number(m.outputTokens || 0),
+        Number(m.totalTokens || 0),
+        Number(m.cacheHitPct || 0).toFixed(1),
+        Number(m.costUsd || 0).toFixed(4),
+        m.avgTokPerSec != null ? `avg_tps=${Number(m.avgTokPerSec).toFixed(1)}` : '',
+      ])
+    );
+  }
+
+  for (const w of workspaces) {
+    rows.push(
+      csvRow([
+        'project',
+        w.label || w.workspacePath || 'unbound',
+        Number(w.calls || 0),
+        Number(w.inputTokens || 0),
+        Number(w.cacheReadTokens || 0),
+        Number(w.responseTokens || 0) + Number(w.thinkingTokens || 0),
+        Number(w.totalTokens || 0),
+        Number(w.cacheHitPct || 0).toFixed(1),
+        Number(w.costUsd || 0).toFixed(4),
+        `sessions=${Number(w.sessionCount || 0)}`,
+      ])
+    );
+  }
+
+  for (const c of sessions) {
+    rows.push(
+      csvRow([
+        'session',
+        c.title || c.cascadeId || '—',
+        Number(c.calls || 0),
+        Number(c.inputTokens || 0),
+        Number(c.cacheReadTokens || 0),
+        Number(c.responseTokens || 0) + Number(c.thinkingTokens || 0),
+        Number(c.totalTokens || 0),
+        Number(c.cacheHitPct || 0).toFixed(1),
+        Number(c.costUsd || 0).toFixed(4),
+        c.sourceName || c.appSource || '',
+      ])
+    );
+  }
+
+  for (const slot of trend) {
+    if (!slot || !(Number(slot.tokens || 0) > 0 || Number(slot.calls || 0) > 0)) continue;
+    rows.push(
+      csvRow([
+        'trend',
+        slot.fullLabel || slot.label || '',
+        Number(slot.calls || 0),
+        Number(slot.inputTokens || 0),
+        Number(slot.cacheReadTokens || 0),
+        Number(slot.outputTokens || 0),
+        Number(slot.tokens || 0),
+        '',
+        Number(slot.costUsd || 0).toFixed(4),
+        slot.granularity || '',
+      ])
+    );
+  }
+
+  return `${includeBom ? '\uFEFF' : ''}${rows.join('\r\n')}\r\n`;
+}
+
+/**
+ * 生成历史用量统计当前区间的 Markdown 汇总报告。
+ *
+ * @param {object} consumption
+ * @param {Array<object>} modelBreakdown
+ * @param {{ displaySettings?: object }} [opts]
+ * @returns {string}
+ */
+function buildConsumptionMarkdownReport(
+  consumption,
+  modelBreakdown = [],
+  { displaySettings = {} } = {}
+) {
+  const cons = consumption || {};
+  const acc = cons.account || {};
+  const range = cons.selectedRange || {};
+  const models = mergeModelsByDisplayName(modelBreakdown || [], displaySettings, {
+    preferLabelInShort: true,
+  });
+  const workspaces = Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [];
+  const sessions = Array.isArray(cons.topConversations) ? cons.topConversations : [];
+
+  const rangeLabel = range.label || range.key || 'All Time';
+  const lines = [
+    `# Usage Report · ${rangeLabel}`,
+    '',
+    `- **Total Tokens**: ${formatTokensPrecise(acc.totalTokens || 0)} (${Number(acc.calls || 0)} calls)`,
+    `- **Est. Cost**: ${formatUsd(acc.costUsd || 0)} (Cache Saved ${formatUsd(acc.savedCostUsd || 0)})`,
+    `- **Cache Hit Rate**: ${Number(acc.cacheHitPct || 0).toFixed(1)}% (Input ${formatTokensPrecise(acc.inputTokens || 0)} / Cache ${formatTokensPrecise(acc.cacheReadTokens || 0)} / Output ${formatTokensPrecise(acc.outputTokens || 0)})`,
+  ];
+
+  if (models.length > 0) {
+    lines.push(
+      '',
+      '## Models',
+      '',
+      '| Model | Calls | Tokens | Cache Hit | Avg Speed | Est. Cost |',
+      '| --- | ---: | ---: | ---: | ---: | ---: |'
+    );
+    for (const m of models) {
+      lines.push(
+        `| ${escapeMdCell(m.displayText || m.label || m.shortName)} | ${Number(m.calls || 0)} | ${formatTokensPrecise(m.totalTokens || 0)} | ${Number(m.cacheHitPct || 0).toFixed(1)}% | ${m.avgTokPerSec != null ? formatSpeedMetric(m.avgTokPerSec, ' tok/s') : '—'} | ${formatUsd(m.costUsd || 0)} |`
+      );
+    }
+  }
+
+  if (workspaces.length > 0) {
+    lines.push(
+      '',
+      '## Projects',
+      '',
+      '| Project | Sessions | Calls | Tokens | Cache Hit | Est. Cost |',
+      '| --- | ---: | ---: | ---: | ---: | ---: |'
+    );
+    for (const w of workspaces) {
+      lines.push(
+        `| ${escapeMdCell(w.label || w.workspacePath || 'Unbound')} | ${Number(w.sessionCount || 0)} | ${Number(w.calls || 0)} | ${formatTokensPrecise(w.totalTokens || 0)} | ${Number(w.cacheHitPct || 0).toFixed(1)}% | ${formatUsd(w.costUsd || 0)} |`
+      );
+    }
+  }
+
+  if (sessions.length > 0) {
+    lines.push(
+      '',
+      '## Top Sessions',
+      '',
+      '| Session | Calls | Tokens | Cache Hit | Est. Cost |',
+      '| --- | ---: | ---: | ---: | ---: |'
+    );
+    for (const c of sessions.slice(0, 8)) {
+      lines.push(
+        `| ${escapeMdCell(c.title || c.cascadeId)} | ${Number(c.calls || 0)} | ${formatTokensPrecise(c.totalTokens || 0)} | ${Number(c.cacheHitPct || 0).toFixed(1)}% | ${formatUsd(c.costUsd || 0)} |`
+      );
+    }
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+return { escapeCsvCell, sanitizeExportFilename, buildStepsCsv, buildStepsMarkdownReport, buildConsumptionCsv, buildConsumptionMarkdownReport };
+})();
+
 // --- src/core/httpClient.js ---
 const { abortSidecarApiKey, getWindowBridgeConfig, isWindowOverlayMode, deliverCdpBridgeResponses, callSidecarApi } = (() => {
 /**
@@ -5962,7 +6549,7 @@ return { abortSidecarApiKey, getWindowBridgeConfig, isWindowOverlayMode, deliver
 })();
 
 // --- src/store/uiStore.js ---
-const { getViewTabs, uiStore, getVisibleMonitorView } = (() => {
+const { getViewTabs, uiStore, showUiToast, dismissUiToast, getVisibleMonitorView } = (() => {
 /**
  * @fileoverview UI navigation and view state store.
  */
@@ -5985,12 +6572,264 @@ const uiStore = createReactiveStore({
   settingsStructureTab: 'mount', // 'mount' | 'hover' | 'overview' | 'steps'
   selectedAgentScope: 'all', // 'all' | 'main' | <subagent cascadeId>
   ctxInspectorAgentId: 'auto', // 'auto' | 'main' | <subagent cascadeId>
+  toast: null, // { id, message, detail, actionLabel, onAction, tone, durationMs }
 });
+
+let toastSeq = 0;
+
+/**
+ * 触发全局底部轻量通知条（用于文件导出路径提示、一键定位文件夹及剪贴板复制反馈）。
+ *
+ * @param {{ message: string, detail?: string, actionLabel?: string, onAction?: (() => void) | null, tone?: 'ok' | 'info' | 'warn', durationMs?: number }} toastConfig
+ * @returns {number}
+ */
+function showUiToast(toastConfig) {
+  if (!toastConfig || !toastConfig.message) return 0;
+  toastSeq += 1;
+  uiStore.setState({
+    toast: {
+      id: toastSeq,
+      message: String(toastConfig.message),
+      detail: toastConfig.detail ? String(toastConfig.detail) : '',
+      actionLabel: toastConfig.actionLabel ? String(toastConfig.actionLabel) : '',
+      onAction: typeof toastConfig.onAction === 'function' ? toastConfig.onAction : null,
+      tone: toastConfig.tone || 'ok',
+      durationMs: Number(toastConfig.durationMs) >= 0 ? Number(toastConfig.durationMs) : 5200,
+    },
+  });
+  return toastSeq;
+}
+
+function dismissUiToast(toastId = 0) {
+  const cur = uiStore.getState().toast;
+  if (!cur) return;
+  if (toastId && cur.id !== toastId) return;
+  uiStore.setState({ toast: null });
+}
 
 function getVisibleMonitorView(state = uiStore.getState()) {
   return state.monitorVisible ? state.activeView : null;
 }
-return { getViewTabs, uiStore, getVisibleMonitorView };
+return { getViewTabs, uiStore, showUiToast, dismissUiToast, getVisibleMonitorView };
+})();
+
+// --- src/core/fileExportClient.js ---
+const { revealExportedFile, exportTextFileWithFeedback, copyTextWithFeedback } = (() => {
+/**
+ * @fileoverview 统一文本文件导出及剪贴板复制客户端 (`fileExportClient.js`)。
+ * 优先调用本机后端 `/api/export-file` 落盘到用户 Downloads（或插件 `.data/exports`）并返回真实绝对路径，
+ * 同时通过全局 Toast 清晰展示保存位置并提供「打开位置」快捷按钮；
+ * 当后端不可达或处于远程浏览器访问时，自动平滑降级到 `showSaveFilePicker` 或浏览器 Blob 下载并给出明确提示。
+ */
+
+
+function isHostEmbeddedWebview() {
+  if (typeof window === 'undefined') return false;
+  return Boolean(window.sidecar?.fetch) || isWindowOverlayMode();
+}
+
+function getPickerTypesForFilename(filename, mimeType) {
+  const lower = String(filename || '').toLowerCase();
+  if (lower.endsWith('.csv') || String(mimeType || '').includes('csv')) {
+    return [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }];
+  }
+  if (lower.endsWith('.md') || String(mimeType || '').includes('markdown')) {
+    return [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }];
+  }
+  return [{ description: 'JSON', accept: { 'application/json': ['.json'] } }];
+}
+
+/**
+ * 调用本机后端在系统文件管理器中打开并高亮选中已导出的文件。
+ * 兼容热更新后常驻父进程 `main.mjs` 尚未注册新路由的场景，自动回退至 `POST /api/settings` 穿透转发至最新 Worker。
+ *
+ * @param {string} filePath
+ * @returns {Promise<boolean>}
+ */
+async function revealExportedFile(filePath) {
+  if (!filePath) return false;
+  try {
+    const res = await callSidecarApi('/api/reveal-file', {
+      method: 'POST',
+      body: { filePath },
+      cdpTimeoutMs: 4000,
+    });
+    if (res?.ok) return true;
+  } catch (err) {
+    if (err?.httpStatus === 403) return false;
+  }
+  try {
+    const fallbackRes = await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __exportFileAction: 'reveal', payload: { filePath } },
+      cdpTimeoutMs: 4000,
+    });
+    return Boolean(fallbackRes?.ok);
+  } catch {
+    return false;
+  }
+}
+
+async function requestLocalBackendExport(payload) {
+  let remoteForbidden = false;
+  try {
+    const res = await callSidecarApi('/api/export-file', {
+      method: 'POST',
+      body: payload,
+      cdpTimeoutMs: 6000,
+    });
+    if (res && res.ok && res.filePath) {
+      return { res, remoteForbidden: false };
+    }
+    if (res && res.fallbackBrowser) {
+      return { res: null, remoteForbidden: true };
+    }
+  } catch (err) {
+    if (err?.httpStatus === 403) {
+      remoteForbidden = true;
+    }
+  }
+
+  if (remoteForbidden) {
+    return { res: null, remoteForbidden: true };
+  }
+
+  // 兼容热更新后常驻父进程 main.mjs 尚未重注册 /api/export-file 的场景，回退经 POST /api/settings 穿透至最新 Worker
+  try {
+    const fallbackRes = await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __exportFileAction: 'save', payload },
+      cdpTimeoutMs: 6000,
+    });
+    if (fallbackRes && fallbackRes.ok && fallbackRes.filePath) {
+      return { res: fallbackRes, remoteForbidden: false };
+    }
+  } catch {
+    // 忽略回退异常，交由下方分环境处理
+  }
+  return { res: null, remoteForbidden: false };
+}
+
+/**
+ * 统一文本导出入口：优先本机后端落盘（返回精确路径 + 支持一键打开所在目录），
+ * 仅在真正独立浏览器上下文（非 Sidecar / 非 Electron 宿主）下降级为浏览器保存，避免宿主静默吞掉 Blob 下载后误报成功。
+ *
+ * @param {string} filename
+ * @param {string} content
+ * @param {string} [mimeType='text/plain;charset=utf-8']
+ * @returns {Promise<{ ok: boolean, mode: 'local' | 'picker' | 'browser' | 'cancelled' | 'failed', filePath?: string, fileName?: string }>}
+ */
+async function exportTextFileWithFeedback(
+  filename,
+  content,
+  mimeType = 'application/json;charset=utf-8'
+) {
+  const safeName = String(filename || 'export.txt');
+  const text = String(content ?? '');
+
+  // 1. 优先通过本机后端落盘到 Downloads（含 /api/settings 穿透兼容旧常驻 main.mjs）
+  const { res: localRes } = await requestLocalBackendExport({
+    filename: safeName,
+    content: text,
+    mimeType,
+  });
+  if (localRes && localRes.ok && localRes.filePath) {
+    const savedPath = String(localRes.filePath);
+    const savedName = String(localRes.fileName || safeName);
+    showUiToast({
+      message: t('export.savedLocal', { file: savedName }),
+      detail: savedPath,
+      actionLabel: t('export.openFolder'),
+      onAction: () => {
+        void revealExportedFile(savedPath);
+      },
+      tone: 'ok',
+      durationMs: 7000,
+    });
+    return { ok: true, mode: 'local', filePath: savedPath, fileName: savedName };
+  }
+
+  // 2. 在 Antigravity Sidecar / 双栖 Electron 宿主内，<a download> 会被静默吞掉，绝不误报“已下载到浏览器”
+  if (isHostEmbeddedWebview()) {
+    showUiToast({
+      message: t('export.failed'),
+      detail: t('export.hostUnavailable'),
+      tone: 'warn',
+      durationMs: 5200,
+    });
+    return { ok: false, mode: 'failed' };
+  }
+
+  // 3. 普通独立浏览器原生「另存为」对话框
+  if (typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function') {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: safeName,
+        types: getPickerTypesForFilename(safeName, mimeType),
+      });
+      const writable = await handle.createWritable();
+      await writable.write(text);
+      await writable.close();
+      const pickedName = handle.name || safeName;
+      showUiToast({
+        message: t('export.savedPicked', { file: pickedName }),
+        tone: 'ok',
+        durationMs: 4200,
+      });
+      return { ok: true, mode: 'picker', fileName: pickedName };
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        return { ok: false, mode: 'cancelled' };
+      }
+      // 沙箱/iframe 抛出 SecurityError 等时继续降级到 Blob 下载
+    }
+  }
+
+  // 4. 独立浏览器标准 Blob 兜底下载
+  const ok = triggerTextFileDownload(safeName, text, mimeType);
+  if (ok) {
+    showUiToast({
+      message: t('export.savedBrowser', { file: safeName }),
+      detail: t('export.savedBrowserHint'),
+      tone: 'info',
+      durationMs: 5000,
+    });
+    return { ok: true, mode: 'browser', fileName: safeName };
+  }
+
+  showUiToast({
+    message: t('export.failed'),
+    tone: 'warn',
+    durationMs: 3600,
+  });
+  return { ok: false, mode: 'failed' };
+}
+
+/**
+ * 复制文本到剪贴板并弹出轻量提示条。
+ *
+ * @param {string} text
+ * @param {string} successMessage
+ * @returns {Promise<boolean>}
+ */
+async function copyTextWithFeedback(text, successMessage) {
+  const ok = await copyPlainTextToClipboard(text);
+  if (ok) {
+    showUiToast({
+      message: successMessage || t('export.copied'),
+      tone: 'ok',
+      durationMs: 2400,
+    });
+  } else {
+    showUiToast({
+      message: t('export.copyFailed'),
+      tone: 'warn',
+      durationMs: 3200,
+    });
+  }
+  return ok;
+}
+return { revealExportedFile, exportTextFileWithFeedback, copyTextWithFeedback };
 })();
 
 // --- src/store/telemetryStore.js ---
@@ -8888,6 +9727,170 @@ const CustomSelect = defineComponent({
   },
 });
 return { filterSelectOptionsByQuery, CustomSelect };
+})();
+
+// --- src/components/ui/ActionMenu.js ---
+const { ActionMenu } = (() => {
+/**
+ * @fileoverview 紧凑竖向三点 (`⋮`) 下拉单选操作菜单组件 (`ActionMenu.js`)。
+ * 兼容 Shadow DOM (`composedPath`) 外部点击收起及 Escape 键盘关闭，供用量统计、调用明细等工具栏复用。
+ */
+
+
+const ActionMenu = defineComponent({
+  name: 'ActionMenu',
+  setup({ props, onCleanup }) {
+    let isOpen = false;
+    let currentItems = Array.isArray(props?.items) ? props.items.slice() : [];
+    const align = props?.align === 'left' ? 'left' : 'right';
+
+    const triggerBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: `action-menu-trigger${props?.buttonClassName ? ` ${props.buttonClassName}` : ''}`,
+        'aria-haspopup': 'menu',
+        'aria-expanded': 'false',
+        'aria-label': props?.ariaLabel || 'More actions',
+        title: props?.ariaLabel || 'More actions',
+        onclick: (e) => {
+          e?.stopPropagation?.();
+          if (isOpen) {
+            close();
+          } else {
+            open();
+          }
+        },
+      },
+      [createSvgIcon('more-vertical', { size: 13 })]
+    );
+
+    const menuEl = h('div', {
+      className: `action-menu-popover${align === 'left' ? ' align-left' : ' align-right'}`,
+      role: 'menu',
+      hidden: true,
+    });
+
+    const rootEl = h(
+      'div',
+      {
+        className: `action-menu${props?.className ? ` ${props.className}` : ''}`,
+      },
+      [triggerBtn, menuEl]
+    );
+
+    let itemBtns = [];
+
+    function rebuildItems(items) {
+      currentItems = Array.isArray(items) ? items.slice() : [];
+      menuEl.textContent = '';
+      itemBtns = currentItems.map((item) => {
+        const iconNode = item.icon ? createSvgIcon(item.icon, { size: 12 }) : null;
+        const labelNode = h('span', { className: 'action-menu-item-label', text: item.label || '' });
+        const btn = h(
+          'button',
+          {
+            type: 'button',
+            role: 'menuitem',
+            className: 'action-menu-item',
+            'data-action-key': item.key || '',
+            title: item.title || '',
+            disabled: Boolean(item.disabled),
+            onclick: (e) => {
+              e?.stopPropagation?.();
+              close();
+              if (!item.disabled && typeof item.onSelect === 'function') {
+                item.onSelect();
+              }
+            },
+          },
+          iconNode ? [iconNode, labelNode] : [labelNode]
+        );
+        menuEl.appendChild(btn);
+        return { key: item.key, btn, labelNode };
+      });
+    }
+
+    function open() {
+      if (isOpen) return;
+      isOpen = true;
+      patchClasses(rootEl, { 'is-open': true });
+      patchAttr(triggerBtn, 'aria-expanded', 'true');
+      patchAttr(menuEl, 'hidden', false);
+    }
+
+    function close() {
+      if (!isOpen) return;
+      isOpen = false;
+      patchClasses(rootEl, { 'is-open': false });
+      patchAttr(triggerBtn, 'aria-expanded', 'false');
+      patchAttr(menuEl, 'hidden', true);
+    }
+
+    function onDocPointerDown(e) {
+      if (!isOpen) return;
+      if (isEventInside(e, rootEl)) return;
+      close();
+    }
+
+    function onDocKeyDown(e) {
+      if (!isOpen) return;
+      if (e?.key === 'Escape') {
+        e.preventDefault?.();
+        close();
+        triggerBtn.focus?.();
+      }
+    }
+
+    rebuildItems(currentItems);
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener?.('pointerdown', onDocPointerDown, true);
+      document.addEventListener?.('click', onDocPointerDown, true);
+      document.addEventListener?.('keydown', onDocKeyDown, true);
+    }
+
+    onCleanup(() => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener?.('pointerdown', onDocPointerDown, true);
+        document.removeEventListener?.('click', onDocPointerDown, true);
+        document.removeEventListener?.('keydown', onDocKeyDown, true);
+      }
+    });
+
+    return {
+      el: rootEl,
+      refs: {
+        triggerBtn,
+        menuEl,
+        getItemBtn: (key) => itemBtns.find((it) => it.key === key)?.btn || null,
+        isOpen: () => isOpen,
+        open,
+        close,
+        setItems: (nextItems) => {
+          rebuildItems(nextItems);
+        },
+        setAriaLabel: (label) => {
+          patchAttr(triggerBtn, 'aria-label', label);
+          patchAttr(triggerBtn, 'title', label);
+        },
+        setHidden: (hidden) => {
+          if (hidden) close();
+          patchAttr(rootEl, 'hidden', Boolean(hidden));
+        },
+        updateItemLabels: (labelMap) => {
+          for (const it of itemBtns) {
+            const entry = labelMap?.[it.key];
+            if (!entry) continue;
+            if (entry.label !== undefined) patchText(it.labelNode, entry.label);
+            if (entry.title !== undefined) patchAttr(it.btn, 'title', entry.title);
+          }
+        },
+      },
+    };
+  },
+});
+return { ActionMenu };
 })();
 
 // --- src/components/ui/CustomNumberInput.js ---
@@ -24182,14 +25185,19 @@ const SettingsOtherTab = defineComponent({
       {
         type: 'button',
         className: 'btn-secondary',
-        onClick: () => {
+        onClick: async () => {
           const json = buildExportableSettingsJson(latestSettings || {});
-          triggerTextFileDownload(
+          const res = await exportTextFileWithFeedback(
             'antigravity-usage-monitor-settings.json',
             json,
             'application/json;charset=utf-8'
           );
-          showMaintFeedback(t('settings.oth.exportDone'), 2400);
+          if (res?.ok) {
+            showMaintFeedback(
+              res.filePath ? `${t('settings.oth.exportDone')} · ${res.filePath}` : t('settings.oth.exportDone'),
+              4200
+            );
+          }
         },
       },
       [createSvgIcon('download', { size: 12 }), exportJsonBtnText]
@@ -25058,6 +26066,56 @@ const ConsumptionView = defineComponent({
     const outputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.replyAndThink', { resp: 0, think: 0 }) });
 
     const overviewSegBar = createFourSegmentBar();
+    const consExportMenu = ActionMenu({
+      ariaLabel: t('cons.exportMenuAria'),
+      className: 'cons-export-menu',
+      items: [
+        {
+          key: 'csv',
+          icon: 'download',
+          label: t('cons.exportCsv'),
+          title: t('cons.exportCsvTip'),
+          onSelect: () => {
+            const cons = latestSlice?.consumption;
+            if (!cons) return;
+            const displaySettings = {
+              modelDisplayMode: latestSlice?.modelDisplayMode,
+              showUpstreamModel: latestSlice?.showUpstreamModel,
+              orchestratorIdMode: latestSlice?.orchestratorIdMode,
+            };
+            const csv = buildConsumptionCsv(cons, latestSlice?.modelBreakdown || [], {
+              displaySettings,
+            });
+            const rKey = cons.selectedRange?.key || latestSlice?.range || 'all';
+            void exportTextFileWithFeedback(
+              sanitizeExportFilename(`usage-${rKey}`, 'csv'),
+              csv,
+              'text/csv;charset=utf-8'
+            );
+          },
+        },
+        {
+          key: 'md',
+          icon: 'copy',
+          label: t('cons.exportMd'),
+          title: t('cons.exportMdTip'),
+          onSelect: () => {
+            const cons = latestSlice?.consumption;
+            if (!cons) return;
+            const displaySettings = {
+              modelDisplayMode: latestSlice?.modelDisplayMode,
+              showUpstreamModel: latestSlice?.showUpstreamModel,
+              orchestratorIdMode: latestSlice?.orchestratorIdMode,
+            };
+            const md = buildConsumptionMarkdownReport(cons, latestSlice?.modelBreakdown || [], {
+              displaySettings,
+            });
+            void copyTextWithFeedback(md, t('cons.exportMdDone'));
+          },
+        },
+      ],
+    });
+    consExportMenu.refs.setHidden(true);
     const totalTokensLabel = h('span', { className: 'text-muted', style: 'font-size: var(--fs-md);', text: t('cons.totalTokens') });
     const estCostLabel = h('span', { className: 'text-muted', style: 'font-size: var(--fs-md);', text: t('cons.estCost') });
     const cacheHitRateLabel = h('span', { text: t('cons.cacheHitRate') });
@@ -25070,7 +26128,10 @@ const ConsumptionView = defineComponent({
         h('span', { className: 'panel-title' }, [
           dateSpanBadge,
         ]),
-        timeFilterSwitch.el,
+        h('div', { className: 'cons-overview-controls' }, [
+          timeFilterSwitch.el,
+          consExportMenu.el,
+        ]),
       ]),
       customRangeBar,
       h('div', { className: 'cons-box cons-unified-matrix' }, [
@@ -26575,6 +27636,7 @@ const ConsumptionView = defineComponent({
           think: formatTokensPrecise(thinkingTokens),
         })
       );
+      consExportMenu.refs.setHidden(!(totalTokens > 0 || Number(acct.calls || 0) > 0));
 
       overviewSegBar.update({
         inputTokens,
@@ -27024,6 +28086,11 @@ const ConsumptionView = defineComponent({
       patchText(newInputLabel, t('cons.newInput'));
       patchText(cacheReadLabel, t('cons.cacheRead'));
       patchText(outputUsageLabel, t('cons.outputUsage'));
+      consExportMenu.refs.setAriaLabel(t('cons.exportMenuAria'));
+      consExportMenu.refs.updateItemLabels({
+        csv: { label: t('cons.exportCsv'), title: t('cons.exportCsvTip') },
+        md: { label: t('cons.exportMd'), title: t('cons.exportMdTip') },
+      });
       patchText(trendTitleSpan, t('cons.trendTitle'));
       rankingTabSwitch.setProps({
         ariaLabel: t('cons.rankTabAria'),
@@ -27066,6 +28133,7 @@ const ConsumptionView = defineComponent({
       unsub();
       unsubView();
       unsubI18n();
+      consExportMenu.destroy();
       trendChart.destroy?.();
       rankingTabSwitch.destroy();
       modelsSortSwitch.destroy();
@@ -27078,7 +28146,14 @@ const ConsumptionView = defineComponent({
 
     return {
       el: rootEl,
-      refs: { timeFilterSwitch, startPicker, endPicker, viewScrollbar, breakdownPopoverEl },
+      refs: {
+        timeFilterSwitch,
+        startPicker,
+        endPicker,
+        viewScrollbar,
+        breakdownPopoverEl,
+        consExportMenu,
+      },
     };
   },
 });
@@ -27483,10 +28558,49 @@ const StepsDetailView = defineComponent({
       { className: 'steps-quick-chips', hidden: true },
       quickChipBtns.map((c) => c.btn)
     );
+    const stepsExportMenu = ActionMenu({
+      ariaLabel: t('steps.exportMenuAria'),
+      className: 'steps-export-menu',
+      items: [
+        {
+          key: 'csv',
+          icon: 'download',
+          label: t('steps.exportCsv'),
+          title: t('steps.exportCsvTip'),
+          onSelect: () => {
+            if (currentTableSteps.length === 0) return;
+            const csv = buildStepsCsv(currentTableSteps, {
+              displaySettings: currentDisplaySettings,
+            });
+            const title = latestSlice?.activeConversation?.title || latestSlice?.cascadeId || 'steps';
+            void exportTextFileWithFeedback(
+              sanitizeExportFilename(`steps-${title}`, 'csv'),
+              csv,
+              'text/csv;charset=utf-8'
+            );
+          },
+        },
+        {
+          key: 'md',
+          icon: 'copy',
+          label: t('steps.exportMd'),
+          title: t('steps.exportMdTip'),
+          onSelect: () => {
+            if (currentTableSteps.length === 0) return;
+            const md = buildStepsMarkdownReport(currentTableSteps, {
+              title: latestSlice?.activeConversation?.title || '',
+              cascadeId: latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || '',
+              displaySettings: currentDisplaySettings,
+            });
+            void copyTextWithFeedback(md, t('steps.exportMdDone'));
+          },
+        },
+      ],
+    });
     const stepsFilterToolbarEl = h(
       'div',
       { className: 'steps-filter-toolbar', hidden: true },
-      [stepSearchWrapEl, stepQuickChipsEl]
+      [stepSearchWrapEl, stepQuickChipsEl, stepsExportMenu.el]
     );
 
     // --- 点击行展开的单步透视诊断抽屉 ---
@@ -28021,6 +29135,11 @@ const StepsDetailView = defineComponent({
       patchAttr(inspCloseBtn, 'aria-label', t('steps.inspCloseAria'));
       patchAttr(inspCloseBtn, 'title', t('steps.inspCloseAria'));
       if (!inspCopyTimer) patchText(inspCopyLabel, t('steps.inspCopy'));
+      stepsExportMenu.refs.setAriaLabel(t('steps.exportMenuAria'));
+      stepsExportMenu.refs.updateItemLabels({
+        csv: { label: t('steps.exportCsv'), title: t('steps.exportCsvTip') },
+        md: { label: t('steps.exportMd'), title: t('steps.exportMdTip') },
+      });
       lastAnomalyStripSig = '';
       lineMetricSwitch.setProps({
         modelValue: selectedLineMetric,
@@ -29027,6 +30146,7 @@ const StepsDetailView = defineComponent({
         clearTimeout(inspCopyTimer);
         inspCopyTimer = null;
       }
+      stepsExportMenu.destroy();
       panelEl.removeEventListener?.('keydown', onPanelKeydown);
       modelsAnalyticsPane.removeEventListener('scroll', onModelsPaneScroll);
       unsubUi();
@@ -29059,6 +30179,7 @@ const StepsDetailView = defineComponent({
         stepsFilterToolbarEl,
         stepSearchInput,
         stepQuickChipsEl,
+        stepsExportMenu,
         stepInspectorDrawerEl,
         modelsAnomalyStripEl,
         modelsListEl,
@@ -29368,6 +30489,116 @@ const App = defineComponent({
       settingsView.el,
     ]);
 
+    const toastMsgEl = h('span', { className: 'app-toast-msg' });
+    const toastDetailEl = h('span', { className: 'app-toast-detail text-mono', hidden: true });
+    let activeToastAction = null;
+    let activeToastId = 0;
+    let toastAutoTimer = null;
+    let toastRemainingMs = 0;
+    let toastStartedAt = 0;
+
+    function clearToastTimer() {
+      if (toastAutoTimer) {
+        clearTimeout(toastAutoTimer);
+        toastAutoTimer = null;
+      }
+    }
+
+    function scheduleToastAutoClose(toastId, delayMs) {
+      clearToastTimer();
+      if (!(delayMs > 0)) return;
+      toastRemainingMs = delayMs;
+      toastStartedAt = Date.now();
+      toastAutoTimer = setTimeout(() => {
+        toastAutoTimer = null;
+        dismissUiToast(toastId);
+      }, delayMs);
+    }
+
+    const toastActionLabelEl = h('span');
+    const toastActionBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'app-toast-action',
+        hidden: true,
+        onclick: () => {
+          const fn = activeToastAction;
+          if (typeof fn === 'function') fn();
+        },
+      },
+      [createSvgIcon('folder', { size: 12 }), toastActionLabelEl]
+    );
+    const toastCloseBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'app-toast-close',
+        'aria-label': t('export.closeToast'),
+        title: t('export.closeToast'),
+        onclick: () => dismissUiToast(activeToastId),
+      },
+      [createSvgIcon('close', { size: 11 })]
+    );
+    const toastEl = h(
+      'div',
+      {
+        className: 'app-toast',
+        role: 'status',
+        'aria-live': 'polite',
+        hidden: true,
+        onMouseenter: () => {
+          if (toastAutoTimer) {
+            const elapsed = Date.now() - toastStartedAt;
+            toastRemainingMs = Math.max(800, toastRemainingMs - elapsed);
+            clearToastTimer();
+          }
+        },
+        onMouseleave: () => {
+          if (activeToastId && toastRemainingMs > 0 && !toastAutoTimer) {
+            scheduleToastAutoClose(activeToastId, toastRemainingMs);
+          }
+        },
+      },
+      [
+        h('div', { className: 'app-toast-body' }, [toastMsgEl, toastDetailEl]),
+        toastActionBtn,
+        toastCloseBtn,
+      ]
+    );
+
+    function syncToastState(toast) {
+      if (!toast || !toast.message) {
+        clearToastTimer();
+        activeToastId = 0;
+        activeToastAction = null;
+        toastRemainingMs = 0;
+        patchAttr(toastEl, 'hidden', true);
+        return;
+      }
+      activeToastId = toast.id;
+      activeToastAction = toast.onAction;
+      patchText(toastMsgEl, toast.message);
+      const hasDetail = Boolean(toast.detail);
+      patchAttr(toastDetailEl, 'hidden', !hasDetail);
+      if (hasDetail) {
+        patchText(toastDetailEl, toast.detail);
+        patchAttr(toastDetailEl, 'title', toast.detail);
+      }
+      const hasAction = Boolean(toast.actionLabel && typeof toast.onAction === 'function');
+      patchAttr(toastActionBtn, 'hidden', !hasAction);
+      if (hasAction) {
+        patchText(toastActionLabelEl, toast.actionLabel);
+      }
+      patchClasses(toastEl, {
+        'tone-ok': toast.tone === 'ok',
+        'tone-info': toast.tone === 'info',
+        'tone-warn': toast.tone === 'warn',
+      });
+      patchAttr(toastEl, 'hidden', false);
+      scheduleToastAutoClose(toast.id, toast.durationMs);
+    }
+
     const shellEl = h(
       'main',
       {
@@ -29400,6 +30631,7 @@ const App = defineComponent({
         h('div', { className: 'top-deck' }, [sessionHeader.el, topPillNav.el]),
         bannerSlotEl,
         stageEl,
+        toastEl,
       ]
     );
 
@@ -29466,19 +30698,29 @@ const App = defineComponent({
       () => syncStepsBadge()
     );
 
+    const unsubToast = uiStore.subscribe(
+      (st) => st.toast,
+      (toast) => syncToastState(toast)
+    );
+    syncToastState(uiStore.getState().toast);
+
     const unsubI18n = i18nStore.subscribe(
       (st) => st.locale,
       () => {
         syncStepsBadge();
         globalBridgeNotice.refs.refreshLabels();
         patchAttr(bannerSlotEl, 'hidden', globalBridgeNotice.el.hasAttribute('hidden'));
+        patchAttr(toastCloseBtn, 'aria-label', t('export.closeToast'));
+        patchAttr(toastCloseBtn, 'title', t('export.closeToast'));
       }
     );
 
     onCleanup(() => {
+      clearToastTimer();
       unsubUi();
       unsubStepCount();
       unsubScopeBadge();
+      unsubToast();
       unsubI18n();
       globalBridgeNotice.destroy();
       sessionHeader.destroy();
@@ -29495,6 +30737,8 @@ const App = defineComponent({
         sessionHeader,
         topPillNav,
         globalBridgeNotice,
+        toastEl,
+        toastActionBtn,
         overviewView,
         consumptionView,
         stepsView,

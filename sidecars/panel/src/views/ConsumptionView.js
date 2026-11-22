@@ -33,8 +33,18 @@ import {
   resolveDeterministicModelColor,
 } from '../core/formatters.js';
 import { scaleBucketsExact } from '../../shared/telemetry-display-rules.mjs';
+import {
+  buildConsumptionCsv,
+  buildConsumptionMarkdownReport,
+  sanitizeExportFilename,
+} from '../core/reportExporter.js';
+import {
+  copyTextWithFeedback,
+  exportTextFileWithFeedback,
+} from '../core/fileExportClient.js';
 import { i18nStore, isEnglishLocale, t } from '../i18n/index.js';
 import { createSvgIcon } from '../icons/SvgIcon.js';
+import { ActionMenu } from '../components/ui/ActionMenu.js';
 import {
   prefetchConsumptionPresets,
   selectConsumptionTimeRange,
@@ -208,6 +218,56 @@ export const ConsumptionView = defineComponent({
     const outputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.replyAndThink', { resp: 0, think: 0 }) });
 
     const overviewSegBar = createFourSegmentBar();
+    const consExportMenu = ActionMenu({
+      ariaLabel: t('cons.exportMenuAria'),
+      className: 'cons-export-menu',
+      items: [
+        {
+          key: 'csv',
+          icon: 'download',
+          label: t('cons.exportCsv'),
+          title: t('cons.exportCsvTip'),
+          onSelect: () => {
+            const cons = latestSlice?.consumption;
+            if (!cons) return;
+            const displaySettings = {
+              modelDisplayMode: latestSlice?.modelDisplayMode,
+              showUpstreamModel: latestSlice?.showUpstreamModel,
+              orchestratorIdMode: latestSlice?.orchestratorIdMode,
+            };
+            const csv = buildConsumptionCsv(cons, latestSlice?.modelBreakdown || [], {
+              displaySettings,
+            });
+            const rKey = cons.selectedRange?.key || latestSlice?.range || 'all';
+            void exportTextFileWithFeedback(
+              sanitizeExportFilename(`usage-${rKey}`, 'csv'),
+              csv,
+              'text/csv;charset=utf-8'
+            );
+          },
+        },
+        {
+          key: 'md',
+          icon: 'copy',
+          label: t('cons.exportMd'),
+          title: t('cons.exportMdTip'),
+          onSelect: () => {
+            const cons = latestSlice?.consumption;
+            if (!cons) return;
+            const displaySettings = {
+              modelDisplayMode: latestSlice?.modelDisplayMode,
+              showUpstreamModel: latestSlice?.showUpstreamModel,
+              orchestratorIdMode: latestSlice?.orchestratorIdMode,
+            };
+            const md = buildConsumptionMarkdownReport(cons, latestSlice?.modelBreakdown || [], {
+              displaySettings,
+            });
+            void copyTextWithFeedback(md, t('cons.exportMdDone'));
+          },
+        },
+      ],
+    });
+    consExportMenu.refs.setHidden(true);
     const totalTokensLabel = h('span', { className: 'text-muted', style: 'font-size: var(--fs-md);', text: t('cons.totalTokens') });
     const estCostLabel = h('span', { className: 'text-muted', style: 'font-size: var(--fs-md);', text: t('cons.estCost') });
     const cacheHitRateLabel = h('span', { text: t('cons.cacheHitRate') });
@@ -220,7 +280,10 @@ export const ConsumptionView = defineComponent({
         h('span', { className: 'panel-title' }, [
           dateSpanBadge,
         ]),
-        timeFilterSwitch.el,
+        h('div', { className: 'cons-overview-controls' }, [
+          timeFilterSwitch.el,
+          consExportMenu.el,
+        ]),
       ]),
       customRangeBar,
       h('div', { className: 'cons-box cons-unified-matrix' }, [
@@ -1725,6 +1788,7 @@ export const ConsumptionView = defineComponent({
           think: formatTokensPrecise(thinkingTokens),
         })
       );
+      consExportMenu.refs.setHidden(!(totalTokens > 0 || Number(acct.calls || 0) > 0));
 
       overviewSegBar.update({
         inputTokens,
@@ -2174,6 +2238,11 @@ export const ConsumptionView = defineComponent({
       patchText(newInputLabel, t('cons.newInput'));
       patchText(cacheReadLabel, t('cons.cacheRead'));
       patchText(outputUsageLabel, t('cons.outputUsage'));
+      consExportMenu.refs.setAriaLabel(t('cons.exportMenuAria'));
+      consExportMenu.refs.updateItemLabels({
+        csv: { label: t('cons.exportCsv'), title: t('cons.exportCsvTip') },
+        md: { label: t('cons.exportMd'), title: t('cons.exportMdTip') },
+      });
       patchText(trendTitleSpan, t('cons.trendTitle'));
       rankingTabSwitch.setProps({
         ariaLabel: t('cons.rankTabAria'),
@@ -2216,6 +2285,7 @@ export const ConsumptionView = defineComponent({
       unsub();
       unsubView();
       unsubI18n();
+      consExportMenu.destroy();
       trendChart.destroy?.();
       rankingTabSwitch.destroy();
       modelsSortSwitch.destroy();
@@ -2228,7 +2298,14 @@ export const ConsumptionView = defineComponent({
 
     return {
       el: rootEl,
-      refs: { timeFilterSwitch, startPicker, endPicker, viewScrollbar, breakdownPopoverEl },
+      refs: {
+        timeFilterSwitch,
+        startPicker,
+        endPicker,
+        viewScrollbar,
+        breakdownPopoverEl,
+        consExportMenu,
+      },
     };
   },
 });

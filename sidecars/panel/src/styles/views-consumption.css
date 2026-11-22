@@ -14,6 +14,14 @@
   gap: 6px;
 }
 
+.cons-overview-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  min-width: 0;
+}
+
 .cons-overview-head .segmented {
   gap: 1px;
 }

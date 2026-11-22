@@ -105,6 +105,19 @@ export const SVG_ICON_DEFS = Object.freeze({
     { tag: 'path', attrs: { d: 'M8 10.2V2.6M5 5.4L8 2.4l3 3' } },
     { tag: 'path', attrs: { d: 'M2.6 11.4v1.4a1 1 0 0 0 1 1h8.8a1 1 0 0 0 1-1v-1.4' } },
   ],
+  'more-vertical': [
+    { tag: 'circle', attrs: { cx: '8', cy: '3.6', r: '1.15', fill: 'currentColor', stroke: 'none' } },
+    { tag: 'circle', attrs: { cx: '8', cy: '8', r: '1.15', fill: 'currentColor', stroke: 'none' } },
+    { tag: 'circle', attrs: { cx: '8', cy: '12.4', r: '1.15', fill: 'currentColor', stroke: 'none' } },
+  ],
+  folder: [
+    {
+      tag: 'path',
+      attrs: {
+        d: 'M2.2 4.3a1.3 1.3 0 0 1 1.3-1.3h3l1.3 1.5h4.7a1.3 1.3 0 0 1 1.3 1.3v5.9a1.3 1.3 0 0 1-1.3 1.3H3.5a1.3 1.3 0 0 1-1.3-1.3V4.3z',
+      },
+    },
+  ],
   grip: [
     { tag: 'circle', attrs: { cx: '6', cy: '4', r: '1.05', fill: 'currentColor', stroke: 'none' } },
     { tag: 'circle', attrs: { cx: '10', cy: '4', r: '1.05', fill: 'currentColor', stroke: 'none' } },

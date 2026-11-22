@@ -11,8 +11,8 @@ import { setI18nLanguage, t } from '../../i18n/index.js';
 import {
   buildExportableSettingsJson,
   parseImportedSettingsJson,
-  triggerTextFileDownload,
 } from '../../core/settingsBackup.js';
+import { exportTextFileWithFeedback } from '../../core/fileExportClient.js';
 import {
   normalizeClientModelDisplayMode,
   normalizeClientOrchestratorIdMode,
@@ -544,14 +544,19 @@ export const SettingsOtherTab = defineComponent({
       {
         type: 'button',
         className: 'btn-secondary',
-        onClick: () => {
+        onClick: async () => {
           const json = buildExportableSettingsJson(latestSettings || {});
-          triggerTextFileDownload(
+          const res = await exportTextFileWithFeedback(
             'antigravity-usage-monitor-settings.json',
             json,
             'application/json;charset=utf-8'
           );
-          showMaintFeedback(t('settings.oth.exportDone'), 2400);
+          if (res?.ok) {
+            showMaintFeedback(
+              res.filePath ? `${t('settings.oth.exportDone')} · ${res.filePath}` : t('settings.oth.exportDone'),
+              4200
+            );
+          }
         },
       },
       [createSvgIcon('download', { size: 12 }), exportJsonBtnText]
