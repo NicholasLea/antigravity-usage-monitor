@@ -529,6 +529,7 @@ export function buildBundle(panelDir = PANEL_DIR) {
     'src/core/domPatch.js',
     'src/core/component.js',
     'src/core/formatters.js',
+    'src/core/stepInspector.js',
     'src/core/settingsBackup.js',
     'src/core/httpClient.js',
     'src/store/uiStore.js',

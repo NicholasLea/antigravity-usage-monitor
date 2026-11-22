@@ -1314,3 +1314,197 @@ test('Feature 13: TopSessionHeader exposes project/workspace tags on sessions an
   assert.equal(visibleOpts.length, 1);
   assert.match(visibleOpts[0].textContent, /web-dashboard/);
 });
+
+test('Feature 10: StepsDetailView live search, dynamic diagnostic chips, and click-to-inspect step drawer', async (t) => {
+  const {
+    computeStepQuickChipCounts,
+    computeStepTimingWaterfall,
+    filterStepsBySearchAndChip,
+    buildStepDiagnosticMarkdown,
+  } = await import('../src/core/stepInspector.js');
+
+  const steps = [
+    {
+      stepIndex: 4,
+      createdAtMs: Date.UTC(2026, 10, 22, 10, 4, 0),
+      modelShort: '4-neon',
+      modelLabel: 'Gemini 4 Neon',
+      tokPerSec: 42.5,
+      ttftSec: 32.4,
+      streamDurationSec: 4.6,
+      durationSec: 38.0,
+      inputTokens: 12_000,
+      cacheReadTokens: 8_000,
+      outputTokens: 600,
+      thinkingTokens: 400,
+      responseTokens: 200,
+      contextTokens: 120_600,
+      cacheHitPct: 40.0,
+      costUsd: 0.24,
+      turnPrompt: 'Debug SQLite migrator lock contention',
+      anomaly: { count: 1, severity: 'danger', primaryKind: 'rate_limit', kinds: { rate_limit: 1 } },
+      anomalySig: 'rate_limit:1',
+    },
+    {
+      stepIndex: 3,
+      createdAtMs: Date.UTC(2026, 10, 22, 10, 3, 0),
+      modelShort: '4-carbon',
+      modelLabel: 'Gemini 4 Carbon',
+      tokPerSec: null,
+      ttftSec: null,
+      isCompactionStep: true,
+      inputTokens: 40_000,
+      cacheReadTokens: 0,
+      outputTokens: 1_500,
+      contextTokens: 41_500,
+      cacheHitPct: 0,
+      costUsd: 0.08,
+    },
+    {
+      stepIndex: 2,
+      createdAtMs: Date.UTC(2026, 10, 22, 10, 2, 0),
+      modelShort: '4-carbon',
+      modelLabel: 'Gemini 4 Carbon',
+      tokPerSec: 68.0,
+      ttftSec: 1.8,
+      streamDurationSec: 3.2,
+      durationSec: 5.0,
+      inputTokens: 4_000,
+      cacheReadTokens: 96_000,
+      outputTokens: 800,
+      thinkingTokens: 200,
+      responseTokens: 600,
+      contextTokens: 100_800,
+      cacheHitPct: 96.0,
+      costUsd: 0.05,
+      turnPrompt: 'Polish quota widget styling',
+    },
+  ];
+
+  // 1. Pure O(N) chip counts, filtering, waterfall math, and diagnostic Markdown
+  const counts = computeStepQuickChipCounts(steps);
+  assert.deepEqual(counts, { anomaly: 1, compaction: 1, low_cache: 1, slow_ttft: 1 });
+  assert.deepEqual(
+    filterStepsBySearchAndChip(steps, { query: 'sqlite neon' }).map((s) => s.stepIndex),
+    [4]
+  );
+  assert.deepEqual(
+    filterStepsBySearchAndChip(steps, { quickChip: 'compaction' }).map((s) => s.stepIndex),
+    [3]
+  );
+  assert.deepEqual(
+    filterStepsBySearchAndChip(steps, { quickChip: 'low_cache' }).map((s) => s.stepIndex),
+    [4]
+  );
+  assert.deepEqual(
+    filterStepsBySearchAndChip(steps, { quickChip: 'slow_ttft' }).map((s) => s.stepIndex),
+    [4]
+  );
+
+  const wf = computeStepTimingWaterfall(steps[0]);
+  assert.equal(wf.totalSec, 38);
+  assert.equal(wf.ttftSec, 32.4);
+  assert.equal(wf.streamSec, 4.6);
+  assert.equal(wf.otherSec, 1);
+
+  // Aligns slow_ttft strictly with danger TTFT tier (>= 30s), avoiding false positives on 10-29.9s steps
+  assert.deepEqual(
+    computeStepQuickChipCounts([
+      { stepIndex: 10, ttftSec: 12.4 },
+      { stepIndex: 11, ttftSec: 29.9 },
+      { stepIndex: 12, ttftSec: 30.0 },
+    ]).slow_ttft,
+    1
+  );
+
+  const md = buildStepDiagnosticMarkdown(steps[0], { prevContextTokens: 41_500 });
+  assert.match(md, /Step #4/);
+  assert.match(md, /Debug SQLite migrator/);
+  assert.match(md, /\+79\.1k/);
+
+  // 2. Full StepsDetailView DOM integration: search input, diagnostic chips, row click -> drawer, keyboard Escape
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevUi = { ...uiStore.getState() };
+  const prevTel = { ...telemetryStore.getState() };
+  const prevLocale = i18nStore.getState().locale;
+
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 960,
+    innerHeight: 720,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  setI18nLanguage('zh-CN');
+
+  let view = null;
+  t.after(() => {
+    view?.destroy?.();
+    uiStore.setState(prevUi, { sync: true });
+    telemetryStore.setState(prevTel, { sync: true });
+    setI18nLanguage(prevLocale);
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  });
+
+  uiStore.setState({ activeView: 'steps', stepsSubTab: 'steps', monitorVisible: true }, { sync: true });
+  telemetryStore.setState(
+    {
+      telemetry: {
+        settings: { stepTableColumns: ['step', 'model', 'tps', 'cost'] },
+        activeConversation: {
+          cascadeId: 'cid-insp-1',
+          stepCount: 3,
+          recentSteps: steps,
+          modelBreakdown: [],
+        },
+      },
+    },
+    { sync: true }
+  );
+
+  view = StepsDetailView();
+  document.body.appendChild(view.el);
+
+  // Filter toolbar visible with all 4 diagnostic chips
+  assert.equal(view.refs.stepsFilterToolbarEl.hasAttribute('hidden'), false);
+  const chipBtns = view.refs.stepQuickChipsEl.querySelectorAll('.steps-chip-btn');
+  assert.equal(chipBtns.length, 4);
+  assert.equal(chipBtns.every((b) => !b.hasAttribute('hidden')), true);
+
+  // Click Low Cache chip -> narrows table to step #4
+  chipBtns[2].dispatchEvent({ type: 'click' });
+  let rows = view.el.querySelectorAll('tbody tr');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].children[0].textContent, '#4');
+
+  // Toggle chip off -> restores all 3 rows
+  chipBtns[2].dispatchEvent({ type: 'click' });
+  rows = view.el.querySelectorAll('tbody tr');
+  assert.equal(rows.length, 3);
+
+  // Type search query "quota" -> narrows to step #2
+  view.refs.stepSearchInput.value = 'quota';
+  view.refs.stepSearchInput.dispatchEvent({ type: 'input', target: view.refs.stepSearchInput });
+  rows = view.el.querySelectorAll('tbody tr');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].children[0].textContent, '#2');
+
+  // Clear search -> click row #4 -> opens inspector drawer with prompt, waterfall, and delta
+  view.refs.stepSearchInput.value = '';
+  view.refs.stepSearchInput.dispatchEvent({ type: 'input', target: view.refs.stepSearchInput });
+  rows = view.el.querySelectorAll('tbody tr');
+  assert.equal(view.refs.stepInspectorDrawerEl.hasAttribute('hidden'), true);
+
+  rows[0].onclick();
+  assert.equal(view.refs.stepInspectorDrawerEl.hasAttribute('hidden'), false);
+  assert.equal(rows[0].classList.contains('is-selected'), true);
+  assert.match(view.refs.stepInspectorDrawerEl.textContent, /Debug SQLite migrator/);
+  assert.match(view.refs.stepInspectorDrawerEl.textContent, /\+79\.1k/);
+
+  // Close drawer cleanly by clicking same row again
+  rows[0].onclick();
+  assert.equal(view.refs.stepInspectorDrawerEl.hasAttribute('hidden'), true);
+});

@@ -692,12 +692,14 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .number-input:focus-within,
 [data-modern-ui="true"] .settings-text-input:focus,
 [data-modern-ui="true"] .settings-account-form input:focus,
-[data-modern-ui="true"] .smig-search-wrap:focus-within {
+[data-modern-ui="true"] .smig-search-wrap:focus-within,
+[data-modern-ui="true"] .steps-search-wrap:focus-within {
   border: none;
   box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent-primary) 55%, transparent);
 }
 
-[data-modern-ui="true"] .smig-search-wrap {
+[data-modern-ui="true"] .smig-search-wrap,
+[data-modern-ui="true"] .steps-search-wrap {
   border: none;
   background: var(--modern-surface-subtle);
 }

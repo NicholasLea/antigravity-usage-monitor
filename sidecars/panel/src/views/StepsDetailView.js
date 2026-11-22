@@ -18,8 +18,10 @@ import {
   buildModelAnomalyDiagnostic,
   formatAnomalyKindLabel,
   formatAnomalyTagText,
+  formatCompactDateTime,
   formatMetric,
   formatSpeedMetric,
+  formatTimingDetailSec,
   formatTokens,
   formatTokensPrecise,
   formatUsd,
@@ -28,7 +30,18 @@ import {
   normalizeOrchestratorIdDisplayMode,
   resolveModelAnomalySummary,
   resolveModelDisplayInfo,
+  speedReasonText,
 } from '../core/formatters.js';
+import {
+  buildStepDiagnosticMarkdown,
+  computeStepQuickChipCounts,
+  computeStepTimingWaterfall,
+  copyPlainTextToClipboard,
+  filterStepsBySearchAndChip,
+  findPrevAgentContextTokens,
+  getStepSelectionKey,
+} from '../core/stepInspector.js';
+import { createSvgIcon, patchSvgIcon } from '../icons/SvgIcon.js';
 import { getEffectiveLocale, i18nStore, t } from '../i18n/index.js';
 import {
   formatAgentLabel,
@@ -230,6 +243,13 @@ export const StepsDetailView = defineComponent({
     let selectedLineModels = ['__all__'];
     let onlyAnomalies = false;
     let anomalyKindFilter = '';
+    let stepSearchQuery = '';
+    let stepQuickChip = '';
+    let selectedStepKey = '';
+    let currentTableSteps = [];
+    let currentAllConvSteps = [];
+    let currentDisplaySettings = {};
+    let inspCopyTimer = null;
     let sortKey = '';
     let sortDir = '';
     let cachedSortSrc = null;
@@ -307,6 +327,10 @@ export const StepsDetailView = defineComponent({
         sortDir = nextDir || '';
         if (latestSlice) renderStepsData(latestSlice);
       },
+      onSelectStep: (_st, rowKey) => {
+        selectedStepKey = selectedStepKey === rowKey ? '' : rowKey;
+        if (latestSlice) renderStepsData(latestSlice);
+      },
     });
     const {
       stepsTablePane,
@@ -335,6 +359,7 @@ export const StepsDetailView = defineComponent({
       onclick: () => {
         onlyAnomalies = false;
         anomalyKindFilter = '';
+        if (stepQuickChip === 'anomaly') stepQuickChip = '';
         if (latestSlice) renderStepsData(latestSlice);
       },
     });
@@ -343,6 +368,378 @@ export const StepsDetailView = defineComponent({
       { className: 'steps-anomaly-filterbar', hidden: true },
       [anomalyFilterLabelEl, anomalyFilterClearBtn]
     );
+
+    // --- 步骤搜索栏及快捷诊断芯片 ---
+    const stepSearchClearBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'steps-search-clear',
+        hidden: true,
+        'aria-label': t('steps.searchClearAria'),
+        onclick: () => {
+          stepSearchQuery = '';
+          stepSearchInput.value = '';
+          patchAttr(stepSearchClearBtn, 'hidden', true);
+          if (latestSlice) renderStepsData(latestSlice);
+          stepSearchInput.focus?.();
+        },
+      },
+      [createSvgIcon('close', { size: 11 })]
+    );
+    const stepSearchInput = h('input', {
+      type: 'text',
+      className: 'steps-search-input',
+      placeholder: t('steps.searchPlaceholder'),
+      'aria-label': t('steps.searchPlaceholder'),
+      onInput: (e) => {
+        stepSearchQuery = String(e?.target?.value ?? '');
+        patchAttr(stepSearchClearBtn, 'hidden', !stepSearchQuery.trim());
+        if (latestSlice) renderStepsData(latestSlice);
+      },
+      onKeydown: (e) => {
+        if (e?.key === 'Escape') {
+          e.stopPropagation?.();
+          if (stepSearchQuery) {
+            stepSearchQuery = '';
+            stepSearchInput.value = '';
+            patchAttr(stepSearchClearBtn, 'hidden', true);
+            if (latestSlice) renderStepsData(latestSlice);
+          } else {
+            stepSearchInput.blur?.();
+          }
+        }
+      },
+    });
+    const stepSearchWrapEl = h('div', { className: 'steps-search-wrap' }, [
+      createSvgIcon('search', { size: 12, className: 'steps-search-icon' }),
+      stepSearchInput,
+      stepSearchClearBtn,
+    ]);
+
+    const QUICK_CHIP_DEFS = [
+      { key: 'anomaly', i18nKey: 'steps.chipAnomaly', tone: 'is-warn' },
+      { key: 'compaction', i18nKey: 'steps.chipCompaction', tone: 'is-info' },
+      { key: 'low_cache', i18nKey: 'steps.chipLowCache', tipKey: 'steps.chipLowCacheTip', tone: 'is-warn' },
+      { key: 'slow_ttft', i18nKey: 'steps.chipSlowTtft', tipKey: 'steps.chipSlowTtftTip', tone: 'is-danger' },
+    ];
+    const quickChipBtns = QUICK_CHIP_DEFS.map((def) => {
+      const btn = h('button', {
+        type: 'button',
+        className: `steps-chip-btn ${def.tone}`,
+        'data-chip': def.key,
+        hidden: true,
+        onclick: () => {
+          if (def.key === 'anomaly') {
+            const nextOn = !(onlyAnomalies || stepQuickChip === 'anomaly');
+            onlyAnomalies = nextOn;
+            anomalyKindFilter = '';
+            stepQuickChip = nextOn ? 'anomaly' : '';
+          } else {
+            const nextKey = stepQuickChip === def.key ? '' : def.key;
+            stepQuickChip = nextKey;
+            if (nextKey) {
+              onlyAnomalies = false;
+              anomalyKindFilter = '';
+            }
+          }
+          if (latestSlice) renderStepsData(latestSlice);
+        },
+      });
+      return { def, btn };
+    });
+    const stepQuickChipsEl = h(
+      'div',
+      { className: 'steps-quick-chips', hidden: true },
+      quickChipBtns.map((c) => c.btn)
+    );
+    const stepsFilterToolbarEl = h(
+      'div',
+      { className: 'steps-filter-toolbar', hidden: true },
+      [stepSearchWrapEl, stepQuickChipsEl]
+    );
+
+    // --- 点击行展开的单步透视诊断抽屉 ---
+    const inspStepBadgeEl = h('span', { className: 'step-insp-badge text-mono' });
+    const inspModelEl = h('strong', { className: 'step-insp-model' });
+    const inspTimeEl = h('span', { className: 'step-insp-time text-mono text-muted' });
+    const inspPrevBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'step-insp-icon-btn',
+        'aria-label': t('steps.inspPrevAria'),
+        title: t('steps.inspPrevAria'),
+        onclick: () => navigateInspectorStep(-1),
+      },
+      [createSvgIcon('chevron-up', { size: 12 })]
+    );
+    const inspNextBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'step-insp-icon-btn',
+        'aria-label': t('steps.inspNextAria'),
+        title: t('steps.inspNextAria'),
+        onclick: () => navigateInspectorStep(1),
+      },
+      [createSvgIcon('chevron-down', { size: 12 })]
+    );
+    const inspCopyIcon = createSvgIcon('copy', { size: 11 });
+    const inspCopyLabel = h('span', { text: t('steps.inspCopy') });
+    let currentInspectedStep = null;
+    let currentInspectedPrevCtx = null;
+    const inspCopyBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'step-insp-copy-btn',
+        onclick: async () => {
+          if (!currentInspectedStep) return;
+          const md = buildStepDiagnosticMarkdown(currentInspectedStep, {
+            prevContextTokens: currentInspectedPrevCtx,
+            displaySettings: currentDisplaySettings,
+          });
+          await copyPlainTextToClipboard(md);
+          patchSvgIcon(inspCopyIcon, 'check');
+          patchText(inspCopyLabel, t('steps.inspCopied'));
+          patchClasses(inspCopyBtn, { 'is-copied': true });
+          if (inspCopyTimer) clearTimeout(inspCopyTimer);
+          inspCopyTimer = setTimeout(() => {
+            inspCopyTimer = null;
+            patchSvgIcon(inspCopyIcon, 'copy');
+            patchText(inspCopyLabel, t('steps.inspCopy'));
+            patchClasses(inspCopyBtn, { 'is-copied': false });
+          }, 1600);
+        },
+      },
+      [inspCopyIcon, inspCopyLabel]
+    );
+    const inspCloseBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'step-insp-icon-btn',
+        'aria-label': t('steps.inspCloseAria'),
+        title: t('steps.inspCloseAria'),
+        onclick: () => {
+          selectedStepKey = '';
+          if (latestSlice) renderStepsData(latestSlice);
+        },
+      },
+      [createSvgIcon('close', { size: 12 })]
+    );
+
+    const inspWfTtftSeg = h('div', { className: 'step-insp-wf-seg is-ttft' });
+    const inspWfStreamSeg = h('div', { className: 'step-insp-wf-seg is-stream' });
+    const inspWfOtherSeg = h('div', { className: 'step-insp-wf-seg is-other' });
+    const inspWfTrackEl = h('div', { className: 'step-insp-wf-track' }, [
+      inspWfTtftSeg,
+      inspWfStreamSeg,
+      inspWfOtherSeg,
+    ]);
+    const inspWfLegendEl = h('div', { className: 'step-insp-wf-legend text-mono' });
+    const inspWaterfallEl = h('div', { className: 'step-insp-waterfall', hidden: true }, [
+      inspWfTrackEl,
+      inspWfLegendEl,
+    ]);
+
+    function createInspKpiCell(labelText) {
+      const lbl = h('span', { className: 'step-insp-kpi-lbl', text: labelText });
+      const val = h('strong', { className: 'step-insp-kpi-val text-mono', text: '—' });
+      const sub = h('span', { className: 'step-insp-kpi-sub text-mono text-muted', text: '' });
+      return {
+        el: h('div', { className: 'step-insp-kpi' }, [lbl, val, sub]),
+        lbl,
+        val,
+        sub,
+      };
+    }
+    const inspKpiInput = createInspKpiCell(t('steps.inspInputLabel'));
+    const inspKpiCache = createInspKpiCell(t('steps.inspCacheLabel'));
+    const inspKpiOutput = createInspKpiCell(t('steps.inspOutputLabel'));
+    const inspKpiCtxCost = createInspKpiCell(t('steps.inspContextCostLabel'));
+    const inspGridEl = h('div', { className: 'step-insp-grid' }, [
+      inspKpiInput.el,
+      inspKpiCache.el,
+      inspKpiOutput.el,
+      inspKpiCtxCost.el,
+    ]);
+
+    const inspPromptLabelEl = h('span', {
+      className: 'step-insp-prompt-lbl',
+      text: t('steps.inspPromptTitle'),
+    });
+    const inspPromptTextEl = h('div', { className: 'step-insp-prompt-text' });
+    const inspPromptWrapEl = h('div', { className: 'step-insp-prompt', hidden: true }, [
+      inspPromptLabelEl,
+      inspPromptTextEl,
+    ]);
+    const inspAnomaliesEl = h('div', { className: 'step-insp-anomalies text-mono', hidden: true });
+
+    const stepInspectorDrawerEl = h(
+      'div',
+      { className: 'step-inspector-drawer', hidden: true },
+      [
+        h('div', { className: 'step-insp-head' }, [
+          h('div', { className: 'step-insp-head-left' }, [
+            inspStepBadgeEl,
+            inspModelEl,
+            inspTimeEl,
+          ]),
+          h('div', { className: 'step-insp-head-actions' }, [
+            inspPrevBtn,
+            inspNextBtn,
+            inspCopyBtn,
+            inspCloseBtn,
+          ]),
+        ]),
+        inspWaterfallEl,
+        inspGridEl,
+        inspPromptWrapEl,
+        inspAnomaliesEl,
+      ]
+    );
+
+    function navigateInspectorStep(delta) {
+      if (!selectedStepKey || currentTableSteps.length === 0) return;
+      const cid = String(latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || '');
+      const curIdx = currentTableSteps.findIndex(
+        (st) => getStepSelectionKey(st, cid) === selectedStepKey
+      );
+      if (curIdx < 0) return;
+      const nextIdx = curIdx + delta;
+      if (nextIdx < 0 || nextIdx >= currentTableSteps.length) return;
+      selectedStepKey = getStepSelectionKey(currentTableSteps[nextIdx], cid);
+      if (latestSlice) renderStepsData(latestSlice);
+    }
+
+    function syncStepInspectorDrawer(tableSteps, allConvSteps, cascadeId, displaySettings, showModels) {
+      if (showModels || !selectedStepKey || !Array.isArray(tableSteps) || tableSteps.length === 0) {
+        currentInspectedStep = null;
+        currentInspectedPrevCtx = null;
+        patchAttr(stepInspectorDrawerEl, 'hidden', true);
+        return;
+      }
+      const idx = tableSteps.findIndex(
+        (st) => getStepSelectionKey(st, cascadeId) === selectedStepKey
+      );
+      if (idx < 0) {
+        selectedStepKey = '';
+        currentInspectedStep = null;
+        currentInspectedPrevCtx = null;
+        patchAttr(stepInspectorDrawerEl, 'hidden', true);
+        return;
+      }
+      const st = tableSteps[idx];
+      currentInspectedStep = st;
+      const prevCtx = findPrevAgentContextTokens(allConvSteps, st);
+      currentInspectedPrevCtx = prevCtx;
+
+      patchAttr(stepInspectorDrawerEl, 'hidden', false);
+      patchText(inspStepBadgeEl, `#${st.stepIndex ?? '—'}`);
+      const mInfo = resolveModelDisplayInfo(st, displaySettings);
+      patchText(inspModelEl, mInfo.text);
+      patchAttr(inspModelEl, 'title', mInfo.title || mInfo.text);
+      patchText(inspTimeEl, st.createdAtMs ? formatCompactDateTime(st.createdAtMs) : '');
+      patchAttr(inspPrevBtn, 'disabled', idx <= 0);
+      patchAttr(inspNextBtn, 'disabled', idx >= tableSteps.length - 1);
+
+      const wf = computeStepTimingWaterfall(st);
+      patchAttr(inspWaterfallEl, 'hidden', !wf);
+      if (wf) {
+        inspWfTtftSeg.style.width = `${wf.ttftPct}%`;
+        inspWfStreamSeg.style.width = `${wf.streamPct}%`;
+        inspWfOtherSeg.style.width = `${wf.otherPct}%`;
+        const parts = [formatSpeedMetric(st.tokPerSec, ' tok/s')];
+        if (wf.ttftSec > 0) {
+          parts.push(t('steps.inspWaterfallTtft', { sec: formatTimingDetailSec(wf.ttftSec) }));
+        }
+        if (wf.streamSec > 0) {
+          parts.push(t('steps.inspWaterfallStream', { sec: formatTimingDetailSec(wf.streamSec) }));
+        }
+        if (wf.otherSec > 0.05) {
+          parts.push(t('steps.inspWaterfallOther', { sec: formatTimingDetailSec(wf.otherSec) }));
+        }
+        if (wf.thinkingSec > 0) {
+          parts.push(t('steps.inspWaterfallThink', { sec: formatTimingDetailSec(wf.thinkingSec) }));
+        }
+        const reason = st.selectedSpeedReason ? speedReasonText(st.selectedSpeedReason) : '';
+        if (reason) parts.push(reason);
+        patchText(inspWfLegendEl, parts.join(' · '));
+      }
+
+      const inTok = Number(st.inputTokens || 0);
+      const cacheTok = Number(st.cacheReadTokens || 0);
+      const outTok = Number(st.outputTokens || 0);
+      const thinkTok = Number(st.thinkingTokens || 0);
+      const replyTok =
+        st.responseTokens != null ? Number(st.responseTokens) : Math.max(0, outTok - thinkTok);
+      const promptTok = inTok + cacheTok;
+      const cachePct =
+        st.cacheHitPct != null && Number.isFinite(Number(st.cacheHitPct))
+          ? Number(st.cacheHitPct)
+          : promptTok > 0
+            ? (cacheTok / promptTok) * 100
+            : 0;
+      const ctxTok = Number(st.contextTokens || promptTok + outTok);
+
+      patchText(inspKpiInput.lbl, t('steps.inspInputLabel'));
+      patchText(inspKpiInput.val, formatTokensPrecise(inTok));
+      patchText(inspKpiInput.sub, st.inputCostUsd != null ? formatUsd(st.inputCostUsd, { precise: true }) : '');
+
+      patchText(inspKpiCache.lbl, t('steps.inspCacheLabel'));
+      patchText(inspKpiCache.val, formatTokensPrecise(cacheTok));
+      patchText(inspKpiCache.sub, `${cachePct.toFixed(1)}%`);
+
+      patchText(inspKpiOutput.lbl, t('steps.inspOutputLabel'));
+      patchText(inspKpiOutput.val, formatTokensPrecise(outTok));
+      patchText(
+        inspKpiOutput.sub,
+        thinkTok > 0
+          ? t('steps.inspOutputSplit', {
+              think: formatTokens(thinkTok),
+              reply: formatTokens(replyTok),
+            })
+          : st.outCostUsd != null
+            ? formatUsd(st.outCostUsd, { precise: true })
+            : ''
+      );
+
+      patchText(inspKpiCtxCost.lbl, t('steps.inspContextCostLabel'));
+      const deltaStr =
+        prevCtx != null && ctxTok > 0
+          ? ` (${ctxTok >= prevCtx ? '+' : '-'}${formatTokens(Math.abs(ctxTok - prevCtx))})`
+          : '';
+      patchText(inspKpiCtxCost.val, `${formatTokens(ctxTok)}${deltaStr}`);
+      patchText(inspKpiCtxCost.sub, formatUsd(st.costUsd, { precise: true }));
+
+      const promptText = String(st.turnPrompt || st.rootTurnPrompt || '').trim();
+      patchAttr(inspPromptWrapEl, 'hidden', !promptText);
+      if (promptText) {
+        patchText(inspPromptLabelEl, t('steps.inspPromptTitle'));
+        patchText(inspPromptTextEl, promptText);
+      }
+
+      const anom = st.anomaly;
+      const hasAnom = Boolean(anom && Number(anom.count) > 0);
+      patchAttr(inspAnomaliesEl, 'hidden', !hasAnom);
+      if (hasAnom) {
+        const itemsText = Array.isArray(anom.items) && anom.items.length > 0
+          ? anom.items
+              .map((it) => {
+                const lbl = formatAnomalyKindLabel(it.kind || anom.primaryKind);
+                const code = it.httpStatus ? ` HTTP ${it.httpStatus}` : '';
+                const delay = Number(it.delaySec) > 0 ? ` (${Number(it.delaySec).toFixed(1)}s)` : '';
+                return `${lbl}${code}${delay}`;
+              })
+              .join(' · ')
+          : Object.entries(anom.kinds || {})
+              .map(([k, v]) => `${formatAnomalyKindLabel(k)} ×${v}`)
+              .join(' · ');
+        patchText(inspAnomaliesEl, itemsText);
+      }
+    }
 
     // --- 子视图 2：总汇总分析面板 ---
     let selectedLineMetric = 'totalTokens';
@@ -507,8 +904,10 @@ export const StepsDetailView = defineComponent({
             headerFiltersEl,
           ]),
         ]),
+        stepsFilterToolbarEl,
         anomalyFilterBarEl,
         stepsScroll.el,
+        stepInspectorDrawerEl,
         modelsScroll.el,
         turnTipEl,
         anomalyTipEl,
@@ -582,6 +981,16 @@ export const StepsDetailView = defineComponent({
       patchText(modelsSectionTitleEl, t('steps.modelsTitle'));
       patchText(modelsEmptyEl, t('steps.modelsEmpty'));
       patchText(anomalyFilterClearBtn, t('steps.anomalyFilterAll'));
+      patchAttr(stepSearchInput, 'placeholder', t('steps.searchPlaceholder'));
+      patchAttr(stepSearchInput, 'aria-label', t('steps.searchPlaceholder'));
+      patchAttr(stepSearchClearBtn, 'aria-label', t('steps.searchClearAria'));
+      patchAttr(inspPrevBtn, 'aria-label', t('steps.inspPrevAria'));
+      patchAttr(inspPrevBtn, 'title', t('steps.inspPrevAria'));
+      patchAttr(inspNextBtn, 'aria-label', t('steps.inspNextAria'));
+      patchAttr(inspNextBtn, 'title', t('steps.inspNextAria'));
+      patchAttr(inspCloseBtn, 'aria-label', t('steps.inspCloseAria'));
+      patchAttr(inspCloseBtn, 'title', t('steps.inspCloseAria'));
+      if (!inspCopyTimer) patchText(inspCopyLabel, t('steps.inspCopy'));
       lastAnomalyStripSig = '';
       lineMetricSwitch.setProps({
         modelValue: selectedLineMetric,
@@ -618,6 +1027,11 @@ export const StepsDetailView = defineComponent({
           selectedLineModels = ['__all__'];
           onlyAnomalies = false;
           anomalyKindFilter = '';
+          stepSearchQuery = '';
+          stepSearchInput.value = '';
+          patchAttr(stepSearchClearBtn, 'hidden', true);
+          stepQuickChip = '';
+          selectedStepKey = '';
           sortKey = '';
           sortDir = '';
         }
@@ -818,15 +1232,34 @@ export const StepsDetailView = defineComponent({
         ? steps.filter((st) => tableModelFilterSet.has(getStepModelGroupKey(st)))
         : steps;
 
-      let filteredTableSteps = modelFilteredSteps;
-      if (onlyAnomalies) {
-        filteredTableSteps = modelFilteredSteps.filter((st) => {
-          const a = st?.anomaly;
-          if (!a || !(Number(a.count) > 0)) return false;
-          if (anomalyKindFilter && !(Number(a.kinds?.[anomalyKindFilter] || 0) > 0)) return false;
-          return true;
-        });
+      const chipCounts = computeStepQuickChipCounts(modelFilteredSteps);
+      const effectiveQuickChip = onlyAnomalies ? 'anomaly' : stepQuickChip;
+      const showFilterToolbar = !showModels && steps.length > 0;
+      patchAttr(stepsFilterToolbarEl, 'hidden', !showFilterToolbar);
+      if (showFilterToolbar) {
+        let visibleChipsCount = 0;
+        for (const { def, btn } of quickChipBtns) {
+          const cnt = chipCounts[def.key] || 0;
+          const isActive = effectiveQuickChip === def.key;
+          const showChip = cnt > 0 || isActive;
+          patchAttr(btn, 'hidden', !showChip);
+          if (showChip) {
+            visibleChipsCount += 1;
+            patchText(btn, t(def.i18nKey, { count: cnt }));
+            if (def.tipKey) patchAttr(btn, 'title', t(def.tipKey));
+            patchClasses(btn, { 'is-active': isActive });
+            patchAttr(btn, 'aria-pressed', isActive ? 'true' : 'false');
+          }
+        }
+        patchAttr(stepQuickChipsEl, 'hidden', visibleChipsCount === 0);
       }
+
+      const filteredTableSteps = filterStepsBySearchAndChip(modelFilteredSteps, {
+        query: stepSearchQuery,
+        quickChip: effectiveQuickChip,
+        anomalyKindFilter: onlyAnomalies ? anomalyKindFilter : '',
+        displaySettings,
+      });
 
       const normTokenFmt = normalizeClientStepTokenComboFormat(slice.stepTokenComboFormat);
       const sortSig = `${sortKey}:${sortDir}:${normTokenFmt}:${displaySettings.modelDisplayMode}:${displaySettings.showUpstreamModel ? 1 : 0}:${displaySettings.orchestratorIdMode}`;
@@ -877,6 +1310,9 @@ export const StepsDetailView = defineComponent({
       const allConversationSteps = hasSubagents
         ? aggregated?.recentSteps || []
         : slice.recentSteps || [];
+      currentTableSteps = tableSteps;
+      currentAllConvSteps = allConversationSteps;
+      currentDisplaySettings = displaySettings;
       const shouldAnimateNewRows = Boolean(
         allowNewRowFade && slice.experimentalModernUi && !showModels
       );
@@ -895,11 +1331,14 @@ export const StepsDetailView = defineComponent({
           allowNewRowFade: shouldAnimateNewRows,
           sortKey,
           sortDir,
+          selectedStepKey,
         });
+        syncStepInspectorDrawer(tableSteps, allConversationSteps, currentCid, displaySettings, false);
         stepsScroll.refresh();
         fitPinnedWhileVisible = false;
         return;
       }
+      syncStepInspectorDrawer(tableSteps, allConversationSteps, currentCid, displaySettings, true);
 
       const chronoSteps = getMemoizedChronoSteps(steps, isMergedMultiAgents);
       const stepTtftFallbackMap = new Map();
@@ -1436,6 +1875,8 @@ export const StepsDetailView = defineComponent({
         hideAnomalyTip();
         subTabSwitch.setValue(tab);
         patchAttr(anomalyFilterBarEl, 'hidden', tab !== 'steps' || !onlyAnomalies);
+        patchAttr(stepsFilterToolbarEl, 'hidden', tab !== 'steps' || currentTableSteps.length === 0 && !stepSearchQuery && !stepQuickChip);
+        patchAttr(stepInspectorDrawerEl, 'hidden', tab !== 'steps' || !selectedStepKey);
         patchAttr(stepsScroll.el, 'hidden', tab !== 'steps');
         patchAttr(modelsScroll.el, 'hidden', tab !== 'models');
         if (getVisibleMonitorView() === 'steps' && latestSlice) {
@@ -1531,7 +1972,32 @@ export const StepsDetailView = defineComponent({
       }
     );
 
+    const onPanelKeydown = (e) => {
+      if (!selectedStepKey || uiStore.getState().stepsSubTab !== 'steps') return;
+      const tag = String(e?.target?.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e?.target?.isContentEditable) {
+        return;
+      }
+      if (e?.key === 'Escape') {
+        e.preventDefault?.();
+        selectedStepKey = '';
+        if (latestSlice) renderStepsData(latestSlice);
+      } else if (e?.key === 'ArrowUp') {
+        e.preventDefault?.();
+        navigateInspectorStep(-1);
+      } else if (e?.key === 'ArrowDown') {
+        e.preventDefault?.();
+        navigateInspectorStep(1);
+      }
+    };
+    panelEl.addEventListener?.('keydown', onPanelKeydown);
+
     onCleanup(() => {
+      if (inspCopyTimer) {
+        clearTimeout(inspCopyTimer);
+        inspCopyTimer = null;
+      }
+      panelEl.removeEventListener?.('keydown', onPanelKeydown);
       modelsAnalyticsPane.removeEventListener('scroll', onModelsPaneScroll);
       unsubUi();
       unsubTelemetry();
@@ -1560,6 +2026,10 @@ export const StepsDetailView = defineComponent({
         turnTipEl,
         anomalyTipEl,
         anomalyFilterBarEl,
+        stepsFilterToolbarEl,
+        stepSearchInput,
+        stepQuickChipsEl,
+        stepInspectorDrawerEl,
         modelsAnomalyStripEl,
         modelsListEl,
         inlineScopeSelect,
