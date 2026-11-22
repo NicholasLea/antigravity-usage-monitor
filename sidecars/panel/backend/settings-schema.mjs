@@ -35,6 +35,7 @@ import {
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
   normalizeExperimentalModernUi,
+  normalizeExperimentalQuotaReservation,
   normalizeFontScale,
   normalizeHoverModules,
   normalizeLanguageSetting,
@@ -87,6 +88,7 @@ export {
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
   normalizeExperimentalModernUi,
+  normalizeExperimentalQuotaReservation,
   normalizeFontScale,
   normalizeHoverModules,
   normalizeLanguageSetting,
@@ -159,6 +161,7 @@ export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
   showStepFilterToolbar: false,
   stepTokenComboFormat: DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   stepTableColumns: DEFAULT_STEP_TABLE_COLUMNS,
+  experimentalQuotaReservation: false,
   contextWindowRiskAccepted: false,
   modelContextWindows: Object.freeze({}),
 });
@@ -238,6 +241,9 @@ export function normalizeFullSettings(rawInput) {
     showStepFilterToolbar: safeRaw.showStepFilterToolbar === true,
     stepTokenComboFormat: normalizeStepTokenComboFormat(safeRaw.stepTokenComboFormat),
     stepTableColumns: normalizeStepTableColumns(safeRaw.stepTableColumns),
+    experimentalQuotaReservation: normalizeExperimentalQuotaReservation(
+      safeRaw.experimentalQuotaReservation
+    ),
     contextWindowRiskAccepted: safeRaw.contextWindowRiskAccepted === true,
     modelContextWindows: normalizeModelContextWindows(safeRaw.modelContextWindows),
   };

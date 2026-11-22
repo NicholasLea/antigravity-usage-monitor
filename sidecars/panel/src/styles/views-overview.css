@@ -577,6 +577,23 @@
   background: var(--metric-danger);
 }
 
+.progress-fill-reserved {
+  height: 100%;
+  width: var(--reserved-w, 0%);
+  background: var(--quota-reserved);
+  transition: width var(--dur-normal) var(--ease-fast);
+  flex-shrink: 0;
+}
+
+.progress-fill-reserved.is-active {
+  min-width: 3px;
+}
+
+.quota-reserved-pct {
+  color: var(--quota-reserved);
+  font-weight: 500;
+}
+
 /* --- 4. 上下文双列图例网格 (Context 10-Channel Legend Grid) --- */
 .ctx-legend-grid {
   display: grid;

@@ -64,6 +64,7 @@ import {
   resolveDevToolsPortCandidates,
   startDefaultWindowBridge,
 } from './window-bridge.mjs';
+import { getQuotaReservationLogSnapshot } from './quota-reservation.mjs';
 import { getSessionMigrationCatalog, migrateSessions } from './session-migrator.mjs';
 import {
   ensureCliStatusLineConfigured,
@@ -750,6 +751,16 @@ export function executeExportFileAction(data, opts = {}) {
   };
 }
 
+export function executeQuotaReservationLogAction() {
+  const snapshot = getQuotaReservationLogSnapshot();
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify({ ok: true, ...snapshot }),
+  };
+}
+
 export function executeRevealFileAction(data, opts = {}) {
   const result = revealLocalExportFile(data?.filePath, {
     ...(opts?.platform ? { platform: opts.platform } : {}),
@@ -791,6 +802,9 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       if (isPlainObject(data) && data.__exportFileAction === 'reveal') {
         return executeRevealFileAction(data.payload || data, opts);
       }
+      if (isPlainObject(data) && data.__quotaReservationAction === 'log') {
+        return executeQuotaReservationLogAction();
+      }
       return executeSettingsAction(data);
     case 'accounts_get':
       return executeAccountCredentialAction(undefined, opts);
@@ -816,6 +830,8 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executeExportFileAction(data, opts);
     case 'reveal_file':
       return executeRevealFileAction(data, opts);
+    case 'quota_reservation_log':
+      return executeQuotaReservationLogAction();
     default:
       return {
         status: 404,

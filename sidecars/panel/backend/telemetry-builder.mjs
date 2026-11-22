@@ -45,6 +45,7 @@ import {
 } from './model-pricing.mjs';
 import { getCloudStatus, getPricingPhaseEpoch, pricingCatalogRevision } from './pricing-catalog.mjs';
 import { buildOfficialQuotaPools } from './quota-pools.mjs';
+import { updatePoolQuotaReservationEstimates } from './quota-reservation.mjs';
 import { getDefaultWindowBridgeStatus } from './window-bridge.mjs';
 import {
   aggregateConsumptionPresetBundle,
@@ -1683,6 +1684,15 @@ export async function buildTelemetryPayloadInternal(
     poolObj.cycle5h = pStats?.cycle5h || createEmptyCycleSummary();
     poolObj.cycleWeekly = pStats?.cycleWeekly || createEmptyCycleSummary();
   }
+
+  updatePoolQuotaReservationEstimates({
+    endpointId,
+    accountScope: accountScope || '',
+    quotaPoolsMap,
+    poolCycleStats,
+    quotaFetchedAtMs: officialQuotaInfo?.fetchedAtMs || 0,
+    nowMs: Date.now(),
+  });
 
   // 6. 组装当前活跃配额池与每周限额视图数据
   const { activePoolQuota, weeklyQuota } = buildActivePoolAndWeeklyQuotas({

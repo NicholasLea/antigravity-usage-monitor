@@ -89,6 +89,10 @@
   --metric-danger: hsl(4 78% 55%);
   --metric-danger-soft: color-mix(in srgb, var(--metric-danger) 14%, transparent);
 
+  --quota-reserved: hsl(262 76% 58%);
+  --quota-reserved-soft: color-mix(in srgb, var(--quota-reserved) 13%, transparent);
+  --quota-reserved-border: color-mix(in srgb, var(--quota-reserved) 34%, transparent);
+
   /* Context Window 10-Channel Palette */
   --ctx-assistant: hsl(215 62% 52%);
   --ctx-tool-results: hsl(172 68% 40%);
@@ -127,6 +131,7 @@
 :root[data-color-scheme="dark"],
 :host([data-color-scheme="dark"]),
 [data-color-scheme="dark"] {
+  --quota-reserved: hsl(264 86% 72%);
   --ctx-assistant: hsl(216 30% 58%);
   --ctx-tool-results: hsl(168 72% 54%);
   --ctx-user-input: hsl(258 86% 73%);
@@ -2253,6 +2258,23 @@ html[data-standalone="true"] .app-shell {
 
 .progress-fill.tone-danger {
   background: var(--metric-danger);
+}
+
+.progress-fill-reserved {
+  height: 100%;
+  width: var(--reserved-w, 0%);
+  background: var(--quota-reserved);
+  transition: width var(--dur-normal) var(--ease-fast);
+  flex-shrink: 0;
+}
+
+.progress-fill-reserved.is-active {
+  min-width: 3px;
+}
+
+.quota-reserved-pct {
+  color: var(--quota-reserved);
+  font-weight: 500;
 }
 
 /* --- 4. 上下文双列图例网格 (Context 10-Channel Legend Grid) --- */
@@ -6957,6 +6979,28 @@ html[data-standalone="true"] .app-shell {
 
 .cli-status-action-btn[hidden] {
   display: none !important;
+}
+
+.settings-experimental-label-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-experimental-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--quota-reserved-soft);
+  border: 1px solid var(--quota-reserved-border);
+  color: var(--quota-reserved);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* --- src/styles/overlay.css --- */

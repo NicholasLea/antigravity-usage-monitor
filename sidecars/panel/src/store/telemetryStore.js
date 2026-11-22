@@ -44,6 +44,7 @@ import {
   TOPBAR_SLOT_KEYS,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeExperimentalQuotaReservation,
   normalizeHoverModules,
   normalizeModelDisplayMode,
   normalizeOrchestratorIdMode,
@@ -468,6 +469,7 @@ export const normalizeClientPopoverWidth = normalizePopoverWidth;
 export const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 export const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
 export const normalizeClientContextAgentMode = normalizeContextAgentMode;
+export const normalizeClientExperimentalQuotaReservation = normalizeExperimentalQuotaReservation;
 export const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
 
 /**
@@ -604,6 +606,12 @@ export function isEquivalentTelemetry(prev, next) {
     return false;
   }
   if (Boolean(pSet?.showStepFilterToolbar) !== Boolean(nSet?.showStepFilterToolbar)) {
+    return false;
+  }
+  if (
+    normalizeClientExperimentalQuotaReservation(pSet?.experimentalQuotaReservation) !==
+    normalizeClientExperimentalQuotaReservation(nSet?.experimentalQuotaReservation)
+  ) {
     return false;
   }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
@@ -1068,9 +1076,13 @@ export function isEquivalentTelemetry(prev, next) {
       pPools[i]?.poolLabel !== nPools[i]?.poolLabel ||
       pPools[i]?.usedPct !== nPools[i]?.usedPct ||
       pPools[i]?.remainingPct !== nPools[i]?.remainingPct ||
+      pPools[i]?.reservedPct !== nPools[i]?.reservedPct ||
+      pPools[i]?.reservedLeaseCount !== nPools[i]?.reservedLeaseCount ||
       pPools[i]?.resetTime !== nPools[i]?.resetTime ||
       pPools[i]?.weeklyUsedPct !== nPools[i]?.weeklyUsedPct ||
       pPools[i]?.weeklyRemainingPct !== nPools[i]?.weeklyRemainingPct ||
+      pPools[i]?.weeklyReservedPct !== nPools[i]?.weeklyReservedPct ||
+      pPools[i]?.weeklyReservedLeaseCount !== nPools[i]?.weeklyReservedLeaseCount ||
       pPools[i]?.weeklyResetTime !== nPools[i]?.weeklyResetTime ||
       pPools[i]?.cycle5h?.tokens !== nPools[i]?.cycle5h?.tokens ||
       pPools[i]?.cycle5h?.costUsd !== nPools[i]?.cycle5h?.costUsd ||
@@ -1794,6 +1806,11 @@ export async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepFilterToolbar')) {
     safePatch.showStepFilterToolbar = Boolean(safePatch.showStepFilterToolbar);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalQuotaReservation')) {
+    safePatch.experimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
+      safePatch.experimentalQuotaReservation
+    );
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'topbarCapsuleSlots')) {
     safePatch.topbarCapsuleSlots = normalizeClientTopbarSlots(safePatch.topbarCapsuleSlots);
   }
@@ -2070,6 +2087,17 @@ export async function fetchSessionMigrationCatalog() {
     return callSidecarApi('/api/settings', {
       method: 'POST',
       body: { __sessionMigrationAction: 'catalog' },
+    });
+  }
+}
+
+export async function fetchQuotaReservationLog() {
+  try {
+    return await callSidecarApi('/api/quota-reservation/log', { method: 'GET' });
+  } catch {
+    return callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __quotaReservationAction: 'log' },
     });
   }
 }

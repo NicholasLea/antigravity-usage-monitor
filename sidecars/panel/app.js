@@ -2,7 +2,7 @@
 'use strict';
 
 // --- shared/settings-normalization.mjs ---
-const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, normalizeContextAgentMode, normalizeExperimentalModernUi } = (() => {
+const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi } = (() => {
 /**
  * @fileoverview 前后端与 CLI 共用的偏好设置枚举常量、默认值与无状态纯函数归一化规则。
  */
@@ -562,6 +562,20 @@ function normalizeContextAgentMode(raw) {
 }
 
 /**
+ * 归一化实验性配额预占估算开关（默认 `false`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+function normalizeExperimentalQuotaReservation(val) {
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    return lower === 'true' || lower === '1' || lower === 'on';
+  }
+  return Boolean(val);
+}
+
+/**
  * 归一化旧版实验性新 UI 字段（保留兼容，缺省返回 `false`）。
  *
  * @param {unknown} val
@@ -574,7 +588,7 @@ function normalizeExperimentalModernUi(val) {
   }
   return Boolean(val);
 }
-return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, normalizeContextAgentMode, normalizeExperimentalModernUi };
+return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi };
 })();
 
 // --- shared/telemetry-display-rules.mjs ---
@@ -869,6 +883,11 @@ const BRIDGE_API_ROUTE_DEFS = Object.freeze([
   }),
   Object.freeze({ path: '/api/export-file', method: 'POST', action: 'export_file' }),
   Object.freeze({ path: '/api/reveal-file', method: 'POST', action: 'reveal_file' }),
+  Object.freeze({
+    path: '/api/quota-reservation/log',
+    method: 'GET',
+    action: 'quota_reservation_log',
+  }),
 ]);
 
 const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path));
@@ -1371,6 +1390,11 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.loading': '读取中...',
   'quota.failed': '获取失败 (--%)',
   'quota.usedAndLeft': '{reset} · 已用 {used}% (余 {rem}%)',
+  'quota.usedBeforeReserved': '{reset} · 已用 {used}% (',
+  'quota.reservedTag': '预占 {rsv}%',
+  'quota.usedAfterReserved': ' · 余 {rem}%)',
+  'quota.reservedTip': '预占估算（试验性）：约 {rsv}%（实际已用约 {actual}%），静默约 10 分钟后未用差额自动退还',
+  'quota.reservedTipMulti': '预占估算（试验性）：约 {rsv}%（检测到 {leases} 笔叠加租约，实际已用约 {actual}%），静默约 10 分钟后未用差额自动退还',
   'quota.cycle5hTitle': '当前 5h 周期累计 ({pool})：{tok} Tokens · {cost} · {calls} 次调用',
   'quota.cycleWkCustomTitle': '本周自然周累计：{tok} Tokens · {cost} · {calls} 次调用',
   'quota.cycleWkPoolTitle': '当前周限周期累计 ({pool})：{tok} Tokens · {cost} · {calls} 次调用',
@@ -1870,6 +1894,16 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.orchFormat': 'Orchestrator 系列 ID',
   'settings.oth.orchCompact': '精简代号 (如 orchestrator-argon)',
   'settings.oth.orchFull': '原始完整 ID (如 gemini-pro-orchestrator)',
+  'settings.oth.expTitle': '试验性功能',
+  'settings.oth.expBadge': '试验性',
+  'settings.oth.quotaReserveLabel': '配额预占估算',
+  'settings.oth.quotaReserveDesc': '在可用额度中估算 5h / 周限的 0.5% / 1% 租约预占，并用紫色标注占比及进度条段',
+  'settings.oth.quotaReserveLogLabel': '预占观测日志',
+  'settings.oth.quotaReserveLogDesc': '将内存中的配额跳变及退还记录复制到剪贴板，便于分析触发阈值',
+  'settings.oth.exportReserveLogBtn': '导出预占日志',
+  'settings.oth.exportReserveLogCopied': '已复制 {count} 条观测日志到剪贴板',
+  'settings.oth.exportReserveLogEmpty': '暂无跳变记录，已复制当前摘要到剪贴板',
+  'settings.oth.exportReserveLogFailed': '获取或复制预占日志失败',
   'settings.oth.baselineTitle': '模型上下文设置',
   'settings.oth.ctxRiskTitle': '非官方能力风险提示',
   'settings.oth.ctxRiskBody': 'Google 官方并未授权在 Antigravity App / IDE 中修改模型上下文上限。擅自修改可能导致 Antigravity 或 GCP 服务被禁用，甚至触发账号封禁；启用该功能即默认由你自行承担全部风险。你最好清楚自己在做什么！',
@@ -2231,6 +2265,11 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.loading': 'Loading...',
   'quota.failed': 'Unavailable (--%)',
   'quota.usedAndLeft': '{reset} · Used {used}% ({rem}% left)',
+  'quota.usedBeforeReserved': '{reset} · Used {used}% (',
+  'quota.reservedTag': '{rsv}% rsv',
+  'quota.usedAfterReserved': ' · {rem}% left)',
+  'quota.reservedTip': 'Estimated lease reservation (Experimental): ~{rsv}% (~{actual}% actual used); unused share refunds after ~10 min idle',
+  'quota.reservedTipMulti': 'Estimated lease reservation (Experimental): ~{rsv}% ({leases} stacked leases, ~{actual}% actual used); unused share refunds after ~10 min idle',
   'quota.cycle5hTitle': 'Current 5h cycle ({pool}): {tok} Tokens · {cost} · {calls} calls',
   'quota.cycleWkCustomTitle': 'Current calendar week: {tok} Tokens · {cost} · {calls} calls',
   'quota.cycleWkPoolTitle': 'Current weekly cycle ({pool}): {tok} Tokens · {cost} · {calls} calls',
@@ -2730,6 +2769,16 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.orchFormat': 'Orchestrator Series ID',
   'settings.oth.orchCompact': 'Compact Alias (e.g. orchestrator-argon)',
   'settings.oth.orchFull': 'Full Upstream ID (e.g. gemini-pro-orchestrator)',
+  'settings.oth.expTitle': 'Experimental',
+  'settings.oth.expBadge': 'Experimental',
+  'settings.oth.quotaReserveLabel': 'Quota Reservation Estimate',
+  'settings.oth.quotaReserveDesc': 'Estimate 0.5% / 1% 5h & weekly lease holds in Available Quotas and highlight the reserved share in violet',
+  'settings.oth.quotaReserveLogLabel': 'Reservation Observation Log',
+  'settings.oth.quotaReserveLogDesc': 'Copy in-memory quota jump & refund events to clipboard for threshold tuning',
+  'settings.oth.exportReserveLogBtn': 'Export Reserve Log',
+  'settings.oth.exportReserveLogCopied': 'Copied {count} log entries to clipboard',
+  'settings.oth.exportReserveLogEmpty': 'No events yet; copied current summary to clipboard',
+  'settings.oth.exportReserveLogFailed': 'Failed to copy reservation log',
   'settings.oth.baselineTitle': 'Model Context Settings',
   'settings.oth.ctxRiskTitle': 'Unofficial Override Risk Warning',
   'settings.oth.ctxRiskBody': 'Google has not authorized modifying model context limits in Antigravity App / IDE. Altering context limits may get your Antigravity access, GCP services, or Google account disabled or banned; enabling this feature means you assume all associated risks. Make sure you know what you are doing!',
@@ -5649,6 +5698,9 @@ function buildExportableSettingsJson(settings = {}) {
       showStepFilterToolbar: src.showStepFilterToolbar === true,
       stepTokenComboFormat: normalizeStepTokenComboFormat(src.stepTokenComboFormat),
       stepTableColumns: normalizeStepTableColumns(src.stepTableColumns),
+      experimentalQuotaReservation: normalizeExperimentalQuotaReservation(
+        src.experimentalQuotaReservation
+      ),
     },
   };
   return `${JSON.stringify(payload, null, 2)}\n`;
@@ -5770,6 +5822,11 @@ function parseImportedSettingsJson(rawText) {
   }
   if (hasKey('stepTableColumns') && Array.isArray(src.stepTableColumns)) {
     patch.stepTableColumns = normalizeStepTableColumns(src.stepTableColumns);
+  }
+  if (hasKey('experimentalQuotaReservation')) {
+    patch.experimentalQuotaReservation = normalizeExperimentalQuotaReservation(
+      src.experimentalQuotaReservation
+    );
   }
 
   const appliedCount = Object.keys(patch).length;
@@ -8626,7 +8683,7 @@ return { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFee
 })();
 
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 /**
  * @fileoverview Reactive telemetry store with async non-overlapping poll scheduler
  * and granular slice updates.
@@ -9034,6 +9091,7 @@ const normalizeClientPopoverWidth = normalizePopoverWidth;
 const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
 const normalizeClientContextAgentMode = normalizeContextAgentMode;
+const normalizeClientExperimentalQuotaReservation = normalizeExperimentalQuotaReservation;
 const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
 
 /**
@@ -9170,6 +9228,12 @@ function isEquivalentTelemetry(prev, next) {
     return false;
   }
   if (Boolean(pSet?.showStepFilterToolbar) !== Boolean(nSet?.showStepFilterToolbar)) {
+    return false;
+  }
+  if (
+    normalizeClientExperimentalQuotaReservation(pSet?.experimentalQuotaReservation) !==
+    normalizeClientExperimentalQuotaReservation(nSet?.experimentalQuotaReservation)
+  ) {
     return false;
   }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
@@ -9634,9 +9698,13 @@ function isEquivalentTelemetry(prev, next) {
       pPools[i]?.poolLabel !== nPools[i]?.poolLabel ||
       pPools[i]?.usedPct !== nPools[i]?.usedPct ||
       pPools[i]?.remainingPct !== nPools[i]?.remainingPct ||
+      pPools[i]?.reservedPct !== nPools[i]?.reservedPct ||
+      pPools[i]?.reservedLeaseCount !== nPools[i]?.reservedLeaseCount ||
       pPools[i]?.resetTime !== nPools[i]?.resetTime ||
       pPools[i]?.weeklyUsedPct !== nPools[i]?.weeklyUsedPct ||
       pPools[i]?.weeklyRemainingPct !== nPools[i]?.weeklyRemainingPct ||
+      pPools[i]?.weeklyReservedPct !== nPools[i]?.weeklyReservedPct ||
+      pPools[i]?.weeklyReservedLeaseCount !== nPools[i]?.weeklyReservedLeaseCount ||
       pPools[i]?.weeklyResetTime !== nPools[i]?.weeklyResetTime ||
       pPools[i]?.cycle5h?.tokens !== nPools[i]?.cycle5h?.tokens ||
       pPools[i]?.cycle5h?.costUsd !== nPools[i]?.cycle5h?.costUsd ||
@@ -10360,6 +10428,11 @@ async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepFilterToolbar')) {
     safePatch.showStepFilterToolbar = Boolean(safePatch.showStepFilterToolbar);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalQuotaReservation')) {
+    safePatch.experimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
+      safePatch.experimentalQuotaReservation
+    );
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'topbarCapsuleSlots')) {
     safePatch.topbarCapsuleSlots = normalizeClientTopbarSlots(safePatch.topbarCapsuleSlots);
   }
@@ -10640,6 +10713,17 @@ async function fetchSessionMigrationCatalog() {
   }
 }
 
+async function fetchQuotaReservationLog() {
+  try {
+    return await callSidecarApi('/api/quota-reservation/log', { method: 'GET' });
+  } catch {
+    return callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __quotaReservationAction: 'log' },
+    });
+  }
+}
+
 async function executeSessionMigration(payload) {
   let res;
   try {
@@ -10916,7 +11000,7 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
@@ -18024,7 +18108,11 @@ const { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncP
  * @param {{ isPending?: boolean }} [options]
  * @returns {Array<object>}
  */
-function buildQuotaPoolItems(quotas, minuteTick = 0, { isPending = false } = {}) {
+function buildQuotaPoolItems(
+  quotas,
+  minuteTick = 0,
+  { isPending = false, showReserved = false } = {}
+) {
   const safeQuotas = quotas || {};
   const activePool = safeQuotas.activePool || {};
   const rawPools =
@@ -18051,6 +18139,7 @@ function buildQuotaPoolItems(quotas, minuteTick = 0, { isPending = false } = {})
       isActivePool,
       minuteTick,
       isPending,
+      showReserved: Boolean(showReserved),
     };
   });
   if (
@@ -18064,27 +18153,45 @@ function buildQuotaPoolItems(quotas, minuteTick = 0, { isPending = false } = {})
 }
 
 /**
- * 创建单个配额池的 DOM 行结构，内含 5h 限额与每周限额两个可独立显隐的子窗口进度条。
+ * 创建单个配额池的 DOM 行结构，内含 5h 限额及每周限额两个可独立显隐的子窗口进度条。
  */
 function createPoolQuotaRow() {
   const title5h = h('span', { className: 'quota-win-title', text: '5h' });
   const usage5h = h('span', { className: 'quota-win-usage', hidden: true, text: '' });
   const left5h = h('span', { className: 'quota-win-left' }, [title5h, usage5h]);
-  const meta5h = h('span', { className: 'panel-meta quota-win-meta text-mono', text: '--' });
+  const meta5hBefore = h('span', { text: '--' });
+  const meta5hReserved = h('span', { className: 'quota-reserved-pct', hidden: true, text: '' });
+  const meta5hAfter = h('span', { hidden: true, text: '' });
+  const meta5h = h('span', { className: 'panel-meta quota-win-meta text-mono' }, [
+    meta5hBefore,
+    meta5hReserved,
+    meta5hAfter,
+  ]);
   const fill5h = h('div', { className: 'progress-fill' });
+  const fillReserved5h = h('div', { className: 'progress-fill-reserved' });
+  const track5h = h('div', { className: 'progress-track' }, [fill5h, fillReserved5h]);
   const row5h = h('div', { style: 'display: flex; flex-direction: column; gap: 4px;' }, [
     h('div', { className: 'panel-header quota-win-head' }, [left5h, meta5h]),
-    h('div', { className: 'progress-track' }, [fill5h]),
+    track5h,
   ]);
 
   const titleWk = h('span', { className: 'quota-win-title', text: t('quota.weeklyShort') });
   const usageWk = h('span', { className: 'quota-win-usage', hidden: true, text: '' });
   const leftWk = h('span', { className: 'quota-win-left' }, [titleWk, usageWk]);
-  const metaWk = h('span', { className: 'panel-meta quota-win-meta text-mono', text: '--' });
+  const metaWkBefore = h('span', { text: '--' });
+  const metaWkReserved = h('span', { className: 'quota-reserved-pct', hidden: true, text: '' });
+  const metaWkAfter = h('span', { hidden: true, text: '' });
+  const metaWk = h('span', { className: 'panel-meta quota-win-meta text-mono' }, [
+    metaWkBefore,
+    metaWkReserved,
+    metaWkAfter,
+  ]);
   const fillWk = h('div', { className: 'progress-fill' });
+  const fillReservedWk = h('div', { className: 'progress-fill-reserved' });
+  const trackWk = h('div', { className: 'progress-track' }, [fillWk, fillReservedWk]);
   const rowWk = h('div', { style: 'display: flex; flex-direction: column; gap: 4px;' }, [
     h('div', { className: 'panel-header quota-win-head' }, [leftWk, metaWk]),
-    h('div', { className: 'progress-track' }, [fillWk]),
+    trackWk,
   ]);
 
   const el = h('div', { className: 'quota-pool-row' }, [
@@ -18100,13 +18207,23 @@ function createPoolQuotaRow() {
       title5h,
       usage5h,
       meta5h,
+      meta5hBefore,
+      meta5hReserved,
+      meta5hAfter,
+      track5h,
       fill5h,
+      fillReserved5h,
       rowWk,
       leftWk,
       titleWk,
       usageWk,
       metaWk,
+      metaWkBefore,
+      metaWkReserved,
+      metaWkAfter,
+      trackWk,
       fillWk,
+      fillReservedWk,
     },
   };
 }
@@ -18132,11 +18249,84 @@ function formatQuotaSummaryFooter(quotas, account) {
   return { leftText, rightText, tooltip };
 }
 
+function syncQuotaWindowMeter({
+  hasData,
+  usedVal,
+  remVal,
+  resetTime,
+  fallbackMetaText,
+  showReserved,
+  rawReservedPct,
+  leaseCount,
+  metaBeforeEl,
+  metaReservedEl,
+  metaAfterEl,
+  trackEl,
+  fillEl,
+  fillReservedEl,
+}) {
+  const numReserved = showReserved && hasData ? Number(rawReservedPct || 0) : 0;
+  const rsvVal =
+    Number.isFinite(numReserved) && numReserved >= 0.05 ? Math.min(usedVal, numReserved) : 0;
+  const actualVal = Math.max(0, usedVal - rsvVal);
+  const resetStr = hasData ? formatCountdown(resetTime) : '';
+
+  if (hasData && rsvVal > 0) {
+    const rsvStr = rsvVal.toFixed(1);
+    const actualStr = actualVal.toFixed(1);
+    const leases = Math.max(1, Number(leaseCount) || 1);
+    const tipText =
+      leases >= 2
+        ? t('quota.reservedTipMulti', { rsv: rsvStr, leases, actual: actualStr })
+        : t('quota.reservedTip', { rsv: rsvStr, actual: actualStr });
+    patchText(
+      metaBeforeEl,
+      t('quota.usedBeforeReserved', { reset: resetStr, used: usedVal.toFixed(1) })
+    );
+    metaReservedEl.hidden = false;
+    patchText(metaReservedEl, t('quota.reservedTag', { rsv: rsvStr }));
+    patchAttr(metaReservedEl, 'title', tipText);
+    metaAfterEl.hidden = false;
+    patchText(metaAfterEl, t('quota.usedAfterReserved', { rem: remVal.toFixed(1) }));
+    patchAttr(trackEl, 'title', tipText);
+    const actualWidth = +Math.min(100, actualVal).toFixed(2);
+    const rsvWidth = +Math.min(Math.max(0, 100 - actualWidth), rsvVal).toFixed(2);
+    patchStyleVar(fillEl, '--fill-w', `${actualWidth}%`);
+    patchStyleVar(fillReservedEl, '--reserved-w', `${rsvWidth}%`);
+    patchClasses(fillReservedEl, { 'is-active': true });
+  } else {
+    patchText(
+      metaBeforeEl,
+      hasData
+        ? t('quota.usedAndLeft', {
+            reset: resetStr,
+            used: usedVal.toFixed(1),
+            rem: remVal.toFixed(1),
+          })
+        : fallbackMetaText
+    );
+    metaReservedEl.hidden = true;
+    patchText(metaReservedEl, '');
+    patchAttr(metaReservedEl, 'title', null);
+    metaAfterEl.hidden = true;
+    patchText(metaAfterEl, '');
+    patchAttr(trackEl, 'title', null);
+    patchStyleVar(fillEl, '--fill-w', `${Math.min(100, usedVal)}%`);
+    patchStyleVar(fillReservedEl, '--reserved-w', '0%');
+    patchClasses(fillReservedEl, { 'is-active': false });
+  }
+
+  patchClasses(fillEl, {
+    'tone-warn': usedVal >= 70 && usedVal < 85,
+    'tone-danger': usedVal >= 85,
+  });
+}
+
 /**
- * 同步单个配额池行的 5h 与每周窗口状态。
+ * 同步单个配额池行的 5h 及每周窗口状态。
  */
 function syncPoolQuotaRow(refs, item, idx, rowEl) {
-  const { poolData, poolLabel, fallbackWeekly, isActivePool, isPending } = item;
+  const { poolData, poolLabel, fallbackWeekly, isActivePool, isPending, showReserved } = item;
   patchClasses(rowEl, { 'quota-pool-row': true, 'has-divider': idx > 0 });
 
   const has5h = poolData?.usedPct != null && poolData?.remainingPct != null;
@@ -18165,6 +18355,7 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
   refs.rowWk.style.display = hideWk ? 'none' : 'flex';
 
   const fallbackMetaText = isPending ? t('quota.loading') : t('quota.failed');
+  const allowReserved = Boolean(showReserved && !isPending);
 
   patchText(refs.title5h, `5h (${poolLabel})`);
   const c5h = poolData?.cycle5h;
@@ -18189,20 +18380,21 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
     patchText(refs.usage5h, '');
     patchAttr(refs.left5h, 'title', null);
   }
-  patchText(
-    refs.meta5h,
-    has5h
-      ? t('quota.usedAndLeft', {
-          reset: formatCountdown(poolData.resetTime),
-          used: used5hVal.toFixed(1),
-          rem: rem5hVal.toFixed(1),
-        })
-      : fallbackMetaText
-  );
-  patchStyleVar(refs.fill5h, '--fill-w', `${Math.min(100, used5hVal)}%`);
-  patchClasses(refs.fill5h, {
-    'tone-warn': used5hVal >= 70 && used5hVal < 85,
-    'tone-danger': used5hVal >= 85,
+  syncQuotaWindowMeter({
+    hasData: has5h,
+    usedVal: used5hVal,
+    remVal: rem5hVal,
+    resetTime: poolData?.resetTime,
+    fallbackMetaText,
+    showReserved: allowReserved,
+    rawReservedPct: poolData?.reservedPct,
+    leaseCount: poolData?.reservedLeaseCount,
+    metaBeforeEl: refs.meta5hBefore,
+    metaReservedEl: refs.meta5hReserved,
+    metaAfterEl: refs.meta5hAfter,
+    trackEl: refs.track5h,
+    fillEl: refs.fill5h,
+    fillReservedEl: refs.fillReserved5h,
   });
 
   const customTitle =
@@ -18236,20 +18428,21 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
     patchText(refs.usageWk, '');
     patchAttr(refs.leftWk, 'title', null);
   }
-  patchText(
-    refs.metaWk,
-    hasWk
-      ? t('quota.usedAndLeft', {
-          reset: formatCountdown(wkResetRaw),
-          used: usedWkVal.toFixed(1),
-          rem: remWkVal.toFixed(1),
-        })
-      : fallbackMetaText
-  );
-  patchStyleVar(refs.fillWk, '--fill-w', `${Math.min(100, usedWkVal)}%`);
-  patchClasses(refs.fillWk, {
-    'tone-warn': usedWkVal >= 70 && usedWkVal < 85,
-    'tone-danger': usedWkVal >= 85,
+  syncQuotaWindowMeter({
+    hasData: hasWk,
+    usedVal: usedWkVal,
+    remVal: remWkVal,
+    resetTime: wkResetRaw,
+    fallbackMetaText,
+    showReserved: allowReserved && !useCustomWeekly,
+    rawReservedPct: poolData?.weeklyReservedPct,
+    leaseCount: poolData?.weeklyReservedLeaseCount,
+    metaBeforeEl: refs.metaWkBefore,
+    metaReservedEl: refs.metaWkReserved,
+    metaAfterEl: refs.metaWkAfter,
+    trackEl: refs.trackWk,
+    fillEl: refs.fillWk,
+    fillReservedEl: refs.fillReservedWk,
   });
 }
 
@@ -18257,7 +18450,7 @@ function quotaPoolRowSig(item, idx) {
   const c5h = item.poolData?.cycle5h;
   const cWk = item.poolData?.cycleWeekly;
   const fw = item.fallbackWeekly;
-  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
+  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
 }
 
 const QuotaPoolsWidget = defineComponent({
@@ -18308,12 +18501,13 @@ const QuotaPoolsWidget = defineComponent({
       }
 
       const quotas = data.quotas || {};
+      const showReserved = data.settings?.experimentalQuotaReservation === true;
       const effTick = Number.isFinite(minuteTick) ? minuteTick : Math.floor(Date.now() / 30000);
       patchText(
         tierBadge,
         `${data.account?.tierName || 'Google AI'} · ${data.account?.planName || 'Pro'}`
       );
-      patchKeyedList(poolsListEl, buildQuotaPoolItems(quotas, effTick), {
+      patchKeyedList(poolsListEl, buildQuotaPoolItems(quotas, effTick, { showReserved }), {
         keyFn: (item) => item.key,
         sigFn: quotaPoolRowSig,
         createRow: createPoolQuotaRow,
@@ -22641,9 +22835,13 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
           family: 'Gemini',
           usedPct: 36,
           remainingPct: 64,
+          reservedPct: 1.0,
+          reservedLeaseCount: 1,
           resetTime: reset5hIso,
           weeklyUsedPct: 48,
           weeklyRemainingPct: 52,
+          weeklyReservedPct: 0.5,
+          weeklyReservedLeaseCount: 1,
           weeklyResetTime: resetWkIso,
           cycle5h: { tokens: 1754800, costUsd: 1.28, calls: 24 },
           cycleWeekly: { tokens: 14200000, costUsd: 11.4, calls: 186 },
@@ -26668,6 +26866,29 @@ const { SettingsOtherTab } = (() => {
  */
 
 
+function getEnableToggleOptions() {
+  return [
+    { value: 'on', label: t('settings.str.on') },
+    { value: 'off', label: t('settings.str.off') },
+  ];
+}
+
+function formatQuotaReservationLogForClipboard(snapshot) {
+  const safe = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  const buckets = Array.isArray(safe.buckets) ? safe.buckets : [];
+  const events = Array.isArray(safe.events) ? safe.events : [];
+  const bucketLines = buckets.map((b) => `    ${JSON.stringify(b)}`).join(',\n');
+  const eventLines = events.map((e) => `    ${JSON.stringify(e)}`).join(',\n');
+  return [
+    '{',
+    `  "generatedAt": ${JSON.stringify(safe.generatedAt || new Date().toISOString())},`,
+    `  "count": ${events.length},`,
+    `  "buckets": [${bucketLines ? `\n${bucketLines}\n  ` : ''}],`,
+    `  "events": [${eventLines ? `\n${eventLines}\n  ` : ''}]`,
+    '}',
+  ].join('\n');
+}
+
 function getStepModelDisplayOptions() {
   return [
     { value: 'short', label: t('settings.oth.modelShort') },
@@ -26688,6 +26909,7 @@ const SettingsOtherTab = defineComponent({
   setup({ onCleanup, getProps }) {
     let draftModelDisplayMode = 'short';
     let draftOrchestratorIdMode = 'compact';
+    let draftExperimentalQuotaReservation = false;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
     let latestSettings = null;
@@ -26698,6 +26920,7 @@ const SettingsOtherTab = defineComponent({
     let savingContextWindow = false;
     let contextFeedback = '';
     let modelTimer = null;
+    let expTimer = null;
     let maintTimer = null;
     let resetConfirmTimer = null;
     let resetConfirmArmed = false;
@@ -26709,11 +26932,30 @@ const SettingsOtherTab = defineComponent({
       style: 'font-size: var(--fs-md);',
       text: '',
     });
+    const expStatusText = h('span', {
+      className: 'text-muted',
+      style: 'font-size: var(--fs-md);',
+      text: '',
+    });
     const maintStatusText = h('span', {
       className: 'text-muted',
       style: 'font-size: var(--fs-md);',
       text: '',
     });
+
+    function showExpFeedback(text, autoClearMs = 1500) {
+      if (expTimer) {
+        clearTimeout(expTimer);
+        expTimer = null;
+      }
+      patchText(expStatusText, text);
+      if (text && autoClearMs > 0) {
+        expTimer = setTimeout(() => {
+          expTimer = null;
+          patchText(expStatusText, '');
+        }, autoClearMs);
+      }
+    }
 
     function showModelFeedback(text, autoClearMs = 1500) {
       if (modelTimer) {
@@ -26805,6 +27047,112 @@ const SettingsOtherTab = defineComponent({
       ]),
       h('div', { className: 'form-row' }, [modelFormatLabelEl, stepModelSelect.el]),
       h('div', { className: 'form-row' }, [orchFormatLabelEl, orchestratorIdSelect.el]),
+    ]);
+
+    // --- Card 2: 试验性功能 ---
+    const expTitleEl = h('span', { text: t('settings.oth.expTitle') });
+    const quotaReserveLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.quotaReserveLabel'),
+    });
+    const quotaReserveBadgeEl = h('span', {
+      className: 'settings-experimental-badge',
+      text: t('settings.oth.expBadge'),
+    });
+    const quotaReserveDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.quotaReserveDesc'),
+    });
+    const quotaReserveLogLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.quotaReserveLogLabel'),
+    });
+    const quotaReserveLogDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.quotaReserveLogDesc'),
+    });
+    const exportReserveLogBtnText = h('span', {
+      text: t('settings.oth.exportReserveLogBtn'),
+    });
+    let isExportingReserveLog = false;
+
+    const exportReserveLogBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          if (isExportingReserveLog) return;
+          isExportingReserveLog = true;
+          patchAttr(exportReserveLogBtn, 'disabled', true);
+          try {
+            const snapshot = await fetchQuotaReservationLog();
+            const text = formatQuotaReservationLogForClipboard(snapshot);
+            const count = Array.isArray(snapshot?.events) ? snapshot.events.length : 0;
+            const successMsg =
+              count > 0
+                ? t('settings.oth.exportReserveLogCopied', { count })
+                : t('settings.oth.exportReserveLogEmpty');
+            const ok = await copyTextWithFeedback(text, successMsg);
+            showExpFeedback(ok ? successMsg : t('settings.oth.exportReserveLogFailed'), 2800);
+          } catch {
+            showExpFeedback(t('settings.oth.exportReserveLogFailed'), 2800);
+          } finally {
+            isExportingReserveLog = false;
+            patchAttr(exportReserveLogBtn, 'disabled', false);
+          }
+        },
+      },
+      [createSvgIcon('copy', { size: 12 }), exportReserveLogBtnText]
+    );
+
+    const quotaReserveToggle = SegmentedControl({
+      modelValue: 'off',
+      ariaLabel: t('settings.oth.quotaReserveLabel'),
+      options: getEnableToggleOptions(),
+      onUpdateModelValue: async (val) => {
+        const nextEnabled = val === 'on';
+        draftExperimentalQuotaReservation = nextEnabled;
+        quotaReserveToggle.setProps({
+          modelValue: nextEnabled ? 'on' : 'off',
+          options: getEnableToggleOptions(),
+        });
+        showExpFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ experimentalQuotaReservation: nextEnabled });
+          showExpFeedback(t('settings.saved'), 1500);
+        } catch {
+          if (latestSettings) renderSettings(latestSettings);
+          showExpFeedback(t('settings.saveFailed'), 2500);
+        }
+      },
+    });
+
+    const experimentalPanel = h('section', { className: 'panel' }, [
+      h('div', { className: 'panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('pulse', { size: 13 }),
+          expTitleEl,
+        ]),
+        expStatusText,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [
+          h('div', { className: 'settings-experimental-label-group' }, [
+            quotaReserveLabelEl,
+            quotaReserveBadgeEl,
+          ]),
+          quotaReserveDescEl,
+        ]),
+        quotaReserveToggle.el,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [
+          quotaReserveLogLabelEl,
+          quotaReserveLogDescEl,
+        ]),
+        exportReserveLogBtn,
+      ]),
     ]);
 
     // --- Card 2: 按模型设置上下文窗口 ---
@@ -27254,6 +27602,7 @@ const SettingsOtherTab = defineComponent({
 
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       modelPanel,
+      experimentalPanel,
       baselinePanel,
       maintPanel,
       sessionMigrationCard.el,
@@ -27275,6 +27624,9 @@ const SettingsOtherTab = defineComponent({
         settings.showUpstreamModel
       );
       draftOrchestratorIdMode = normalizeClientOrchestratorIdMode(settings.orchestratorIdMode);
+      draftExperimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
+        settings.experimentalQuotaReservation
+      );
       if (!acceptingContextRisk) {
         draftContextRiskAccepted = Boolean(settings.contextWindowRiskAccepted);
       }
@@ -27286,6 +27638,11 @@ const SettingsOtherTab = defineComponent({
         modelValue: draftOrchestratorIdMode,
         options: getOrchestratorIdDisplayOptions(),
       });
+      quotaReserveToggle.setProps({
+        modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
+        options: getEnableToggleOptions(),
+        ariaLabel: t('settings.oth.quotaReserveLabel'),
+      });
       renderContextWindows();
       void sessionMigrationCard.refs.ensureLoaded();
     }
@@ -27294,6 +27651,18 @@ const SettingsOtherTab = defineComponent({
       patchText(modelCardTitleEl, t('settings.oth.modelTitle'));
       patchText(modelFormatLabelEl, t('settings.oth.modelFormat'));
       patchText(orchFormatLabelEl, t('settings.oth.orchFormat'));
+      patchText(expTitleEl, t('settings.oth.expTitle'));
+      patchText(quotaReserveLabelEl, t('settings.oth.quotaReserveLabel'));
+      patchText(quotaReserveBadgeEl, t('settings.oth.expBadge'));
+      patchText(quotaReserveDescEl, t('settings.oth.quotaReserveDesc'));
+      patchText(quotaReserveLogLabelEl, t('settings.oth.quotaReserveLogLabel'));
+      patchText(quotaReserveLogDescEl, t('settings.oth.quotaReserveLogDesc'));
+      patchText(exportReserveLogBtnText, t('settings.oth.exportReserveLogBtn'));
+      quotaReserveToggle.setProps({
+        modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
+        options: getEnableToggleOptions(),
+        ariaLabel: t('settings.oth.quotaReserveLabel'),
+      });
       patchText(baselineTitleEl, t('settings.oth.baselineTitle'));
       renderContextWindows();
       patchText(maintTitleEl, t('settings.oth.maintTitle'));
@@ -27329,10 +27698,12 @@ const SettingsOtherTab = defineComponent({
 
     onCleanup(() => {
       if (modelTimer) clearTimeout(modelTimer);
+      if (expTimer) clearTimeout(expTimer);
       if (maintTimer) clearTimeout(maintTimer);
       if (resetConfirmTimer) clearTimeout(resetConfirmTimer);
       stepModelSelect.destroy();
       orchestratorIdSelect.destroy();
+      quotaReserveToggle.destroy();
       ctxBridgeNotice.destroy();
       ctxModelSelect.destroy();
       ctxWindowSelect.destroy();
@@ -27344,6 +27715,8 @@ const SettingsOtherTab = defineComponent({
       refs: {
         stepModelSelect,
         orchestratorIdSelect,
+        quotaReserveToggle,
+        exportReserveLogBtn,
         ctxBridgeNotice,
         ctxModelSelect,
         ctxWindowSelect,

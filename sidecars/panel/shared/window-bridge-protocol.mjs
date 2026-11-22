@@ -40,6 +40,11 @@ export const BRIDGE_API_ROUTE_DEFS = Object.freeze([
   }),
   Object.freeze({ path: '/api/export-file', method: 'POST', action: 'export_file' }),
   Object.freeze({ path: '/api/reveal-file', method: 'POST', action: 'reveal_file' }),
+  Object.freeze({
+    path: '/api/quota-reservation/log',
+    method: 'GET',
+    action: 'quota_reservation_log',
+  }),
 ]);
 
 export const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path));

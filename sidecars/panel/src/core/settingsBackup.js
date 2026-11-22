@@ -6,6 +6,7 @@
 import {
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeExperimentalQuotaReservation,
   normalizeFontScale,
   normalizeHoverModules,
   normalizeLanguageSetting,
@@ -120,6 +121,9 @@ export function buildExportableSettingsJson(settings = {}) {
       showStepFilterToolbar: src.showStepFilterToolbar === true,
       stepTokenComboFormat: normalizeStepTokenComboFormat(src.stepTokenComboFormat),
       stepTableColumns: normalizeStepTableColumns(src.stepTableColumns),
+      experimentalQuotaReservation: normalizeExperimentalQuotaReservation(
+        src.experimentalQuotaReservation
+      ),
     },
   };
   return `${JSON.stringify(payload, null, 2)}\n`;
@@ -241,6 +245,11 @@ export function parseImportedSettingsJson(rawText) {
   }
   if (hasKey('stepTableColumns') && Array.isArray(src.stepTableColumns)) {
     patch.stepTableColumns = normalizeStepTableColumns(src.stepTableColumns);
+  }
+  if (hasKey('experimentalQuotaReservation')) {
+    patch.experimentalQuotaReservation = normalizeExperimentalQuotaReservation(
+      src.experimentalQuotaReservation
+    );
   }
 
   const appliedCount = Object.keys(patch).length;

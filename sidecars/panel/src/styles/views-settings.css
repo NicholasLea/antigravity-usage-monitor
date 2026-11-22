@@ -1559,3 +1559,25 @@
 .cli-status-action-btn[hidden] {
   display: none !important;
 }
+
+.settings-experimental-label-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-experimental-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--quota-reserved-soft);
+  border: 1px solid var(--quota-reserved-border);
+  color: var(--quota-reserved);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  flex-shrink: 0;
+}

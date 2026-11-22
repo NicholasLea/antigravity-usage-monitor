@@ -45,6 +45,7 @@ export {
   createDefaultSettingsObject,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeExperimentalQuotaReservation,
   normalizeFontScale,
   normalizeFullSettings,
   normalizeHoverModules,

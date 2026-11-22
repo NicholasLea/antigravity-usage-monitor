@@ -800,6 +800,8 @@ function buildQuotaPoolCycleMap(quotaPoolsMap, nowMs) {
         startWkMs,
         b5h: createUsageBucket(),
         bWk: createUsageBucket(),
+        lastActivityMs: 0,
+        recent10mSessions: new Map(),
       });
     }
   }
@@ -1567,6 +1569,20 @@ export function aggregateMultiWindowUsage({
       );
 
       if (includeInQuotaPools && poolBucketEntry && qMs > 0 && qMs <= nowMs) {
+        if (qMs > poolBucketEntry.lastActivityMs) {
+          poolBucketEntry.lastActivityMs = qMs;
+        }
+        if (qMs >= nowMs - 10 * 60 * 1000) {
+          const sessKey = String(cascadeId || '');
+          let sessStat = poolBucketEntry.recent10mSessions.get(sessKey);
+          if (!sessStat) {
+            sessStat = { costUsd: 0, calls: 0, lastActivityMs: 0 };
+            poolBucketEntry.recent10mSessions.set(sessKey, sessStat);
+          }
+          sessStat.costUsd += stepUsage.resolvedCost;
+          sessStat.calls += 1;
+          if (qMs > sessStat.lastActivityMs) sessStat.lastActivityMs = qMs;
+        }
         if (qMs >= poolBucketEntry.start5hMs) {
           accumulateStepIntoBucket(poolBucketEntry.b5h, stepUsage, cascadeId);
         }
@@ -1774,9 +1790,20 @@ export function aggregateMultiWindowUsage({
   let rawPoolsWeeklyCostUsd = 0;
   let rawPoolsWeeklyUnpricedCalls = 0;
   for (const [poolKey, entry] of poolCycleBuckets.entries()) {
+    let recent10mCostUsd = 0;
+    for (const sStat of entry.recent10mSessions.values()) {
+      recent10mCostUsd += sStat.costUsd;
+    }
     poolCycleStats.set(poolKey, {
       cycle5h: formatCycleSummary(entry.b5h),
       cycleWeekly: formatCycleSummary(entry.bWk),
+      exactCost5hUsd: +entry.b5h.costUsd.toFixed(6),
+      exactCostWeeklyUsd: +entry.bWk.costUsd.toFixed(6),
+      recent10m: {
+        lastActivityMs: entry.lastActivityMs,
+        activeSessionCount: entry.recent10mSessions.size,
+        costUsd: +recent10mCostUsd.toFixed(4),
+      },
     });
     rawPoolsWeeklyCalls += entry.bWk.calls;
     rawPoolsWeeklyTokens += entry.bWk.totalTokens;

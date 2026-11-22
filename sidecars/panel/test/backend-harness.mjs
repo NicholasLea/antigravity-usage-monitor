@@ -38,6 +38,7 @@ const BACKEND_MODULE_FILES = [
   '../backend/ls-rpc.mjs',
   '../backend/model-pricing.mjs',
   '../backend/quota-pools.mjs',
+  '../backend/quota-reservation.mjs',
   '../backend/local-scanner.mjs',
   '../backend/usage-aggregator.mjs',
   '../backend/telemetry-builder.mjs',

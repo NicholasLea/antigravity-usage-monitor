@@ -2082,8 +2082,10 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const maintBtns = otherPane
       .querySelectorAll('.btn-secondary')
       .filter((btn) => !btn.classList.contains('ctx-risk-accept-btn'));
-    const rebuildBtn = maintBtns[0];
-    const resetAllBtn = maintBtns[1];
+    const exportReserveLogBtn = maintBtns.find((b) => /导出预占日志/.test(b.textContent));
+    assert.ok(exportReserveLogBtn, 'Experimental quota reservation log export button rendered');
+    const rebuildBtn = maintBtns.find((b) => /重建本地轨迹缓存/.test(b.textContent));
+    const resetAllBtn = maintBtns.find((b) => /恢复全部默认设置/.test(b.textContent));
     rebuildBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(cacheRebuildCalls, 1, 'POST /api/cache/rebuild invoked cleanly');

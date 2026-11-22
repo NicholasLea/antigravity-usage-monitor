@@ -88,6 +88,10 @@
   --metric-danger: hsl(4 78% 55%);
   --metric-danger-soft: color-mix(in srgb, var(--metric-danger) 14%, transparent);
 
+  --quota-reserved: hsl(262 76% 58%);
+  --quota-reserved-soft: color-mix(in srgb, var(--quota-reserved) 13%, transparent);
+  --quota-reserved-border: color-mix(in srgb, var(--quota-reserved) 34%, transparent);
+
   /* Context Window 10-Channel Palette */
   --ctx-assistant: hsl(215 62% 52%);
   --ctx-tool-results: hsl(172 68% 40%);
@@ -126,6 +130,7 @@
 :root[data-color-scheme="dark"],
 :host([data-color-scheme="dark"]),
 [data-color-scheme="dark"] {
+  --quota-reserved: hsl(264 86% 72%);
   --ctx-assistant: hsl(216 30% 58%);
   --ctx-tool-results: hsl(168 72% 54%);
   --ctx-user-input: hsl(258 86% 73%);

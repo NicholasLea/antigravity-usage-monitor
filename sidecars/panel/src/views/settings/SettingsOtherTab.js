@@ -12,8 +12,13 @@ import {
   buildExportableSettingsJson,
   parseImportedSettingsJson,
 } from '../../core/settingsBackup.js';
-import { exportTextFileWithFeedback } from '../../core/fileExportClient.js';
 import {
+  copyTextWithFeedback,
+  exportTextFileWithFeedback,
+} from '../../core/fileExportClient.js';
+import {
+  fetchQuotaReservationLog,
+  normalizeClientExperimentalQuotaReservation,
   normalizeClientModelDisplayMode,
   normalizeClientOrchestratorIdMode,
   rebuildTrajectoryCache,
@@ -22,8 +27,32 @@ import {
   saveSettingsPatch,
 } from '../../store/telemetryStore.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
+import { SegmentedControl } from '../../components/ui/SegmentedControl.js';
 import { BridgeStatusNotice } from '../../components/settings/BridgeStatusNotice.js';
 import { SessionMigrationCard } from '../../components/settings/SessionMigrationCard.js';
+
+function getEnableToggleOptions() {
+  return [
+    { value: 'on', label: t('settings.str.on') },
+    { value: 'off', label: t('settings.str.off') },
+  ];
+}
+
+function formatQuotaReservationLogForClipboard(snapshot) {
+  const safe = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  const buckets = Array.isArray(safe.buckets) ? safe.buckets : [];
+  const events = Array.isArray(safe.events) ? safe.events : [];
+  const bucketLines = buckets.map((b) => `    ${JSON.stringify(b)}`).join(',\n');
+  const eventLines = events.map((e) => `    ${JSON.stringify(e)}`).join(',\n');
+  return [
+    '{',
+    `  "generatedAt": ${JSON.stringify(safe.generatedAt || new Date().toISOString())},`,
+    `  "count": ${events.length},`,
+    `  "buckets": [${bucketLines ? `\n${bucketLines}\n  ` : ''}],`,
+    `  "events": [${eventLines ? `\n${eventLines}\n  ` : ''}]`,
+    '}',
+  ].join('\n');
+}
 
 function getStepModelDisplayOptions() {
   return [
@@ -45,6 +74,7 @@ export const SettingsOtherTab = defineComponent({
   setup({ onCleanup, getProps }) {
     let draftModelDisplayMode = 'short';
     let draftOrchestratorIdMode = 'compact';
+    let draftExperimentalQuotaReservation = false;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
     let latestSettings = null;
@@ -55,6 +85,7 @@ export const SettingsOtherTab = defineComponent({
     let savingContextWindow = false;
     let contextFeedback = '';
     let modelTimer = null;
+    let expTimer = null;
     let maintTimer = null;
     let resetConfirmTimer = null;
     let resetConfirmArmed = false;
@@ -66,11 +97,30 @@ export const SettingsOtherTab = defineComponent({
       style: 'font-size: var(--fs-md);',
       text: '',
     });
+    const expStatusText = h('span', {
+      className: 'text-muted',
+      style: 'font-size: var(--fs-md);',
+      text: '',
+    });
     const maintStatusText = h('span', {
       className: 'text-muted',
       style: 'font-size: var(--fs-md);',
       text: '',
     });
+
+    function showExpFeedback(text, autoClearMs = 1500) {
+      if (expTimer) {
+        clearTimeout(expTimer);
+        expTimer = null;
+      }
+      patchText(expStatusText, text);
+      if (text && autoClearMs > 0) {
+        expTimer = setTimeout(() => {
+          expTimer = null;
+          patchText(expStatusText, '');
+        }, autoClearMs);
+      }
+    }
 
     function showModelFeedback(text, autoClearMs = 1500) {
       if (modelTimer) {
@@ -162,6 +212,112 @@ export const SettingsOtherTab = defineComponent({
       ]),
       h('div', { className: 'form-row' }, [modelFormatLabelEl, stepModelSelect.el]),
       h('div', { className: 'form-row' }, [orchFormatLabelEl, orchestratorIdSelect.el]),
+    ]);
+
+    // --- Card 2: 试验性功能 ---
+    const expTitleEl = h('span', { text: t('settings.oth.expTitle') });
+    const quotaReserveLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.quotaReserveLabel'),
+    });
+    const quotaReserveBadgeEl = h('span', {
+      className: 'settings-experimental-badge',
+      text: t('settings.oth.expBadge'),
+    });
+    const quotaReserveDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.quotaReserveDesc'),
+    });
+    const quotaReserveLogLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.quotaReserveLogLabel'),
+    });
+    const quotaReserveLogDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.quotaReserveLogDesc'),
+    });
+    const exportReserveLogBtnText = h('span', {
+      text: t('settings.oth.exportReserveLogBtn'),
+    });
+    let isExportingReserveLog = false;
+
+    const exportReserveLogBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          if (isExportingReserveLog) return;
+          isExportingReserveLog = true;
+          patchAttr(exportReserveLogBtn, 'disabled', true);
+          try {
+            const snapshot = await fetchQuotaReservationLog();
+            const text = formatQuotaReservationLogForClipboard(snapshot);
+            const count = Array.isArray(snapshot?.events) ? snapshot.events.length : 0;
+            const successMsg =
+              count > 0
+                ? t('settings.oth.exportReserveLogCopied', { count })
+                : t('settings.oth.exportReserveLogEmpty');
+            const ok = await copyTextWithFeedback(text, successMsg);
+            showExpFeedback(ok ? successMsg : t('settings.oth.exportReserveLogFailed'), 2800);
+          } catch {
+            showExpFeedback(t('settings.oth.exportReserveLogFailed'), 2800);
+          } finally {
+            isExportingReserveLog = false;
+            patchAttr(exportReserveLogBtn, 'disabled', false);
+          }
+        },
+      },
+      [createSvgIcon('copy', { size: 12 }), exportReserveLogBtnText]
+    );
+
+    const quotaReserveToggle = SegmentedControl({
+      modelValue: 'off',
+      ariaLabel: t('settings.oth.quotaReserveLabel'),
+      options: getEnableToggleOptions(),
+      onUpdateModelValue: async (val) => {
+        const nextEnabled = val === 'on';
+        draftExperimentalQuotaReservation = nextEnabled;
+        quotaReserveToggle.setProps({
+          modelValue: nextEnabled ? 'on' : 'off',
+          options: getEnableToggleOptions(),
+        });
+        showExpFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ experimentalQuotaReservation: nextEnabled });
+          showExpFeedback(t('settings.saved'), 1500);
+        } catch {
+          if (latestSettings) renderSettings(latestSettings);
+          showExpFeedback(t('settings.saveFailed'), 2500);
+        }
+      },
+    });
+
+    const experimentalPanel = h('section', { className: 'panel' }, [
+      h('div', { className: 'panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('pulse', { size: 13 }),
+          expTitleEl,
+        ]),
+        expStatusText,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [
+          h('div', { className: 'settings-experimental-label-group' }, [
+            quotaReserveLabelEl,
+            quotaReserveBadgeEl,
+          ]),
+          quotaReserveDescEl,
+        ]),
+        quotaReserveToggle.el,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [
+          quotaReserveLogLabelEl,
+          quotaReserveLogDescEl,
+        ]),
+        exportReserveLogBtn,
+      ]),
     ]);
 
     // --- Card 2: 按模型设置上下文窗口 ---
@@ -611,6 +767,7 @@ export const SettingsOtherTab = defineComponent({
 
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       modelPanel,
+      experimentalPanel,
       baselinePanel,
       maintPanel,
       sessionMigrationCard.el,
@@ -632,6 +789,9 @@ export const SettingsOtherTab = defineComponent({
         settings.showUpstreamModel
       );
       draftOrchestratorIdMode = normalizeClientOrchestratorIdMode(settings.orchestratorIdMode);
+      draftExperimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
+        settings.experimentalQuotaReservation
+      );
       if (!acceptingContextRisk) {
         draftContextRiskAccepted = Boolean(settings.contextWindowRiskAccepted);
       }
@@ -643,6 +803,11 @@ export const SettingsOtherTab = defineComponent({
         modelValue: draftOrchestratorIdMode,
         options: getOrchestratorIdDisplayOptions(),
       });
+      quotaReserveToggle.setProps({
+        modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
+        options: getEnableToggleOptions(),
+        ariaLabel: t('settings.oth.quotaReserveLabel'),
+      });
       renderContextWindows();
       void sessionMigrationCard.refs.ensureLoaded();
     }
@@ -651,6 +816,18 @@ export const SettingsOtherTab = defineComponent({
       patchText(modelCardTitleEl, t('settings.oth.modelTitle'));
       patchText(modelFormatLabelEl, t('settings.oth.modelFormat'));
       patchText(orchFormatLabelEl, t('settings.oth.orchFormat'));
+      patchText(expTitleEl, t('settings.oth.expTitle'));
+      patchText(quotaReserveLabelEl, t('settings.oth.quotaReserveLabel'));
+      patchText(quotaReserveBadgeEl, t('settings.oth.expBadge'));
+      patchText(quotaReserveDescEl, t('settings.oth.quotaReserveDesc'));
+      patchText(quotaReserveLogLabelEl, t('settings.oth.quotaReserveLogLabel'));
+      patchText(quotaReserveLogDescEl, t('settings.oth.quotaReserveLogDesc'));
+      patchText(exportReserveLogBtnText, t('settings.oth.exportReserveLogBtn'));
+      quotaReserveToggle.setProps({
+        modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
+        options: getEnableToggleOptions(),
+        ariaLabel: t('settings.oth.quotaReserveLabel'),
+      });
       patchText(baselineTitleEl, t('settings.oth.baselineTitle'));
       renderContextWindows();
       patchText(maintTitleEl, t('settings.oth.maintTitle'));
@@ -686,10 +863,12 @@ export const SettingsOtherTab = defineComponent({
 
     onCleanup(() => {
       if (modelTimer) clearTimeout(modelTimer);
+      if (expTimer) clearTimeout(expTimer);
       if (maintTimer) clearTimeout(maintTimer);
       if (resetConfirmTimer) clearTimeout(resetConfirmTimer);
       stepModelSelect.destroy();
       orchestratorIdSelect.destroy();
+      quotaReserveToggle.destroy();
       ctxBridgeNotice.destroy();
       ctxModelSelect.destroy();
       ctxWindowSelect.destroy();
@@ -701,6 +880,8 @@ export const SettingsOtherTab = defineComponent({
       refs: {
         stepModelSelect,
         orchestratorIdSelect,
+        quotaReserveToggle,
+        exportReserveLogBtn,
         ctxBridgeNotice,
         ctxModelSelect,
         ctxWindowSelect,

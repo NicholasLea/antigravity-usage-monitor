@@ -557,6 +557,20 @@ export function normalizeContextAgentMode(raw) {
 }
 
 /**
+ * 归一化实验性配额预占估算开关（默认 `false`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+export function normalizeExperimentalQuotaReservation(val) {
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    return lower === 'true' || lower === '1' || lower === 'on';
+  }
+  return Boolean(val);
+}
+
+/**
  * 归一化旧版实验性新 UI 字段（保留兼容，缺省返回 `false`）。
  *
  * @param {unknown} val
