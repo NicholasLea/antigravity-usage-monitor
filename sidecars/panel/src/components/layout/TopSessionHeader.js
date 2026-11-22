@@ -22,7 +22,23 @@ import { uiStore } from '../../store/uiStore.js';
 import { CustomSelect } from '../ui/CustomSelect.js';
 
 function formatConvOptionMeta(c) {
-  return formatConversationMeta(c);
+  const base = formatConversationMeta(c);
+  const wsName = String(c?.workspaceName || '').trim();
+  if (!wsName) return base;
+  return base ? `${wsName} · ${base}` : wsName;
+}
+
+function formatConvOptionTitle(c) {
+  const parts = [];
+  const label = String(c?.title || c?.cascadeId?.slice?.(0, 8) || '').trim();
+  if (c?.swarmTitle && c.swarmTitle !== c.title) {
+    parts.push(`${label} · ${c.swarmTitle}`);
+  }
+  const wsPath = String(c?.workspacePath || c?.workspaceName || '').trim();
+  if (wsPath) {
+    parts.push(wsPath);
+  }
+  return parts.length > 0 ? parts.join(' · ') : '';
 }
 
 export const TopSessionHeader = defineComponent({
@@ -213,14 +229,15 @@ export const TopSessionHeader = defineComponent({
           meta: defaultOptMeta,
           ...(hostMatchedConv?.swarmTitle ? { title: hostMatchedConv.swarmTitle } : {}),
         },
-        ...convs.map((c) => ({
-          value: c.cascadeId,
-          label: c.title || c.cascadeId.slice(0, 8),
-          meta: formatConvOptionMeta(c),
-          ...(c.swarmTitle && c.swarmTitle !== c.title
-            ? { title: `${c.title || c.cascadeId.slice(0, 8)} · ${c.swarmTitle}` }
-            : {}),
-        })),
+        ...convs.map((c) => {
+          const optTitle = formatConvOptionTitle(c);
+          return {
+            value: c.cascadeId,
+            label: c.title || c.cascadeId.slice(0, 8),
+            meta: formatConvOptionMeta(c),
+            ...(optTitle ? { title: optTitle } : {}),
+          };
+        }),
       ];
       const lockedId = telSt.selectedConversationId;
       if (lockedId && !convs.some((c) => c.cascadeId === lockedId)) {

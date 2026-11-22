@@ -208,7 +208,6 @@ export const ConsumptionView = defineComponent({
     const outputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.replyAndThink', { resp: 0, think: 0 }) });
 
     const overviewSegBar = createFourSegmentBar();
-    const overviewTitleSpan = h('span', { text: t('cons.overviewTitle') });
     const totalTokensLabel = h('span', { className: 'text-muted', style: 'font-size: var(--fs-md);', text: t('cons.totalTokens') });
     const estCostLabel = h('span', { className: 'text-muted', style: 'font-size: var(--fs-md);', text: t('cons.estCost') });
     const cacheHitRateLabel = h('span', { text: t('cons.cacheHitRate') });
@@ -219,7 +218,6 @@ export const ConsumptionView = defineComponent({
     const overviewPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header cons-overview-head' }, [
         h('span', { className: 'panel-title' }, [
-          overviewTitleSpan,
           dateSpanBadge,
         ]),
         timeFilterSwitch.el,
@@ -326,15 +324,20 @@ export const ConsumptionView = defineComponent({
       trendChart.el,
     ]);
 
-    // --- Section 3: 统一排行卡片（分段切换「模型排行 | 会话排行」，右侧联动对应排序切换） ---
+    // --- Section 3: 统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」，右侧联动对应排序切换） ---
     let activeRankingTab = 'models';
     let modelsSortBy = 'tokens';
     let topConvsSortBy = 'cost';
     let lastModelsCount = 0;
+    let lastWorkspacesCount = 0;
     let lastConvsCount = 0;
 
-    function getRankingTabOptions(modelsCount = lastModelsCount, convsCount = lastConvsCount) {
-      return [
+    function getRankingTabOptions(
+      modelsCount = lastModelsCount,
+      convsCount = lastConvsCount,
+      workspacesCount = lastWorkspacesCount
+    ) {
+      const opts = [
         {
           value: 'models',
           label:
@@ -342,14 +345,21 @@ export const ConsumptionView = defineComponent({
               ? t('cons.rankTabModelsCount', { count: modelsCount })
               : t('cons.topModels'),
         },
-        {
-          value: 'sessions',
-          label:
-            convsCount > 0
-              ? t('cons.rankTabSessionsCount', { count: convsCount })
-              : t('cons.rankTabSessions'),
-        },
       ];
+      if (workspacesCount > 0) {
+        opts.push({
+          value: 'workspaces',
+          label: t('cons.rankTabWorkspacesCount', { count: workspacesCount }),
+        });
+      }
+      opts.push({
+        value: 'sessions',
+        label:
+          convsCount > 0
+            ? t('cons.rankTabSessionsCount', { count: convsCount })
+            : t('cons.rankTabSessions'),
+      });
+      return opts;
     }
 
     function getModelsSortOptions() {
@@ -371,9 +381,9 @@ export const ConsumptionView = defineComponent({
     const rankingTabSwitch = SegmentedControl({
       ariaLabel: t('cons.rankTabAria'),
       modelValue: activeRankingTab,
-      options: getRankingTabOptions(0, 0),
+      options: getRankingTabOptions(0, 0, 0),
       onUpdateModelValue: (nextTab) => {
-        if (nextTab !== 'models' && nextTab !== 'sessions') return;
+        if (nextTab !== 'models' && nextTab !== 'sessions' && nextTab !== 'workspaces') return;
         activeRankingTab = nextTab;
         rankingTabSwitch.setValue(nextTab);
         if (latestSlice) {
@@ -417,6 +427,7 @@ export const ConsumptionView = defineComponent({
     ]);
     const modelsListEl = h('div', { className: 'cons-item-list' });
     const topConvsListEl = h('div', { className: 'cons-item-list', hidden: true });
+    const workspacesListEl = h('div', { className: 'cons-item-list', hidden: true });
     const topConvsEmptyEl = h('div', {
       className: 'cons-ranking-empty text-muted',
       hidden: true,
@@ -429,6 +440,7 @@ export const ConsumptionView = defineComponent({
       ]),
       modelsListEl,
       topConvsListEl,
+      workspacesListEl,
       topConvsEmptyEl,
     ]);
 
@@ -1325,8 +1337,10 @@ export const ConsumptionView = defineComponent({
 
     function createTopConversationRow() {
       const titleTextEl = h('span', { className: 'cons-row-title-text' });
+      const wsBadgeEl = h('span', { className: 'cons-ws-sessions-tag text-mono', hidden: true });
       const titleEl = h('strong', { className: 'cons-row-title cons-top-conv-title' }, [
         titleTextEl,
+        wsBadgeEl,
       ]);
       const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
       const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
@@ -1414,6 +1428,7 @@ export const ConsumptionView = defineComponent({
           rowEl,
           titleEl,
           titleTextEl,
+          wsBadgeEl,
           pctBadge,
           totalTokEl,
           costEl,
@@ -1430,16 +1445,34 @@ export const ConsumptionView = defineComponent({
 
     function updateTopConversationRow(refs, item, bases, modelColorMap, sortMode = 'cost') {
       patchText(refs.callsLbl, t('cons.footCalls'));
-      const title = String(item.title || item.cascadeId || '—').trim();
-      refs.rowState.cascadeId = String(item.cascadeId || '');
-      refs.rowState.canJump = item.canJump !== false && Boolean(refs.rowState.cascadeId);
-      patchClasses(refs.rowEl, { 'is-jumpable': refs.rowState.canJump });
-      patchAttr(
-        refs.rowEl,
-        'title',
-        refs.rowState.canJump ? `${title} — ${t('cons.topConvJumpTip')}` : title
+      const isWorkspaceRow = Boolean(item.isWorkspaceRow);
+      const title = isWorkspaceRow
+        ? item.isUnbound
+          ? t('cons.workspaceUnbound')
+          : String(item.label || item.workspacePath || '—').trim()
+        : String(item.title || item.cascadeId || '—').trim();
+      refs.rowState.cascadeId = String(
+        isWorkspaceRow ? item.latestCascadeId || '' : item.cascadeId || ''
       );
+      refs.rowState.canJump = item.canJump !== false && Boolean(refs.rowState.cascadeId);
+      patchClasses(refs.rowEl, {
+        'is-jumpable': refs.rowState.canJump,
+        'cons-workspace-row': isWorkspaceRow,
+      });
+      const baseTip =
+        isWorkspaceRow && item.workspacePath && item.workspacePath !== title
+          ? `${title} (${item.workspacePath})`
+          : title;
+      const jumpTip = isWorkspaceRow ? t('cons.workspaceJumpTip') : t('cons.topConvJumpTip');
+      patchAttr(refs.rowEl, 'title', refs.rowState.canJump ? `${baseTip} — ${jumpTip}` : baseTip);
       patchText(refs.titleTextEl, title);
+      if (refs.wsBadgeEl) {
+        const showWsBadge = isWorkspaceRow && Number(item.sessionCount || 0) > 0;
+        patchAttr(refs.wsBadgeEl, 'hidden', !showWsBadge);
+        if (showWsBadge) {
+          patchText(refs.wsBadgeEl, t('cons.workspaceSessions', { count: item.sessionCount }));
+        }
+      }
 
       const total = Number(item.totalTokens || 0);
       const costVal = Number(item.costUsd || 0);
@@ -1760,6 +1793,16 @@ export const ConsumptionView = defineComponent({
         return { ...c, mergedModels };
       });
 
+      const rawTopWorkspaces = Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [];
+      const allWorkspaceMergedModels = [];
+      const topWorkspacesWithModels = rawTopWorkspaces.map((w) => {
+        const mergedModels = mergeAndSortBucketModels(w.models);
+        for (const m of mergedModels) {
+          allWorkspaceMergedModels.push(m);
+        }
+        return { ...w, isWorkspaceRow: true, mergedModels };
+      });
+
       const rawSources = cons.sourcesBreakdown || [];
       const sourcesTotalTok = rawSources.reduce((s, x) => s + Number(x.totalTokens || 0), 0);
       const allSourceMergedModels = [];
@@ -1813,6 +1856,7 @@ export const ConsumptionView = defineComponent({
         ...models,
         ...allSourceMergedModels,
         ...allTopConvMergedModels,
+        ...allWorkspaceMergedModels,
         ...allMonthMergedModels,
         ...allTrendMergedModels,
       ]);
@@ -1848,24 +1892,46 @@ export const ConsumptionView = defineComponent({
       });
       trendChart.update(enrichedTrendSeries);
 
-      // 3. 同步统一排行卡片（分段切换「模型排行 | 会话排行」及对应排序控制）
+      // 3. 同步统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」及对应排序控制）
       const sortedTopConvs = [...topConvsWithModels].sort((a, b) =>
         topConvsSortBy === 'tokens'
           ? (b.totalTokens || 0) - (a.totalTokens || 0) || (b.costUsd || 0) - (a.costUsd || 0)
           : (b.costUsd || 0) - (a.costUsd || 0) || (b.totalTokens || 0) - (a.totalTokens || 0)
       );
+      const sortedTopWorkspaces = [...topWorkspacesWithModels].sort((a, b) =>
+        topConvsSortBy === 'tokens'
+          ? (b.totalTokens || 0) - (a.totalTokens || 0) || (b.costUsd || 0) - (a.costUsd || 0)
+          : (b.costUsd || 0) - (a.costUsd || 0) || (b.totalTokens || 0) - (a.totalTokens || 0)
+      );
+      if (activeRankingTab === 'workspaces' && sortedTopWorkspaces.length === 0) {
+        activeRankingTab = 'models';
+      }
       lastModelsCount = models.length;
+      lastWorkspacesCount = sortedTopWorkspaces.length;
       lastConvsCount = sortedTopConvs.length;
       rankingTabSwitch.setProps({
         ariaLabel: t('cons.rankTabAria'),
         modelValue: activeRankingTab,
-        options: getRankingTabOptions(models.length, sortedTopConvs.length),
+        options: getRankingTabOptions(
+          models.length,
+          sortedTopConvs.length,
+          sortedTopWorkspaces.length
+        ),
       });
       const showSessionsTab = activeRankingTab === 'sessions';
-      patchAttr(modelsSortSwitch.el, 'hidden', showSessionsTab);
-      patchAttr(topConvsSortSwitch.el, 'hidden', !showSessionsTab || sortedTopConvs.length === 0);
-      patchAttr(modelsListEl, 'hidden', showSessionsTab);
+      const showWorkspacesTab = activeRankingTab === 'workspaces' && sortedTopWorkspaces.length > 0;
+      const showModelsTab = !showSessionsTab && !showWorkspacesTab;
+      patchAttr(modelsSortSwitch.el, 'hidden', !showModelsTab);
+      patchAttr(
+        topConvsSortSwitch.el,
+        'hidden',
+        showModelsTab ||
+          (showSessionsTab && sortedTopConvs.length === 0) ||
+          (showWorkspacesTab && sortedTopWorkspaces.length === 0)
+      );
+      patchAttr(modelsListEl, 'hidden', !showModelsTab);
       patchAttr(topConvsListEl, 'hidden', !showSessionsTab || sortedTopConvs.length === 0);
+      patchAttr(workspacesListEl, 'hidden', !showWorkspacesTab);
       patchAttr(topConvsEmptyEl, 'hidden', !showSessionsTab || sortedTopConvs.length > 0);
       patchText(topConvsEmptyEl, t('cons.topConvsEmpty'));
 
@@ -1907,6 +1973,31 @@ export const ConsumptionView = defineComponent({
         createRow: createTopConversationRow,
         updateRow: (refs, c) =>
           updateTopConversationRow(refs, c, topConvsBases, modelColorMap, topConvsSortBy),
+      });
+
+      const topWsBaseTokens =
+        totalTokens > 0
+          ? totalTokens
+          : sortedTopWorkspaces.reduce((s, w) => s + Number(w.totalTokens || 0), 0);
+      const topWsBaseCost =
+        costUsd > 0
+          ? costUsd
+          : sortedTopWorkspaces.reduce((s, w) => s + Math.max(0, Number(w.costUsd || 0)), 0);
+      const topWsBases = { tokens: topWsBaseTokens, cost: topWsBaseCost };
+      patchKeyedList(workspacesListEl, sortedTopWorkspaces, {
+        keyFn: (w) => w.workspaceKey,
+        sigFn: (w) => {
+          const modelsSig = w.mergedModels
+            .map((m) => {
+              const seed = getCanonicalModelColorSeed(m);
+              return `${m.displayText}:${m.totalTokens}:${m.inputTokens || 0}:${m.cacheReadTokens || 0}:${m.thinkingTokens || 0}:${m.responseTokens || 0}:${m.calls}:${modelColorMap.get(seed) || ''}`;
+            })
+            .join('|');
+          return `${localeSig}:${topConvsSortBy}:${w.workspaceKey}:${w.label}:${w.sessionCount}:${w.totalTokens}:${w.inputTokens || 0}:${w.cacheReadTokens || 0}:${w.thinkingTokens || 0}:${w.responseTokens || 0}:${w.costUsd}:${w.unpricedCalls}:${w.calls}:${w.cacheHitPct}:${w.latestCascadeId}:${w.canJump ? 1 : 0}:${topWsBaseTokens}:${topWsBaseCost.toFixed(4)}:${modelsSig}`;
+        },
+        createRow: createTopConversationRow,
+        updateRow: (refs, w) =>
+          updateTopConversationRow(refs, w, topWsBases, modelColorMap, topConvsSortBy),
       });
 
       // 4. 同步客户端来源列表（长尾合并分段配色 + 右侧总调用数 + 悬停进度条弹出明细浮层）
@@ -2077,7 +2168,6 @@ export const ConsumptionView = defineComponent({
       });
       patchText(applyCustomBtnLabel, t('cons.applyFilter'));
       patchText(rangeToSpan, t('cons.rangeTo'));
-      patchText(overviewTitleSpan, t('cons.overviewTitle'));
       patchText(totalTokensLabel, t('cons.totalTokens'));
       patchText(estCostLabel, t('cons.estCost'));
       patchText(cacheHitRateLabel, t('cons.cacheHitRate'));

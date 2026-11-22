@@ -359,6 +359,7 @@ function recordConsumptionSliceToCache(
     trendSeries: Array.isArray(cons.trendSeries) ? cons.trendSeries : [],
     sourcesBreakdown: Array.isArray(cons.sourcesBreakdown) ? cons.sourcesBreakdown : [],
     topConversations: Array.isArray(cons.topConversations) ? cons.topConversations : [],
+    topWorkspaces: Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [],
     modelBreakdown: Array.isArray(modelBreakdown) ? modelBreakdown : [],
   });
 }
@@ -379,6 +380,7 @@ function applyCachedConsumptionSlice(baseTelemetry, cachedEntry, targetRevision 
       topConversations: Array.isArray(cachedEntry.topConversations)
         ? cachedEntry.topConversations
         : [],
+      topWorkspaces: Array.isArray(cachedEntry.topWorkspaces) ? cachedEntry.topWorkspaces : [],
     },
     modelBreakdown: cachedEntry.modelBreakdown,
   };
@@ -967,6 +969,23 @@ export function isEquivalentTelemetry(prev, next) {
     }
   }
 
+  const pTopWs = prev.consumption?.topWorkspaces || [];
+  const nTopWs = next.consumption?.topWorkspaces || [];
+  if (pTopWs.length !== nTopWs.length) return false;
+  for (let i = 0; i < pTopWs.length; i++) {
+    if (
+      pTopWs[i]?.workspaceKey !== nTopWs[i]?.workspaceKey ||
+      pTopWs[i]?.label !== nTopWs[i]?.label ||
+      pTopWs[i]?.sessionCount !== nTopWs[i]?.sessionCount ||
+      pTopWs[i]?.totalTokens !== nTopWs[i]?.totalTokens ||
+      pTopWs[i]?.costUsd !== nTopWs[i]?.costUsd ||
+      pTopWs[i]?.calls !== nTopWs[i]?.calls ||
+      !areModelSlicesEqual(pTopWs[i]?.models, nTopWs[i]?.models)
+    ) {
+      return false;
+    }
+  }
+
   // 8. 比对账号订阅档位与动态多配额池
   if (
     prev.account?.email !== next.account?.email ||
@@ -1037,6 +1056,7 @@ export function isEquivalentTelemetry(prev, next) {
       pConvs[i]?.subagentCount !== nConvs[i]?.subagentCount ||
       (pConvs[i]?.swarmCount || 0) !== (nConvs[i]?.swarmCount || 0) ||
       (pConvs[i]?.swarmTitle || '') !== (nConvs[i]?.swarmTitle || '') ||
+      (pConvs[i]?.workspaceName || '') !== (nConvs[i]?.workspaceName || '') ||
       pConvs[i]?.totalStepCount !== nConvs[i]?.totalStepCount
     ) {
       return false;
@@ -1280,6 +1300,7 @@ async function requestTelemetry(params, force) {
             trendSeries: latestSt.telemetry.consumption.trendSeries,
             sourcesBreakdown: latestSt.telemetry.consumption.sourcesBreakdown,
             topConversations: latestSt.telemetry.consumption.topConversations,
+            topWorkspaces: latestSt.telemetry.consumption.topWorkspaces,
           },
           modelBreakdown: latestSt.telemetry.modelBreakdown,
         };

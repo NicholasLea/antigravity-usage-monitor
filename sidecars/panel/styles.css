@@ -3012,6 +3012,33 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
+.cons-ws-sessions-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0 5px;
+  height: 16px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cons-ws-sessions-tag[hidden] {
+  display: none !important;
+}
+
+[data-modern-ui="true"] .cons-ws-sessions-tag {
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--modern-surface-subtle);
+  padding: 0 7px;
+}
+
 .cons-item-foot {
   display: flex;
   align-items: center;

@@ -481,26 +481,50 @@ export function readLocalSummarySnapshot(productRoots = PRODUCT_DATA_ROOTS, { fo
       withReadOnlySqliteDb(dbPath, (db) => {
         let rows = [];
         try {
-          rows = db
-            .prepare(
-              `SELECT
-                 conversation_id,
-                 title,
-                 preview,
-                 status,
-                 source,
-                 parent_conversation_id,
-                 nesting_depth,
-                 agent_name,
-                 not_fully_idle,
-                 killed,
-                 step_count,
-                 last_modified_time,
-                 app_data_dir,
-                 raw_summary
-               FROM conversation_summaries`
-            )
-            .all();
+          try {
+            rows = db
+              .prepare(
+                `SELECT
+                   conversation_id,
+                   title,
+                   preview,
+                   status,
+                   source,
+                   parent_conversation_id,
+                   nesting_depth,
+                   agent_name,
+                   not_fully_idle,
+                   killed,
+                   step_count,
+                   last_modified_time,
+                   app_data_dir,
+                   workspace_uris,
+                   raw_summary
+                 FROM conversation_summaries`
+              )
+              .all();
+          } catch {
+            rows = db
+              .prepare(
+                `SELECT
+                   conversation_id,
+                   title,
+                   preview,
+                   status,
+                   source,
+                   parent_conversation_id,
+                   nesting_depth,
+                   agent_name,
+                   not_fully_idle,
+                   killed,
+                   step_count,
+                   last_modified_time,
+                   app_data_dir,
+                   raw_summary
+                 FROM conversation_summaries`
+              )
+              .all();
+          }
         } catch {
           rows = db
             .prepare(
@@ -587,6 +611,22 @@ export function readLocalSummarySnapshot(productRoots = PRODUCT_DATA_ROOTS, { fo
             ? decoded.annotations.sideQuestionCascadeIds
             : [];
           const sideQuestionTitles = decoded?.annotations?.sideQuestionTitles || {};
+          let workspaceUri = '';
+          const rawWsCol = String(row?.workspace_uris || '').trim();
+          if (rawWsCol) {
+            if (rawWsCol.startsWith('[')) {
+              try {
+                const parsedWs = JSON.parse(rawWsCol);
+                if (Array.isArray(parsedWs)) {
+                  workspaceUri = String(parsedWs.find((u) => String(u || '').trim()) || '').trim();
+                }
+              } catch {
+                workspaceUri = rawWsCol;
+              }
+            } else {
+              workspaceUri = rawWsCol;
+            }
+          }
 
           const entry = {
             cascadeId: cidLower,
@@ -605,6 +645,7 @@ export function readLocalSummarySnapshot(productRoots = PRODUCT_DATA_ROOTS, { fo
             trajectoryType,
             isSideQuestion,
             forkParentConversationId,
+            ...(workspaceUri ? { workspaceUri } : {}),
           };
 
           const summaryRpcShape = {
@@ -620,6 +661,9 @@ export function readLocalSummarySnapshot(productRoots = PRODUCT_DATA_ROOTS, { fo
             trajectoryType,
             isSideQuestion,
             forkParentConversationId,
+            ...(workspaceUri
+              ? { workspaces: [{ workspaceFolderAbsoluteUri: workspaceUri }] }
+              : {}),
             annotations: {
               title,
               archived: Boolean(decoded?.annotations?.archived),

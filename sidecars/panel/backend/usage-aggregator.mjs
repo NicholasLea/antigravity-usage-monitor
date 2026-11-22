@@ -536,11 +536,15 @@ function collectUsageEntriesToAggregate(familySet, endpoint = null) {
     const entryTitle = String(
       rootLive?.title || entry?.title || extMatch?.title || ''
     ).trim();
+    const entryWorkspaceUri = String(
+      rootLive?.workspaceUri || entry?.workspaceUri || extMatch?.workspaceUri || ''
+    ).trim();
     allEntriesToAggregate.push({
       cascadeId: groupCascadeId,
       title: entryTitle,
       appSource: isRemote ? 'ssh' : entry?.appSource || 'standalone',
       accountName: entry?.accountName || extMatch?.accountName || '',
+      workspaceUri: entryWorkspaceUri,
       steps: entry?.steps || [],
       isCurrentConv: familySet.has(cidLower),
     });
@@ -556,6 +560,7 @@ function collectUsageEntriesToAggregate(familySet, endpoint = null) {
       title: String(ext.title || liveEntry?.title || '').trim(),
       appSource: ext.appSource || 'ide',
       accountName: ext.accountName || liveEntry?.accountName || '',
+      workspaceUri: String(ext.workspaceUri || liveEntry?.workspaceUri || '').trim(),
       steps: ext.steps || [],
       isCurrentConv: familySet.has(extCidLower),
     });
@@ -565,6 +570,136 @@ function collectUsageEntriesToAggregate(familySet, endpoint = null) {
 }
 
 const MAX_TOP_CONVERSATIONS_LIMIT = 10;
+const MAX_TOP_WORKSPACES_LIMIT = 12;
+const UNBOUND_WORKSPACE_KEY = '__unbound__';
+
+/**
+ * 将 `file://` URI 或本地文件系统路径归一化为稳定的工作区聚合键、项目短名及可读路径。
+ *
+ * @param {string} rawUri
+ * @returns {{ workspaceKey: string, label: string, workspacePath: string }|null}
+ */
+export function normalizeWorkspaceBucket(rawUri) {
+  const raw = String(rawUri || '').trim();
+  if (!raw) return null;
+  let decoded = raw;
+  if (/^file:\/\//i.test(decoded)) {
+    decoded = decoded.replace(/^file:\/\//i, '');
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      decoded = decoded.replace(/%3A/gi, ':');
+    }
+    // Windows `file:///F:/...` 解码后形如 `/F:/...`，剥离盘符前多余斜杠；POSIX `/Users/...` 保留前导 `/`
+    if (/^\/[A-Za-z]:/.test(decoded)) {
+      decoded = decoded.slice(1);
+    }
+  } else {
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      // 保留原始文本
+    }
+  }
+  decoded = decoded.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!decoded) return null;
+  const parts = decoded.split('/').filter(Boolean);
+  const label = parts.length > 0 ? parts[parts.length - 1] : decoded;
+  return {
+    workspaceKey: decoded.toLowerCase(),
+    label,
+    workspacePath: decoded,
+  };
+}
+
+function accumulateStepIntoWorkspaceMap(
+  perWorkspaceMap,
+  entry,
+  stepUsage,
+  tMs,
+  st = null,
+  mInfo = null,
+  stepCost = null
+) {
+  const norm = normalizeWorkspaceBucket(entry?.workspaceUri);
+  const key = norm ? norm.workspaceKey : UNBOUND_WORKSPACE_KEY;
+  let acc = perWorkspaceMap.get(key);
+  if (!acc) {
+    acc = {
+      workspaceKey: key,
+      label: norm ? norm.label : '',
+      workspacePath: norm ? norm.workspacePath : '',
+      isUnbound: !norm,
+      sessionIds: new Set(),
+      calls: 0,
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      responseTokens: 0,
+      thinkingTokens: 0,
+      totalTokens: 0,
+      costUsd: 0,
+      unpricedCalls: 0,
+      lastTimestampMs: 0,
+      latestCascadeId: '',
+      perModelStats: new Map(),
+    };
+    perWorkspaceMap.set(key, acc);
+  }
+  const cid = String(entry?.cascadeId || '').trim();
+  if (cid) acc.sessionIds.add(cid);
+  acc.calls += 1;
+  acc.inputTokens += stepUsage.inTok;
+  acc.cacheReadTokens += stepUsage.cacheTok;
+  acc.responseTokens += stepUsage.respTok;
+  acc.thinkingTokens += stepUsage.thinkTok;
+  acc.totalTokens += stepUsage.stepTotalTokens;
+  acc.costUsd += stepUsage.resolvedCost;
+  acc.unpricedCalls += stepUsage.unpriced;
+  if (tMs >= acc.lastTimestampMs) {
+    acc.lastTimestampMs = tMs;
+    if (cid) acc.latestCascadeId = cid;
+  }
+  if (st && mInfo) {
+    accumulateStepIntoModelMap(acc.perModelStats, st, mInfo, stepCost);
+  }
+}
+
+function finalizeTopWorkspacesMap(perWorkspaceMap, maxItems = MAX_TOP_WORKSPACES_LIMIT) {
+  let hasRealWorkspace = false;
+  for (const w of perWorkspaceMap.values()) {
+    if (!w.isUnbound && (w.totalTokens > 0 || w.calls > 0)) {
+      hasRealWorkspace = true;
+      break;
+    }
+  }
+  if (!hasRealWorkspace) return [];
+  return Array.from(perWorkspaceMap.values())
+    .filter((w) => w.totalTokens > 0 || w.calls > 0)
+    .sort((a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens || b.calls - a.calls)
+    .slice(0, maxItems)
+    .map((w) => {
+      const promptTokens = w.inputTokens + w.cacheReadTokens;
+      return {
+        workspaceKey: w.workspaceKey,
+        label: w.label,
+        workspacePath: w.workspacePath,
+        isUnbound: w.isUnbound,
+        sessionCount: w.sessionIds.size,
+        calls: w.calls,
+        inputTokens: w.inputTokens,
+        cacheReadTokens: w.cacheReadTokens,
+        responseTokens: w.responseTokens,
+        thinkingTokens: w.thinkingTokens,
+        totalTokens: w.totalTokens,
+        costUsd: +w.costUsd.toFixed(6),
+        unpricedCalls: w.unpricedCalls,
+        cacheHitPct: promptTokens > 0 ? +((w.cacheReadTokens / promptTokens) * 100).toFixed(1) : 0,
+        lastTimestampMs: w.lastTimestampMs,
+        latestCascadeId: w.latestCascadeId,
+        models: finalizeModelBreakdownMap(w.perModelStats),
+      };
+    });
+}
 
 function accumulateStepIntoConversationMap(
   perConvMap,
@@ -975,7 +1110,8 @@ function sameUsageEntries(previous, current) {
   return previous.length === current.length && current.every((entry, index) => {
     const before = previous[index];
     return entry.steps === before.steps && entry.cascadeId === before.cascadeId &&
-      entry.appSource === before.appSource && entry.accountName === before.accountName;
+      entry.appSource === before.appSource && entry.accountName === before.accountName &&
+      entry.workspaceUri === before.workspaceUri;
   });
 }
 
@@ -1254,6 +1390,7 @@ export function aggregateMultiWindowUsage({
   const selectedSessionBucket = sessionBuckets[selectedWindow.key] || createUsageBucket();
   const perModelStats = new Map();
   const perConvStats = new Map();
+  const perWorkspaceStats = new Map();
   const selectedWindowSteps = [];
   let earliestSelectedStepMs = Infinity;
   let latestSelectedStepMs = 0;
@@ -1550,6 +1687,15 @@ export function aggregateMultiWindowUsage({
           mInfo,
           stepCost
         );
+        accumulateStepIntoWorkspaceMap(
+          perWorkspaceStats,
+          entry,
+          stepUsage,
+          tMs,
+          st,
+          mInfo,
+          stepCost
+        );
       }
     }
   }
@@ -1607,6 +1753,7 @@ export function aggregateMultiWindowUsage({
   const finalizedQuotaWeekBucket = finalizeUsageBucket(quotaWeekBucket);
   const modelBreakdown = finalizeModelBreakdownMap(perModelStats);
   const topConversations = finalizeTopConversationsMap(perConvStats);
+  const topWorkspaces = finalizeTopWorkspacesMap(perWorkspaceStats);
 
   const formatCycleSummary = (b) => {
     const fin = finalizeUsageBucket(b);
@@ -1693,6 +1840,7 @@ export function aggregateMultiWindowUsage({
     quotaWeekBucket: finalizedQuotaWeekBucket,
     modelBreakdown,
     topConversations,
+    topWorkspaces,
     poolCycleStats,
     poolsWeeklySummary,
   };
@@ -1835,6 +1983,7 @@ export function aggregateSelectedWindowUsage({
           sourcesBreakdown: res.sourcesBreakdown,
           modelBreakdown: res.modelBreakdown,
           topConversations: res.topConversations || [],
+          topWorkspaces: res.topWorkspaces || [],
         };
       }
     }
@@ -1876,6 +2025,7 @@ export function aggregateSelectedWindowUsage({
   const perModelStats = new Map();
   const perSourceStats = new Map();
   const perConvStats = new Map();
+  const perWorkspaceStats = new Map();
   const selectedWindowSteps = [];
   let earliestSelectedStepMs = Infinity;
   let latestSelectedStepMs = 0;
@@ -2044,6 +2194,15 @@ export function aggregateSelectedWindowUsage({
         mInfo,
         stepCost
       );
+      accumulateStepIntoWorkspaceMap(
+        perWorkspaceStats,
+        entry,
+        stepUsage,
+        tMs,
+        st,
+        mInfo,
+        stepCost
+      );
     }
   }
 
@@ -2078,6 +2237,7 @@ export function aggregateSelectedWindowUsage({
     .sort((a, b) => b.totalTokens - a.totalTokens || b.calls - a.calls);
   const modelBreakdown = finalizeModelBreakdownMap(perModelStats);
   const topConversations = finalizeTopConversationsMap(perConvStats);
+  const topWorkspaces = finalizeTopWorkspacesMap(perWorkspaceStats);
 
   const sliceResult = {
     usageRevision: sameSnapshot ? snapshot.revision : usageSnapshotRevisionSeq,
@@ -2090,6 +2250,7 @@ export function aggregateSelectedWindowUsage({
     sourcesBreakdown,
     modelBreakdown,
     topConversations,
+    topWorkspaces,
   };
 
   if (sameSnapshot) {
@@ -2218,6 +2379,7 @@ export function aggregateConsumptionPresetBundle(params) {
       sourcesBreakdown: agg.sourcesBreakdown,
       modelBreakdown: agg.modelBreakdown,
       topConversations: agg.topConversations || [],
+      topWorkspaces: agg.topWorkspaces || [],
     };
   }
 

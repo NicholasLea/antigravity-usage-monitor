@@ -967,3 +967,350 @@ test('Feature 8: StepsDetailView model summary cards align with Model Ranking (p
   assert.ok(cards[0].querySelector('.smodel-perf-foot > .smodel-perf'), 'Perf metrics live in dedicated left-aligned sub-row');
   assert.match(cards[0].querySelector('.smodel-unit-cost')?.textContent || '', /均价 \$3\.00\/1M/);
 });
+
+test('Feature 9: workspace/project cost aggregation (full + fast paths) and Projects ranking tab in ConsumptionView', async (t) => {
+  const { normalizeWorkspaceBucket } = await import('../backend/usage-aggregator.mjs');
+
+  // 1. URI / Windows / POSIX workspace path normalization
+  const winNorm = normalizeWorkspaceBucket('file:///F%3A/ppt/1111/antigravity-usage-monitor/');
+  assert.equal(winNorm.label, 'antigravity-usage-monitor');
+  assert.equal(winNorm.workspacePath, 'F:/ppt/1111/antigravity-usage-monitor');
+  assert.equal(winNorm.workspaceKey, 'f:/ppt/1111/antigravity-usage-monitor');
+
+  const winBackslash = normalizeWorkspaceBucket('f:\\ppt\\1111\\antigravity-usage-monitor\\');
+  assert.equal(winBackslash.workspaceKey, winNorm.workspaceKey);
+
+  const posixNorm = normalizeWorkspaceBucket('file:///Users/dev/my-service/');
+  assert.equal(posixNorm.label, 'my-service');
+  assert.equal(posixNorm.workspacePath, '/Users/dev/my-service');
+
+  // 2. End-to-end backend aggregation across multiple sessions sharing a workspace (including backfill from summaries.workspaces)
+  const now = Date.now();
+  const harn = backendHarness({
+    cache: {
+      'ws-conv-a1': {
+        cascadeId: 'ws-conv-a1',
+        title: 'Monitor work 1',
+        appSource: 'standalone',
+        workspaceUri: 'file:///F%3A/ppt/usage-monitor',
+        steps: [
+          {
+            stepIndex: 1,
+            modelKey: 'MODEL_PLACEHOLDER_M18',
+            inputTokens: 120_000,
+            cacheReadTokens: 180_000,
+            outputTokens: 8_000,
+            thinkingTokens: 3_000,
+            responseTokens: 5_000,
+            createdAtMs: now - 120_000,
+          },
+        ],
+      },
+      'ws-conv-a2': {
+        cascadeId: 'ws-conv-a2',
+        title: 'Monitor work 2',
+        appSource: 'cli',
+        // Intentionally omit workspaceUri on cache entry to verify backfill from summaries.workspaces
+        steps: [
+          {
+            stepIndex: 1,
+            modelKey: 'MODEL_PLACEHOLDER_M18',
+            inputTokens: 80_000,
+            cacheReadTokens: 120_000,
+            outputTokens: 4_000,
+            thinkingTokens: 1_000,
+            responseTokens: 3_000,
+            createdAtMs: now - 60_000,
+          },
+        ],
+      },
+      'ws-conv-b1': {
+        cascadeId: 'ws-conv-b1',
+        title: 'Docs site',
+        appSource: 'ide',
+        workspaceUri: 'file:///F%3A/ppt/docs-site',
+        steps: [
+          {
+            stepIndex: 1,
+            modelKey: 'MODEL_PLACEHOLDER_M18',
+            inputTokens: 20_000,
+            cacheReadTokens: 30_000,
+            outputTokens: 1_000,
+            thinkingTokens: 400,
+            responseTokens: 600,
+            createdAtMs: now - 90_000,
+          },
+        ],
+      },
+    },
+    summaries: {
+      'ws-conv-a1': {
+        summary: 'Monitor work 1',
+        stepCount: 1,
+        lastModifiedTime: new Date(now - 120_000).toISOString(),
+        workspaces: [{ workspaceFolderAbsoluteUri: 'file:///F%3A/ppt/usage-monitor' }],
+      },
+      'ws-conv-a2': {
+        summary: 'Monitor work 2',
+        stepCount: 1,
+        lastModifiedTime: new Date(now - 60_000).toISOString(),
+        workspaces: [{ workspaceFolderAbsoluteUri: 'file:///f:/ppt/usage-monitor/' }],
+      },
+      'ws-conv-b1': {
+        summary: 'Docs site',
+        stepCount: 1,
+        lastModifiedTime: new Date(now - 90_000).toISOString(),
+        workspaces: [{ workspaceFolderAbsoluteUri: 'file:///F%3A/ppt/docs-site' }],
+      },
+    },
+  });
+
+  const fullPayload = await harn.buildTelemetryPayloadInternal('ws-conv-a2', false, { range: '24h' });
+  const topWs = fullPayload.consumption?.topWorkspaces || [];
+  assert.equal(topWs.length, 2);
+  assert.equal(topWs[0].label, 'usage-monitor');
+  assert.equal(topWs[0].sessionCount, 2);
+  assert.equal(topWs[0].calls, 2);
+  assert.equal(topWs[0].totalTokens, 512_000);
+  assert.equal(topWs[0].latestCascadeId, 'ws-conv-a2');
+  assert.equal(topWs[0].canJump, true);
+  assert.equal(topWs[1].label, 'docs-site');
+  assert.equal(topWs[1].sessionCount, 1);
+
+  const fastPayload = JSON.parse(
+    (await harn.executeTelemetryAction({
+      conversationId: 'ws-conv-a2',
+      range: '24h',
+      scope: 'consumption',
+    })).body
+  );
+  assert.equal(fastPayload.consumption.topWorkspaces.length, 2);
+  assert.equal(fastPayload.consumption.topWorkspaces[0].label, 'usage-monitor');
+  assert.equal(fastPayload.consumption.topWorkspaces[0].totalTokens, topWs[0].totalTokens);
+
+  // 3. Frontend ConsumptionView Projects tab rendering, sorting, and click-to-jump
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevFetch = globalThis.fetch;
+  const prevLocale = i18nStore.getState().locale;
+  const prevUi = uiStore.getState();
+  const prevTel = telemetryStore.getState();
+
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    requestAnimationFrame: (cb) => {
+      cb();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  };
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({}) });
+
+  let view = null;
+  t.after(() => {
+    view?.destroy?.();
+    setI18nLanguage(prevLocale);
+    uiStore.setState(prevUi, { sync: true });
+    telemetryStore.setState(prevTel, { sync: true });
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.fetch = prevFetch;
+  });
+
+  setI18nLanguage('zh-CN');
+  uiStore.setState({ activeView: 'consumption', monitorVisible: true }, { sync: true });
+  telemetryStore.setState(
+    {
+      selectedTimeRange: '7d',
+      customStartMs: 0,
+      customEndMs: 0,
+      telemetry: {
+        settings: {},
+        consumption: {
+          revision: 11,
+          selectedRange: { key: '7d', label: '近7天', startMs: now - 86_400_000, endMs: now },
+          account: {
+            totalTokens: 1_000_000,
+            inputTokens: 200_000,
+            cacheReadTokens: 700_000,
+            outputTokens: 100_000,
+            responseTokens: 60_000,
+            thinkingTokens: 40_000,
+            costUsd: 3.0,
+            savedCostUsd: 1.0,
+            cacheHitPct: 77.8,
+            calls: 10,
+          },
+          topConversations: [],
+          topWorkspaces: [
+            {
+              workspaceKey: 'f:/ppt/usage-monitor',
+              label: 'usage-monitor',
+              workspacePath: 'F:/ppt/usage-monitor',
+              isUnbound: false,
+              sessionCount: 4,
+              calls: 6,
+              inputTokens: 150_000,
+              cacheReadTokens: 200_000,
+              responseTokens: 30_000,
+              thinkingTokens: 20_000,
+              totalTokens: 400_000,
+              costUsd: 2.1,
+              cacheHitPct: 57.1,
+              latestCascadeId: 'ws-conv-a2',
+              canJump: true,
+              models: [{ label: '4-neon', shortName: '4-neon', calls: 6, totalTokens: 400_000, costUsd: 2.1 }],
+            },
+            {
+              workspaceKey: 'f:/ppt/docs-site',
+              label: 'docs-site',
+              workspacePath: 'F:/ppt/docs-site',
+              isUnbound: false,
+              sessionCount: 2,
+              calls: 4,
+              inputTokens: 50_000,
+              cacheReadTokens: 500_000,
+              responseTokens: 30_000,
+              thinkingTokens: 20_000,
+              totalTokens: 600_000,
+              costUsd: 0.9,
+              cacheHitPct: 90.9,
+              latestCascadeId: 'ws-conv-b1',
+              canJump: true,
+              models: [{ label: '4-carbon', shortName: '4-carbon', calls: 4, totalTokens: 600_000, costUsd: 0.9 }],
+            },
+          ],
+          trendSeries: [],
+          sourcesBreakdown: [],
+          monthlyYear: 2026,
+          monthlySeries: [],
+        },
+        modelBreakdown: [],
+      },
+    },
+    { sync: true }
+  );
+
+  view = ConsumptionView();
+  document.body.appendChild(view.el);
+
+  const rankingPanel = view.el.querySelector('.cons-ranking-panel');
+  const rankingTabBtns = rankingPanel.querySelector('.cons-ranking-head > .segmented').querySelectorAll('.seg-btn');
+  assert.equal(rankingTabBtns.length, 3);
+  assert.match(rankingTabBtns[1].textContent, /项目排行 \(2\)/);
+
+  // Switch to Projects tab
+  rankingTabBtns[1].dispatchEvent({ type: 'click', stopPropagation: () => {} });
+  const wsRows = view.el.querySelectorAll('.cons-workspace-row');
+  assert.equal(wsRows.length, 2);
+  assert.equal(wsRows[0].querySelector('.cons-row-title-text').textContent, 'usage-monitor');
+  assert.equal(wsRows[0].querySelector('.cons-ws-sessions-tag').textContent, '4 会话');
+
+  // Switch sort to Tokens -> docs-site (600k) moves first
+  const sortSwitches = rankingPanel.querySelectorAll('.cons-ranking-sort-wrap > .segmented');
+  sortSwitches[1].querySelectorAll('.seg-btn')[1].dispatchEvent({ type: 'click', stopPropagation: () => {} });
+  const wsRowsAfterSort = view.el.querySelectorAll('.cons-workspace-row');
+  assert.equal(wsRowsAfterSort[0].querySelector('.cons-row-title-text').textContent, 'docs-site');
+
+  // Click workspace row jumps to its latest conversation in steps view
+  wsRowsAfterSort[0].dispatchEvent({ type: 'click' });
+  assert.equal(uiStore.getState().activeView, 'steps');
+  assert.equal(telemetryStore.getState().selectedConversationId, 'ws-conv-b1');
+});
+
+test('Feature 13: TopSessionHeader exposes project/workspace tags on sessions and filters by workspace name', async (t) => {
+  const { TopSessionHeader } = await import('../src/components/layout/TopSessionHeader.js');
+  const now = Date.now();
+  const harn = backendHarness({
+    cache: {
+      'proj-conv-1': {
+        cascadeId: 'proj-conv-1',
+        title: 'Fix auth bug',
+        workspaceUri: 'file:///F%3A/repos/billing-service',
+        steps: [{ stepIndex: 1, modelKey: 'MODEL_PLACEHOLDER_M18', inputTokens: 1000, outputTokens: 100, createdAtMs: now - 5000 }],
+      },
+      'proj-conv-2': {
+        cascadeId: 'proj-conv-2',
+        title: 'Fix auth bug',
+        workspaceUri: 'file:///F%3A/repos/web-dashboard',
+        steps: [{ stepIndex: 1, modelKey: 'MODEL_PLACEHOLDER_M18', inputTokens: 1000, outputTokens: 100, createdAtMs: now - 10000 }],
+      },
+    },
+    summaries: {
+      'proj-conv-1': { summary: 'Fix auth bug', stepCount: 1, lastModifiedTime: new Date(now - 5000).toISOString() },
+      'proj-conv-2': { summary: 'Fix auth bug', stepCount: 1, lastModifiedTime: new Date(now - 10000).toISOString() },
+    },
+  });
+
+  const payload = await harn.buildTelemetryPayloadInternal('proj-conv-1');
+  const convById = new Map((payload.conversations || []).map((c) => [c.cascadeId, c]));
+  assert.equal(convById.get('proj-conv-1')?.workspaceName, 'billing-service');
+  assert.equal(convById.get('proj-conv-2')?.workspaceName, 'web-dashboard');
+
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevLocale = i18nStore.getState().locale;
+  const prevUi = uiStore.getState();
+  const prevTel = telemetryStore.getState();
+
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 960,
+    innerHeight: 720,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+
+  let header = null;
+  t.after(() => {
+    header?.destroy?.();
+    setI18nLanguage(prevLocale);
+    uiStore.setState(prevUi, { sync: true });
+    telemetryStore.setState(prevTel, { sync: true });
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  });
+
+  setI18nLanguage('zh-CN');
+  uiStore.setState({ activeView: 'overview', monitorVisible: true }, { sync: true });
+  telemetryStore.setState(
+    {
+      selectedConversationId: '',
+      telemetry: {
+        ...payload,
+        conversations: [
+          ...payload.conversations,
+          ...Array.from({ length: 6 }, (_, i) => ({
+            cascadeId: `pad-${i}`,
+            title: `Other session ${i}`,
+            stepCount: 2,
+            workspaceName: 'misc-repo',
+          })),
+        ],
+      },
+    },
+    { sync: true }
+  );
+
+  header = TopSessionHeader();
+  document.body.appendChild(header.el);
+  header.refs.convSelect.open();
+
+  const optionEls = header.refs.convSelect.el.querySelectorAll('.select-option');
+  const billingOpt = optionEls.find((el) => (el.textContent || '').includes('billing-service'));
+  assert.ok(billingOpt, 'Session dropdown option displays workspaceName tag');
+
+  const searchInput = header.refs.convSelect.el.querySelector('.select-search-input');
+  assert.ok(searchInput, 'Search input present for >6 sessions');
+  searchInput.value = 'web-dashboard';
+  searchInput.dispatchEvent({ type: 'input', target: searchInput });
+  const visibleOpts = header.refs.convSelect.el
+    .querySelectorAll('.select-option')
+    .filter((el) => !el.hasAttribute('hidden'));
+  assert.equal(visibleOpts.length, 1);
+  assert.match(visibleOpts[0].textContent, /web-dashboard/);
+});

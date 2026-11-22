@@ -54,6 +54,7 @@ import {
   buildScopedModelBreakdown,
   clearUsageAggregatorMemo,
   getNextMondayResetIso,
+  normalizeWorkspaceBucket,
 } from './usage-aggregator.mjs';
 
 const MAX_RECENT_QUICK_STATS = 30;
@@ -1661,6 +1662,7 @@ export async function buildTelemetryPayloadInternal(
     quotaWeekBucket,
     modelBreakdown,
     topConversations,
+    topWorkspaces,
     poolCycleStats,
     poolsWeeklySummary,
   } = aggregateMultiWindowUsage({
@@ -2107,10 +2109,14 @@ export async function buildTelemetryPayloadInternal(
       const cSwarmCount = Number(c.swarmCount ?? rawSubs.filter((s) => s.isSwarmWorker).length);
       const cSideCount = rawSubs.filter((s) => s.isSideQuestion).length;
       const cNormalSubCount = Math.max(0, rawSubs.length - cSwarmCount - cSideCount);
+      const wsInfo = normalizeWorkspaceBucket(
+        c.workspaceUri || findTrajectoryCacheEntry(c.cascadeId, cacheStore)?.workspaceUri || ''
+      );
       return {
         cascadeId: c.cascadeId,
         title: c.title,
         ...(c.swarmTitle ? { swarmTitle: c.swarmTitle } : {}),
+        ...(wsInfo ? { workspaceName: wsInfo.label, workspacePath: wsInfo.workspacePath } : {}),
         stepCount: c.stepCount,
         subagentCount: c.subagentCount || 0,
         swarmCount: cSwarmCount,
@@ -2150,6 +2156,7 @@ export async function buildTelemetryPayloadInternal(
       trendSeries,
       sourcesBreakdown,
       topConversations: enrichTopConversationTitles(topConversations, conversations),
+      topWorkspaces: enrichTopWorkspaces(topWorkspaces, conversations),
       monthlyYear: currentYear,
       monthlySeries,
     },
@@ -2403,6 +2410,25 @@ function enrichTopConversationTitles(topList, convSummaries) {
   });
 }
 
+function enrichTopWorkspaces(wsList, convSummaries) {
+  if (!Array.isArray(wsList) || wsList.length === 0) return [];
+  const jumpableIds = new Set();
+  if (Array.isArray(convSummaries)) {
+    for (const c of convSummaries) {
+      const cid = String(c?.cascadeId || '').toLowerCase();
+      if (cid) jumpableIds.add(cid);
+    }
+  }
+  return wsList.map((item) => {
+    if (!item || typeof item !== 'object') return item;
+    const latestCid = String(item.latestCascadeId || '').toLowerCase();
+    return {
+      ...item,
+      canJump: Boolean(latestCid && (jumpableIds.size === 0 || jumpableIds.has(latestCid))),
+    };
+  });
+}
+
 function tryBuildFastConsumptionPayload(filterOpts = {}) {
   const endpoint = filterOpts?.endpoint && filterOpts.endpoint.isRemote ? filterOpts.endpoint : null;
   const snap = resolveValidFastSnapshot(endpoint);
@@ -2434,6 +2460,7 @@ function tryBuildFastConsumptionPayload(filterOpts = {}) {
         agg.topConversations,
         snap.sessions?.conversations
       ),
+      topWorkspaces: enrichTopWorkspaces(agg.topWorkspaces, snap.sessions?.conversations),
     },
     modelBreakdown: agg.modelBreakdown,
   };
@@ -2455,6 +2482,7 @@ function tryBuildConsumptionPresetsPayload(filterOpts = {}) {
         entry?.topConversations,
         snap.sessions?.conversations
       ),
+      topWorkspaces: enrichTopWorkspaces(entry?.topWorkspaces, snap.sessions?.conversations),
     };
   }
   return {

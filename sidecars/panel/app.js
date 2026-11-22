@@ -1192,7 +1192,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.statusQuotaCached': '额度缓存',
   'header.statusQuotaOffline': '额度离线',
   'header.statusLive': '监控中',
-  'header.searchSessionPlaceholder': '搜索会话标题或 ID…',
+  'header.searchSessionPlaceholder': '搜索会话标题、项目或 ID…',
   'select.searchPlaceholder': '输入关键词筛选…',
   'select.noMatches': '没有匹配的选项',
   'select.clearSearch': '清空搜索',
@@ -1421,6 +1421,11 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.rankTabModelsCount': '模型排行 ({count})',
   'cons.rankTabSessions': '会话排行',
   'cons.rankTabSessionsCount': '会话排行 ({count})',
+  'cons.rankTabWorkspaces': '项目排行',
+  'cons.rankTabWorkspacesCount': '项目排行 ({count})',
+  'cons.workspaceUnbound': '未绑定工作区',
+  'cons.workspaceSessions': '{count} 会话',
+  'cons.workspaceJumpTip': '点击跳转到该项目最近会话',
   'cons.topConvsEmpty': '当前时间范围暂无会话消耗记录',
   'cons.topConvsSortAria': '会话排行排序方式',
   'cons.topConvsSortCost': '费用',
@@ -1989,7 +1994,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'header.statusQuotaCached': 'Quota Cached',
   'header.statusQuotaOffline': 'Quota Offline',
   'header.statusLive': 'Monitoring',
-  'header.searchSessionPlaceholder': 'Search sessions by title or ID…',
+  'header.searchSessionPlaceholder': 'Search sessions, projects, or ID…',
   'select.searchPlaceholder': 'Filter options…',
   'select.noMatches': 'No matching items',
   'select.clearSearch': 'Clear search',
@@ -2218,6 +2223,11 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.rankTabModelsCount': 'Models ({count})',
   'cons.rankTabSessions': 'Sessions',
   'cons.rankTabSessionsCount': 'Sessions ({count})',
+  'cons.rankTabWorkspaces': 'Projects',
+  'cons.rankTabWorkspacesCount': 'Projects ({count})',
+  'cons.workspaceUnbound': 'Unbound Workspace',
+  'cons.workspaceSessions': '{count} sessions',
+  'cons.workspaceJumpTip': 'Click to inspect latest session in this project',
   'cons.topConvsEmpty': 'No session usage in this range',
   'cons.topConvsSortAria': 'Sort sessions ranking',
   'cons.topConvsSortCost': 'Cost',
@@ -5908,6 +5918,7 @@ function recordConsumptionSliceToCache(
     trendSeries: Array.isArray(cons.trendSeries) ? cons.trendSeries : [],
     sourcesBreakdown: Array.isArray(cons.sourcesBreakdown) ? cons.sourcesBreakdown : [],
     topConversations: Array.isArray(cons.topConversations) ? cons.topConversations : [],
+    topWorkspaces: Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [],
     modelBreakdown: Array.isArray(modelBreakdown) ? modelBreakdown : [],
   });
 }
@@ -5928,6 +5939,7 @@ function applyCachedConsumptionSlice(baseTelemetry, cachedEntry, targetRevision 
       topConversations: Array.isArray(cachedEntry.topConversations)
         ? cachedEntry.topConversations
         : [],
+      topWorkspaces: Array.isArray(cachedEntry.topWorkspaces) ? cachedEntry.topWorkspaces : [],
     },
     modelBreakdown: cachedEntry.modelBreakdown,
   };
@@ -6516,6 +6528,23 @@ function isEquivalentTelemetry(prev, next) {
     }
   }
 
+  const pTopWs = prev.consumption?.topWorkspaces || [];
+  const nTopWs = next.consumption?.topWorkspaces || [];
+  if (pTopWs.length !== nTopWs.length) return false;
+  for (let i = 0; i < pTopWs.length; i++) {
+    if (
+      pTopWs[i]?.workspaceKey !== nTopWs[i]?.workspaceKey ||
+      pTopWs[i]?.label !== nTopWs[i]?.label ||
+      pTopWs[i]?.sessionCount !== nTopWs[i]?.sessionCount ||
+      pTopWs[i]?.totalTokens !== nTopWs[i]?.totalTokens ||
+      pTopWs[i]?.costUsd !== nTopWs[i]?.costUsd ||
+      pTopWs[i]?.calls !== nTopWs[i]?.calls ||
+      !areModelSlicesEqual(pTopWs[i]?.models, nTopWs[i]?.models)
+    ) {
+      return false;
+    }
+  }
+
   // 8. 比对账号订阅档位与动态多配额池
   if (
     prev.account?.email !== next.account?.email ||
@@ -6586,6 +6615,7 @@ function isEquivalentTelemetry(prev, next) {
       pConvs[i]?.subagentCount !== nConvs[i]?.subagentCount ||
       (pConvs[i]?.swarmCount || 0) !== (nConvs[i]?.swarmCount || 0) ||
       (pConvs[i]?.swarmTitle || '') !== (nConvs[i]?.swarmTitle || '') ||
+      (pConvs[i]?.workspaceName || '') !== (nConvs[i]?.workspaceName || '') ||
       pConvs[i]?.totalStepCount !== nConvs[i]?.totalStepCount
     ) {
       return false;
@@ -6829,6 +6859,7 @@ async function requestTelemetry(params, force) {
             trendSeries: latestSt.telemetry.consumption.trendSeries,
             sourcesBreakdown: latestSt.telemetry.consumption.sourcesBreakdown,
             topConversations: latestSt.telemetry.consumption.topConversations,
+            topWorkspaces: latestSt.telemetry.consumption.topWorkspaces,
           },
           modelBreakdown: latestSt.telemetry.modelBreakdown,
         };
@@ -23939,7 +23970,23 @@ const { TopSessionHeader } = (() => {
 
 
 function formatConvOptionMeta(c) {
-  return formatConversationMeta(c);
+  const base = formatConversationMeta(c);
+  const wsName = String(c?.workspaceName || '').trim();
+  if (!wsName) return base;
+  return base ? `${wsName} · ${base}` : wsName;
+}
+
+function formatConvOptionTitle(c) {
+  const parts = [];
+  const label = String(c?.title || c?.cascadeId?.slice?.(0, 8) || '').trim();
+  if (c?.swarmTitle && c.swarmTitle !== c.title) {
+    parts.push(`${label} · ${c.swarmTitle}`);
+  }
+  const wsPath = String(c?.workspacePath || c?.workspaceName || '').trim();
+  if (wsPath) {
+    parts.push(wsPath);
+  }
+  return parts.length > 0 ? parts.join(' · ') : '';
 }
 
 const TopSessionHeader = defineComponent({
@@ -24130,14 +24177,15 @@ const TopSessionHeader = defineComponent({
           meta: defaultOptMeta,
           ...(hostMatchedConv?.swarmTitle ? { title: hostMatchedConv.swarmTitle } : {}),
         },
-        ...convs.map((c) => ({
-          value: c.cascadeId,
-          label: c.title || c.cascadeId.slice(0, 8),
-          meta: formatConvOptionMeta(c),
-          ...(c.swarmTitle && c.swarmTitle !== c.title
-            ? { title: `${c.title || c.cascadeId.slice(0, 8)} · ${c.swarmTitle}` }
-            : {}),
-        })),
+        ...convs.map((c) => {
+          const optTitle = formatConvOptionTitle(c);
+          return {
+            value: c.cascadeId,
+            label: c.title || c.cascadeId.slice(0, 8),
+            meta: formatConvOptionMeta(c),
+            ...(optTitle ? { title: optTitle } : {}),
+          };
+        }),
       ];
       const lockedId = telSt.selectedConversationId;
       if (lockedId && !convs.some((c) => c.cascadeId === lockedId)) {
@@ -24617,7 +24665,6 @@ const ConsumptionView = defineComponent({
     const outputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.replyAndThink', { resp: 0, think: 0 }) });
 
     const overviewSegBar = createFourSegmentBar();
-    const overviewTitleSpan = h('span', { text: t('cons.overviewTitle') });
     const totalTokensLabel = h('span', { className: 'text-muted', style: 'font-size: var(--fs-md);', text: t('cons.totalTokens') });
     const estCostLabel = h('span', { className: 'text-muted', style: 'font-size: var(--fs-md);', text: t('cons.estCost') });
     const cacheHitRateLabel = h('span', { text: t('cons.cacheHitRate') });
@@ -24628,7 +24675,6 @@ const ConsumptionView = defineComponent({
     const overviewPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header cons-overview-head' }, [
         h('span', { className: 'panel-title' }, [
-          overviewTitleSpan,
           dateSpanBadge,
         ]),
         timeFilterSwitch.el,
@@ -24735,15 +24781,20 @@ const ConsumptionView = defineComponent({
       trendChart.el,
     ]);
 
-    // --- Section 3: 统一排行卡片（分段切换「模型排行 | 会话排行」，右侧联动对应排序切换） ---
+    // --- Section 3: 统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」，右侧联动对应排序切换） ---
     let activeRankingTab = 'models';
     let modelsSortBy = 'tokens';
     let topConvsSortBy = 'cost';
     let lastModelsCount = 0;
+    let lastWorkspacesCount = 0;
     let lastConvsCount = 0;
 
-    function getRankingTabOptions(modelsCount = lastModelsCount, convsCount = lastConvsCount) {
-      return [
+    function getRankingTabOptions(
+      modelsCount = lastModelsCount,
+      convsCount = lastConvsCount,
+      workspacesCount = lastWorkspacesCount
+    ) {
+      const opts = [
         {
           value: 'models',
           label:
@@ -24751,14 +24802,21 @@ const ConsumptionView = defineComponent({
               ? t('cons.rankTabModelsCount', { count: modelsCount })
               : t('cons.topModels'),
         },
-        {
-          value: 'sessions',
-          label:
-            convsCount > 0
-              ? t('cons.rankTabSessionsCount', { count: convsCount })
-              : t('cons.rankTabSessions'),
-        },
       ];
+      if (workspacesCount > 0) {
+        opts.push({
+          value: 'workspaces',
+          label: t('cons.rankTabWorkspacesCount', { count: workspacesCount }),
+        });
+      }
+      opts.push({
+        value: 'sessions',
+        label:
+          convsCount > 0
+            ? t('cons.rankTabSessionsCount', { count: convsCount })
+            : t('cons.rankTabSessions'),
+      });
+      return opts;
     }
 
     function getModelsSortOptions() {
@@ -24780,9 +24838,9 @@ const ConsumptionView = defineComponent({
     const rankingTabSwitch = SegmentedControl({
       ariaLabel: t('cons.rankTabAria'),
       modelValue: activeRankingTab,
-      options: getRankingTabOptions(0, 0),
+      options: getRankingTabOptions(0, 0, 0),
       onUpdateModelValue: (nextTab) => {
-        if (nextTab !== 'models' && nextTab !== 'sessions') return;
+        if (nextTab !== 'models' && nextTab !== 'sessions' && nextTab !== 'workspaces') return;
         activeRankingTab = nextTab;
         rankingTabSwitch.setValue(nextTab);
         if (latestSlice) {
@@ -24826,6 +24884,7 @@ const ConsumptionView = defineComponent({
     ]);
     const modelsListEl = h('div', { className: 'cons-item-list' });
     const topConvsListEl = h('div', { className: 'cons-item-list', hidden: true });
+    const workspacesListEl = h('div', { className: 'cons-item-list', hidden: true });
     const topConvsEmptyEl = h('div', {
       className: 'cons-ranking-empty text-muted',
       hidden: true,
@@ -24838,6 +24897,7 @@ const ConsumptionView = defineComponent({
       ]),
       modelsListEl,
       topConvsListEl,
+      workspacesListEl,
       topConvsEmptyEl,
     ]);
 
@@ -25734,8 +25794,10 @@ const ConsumptionView = defineComponent({
 
     function createTopConversationRow() {
       const titleTextEl = h('span', { className: 'cons-row-title-text' });
+      const wsBadgeEl = h('span', { className: 'cons-ws-sessions-tag text-mono', hidden: true });
       const titleEl = h('strong', { className: 'cons-row-title cons-top-conv-title' }, [
         titleTextEl,
+        wsBadgeEl,
       ]);
       const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
       const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
@@ -25823,6 +25885,7 @@ const ConsumptionView = defineComponent({
           rowEl,
           titleEl,
           titleTextEl,
+          wsBadgeEl,
           pctBadge,
           totalTokEl,
           costEl,
@@ -25839,16 +25902,34 @@ const ConsumptionView = defineComponent({
 
     function updateTopConversationRow(refs, item, bases, modelColorMap, sortMode = 'cost') {
       patchText(refs.callsLbl, t('cons.footCalls'));
-      const title = String(item.title || item.cascadeId || '—').trim();
-      refs.rowState.cascadeId = String(item.cascadeId || '');
-      refs.rowState.canJump = item.canJump !== false && Boolean(refs.rowState.cascadeId);
-      patchClasses(refs.rowEl, { 'is-jumpable': refs.rowState.canJump });
-      patchAttr(
-        refs.rowEl,
-        'title',
-        refs.rowState.canJump ? `${title} — ${t('cons.topConvJumpTip')}` : title
+      const isWorkspaceRow = Boolean(item.isWorkspaceRow);
+      const title = isWorkspaceRow
+        ? item.isUnbound
+          ? t('cons.workspaceUnbound')
+          : String(item.label || item.workspacePath || '—').trim()
+        : String(item.title || item.cascadeId || '—').trim();
+      refs.rowState.cascadeId = String(
+        isWorkspaceRow ? item.latestCascadeId || '' : item.cascadeId || ''
       );
+      refs.rowState.canJump = item.canJump !== false && Boolean(refs.rowState.cascadeId);
+      patchClasses(refs.rowEl, {
+        'is-jumpable': refs.rowState.canJump,
+        'cons-workspace-row': isWorkspaceRow,
+      });
+      const baseTip =
+        isWorkspaceRow && item.workspacePath && item.workspacePath !== title
+          ? `${title} (${item.workspacePath})`
+          : title;
+      const jumpTip = isWorkspaceRow ? t('cons.workspaceJumpTip') : t('cons.topConvJumpTip');
+      patchAttr(refs.rowEl, 'title', refs.rowState.canJump ? `${baseTip} — ${jumpTip}` : baseTip);
       patchText(refs.titleTextEl, title);
+      if (refs.wsBadgeEl) {
+        const showWsBadge = isWorkspaceRow && Number(item.sessionCount || 0) > 0;
+        patchAttr(refs.wsBadgeEl, 'hidden', !showWsBadge);
+        if (showWsBadge) {
+          patchText(refs.wsBadgeEl, t('cons.workspaceSessions', { count: item.sessionCount }));
+        }
+      }
 
       const total = Number(item.totalTokens || 0);
       const costVal = Number(item.costUsd || 0);
@@ -26169,6 +26250,16 @@ const ConsumptionView = defineComponent({
         return { ...c, mergedModels };
       });
 
+      const rawTopWorkspaces = Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [];
+      const allWorkspaceMergedModels = [];
+      const topWorkspacesWithModels = rawTopWorkspaces.map((w) => {
+        const mergedModels = mergeAndSortBucketModels(w.models);
+        for (const m of mergedModels) {
+          allWorkspaceMergedModels.push(m);
+        }
+        return { ...w, isWorkspaceRow: true, mergedModels };
+      });
+
       const rawSources = cons.sourcesBreakdown || [];
       const sourcesTotalTok = rawSources.reduce((s, x) => s + Number(x.totalTokens || 0), 0);
       const allSourceMergedModels = [];
@@ -26222,6 +26313,7 @@ const ConsumptionView = defineComponent({
         ...models,
         ...allSourceMergedModels,
         ...allTopConvMergedModels,
+        ...allWorkspaceMergedModels,
         ...allMonthMergedModels,
         ...allTrendMergedModels,
       ]);
@@ -26257,24 +26349,46 @@ const ConsumptionView = defineComponent({
       });
       trendChart.update(enrichedTrendSeries);
 
-      // 3. 同步统一排行卡片（分段切换「模型排行 | 会话排行」及对应排序控制）
+      // 3. 同步统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」及对应排序控制）
       const sortedTopConvs = [...topConvsWithModels].sort((a, b) =>
         topConvsSortBy === 'tokens'
           ? (b.totalTokens || 0) - (a.totalTokens || 0) || (b.costUsd || 0) - (a.costUsd || 0)
           : (b.costUsd || 0) - (a.costUsd || 0) || (b.totalTokens || 0) - (a.totalTokens || 0)
       );
+      const sortedTopWorkspaces = [...topWorkspacesWithModels].sort((a, b) =>
+        topConvsSortBy === 'tokens'
+          ? (b.totalTokens || 0) - (a.totalTokens || 0) || (b.costUsd || 0) - (a.costUsd || 0)
+          : (b.costUsd || 0) - (a.costUsd || 0) || (b.totalTokens || 0) - (a.totalTokens || 0)
+      );
+      if (activeRankingTab === 'workspaces' && sortedTopWorkspaces.length === 0) {
+        activeRankingTab = 'models';
+      }
       lastModelsCount = models.length;
+      lastWorkspacesCount = sortedTopWorkspaces.length;
       lastConvsCount = sortedTopConvs.length;
       rankingTabSwitch.setProps({
         ariaLabel: t('cons.rankTabAria'),
         modelValue: activeRankingTab,
-        options: getRankingTabOptions(models.length, sortedTopConvs.length),
+        options: getRankingTabOptions(
+          models.length,
+          sortedTopConvs.length,
+          sortedTopWorkspaces.length
+        ),
       });
       const showSessionsTab = activeRankingTab === 'sessions';
-      patchAttr(modelsSortSwitch.el, 'hidden', showSessionsTab);
-      patchAttr(topConvsSortSwitch.el, 'hidden', !showSessionsTab || sortedTopConvs.length === 0);
-      patchAttr(modelsListEl, 'hidden', showSessionsTab);
+      const showWorkspacesTab = activeRankingTab === 'workspaces' && sortedTopWorkspaces.length > 0;
+      const showModelsTab = !showSessionsTab && !showWorkspacesTab;
+      patchAttr(modelsSortSwitch.el, 'hidden', !showModelsTab);
+      patchAttr(
+        topConvsSortSwitch.el,
+        'hidden',
+        showModelsTab ||
+          (showSessionsTab && sortedTopConvs.length === 0) ||
+          (showWorkspacesTab && sortedTopWorkspaces.length === 0)
+      );
+      patchAttr(modelsListEl, 'hidden', !showModelsTab);
       patchAttr(topConvsListEl, 'hidden', !showSessionsTab || sortedTopConvs.length === 0);
+      patchAttr(workspacesListEl, 'hidden', !showWorkspacesTab);
       patchAttr(topConvsEmptyEl, 'hidden', !showSessionsTab || sortedTopConvs.length > 0);
       patchText(topConvsEmptyEl, t('cons.topConvsEmpty'));
 
@@ -26316,6 +26430,31 @@ const ConsumptionView = defineComponent({
         createRow: createTopConversationRow,
         updateRow: (refs, c) =>
           updateTopConversationRow(refs, c, topConvsBases, modelColorMap, topConvsSortBy),
+      });
+
+      const topWsBaseTokens =
+        totalTokens > 0
+          ? totalTokens
+          : sortedTopWorkspaces.reduce((s, w) => s + Number(w.totalTokens || 0), 0);
+      const topWsBaseCost =
+        costUsd > 0
+          ? costUsd
+          : sortedTopWorkspaces.reduce((s, w) => s + Math.max(0, Number(w.costUsd || 0)), 0);
+      const topWsBases = { tokens: topWsBaseTokens, cost: topWsBaseCost };
+      patchKeyedList(workspacesListEl, sortedTopWorkspaces, {
+        keyFn: (w) => w.workspaceKey,
+        sigFn: (w) => {
+          const modelsSig = w.mergedModels
+            .map((m) => {
+              const seed = getCanonicalModelColorSeed(m);
+              return `${m.displayText}:${m.totalTokens}:${m.inputTokens || 0}:${m.cacheReadTokens || 0}:${m.thinkingTokens || 0}:${m.responseTokens || 0}:${m.calls}:${modelColorMap.get(seed) || ''}`;
+            })
+            .join('|');
+          return `${localeSig}:${topConvsSortBy}:${w.workspaceKey}:${w.label}:${w.sessionCount}:${w.totalTokens}:${w.inputTokens || 0}:${w.cacheReadTokens || 0}:${w.thinkingTokens || 0}:${w.responseTokens || 0}:${w.costUsd}:${w.unpricedCalls}:${w.calls}:${w.cacheHitPct}:${w.latestCascadeId}:${w.canJump ? 1 : 0}:${topWsBaseTokens}:${topWsBaseCost.toFixed(4)}:${modelsSig}`;
+        },
+        createRow: createTopConversationRow,
+        updateRow: (refs, w) =>
+          updateTopConversationRow(refs, w, topWsBases, modelColorMap, topConvsSortBy),
       });
 
       // 4. 同步客户端来源列表（长尾合并分段配色 + 右侧总调用数 + 悬停进度条弹出明细浮层）
@@ -26486,7 +26625,6 @@ const ConsumptionView = defineComponent({
       });
       patchText(applyCustomBtnLabel, t('cons.applyFilter'));
       patchText(rangeToSpan, t('cons.rangeTo'));
-      patchText(overviewTitleSpan, t('cons.overviewTitle'));
       patchText(totalTokensLabel, t('cons.totalTokens'));
       patchText(estCostLabel, t('cons.estCost'));
       patchText(cacheHitRateLabel, t('cons.cacheHitRate'));

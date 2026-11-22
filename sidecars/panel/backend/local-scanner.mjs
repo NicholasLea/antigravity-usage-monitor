@@ -1707,6 +1707,18 @@ export async function enumerateAndSyncConversations({
         ? 'CASCADE_RUN_STATUS_RUNNING'
         : 'IDLE';
 
+    const rawWsList = Array.isArray(item?.workspaces) ? item.workspaces : [];
+    const rpcWorkspaceUri = String(
+      rawWsList[0]?.workspaceFolderAbsoluteUri ||
+        rawWsList[0]?.gitRootAbsoluteUri ||
+        item?.workspaceFolderAbsoluteUri ||
+        item?.workspaceUri ||
+        ''
+    ).trim();
+    const workspaceUri = String(
+      rpcWorkspaceUri || localSum?.workspaceUri || cached?.workspaceUri || ''
+    ).trim();
+
     if (item) {
       const lastModifiedMs =
         summaryMtimeMs || diskMtimeMs || cached?.lastModifiedMs || 0;
@@ -1736,6 +1748,7 @@ export async function enumerateAndSyncConversations({
         dbPath,
         diskFileSig,
         appSource,
+        ...(workspaceUri ? { workspaceUri } : {}),
         inSummaries: true,
         isSubagent,
         isSideQuestion,
@@ -1773,6 +1786,7 @@ export async function enumerateAndSyncConversations({
         dbPath,
         diskFileSig,
         appSource,
+        ...(workspaceUri ? { workspaceUri } : {}),
         inSummaries: false,
         isSubagent,
         isSideQuestion,
@@ -1802,6 +1816,7 @@ export async function enumerateAndSyncConversations({
         dbPath,
         diskFileSig,
         appSource,
+        ...(workspaceUri ? { workspaceUri } : {}),
         inSummaries: false,
         needsInitialLoad: true,
         isSubagent,
@@ -2109,6 +2124,7 @@ export async function enumerateAndSyncConversations({
             if (rpcSwarmMeta) cacheEntry.swarmMeta = rpcSwarmMeta;
             if (isParkedSwarm) cacheEntry.parkedOnSwarmWait = true;
             if (conv.diskFileSig) cacheEntry.diskFileSig = conv.diskFileSig;
+            if (conv.workspaceUri) cacheEntry.workspaceUri = conv.workspaceUri;
             if (conv.appSource && conv.appSource !== 'standalone') {
               cacheEntry.appSource = conv.appSource;
             }
@@ -2200,6 +2216,7 @@ export async function enumerateAndSyncConversations({
                   accountName: offlineAccountName,
                   title: offlineFallback.title,
                   ...(offlineFallback.appSource ? { appSource: offlineFallback.appSource } : {}),
+                  ...(conv.workspaceUri ? { workspaceUri: conv.workspaceUri } : {}),
                   lastModifiedMs: offlineFallback.lastModifiedMs,
                   diskMtimeMs: resolvedDiskMtime,
                   wasRunning: isRunning,
@@ -2763,6 +2780,11 @@ export async function enumerateAndSyncConversations({
           titleBackfillDirty = true;
         }
       }
+    }
+    const latestRootCached = getEntry(rootConv.cascadeId);
+    if (rootConv.workspaceUri && latestRootCached && latestRootCached.workspaceUri !== rootConv.workspaceUri) {
+      setEntry(rootConv.cascadeId, { ...latestRootCached, workspaceUri: rootConv.workspaceUri });
+      titleBackfillDirty = true;
     }
     if (swarmManifest?.coordinator?.killed || rootConv.killed) {
       rootConv.status = 'IDLE';
