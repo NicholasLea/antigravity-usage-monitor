@@ -3332,3 +3332,115 @@ test('scope=conversation switches sessions with zero LS RPCs, preserves usageRev
   await pendingSwitch;
   assert.equal(telemetryStore.getState().telemetry.activeConversation.recentSteps.length, 2);
 });
+
+test('CLI statusLine supports --style pill|bar|compact switching, flag persistence, and --json snapshot output', async () => {
+  const {
+    buildCliJsonStatusOutput,
+    formatCliStatusLineCapsule,
+    normalizeCliStatusLineGaugeStyle,
+  } = await import('../backend/cli-statusline-config.mjs');
+  const {
+    parseCliStatusLineArgs,
+    buildPersistableStatusLineFlags,
+  } = await import('../cli-statusline.mjs');
+
+  assert.equal(normalizeCliStatusLineGaugeStyle('bar'), 'bar');
+  assert.equal(normalizeCliStatusLineGaugeStyle('compact'), 'compact');
+  assert.equal(normalizeCliStatusLineGaugeStyle('unknown'), 'pill');
+
+  const parsedArgs = parseCliStatusLineArgs([
+    '--slots',
+    'tps,context,gemini_5h',
+    '--style',
+    'bar',
+    '--json',
+    '--no-multi',
+  ]);
+  assert.equal(parsedArgs.style, 'bar');
+  assert.equal(parsedArgs.json, true);
+  assert.equal(parsedArgs.showMultiSession, false);
+  assert.match(buildPersistableStatusLineFlags(parsedArgs), /--style bar/);
+
+  const nowMs = Date.UTC(2026, 10, 22, 12, 0, 0);
+  const slotCtx = {
+    hasTelemetry: true,
+    isRunning: false,
+    hasWaiting: false,
+    runningCount: 1,
+    runningSubCount: 0,
+    stepCount: 5,
+    tps: 52.3,
+    avgTps: 48.0,
+    ttft: 2.1,
+    stepCost: 0.04,
+    sessionCost: 0.32,
+    cacheHitPct: 88.5,
+    latestPromptTokens: 80_000,
+    sessionTokens: 320_000,
+    usedPct: 42,
+    quotas: {
+      activePool: { poolKey: 'Gemini', remainingPct: 40, weeklyRemainingPct: 80 },
+      pools: [
+        {
+          poolKey: 'Gemini',
+          family: 'Gemini',
+          usedPct: 60,
+          remainingPct: 40,
+          resetTime: new Date(nowMs + 3 * 3_600_000).toISOString(),
+          weeklyUsedPct: 20,
+          weeklyRemainingPct: 80,
+          weeklyResetTime: new Date(nowMs + 3.5 * 24 * 3_600_000).toISOString(),
+        },
+      ],
+    },
+  };
+
+  // 1. Pill style emits 24-bit background fill (48;2;)
+  const pillOut = formatCliStatusLineCapsule(slotCtx, {
+    slots: ['tps', 'context', 'gemini_5h'],
+    gaugeStyle: 'pill',
+    language: 'zh-CN',
+    color: true,
+  });
+  assert.match(pillOut, /\x1b\[48;2;/);
+
+  // 2. Bar style emits transparent Braille/block bar without 48;2; background codes
+  const barOut = formatCliStatusLineCapsule(slotCtx, {
+    slots: ['tps', 'context', 'gemini_5h'],
+    gaugeStyle: 'bar',
+    language: 'zh-CN',
+    color: true,
+  });
+  assert.doesNotMatch(barOut, /\x1b\[48;2;/);
+  assert.match(barOut, /[█▏▎▍▌▋▊▉]/);
+  assert.match(barOut, /⢕/);
+
+  // 3. Compact style emits clean text-only gauges without 48;2; or bar glyphs
+  const compactOut = formatCliStatusLineCapsule(slotCtx, {
+    slots: ['tps', 'context', 'gemini_5h'],
+    gaugeStyle: 'compact',
+    language: 'zh-CN',
+    color: true,
+  });
+  assert.doesNotMatch(compactOut, /\x1b\[48;2;/);
+  assert.doesNotMatch(compactOut, /[█⢕]/);
+  assert.match(compactOut, /上下文.*42%/);
+  assert.match(compactOut, /G5h.*40%/);
+
+  // 4. Structured JSON output includes model, speed, context, and quota pool snapshots
+  const jsonSnap = buildCliJsonStatusOutput(slotCtx, {
+    modelDisplayName: 'Gemini 4 Neon',
+    modelEffort: 'xhigh',
+    cycleMode: 'auto',
+    nowMs,
+  });
+  assert.equal(jsonSnap.model.displayName, 'Gemini 4 Neon');
+  assert.equal(jsonSnap.model.effort, 'xhigh');
+  assert.equal(jsonSnap.speed.tps, 52.3);
+  assert.equal(jsonSnap.context.usedPct, 42);
+  assert.equal(jsonSnap.quotas.autoRemainingPct, 40);
+  assert.equal(jsonSnap.quotas.pools.length, 1);
+  assert.equal(jsonSnap.quotas.pools[0].poolKey, 'Gemini');
+  assert.equal(jsonSnap.quotas.pools[0].remaining5hPct, 40);
+  assert.equal(jsonSnap.quotas.pools[0].remainingWeeklyPct, 80);
+});

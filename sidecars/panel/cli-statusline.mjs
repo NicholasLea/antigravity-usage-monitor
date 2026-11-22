@@ -36,8 +36,10 @@ import {
 } from './backend/cli-sqlite-reader.mjs';
 import { withReadOnlySqliteDb } from './backend/sqlite-client.mjs';
 import {
+  buildCliJsonStatusOutput,
   ensureCliStatusLineConfigured,
   formatCliStatusLineCapsule,
+  normalizeCliStatusLineGaugeStyle,
 } from './backend/cli-statusline-config.mjs';
 import {
   CLI_STATUS_SNAPSHOT_FILE,
@@ -585,6 +587,8 @@ export function parseCliStatusLineArgs(argv = []) {
     showAnomaly: null,
     language: '',
     noColor: false,
+    style: '',
+    json: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const raw = String(argv[i] || '').trim();
@@ -605,6 +609,8 @@ export function parseCliStatusLineArgs(argv = []) {
     else if (flag === '--reset-flags') out.resetFlags = true;
     else if (flag === '--slots') out.slotsRaw = readVal();
     else if (flag === '--preset') out.preset = readVal().toLowerCase();
+    else if (flag === '--style') out.style = normalizeCliStatusLineGaugeStyle(readVal());
+    else if (flag === '--json') out.json = true;
     else if (flag === '--multi' || flag === '--show-multi') out.showMultiSession = true;
     else if (flag === '--no-multi' || flag === '--hide-multi') out.showMultiSession = false;
     else if (flag === '--anomaly' || flag === '--show-anomaly') out.showAnomaly = true;
@@ -615,7 +621,7 @@ export function parseCliStatusLineArgs(argv = []) {
   return out;
 }
 
-function buildPersistableStatusLineFlags(parsed) {
+export function buildPersistableStatusLineFlags(parsed) {
   const parts = [];
   if (parsed.slotsRaw && parsed.slotsRaw.toLowerCase() !== 'auto') {
     const norm = normalizeCliStatusLineSlots(parsed.slotsRaw);
@@ -626,6 +632,7 @@ function buildPersistableStatusLineFlags(parsed) {
   ) {
     parts.push(`--preset ${parsed.preset}`);
   }
+  if (parsed.style) parts.push(`--style ${normalizeCliStatusLineGaugeStyle(parsed.style)}`);
   if (parsed.showMultiSession === false) parts.push('--no-multi');
   else if (parsed.showMultiSession === true) parts.push('--multi');
   if (parsed.showAnomaly === false) parts.push('--no-anomaly');
@@ -641,6 +648,8 @@ function formatCliStatusLineHelp() {
     '  --slots <list|auto>         Custom 1-6 slots (e.g. tps,ttft,session_cost,quota_auto,context)',
     '  --preset compact|balanced|full',
     '                              Built-in slot presets (3 / 5 / 6 slots)',
+    '  --style pill|bar|compact    Gauge style (24-bit pill / transparent bar / plain text)',
+    '  --json                      Output single-line structured JSON snapshot for scripts/prompts',
     '  --multi / --no-multi        Show or hide running sessions indicator',
     '  --anomaly / --no-anomaly    Show or hide latest-step anomaly badge (! 503 / ! 429)',
     '  --lang zh-CN|en-US|auto     Override display language',
@@ -893,8 +902,20 @@ export async function runCliStatusLineMain(argv = process.argv.slice(2)) {
     effectiveSlots = resolveEffectiveCliStatusLineSlots(settings);
   }
 
+  if (cliArgs.json) {
+    const jsonPayload = buildCliJsonStatusOutput(slotCtx, {
+      modelDisplayName,
+      modelEffort: typeof stdinData?.model?.effort === 'string' ? stdinData.model.effort : '',
+      cycleMode: typeof stdinData?.cycle_mode === 'string' ? stdinData.cycle_mode : '',
+      nowMs,
+    });
+    process.stdout.write(`${JSON.stringify(jsonPayload)}\n`);
+    return;
+  }
+
   const line = formatCliStatusLineCapsule(slotCtx, {
     slots: effectiveSlots,
+    gaugeStyle: cliArgs.style || undefined,
     showMultiSession:
       cliArgs.showMultiSession !== null
         ? cliArgs.showMultiSession

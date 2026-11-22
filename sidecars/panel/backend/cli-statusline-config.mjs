@@ -33,6 +33,21 @@ import {
   resolveCapsuleQuotaSlotPct,
 } from '../shared/telemetry-display-rules.mjs';
 
+export const CLI_STATUSLINE_GAUGE_STYLES = Object.freeze(['pill', 'bar', 'compact']);
+
+/**
+ * 归一化 CLI 进度指示器样式（`pill` 底色胶囊 / `bar` 透明盲文条 / `compact` 极简纯文本）。
+ *
+ * @param {unknown} raw
+ * @returns {'pill'|'bar'|'compact'}
+ */
+export function normalizeCliStatusLineGaugeStyle(raw) {
+  const val = String(raw || '').trim().toLowerCase();
+  if (val === 'bar' || val === 'braille') return 'bar';
+  if (val === 'compact' || val === 'text' || val === 'plain') return 'compact';
+  return 'pill';
+}
+
 // 24-bit ANSI SGR 调色板（和桌面端语义色阶及 CLI 原生底栏对齐；上下文和配额槽位采用 24-bit 底色胶囊填充，零 OSC 序列）
 const SGR_RESET = '\x1b[0m';
 const SGR_BOLD = '\x1b[1m';
@@ -771,6 +786,27 @@ function cliBuildPillGauge(
   return `${out}${SGR_RESET}`;
 }
 
+const CLI_BAR_PARTIAL_GLYPHS = Object.freeze([' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█']);
+const CLI_BAR_TRACK_GLYPH = '⢕';
+
+/**
+ * 渲染零背景色的透明迷你进度条（如 `上下文 ██▌⢕⢕ 42%` / `G5h █████ 95%`），适配浅色/透明终端及老旧 SSH 复用器。
+ */
+function cliBuildBarGauge(label, pct, { fillFg = SGR_FG_ACCENT, valFg = SGR_FG_BRIGHT } = {}) {
+  const clamped = Math.max(0, Math.min(100, Number(pct) || 0));
+  const width = 5;
+  const exactEighths = Math.round((clamped / 100) * width * 8);
+  const fullCells = Math.floor(exactEighths / 8);
+  const remEighths = exactEighths % 8;
+  const filledPart =
+    '█'.repeat(Math.min(width, fullCells)) +
+    (fullCells < width && remEighths > 0 ? CLI_BAR_PARTIAL_GLYPHS[remEighths] : '');
+  const emptyCount = Math.max(0, width - fullCells - (remEighths > 0 ? 1 : 0));
+  const emptyPart = CLI_BAR_TRACK_GLYPH.repeat(emptyCount);
+  const valStr = `${Math.round(clamped)}%`.padStart(3, ' ');
+  return `${SGR_FG_MUTED}${label} ${fillFg}${filledPart}${emptyPart ? `${SGR_FG_DIM}${emptyPart}` : ''} ${valFg}${valStr}${SGR_RESET}`;
+}
+
 function cliResolveQuotaSlotPrefix(metricKey, isEn) {
   if (metricKey === 'gemini_5h') return 'G5h';
   if (metricKey === 'gemini_weekly') return isEn ? 'Gw' : 'G周';
@@ -785,9 +821,14 @@ function cliResolveQuotaSlotPrefix(metricKey, isEn) {
 function cliRenderSingleSlot(
   metricKey,
   slotCtx,
-  { isEn = false, useColor = true, slotSet, usePill = true } = {}
+  { isEn = false, useColor = true, slotSet, usePill = true, gaugeStyle = '' } = {}
 ) {
   const hasTelemetry = slotCtx.hasTelemetry !== false;
+  const resolvedStyle = gaugeStyle
+    ? normalizeCliStatusLineGaugeStyle(gaugeStyle)
+    : usePill
+      ? 'pill'
+      : 'compact';
 
   if (metricKey === 'context') {
     const valid = hasTelemetry && slotCtx.usedPct != null && Number.isFinite(Number(slotCtx.usedPct));
@@ -799,7 +840,7 @@ function cliRenderSingleSlot(
     }
     const isDanger = pctNum != null && pctNum >= 88;
     const isWarn = !isDanger && pctNum != null && pctNum >= 70;
-    if (usePill && pctNum != null) {
+    if (resolvedStyle === 'pill' && pctNum != null) {
       const fillBg = isDanger
         ? SGR_BG_PILL_DANGER
         : isWarn
@@ -819,6 +860,10 @@ function cliRenderSingleSlot(
         : pctNum != null
           ? `${SGR_BOLD}${SGR_FG_BRIGHT}`
           : SGR_FG_MUTED;
+    if (resolvedStyle === 'bar' && pctNum != null) {
+      const fillFg = isDanger ? SGR_FG_DANGER : isWarn ? SGR_FG_WARN : SGR_FG_ACCENT;
+      return cliBuildBarGauge(label, pctNum, { fillFg, valFg: valColor });
+    }
     return `${SGR_FG_MUTED}${label} ${valColor}${textVal}${SGR_RESET}`;
   }
 
@@ -931,7 +976,7 @@ function cliRenderSingleSlot(
     return `${prefix} ${quotaPct}%`;
   }
 
-  if (usePill) {
+  if (resolvedStyle === 'pill') {
     const fillBg = isDanger
       ? SGR_BG_PILL_DANGER
       : isWarn
@@ -943,6 +988,11 @@ function cliRenderSingleSlot(
         ? SGR_FG_PILL_LABEL_WARN
         : SGR_FG_PILL_LABEL_GREEN;
     return cliBuildPillGauge(prefix, quotaPct, { fillBg, fillLabelFg });
+  }
+
+  if (resolvedStyle === 'bar') {
+    const fillFg = isDanger ? SGR_FG_DANGER : isWarn ? SGR_FG_WARN : SGR_FG_GOOD;
+    return cliBuildBarGauge(prefix, quotaPct, { fillFg, valFg: pctSgr });
   }
 
   return `${SGR_FG_MUTED}${prefix} ${pctSgr}${quotaPct}%${SGR_RESET}`;
@@ -1159,12 +1209,22 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
     ? cliStatusFormatAnomalyTag(slotCtx.latestAnomaly, { isEn, useColor })
     : '';
 
-  const defaultUsePill = options.showProgressBars !== false;
+  const primaryGaugeStyle =
+    options.gaugeStyle != null && String(options.gaugeStyle).trim()
+      ? normalizeCliStatusLineGaugeStyle(options.gaugeStyle)
+      : options.showProgressBars === false
+        ? 'compact'
+        : 'pill';
+  const defaultUseGauge = primaryGaugeStyle !== 'compact';
 
-  const buildCapsulesForSlots = (slotList, includeAnomaly = true, usePill = defaultUsePill) => {
+  const buildCapsulesForSlots = (
+    slotList,
+    includeAnomaly = true,
+    gaugeStyle = primaryGaugeStyle
+  ) => {
     const slotSet = new Set(slotList);
     const rendered = slotList.map((key) =>
-      cliRenderSingleSlot(key, slotCtx, { isEn, useColor, slotSet, usePill })
+      cliRenderSingleSlot(key, slotCtx, { isEn, useColor, slotSet, gaugeStyle })
     );
     if (includeAnomaly && anomalyBadge) {
       rendered.push(anomalyBadge);
@@ -1177,7 +1237,7 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
     };
   };
 
-  const baseCapsules = buildCapsulesForSlots(activeSlots, true, defaultUsePill);
+  const baseCapsules = buildCapsulesForSlots(activeSlots, true, primaryGaugeStyle);
   const rawWidth = Number(options.terminalWidth);
   if (!Number.isFinite(rawWidth) || rawWidth <= 0) {
     return baseCapsules.fullCapsule;
@@ -1219,20 +1279,20 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
   const primaryComposed = tryCompose(baseCapsules);
   if (primaryComposed) return primaryComposed;
 
-  if (defaultUsePill) {
-    const noPillCapsules = buildCapsulesForSlots(activeSlots, true, false);
-    const noPillComposed = tryCompose(noPillCapsules);
-    if (noPillComposed) return noPillComposed;
+  if (defaultUseGauge) {
+    const noGaugeCapsules = buildCapsulesForSlots(activeSlots, true, 'compact');
+    const noGaugeComposed = tryCompose(noGaugeCapsules);
+    if (noGaugeComposed) return noGaugeComposed;
   }
 
   let reducedSlots = [...activeSlots];
   while (reducedSlots.length > 1) {
     reducedSlots = cliStatusShedLowestPrioritySlot(reducedSlots);
-    const reducedCap = buildCapsulesForSlots(reducedSlots, true, defaultUsePill);
+    const reducedCap = buildCapsulesForSlots(reducedSlots, true, primaryGaugeStyle);
     const composed = tryCompose(reducedCap);
     if (composed) return composed;
-    if (defaultUsePill) {
-      const reducedPlain = buildCapsulesForSlots(reducedSlots, true, false);
+    if (defaultUseGauge) {
+      const reducedPlain = buildCapsulesForSlots(reducedSlots, true, 'compact');
       const composedPlain = tryCompose(reducedPlain);
       if (composedPlain) return composedPlain;
     }
@@ -1241,9 +1301,69 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
   if (cliDisplayWidth(baseCapsules.fullCapsule) <= maxWidth) {
     return baseCapsules.fullCapsule;
   }
-  const minimalCap = buildCapsulesForSlots(reducedSlots, false, false);
+  const minimalCap = buildCapsulesForSlots(reducedSlots, false, 'compact');
   if (cliDisplayWidth(minimalCap.fullCapsule) <= maxWidth) {
     return minimalCap.fullCapsule;
   }
   return minimalCap.slotsBody;
+}
+
+/**
+ * 构建供外部终端提示符（Starship / Oh-My-Posh / tmux / Waybar）或脚本消费的结构化单行 JSON 遥测快照，
+ * 内含压缩线对齐后的上下文占比及各配额池剩余额度状态。
+ *
+ * @param {object} slotCtx
+ * @param {{ modelDisplayName?: string, modelEffort?: string, cycleMode?: string, nowMs?: number }} [meta]
+ * @returns {object}
+ */
+export function buildCliJsonStatusOutput(
+  slotCtx = {},
+  { modelDisplayName = '', modelEffort = '', cycleMode = '', nowMs = Date.now() } = {}
+) {
+  const parsedModel = parseCliModelAndEffort(modelDisplayName, modelEffort);
+  const pools = Array.isArray(slotCtx?.quotas?.pools) ? slotCtx.quotas.pools : [];
+  const quotaPools = pools.map((p) => ({
+    poolKey: p?.poolKey || p?.family || '',
+    remaining5hPct: p?.remainingPct ?? null,
+    remainingWeeklyPct: p?.weeklyRemainingPct ?? null,
+    reset5h: p?.resetTime || null,
+    resetWeekly: p?.weeklyResetTime || null,
+  }));
+
+  return {
+    timestamp: new Date(nowMs).toISOString(),
+    hasTelemetry: slotCtx.hasTelemetry !== false,
+    isRunning: Boolean(slotCtx.isRunning),
+    hasWaiting: Boolean(slotCtx.hasWaiting),
+    runningCount: Math.max(0, Math.floor(Number(slotCtx.runningCount) || 0)),
+    runningSubCount: Math.max(0, Math.floor(Number(slotCtx.runningSubCount) || 0)),
+    stepCount: slotCtx.stepCount ?? null,
+    model: {
+      displayName: parsedModel.modelName || '',
+      effort: parsedModel.effort || '',
+      cycleMode: String(cycleMode || '').trim(),
+    },
+    speed: {
+      tps: slotCtx.tps ?? null,
+      avgTps: slotCtx.avgTps ?? null,
+      ttftSec: slotCtx.ttft ?? null,
+    },
+    cost: {
+      stepUsd: slotCtx.stepCost ?? null,
+      sessionUsd: slotCtx.sessionCost ?? null,
+    },
+    cache: {
+      hitPct: slotCtx.cacheHitPct ?? null,
+      latestPromptTokens: slotCtx.latestPromptTokens ?? null,
+      sessionTokens: slotCtx.sessionTokens ?? null,
+    },
+    context: {
+      usedPct: slotCtx.usedPct ?? null,
+    },
+    quotas: {
+      autoRemainingPct: resolveCapsuleQuotaSlotPct(slotCtx.quotas, 'quota_auto'),
+      pools: quotaPools,
+    },
+    latestAnomaly: slotCtx.latestAnomaly || null,
+  };
 }
