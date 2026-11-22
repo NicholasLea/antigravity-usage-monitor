@@ -618,7 +618,6 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.popoverWidthHint': '自适应模式下在调用明细等宽表格视图自动撑宽免水平滚动；指定宽度范围 440~1080 px',
   'settings.str.multiToggle': '实时运行会话入口',
   'settings.str.contextAgentModeLabel': '胶囊及悬浮上下文',
-  'settings.str.contextAgentModeHint': '锁定主代理时，顶栏百分比及悬停速览始终展示主代理；完整面板内仍可随时点选子代理明细',
   'settings.str.contextAgentMain': '锁定主代理',
   'settings.str.contextAgentAuto': '跟随活跃',
   'settings.str.cliCapsuleToggle': 'CLI 底部状态胶囊',

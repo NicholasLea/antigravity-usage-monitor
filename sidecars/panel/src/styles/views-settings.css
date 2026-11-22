@@ -1453,6 +1453,7 @@
 .cli-preview-prefix {
   color: var(--text-secondary);
   font-weight: 400;
+  white-space: pre;
 }
 
 .cli-preview-val {
@@ -1472,8 +1473,8 @@
 }
 
 .cli-preview-slot.is-pill {
-  --cli-pill-track: color-mix(in srgb, var(--text-primary) 10%, var(--surface-panel));
-  --cli-pill-fill: color-mix(in srgb, var(--accent-primary) 34%, var(--surface-panel));
+  --cli-pill-track: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  --cli-pill-fill: color-mix(in srgb, var(--accent-primary) 24%, transparent);
   padding: 1px 6px;
   border-radius: 3px;
   background: linear-gradient(
@@ -1486,11 +1487,11 @@
 }
 
 .cli-preview-slot.is-pill.tone-good {
-  --cli-pill-fill: color-mix(in srgb, var(--metric-ok) 32%, var(--surface-panel));
+  --cli-pill-fill: color-mix(in srgb, var(--metric-ok) 22%, transparent);
 }
 
 .cli-preview-slot.is-pill.tone-accent {
-  --cli-pill-fill: color-mix(in srgb, var(--accent-primary) 34%, var(--surface-panel));
+  --cli-pill-fill: color-mix(in srgb, var(--accent-primary) 24%, transparent);
 }
 
 .cli-preview-slot.is-pill .cli-preview-prefix {

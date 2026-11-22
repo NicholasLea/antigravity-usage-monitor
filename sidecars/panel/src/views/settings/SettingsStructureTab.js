@@ -8,11 +8,13 @@
 
 import { defineComponent } from '../../core/component.js';
 import { h, patchAttr, patchClasses, patchStyleVar, patchText } from '../../core/domPatch.js';
+import { formatMetric, formatTokens, formatUsd } from '../../core/formatters.js';
 import { getEffectiveLocale, t } from '../../i18n/index.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 import {
   getCapsuleMetricOptions,
   getOverviewMetricOptions,
+  resolveSpecificQuotaSlotSummary,
 } from '../../registries/metricRegistry.js';
 import { getStepColumnOptions } from '../../registries/stepColumnRegistry.js';
 import {
@@ -43,6 +45,7 @@ import {
   normalizeClientWindowMountMode,
   resolveEffectiveClientCliStatusLineSlots,
   resolveOverlayCtxInspectorAgentId,
+  resolveScopedConversation,
   saveSettingsPatch,
   triggerCliStatusLineAction,
 } from '../../store/telemetryStore.js';
@@ -54,7 +57,10 @@ import { buildStructurePreviewTelemetry } from '../../components/settings/struct
 import { CustomNumberInput } from '../../components/ui/CustomNumberInput.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
 import { SegmentedControl } from '../../components/ui/SegmentedControl.js';
-import { CapsuleBarWidget } from '../../components/widgets/CapsuleBarWidget.js';
+import {
+  CapsuleBarWidget,
+  buildCapsuleSlotContext,
+} from '../../components/widgets/CapsuleBarWidget.js';
 import { StepTableWidget } from '../../components/widgets/StepTableWidget.js';
 
 const STRUCTURE_THIRD_TABS = Object.freeze([
@@ -113,75 +119,113 @@ function isSameList(a, b) {
   return true;
 }
 
-function formatCliPreviewSlot(slotKey, isEn) {
+function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
+  const safeCtx = slotCtx || {};
+  const quotas = safeCtx.quotas || {};
+  const quotaPct = (key, fallback) => {
+    const summary = resolveSpecificQuotaSlotSummary(quotas, key);
+    return summary && Number.isFinite(summary.roundedPct) ? summary.roundedPct : fallback;
+  };
   switch (slotKey) {
-    case 'tps':
-      return { prefix: '', text: '68.4 t/s', tone: 'good', pillPct: null };
-    case 'avg_tps':
+    case 'tps': {
+      const val = Number.isFinite(Number(safeCtx.tps)) ? Number(safeCtx.tps).toFixed(1) : '68.4';
+      return { prefix: '', text: `${val} t/s`, tone: 'good', pillPct: null };
+    }
+    case 'avg_tps': {
+      const val = Number.isFinite(Number(safeCtx.avgTps)) ? Number(safeCtx.avgTps).toFixed(1) : '59.6';
       return {
         prefix: '',
-        text: isEn ? 'avg 54.0' : '均 54.0',
+        text: isEn ? `avg ${val}` : `均 ${val}`,
         tone: 'info',
         pillPct: null,
       };
-    case 'ttft':
-      return { prefix: '', text: '1.1s', tone: 'good', pillPct: null };
-    case 'cost':
-      return { prefix: '', text: '$0.040', tone: 'normal', pillPct: null };
-    case 'session_cost':
-      return { prefix: '', text: '$0.42', tone: 'normal', pillPct: null };
-    case 'cache_hit':
+    }
+    case 'ttft': {
+      const val = Number.isFinite(Number(safeCtx.ttft)) ? formatMetric(Number(safeCtx.ttft), 's') : '1.1s';
+      return { prefix: '', text: val, tone: 'good', pillPct: null };
+    }
+    case 'cost': {
+      const num = Number.isFinite(Number(safeCtx.stepCost)) ? Number(safeCtx.stepCost) : 0.042;
+      return { prefix: '', text: `$${num.toFixed(3)}`, tone: 'normal', pillPct: null };
+    }
+    case 'session_cost': {
+      const num = Number.isFinite(Number(safeCtx.sessionCost)) ? Number(safeCtx.sessionCost) : 1.28;
+      return { prefix: '', text: formatUsd(num), tone: 'normal', pillPct: null };
+    }
+    case 'cache_hit': {
+      const pct = Number.isFinite(Number(safeCtx.cacheHitPct))
+        ? Math.round(Number(safeCtx.cacheHitPct))
+        : 95;
       return {
         prefix: '',
-        text: isEn ? 'cache 92%' : '缓 92%',
+        text: isEn ? `cache ${pct}%` : `缓 ${pct}%`,
         tone: 'good',
         pillPct: null,
       };
-    case 'session_tokens':
-      return { prefix: '', text: '142K tok', tone: 'muted', pillPct: null };
-    case 'quota_auto':
+    }
+    case 'session_tokens': {
+      const tokStr = Number.isFinite(Number(safeCtx.sessionTokens))
+        ? formatTokens(Number(safeCtx.sessionTokens))
+        : '1.8M';
+      return { prefix: '', text: `${tokStr} tok`, tone: 'muted', pillPct: null };
+    }
+    case 'quota_auto': {
+      const pct = quotaPct('quota_auto', 64);
       return {
         prefix: isEn ? '5h ' : '余 ',
-        text: '64%',
+        text: `${pct}%`,
         tone: 'good',
-        pillPct: 64,
+        pillPct: pct,
       };
-    case 'gemini_5h':
+    }
+    case 'gemini_5h': {
+      const pct = quotaPct('gemini_5h', 64);
       return {
         prefix: 'G5h ',
-        text: '64%',
+        text: `${pct}%`,
         tone: 'good',
-        pillPct: 64,
+        pillPct: pct,
       };
-    case 'gemini_weekly':
+    }
+    case 'gemini_weekly': {
+      const pct = quotaPct('gemini_weekly', 52);
       return {
         prefix: isEn ? 'Gw ' : 'G周 ',
-        text: '88%',
+        text: `${pct}%`,
         tone: 'good',
-        pillPct: 88,
+        pillPct: pct,
       };
-    case 'claude_5h':
+    }
+    case 'claude_5h': {
+      const pct = quotaPct('claude_5h', 32);
       return {
         prefix: 'C5h ',
-        text: '96%',
+        text: `${pct}%`,
         tone: 'good',
-        pillPct: 96,
+        pillPct: pct,
       };
-    case 'claude_weekly':
+    }
+    case 'claude_weekly': {
+      const pct = quotaPct('claude_weekly', 59);
       return {
         prefix: isEn ? 'Cw ' : 'C周 ',
-        text: '99%',
+        text: `${pct}%`,
         tone: 'good',
-        pillPct: 99,
+        pillPct: pct,
       };
+    }
     case 'context':
-    default:
+    default: {
+      const pct = Number.isFinite(Number(safeCtx.usedPct))
+        ? Math.round(Number(safeCtx.usedPct))
+        : 56;
       return {
         prefix: isEn ? 'Ctx ' : '上下文 ',
-        text: '56%',
+        text: `${pct}%`,
         tone: 'accent',
-        pillPct: 56,
+        pillPct: pct,
       };
+    }
   }
 }
 
@@ -340,10 +384,6 @@ export const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.popoverWidthLabel'),
     });
-    const popoverWidthHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.str.popoverWidthHint'),
-    });
     const multiToggleLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.multiToggle'),
@@ -351,10 +391,6 @@ export const SettingsStructureTab = defineComponent({
     const contextAgentModeLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.contextAgentModeLabel'),
-    });
-    const contextAgentModeHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.str.contextAgentModeHint'),
     });
     const cliCapsuleLabelEl = h('span', {
       className: 'form-label',
@@ -508,7 +544,7 @@ export const SettingsStructureTab = defineComponent({
     });
 
     const cliPreviewMultiTextEl = h('span', {
-      text: t('settings.str.cliPreviewRunning', { count: 2 }),
+      text: t('settings.str.cliPreviewRunning', { count: 1 }),
     });
     const cliPreviewMultiEl = h('span', { className: 'cli-preview-multi' }, [
       h('span', { className: 'cli-preview-dot', 'aria-hidden': 'true', text: '●' }),
@@ -636,37 +672,42 @@ export const SettingsStructureTab = defineComponent({
         h('div', { className: 'settings-divider' }),
         h('div', { className: 'form-row' }, [mountModeLabelEl, windowMountSelect.el]),
         mountBridgeNotice.el,
-        h('div', { className: 'form-row' }, [
-          h('div', { className: 'settings-inline-row' }, [
-            popoverWidthLabelEl,
-            h('div', { className: 'settings-inline-controls' }, [
-              popoverWidthModeToggle.el,
-              popoverWidthNumWrap,
-            ]),
+        h('div', { className: 'settings-inline-row' }, [
+          popoverWidthLabelEl,
+          h('div', { className: 'settings-inline-controls' }, [
+            popoverWidthModeToggle.el,
+            popoverWidthNumWrap,
           ]),
-          popoverWidthHintEl,
         ]),
         h('div', { className: 'settings-inline-row' }, [
           multiToggleLabelEl,
           multiSessionToggle.el,
         ]),
-        h('div', { className: 'form-row' }, [
-          h('div', { className: 'settings-inline-row' }, [
-            contextAgentModeLabelEl,
-            contextAgentModeToggle.el,
-          ]),
-          contextAgentModeHintEl,
+        h('div', { className: 'settings-inline-row' }, [
+          contextAgentModeLabelEl,
+          contextAgentModeToggle.el,
         ]),
         h('div', { className: 'form-row' }, [capsuleSlotsLabelEl, topbarSlotsList.el]),
         cliStatusGroupEl,
       ],
     });
 
-    function refreshCliPreview() {
+    function refreshCliPreview(previewData = null) {
       const effectiveSlots = getEffectiveDraftCliSlots();
       const isEn = getEffectiveLocale() === 'en-US';
+      const mockData = previewData || buildDraftTelemetry();
+      const { scopedConv, ctxAgent, aggregated } = resolveScopedConversation(
+        mockData,
+        'all',
+        resolveOverlayCtxInspectorAgentId(mockData, 'auto')
+      );
+      const slotCtx = buildCapsuleSlotContext(mockData, { scopedConv, ctxAgent, aggregated });
+      const runningCount = Math.max(
+        1,
+        Array.isArray(mockData?.runningConversations) ? mockData.runningConversations.length : 1
+      );
       patchAttr(cliPreviewMultiEl, 'hidden', !draftShowTopbarMulti);
-      patchText(cliPreviewMultiTextEl, t('settings.str.cliPreviewRunning', { count: 2 }));
+      patchText(cliPreviewMultiTextEl, t('settings.str.cliPreviewRunning', { count: runningCount }));
       for (let i = 0; i < cliPreviewSlotParts.length; i += 1) {
         const parts = cliPreviewSlotParts[i];
         const sepEl = i > 0 ? cliPreviewSepEls[i - 1] : null;
@@ -675,7 +716,7 @@ export const SettingsStructureTab = defineComponent({
         patchAttr(parts.slotEl, 'hidden', !visible);
         if (sepEl) patchAttr(sepEl, 'hidden', !visible);
         if (visible) {
-          const item = formatCliPreviewSlot(key, isEn);
+          const item = formatCliPreviewSlot(key, slotCtx, isEn);
           const isPill = Number.isFinite(item.pillPct);
           patchAttr(parts.slotEl, 'data-metric', key);
           patchText(parts.prefixEl, item.prefix || '');
@@ -694,8 +735,9 @@ export const SettingsStructureTab = defineComponent({
 
     function refreshMountPreview() {
       if (!isStructureVisible() || activeThirdTab !== 'mount') return;
-      capsulePreviewWidget.refs.update({ data: buildDraftTelemetry() });
-      refreshCliPreview();
+      const mockData = buildDraftTelemetry();
+      capsulePreviewWidget.refs.update({ data: mockData });
+      refreshCliPreview(mockData);
     }
 
     function syncMountSectionMeta() {
@@ -1436,11 +1478,9 @@ export const SettingsStructureTab = defineComponent({
       mountSection.refs.setResetLabel(t('settings.resetBtn'));
       patchText(mountModeLabelEl, t('settings.str.mountMode'));
       patchText(popoverWidthLabelEl, t('settings.str.popoverWidthLabel'));
-      patchText(popoverWidthHintEl, t('settings.str.popoverWidthHint'));
       popoverWidthStepper.setProps({ ariaLabel: t('settings.str.popoverWidthLabel') });
       patchText(multiToggleLabelEl, t('settings.str.multiToggle'));
       patchText(contextAgentModeLabelEl, t('settings.str.contextAgentModeLabel'));
-      patchText(contextAgentModeHintEl, t('settings.str.contextAgentModeHint'));
       patchText(cliCapsuleLabelEl, t('settings.str.cliCapsuleToggle'));
       patchText(cliSlotsLabelEl, t('settings.str.cliSlotsLabel'));
       patchText(capsuleSlotsLabelEl, t('settings.str.capsuleSlotsLabel'));

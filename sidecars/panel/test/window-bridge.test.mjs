@@ -1345,9 +1345,16 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const claudeHoverUsages = hoverQuotaPools.children[1].querySelectorAll('.quota-win-usage');
     assert.equal(claudeHoverUsages[0].textContent, '· 0 ($0.00)');
     assert.equal(claudeHoverUsages[1].textContent, '· 7.3M ($3.82)');
-    const hoverFootSpans = hoverTipEl.querySelector('.wm-hover-quota-foot').children;
-    assert.equal(hoverFootSpans[0].textContent, '周期累计: 25.5M ($9.22)');
-    assert.equal(hoverFootSpans[1].textContent, '周期调用: 160 次');
+    assert.equal(
+      hoverTipEl.querySelector('.wm-hover-quota-foot'),
+      null,
+      'Redundant quota cycle summary footer removed now that each pool displays inline cycle usage'
+    );
+    assert.equal(
+      hoverQuotaPools.children[1].classList.contains('has-divider'),
+      true,
+      'Secondary quota pool uses CSS class divider for light/dark polarity control'
+    );
 
     // Verify clicking multi-session button pins open multi-session panel, and clicking capsule switches to 4-tab panel
     multiBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -1689,9 +1696,12 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     capRowSelects[0].querySelectorAll('.select-option')[9].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(capSlots[0].getAttribute('data-metric'), 'gemini_5h');
-    assert.equal(readCapVal(capSlots[0].children[0]), '余 44%');
+    assert.equal(capSlots[0].querySelector('.wm-slot-prefix')?.textContent, 'G5h');
+    assert.equal(readCapVal(capSlots[0].querySelector('.wm-quota-text')), '44%');
+    assert.equal(capSlots[0].querySelector('.wm-ring-fill')?.classList.contains('is-quota'), true);
     assert.equal(previewCapsuleSlots[0].getAttribute('data-metric'), 'gemini_5h', 'Preview slot 0 mirrors gemini_5h');
-    assert.equal(readCapVal(previewCapsuleSlots[0].children[0]), '余 64%', 'Preview slot 0 renders simulated gemini_5h');
+    assert.equal(previewCapsuleSlots[0].querySelector('.wm-slot-prefix')?.textContent, 'G5h');
+    assert.equal(readCapVal(previewCapsuleSlots[0].querySelector('.wm-quota-text')), '64%', 'Preview slot 0 renders simulated gemini_5h');
     assert.equal(capSlots[1].getAttribute('data-metric'), 'ttft');
     assert.equal(readCapVal(capSlots[1].children[0]), '0.85s');
 
@@ -1708,7 +1718,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     await new Promise((r) => setTimeout(r, 30));
     assert.deepEqual(mockSettings.topbarCapsuleSlots, ['ttft', 'gemini_5h', 'cost']);
     assert.equal(readCapVal(capSlots[0].children[0]), '0.85s');
-    assert.equal(readCapVal(capSlots[1].children[0]), '余 44%');
+    assert.equal(capSlots[1].querySelector('.wm-slot-prefix')?.textContent, 'G5h');
+    assert.equal(readCapVal(capSlots[1].querySelector('.wm-quota-text')), '44%');
 
     // Mouse drag-and-drop reorder: drag Row 0 ('ttft') down below Row 2 ('cost') -> ['gemini_5h', 'cost', 'ttft']
     const capSlotListEl = capSlotWrap.querySelector('.editable-slot-list');
@@ -5946,7 +5957,12 @@ test('SettingsStructureTab CLI statusLine controls stay hidden unless CLI is det
         .querySelectorAll('.cli-preview-slot')
         .filter((el) => !el.hasAttribute('hidden'))
         .map((el) => el.textContent);
-    assert.deepEqual(visibleSlots(), ['68.4 t/s', '1.1s', '$0.42', '余 64%', '上下文 56%']);
+    assert.deepEqual(visibleSlots(), ['68.4 t/s', '1.1s', '$1.28', '余 52%', '上下文 56%']);
+    assert.equal(
+      previewEl.querySelector('.cli-preview-multi')?.textContent,
+      '●1 运行中',
+      'CLI preview shares the exact same running count (1) as the top Antigravity preview bar'
+    );
     const pillSlots1 = previewEl
       .querySelectorAll('.cli-preview-slot.is-pill')
       .filter((el) => !el.hasAttribute('hidden'));
@@ -5964,9 +5980,9 @@ test('SettingsStructureTab CLI statusLine controls stay hidden unless CLI is det
     );
     assert.deepEqual(visibleSlots(), [
       'G5h 64%',
-      'G周 88%',
-      'C5h 96%',
-      'C周 99%',
+      'G周 52%',
+      'C5h 32%',
+      'C周 59%',
       '上下文 56%',
     ]);
     const pillSlots2 = previewEl

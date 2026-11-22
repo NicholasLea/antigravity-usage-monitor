@@ -616,6 +616,7 @@ export function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     target.baseModelUpstream ??
       target.activeModelUpstream ??
       target.modelUpstream ??
+      target.upstreamModel ??
       target.upstreamName ??
       ''
   ).trim();

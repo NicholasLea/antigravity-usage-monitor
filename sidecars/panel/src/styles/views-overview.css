@@ -53,6 +53,25 @@
   white-space: nowrap;
 }
 
+/* 配额池分组行及池间分隔线（暗黑模式保留原分割色，浅色模式使用柔和细线） */
+.quota-pool-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quota-pool-row.has-divider {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+:root[data-color-scheme="light"] .quota-pool-row.has-divider,
+:host([data-color-scheme="light"]) .quota-pool-row.has-divider,
+[data-color-scheme="light"] .quota-pool-row.has-divider {
+  border-top-color: color-mix(in srgb, var(--text-primary) 7%, transparent);
+}
+
 /* 配额池窗口行头：标题 + 周期用量内联（窄栏自适应截断，零额外纵向行高） */
 .quota-win-head {
   gap: 8px;

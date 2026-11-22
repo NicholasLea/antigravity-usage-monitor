@@ -88,7 +88,7 @@ export function createPoolQuotaRow() {
     h('div', { className: 'progress-track' }, [fillWk]),
   ]);
 
-  const el = h('div', { style: 'display: flex; flex-direction: column; gap: 8px;' }, [
+  const el = h('div', { className: 'quota-pool-row' }, [
     row5h,
     rowWk,
   ]);
@@ -138,13 +138,7 @@ export function formatQuotaSummaryFooter(quotas, account) {
  */
 export function syncPoolQuotaRow(refs, item, idx, rowEl) {
   const { poolData, poolLabel, fallbackWeekly, isActivePool, isPending } = item;
-  patchAttr(
-    rowEl,
-    'style',
-    idx === 0
-      ? 'display: flex; flex-direction: column; gap: 8px;'
-      : 'display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-hairline);'
-  );
+  patchClasses(rowEl, { 'quota-pool-row': true, 'has-divider': idx > 0 });
 
   const has5h = poolData?.usedPct != null && poolData?.remainingPct != null;
   const used5hVal = has5h ? Number(poolData.usedPct) : 0;
@@ -289,13 +283,6 @@ export const QuotaPoolsWidget = defineComponent({
       });
     }
 
-    const initFoot = formatQuotaSummaryFooter(null, null);
-    const wkFootLeft = h('span', { className: 'text-muted', text: initFoot.leftText });
-    const wkFootRight = h('span', {
-      className: 'text-muted',
-      text: compactHover ? initFoot.rightText : '',
-    });
-
     const quotaPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
@@ -305,13 +292,6 @@ export const QuotaPoolsWidget = defineComponent({
         tierBadge,
       ]),
       poolsListEl,
-      h(
-        'div',
-        compactHover
-          ? { className: 'panel-header wm-hover-quota-foot' }
-          : { className: 'panel-header', style: 'font-size: var(--fs-md); padding-top: 2px;' },
-        [wkFootLeft, wkFootRight]
-      ),
     ]);
 
     function update({ data, minuteTick } = {}) {
@@ -324,9 +304,6 @@ export const QuotaPoolsWidget = defineComponent({
             createRow: createPoolQuotaRow,
             updateRow: syncPoolQuotaRow,
           });
-          const pendingFoot = formatQuotaSummaryFooter(null, null);
-          patchText(wkFootLeft, pendingFoot.leftText);
-          patchText(wkFootRight, pendingFoot.rightText);
         }
         return;
       }
@@ -343,12 +320,6 @@ export const QuotaPoolsWidget = defineComponent({
         createRow: createPoolQuotaRow,
         updateRow: syncPoolQuotaRow,
       });
-
-      const footSummary = formatQuotaSummaryFooter(quotas, data.account);
-      patchText(wkFootLeft, footSummary.leftText);
-      patchText(wkFootRight, footSummary.rightText);
-      patchAttr(wkFootLeft, 'title', footSummary.tooltip);
-      patchAttr(wkFootRight, 'title', footSummary.tooltip);
     }
 
     return {

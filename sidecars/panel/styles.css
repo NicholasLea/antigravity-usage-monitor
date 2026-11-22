@@ -1731,6 +1731,25 @@ html[data-standalone="true"] .app-shell {
   white-space: nowrap;
 }
 
+/* 配额池分组行及池间分隔线（暗黑模式保留原分割色，浅色模式使用柔和细线） */
+.quota-pool-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quota-pool-row.has-divider {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+:root[data-color-scheme="light"] .quota-pool-row.has-divider,
+:host([data-color-scheme="light"]) .quota-pool-row.has-divider,
+[data-color-scheme="light"] .quota-pool-row.has-divider {
+  border-top-color: color-mix(in srgb, var(--text-primary) 7%, transparent);
+}
+
 /* 配额池窗口行头：标题 + 周期用量内联（窄栏自适应截断，零额外纵向行高） */
 .quota-win-head {
   gap: 8px;
@@ -6833,6 +6852,7 @@ html[data-standalone="true"] .app-shell {
 .cli-preview-prefix {
   color: var(--text-secondary);
   font-weight: 400;
+  white-space: pre;
 }
 
 .cli-preview-val {
@@ -6852,8 +6872,8 @@ html[data-standalone="true"] .app-shell {
 }
 
 .cli-preview-slot.is-pill {
-  --cli-pill-track: color-mix(in srgb, var(--text-primary) 10%, var(--surface-panel));
-  --cli-pill-fill: color-mix(in srgb, var(--accent-primary) 34%, var(--surface-panel));
+  --cli-pill-track: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  --cli-pill-fill: color-mix(in srgb, var(--accent-primary) 24%, transparent);
   padding: 1px 6px;
   border-radius: 3px;
   background: linear-gradient(
@@ -6866,11 +6886,11 @@ html[data-standalone="true"] .app-shell {
 }
 
 .cli-preview-slot.is-pill.tone-good {
-  --cli-pill-fill: color-mix(in srgb, var(--metric-ok) 32%, var(--surface-panel));
+  --cli-pill-fill: color-mix(in srgb, var(--metric-ok) 22%, transparent);
 }
 
 .cli-preview-slot.is-pill.tone-accent {
-  --cli-pill-fill: color-mix(in srgb, var(--accent-primary) 34%, var(--surface-panel));
+  --cli-pill-fill: color-mix(in srgb, var(--accent-primary) 24%, transparent);
 }
 
 .cli-preview-slot.is-pill .cli-preview-prefix {
@@ -7204,6 +7224,14 @@ html[data-standalone="true"] .app-shell {
     stroke var(--dur-fast) var(--ease-fast);
 }
 
+.wm-ring-fill.is-quota {
+  stroke: var(--metric-ok);
+}
+
+.wm-ring-fill.is-empty {
+  stroke: transparent;
+}
+
 .wm-ring-fill.tone-warn {
   stroke: var(--metric-warn);
 }
@@ -7266,14 +7294,35 @@ html[data-standalone="true"] .app-shell {
   font-weight: 500;
 }
 
-/* 配额槽位（固定预占宽度 52px 居中对齐，完整容纳 余 100% / 余 --% 且在任意槽位对称） */
+/* 配额槽位（环形剩余进度圈 + 池/窗口短标 + 清晰百分比，零嵌套边框） */
 .wm-seg-quota {
-  width: 52px;
+  justify-content: center;
+  gap: 4px;
+  width: auto;
+  min-width: 68px;
+  padding: 0 2px;
+}
+
+.wm-slot-prefix {
+  display: inline-block;
+  font-size: inherit;
+  font-weight: 500;
+  color: var(--text-secondary);
+  line-height: 18px;
+  letter-spacing: 0.015em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .wm-quota-text {
-  width: 52px;
-  text-align: center;
+  min-width: 28px;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 /* 缓存命中率槽位（固定预占宽度 44px 居中对齐） */
@@ -7446,6 +7495,8 @@ html[data-standalone="true"] .app-shell {
 :host(.wm-capsule-host[data-layout="ring-only"]) .wm-sep[data-sep-for-rank="4"],
 :host(.wm-capsule-host[data-layout="ring-only"]) .wm-sep[data-sep-for-rank="5"],
 :host(.wm-capsule-host[data-layout="ring-only"]) .wm-cap-slot[data-vis-rank="1"] .wm-ctx-pct,
+:host(.wm-capsule-host[data-layout="ring-only"]) .wm-cap-slot[data-vis-rank="1"] .wm-slot-prefix,
+:host(.wm-capsule-host[data-layout="ring-only"]) .wm-cap-slot[data-vis-rank="1"] .wm-quota-text,
 :host(.wm-capsule-host[data-layout="ring-only"]) .wm-multi-label {
   display: none !important;
 }
@@ -7454,8 +7505,11 @@ html[data-standalone="true"] .app-shell {
   padding: 0 6px;
 }
 
-:host(.wm-capsule-host[data-layout="ring-only"]) .wm-cap-slot[data-vis-rank="1"].wm-ctx-seg {
+:host(.wm-capsule-host[data-layout="ring-only"]) .wm-cap-slot[data-vis-rank="1"].wm-ctx-seg,
+:host(.wm-capsule-host[data-layout="ring-only"]) .wm-cap-slot[data-vis-rank="1"].wm-seg-quota {
   width: 14px;
+  min-width: 14px;
+  padding: 0;
 }
 
 /* --- 2. 顶层浮层传送门宿主 (Body Portal Host: Multi-Session HUD, Tooltip & Full 4-Tab Popover) --- */
@@ -8410,11 +8464,16 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .structure-preview-empty,
 [data-modern-ui="true"] .preview-sidebar-note,
 [data-modern-ui="true"] .preview-capsule-bar,
+[data-modern-ui="true"] .cli-status-preview,
 [data-modern-ui="true"] .preview-capsule-bar.is-composer .wm-multi-btn,
 [data-modern-ui="true"] .preview-capsule-bar.is-composer .wm-capsule-btn,
 [data-modern-ui="true"] .preview-composer-chip {
   border: none;
   background: var(--modern-surface-subtle);
+}
+
+[data-modern-ui="true"][data-color-scheme="light"] .quota-pool-row.has-divider {
+  border-top-color: hsl(216 24% 92%);
 }
 
 [data-modern-ui="true"] .slot-add-btn,
@@ -8700,8 +8759,10 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 :host([data-modern-ui="true"]) .wm-slot-text.wm-ctx-pct[data-od-active="1"],
+:host([data-modern-ui="true"]) .wm-slot-text.wm-quota-text[data-od-active="1"],
 :host([data-modern-ui="true"]) .wm-multi-label[data-od-active="1"],
 [data-modern-ui="true"] .wm-slot-text.wm-ctx-pct[data-od-active="1"],
+[data-modern-ui="true"] .wm-slot-text.wm-quota-text[data-od-active="1"],
 [data-modern-ui="true"] .wm-multi-label[data-od-active="1"] {
   justify-content: flex-start;
 }

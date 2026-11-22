@@ -1807,7 +1807,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.popoverWidthHint': '自适应模式下在调用明细等宽表格视图自动撑宽免水平滚动；指定宽度范围 440~1080 px',
   'settings.str.multiToggle': '实时运行会话入口',
   'settings.str.contextAgentModeLabel': '胶囊及悬浮上下文',
-  'settings.str.contextAgentModeHint': '锁定主代理时，顶栏百分比及悬停速览始终展示主代理；完整面板内仍可随时点选子代理明细',
   'settings.str.contextAgentMain': '锁定主代理',
   'settings.str.contextAgentAuto': '跟随活跃',
   'settings.str.cliCapsuleToggle': 'CLI 底部状态胶囊',
@@ -2668,7 +2667,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.popoverWidthHint': 'Auto Fit widens wide tables like Step Records to avoid horizontal scroll; Custom accepts 440–1080 px',
   'settings.str.multiToggle': 'Active Sessions Pill',
   'settings.str.contextAgentModeLabel': 'Capsule & Hover Context',
-  'settings.str.contextAgentModeHint': 'Lock to Main Agent keeps the topbar percentage and hover HUD on Main Agent; you can still inspect subagents inside the full panel',
   'settings.str.contextAgentMain': 'Lock Main Agent',
   'settings.str.contextAgentAuto': 'Follow Active',
   'settings.str.cliCapsuleToggle': 'CLI Bottom Capsule',
@@ -4518,6 +4516,7 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     target.baseModelUpstream ??
       target.activeModelUpstream ??
       target.modelUpstream ??
+      target.upstreamModel ??
       target.upstreamName ??
       ''
   ).trim();
@@ -16786,9 +16785,22 @@ function resolveQuotaCapsuleSummary(quotas) {
       ? `${tightest.label} ${tightest.windowTag} · ${runnerUp.windowTag} ${runnerPct}%`
       : `${tightest.label} ${tightest.windowTag} · ${runnerUp.label} ${runnerUp.windowTag} ${runnerPct}%`
     : `${tightest.label} · ${tightest.windowTag}`;
+  const tightestIsClaude = /claude|gpt|fable|oss|third/i.test(String(tightest.label || ''));
+  const tightestIsGemini = !tightestIsClaude && /gemini|argon|carbon|neon|flash|pro/i.test(String(tightest.label || ''));
+  const tightestWinShort = tightest.windowTag === '5h' ? '5h' : isEnglishLocale() ? 'w' : '周';
+  const poolPrefix = tightestIsClaude
+    ? `C${tightestWinShort}`
+    : tightestIsGemini
+      ? `G${tightestWinShort}`
+      : tightest.windowTag === '5h'
+        ? '5h'
+        : isEnglishLocale()
+          ? 'Wk'
+          : '周';
   return {
     roundedPct: rounded,
     shortText: t('capsule.quotaLeft', { pct: rounded }),
+    poolPrefix,
     subLabelText,
     detailText: candidates
       .map((c) => {
@@ -16797,6 +16809,16 @@ function resolveQuotaCapsuleSummary(quotas) {
       })
       .join(' · '),
   };
+}
+
+function resolveQuotaCapsulePrefix(metricKey, quotaSum) {
+  const isEn = isEnglishLocale();
+  if (metricKey === 'gemini_5h') return 'G5h';
+  if (metricKey === 'gemini_weekly') return isEn ? 'Gw' : 'G周';
+  if (metricKey === 'claude_5h') return 'C5h';
+  if (metricKey === 'claude_weekly') return isEn ? 'Cw' : 'C周';
+  if (quotaSum?.poolPrefix) return quotaSum.poolPrefix;
+  return isEn ? 'Q' : '余';
 }
 
 /**
@@ -17018,17 +17040,25 @@ function resolveCapsuleMetricPresentation(metricKey, slotCtx, ringCircumference)
     : metricKey === 'quota_auto'
       ? resolveQuotaCapsuleSummary(slotCtx.quotas)
       : resolveSpecificQuotaSlotSummary(slotCtx.quotas, metricKey);
-  const isDanger = Boolean(quotaSum && quotaSum.roundedPct <= 15);
-  const isWarn = Boolean(quotaSum && !isDanger && quotaSum.roundedPct <= 30);
+  const hasQuotaPct = Boolean(quotaSum && Number.isFinite(quotaSum.roundedPct));
+  const clampedPct = hasQuotaPct ? Math.max(0, Math.min(100, quotaSum.roundedPct)) : 0;
+  const quotaDashOffset = hasQuotaPct
+    ? +(ringCircumference * (1 - clampedPct / 100)).toFixed(2)
+    : ringCircumference;
+  const isDanger = Boolean(hasQuotaPct && clampedPct <= 15);
+  const isWarn = Boolean(hasQuotaPct && !isDanger && clampedPct <= 30);
   const toneClass = isDanger ? 'tone-danger' : isWarn ? 'tone-warn' : '';
   return {
     hidden: false,
     metric: metricKey,
     segClass: 'wm-cap-slot wm-seg-quota',
     textClass: 'wm-slot-text wm-quota-text',
-    showRing: false,
-    dashOffset: ringCircumference,
-    text: quotaSum ? quotaSum.shortText : t('capsule.quotaUnknown'),
+    showRing: true,
+    ringKind: 'quota',
+    ringEmpty: !hasQuotaPct,
+    dashOffset: quotaDashOffset,
+    prefix: resolveQuotaCapsulePrefix(metricKey, quotaSum),
+    text: hasQuotaPct ? `${clampedPct}%` : '--%',
     toneClass,
     running: false,
     warn: isWarn,
@@ -18057,7 +18087,7 @@ function createPoolQuotaRow() {
     h('div', { className: 'progress-track' }, [fillWk]),
   ]);
 
-  const el = h('div', { style: 'display: flex; flex-direction: column; gap: 8px;' }, [
+  const el = h('div', { className: 'quota-pool-row' }, [
     row5h,
     rowWk,
   ]);
@@ -18107,13 +18137,7 @@ function formatQuotaSummaryFooter(quotas, account) {
  */
 function syncPoolQuotaRow(refs, item, idx, rowEl) {
   const { poolData, poolLabel, fallbackWeekly, isActivePool, isPending } = item;
-  patchAttr(
-    rowEl,
-    'style',
-    idx === 0
-      ? 'display: flex; flex-direction: column; gap: 8px;'
-      : 'display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-hairline);'
-  );
+  patchClasses(rowEl, { 'quota-pool-row': true, 'has-divider': idx > 0 });
 
   const has5h = poolData?.usedPct != null && poolData?.remainingPct != null;
   const used5hVal = has5h ? Number(poolData.usedPct) : 0;
@@ -18258,13 +18282,6 @@ const QuotaPoolsWidget = defineComponent({
       });
     }
 
-    const initFoot = formatQuotaSummaryFooter(null, null);
-    const wkFootLeft = h('span', { className: 'text-muted', text: initFoot.leftText });
-    const wkFootRight = h('span', {
-      className: 'text-muted',
-      text: compactHover ? initFoot.rightText : '',
-    });
-
     const quotaPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
@@ -18274,13 +18291,6 @@ const QuotaPoolsWidget = defineComponent({
         tierBadge,
       ]),
       poolsListEl,
-      h(
-        'div',
-        compactHover
-          ? { className: 'panel-header wm-hover-quota-foot' }
-          : { className: 'panel-header', style: 'font-size: var(--fs-md); padding-top: 2px;' },
-        [wkFootLeft, wkFootRight]
-      ),
     ]);
 
     function update({ data, minuteTick } = {}) {
@@ -18293,9 +18303,6 @@ const QuotaPoolsWidget = defineComponent({
             createRow: createPoolQuotaRow,
             updateRow: syncPoolQuotaRow,
           });
-          const pendingFoot = formatQuotaSummaryFooter(null, null);
-          patchText(wkFootLeft, pendingFoot.leftText);
-          patchText(wkFootRight, pendingFoot.rightText);
         }
         return;
       }
@@ -18312,12 +18319,6 @@ const QuotaPoolsWidget = defineComponent({
         createRow: createPoolQuotaRow,
         updateRow: syncPoolQuotaRow,
       });
-
-      const footSummary = formatQuotaSummaryFooter(quotas, data.account);
-      patchText(wkFootLeft, footSummary.leftText);
-      patchText(wkFootRight, footSummary.rightText);
-      patchAttr(wkFootLeft, 'title', footSummary.tooltip);
-      patchAttr(wkFootRight, 'title', footSummary.tooltip);
     }
 
     return {
@@ -20186,6 +20187,7 @@ function createCapsuleSlotNode(slotIndex, initialMetric) {
 
   const isNone = initialMetric === 'none';
   const isCtx = initialMetric === 'context';
+  const prefixSpan = h('span', { className: 'wm-slot-prefix' });
   const textSpan = h('span', {
     className: isCtx ? 'wm-slot-text wm-ctx-pct' : 'wm-slot-text',
     text: isNone
@@ -20196,7 +20198,7 @@ function createCapsuleSlotNode(slotIndex, initialMetric) {
           ? '-- t/s'
           : initialMetric === 'ttft'
             ? '--s'
-            : t('capsule.quotaUnknown'),
+            : '--%',
   });
   const el = h(
     'span',
@@ -20222,8 +20224,10 @@ function createCapsuleSlotNode(slotIndex, initialMetric) {
     el,
     ringSvg,
     ringFill,
+    prefixSpan,
     textSpan,
     ringMounted: isCtx,
+    prefixMounted: false,
   };
 }
 
@@ -20250,11 +20254,23 @@ function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCtx) {
     patchAttr(slot.el, 'data-vis-rank', String(visRank));
 
     if (pres.showRing && !slot.ringMounted) {
-      slot.el.insertBefore(slot.ringSvg, slot.textSpan);
+      slot.el.insertBefore(slot.ringSvg, slot.el.firstChild || slot.textSpan);
       slot.ringMounted = true;
     } else if (!pres.showRing && slot.ringMounted) {
       slot.ringSvg.remove();
       slot.ringMounted = false;
+    }
+
+    const prefixText = String(pres.prefix || '');
+    if (prefixText) {
+      patchText(slot.prefixSpan, prefixText);
+      if (!slot.prefixMounted) {
+        slot.el.insertBefore(slot.prefixSpan, slot.textSpan);
+        slot.prefixMounted = true;
+      }
+    } else if (slot.prefixMounted) {
+      slot.prefixSpan.remove();
+      slot.prefixMounted = false;
     }
 
     const toneCls =
@@ -20267,7 +20283,12 @@ function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCtx) {
 
     if (pres.showRing) {
       slot.ringFill.setAttribute('stroke-dashoffset', String(pres.dashOffset));
-      patchClasses(slot.ringFill, { 'tone-warn': pres.warn, 'tone-danger': pres.danger });
+      patchClasses(slot.ringFill, {
+        'is-quota': pres.ringKind === 'quota',
+        'is-empty': pres.ringEmpty === true,
+        'tone-warn': pres.warn,
+        'tone-danger': pres.danger,
+      });
     }
   }
 
@@ -22417,10 +22438,12 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
       isSubagent: false,
       agentBadge: '主',
       agentLabel: t('fmt.mainAgent'),
-      modelLabel: 'Gemini 4 Carbon (High)',
-      modelShort: 'gemini-4-carbon',
-      rawModel: 'MODEL_PLACEHOLDER_M37',
-      upstreamModel: 'gemini-4-carbon-high',
+      modelKey: 'MODEL_PLACEHOLDER_M667',
+      modelLabel: 'Gemini Pro Orchestrator (Carbon)',
+      modelShort: 'orchestrator-carbon',
+      rawModel: 'MODEL_PLACEHOLDER_M667',
+      modelUpstream: 'gemini-pro-orchestrator',
+      upstreamModel: 'gemini-pro-orchestrator',
       tokPerSec: 17.8,
       ttftSec: 19.4,
       totalDurationSec: 31.2,
@@ -22474,18 +22497,19 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
     outputTokens: 22100,
     totalTokens: 1434500,
     latestModelLabel: 'Gemini 4 Carbon (High)',
-    latestModelShort: 'gemini-4-carbon',
+    latestModelShort: 'carbon-4-high',
     latestRawModel: 'MODEL_PLACEHOLDER_M37',
     latestUpstreamModel: 'gemini-4-carbon-high',
     activeModelLabel: 'Gemini 4 Carbon (High)',
-    activeModelShort: 'gemini-4-carbon',
+    activeModelShort: 'carbon-4-high',
     activeModelUpstream: 'gemini-4-carbon-high',
     sessionUnpricedCalls: 0,
     modelBreakdown: [
       {
         modelKey: 'MODEL_PLACEHOLDER_M37',
-        modelShort: 'gemini-4-carbon',
+        modelShort: 'carbon-4-high',
         modelLabel: 'Gemini 4 Carbon (High)',
+        modelUpstream: 'gemini-4-carbon-high',
         upstreamModel: 'gemini-4-carbon-high',
         calls: 16,
         inputTokens: 152400,
@@ -22505,6 +22529,8 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
     agentId: 'sub-1',
     cascadeId: 'mock-sub-1',
     isMain: false,
+    agentKind: 'subagent',
+    agentOrdinal: 1,
     index: 1,
     badgeText: '子1',
     shortLabel: `${t('fmt.subAgent')} #1`,
@@ -22528,18 +22554,19 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
     outputTokens: 6300,
     totalTokens: 320300,
     latestModelLabel: 'Gemini 3.8 Flash',
-    latestModelShort: 'gemini-3.8-flash',
+    latestModelShort: 'flash-3.8',
     latestRawModel: 'MODEL_PLACEHOLDER_M42',
     latestUpstreamModel: 'gemini-3.8-flash-n',
     activeModelLabel: 'Gemini 3.8 Flash',
-    activeModelShort: 'gemini-3.8-flash',
+    activeModelShort: 'flash-3.8',
     activeModelUpstream: 'gemini-3.8-flash-n',
     sessionUnpricedCalls: 0,
     modelBreakdown: [
       {
         modelKey: 'MODEL_PLACEHOLDER_M42',
-        modelShort: 'gemini-3.8-flash',
+        modelShort: 'flash-3.8',
         modelLabel: 'Gemini 3.8 Flash',
+        modelUpstream: 'gemini-3.8-flash-n',
         upstreamModel: 'gemini-3.8-flash-n',
         calls: 8,
         inputTokens: 34000,
@@ -22562,9 +22589,9 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
     agentKind: 'all',
     agentOrdinal: 0,
     badgeText: t('header.scopeAllShort'),
-    activeAgentId: 'main',
-    activeAgentKind: 'main',
-    activeAgentOrdinal: 0,
+    activeAgentId: 'sub-1',
+    activeAgentKind: 'subagent',
+    activeAgentOrdinal: 1,
     stepCount: 24,
     speedSampleCount: 23,
     speedSummary: { sampleCount: 23, excludedCount: 1 },
@@ -22578,7 +22605,7 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
     cacheReadTokens: 1540000,
     outputTokens: 28400,
     totalTokens: 1754800,
-    activeAgentBadge: t('fmt.mainBadge'),
+    activeAgentBadge: '子1',
     modelBreakdown: [...mainAgent.modelBreakdown, ...subAgent1.modelBreakdown],
     recentSteps: mockSteps,
   };
@@ -25137,75 +25164,113 @@ function isSameList(a, b) {
   return true;
 }
 
-function formatCliPreviewSlot(slotKey, isEn) {
+function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
+  const safeCtx = slotCtx || {};
+  const quotas = safeCtx.quotas || {};
+  const quotaPct = (key, fallback) => {
+    const summary = resolveSpecificQuotaSlotSummary(quotas, key);
+    return summary && Number.isFinite(summary.roundedPct) ? summary.roundedPct : fallback;
+  };
   switch (slotKey) {
-    case 'tps':
-      return { prefix: '', text: '68.4 t/s', tone: 'good', pillPct: null };
-    case 'avg_tps':
+    case 'tps': {
+      const val = Number.isFinite(Number(safeCtx.tps)) ? Number(safeCtx.tps).toFixed(1) : '68.4';
+      return { prefix: '', text: `${val} t/s`, tone: 'good', pillPct: null };
+    }
+    case 'avg_tps': {
+      const val = Number.isFinite(Number(safeCtx.avgTps)) ? Number(safeCtx.avgTps).toFixed(1) : '59.6';
       return {
         prefix: '',
-        text: isEn ? 'avg 54.0' : '均 54.0',
+        text: isEn ? `avg ${val}` : `均 ${val}`,
         tone: 'info',
         pillPct: null,
       };
-    case 'ttft':
-      return { prefix: '', text: '1.1s', tone: 'good', pillPct: null };
-    case 'cost':
-      return { prefix: '', text: '$0.040', tone: 'normal', pillPct: null };
-    case 'session_cost':
-      return { prefix: '', text: '$0.42', tone: 'normal', pillPct: null };
-    case 'cache_hit':
+    }
+    case 'ttft': {
+      const val = Number.isFinite(Number(safeCtx.ttft)) ? formatMetric(Number(safeCtx.ttft), 's') : '1.1s';
+      return { prefix: '', text: val, tone: 'good', pillPct: null };
+    }
+    case 'cost': {
+      const num = Number.isFinite(Number(safeCtx.stepCost)) ? Number(safeCtx.stepCost) : 0.042;
+      return { prefix: '', text: `$${num.toFixed(3)}`, tone: 'normal', pillPct: null };
+    }
+    case 'session_cost': {
+      const num = Number.isFinite(Number(safeCtx.sessionCost)) ? Number(safeCtx.sessionCost) : 1.28;
+      return { prefix: '', text: formatUsd(num), tone: 'normal', pillPct: null };
+    }
+    case 'cache_hit': {
+      const pct = Number.isFinite(Number(safeCtx.cacheHitPct))
+        ? Math.round(Number(safeCtx.cacheHitPct))
+        : 95;
       return {
         prefix: '',
-        text: isEn ? 'cache 92%' : '缓 92%',
+        text: isEn ? `cache ${pct}%` : `缓 ${pct}%`,
         tone: 'good',
         pillPct: null,
       };
-    case 'session_tokens':
-      return { prefix: '', text: '142K tok', tone: 'muted', pillPct: null };
-    case 'quota_auto':
+    }
+    case 'session_tokens': {
+      const tokStr = Number.isFinite(Number(safeCtx.sessionTokens))
+        ? formatTokens(Number(safeCtx.sessionTokens))
+        : '1.8M';
+      return { prefix: '', text: `${tokStr} tok`, tone: 'muted', pillPct: null };
+    }
+    case 'quota_auto': {
+      const pct = quotaPct('quota_auto', 64);
       return {
         prefix: isEn ? '5h ' : '余 ',
-        text: '64%',
+        text: `${pct}%`,
         tone: 'good',
-        pillPct: 64,
+        pillPct: pct,
       };
-    case 'gemini_5h':
+    }
+    case 'gemini_5h': {
+      const pct = quotaPct('gemini_5h', 64);
       return {
         prefix: 'G5h ',
-        text: '64%',
+        text: `${pct}%`,
         tone: 'good',
-        pillPct: 64,
+        pillPct: pct,
       };
-    case 'gemini_weekly':
+    }
+    case 'gemini_weekly': {
+      const pct = quotaPct('gemini_weekly', 52);
       return {
         prefix: isEn ? 'Gw ' : 'G周 ',
-        text: '88%',
+        text: `${pct}%`,
         tone: 'good',
-        pillPct: 88,
+        pillPct: pct,
       };
-    case 'claude_5h':
+    }
+    case 'claude_5h': {
+      const pct = quotaPct('claude_5h', 32);
       return {
         prefix: 'C5h ',
-        text: '96%',
+        text: `${pct}%`,
         tone: 'good',
-        pillPct: 96,
+        pillPct: pct,
       };
-    case 'claude_weekly':
+    }
+    case 'claude_weekly': {
+      const pct = quotaPct('claude_weekly', 59);
       return {
         prefix: isEn ? 'Cw ' : 'C周 ',
-        text: '99%',
+        text: `${pct}%`,
         tone: 'good',
-        pillPct: 99,
+        pillPct: pct,
       };
+    }
     case 'context':
-    default:
+    default: {
+      const pct = Number.isFinite(Number(safeCtx.usedPct))
+        ? Math.round(Number(safeCtx.usedPct))
+        : 56;
       return {
         prefix: isEn ? 'Ctx ' : '上下文 ',
-        text: '56%',
+        text: `${pct}%`,
         tone: 'accent',
-        pillPct: 56,
+        pillPct: pct,
       };
+    }
   }
 }
 
@@ -25364,10 +25429,6 @@ const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.popoverWidthLabel'),
     });
-    const popoverWidthHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.str.popoverWidthHint'),
-    });
     const multiToggleLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.multiToggle'),
@@ -25375,10 +25436,6 @@ const SettingsStructureTab = defineComponent({
     const contextAgentModeLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.contextAgentModeLabel'),
-    });
-    const contextAgentModeHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.str.contextAgentModeHint'),
     });
     const cliCapsuleLabelEl = h('span', {
       className: 'form-label',
@@ -25532,7 +25589,7 @@ const SettingsStructureTab = defineComponent({
     });
 
     const cliPreviewMultiTextEl = h('span', {
-      text: t('settings.str.cliPreviewRunning', { count: 2 }),
+      text: t('settings.str.cliPreviewRunning', { count: 1 }),
     });
     const cliPreviewMultiEl = h('span', { className: 'cli-preview-multi' }, [
       h('span', { className: 'cli-preview-dot', 'aria-hidden': 'true', text: '●' }),
@@ -25660,37 +25717,42 @@ const SettingsStructureTab = defineComponent({
         h('div', { className: 'settings-divider' }),
         h('div', { className: 'form-row' }, [mountModeLabelEl, windowMountSelect.el]),
         mountBridgeNotice.el,
-        h('div', { className: 'form-row' }, [
-          h('div', { className: 'settings-inline-row' }, [
-            popoverWidthLabelEl,
-            h('div', { className: 'settings-inline-controls' }, [
-              popoverWidthModeToggle.el,
-              popoverWidthNumWrap,
-            ]),
+        h('div', { className: 'settings-inline-row' }, [
+          popoverWidthLabelEl,
+          h('div', { className: 'settings-inline-controls' }, [
+            popoverWidthModeToggle.el,
+            popoverWidthNumWrap,
           ]),
-          popoverWidthHintEl,
         ]),
         h('div', { className: 'settings-inline-row' }, [
           multiToggleLabelEl,
           multiSessionToggle.el,
         ]),
-        h('div', { className: 'form-row' }, [
-          h('div', { className: 'settings-inline-row' }, [
-            contextAgentModeLabelEl,
-            contextAgentModeToggle.el,
-          ]),
-          contextAgentModeHintEl,
+        h('div', { className: 'settings-inline-row' }, [
+          contextAgentModeLabelEl,
+          contextAgentModeToggle.el,
         ]),
         h('div', { className: 'form-row' }, [capsuleSlotsLabelEl, topbarSlotsList.el]),
         cliStatusGroupEl,
       ],
     });
 
-    function refreshCliPreview() {
+    function refreshCliPreview(previewData = null) {
       const effectiveSlots = getEffectiveDraftCliSlots();
       const isEn = getEffectiveLocale() === 'en-US';
+      const mockData = previewData || buildDraftTelemetry();
+      const { scopedConv, ctxAgent, aggregated } = resolveScopedConversation(
+        mockData,
+        'all',
+        resolveOverlayCtxInspectorAgentId(mockData, 'auto')
+      );
+      const slotCtx = buildCapsuleSlotContext(mockData, { scopedConv, ctxAgent, aggregated });
+      const runningCount = Math.max(
+        1,
+        Array.isArray(mockData?.runningConversations) ? mockData.runningConversations.length : 1
+      );
       patchAttr(cliPreviewMultiEl, 'hidden', !draftShowTopbarMulti);
-      patchText(cliPreviewMultiTextEl, t('settings.str.cliPreviewRunning', { count: 2 }));
+      patchText(cliPreviewMultiTextEl, t('settings.str.cliPreviewRunning', { count: runningCount }));
       for (let i = 0; i < cliPreviewSlotParts.length; i += 1) {
         const parts = cliPreviewSlotParts[i];
         const sepEl = i > 0 ? cliPreviewSepEls[i - 1] : null;
@@ -25699,7 +25761,7 @@ const SettingsStructureTab = defineComponent({
         patchAttr(parts.slotEl, 'hidden', !visible);
         if (sepEl) patchAttr(sepEl, 'hidden', !visible);
         if (visible) {
-          const item = formatCliPreviewSlot(key, isEn);
+          const item = formatCliPreviewSlot(key, slotCtx, isEn);
           const isPill = Number.isFinite(item.pillPct);
           patchAttr(parts.slotEl, 'data-metric', key);
           patchText(parts.prefixEl, item.prefix || '');
@@ -25718,8 +25780,9 @@ const SettingsStructureTab = defineComponent({
 
     function refreshMountPreview() {
       if (!isStructureVisible() || activeThirdTab !== 'mount') return;
-      capsulePreviewWidget.refs.update({ data: buildDraftTelemetry() });
-      refreshCliPreview();
+      const mockData = buildDraftTelemetry();
+      capsulePreviewWidget.refs.update({ data: mockData });
+      refreshCliPreview(mockData);
     }
 
     function syncMountSectionMeta() {
@@ -26460,11 +26523,9 @@ const SettingsStructureTab = defineComponent({
       mountSection.refs.setResetLabel(t('settings.resetBtn'));
       patchText(mountModeLabelEl, t('settings.str.mountMode'));
       patchText(popoverWidthLabelEl, t('settings.str.popoverWidthLabel'));
-      patchText(popoverWidthHintEl, t('settings.str.popoverWidthHint'));
       popoverWidthStepper.setProps({ ariaLabel: t('settings.str.popoverWidthLabel') });
       patchText(multiToggleLabelEl, t('settings.str.multiToggle'));
       patchText(contextAgentModeLabelEl, t('settings.str.contextAgentModeLabel'));
-      patchText(contextAgentModeHintEl, t('settings.str.contextAgentModeHint'));
       patchText(cliCapsuleLabelEl, t('settings.str.cliCapsuleToggle'));
       patchText(cliSlotsLabelEl, t('settings.str.cliSlotsLabel'));
       patchText(capsuleSlotsLabelEl, t('settings.str.capsuleSlotsLabel'));

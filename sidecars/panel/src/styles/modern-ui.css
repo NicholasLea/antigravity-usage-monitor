@@ -650,11 +650,16 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .structure-preview-empty,
 [data-modern-ui="true"] .preview-sidebar-note,
 [data-modern-ui="true"] .preview-capsule-bar,
+[data-modern-ui="true"] .cli-status-preview,
 [data-modern-ui="true"] .preview-capsule-bar.is-composer .wm-multi-btn,
 [data-modern-ui="true"] .preview-capsule-bar.is-composer .wm-capsule-btn,
 [data-modern-ui="true"] .preview-composer-chip {
   border: none;
   background: var(--modern-surface-subtle);
+}
+
+[data-modern-ui="true"][data-color-scheme="light"] .quota-pool-row.has-divider {
+  border-top-color: hsl(216 24% 92%);
 }
 
 [data-modern-ui="true"] .slot-add-btn,
@@ -940,8 +945,10 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 :host([data-modern-ui="true"]) .wm-slot-text.wm-ctx-pct[data-od-active="1"],
+:host([data-modern-ui="true"]) .wm-slot-text.wm-quota-text[data-od-active="1"],
 :host([data-modern-ui="true"]) .wm-multi-label[data-od-active="1"],
 [data-modern-ui="true"] .wm-slot-text.wm-ctx-pct[data-od-active="1"],
+[data-modern-ui="true"] .wm-slot-text.wm-quota-text[data-od-active="1"],
 [data-modern-ui="true"] .wm-multi-label[data-od-active="1"] {
   justify-content: flex-start;
 }

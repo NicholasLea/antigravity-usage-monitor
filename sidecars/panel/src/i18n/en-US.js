@@ -618,7 +618,6 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.popoverWidthHint': 'Auto Fit widens wide tables like Step Records to avoid horizontal scroll; Custom accepts 440–1080 px',
   'settings.str.multiToggle': 'Active Sessions Pill',
   'settings.str.contextAgentModeLabel': 'Capsule & Hover Context',
-  'settings.str.contextAgentModeHint': 'Lock to Main Agent keeps the topbar percentage and hover HUD on Main Agent; you can still inspect subagents inside the full panel',
   'settings.str.contextAgentMain': 'Lock Main Agent',
   'settings.str.contextAgentAuto': 'Follow Active',
   'settings.str.cliCapsuleToggle': 'CLI Bottom Capsule',
