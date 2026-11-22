@@ -14,6 +14,7 @@ import { createSvgIcon } from '../../icons/SvgIcon.js';
 import {
   getCapsuleMetricOptions,
   getOverviewMetricOptions,
+  hasArgonWeeklyQuotaPool,
   resolveSpecificQuotaSlotSummary,
 } from '../../registries/metricRegistry.js';
 import { getStepColumnOptions } from '../../registries/stepColumnRegistry.js';
@@ -196,6 +197,15 @@ function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
         pillPct: pct,
       };
     }
+    case 'argon_weekly': {
+      const pct = quotaPct('argon_weekly', 42);
+      return {
+        prefix: isEn ? 'Aw ' : 'A周 ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
     case 'claude_5h': {
       const pct = quotaPct('claude_5h', 32);
       return {
@@ -255,6 +265,7 @@ export const SettingsStructureTab = defineComponent({
     let latestWindowBridge = null;
     let latestCliStatusLine = null;
     let latestHostPlatform = 'win32';
+    let latestQuotas = null;
 
     function getEffectiveDraftCliSlots() {
       return resolveEffectiveClientCliStatusLineSlots({
@@ -269,25 +280,34 @@ export const SettingsStructureTab = defineComponent({
     }
 
     function buildDraftTelemetry() {
-      return buildStructurePreviewTelemetry(latestSettings, {
-        windowMountMode: draftWindowMountMode,
-        enableWindowOverlay: draftWindowMountMode !== 'sidebar',
-        popoverWidthMode: draftPopoverWidthMode,
-        popoverWidth: draftPopoverWidth,
-        enableCliStatusLine: draftEnableCliStatusLine,
-        showTopbarMultiSession: draftShowTopbarMulti,
-        contextAgentMode: draftContextAgentMode,
-        topbarCapsuleSlots: draftTopbarSlots,
-        hoverModules: draftHoverModules,
-        overviewModules: draftOverviewModules,
-        overviewMetrics: draftOverviewMetrics,
-        showStepTurnRail: draftShowStepTurnRail,
-        showStepAgentBadge: draftShowStepAgentBadge,
-        showStepSpeedColor: draftShowStepSpeedColor,
-        showStepFilterToolbar: draftShowStepFilterToolbar,
-        stepTokenComboFormat: draftStepTokenComboFormat,
-        stepTableColumns: draftStepColumns,
-      });
+      const effectiveCliSlots = getEffectiveDraftCliSlots();
+      const includeArgonPool =
+        hasArgonWeeklyQuotaPool(latestQuotas) ||
+        draftTopbarSlots.includes('argon_weekly') ||
+        effectiveCliSlots.includes('argon_weekly');
+      return buildStructurePreviewTelemetry(
+        latestSettings,
+        {
+          windowMountMode: draftWindowMountMode,
+          enableWindowOverlay: draftWindowMountMode !== 'sidebar',
+          popoverWidthMode: draftPopoverWidthMode,
+          popoverWidth: draftPopoverWidth,
+          enableCliStatusLine: draftEnableCliStatusLine,
+          showTopbarMultiSession: draftShowTopbarMulti,
+          contextAgentMode: draftContextAgentMode,
+          topbarCapsuleSlots: draftTopbarSlots,
+          hoverModules: draftHoverModules,
+          overviewModules: draftOverviewModules,
+          overviewMetrics: draftOverviewMetrics,
+          showStepTurnRail: draftShowStepTurnRail,
+          showStepAgentBadge: draftShowStepAgentBadge,
+          showStepSpeedColor: draftShowStepSpeedColor,
+          showStepFilterToolbar: draftShowStepFilterToolbar,
+          stepTokenComboFormat: draftStepTokenComboFormat,
+          stepTableColumns: draftStepColumns,
+        },
+        { includeArgonPool }
+      );
     }
 
     async function persistStructurePatch(sectionComp, patchObj, successKey = 'settings.saved') {
@@ -780,7 +800,10 @@ export const SettingsStructureTab = defineComponent({
       const effectiveCliSlots = getEffectiveDraftCliSlots();
       cliSlotsList.refs.setProps({
         items: effectiveCliSlots,
-        options: getCapsuleMetricOptions(),
+        options: getCapsuleMetricOptions({
+          quotas: latestQuotas,
+          selectedSlots: effectiveCliSlots,
+        }),
         addBtnTextFn: (count, max) => t('settings.str.addCliSlot', { count, max }),
       });
       const preservedCustom = Boolean(latestCliStatusLine?.preservedCustom);
@@ -819,7 +842,10 @@ export const SettingsStructureTab = defineComponent({
       refreshCliPreview();
       topbarSlotsList.refs.setProps({
         items: draftTopbarSlots,
-        options: getCapsuleMetricOptions(),
+        options: getCapsuleMetricOptions({
+          quotas: latestQuotas,
+          selectedSlots: draftTopbarSlots,
+        }),
         addBtnTextFn: (count, max) => t('settings.str.addCapsuleSlot', { count, max }),
       });
       mountSection.refs.setBadge(
@@ -1431,13 +1457,15 @@ export const SettingsStructureTab = defineComponent({
       settings,
       windowBridge = latestWindowBridge,
       hostPlatform = latestHostPlatform,
-      cliStatusLine = latestCliStatusLine
+      cliStatusLine = latestCliStatusLine,
+      quotas = latestQuotas
     ) {
       if (!settings) return;
       latestSettings = settings;
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
       if (cliStatusLine !== undefined) latestCliStatusLine = cliStatusLine;
+      if (quotas !== undefined) latestQuotas = quotas;
       draftWindowMountMode = normalizeClientWindowMountMode(
         settings.windowMountMode,
         settings.enableWindowOverlay

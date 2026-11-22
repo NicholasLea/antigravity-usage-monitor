@@ -628,11 +628,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   margin: 4px 2px 2px;
 }
 
-[data-modern-ui="true"] .sstep-anomaly-dot,
-[data-modern-ui="true"] .sstep-scatter-dot.is-anomaly {
-  fill: var(--modern-surface-card);
-}
-
 /* --- 6. 设置表单、折叠面板、槽位排序与输入控件去边框 --- */
 [data-modern-ui="true"] .collapsible-body,
 [data-modern-ui="true"] .settings-action-block + .settings-action-block,

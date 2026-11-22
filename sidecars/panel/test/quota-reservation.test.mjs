@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   QR_LEASE_IDLE_EXPIRY_MS,
+  QR_REFUND_CONFIRM_WINDOW_MS,
   createQuotaReservationTracker,
 } from '../backend/quota-reservation.mjs';
 import { normalizeFullSettings } from '../backend/settings-schema.mjs';
@@ -313,6 +314,311 @@ test('quota-reservation: avoids false positives on genuinely large steps, handle
   assert.ok(tracker._buckets.get(key).ratePctPerUsd > 0, 'calibrated rate preserved across reset');
 });
 
+test('quota-reservation: persists log, calibrated rate, and active leases across plugin restarts', () => {
+  let storedPayload = null;
+  const trackerA = createQuotaReservationTracker({
+    loadState: () => storedPayload,
+    saveState: (payload) => {
+      storedPayload = JSON.parse(JSON.stringify(payload));
+    },
+  });
+  const key = 'local::u@example.com::Gemini::5h';
+
+  trackerA.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 4.0,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: T0,
+    cycleCostUsd: 4.0,
+    poolLastActivityMs: T0,
+    nowMs: T0,
+  });
+
+  const t1 = T0 + 20_000;
+  trackerA.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 5.0,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: t1,
+    cycleCostUsd: 4.05,
+    poolLastActivityMs: t1,
+    nowMs: t1,
+  });
+  assert.ok(storedPayload && storedPayload.events.length === 2, 'baseline + lease persisted to disk');
+
+  // Simulate full plugin restart with a brand new tracker instance reading storedPayload
+  const trackerB = createQuotaReservationTracker({
+    loadState: () => storedPayload,
+    saveState: (payload) => {
+      storedPayload = JSON.parse(JSON.stringify(payload));
+    },
+  });
+  const snapBeforeAnyPoll = trackerB.getLogSnapshot();
+  assert.equal(snapBeforeAnyPoll.count, 2, 'historical events immediately available after restart');
+  assert.equal(snapBeforeAnyPoll.buckets[0].reservedPct, 1.0, 'active lease survives restart');
+  assert.equal(snapBeforeAnyPoll.buckets[0].ratePctPerUsd, 1.0, 'calibrated rate survives restart');
+
+  // Refund arriving after restart cleanly reconciles against the hydrated lease
+  const t2 = t1 + 10 * 60 * 1000;
+  const rAfterRestart = trackerB.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 4.05,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: t2,
+    cycleCostUsd: 4.05,
+    poolLastActivityMs: t1,
+    nowMs: t2,
+  });
+  assert.equal(rAfterRestart.reservedPct, 0);
+  assert.equal(trackerB.getLogSnapshot().count, 3);
+});
+
+test('quota-reservation: suppresses replica ping-pong, keeps rolling median rate clean, and ignores 0% idle reset drift', () => {
+  const tracker = createQuotaReservationTracker();
+  const key5h = 'local::u@example.com::Gemini::5h';
+  const keyWk = 'local::u@example.com::Gemini::weekly';
+  const keyIdle = 'local::u@example.com::Claude & GPT::5h';
+
+  let ts = T0;
+  let u5 = 13.0;
+  let uw = 18.0;
+  let c5 = 18.0;
+  let cw = 86.0;
+
+  // Baseline + 8 clean steps at exact 0.6667 %/$ (5h) and 0.1667 %/$ (weekly)
+  tracker.observeBucket({
+    bucketKey: key5h,
+    officialUsedPct: u5,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: c5,
+    poolLastActivityMs: ts,
+    nowMs: ts,
+  });
+  tracker.observeBucket({
+    bucketKey: keyWk,
+    officialUsedPct: uw,
+    resetTimeMs: RESET_WK,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: cw,
+    poolLastActivityMs: ts,
+    nowMs: ts,
+  });
+  tracker.observeBucket({
+    bucketKey: keyIdle,
+    officialUsedPct: 0,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: 0,
+    poolLastActivityMs: 0,
+    nowMs: ts,
+  });
+
+  for (let i = 0; i < 8; i += 1) {
+    ts += 15_000;
+    const dc = 0.09;
+    c5 += dc;
+    cw += dc;
+    u5 += dc * (2 / 3);
+    uw += dc * (1 / 6);
+    tracker.observeBucket({
+      bucketKey: key5h,
+      officialUsedPct: u5,
+      resetTimeMs: RESET_5H,
+      quotaFetchedAtMs: ts,
+      cycleCostUsd: c5,
+      poolLastActivityMs: ts,
+      nowMs: ts,
+    });
+    tracker.observeBucket({
+      bucketKey: keyWk,
+      officialUsedPct: uw,
+      resetTimeMs: RESET_WK,
+      quotaFetchedAtMs: ts,
+      cycleCostUsd: cw,
+      poolLastActivityMs: ts,
+      nowMs: ts,
+    });
+  }
+
+  // Idle 0% pool resetTime drifts by 35 min -> silently absorbed (no spurious reset event)
+  tracker.observeBucket({
+    bucketKey: keyIdle,
+    officialUsedPct: 0,
+    resetTimeMs: RESET_5H + 35 * 60 * 1000,
+    quotaFetchedAtMs: ts + 35 * 60 * 1000,
+    cycleCostUsd: 0,
+    poolLastActivityMs: 0,
+    nowMs: ts,
+  });
+  assert.equal(
+    tracker.getLogSnapshot().events.some((e) => e.pool === 'Claude & GPT' && e.event === 'reset'),
+    false,
+    'idle 0% pool drift must not emit reset'
+  );
+
+  // Weekly triggers a +0.9% lease on Cell B, then bounces Cell A <-> Cell B 5 times while 5h bounces +/-0.2%
+  ts += 10_000;
+  const wkBase = uw;
+  const wkHigh = uw + 0.9;
+  const rLease = tracker.observeBucket({
+    bucketKey: keyWk,
+    officialUsedPct: wkHigh,
+    resetTimeMs: RESET_WK,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: cw,
+    poolLastActivityMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(rLease.reservedPct, 0.9);
+  assert.equal(rLease.reservedLeaseCount, 1);
+
+  for (let i = 0; i < 5; i += 1) {
+    // Drop to Cell A (low replica)
+    ts += 10_000;
+    c5 += 0.06;
+    cw += 0.06;
+    const rLowWk = tracker.observeBucket({
+      bucketKey: keyWk,
+      officialUsedPct: wkBase + (i + 1) * 0.01,
+      resetTimeMs: RESET_WK,
+      quotaFetchedAtMs: ts,
+      cycleCostUsd: cw,
+      poolLastActivityMs: ts,
+      nowMs: ts,
+    });
+    assert.equal(rLowWk.reservedPct, 0, 'low replica hides lease portion so actual stays stable');
+
+    tracker.observeBucket({
+      bucketKey: key5h,
+      officialUsedPct: u5 - 0.2 + i * 0.04,
+      resetTimeMs: RESET_5H,
+      quotaFetchedAtMs: ts,
+      cycleCostUsd: c5,
+      poolLastActivityMs: ts,
+      nowMs: ts,
+    });
+
+    // Bounce back to Cell B (high replica)
+    ts += 10_000;
+    c5 += 0.06;
+    cw += 0.06;
+    const rHighWk = tracker.observeBucket({
+      bucketKey: keyWk,
+      officialUsedPct: wkHigh + (i + 1) * 0.02,
+      resetTimeMs: RESET_WK,
+      quotaFetchedAtMs: ts,
+      cycleCostUsd: cw,
+      poolLastActivityMs: ts,
+      nowMs: ts,
+    });
+    assert.equal(rHighWk.reservedPct, 0.9, 'rebound restores same lease without duplicating');
+    assert.equal(rHighWk.reservedLeaseCount, 1);
+
+    tracker.observeBucket({
+      bucketKey: key5h,
+      officialUsedPct: u5 + 0.08 + i * 0.08,
+      resetTimeMs: RESET_5H,
+      quotaFetchedAtMs: ts,
+      cycleCostUsd: c5,
+      poolLastActivityMs: ts,
+      nowMs: ts,
+    });
+  }
+
+  // Both rolling-median rates remain unpolluted near 0.6667 and 0.1667
+  const snapMid = tracker.getLogSnapshot();
+  const b5h = snapMid.buckets.find((b) => b.pool === 'Gemini' && b.win === '5h');
+  const bWk = snapMid.buckets.find((b) => b.pool === 'Gemini' && b.win === 'weekly');
+  assert.ok(Math.abs(b5h.ratePctPerUsd - 0.6667) < 0.02, `5h rate stays clean: ${b5h.ratePctPerUsd}`);
+  assert.ok(Math.abs(bWk.ratePctPerUsd - 0.1667) < 0.01, `weekly rate stays clean: ${bWk.ratePctPerUsd}`);
+
+  // Sustained drop on weekly (stays low across >= 3 samples and >= 90s while active) confirms genuine refund
+  for (let i = 0; i < 4; i += 1) {
+    ts += Math.ceil(QR_REFUND_CONFIRM_WINDOW_MS / 3);
+    tracker.observeBucket({
+      bucketKey: keyWk,
+      officialUsedPct: wkBase + 0.1,
+      resetTimeMs: RESET_WK,
+      quotaFetchedAtMs: ts,
+      cycleCostUsd: cw,
+      poolLastActivityMs: ts,
+      nowMs: ts,
+    });
+  }
+  const bWkAfter = tracker.getLogSnapshot().buckets.find((b) => b.pool === 'Gemini' && b.win === 'weekly');
+  assert.equal(bWkAfter.reservedPct, 0);
+  assert.equal(bWkAfter.leases, 0);
+});
+
+test('quota-reservation: ignores sub-epsilon shortfall noise and drops polluted v1 EMA rate on schema upgrade', () => {
+  // 1. Sub-epsilon rounding mismatch during normal spending must not keep stale leases alive
+  const tracker = createQuotaReservationTracker();
+  const key = 'local::u@example.com::Gemini::5h';
+  tracker.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 10.0,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: T0,
+    cycleCostUsd: 15.0,
+    poolLastActivityMs: T0,
+    nowMs: T0,
+  });
+  // Trigger +1.0% lease at t1
+  const t1 = T0 + 15_000;
+  tracker.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 11.0,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: t1,
+    cycleCostUsd: 15.0,
+    poolLastActivityMs: t1,
+    nowMs: t1,
+  });
+  // Normal steps at ~0.666 %/$ (0.001% below cold-start 0.667) across 12 minutes -> lease expires normally
+  let u = 11.0;
+  let c = 15.0;
+  let now = t1;
+  for (let i = 0; i < 12; i += 1) {
+    now += 60_000;
+    c += 0.09;
+    u += 0.059;
+    tracker.observeBucket({
+      bucketKey: key,
+      officialUsedPct: u,
+      resetTimeMs: RESET_5H,
+      quotaFetchedAtMs: now,
+      cycleCostUsd: c,
+      poolLastActivityMs: now,
+      nowMs: now,
+    });
+  }
+  const snap = tracker.getLogSnapshot();
+  assert.equal(snap.buckets[0].reservedPct, 0, 'normal billing does not infinitely renew stale lease');
+
+  // 2. Loading v1 persisted payload resets polluted EMA rate while preserving event log
+  const v1Payload = {
+    version: 1,
+    savedAt: new Date(T0).toISOString(),
+    buckets: {
+      [key]: {
+        resetTimeMs: RESET_5H,
+        lastQuotaTs: T0,
+        lastOfficialUsedPct: 30.0,
+        lastCycleCostUsd: 38.0,
+        ratePctPerUsd: 2.005,
+        rateSamples: 41,
+        activeLeases: [],
+      },
+    },
+    events: [{ ts: new Date(T0).toISOString(), pool: 'Gemini', win: '5h', event: 'normal' }],
+  };
+  const migrated = createQuotaReservationTracker({ loadState: () => v1Payload });
+  const migSnap = migrated.getLogSnapshot();
+  assert.equal(migSnap.count, 1, 'v1 events preserved on upgrade');
+  assert.equal(migSnap.buckets[0].ratePctPerUsd, null, 'polluted v1 rate cleared for clean recalibration');
+});
+
 test('experimentalQuotaReservation setting defaults false and round-trips through schema & backup', () => {
   const def = normalizeFullSettings({});
   assert.equal(def.experimentalQuotaReservation, false);
@@ -501,8 +807,11 @@ test('QuotaPoolsWidget & SettingsOtherTab render experimental reservation bar/te
       },
     };
 
-    // Toggle OFF: no reserved highlight
+    // Toggle OFF: no reserved highlight and legend hidden
     widget.refs.update({ data: baseData, minuteTick: 1 });
+    const legendEl = widget.el.querySelector('.quota-reserve-legend');
+    assert.ok(legendEl, 'quota reservation legend mounted');
+    assert.equal(legendEl.hidden, true);
     const rsvTagsOff = widget.el.querySelectorAll('.quota-reserved-pct');
     assert.equal(rsvTagsOff.length, 2);
     assert.equal(rsvTagsOff[0].hidden, true);
@@ -510,11 +819,16 @@ test('QuotaPoolsWidget & SettingsOtherTab render experimental reservation bar/te
     const fillBarsOff = widget.el.querySelectorAll('.progress-fill');
     assert.equal(fillBarsOff[0].style.getPropertyValue('--fill-w'), '4.1%');
 
-    // Toggle ON: violet reserved bar segment + colored percentage tag
+    // Toggle ON: violet reserved bar segment + colored percentage tag + bottom solid/dashed legend
     widget.refs.update({
       data: { ...baseData, settings: { experimentalQuotaReservation: true } },
       minuteTick: 1,
     });
+    assert.equal(legendEl.hidden, false);
+    assert.ok(legendEl.querySelector('.quota-legend-line.is-actual'));
+    assert.ok(legendEl.querySelector('.quota-legend-line.is-reserved'));
+    assert.match(legendEl.textContent, /实占/);
+    assert.match(legendEl.textContent, /预占/);
     const rsvTagsOn = widget.el.querySelectorAll('.quota-reserved-pct');
     assert.equal(rsvTagsOn[0].hidden, false);
     assert.equal(rsvTagsOn[0].textContent, '预占 1.0%');
@@ -526,8 +840,10 @@ test('QuotaPoolsWidget & SettingsOtherTab render experimental reservation bar/te
     assert.equal(fillBarsOn[0].style.getPropertyValue('--fill-w'), '3.1%');
     assert.equal(rsvBarsOn[0].style.getPropertyValue('--reserved-w'), '1%');
     assert.equal(rsvBarsOn[0].classList.contains('is-active'), true);
+    assert.equal(rsvBarsOn[0].classList.contains('has-sep'), true);
     assert.equal(fillBarsOn[1].style.getPropertyValue('--fill-w'), '15.7%');
     assert.equal(rsvBarsOn[1].style.getPropertyValue('--reserved-w'), '0.5%');
+    assert.equal(rsvBarsOn[1].classList.contains('has-sep'), true);
 
     // SettingsOtherTab renders experimental badge and persists toggle click
     const othTab = SettingsOtherTab({ onLayoutChange: () => {} });

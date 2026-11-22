@@ -28,6 +28,7 @@ export const TOPBAR_SLOT_KEYS = Object.freeze([
   'quota_auto',
   'gemini_5h',
   'gemini_weekly',
+  'argon_weekly',
   'claude_5h',
   'claude_weekly',
 ]);

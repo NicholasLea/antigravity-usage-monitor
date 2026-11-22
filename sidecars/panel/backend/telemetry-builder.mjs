@@ -1713,13 +1713,39 @@ export async function buildTelemetryPayloadInternal(
   const realAiCredits = Number(g1CreditEntry?.creditAmount || 0);
   const uiBundleVersion = computeRuntimeCodeVersion();
 
-  const rawTierName = userStatus?.userTier?.name || '';
-  const inferredPlanFallback = /\bfree\b/i.test(rawTierName)
+  const rawTierId = String(userStatus?.userTier?.id || '').trim();
+  const rawTierName = String(userStatus?.userTier?.name || '').trim();
+  const rawTierDesc = String(userStatus?.userTier?.description || '').trim();
+  const rawPlanName = String(userStatus?.planStatus?.planInfo?.planName || '').trim();
+  const tierIdLower = rawTierId.toLowerCase();
+  const tierText = `${rawTierId} ${rawTierName} ${rawTierDesc}`;
+  const resolvedTierMultiplier = /(?:^|[-_\s])5x(?:$|[-_\s])|ultra[-_]?lite/i.test(tierText)
+    ? '5x'
+    : /(?:^|[-_\s])20x(?:$|[-_\s])/i.test(tierText) ||
+        tierIdLower === 'g1-ultra-tier' ||
+        (/^g1-ultra(?:-[a-z0-9]+)?-tier$/i.test(tierIdLower) && !/lite|5x/i.test(tierIdLower))
+      ? '20x'
+      : '';
+  const resolvedTierName =
+    rawTierName ||
+    (/ultra/i.test(tierIdLower)
+      ? 'Google AI Ultra'
+      : /pro/i.test(tierIdLower)
+        ? 'Google AI Pro'
+        : /free|standard/i.test(tierIdLower)
+          ? 'Google AI Free'
+          : 'Google AI');
+  const isUltraTier = /\bultra\b/i.test(resolvedTierName) || /ultra/i.test(tierIdLower);
+  const inferredPlanFallback = /\bfree\b/i.test(resolvedTierName)
     ? 'Free'
-    : /\bultra\b/i.test(rawTierName)
-      ? 'Ultra'
+    : isUltraTier
+      ? resolvedTierMultiplier || 'Ultra'
       : 'Pro';
-  const resolvedPlanName = userStatus?.planStatus?.planInfo?.planName || inferredPlanFallback;
+  // Google 上游对 Ultra 订阅的 planStatus.planInfo.planName 仍会返回 "Pro"，按 userTier.id 还原 5x / 20x
+  const resolvedPlanName = isUltraTier
+    ? resolvedTierMultiplier ||
+      (rawPlanName && !/^pro$/i.test(rawPlanName) ? rawPlanName : 'Ultra')
+    : rawPlanName || inferredPlanFallback;
 
   // 预计算近期会话与运行中会话的轻量缓存速览指标（零额外 RPC 开销）
   const quickStatsMemo = new Map();
@@ -2100,7 +2126,9 @@ export async function buildTelemetryPayloadInternal(
       status: accountStatus,
       email: userStatus?.email || '',
       name: userStatus?.name || '',
-      tierName: rawTierName || 'Google AI',
+      tierId: rawTierId,
+      tierName: resolvedTierName,
+      tierMultiplier: resolvedTierMultiplier,
       planName: resolvedPlanName,
       aiCredits: realAiCredits > 0 ? realAiCredits : null,
       totalConversations: conversations.length,

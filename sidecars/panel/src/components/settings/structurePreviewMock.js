@@ -7,7 +7,11 @@
 
 import { t } from '../../i18n/index.js';
 
-export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) {
+export function buildStructurePreviewTelemetry(
+  baseSettings = {},
+  draftOverrides = {},
+  { includeArgonPool = false } = {}
+) {
   const anchorMinMs = Math.floor(Date.now() / 60000) * 60000;
   const reset5hIso = new Date(anchorMinMs + (2 * 60 + 42) * 60000).toISOString();
   const resetWkIso = new Date(anchorMinMs + (4 * 24 * 60 + 180) * 60000).toISOString();
@@ -361,8 +365,10 @@ export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides
   return {
     settings: mergedSettings,
     account: {
+      tierId: 'g1-ultra-lite-tier',
       tierName: 'Google AI Ultra',
-      planName: 'Pro',
+      tierMultiplier: '5x',
+      planName: '5x',
       aiCredits: 0,
     },
     quotas: {
@@ -400,6 +406,21 @@ export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides
           cycle5h: { tokens: 1754800, costUsd: 1.28, calls: 24 },
           cycleWeekly: { tokens: 14200000, costUsd: 11.4, calls: 186 },
         },
+        ...(includeArgonPool
+          ? [
+              {
+                poolKey: 'Argon',
+                poolLabel: 'Gemini 4 Argon',
+                family: 'Argon',
+                has5h: false,
+                hasWeekly: true,
+                weeklyUsedPct: 58,
+                weeklyRemainingPct: 42,
+                weeklyResetTime: resetWkIso,
+                cycleWeekly: { tokens: 4200000, costUsd: 6.4, calls: 48 },
+              },
+            ]
+          : []),
         {
           poolKey: 'Claude & GPT',
           poolLabel: 'Claude & GPT',

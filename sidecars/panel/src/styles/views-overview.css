@@ -580,18 +580,69 @@
 .progress-fill-reserved {
   height: 100%;
   width: var(--reserved-w, 0%);
-  background: var(--quota-reserved);
-  transition: width var(--dur-normal) var(--ease-fast);
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--quota-reserved) 72%, transparent) 0 2px,
+    color-mix(in srgb, var(--quota-reserved) 26%, transparent) 2px 5px
+  );
+  transition:
+    width var(--dur-normal) var(--ease-fast),
+    margin-left var(--dur-fast) var(--ease-fast);
   flex-shrink: 0;
 }
 
 .progress-fill-reserved.is-active {
-  min-width: 3px;
+  min-width: 5px;
+}
+
+.progress-fill-reserved.is-active.has-sep {
+  margin-left: 1px;
 }
 
 .quota-reserved-pct {
   color: var(--quota-reserved);
   font-weight: 500;
+}
+
+.quota-reserve-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 2px;
+  padding-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.quota-reserve-legend[hidden] {
+  display: none;
+}
+
+.quota-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.quota-legend-line {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.quota-legend-line.is-actual {
+  background: var(--accent-primary);
+}
+
+.quota-legend-line.is-reserved {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--quota-reserved) 0 4px,
+    transparent 4px 6.5px
+  );
 }
 
 /* --- 4. 上下文双列图例网格 (Context 10-Channel Legend Grid) --- */

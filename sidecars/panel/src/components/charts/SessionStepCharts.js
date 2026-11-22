@@ -1311,16 +1311,15 @@ export function createSessionLineChart() {
             patchStyleVar(mLine, '--sstep-fit-accent', seriesColor);
             multiLineGroup.appendChild(mLine);
 
-            if (seriesPts.length <= 36) {
-              for (const pt of seriesPts) {
-                const dot = document.createElementNS(SVG_NS, 'circle');
-                dot.setAttribute('cx', pt.x.toFixed(1));
-                dot.setAttribute('cy', pt.y.toFixed(1));
-                dot.setAttribute('r', seriesPts.length > 20 ? '1.7' : '2.1');
-                dot.setAttribute('class', 'sstep-node-dot');
-                patchStyleVar(dot, '--dot-stroke', seriesColor);
-                dotsGroup.appendChild(dot);
-              }
+            if (seriesPts.length === 1) {
+              const pt = seriesPts[0];
+              const dot = document.createElementNS(SVG_NS, 'circle');
+              dot.setAttribute('cx', pt.x.toFixed(1));
+              dot.setAttribute('cy', pt.y.toFixed(1));
+              dot.setAttribute('r', '2.1');
+              dot.setAttribute('class', 'sstep-node-dot');
+              patchStyleVar(dot, '--dot-stroke', seriesColor);
+              dotsGroup.appendChild(dot);
             }
           }
         }
@@ -1344,40 +1343,30 @@ export function createSessionLineChart() {
           patchAttr(linePath, 'd', lineD);
           patchAttr(areaPath, 'd', `${lineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`);
         }
-
-        if (points.length <= 64) {
-          for (const pt of points) {
-            const dot = document.createElementNS(SVG_NS, 'circle');
-            dot.setAttribute('cx', pt.x.toFixed(1));
-            dot.setAttribute('cy', pt.y.toFixed(1));
-            if (pt.valid) {
-              dot.setAttribute('r', points.length > 36 ? '1.8' : '2.3');
-              dot.setAttribute('class', 'sstep-node-dot');
-              patchStyleVar(
-                dot,
-                '--dot-stroke',
-                modelColorMap.size > 1 ? pt.dotColor : accentColor
-              );
-            } else {
-              dot.setAttribute('r', '1.6');
-              dot.setAttribute('class', 'sstep-node-dot is-skipped');
-            }
-            dotsGroup.appendChild(dot);
-          }
-        }
       }
 
+      const anomalyTicks = [];
       for (const pt of points) {
         if (!pt.valid || !pt.anomalySummary) continue;
-        const aDot = document.createElementNS(SVG_NS, 'circle');
-        aDot.setAttribute('cx', pt.x.toFixed(1));
-        aDot.setAttribute('cy', pt.y.toFixed(1));
-        aDot.setAttribute('r', '2.9');
-        aDot.setAttribute(
+        anomalyTicks.push(pt);
+      }
+      anomalyTicks.sort((a, b) =>
+        a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+      );
+      const tickTopY = (BOTTOM_Y - 5).toFixed(1);
+      const tickBotY = BOTTOM_Y.toFixed(1);
+      for (const pt of anomalyTicks) {
+        const xStr = pt.x.toFixed(1);
+        const aTick = document.createElementNS(SVG_NS, 'line');
+        aTick.setAttribute('x1', xStr);
+        aTick.setAttribute('x2', xStr);
+        aTick.setAttribute('y1', tickTopY);
+        aTick.setAttribute('y2', tickBotY);
+        aTick.setAttribute(
           'class',
-          `sstep-anomaly-dot${pt.anomalySeverity === 'danger' ? ' is-danger' : ''}`
+          `sstep-anomaly-dot sstep-anomaly-tick${pt.anomalySeverity === 'danger' ? ' is-danger' : ''}`
         );
-        anomalyDotsGroup.appendChild(aDot);
+        anomalyDotsGroup.appendChild(aTick);
       }
 
       const tickIndices = computeStepTickIndices(points.length);
@@ -2288,11 +2277,14 @@ export function createModelFitChart() {
             multiCurveGroup.appendChild(curveEl);
           }
         }
+        anomalyOverlayDots.sort((a, b) =>
+          a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+        );
         for (const sp of anomalyOverlayDots) {
           const aDot = document.createElementNS(SVG_NS, 'circle');
           aDot.setAttribute('cx', sp.x.toFixed(1));
           aDot.setAttribute('cy', sp.rawY.toFixed(1));
-          aDot.setAttribute('r', '2.9');
+          aDot.setAttribute('r', dotRadius);
           aDot.setAttribute(
             'class',
             `sstep-scatter-dot is-anomaly${sp.anomalySeverity === 'danger' ? ' is-danger' : ''}`
@@ -2462,11 +2454,14 @@ export function createModelFitChart() {
         dot.setAttribute('class', 'sstep-scatter-dot');
         scatterTarget.appendChild(dot);
       }
+      singleAnomalyDots.sort((a, b) =>
+        a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+      );
       for (const s of singleAnomalyDots) {
         const aDot = document.createElementNS(SVG_NS, 'circle');
         aDot.setAttribute('cx', s.x.toFixed(1));
         aDot.setAttribute('cy', s.rawY.toFixed(1));
-        aDot.setAttribute('r', '2.9');
+        aDot.setAttribute('r', dotRadius);
         aDot.setAttribute(
           'class',
           `sstep-scatter-dot is-anomaly${s.anomalySeverity === 'danger' ? ' is-danger' : ''}`

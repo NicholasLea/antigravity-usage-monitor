@@ -33,6 +33,7 @@ const TOPBAR_SLOT_KEYS = Object.freeze([
   'quota_auto',
   'gemini_5h',
   'gemini_weekly',
+  'argon_weekly',
   'claude_5h',
   'claude_weekly',
 ]);
@@ -592,7 +593,7 @@ return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KE
 })();
 
 // --- shared/telemetry-display-rules.mjs ---
-const { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyCacheTier, classifyStepCostTier, classifyTtftTier, formatCompactTokens, formatCompactCapsuleCost, formatCompactCapsuleTtft, resolveCapsuleQuotaSlotPct, scaleBucketsExact } = (() => {
+const { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyCacheTier, classifyStepCostTier, classifyTtftTier, formatCompactTokens, formatCompactCapsuleCost, formatCompactCapsuleTtft, hasArgonWeeklyQuotaPool, resolveCapsuleQuotaSlotPct, scaleBucketsExact } = (() => {
 /**
  * @fileoverview 跨 Backend / Frontend / CLI 共用的纯展示阈值、紧凑格式化、第三方配额分池与精确整数缩放规则。
  */
@@ -691,8 +692,40 @@ function formatCompactCapsuleTtft(ttftSec) {
   return `${Math.round(val)}s`;
 }
 
+function readPoolWeeklyRemainingPct(pool) {
+  if (!pool || typeof pool !== 'object') return null;
+  const raw = pool.weeklyRemainingPct ?? pool.remainingWeeklyPct;
+  return raw != null && Number.isFinite(Number(raw)) ? Number(raw) : null;
+}
+
+function isArgonPoolObject(pool) {
+  if (!pool || typeof pool !== 'object') return false;
+  if (pool.poolKey === 'Argon' || pool.family === 'Argon') return true;
+  return /\bargon\b/i.test(String(pool.poolKey || pool.poolLabel || pool.family || ''));
+}
+
 /**
- * 解析胶囊指定配额槽位（`quota_auto` / `gemini_5h` / `gemini_weekly` / `claude_5h` / `claude_weekly`）的整数剩余百分比。
+ * 判断当前配额摘要中是否存在独立的 Argon 周限配额池（如 Google AI Pro 账号）。
+ *
+ * @param {object|null|undefined} quotas
+ * @returns {boolean}
+ */
+function hasArgonWeeklyQuotaPool(quotas) {
+  if (!quotas || typeof quotas !== 'object') return false;
+  const pools = Array.isArray(quotas.pools) ? quotas.pools : [];
+  const argonPool = pools.find(isArgonPoolObject);
+  if (argonPool && readPoolWeeklyRemainingPct(argonPool) != null) {
+    return true;
+  }
+  const activePool = quotas.activePool;
+  if (activePool && isArgonPoolObject(activePool) && readPoolWeeklyRemainingPct(activePool) != null) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 解析胶囊指定配额槽位（`quota_auto` / `gemini_5h` / `gemini_weekly` / `argon_weekly` / `claude_5h` / `claude_weekly`）的整数剩余百分比。
  *
  * @param {object|null|undefined} quotas
  * @param {string} slotKey
@@ -709,8 +742,9 @@ function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     if (activePool && Number.isFinite(Number(activePool.remainingPct))) {
       candidates.push(Number(activePool.remainingPct));
     }
-    if (activePool && Number.isFinite(Number(activePool.weeklyRemainingPct))) {
-      candidates.push(Number(activePool.weeklyRemainingPct));
+    const activeWk = readPoolWeeklyRemainingPct(activePool);
+    if (activeWk != null) {
+      candidates.push(activeWk);
     }
     if (!candidates.length && weekly && Number.isFinite(Number(weekly.remainingPct))) {
       candidates.push(Number(weekly.remainingPct));
@@ -718,13 +752,22 @@ function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     if (!candidates.length && pools.length > 0) {
       for (const p of pools) {
         if (p && Number.isFinite(Number(p.remainingPct))) candidates.push(Number(p.remainingPct));
-        if (p && Number.isFinite(Number(p.weeklyRemainingPct))) {
-          candidates.push(Number(p.weeklyRemainingPct));
-        }
+        const pWk = readPoolWeeklyRemainingPct(p);
+        if (pWk != null) candidates.push(pWk);
       }
     }
     if (!candidates.length) return null;
     return Math.max(0, Math.min(100, Math.round(Math.min(...candidates))));
+  }
+
+  if (slotKey === 'argon_weekly') {
+    const argonPool = pools.find(isArgonPoolObject);
+    let argonPct = readPoolWeeklyRemainingPct(argonPool);
+    if (argonPct == null && isArgonPoolObject(activePool)) {
+      argonPct = readPoolWeeklyRemainingPct(activePool);
+    }
+    if (argonPct == null || !Number.isFinite(argonPct)) return null;
+    return Math.max(0, Math.min(100, Math.round(argonPct)));
   }
 
   const isClaude = slotKey.startsWith('claude_');
@@ -735,11 +778,11 @@ function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     const claudePool =
       pools.find((p) => p?.poolKey === 'Claude & GPT') ||
       pools.find((p) => isThirdPartyPoolText(p?.poolKey || p?.poolLabel || ''));
-    const cand = isWeekly ? claudePool?.weeklyRemainingPct : claudePool?.remainingPct;
+    const cand = isWeekly ? readPoolWeeklyRemainingPct(claudePool) : claudePool?.remainingPct;
     if (cand != null && Number.isFinite(Number(cand))) {
       rawPct = Number(cand);
     } else if (activePool && isThirdPartyPoolText(activePool.family || activePool.poolLabel || '')) {
-      const fb = isWeekly ? activePool.weeklyRemainingPct : activePool.remainingPct;
+      const fb = isWeekly ? readPoolWeeklyRemainingPct(activePool) : activePool.remainingPct;
       if (fb != null && Number.isFinite(Number(fb))) rawPct = Number(fb);
     }
   } else {
@@ -753,12 +796,12 @@ function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     const geminiFamilyPools = pools.filter((p) =>
       /gemini|carbon|argon/i.test(String(p?.poolKey || p?.poolLabel || ''))
     );
-    const primaryCand = isWeekly ? stdGemini?.weeklyRemainingPct : stdGemini?.remainingPct;
+    const primaryCand = isWeekly ? readPoolWeeklyRemainingPct(stdGemini) : stdGemini?.remainingPct;
     if (primaryCand != null && Number.isFinite(Number(primaryCand))) {
       rawPct = Number(primaryCand);
     } else {
       const familyVals = geminiFamilyPools
-        .map((p) => (isWeekly ? p?.weeklyRemainingPct : p?.remainingPct))
+        .map((p) => (isWeekly ? readPoolWeeklyRemainingPct(p) : p?.remainingPct))
         .filter((v) => v != null && Number.isFinite(Number(v)))
         .map(Number);
       if (familyVals.length > 0) {
@@ -767,7 +810,7 @@ function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
         activePool &&
         !isThirdPartyPoolText(activePool.family || activePool.poolLabel || '')
       ) {
-        const fb = isWeekly ? activePool.weeklyRemainingPct : activePool.remainingPct;
+        const fb = isWeekly ? readPoolWeeklyRemainingPct(activePool) : activePool.remainingPct;
         if (fb != null && Number.isFinite(Number(fb))) rawPct = Number(fb);
       }
       if (
@@ -836,7 +879,7 @@ function scaleBucketsExact(buckets, keys, targetTotal) {
   }
   return out;
 }
-return { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyCacheTier, classifyStepCostTier, classifyTtftTier, formatCompactTokens, formatCompactCapsuleCost, formatCompactCapsuleTtft, resolveCapsuleQuotaSlotPct, scaleBucketsExact };
+return { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyCacheTier, classifyStepCostTier, classifyTtftTier, formatCompactTokens, formatCompactCapsuleCost, formatCompactCapsuleTtft, hasArgonWeeklyQuotaPool, resolveCapsuleQuotaSlotPct, scaleBucketsExact };
 })();
 
 // --- shared/window-bridge-protocol.mjs ---
@@ -1333,6 +1376,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'capMetric.quota_auto': '自动紧俏额度',
   'capMetric.gemini_5h': 'Gemini 5h 额度',
   'capMetric.gemini_weekly': 'Gemini 周额度',
+  'capMetric.argon_weekly': 'Argon 周额度',
   'capMetric.claude_5h': 'Claude 5h 额度',
   'capMetric.claude_weekly': 'Claude 周额度',
 
@@ -1395,6 +1439,8 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.usedAfterReserved': ' · 余 {rem}%)',
   'quota.reservedTip': '预占估算（试验性）：约 {rsv}%（实际已用约 {actual}%），静默约 10 分钟后未用差额自动退还',
   'quota.reservedTipMulti': '预占估算（试验性）：约 {rsv}%（检测到 {leases} 笔叠加租约，实际已用约 {actual}%），静默约 10 分钟后未用差额自动退还',
+  'quota.legendActual': '实占',
+  'quota.legendReserved': '预占',
   'quota.cycle5hTitle': '当前 5h 周期累计 ({pool})：{tok} Tokens · {cost} · {calls} 次调用',
   'quota.cycleWkCustomTitle': '本周自然周累计：{tok} Tokens · {cost} · {calls} 次调用',
   'quota.cycleWkPoolTitle': '当前周限周期累计 ({pool})：{tok} Tokens · {cost} · {calls} 次调用',
@@ -1899,7 +1945,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.quotaReserveLabel': '配额预占估算',
   'settings.oth.quotaReserveDesc': '在可用额度中估算 5h / 周限的 0.5% / 1% 租约预占，并用紫色标注占比及进度条段',
   'settings.oth.quotaReserveLogLabel': '预占观测日志',
-  'settings.oth.quotaReserveLogDesc': '将内存中的配额跳变及退还记录复制到剪贴板，便于分析触发阈值',
+  'settings.oth.quotaReserveLogDesc': '将配额跳变及退还观测记录复制到剪贴板，重启后自动保留，便于分析触发阈值',
   'settings.oth.exportReserveLogBtn': '导出预占日志',
   'settings.oth.exportReserveLogCopied': '已复制 {count} 条观测日志到剪贴板',
   'settings.oth.exportReserveLogEmpty': '暂无跳变记录，已复制当前摘要到剪贴板',
@@ -1939,7 +1985,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.resettingBtn': '重置中…',
   'settings.oth.resetAllDone': '已恢复全部默认设置',
   'settings.oth.backupLabel': '配置备份及恢复',
-  'settings.oth.backupDesc': '导出或导入外观、胶囊、列配置等便携偏好 JSON（不含账号凭证）',
+  'settings.oth.backupDesc': '导出或导入外观、胶囊、列配置等便携偏好 JSON',
   'settings.oth.exportJsonBtn': '导出 JSON',
   'settings.oth.importJsonBtn': '导入 JSON',
   'settings.oth.exportDone': '配置 JSON 已导出',
@@ -1953,7 +1999,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.migModeLabel': '迁移方式',
   'settings.oth.migModeMove': '完整迁移（推荐）',
   'settings.oth.migModeClone': '克隆副本',
-  'settings.oth.migModeMoveHint': '分配目标端独立会话 ID 并完整保留全部历史步序明细，备份后移出源端（零重复计费；迁移前建议先关闭源端该会话）',
+  'settings.oth.migModeMoveHint': '分配目标端独立会话 ID 并完整保留全部历史步序明细，备份后移出源端',
   'settings.oth.migModeCloneHint': '保留源会话并生成新 ID，新副本仅统计迁入后的新步骤',
   'settings.oth.migProjectLabel': '绑定目标项目',
   'settings.oth.migProjectOutside': '独立会话（无所属项目）',
@@ -2208,6 +2254,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'capMetric.quota_auto': 'Auto Tightest Quota',
   'capMetric.gemini_5h': 'Gemini 5h Quota',
   'capMetric.gemini_weekly': 'Gemini Weekly Quota',
+  'capMetric.argon_weekly': 'Argon Weekly Quota',
   'capMetric.claude_5h': 'Claude 5h Quota',
   'capMetric.claude_weekly': 'Claude Weekly Quota',
 
@@ -2270,6 +2317,8 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.usedAfterReserved': ' · {rem}% left)',
   'quota.reservedTip': 'Estimated lease reservation (Experimental): ~{rsv}% (~{actual}% actual used); unused share refunds after ~10 min idle',
   'quota.reservedTipMulti': 'Estimated lease reservation (Experimental): ~{rsv}% ({leases} stacked leases, ~{actual}% actual used); unused share refunds after ~10 min idle',
+  'quota.legendActual': 'Actual',
+  'quota.legendReserved': 'Reserved',
   'quota.cycle5hTitle': 'Current 5h cycle ({pool}): {tok} Tokens · {cost} · {calls} calls',
   'quota.cycleWkCustomTitle': 'Current calendar week: {tok} Tokens · {cost} · {calls} calls',
   'quota.cycleWkPoolTitle': 'Current weekly cycle ({pool}): {tok} Tokens · {cost} · {calls} calls',
@@ -2774,7 +2823,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.quotaReserveLabel': 'Quota Reservation Estimate',
   'settings.oth.quotaReserveDesc': 'Estimate 0.5% / 1% 5h & weekly lease holds in Available Quotas and highlight the reserved share in violet',
   'settings.oth.quotaReserveLogLabel': 'Reservation Observation Log',
-  'settings.oth.quotaReserveLogDesc': 'Copy in-memory quota jump & refund events to clipboard for threshold tuning',
+  'settings.oth.quotaReserveLogDesc': 'Copy persisted quota jump & refund observations to clipboard (retained across restarts)',
   'settings.oth.exportReserveLogBtn': 'Export Reserve Log',
   'settings.oth.exportReserveLogCopied': 'Copied {count} log entries to clipboard',
   'settings.oth.exportReserveLogEmpty': 'No events yet; copied current summary to clipboard',
@@ -2814,7 +2863,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.resettingBtn': 'Resetting…',
   'settings.oth.resetAllDone': 'All preferences restored to defaults',
   'settings.oth.backupLabel': 'Preferences Backup & Restore',
-  'settings.oth.backupDesc': 'Export or import portable UI, capsule, and table preferences as JSON (excludes credentials)',
+  'settings.oth.backupDesc': 'Export or import portable UI, capsule, and table preferences as JSON',
   'settings.oth.exportJsonBtn': 'Export JSON',
   'settings.oth.importJsonBtn': 'Import JSON',
   'settings.oth.exportDone': 'Preferences JSON exported',
@@ -2828,7 +2877,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.migModeLabel': 'Migration Mode',
   'settings.oth.migModeMove': 'Full Move (Recommended)',
   'settings.oth.migModeClone': 'Clone Copy',
-  'settings.oth.migModeMoveHint': 'Assigns an isolated target ID while preserving all historical steps/details; archives source backup before moving (close source session first)',
+  'settings.oth.migModeMoveHint': 'Assigns an isolated target ID while preserving all historical steps/details; archives source backup before moving',
   'settings.oth.migModeCloneHint': 'Keeps source intact with a fresh UUID; only counts new steps generated after cloning',
   'settings.oth.migProjectLabel': 'Target Project',
   'settings.oth.migProjectOutside': 'Standalone (No Project)',
@@ -9660,7 +9709,9 @@ function isEquivalentTelemetry(prev, next) {
     prev.account?.email !== next.account?.email ||
     prev.account?.name !== next.account?.name ||
     prev.account?.status !== next.account?.status ||
+    prev.account?.tierId !== next.account?.tierId ||
     prev.account?.tierName !== next.account?.tierName ||
+    prev.account?.tierMultiplier !== next.account?.tierMultiplier ||
     prev.account?.planName !== next.account?.planName ||
     prev.account?.aiCredits !== next.account?.aiCredits
   ) {
@@ -13349,16 +13400,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   linePath.setAttribute('fill', 'none');
   svg.appendChild(linePath);
 
-  const dotsGroup = document.createElementNS(SVG_NS, 'g');
-  dotsGroup.setAttribute('class', 'trend-dots-group');
-  svg.appendChild(dotsGroup);
-
-  const peakDot = document.createElementNS(SVG_NS, 'circle');
-  peakDot.setAttribute('r', '3');
-  peakDot.setAttribute('class', 'trend-peak-dot');
-  svg.appendChild(peakDot);
-
-  // 悬停十字准星与焦点圆点
+  // 悬停十字准星及焦点圆点
   const hoverLine = document.createElementNS(SVG_NS, 'line');
   hoverLine.setAttribute('class', 'trend-hover-line');
   hoverLine.setAttribute('y1', '12');
@@ -14197,25 +14239,9 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         xAxisEl.appendChild(tickEl);
         tickElsByIdx.set(tIdx, tickEl);
       }
-
-      // 渲染采样点小圆点（当点数 <= 36 时展示，突出有消耗的整点/日期）
-      while (dotsGroup.firstChild) dotsGroup.removeChild(dotsGroup.firstChild);
-      if (pts.length <= 36) {
-        for (let i = 0; i < pts.length; i++) {
-          if (pts[i].tokens <= 0) continue;
-          const dot = document.createElementNS(SVG_NS, 'circle');
-          dot.setAttribute('cx', pts[i].x.toFixed(1));
-          dot.setAttribute('cy', pts[i].y.toFixed(1));
-          dot.setAttribute('r', '2');
-          dot.setAttribute('class', 'trend-node-dot');
-          dotsGroup.appendChild(dot);
-        }
-      }
     }
 
     const peakPt = pts[peakIdx] || { x: viewW / 2, y: BOTTOM_Y };
-    patchAttr(peakDot, 'cx', peakPt.x.toFixed(1));
-    patchAttr(peakDot, 'cy', peakPt.y.toFixed(1));
 
     const peakSlot = slots[peakIdx];
     const peakText =
@@ -15542,16 +15568,15 @@ function createSessionLineChart() {
             patchStyleVar(mLine, '--sstep-fit-accent', seriesColor);
             multiLineGroup.appendChild(mLine);
 
-            if (seriesPts.length <= 36) {
-              for (const pt of seriesPts) {
-                const dot = document.createElementNS(SVG_NS, 'circle');
-                dot.setAttribute('cx', pt.x.toFixed(1));
-                dot.setAttribute('cy', pt.y.toFixed(1));
-                dot.setAttribute('r', seriesPts.length > 20 ? '1.7' : '2.1');
-                dot.setAttribute('class', 'sstep-node-dot');
-                patchStyleVar(dot, '--dot-stroke', seriesColor);
-                dotsGroup.appendChild(dot);
-              }
+            if (seriesPts.length === 1) {
+              const pt = seriesPts[0];
+              const dot = document.createElementNS(SVG_NS, 'circle');
+              dot.setAttribute('cx', pt.x.toFixed(1));
+              dot.setAttribute('cy', pt.y.toFixed(1));
+              dot.setAttribute('r', '2.1');
+              dot.setAttribute('class', 'sstep-node-dot');
+              patchStyleVar(dot, '--dot-stroke', seriesColor);
+              dotsGroup.appendChild(dot);
             }
           }
         }
@@ -15575,40 +15600,30 @@ function createSessionLineChart() {
           patchAttr(linePath, 'd', lineD);
           patchAttr(areaPath, 'd', `${lineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`);
         }
-
-        if (points.length <= 64) {
-          for (const pt of points) {
-            const dot = document.createElementNS(SVG_NS, 'circle');
-            dot.setAttribute('cx', pt.x.toFixed(1));
-            dot.setAttribute('cy', pt.y.toFixed(1));
-            if (pt.valid) {
-              dot.setAttribute('r', points.length > 36 ? '1.8' : '2.3');
-              dot.setAttribute('class', 'sstep-node-dot');
-              patchStyleVar(
-                dot,
-                '--dot-stroke',
-                modelColorMap.size > 1 ? pt.dotColor : accentColor
-              );
-            } else {
-              dot.setAttribute('r', '1.6');
-              dot.setAttribute('class', 'sstep-node-dot is-skipped');
-            }
-            dotsGroup.appendChild(dot);
-          }
-        }
       }
 
+      const anomalyTicks = [];
       for (const pt of points) {
         if (!pt.valid || !pt.anomalySummary) continue;
-        const aDot = document.createElementNS(SVG_NS, 'circle');
-        aDot.setAttribute('cx', pt.x.toFixed(1));
-        aDot.setAttribute('cy', pt.y.toFixed(1));
-        aDot.setAttribute('r', '2.9');
-        aDot.setAttribute(
+        anomalyTicks.push(pt);
+      }
+      anomalyTicks.sort((a, b) =>
+        a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+      );
+      const tickTopY = (BOTTOM_Y - 5).toFixed(1);
+      const tickBotY = BOTTOM_Y.toFixed(1);
+      for (const pt of anomalyTicks) {
+        const xStr = pt.x.toFixed(1);
+        const aTick = document.createElementNS(SVG_NS, 'line');
+        aTick.setAttribute('x1', xStr);
+        aTick.setAttribute('x2', xStr);
+        aTick.setAttribute('y1', tickTopY);
+        aTick.setAttribute('y2', tickBotY);
+        aTick.setAttribute(
           'class',
-          `sstep-anomaly-dot${pt.anomalySeverity === 'danger' ? ' is-danger' : ''}`
+          `sstep-anomaly-dot sstep-anomaly-tick${pt.anomalySeverity === 'danger' ? ' is-danger' : ''}`
         );
-        anomalyDotsGroup.appendChild(aDot);
+        anomalyDotsGroup.appendChild(aTick);
       }
 
       const tickIndices = computeStepTickIndices(points.length);
@@ -16519,11 +16534,14 @@ function createModelFitChart() {
             multiCurveGroup.appendChild(curveEl);
           }
         }
+        anomalyOverlayDots.sort((a, b) =>
+          a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+        );
         for (const sp of anomalyOverlayDots) {
           const aDot = document.createElementNS(SVG_NS, 'circle');
           aDot.setAttribute('cx', sp.x.toFixed(1));
           aDot.setAttribute('cy', sp.rawY.toFixed(1));
-          aDot.setAttribute('r', '2.9');
+          aDot.setAttribute('r', dotRadius);
           aDot.setAttribute(
             'class',
             `sstep-scatter-dot is-anomaly${sp.anomalySeverity === 'danger' ? ' is-danger' : ''}`
@@ -16693,11 +16711,14 @@ function createModelFitChart() {
         dot.setAttribute('class', 'sstep-scatter-dot');
         scatterTarget.appendChild(dot);
       }
+      singleAnomalyDots.sort((a, b) =>
+        a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+      );
       for (const s of singleAnomalyDots) {
         const aDot = document.createElementNS(SVG_NS, 'circle');
         aDot.setAttribute('cx', s.x.toFixed(1));
         aDot.setAttribute('cy', s.rawY.toFixed(1));
-        aDot.setAttribute('r', '2.9');
+        aDot.setAttribute('r', dotRadius);
         aDot.setAttribute(
           'class',
           `sstep-scatter-dot is-anomaly${s.anomalySeverity === 'danger' ? ' is-danger' : ''}`
@@ -16803,11 +16824,16 @@ const { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions, 
 
 const CAPSULE_METRIC_KEYS = TOPBAR_SLOT_KEYS;
 
-function getCapsuleMetricOptions() {
-  return CAPSULE_METRIC_KEYS.map((key) => ({
-    value: key,
-    label: t(`capMetric.${key}`),
-  }));
+function getCapsuleMetricOptions({ quotas = null, selectedSlots = [] } = {}) {
+  const showArgonWeekly =
+    hasArgonWeeklyQuotaPool(quotas) ||
+    (Array.isArray(selectedSlots) && selectedSlots.includes('argon_weekly'));
+  return CAPSULE_METRIC_KEYS.filter((key) => key !== 'argon_weekly' || showArgonWeekly).map(
+    (key) => ({
+      value: key,
+      label: t(`capMetric.${key}`),
+    })
+  );
 }
 
 function getOverviewMetricOptions() {
@@ -16870,17 +16896,21 @@ function resolveQuotaCapsuleSummary(quotas) {
       : `${tightest.label} ${tightest.windowTag} · ${runnerUp.label} ${runnerUp.windowTag} ${runnerPct}%`
     : `${tightest.label} · ${tightest.windowTag}`;
   const tightestIsClaude = /claude|gpt|fable|oss|third/i.test(String(tightest.label || ''));
-  const tightestIsGemini = !tightestIsClaude && /gemini|argon|carbon|neon|flash|pro/i.test(String(tightest.label || ''));
+  const tightestIsArgon = !tightestIsClaude && /\bargon\b/i.test(String(tightest.label || ''));
+  const tightestIsGemini =
+    !tightestIsClaude && !tightestIsArgon && /gemini|carbon|neon|flash|pro/i.test(String(tightest.label || ''));
   const tightestWinShort = tightest.windowTag === '5h' ? '5h' : isEnglishLocale() ? 'w' : '周';
   const poolPrefix = tightestIsClaude
     ? `C${tightestWinShort}`
-    : tightestIsGemini
-      ? `G${tightestWinShort}`
-      : tightest.windowTag === '5h'
-        ? '5h'
-        : isEnglishLocale()
-          ? 'Wk'
-          : '周';
+    : tightestIsArgon
+      ? `A${tightestWinShort}`
+      : tightestIsGemini
+        ? `G${tightestWinShort}`
+        : tightest.windowTag === '5h'
+          ? '5h'
+          : isEnglishLocale()
+            ? 'Wk'
+            : '周';
   return {
     roundedPct: rounded,
     shortText: t('capsule.quotaLeft', { pct: rounded }),
@@ -16899,6 +16929,7 @@ function resolveQuotaCapsulePrefix(metricKey, quotaSum) {
   const isEn = isEnglishLocale();
   if (metricKey === 'gemini_5h') return 'G5h';
   if (metricKey === 'gemini_weekly') return isEn ? 'Gw' : 'G周';
+  if (metricKey === 'argon_weekly') return isEn ? 'Aw' : 'A周';
   if (metricKey === 'claude_5h') return 'C5h';
   if (metricKey === 'claude_weekly') return isEn ? 'Cw' : 'C周';
   if (quotaSum?.poolPrefix) return quotaSum.poolPrefix;
@@ -17112,6 +17143,22 @@ function resolveCapsuleMetricPresentation(metricKey, slotCtx, ringCircumference)
       showRing: false,
       dashOffset: ringCircumference,
       text: valid ? formatTokens(Number(tokVal)) : '--',
+      toneClass: '',
+      running: false,
+      warn: false,
+      danger: false,
+    };
+  }
+
+  if (metricKey === 'argon_weekly' && slotCtx.hasTelemetry && !hasArgonWeeklyQuotaPool(slotCtx.quotas)) {
+    return {
+      hidden: true,
+      metric: 'none',
+      segClass: 'wm-cap-slot',
+      textClass: 'wm-slot-text',
+      showRing: false,
+      dashOffset: ringCircumference,
+      text: '',
       toneClass: '',
       running: false,
       warn: false,
@@ -18092,7 +18139,7 @@ return { CTX_CHANNEL_DEFS, ContextWindowWidget };
 })();
 
 // --- src/components/widgets/QuotaPoolsWidget.js ---
-const { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, QuotaPoolsWidget } = (() => {
+const { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, formatAccountTierBadge, QuotaPoolsWidget } = (() => {
 /**
  * @fileoverview Standalone decoupled Quota Pools Widget (`QuotaPoolsWidget.js`).
  * Renders dynamic multi-pool quota bars (Gemini, Argon/Carbon, Claude & GPT)
@@ -18293,7 +18340,7 @@ function syncQuotaWindowMeter({
     const rsvWidth = +Math.min(Math.max(0, 100 - actualWidth), rsvVal).toFixed(2);
     patchStyleVar(fillEl, '--fill-w', `${actualWidth}%`);
     patchStyleVar(fillReservedEl, '--reserved-w', `${rsvWidth}%`);
-    patchClasses(fillReservedEl, { 'is-active': true });
+    patchClasses(fillReservedEl, { 'is-active': true, 'has-sep': actualWidth > 0 });
   } else {
     patchText(
       metaBeforeEl,
@@ -18313,7 +18360,7 @@ function syncQuotaWindowMeter({
     patchAttr(trackEl, 'title', null);
     patchStyleVar(fillEl, '--fill-w', `${Math.min(100, usedVal)}%`);
     patchStyleVar(fillReservedEl, '--reserved-w', '0%');
-    patchClasses(fillReservedEl, { 'is-active': false });
+    patchClasses(fillReservedEl, { 'is-active': false, 'has-sep': false });
   }
 
   patchClasses(fillEl, {
@@ -18453,6 +18500,45 @@ function quotaPoolRowSig(item, idx) {
   return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
 }
 
+/**
+ * 格式化可用额度面板右上角的账号订阅徽章（区分 Ultra 5x / 20x，并对 Pro / Free 去重）。
+ *
+ * @param {object|null|undefined} account
+ * @returns {string}
+ */
+function formatAccountTierBadge(account) {
+  const tierName = String(account?.tierName || '').trim() || 'Google AI';
+  const tierId = String(account?.tierId || '').trim().toLowerCase();
+  const explicitMult = String(account?.tierMultiplier || '').trim();
+  const inferredMult =
+    explicitMult ||
+    (/(?:^|[-_\s])5x(?:$|[-_\s])|ultra[-_]?lite/i.test(`${tierId} ${tierName}`)
+      ? '5x'
+      : /(?:^|[-_\s])20x(?:$|[-_\s])/i.test(`${tierId} ${tierName}`) || tierId === 'g1-ultra-tier'
+        ? '20x'
+        : '');
+  const rawPlan = String(account?.planName || '').trim();
+  const isUltra = /\bultra\b/i.test(tierName) || /ultra/i.test(tierId);
+
+  if (isUltra) {
+    if (inferredMult) {
+      const hasMultInTier = new RegExp(`(?:^|\\s|·)${inferredMult}(?:$|\\s)`, 'i').test(tierName);
+      return hasMultInTier ? tierName : `${tierName} · ${inferredMult}`;
+    }
+    if (rawPlan && !/^(?:pro|ultra)$/i.test(rawPlan)) {
+      return `${tierName} · ${rawPlan}`;
+    }
+    return tierName;
+  }
+
+  if (!rawPlan) return tierName;
+  const escapedPlan = rawPlan.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (new RegExp(`(?:^|\\s|·)${escapedPlan}(?:$|\\s)`, 'i').test(tierName)) {
+    return tierName;
+  }
+  return `${tierName} · ${rawPlan}`;
+}
+
 const QuotaPoolsWidget = defineComponent({
   name: 'QuotaPoolsWidget',
   setup({ props }) {
@@ -18475,6 +18561,23 @@ const QuotaPoolsWidget = defineComponent({
       });
     }
 
+    const legendActualTextEl = h('span', { text: t('quota.legendActual') });
+    const legendReservedTextEl = h('span', { text: t('quota.legendReserved') });
+    const reserveLegendEl = h(
+      'div',
+      { className: 'quota-reserve-legend', hidden: true },
+      [
+        h('span', { className: 'quota-legend-item' }, [
+          h('span', { className: 'quota-legend-line is-actual', 'aria-hidden': 'true' }),
+          legendActualTextEl,
+        ]),
+        h('span', { className: 'quota-legend-item' }, [
+          h('span', { className: 'quota-legend-line is-reserved', 'aria-hidden': 'true' }),
+          legendReservedTextEl,
+        ]),
+      ]
+    );
+
     const quotaPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
@@ -18484,11 +18587,15 @@ const QuotaPoolsWidget = defineComponent({
         tierBadge,
       ]),
       poolsListEl,
+      reserveLegendEl,
     ]);
 
     function update({ data, minuteTick } = {}) {
       patchText(titleTextEl, t('module.quotas'));
+      patchText(legendActualTextEl, t('quota.legendActual'));
+      patchText(legendReservedTextEl, t('quota.legendReserved'));
       if (!data) {
+        reserveLegendEl.hidden = true;
         if (compactHover) {
           patchKeyedList(poolsListEl, buildQuotaPoolItems(null, 0, { isPending: true }), {
             keyFn: (item) => item.key,
@@ -18502,11 +18609,9 @@ const QuotaPoolsWidget = defineComponent({
 
       const quotas = data.quotas || {};
       const showReserved = data.settings?.experimentalQuotaReservation === true;
+      reserveLegendEl.hidden = !showReserved;
       const effTick = Number.isFinite(minuteTick) ? minuteTick : Math.floor(Date.now() / 30000);
-      patchText(
-        tierBadge,
-        `${data.account?.tierName || 'Google AI'} · ${data.account?.planName || 'Pro'}`
-      );
+      patchText(tierBadge, formatAccountTierBadge(data.account));
       patchKeyedList(poolsListEl, buildQuotaPoolItems(quotas, effTick, { showReserved }), {
         keyFn: (item) => item.key,
         sigFn: quotaPoolRowSig,
@@ -18521,7 +18626,7 @@ const QuotaPoolsWidget = defineComponent({
     };
   },
 });
-return { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, QuotaPoolsWidget };
+return { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, formatAccountTierBadge, QuotaPoolsWidget };
 })();
 
 // --- src/components/widgets/LiveActivityWidget.js ---
@@ -22453,7 +22558,11 @@ const { buildStructurePreviewTelemetry } = (() => {
  */
 
 
-function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) {
+function buildStructurePreviewTelemetry(
+  baseSettings = {},
+  draftOverrides = {},
+  { includeArgonPool = false } = {}
+) {
   const anchorMinMs = Math.floor(Date.now() / 60000) * 60000;
   const reset5hIso = new Date(anchorMinMs + (2 * 60 + 42) * 60000).toISOString();
   const resetWkIso = new Date(anchorMinMs + (4 * 24 * 60 + 180) * 60000).toISOString();
@@ -22807,8 +22916,10 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
   return {
     settings: mergedSettings,
     account: {
+      tierId: 'g1-ultra-lite-tier',
       tierName: 'Google AI Ultra',
-      planName: 'Pro',
+      tierMultiplier: '5x',
+      planName: '5x',
       aiCredits: 0,
     },
     quotas: {
@@ -22846,6 +22957,21 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
           cycle5h: { tokens: 1754800, costUsd: 1.28, calls: 24 },
           cycleWeekly: { tokens: 14200000, costUsd: 11.4, calls: 186 },
         },
+        ...(includeArgonPool
+          ? [
+              {
+                poolKey: 'Argon',
+                poolLabel: 'Gemini 4 Argon',
+                family: 'Argon',
+                has5h: false,
+                hasWeekly: true,
+                weeklyUsedPct: 58,
+                weeklyRemainingPct: 42,
+                weeklyResetTime: resetWkIso,
+                cycleWeekly: { tokens: 4200000, costUsd: 6.4, calls: 48 },
+              },
+            ]
+          : []),
         {
           poolKey: 'Claude & GPT',
           poolLabel: 'Claude & GPT',
@@ -25439,6 +25565,15 @@ function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
         pillPct: pct,
       };
     }
+    case 'argon_weekly': {
+      const pct = quotaPct('argon_weekly', 42);
+      return {
+        prefix: isEn ? 'Aw ' : 'A周 ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
     case 'claude_5h': {
       const pct = quotaPct('claude_5h', 32);
       return {
@@ -25498,6 +25633,7 @@ const SettingsStructureTab = defineComponent({
     let latestWindowBridge = null;
     let latestCliStatusLine = null;
     let latestHostPlatform = 'win32';
+    let latestQuotas = null;
 
     function getEffectiveDraftCliSlots() {
       return resolveEffectiveClientCliStatusLineSlots({
@@ -25512,25 +25648,34 @@ const SettingsStructureTab = defineComponent({
     }
 
     function buildDraftTelemetry() {
-      return buildStructurePreviewTelemetry(latestSettings, {
-        windowMountMode: draftWindowMountMode,
-        enableWindowOverlay: draftWindowMountMode !== 'sidebar',
-        popoverWidthMode: draftPopoverWidthMode,
-        popoverWidth: draftPopoverWidth,
-        enableCliStatusLine: draftEnableCliStatusLine,
-        showTopbarMultiSession: draftShowTopbarMulti,
-        contextAgentMode: draftContextAgentMode,
-        topbarCapsuleSlots: draftTopbarSlots,
-        hoverModules: draftHoverModules,
-        overviewModules: draftOverviewModules,
-        overviewMetrics: draftOverviewMetrics,
-        showStepTurnRail: draftShowStepTurnRail,
-        showStepAgentBadge: draftShowStepAgentBadge,
-        showStepSpeedColor: draftShowStepSpeedColor,
-        showStepFilterToolbar: draftShowStepFilterToolbar,
-        stepTokenComboFormat: draftStepTokenComboFormat,
-        stepTableColumns: draftStepColumns,
-      });
+      const effectiveCliSlots = getEffectiveDraftCliSlots();
+      const includeArgonPool =
+        hasArgonWeeklyQuotaPool(latestQuotas) ||
+        draftTopbarSlots.includes('argon_weekly') ||
+        effectiveCliSlots.includes('argon_weekly');
+      return buildStructurePreviewTelemetry(
+        latestSettings,
+        {
+          windowMountMode: draftWindowMountMode,
+          enableWindowOverlay: draftWindowMountMode !== 'sidebar',
+          popoverWidthMode: draftPopoverWidthMode,
+          popoverWidth: draftPopoverWidth,
+          enableCliStatusLine: draftEnableCliStatusLine,
+          showTopbarMultiSession: draftShowTopbarMulti,
+          contextAgentMode: draftContextAgentMode,
+          topbarCapsuleSlots: draftTopbarSlots,
+          hoverModules: draftHoverModules,
+          overviewModules: draftOverviewModules,
+          overviewMetrics: draftOverviewMetrics,
+          showStepTurnRail: draftShowStepTurnRail,
+          showStepAgentBadge: draftShowStepAgentBadge,
+          showStepSpeedColor: draftShowStepSpeedColor,
+          showStepFilterToolbar: draftShowStepFilterToolbar,
+          stepTokenComboFormat: draftStepTokenComboFormat,
+          stepTableColumns: draftStepColumns,
+        },
+        { includeArgonPool }
+      );
     }
 
     async function persistStructurePatch(sectionComp, patchObj, successKey = 'settings.saved') {
@@ -26023,7 +26168,10 @@ const SettingsStructureTab = defineComponent({
       const effectiveCliSlots = getEffectiveDraftCliSlots();
       cliSlotsList.refs.setProps({
         items: effectiveCliSlots,
-        options: getCapsuleMetricOptions(),
+        options: getCapsuleMetricOptions({
+          quotas: latestQuotas,
+          selectedSlots: effectiveCliSlots,
+        }),
         addBtnTextFn: (count, max) => t('settings.str.addCliSlot', { count, max }),
       });
       const preservedCustom = Boolean(latestCliStatusLine?.preservedCustom);
@@ -26062,7 +26210,10 @@ const SettingsStructureTab = defineComponent({
       refreshCliPreview();
       topbarSlotsList.refs.setProps({
         items: draftTopbarSlots,
-        options: getCapsuleMetricOptions(),
+        options: getCapsuleMetricOptions({
+          quotas: latestQuotas,
+          selectedSlots: draftTopbarSlots,
+        }),
         addBtnTextFn: (count, max) => t('settings.str.addCapsuleSlot', { count, max }),
       });
       mountSection.refs.setBadge(
@@ -26674,13 +26825,15 @@ const SettingsStructureTab = defineComponent({
       settings,
       windowBridge = latestWindowBridge,
       hostPlatform = latestHostPlatform,
-      cliStatusLine = latestCliStatusLine
+      cliStatusLine = latestCliStatusLine,
+      quotas = latestQuotas
     ) {
       if (!settings) return;
       latestSettings = settings;
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
       if (cliStatusLine !== undefined) latestCliStatusLine = cliStatusLine;
+      if (quotas !== undefined) latestQuotas = quotas;
       draftWindowMountMode = normalizeClientWindowMountMode(
         settings.windowMountMode,
         settings.enableWindowOverlay
@@ -32736,7 +32889,8 @@ const SettingsView = defineComponent({
             settings,
             telemetry?.windowBridge,
             telemetry?.hostPlatform,
-            telemetry?.cliStatusLine
+            telemetry?.cliStatusLine,
+            telemetry?.quotas
           );
         }
       } else if (settingsSubTab === 'other') {

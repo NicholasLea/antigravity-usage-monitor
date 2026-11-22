@@ -1038,7 +1038,9 @@ export function isEquivalentTelemetry(prev, next) {
     prev.account?.email !== next.account?.email ||
     prev.account?.name !== next.account?.name ||
     prev.account?.status !== next.account?.status ||
+    prev.account?.tierId !== next.account?.tierId ||
     prev.account?.tierName !== next.account?.tierName ||
+    prev.account?.tierMultiplier !== next.account?.tierMultiplier ||
     prev.account?.planName !== next.account?.planName ||
     prev.account?.aiCredits !== next.account?.aiCredits
   ) {

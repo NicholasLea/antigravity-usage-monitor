@@ -281,16 +281,7 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
   linePath.setAttribute('fill', 'none');
   svg.appendChild(linePath);
 
-  const dotsGroup = document.createElementNS(SVG_NS, 'g');
-  dotsGroup.setAttribute('class', 'trend-dots-group');
-  svg.appendChild(dotsGroup);
-
-  const peakDot = document.createElementNS(SVG_NS, 'circle');
-  peakDot.setAttribute('r', '3');
-  peakDot.setAttribute('class', 'trend-peak-dot');
-  svg.appendChild(peakDot);
-
-  // 悬停十字准星与焦点圆点
+  // 悬停十字准星及焦点圆点
   const hoverLine = document.createElementNS(SVG_NS, 'line');
   hoverLine.setAttribute('class', 'trend-hover-line');
   hoverLine.setAttribute('y1', '12');
@@ -1129,25 +1120,9 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
         xAxisEl.appendChild(tickEl);
         tickElsByIdx.set(tIdx, tickEl);
       }
-
-      // 渲染采样点小圆点（当点数 <= 36 时展示，突出有消耗的整点/日期）
-      while (dotsGroup.firstChild) dotsGroup.removeChild(dotsGroup.firstChild);
-      if (pts.length <= 36) {
-        for (let i = 0; i < pts.length; i++) {
-          if (pts[i].tokens <= 0) continue;
-          const dot = document.createElementNS(SVG_NS, 'circle');
-          dot.setAttribute('cx', pts[i].x.toFixed(1));
-          dot.setAttribute('cy', pts[i].y.toFixed(1));
-          dot.setAttribute('r', '2');
-          dot.setAttribute('class', 'trend-node-dot');
-          dotsGroup.appendChild(dot);
-        }
-      }
     }
 
     const peakPt = pts[peakIdx] || { x: viewW / 2, y: BOTTOM_Y };
-    patchAttr(peakDot, 'cx', peakPt.x.toFixed(1));
-    patchAttr(peakDot, 'cy', peakPt.y.toFixed(1));
 
     const peakSlot = slots[peakIdx];
     const peakText =

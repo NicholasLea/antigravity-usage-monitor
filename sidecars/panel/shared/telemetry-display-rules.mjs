@@ -96,8 +96,40 @@ export function formatCompactCapsuleTtft(ttftSec) {
   return `${Math.round(val)}s`;
 }
 
+function readPoolWeeklyRemainingPct(pool) {
+  if (!pool || typeof pool !== 'object') return null;
+  const raw = pool.weeklyRemainingPct ?? pool.remainingWeeklyPct;
+  return raw != null && Number.isFinite(Number(raw)) ? Number(raw) : null;
+}
+
+function isArgonPoolObject(pool) {
+  if (!pool || typeof pool !== 'object') return false;
+  if (pool.poolKey === 'Argon' || pool.family === 'Argon') return true;
+  return /\bargon\b/i.test(String(pool.poolKey || pool.poolLabel || pool.family || ''));
+}
+
 /**
- * 解析胶囊指定配额槽位（`quota_auto` / `gemini_5h` / `gemini_weekly` / `claude_5h` / `claude_weekly`）的整数剩余百分比。
+ * 判断当前配额摘要中是否存在独立的 Argon 周限配额池（如 Google AI Pro 账号）。
+ *
+ * @param {object|null|undefined} quotas
+ * @returns {boolean}
+ */
+export function hasArgonWeeklyQuotaPool(quotas) {
+  if (!quotas || typeof quotas !== 'object') return false;
+  const pools = Array.isArray(quotas.pools) ? quotas.pools : [];
+  const argonPool = pools.find(isArgonPoolObject);
+  if (argonPool && readPoolWeeklyRemainingPct(argonPool) != null) {
+    return true;
+  }
+  const activePool = quotas.activePool;
+  if (activePool && isArgonPoolObject(activePool) && readPoolWeeklyRemainingPct(activePool) != null) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 解析胶囊指定配额槽位（`quota_auto` / `gemini_5h` / `gemini_weekly` / `argon_weekly` / `claude_5h` / `claude_weekly`）的整数剩余百分比。
  *
  * @param {object|null|undefined} quotas
  * @param {string} slotKey
@@ -114,8 +146,9 @@ export function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     if (activePool && Number.isFinite(Number(activePool.remainingPct))) {
       candidates.push(Number(activePool.remainingPct));
     }
-    if (activePool && Number.isFinite(Number(activePool.weeklyRemainingPct))) {
-      candidates.push(Number(activePool.weeklyRemainingPct));
+    const activeWk = readPoolWeeklyRemainingPct(activePool);
+    if (activeWk != null) {
+      candidates.push(activeWk);
     }
     if (!candidates.length && weekly && Number.isFinite(Number(weekly.remainingPct))) {
       candidates.push(Number(weekly.remainingPct));
@@ -123,13 +156,22 @@ export function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     if (!candidates.length && pools.length > 0) {
       for (const p of pools) {
         if (p && Number.isFinite(Number(p.remainingPct))) candidates.push(Number(p.remainingPct));
-        if (p && Number.isFinite(Number(p.weeklyRemainingPct))) {
-          candidates.push(Number(p.weeklyRemainingPct));
-        }
+        const pWk = readPoolWeeklyRemainingPct(p);
+        if (pWk != null) candidates.push(pWk);
       }
     }
     if (!candidates.length) return null;
     return Math.max(0, Math.min(100, Math.round(Math.min(...candidates))));
+  }
+
+  if (slotKey === 'argon_weekly') {
+    const argonPool = pools.find(isArgonPoolObject);
+    let argonPct = readPoolWeeklyRemainingPct(argonPool);
+    if (argonPct == null && isArgonPoolObject(activePool)) {
+      argonPct = readPoolWeeklyRemainingPct(activePool);
+    }
+    if (argonPct == null || !Number.isFinite(argonPct)) return null;
+    return Math.max(0, Math.min(100, Math.round(argonPct)));
   }
 
   const isClaude = slotKey.startsWith('claude_');
@@ -140,11 +182,11 @@ export function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     const claudePool =
       pools.find((p) => p?.poolKey === 'Claude & GPT') ||
       pools.find((p) => isThirdPartyPoolText(p?.poolKey || p?.poolLabel || ''));
-    const cand = isWeekly ? claudePool?.weeklyRemainingPct : claudePool?.remainingPct;
+    const cand = isWeekly ? readPoolWeeklyRemainingPct(claudePool) : claudePool?.remainingPct;
     if (cand != null && Number.isFinite(Number(cand))) {
       rawPct = Number(cand);
     } else if (activePool && isThirdPartyPoolText(activePool.family || activePool.poolLabel || '')) {
-      const fb = isWeekly ? activePool.weeklyRemainingPct : activePool.remainingPct;
+      const fb = isWeekly ? readPoolWeeklyRemainingPct(activePool) : activePool.remainingPct;
       if (fb != null && Number.isFinite(Number(fb))) rawPct = Number(fb);
     }
   } else {
@@ -158,12 +200,12 @@ export function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     const geminiFamilyPools = pools.filter((p) =>
       /gemini|carbon|argon/i.test(String(p?.poolKey || p?.poolLabel || ''))
     );
-    const primaryCand = isWeekly ? stdGemini?.weeklyRemainingPct : stdGemini?.remainingPct;
+    const primaryCand = isWeekly ? readPoolWeeklyRemainingPct(stdGemini) : stdGemini?.remainingPct;
     if (primaryCand != null && Number.isFinite(Number(primaryCand))) {
       rawPct = Number(primaryCand);
     } else {
       const familyVals = geminiFamilyPools
-        .map((p) => (isWeekly ? p?.weeklyRemainingPct : p?.remainingPct))
+        .map((p) => (isWeekly ? readPoolWeeklyRemainingPct(p) : p?.remainingPct))
         .filter((v) => v != null && Number.isFinite(Number(v)))
         .map(Number);
       if (familyVals.length > 0) {
@@ -172,7 +214,7 @@ export function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
         activePool &&
         !isThirdPartyPoolText(activePool.family || activePool.poolLabel || '')
       ) {
-        const fb = isWeekly ? activePool.weeklyRemainingPct : activePool.remainingPct;
+        const fb = isWeekly ? readPoolWeeklyRemainingPct(activePool) : activePool.remainingPct;
         if (fb != null && Number.isFinite(Number(fb))) rawPct = Number(fb);
       }
       if (

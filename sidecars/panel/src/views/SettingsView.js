@@ -108,7 +108,8 @@ export const SettingsView = defineComponent({
             settings,
             telemetry?.windowBridge,
             telemetry?.hostPlatform,
-            telemetry?.cliStatusLine
+            telemetry?.cliStatusLine,
+            telemetry?.quotas
           );
         }
       } else if (settingsSubTab === 'other') {

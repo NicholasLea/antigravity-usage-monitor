@@ -896,18 +896,29 @@
   stroke: var(--metric-danger);
 }
 
-.sstep-anomaly-dot,
-.sstep-scatter-dot.is-anomaly {
-  fill: var(--surface-panel);
-  fill-opacity: 1;
+.sstep-anomaly-dot {
   stroke: var(--metric-warn);
-  stroke-width: 1.6;
+  stroke-width: 1.5;
+  stroke-opacity: 0.82;
+  stroke-linecap: round;
   pointer-events: none;
 }
 
-.sstep-anomaly-dot.is-danger,
-.sstep-scatter-dot.is-anomaly.is-danger {
+.sstep-anomaly-dot.is-danger {
   stroke: var(--metric-danger);
+  stroke-opacity: 0.92;
+}
+
+.sstep-scatter-dot.is-anomaly {
+  fill: var(--metric-warn);
+  fill-opacity: 0.88;
+  stroke: none;
+  pointer-events: none;
+}
+
+.sstep-scatter-dot.is-anomaly.is-danger {
+  fill: var(--metric-danger);
+  fill-opacity: 0.92;
 }
 
 .trend-tip-anomaly {

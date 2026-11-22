@@ -1854,8 +1854,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.ok(previewCellSubs.includes('有效 23/24 步'), 'Preview Avg TPS card shows populated valid sample ratio');
     assert.equal(
       overviewPreviewHostEl.children[2].querySelector('.panel-meta').textContent,
-      'Google AI Ultra · Pro',
-      'Preview quota badge matches real tier · plan format'
+      'Google AI Ultra · 5x',
+      'Preview quota badge displays Ultra 5x multiplier instead of legacy Pro'
     );
 
     const [ovModWrap, ovMetricWrap] = sec2.querySelectorAll('.editable-slot-wrap');

@@ -857,7 +857,9 @@ test('StepsDetailView total summary cards, session anomaly strip, click-to-filte
       metric: 'tps',
     });
     const lineAnomalyDots = lineChart.el.querySelectorAll('.sstep-anomaly-dot');
-    assert.equal(lineAnomalyDots.length, 1, 'Line chart renders anomaly ring marker even when steps > 64');
+    assert.equal(lineAnomalyDots.length, 1, 'Line chart renders bottom rug tick marker even when steps > 64');
+    assert.equal(lineAnomalyDots[0].tagName.toLowerCase(), 'line');
+    assert.equal(lineAnomalyDots[0].classList.contains('sstep-anomaly-tick'), true);
     assert.equal(lineAnomalyDots[0].classList.contains('is-danger'), true);
 
     fitChart = createModelFitChart();
@@ -868,7 +870,8 @@ test('StepsDetailView total summary cards, session anomaly strip, click-to-filte
       metric: 'tps',
     });
     const fitAnomalyDots = fitChart.el.querySelectorAll('.sstep-scatter-dot.is-anomaly');
-    assert.equal(fitAnomalyDots.length, 1, 'Fit scatter chart renders anomaly ring overlay without overdraw drop');
+    assert.equal(fitAnomalyDots.length, 1, 'Fit scatter chart renders solid matching-size anomaly dot without overdraw drop');
+    assert.equal(fitAnomalyDots[0].getAttribute('r'), '2.1');
     assert.equal(fitAnomalyDots[0].classList.contains('is-danger'), true);
     assert.ok(fitChart.el.querySelector('.trend-tip-anomaly'), 'Fit chart tooltip mounts linked anomaly diagnostic row');
   } finally {

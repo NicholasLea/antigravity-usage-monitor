@@ -30,6 +30,7 @@ import {
   formatCompactCapsuleCost,
   formatCompactCapsuleTtft,
   formatCompactTokens,
+  hasArgonWeeklyQuotaPool,
   resolveCapsuleQuotaSlotPct,
 } from '../shared/telemetry-display-rules.mjs';
 
@@ -810,6 +811,7 @@ function cliBuildBarGauge(label, pct, { fillFg = SGR_FG_ACCENT, valFg = SGR_FG_B
 function cliResolveQuotaSlotPrefix(metricKey, isEn) {
   if (metricKey === 'gemini_5h') return 'G5h';
   if (metricKey === 'gemini_weekly') return isEn ? 'Gw' : 'G周';
+  if (metricKey === 'argon_weekly') return isEn ? 'Aw' : 'A周';
   if (metricKey === 'claude_5h') return 'C5h';
   if (metricKey === 'claude_weekly') return isEn ? 'Cw' : 'C周';
   return isEn ? '5h' : '余';
@@ -1062,6 +1064,7 @@ const CLI_STATUS_SLOT_KEEP_PRIORITY = Object.freeze({
   avg_tps: 45,
   session_tokens: 40,
   gemini_weekly: 35,
+  argon_weekly: 33,
   claude_weekly: 30,
 });
 
@@ -1163,8 +1166,14 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
 
   // 新会话尚无任何完成步骤（stepCount === 0）时，隐藏纯占位性的 "--s" / "--" 槽位，避免刚启动显得满屏缺数据
   let activeSlots = rawSlots;
+  if (slotCtx.hasTelemetry !== false && activeSlots.includes('argon_weekly') && !hasArgonWeeklyQuotaPool(slotCtx.quotas)) {
+    const withoutArgon = activeSlots.filter((key) => key !== 'argon_weekly');
+    if (withoutArgon.length > 0) {
+      activeSlots = withoutArgon;
+    }
+  }
   if (slotCtx.stepCount === 0) {
-    const filtered = rawSlots.filter(
+    const filtered = activeSlots.filter(
       (key) => key === 'tps' || cliStatusHasRenderableValue(key, slotCtx)
     );
     if (filtered.length > 0) {

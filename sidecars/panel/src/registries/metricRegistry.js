@@ -24,17 +24,28 @@ import { OVERVIEW_METRIC_KEYS, TOPBAR_SLOT_KEYS } from '../../shared/settings-no
 import {
   formatCompactCapsuleCost,
   formatCompactCapsuleTtft,
+  hasArgonWeeklyQuotaPool,
   resolveCapsuleQuotaSlotPct,
 } from '../../shared/telemetry-display-rules.mjs';
 
-export { OVERVIEW_METRIC_KEYS, formatCompactCapsuleCost, formatCompactCapsuleTtft };
+export {
+  OVERVIEW_METRIC_KEYS,
+  formatCompactCapsuleCost,
+  formatCompactCapsuleTtft,
+  hasArgonWeeklyQuotaPool,
+};
 export const CAPSULE_METRIC_KEYS = TOPBAR_SLOT_KEYS;
 
-export function getCapsuleMetricOptions() {
-  return CAPSULE_METRIC_KEYS.map((key) => ({
-    value: key,
-    label: t(`capMetric.${key}`),
-  }));
+export function getCapsuleMetricOptions({ quotas = null, selectedSlots = [] } = {}) {
+  const showArgonWeekly =
+    hasArgonWeeklyQuotaPool(quotas) ||
+    (Array.isArray(selectedSlots) && selectedSlots.includes('argon_weekly'));
+  return CAPSULE_METRIC_KEYS.filter((key) => key !== 'argon_weekly' || showArgonWeekly).map(
+    (key) => ({
+      value: key,
+      label: t(`capMetric.${key}`),
+    })
+  );
 }
 
 export function getOverviewMetricOptions() {
@@ -97,17 +108,21 @@ export function resolveQuotaCapsuleSummary(quotas) {
       : `${tightest.label} ${tightest.windowTag} · ${runnerUp.label} ${runnerUp.windowTag} ${runnerPct}%`
     : `${tightest.label} · ${tightest.windowTag}`;
   const tightestIsClaude = /claude|gpt|fable|oss|third/i.test(String(tightest.label || ''));
-  const tightestIsGemini = !tightestIsClaude && /gemini|argon|carbon|neon|flash|pro/i.test(String(tightest.label || ''));
+  const tightestIsArgon = !tightestIsClaude && /\bargon\b/i.test(String(tightest.label || ''));
+  const tightestIsGemini =
+    !tightestIsClaude && !tightestIsArgon && /gemini|carbon|neon|flash|pro/i.test(String(tightest.label || ''));
   const tightestWinShort = tightest.windowTag === '5h' ? '5h' : isEnglishLocale() ? 'w' : '周';
   const poolPrefix = tightestIsClaude
     ? `C${tightestWinShort}`
-    : tightestIsGemini
-      ? `G${tightestWinShort}`
-      : tightest.windowTag === '5h'
-        ? '5h'
-        : isEnglishLocale()
-          ? 'Wk'
-          : '周';
+    : tightestIsArgon
+      ? `A${tightestWinShort}`
+      : tightestIsGemini
+        ? `G${tightestWinShort}`
+        : tightest.windowTag === '5h'
+          ? '5h'
+          : isEnglishLocale()
+            ? 'Wk'
+            : '周';
   return {
     roundedPct: rounded,
     shortText: t('capsule.quotaLeft', { pct: rounded }),
@@ -126,6 +141,7 @@ function resolveQuotaCapsulePrefix(metricKey, quotaSum) {
   const isEn = isEnglishLocale();
   if (metricKey === 'gemini_5h') return 'G5h';
   if (metricKey === 'gemini_weekly') return isEn ? 'Gw' : 'G周';
+  if (metricKey === 'argon_weekly') return isEn ? 'Aw' : 'A周';
   if (metricKey === 'claude_5h') return 'C5h';
   if (metricKey === 'claude_weekly') return isEn ? 'Cw' : 'C周';
   if (quotaSum?.poolPrefix) return quotaSum.poolPrefix;
@@ -339,6 +355,22 @@ export function resolveCapsuleMetricPresentation(metricKey, slotCtx, ringCircumf
       showRing: false,
       dashOffset: ringCircumference,
       text: valid ? formatTokens(Number(tokVal)) : '--',
+      toneClass: '',
+      running: false,
+      warn: false,
+      danger: false,
+    };
+  }
+
+  if (metricKey === 'argon_weekly' && slotCtx.hasTelemetry && !hasArgonWeeklyQuotaPool(slotCtx.quotas)) {
+    return {
+      hidden: true,
+      metric: 'none',
+      segClass: 'wm-cap-slot',
+      textClass: 'wm-slot-text',
+      showRing: false,
+      dashOffset: ringCircumference,
+      text: '',
       toneClass: '',
       running: false,
       warn: false,

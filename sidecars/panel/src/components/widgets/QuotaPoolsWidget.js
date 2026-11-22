@@ -210,7 +210,7 @@ function syncQuotaWindowMeter({
     const rsvWidth = +Math.min(Math.max(0, 100 - actualWidth), rsvVal).toFixed(2);
     patchStyleVar(fillEl, '--fill-w', `${actualWidth}%`);
     patchStyleVar(fillReservedEl, '--reserved-w', `${rsvWidth}%`);
-    patchClasses(fillReservedEl, { 'is-active': true });
+    patchClasses(fillReservedEl, { 'is-active': true, 'has-sep': actualWidth > 0 });
   } else {
     patchText(
       metaBeforeEl,
@@ -230,7 +230,7 @@ function syncQuotaWindowMeter({
     patchAttr(trackEl, 'title', null);
     patchStyleVar(fillEl, '--fill-w', `${Math.min(100, usedVal)}%`);
     patchStyleVar(fillReservedEl, '--reserved-w', '0%');
-    patchClasses(fillReservedEl, { 'is-active': false });
+    patchClasses(fillReservedEl, { 'is-active': false, 'has-sep': false });
   }
 
   patchClasses(fillEl, {
@@ -370,6 +370,45 @@ export function quotaPoolRowSig(item, idx) {
   return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
 }
 
+/**
+ * 格式化可用额度面板右上角的账号订阅徽章（区分 Ultra 5x / 20x，并对 Pro / Free 去重）。
+ *
+ * @param {object|null|undefined} account
+ * @returns {string}
+ */
+export function formatAccountTierBadge(account) {
+  const tierName = String(account?.tierName || '').trim() || 'Google AI';
+  const tierId = String(account?.tierId || '').trim().toLowerCase();
+  const explicitMult = String(account?.tierMultiplier || '').trim();
+  const inferredMult =
+    explicitMult ||
+    (/(?:^|[-_\s])5x(?:$|[-_\s])|ultra[-_]?lite/i.test(`${tierId} ${tierName}`)
+      ? '5x'
+      : /(?:^|[-_\s])20x(?:$|[-_\s])/i.test(`${tierId} ${tierName}`) || tierId === 'g1-ultra-tier'
+        ? '20x'
+        : '');
+  const rawPlan = String(account?.planName || '').trim();
+  const isUltra = /\bultra\b/i.test(tierName) || /ultra/i.test(tierId);
+
+  if (isUltra) {
+    if (inferredMult) {
+      const hasMultInTier = new RegExp(`(?:^|\\s|·)${inferredMult}(?:$|\\s)`, 'i').test(tierName);
+      return hasMultInTier ? tierName : `${tierName} · ${inferredMult}`;
+    }
+    if (rawPlan && !/^(?:pro|ultra)$/i.test(rawPlan)) {
+      return `${tierName} · ${rawPlan}`;
+    }
+    return tierName;
+  }
+
+  if (!rawPlan) return tierName;
+  const escapedPlan = rawPlan.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (new RegExp(`(?:^|\\s|·)${escapedPlan}(?:$|\\s)`, 'i').test(tierName)) {
+    return tierName;
+  }
+  return `${tierName} · ${rawPlan}`;
+}
+
 export const QuotaPoolsWidget = defineComponent({
   name: 'QuotaPoolsWidget',
   setup({ props }) {
@@ -392,6 +431,23 @@ export const QuotaPoolsWidget = defineComponent({
       });
     }
 
+    const legendActualTextEl = h('span', { text: t('quota.legendActual') });
+    const legendReservedTextEl = h('span', { text: t('quota.legendReserved') });
+    const reserveLegendEl = h(
+      'div',
+      { className: 'quota-reserve-legend', hidden: true },
+      [
+        h('span', { className: 'quota-legend-item' }, [
+          h('span', { className: 'quota-legend-line is-actual', 'aria-hidden': 'true' }),
+          legendActualTextEl,
+        ]),
+        h('span', { className: 'quota-legend-item' }, [
+          h('span', { className: 'quota-legend-line is-reserved', 'aria-hidden': 'true' }),
+          legendReservedTextEl,
+        ]),
+      ]
+    );
+
     const quotaPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
@@ -401,11 +457,15 @@ export const QuotaPoolsWidget = defineComponent({
         tierBadge,
       ]),
       poolsListEl,
+      reserveLegendEl,
     ]);
 
     function update({ data, minuteTick } = {}) {
       patchText(titleTextEl, t('module.quotas'));
+      patchText(legendActualTextEl, t('quota.legendActual'));
+      patchText(legendReservedTextEl, t('quota.legendReserved'));
       if (!data) {
+        reserveLegendEl.hidden = true;
         if (compactHover) {
           patchKeyedList(poolsListEl, buildQuotaPoolItems(null, 0, { isPending: true }), {
             keyFn: (item) => item.key,
@@ -419,11 +479,9 @@ export const QuotaPoolsWidget = defineComponent({
 
       const quotas = data.quotas || {};
       const showReserved = data.settings?.experimentalQuotaReservation === true;
+      reserveLegendEl.hidden = !showReserved;
       const effTick = Number.isFinite(minuteTick) ? minuteTick : Math.floor(Date.now() / 30000);
-      patchText(
-        tierBadge,
-        `${data.account?.tierName || 'Google AI'} · ${data.account?.planName || 'Pro'}`
-      );
+      patchText(tierBadge, formatAccountTierBadge(data.account));
       patchKeyedList(poolsListEl, buildQuotaPoolItems(quotas, effTick, { showReserved }), {
         keyFn: (item) => item.key,
         sigFn: quotaPoolRowSig,
