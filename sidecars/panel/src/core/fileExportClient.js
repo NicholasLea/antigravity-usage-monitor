@@ -10,14 +10,55 @@ import { showUiToast } from '../store/uiStore.js';
 import { callSidecarApi, isWindowOverlayMode } from './httpClient.js';
 import { triggerTextFileDownload } from './settingsBackup.js';
 import { copyPlainTextToClipboard } from './stepInspector.js';
+import { uint8ArrayToBase64 } from './xlsxBuilder.js';
 
 function isHostEmbeddedWebview() {
   if (typeof window === 'undefined') return false;
   return Boolean(window.sidecar?.fetch) || isWindowOverlayMode();
 }
 
+function triggerBinaryFileDownload(filename, bytes, mimeType) {
+  try {
+    if (
+      typeof Blob === 'undefined' ||
+      typeof URL === 'undefined' ||
+      typeof URL.createObjectURL !== 'function' ||
+      typeof document === 'undefined'
+    ) {
+      return false;
+    }
+    const blob = new Blob([bytes], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', String(filename || 'export.xlsx'));
+    a.style.display = 'none';
+    document.body?.appendChild?.(a);
+    a.click?.();
+    a.remove?.();
+    setTimeout(() => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
+    }, 1000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getPickerTypesForFilename(filename, mimeType) {
   const lower = String(filename || '').toLowerCase();
+  if (lower.endsWith('.xlsx') || String(mimeType || '').includes('spreadsheetml')) {
+    return [
+      {
+        description: 'Excel Workbook',
+        accept: {
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+        },
+      },
+    ];
+  }
   if (lower.endsWith('.csv') || String(mimeType || '').includes('csv')) {
     return [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }];
   }
@@ -175,6 +216,101 @@ export async function exportTextFileWithFeedback(
 
   // 4. 独立浏览器标准 Blob 兜底下载
   const ok = triggerTextFileDownload(safeName, text, mimeType);
+  if (ok) {
+    showUiToast({
+      message: t('export.savedBrowser', { file: safeName }),
+      detail: t('export.savedBrowserHint'),
+      tone: 'info',
+      durationMs: 5000,
+    });
+    return { ok: true, mode: 'browser', fileName: safeName };
+  }
+
+  showUiToast({
+    message: t('export.failed'),
+    tone: 'warn',
+    durationMs: 3600,
+  });
+  return { ok: false, mode: 'failed' };
+}
+
+/**
+ * 统一二进制文件导出入口（用于原生 `.xlsx` Excel 工作簿）。
+ * 优先转 Base64 经本机后端落盘到 Downloads 并展示完整路径 + 「打开位置」直达按钮。
+ *
+ * @param {string} filename
+ * @param {Uint8Array} bytes
+ * @param {string} [mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+ * @returns {Promise<{ ok: boolean, mode: 'local' | 'picker' | 'browser' | 'cancelled' | 'failed', filePath?: string, fileName?: string }>}
+ */
+export async function exportBinaryFileWithFeedback(
+  filename,
+  bytes,
+  mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+) {
+  const safeName = String(filename || 'export.xlsx');
+  if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
+    showUiToast({ message: t('export.failed'), tone: 'warn', durationMs: 3600 });
+    return { ok: false, mode: 'failed' };
+  }
+
+  const base64Content = uint8ArrayToBase64(bytes);
+  const { res: localRes } = await requestLocalBackendExport({
+    filename: safeName,
+    content: base64Content,
+    encoding: 'base64',
+    mimeType,
+  });
+  if (localRes && localRes.ok && localRes.filePath) {
+    const savedPath = String(localRes.filePath);
+    const savedName = String(localRes.fileName || safeName);
+    showUiToast({
+      message: t('export.savedLocal', { file: savedName }),
+      detail: savedPath,
+      actionLabel: t('export.openFolder'),
+      onAction: () => {
+        void revealExportedFile(savedPath);
+      },
+      tone: 'ok',
+      durationMs: 7000,
+    });
+    return { ok: true, mode: 'local', filePath: savedPath, fileName: savedName };
+  }
+
+  if (isHostEmbeddedWebview()) {
+    showUiToast({
+      message: t('export.failed'),
+      detail: t('export.hostUnavailable'),
+      tone: 'warn',
+      durationMs: 5200,
+    });
+    return { ok: false, mode: 'failed' };
+  }
+
+  if (typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function') {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: safeName,
+        types: getPickerTypesForFilename(safeName, mimeType),
+      });
+      const writable = await handle.createWritable();
+      await writable.write(bytes);
+      await writable.close();
+      const pickedName = handle.name || safeName;
+      showUiToast({
+        message: t('export.savedPicked', { file: pickedName }),
+        tone: 'ok',
+        durationMs: 4200,
+      });
+      return { ok: true, mode: 'picker', fileName: pickedName };
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        return { ok: false, mode: 'cancelled' };
+      }
+    }
+  }
+
+  const ok = triggerBinaryFileDownload(safeName, bytes, mimeType);
   if (ok) {
     showUiToast({
       message: t('export.savedBrowser', { file: safeName }),

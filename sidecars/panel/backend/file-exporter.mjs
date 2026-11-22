@@ -11,7 +11,7 @@ import path from 'node:path';
 import { DATA_DIR } from './config.mjs';
 
 export const MAX_EXPORT_FILE_BYTES = 8 * 1024 * 1024;
-export const ALLOWED_EXPORT_EXTENSIONS = Object.freeze(['.json', '.csv', '.md', '.txt']);
+export const ALLOWED_EXPORT_EXTENSIONS = Object.freeze(['.json', '.csv', '.md', '.txt', '.xlsx']);
 const ALLOWED_EXT_SET = new Set(ALLOWED_EXPORT_EXTENSIONS);
 const MAX_RECENT_EXPORT_TRACK = 64;
 
@@ -38,6 +38,7 @@ export function isAuthorizedExportPath(filePath) {
 
 function inferExtensionFromMime(mimeType) {
   const lower = String(mimeType || '').toLowerCase();
+  if (lower.includes('spreadsheetml') || lower.includes('xlsx')) return '.xlsx';
   if (lower.includes('csv')) return '.csv';
   if (lower.includes('markdown')) return '.md';
   if (lower.includes('plain')) return '.txt';
@@ -118,12 +119,33 @@ export function writeLocalExportFile(payload = {}, options = {}) {
   if (typeof payload.content !== 'string') {
     return { ok: false, status: 400, error: 'Export content must be a string' };
   }
-  const byteLen = Buffer.byteLength(payload.content, 'utf8');
-  if (byteLen > MAX_EXPORT_FILE_BYTES) {
-    return { ok: false, status: 413, error: 'Export file exceeds size limit' };
+  const isBase64 = payload.encoding === 'base64';
+  const { baseName, ext } = sanitizeLocalExportFilename(payload.filename, payload.mimeType);
+
+  let writeData;
+  let byteLen = 0;
+  if (isBase64) {
+    const cleanB64 = payload.content.replace(/\s+/g, '');
+    if (!cleanB64 || !/^[A-Za-z0-9+/=]+$/.test(cleanB64)) {
+      return { ok: false, status: 400, error: 'Invalid base64 export payload' };
+    }
+    const buf = Buffer.from(cleanB64, 'base64');
+    byteLen = buf.length;
+    if (byteLen > MAX_EXPORT_FILE_BYTES) {
+      return { ok: false, status: 413, error: 'Export file exceeds size limit' };
+    }
+    if (ext === '.xlsx' && (buf.length < 4 || buf[0] !== 0x50 || buf[1] !== 0x4b)) {
+      return { ok: false, status: 400, error: 'Invalid xlsx archive header' };
+    }
+    writeData = buf;
+  } else {
+    byteLen = Buffer.byteLength(payload.content, 'utf8');
+    if (byteLen > MAX_EXPORT_FILE_BYTES) {
+      return { ok: false, status: 413, error: 'Export file exceeds size limit' };
+    }
+    writeData = payload.content;
   }
 
-  const { baseName, ext } = sanitizeLocalExportFilename(payload.filename, payload.mimeType);
   const { dirPath, source } = resolveExportDirectory(options);
 
   let targetPath = '';
@@ -132,7 +154,11 @@ export function writeLocalExportFile(payload = {}, options = {}) {
     const candidateName = attempt === 0 ? `${baseName}${ext}` : `${baseName} (${attempt})${ext}`;
     const candidatePath = path.join(dirPath, candidateName);
     try {
-      writeFileSync(candidatePath, payload.content, { encoding: 'utf8', flag: 'wx' });
+      if (isBase64) {
+        writeFileSync(candidatePath, writeData, { flag: 'wx' });
+      } else {
+        writeFileSync(candidatePath, writeData, { encoding: 'utf8', flag: 'wx' });
+      }
       targetPath = path.resolve(candidatePath);
       finalFileName = candidateName;
       break;
@@ -150,7 +176,11 @@ export function writeLocalExportFile(payload = {}, options = {}) {
     const fallbackName = `${baseName}-${Date.now()}${ext}`;
     const fallbackPath = path.join(dirPath, fallbackName);
     try {
-      writeFileSync(fallbackPath, payload.content, { encoding: 'utf8', flag: 'wx' });
+      if (isBase64) {
+        writeFileSync(fallbackPath, writeData, { flag: 'wx' });
+      } else {
+        writeFileSync(fallbackPath, writeData, { encoding: 'utf8', flag: 'wx' });
+      }
       targetPath = path.resolve(fallbackPath);
       finalFileName = fallbackName;
     } catch (err) {

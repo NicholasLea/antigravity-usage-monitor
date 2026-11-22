@@ -1442,6 +1442,8 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.workspaceSessions': '{count} 会话',
   'cons.workspaceJumpTip': '点击跳转到该项目最近会话',
   'cons.exportMenuAria': '导出及报告选项',
+  'cons.exportXlsx': '导出 Excel (.xlsx)',
+  'cons.exportXlsxTip': '导出多工作表排版精美的 Excel 报表（自动列宽、千分位及对齐）',
   'cons.exportCsv': '导出 CSV',
   'cons.exportCsvTip': '导出当前统计区间用量明细为 CSV',
   'cons.exportCsvDone': '已导出',
@@ -1585,6 +1587,8 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.inspPromptTitle': '本轮提问',
   'steps.inspRowClickTip': '点击查看单步详情',
   'steps.exportMenuAria': '导出及报告选项',
+  'steps.exportXlsx': '导出 Excel (.xlsx)',
+  'steps.exportXlsxTip': '导出排版精美的步骤明细及模型汇总 Excel 报表',
   'steps.exportCsv': '导出 CSV',
   'steps.exportCsvTip': '导出当前步骤明细为 CSV 文件',
   'steps.exportCsvDone': '已导出',
@@ -2294,6 +2298,8 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.workspaceSessions': '{count} sessions',
   'cons.workspaceJumpTip': 'Click to inspect latest session in this project',
   'cons.exportMenuAria': 'Export and report actions',
+  'cons.exportXlsx': 'Export Excel (.xlsx)',
+  'cons.exportXlsxTip': 'Export styled multi-sheet Excel workbook with auto column width and alignment',
   'cons.exportCsv': 'Export CSV',
   'cons.exportCsvTip': 'Export current usage range as CSV',
   'cons.exportCsvDone': 'Exported',
@@ -2437,6 +2443,8 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.inspPromptTitle': 'Turn Prompt',
   'steps.inspRowClickTip': 'Click row to inspect step details',
   'steps.exportMenuAria': 'Export and report actions',
+  'steps.exportXlsx': 'Export Excel (.xlsx)',
+  'steps.exportXlsxTip': 'Export styled multi-sheet Excel workbook for steps and model summary',
   'steps.exportCsv': 'Export CSV',
   'steps.exportCsvTip': 'Export current steps table as CSV',
   'steps.exportCsvDone': 'Exported',
@@ -5742,15 +5750,927 @@ function parseImportedSettingsJson(rawText) {
 return { triggerTextFileDownload, buildExportableSettingsJson, parseImportedSettingsJson };
 })();
 
-// --- src/core/reportExporter.js ---
-const { escapeCsvCell, sanitizeExportFilename, buildStepsCsv, buildStepsMarkdownReport, buildConsumptionCsv, buildConsumptionMarkdownReport } = (() => {
+// --- src/core/xlsxBuilder.js ---
+const { uint8ArrayToBase64, buildXlsxWorkbookBytes } = (() => {
 /**
- * @fileoverview RFC-4180 防公式注入 CSV 导出及 Markdown 诊断报告生成纯函数模块 (`reportExporter.js`)。
- * 零外部依赖、单遍 O(N) 拼接，供「按步查看」和「用量统计」视图复用。
+ * @fileoverview 零外部依赖原生 Excel (`.xlsx` / ECMA-376 OOXML) 多工作表构建器 (`xlsxBuilder.js`)。
+ * 内置标准 IEEE 802.3 CRC-32 及 ZIP STORE 封装，支持：
+ * - 多 Sheet 分页、冻结首行表头、自动筛选下拉箭头；
+ * - 按中英文混合视觉宽度精确自动计算最佳列宽（彻底消除截断及 `###` / `1E+08` 科学计数法）；
+ * - 原生数字格式（整数千分位 `#,##0`、货币 `$#,##0.00` / `$#,##0.0000`、原生百分比 `0.0%`、小数 `#,##0.0`）；
+ * - 专业视觉样式（深石板蓝表头、斑马纹、汇总高亮、异常红底警示、压缩蓝底提示）；
+ * - 全部字符串采用 `inlineStr` 并剔除 XML 1.0 非法控制符，天然免疫公式注入及 Excel 损坏警告。
+ */
+
+const INVALID_XML_CTRL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g;
+const INVALID_SHEET_NAME_RE = /[\\/?*[\]:]/g;
+
+// --- 样式索引常量（对应下方 STYLES_XML 中的 cellXfs 顺序） ---
+const STYLE_TEXT_LEFT = 1;
+const STYLE_TEXT_LEFT_ALT = 2;
+const STYLE_TEXT_CENTER = 3;
+const STYLE_TEXT_CENTER_ALT = 4;
+const STYLE_TEXT_RIGHT = 5;
+const STYLE_TEXT_RIGHT_ALT = 6;
+const STYLE_INT = 7;
+const STYLE_INT_ALT = 8;
+const STYLE_DEC1 = 9;
+const STYLE_DEC1_ALT = 10;
+const STYLE_DEC2 = 11;
+const STYLE_DEC2_ALT = 12;
+const STYLE_PCT = 13;
+const STYLE_PCT_ALT = 14;
+const STYLE_USD2 = 15;
+const STYLE_USD2_ALT = 16;
+const STYLE_USD4 = 17;
+const STYLE_USD4_ALT = 18;
+const STYLE_HEADER_LEFT = 19;
+const STYLE_HEADER_CENTER = 20;
+const STYLE_HEADER_RIGHT = 21;
+const STYLE_DANGER_TEXT = 22;
+const STYLE_DANGER_CENTER = 23;
+const STYLE_DANGER_INT = 24;
+const STYLE_DANGER_DEC1 = 25;
+const STYLE_DANGER_DEC2 = 26;
+const STYLE_DANGER_PCT = 27;
+const STYLE_DANGER_USD4 = 28;
+const STYLE_INFO_TEXT = 29;
+const STYLE_INFO_CENTER = 30;
+const STYLE_INFO_INT = 31;
+const STYLE_INFO_DEC1 = 32;
+const STYLE_INFO_DEC2 = 33;
+const STYLE_INFO_PCT = 34;
+const STYLE_INFO_USD4 = 35;
+const STYLE_SUMMARY_LABEL = 36;
+const STYLE_SUMMARY_CENTER = 37;
+const STYLE_SUMMARY_TEXT_RIGHT = 38;
+const STYLE_SUMMARY_INT = 39;
+const STYLE_SUMMARY_DEC1 = 40;
+const STYLE_SUMMARY_DEC2 = 41;
+const STYLE_SUMMARY_PCT = 42;
+const STYLE_SUMMARY_USD2 = 43;
+const STYLE_SUMMARY_USD4 = 44;
+
+const CRC32_TABLE = (() => {
+  const tbl = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let k = 0; k < 8; k += 1) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    tbl[i] = c >>> 0;
+  }
+  return tbl;
+})();
+
+function computeCrc32(bytes) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function encodeUtf8Bytes(str) {
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(String(str ?? ''));
+  }
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(String(str ?? ''), 'utf8'));
+  }
+  const s = unescape(encodeURIComponent(String(str ?? '')));
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i += 1) out[i] = s.charCodeAt(i);
+  return out;
+}
+
+/**
+ * 将 `Uint8Array` 编码为标准 Base64 字符串（兼容浏览器及 Node 环境）。
+ *
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+function uint8ArrayToBase64(bytes) {
+  if (!(bytes instanceof Uint8Array)) return '';
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64');
+  }
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, slice);
+  }
+  return btoa(binary);
+}
+
+/**
+ * 标准零依赖 ZIP STORE 打包器（用于生成严格合规的 `.xlsx` OOXML 容器）。
+ *
+ * @param {Array<{ name: string, data: Uint8Array | string }>} entries
+ * @returns {Uint8Array}
+ */
+function buildZipStoreArchive(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (let i = 0; i < entries.length; i += 1) {
+    const nameBytes = encodeUtf8Bytes(entries[i].name);
+    const dataBytes =
+      entries[i].data instanceof Uint8Array
+        ? entries[i].data
+        : encodeUtf8Bytes(entries[i].data);
+    const crc = computeCrc32(dataBytes);
+    const size = dataBytes.length;
+
+    // Local File Header (30 bytes + filename + data)
+    const lh = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true); // version needed: 2.0
+    lv.setUint16(6, 0x0800, true); // UTF-8 filename flag
+    lv.setUint16(8, 0, true); // compression: STORE
+    lv.setUint16(10, 0, true); // mod time
+    lv.setUint16(12, 0x5821, true); // mod date
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, size, true);
+    lv.setUint32(22, size, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true);
+    lh.set(nameBytes, 30);
+
+    localParts.push(lh, dataBytes);
+
+    // Central Directory Header (46 bytes + filename)
+    const ch = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, 0, true);
+    cv.setUint16(14, 0x5821, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, size, true);
+    cv.setUint32(24, size, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true);
+    cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true);
+    cv.setUint32(42, offset, true);
+    ch.set(nameBytes, 46);
+    centralParts.push(ch);
+
+    offset += lh.length + dataBytes.length;
+  }
+
+  let cdSize = 0;
+  for (let i = 0; i < centralParts.length; i += 1) cdSize += centralParts[i].length;
+
+  // End of Central Directory Record (22 bytes)
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(4, 0, true);
+  ev.setUint16(6, 0, true);
+  ev.setUint16(8, entries.length, true);
+  ev.setUint16(10, entries.length, true);
+  ev.setUint32(12, cdSize, true);
+  ev.setUint32(16, offset, true);
+  ev.setUint16(20, 0, true);
+
+  const totalLen = offset + cdSize + eocd.length;
+  const archive = new Uint8Array(totalLen);
+  let pos = 0;
+  for (let i = 0; i < localParts.length; i += 1) {
+    archive.set(localParts[i], pos);
+    pos += localParts[i].length;
+  }
+  for (let i = 0; i < centralParts.length; i += 1) {
+    archive.set(centralParts[i], pos);
+    pos += centralParts[i].length;
+  }
+  archive.set(eocd, pos);
+  return archive;
+}
+
+function escapeXmlText(val) {
+  return String(val ?? '')
+    .replace(INVALID_XML_CTRL_RE, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function columnIndexToLetter(index) {
+  let n = index + 1;
+  let out = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+/**
+ * 估算文本在 Excel 单元格中的视觉字符宽度（中文/全角约占 2.05 宽，ASCII 约 1.05 宽）。
+ */
+function measureExcelVisualWidth(str) {
+  const s = String(str ?? '').replace(/\r?\n/g, ' ');
+  let w = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    const code = s.charCodeAt(i);
+    if (
+      (code >= 0x2e80 && code <= 0x9fff) ||
+      (code >= 0xac00 && code <= 0xd7af) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xff00 && code <= 0xffef)
+    ) {
+      w += 2.05;
+    } else {
+      w += 1.05;
+    }
+  }
+  return w;
+}
+
+function estimateFormattedValueWidth(val, colType) {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    if (colType === 'int') {
+      return Math.round(val).toLocaleString('en-US').length * 1.1;
+    }
+    if (colType === 'usd2') {
+      return (`$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).length * 1.1;
+    }
+    if (colType === 'usd4') {
+      return (`$${val.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`).length * 1.1;
+    }
+    if (colType === 'pct') {
+      return (`${(val * 100).toFixed(1)}%`).length * 1.1;
+    }
+    if (colType === 'dec1') {
+      return (`${val.toFixed(1)}`).length * 1.1;
+    }
+    if (colType === 'dec2') {
+      return (`${val.toFixed(2)}`).length * 1.1;
+    }
+  }
+  return measureExcelVisualWidth(String(val));
+}
+
+function sanitizeSheetName(rawName, usedNames) {
+  const base =
+    String(rawName || 'Sheet')
+      .replace(INVALID_XML_CTRL_RE, '')
+      .replace(INVALID_SHEET_NAME_RE, ' ')
+      .replace(/^'+|'+$/g, '')
+      .trim()
+      .slice(0, 31) || 'Sheet';
+  let name = base;
+  let seq = 2;
+  while (usedNames.has(name.toLowerCase())) {
+    const suffix = ` ${seq}`;
+    name = `${base.slice(0, Math.max(1, 31 - suffix.length))}${suffix}`;
+    seq += 1;
+  }
+  usedNames.add(name.toLowerCase());
+  return name;
+}
+
+function resolveHeaderStyle(col) {
+  const align =
+    col.align ||
+    (col.type === 'center'
+      ? 'center'
+      : col.type && col.type !== 'text'
+        ? 'right'
+        : 'left');
+  if (align === 'center') return STYLE_HEADER_CENTER;
+  if (align === 'right') return STYLE_HEADER_RIGHT;
+  return STYLE_HEADER_LEFT;
+}
+
+function resolveCellStyle(col, isAlt, rowTone) {
+  const colType = col.type || 'text';
+  if (rowTone === 'summary') {
+    if (colType === 'center') return STYLE_SUMMARY_CENTER;
+    if (colType === 'int') return STYLE_SUMMARY_INT;
+    if (colType === 'dec1') return STYLE_SUMMARY_DEC1;
+    if (colType === 'dec2') return STYLE_SUMMARY_DEC2;
+    if (colType === 'pct') return STYLE_SUMMARY_PCT;
+    if (colType === 'usd2') return STYLE_SUMMARY_USD2;
+    if (colType === 'usd4') return STYLE_SUMMARY_USD4;
+    if (colType === 'text_right' || col.align === 'right') return STYLE_SUMMARY_TEXT_RIGHT;
+    return STYLE_SUMMARY_LABEL;
+  }
+  if (rowTone === 'danger') {
+    if (colType === 'center') return STYLE_DANGER_CENTER;
+    if (colType === 'int') return STYLE_DANGER_INT;
+    if (colType === 'dec1') return STYLE_DANGER_DEC1;
+    if (colType === 'dec2') return STYLE_DANGER_DEC2;
+    if (colType === 'pct') return STYLE_DANGER_PCT;
+    if (colType === 'usd2' || colType === 'usd4') return STYLE_DANGER_USD4;
+    return STYLE_DANGER_TEXT;
+  }
+  if (rowTone === 'info') {
+    if (colType === 'center') return STYLE_INFO_CENTER;
+    if (colType === 'int') return STYLE_INFO_INT;
+    if (colType === 'dec1') return STYLE_INFO_DEC1;
+    if (colType === 'dec2') return STYLE_INFO_DEC2;
+    if (colType === 'pct') return STYLE_INFO_PCT;
+    if (colType === 'usd2' || colType === 'usd4') return STYLE_INFO_USD4;
+    return STYLE_INFO_TEXT;
+  }
+  if (colType === 'center') return isAlt ? STYLE_TEXT_CENTER_ALT : STYLE_TEXT_CENTER;
+  if (colType === 'text_right') return isAlt ? STYLE_TEXT_RIGHT_ALT : STYLE_TEXT_RIGHT;
+  if (colType === 'int') return isAlt ? STYLE_INT_ALT : STYLE_INT;
+  if (colType === 'dec1') return isAlt ? STYLE_DEC1_ALT : STYLE_DEC1;
+  if (colType === 'dec2') return isAlt ? STYLE_DEC2_ALT : STYLE_DEC2;
+  if (colType === 'pct') return isAlt ? STYLE_PCT_ALT : STYLE_PCT;
+  if (colType === 'usd2') return isAlt ? STYLE_USD2_ALT : STYLE_USD2;
+  if (colType === 'usd4') return isAlt ? STYLE_USD4_ALT : STYLE_USD4;
+  return isAlt ? STYLE_TEXT_LEFT_ALT : STYLE_TEXT_LEFT;
+}
+
+function buildStylesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="6">
+    <numFmt numFmtId="164" formatCode="#,##0"/>
+    <numFmt numFmtId="165" formatCode="#,##0.0"/>
+    <numFmt numFmtId="166" formatCode="#,##0.00"/>
+    <numFmt numFmtId="167" formatCode="$#,##0.00"/>
+    <numFmt numFmtId="168" formatCode="$#,##0.0000"/>
+    <numFmt numFmtId="169" formatCode="0.0%"/>
+  </numFmts>
+  <fonts count="5">
+    <font><sz val="10"/><color rgb="FF1E293B"/><name val="Microsoft YaHei UI"/></font>
+    <font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Microsoft YaHei UI"/></font>
+    <font><sz val="10"/><color rgb="FFB91C1C"/><name val="Microsoft YaHei UI"/></font>
+    <font><sz val="10"/><color rgb="FF0369A1"/><name val="Microsoft YaHei UI"/></font>
+    <font><b/><sz val="10"/><color rgb="FF0F172A"/><name val="Microsoft YaHei UI"/></font>
+  </fonts>
+  <fills count="7">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF1E293B"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF8FAFC"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFEF2F2"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF0F9FF"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFEFF6FF"/></patternFill></fill>
+  </fills>
+  <borders count="4">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border>
+      <left style="thin"><color rgb="FFE2E8F0"/></left>
+      <right style="thin"><color rgb="FFE2E8F0"/></right>
+      <top style="thin"><color rgb="FFE2E8F0"/></top>
+      <bottom style="thin"><color rgb="FFE2E8F0"/></bottom>
+      <diagonal/>
+    </border>
+    <border>
+      <left style="thin"><color rgb="FF334155"/></left>
+      <right style="thin"><color rgb="FF334155"/></right>
+      <top style="thin"><color rgb="FF334155"/></top>
+      <bottom style="medium"><color rgb="FF0F172A"/></bottom>
+      <diagonal/>
+    </border>
+    <border>
+      <left style="thin"><color rgb="FFCBD5E1"/></left>
+      <right style="thin"><color rgb="FFCBD5E1"/></right>
+      <top style="thin"><color rgb="FF94A3B8"/></top>
+      <bottom style="medium"><color rgb="FF475569"/></bottom>
+      <diagonal/>
+    </border>
+  </borders>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
+  <cellXfs count="45">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="166" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="166" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="169" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="169" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="167" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="167" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="168" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="168" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="166" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="169" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="168" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="3" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="3" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="166" fontId="3" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="169" fontId="3" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="168" fontId="3" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="6" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="6" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="6" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="166" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="169" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="167" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="168" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+  </cellXfs>
+</styleSheet>`;
+}
+
+function buildWorksheetXml(sheet, isFirstSheet) {
+  const columns = Array.isArray(sheet.columns) ? sheet.columns : [];
+  const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
+  const hasAutoFilter = sheet.autoFilter !== false;
+  const headerPad = hasAutoFilter ? 5.5 : 3.8;
+  const colWidths = columns.map((col) => {
+    const headerW = measureExcelVisualWidth(col.header || '') + headerPad;
+    return Math.max(Number(col.minWidth || 9), headerW);
+  });
+
+  const rowXmls = [];
+  // Row 1: Header
+  const headerCells = [];
+  for (let c = 0; c < columns.length; c += 1) {
+    const ref = `${columnIndexToLetter(c)}1`;
+    const styleId = resolveHeaderStyle(columns[c]);
+    headerCells.push(
+      `<c r="${ref}" t="inlineStr" s="${styleId}"><is><t xml:space="preserve">${escapeXmlText(columns[c].header || '')}</t></is></c>`
+    );
+  }
+  rowXmls.push(`<row r="1" ht="26" customHeight="1">${headerCells.join('')}</row>`);
+
+  // Data Rows
+  for (let r = 0; r < rows.length; r += 1) {
+    const rowObj = rows[r];
+    const rowValues = Array.isArray(rowObj) ? rowObj : Array.isArray(rowObj?.values) ? rowObj.values : [];
+    const rowTone = !Array.isArray(rowObj) && rowObj?.tone ? rowObj.tone : '';
+    const isAlt = r % 2 === 1;
+    const excelRowIdx = r + 2;
+    const cellXmls = [];
+
+    for (let c = 0; c < columns.length; c += 1) {
+      const col = columns[c];
+      const rawVal = rowValues[c];
+      const ref = `${columnIndexToLetter(c)}${excelRowIdx}`;
+      const isCellObj = rawVal && typeof rawVal === 'object' && !Array.isArray(rawVal);
+      const val = isCellObj ? rawVal.value : rawVal;
+      const cellCol = isCellObj && rawVal.type ? { ...col, type: rawVal.type } : col;
+      const styleId = resolveCellStyle(cellCol, isAlt, rowTone);
+
+      const estW = estimateFormattedValueWidth(val, cellCol.type) + 3.8;
+      const maxW = Number(col.maxWidth || 52);
+      if (estW > colWidths[c]) {
+        colWidths[c] = Math.min(maxW, estW);
+      }
+
+      if (val === null || val === undefined || val === '') {
+        cellXmls.push(`<c r="${ref}" s="${styleId}"/>`);
+      } else if (typeof val === 'number' && Number.isFinite(val)) {
+        cellXmls.push(`<c r="${ref}" s="${styleId}"><v>${val}</v></c>`);
+      } else {
+        const textVal = String(val);
+        cellXmls.push(
+          `<c r="${ref}" t="inlineStr" s="${styleId}"><is><t xml:space="preserve">${escapeXmlText(textVal)}</t></is></c>`
+        );
+      }
+    }
+    const rowHeight = rowTone === 'summary' ? 24 : 21;
+    rowXmls.push(`<row r="${excelRowIdx}" ht="${rowHeight}" customHeight="1">${cellXmls.join('')}</row>`);
+  }
+
+  const colsXml = columns
+    .map((_, idx) => {
+      const w = Math.max(8, Math.min(64, +colWidths[idx].toFixed(1)));
+      return `<col min="${idx + 1}" max="${idx + 1}" width="${w}" customWidth="1"/>`;
+    })
+    .join('');
+
+  const lastCol = columnIndexToLetter(Math.max(0, columns.length - 1));
+  const lastRow = Math.max(1, rows.length + 1);
+  // 若末尾包含合计行，自动筛选区自动排除合计行，避免按列排序时把合计行混入明细
+  let filterEndRow = lastRow;
+  while (filterEndRow > 1) {
+    const tailRow = rows[filterEndRow - 2];
+    if (tailRow && !Array.isArray(tailRow) && tailRow.tone === 'summary') {
+      filterEndRow -= 1;
+    } else {
+      break;
+    }
+  }
+  const autoFilterXml =
+    hasAutoFilter && columns.length > 0 && filterEndRow > 1
+      ? `<autoFilter ref="A1:${lastCol}${filterEndRow}"/>`
+      : '';
+  const tabSel = isFirstSheet ? ' tabSelected="1"' : '';
+  const freezeXml =
+    sheet.freezeHeader !== false
+      ? '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
+      : '';
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:${lastCol}${lastRow}"/>
+  <sheetViews><sheetView${tabSel} workbookViewId="0">${freezeXml}</sheetView></sheetViews>
+  <sheetFormatPr defaultRowHeight="21"/>
+  <cols>${colsXml}</cols>
+  <sheetData>${rowXmls.join('')}</sheetData>
+  ${autoFilterXml}
+</worksheet>`;
+}
+
+/**
+ * 将结构化多工作表数据编译为标准 `.xlsx` 二进制字节流 (`Uint8Array`)。
+ *
+ * @param {Array<{
+ *   name: string,
+ *   columns: Array<{ header: string, type?: 'text'|'center'|'int'|'dec1'|'dec2'|'pct'|'usd2'|'usd4', align?: 'left'|'center'|'right', minWidth?: number, maxWidth?: number }>,
+ *   rows: Array<Array<unknown> | { values: Array<unknown>, tone?: ''|'danger'|'info'|'summary' }>,
+ *   autoFilter?: boolean,
+ *   freezeHeader?: boolean,
+ * }>} sheets
+ * @returns {Uint8Array}
+ */
+function buildXlsxWorkbookBytes(sheets) {
+  const validSheets = (Array.isArray(sheets) ? sheets : []).filter(
+    (s) => s && Array.isArray(s.columns) && s.columns.length > 0
+  );
+  if (validSheets.length === 0) {
+    validSheets.push({
+      name: 'Sheet1',
+      columns: [{ header: 'Empty', type: 'text', minWidth: 14 }],
+      rows: [],
+    });
+  }
+
+  const usedNames = new Set();
+  const normalizedSheets = validSheets.map((s) => ({
+    ...s,
+    safeName: sanitizeSheetName(s.name, usedNames),
+  }));
+
+  const contentOverrides = [
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>',
+    ...normalizedSheets.map(
+      (_, idx) =>
+        `<Override PartName="/xl/worksheets/sheet${idx + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+    ),
+  ].join('');
+
+  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  ${contentOverrides}
+</Types>`;
+
+  const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+  const wbSheetsXml = normalizedSheets
+    .map(
+      (s, idx) =>
+        `<sheet name="${escapeXmlText(s.safeName)}" sheetId="${idx + 1}" r:id="rId${idx + 1}"/>`
+    )
+    .join('');
+
+  const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>${wbSheetsXml}</sheets>
+</workbook>`;
+
+  const wbRelsList = [
+    ...normalizedSheets.map(
+      (_, idx) =>
+        `<Relationship Id="rId${idx + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${idx + 1}.xml"/>`
+    ),
+    `<Relationship Id="rId${normalizedSheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`,
+  ].join('');
+
+  const wbRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${wbRelsList}
+</Relationships>`;
+
+  const archiveEntries = [
+    { name: '[Content_Types].xml', data: contentTypesXml },
+    { name: '_rels/.rels', data: rootRelsXml },
+    { name: 'xl/workbook.xml', data: workbookXml },
+    { name: 'xl/_rels/workbook.xml.rels', data: wbRelsXml },
+    { name: 'xl/styles.xml', data: buildStylesXml() },
+    ...normalizedSheets.map((s, idx) => ({
+      name: `xl/worksheets/sheet${idx + 1}.xml`,
+      data: buildWorksheetXml(s, idx === 0),
+    })),
+  ];
+
+  return buildZipStoreArchive(archiveEntries);
+}
+return { uint8ArrayToBase64, buildXlsxWorkbookBytes };
+})();
+
+// --- src/core/reportExporter.js ---
+const { escapeCsvCell, sanitizeExportFilename, buildConsumptionExportBaseName, buildStepsExportBaseName, buildStepsCsv, buildStepsXlsx, buildStepsMarkdownReport, buildConsumptionCsv, buildConsumptionXlsx, buildConsumptionMarkdownReport } = (() => {
+/**
+ * @fileoverview 原生多工作表 Excel (`.xlsx`)、RFC-4180 防公式注入 CSV 及双语 Markdown 诊断报告生成纯函数模块 (`reportExporter.js`)。
+ * 零外部依赖、单遍 O(N) 聚合，供「按步查看」和「用量统计」视图复用。
  */
 
 
 const PLAIN_SIGNED_NUMBER_RE = /^[+-]?\d+(\.\d+)?$/;
+
+const RANGE_LABELS_ZH = Object.freeze({
+  today: '今日',
+  '24h': '近24小时',
+  '7d': '近7天',
+  '14d': '近14天',
+  '30d': '近30天',
+  all: '全部时间',
+  cycle: '当前周期',
+  custom: '自定义区间',
+});
+
+const RANGE_LABELS_EN = Object.freeze({
+  today: 'Today',
+  '24h': 'Last 24 Hours',
+  '7d': 'Last 7 Days',
+  '14d': 'Last 14 Days',
+  '30d': 'Last 30 Days',
+  all: 'All Time',
+  cycle: 'Current Cycle',
+  custom: 'Custom Range',
+});
+
+const ANOMALY_LABELS_ZH = Object.freeze({
+  timeout: '流空闲 / 连接超时',
+  rate_limit: '429 限流 / 配额耗尽',
+  capacity: '503 上游算力不足',
+  disconnect: '连接中断 / 断流',
+  upstream: '上游 5xx 内部错误',
+  model_output: '模型输出 / 工具参数无效',
+  safety: '内容安全过滤',
+  auth_or_model: '请求受限 / 模型不可用',
+  error: '调用异常',
+  canceled: '用户取消',
+});
+
+const ANOMALY_LABELS_EN = Object.freeze({
+  timeout: 'Stream Idle / Connect Timeout',
+  rate_limit: '429 Rate Limit / Quota Reached',
+  capacity: '503 No Capacity Available',
+  disconnect: 'Connection Reset / Stream Interrupted',
+  upstream: 'Upstream 5xx Internal Error',
+  model_output: 'Invalid Model Output / Tool Call',
+  safety: 'Content Safety Filter',
+  auth_or_model: 'Request / Model Rejected',
+  error: 'Call Error',
+  canceled: 'Canceled by User',
+});
+
+function resolveExportEnglish(locale) {
+  if (typeof locale === 'string' && locale.trim()) {
+    return locale.trim().toLowerCase().startsWith('en');
+  }
+  return isEnglishLocale();
+}
+
+function formatExportDateTime(ms, includeSeconds = true) {
+  const n = Number(ms);
+  if (!(n > 0) || !Number.isFinite(n)) return '';
+  const d = new Date(n);
+  const pad = (v) => String(v).padStart(2, '0');
+  const base = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return includeSeconds ? `${base}:${pad(d.getSeconds())}` : base;
+}
+
+function formatExportDate(ms) {
+  const n = Number(ms);
+  if (!(n > 0) || !Number.isFinite(n)) return '';
+  const d = new Date(n);
+  const pad = (v) => String(v).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function resolveLocalizedRangeLabel(range, en) {
+  const r = range || {};
+  const key = String(r.key || '').trim().toLowerCase();
+  if (en) {
+    return RANGE_LABELS_EN[key] || r.label || key || 'All Time';
+  }
+  return r.label || RANGE_LABELS_ZH[key] || key || '全部时间';
+}
+
+function resolveRangeSpanNote(range) {
+  const startMs = Number(range?.startMs || 0);
+  const endMs = Number(range?.endMs || 0);
+  if (startMs > 0 && endMs > 0) {
+    return `${formatExportDate(startMs)} ~ ${formatExportDate(endMs)}`;
+  }
+  return '';
+}
+
+function computeCacheHitRatio(inTok, cacheTok, fallbackPct = null) {
+  const safeIn = Math.max(0, Number(inTok || 0));
+  const safeCache = Math.max(0, Number(cacheTok || 0));
+  const promptTok = safeIn + safeCache;
+  if (promptTok > 0) {
+    return Math.max(0, Math.min(1, safeCache / promptTok));
+  }
+  if (fallbackPct != null && Number.isFinite(Number(fallbackPct))) {
+    return Math.max(0, Math.min(1, Number(fallbackPct) / 100));
+  }
+  return 0;
+}
+
+function formatLocalizedAnomalyKind(kind, en, explicitLocale) {
+  const k = String(kind || 'error').trim();
+  if (explicitLocale) {
+    const dict = en ? ANOMALY_LABELS_EN : ANOMALY_LABELS_ZH;
+    if (dict[k]) return dict[k];
+  }
+  return formatAnomalyKindLabel(k);
+}
+
+function formatStepAnomaliesText(st, en, explicitLocale) {
+  const anom = st?.anomaly;
+  const count = Number(anom?.count || 0);
+  if (!(count > 0)) return '';
+  const kinds = anom?.kinds && typeof anom.kinds === 'object' ? Object.entries(anom.kinds) : [];
+  if (kinds.length > 0) {
+    return kinds
+      .filter(([, v]) => Number(v || 0) > 0)
+      .map(([k, v]) => `${formatLocalizedAnomalyKind(k, en, explicitLocale)} ×${Number(v)}`)
+      .join('；');
+  }
+  return formatLocalizedAnomalyKind(anom?.primaryKind || 'error', en, explicitLocale);
+}
+
+function formatStepAgentLabel(st, en) {
+  const explicit = String(st?.agentLabel || st?.agentBadge || '').trim();
+  if (explicit) return explicit;
+  if (st?.isSubagent) {
+    return st?.agentId ? String(st.agentId) : en ? 'Subagent' : '子代理';
+  }
+  return en ? 'Main' : '主会话';
+}
+
+function formatTrendWindowLabel(slot, isHourly) {
+  if (Number(slot?.startMs) > 0) {
+    return isHourly
+      ? formatExportDateTime(slot.startMs, false)
+      : formatExportDate(slot.startMs);
+  }
+  return String(slot?.fullLabel || slot?.label || '');
+}
+
+function summarizeStepsForExport(list, displaySettings) {
+  let sumIn = 0;
+  let sumCache = 0;
+  let sumOut = 0;
+  let sumThink = 0;
+  let sumReply = 0;
+  let sumCost = 0;
+  let sumDuration = 0;
+  let maxContext = 0;
+  let tpsSum = 0;
+  let tpsCnt = 0;
+  let ttftSum = 0;
+  let ttftCnt = 0;
+  let anomSteps = 0;
+  let anomTotal = 0;
+  let compactionCount = 0;
+  const byModel = new Map();
+
+  for (let i = 0; i < list.length; i += 1) {
+    const st = list[i];
+    if (!st) continue;
+    const inTok = Math.max(0, Number(st.inputTokens || 0));
+    const cacheTok = Math.max(0, Number(st.cacheReadTokens || 0));
+    const outTok = Math.max(0, Number(st.outputTokens || 0));
+    const thinkTok = Math.max(0, Number(st.thinkingTokens || 0));
+    const replyTok =
+      st.responseTokens != null
+        ? Math.max(0, Number(st.responseTokens))
+        : Math.max(0, outTok - thinkTok);
+    const ctxTok = Math.max(0, Number(st.contextTokens || inTok + cacheTok + outTok));
+    const cost = Number(st.costUsd || 0);
+    const dur = Number(st.durationSec || 0);
+
+    sumIn += inTok;
+    sumCache += cacheTok;
+    sumOut += outTok;
+    sumThink += thinkTok;
+    sumReply += replyTok;
+    if (ctxTok > maxContext) maxContext = ctxTok;
+    if (Number.isFinite(cost) && cost > 0) sumCost += cost;
+    if (Number.isFinite(dur) && dur > 0) sumDuration += dur;
+
+    const validTps =
+      !st.isCompactionStep && Number.isFinite(Number(st.tokPerSec)) && Number(st.tokPerSec) > 0;
+    const validTtft =
+      !st.isCompactionStep && Number.isFinite(Number(st.ttftSec)) && Number(st.ttftSec) >= 0;
+    if (validTps) {
+      tpsSum += Number(st.tokPerSec);
+      tpsCnt += 1;
+    }
+    if (validTtft) {
+      ttftSum += Number(st.ttftSec);
+      ttftCnt += 1;
+    }
+    if (st.isCompactionStep) compactionCount += 1;
+    const ac = Number(st.anomaly?.count || 0);
+    if (ac > 0) {
+      anomSteps += 1;
+      anomTotal += ac;
+    }
+
+    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const mKey = mInfo.text || 'Unknown';
+    let mAcc = byModel.get(mKey);
+    if (!mAcc) {
+      mAcc = {
+        label: mKey,
+        calls: 0,
+        inTok: 0,
+        cacheTok: 0,
+        outTok: 0,
+        cost: 0,
+        tpsSum: 0,
+        tpsCnt: 0,
+        ttftSum: 0,
+        ttftCnt: 0,
+      };
+      byModel.set(mKey, mAcc);
+    }
+    mAcc.calls += 1;
+    mAcc.inTok += inTok;
+    mAcc.cacheTok += cacheTok;
+    mAcc.outTok += outTok;
+    if (Number.isFinite(cost) && cost > 0) mAcc.cost += cost;
+    if (validTps) {
+      mAcc.tpsSum += Number(st.tokPerSec);
+      mAcc.tpsCnt += 1;
+    }
+    if (validTtft) {
+      mAcc.ttftSum += Number(st.ttftSec);
+      mAcc.ttftCnt += 1;
+    }
+  }
+
+  const sortedModels = Array.from(byModel.values()).sort(
+    (a, b) =>
+      b.cost - a.cost ||
+      b.inTok + b.cacheTok + b.outTok - (a.inTok + a.cacheTok + a.outTok)
+  );
+
+  return {
+    sumIn,
+    sumCache,
+    sumOut,
+    sumThink,
+    sumReply,
+    sumCost,
+    sumDuration,
+    maxContext,
+    tpsSum,
+    tpsCnt,
+    ttftSum,
+    ttftCnt,
+    anomSteps,
+    anomTotal,
+    compactionCount,
+    sortedModels,
+  };
+}
 
 /**
  * RFC-4180 安全转义单个 CSV 单元格，并防御电子表格公式注入（`=`, `+`, `-`, `@`, `\t`, `\r`）。
@@ -5764,11 +6684,11 @@ function escapeCsvCell(value) {
   if (str.length > 0) {
     const first = str[0];
     if (
-      (first === '=' ||
-        first === '@' ||
-        first === '\t' ||
-        first === '\r' ||
-        ((first === '+' || first === '-') && !PLAIN_SIGNED_NUMBER_RE.test(str.trim())))
+      first === '=' ||
+      first === '@' ||
+      first === '\t' ||
+      first === '\r' ||
+      ((first === '+' || first === '-') && !PLAIN_SIGNED_NUMBER_RE.test(str.trim()))
     ) {
       str = `'${str}`;
     }
@@ -5791,18 +6711,59 @@ function csvRow(cells) {
  * @param {number} [nowMs]
  * @returns {string}
  */
-function sanitizeExportFilename(baseName, ext = 'csv', nowMs = Date.now()) {
-  const cleanBase = String(baseName || 'usage-report')
-    .replace(/[\\/:*?"<>|\r\n\t]+/g, '-')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 48) || 'usage-report';
+function sanitizeExportFilename(baseName, ext = 'xlsx', nowMs = Date.now()) {
+  const cleanBase =
+    String(baseName || 'usage-report')
+      .replace(/[\\/:*?"<>|\r\n\t]+/g, '-')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 48) || 'usage-report';
   const d = new Date(Number.isFinite(nowMs) ? nowMs : Date.now());
   const pad = (n) => String(n).padStart(2, '0');
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
-  const cleanExt = String(ext || 'csv').replace(/^\.+/, '');
+  const cleanExt = String(ext || 'xlsx').replace(/^\.+/, '');
   return `${cleanBase}-${stamp}.${cleanExt}`;
+}
+
+/**
+ * 生成按当前界面语言本地化的用量统计导出文件前缀。
+ *
+ * @param {object} consumption
+ * @param {string} [fallbackRange='all']
+ * @param {{ locale?: string }} [opts]
+ * @returns {string}
+ */
+function buildConsumptionExportBaseName(
+  consumption,
+  fallbackRange = 'all',
+  { locale } = {}
+) {
+  const en = resolveExportEnglish(locale);
+  const range = consumption?.selectedRange || { key: fallbackRange };
+  const rKey = range.key || fallbackRange || 'all';
+  if (en) {
+    return `usage-${rKey}`;
+  }
+  const zhLabel = resolveLocalizedRangeLabel(range, false);
+  return `用量统计-${zhLabel}`;
+}
+
+/**
+ * 生成按当前界面语言本地化的调用明细导出文件前缀。
+ *
+ * @param {string} [title='']
+ * @param {string} [cascadeId='']
+ * @param {{ locale?: string }} [opts]
+ * @returns {string}
+ */
+function buildStepsExportBaseName(title = '', cascadeId = '', { locale } = {}) {
+  const en = resolveExportEnglish(locale);
+  const name = String(title || cascadeId || '').trim();
+  if (en) {
+    return `steps-${name || 'session'}`;
+  }
+  return `调用明细-${name || '当前会话'}`;
 }
 
 function escapeMdCell(value) {
@@ -5813,7 +6774,7 @@ function escapeMdCell(value) {
 }
 
 /**
- * 将当前步骤列表导出为带 UTF-8 BOM 的 RFC-4180 安全 CSV 字符串（Excel 打开中文零乱码）。
+ * 将当前步骤列表导出为带 UTF-8 BOM 的 RFC-4180 安全 CSV 字符串（向后兼容保留）。
  *
  * @param {Array<object>} steps
  * @param {{ displaySettings?: object, includeBom?: boolean }} [opts]
@@ -5907,115 +6868,263 @@ function buildStepsCsv(steps, { displaySettings = {}, includeBom = true } = {}) 
 }
 
 /**
- * 生成当前会话（或筛选后步骤子集）的可分享 Markdown 诊断报告。
+ * 将当前步骤列表导出为精排版、多工作表、双语本地化原生 Excel (`.xlsx`) 二进制工作簿。
+ * 包含「步骤明细 / Steps」（带异常红底标亮、压缩蓝底提示、自动列宽及数字格式）和「模型汇总 / Model Summary」。
  *
  * @param {Array<object>} steps
- * @param {{ title?: string, cascadeId?: string, displaySettings?: object, filterNote?: string }} [opts]
+ * @param {{ title?: string, cascadeId?: string, displaySettings?: object, locale?: string }} [opts]
+ * @returns {Uint8Array}
+ */
+function buildStepsXlsx(
+  steps,
+  { displaySettings = {}, locale } = {}
+) {
+  const en = resolveExportEnglish(locale);
+  const explicitLocale = typeof locale === 'string' && locale.trim().length > 0;
+  const list = Array.isArray(steps) ? steps.filter(Boolean) : [];
+  const agg = summarizeStepsForExport(list, displaySettings);
+
+  const stepRows = [];
+  for (let i = 0; i < list.length; i += 1) {
+    const st = list[i];
+    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const inTok = Math.max(0, Number(st.inputTokens || 0));
+    const cacheTok = Math.max(0, Number(st.cacheReadTokens || 0));
+    const outTok = Math.max(0, Number(st.outputTokens || 0));
+    const thinkTok = Math.max(0, Number(st.thinkingTokens || 0));
+    const replyTok =
+      st.responseTokens != null
+        ? Math.max(0, Number(st.responseTokens))
+        : Math.max(0, outTok - thinkTok);
+    const ctxTok = Math.max(0, Number(st.contextTokens || inTok + cacheTok + outTok));
+    const cacheRatio = computeCacheHitRatio(inTok, cacheTok, st.cacheHitPct);
+    const anomCount = Number(st.anomaly?.count || 0);
+    const anomText = formatStepAnomaliesText(st, en, explicitLocale);
+    const promptText = String(st.turnPrompt || st.rootTurnPrompt || '')
+      .replace(/\r?\n/g, ' ')
+      .trim();
+    const stepNum = Number.isFinite(Number(st.stepIndex)) ? Number(st.stepIndex) : i + 1;
+    const tpsVal =
+      !st.isCompactionStep && st.tokPerSec != null && Number.isFinite(Number(st.tokPerSec))
+        ? Number(st.tokPerSec)
+        : null;
+    const ttftVal =
+      !st.isCompactionStep && st.ttftSec != null && Number.isFinite(Number(st.ttftSec))
+        ? Number(st.ttftSec)
+        : null;
+    const durVal =
+      st.durationSec != null && Number.isFinite(Number(st.durationSec))
+        ? Number(st.durationSec)
+        : null;
+    const costVal =
+      st.costUsd != null && Number.isFinite(Number(st.costUsd)) ? Number(st.costUsd) : null;
+    const typeLabel = st.isCompactionStep
+      ? en
+        ? 'Compaction'
+        : '自动压缩'
+      : en
+        ? 'Normal'
+        : '常规';
+    const tone = anomCount > 0 ? 'danger' : st.isCompactionStep ? 'info' : '';
+
+    stepRows.push({
+      tone,
+      values: [
+        stepNum,
+        formatExportDateTime(st.createdAtMs, true),
+        formatStepAgentLabel(st, en),
+        mInfo.text || '—',
+        typeLabel,
+        tpsVal,
+        ttftVal,
+        durVal,
+        inTok,
+        cacheTok,
+        thinkTok,
+        replyTok,
+        outTok,
+        ctxTok,
+        cacheRatio,
+        costVal,
+        anomText,
+        promptText,
+      ],
+    });
+  }
+
+  if (list.length > 0) {
+    const overallCacheRatio = computeCacheHitRatio(agg.sumIn, agg.sumCache);
+    stepRows.push({
+      tone: 'summary',
+      values: [
+        '',
+        '',
+        '',
+        en ? `Total (${list.length} steps)` : `合计（共 ${list.length} 步）`,
+        agg.compactionCount > 0
+          ? en
+            ? `${agg.compactionCount} compact`
+            : `含 ${agg.compactionCount} 次压缩`
+          : '',
+        agg.tpsCnt > 0 ? +(agg.tpsSum / agg.tpsCnt).toFixed(1) : null,
+        agg.ttftCnt > 0 ? +(agg.ttftSum / agg.ttftCnt).toFixed(2) : null,
+        agg.sumDuration > 0 ? +agg.sumDuration.toFixed(2) : null,
+        agg.sumIn,
+        agg.sumCache,
+        agg.sumThink,
+        agg.sumReply,
+        agg.sumOut,
+        agg.maxContext,
+        overallCacheRatio,
+        agg.sumCost,
+        agg.anomTotal > 0
+          ? en
+            ? `${agg.anomTotal} events (${agg.anomSteps} steps)`
+            : `共 ${agg.anomTotal} 次（${agg.anomSteps} 步）`
+          : '',
+        '',
+      ],
+    });
+  }
+
+  const sheets = [
+    {
+      name: en ? 'Steps' : '步骤明细',
+      columns: [
+        { header: en ? 'Step' : '步骤', type: 'int', minWidth: 9 },
+        { header: en ? 'Time' : '时间', type: 'center', minWidth: 21 },
+        { header: en ? 'Agent' : '执行体', type: 'center', minWidth: 11 },
+        { header: en ? 'Model' : '模型', type: 'text', minWidth: 18, maxWidth: 38 },
+        { header: en ? 'Type' : '类型', type: 'center', minWidth: 11 },
+        { header: en ? 'Speed (tok/s)' : '速率 (tok/s)', type: 'dec1', minWidth: 14 },
+        { header: en ? 'TTFT (s)' : '首字延迟 (s)', type: 'dec2', minWidth: 13 },
+        { header: en ? 'Duration (s)' : '总耗时 (s)', type: 'dec2', minWidth: 13 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 13 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 14 },
+        { header: en ? 'Thinking' : '思考', type: 'int', minWidth: 11 },
+        { header: en ? 'Reply' : '回复', type: 'int', minWidth: 11 },
+        { header: en ? 'Output' : '总输出', type: 'int', minWidth: 12 },
+        { header: en ? 'Context' : '上下文', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Cost (USD)' : '费用 (USD)', type: 'usd4', minWidth: 14 },
+        { header: en ? 'Anomalies' : '异常诊断', type: 'text', minWidth: 14, maxWidth: 38 },
+        { header: en ? 'Turn Prompt' : '用户指令', type: 'text', minWidth: 24, maxWidth: 52 },
+      ],
+      rows: stepRows,
+    },
+  ];
+
+  if (agg.sortedModels.length > 0) {
+    const modelRows = agg.sortedModels.map((m) => {
+      const mTotal = m.inTok + m.cacheTok + m.outTok;
+      return [
+        m.label,
+        m.calls,
+        m.inTok,
+        m.cacheTok,
+        m.outTok,
+        mTotal,
+        computeCacheHitRatio(m.inTok, m.cacheTok),
+        m.tpsCnt > 0 ? +(m.tpsSum / m.tpsCnt).toFixed(1) : null,
+        m.ttftCnt > 0 ? +(m.ttftSum / m.ttftCnt).toFixed(2) : null,
+        m.cost,
+      ];
+    });
+    modelRows.push({
+      tone: 'summary',
+      values: [
+        en ? 'Total' : '合计',
+        list.length,
+        agg.sumIn,
+        agg.sumCache,
+        agg.sumOut,
+        agg.sumIn + agg.sumCache + agg.sumOut,
+        computeCacheHitRatio(agg.sumIn, agg.sumCache),
+        agg.tpsCnt > 0 ? +(agg.tpsSum / agg.tpsCnt).toFixed(1) : null,
+        agg.ttftCnt > 0 ? +(agg.ttftSum / agg.ttftCnt).toFixed(2) : null,
+        agg.sumCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Model Summary' : '模型汇总',
+      columns: [
+        { header: en ? 'Model' : '模型', type: 'text', minWidth: 20, maxWidth: 42 },
+        { header: en ? 'Steps' : '步数', type: 'int', minWidth: 10 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '总输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Avg Speed (tok/s)' : '平均速率 (tok/s)', type: 'dec1', minWidth: 16 },
+        { header: en ? 'Avg TTFT (s)' : '平均首字 (s)', type: 'dec2', minWidth: 14 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd4', minWidth: 16 },
+      ],
+      rows: modelRows,
+    });
+  }
+
+  return buildXlsxWorkbookBytes(sheets);
+}
+
+/**
+ * 生成当前会话（或筛选后步骤子集）的可分享双语 Markdown 诊断报告。
+ *
+ * @param {Array<object>} steps
+ * @param {{ title?: string, cascadeId?: string, displaySettings?: object, filterNote?: string, locale?: string }} [opts]
  * @returns {string}
  */
 function buildStepsMarkdownReport(
   steps,
-  { title = '', cascadeId = '', displaySettings = {}, filterNote = '' } = {}
+  { title = '', cascadeId = '', displaySettings = {}, filterNote = '', locale } = {}
 ) {
-  const list = Array.isArray(steps) ? steps : [];
-  let sumIn = 0;
-  let sumCache = 0;
-  let sumOut = 0;
-  let sumCost = 0;
-  let tpsSum = 0;
-  let tpsCnt = 0;
-  let ttftSum = 0;
-  let ttftCnt = 0;
-  let anomSteps = 0;
-  let anomTotal = 0;
-  let compactionCount = 0;
-  const byModel = new Map();
+  const en = resolveExportEnglish(locale);
+  const explicitLocale = typeof locale === 'string' && locale.trim().length > 0;
+  const list = Array.isArray(steps) ? steps.filter(Boolean) : [];
+  const agg = summarizeStepsForExport(list, displaySettings);
 
-  for (let i = 0; i < list.length; i += 1) {
-    const st = list[i];
-    if (!st) continue;
-    const inTok = Number(st.inputTokens || 0);
-    const cacheTok = Number(st.cacheReadTokens || 0);
-    const outTok = Number(st.outputTokens || 0);
-    const cost = Number(st.costUsd || 0);
-    sumIn += inTok;
-    sumCache += cacheTok;
-    sumOut += outTok;
-    if (Number.isFinite(cost) && cost > 0) sumCost += cost;
-    if (!st.isCompactionStep && Number.isFinite(Number(st.tokPerSec)) && Number(st.tokPerSec) > 0) {
-      tpsSum += Number(st.tokPerSec);
-      tpsCnt += 1;
-    }
-    if (!st.isCompactionStep && Number.isFinite(Number(st.ttftSec)) && Number(st.ttftSec) >= 0) {
-      ttftSum += Number(st.ttftSec);
-      ttftCnt += 1;
-    }
-    if (st.isCompactionStep) compactionCount += 1;
-    const ac = Number(st.anomaly?.count || 0);
-    if (ac > 0) {
-      anomSteps += 1;
-      anomTotal += ac;
-    }
+  const totalTok = agg.sumIn + agg.sumCache + agg.sumOut;
+  const cacheHitPct = (computeCacheHitRatio(agg.sumIn, agg.sumCache) * 100).toFixed(1);
+  const avgTps = agg.tpsCnt > 0 ? formatSpeedMetric(agg.tpsSum / agg.tpsCnt, ' tok/s') : '—';
+  const avgTtft = agg.ttftCnt > 0 ? formatMetric(agg.ttftSum / agg.ttftCnt, 's') : '—';
+  const heading = title
+    ? `# ${title}`
+    : en
+      ? '# Session Telemetry Report'
+      : '# 会话遥测诊断报告';
 
-    const mInfo = resolveModelDisplayInfo(st, displaySettings);
-    const mKey = mInfo.text || 'Unknown';
-    let mAcc = byModel.get(mKey);
-    if (!mAcc) {
-      mAcc = {
-        label: mKey,
-        calls: 0,
-        inTok: 0,
-        cacheTok: 0,
-        outTok: 0,
-        cost: 0,
-        tpsSum: 0,
-        tpsCnt: 0,
-      };
-      byModel.set(mKey, mAcc);
-    }
-    mAcc.calls += 1;
-    mAcc.inTok += inTok;
-    mAcc.cacheTok += cacheTok;
-    mAcc.outTok += outTok;
-    if (Number.isFinite(cost) && cost > 0) mAcc.cost += cost;
-    if (!st.isCompactionStep && Number.isFinite(Number(st.tokPerSec)) && Number(st.tokPerSec) > 0) {
-      mAcc.tpsSum += Number(st.tokPerSec);
-      mAcc.tpsCnt += 1;
-    }
-  }
+  const lines = en
+    ? [
+        heading,
+        '',
+        ...(cascadeId ? [`- **Session ID**: \`${cascadeId}\``] : []),
+        ...(filterNote ? [`- **Scope**: ${filterNote}`] : []),
+        `- **Steps**: ${list.length}${agg.compactionCount > 0 ? ` (${agg.compactionCount} compaction)` : ''}${agg.anomTotal > 0 ? ` · **Anomalies**: ${agg.anomTotal} across ${agg.anomSteps} steps` : ''}`,
+        `- **Total Tokens**: ${formatTokensPrecise(totalTok)} (Input ${formatTokensPrecise(agg.sumIn)} / Cache ${formatTokensPrecise(agg.sumCache)} · ${cacheHitPct}% / Output ${formatTokensPrecise(agg.sumOut)})`,
+        `- **Est. Cost**: ${formatUsd(agg.sumCost, { precise: agg.sumCost > 0 && agg.sumCost < 0.1 })} · **Avg Speed**: ${avgTps} · **Avg TTFT**: ${avgTtft}`,
+      ]
+    : [
+        heading,
+        '',
+        ...(cascadeId ? [`- **会话 ID**: \`${cascadeId}\``] : []),
+        ...(filterNote ? [`- **筛选范围**: ${filterNote}`] : []),
+        `- **调用步数**: ${list.length}${agg.compactionCount > 0 ? `（含 ${agg.compactionCount} 次自动压缩）` : ''}${agg.anomTotal > 0 ? ` · **异常事件**: ${agg.anomTotal} 次（涉及 ${agg.anomSteps} 步）` : ''}`,
+        `- **总 Token**: ${formatTokensPrecise(totalTok)}（新输入 ${formatTokensPrecise(agg.sumIn)} / 缓存读取 ${formatTokensPrecise(agg.sumCache)} · ${cacheHitPct}% / 输出 ${formatTokensPrecise(agg.sumOut)}）`,
+        `- **预估费用**: ${formatUsd(agg.sumCost, { precise: agg.sumCost > 0 && agg.sumCost < 0.1 })} · **平均速率**: ${avgTps} · **平均首字**: ${avgTtft}`,
+      ];
 
-  const totalTok = sumIn + sumCache + sumOut;
-  const promptTok = sumIn + sumCache;
-  const cacheHitPct = promptTok > 0 ? ((sumCache / promptTok) * 100).toFixed(1) : '0.0';
-  const avgTps = tpsCnt > 0 ? formatSpeedMetric(tpsSum / tpsCnt, ' tok/s') : '—';
-  const avgTtft = ttftCnt > 0 ? formatMetric(ttftSum / ttftCnt, 's') : '—';
-  const heading = title ? `# ${title}` : '# Session Telemetry Report';
-
-  const lines = [
-    heading,
-    '',
-    ...(cascadeId ? [`- **Session ID**: \`${cascadeId}\``] : []),
-    ...(filterNote ? [`- **Scope**: ${filterNote}`] : []),
-    `- **Steps**: ${list.length}${compactionCount > 0 ? ` (${compactionCount} compaction)` : ''}${anomTotal > 0 ? ` · **Anomalies**: ${anomTotal} across ${anomSteps} steps` : ''}`,
-    `- **Total Tokens**: ${formatTokensPrecise(totalTok)} (Input ${formatTokensPrecise(sumIn)} / Cache ${formatTokensPrecise(sumCache)} · ${cacheHitPct}% / Output ${formatTokensPrecise(sumOut)})`,
-    `- **Est. Cost**: ${formatUsd(sumCost, { precise: sumCost > 0 && sumCost < 0.1 })} · **Avg Speed**: ${avgTps} · **Avg TTFT**: ${avgTtft}`,
-  ];
-
-  const sortedModels = Array.from(byModel.values()).sort(
-    (a, b) => b.cost - a.cost || b.inTok + b.cacheTok + b.outTok - (a.inTok + a.cacheTok + a.outTok)
-  );
-  if (sortedModels.length > 0) {
+  if (agg.sortedModels.length > 0) {
     lines.push(
       '',
-      '## Model Breakdown',
+      en ? '## Model Breakdown' : '## 模型分布',
       '',
-      '| Model | Calls | Total Tokens | Cache Hit | Avg Speed | Est. Cost |',
+      en
+        ? '| Model | Calls | Total Tokens | Cache Hit | Avg Speed | Est. Cost |'
+        : '| 模型 | 调用次数 | 总 Token | 缓存命中率 | 平均速率 | 预估费用 |',
       '| --- | ---: | ---: | ---: | ---: | ---: |'
     );
-    for (const m of sortedModels) {
+    for (const m of agg.sortedModels) {
       const mTotal = m.inTok + m.cacheTok + m.outTok;
-      const mPrompt = m.inTok + m.cacheTok;
-      const mCache = mPrompt > 0 ? `${((m.cacheTok / mPrompt) * 100).toFixed(1)}%` : '0.0%';
+      const mCache = `${(computeCacheHitRatio(m.inTok, m.cacheTok) * 100).toFixed(1)}%`;
       const mTps = m.tpsCnt > 0 ? formatSpeedMetric(m.tpsSum / m.tpsCnt, ' tok/s') : '—';
       lines.push(
         `| ${escapeMdCell(m.label)} | ${m.calls} | ${formatTokensPrecise(mTotal)} | ${mCache} | ${mTps} | ${formatUsd(m.cost, { precise: m.cost > 0 && m.cost < 0.1 })} |`
@@ -6031,9 +7140,11 @@ function buildStepsMarkdownReport(
   if (topCostly.length > 0) {
     lines.push(
       '',
-      '## Top Costliest Steps',
+      en ? '## Top Costliest Steps' : '## 高成本步骤 Top 5',
       '',
-      '| Step | Time | Model | Speed | TTFT | Context | Cost |',
+      en
+        ? '| Step | Time | Model | Speed | TTFT | Context | Cost |'
+        : '| 步骤 | 时间 | 模型 | 速率 | 首字延迟 | 上下文 | 费用 |',
       '| ---: | --- | --- | ---: | ---: | ---: | ---: |'
     );
     for (const st of topCostly) {
@@ -6049,7 +7160,7 @@ function buildStepsMarkdownReport(
     }
   }
 
-  if (anomTotal > 0) {
+  if (agg.anomTotal > 0) {
     const anomKindTotals = new Map();
     for (const st of list) {
       if (!st?.anomaly?.kinds) continue;
@@ -6061,9 +7172,9 @@ function buildStepsMarkdownReport(
     if (anomKindTotals.size > 0) {
       const summary = Array.from(anomKindTotals.entries())
         .sort((a, b) => b[1] - a[1])
-        .map(([k, v]) => `${formatAnomalyKindLabel(k)} ×${v}`)
-        .join(', ');
-      lines.push('', `**Anomaly Summary**: ${summary}`);
+        .map(([k, v]) => `${formatLocalizedAnomalyKind(k, en, explicitLocale)} ×${v}`)
+        .join(en ? ', ' : '、');
+      lines.push('', en ? `**Anomaly Summary**: ${summary}` : `**异常汇总**: ${summary}`);
     }
   }
 
@@ -6071,7 +7182,7 @@ function buildStepsMarkdownReport(
 }
 
 /**
- * 将历史用量统计视图当前区间数据导出为结构化 CSV（含摘要、模型、项目、会话及趋势明细）。
+ * 将历史用量统计视图当前区间数据导出为结构化 CSV（向后兼容保留）。
  *
  * @param {object} consumption
  * @param {Array<object>} modelBreakdown
@@ -6094,7 +7205,18 @@ function buildConsumptionCsv(
   const trend = Array.isArray(cons.trendSeries) ? cons.trendSeries : [];
 
   const rows = [
-    csvRow(['section', 'name', 'calls', 'input_tokens', 'cache_read_tokens', 'output_tokens', 'total_tokens', 'cache_hit_pct', 'cost_usd', 'extra']),
+    csvRow([
+      'section',
+      'name',
+      'calls',
+      'input_tokens',
+      'cache_read_tokens',
+      'output_tokens',
+      'total_tokens',
+      'cache_hit_pct',
+      'cost_usd',
+      'extra',
+    ]),
     csvRow([
       'summary',
       range.label || range.key || 'all',
@@ -6182,18 +7304,509 @@ function buildConsumptionCsv(
 }
 
 /**
- * 生成历史用量统计当前区间的 Markdown 汇总报告。
+ * 将历史用量统计视图当前区间数据导出为多工作表、全自动列宽及双语本地化原生 Excel (`.xlsx`) 工作簿。
+ * 自动拆分为「用量总览 / 模型排行 / 项目排行 / 会话排行 / 时间趋势 / 客户端来源」独立分页。
  *
  * @param {object} consumption
  * @param {Array<object>} modelBreakdown
- * @param {{ displaySettings?: object }} [opts]
+ * @param {{ displaySettings?: object, locale?: string, nowMs?: number }} [opts]
+ * @returns {Uint8Array}
+ */
+function buildConsumptionXlsx(
+  consumption,
+  modelBreakdown = [],
+  { displaySettings = {}, locale, nowMs = Date.now() } = {}
+) {
+  const en = resolveExportEnglish(locale);
+  const cons = consumption || {};
+  const acc = cons.account || {};
+  const range = cons.selectedRange || {};
+  const models = mergeModelsByDisplayName(modelBreakdown || [], displaySettings, {
+    preferLabelInShort: true,
+  });
+  const workspaces = Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [];
+  const sessions = Array.isArray(cons.topConversations) ? cons.topConversations : [];
+  const sources = Array.isArray(cons.sourcesBreakdown) ? cons.sourcesBreakdown : [];
+  const trend = (Array.isArray(cons.trendSeries) ? cons.trendSeries : []).filter(
+    (slot) => slot && (Number(slot.tokens || 0) > 0 || Number(slot.calls || 0) > 0)
+  );
+
+  const rangeLabel = resolveLocalizedRangeLabel(range, en);
+  const spanNote = resolveRangeSpanNote(range);
+  const accIn = Math.max(0, Number(acc.inputTokens || 0));
+  const accCache = Math.max(0, Number(acc.cacheReadTokens || 0));
+  const accOut = Math.max(0, Number(acc.outputTokens || 0));
+  const accThink = Math.max(0, Number(acc.thinkingTokens || 0));
+  const accReply =
+    acc.responseTokens != null
+      ? Math.max(0, Number(acc.responseTokens))
+      : Math.max(0, accOut - accThink);
+  const accTotal = Math.max(0, Number(acc.totalTokens ?? accIn + accCache + accOut));
+  const accCalls = Math.max(0, Number(acc.calls || 0));
+  const accCacheRatio = computeCacheHitRatio(accIn, accCache, acc.cacheHitPct);
+  const accCost = Math.max(0, Number(acc.costUsd || 0));
+  const accSaved = Math.max(0, Number(acc.savedCostUsd || 0));
+
+  const overviewRows = [
+    [en ? 'Time Range' : '统计周期', { value: rangeLabel, type: 'text_right' }, spanNote],
+    [en ? 'Exported At' : '导出时间', { value: formatExportDateTime(nowMs, true), type: 'text_right' }, ''],
+    [
+      en ? 'Total Calls' : '调用次数',
+      { value: accCalls, type: 'int' },
+      en ? 'Completed model requests' : '有效模型请求步数',
+    ],
+    [
+      en ? 'Total Tokens' : '总 Token',
+      { value: accTotal, type: 'int' },
+      en ? 'Fresh input + Cache read + Output' : '新输入 + 缓存读取 + 总输出',
+    ],
+    [
+      en ? 'Fresh Input Tokens' : '新输入 Token',
+      { value: accIn, type: 'int' },
+      en ? 'Uncached prompt tokens' : '未命中缓存的新增提示词',
+    ],
+    [
+      en ? 'Cache Read Tokens' : '缓存读取 Token',
+      { value: accCache, type: 'int' },
+      en ? 'Prompt cache hit tokens' : '命中 Prompt Cache 的复用输入',
+    ],
+    [
+      en ? 'Total Output Tokens' : '总输出 Token',
+      { value: accOut, type: 'int' },
+      accThink > 0
+        ? en
+          ? `Thinking ${accThink.toLocaleString('en-US')} / Reply ${accReply.toLocaleString('en-US')}`
+          : `思考 ${accThink.toLocaleString('en-US')} / 回复 ${accReply.toLocaleString('en-US')}`
+        : en
+          ? 'Generated completion tokens'
+          : '模型生成输出总量',
+    ],
+  ];
+
+  if (accThink > 0 || accReply > 0) {
+    overviewRows.push(
+      [
+        en ? 'Thinking Tokens' : '思考 Token',
+        { value: accThink, type: 'int' },
+        en ? 'Reasoning output tokens' : '内部推理过程消耗',
+      ],
+      [
+        en ? 'Reply Tokens' : '回复 Token',
+        { value: accReply, type: 'int' },
+        en ? 'Visible response tokens' : '正文可见回复消耗',
+      ]
+    );
+  }
+
+  overviewRows.push(
+    [
+      en ? 'Cache Hit Rate' : '缓存命中率',
+      { value: accCacheRatio, type: 'pct' },
+      en ? 'Cache read / (Fresh input + Cache read)' : '缓存读取 / (新输入 + 缓存读取)',
+    ],
+    [
+      en ? 'Cache Saved (USD)' : '缓存节省 (USD)',
+      { value: accSaved, type: 'usd2' },
+      en ? 'Estimated savings from prompt caching' : '相比全量未缓存输入估算节省的费用',
+    ],
+    {
+      tone: 'summary',
+      values: [
+        en ? 'Est. Cost (USD)' : '预估费用 (USD)',
+        { value: accCost, type: 'usd2' },
+        en ? 'Estimated from official model list pricing' : '按模型官方阶梯定价汇总估算',
+      ],
+    }
+  );
+
+  const sheets = [
+    {
+      name: en ? 'Overview' : '用量总览',
+      autoFilter: false,
+      columns: [
+        { header: en ? 'Metric' : '指标项', type: 'text', minWidth: 20 },
+        { header: en ? 'Value' : '数值', type: 'text_right', align: 'right', minWidth: 22 },
+        { header: en ? 'Notes' : '说明', type: 'text', minWidth: 32, maxWidth: 56 },
+      ],
+      rows: overviewRows,
+    },
+  ];
+
+  // Sheet 2: Models
+  if (models.length > 0) {
+    let mCalls = 0;
+    let mIn = 0;
+    let mCache = 0;
+    let mOut = 0;
+    let mTot = 0;
+    let mCost = 0;
+    let tpsWeighted = 0;
+    let tpsWeight = 0;
+    const modelRows = models.map((m, idx) => {
+      const calls = Math.max(0, Number(m.calls || 0));
+      const inTok = Math.max(0, Number(m.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(m.cacheReadTokens || 0));
+      const outTok = Math.max(0, Number(m.outputTokens || 0));
+      const totTok = Math.max(0, Number(m.totalTokens ?? inTok + cacheTok + outTok));
+      const cost = Math.max(0, Number(m.costUsd || 0));
+      const tps =
+        m.avgTokPerSec != null && Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0
+          ? Number(m.avgTokPerSec)
+          : null;
+      mCalls += calls;
+      mIn += inTok;
+      mCache += cacheTok;
+      mOut += outTok;
+      mTot += totTok;
+      mCost += cost;
+      if (tps != null) {
+        const w = Math.max(1, outTok || calls);
+        tpsWeighted += tps * w;
+        tpsWeight += w;
+      }
+      return [
+        idx + 1,
+        m.displayText || m.label || m.shortName || '—',
+        calls,
+        inTok,
+        cacheTok,
+        outTok,
+        totTok,
+        computeCacheHitRatio(inTok, cacheTok, m.cacheHitPct),
+        tps,
+        cost,
+      ];
+    });
+    modelRows.push({
+      tone: 'summary',
+      values: [
+        '',
+        en ? 'Total' : '合计',
+        mCalls,
+        mIn,
+        mCache,
+        mOut,
+        mTot,
+        computeCacheHitRatio(mIn, mCache),
+        tpsWeight > 0 ? +(tpsWeighted / tpsWeight).toFixed(1) : null,
+        mCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Models' : '模型排行',
+      columns: [
+        { header: en ? 'Rank' : '排名', type: 'center', minWidth: 8 },
+        { header: en ? 'Model' : '模型', type: 'text', minWidth: 20, maxWidth: 42 },
+        { header: en ? 'Calls' : '调用次数', type: 'int', minWidth: 11 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Avg Speed (tok/s)' : '平均速率 (tok/s)', type: 'dec1', minWidth: 17 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd2', minWidth: 16 },
+      ],
+      rows: modelRows,
+    });
+  }
+
+  // Sheet 3: Projects
+  if (workspaces.length > 0) {
+    let wSess = 0;
+    let wCalls = 0;
+    let wIn = 0;
+    let wCache = 0;
+    let wOut = 0;
+    let wTot = 0;
+    let wCost = 0;
+    const wsRows = workspaces.map((w, idx) => {
+      const sess = Math.max(0, Number(w.sessionCount || 0));
+      const calls = Math.max(0, Number(w.calls || 0));
+      const inTok = Math.max(0, Number(w.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(w.cacheReadTokens || 0));
+      const outTok =
+        w.outputTokens != null
+          ? Math.max(0, Number(w.outputTokens))
+          : Math.max(0, Number(w.responseTokens || 0)) + Math.max(0, Number(w.thinkingTokens || 0));
+      const totTok = Math.max(0, Number(w.totalTokens ?? inTok + cacheTok + outTok));
+      const cost = Math.max(0, Number(w.costUsd || 0));
+      wSess += sess;
+      wCalls += calls;
+      wIn += inTok;
+      wCache += cacheTok;
+      wOut += outTok;
+      wTot += totTok;
+      wCost += cost;
+      return [
+        idx + 1,
+        w.label || w.workspacePath || (en ? 'Unbound' : '未绑定工作区'),
+        w.workspacePath || '',
+        sess,
+        calls,
+        inTok,
+        cacheTok,
+        outTok,
+        totTok,
+        computeCacheHitRatio(inTok, cacheTok, w.cacheHitPct),
+        cost,
+      ];
+    });
+    wsRows.push({
+      tone: 'summary',
+      values: [
+        '',
+        en ? 'Total' : '合计',
+        '',
+        wSess,
+        wCalls,
+        wIn,
+        wCache,
+        wOut,
+        wTot,
+        computeCacheHitRatio(wIn, wCache),
+        wCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Projects' : '项目排行',
+      columns: [
+        { header: en ? 'Rank' : '排名', type: 'center', minWidth: 8 },
+        { header: en ? 'Project' : '项目名称', type: 'text', minWidth: 18, maxWidth: 36 },
+        { header: en ? 'Workspace Path' : '工作区路径', type: 'text', minWidth: 22, maxWidth: 52 },
+        { header: en ? 'Sessions' : '会话数', type: 'int', minWidth: 10 },
+        { header: en ? 'Calls' : '调用次数', type: 'int', minWidth: 11 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd2', minWidth: 16 },
+      ],
+      rows: wsRows,
+    });
+  }
+
+  // Sheet 4: Sessions
+  if (sessions.length > 0) {
+    let sCalls = 0;
+    let sIn = 0;
+    let sCache = 0;
+    let sOut = 0;
+    let sTot = 0;
+    let sCost = 0;
+    const sessRows = sessions.map((c, idx) => {
+      const calls = Math.max(0, Number(c.calls || 0));
+      const inTok = Math.max(0, Number(c.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(c.cacheReadTokens || 0));
+      const outTok =
+        c.outputTokens != null
+          ? Math.max(0, Number(c.outputTokens))
+          : Math.max(0, Number(c.responseTokens || 0)) + Math.max(0, Number(c.thinkingTokens || 0));
+      const totTok = Math.max(0, Number(c.totalTokens ?? inTok + cacheTok + outTok));
+      const cost = Math.max(0, Number(c.costUsd || 0));
+      sCalls += calls;
+      sIn += inTok;
+      sCache += cacheTok;
+      sOut += outTok;
+      sTot += totTok;
+      sCost += cost;
+      return [
+        idx + 1,
+        c.title || c.cascadeId || '—',
+        c.sourceName || c.appSource || '',
+        calls,
+        inTok,
+        cacheTok,
+        outTok,
+        totTok,
+        computeCacheHitRatio(inTok, cacheTok, c.cacheHitPct),
+        cost,
+      ];
+    });
+    sessRows.push({
+      tone: 'summary',
+      values: [
+        '',
+        en ? 'Total' : '合计',
+        '',
+        sCalls,
+        sIn,
+        sCache,
+        sOut,
+        sTot,
+        computeCacheHitRatio(sIn, sCache),
+        sCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Sessions' : '会话排行',
+      columns: [
+        { header: en ? 'Rank' : '排名', type: 'center', minWidth: 8 },
+        { header: en ? 'Session Title' : '会话标题', type: 'text', minWidth: 24, maxWidth: 48 },
+        { header: en ? 'Client Source' : '客户端来源', type: 'text', minWidth: 16 },
+        { header: en ? 'Calls' : '调用次数', type: 'int', minWidth: 11 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd2', minWidth: 16 },
+      ],
+      rows: sessRows,
+    });
+  }
+
+  // Sheet 5: Trend
+  if (trend.length > 0) {
+    let tCalls = 0;
+    let tIn = 0;
+    let tCache = 0;
+    let tOut = 0;
+    let tTot = 0;
+    let tCost = 0;
+    const trendRows = trend.map((slot) => {
+      const isHourly =
+        slot.granularity === 'hour' || String(slot.label || '').includes(':');
+      const calls = Math.max(0, Number(slot.calls || 0));
+      const inTok = Math.max(0, Number(slot.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(slot.cacheReadTokens || 0));
+      const outTok = Math.max(0, Number(slot.outputTokens || 0));
+      const totTok = Math.max(0, Number(slot.tokens ?? inTok + cacheTok + outTok));
+      const cost = Math.max(0, Number(slot.costUsd || 0));
+      tCalls += calls;
+      tIn += inTok;
+      tCache += cacheTok;
+      tOut += outTok;
+      tTot += totTok;
+      tCost += cost;
+      const granLabel = isHourly
+        ? en
+          ? 'Hourly'
+          : '按小时'
+        : en
+          ? 'Daily'
+          : '按天';
+      return [
+        formatTrendWindowLabel(slot, isHourly),
+        granLabel,
+        calls,
+        inTok,
+        cacheTok,
+        outTok,
+        totTok,
+        cost,
+      ];
+    });
+    trendRows.push({
+      tone: 'summary',
+      values: [
+        en ? 'Total' : '合计',
+        '',
+        tCalls,
+        tIn,
+        tCache,
+        tOut,
+        tTot,
+        tCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Trend' : '时间趋势',
+      columns: [
+        { header: en ? 'Time Window' : '时间段', type: 'text', minWidth: 19 },
+        { header: en ? 'Granularity' : '粒度', type: 'center', minWidth: 11 },
+        { header: en ? 'Calls' : '调用次数', type: 'int', minWidth: 11 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd2', minWidth: 16 },
+      ],
+      rows: trendRows,
+    });
+  }
+
+  // Sheet 6: Client Sources
+  if (sources.length > 0) {
+    let srcCalls = 0;
+    let srcIn = 0;
+    let srcCache = 0;
+    let srcOut = 0;
+    let srcTot = 0;
+    let srcCost = 0;
+    const srcRows = sources.map((s) => {
+      const calls = Math.max(0, Number(s.calls || 0));
+      const inTok = Math.max(0, Number(s.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(s.cacheReadTokens || 0));
+      const outTok =
+        s.outputTokens != null
+          ? Math.max(0, Number(s.outputTokens))
+          : Math.max(0, Number(s.responseTokens || 0)) + Math.max(0, Number(s.thinkingTokens || 0));
+      const totTok = Math.max(0, Number(s.totalTokens ?? inTok + cacheTok + outTok));
+      const cost = Math.max(0, Number(s.costUsd || 0));
+      srcCalls += calls;
+      srcIn += inTok;
+      srcCache += cacheTok;
+      srcOut += outTok;
+      srcTot += totTok;
+      srcCost += cost;
+      return [
+        s.name || '—',
+        calls,
+        inTok,
+        cacheTok,
+        outTok,
+        totTok,
+        computeCacheHitRatio(inTok, cacheTok, s.cacheHitPct),
+        cost,
+      ];
+    });
+    srcRows.push({
+      tone: 'summary',
+      values: [
+        en ? 'Total' : '合计',
+        srcCalls,
+        srcIn,
+        srcCache,
+        srcOut,
+        srcTot,
+        computeCacheHitRatio(srcIn, srcCache),
+        srcCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Client Sources' : '客户端来源',
+      columns: [
+        { header: en ? 'Client Source' : '客户端来源', type: 'text', minWidth: 18 },
+        { header: en ? 'Calls' : '调用次数', type: 'int', minWidth: 11 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd2', minWidth: 16 },
+      ],
+      rows: srcRows,
+    });
+  }
+
+  return buildXlsxWorkbookBytes(sheets);
+}
+
+/**
+ * 生成历史用量统计当前区间的双语 Markdown 汇总报告。
+ *
+ * @param {object} consumption
+ * @param {Array<object>} modelBreakdown
+ * @param {{ displaySettings?: object, locale?: string }} [opts]
  * @returns {string}
  */
 function buildConsumptionMarkdownReport(
   consumption,
   modelBreakdown = [],
-  { displaySettings = {} } = {}
+  { displaySettings = {}, locale } = {}
 ) {
+  const en = resolveExportEnglish(locale);
   const cons = consumption || {};
   const acc = cons.account || {};
   const range = cons.selectedRange || {};
@@ -6203,21 +7816,31 @@ function buildConsumptionMarkdownReport(
   const workspaces = Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [];
   const sessions = Array.isArray(cons.topConversations) ? cons.topConversations : [];
 
-  const rangeLabel = range.label || range.key || 'All Time';
-  const lines = [
-    `# Usage Report · ${rangeLabel}`,
-    '',
-    `- **Total Tokens**: ${formatTokensPrecise(acc.totalTokens || 0)} (${Number(acc.calls || 0)} calls)`,
-    `- **Est. Cost**: ${formatUsd(acc.costUsd || 0)} (Cache Saved ${formatUsd(acc.savedCostUsd || 0)})`,
-    `- **Cache Hit Rate**: ${Number(acc.cacheHitPct || 0).toFixed(1)}% (Input ${formatTokensPrecise(acc.inputTokens || 0)} / Cache ${formatTokensPrecise(acc.cacheReadTokens || 0)} / Output ${formatTokensPrecise(acc.outputTokens || 0)})`,
-  ];
+  const rangeLabel = resolveLocalizedRangeLabel(range, en);
+  const lines = en
+    ? [
+        `# Usage Report · ${rangeLabel}`,
+        '',
+        `- **Total Tokens**: ${formatTokensPrecise(acc.totalTokens || 0)} (${Number(acc.calls || 0)} calls)`,
+        `- **Est. Cost**: ${formatUsd(acc.costUsd || 0)} (Cache Saved ${formatUsd(acc.savedCostUsd || 0)})`,
+        `- **Cache Hit Rate**: ${Number(acc.cacheHitPct || 0).toFixed(1)}% (Input ${formatTokensPrecise(acc.inputTokens || 0)} / Cache ${formatTokensPrecise(acc.cacheReadTokens || 0)} / Output ${formatTokensPrecise(acc.outputTokens || 0)})`,
+      ]
+    : [
+        `# 用量统计报告 · ${rangeLabel}`,
+        '',
+        `- **总 Token**: ${formatTokensPrecise(acc.totalTokens || 0)}（共 ${Number(acc.calls || 0)} 次调用）`,
+        `- **预估费用**: ${formatUsd(acc.costUsd || 0)}（缓存节省 ${formatUsd(acc.savedCostUsd || 0)}）`,
+        `- **缓存命中率**: ${Number(acc.cacheHitPct || 0).toFixed(1)}%（新输入 ${formatTokensPrecise(acc.inputTokens || 0)} / 缓存读取 ${formatTokensPrecise(acc.cacheReadTokens || 0)} / 输出 ${formatTokensPrecise(acc.outputTokens || 0)}）`,
+      ];
 
   if (models.length > 0) {
     lines.push(
       '',
-      '## Models',
+      en ? '## Models' : '## 模型排行',
       '',
-      '| Model | Calls | Tokens | Cache Hit | Avg Speed | Est. Cost |',
+      en
+        ? '| Model | Calls | Tokens | Cache Hit | Avg Speed | Est. Cost |'
+        : '| 模型 | 调用次数 | 总 Token | 缓存命中率 | 平均速率 | 预估费用 |',
       '| --- | ---: | ---: | ---: | ---: | ---: |'
     );
     for (const m of models) {
@@ -6230,14 +7853,16 @@ function buildConsumptionMarkdownReport(
   if (workspaces.length > 0) {
     lines.push(
       '',
-      '## Projects',
+      en ? '## Projects' : '## 项目排行',
       '',
-      '| Project | Sessions | Calls | Tokens | Cache Hit | Est. Cost |',
+      en
+        ? '| Project | Sessions | Calls | Tokens | Cache Hit | Est. Cost |'
+        : '| 项目 | 会话数 | 调用次数 | 总 Token | 缓存命中率 | 预估费用 |',
       '| --- | ---: | ---: | ---: | ---: | ---: |'
     );
     for (const w of workspaces) {
       lines.push(
-        `| ${escapeMdCell(w.label || w.workspacePath || 'Unbound')} | ${Number(w.sessionCount || 0)} | ${Number(w.calls || 0)} | ${formatTokensPrecise(w.totalTokens || 0)} | ${Number(w.cacheHitPct || 0).toFixed(1)}% | ${formatUsd(w.costUsd || 0)} |`
+        `| ${escapeMdCell(w.label || w.workspacePath || (en ? 'Unbound' : '未绑定工作区'))} | ${Number(w.sessionCount || 0)} | ${Number(w.calls || 0)} | ${formatTokensPrecise(w.totalTokens || 0)} | ${Number(w.cacheHitPct || 0).toFixed(1)}% | ${formatUsd(w.costUsd || 0)} |`
       );
     }
   }
@@ -6245,9 +7870,11 @@ function buildConsumptionMarkdownReport(
   if (sessions.length > 0) {
     lines.push(
       '',
-      '## Top Sessions',
+      en ? '## Top Sessions' : '## 热门会话',
       '',
-      '| Session | Calls | Tokens | Cache Hit | Est. Cost |',
+      en
+        ? '| Session | Calls | Tokens | Cache Hit | Est. Cost |'
+        : '| 会话 | 调用次数 | 总 Token | 缓存命中率 | 预估费用 |',
       '| --- | ---: | ---: | ---: | ---: |'
     );
     for (const c of sessions.slice(0, 8)) {
@@ -6259,7 +7886,7 @@ function buildConsumptionMarkdownReport(
 
   return `${lines.join('\n')}\n`;
 }
-return { escapeCsvCell, sanitizeExportFilename, buildStepsCsv, buildStepsMarkdownReport, buildConsumptionCsv, buildConsumptionMarkdownReport };
+return { escapeCsvCell, sanitizeExportFilename, buildConsumptionExportBaseName, buildStepsExportBaseName, buildStepsCsv, buildStepsXlsx, buildStepsMarkdownReport, buildConsumptionCsv, buildConsumptionXlsx, buildConsumptionMarkdownReport };
 })();
 
 // --- src/core/httpClient.js ---
@@ -6614,7 +8241,7 @@ return { getViewTabs, uiStore, showUiToast, dismissUiToast, getVisibleMonitorVie
 })();
 
 // --- src/core/fileExportClient.js ---
-const { revealExportedFile, exportTextFileWithFeedback, copyTextWithFeedback } = (() => {
+const { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFeedback, copyTextWithFeedback } = (() => {
 /**
  * @fileoverview 统一文本文件导出及剪贴板复制客户端 (`fileExportClient.js`)。
  * 优先调用本机后端 `/api/export-file` 落盘到用户 Downloads（或插件 `.data/exports`）并返回真实绝对路径，
@@ -6628,8 +8255,48 @@ function isHostEmbeddedWebview() {
   return Boolean(window.sidecar?.fetch) || isWindowOverlayMode();
 }
 
+function triggerBinaryFileDownload(filename, bytes, mimeType) {
+  try {
+    if (
+      typeof Blob === 'undefined' ||
+      typeof URL === 'undefined' ||
+      typeof URL.createObjectURL !== 'function' ||
+      typeof document === 'undefined'
+    ) {
+      return false;
+    }
+    const blob = new Blob([bytes], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', String(filename || 'export.xlsx'));
+    a.style.display = 'none';
+    document.body?.appendChild?.(a);
+    a.click?.();
+    a.remove?.();
+    setTimeout(() => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
+    }, 1000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getPickerTypesForFilename(filename, mimeType) {
   const lower = String(filename || '').toLowerCase();
+  if (lower.endsWith('.xlsx') || String(mimeType || '').includes('spreadsheetml')) {
+    return [
+      {
+        description: 'Excel Workbook',
+        accept: {
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+        },
+      },
+    ];
+  }
   if (lower.endsWith('.csv') || String(mimeType || '').includes('csv')) {
     return [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }];
   }
@@ -6806,6 +8473,101 @@ async function exportTextFileWithFeedback(
 }
 
 /**
+ * 统一二进制文件导出入口（用于原生 `.xlsx` Excel 工作簿）。
+ * 优先转 Base64 经本机后端落盘到 Downloads 并展示完整路径 + 「打开位置」直达按钮。
+ *
+ * @param {string} filename
+ * @param {Uint8Array} bytes
+ * @param {string} [mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+ * @returns {Promise<{ ok: boolean, mode: 'local' | 'picker' | 'browser' | 'cancelled' | 'failed', filePath?: string, fileName?: string }>}
+ */
+async function exportBinaryFileWithFeedback(
+  filename,
+  bytes,
+  mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+) {
+  const safeName = String(filename || 'export.xlsx');
+  if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
+    showUiToast({ message: t('export.failed'), tone: 'warn', durationMs: 3600 });
+    return { ok: false, mode: 'failed' };
+  }
+
+  const base64Content = uint8ArrayToBase64(bytes);
+  const { res: localRes } = await requestLocalBackendExport({
+    filename: safeName,
+    content: base64Content,
+    encoding: 'base64',
+    mimeType,
+  });
+  if (localRes && localRes.ok && localRes.filePath) {
+    const savedPath = String(localRes.filePath);
+    const savedName = String(localRes.fileName || safeName);
+    showUiToast({
+      message: t('export.savedLocal', { file: savedName }),
+      detail: savedPath,
+      actionLabel: t('export.openFolder'),
+      onAction: () => {
+        void revealExportedFile(savedPath);
+      },
+      tone: 'ok',
+      durationMs: 7000,
+    });
+    return { ok: true, mode: 'local', filePath: savedPath, fileName: savedName };
+  }
+
+  if (isHostEmbeddedWebview()) {
+    showUiToast({
+      message: t('export.failed'),
+      detail: t('export.hostUnavailable'),
+      tone: 'warn',
+      durationMs: 5200,
+    });
+    return { ok: false, mode: 'failed' };
+  }
+
+  if (typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function') {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: safeName,
+        types: getPickerTypesForFilename(safeName, mimeType),
+      });
+      const writable = await handle.createWritable();
+      await writable.write(bytes);
+      await writable.close();
+      const pickedName = handle.name || safeName;
+      showUiToast({
+        message: t('export.savedPicked', { file: pickedName }),
+        tone: 'ok',
+        durationMs: 4200,
+      });
+      return { ok: true, mode: 'picker', fileName: pickedName };
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        return { ok: false, mode: 'cancelled' };
+      }
+    }
+  }
+
+  const ok = triggerBinaryFileDownload(safeName, bytes, mimeType);
+  if (ok) {
+    showUiToast({
+      message: t('export.savedBrowser', { file: safeName }),
+      detail: t('export.savedBrowserHint'),
+      tone: 'info',
+      durationMs: 5000,
+    });
+    return { ok: true, mode: 'browser', fileName: safeName };
+  }
+
+  showUiToast({
+    message: t('export.failed'),
+    tone: 'warn',
+    durationMs: 3600,
+  });
+  return { ok: false, mode: 'failed' };
+}
+
+/**
  * 复制文本到剪贴板并弹出轻量提示条。
  *
  * @param {string} text
@@ -6829,7 +8591,7 @@ async function copyTextWithFeedback(text, successMessage) {
   }
   return ok;
 }
-return { revealExportedFile, exportTextFileWithFeedback, copyTextWithFeedback };
+return { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFeedback, copyTextWithFeedback };
 })();
 
 // --- src/store/telemetryStore.js ---
@@ -26071,10 +27833,10 @@ const ConsumptionView = defineComponent({
       className: 'cons-export-menu',
       items: [
         {
-          key: 'csv',
+          key: 'xlsx',
           icon: 'download',
-          label: t('cons.exportCsv'),
-          title: t('cons.exportCsvTip'),
+          label: t('cons.exportXlsx'),
+          title: t('cons.exportXlsxTip'),
           onSelect: () => {
             const cons = latestSlice?.consumption;
             if (!cons) return;
@@ -26083,14 +27845,16 @@ const ConsumptionView = defineComponent({
               showUpstreamModel: latestSlice?.showUpstreamModel,
               orchestratorIdMode: latestSlice?.orchestratorIdMode,
             };
-            const csv = buildConsumptionCsv(cons, latestSlice?.modelBreakdown || [], {
+            const bytes = buildConsumptionXlsx(cons, latestSlice?.modelBreakdown || [], {
               displaySettings,
             });
-            const rKey = cons.selectedRange?.key || latestSlice?.range || 'all';
-            void exportTextFileWithFeedback(
-              sanitizeExportFilename(`usage-${rKey}`, 'csv'),
-              csv,
-              'text/csv;charset=utf-8'
+            const baseName = buildConsumptionExportBaseName(
+              cons,
+              latestSlice?.range || 'all'
+            );
+            void exportBinaryFileWithFeedback(
+              sanitizeExportFilename(baseName, 'xlsx'),
+              bytes
             );
           },
         },
@@ -28088,7 +29852,7 @@ const ConsumptionView = defineComponent({
       patchText(outputUsageLabel, t('cons.outputUsage'));
       consExportMenu.refs.setAriaLabel(t('cons.exportMenuAria'));
       consExportMenu.refs.updateItemLabels({
-        csv: { label: t('cons.exportCsv'), title: t('cons.exportCsvTip') },
+        xlsx: { label: t('cons.exportXlsx'), title: t('cons.exportXlsxTip') },
         md: { label: t('cons.exportMd'), title: t('cons.exportMdTip') },
       });
       patchText(trendTitleSpan, t('cons.trendTitle'));
@@ -28563,20 +30327,24 @@ const StepsDetailView = defineComponent({
       className: 'steps-export-menu',
       items: [
         {
-          key: 'csv',
+          key: 'xlsx',
           icon: 'download',
-          label: t('steps.exportCsv'),
-          title: t('steps.exportCsvTip'),
+          label: t('steps.exportXlsx'),
+          title: t('steps.exportXlsxTip'),
           onSelect: () => {
             if (currentTableSteps.length === 0) return;
-            const csv = buildStepsCsv(currentTableSteps, {
+            const bytes = buildStepsXlsx(currentTableSteps, {
+              title: latestSlice?.activeConversation?.title || '',
+              cascadeId: latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || '',
               displaySettings: currentDisplaySettings,
             });
-            const title = latestSlice?.activeConversation?.title || latestSlice?.cascadeId || 'steps';
-            void exportTextFileWithFeedback(
-              sanitizeExportFilename(`steps-${title}`, 'csv'),
-              csv,
-              'text/csv;charset=utf-8'
+            const baseName = buildStepsExportBaseName(
+              latestSlice?.activeConversation?.title || '',
+              latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || ''
+            );
+            void exportBinaryFileWithFeedback(
+              sanitizeExportFilename(baseName, 'xlsx'),
+              bytes
             );
           },
         },
@@ -29137,7 +30905,7 @@ const StepsDetailView = defineComponent({
       if (!inspCopyTimer) patchText(inspCopyLabel, t('steps.inspCopy'));
       stepsExportMenu.refs.setAriaLabel(t('steps.exportMenuAria'));
       stepsExportMenu.refs.updateItemLabels({
-        csv: { label: t('steps.exportCsv'), title: t('steps.exportCsvTip') },
+        xlsx: { label: t('steps.exportXlsx'), title: t('steps.exportXlsxTip') },
         md: { label: t('steps.exportMd'), title: t('steps.exportMdTip') },
       });
       lastAnomalyStripSig = '';

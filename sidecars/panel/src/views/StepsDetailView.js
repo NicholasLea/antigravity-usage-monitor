@@ -42,13 +42,14 @@ import {
   getStepSelectionKey,
 } from '../core/stepInspector.js';
 import {
-  buildStepsCsv,
+  buildStepsExportBaseName,
   buildStepsMarkdownReport,
+  buildStepsXlsx,
   sanitizeExportFilename,
 } from '../core/reportExporter.js';
 import {
   copyTextWithFeedback,
-  exportTextFileWithFeedback,
+  exportBinaryFileWithFeedback,
 } from '../core/fileExportClient.js';
 import { createSvgIcon, patchSvgIcon } from '../icons/SvgIcon.js';
 import { ActionMenu } from '../components/ui/ActionMenu.js';
@@ -468,20 +469,24 @@ export const StepsDetailView = defineComponent({
       className: 'steps-export-menu',
       items: [
         {
-          key: 'csv',
+          key: 'xlsx',
           icon: 'download',
-          label: t('steps.exportCsv'),
-          title: t('steps.exportCsvTip'),
+          label: t('steps.exportXlsx'),
+          title: t('steps.exportXlsxTip'),
           onSelect: () => {
             if (currentTableSteps.length === 0) return;
-            const csv = buildStepsCsv(currentTableSteps, {
+            const bytes = buildStepsXlsx(currentTableSteps, {
+              title: latestSlice?.activeConversation?.title || '',
+              cascadeId: latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || '',
               displaySettings: currentDisplaySettings,
             });
-            const title = latestSlice?.activeConversation?.title || latestSlice?.cascadeId || 'steps';
-            void exportTextFileWithFeedback(
-              sanitizeExportFilename(`steps-${title}`, 'csv'),
-              csv,
-              'text/csv;charset=utf-8'
+            const baseName = buildStepsExportBaseName(
+              latestSlice?.activeConversation?.title || '',
+              latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || ''
+            );
+            void exportBinaryFileWithFeedback(
+              sanitizeExportFilename(baseName, 'xlsx'),
+              bytes
             );
           },
         },
@@ -1042,7 +1047,7 @@ export const StepsDetailView = defineComponent({
       if (!inspCopyTimer) patchText(inspCopyLabel, t('steps.inspCopy'));
       stepsExportMenu.refs.setAriaLabel(t('steps.exportMenuAria'));
       stepsExportMenu.refs.updateItemLabels({
-        csv: { label: t('steps.exportCsv'), title: t('steps.exportCsvTip') },
+        xlsx: { label: t('steps.exportXlsx'), title: t('steps.exportXlsxTip') },
         md: { label: t('steps.exportMd'), title: t('steps.exportMdTip') },
       });
       lastAnomalyStripSig = '';

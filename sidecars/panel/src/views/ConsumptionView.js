@@ -34,13 +34,14 @@ import {
 } from '../core/formatters.js';
 import { scaleBucketsExact } from '../../shared/telemetry-display-rules.mjs';
 import {
-  buildConsumptionCsv,
+  buildConsumptionExportBaseName,
   buildConsumptionMarkdownReport,
+  buildConsumptionXlsx,
   sanitizeExportFilename,
 } from '../core/reportExporter.js';
 import {
   copyTextWithFeedback,
-  exportTextFileWithFeedback,
+  exportBinaryFileWithFeedback,
 } from '../core/fileExportClient.js';
 import { i18nStore, isEnglishLocale, t } from '../i18n/index.js';
 import { createSvgIcon } from '../icons/SvgIcon.js';
@@ -223,10 +224,10 @@ export const ConsumptionView = defineComponent({
       className: 'cons-export-menu',
       items: [
         {
-          key: 'csv',
+          key: 'xlsx',
           icon: 'download',
-          label: t('cons.exportCsv'),
-          title: t('cons.exportCsvTip'),
+          label: t('cons.exportXlsx'),
+          title: t('cons.exportXlsxTip'),
           onSelect: () => {
             const cons = latestSlice?.consumption;
             if (!cons) return;
@@ -235,14 +236,16 @@ export const ConsumptionView = defineComponent({
               showUpstreamModel: latestSlice?.showUpstreamModel,
               orchestratorIdMode: latestSlice?.orchestratorIdMode,
             };
-            const csv = buildConsumptionCsv(cons, latestSlice?.modelBreakdown || [], {
+            const bytes = buildConsumptionXlsx(cons, latestSlice?.modelBreakdown || [], {
               displaySettings,
             });
-            const rKey = cons.selectedRange?.key || latestSlice?.range || 'all';
-            void exportTextFileWithFeedback(
-              sanitizeExportFilename(`usage-${rKey}`, 'csv'),
-              csv,
-              'text/csv;charset=utf-8'
+            const baseName = buildConsumptionExportBaseName(
+              cons,
+              latestSlice?.range || 'all'
+            );
+            void exportBinaryFileWithFeedback(
+              sanitizeExportFilename(baseName, 'xlsx'),
+              bytes
             );
           },
         },
@@ -2240,7 +2243,7 @@ export const ConsumptionView = defineComponent({
       patchText(outputUsageLabel, t('cons.outputUsage'));
       consExportMenu.refs.setAriaLabel(t('cons.exportMenuAria'));
       consExportMenu.refs.updateItemLabels({
-        csv: { label: t('cons.exportCsv'), title: t('cons.exportCsvTip') },
+        xlsx: { label: t('cons.exportXlsx'), title: t('cons.exportXlsxTip') },
         md: { label: t('cons.exportMd'), title: t('cons.exportMdTip') },
       });
       patchText(trendTitleSpan, t('cons.trendTitle'));

@@ -1415,15 +1415,46 @@ test('Feature 10: StepsDetailView live search, dynamic diagnostic chips, and cli
   assert.equal(view.refs.stepInspectorDrawerEl.hasAttribute('hidden'), true);
 });
 
-test('Feature 11: RFC-4180 formula-safe CSV and Markdown report export for Steps and Consumption views', async () => {
+test('Feature 11: native multi-sheet localized XLSX, formula-safe CSV and bilingual Markdown report export', async () => {
   const {
     escapeCsvCell,
     sanitizeExportFilename,
     buildStepsCsv,
+    buildStepsXlsx,
     buildStepsMarkdownReport,
+    buildStepsExportBaseName,
     buildConsumptionCsv,
+    buildConsumptionXlsx,
     buildConsumptionMarkdownReport,
+    buildConsumptionExportBaseName,
   } = await import('../src/core/reportExporter.js');
+
+  function parseZipStoreEntries(bytes) {
+    assert.equal(bytes instanceof Uint8Array, true);
+    assert.equal(bytes[0], 0x50);
+    assert.equal(bytes[1], 0x4b);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const entries = new Map();
+    let pos = 0;
+    while (pos + 30 <= bytes.length && view.getUint32(pos, true) === 0x04034b50) {
+      const compMethod = view.getUint16(pos + 8, true);
+      assert.equal(compMethod, 0, 'ZIP STORE entry');
+      const compSize = view.getUint32(pos + 18, true);
+      const nameLen = view.getUint16(pos + 26, true);
+      const extraLen = view.getUint16(pos + 28, true);
+      const nameStart = pos + 30;
+      const dataStart = nameStart + nameLen + extraLen;
+      const name = Buffer.from(bytes.subarray(nameStart, nameStart + nameLen)).toString('utf8');
+      const text = Buffer.from(bytes.subarray(dataStart, dataStart + compSize)).toString('utf8');
+      entries.set(name, text);
+      pos = dataStart + compSize;
+    }
+    // Verify EOCD record exists at end
+    const eocdPos = bytes.length - 22;
+    assert.equal(view.getUint32(eocdPos, true), 0x06054b50, 'Valid ZIP EOCD signature');
+    assert.equal(view.getUint16(eocdPos + 10, true), entries.size);
+    return entries;
+  }
 
   // 1. Formula injection neutralization and RFC-4180 quoting
   assert.equal(escapeCsvCell('=CMD("calc")'), `"'=CMD(""calc"")"` );
@@ -1432,10 +1463,10 @@ test('Feature 11: RFC-4180 formula-safe CSV and Markdown report export for Steps
   assert.equal(escapeCsvCell('-12.5'), '-12.5'); // genuine signed numbers preserved
   assert.equal(escapeCsvCell('hello, "world"\nline2'), '"hello, ""world""\nline2"');
 
-  const fname = sanitizeExportFilename('my:bad/title*name?', 'csv', Date.UTC(2026, 10, 22, 8, 5));
-  assert.match(fname, /^my-bad-title-name-\d{8}-\d{4}\.csv$/);
+  const fname = sanitizeExportFilename('my:bad/title*name?', 'xlsx', Date.UTC(2026, 10, 22, 8, 5));
+  assert.match(fname, /^my-bad-title-name-\d{8}-\d{4}\.xlsx$/);
 
-  // 2. Steps CSV (UTF-8 BOM + safe cells) & Markdown report
+  // 2. Steps CSV, bilingual Markdown report, and native multi-sheet XLSX (with danger/info row styles)
   const sampleSteps = [
     {
       stepIndex: 2,
@@ -1454,7 +1485,19 @@ test('Feature 11: RFC-4180 formula-safe CSV and Markdown report export for Steps
       contextTokens: 100_500,
       cacheHitPct: 90,
       costUsd: 0.145,
+      anomaly: { count: 1, primaryKind: 'timeout', kinds: { timeout: 1 } },
       turnPrompt: '=HYPERLINK("http://x"), "test"',
+    },
+    {
+      stepIndex: 3,
+      createdAtMs: Date.UTC(2026, 10, 22, 9, 5, 0),
+      modelShort: '4-neon',
+      modelLabel: 'Gemini 4 Neon',
+      inputTokens: 1_000,
+      cacheReadTokens: 50_000,
+      outputTokens: 300,
+      costUsd: 0.012,
+      isCompactionStep: true,
     },
   ];
   const stepsCsv = buildStepsCsv(sampleSteps);
@@ -1462,86 +1505,158 @@ test('Feature 11: RFC-4180 formula-safe CSV and Markdown report export for Steps
   assert.match(stepsCsv, /"'=HYPERLINK\(""http:\/\/x""\), ""test"""/);
   assert.match(stepsCsv, /0\.145000/);
 
-  const stepsMd = buildStepsMarkdownReport(sampleSteps, {
+  const stepsMdEn = buildStepsMarkdownReport(sampleSteps, {
     title: 'Perf Audit',
     cascadeId: 'cid-export-1',
+    locale: 'en-US',
   });
-  assert.match(stepsMd, /# Perf Audit/);
-  assert.match(stepsMd, /## Model Breakdown/);
-  assert.match(stepsMd, /## Top Costliest Steps/);
-  assert.match(stepsMd, /#2/);
+  assert.match(stepsMdEn, /# Perf Audit/);
+  assert.match(stepsMdEn, /## Model Breakdown/);
+  assert.match(stepsMdEn, /## Top Costliest Steps/);
+  assert.match(stepsMdEn, /#2/);
 
-  // 3. Consumption CSV & Markdown report (including models + projects + sessions)
+  const stepsMdZh = buildStepsMarkdownReport(sampleSteps, {
+    title: 'Perf Audit',
+    cascadeId: 'cid-export-1',
+    locale: 'zh-CN',
+  });
+  assert.match(stepsMdZh, /## 模型分布/);
+  assert.match(stepsMdZh, /## 高成本步骤 Top 5/);
+  assert.match(stepsMdZh, /异常汇总/);
+
+  const stepsXlsxZh = parseZipStoreEntries(
+    buildStepsXlsx(sampleSteps, { title: 'Perf Audit', locale: 'zh-CN' })
+  );
+  assert.match(stepsXlsxZh.get('xl/workbook.xml'), /name="步骤明细"/);
+  assert.match(stepsXlsxZh.get('xl/workbook.xml'), /name="模型汇总"/);
+  const stepsSheetZh = stepsXlsxZh.get('xl/worksheets/sheet1.xml');
+  assert.match(stepsSheetZh, /<pane ySplit="1"/);
+  assert.match(stepsSheetZh, /<autoFilter ref="A1:R3"\/>/, 'AutoFilter excludes bottom summary row 4');
+  assert.match(stepsSheetZh, /t="inlineStr"[^>]*><is><t[^>]*>=HYPERLINK/, 'Formulas stored safely as inlineStr');
+  assert.match(stepsSheetZh, /自动压缩/);
+  assert.match(stepsSheetZh, /流空闲 \/ 连接超时/);
+  assert.match(stepsSheetZh, /合计（共 2 步）/);
+
+  const stepsXlsxEn = parseZipStoreEntries(
+    buildStepsXlsx(sampleSteps, { title: 'Perf Audit', locale: 'en-US' })
+  );
+  assert.match(stepsXlsxEn.get('xl/workbook.xml'), /name="Steps"/);
+  assert.match(stepsXlsxEn.get('xl/workbook.xml'), /name="Model Summary"/);
+  assert.match(stepsXlsxEn.get('xl/worksheets/sheet1.xml'), /Compaction/);
+  assert.match(stepsXlsxEn.get('xl/worksheets/sheet1.xml'), /Total \(2 steps\)/);
+
+  // 3. Consumption CSV, bilingual Markdown report, and 6-sheet native XLSX
   const cons = {
-    selectedRange: { key: '7d', label: '近7天' },
+    selectedRange: { key: '7d', label: '近7天', startMs: Date.UTC(2026, 10, 15), endMs: Date.UTC(2026, 10, 22) },
     account: {
-      calls: 12,
-      inputTokens: 100_000,
-      cacheReadTokens: 800_000,
-      outputTokens: 50_000,
-      totalTokens: 950_000,
-      cacheHitPct: 88.9,
-      costUsd: 2.35,
-      savedCostUsd: 1.45,
+      calls: 410,
+      inputTokens: 2_250_054,
+      cacheReadTokens: 100_300_000,
+      outputTokens: 479_037,
+      thinkingTokens: 136_100,
+      responseTokens: 342_937,
+      totalTokens: 103_029_091,
+      cacheHitPct: 97.8,
+      costUsd: 28.98,
+      savedCostUsd: 285.89,
     },
     topWorkspaces: [
       {
         label: 'usage-monitor',
+        workspacePath: 'F:/ppt/1111/antigravity-usage-monitor',
         sessionCount: 3,
-        calls: 12,
-        inputTokens: 100_000,
-        cacheReadTokens: 800_000,
-        responseTokens: 30_000,
-        thinkingTokens: 20_000,
-        totalTokens: 950_000,
-        cacheHitPct: 88.9,
-        costUsd: 2.35,
+        calls: 333,
+        inputTokens: 1_859_526,
+        cacheReadTokens: 85_614_438,
+        responseTokens: 250_000,
+        thinkingTokens: 134_565,
+        totalTokens: 87_858_529,
+        cacheHitPct: 97.9,
+        costUsd: 24.1892,
       },
     ],
     topConversations: [
       {
         cascadeId: 'cid-1',
         title: 'Refactor',
-        sourceName: 'CLI',
-        calls: 12,
-        inputTokens: 100_000,
-        cacheReadTokens: 800_000,
-        responseTokens: 30_000,
-        thinkingTokens: 20_000,
-        totalTokens: 950_000,
-        cacheHitPct: 88.9,
-        costUsd: 2.35,
+        sourceName: 'Antigravity App',
+        calls: 333,
+        inputTokens: 1_859_526,
+        cacheReadTokens: 85_614_438,
+        responseTokens: 250_000,
+        thinkingTokens: 134_565,
+        totalTokens: 87_858_529,
+        cacheHitPct: 97.9,
+        costUsd: 24.1892,
       },
     ],
     trendSeries: [
-      { label: '11/22', fullLabel: '2026-11-22', calls: 12, tokens: 950_000, costUsd: 2.35 },
+      { label: '11/22', fullLabel: '2026-11-22', granularity: 'day', calls: 410, inputTokens: 2_250_054, cacheReadTokens: 100_300_000, outputTokens: 479_037, tokens: 103_029_091, costUsd: 28.98 },
+    ],
+    sourcesBreakdown: [
+      { name: 'Antigravity App', calls: 333, inputTokens: 1_859_526, cacheReadTokens: 85_614_438, outputTokens: 384_565, totalTokens: 87_858_529, costUsd: 24.19 },
     ],
   };
   const models = [
     {
       label: '4-neon',
       shortName: '4-neon',
-      calls: 12,
-      inputTokens: 100_000,
-      cacheReadTokens: 800_000,
-      outputTokens: 50_000,
-      totalTokens: 950_000,
-      cacheHitPct: 88.9,
-      avgTokPerSec: 52.1,
-      costUsd: 2.35,
+      calls: 410,
+      inputTokens: 2_250_054,
+      cacheReadTokens: 100_300_000,
+      outputTokens: 479_037,
+      totalTokens: 103_029_091,
+      cacheHitPct: 97.8,
+      avgTokPerSec: 50.9,
+      costUsd: 28.9826,
     },
   ];
   const consCsv = buildConsumptionCsv(cons, models);
   assert.equal(consCsv.startsWith('\uFEFFsection,name,'), true);
-  assert.match(consCsv, /project,usage-monitor,12,/);
-  assert.match(consCsv, /trend,2026-11-22,12,/);
+  assert.match(consCsv, /project,usage-monitor,333,/);
+  assert.match(consCsv, /trend,2026-11-22,410,/);
 
-  const consMd = buildConsumptionMarkdownReport(cons, models);
-  assert.match(consMd, /# Usage Report · 近7天/);
-  assert.match(consMd, /## Models/);
-  assert.match(consMd, /## Projects/);
-  assert.match(consMd, /usage-monitor/);
-  assert.match(consMd, /## Top Sessions/);
+  const consMdEn = buildConsumptionMarkdownReport(cons, models, { locale: 'en-US' });
+  assert.match(consMdEn, /# Usage Report · Last 7 Days/);
+  assert.match(consMdEn, /## Models/);
+  assert.match(consMdEn, /## Projects/);
+  assert.match(consMdEn, /usage-monitor/);
+  assert.match(consMdEn, /## Top Sessions/);
+
+  const consMdZh = buildConsumptionMarkdownReport(cons, models, { locale: 'zh-CN' });
+  assert.match(consMdZh, /# 用量统计报告 · 近7天/);
+  assert.match(consMdZh, /## 模型排行/);
+  assert.match(consMdZh, /## 项目排行/);
+  assert.match(consMdZh, /## 热门会话/);
+
+  const consXlsxZh = parseZipStoreEntries(buildConsumptionXlsx(cons, models, { locale: 'zh-CN' }));
+  const wbZh = consXlsxZh.get('xl/workbook.xml');
+  for (const sheetName of ['用量总览', '模型排行', '项目排行', '会话排行', '时间趋势', '客户端来源']) {
+    assert.ok(wbZh.includes(`name="${sheetName}"`), `ZH workbook includes sheet ${sheetName}`);
+  }
+  const stylesXml = consXlsxZh.get('xl/styles.xml');
+  assert.match(stylesXml, /formatCode="#,##0"/);
+  assert.match(stylesXml, /formatCode="\$#,##0\.00"/);
+  assert.match(stylesXml, /formatCode="0\.0%"/);
+  assert.match(stylesXml, /<cellXfs count="45">/);
+
+  const modelsSheetZh = consXlsxZh.get('xl/worksheets/sheet2.xml');
+  assert.match(modelsSheetZh, /<v>103029091<\/v>/, 'Large token count stored as raw integer without scientific notation');
+  assert.match(modelsSheetZh, /customWidth="1"/, 'Auto column widths emitted');
+  assert.match(modelsSheetZh, /<autoFilter ref="A1:J2"\/>/, 'Models autoFilter excludes bottom total row');
+
+  const consXlsxEn = parseZipStoreEntries(buildConsumptionXlsx(cons, models, { locale: 'en-US' }));
+  const wbEn = consXlsxEn.get('xl/workbook.xml');
+  for (const sheetName of ['Overview', 'Models', 'Projects', 'Sessions', 'Trend', 'Client Sources']) {
+    assert.ok(wbEn.includes(`name="${sheetName}"`), `EN workbook includes sheet ${sheetName}`);
+  }
+  assert.match(consXlsxEn.get('xl/worksheets/sheet1.xml'), /Last 7 Days/);
+  assert.equal(consXlsxEn.get('xl/worksheets/sheet1.xml').includes('近7天'), false);
+
+  assert.equal(buildConsumptionExportBaseName(cons, '7d', { locale: 'zh-CN' }), '用量统计-近7天');
+  assert.equal(buildConsumptionExportBaseName(cons, '7d', { locale: 'en-US' }), 'usage-7d');
+  assert.equal(buildStepsExportBaseName('调试任务', '', { locale: 'zh-CN' }), '调用明细-调试任务');
+  assert.equal(buildStepsExportBaseName('Debug Task', '', { locale: 'en-US' }), 'steps-Debug Task');
 });
 
 test('Feature 13: TopSessionHeader exposes project/workspace tags on sessions and filters by workspace name', async (t) => {
@@ -1679,6 +1794,38 @@ test('Feature 14: compact vertical ActionMenu replaces export bars, backend expo
   assert.equal(exp2.ok, true);
   assert.equal(exp2.fileName, 'usage-today (1).csv');
 
+  // Binary .xlsx base64 export writes exact ZIP/PK archive and rejects corrupted non-PK payload
+  const { buildXlsxWorkbookBytes, uint8ArrayToBase64 } = await import('../src/core/xlsxBuilder.js');
+  const miniXlsx = buildXlsxWorkbookBytes([
+    { name: '总览', columns: [{ header: '指标', type: 'text' }], rows: [['测试']] },
+  ]);
+  const expXlsx = writeLocalExportFile(
+    {
+      filename: '用量统计-今日.xlsx',
+      content: uint8ArrayToBase64(miniXlsx),
+      encoding: 'base64',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+    { overrideDir: tempExportDir }
+  );
+  assert.equal(expXlsx.ok, true);
+  assert.equal(expXlsx.fileName, '用量统计-今日.xlsx');
+  const savedXlsxBytes = readFileSync(expXlsx.filePath);
+  assert.equal(savedXlsxBytes[0], 0x50);
+  assert.equal(savedXlsxBytes[1], 0x4b);
+  assert.equal(savedXlsxBytes.length, miniXlsx.length);
+
+  const badXlsx = writeLocalExportFile(
+    {
+      filename: 'corrupt.xlsx',
+      content: Buffer.from('not-a-zip').toString('base64'),
+      encoding: 'base64',
+    },
+    { overrideDir: tempExportDir }
+  );
+  assert.equal(badXlsx.ok, false);
+  assert.equal(badXlsx.status, 400);
+
   // Unauthorized arbitrary path must be rejected (403)
   const denied = revealLocalExportFile(path.join(tempExportDir, 'not-exported.txt'), {
     platform: 'win32',
@@ -1762,7 +1909,7 @@ test('Feature 14: compact vertical ActionMenu replaces export bars, backend expo
           ok: true,
           filePath: apiSaveBody.filePath,
           dirPath: tempExportDir,
-          fileName: 'usage-7d.csv',
+          fileName: parsedBody.filename || '用量统计-近7天.xlsx',
         }),
       };
     }
@@ -1839,15 +1986,20 @@ test('Feature 14: compact vertical ActionMenu replaces export bars, backend expo
   menu.refs.triggerBtn.dispatchEvent({ type: 'click', stopPropagation: () => {} });
   assert.equal(menu.refs.isOpen(), true);
 
-  const csvItem = menu.refs.getItemBtn('csv');
-  assert.ok(csvItem);
-  csvItem.dispatchEvent({ type: 'click', stopPropagation: () => {} });
+  const xlsxItem = menu.refs.getItemBtn('xlsx');
+  assert.ok(xlsxItem);
+  xlsxItem.dispatchEvent({ type: 'click', stopPropagation: () => {} });
   assert.equal(menu.refs.isOpen(), false);
 
   await new Promise((r) => setTimeout(r, 15));
+  const exportCall = apiCalls.find((c) => String(c.url).includes('/api/export-file'));
+  assert.ok(exportCall, 'XLSX menu item posts to /api/export-file');
+  assert.equal(exportCall.body.encoding, 'base64');
+  assert.match(exportCall.body.filename, /^用量统计-近7天-\d{8}-\d{4}\.xlsx$/);
+
   const toast = uiStore.getState().toast;
   assert.ok(toast, 'Export displays global toast');
-  assert.match(toast.message, /usage-7d\.csv/);
+  assert.match(toast.message, /用量统计-近7天-.*\.xlsx/);
   assert.equal(toast.detail, apiSaveBody.filePath);
   assert.equal(toast.actionLabel, '打开位置');
   assert.equal(typeof toast.onAction, 'function');
