@@ -801,3 +801,18 @@ test('argon_weekly capsule & CLI slot enables only when user has an Argon weekly
   );
   assert.doesNotMatch(cliUltra, /A周/);
 });
+
+test('formatPctNumber collapses boundary 0.0 -> 0 and 100.0 -> 100 while preserving intermediate decimals', async () => {
+  const { formatPctNumber } = await import('../src/core/formatters.js');
+  assert.equal(formatPctNumber(0), '0');
+  assert.equal(formatPctNumber(0, { withSymbol: true }), '0%');
+  assert.equal(formatPctNumber(0.04, { withSymbol: true }), '0%');
+  assert.equal(formatPctNumber(-0.01, { withSymbol: true }), '0%');
+  assert.equal(formatPctNumber(100), '100');
+  assert.equal(formatPctNumber(100, { withSymbol: true }), '100%');
+  assert.equal(formatPctNumber(99.96, { withSymbol: true }), '100%');
+  assert.equal(formatPctNumber(0.5, { withSymbol: true }), '0.5%');
+  assert.equal(formatPctNumber(1.0, { withSymbol: true }), '1.0%');
+  assert.equal(formatPctNumber(50.0, { withSymbol: true }), '50.0%');
+  assert.equal(formatPctNumber(99.9, { withSymbol: true }), '99.9%');
+});

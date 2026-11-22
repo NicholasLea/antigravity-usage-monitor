@@ -23,6 +23,7 @@ import {
   formatCnyApprox,
   formatDateSpanBadge,
   formatMetric,
+  formatPctNumber,
   formatSpeedMetric,
   formatTokensPrecise,
   formatUsd,
@@ -813,7 +814,7 @@ export const ConsumptionView = defineComponent({
           responseTokens,
           outputTokens: responseTokens + thinkingTokens,
           tokText: formatTokensPrecise(tok),
-          pctText: `${pct.toFixed(1)}%`,
+          pctText: formatPctNumber(pct, { withSymbol: true }),
           color,
           isOther: false,
         };
@@ -850,7 +851,7 @@ export const ConsumptionView = defineComponent({
           responseTokens: otherResp,
           outputTokens: otherResp + otherThink,
           tokText: formatTokensPrecise(otherTok),
-          pctText: `${otherPct.toFixed(1)}%`,
+          pctText: formatPctNumber(otherPct, { withSymbol: true }),
           color: 'var(--cons-other-seg)',
           isOther: true,
         });
@@ -1014,7 +1015,7 @@ export const ConsumptionView = defineComponent({
         : promptTok > 0 && Number(item.cacheReadTokens || 0) > 0
           ? +((Number(item.cacheReadTokens || 0) / promptTok) * 100).toFixed(1)
           : 0;
-      const cachePctStr = cachePctVal.toFixed(1);
+      const cachePctStr = formatPctNumber(cachePctVal);
       const effCostPer1M =
         !isAllUnpriced && costVal > 0 && total >= 1000 ? costVal / (total / 1_000_000) : null;
       const outTok = Number(
@@ -1028,7 +1029,7 @@ export const ConsumptionView = defineComponent({
         const barPct = costBase > 0 && costVal > 0 ? Math.min(100, Math.max(1, (costVal / costBase) * 100)) : 0;
         patchAttr(refs.pctBadge, 'hidden', false);
         patchAttr(refs.pctBadge, 'title', null);
-        patchText(refs.pctBadge, `${costShare.toFixed(1)}%`);
+        patchText(refs.pctBadge, formatPctNumber(costShare, { withSymbol: true }));
         patchText(refs.totalTokEl, isAllUnpriced ? '' : formatCnyApprox(costVal));
         patchText(refs.costEl, costText);
 
@@ -1103,7 +1104,7 @@ export const ConsumptionView = defineComponent({
           callsBase > 0 && callsCount > 0 ? Math.min(100, Math.max(1, (callsCount / callsBase) * 100)) : 0;
         patchAttr(refs.pctBadge, 'hidden', false);
         patchAttr(refs.pctBadge, 'title', null);
-        patchText(refs.pctBadge, `${callsShare.toFixed(1)}%`);
+        patchText(refs.pctBadge, formatPctNumber(callsShare, { withSymbol: true }));
         patchText(refs.totalTokEl, formatTokensPrecise(total));
         patchText(refs.costEl, t('cons.callsCount', { calls: callsCount }));
 
@@ -1143,7 +1144,7 @@ export const ConsumptionView = defineComponent({
         grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.008, total / grandTotalTokens)) : 0;
       patchAttr(refs.pctBadge, 'hidden', false);
       patchAttr(refs.pctBadge, 'title', null);
-      patchText(refs.pctBadge, `${share.toFixed(1)}%`);
+      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
       patchText(refs.totalTokEl, formatTokensPrecise(total));
       patchText(refs.costEl, costText);
 
@@ -1317,7 +1318,7 @@ export const ConsumptionView = defineComponent({
       const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
       const scaleRatio =
         grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.01, total / grandTotalTokens)) : 0;
-      patchText(refs.pctBadge, `${share.toFixed(1)}%`);
+      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
       patchText(refs.totalTokEl, formatTokensPrecise(total));
 
       const costVal = Number(item.costUsd || 0);
@@ -1568,7 +1569,7 @@ export const ConsumptionView = defineComponent({
           ? Math.min(1, Math.max(0.01, total / tokBase))
           : 0;
 
-      patchText(refs.pctBadge, `${share.toFixed(1)}%`);
+      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
       if (sortMode === 'tokens') {
         patchText(refs.totalTokEl, costText);
         patchText(refs.costEl, formatTokensPrecise(total));
@@ -1638,7 +1639,7 @@ export const ConsumptionView = defineComponent({
       if (showFallbackMeta) {
         const srcLabel = item.sourceName || item.appSource || '';
         const cacheLabel = t('cons.topConvCacheMeta', {
-          pct: Number(item.cacheHitPct ?? 0).toFixed(1),
+          pct: formatPctNumber(item.cacheHitPct ?? 0),
         });
         patchText(refs.fallbackMetaEl, srcLabel ? `${srcLabel} · ${cacheLabel}` : cacheLabel);
       }
@@ -1755,7 +1756,7 @@ export const ConsumptionView = defineComponent({
       patchText(heroCostUsd, formatUsd(costUsd));
       patchText(heroCostCny, formatCnyApprox(costUsd));
 
-      patchText(cacheHitPctEl, `${Number(acct.cacheHitPct ?? 0).toFixed(1)}%`);
+      patchText(cacheHitPctEl, formatPctNumber(acct.cacheHitPct ?? 0, { withSymbol: true }));
       patchText(cacheTokensEl, t('cons.cacheHitTokens', { tokens: formatTokensPrecise(cacheTokens) }));
 
       let inPct = 0;

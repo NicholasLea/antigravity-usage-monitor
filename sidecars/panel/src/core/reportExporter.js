@@ -8,6 +8,7 @@ import {
   formatAnomalyKindLabel,
   formatCompactDateTime,
   formatMetric,
+  formatPctNumber,
   formatSpeedMetric,
   formatTokensPrecise,
   formatUsd,
@@ -429,10 +430,10 @@ export function buildStepsCsv(steps, { displaySettings = {}, includeBom = true }
     const promptTok = inTok + cacheTok;
     const cachePct =
       st.cacheHitPct != null && Number.isFinite(Number(st.cacheHitPct))
-        ? Number(st.cacheHitPct).toFixed(1)
+        ? formatPctNumber(st.cacheHitPct)
         : promptTok > 0
-          ? ((cacheTok / promptTok) * 100).toFixed(1)
-          : '0.0';
+          ? formatPctNumber((cacheTok / promptTok) * 100)
+          : '0';
     const ctxTok = Number(st.contextTokens || promptTok + outTok);
     const anomCount = Number(st.anomaly?.count || 0);
     const anomDesc =
@@ -693,7 +694,7 @@ export function buildStepsMarkdownReport(
   const agg = summarizeStepsForExport(list, displaySettings);
 
   const totalTok = agg.sumIn + agg.sumCache + agg.sumOut;
-  const cacheHitPct = (computeCacheHitRatio(agg.sumIn, agg.sumCache) * 100).toFixed(1);
+  const cacheHitPct = formatPctNumber(computeCacheHitRatio(agg.sumIn, agg.sumCache) * 100);
   const avgTps = agg.tpsCnt > 0 ? formatSpeedMetric(agg.tpsSum / agg.tpsCnt, ' tok/s') : '—';
   const avgTtft = agg.ttftCnt > 0 ? formatMetric(agg.ttftSum / agg.ttftCnt, 's') : '—';
   const heading = title
@@ -734,7 +735,9 @@ export function buildStepsMarkdownReport(
     );
     for (const m of agg.sortedModels) {
       const mTotal = m.inTok + m.cacheTok + m.outTok;
-      const mCache = `${(computeCacheHitRatio(m.inTok, m.cacheTok) * 100).toFixed(1)}%`;
+      const mCache = formatPctNumber(computeCacheHitRatio(m.inTok, m.cacheTok) * 100, {
+        withSymbol: true,
+      });
       const mTps = m.tpsCnt > 0 ? formatSpeedMetric(m.tpsSum / m.tpsCnt, ' tok/s') : '—';
       lines.push(
         `| ${escapeMdCell(m.label)} | ${m.calls} | ${formatTokensPrecise(mTotal)} | ${mCache} | ${mTps} | ${formatUsd(m.cost, { precise: m.cost > 0 && m.cost < 0.1 })} |`
@@ -835,7 +838,7 @@ export function buildConsumptionCsv(
       Number(acc.cacheReadTokens || 0),
       Number(acc.outputTokens || 0),
       Number(acc.totalTokens || 0),
-      Number(acc.cacheHitPct || 0).toFixed(1),
+      formatPctNumber(acc.cacheHitPct || 0),
       Number(acc.costUsd || 0).toFixed(4),
       `saved_usd=${Number(acc.savedCostUsd || 0).toFixed(4)}`,
     ]),
@@ -851,7 +854,7 @@ export function buildConsumptionCsv(
         Number(m.cacheReadTokens || 0),
         Number(m.outputTokens || 0),
         Number(m.totalTokens || 0),
-        Number(m.cacheHitPct || 0).toFixed(1),
+        formatPctNumber(m.cacheHitPct || 0),
         Number(m.costUsd || 0).toFixed(4),
         m.avgTokPerSec != null ? `avg_tps=${Number(m.avgTokPerSec).toFixed(1)}` : '',
       ])
@@ -868,7 +871,7 @@ export function buildConsumptionCsv(
         Number(w.cacheReadTokens || 0),
         Number(w.responseTokens || 0) + Number(w.thinkingTokens || 0),
         Number(w.totalTokens || 0),
-        Number(w.cacheHitPct || 0).toFixed(1),
+        formatPctNumber(w.cacheHitPct || 0),
         Number(w.costUsd || 0).toFixed(4),
         `sessions=${Number(w.sessionCount || 0)}`,
       ])
@@ -885,7 +888,7 @@ export function buildConsumptionCsv(
         Number(c.cacheReadTokens || 0),
         Number(c.responseTokens || 0) + Number(c.thinkingTokens || 0),
         Number(c.totalTokens || 0),
-        Number(c.cacheHitPct || 0).toFixed(1),
+        formatPctNumber(c.cacheHitPct || 0),
         Number(c.costUsd || 0).toFixed(4),
         c.sourceName || c.appSource || '',
       ])
@@ -1433,14 +1436,14 @@ export function buildConsumptionMarkdownReport(
         '',
         `- **Total Tokens**: ${formatTokensPrecise(acc.totalTokens || 0)} (${Number(acc.calls || 0)} calls)`,
         `- **Est. Cost**: ${formatUsd(acc.costUsd || 0)} (Cache Saved ${formatUsd(acc.savedCostUsd || 0)})`,
-        `- **Cache Hit Rate**: ${Number(acc.cacheHitPct || 0).toFixed(1)}% (Input ${formatTokensPrecise(acc.inputTokens || 0)} / Cache ${formatTokensPrecise(acc.cacheReadTokens || 0)} / Output ${formatTokensPrecise(acc.outputTokens || 0)})`,
+        `- **Cache Hit Rate**: ${formatPctNumber(acc.cacheHitPct || 0, { withSymbol: true })} (Input ${formatTokensPrecise(acc.inputTokens || 0)} / Cache ${formatTokensPrecise(acc.cacheReadTokens || 0)} / Output ${formatTokensPrecise(acc.outputTokens || 0)})`,
       ]
     : [
         `# 用量统计报告 · ${rangeLabel}`,
         '',
         `- **总 Token**: ${formatTokensPrecise(acc.totalTokens || 0)}（共 ${Number(acc.calls || 0)} 次调用）`,
         `- **预估费用**: ${formatUsd(acc.costUsd || 0)}（缓存节省 ${formatUsd(acc.savedCostUsd || 0)}）`,
-        `- **缓存命中率**: ${Number(acc.cacheHitPct || 0).toFixed(1)}%（新输入 ${formatTokensPrecise(acc.inputTokens || 0)} / 缓存读取 ${formatTokensPrecise(acc.cacheReadTokens || 0)} / 输出 ${formatTokensPrecise(acc.outputTokens || 0)}）`,
+        `- **缓存命中率**: ${formatPctNumber(acc.cacheHitPct || 0, { withSymbol: true })}（新输入 ${formatTokensPrecise(acc.inputTokens || 0)} / 缓存读取 ${formatTokensPrecise(acc.cacheReadTokens || 0)} / 输出 ${formatTokensPrecise(acc.outputTokens || 0)}）`,
       ];
 
   if (models.length > 0) {
@@ -1455,7 +1458,7 @@ export function buildConsumptionMarkdownReport(
     );
     for (const m of models) {
       lines.push(
-        `| ${escapeMdCell(m.displayText || m.label || m.shortName)} | ${Number(m.calls || 0)} | ${formatTokensPrecise(m.totalTokens || 0)} | ${Number(m.cacheHitPct || 0).toFixed(1)}% | ${m.avgTokPerSec != null ? formatSpeedMetric(m.avgTokPerSec, ' tok/s') : '—'} | ${formatUsd(m.costUsd || 0)} |`
+        `| ${escapeMdCell(m.displayText || m.label || m.shortName)} | ${Number(m.calls || 0)} | ${formatTokensPrecise(m.totalTokens || 0)} | ${formatPctNumber(m.cacheHitPct || 0, { withSymbol: true })} | ${m.avgTokPerSec != null ? formatSpeedMetric(m.avgTokPerSec, ' tok/s') : '—'} | ${formatUsd(m.costUsd || 0)} |`
       );
     }
   }
@@ -1472,7 +1475,7 @@ export function buildConsumptionMarkdownReport(
     );
     for (const w of workspaces) {
       lines.push(
-        `| ${escapeMdCell(w.label || w.workspacePath || (en ? 'Unbound' : '未绑定工作区'))} | ${Number(w.sessionCount || 0)} | ${Number(w.calls || 0)} | ${formatTokensPrecise(w.totalTokens || 0)} | ${Number(w.cacheHitPct || 0).toFixed(1)}% | ${formatUsd(w.costUsd || 0)} |`
+        `| ${escapeMdCell(w.label || w.workspacePath || (en ? 'Unbound' : '未绑定工作区'))} | ${Number(w.sessionCount || 0)} | ${Number(w.calls || 0)} | ${formatTokensPrecise(w.totalTokens || 0)} | ${formatPctNumber(w.cacheHitPct || 0, { withSymbol: true })} | ${formatUsd(w.costUsd || 0)} |`
       );
     }
   }
@@ -1489,7 +1492,7 @@ export function buildConsumptionMarkdownReport(
     );
     for (const c of sessions.slice(0, 8)) {
       lines.push(
-        `| ${escapeMdCell(c.title || c.cascadeId)} | ${Number(c.calls || 0)} | ${formatTokensPrecise(c.totalTokens || 0)} | ${Number(c.cacheHitPct || 0).toFixed(1)}% | ${formatUsd(c.costUsd || 0)} |`
+        `| ${escapeMdCell(c.title || c.cascadeId)} | ${Number(c.calls || 0)} | ${formatTokensPrecise(c.totalTokens || 0)} | ${formatPctNumber(c.cacheHitPct || 0, { withSymbol: true })} | ${formatUsd(c.costUsd || 0)} |`
       );
     }
   }

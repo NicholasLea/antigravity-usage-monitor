@@ -12,6 +12,7 @@ import { h, patchAttr, patchClasses, patchStyleVar, patchText } from '../../core
 import {
   formatAgentBadgeText,
   formatMetric,
+  formatPctNumber,
   formatSpeedMetric,
   formatStepAnomalyInlineSummary,
   formatTokens,
@@ -573,7 +574,7 @@ function formatYAxisTick(metric, val, step) {
     return step >= 1 ? `${Math.round(val)}s` : `${val.toFixed(1)}s`;
   }
   if (metric === 'cache') {
-    return step >= 1 ? `${Math.round(val)}%` : `${val.toFixed(1)}%`;
+    return step >= 1 ? `${Math.round(val)}%` : formatPctNumber(val, { withSymbol: true });
   }
   if (metric === 'cost') {
     if (step >= 1) return `$${Math.round(val)}`;
@@ -648,7 +649,7 @@ function formatChartMetricValue(metric, val) {
     case 'ttft':
       return formatMetric(val, 's');
     case 'cache':
-      return `${val.toFixed(1)}%`;
+      return formatPctNumber(val, { withSymbol: true });
     case 'cost':
       return formatUsd(val, { precise: true });
     default:
@@ -667,7 +668,7 @@ function formatChartMetricCompact(metric, val) {
     case 'ttft':
       return formatMetric(val, 's');
     case 'cache':
-      return `${val.toFixed(1)}%`;
+      return formatPctNumber(val, { withSymbol: true });
     case 'cost':
       return formatUsd(val, { precise: true });
     default:

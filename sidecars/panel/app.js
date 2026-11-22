@@ -4014,7 +4014,7 @@ return { defineComponent };
 })();
 
 // --- src/core/formatters.js ---
-const { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
+const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
 /**
  * @fileoverview Pure formatting utilities for speed metrics, token counts,
  * USD estimates, countdown timers, and custom datetime displays.
@@ -4040,6 +4040,26 @@ function formatCachePct(value) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
   const num = Math.max(0, Math.min(100, +Number(value).toFixed(1)));
   return `${num}%`;
+}
+
+/**
+ * 格式化百分比数值文本：常规值保留 1 位小数，将边界值 `0.0` / `100.0` 收口为整数 `0` / `100`。
+ *
+ * @param {number|string|null|undefined} value
+ * @param {{ withSymbol?: boolean }} [options]
+ * @returns {string}
+ */
+function formatPctNumber(value, { withSymbol = false } = {}) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return withSymbol ? '0%' : '0';
+  const rounded = Math.round(num * 10) / 10;
+  const str =
+    Math.abs(rounded) < 1e-9
+      ? '0'
+      : Math.abs(rounded - 100) < 1e-9
+        ? '100'
+        : rounded.toFixed(1);
+  return withSymbol ? `${str}%` : str;
 }
 
 function getSpeedToneClass(tokPerSec) {
@@ -5319,7 +5339,7 @@ function buildDeterministicModelColorMap(models = []) {
 
   return colorMap;
 }
-return { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
 })();
 
 // --- src/core/stepInspector.js ---
@@ -5581,10 +5601,12 @@ function buildStepDiagnosticMarkdown(
   const promptTok = Number(st.inputTokens || 0) + Number(st.cacheReadTokens || 0);
   const cachePct =
     st.cacheHitPct != null && Number.isFinite(Number(st.cacheHitPct))
-      ? `${Number(st.cacheHitPct).toFixed(1)}%`
+      ? formatPctNumber(st.cacheHitPct, { withSymbol: true })
       : promptTok > 0
-        ? `${((Number(st.cacheReadTokens || 0) / promptTok) * 100).toFixed(1)}%`
-        : '0.0%';
+        ? formatPctNumber((Number(st.cacheReadTokens || 0) / promptTok) * 100, {
+            withSymbol: true,
+          })
+        : '0%';
   const ctxTok = Number(st.contextTokens || promptTok + Number(st.outputTokens || 0));
   const ctxDelta =
     prevContextTokens != null && ctxTok > 0
@@ -6962,10 +6984,10 @@ function buildStepsCsv(steps, { displaySettings = {}, includeBom = true } = {}) 
     const promptTok = inTok + cacheTok;
     const cachePct =
       st.cacheHitPct != null && Number.isFinite(Number(st.cacheHitPct))
-        ? Number(st.cacheHitPct).toFixed(1)
+        ? formatPctNumber(st.cacheHitPct)
         : promptTok > 0
-          ? ((cacheTok / promptTok) * 100).toFixed(1)
-          : '0.0';
+          ? formatPctNumber((cacheTok / promptTok) * 100)
+          : '0';
     const ctxTok = Number(st.contextTokens || promptTok + outTok);
     const anomCount = Number(st.anomaly?.count || 0);
     const anomDesc =
@@ -7226,7 +7248,7 @@ function buildStepsMarkdownReport(
   const agg = summarizeStepsForExport(list, displaySettings);
 
   const totalTok = agg.sumIn + agg.sumCache + agg.sumOut;
-  const cacheHitPct = (computeCacheHitRatio(agg.sumIn, agg.sumCache) * 100).toFixed(1);
+  const cacheHitPct = formatPctNumber(computeCacheHitRatio(agg.sumIn, agg.sumCache) * 100);
   const avgTps = agg.tpsCnt > 0 ? formatSpeedMetric(agg.tpsSum / agg.tpsCnt, ' tok/s') : '—';
   const avgTtft = agg.ttftCnt > 0 ? formatMetric(agg.ttftSum / agg.ttftCnt, 's') : '—';
   const heading = title
@@ -7267,7 +7289,9 @@ function buildStepsMarkdownReport(
     );
     for (const m of agg.sortedModels) {
       const mTotal = m.inTok + m.cacheTok + m.outTok;
-      const mCache = `${(computeCacheHitRatio(m.inTok, m.cacheTok) * 100).toFixed(1)}%`;
+      const mCache = formatPctNumber(computeCacheHitRatio(m.inTok, m.cacheTok) * 100, {
+        withSymbol: true,
+      });
       const mTps = m.tpsCnt > 0 ? formatSpeedMetric(m.tpsSum / m.tpsCnt, ' tok/s') : '—';
       lines.push(
         `| ${escapeMdCell(m.label)} | ${m.calls} | ${formatTokensPrecise(mTotal)} | ${mCache} | ${mTps} | ${formatUsd(m.cost, { precise: m.cost > 0 && m.cost < 0.1 })} |`
@@ -7368,7 +7392,7 @@ function buildConsumptionCsv(
       Number(acc.cacheReadTokens || 0),
       Number(acc.outputTokens || 0),
       Number(acc.totalTokens || 0),
-      Number(acc.cacheHitPct || 0).toFixed(1),
+      formatPctNumber(acc.cacheHitPct || 0),
       Number(acc.costUsd || 0).toFixed(4),
       `saved_usd=${Number(acc.savedCostUsd || 0).toFixed(4)}`,
     ]),
@@ -7384,7 +7408,7 @@ function buildConsumptionCsv(
         Number(m.cacheReadTokens || 0),
         Number(m.outputTokens || 0),
         Number(m.totalTokens || 0),
-        Number(m.cacheHitPct || 0).toFixed(1),
+        formatPctNumber(m.cacheHitPct || 0),
         Number(m.costUsd || 0).toFixed(4),
         m.avgTokPerSec != null ? `avg_tps=${Number(m.avgTokPerSec).toFixed(1)}` : '',
       ])
@@ -7401,7 +7425,7 @@ function buildConsumptionCsv(
         Number(w.cacheReadTokens || 0),
         Number(w.responseTokens || 0) + Number(w.thinkingTokens || 0),
         Number(w.totalTokens || 0),
-        Number(w.cacheHitPct || 0).toFixed(1),
+        formatPctNumber(w.cacheHitPct || 0),
         Number(w.costUsd || 0).toFixed(4),
         `sessions=${Number(w.sessionCount || 0)}`,
       ])
@@ -7418,7 +7442,7 @@ function buildConsumptionCsv(
         Number(c.cacheReadTokens || 0),
         Number(c.responseTokens || 0) + Number(c.thinkingTokens || 0),
         Number(c.totalTokens || 0),
-        Number(c.cacheHitPct || 0).toFixed(1),
+        formatPctNumber(c.cacheHitPct || 0),
         Number(c.costUsd || 0).toFixed(4),
         c.sourceName || c.appSource || '',
       ])
@@ -7966,14 +7990,14 @@ function buildConsumptionMarkdownReport(
         '',
         `- **Total Tokens**: ${formatTokensPrecise(acc.totalTokens || 0)} (${Number(acc.calls || 0)} calls)`,
         `- **Est. Cost**: ${formatUsd(acc.costUsd || 0)} (Cache Saved ${formatUsd(acc.savedCostUsd || 0)})`,
-        `- **Cache Hit Rate**: ${Number(acc.cacheHitPct || 0).toFixed(1)}% (Input ${formatTokensPrecise(acc.inputTokens || 0)} / Cache ${formatTokensPrecise(acc.cacheReadTokens || 0)} / Output ${formatTokensPrecise(acc.outputTokens || 0)})`,
+        `- **Cache Hit Rate**: ${formatPctNumber(acc.cacheHitPct || 0, { withSymbol: true })} (Input ${formatTokensPrecise(acc.inputTokens || 0)} / Cache ${formatTokensPrecise(acc.cacheReadTokens || 0)} / Output ${formatTokensPrecise(acc.outputTokens || 0)})`,
       ]
     : [
         `# 用量统计报告 · ${rangeLabel}`,
         '',
         `- **总 Token**: ${formatTokensPrecise(acc.totalTokens || 0)}（共 ${Number(acc.calls || 0)} 次调用）`,
         `- **预估费用**: ${formatUsd(acc.costUsd || 0)}（缓存节省 ${formatUsd(acc.savedCostUsd || 0)}）`,
-        `- **缓存命中率**: ${Number(acc.cacheHitPct || 0).toFixed(1)}%（新输入 ${formatTokensPrecise(acc.inputTokens || 0)} / 缓存读取 ${formatTokensPrecise(acc.cacheReadTokens || 0)} / 输出 ${formatTokensPrecise(acc.outputTokens || 0)}）`,
+        `- **缓存命中率**: ${formatPctNumber(acc.cacheHitPct || 0, { withSymbol: true })}（新输入 ${formatTokensPrecise(acc.inputTokens || 0)} / 缓存读取 ${formatTokensPrecise(acc.cacheReadTokens || 0)} / 输出 ${formatTokensPrecise(acc.outputTokens || 0)}）`,
       ];
 
   if (models.length > 0) {
@@ -7988,7 +8012,7 @@ function buildConsumptionMarkdownReport(
     );
     for (const m of models) {
       lines.push(
-        `| ${escapeMdCell(m.displayText || m.label || m.shortName)} | ${Number(m.calls || 0)} | ${formatTokensPrecise(m.totalTokens || 0)} | ${Number(m.cacheHitPct || 0).toFixed(1)}% | ${m.avgTokPerSec != null ? formatSpeedMetric(m.avgTokPerSec, ' tok/s') : '—'} | ${formatUsd(m.costUsd || 0)} |`
+        `| ${escapeMdCell(m.displayText || m.label || m.shortName)} | ${Number(m.calls || 0)} | ${formatTokensPrecise(m.totalTokens || 0)} | ${formatPctNumber(m.cacheHitPct || 0, { withSymbol: true })} | ${m.avgTokPerSec != null ? formatSpeedMetric(m.avgTokPerSec, ' tok/s') : '—'} | ${formatUsd(m.costUsd || 0)} |`
       );
     }
   }
@@ -8005,7 +8029,7 @@ function buildConsumptionMarkdownReport(
     );
     for (const w of workspaces) {
       lines.push(
-        `| ${escapeMdCell(w.label || w.workspacePath || (en ? 'Unbound' : '未绑定工作区'))} | ${Number(w.sessionCount || 0)} | ${Number(w.calls || 0)} | ${formatTokensPrecise(w.totalTokens || 0)} | ${Number(w.cacheHitPct || 0).toFixed(1)}% | ${formatUsd(w.costUsd || 0)} |`
+        `| ${escapeMdCell(w.label || w.workspacePath || (en ? 'Unbound' : '未绑定工作区'))} | ${Number(w.sessionCount || 0)} | ${Number(w.calls || 0)} | ${formatTokensPrecise(w.totalTokens || 0)} | ${formatPctNumber(w.cacheHitPct || 0, { withSymbol: true })} | ${formatUsd(w.costUsd || 0)} |`
       );
     }
   }
@@ -8022,7 +8046,7 @@ function buildConsumptionMarkdownReport(
     );
     for (const c of sessions.slice(0, 8)) {
       lines.push(
-        `| ${escapeMdCell(c.title || c.cascadeId)} | ${Number(c.calls || 0)} | ${formatTokensPrecise(c.totalTokens || 0)} | ${Number(c.cacheHitPct || 0).toFixed(1)}% | ${formatUsd(c.costUsd || 0)} |`
+        `| ${escapeMdCell(c.title || c.cascadeId)} | ${Number(c.calls || 0)} | ${formatTokensPrecise(c.totalTokens || 0)} | ${formatPctNumber(c.cacheHitPct || 0, { withSymbol: true })} | ${formatUsd(c.costUsd || 0)} |`
       );
     }
   }
@@ -12815,7 +12839,7 @@ const ContextSegmentMeter = defineComponent({
           slotEl,
           'title',
           isActive
-            ? `${t(item.def.labelKey)} · ${formatTokens(item.val)} (${item.pct.toFixed(1)}%)`
+            ? `${t(item.def.labelKey)} · ${formatTokens(item.val)} (${formatPctNumber(item.pct, { withSymbol: true })})`
             : null
         );
       }
@@ -14856,7 +14880,7 @@ function formatYAxisTick(metric, val, step) {
     return step >= 1 ? `${Math.round(val)}s` : `${val.toFixed(1)}s`;
   }
   if (metric === 'cache') {
-    return step >= 1 ? `${Math.round(val)}%` : `${val.toFixed(1)}%`;
+    return step >= 1 ? `${Math.round(val)}%` : formatPctNumber(val, { withSymbol: true });
   }
   if (metric === 'cost') {
     if (step >= 1) return `$${Math.round(val)}`;
@@ -14931,7 +14955,7 @@ function formatChartMetricValue(metric, val) {
     case 'ttft':
       return formatMetric(val, 's');
     case 'cache':
-      return `${val.toFixed(1)}%`;
+      return formatPctNumber(val, { withSymbol: true });
     case 'cost':
       return formatUsd(val, { precise: true });
     default:
@@ -14950,7 +14974,7 @@ function formatChartMetricCompact(metric, val) {
     case 'ttft':
       return formatMetric(val, 's');
     case 'cache':
-      return `${val.toFixed(1)}%`;
+      return formatPctNumber(val, { withSymbol: true });
     case 'cost':
       return formatUsd(val, { precise: true });
     default:
@@ -18345,8 +18369,8 @@ function syncQuotaWindowMeter({
   const resetStr = hasData ? formatCountdown(resetTime) : '';
 
   if (hasData && rsvVal > 0) {
-    const rsvStr = rsvVal.toFixed(1);
-    const actualStr = actualVal.toFixed(1);
+    const rsvStr = formatPctNumber(rsvVal);
+    const actualStr = formatPctNumber(actualVal);
     const leases = Math.max(1, Number(leaseCount) || 1);
     const tipText =
       leases >= 2
@@ -18354,13 +18378,13 @@ function syncQuotaWindowMeter({
         : t('quota.reservedTip', { rsv: rsvStr, actual: actualStr });
     patchText(
       metaBeforeEl,
-      t('quota.usedBeforeReserved', { reset: resetStr, used: usedVal.toFixed(1) })
+      t('quota.usedBeforeReserved', { reset: resetStr, used: formatPctNumber(usedVal) })
     );
     metaReservedEl.hidden = false;
     patchText(metaReservedEl, t('quota.reservedTag', { rsv: rsvStr }));
     patchAttr(metaReservedEl, 'title', tipText);
     metaAfterEl.hidden = false;
-    patchText(metaAfterEl, t('quota.usedAfterReserved', { rem: remVal.toFixed(1) }));
+    patchText(metaAfterEl, t('quota.usedAfterReserved', { rem: formatPctNumber(remVal) }));
     patchAttr(trackEl, 'title', tipText);
     const actualWidth = +Math.min(100, actualVal).toFixed(2);
     const rsvWidth = +Math.min(Math.max(0, 100 - actualWidth), rsvVal).toFixed(2);
@@ -18373,8 +18397,8 @@ function syncQuotaWindowMeter({
       hasData
         ? t('quota.usedAndLeft', {
             reset: resetStr,
-            used: usedVal.toFixed(1),
-            rem: remVal.toFixed(1),
+            used: formatPctNumber(usedVal),
+            rem: formatPctNumber(remVal),
           })
         : fallbackMetaText
     );
@@ -29340,7 +29364,7 @@ const ConsumptionView = defineComponent({
           responseTokens,
           outputTokens: responseTokens + thinkingTokens,
           tokText: formatTokensPrecise(tok),
-          pctText: `${pct.toFixed(1)}%`,
+          pctText: formatPctNumber(pct, { withSymbol: true }),
           color,
           isOther: false,
         };
@@ -29377,7 +29401,7 @@ const ConsumptionView = defineComponent({
           responseTokens: otherResp,
           outputTokens: otherResp + otherThink,
           tokText: formatTokensPrecise(otherTok),
-          pctText: `${otherPct.toFixed(1)}%`,
+          pctText: formatPctNumber(otherPct, { withSymbol: true }),
           color: 'var(--cons-other-seg)',
           isOther: true,
         });
@@ -29541,7 +29565,7 @@ const ConsumptionView = defineComponent({
         : promptTok > 0 && Number(item.cacheReadTokens || 0) > 0
           ? +((Number(item.cacheReadTokens || 0) / promptTok) * 100).toFixed(1)
           : 0;
-      const cachePctStr = cachePctVal.toFixed(1);
+      const cachePctStr = formatPctNumber(cachePctVal);
       const effCostPer1M =
         !isAllUnpriced && costVal > 0 && total >= 1000 ? costVal / (total / 1_000_000) : null;
       const outTok = Number(
@@ -29555,7 +29579,7 @@ const ConsumptionView = defineComponent({
         const barPct = costBase > 0 && costVal > 0 ? Math.min(100, Math.max(1, (costVal / costBase) * 100)) : 0;
         patchAttr(refs.pctBadge, 'hidden', false);
         patchAttr(refs.pctBadge, 'title', null);
-        patchText(refs.pctBadge, `${costShare.toFixed(1)}%`);
+        patchText(refs.pctBadge, formatPctNumber(costShare, { withSymbol: true }));
         patchText(refs.totalTokEl, isAllUnpriced ? '' : formatCnyApprox(costVal));
         patchText(refs.costEl, costText);
 
@@ -29630,7 +29654,7 @@ const ConsumptionView = defineComponent({
           callsBase > 0 && callsCount > 0 ? Math.min(100, Math.max(1, (callsCount / callsBase) * 100)) : 0;
         patchAttr(refs.pctBadge, 'hidden', false);
         patchAttr(refs.pctBadge, 'title', null);
-        patchText(refs.pctBadge, `${callsShare.toFixed(1)}%`);
+        patchText(refs.pctBadge, formatPctNumber(callsShare, { withSymbol: true }));
         patchText(refs.totalTokEl, formatTokensPrecise(total));
         patchText(refs.costEl, t('cons.callsCount', { calls: callsCount }));
 
@@ -29670,7 +29694,7 @@ const ConsumptionView = defineComponent({
         grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.008, total / grandTotalTokens)) : 0;
       patchAttr(refs.pctBadge, 'hidden', false);
       patchAttr(refs.pctBadge, 'title', null);
-      patchText(refs.pctBadge, `${share.toFixed(1)}%`);
+      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
       patchText(refs.totalTokEl, formatTokensPrecise(total));
       patchText(refs.costEl, costText);
 
@@ -29844,7 +29868,7 @@ const ConsumptionView = defineComponent({
       const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
       const scaleRatio =
         grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.01, total / grandTotalTokens)) : 0;
-      patchText(refs.pctBadge, `${share.toFixed(1)}%`);
+      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
       patchText(refs.totalTokEl, formatTokensPrecise(total));
 
       const costVal = Number(item.costUsd || 0);
@@ -30095,7 +30119,7 @@ const ConsumptionView = defineComponent({
           ? Math.min(1, Math.max(0.01, total / tokBase))
           : 0;
 
-      patchText(refs.pctBadge, `${share.toFixed(1)}%`);
+      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
       if (sortMode === 'tokens') {
         patchText(refs.totalTokEl, costText);
         patchText(refs.costEl, formatTokensPrecise(total));
@@ -30165,7 +30189,7 @@ const ConsumptionView = defineComponent({
       if (showFallbackMeta) {
         const srcLabel = item.sourceName || item.appSource || '';
         const cacheLabel = t('cons.topConvCacheMeta', {
-          pct: Number(item.cacheHitPct ?? 0).toFixed(1),
+          pct: formatPctNumber(item.cacheHitPct ?? 0),
         });
         patchText(refs.fallbackMetaEl, srcLabel ? `${srcLabel} · ${cacheLabel}` : cacheLabel);
       }
@@ -30282,7 +30306,7 @@ const ConsumptionView = defineComponent({
       patchText(heroCostUsd, formatUsd(costUsd));
       patchText(heroCostCny, formatCnyApprox(costUsd));
 
-      patchText(cacheHitPctEl, `${Number(acct.cacheHitPct ?? 0).toFixed(1)}%`);
+      patchText(cacheHitPctEl, formatPctNumber(acct.cacheHitPct ?? 0, { withSymbol: true }));
       patchText(cacheTokensEl, t('cons.cacheHitTokens', { tokens: formatTokensPrecise(cacheTokens) }));
 
       let inPct = 0;
@@ -31533,7 +31557,7 @@ const StepsDetailView = defineComponent({
 
       patchText(inspKpiCache.lbl, t('steps.inspCacheLabel'));
       patchText(inspKpiCache.val, formatTokensPrecise(cacheTok));
-      patchText(inspKpiCache.sub, `${cachePct.toFixed(1)}%`);
+      patchText(inspKpiCache.sub, formatPctNumber(cachePct, { withSymbol: true }));
 
       patchText(inspKpiOutput.lbl, t('steps.inspOutputLabel'));
       patchText(inspKpiOutput.val, formatTokensPrecise(outTok));

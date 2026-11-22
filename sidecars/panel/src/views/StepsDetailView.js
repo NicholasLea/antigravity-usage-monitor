@@ -20,6 +20,7 @@ import {
   formatAnomalyTagText,
   formatCompactDateTime,
   formatMetric,
+  formatPctNumber,
   formatSpeedMetric,
   formatTimingDetailSec,
   formatTokens,
@@ -755,7 +756,7 @@ export const StepsDetailView = defineComponent({
 
       patchText(inspKpiCache.lbl, t('steps.inspCacheLabel'));
       patchText(inspKpiCache.val, formatTokensPrecise(cacheTok));
-      patchText(inspKpiCache.sub, `${cachePct.toFixed(1)}%`);
+      patchText(inspKpiCache.sub, formatPctNumber(cachePct, { withSymbol: true }));
 
       patchText(inspKpiOutput.lbl, t('steps.inspOutputLabel'));
       patchText(inspKpiOutput.val, formatTokensPrecise(outTok));

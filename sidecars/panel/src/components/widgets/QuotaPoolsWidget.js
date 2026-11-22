@@ -13,7 +13,12 @@ import {
   patchStyleVar,
   patchText,
 } from '../../core/domPatch.js';
-import { formatCountdown, formatTokens, formatUsd } from '../../core/formatters.js';
+import {
+  formatCountdown,
+  formatPctNumber,
+  formatTokens,
+  formatUsd,
+} from '../../core/formatters.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 import { getEffectiveLocale, t } from '../../i18n/index.js';
 
@@ -189,8 +194,8 @@ function syncQuotaWindowMeter({
   const resetStr = hasData ? formatCountdown(resetTime) : '';
 
   if (hasData && rsvVal > 0) {
-    const rsvStr = rsvVal.toFixed(1);
-    const actualStr = actualVal.toFixed(1);
+    const rsvStr = formatPctNumber(rsvVal);
+    const actualStr = formatPctNumber(actualVal);
     const leases = Math.max(1, Number(leaseCount) || 1);
     const tipText =
       leases >= 2
@@ -198,13 +203,13 @@ function syncQuotaWindowMeter({
         : t('quota.reservedTip', { rsv: rsvStr, actual: actualStr });
     patchText(
       metaBeforeEl,
-      t('quota.usedBeforeReserved', { reset: resetStr, used: usedVal.toFixed(1) })
+      t('quota.usedBeforeReserved', { reset: resetStr, used: formatPctNumber(usedVal) })
     );
     metaReservedEl.hidden = false;
     patchText(metaReservedEl, t('quota.reservedTag', { rsv: rsvStr }));
     patchAttr(metaReservedEl, 'title', tipText);
     metaAfterEl.hidden = false;
-    patchText(metaAfterEl, t('quota.usedAfterReserved', { rem: remVal.toFixed(1) }));
+    patchText(metaAfterEl, t('quota.usedAfterReserved', { rem: formatPctNumber(remVal) }));
     patchAttr(trackEl, 'title', tipText);
     const actualWidth = +Math.min(100, actualVal).toFixed(2);
     const rsvWidth = +Math.min(Math.max(0, 100 - actualWidth), rsvVal).toFixed(2);
@@ -217,8 +222,8 @@ function syncQuotaWindowMeter({
       hasData
         ? t('quota.usedAndLeft', {
             reset: resetStr,
-            used: usedVal.toFixed(1),
-            rem: remVal.toFixed(1),
+            used: formatPctNumber(usedVal),
+            rem: formatPctNumber(remVal),
           })
         : fallbackMetaText
     );

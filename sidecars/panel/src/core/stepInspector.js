@@ -8,6 +8,7 @@ import {
   formatAnomalyKindLabel,
   formatCompactDateTime,
   formatMetric,
+  formatPctNumber,
   formatSpeedMetric,
   formatTimingDetailSec,
   formatTokensPrecise,
@@ -267,10 +268,12 @@ export function buildStepDiagnosticMarkdown(
   const promptTok = Number(st.inputTokens || 0) + Number(st.cacheReadTokens || 0);
   const cachePct =
     st.cacheHitPct != null && Number.isFinite(Number(st.cacheHitPct))
-      ? `${Number(st.cacheHitPct).toFixed(1)}%`
+      ? formatPctNumber(st.cacheHitPct, { withSymbol: true })
       : promptTok > 0
-        ? `${((Number(st.cacheReadTokens || 0) / promptTok) * 100).toFixed(1)}%`
-        : '0.0%';
+        ? formatPctNumber((Number(st.cacheReadTokens || 0) / promptTok) * 100, {
+            withSymbol: true,
+          })
+        : '0%';
   const ctxTok = Number(st.contextTokens || promptTok + Number(st.outputTokens || 0));
   const ctxDelta =
     prevContextTokens != null && ctxTok > 0

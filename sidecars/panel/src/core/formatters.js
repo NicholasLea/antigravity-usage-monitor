@@ -37,6 +37,26 @@ export function formatCachePct(value) {
   return `${num}%`;
 }
 
+/**
+ * 格式化百分比数值文本：常规值保留 1 位小数，将边界值 `0.0` / `100.0` 收口为整数 `0` / `100`。
+ *
+ * @param {number|string|null|undefined} value
+ * @param {{ withSymbol?: boolean }} [options]
+ * @returns {string}
+ */
+export function formatPctNumber(value, { withSymbol = false } = {}) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return withSymbol ? '0%' : '0';
+  const rounded = Math.round(num * 10) / 10;
+  const str =
+    Math.abs(rounded) < 1e-9
+      ? '0'
+      : Math.abs(rounded - 100) < 1e-9
+        ? '100'
+        : rounded.toFixed(1);
+  return withSymbol ? `${str}%` : str;
+}
+
 export function getSpeedToneClass(tokPerSec) {
   return `tone-${classifySpeedTier(tokPerSec)}`;
 }

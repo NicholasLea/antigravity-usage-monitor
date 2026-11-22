@@ -6,7 +6,7 @@
 
 import { defineComponent } from '../../core/component.js';
 import { h, patchAttr, patchClasses, patchStyleVar } from '../../core/domPatch.js';
-import { formatTokens } from '../../core/formatters.js';
+import { formatPctNumber, formatTokens } from '../../core/formatters.js';
 import { t } from '../../i18n/index.js';
 
 const SEGMENT_DEFS = [
@@ -84,7 +84,7 @@ export const ContextSegmentMeter = defineComponent({
           slotEl,
           'title',
           isActive
-            ? `${t(item.def.labelKey)} · ${formatTokens(item.val)} (${item.pct.toFixed(1)}%)`
+            ? `${t(item.def.labelKey)} · ${formatTokens(item.val)} (${formatPctNumber(item.pct, { withSymbol: true })})`
             : null
         );
       }
