@@ -122,7 +122,9 @@ function readConversationMtime(files = []) {
       const fullPath = /[\\/]|^[a-zA-Z]:/.test(nameOrPath)
         ? nameOrPath
         : join(CONVERSATIONS_DIR, nameOrPath);
-      mtimeMs = Math.max(mtimeMs, Number(statSync(fullPath)?.mtimeMs || 0));
+      const st = statSync(fullPath);
+      if (/\.db-wal$/i.test(fullPath) && Number(st?.size || 0) <= 0) continue;
+      mtimeMs = Math.max(mtimeMs, Number(st?.mtimeMs || 0));
     } catch {
       // 轨迹文件可能在目录枚举后被宿主删除。
     }
@@ -352,6 +354,12 @@ function attachStepAccountOwners(steps, prev, currentAccountName, entryAccountNa
 const MAX_SUBAGENT_RECONCILE_DEPTH = 4;
 const FAILED_RPC_COOLDOWN_MS = 60_000;
 const ACTIVE_FAILED_RPC_COOLDOWN_MS = 15_000;
+const REMOTE_FAILED_RPC_COOLDOWN_MS = 15 * 60_000;
+const REMOTE_ACTIVE_FAILED_RPC_COOLDOWN_MS = 30_000;
+const NOT_FOUND_RPC_COOLDOWN_MS = 30 * 60_000;
+const REMOTE_TRAJECTORY_RPC_TIMEOUT_MS = 25_000;
+const REMOTE_BACKGROUND_FETCH_LIMIT = 2;
+const REMOTE_CONSECUTIVE_TIMEOUT_BREAKER = 2;
 const TRANSCRIPT_TAIL_MAX_BYTES = 96 * 1024;
 const MAX_TRANSCRIPT_MEMO_ENTRIES = 64;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1407,7 +1415,8 @@ export async function enumerateAndSyncConversations({
   const persistCacheIfNeeded = cacheStore.persistTrajectoryCacheIfNeeded;
   const activeCooldownMap = isRemote ? endpoint.failedFetchCooldownMap : failedFetchCooldownMap;
   const activeLiveActivityMemo = isRemote ? endpoint.liveActivityMemo : liveActivityMemo;
-  const maxConcurrentRpc = isRemote ? 2 : MAX_CONCURRENT_RPC;
+  const maxConcurrentRpc = isRemote ? 1 : MAX_CONCURRENT_RPC;
+  let remoteConsecutiveTimeouts = 0;
 
   const nowSweepMs = Date.now();
   if (forceRefresh) {
@@ -1791,6 +1800,9 @@ export async function enumerateAndSyncConversations({
       attemptedFetchIds.add(c.cascadeId.toLowerCase());
     }
     for (let i = 0; i < targetConvs.length; i += maxConcurrentRpc) {
+      if (isRemote && remoteConsecutiveTimeouts >= REMOTE_CONSECUTIVE_TIMEOUT_BREAKER) {
+        break;
+      }
       const batch = targetConvs.slice(i, i + maxConcurrentRpc);
       await Promise.all(
         batch.map(async (conv) => {
@@ -1825,9 +1837,12 @@ export async function enumerateAndSyncConversations({
               trajRes = await callLsRpc(
                 'GetCascadeTrajectory',
                 { cascadeId: conv.cascadeId },
-                5000,
+                isRemote ? REMOTE_TRAJECTORY_RPC_TIMEOUT_MS : 5000,
                 endpoint
               );
+            }
+            if (isRemote) {
+              remoteConsecutiveTimeouts = 0;
             }
             if (!Array.isArray(trajRes?.trajectory?.steps)) {
               throw new Error('Trajectory steps unavailable');
@@ -2144,10 +2159,23 @@ export async function enumerateAndSyncConversations({
             ) {
               console.error(`Failed loading trajectory ${conv.cascadeId}: ${err.message}`);
             }
+            const errText = String(err?.message || '');
+            const isNotFoundErr = /(?:\(404\)|\bnot_found\b)/i.test(errText);
+            const isTimeoutErr = /(?:timed out|timeout|aborted)/i.test(errText);
+            if (isRemote && isTimeoutErr) {
+              remoteConsecutiveTimeouts += 1;
+            }
             if (!(isRunning && (hasTailStepInfo || offlineRecovered))) {
-              const cooldownMs =
-                isRunning || isReq ? ACTIVE_FAILED_RPC_COOLDOWN_MS : FAILED_RPC_COOLDOWN_MS;
-              activeCooldownMap.set(cooldownKey, { failedAt: nowPollMs, cooldownMs });
+              const cooldownMs = isNotFoundErr
+                ? NOT_FOUND_RPC_COOLDOWN_MS
+                : isRemote
+                  ? isRunning || isReq
+                    ? REMOTE_ACTIVE_FAILED_RPC_COOLDOWN_MS
+                    : REMOTE_FAILED_RPC_COOLDOWN_MS
+                  : isRunning || isReq
+                    ? ACTIVE_FAILED_RPC_COOLDOWN_MS
+                    : FAILED_RPC_COOLDOWN_MS;
+              activeCooldownMap.set(cooldownKey, { failedAt: Date.now(), cooldownMs });
             }
             const tailStepsOnErr =
               partialTailSteps.length > 0
@@ -2320,7 +2348,28 @@ export async function enumerateAndSyncConversations({
     return false;
   });
 
-  await fetchTrajectoryBatch(toFetch);
+  let fetchQueue = toFetch;
+  if (isRemote && toFetch.length > REMOTE_BACKGROUND_FETCH_LIMIT) {
+    const priorityConvs = [];
+    const backgroundConvs = [];
+    for (const conv of toFetch) {
+      const lowerCid = conv.cascadeId.toLowerCase();
+      const isPriority =
+        conv.status === 'CASCADE_RUN_STATUS_RUNNING' ||
+        lowerCid === reqLower ||
+        lowerCid === contextTelemetryCascadeId ||
+        lowerCid === selectedRootId ||
+        Boolean(conv.rootConversationId && conv.rootConversationId.toLowerCase() === selectedRootId);
+      if (isPriority) {
+        priorityConvs.push(conv);
+      } else if (backgroundConvs.length < REMOTE_BACKGROUND_FETCH_LIMIT) {
+        backgroundConvs.push(conv);
+      }
+    }
+    fetchQueue = [...priorityConvs, ...backgroundConvs];
+  }
+
+  await fetchTrajectoryBatch(fetchQueue);
 
   /**
    * 阶段 2：根据父会话的 `subagentRefs` 将子代理归属关系、角色名称与启动顺序回填至子代理会话，

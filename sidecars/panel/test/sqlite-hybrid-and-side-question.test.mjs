@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, truncateSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readLocalSqliteTrajectory } from '../backend/cli-sqlite-reader.mjs';
+import { computeSqliteWalSig, readLocalSqliteTrajectory } from '../backend/cli-sqlite-reader.mjs';
 import { backendHarness } from './backend-harness.mjs';
 import { i18nStore } from '../src/i18n/index.js';
 import {
@@ -785,4 +785,44 @@ test('SQLite trajectory reader scans backwards past trailing plannerConfig-only 
     gm0?.chatModel?.chatStartMetadata?.contextWindowMetadata?.tokenBreakdown?.groups?.length > 0,
     'must decode tokenBreakdown on gen_metadata[0] even with 3 trailing plannerConfig-only records'
   );
+});
+
+test('computeSqliteWalSig ignores zero-byte .db-wal mtime churn while detecting non-empty WAL writes', (t) => {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'agy-sqlite-empty-wal-'));
+  t.after(() => rmSync(tempRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+
+  const dbPath = join(tempRoot, 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111.db');
+  const walPath = `${dbPath}-wal`;
+  writeFileSync(dbPath, Buffer.from('sqlite-main-placeholder'));
+  const baseSec = 1_795_000_000;
+  utimesSync(dbPath, baseSec, baseSec);
+
+  const sigNoWal = computeSqliteWalSig(dbPath);
+  assert.equal(sigNoWal.exists, true);
+  assert.ok(sigNoWal.sig.endsWith('|0:0'), `expected |0:0 suffix, got ${sigNoWal.sig}`);
+
+  // Creating and touching a 0-byte .db-wal (e.g. SQLite WAL open/close or host LRU eviction)
+  // must NOT change sig or mtimeMs.
+  writeFileSync(walPath, Buffer.alloc(0));
+  utimesSync(walPath, baseSec + 120, baseSec + 120);
+  const sigEmptyWal1 = computeSqliteWalSig(dbPath);
+  assert.deepEqual(sigEmptyWal1, sigNoWal);
+
+  utimesSync(walPath, baseSec + 360, baseSec + 360);
+  const sigEmptyWal2 = computeSqliteWalSig(dbPath);
+  assert.deepEqual(sigEmptyWal2, sigNoWal);
+
+  // Real uncheckpointed WAL write (size > 0) MUST change sig and advance mtimeMs.
+  writeFileSync(walPath, Buffer.alloc(4096, 1));
+  utimesSync(walPath, baseSec + 500, baseSec + 500);
+  const sigNonEmptyWal = computeSqliteWalSig(dbPath);
+  assert.notEqual(sigNonEmptyWal.sig, sigNoWal.sig);
+  assert.ok(sigNonEmptyWal.mtimeMs > sigNoWal.mtimeMs);
+  assert.ok(sigNonEmptyWal.sig.endsWith(':4096'));
+
+  // Truncating the WAL back to 0 bytes converges back to the canonical |0:0 signature.
+  truncateSync(walPath, 0);
+  utimesSync(walPath, baseSec + 900, baseSec + 900);
+  const sigTruncatedWal = computeSqliteWalSig(dbPath);
+  assert.deepEqual(sigTruncatedWal, sigNoWal);
 });
