@@ -1670,22 +1670,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.chipLowCacheTip': '筛选缓存命中率低于 50% 的步骤',
   'steps.chipSlowTtft': '慢首字 {count}',
   'steps.chipSlowTtftTip': '筛选首字延迟 >= 30s 的严重卡顿步骤',
-  'steps.inspPrevAria': '查看上一步',
-  'steps.inspNextAria': '查看下一步',
-  'steps.inspCopy': '复制诊断',
-  'steps.inspCopied': '已复制',
-  'steps.inspCloseAria': '关闭单步详情',
-  'steps.inspWaterfallTtft': '首字 {sec}',
-  'steps.inspWaterfallStream': '流式 {sec}',
-  'steps.inspWaterfallOther': '工具/等待 {sec}',
-  'steps.inspWaterfallThink': '思考 {sec}',
-  'steps.inspInputLabel': '新输入',
-  'steps.inspCacheLabel': '缓存读取',
-  'steps.inspOutputLabel': '输出',
-  'steps.inspOutputSplit': '思 {think} / 回 {reply}',
-  'steps.inspContextCostLabel': '上下文 / 费用',
-  'steps.inspPromptTitle': '本轮提问',
-  'steps.inspRowClickTip': '点击查看单步详情',
   'steps.exportMenuAria': '导出及报告选项',
   'steps.exportXlsx': '导出 Excel (.xlsx)',
   'steps.exportXlsxTip': '导出排版精美的步骤明细及模型汇总 Excel 报表',
@@ -2577,22 +2561,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.chipLowCacheTip': 'Filter steps with cache hit rate below 50%',
   'steps.chipSlowTtft': 'Slow TTFT {count}',
   'steps.chipSlowTtftTip': 'Filter severely delayed steps with TTFT >= 30s',
-  'steps.inspPrevAria': 'Previous step',
-  'steps.inspNextAria': 'Next step',
-  'steps.inspCopy': 'Copy',
-  'steps.inspCopied': 'Copied',
-  'steps.inspCloseAria': 'Close step inspector',
-  'steps.inspWaterfallTtft': 'TTFT {sec}',
-  'steps.inspWaterfallStream': 'Stream {sec}',
-  'steps.inspWaterfallOther': 'Tool/Wait {sec}',
-  'steps.inspWaterfallThink': 'Think {sec}',
-  'steps.inspInputLabel': 'Fresh Input',
-  'steps.inspCacheLabel': 'Cache Read',
-  'steps.inspOutputLabel': 'Output',
-  'steps.inspOutputSplit': 'Think {think} / Reply {reply}',
-  'steps.inspContextCostLabel': 'Context / Cost',
-  'steps.inspPromptTitle': 'Turn Prompt',
-  'steps.inspRowClickTip': 'Click row to inspect step details',
   'steps.exportMenuAria': 'Export and report actions',
   'steps.exportXlsx': 'Export Excel (.xlsx)',
   'steps.exportXlsxTip': 'Export styled multi-sheet Excel workbook for steps and model summary',
@@ -22007,8 +21975,6 @@ const StepTableWidget = defineComponent({
       typeof props.onVirtualHeightChange === 'function' ? props.onVirtualHeightChange : null;
     const onSortChange =
       typeof props.onSortChange === 'function' ? props.onSortChange : null;
-    const onSelectStep =
-      typeof props.onSelectStep === 'function' ? props.onSelectStep : null;
 
     const stepsTheadRow = h('tr');
     const stepsThead = h('thead', {}, [stepsTheadRow]);
@@ -22754,8 +22720,7 @@ const StepTableWidget = defineComponent({
           const stripeSig = isVirtualized ? (item.isStripeEven ? 'E' : 'O') : 'N';
           const anomalySig = st.anomalySig || '';
           const compactSig = isCompactionStepItem(st) ? 'C' : '';
-          const selSig = ds.selectedStepKey && ds.selectedStepKey === item.rowKey ? 'S' : '';
-          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${compactSig}:${selSig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
+          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${compactSig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
         },
         createRow: (item) => {
           if (item.isSizer) {
@@ -23008,21 +22973,11 @@ const StepTableWidget = defineComponent({
           const rowDiagGetter = hasRowTip
             ? () => buildStepRowDiagnostic(st, cellCtx.displaySettings, hasStepAnomaly, isCompactionRow)
             : null;
-          const isSelectedRow = Boolean(ds.selectedStepKey && ds.selectedStepKey === item.rowKey);
           patchClasses(tr, {
             'is-compaction': isCompactionRow,
             'is-anomaly-warn': isAnomalyWarn,
             'is-anomaly-danger': isAnomalyDanger,
-            'is-selectable': Boolean(onSelectStep),
-            'is-selected': isSelectedRow,
           });
-          if (onSelectStep) {
-            tr.onclick = () => {
-              onSelectStep(st, item.rowKey);
-            };
-          } else {
-            tr.onclick = null;
-          }
           if (hasRowTip) {
             const anchorEl = firstTd || tr;
             tr.onmouseenter = () => {
@@ -23196,7 +23151,6 @@ const StepTableWidget = defineComponent({
         allowNewRowFade = false,
         sortKey = '',
         sortDir = '',
-        selectedStepKey = '',
       } = {}
     ) {
       const normCascadeId = String(cascadeId || '');
@@ -23267,7 +23221,7 @@ const StepTableWidget = defineComponent({
         cascadeId, locale, colOrderSig, effectiveScopes, hasSubagents, isMergedMultiAgents,
         effectiveTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
         displaySettings.modelDisplayMode, displaySettings.showUpstreamModel,
-        displaySettings.orchestratorIdMode, normSortKey, normSortDir, String(selectedStepKey || ''),
+        displaySettings.orchestratorIdMode, normSortKey, normSortDir,
       ]);
       if (
         lastRenderOptions === renderOptions &&
@@ -23366,7 +23320,6 @@ const StepTableWidget = defineComponent({
         totalBodyH,
         sizerSpec,
         effectiveScopes,
-        selectedStepKey: String(selectedStepKey || ''),
         formattedPrompts: new Map(),
       };
       renderedSliceStart = -1;
@@ -31817,11 +31770,9 @@ const StepsDetailView = defineComponent({
     let anomalyKindFilter = '';
     let stepSearchQuery = '';
     let stepQuickChip = '';
-    let selectedStepKey = '';
     let currentTableSteps = [];
     let currentAllConvSteps = [];
     let currentDisplaySettings = {};
-    let inspCopyTimer = null;
     let sortKey = '';
     let sortDir = '';
     let cachedSortSrc = null;
@@ -31906,10 +31857,6 @@ const StepsDetailView = defineComponent({
       onSortChange: (nextKey, nextDir) => {
         sortKey = nextKey || '';
         sortDir = nextDir || '';
-        if (latestSlice) renderStepsData(latestSlice);
-      },
-      onSelectStep: (_st, rowKey) => {
-        selectedStepKey = selectedStepKey === rowKey ? '' : rowKey;
         if (latestSlice) renderStepsData(latestSlice);
       },
     });
@@ -32071,288 +32018,6 @@ const StepsDetailView = defineComponent({
       { className: 'steps-filter-toolbar', hidden: true },
       [stepSearchWrapEl, stepQuickChipsEl]
     );
-
-    // --- 点击行展开的单步透视诊断抽屉 ---
-    const inspStepBadgeEl = h('span', { className: 'step-insp-badge text-mono' });
-    const inspModelEl = h('strong', { className: 'step-insp-model' });
-    const inspTimeEl = h('span', { className: 'step-insp-time text-mono text-muted' });
-    const inspPrevBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'step-insp-icon-btn',
-        'aria-label': t('steps.inspPrevAria'),
-        title: t('steps.inspPrevAria'),
-        onclick: () => navigateInspectorStep(-1),
-      },
-      [createSvgIcon('chevron-up', { size: 12 })]
-    );
-    const inspNextBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'step-insp-icon-btn',
-        'aria-label': t('steps.inspNextAria'),
-        title: t('steps.inspNextAria'),
-        onclick: () => navigateInspectorStep(1),
-      },
-      [createSvgIcon('chevron-down', { size: 12 })]
-    );
-    const inspCopyIcon = createSvgIcon('copy', { size: 11 });
-    const inspCopyLabel = h('span', { text: t('steps.inspCopy') });
-    let currentInspectedStep = null;
-    let currentInspectedPrevCtx = null;
-    const inspCopyBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'step-insp-copy-btn',
-        onclick: async () => {
-          if (!currentInspectedStep) return;
-          const md = buildStepDiagnosticMarkdown(currentInspectedStep, {
-            prevContextTokens: currentInspectedPrevCtx,
-            displaySettings: currentDisplaySettings,
-          });
-          await copyPlainTextToClipboard(md);
-          patchSvgIcon(inspCopyIcon, 'check');
-          patchText(inspCopyLabel, t('steps.inspCopied'));
-          patchClasses(inspCopyBtn, { 'is-copied': true });
-          if (inspCopyTimer) clearTimeout(inspCopyTimer);
-          inspCopyTimer = setTimeout(() => {
-            inspCopyTimer = null;
-            patchSvgIcon(inspCopyIcon, 'copy');
-            patchText(inspCopyLabel, t('steps.inspCopy'));
-            patchClasses(inspCopyBtn, { 'is-copied': false });
-          }, 1600);
-        },
-      },
-      [inspCopyIcon, inspCopyLabel]
-    );
-    const inspCloseBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'step-insp-icon-btn',
-        'aria-label': t('steps.inspCloseAria'),
-        title: t('steps.inspCloseAria'),
-        onclick: () => {
-          selectedStepKey = '';
-          if (latestSlice) renderStepsData(latestSlice);
-        },
-      },
-      [createSvgIcon('close', { size: 12 })]
-    );
-
-    const inspWfTtftSeg = h('div', { className: 'step-insp-wf-seg is-ttft' });
-    const inspWfStreamSeg = h('div', { className: 'step-insp-wf-seg is-stream' });
-    const inspWfOtherSeg = h('div', { className: 'step-insp-wf-seg is-other' });
-    const inspWfTrackEl = h('div', { className: 'step-insp-wf-track' }, [
-      inspWfTtftSeg,
-      inspWfStreamSeg,
-      inspWfOtherSeg,
-    ]);
-    const inspWfLegendEl = h('div', { className: 'step-insp-wf-legend text-mono' });
-    const inspWaterfallEl = h('div', { className: 'step-insp-waterfall', hidden: true }, [
-      inspWfTrackEl,
-      inspWfLegendEl,
-    ]);
-
-    function createInspKpiCell(labelText) {
-      const lbl = h('span', { className: 'step-insp-kpi-lbl', text: labelText });
-      const val = h('strong', { className: 'step-insp-kpi-val text-mono', text: '—' });
-      const sub = h('span', { className: 'step-insp-kpi-sub text-mono text-muted', text: '' });
-      return {
-        el: h('div', { className: 'step-insp-kpi' }, [lbl, val, sub]),
-        lbl,
-        val,
-        sub,
-      };
-    }
-    const inspKpiInput = createInspKpiCell(t('steps.inspInputLabel'));
-    const inspKpiCache = createInspKpiCell(t('steps.inspCacheLabel'));
-    const inspKpiOutput = createInspKpiCell(t('steps.inspOutputLabel'));
-    const inspKpiCtxCost = createInspKpiCell(t('steps.inspContextCostLabel'));
-    const inspGridEl = h('div', { className: 'step-insp-grid' }, [
-      inspKpiInput.el,
-      inspKpiCache.el,
-      inspKpiOutput.el,
-      inspKpiCtxCost.el,
-    ]);
-
-    const inspPromptLabelEl = h('span', {
-      className: 'step-insp-prompt-lbl',
-      text: t('steps.inspPromptTitle'),
-    });
-    const inspPromptTextEl = h('div', { className: 'step-insp-prompt-text' });
-    const inspPromptWrapEl = h('div', { className: 'step-insp-prompt', hidden: true }, [
-      inspPromptLabelEl,
-      inspPromptTextEl,
-    ]);
-    const inspAnomaliesEl = h('div', { className: 'step-insp-anomalies text-mono', hidden: true });
-
-    const stepInspectorDrawerEl = h(
-      'div',
-      { className: 'step-inspector-drawer', hidden: true },
-      [
-        h('div', { className: 'step-insp-head' }, [
-          h('div', { className: 'step-insp-head-left' }, [
-            inspStepBadgeEl,
-            inspModelEl,
-            inspTimeEl,
-          ]),
-          h('div', { className: 'step-insp-head-actions' }, [
-            inspPrevBtn,
-            inspNextBtn,
-            inspCopyBtn,
-            inspCloseBtn,
-          ]),
-        ]),
-        inspWaterfallEl,
-        inspGridEl,
-        inspPromptWrapEl,
-        inspAnomaliesEl,
-      ]
-    );
-
-    function navigateInspectorStep(delta) {
-      if (!selectedStepKey || currentTableSteps.length === 0) return;
-      const cid = String(latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || '');
-      const curIdx = currentTableSteps.findIndex(
-        (st) => getStepSelectionKey(st, cid) === selectedStepKey
-      );
-      if (curIdx < 0) return;
-      const nextIdx = curIdx + delta;
-      if (nextIdx < 0 || nextIdx >= currentTableSteps.length) return;
-      selectedStepKey = getStepSelectionKey(currentTableSteps[nextIdx], cid);
-      if (latestSlice) renderStepsData(latestSlice);
-    }
-
-    function syncStepInspectorDrawer(tableSteps, allConvSteps, cascadeId, displaySettings, showModels) {
-      if (showModels || !selectedStepKey || !Array.isArray(tableSteps) || tableSteps.length === 0) {
-        currentInspectedStep = null;
-        currentInspectedPrevCtx = null;
-        patchAttr(stepInspectorDrawerEl, 'hidden', true);
-        return;
-      }
-      const idx = tableSteps.findIndex(
-        (st) => getStepSelectionKey(st, cascadeId) === selectedStepKey
-      );
-      if (idx < 0) {
-        selectedStepKey = '';
-        currentInspectedStep = null;
-        currentInspectedPrevCtx = null;
-        patchAttr(stepInspectorDrawerEl, 'hidden', true);
-        return;
-      }
-      const st = tableSteps[idx];
-      currentInspectedStep = st;
-      const prevCtx = findPrevAgentContextTokens(allConvSteps, st);
-      currentInspectedPrevCtx = prevCtx;
-
-      patchAttr(stepInspectorDrawerEl, 'hidden', false);
-      patchText(inspStepBadgeEl, `#${st.stepIndex ?? '—'}`);
-      const mInfo = resolveModelDisplayInfo(st, displaySettings);
-      patchText(inspModelEl, mInfo.text);
-      patchAttr(inspModelEl, 'title', mInfo.title || mInfo.text);
-      patchText(inspTimeEl, st.createdAtMs ? formatCompactDateTime(st.createdAtMs) : '');
-      patchAttr(inspPrevBtn, 'disabled', idx <= 0);
-      patchAttr(inspNextBtn, 'disabled', idx >= tableSteps.length - 1);
-
-      const wf = computeStepTimingWaterfall(st);
-      patchAttr(inspWaterfallEl, 'hidden', !wf);
-      if (wf) {
-        inspWfTtftSeg.style.width = `${wf.ttftPct}%`;
-        inspWfStreamSeg.style.width = `${wf.streamPct}%`;
-        inspWfOtherSeg.style.width = `${wf.otherPct}%`;
-        const parts = [formatSpeedMetric(st.tokPerSec, ' tok/s')];
-        if (wf.ttftSec > 0) {
-          parts.push(t('steps.inspWaterfallTtft', { sec: formatTimingDetailSec(wf.ttftSec) }));
-        }
-        if (wf.streamSec > 0) {
-          parts.push(t('steps.inspWaterfallStream', { sec: formatTimingDetailSec(wf.streamSec) }));
-        }
-        if (wf.otherSec > 0.05) {
-          parts.push(t('steps.inspWaterfallOther', { sec: formatTimingDetailSec(wf.otherSec) }));
-        }
-        if (wf.thinkingSec > 0) {
-          parts.push(t('steps.inspWaterfallThink', { sec: formatTimingDetailSec(wf.thinkingSec) }));
-        }
-        const reason = st.selectedSpeedReason ? speedReasonText(st.selectedSpeedReason) : '';
-        if (reason) parts.push(reason);
-        patchText(inspWfLegendEl, parts.join(' · '));
-      }
-
-      const inTok = Number(st.inputTokens || 0);
-      const cacheTok = Number(st.cacheReadTokens || 0);
-      const outTok = Number(st.outputTokens || 0);
-      const thinkTok = Number(st.thinkingTokens || 0);
-      const replyTok =
-        st.responseTokens != null ? Number(st.responseTokens) : Math.max(0, outTok - thinkTok);
-      const promptTok = inTok + cacheTok;
-      const cachePct =
-        st.cacheHitPct != null && Number.isFinite(Number(st.cacheHitPct))
-          ? Number(st.cacheHitPct)
-          : promptTok > 0
-            ? (cacheTok / promptTok) * 100
-            : 0;
-      const ctxTok = Number(st.contextTokens || promptTok + outTok);
-
-      patchText(inspKpiInput.lbl, t('steps.inspInputLabel'));
-      patchText(inspKpiInput.val, formatTokensPrecise(inTok));
-      patchText(inspKpiInput.sub, st.inputCostUsd != null ? formatUsd(st.inputCostUsd, { precise: true }) : '');
-
-      patchText(inspKpiCache.lbl, t('steps.inspCacheLabel'));
-      patchText(inspKpiCache.val, formatTokensPrecise(cacheTok));
-      patchText(inspKpiCache.sub, formatPctNumber(cachePct, { withSymbol: true }));
-
-      patchText(inspKpiOutput.lbl, t('steps.inspOutputLabel'));
-      patchText(inspKpiOutput.val, formatTokensPrecise(outTok));
-      patchText(
-        inspKpiOutput.sub,
-        thinkTok > 0
-          ? t('steps.inspOutputSplit', {
-              think: formatTokens(thinkTok),
-              reply: formatTokens(replyTok),
-            })
-          : st.outCostUsd != null
-            ? formatUsd(st.outCostUsd, { precise: true })
-            : ''
-      );
-
-      patchText(inspKpiCtxCost.lbl, t('steps.inspContextCostLabel'));
-      const deltaStr =
-        prevCtx != null && ctxTok > 0
-          ? ` (${ctxTok >= prevCtx ? '+' : '-'}${formatTokens(Math.abs(ctxTok - prevCtx))})`
-          : '';
-      patchText(inspKpiCtxCost.val, `${formatTokens(ctxTok)}${deltaStr}`);
-      patchText(inspKpiCtxCost.sub, formatUsd(st.costUsd, { precise: true }));
-
-      const promptText = String(st.turnPrompt || st.rootTurnPrompt || '').trim();
-      patchAttr(inspPromptWrapEl, 'hidden', !promptText);
-      if (promptText) {
-        patchText(inspPromptLabelEl, t('steps.inspPromptTitle'));
-        patchText(inspPromptTextEl, promptText);
-      }
-
-      const anom = st.anomaly;
-      const hasAnom = Boolean(anom && Number(anom.count) > 0);
-      patchAttr(inspAnomaliesEl, 'hidden', !hasAnom);
-      if (hasAnom) {
-        const itemsText = Array.isArray(anom.items) && anom.items.length > 0
-          ? anom.items
-              .map((it) => {
-                const lbl = formatAnomalyKindLabel(it.kind || anom.primaryKind);
-                const code = it.httpStatus ? ` HTTP ${it.httpStatus}` : '';
-                const delay = Number(it.delaySec) > 0 ? ` (${Number(it.delaySec).toFixed(1)}s)` : '';
-                return `${lbl}${code}${delay}`;
-              })
-              .join(' · ')
-          : Object.entries(anom.kinds || {})
-              .map(([k, v]) => `${formatAnomalyKindLabel(k)} ×${v}`)
-              .join(' · ');
-        patchText(inspAnomaliesEl, itemsText);
-      }
-    }
 
     // --- 子视图 2：总汇总分析面板 ---
     let selectedLineMetric = 'totalTokens';
@@ -32523,7 +32188,6 @@ const StepsDetailView = defineComponent({
         stepsFilterToolbarEl,
         anomalyFilterBarEl,
         stepsScroll.el,
-        stepInspectorDrawerEl,
         modelsScroll.el,
         turnTipEl,
         anomalyTipEl,
@@ -32600,13 +32264,6 @@ const StepsDetailView = defineComponent({
       patchAttr(stepSearchInput, 'placeholder', t('steps.searchPlaceholder'));
       patchAttr(stepSearchInput, 'aria-label', t('steps.searchPlaceholder'));
       patchAttr(stepSearchClearBtn, 'aria-label', t('steps.searchClearAria'));
-      patchAttr(inspPrevBtn, 'aria-label', t('steps.inspPrevAria'));
-      patchAttr(inspPrevBtn, 'title', t('steps.inspPrevAria'));
-      patchAttr(inspNextBtn, 'aria-label', t('steps.inspNextAria'));
-      patchAttr(inspNextBtn, 'title', t('steps.inspNextAria'));
-      patchAttr(inspCloseBtn, 'aria-label', t('steps.inspCloseAria'));
-      patchAttr(inspCloseBtn, 'title', t('steps.inspCloseAria'));
-      if (!inspCopyTimer) patchText(inspCopyLabel, t('steps.inspCopy'));
       stepsExportMenu.refs.setAriaLabel(t('steps.exportMenuAria'));
       stepsExportMenu.refs.updateItemLabels({
         xlsx: { label: t('steps.exportXlsx'), title: t('steps.exportXlsxTip') },
@@ -32652,7 +32309,6 @@ const StepsDetailView = defineComponent({
           stepSearchInput.value = '';
           patchAttr(stepSearchClearBtn, 'hidden', true);
           stepQuickChip = '';
-          selectedStepKey = '';
           sortKey = '';
           sortDir = '';
         }
@@ -32968,14 +32624,11 @@ const StepsDetailView = defineComponent({
           allowNewRowFade: shouldAnimateNewRows,
           sortKey,
           sortDir,
-          selectedStepKey,
         });
-        syncStepInspectorDrawer(tableSteps, allConversationSteps, currentCid, displaySettings, false);
         stepsScroll.refresh();
         fitPinnedWhileVisible = false;
         return;
       }
-      syncStepInspectorDrawer(tableSteps, allConversationSteps, currentCid, displaySettings, true);
 
       const chronoSteps = getMemoizedChronoSteps(steps, isMergedMultiAgents);
       const stepTtftFallbackMap = new Map();
@@ -33519,7 +33172,6 @@ const StepsDetailView = defineComponent({
           tab !== 'steps' || !toolbarAllowed || (currentTableSteps.length === 0 && !stepSearchQuery && !stepQuickChip)
         );
         stepsExportMenu.refs.setHidden(tab !== 'steps' || currentAllConvSteps.length === 0);
-        patchAttr(stepInspectorDrawerEl, 'hidden', tab !== 'steps' || !selectedStepKey);
         patchAttr(stepsScroll.el, 'hidden', tab !== 'steps');
         patchAttr(modelsScroll.el, 'hidden', tab !== 'models');
         if (getVisibleMonitorView() === 'steps' && latestSlice) {
@@ -33616,33 +33268,8 @@ const StepsDetailView = defineComponent({
       }
     );
 
-    const onPanelKeydown = (e) => {
-      if (!selectedStepKey || uiStore.getState().stepsSubTab !== 'steps') return;
-      const tag = String(e?.target?.tagName || '').toUpperCase();
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e?.target?.isContentEditable) {
-        return;
-      }
-      if (e?.key === 'Escape') {
-        e.preventDefault?.();
-        selectedStepKey = '';
-        if (latestSlice) renderStepsData(latestSlice);
-      } else if (e?.key === 'ArrowUp') {
-        e.preventDefault?.();
-        navigateInspectorStep(-1);
-      } else if (e?.key === 'ArrowDown') {
-        e.preventDefault?.();
-        navigateInspectorStep(1);
-      }
-    };
-    panelEl.addEventListener?.('keydown', onPanelKeydown);
-
     onCleanup(() => {
-      if (inspCopyTimer) {
-        clearTimeout(inspCopyTimer);
-        inspCopyTimer = null;
-      }
       stepsExportMenu.destroy();
-      panelEl.removeEventListener?.('keydown', onPanelKeydown);
       modelsAnalyticsPane.removeEventListener('scroll', onModelsPaneScroll);
       unsubUi();
       unsubTelemetry();
@@ -33675,7 +33302,6 @@ const StepsDetailView = defineComponent({
         stepSearchInput,
         stepQuickChipsEl,
         stepsExportMenu,
-        stepInspectorDrawerEl,
         modelsAnomalyStripEl,
         modelsListEl,
         inlineScopeSelect,

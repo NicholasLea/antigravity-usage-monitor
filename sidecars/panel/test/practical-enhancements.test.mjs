@@ -1436,18 +1436,11 @@ test('Feature 10: StepsDetailView live search, dynamic diagnostic chips, and cli
   rows = view.el.querySelectorAll('tbody tr');
   assert.equal(rows.length, 3);
 
-  // Click row #4 -> opens inspector drawer with prompt, waterfall, and delta
-  assert.equal(view.refs.stepInspectorDrawerEl.hasAttribute('hidden'), true);
-
-  rows[0].onclick();
-  assert.equal(view.refs.stepInspectorDrawerEl.hasAttribute('hidden'), false);
-  assert.equal(rows[0].classList.contains('is-selected'), true);
-  assert.match(view.refs.stepInspectorDrawerEl.textContent, /Debug SQLite migrator/);
-  assert.match(view.refs.stepInspectorDrawerEl.textContent, /\+79\.1k/);
-
-  // Close drawer cleanly by clicking same row again
-  rows[0].onclick();
-  assert.equal(view.refs.stepInspectorDrawerEl.hasAttribute('hidden'), true);
+  // Step rows do not expose row-click diagnostic drawer or selection handlers
+  assert.equal(view.el.querySelector('.step-inspector-drawer'), null);
+  assert.equal(Boolean(rows[0].onclick), false);
+  assert.equal(rows[0].classList.contains('is-selectable'), false);
+  assert.equal(rows[0].classList.contains('is-selected'), false);
 });
 
 test('Feature 11: native multi-sheet localized XLSX, formula-safe CSV and bilingual Markdown report export', async () => {
@@ -2446,8 +2439,9 @@ test('P0 regression: V4 display-projected steps open inspector, preserve waterfa
     `${cascadeUuid}-${projectedLikeStep.stepIndex}`
   );
   const tr = stepsView.el.querySelectorAll('tbody tr')[0];
-  tr.onclick({});
-  assert.equal(stepsView.refs.stepInspectorDrawerEl.hasAttribute('hidden'), false);
+  assert.ok(tr, 'projected step row rendered');
+  assert.equal(Boolean(tr.onclick), false, 'clicking step row does not trigger diagnostic drawer');
+  assert.equal(stepsView.el.querySelector('.step-inspector-drawer'), null);
   stepsView.destroy();
   stepsView = null;
 

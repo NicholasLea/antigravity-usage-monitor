@@ -395,8 +395,6 @@ export const StepTableWidget = defineComponent({
       typeof props.onVirtualHeightChange === 'function' ? props.onVirtualHeightChange : null;
     const onSortChange =
       typeof props.onSortChange === 'function' ? props.onSortChange : null;
-    const onSelectStep =
-      typeof props.onSelectStep === 'function' ? props.onSelectStep : null;
 
     const stepsTheadRow = h('tr');
     const stepsThead = h('thead', {}, [stepsTheadRow]);
@@ -1142,8 +1140,7 @@ export const StepTableWidget = defineComponent({
           const stripeSig = isVirtualized ? (item.isStripeEven ? 'E' : 'O') : 'N';
           const anomalySig = st.anomalySig || '';
           const compactSig = isCompactionStepItem(st) ? 'C' : '';
-          const selSig = ds.selectedStepKey && ds.selectedStepKey === item.rowKey ? 'S' : '';
-          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${compactSig}:${selSig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
+          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${compactSig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
         },
         createRow: (item) => {
           if (item.isSizer) {
@@ -1396,21 +1393,11 @@ export const StepTableWidget = defineComponent({
           const rowDiagGetter = hasRowTip
             ? () => buildStepRowDiagnostic(st, cellCtx.displaySettings, hasStepAnomaly, isCompactionRow)
             : null;
-          const isSelectedRow = Boolean(ds.selectedStepKey && ds.selectedStepKey === item.rowKey);
           patchClasses(tr, {
             'is-compaction': isCompactionRow,
             'is-anomaly-warn': isAnomalyWarn,
             'is-anomaly-danger': isAnomalyDanger,
-            'is-selectable': Boolean(onSelectStep),
-            'is-selected': isSelectedRow,
           });
-          if (onSelectStep) {
-            tr.onclick = () => {
-              onSelectStep(st, item.rowKey);
-            };
-          } else {
-            tr.onclick = null;
-          }
           if (hasRowTip) {
             const anchorEl = firstTd || tr;
             tr.onmouseenter = () => {
@@ -1584,7 +1571,6 @@ export const StepTableWidget = defineComponent({
         allowNewRowFade = false,
         sortKey = '',
         sortDir = '',
-        selectedStepKey = '',
       } = {}
     ) {
       const normCascadeId = String(cascadeId || '');
@@ -1655,7 +1641,7 @@ export const StepTableWidget = defineComponent({
         cascadeId, locale, colOrderSig, effectiveScopes, hasSubagents, isMergedMultiAgents,
         effectiveTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
         displaySettings.modelDisplayMode, displaySettings.showUpstreamModel,
-        displaySettings.orchestratorIdMode, normSortKey, normSortDir, String(selectedStepKey || ''),
+        displaySettings.orchestratorIdMode, normSortKey, normSortDir,
       ]);
       if (
         lastRenderOptions === renderOptions &&
@@ -1754,7 +1740,6 @@ export const StepTableWidget = defineComponent({
         totalBodyH,
         sizerSpec,
         effectiveScopes,
-        selectedStepKey: String(selectedStepKey || ''),
         formattedPrompts: new Map(),
       };
       renderedSliceStart = -1;
