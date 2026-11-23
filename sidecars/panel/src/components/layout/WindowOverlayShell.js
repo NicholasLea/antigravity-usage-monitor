@@ -2922,6 +2922,9 @@ export function mountWindowOverlay() {
       navigator?.windowControlsOverlay?.removeEventListener?.('geometrychange', onWindowResize);
       restorePatchedActionToolbar();
       try {
+        multiRunningWidget.destroy();
+      } catch {}
+      try {
         hoverWidgetHost.destroy();
       } catch {}
       try {

@@ -873,4 +873,19 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'chart.trend.hmActivePeak': '活跃 {active}/{total} 天 · 峰值 {label} · {tokens}',
   'chart.trend.hmActiveZero': '活跃 0/{total} 天',
   'chart.trend.peakPill': '峰值 {label} · {tokens}',
+
+  // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
+  'ui.dt.wdayMon': '一',
+  'ui.dt.wdayTue': '二',
+  'ui.dt.wdayWed': '三',
+  'ui.dt.wdayThu': '四',
+  'ui.dt.wdayFri': '五',
+  'ui.dt.wdaySat': '六',
+  'ui.dt.wdaySun': '日',
+  'ui.dt.prevMonth': '上个月',
+  'ui.dt.nextMonth': '下个月',
+  'ui.dt.hourMinute': '时 / 分',
+  'ui.num.decrease': '减少数值',
+  'ui.num.increase': '增加数值',
+  'ui.seg.defaultAria': '分段切换器',
 });

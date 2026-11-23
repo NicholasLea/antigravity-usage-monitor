@@ -2124,6 +2124,21 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'chart.trend.hmActivePeak': '活跃 {active}/{total} 天 · 峰值 {label} · {tokens}',
   'chart.trend.hmActiveZero': '活跃 0/{total} 天',
   'chart.trend.peakPill': '峰值 {label} · {tokens}',
+
+  // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
+  'ui.dt.wdayMon': '一',
+  'ui.dt.wdayTue': '二',
+  'ui.dt.wdayWed': '三',
+  'ui.dt.wdayThu': '四',
+  'ui.dt.wdayFri': '五',
+  'ui.dt.wdaySat': '六',
+  'ui.dt.wdaySun': '日',
+  'ui.dt.prevMonth': '上个月',
+  'ui.dt.nextMonth': '下个月',
+  'ui.dt.hourMinute': '时 / 分',
+  'ui.num.decrease': '减少数值',
+  'ui.num.increase': '增加数值',
+  'ui.seg.defaultAria': '分段切换器',
 });
 return { I18N_MESSAGES_ZH_CN };
 })();
@@ -3005,6 +3020,21 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'chart.trend.hmActivePeak': 'Active {active}/{total}d · Peak {label} · {tokens}',
   'chart.trend.hmActiveZero': 'Active 0/{total}d',
   'chart.trend.peakPill': 'Peak {label} · {tokens}',
+
+  // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
+  'ui.dt.wdayMon': 'Mo',
+  'ui.dt.wdayTue': 'Tu',
+  'ui.dt.wdayWed': 'We',
+  'ui.dt.wdayThu': 'Th',
+  'ui.dt.wdayFri': 'Fr',
+  'ui.dt.wdaySat': 'Sa',
+  'ui.dt.wdaySun': 'Su',
+  'ui.dt.prevMonth': 'Previous month',
+  'ui.dt.nextMonth': 'Next month',
+  'ui.dt.hourMinute': 'Hr / Min',
+  'ui.num.decrease': 'Decrease value',
+  'ui.num.increase': 'Increase value',
+  'ui.seg.defaultAria': 'Segmented switcher',
 });
 return { I18N_MESSAGES_EN_US };
 })();
@@ -4833,14 +4863,30 @@ function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
     const speedSampleCount = Math.max(0, Number(m.speedSummary?.sampleCount || 0));
     const speedExcludedCount = Math.max(0, Number(m.speedSummary?.excludedCount || 0));
     const speedWeight = speedSampleCount > 0 ? speedSampleCount : Math.max(1, outTok || calls || 1);
-    const hasSpeed = m.avgTokPerSec != null && Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0;
+    const hasSpeed =
+      m.avgTokPerSec != null && Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0;
+    const rawSpeedTokens = Number(m.speedSummary?.tokens);
+    const rawSpeedSeconds = Number(m.speedSummary?.seconds);
+    const hasExactSpeedSummary =
+      Number.isFinite(rawSpeedTokens) &&
+      Number.isFinite(rawSpeedSeconds) &&
+      rawSpeedSeconds > 0 &&
+      rawSpeedTokens >= 0;
 
     const ttftSampleCount = Math.max(0, Number(m.ttftSampleCount || 0));
     const ttftWeight = ttftSampleCount > 0 ? ttftSampleCount : Math.max(1, calls || 1);
-    const hasTtft = m.avgTtftSec != null && Number.isFinite(Number(m.avgTtftSec)) && Number(m.avgTtftSec) >= 0;
+    const hasTtft =
+      m.avgTtftSec != null && Number.isFinite(Number(m.avgTtftSec)) && Number(m.avgTtftSec) >= 0;
 
     let acc = byDisplay.get(key);
     if (!acc) {
+      const initExcludedReasons = {};
+      if (m.speedSummary?.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+        for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+          const cnt = Math.max(0, Number(rv || 0));
+          if (cnt > 0) initExcludedReasons[rk] = cnt;
+        }
+      }
       acc = {
         baseItem: m,
         mergedCount: 1,
@@ -4860,10 +4906,15 @@ function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
         totalTokens: totTok,
         costUsd,
         unpricedCalls,
+        hasAnySpeedSummary: Boolean(m.speedSummary),
+        allSpeedExact: !hasSpeed || hasExactSpeedSummary,
+        speedTokens: hasExactSpeedSummary ? rawSpeedTokens : 0,
+        speedSeconds: hasExactSpeedSummary ? rawSpeedSeconds : 0,
         speedWeightedSum: hasSpeed ? Number(m.avgTokPerSec) * speedWeight : 0,
         speedWeight: hasSpeed ? speedWeight : 0,
         speedSampleCount,
         speedExcludedCount,
+        speedExcludedReasons: initExcludedReasons,
         ttftWeightedSum: hasTtft ? Number(m.avgTtftSec) * ttftWeight : 0,
         ttftWeight: hasTtft ? ttftWeight : 0,
         ttftSampleCount,
@@ -4912,12 +4963,24 @@ function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
       }
     }
 
+    if (m.speedSummary) acc.hasAnySpeedSummary = true;
+    if (hasSpeed && !hasExactSpeedSummary) acc.allSpeedExact = false;
+    if (hasExactSpeedSummary) {
+      acc.speedTokens += rawSpeedTokens;
+      acc.speedSeconds += rawSpeedSeconds;
+    }
     if (hasSpeed) {
       acc.speedWeightedSum += Number(m.avgTokPerSec) * speedWeight;
       acc.speedWeight += speedWeight;
     }
     acc.speedSampleCount += speedSampleCount;
     acc.speedExcludedCount += speedExcludedCount;
+    if (m.speedSummary?.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+      for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+        const cnt = Math.max(0, Number(rv || 0));
+        if (cnt > 0) acc.speedExcludedReasons[rk] = (acc.speedExcludedReasons[rk] || 0) + cnt;
+      }
+    }
 
     if (hasTtft) {
       acc.ttftWeightedSum += Number(m.avgTtftSec) * ttftWeight;
@@ -4937,8 +5000,13 @@ function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
     }
     const promptTok = acc.inputTokens + acc.cacheReadTokens;
     const cacheHitPct = promptTok > 0 ? +((acc.cacheReadTokens / promptTok) * 100).toFixed(1) : 0;
-    const avgTokPerSec =
-      acc.speedWeight > 0 ? +(acc.speedWeightedSum / acc.speedWeight).toFixed(1) : null;
+    const rawAvgTps =
+      acc.allSpeedExact && acc.speedSeconds > 0
+        ? acc.speedTokens / acc.speedSeconds
+        : acc.speedWeight > 0
+          ? acc.speedWeightedSum / acc.speedWeight
+          : null;
+    const avgTokPerSec = rawAvgTps !== null ? +rawAvgTps.toFixed(1) : null;
     const avgTtftSec =
       acc.ttftWeight > 0 ? +(acc.ttftWeightedSum / acc.ttftWeight).toFixed(1) : null;
     const upstreamModels = Array.from(acc.upstreamSet);
@@ -4971,12 +5039,15 @@ function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
             anomalyByKind: acc.anomalyByKind,
           }
         : {}),
-      speedSummary: acc.baseItem.speedSummary
+      speedSummary: acc.hasAnySpeedSummary
         ? {
-            ...acc.baseItem.speedSummary,
+            ...(acc.baseItem.speedSummary || {}),
+            tokens: acc.speedTokens,
+            seconds: +acc.speedSeconds.toFixed(6),
             sampleCount: acc.speedSampleCount,
             excludedCount: acc.speedExcludedCount,
-            avgTokPerSec,
+            excludedReasons: acc.speedExcludedReasons,
+            avgTokPerSec: rawAvgTps,
           }
         : undefined,
       upstreamModels,
@@ -5363,7 +5434,8 @@ const STEP_SLOW_TTFT_MIN_SEC = 30;
  */
 function getStepSelectionKey(st, fallbackCascadeId = '') {
   if (!st || typeof st !== 'object') return '';
-  const agentKey = st.agentId || st.cascadeId || fallbackCascadeId || 'main';
+  const agentKey =
+    st.agentCascadeId || st.agentId || st.cascadeId || fallbackCascadeId || 'conv';
   return `${agentKey}-${st.stepIndex}`;
 }
 
@@ -5458,6 +5530,11 @@ function filterStepsBySearchAndChip(
     if (rawTerms.length > 0) {
       const modelInfo = resolveModelDisplayInfo(st, displaySettings);
       const anomalyKinds = st.anomaly?.kinds ? Object.keys(st.anomaly.kinds).join(' ') : '';
+      const anomalyEventsText = Array.isArray(st.anomaly?.events)
+        ? st.anomaly.events
+            .map((ev) => `${ev?.kind || ''} ${ev?.attempt ?? ''} ${ev?.message || ''}`)
+            .join(' ')
+        : '';
       const anomalyItemsText = Array.isArray(st.anomaly?.items)
         ? st.anomaly.items
             .map((it) => `${it?.kind || ''} ${it?.httpStatus || ''} ${it?.detail || ''}`)
@@ -5470,6 +5547,9 @@ function filterStepsBySearchAndChip(
         modelInfo.title,
         st.modelLabel || '',
         st.modelShort || '',
+        st.modelKey || '',
+        st.modelUpstream || '',
+        st.responseModel || '',
         st.rawModelId || '',
         st.upstreamName || '',
         st.turnPrompt || '',
@@ -5479,6 +5559,7 @@ function filterStepsBySearchAndChip(
         st.agentBadge || '',
         st.isCompactionStep ? 'compaction 压缩' : '',
         anomalyKinds,
+        anomalyEventsText,
         anomalyItemsText,
       ]
         .join(' ')
@@ -5543,15 +5624,15 @@ function findPrevAgentContextTokens(allSteps, targetStep) {
  */
 function computeStepTimingWaterfall(st) {
   if (!st || typeof st !== 'object') return null;
+  const rawTtft = st.ttftSec ?? st.nativeTtftSec;
   const ttft =
-    st.ttftSec != null && Number.isFinite(Number(st.ttftSec)) && Number(st.ttftSec) >= 0
-      ? Number(st.ttftSec)
+    rawTtft != null && Number.isFinite(Number(rawTtft)) && Number(rawTtft) >= 0
+      ? Number(rawTtft)
       : 0;
+  const rawStream = st.nativeStreamSec ?? st.streamDurationSec;
   const stream =
-    st.streamDurationSec != null &&
-    Number.isFinite(Number(st.streamDurationSec)) &&
-    Number(st.streamDurationSec) >= 0
-      ? Number(st.streamDurationSec)
+    rawStream != null && Number.isFinite(Number(rawStream)) && Number(rawStream) >= 0
+      ? Number(rawStream)
       : 0;
   const thinking =
     st.thinkingDurationSec != null &&
@@ -5559,9 +5640,10 @@ function computeStepTimingWaterfall(st) {
     Number(st.thinkingDurationSec) >= 0
       ? Number(st.thinkingDurationSec)
       : 0;
+  const rawDur = st.totalDurationSec ?? st.durationSec;
   const rawTotal =
-    st.durationSec != null && Number.isFinite(Number(st.durationSec)) && Number(st.durationSec) > 0
-      ? Number(st.durationSec)
+    rawDur != null && Number.isFinite(Number(rawDur)) && Number(rawDur) > 0
+      ? Number(rawDur)
       : ttft + stream;
   const totalSec = Math.max(rawTotal, ttft + stream);
   if (!(totalSec > 0)) return null;
@@ -6726,7 +6808,8 @@ function summarizeStepsForExport(list, displaySettings) {
   let sumCost = 0;
   let sumDuration = 0;
   let maxContext = 0;
-  let tpsSum = 0;
+  let tpsTokSum = 0;
+  let tpsSecSum = 0;
   let tpsCnt = 0;
   let ttftSum = 0;
   let ttftCnt = 0;
@@ -6748,7 +6831,8 @@ function summarizeStepsForExport(list, displaySettings) {
         : Math.max(0, outTok - thinkTok);
     const ctxTok = Math.max(0, Number(st.contextTokens || inTok + cacheTok + outTok));
     const cost = Number(st.costUsd || 0);
-    const dur = Number(st.durationSec || 0);
+    const rawDur = st.totalDurationSec ?? st.durationSec;
+    const dur = rawDur != null && Number.isFinite(Number(rawDur)) ? Number(rawDur) : 0;
 
     sumIn += inTok;
     sumCache += cacheTok;
@@ -6760,11 +6844,21 @@ function summarizeStepsForExport(list, displaySettings) {
     if (Number.isFinite(dur) && dur > 0) sumDuration += dur;
 
     const validTps =
-      !st.isCompactionStep && Number.isFinite(Number(st.tokPerSec)) && Number(st.tokPerSec) > 0;
+      !st.isCompactionStep &&
+      outTok >= 50 &&
+      !st.selectedSpeedReason &&
+      Number.isFinite(Number(st.tokPerSec)) &&
+      Number(st.tokPerSec) > 0;
+    const stepSpeedSec = validTps
+      ? st.totalDurationSec != null && Number(st.totalDurationSec) >= 0.5
+        ? Number(st.totalDurationSec)
+        : outTok / Number(st.tokPerSec)
+      : 0;
     const validTtft =
       !st.isCompactionStep && Number.isFinite(Number(st.ttftSec)) && Number(st.ttftSec) >= 0;
-    if (validTps) {
-      tpsSum += Number(st.tokPerSec);
+    if (validTps && stepSpeedSec > 0) {
+      tpsTokSum += outTok;
+      tpsSecSum += stepSpeedSec;
       tpsCnt += 1;
     }
     if (validTtft) {
@@ -6789,7 +6883,8 @@ function summarizeStepsForExport(list, displaySettings) {
         cacheTok: 0,
         outTok: 0,
         cost: 0,
-        tpsSum: 0,
+        tpsTokSum: 0,
+        tpsSecSum: 0,
         tpsCnt: 0,
         ttftSum: 0,
         ttftCnt: 0,
@@ -6801,8 +6896,9 @@ function summarizeStepsForExport(list, displaySettings) {
     mAcc.cacheTok += cacheTok;
     mAcc.outTok += outTok;
     if (Number.isFinite(cost) && cost > 0) mAcc.cost += cost;
-    if (validTps) {
-      mAcc.tpsSum += Number(st.tokPerSec);
+    if (validTps && stepSpeedSec > 0) {
+      mAcc.tpsTokSum += outTok;
+      mAcc.tpsSecSum += stepSpeedSec;
       mAcc.tpsCnt += 1;
     }
     if (validTtft) {
@@ -6826,7 +6922,8 @@ function summarizeStepsForExport(list, displaySettings) {
     sumCost,
     sumDuration,
     maxContext,
-    tpsSum,
+    tpsTokSum,
+    tpsSecSum,
     tpsCnt,
     ttftSum,
     ttftCnt,
@@ -7009,8 +7106,9 @@ function buildStepsCsv(steps, { displaySettings = {}, includeBom = true } = {}) 
         st.ttftSec != null && Number.isFinite(Number(st.ttftSec))
           ? Number(st.ttftSec).toFixed(3)
           : '',
-        st.durationSec != null && Number.isFinite(Number(st.durationSec))
-          ? Number(st.durationSec).toFixed(3)
+        (st.totalDurationSec ?? st.durationSec) != null &&
+        Number.isFinite(Number(st.totalDurationSec ?? st.durationSec))
+          ? Number(st.totalDurationSec ?? st.durationSec).toFixed(3)
           : '',
         inTok,
         cacheTok,
@@ -7077,9 +7175,10 @@ function buildStepsXlsx(
       !st.isCompactionStep && st.ttftSec != null && Number.isFinite(Number(st.ttftSec))
         ? Number(st.ttftSec)
         : null;
+    const rawDurVal = st.totalDurationSec ?? st.durationSec;
     const durVal =
-      st.durationSec != null && Number.isFinite(Number(st.durationSec))
-        ? Number(st.durationSec)
+      rawDurVal != null && Number.isFinite(Number(rawDurVal))
+        ? Number(rawDurVal)
         : null;
     const costVal =
       st.costUsd != null && Number.isFinite(Number(st.costUsd)) ? Number(st.costUsd) : null;
@@ -7131,7 +7230,7 @@ function buildStepsXlsx(
             ? `${agg.compactionCount} compact`
             : `含 ${agg.compactionCount} 次压缩`
           : '',
-        agg.tpsCnt > 0 ? +(agg.tpsSum / agg.tpsCnt).toFixed(1) : null,
+        agg.tpsSecSum > 0 ? +(agg.tpsTokSum / agg.tpsSecSum).toFixed(1) : null,
         agg.ttftCnt > 0 ? +(agg.ttftSum / agg.ttftCnt).toFixed(2) : null,
         agg.sumDuration > 0 ? +agg.sumDuration.toFixed(2) : null,
         agg.sumIn,
@@ -7190,7 +7289,7 @@ function buildStepsXlsx(
         m.outTok,
         mTotal,
         computeCacheHitRatio(m.inTok, m.cacheTok),
-        m.tpsCnt > 0 ? +(m.tpsSum / m.tpsCnt).toFixed(1) : null,
+        m.tpsSecSum > 0 ? +(m.tpsTokSum / m.tpsSecSum).toFixed(1) : null,
         m.ttftCnt > 0 ? +(m.ttftSum / m.ttftCnt).toFixed(2) : null,
         m.cost,
       ];
@@ -7205,7 +7304,7 @@ function buildStepsXlsx(
         agg.sumOut,
         agg.sumIn + agg.sumCache + agg.sumOut,
         computeCacheHitRatio(agg.sumIn, agg.sumCache),
-        agg.tpsCnt > 0 ? +(agg.tpsSum / agg.tpsCnt).toFixed(1) : null,
+        agg.tpsSecSum > 0 ? +(agg.tpsTokSum / agg.tpsSecSum).toFixed(1) : null,
         agg.ttftCnt > 0 ? +(agg.ttftSum / agg.ttftCnt).toFixed(2) : null,
         agg.sumCost,
       ],
@@ -7249,7 +7348,8 @@ function buildStepsMarkdownReport(
 
   const totalTok = agg.sumIn + agg.sumCache + agg.sumOut;
   const cacheHitPct = formatPctNumber(computeCacheHitRatio(agg.sumIn, agg.sumCache) * 100);
-  const avgTps = agg.tpsCnt > 0 ? formatSpeedMetric(agg.tpsSum / agg.tpsCnt, ' tok/s') : '—';
+  const avgTps =
+    agg.tpsSecSum > 0 ? formatSpeedMetric(agg.tpsTokSum / agg.tpsSecSum, ' tok/s') : '—';
   const avgTtft = agg.ttftCnt > 0 ? formatMetric(agg.ttftSum / agg.ttftCnt, 's') : '—';
   const heading = title
     ? `# ${title}`
@@ -7292,7 +7392,8 @@ function buildStepsMarkdownReport(
       const mCache = formatPctNumber(computeCacheHitRatio(m.inTok, m.cacheTok) * 100, {
         withSymbol: true,
       });
-      const mTps = m.tpsCnt > 0 ? formatSpeedMetric(m.tpsSum / m.tpsCnt, ' tok/s') : '—';
+      const mTps =
+        m.tpsSecSum > 0 ? formatSpeedMetric(m.tpsTokSum / m.tpsSecSum, ' tok/s') : '—';
       lines.push(
         `| ${escapeMdCell(m.label)} | ${m.calls} | ${formatTokensPrecise(mTotal)} | ${mCache} | ${mTps} | ${formatUsd(m.cost, { precise: m.cost > 0 && m.cost < 0.1 })} |`
       );
@@ -7607,8 +7708,8 @@ function buildConsumptionXlsx(
     let mOut = 0;
     let mTot = 0;
     let mCost = 0;
-    let tpsWeighted = 0;
-    let tpsWeight = 0;
+    let tpsTokSum = 0;
+    let tpsSecSum = 0;
     const modelRows = models.map((m, idx) => {
       const calls = Math.max(0, Number(m.calls || 0));
       const inTok = Math.max(0, Number(m.inputTokens || 0));
@@ -7626,10 +7727,20 @@ function buildConsumptionXlsx(
       mOut += outTok;
       mTot += totTok;
       mCost += cost;
-      if (tps != null) {
-        const w = Math.max(1, outTok || calls);
-        tpsWeighted += tps * w;
-        tpsWeight += w;
+      const rawSpeedTok = Number(m.speedSummary?.tokens);
+      const rawSpeedSec = Number(m.speedSummary?.seconds);
+      if (
+        Number.isFinite(rawSpeedTok) &&
+        Number.isFinite(rawSpeedSec) &&
+        rawSpeedSec > 0 &&
+        rawSpeedTok >= 0
+      ) {
+        tpsTokSum += rawSpeedTok;
+        tpsSecSum += rawSpeedSec;
+      } else if (tps != null) {
+        const fallbackTok = outTok > 0 ? outTok : Math.max(1, calls);
+        tpsTokSum += fallbackTok;
+        tpsSecSum += fallbackTok / tps;
       }
       return [
         idx + 1,
@@ -7655,7 +7766,7 @@ function buildConsumptionXlsx(
         mOut,
         mTot,
         computeCacheHitRatio(mIn, mCache),
-        tpsWeight > 0 ? +(tpsWeighted / tpsWeight).toFixed(1) : null,
+        tpsSecSum > 0 ? +(tpsTokSum / tpsSecSum).toFixed(1) : null,
         mCost,
       ],
     });
@@ -11925,7 +12036,7 @@ const { CustomNumberInput } = (() => {
 
 const CustomNumberInput = defineComponent({
   name: 'CustomNumberInput',
-  setup({ getProps, setProps, emit }) {
+  setup({ getProps, setProps, emit, onCleanup }) {
     function clampValue(raw) {
       const { min = -Infinity, max = Infinity, precision = 0 } = getProps();
       const num = Number(raw);
@@ -11952,7 +12063,7 @@ const CustomNumberInput = defineComponent({
       {
         type: 'button',
         className: 'num-step-btn',
-        'aria-label': '减少数值',
+        'aria-label': t('ui.num.decrease'),
         onClick: (e) => {
           e.preventDefault();
           applyStep(-1, e.shiftKey ? 10 : 1);
@@ -11966,7 +12077,7 @@ const CustomNumberInput = defineComponent({
       {
         type: 'button',
         className: 'num-step-btn',
-        'aria-label': '增加数值',
+        'aria-label': t('ui.num.increase'),
         onClick: (e) => {
           e.preventDefault();
           applyStep(1, e.shiftKey ? 10 : 1);
@@ -12030,6 +12141,15 @@ const CustomNumberInput = defineComponent({
     }
 
     const rootEl = h('div', { className: 'number-input' }, [decBtn, textField, incBtn]);
+    const unsubI18n = i18nStore.subscribe(
+      (st) => st.locale,
+      () => {
+        patchAttr(decBtn, 'aria-label', t('ui.num.decrease'));
+        patchAttr(incBtn, 'aria-label', t('ui.num.increase'));
+      },
+      { immediate: false }
+    );
+    onCleanup(unsubI18n);
     syncFieldDisplay();
 
     return {
@@ -12053,7 +12173,15 @@ const { CustomDateTimePicker } = (() => {
  */
 
 
-const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
+const WEEKDAY_KEYS = [
+  'ui.dt.wdayMon',
+  'ui.dt.wdayTue',
+  'ui.dt.wdayWed',
+  'ui.dt.wdayThu',
+  'ui.dt.wdayFri',
+  'ui.dt.wdaySat',
+  'ui.dt.wdaySun',
+];
 
 function buildCalendarDays(viewYear, viewMonth, selectedDate) {
   const firstDay = new Date(viewYear, viewMonth, 1);
@@ -12114,7 +12242,7 @@ const CustomDateTimePicker = defineComponent({
       {
         type: 'button',
         className: 'icon-btn',
-        'aria-label': '上个月',
+        'aria-label': t('ui.dt.prevMonth'),
         onClick: (e) => {
           e.stopPropagation();
           viewMonth -= 1;
@@ -12133,7 +12261,7 @@ const CustomDateTimePicker = defineComponent({
       {
         type: 'button',
         className: 'icon-btn',
-        'aria-label': '下个月',
+        'aria-label': t('ui.dt.nextMonth'),
         onClick: (e) => {
           e.stopPropagation();
           viewMonth += 1;
@@ -12149,11 +12277,10 @@ const CustomDateTimePicker = defineComponent({
 
     const navBar = h('div', { className: 'dt-nav' }, [prevMonthBtn, monthTitle, nextMonthBtn]);
 
-    const weekdayRow = h(
-      'div',
-      { className: 'dt-weekdays' },
-      WEEKDAYS.map((w) => h('span', { className: 'dt-weekday', text: w }))
+    const weekdaySpans = WEEKDAY_KEYS.map((key) =>
+      h('span', { className: 'dt-weekday', text: t(key) })
     );
+    const weekdayRow = h('div', { className: 'dt-weekdays' }, weekdaySpans);
 
     const daysGrid = h('div', { className: 'dt-days' });
 
@@ -12173,8 +12300,9 @@ const CustomDateTimePicker = defineComponent({
       emit('update:modelValue', nextMs);
     }
 
+    const hourMinLabelEl = h('span', { className: 'text-muted', text: t('ui.dt.hourMinute') });
     const timeRow = h('div', { className: 'dt-time-row' }, [
-      h('span', { className: 'text-muted', text: '时 / 分' }),
+      hourMinLabelEl,
       h('div', { className: 'dt-time-controls' }, [
         h('div', { className: 'dt-mini-step' }, [
           h('button', {
@@ -12342,6 +12470,25 @@ const CustomDateTimePicker = defineComponent({
     } else {
       onCleanup(() => setRepositionListeners(false));
     }
+
+    function syncI18nLabels() {
+      patchAttr(prevMonthBtn, 'aria-label', t('ui.dt.prevMonth'));
+      patchAttr(nextMonthBtn, 'aria-label', t('ui.dt.nextMonth'));
+      patchText(hourMinLabelEl, t('ui.dt.hourMinute'));
+      for (let i = 0; i < WEEKDAY_KEYS.length; i += 1) {
+        patchText(weekdaySpans[i], t(WEEKDAY_KEYS[i]));
+      }
+    }
+
+    const unsubI18n = i18nStore.subscribe(
+      (st) => st.locale,
+      () => {
+        syncI18nLabels();
+        syncDisplay();
+      },
+      { immediate: false }
+    );
+    onCleanup(unsubI18n);
 
     syncDisplay();
 
@@ -12554,10 +12701,18 @@ const SegmentedControl = defineComponent({
       {
         className: 'segmented',
         role: 'group',
-        'aria-label': getProps().ariaLabel || '分段切换器',
+        'aria-label': getProps().ariaLabel || t('ui.seg.defaultAria'),
       },
       [gliderEl]
     );
+    const unsubI18n = i18nStore.subscribe(
+      (st) => st.locale,
+      () => {
+        patchAttr(rootEl, 'aria-label', getProps().ariaLabel || t('ui.seg.defaultAria'));
+      },
+      { immediate: false }
+    );
+    onCleanup(unsubI18n);
 
     const btnMap = new Map();
     let orderedBtns = [];
@@ -21514,9 +21669,11 @@ const StepTableWidget = defineComponent({
     }
 
     function getStepRowIdentity(st, fallbackCascadeId) {
-      const agentKey = String(st?.agentCascadeId || fallbackCascadeId || 'conv');
+      const agentKey = String(
+        st?.agentCascadeId || st?.agentId || st?.cascadeId || fallbackCascadeId || 'conv'
+      );
       const stepNum = Number(st?.stepIndex);
-      const rowKey = `${agentKey}-${st?.stepIndex}`;
+      const rowKey = getStepSelectionKey(st, fallbackCascadeId);
       return { agentKey, stepNum, rowKey };
     }
 
@@ -21892,7 +22049,7 @@ const StepTableWidget = defineComponent({
           logicalIdx: idx,
           isStripeEven: (idx & 1) === 1,
           hasReason: Boolean(hasReasonFlags && hasReasonFlags[idx]),
-          rowKey: `${st.agentCascadeId || cascadeId || 'conv'}-${st.stepIndex}`,
+          rowKey: getStepSelectionKey(st, cascadeId),
           hasTurn,
           hasUp,
           hasDown,
@@ -24705,7 +24862,7 @@ const SessionMigrationCard = defineComponent({
         }
       }
 
-      listScrollbar?.methods?.refresh?.();
+      listScrollbar?.refresh?.();
 
       patchAttr(migrateBtn, 'disabled', isMigrating || selectedIds.size === 0 || !targetClient);
       patchText(
@@ -30870,7 +31027,7 @@ return { ConsumptionView };
 })();
 
 // --- src/views/StepsDetailView.js ---
-const { StepsDetailView } = (() => {
+const { mergeSelectedAgentUnits, StepsDetailView } = (() => {
 /**
  * @fileoverview View 3: StepsDetailView (步骤明细与总汇总分析视图).
  * 提供“按步查看”与“总汇总”双子视图切换：
@@ -30916,10 +31073,15 @@ function mergeSelectedAgentUnits(units) {
           anomalyDangerCount: 0,
           anomalyTotalDelaySec: 0,
           anomalyByKind: {},
-          _speedWeightedSum: 0,
-          _speedWeight: 0,
+          _hasAnySpeedSummary: false,
+          _speedTokens: 0,
+          _speedSeconds: 0,
+          _speedSampleCount: 0,
+          _speedExcludedCount: 0,
+          _speedExcludedReasons: {},
           _ttftWeightedSum: 0,
           _ttftWeight: 0,
+          _ttftSampleCount: 0,
         };
         if (acc.upstreamName) acc.upstreamSet.add(acc.upstreamName);
         modelMap.set(gk, acc);
@@ -30966,19 +31128,43 @@ function mergeSelectedAgentUnits(units) {
         }
       }
 
-      if (Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0) {
-        const w = Math.max(1, outTok || calls || 1);
-        acc._speedWeightedSum += Number(m.avgTokPerSec) * w;
-        acc._speedWeight += w;
+      const rawSpeedTok = Number(m.speedSummary?.tokens);
+      const rawSpeedSec = Number(m.speedSummary?.seconds);
+      if (
+        Number.isFinite(rawSpeedTok) &&
+        Number.isFinite(rawSpeedSec) &&
+        rawSpeedSec > 0 &&
+        rawSpeedTok >= 0
+      ) {
+        acc._hasAnySpeedSummary = true;
+        acc._speedTokens += rawSpeedTok;
+        acc._speedSeconds += rawSpeedSec;
+      } else if (Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0) {
+        const fallbackTok = outTok > 0 ? outTok : Math.max(1, calls || 1);
+        acc._speedTokens += fallbackTok;
+        acc._speedSeconds += fallbackTok / Number(m.avgTokPerSec);
+      }
+      if (m.speedSummary) {
+        acc._hasAnySpeedSummary = true;
+        acc._speedSampleCount += Math.max(0, Number(m.speedSummary.sampleCount || 0));
+        acc._speedExcludedCount += Math.max(0, Number(m.speedSummary.excludedCount || 0));
+        if (m.speedSummary.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+          for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+            const cnt = Math.max(0, Number(rv || 0));
+            if (cnt > 0) acc._speedExcludedReasons[rk] = (acc._speedExcludedReasons[rk] || 0) + cnt;
+          }
+        }
       }
       if (
         m.avgTtftSec != null &&
         Number.isFinite(Number(m.avgTtftSec)) &&
         Number(m.avgTtftSec) >= 0
       ) {
-        const w = Math.max(1, calls || 1);
+        const ttftSamples = Math.max(0, Number(m.ttftSampleCount || 0));
+        const w = ttftSamples > 0 ? ttftSamples : Math.max(1, calls || 1);
         acc._ttftWeightedSum += Number(m.avgTtftSec) * w;
         acc._ttftWeight += w;
+        acc._ttftSampleCount += ttftSamples;
       }
     }
   }
@@ -30993,6 +31179,7 @@ function mergeSelectedAgentUnits(units) {
   const mergedModels = Array.from(modelMap.values())
     .map((acc) => {
       const promptTok = acc.inputTokens + acc.cacheReadTokens;
+      const rawAvgTps = acc._speedSeconds > 0 ? acc._speedTokens / acc._speedSeconds : null;
       return {
         label: acc.label,
         shortName: acc.shortName,
@@ -31008,10 +31195,22 @@ function mergeSelectedAgentUnits(units) {
         totalTokens: acc.totalTokens,
         costUsd: +acc.costUsd.toFixed(6),
         unpricedCalls: acc.unpricedCalls,
-        avgTokPerSec:
-          acc._speedWeight > 0 ? +(acc._speedWeightedSum / acc._speedWeight).toFixed(1) : null,
+        avgTokPerSec: rawAvgTps !== null ? +rawAvgTps.toFixed(1) : null,
         avgTtftSec:
           acc._ttftWeight > 0 ? +(acc._ttftWeightedSum / acc._ttftWeight).toFixed(1) : null,
+        ttftSampleCount: acc._ttftSampleCount,
+        ...(acc._hasAnySpeedSummary
+          ? {
+              speedSummary: {
+                tokens: acc._speedTokens,
+                seconds: +acc._speedSeconds.toFixed(6),
+                sampleCount: acc._speedSampleCount,
+                excludedCount: acc._speedExcludedCount,
+                excludedReasons: acc._speedExcludedReasons,
+                avgTokPerSec: rawAvgTps,
+              },
+            }
+          : {}),
         cacheHitPct: promptTok > 0 ? +((acc.cacheReadTokens / promptTok) * 100).toFixed(1) : 0,
         ...(acc.anomalyCount > 0
           ? {
@@ -32946,7 +33145,7 @@ const StepsDetailView = defineComponent({
     };
   },
 });
-return { StepsDetailView };
+return { mergeSelectedAgentUnits, StepsDetailView };
 })();
 
 // --- src/views/SettingsView.js ---
@@ -36390,6 +36589,9 @@ function mountWindowOverlay() {
       window.removeEventListener?.('popstate', onPopState);
       navigator?.windowControlsOverlay?.removeEventListener?.('geometrychange', onWindowResize);
       restorePatchedActionToolbar();
+      try {
+        multiRunningWidget.destroy();
+      } catch {}
       try {
         hoverWidgetHost.destroy();
       } catch {}

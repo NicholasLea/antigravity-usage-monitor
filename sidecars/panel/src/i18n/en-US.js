@@ -873,4 +873,19 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'chart.trend.hmActivePeak': 'Active {active}/{total}d · Peak {label} · {tokens}',
   'chart.trend.hmActiveZero': 'Active 0/{total}d',
   'chart.trend.peakPill': 'Peak {label} · {tokens}',
+
+  // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
+  'ui.dt.wdayMon': 'Mo',
+  'ui.dt.wdayTue': 'Tu',
+  'ui.dt.wdayWed': 'We',
+  'ui.dt.wdayThu': 'Th',
+  'ui.dt.wdayFri': 'Fr',
+  'ui.dt.wdaySat': 'Sa',
+  'ui.dt.wdaySun': 'Su',
+  'ui.dt.prevMonth': 'Previous month',
+  'ui.dt.nextMonth': 'Next month',
+  'ui.dt.hourMinute': 'Hr / Min',
+  'ui.num.decrease': 'Decrease value',
+  'ui.num.increase': 'Increase value',
+  'ui.seg.defaultAria': 'Segmented switcher',
 });

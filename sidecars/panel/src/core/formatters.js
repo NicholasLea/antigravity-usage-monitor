@@ -829,14 +829,30 @@ export function mergeModelsByDisplayName(models = [], settings = {}, options = {
     const speedSampleCount = Math.max(0, Number(m.speedSummary?.sampleCount || 0));
     const speedExcludedCount = Math.max(0, Number(m.speedSummary?.excludedCount || 0));
     const speedWeight = speedSampleCount > 0 ? speedSampleCount : Math.max(1, outTok || calls || 1);
-    const hasSpeed = m.avgTokPerSec != null && Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0;
+    const hasSpeed =
+      m.avgTokPerSec != null && Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0;
+    const rawSpeedTokens = Number(m.speedSummary?.tokens);
+    const rawSpeedSeconds = Number(m.speedSummary?.seconds);
+    const hasExactSpeedSummary =
+      Number.isFinite(rawSpeedTokens) &&
+      Number.isFinite(rawSpeedSeconds) &&
+      rawSpeedSeconds > 0 &&
+      rawSpeedTokens >= 0;
 
     const ttftSampleCount = Math.max(0, Number(m.ttftSampleCount || 0));
     const ttftWeight = ttftSampleCount > 0 ? ttftSampleCount : Math.max(1, calls || 1);
-    const hasTtft = m.avgTtftSec != null && Number.isFinite(Number(m.avgTtftSec)) && Number(m.avgTtftSec) >= 0;
+    const hasTtft =
+      m.avgTtftSec != null && Number.isFinite(Number(m.avgTtftSec)) && Number(m.avgTtftSec) >= 0;
 
     let acc = byDisplay.get(key);
     if (!acc) {
+      const initExcludedReasons = {};
+      if (m.speedSummary?.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+        for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+          const cnt = Math.max(0, Number(rv || 0));
+          if (cnt > 0) initExcludedReasons[rk] = cnt;
+        }
+      }
       acc = {
         baseItem: m,
         mergedCount: 1,
@@ -856,10 +872,15 @@ export function mergeModelsByDisplayName(models = [], settings = {}, options = {
         totalTokens: totTok,
         costUsd,
         unpricedCalls,
+        hasAnySpeedSummary: Boolean(m.speedSummary),
+        allSpeedExact: !hasSpeed || hasExactSpeedSummary,
+        speedTokens: hasExactSpeedSummary ? rawSpeedTokens : 0,
+        speedSeconds: hasExactSpeedSummary ? rawSpeedSeconds : 0,
         speedWeightedSum: hasSpeed ? Number(m.avgTokPerSec) * speedWeight : 0,
         speedWeight: hasSpeed ? speedWeight : 0,
         speedSampleCount,
         speedExcludedCount,
+        speedExcludedReasons: initExcludedReasons,
         ttftWeightedSum: hasTtft ? Number(m.avgTtftSec) * ttftWeight : 0,
         ttftWeight: hasTtft ? ttftWeight : 0,
         ttftSampleCount,
@@ -908,12 +929,24 @@ export function mergeModelsByDisplayName(models = [], settings = {}, options = {
       }
     }
 
+    if (m.speedSummary) acc.hasAnySpeedSummary = true;
+    if (hasSpeed && !hasExactSpeedSummary) acc.allSpeedExact = false;
+    if (hasExactSpeedSummary) {
+      acc.speedTokens += rawSpeedTokens;
+      acc.speedSeconds += rawSpeedSeconds;
+    }
     if (hasSpeed) {
       acc.speedWeightedSum += Number(m.avgTokPerSec) * speedWeight;
       acc.speedWeight += speedWeight;
     }
     acc.speedSampleCount += speedSampleCount;
     acc.speedExcludedCount += speedExcludedCount;
+    if (m.speedSummary?.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+      for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+        const cnt = Math.max(0, Number(rv || 0));
+        if (cnt > 0) acc.speedExcludedReasons[rk] = (acc.speedExcludedReasons[rk] || 0) + cnt;
+      }
+    }
 
     if (hasTtft) {
       acc.ttftWeightedSum += Number(m.avgTtftSec) * ttftWeight;
@@ -933,8 +966,13 @@ export function mergeModelsByDisplayName(models = [], settings = {}, options = {
     }
     const promptTok = acc.inputTokens + acc.cacheReadTokens;
     const cacheHitPct = promptTok > 0 ? +((acc.cacheReadTokens / promptTok) * 100).toFixed(1) : 0;
-    const avgTokPerSec =
-      acc.speedWeight > 0 ? +(acc.speedWeightedSum / acc.speedWeight).toFixed(1) : null;
+    const rawAvgTps =
+      acc.allSpeedExact && acc.speedSeconds > 0
+        ? acc.speedTokens / acc.speedSeconds
+        : acc.speedWeight > 0
+          ? acc.speedWeightedSum / acc.speedWeight
+          : null;
+    const avgTokPerSec = rawAvgTps !== null ? +rawAvgTps.toFixed(1) : null;
     const avgTtftSec =
       acc.ttftWeight > 0 ? +(acc.ttftWeightedSum / acc.ttftWeight).toFixed(1) : null;
     const upstreamModels = Array.from(acc.upstreamSet);
@@ -967,12 +1005,15 @@ export function mergeModelsByDisplayName(models = [], settings = {}, options = {
             anomalyByKind: acc.anomalyByKind,
           }
         : {}),
-      speedSummary: acc.baseItem.speedSummary
+      speedSummary: acc.hasAnySpeedSummary
         ? {
-            ...acc.baseItem.speedSummary,
+            ...(acc.baseItem.speedSummary || {}),
+            tokens: acc.speedTokens,
+            seconds: +acc.speedSeconds.toFixed(6),
             sampleCount: acc.speedSampleCount,
             excludedCount: acc.speedExcludedCount,
-            avgTokPerSec,
+            excludedReasons: acc.speedExcludedReasons,
+            avgTokPerSec: rawAvgTps,
           }
         : undefined,
       upstreamModels,

@@ -2107,3 +2107,412 @@ test('Feature 14: compact vertical ActionMenu replaces export bars, backend expo
   assert.equal(failedRes.mode, 'failed');
   assert.equal(uiStore.getState().toast?.tone, 'warn');
 });
+
+test('P0 regression: V4 display-projected steps open inspector, preserve waterfall/diagnostics/XLSX duration, match anomaly events, compute harmonic speed, and clean up UI observers/i18n', async (t) => {
+  const { extractModelSteps, summarizeSpeed } = await import('../trajectory-metrics.mjs');
+  const { handleAccountCredentialAction } = await import('../backend/account-switch.mjs');
+  const {
+    getStepSelectionKey,
+    computeStepTimingWaterfall,
+    filterStepsBySearchAndChip,
+  } = await import('../src/core/stepInspector.js');
+  const {
+    buildStepTimingDiagnostic,
+    mergeModelsByDisplayName,
+  } = await import('../src/core/formatters.js');
+  const {
+    buildStepsXlsx,
+    buildStepsCsv,
+    buildStepsMarkdownReport,
+    buildConsumptionXlsx,
+  } = await import('../src/core/reportExporter.js');
+  const { StepsDetailView, mergeSelectedAgentUnits } = await import('../src/views/StepsDetailView.js');
+  const { CustomDateTimePicker } = await import('../src/components/ui/CustomDateTimePicker.js');
+  const { CustomNumberInput } = await import('../src/components/ui/CustomNumberInput.js');
+  const { SegmentedControl } = await import('../src/components/ui/SegmentedControl.js');
+  const { mountWindowOverlay } = await import('../src/components/layout/WindowOverlayShell.js');
+  const { WINDOW_OVERLAY_KEY } = await import('../shared/window-bridge-protocol.mjs');
+  const { uiStore } = await import('../src/store/uiStore.js');
+  const { telemetryStore } = await import('../src/store/telemetryStore.js');
+  const { i18nStore, setI18nLanguage } = await import('../src/i18n/index.js');
+
+  function parseZipEntries(bytes) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const entries = new Map();
+    let pos = 0;
+    while (pos + 30 <= bytes.length && view.getUint32(pos, true) === 0x04034b50) {
+      const compSize = view.getUint32(pos + 18, true);
+      const nameLen = view.getUint16(pos + 26, true);
+      const extraLen = view.getUint16(pos + 28, true);
+      const nameStart = pos + 30;
+      const dataStart = nameStart + nameLen + extraLen;
+      const name = Buffer.from(bytes.subarray(nameStart, nameStart + nameLen)).toString('utf8');
+      const text = Buffer.from(bytes.subarray(dataStart, dataStart + compSize)).toString('utf8');
+      entries.set(name, text);
+      pos = dataStart + compSize;
+    }
+    return entries;
+  }
+
+  // Extract genuine V4 step with nativeTtftSec, nativeStreamSec, thinkingDurationSec, toolCalls, and retryInfos
+  const rawSteps = [
+    {
+      type: 'CORTEX_STEP_TYPE_USER_INPUT',
+      metadata: { createdAt: '2026-11-22T10:00:00Z' },
+      userInput: { items: [{ text: 'Inspect V4 projected telemetry step' }] },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        createdAt: '2026-11-22T10:00:01Z',
+        completedAt: '2026-11-22T10:00:11.050Z',
+        generatorModel: 'MODEL_PLACEHOLDER_M37',
+        modelUsage: {
+          model: 'MODEL_PLACEHOLDER_M37',
+          inputTokens: '4000',
+          outputTokens: '200',
+          thinkingTokens: '120',
+          cacheReadInputTokens: '16000',
+        },
+        retryInfos: [
+          {
+            attempt: 1,
+            error: 'HTTP 429 Resource Exhausted UniqueQuotaToken777',
+            retryDelay: '2.5s',
+          },
+        ],
+      },
+      plannerResponse: {
+        response: 'Completed',
+        thinkingDuration: '8.64s',
+        toolCalls: [{ id: 'tc-1', name: 'read_file' }],
+      },
+    },
+  ];
+  const generatorMetadata = [
+    {
+      stepIndices: [1],
+      chatModel: {
+        usage: {
+          model: 'MODEL_PLACEHOLDER_M37',
+          inputTokens: '4000',
+          outputTokens: '200',
+          thinkingOutputTokens: '120',
+          cacheReadTokens: '16000',
+        },
+        timeToFirstToken: '8.32s',
+        streamingDuration: '1.73s',
+      },
+    },
+  ];
+  const [extracted] = extractModelSteps(rawSteps, generatorMetadata);
+  const cascadeUuid = '28a876b9-8b93-4dbd-8c0b-3b6101fc481d';
+  const projectedLikeStep = {
+    stepIndex: extracted.stepIndex,
+    createdAtMs: extracted.createdAtMs,
+    isCompactionStep: extracted.isCompactionStep,
+    modelKey: extracted.modelKey,
+    modelShort: '3.1-pro-h',
+    modelLabel: 'Gemini 3.1 Pro (High)',
+    modelUpstream: 'gemini-3.1-pro-high-upstream-id',
+    responseModel: '',
+    modelSource: extracted.modelSource,
+    tokPerSec: +(extracted.outputTokens / extracted.totalDurationSec).toFixed(1),
+    ttftSec: extracted.nativeTtftSec,
+    totalDurationSec: extracted.totalDurationSec,
+    nativeStreamSec: extracted.nativeStreamSec,
+    thinkingDurationSec: extracted.thinkingDurationSec,
+    hasToolCalls: extracted.hasToolCalls,
+    selectedSpeedReason: extracted.speedReason,
+    anomaly: extracted.anomaly,
+    anomalySig: extracted.anomalySig,
+    contextTokens: 20200,
+    inputTokens: extracted.inputTokens,
+    cacheReadTokens: extracted.cacheReadTokens,
+    outputTokens: extracted.outputTokens,
+    thinkingTokens: extracted.thinkingTokens,
+    responseTokens: extracted.responseTokens,
+    cacheHitPct: 80,
+    costUsd: 0.042,
+    agentId: 'main',
+    agentCascadeId: cascadeUuid,
+    agentLabel: 'Main',
+    agentBadge: 'MAIN',
+    agentIndex: 0,
+    isSubagent: false,
+    turnIndex: extracted.turnIndex,
+    isTurnStart: extracted.isTurnStart,
+    isLatestTurn: true,
+    turnPrompt: extracted.turnPrompt,
+  };
+
+  // B-04: Anomaly event message, modelKey, and modelUpstream search
+  assert.equal(
+    filterStepsBySearchAndChip([projectedLikeStep], { query: 'UniqueQuotaToken777' }).length,
+    1
+  );
+  assert.equal(
+    filterStepsBySearchAndChip([projectedLikeStep], { query: 'MODEL_PLACEHOLDER_M37' }).length,
+    1
+  );
+  assert.equal(
+    filterStepsBySearchAndChip([projectedLikeStep], {
+      query: 'gemini-3.1-pro-high-upstream-id',
+    }).length,
+    1
+  );
+
+  // B-02 & B-03: Waterfall, XLSX H2 duration cell, CSV duration, and timing diagnostic parity
+  const wf = computeStepTimingWaterfall(projectedLikeStep);
+  assert.equal(wf.totalSec, 10.05);
+  assert.equal(wf.ttftSec, 8.32);
+  assert.equal(wf.streamSec, 1.73);
+  assert.equal(wf.thinkingSec, 8.64);
+
+  const xlsxXml = parseZipEntries(buildStepsXlsx([projectedLikeStep], { locale: 'en-US' })).get(
+    'xl/worksheets/sheet1.xml'
+  );
+  assert.match(xlsxXml, /<c r="H2"[^>]*><v>10\.05<\/v><\/c>/);
+  assert.match(buildStepsCsv([projectedLikeStep], { includeBom: false }), /,10\.050,/);
+
+  setI18nLanguage('zh-CN');
+  const diag = buildStepTimingDiagnostic(projectedLikeStep);
+  assert.equal(diag.rows.length, 3);
+  assert.match(diag.rows[1].text, /流式返回/);
+  assert.match(diag.rows[2].text, /原生思考计时/);
+  assert.match(diag.hint, /重叠/);
+
+  // B-05: Speed aggregation matches official summarizeSpeed (18.2 tok/s, not 55.0 tok/s) and skips <50 tok short samples
+  const stepSlow = {
+    measurementVersion: 4,
+    isComplete: true,
+    isCompactionStep: false,
+    speedSampleEligible: true,
+    speedReason: null,
+    selectedSpeedReason: null,
+    stepIndex: 1,
+    modelShort: '4-neon',
+    modelLabel: 'Gemini 4 Neon',
+    outputTokens: 100,
+    totalDurationSec: 10,
+    totalTokPerSec: 10,
+    tokPerSec: 10,
+  };
+  const stepFast = {
+    ...stepSlow,
+    stepIndex: 2,
+    totalDurationSec: 1,
+    totalTokPerSec: 100,
+    tokPerSec: 100,
+  };
+  const stepShort = {
+    ...stepSlow,
+    stepIndex: 3,
+    speedSampleEligible: false,
+    speedReason: 'short_sample',
+    selectedSpeedReason: 'short_sample',
+    outputTokens: 10,
+    totalDurationSec: 0.5,
+    totalTokPerSec: 20,
+    tokPerSec: 20,
+  };
+  const mSlow = {
+    label: 'Gemini 4 Neon',
+    shortName: '4-neon',
+    rawModel: 'MODEL_A',
+    calls: 1,
+    outputTokens: 100,
+    totalTokens: 100,
+    avgTokPerSec: 10,
+    speedSummary: summarizeSpeed([stepSlow]),
+  };
+  const mFast = {
+    label: 'Gemini 4 Neon',
+    shortName: '4-neon',
+    rawModel: 'MODEL_A',
+    calls: 1,
+    outputTokens: 100,
+    totalTokens: 100,
+    avgTokPerSec: 100,
+    speedSummary: summarizeSpeed([stepFast]),
+  };
+  const mergedDisplay = mergeModelsByDisplayName(
+    [mSlow, { ...mFast, rawModel: 'MODEL_B' }],
+    { modelDisplayMode: 'short' }
+  );
+  assert.equal(mergedDisplay[0].avgTokPerSec, 18.2);
+  assert.equal(mergedDisplay[0].speedSummary.tokens, 200);
+  assert.equal(mergedDisplay[0].speedSummary.seconds, 11);
+
+  const mergedUnits = mergeSelectedAgentUnits([
+    { recentSteps: [stepSlow], modelBreakdown: [mSlow] },
+    { recentSteps: [stepFast], modelBreakdown: [mFast] },
+  ]);
+  assert.equal(mergedUnits.models[0].avgTokPerSec, 18.2);
+
+  const consXlsxXml = parseZipEntries(
+    buildConsumptionXlsx(
+      { selectedRange: { key: '7d', label: '7d' }, account: { calls: 2, outputTokens: 200 } },
+      [
+        { ...mSlow, label: 'Slow', shortName: 'slow' },
+        { ...mFast, label: 'Fast', shortName: 'fast' },
+      ],
+      { locale: 'en-US' }
+    )
+  ).get('xl/worksheets/sheet2.xml');
+  assert.match(consXlsxXml, /<c r="I4"[^>]*><v>18\.2<\/v><\/c>/);
+  assert.match(
+    buildStepsMarkdownReport([stepSlow, stepFast, stepShort], { locale: 'en-US' }),
+    /\*\*Avg Speed\*\*: 18\.2 tok\/s/
+  );
+
+  // B-01 & B-07 DOM checks: click real projected step opens drawer + i18n controls + WindowOverlayShell ResizeObserver cleanup
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRo = globalThis.ResizeObserver;
+  const prevMo = globalThis.MutationObserver;
+  const prevUi = uiStore.getState();
+  const prevTel = telemetryStore.getState();
+  const prevLocale = i18nStore.getState().language;
+
+  const { document } = createMockDom();
+  globalThis.document = document;
+  let activeResizeObservers = 0;
+  globalThis.ResizeObserver = class {
+    constructor() {
+      this.connected = false;
+    }
+    observe() {
+      if (!this.connected) {
+        this.connected = true;
+        activeResizeObservers += 1;
+      }
+    }
+    unobserve() {}
+    disconnect() {
+      if (this.connected) {
+        this.connected = false;
+        activeResizeObservers -= 1;
+      }
+    }
+  };
+  globalThis.MutationObserver = class {
+    observe() {}
+    disconnect() {}
+  };
+  globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    addEventListener() {},
+    removeEventListener() {},
+    requestAnimationFrame: (fn) => setTimeout(fn, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+  };
+
+  let stepsView = null;
+  let overlay = null;
+  t.after(() => {
+    stepsView?.destroy?.();
+    overlay?.dispose?.();
+    uiStore.setState(prevUi, { sync: true });
+    telemetryStore.setState(prevTel, { sync: true });
+    setI18nLanguage(prevLocale);
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.ResizeObserver = prevRo;
+    globalThis.MutationObserver = prevMo;
+  });
+
+  uiStore.setState({ activeView: 'steps', stepsSubTab: 'steps', monitorVisible: true }, { sync: true });
+  telemetryStore.setState(
+    {
+      telemetry: {
+        settings: { stepTableColumns: ['step', 'model', 'tps', 'duration', 'cost'] },
+        activeConversation: {
+          cascadeId: cascadeUuid,
+          stepCount: 1,
+          recentSteps: [projectedLikeStep],
+          modelBreakdown: [],
+        },
+      },
+    },
+    { sync: true }
+  );
+  stepsView = StepsDetailView();
+  document.body.appendChild(stepsView.el);
+  assert.equal(
+    getStepSelectionKey(projectedLikeStep, cascadeUuid),
+    `${cascadeUuid}-${projectedLikeStep.stepIndex}`
+  );
+  const tr = stepsView.el.querySelectorAll('tbody tr')[0];
+  tr.onclick({});
+  assert.equal(stepsView.refs.stepInspectorDrawerEl.hasAttribute('hidden'), false);
+  stepsView.destroy();
+  stepsView = null;
+
+  // B-07 i18n reactive switching
+  setI18nLanguage('en-US');
+  const dt = CustomDateTimePicker({ modelValue: Date.UTC(2026, 10, 22, 12, 30) });
+  const num = CustomNumberInput({ modelValue: 5 });
+  const seg = SegmentedControl({ options: [{ label: 'A', value: 'a' }], modelValue: 'a' });
+  assert.equal(dt.el.querySelector('.dt-weekdays').textContent, 'MoTuWeThFrSaSu');
+  assert.equal(dt.el.querySelector('.dt-time-row .text-muted').textContent, 'Hr / Min');
+  assert.equal(num.el.querySelectorAll('.num-step-btn')[0].getAttribute('aria-label'), 'Decrease value');
+  assert.equal(seg.el.getAttribute('aria-label'), 'Segmented switcher');
+  setI18nLanguage('zh-CN');
+  await Promise.resolve();
+  assert.equal(dt.el.querySelector('.dt-weekdays').textContent, '一二三四五六日');
+  assert.equal(dt.el.querySelector('.dt-time-row .text-muted').textContent, '时 / 分');
+  dt.destroy();
+  num.destroy();
+  seg.destroy();
+
+  // B-07 WindowOverlayShell dispose cleans up multiRunningWidget subScroll ResizeObserver
+  const roBaseline = activeResizeObservers;
+  globalThis.window[WINDOW_OVERLAY_KEY] = { isMultiPinnedOpen: () => true, dispose() {} };
+  overlay = mountWindowOverlay();
+  telemetryStore.setState(
+    {
+      telemetry: {
+        settings: {},
+        runningConversations: [
+          {
+            cascadeId: 'run-ro-1',
+            title: 'Swarm Run',
+            isMainRunning: true,
+            subagentCount: 1,
+            runningSubagentCount: 1,
+            subagents: [{ cascadeId: 'sub-ro-1', isRunning: true, stepCount: 2 }],
+          },
+        ],
+        activeConversation: { cascadeId: 'run-ro-1', recentSteps: [], modelBreakdown: [] },
+      },
+    },
+    { sync: true }
+  );
+  overlay.dispose();
+  overlay = null;
+  assert.equal(activeResizeObservers, roBaseline);
+
+  // B-07 account-switch honors ANTIGRAVITY_GEMINI_DIR
+  const prevGemEnv = process.env.ANTIGRAVITY_GEMINI_DIR;
+  process.env.ANTIGRAVITY_GEMINI_DIR = 'D:\\CustomGeminiVerify';
+  try {
+    let seenFallbacks = [];
+    await handleAccountCredentialAction(
+      { action: 'list' },
+      {
+        platform: 'win32',
+        store: async (cfg) => {
+          seenFallbacks = cfg.fallbacks || [];
+          return { accounts: [], selectedEmail: '' };
+        },
+      }
+    );
+    assert.equal(seenFallbacks.every((p) => p.startsWith('D:\\CustomGeminiVerify')), true);
+  } finally {
+    if (prevGemEnv === undefined) delete process.env.ANTIGRAVITY_GEMINI_DIR;
+    else process.env.ANTIGRAVITY_GEMINI_DIR = prevGemEnv;
+  }
+});

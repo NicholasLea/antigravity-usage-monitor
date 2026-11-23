@@ -30,7 +30,8 @@ export const STEP_SLOW_TTFT_MIN_SEC = 30;
  */
 export function getStepSelectionKey(st, fallbackCascadeId = '') {
   if (!st || typeof st !== 'object') return '';
-  const agentKey = st.agentId || st.cascadeId || fallbackCascadeId || 'main';
+  const agentKey =
+    st.agentCascadeId || st.agentId || st.cascadeId || fallbackCascadeId || 'conv';
   return `${agentKey}-${st.stepIndex}`;
 }
 
@@ -125,6 +126,11 @@ export function filterStepsBySearchAndChip(
     if (rawTerms.length > 0) {
       const modelInfo = resolveModelDisplayInfo(st, displaySettings);
       const anomalyKinds = st.anomaly?.kinds ? Object.keys(st.anomaly.kinds).join(' ') : '';
+      const anomalyEventsText = Array.isArray(st.anomaly?.events)
+        ? st.anomaly.events
+            .map((ev) => `${ev?.kind || ''} ${ev?.attempt ?? ''} ${ev?.message || ''}`)
+            .join(' ')
+        : '';
       const anomalyItemsText = Array.isArray(st.anomaly?.items)
         ? st.anomaly.items
             .map((it) => `${it?.kind || ''} ${it?.httpStatus || ''} ${it?.detail || ''}`)
@@ -137,6 +143,9 @@ export function filterStepsBySearchAndChip(
         modelInfo.title,
         st.modelLabel || '',
         st.modelShort || '',
+        st.modelKey || '',
+        st.modelUpstream || '',
+        st.responseModel || '',
         st.rawModelId || '',
         st.upstreamName || '',
         st.turnPrompt || '',
@@ -146,6 +155,7 @@ export function filterStepsBySearchAndChip(
         st.agentBadge || '',
         st.isCompactionStep ? 'compaction 压缩' : '',
         anomalyKinds,
+        anomalyEventsText,
         anomalyItemsText,
       ]
         .join(' ')
@@ -210,15 +220,15 @@ export function findPrevAgentContextTokens(allSteps, targetStep) {
  */
 export function computeStepTimingWaterfall(st) {
   if (!st || typeof st !== 'object') return null;
+  const rawTtft = st.ttftSec ?? st.nativeTtftSec;
   const ttft =
-    st.ttftSec != null && Number.isFinite(Number(st.ttftSec)) && Number(st.ttftSec) >= 0
-      ? Number(st.ttftSec)
+    rawTtft != null && Number.isFinite(Number(rawTtft)) && Number(rawTtft) >= 0
+      ? Number(rawTtft)
       : 0;
+  const rawStream = st.nativeStreamSec ?? st.streamDurationSec;
   const stream =
-    st.streamDurationSec != null &&
-    Number.isFinite(Number(st.streamDurationSec)) &&
-    Number(st.streamDurationSec) >= 0
-      ? Number(st.streamDurationSec)
+    rawStream != null && Number.isFinite(Number(rawStream)) && Number(rawStream) >= 0
+      ? Number(rawStream)
       : 0;
   const thinking =
     st.thinkingDurationSec != null &&
@@ -226,9 +236,10 @@ export function computeStepTimingWaterfall(st) {
     Number(st.thinkingDurationSec) >= 0
       ? Number(st.thinkingDurationSec)
       : 0;
+  const rawDur = st.totalDurationSec ?? st.durationSec;
   const rawTotal =
-    st.durationSec != null && Number.isFinite(Number(st.durationSec)) && Number(st.durationSec) > 0
-      ? Number(st.durationSec)
+    rawDur != null && Number.isFinite(Number(rawDur)) && Number(rawDur) > 0
+      ? Number(rawDur)
       : ttft + stream;
   const totalSec = Math.max(rawTotal, ttft + stream);
   if (!(totalSec > 0)) return null;

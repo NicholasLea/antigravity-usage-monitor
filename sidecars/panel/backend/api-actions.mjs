@@ -92,7 +92,8 @@ function projectDisplayStep(st) {
   const {
     stepIndex, createdAtMs, isCompactionStep, modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
-    streamDurationSec, selectedSpeedReason, anomaly, anomalySig, contextTokens, inputTokens, cacheReadTokens,
+    nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason, anomaly, anomalySig,
+    contextTokens, inputTokens, cacheReadTokens,
     outputTokens, thinkingTokens, responseTokens, cacheHitPct, costUsd, inCostUsd,
     cacheCostUsd, outCostUsd, agentId, agentCascadeId, agentKind, agentOrdinal,
     agentCustomRole, agentLabel, agentBadge, agentRole, agentIndex, isSubagent,
@@ -104,7 +105,7 @@ function projectDisplayStep(st) {
   return {
     stepIndex, createdAtMs, isCompactionStep, modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
-    streamDurationSec, selectedSpeedReason,
+    nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason,
     ...(anomaly ? { anomaly, anomalySig } : {}),
     contextTokens, inputTokens, cacheReadTokens,
     outputTokens, thinkingTokens, responseTokens, cacheHitPct, costUsd, inCostUsd,

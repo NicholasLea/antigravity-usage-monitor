@@ -78,7 +78,7 @@ import { SegmentedControl } from '../components/ui/SegmentedControl.js';
 import { StepTableWidget } from '../components/widgets/StepTableWidget.js';
 import { sortStepsByColumn } from '../registries/stepColumnRegistry.js';
 
-function mergeSelectedAgentUnits(units) {
+export function mergeSelectedAgentUnits(units) {
   const combinedSteps = [];
   const modelMap = new Map();
 
@@ -115,10 +115,15 @@ function mergeSelectedAgentUnits(units) {
           anomalyDangerCount: 0,
           anomalyTotalDelaySec: 0,
           anomalyByKind: {},
-          _speedWeightedSum: 0,
-          _speedWeight: 0,
+          _hasAnySpeedSummary: false,
+          _speedTokens: 0,
+          _speedSeconds: 0,
+          _speedSampleCount: 0,
+          _speedExcludedCount: 0,
+          _speedExcludedReasons: {},
           _ttftWeightedSum: 0,
           _ttftWeight: 0,
+          _ttftSampleCount: 0,
         };
         if (acc.upstreamName) acc.upstreamSet.add(acc.upstreamName);
         modelMap.set(gk, acc);
@@ -165,19 +170,43 @@ function mergeSelectedAgentUnits(units) {
         }
       }
 
-      if (Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0) {
-        const w = Math.max(1, outTok || calls || 1);
-        acc._speedWeightedSum += Number(m.avgTokPerSec) * w;
-        acc._speedWeight += w;
+      const rawSpeedTok = Number(m.speedSummary?.tokens);
+      const rawSpeedSec = Number(m.speedSummary?.seconds);
+      if (
+        Number.isFinite(rawSpeedTok) &&
+        Number.isFinite(rawSpeedSec) &&
+        rawSpeedSec > 0 &&
+        rawSpeedTok >= 0
+      ) {
+        acc._hasAnySpeedSummary = true;
+        acc._speedTokens += rawSpeedTok;
+        acc._speedSeconds += rawSpeedSec;
+      } else if (Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0) {
+        const fallbackTok = outTok > 0 ? outTok : Math.max(1, calls || 1);
+        acc._speedTokens += fallbackTok;
+        acc._speedSeconds += fallbackTok / Number(m.avgTokPerSec);
+      }
+      if (m.speedSummary) {
+        acc._hasAnySpeedSummary = true;
+        acc._speedSampleCount += Math.max(0, Number(m.speedSummary.sampleCount || 0));
+        acc._speedExcludedCount += Math.max(0, Number(m.speedSummary.excludedCount || 0));
+        if (m.speedSummary.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+          for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+            const cnt = Math.max(0, Number(rv || 0));
+            if (cnt > 0) acc._speedExcludedReasons[rk] = (acc._speedExcludedReasons[rk] || 0) + cnt;
+          }
+        }
       }
       if (
         m.avgTtftSec != null &&
         Number.isFinite(Number(m.avgTtftSec)) &&
         Number(m.avgTtftSec) >= 0
       ) {
-        const w = Math.max(1, calls || 1);
+        const ttftSamples = Math.max(0, Number(m.ttftSampleCount || 0));
+        const w = ttftSamples > 0 ? ttftSamples : Math.max(1, calls || 1);
         acc._ttftWeightedSum += Number(m.avgTtftSec) * w;
         acc._ttftWeight += w;
+        acc._ttftSampleCount += ttftSamples;
       }
     }
   }
@@ -192,6 +221,7 @@ function mergeSelectedAgentUnits(units) {
   const mergedModels = Array.from(modelMap.values())
     .map((acc) => {
       const promptTok = acc.inputTokens + acc.cacheReadTokens;
+      const rawAvgTps = acc._speedSeconds > 0 ? acc._speedTokens / acc._speedSeconds : null;
       return {
         label: acc.label,
         shortName: acc.shortName,
@@ -207,10 +237,22 @@ function mergeSelectedAgentUnits(units) {
         totalTokens: acc.totalTokens,
         costUsd: +acc.costUsd.toFixed(6),
         unpricedCalls: acc.unpricedCalls,
-        avgTokPerSec:
-          acc._speedWeight > 0 ? +(acc._speedWeightedSum / acc._speedWeight).toFixed(1) : null,
+        avgTokPerSec: rawAvgTps !== null ? +rawAvgTps.toFixed(1) : null,
         avgTtftSec:
           acc._ttftWeight > 0 ? +(acc._ttftWeightedSum / acc._ttftWeight).toFixed(1) : null,
+        ttftSampleCount: acc._ttftSampleCount,
+        ...(acc._hasAnySpeedSummary
+          ? {
+              speedSummary: {
+                tokens: acc._speedTokens,
+                seconds: +acc._speedSeconds.toFixed(6),
+                sampleCount: acc._speedSampleCount,
+                excludedCount: acc._speedExcludedCount,
+                excludedReasons: acc._speedExcludedReasons,
+                avgTokPerSec: rawAvgTps,
+              },
+            }
+          : {}),
         cacheHitPct: promptTok > 0 ? +((acc.cacheReadTokens / promptTok) * 100).toFixed(1) : 0,
         ...(acc.anomalyCount > 0
           ? {

@@ -21,6 +21,7 @@ import {
   resolveModelDisplayInfo,
   speedReasonText,
 } from '../../core/formatters.js';
+import { getStepSelectionKey } from '../../core/stepInspector.js';
 import { getEffectiveLocale, t } from '../../i18n/index.js';
 import { createSvgIcon, patchSvgIcon } from '../../icons/SvgIcon.js';
 import {
@@ -722,9 +723,11 @@ export const StepTableWidget = defineComponent({
     }
 
     function getStepRowIdentity(st, fallbackCascadeId) {
-      const agentKey = String(st?.agentCascadeId || fallbackCascadeId || 'conv');
+      const agentKey = String(
+        st?.agentCascadeId || st?.agentId || st?.cascadeId || fallbackCascadeId || 'conv'
+      );
       const stepNum = Number(st?.stepIndex);
-      const rowKey = `${agentKey}-${st?.stepIndex}`;
+      const rowKey = getStepSelectionKey(st, fallbackCascadeId);
       return { agentKey, stepNum, rowKey };
     }
 
@@ -1100,7 +1103,7 @@ export const StepTableWidget = defineComponent({
           logicalIdx: idx,
           isStripeEven: (idx & 1) === 1,
           hasReason: Boolean(hasReasonFlags && hasReasonFlags[idx]),
-          rowKey: `${st.agentCascadeId || cascadeId || 'conv'}-${st.stepIndex}`,
+          rowKey: getStepSelectionKey(st, cascadeId),
           hasTurn,
           hasUp,
           hasDown,

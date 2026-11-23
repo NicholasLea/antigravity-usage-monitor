@@ -6,11 +6,12 @@
 
 import { defineComponent } from '../../core/component.js';
 import { h, patchAttr } from '../../core/domPatch.js';
+import { i18nStore, t } from '../../i18n/index.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 
 export const CustomNumberInput = defineComponent({
   name: 'CustomNumberInput',
-  setup({ getProps, setProps, emit }) {
+  setup({ getProps, setProps, emit, onCleanup }) {
     function clampValue(raw) {
       const { min = -Infinity, max = Infinity, precision = 0 } = getProps();
       const num = Number(raw);
@@ -37,7 +38,7 @@ export const CustomNumberInput = defineComponent({
       {
         type: 'button',
         className: 'num-step-btn',
-        'aria-label': '减少数值',
+        'aria-label': t('ui.num.decrease'),
         onClick: (e) => {
           e.preventDefault();
           applyStep(-1, e.shiftKey ? 10 : 1);
@@ -51,7 +52,7 @@ export const CustomNumberInput = defineComponent({
       {
         type: 'button',
         className: 'num-step-btn',
-        'aria-label': '增加数值',
+        'aria-label': t('ui.num.increase'),
         onClick: (e) => {
           e.preventDefault();
           applyStep(1, e.shiftKey ? 10 : 1);
@@ -115,6 +116,15 @@ export const CustomNumberInput = defineComponent({
     }
 
     const rootEl = h('div', { className: 'number-input' }, [decBtn, textField, incBtn]);
+    const unsubI18n = i18nStore.subscribe(
+      (st) => st.locale,
+      () => {
+        patchAttr(decBtn, 'aria-label', t('ui.num.decrease'));
+        patchAttr(incBtn, 'aria-label', t('ui.num.increase'));
+      },
+      { immediate: false }
+    );
+    onCleanup(unsubI18n);
     syncFieldDisplay();
 
     return {

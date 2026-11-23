@@ -14,9 +14,18 @@ import {
   positionAnchoredPopup,
 } from '../../core/domPatch.js';
 import { formatCompactDateTime } from '../../core/formatters.js';
+import { i18nStore, t } from '../../i18n/index.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 
-const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
+const WEEKDAY_KEYS = [
+  'ui.dt.wdayMon',
+  'ui.dt.wdayTue',
+  'ui.dt.wdayWed',
+  'ui.dt.wdayThu',
+  'ui.dt.wdayFri',
+  'ui.dt.wdaySat',
+  'ui.dt.wdaySun',
+];
 
 function buildCalendarDays(viewYear, viewMonth, selectedDate) {
   const firstDay = new Date(viewYear, viewMonth, 1);
@@ -77,7 +86,7 @@ export const CustomDateTimePicker = defineComponent({
       {
         type: 'button',
         className: 'icon-btn',
-        'aria-label': '上个月',
+        'aria-label': t('ui.dt.prevMonth'),
         onClick: (e) => {
           e.stopPropagation();
           viewMonth -= 1;
@@ -96,7 +105,7 @@ export const CustomDateTimePicker = defineComponent({
       {
         type: 'button',
         className: 'icon-btn',
-        'aria-label': '下个月',
+        'aria-label': t('ui.dt.nextMonth'),
         onClick: (e) => {
           e.stopPropagation();
           viewMonth += 1;
@@ -112,11 +121,10 @@ export const CustomDateTimePicker = defineComponent({
 
     const navBar = h('div', { className: 'dt-nav' }, [prevMonthBtn, monthTitle, nextMonthBtn]);
 
-    const weekdayRow = h(
-      'div',
-      { className: 'dt-weekdays' },
-      WEEKDAYS.map((w) => h('span', { className: 'dt-weekday', text: w }))
+    const weekdaySpans = WEEKDAY_KEYS.map((key) =>
+      h('span', { className: 'dt-weekday', text: t(key) })
     );
+    const weekdayRow = h('div', { className: 'dt-weekdays' }, weekdaySpans);
 
     const daysGrid = h('div', { className: 'dt-days' });
 
@@ -136,8 +144,9 @@ export const CustomDateTimePicker = defineComponent({
       emit('update:modelValue', nextMs);
     }
 
+    const hourMinLabelEl = h('span', { className: 'text-muted', text: t('ui.dt.hourMinute') });
     const timeRow = h('div', { className: 'dt-time-row' }, [
-      h('span', { className: 'text-muted', text: '时 / 分' }),
+      hourMinLabelEl,
       h('div', { className: 'dt-time-controls' }, [
         h('div', { className: 'dt-mini-step' }, [
           h('button', {
@@ -305,6 +314,25 @@ export const CustomDateTimePicker = defineComponent({
     } else {
       onCleanup(() => setRepositionListeners(false));
     }
+
+    function syncI18nLabels() {
+      patchAttr(prevMonthBtn, 'aria-label', t('ui.dt.prevMonth'));
+      patchAttr(nextMonthBtn, 'aria-label', t('ui.dt.nextMonth'));
+      patchText(hourMinLabelEl, t('ui.dt.hourMinute'));
+      for (let i = 0; i < WEEKDAY_KEYS.length; i += 1) {
+        patchText(weekdaySpans[i], t(WEEKDAY_KEYS[i]));
+      }
+    }
+
+    const unsubI18n = i18nStore.subscribe(
+      (st) => st.locale,
+      () => {
+        syncI18nLabels();
+        syncDisplay();
+      },
+      { immediate: false }
+    );
+    onCleanup(unsubI18n);
 
     syncDisplay();
 

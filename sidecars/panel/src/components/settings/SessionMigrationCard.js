@@ -577,7 +577,7 @@ export const SessionMigrationCard = defineComponent({
         }
       }
 
-      listScrollbar?.methods?.refresh?.();
+      listScrollbar?.refresh?.();
 
       patchAttr(migrateBtn, 'disabled', isMigrating || selectedIds.size === 0 || !targetClient);
       patchText(

@@ -172,7 +172,8 @@ function summarizeStepsForExport(list, displaySettings) {
   let sumCost = 0;
   let sumDuration = 0;
   let maxContext = 0;
-  let tpsSum = 0;
+  let tpsTokSum = 0;
+  let tpsSecSum = 0;
   let tpsCnt = 0;
   let ttftSum = 0;
   let ttftCnt = 0;
@@ -194,7 +195,8 @@ function summarizeStepsForExport(list, displaySettings) {
         : Math.max(0, outTok - thinkTok);
     const ctxTok = Math.max(0, Number(st.contextTokens || inTok + cacheTok + outTok));
     const cost = Number(st.costUsd || 0);
-    const dur = Number(st.durationSec || 0);
+    const rawDur = st.totalDurationSec ?? st.durationSec;
+    const dur = rawDur != null && Number.isFinite(Number(rawDur)) ? Number(rawDur) : 0;
 
     sumIn += inTok;
     sumCache += cacheTok;
@@ -206,11 +208,21 @@ function summarizeStepsForExport(list, displaySettings) {
     if (Number.isFinite(dur) && dur > 0) sumDuration += dur;
 
     const validTps =
-      !st.isCompactionStep && Number.isFinite(Number(st.tokPerSec)) && Number(st.tokPerSec) > 0;
+      !st.isCompactionStep &&
+      outTok >= 50 &&
+      !st.selectedSpeedReason &&
+      Number.isFinite(Number(st.tokPerSec)) &&
+      Number(st.tokPerSec) > 0;
+    const stepSpeedSec = validTps
+      ? st.totalDurationSec != null && Number(st.totalDurationSec) >= 0.5
+        ? Number(st.totalDurationSec)
+        : outTok / Number(st.tokPerSec)
+      : 0;
     const validTtft =
       !st.isCompactionStep && Number.isFinite(Number(st.ttftSec)) && Number(st.ttftSec) >= 0;
-    if (validTps) {
-      tpsSum += Number(st.tokPerSec);
+    if (validTps && stepSpeedSec > 0) {
+      tpsTokSum += outTok;
+      tpsSecSum += stepSpeedSec;
       tpsCnt += 1;
     }
     if (validTtft) {
@@ -235,7 +247,8 @@ function summarizeStepsForExport(list, displaySettings) {
         cacheTok: 0,
         outTok: 0,
         cost: 0,
-        tpsSum: 0,
+        tpsTokSum: 0,
+        tpsSecSum: 0,
         tpsCnt: 0,
         ttftSum: 0,
         ttftCnt: 0,
@@ -247,8 +260,9 @@ function summarizeStepsForExport(list, displaySettings) {
     mAcc.cacheTok += cacheTok;
     mAcc.outTok += outTok;
     if (Number.isFinite(cost) && cost > 0) mAcc.cost += cost;
-    if (validTps) {
-      mAcc.tpsSum += Number(st.tokPerSec);
+    if (validTps && stepSpeedSec > 0) {
+      mAcc.tpsTokSum += outTok;
+      mAcc.tpsSecSum += stepSpeedSec;
       mAcc.tpsCnt += 1;
     }
     if (validTtft) {
@@ -272,7 +286,8 @@ function summarizeStepsForExport(list, displaySettings) {
     sumCost,
     sumDuration,
     maxContext,
-    tpsSum,
+    tpsTokSum,
+    tpsSecSum,
     tpsCnt,
     ttftSum,
     ttftCnt,
@@ -455,8 +470,9 @@ export function buildStepsCsv(steps, { displaySettings = {}, includeBom = true }
         st.ttftSec != null && Number.isFinite(Number(st.ttftSec))
           ? Number(st.ttftSec).toFixed(3)
           : '',
-        st.durationSec != null && Number.isFinite(Number(st.durationSec))
-          ? Number(st.durationSec).toFixed(3)
+        (st.totalDurationSec ?? st.durationSec) != null &&
+        Number.isFinite(Number(st.totalDurationSec ?? st.durationSec))
+          ? Number(st.totalDurationSec ?? st.durationSec).toFixed(3)
           : '',
         inTok,
         cacheTok,
@@ -523,9 +539,10 @@ export function buildStepsXlsx(
       !st.isCompactionStep && st.ttftSec != null && Number.isFinite(Number(st.ttftSec))
         ? Number(st.ttftSec)
         : null;
+    const rawDurVal = st.totalDurationSec ?? st.durationSec;
     const durVal =
-      st.durationSec != null && Number.isFinite(Number(st.durationSec))
-        ? Number(st.durationSec)
+      rawDurVal != null && Number.isFinite(Number(rawDurVal))
+        ? Number(rawDurVal)
         : null;
     const costVal =
       st.costUsd != null && Number.isFinite(Number(st.costUsd)) ? Number(st.costUsd) : null;
@@ -577,7 +594,7 @@ export function buildStepsXlsx(
             ? `${agg.compactionCount} compact`
             : `含 ${agg.compactionCount} 次压缩`
           : '',
-        agg.tpsCnt > 0 ? +(agg.tpsSum / agg.tpsCnt).toFixed(1) : null,
+        agg.tpsSecSum > 0 ? +(agg.tpsTokSum / agg.tpsSecSum).toFixed(1) : null,
         agg.ttftCnt > 0 ? +(agg.ttftSum / agg.ttftCnt).toFixed(2) : null,
         agg.sumDuration > 0 ? +agg.sumDuration.toFixed(2) : null,
         agg.sumIn,
@@ -636,7 +653,7 @@ export function buildStepsXlsx(
         m.outTok,
         mTotal,
         computeCacheHitRatio(m.inTok, m.cacheTok),
-        m.tpsCnt > 0 ? +(m.tpsSum / m.tpsCnt).toFixed(1) : null,
+        m.tpsSecSum > 0 ? +(m.tpsTokSum / m.tpsSecSum).toFixed(1) : null,
         m.ttftCnt > 0 ? +(m.ttftSum / m.ttftCnt).toFixed(2) : null,
         m.cost,
       ];
@@ -651,7 +668,7 @@ export function buildStepsXlsx(
         agg.sumOut,
         agg.sumIn + agg.sumCache + agg.sumOut,
         computeCacheHitRatio(agg.sumIn, agg.sumCache),
-        agg.tpsCnt > 0 ? +(agg.tpsSum / agg.tpsCnt).toFixed(1) : null,
+        agg.tpsSecSum > 0 ? +(agg.tpsTokSum / agg.tpsSecSum).toFixed(1) : null,
         agg.ttftCnt > 0 ? +(agg.ttftSum / agg.ttftCnt).toFixed(2) : null,
         agg.sumCost,
       ],
@@ -695,7 +712,8 @@ export function buildStepsMarkdownReport(
 
   const totalTok = agg.sumIn + agg.sumCache + agg.sumOut;
   const cacheHitPct = formatPctNumber(computeCacheHitRatio(agg.sumIn, agg.sumCache) * 100);
-  const avgTps = agg.tpsCnt > 0 ? formatSpeedMetric(agg.tpsSum / agg.tpsCnt, ' tok/s') : '—';
+  const avgTps =
+    agg.tpsSecSum > 0 ? formatSpeedMetric(agg.tpsTokSum / agg.tpsSecSum, ' tok/s') : '—';
   const avgTtft = agg.ttftCnt > 0 ? formatMetric(agg.ttftSum / agg.ttftCnt, 's') : '—';
   const heading = title
     ? `# ${title}`
@@ -738,7 +756,8 @@ export function buildStepsMarkdownReport(
       const mCache = formatPctNumber(computeCacheHitRatio(m.inTok, m.cacheTok) * 100, {
         withSymbol: true,
       });
-      const mTps = m.tpsCnt > 0 ? formatSpeedMetric(m.tpsSum / m.tpsCnt, ' tok/s') : '—';
+      const mTps =
+        m.tpsSecSum > 0 ? formatSpeedMetric(m.tpsTokSum / m.tpsSecSum, ' tok/s') : '—';
       lines.push(
         `| ${escapeMdCell(m.label)} | ${m.calls} | ${formatTokensPrecise(mTotal)} | ${mCache} | ${mTps} | ${formatUsd(m.cost, { precise: m.cost > 0 && m.cost < 0.1 })} |`
       );
@@ -1053,8 +1072,8 @@ export function buildConsumptionXlsx(
     let mOut = 0;
     let mTot = 0;
     let mCost = 0;
-    let tpsWeighted = 0;
-    let tpsWeight = 0;
+    let tpsTokSum = 0;
+    let tpsSecSum = 0;
     const modelRows = models.map((m, idx) => {
       const calls = Math.max(0, Number(m.calls || 0));
       const inTok = Math.max(0, Number(m.inputTokens || 0));
@@ -1072,10 +1091,20 @@ export function buildConsumptionXlsx(
       mOut += outTok;
       mTot += totTok;
       mCost += cost;
-      if (tps != null) {
-        const w = Math.max(1, outTok || calls);
-        tpsWeighted += tps * w;
-        tpsWeight += w;
+      const rawSpeedTok = Number(m.speedSummary?.tokens);
+      const rawSpeedSec = Number(m.speedSummary?.seconds);
+      if (
+        Number.isFinite(rawSpeedTok) &&
+        Number.isFinite(rawSpeedSec) &&
+        rawSpeedSec > 0 &&
+        rawSpeedTok >= 0
+      ) {
+        tpsTokSum += rawSpeedTok;
+        tpsSecSum += rawSpeedSec;
+      } else if (tps != null) {
+        const fallbackTok = outTok > 0 ? outTok : Math.max(1, calls);
+        tpsTokSum += fallbackTok;
+        tpsSecSum += fallbackTok / tps;
       }
       return [
         idx + 1,
@@ -1101,7 +1130,7 @@ export function buildConsumptionXlsx(
         mOut,
         mTot,
         computeCacheHitRatio(mIn, mCache),
-        tpsWeight > 0 ? +(tpsWeighted / tpsWeight).toFixed(1) : null,
+        tpsSecSum > 0 ? +(tpsTokSum / tpsSecSum).toFixed(1) : null,
         mCost,
       ],
     });

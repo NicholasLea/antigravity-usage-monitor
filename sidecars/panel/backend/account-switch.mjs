@@ -103,7 +103,7 @@ export async function handleAccountCredentialAction(data, {
   if (!['list', 'save', 'capture', 'switch', 'remove', 'quota'].includes(action)) return { error: 'invalidCredential' };
   const email = normalizeAccountEmail(data?.email);
   if (['switch', 'remove', 'quota'].includes(action) && !email) return { error: 'invalidEmail' };
-  const gemini = join(homedir(), '.gemini');
+  const gemini = String(process.env.ANTIGRAVITY_GEMINI_DIR || '').trim() || join(homedir(), '.gemini');
   const config = {
     target: 'gemini:antigravity',
     vault: join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'AntigravityUsageMonitor', 'accounts.dpapi'),
