@@ -287,7 +287,6 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.rankTabWorkspacesCount': 'Projects ({count})',
   'cons.workspaceUnbound': 'Unbound Workspace',
   'cons.workspaceSessions': '{count} sessions',
-  'cons.workspaceJumpTip': 'Click to inspect latest session in this project',
   'cons.exportMenuAria': 'Export and report actions',
   'cons.exportXlsx': 'Export Excel (.xlsx)',
   'cons.exportXlsxTip': 'Export styled multi-sheet Excel workbook with auto column width and alignment',

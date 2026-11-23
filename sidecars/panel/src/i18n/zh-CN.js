@@ -287,7 +287,6 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.rankTabWorkspacesCount': '项目排行 ({count})',
   'cons.workspaceUnbound': '未绑定工作区',
   'cons.workspaceSessions': '{count} 会话',
-  'cons.workspaceJumpTip': '点击跳转到该项目最近会话',
   'cons.exportMenuAria': '导出及报告选项',
   'cons.exportXlsx': '导出 Excel (.xlsx)',
   'cons.exportXlsxTip': '导出多工作表排版精美的 Excel 报表（自动列宽、千分位及对齐）',

@@ -1546,7 +1546,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.rankTabWorkspacesCount': '项目排行 ({count})',
   'cons.workspaceUnbound': '未绑定工作区',
   'cons.workspaceSessions': '{count} 会话',
-  'cons.workspaceJumpTip': '点击跳转到该项目最近会话',
   'cons.exportMenuAria': '导出及报告选项',
   'cons.exportXlsx': '导出 Excel (.xlsx)',
   'cons.exportXlsxTip': '导出多工作表排版精美的 Excel 报表（自动列宽、千分位及对齐）',
@@ -2440,7 +2439,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.rankTabWorkspacesCount': 'Projects ({count})',
   'cons.workspaceUnbound': 'Unbound Workspace',
   'cons.workspaceSessions': '{count} sessions',
-  'cons.workspaceJumpTip': 'Click to inspect latest session in this project',
   'cons.exportMenuAria': 'Export and report actions',
   'cons.exportXlsx': 'Export Excel (.xlsx)',
   'cons.exportXlsxTip': 'Export styled multi-sheet Excel workbook with auto column width and alignment',
@@ -30855,7 +30853,7 @@ const ConsumptionView = defineComponent({
         {
           className: 'cons-top-conv-row',
           onClick: () => {
-            if (!rowState.cascadeId) return;
+            if (!rowState.canJump || !rowState.cascadeId) return;
             hideBreakdownPopover();
             selectConversation(rowState.cascadeId);
             uiStore.setState({
@@ -30911,10 +30909,9 @@ const ConsumptionView = defineComponent({
           ? t('cons.workspaceUnbound')
           : String(item.label || item.workspacePath || '—').trim()
         : String(item.title || item.cascadeId || '—').trim();
-      refs.rowState.cascadeId = String(
-        isWorkspaceRow ? item.latestCascadeId || '' : item.cascadeId || ''
-      );
-      refs.rowState.canJump = item.canJump !== false && Boolean(refs.rowState.cascadeId);
+      refs.rowState.cascadeId = isWorkspaceRow ? '' : String(item.cascadeId || '');
+      refs.rowState.canJump =
+        !isWorkspaceRow && item.canJump !== false && Boolean(refs.rowState.cascadeId);
       patchClasses(refs.rowEl, {
         'is-jumpable': refs.rowState.canJump,
         'cons-workspace-row': isWorkspaceRow,
@@ -30923,8 +30920,11 @@ const ConsumptionView = defineComponent({
         isWorkspaceRow && item.workspacePath && item.workspacePath !== title
           ? `${title} (${item.workspacePath})`
           : title;
-      const jumpTip = isWorkspaceRow ? t('cons.workspaceJumpTip') : t('cons.topConvJumpTip');
-      patchAttr(refs.rowEl, 'title', refs.rowState.canJump ? `${baseTip} — ${jumpTip}` : baseTip);
+      patchAttr(
+        refs.rowEl,
+        'title',
+        refs.rowState.canJump ? `${baseTip} — ${t('cons.topConvJumpTip')}` : baseTip
+      );
       patchText(refs.titleTextEl, title);
       if (refs.wsBadgeEl) {
         const showWsBadge = isWorkspaceRow && Number(item.sessionCount || 0) > 0;

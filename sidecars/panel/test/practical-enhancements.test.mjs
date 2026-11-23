@@ -1215,10 +1215,13 @@ test('Feature 9: workspace/project cost aggregation (full + fast paths) and Proj
   const wsRowsAfterSort = view.el.querySelectorAll('.cons-workspace-row');
   assert.equal(wsRowsAfterSort[0].querySelector('.cons-row-title-text').textContent, 'docs-site');
 
-  // Click workspace row jumps to its latest conversation in steps view
+  // Project rows are read-only breakdown cards and must not jump on click
+  assert.equal(wsRowsAfterSort[0].classList.contains('is-jumpable'), false);
+  const prevView = uiStore.getState().activeView;
+  const prevSelectedCid = telemetryStore.getState().selectedConversationId;
   wsRowsAfterSort[0].dispatchEvent({ type: 'click' });
-  assert.equal(uiStore.getState().activeView, 'steps');
-  assert.equal(telemetryStore.getState().selectedConversationId, 'ws-conv-b1');
+  assert.equal(uiStore.getState().activeView, prevView);
+  assert.equal(telemetryStore.getState().selectedConversationId, prevSelectedCid);
 });
 
 test('Feature 10: StepsDetailView live search, dynamic diagnostic chips, and click-to-inspect step drawer', async (t) => {

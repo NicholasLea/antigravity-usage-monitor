@@ -1520,7 +1520,7 @@ export const ConsumptionView = defineComponent({
         {
           className: 'cons-top-conv-row',
           onClick: () => {
-            if (!rowState.cascadeId) return;
+            if (!rowState.canJump || !rowState.cascadeId) return;
             hideBreakdownPopover();
             selectConversation(rowState.cascadeId);
             uiStore.setState({
@@ -1576,10 +1576,9 @@ export const ConsumptionView = defineComponent({
           ? t('cons.workspaceUnbound')
           : String(item.label || item.workspacePath || '—').trim()
         : String(item.title || item.cascadeId || '—').trim();
-      refs.rowState.cascadeId = String(
-        isWorkspaceRow ? item.latestCascadeId || '' : item.cascadeId || ''
-      );
-      refs.rowState.canJump = item.canJump !== false && Boolean(refs.rowState.cascadeId);
+      refs.rowState.cascadeId = isWorkspaceRow ? '' : String(item.cascadeId || '');
+      refs.rowState.canJump =
+        !isWorkspaceRow && item.canJump !== false && Boolean(refs.rowState.cascadeId);
       patchClasses(refs.rowEl, {
         'is-jumpable': refs.rowState.canJump,
         'cons-workspace-row': isWorkspaceRow,
@@ -1588,8 +1587,11 @@ export const ConsumptionView = defineComponent({
         isWorkspaceRow && item.workspacePath && item.workspacePath !== title
           ? `${title} (${item.workspacePath})`
           : title;
-      const jumpTip = isWorkspaceRow ? t('cons.workspaceJumpTip') : t('cons.topConvJumpTip');
-      patchAttr(refs.rowEl, 'title', refs.rowState.canJump ? `${baseTip} — ${jumpTip}` : baseTip);
+      patchAttr(
+        refs.rowEl,
+        'title',
+        refs.rowState.canJump ? `${baseTip} — ${t('cons.topConvJumpTip')}` : baseTip
+      );
       patchText(refs.titleTextEl, title);
       if (refs.wsBadgeEl) {
         const showWsBadge = isWorkspaceRow && Number(item.sessionCount || 0) > 0;
