@@ -261,6 +261,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.trendTitle': 'Usage Trend',
   'cons.allTime': 'All Time',
   'cons.trendHeatmapHint': 'Daily ({days}d) · Hover for details',
+  'cons.trendPointsHintMinute': '{minutes}m ({points} pts) · Hover for details',
   'cons.trendPointsHintHourly': 'Hourly ({points} pts) · Hover for details',
   'cons.trendPointsHintDaily': 'Daily ({points} pts) · Hover for details',
   'cons.topModels': 'Top Models',

@@ -1307,8 +1307,11 @@ export function buildConsumptionXlsx(
     let tTot = 0;
     let tCost = 0;
     const trendRows = trend.map((slot) => {
+      const isMinute = slot.granularity === 'minute';
       const isHourly =
-        slot.granularity === 'hour' || String(slot.label || '').includes(':');
+        isMinute ||
+        slot.granularity === 'hour' ||
+        String(slot.label || '').includes(':');
       const calls = Math.max(0, Number(slot.calls || 0));
       const inTok = Math.max(0, Number(slot.inputTokens || 0));
       const cacheTok = Math.max(0, Number(slot.cacheReadTokens || 0));
@@ -1321,13 +1324,18 @@ export function buildConsumptionXlsx(
       tOut += outTok;
       tTot += totTok;
       tCost += cost;
-      const granLabel = isHourly
+      const stepMins = Math.max(1, Number(slot.stepMinutes) || 5);
+      const granLabel = isMinute
         ? en
-          ? 'Hourly'
-          : '按小时'
-        : en
-          ? 'Daily'
-          : '按天';
+          ? `${stepMins}m`
+          : `按 ${stepMins} 分钟`
+        : isHourly
+          ? en
+            ? 'Hourly'
+            : '按小时'
+          : en
+            ? 'Daily'
+            : '按天';
       return [
         formatTrendWindowLabel(slot, isHourly),
         granLabel,

@@ -280,6 +280,61 @@ export const ConsumptionView = defineComponent({
     const cacheReadLabel = h('span', { text: t('cons.cacheRead') });
     const outputUsageLabel = h('span', { text: t('cons.outputUsage') });
 
+    const unifiedMatrixEl = h('div', { className: 'cons-box cons-unified-matrix' }, [
+      h('div', { className: 'cons-split-3' }, [
+        h('div', { className: 'cons-col' }, [
+          totalTokensLabel,
+          h('div', { className: 'cons-baseline' }, [heroTotalTokens, heroTotalCalls]),
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          estCostLabel,
+          h('div', { className: 'cons-baseline' }, [heroCostUsd, heroCostCny]),
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          h('span', { className: 'legend-left', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-cached' }),
+            cacheHitRateLabel,
+          ]),
+          h('div', { className: 'cons-baseline' }, [cacheHitPctEl, cacheTokensEl]),
+        ]),
+      ]),
+      h('div', { className: 'cons-split-3 cons-matrix-bottom' }, [
+        h('div', { className: 'cons-col' }, [
+          h('div', { className: 'cons-sub-head' }, [
+            h('span', { className: 'legend-left cons-sub-label' }, [
+              h('span', { className: 'dot-swatch seg-input' }),
+              newInputLabel,
+            ]),
+            inputSharePct,
+          ]),
+          inputMainTokens,
+          inputSubText,
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          h('div', { className: 'cons-sub-head' }, [
+            h('span', { className: 'legend-left cons-sub-label' }, [
+              h('span', { className: 'dot-swatch seg-cached' }),
+              cacheReadLabel,
+            ]),
+            cacheSharePct,
+          ]),
+          cacheMainTokens,
+          cacheSubText,
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          h('div', { className: 'cons-sub-head' }, [
+            h('span', { className: 'legend-left cons-sub-label' }, [
+              h('span', { className: 'dot-swatch seg-output' }),
+              outputUsageLabel,
+            ]),
+            outputSharePct,
+          ]),
+          outputMainTokens,
+          outputSubText,
+        ]),
+      ]),
+    ]);
+
     const overviewPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header cons-overview-head' }, [
         h('span', { className: 'panel-title' }, [
@@ -291,60 +346,7 @@ export const ConsumptionView = defineComponent({
         ]),
       ]),
       customRangeBar,
-      h('div', { className: 'cons-box cons-unified-matrix' }, [
-        h('div', { className: 'cons-split-3' }, [
-          h('div', { className: 'cons-col' }, [
-            totalTokensLabel,
-            h('div', { className: 'cons-baseline' }, [heroTotalTokens, heroTotalCalls]),
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            estCostLabel,
-            h('div', { className: 'cons-baseline' }, [heroCostUsd, heroCostCny]),
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            h('span', { className: 'legend-left', style: 'font-size: var(--fs-md);' }, [
-              h('span', { className: 'dot-swatch seg-cached' }),
-              cacheHitRateLabel,
-            ]),
-            h('div', { className: 'cons-baseline' }, [cacheHitPctEl, cacheTokensEl]),
-          ]),
-        ]),
-        h('div', { className: 'cons-split-3 cons-matrix-bottom' }, [
-          h('div', { className: 'cons-col' }, [
-            h('div', { className: 'cons-sub-head' }, [
-              h('span', { className: 'legend-left cons-sub-label' }, [
-                h('span', { className: 'dot-swatch seg-input' }),
-                newInputLabel,
-              ]),
-              inputSharePct,
-            ]),
-            inputMainTokens,
-            inputSubText,
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            h('div', { className: 'cons-sub-head' }, [
-              h('span', { className: 'legend-left cons-sub-label' }, [
-                h('span', { className: 'dot-swatch seg-cached' }),
-                cacheReadLabel,
-              ]),
-              cacheSharePct,
-            ]),
-            cacheMainTokens,
-            cacheSubText,
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            h('div', { className: 'cons-sub-head' }, [
-              h('span', { className: 'legend-left cons-sub-label' }, [
-                h('span', { className: 'dot-swatch seg-output' }),
-                outputUsageLabel,
-              ]),
-              outputSharePct,
-            ]),
-            outputMainTokens,
-            outputSubText,
-          ]),
-        ]),
-      ]),
+      unifiedMatrixEl,
       overviewSegBar.el,
     ]);
 
@@ -399,6 +401,54 @@ export const ConsumptionView = defineComponent({
     let lastModelsCount = 0;
     let lastWorkspacesCount = 0;
     let lastConvsCount = 0;
+    let hasCompletedInitialDraw = false;
+    let lastAnimatedRangeSig = '';
+    let lastAnimatedRankingKey = '';
+    let lastAnimatedSortSig = '';
+    const consAnimTimers = new Map();
+    const TRANSIENT_CONS_CLASSES = [
+      'is-range-switching',
+      'is-tab-entering',
+      'is-bars-revealing',
+    ];
+
+    function cleanupConsAnim(el) {
+      const rec = consAnimTimers.get(el);
+      if (!rec) return;
+      clearTimeout(rec.tid);
+      el?.removeEventListener?.('animationend', rec.onEnd);
+      el?.classList?.remove(...TRANSIENT_CONS_CLASSES);
+      consAnimTimers.delete(el);
+    }
+
+    function triggerConsAnim(el, cls, fallbackMs = 650) {
+      if (
+        !el ||
+        !el.classList ||
+        typeof window === 'undefined' ||
+        typeof window.getComputedStyle !== 'function' ||
+        window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+      ) {
+        return;
+      }
+      cleanupConsAnim(el);
+      el.classList.remove(...TRANSIENT_CONS_CLASSES);
+      void el.offsetWidth;
+      const onEnd = (ev) => {
+        if (ev && ev.target && ev.target !== el) return;
+        cleanupConsAnim(el);
+      };
+      const tid = setTimeout(() => cleanupConsAnim(el), fallbackMs);
+      consAnimTimers.set(el, { cls, tid, onEnd });
+      el.addEventListener?.('animationend', onEnd);
+      el.classList.add(cls);
+    }
+
+    function clearConsAnimTimers() {
+      for (const el of Array.from(consAnimTimers.keys())) {
+        cleanupConsAnim(el);
+      }
+    }
 
     function getRankingTabOptions(
       modelsCount = lastModelsCount,
@@ -1996,17 +2046,26 @@ export const ConsumptionView = defineComponent({
           t('cons.allTime')
         : preset?.label || rangeInfo.label || t('cons.allTime');
       patchText(trendRangeBadge, rangeBadgeText);
+      const firstTrendSlot = rawTrendSeries[0] || null;
+      const isMinuteTrend = firstTrendSlot?.granularity === 'minute';
       const isHourlyTrend =
-        rawTrendSeries[0]?.granularity === 'hour' ||
-        (rawTrendSeries[0]?.label || '').includes(':');
-      const isHeatmapTrend = !isHourlyTrend && rawTrendSeries.length > HEATMAP_DAYS_THRESHOLD;
+        !isMinuteTrend &&
+        (firstTrendSlot?.granularity === 'hour' ||
+          (firstTrendSlot?.label || '').includes(':'));
+      const isHeatmapTrend =
+        !isMinuteTrend && !isHourlyTrend && rawTrendSeries.length > HEATMAP_DAYS_THRESHOLD;
       patchText(
         trendGranularityHint,
         isHeatmapTrend
           ? t('cons.trendHeatmapHint', { days: rawTrendSeries.length })
-          : isHourlyTrend
-            ? t('cons.trendPointsHintHourly', { points: rawTrendSeries.length || 0 })
-            : t('cons.trendPointsHintDaily', { points: rawTrendSeries.length || 0 })
+          : isMinuteTrend
+            ? t('cons.trendPointsHintMinute', {
+                minutes: Math.max(1, Number(firstTrendSlot?.stepMinutes) || 5),
+                points: rawTrendSeries.length || 0,
+              })
+            : isHourlyTrend
+              ? t('cons.trendPointsHintHourly', { points: rawTrendSeries.length || 0 })
+              : t('cons.trendPointsHintDaily', { points: rawTrendSeries.length || 0 })
       );
       const enrichedTrendSeries = rawTrendSeries.map((slot, idx) => {
         const mergedSlotModels = trendMergedByIdx[idx];
@@ -2144,6 +2203,53 @@ export const ConsumptionView = defineComponent({
         createRow: createSourceBreakdownRow,
         updateRow: (refs, s) => updateSourceBreakdownRow(refs, s, sourcesTotalTok, modelColorMap),
       });
+
+      const nextRangeSig = `${slice.range || ''}:${slice.customStartMs || 0}:${slice.customEndMs || 0}`;
+      const nextRankingKey = showWorkspacesTab
+        ? 'workspaces'
+        : showSessionsTab
+          ? 'sessions'
+          : 'models';
+      const nextSortSig = showModelsTab ? `m:${modelsSortBy}` : `c:${topConvsSortBy}`;
+      const activeRankingEl = showWorkspacesTab
+        ? workspacesListEl
+        : showSessionsTab
+          ? sortedTopConvs.length > 0
+            ? topConvsListEl
+            : topConvsEmptyEl
+          : modelsListEl;
+
+      const rangeSwitched = hasCompletedInitialDraw && nextRangeSig !== lastAnimatedRangeSig;
+      const tabSwitched =
+        hasCompletedInitialDraw && !rangeSwitched && nextRankingKey !== lastAnimatedRankingKey;
+      const sortSwitched =
+        hasCompletedInitialDraw &&
+        !rangeSwitched &&
+        !tabSwitched &&
+        nextSortSig !== lastAnimatedSortSig;
+
+      if (rangeSwitched) {
+        triggerConsAnim(unifiedMatrixEl, 'is-range-switching');
+        triggerConsAnim(activeRankingEl, 'is-range-switching');
+        triggerConsAnim(sourcesListEl, 'is-range-switching');
+      } else if (tabSwitched) {
+        triggerConsAnim(activeRankingEl, 'is-tab-entering');
+      } else if (sortSwitched) {
+        triggerConsAnim(activeRankingEl, 'is-bars-revealing');
+      }
+      if (!hasCompletedInitialDraw) {
+        hasCompletedInitialDraw = true;
+        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+          window.requestAnimationFrame(() => {
+            rootEl.classList?.add('is-ready');
+          });
+        } else {
+          rootEl.classList?.add('is-ready');
+        }
+      }
+      lastAnimatedRangeSig = nextRangeSig;
+      lastAnimatedRankingKey = nextRankingKey;
+      lastAnimatedSortSig = nextSortSig;
 
       // 5. 同步 12 个月垂直堆叠柱状图（按模型配色堆叠 + 长尾合并 + 悬停弹出明细浮层）
       patchText(monthlyYearBadge, String(monthlyYear));
@@ -2346,6 +2452,7 @@ export const ConsumptionView = defineComponent({
     );
 
     onCleanup(() => {
+      clearConsAnimTimers();
       hideBreakdownPopover();
       unsub();
       unsubView();

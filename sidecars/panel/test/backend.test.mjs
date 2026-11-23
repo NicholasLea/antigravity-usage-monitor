@@ -3780,3 +3780,124 @@ test('conversation undo preserves 10-channel context breakdown across unindexed 
   assert.equal(ctx4.userInputTokens, 20000);
   assert.equal(ctx4.userInputTokens + ctx4.assistantTokens + ctx4.toolResultsTokens, 27500);
 });
+
+test('trendSeries respects strict window bounds without 6h out-of-window padding and subdivides <2h spans into 1m/5m/15m slots', async () => {
+  const mkStep = (atMs, tok) => ({
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      createdAt: new Date(atMs).toISOString(),
+      finishedGeneratingAt: new Date(atMs + 4000).toISOString(),
+      modelUsage: {
+        model: 'MODEL_PLACEHOLDER_M37',
+        inputTokens: String(tok),
+        cacheReadTokens: '0',
+        outputTokens: '0',
+      },
+    },
+    plannerResponse: { response: 'ok' },
+  });
+
+  // Anchor clock to local 2026-11-24 03:27:40 (3h 27m into 'today'; 27m into a cycle reset at 03:00:00)
+  const dayStart = new Date(2026, 10, 24, 0, 0, 0, 0).getTime();
+  let fakeNowMs = dayStart + 3 * 3600_000 + 27 * 60_000 + 40_000;
+
+  const cycleStartMs = dayStart + 3 * 3600_000;
+  const weeklyResetIso = new Date(cycleStartMs + 7 * 24 * 3600_000).toISOString();
+  const fiveHourResetIso = new Date(cycleStartMs + 5 * 3600_000).toISOString();
+
+  const h = backendHarness({
+    clock: () => fakeNowMs,
+    userStatus: {
+      email: 'trend@example.com',
+      cascadeModelConfigData: {
+        clientModelConfigs: [
+          {
+            label: 'Gemini 3.8 Flash (High)',
+            modelOrAlias: { model: 'MODEL_PLACEHOLDER_M37' },
+            quotaInfo: { remainingFraction: 0.9, resetTime: fiveHourResetIso },
+          },
+        ],
+      },
+    },
+    quotaSummary: {
+      groups: [
+        {
+          displayName: 'Gemini',
+          buckets: [
+            { remainingFraction: 0.9, resetTime: fiveHourResetIso },
+            { remainingFraction: 0.95, resetTime: weeklyResetIso },
+          ],
+        },
+      ],
+    },
+    trajectories: {
+      cTrend: {
+        trajectory: {
+          steps: [
+            mkStep(dayStart + 2 * 3600_000 + 10 * 60_000, 30_000), // 02:10 (previous cycle)
+            mkStep(cycleStartMs + 18 * 60_000, 5_000), // 03:18 (current cycle)
+          ],
+          generatorMetadata: [],
+        },
+      },
+    },
+    summaries: {
+      cTrend: { stepCount: 2, lastModifiedTime: new Date(fakeNowMs).toISOString(), status: 'IDLE' },
+    },
+  });
+
+  // 1. 'today' at 03:27 (>= 2h): strictly 4 hourly slots (00:00..03:00), never padded to future 04:00/05:00
+  const pToday = await h.buildTelemetryPayloadInternal('cTrend', false, { range: 'today' });
+  assert.deepEqual(
+    Array.from(pToday.consumption.trendSeries, (s) => s.label),
+    ['00:00', '01:00', '02:00', '03:00']
+  );
+  assert.equal(pToday.consumption.trendSeries[0].granularity, 'hour');
+  assert.equal(pToday.consumption.trendSeries[2].tokens, 30_000);
+  assert.equal(pToday.consumption.trendSeries[3].tokens, 5_000);
+
+  // 2. 'cycle' 27m after reset (< 1h): 6 five-minute slots (03:00..03:25), never reaching back to 22:00..02:00
+  const pCycle = await h.buildTelemetryPayloadInternal('cTrend', false, { range: 'cycle' });
+  assert.deepEqual(
+    Array.from(pCycle.consumption.trendSeries, (s) => s.label),
+    ['03:00', '03:05', '03:10', '03:15', '03:20', '03:25']
+  );
+  assert.equal(pCycle.consumption.trendSeries[0].granularity, 'minute');
+  assert.equal(pCycle.consumption.trendSeries[0].stepMinutes, 5);
+  assert.equal(pCycle.consumption.trendSeries[3].tokens, 5_000); // 03:18 falls in 03:15 - 03:20
+
+  // 3. Rewind to 01:20 (< 2h) on a fresh harness and verify 15m -> 1h cache invalidation across the 2h boundary
+  fakeNowMs = dayStart + 1 * 3600_000 + 20 * 60_000;
+  const hTransition = backendHarness({
+    clock: () => fakeNowMs,
+    trajectories: {
+      cEarly: {
+        trajectory: {
+          steps: [mkStep(dayStart + 35 * 60_000, 8_000)],
+          generatorMetadata: [],
+        },
+      },
+    },
+    summaries: {
+      cEarly: { stepCount: 1, lastModifiedTime: new Date(fakeNowMs).toISOString(), status: 'IDLE' },
+    },
+  });
+  const pEarly = await hTransition.buildTelemetryPayloadInternal('cEarly', false, { range: 'today' });
+  assert.deepEqual(
+    Array.from(pEarly.consumption.trendSeries, (s) => s.label),
+    ['00:00', '00:15', '00:30', '00:45', '01:00', '01:15']
+  );
+  assert.equal(pEarly.consumption.trendSeries[0].granularity, 'minute');
+  assert.equal(pEarly.consumption.trendSeries[0].stepMinutes, 15);
+  assert.equal(pEarly.consumption.trendSeries[2].tokens, 8_000);
+
+  // Advance clock to 02:05 (>= 2h): snapshot cache must invalidate stepMs and switch to 3 hourly slots
+  fakeNowMs = dayStart + 2 * 3600_000 + 5 * 60_000;
+  const pAfter2h = await hTransition.buildTelemetryPayloadInternal('cEarly', false, { range: 'today' });
+  assert.deepEqual(
+    Array.from(pAfter2h.consumption.trendSeries, (s) => s.label),
+    ['00:00', '01:00', '02:00']
+  );
+  assert.equal(pAfter2h.consumption.trendSeries[0].granularity, 'hour');
+  assert.equal(pAfter2h.consumption.trendSeries[0].tokens, 8_000);
+});

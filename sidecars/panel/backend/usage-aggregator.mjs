@@ -857,43 +857,34 @@ function buildUsageTrendSeries(
     earliestSelectedStepMs,
     latestSelectedStepMs
   );
-  const { start: trendStartMs, end: trendEndMs, hourly: useHourly } = trend;
+  const { start: trendStartMs, end: trendEndMs, hourly: useHourly, stepMs: plannedStepMs } = trend;
   const pad2 = (n) => String(n).padStart(2, '0');
   const WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
   const trendSeries = [];
   if (useHourly) {
-    let firstHourMs = trend.first;
-    let lastHourMs = trend.last;
-    if (selectedWindow.key === 'today') {
-      const minTodayEndMs = firstHourMs + 5 * 3600 * 1000;
-      if (lastHourMs < minTodayEndMs) {
-        lastHourMs = minTodayEndMs;
-      }
-    } else if (lastHourMs - firstHourMs < 5 * 3600 * 1000) {
-      firstHourMs = lastHourMs - 5 * 3600 * 1000;
-    }
+    const firstSlotMs = trend.first;
+    const lastSlotMs = trend.last;
+    const slotMs = Math.max(60 * 1000, Number(plannedStepMs) || 3600 * 1000);
+    const stepMinutes = Math.max(1, Math.round(slotMs / (60 * 1000)));
+    const isSubHour = stepMinutes < 60;
+    const slotCount = Math.max(1, Math.floor((lastSlotMs - firstSlotMs) / slotMs) + 1);
 
-    const totalHours = Math.max(2, Math.round((lastHourMs - firstHourMs) / (3600 * 1000)) + 1);
-    const stepHours = totalHours > 72 ? Math.ceil(totalHours / 48) : 1;
-    const slotMs = stepHours * 3600 * 1000;
-    const slotCount = Math.max(2, Math.ceil((lastHourMs - firstHourMs + 3600 * 1000) / slotMs));
-
-    const firstD = new Date(firstHourMs);
-    const lastD = new Date(firstHourMs + (slotCount - 1) * slotMs);
+    const firstD = new Date(firstSlotMs);
+    const lastD = new Date(firstSlotMs + (slotCount - 1) * slotMs);
     const isSameDay =
       firstD.getFullYear() === lastD.getFullYear() &&
       firstD.getMonth() === lastD.getMonth() &&
       firstD.getDate() === lastD.getDate();
 
     for (let idx = 0; idx < slotCount; idx++) {
-      const sMs = firstHourMs + idx * slotMs;
+      const sMs = firstSlotMs + idx * slotMs;
       const eMs = sMs + slotMs;
       const sd = new Date(sMs);
       const ed = new Date(eMs);
       if (Number.isNaN(sd.getTime())) continue;
-      const hh = `${pad2(sd.getHours())}:00`;
-      const endHh = `${pad2(ed.getHours())}:00`;
+      const hh = `${pad2(sd.getHours())}:${pad2(sd.getMinutes())}`;
+      const endHh = `${pad2(ed.getHours())}:${pad2(ed.getMinutes())}`;
       const dateStr = `${sd.getMonth() + 1}/${pad2(sd.getDate())}`;
       const axisLabel = isSameDay ? hh : `${dateStr} ${hh}`;
       const fullLabel = `${sd.getMonth() + 1}月${sd.getDate()}日 ${hh} - ${endHh}`;
@@ -901,7 +892,8 @@ function buildUsageTrendSeries(
         index: idx,
         startMs: sMs,
         endMs: eMs,
-        granularity: 'hour',
+        granularity: isSubHour ? 'minute' : 'hour',
+        ...(isSubHour ? { stepMinutes } : {}),
         label: axisLabel,
         fullLabel,
         tokens: 0,
@@ -928,11 +920,10 @@ function buildUsageTrendSeries(
       cursor.setHours(0, 0, 0, 0);
       safety++;
     }
-    while (dayStarts.length < 2) {
-      const prev = new Date(dayStarts[0] || firstDayMs);
-      prev.setDate(prev.getDate() - 1);
-      prev.setHours(0, 0, 0, 0);
-      dayStarts.unshift(prev.getTime());
+    if (dayStarts.length === 0) {
+      const fallbackDay = new Date(firstDayMs);
+      fallbackDay.setHours(0, 0, 0, 0);
+      dayStarts.push(fallbackDay.getTime());
     }
 
     const firstYear = new Date(dayStarts[0]).getFullYear();
@@ -1082,26 +1073,61 @@ function buildUsageTrendSeries(
   return { trend, trendStartMs, trendEndMs, trendSeries };
 }
 
+function resolveIntradayStepMinutes(spanMs, windowKey = '') {
+  if (windowKey !== 'all') {
+    if (spanMs < 15 * 60 * 1000) return 1;
+    if (spanMs < 60 * 60 * 1000) return 5;
+    if (spanMs < 2 * 3600 * 1000) return 15;
+  }
+  const totalHours = Math.max(2, Math.floor(spanMs / (3600 * 1000)) + 1);
+  return totalHours > 72 ? Math.ceil(totalHours / 48) * 60 : 60;
+}
+
+function floorToLocalTrendSlotMs(ms, stepMinutes) {
+  const d = new Date(ms);
+  if (stepMinutes < 60) {
+    const alignedMin = Math.floor(d.getMinutes() / stepMinutes) * stepMinutes;
+    d.setMinutes(alignedMin, 0, 0);
+  } else {
+    d.setMinutes(0, 0, 0);
+  }
+  return d.getTime();
+}
+
 function planUsageTrend(window, nowMs, earliest, latest) {
   const safeMs = (value, fallback) =>
     Number.isFinite(value) && value > 0 && value <= MAX_TREND_TIMESTAMP_MS ? value : fallback;
   const end = Math.max(safeMs(window.endMs, Math.max(nowMs, latest || nowMs)), latest);
   const defaultStart = end - 24 * 3600 * 1000;
-  const start = window.key === 'all'
-    ? Math.min(safeMs(earliest, defaultStart), end - 3600 * 1000)
-    : Math.min(safeMs(window.startMs, defaultStart), end);
-  const hourly = window.key === 'today' || window.key === '24h' || window.key === '5h' ||
-    end - start <= 72 * 3600 * 1000;
+  const start =
+    window.key === 'all'
+      ? Math.min(safeMs(earliest, defaultStart), end - 3600 * 1000)
+      : Math.min(safeMs(window.startMs, defaultStart), end);
+  const spanMs = Math.max(0, end - start);
+  const hourly =
+    window.key === 'today' ||
+    window.key === '24h' ||
+    window.key === '5h' ||
+    spanMs <= 72 * 3600 * 1000;
+  if (hourly) {
+    const stepMinutes = resolveIntradayStepMinutes(spanMs, window.key);
+    const stepMs = stepMinutes * 60 * 1000;
+    const first = floorToLocalTrendSlotMs(start, stepMinutes);
+    const last = floorToLocalTrendSlotMs(end, stepMinutes);
+    return { start, end, hourly, stepMs, first, last };
+  }
   const first = new Date(start);
   const last = new Date(end);
-  if (hourly) {
-    first.setMinutes(0, 0, 0);
-    last.setMinutes(0, 0, 0);
-  } else {
-    first.setHours(0, 0, 0, 0);
-    last.setHours(0, 0, 0, 0);
-  }
-  return { start, end, hourly, first: first.getTime(), last: last.getTime() };
+  first.setHours(0, 0, 0, 0);
+  last.setHours(0, 0, 0, 0);
+  return {
+    start,
+    end,
+    hourly,
+    stepMs: 24 * 3600 * 1000,
+    first: first.getTime(),
+    last: last.getTime(),
+  };
 }
 
 function sameUsageEntries(previous, current) {
@@ -1441,7 +1467,9 @@ export function aggregateMultiWindowUsage({
         : selectedWindow;
     const trend = planUsageTrend(effectivePrevWin, nowMs, previous.earliest, previous.latest);
     if (
-      trend.hourly === previous.trend.hourly && trend.first === previous.trend.first &&
+      trend.hourly === previous.trend.hourly &&
+      trend.stepMs === previous.trend.stepMs &&
+      trend.first === previous.trend.first &&
       trend.last === previous.trend.last &&
       sameUsageWindows(
         previous.windows,
@@ -1994,6 +2022,7 @@ export function aggregateSelectedWindowUsage({
       const trend = planUsageTrend(effectivePrevWin, nowMs, candidate.earliest, candidate.latest);
       if (
         trend.hourly === candidate.trend.hourly &&
+        trend.stepMs === candidate.trend.stepMs &&
         trend.first === candidate.trend.first &&
         trend.last === candidate.trend.last &&
         sameUsageWindows(

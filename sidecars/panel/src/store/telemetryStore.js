@@ -967,6 +967,8 @@ export function isEquivalentTelemetry(prev, next) {
       pTrend[i]?.thinkingTokens !== nTrend[i]?.thinkingTokens ||
       pTrend[i]?.responseTokens !== nTrend[i]?.responseTokens ||
       pTrend[i]?.calls !== nTrend[i]?.calls ||
+      pTrend[i]?.granularity !== nTrend[i]?.granularity ||
+      pTrend[i]?.stepMinutes !== nTrend[i]?.stepMinutes ||
       pTrend[i]?.label !== nTrend[i]?.label ||
       pTrend[i]?.fullLabel !== nTrend[i]?.fullLabel ||
       !areModelSlicesEqual(pTrend[i]?.models, nTrend[i]?.models)

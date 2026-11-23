@@ -261,6 +261,7 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.trendTitle': '用量趋势',
   'cons.allTime': '全部时间',
   'cons.trendHeatmapHint': '按日 ({days}天) · 悬停查看',
+  'cons.trendPointsHintMinute': '按 {minutes} 分钟 ({points}点) · 悬停查看',
   'cons.trendPointsHintHourly': '按小时 ({points}点) · 悬停查看',
   'cons.trendPointsHintDaily': '按日 ({points}点) · 悬停查看',
   'cons.topModels': '模型排行',
