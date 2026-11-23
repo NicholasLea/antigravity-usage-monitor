@@ -4189,6 +4189,19 @@ html[data-standalone="true"] .app-shell {
   white-space: nowrap;
 }
 
+.data-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table.is-cols-locked {
+  table-layout: fixed;
+}
+
+.data-table.is-cols-locked td:not(:first-child) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .data-table th.is-right,
 .data-table td.is-right {
   text-align: right;
@@ -4271,6 +4284,10 @@ html[data-standalone="true"] .app-shell {
   border: none !important;
   line-height: 0;
   height: 0;
+}
+
+.data-table tbody tr.step-vsizer.has-bold-first td:first-child {
+  font-weight: 600;
 }
 
 .step-vsizer-inner {

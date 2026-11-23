@@ -17,6 +17,8 @@ import {
   buildStepAnomalyDiagnostic,
   buildStepCompactionDiagnostic,
   buildStepTimingDiagnostic,
+  formatMetric,
+  formatUsd,
   hasStepTimingData,
   resolveModelDisplayInfo,
   speedReasonText,
@@ -55,24 +57,48 @@ const SIZER_ROW_KEY = '__vsizer__';
 const SPACER_TOP_KEY = '__vspacer_top__';
 const SPACER_BOTTOM_KEY = '__vspacer_bottom__';
 
-function estTokenChars(val) {
-  const n = Math.max(0, Number(val || 0));
-  if (n >= 1_000_000) return n >= 10_000_000 ? 6 : 5;
-  if (n >= 100_000) return 6;
-  if (n >= 10_000) return 5;
-  if (n >= 1_000) return 4;
-  if (n >= 100) return 3;
-  if (n >= 10) return 2;
-  return 1;
+function estProportionalTextWidth(text) {
+  const s = String(text || '');
+  let w = 0;
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if (code > 0x2e7f) {
+      w += 1.8;
+    } else if (
+      code === 105 || code === 108 || code === 73 || code === 116 || code === 102 ||
+      code === 114 || code === 46 || code === 44 || code === 58 || code === 59 ||
+      code === 45 || code === 47 || code === 32
+    ) {
+      w += 0.55;
+    } else if (
+      code === 109 || code === 119 || code === 77 || code === 87 || code === 71 ||
+      code === 79 || code === 81 || code === 67
+    ) {
+      w += 1.32;
+    } else {
+      w += 1.0;
+    }
+  }
+  return w;
 }
 
-function estCostChars(val) {
-  const n = Number(val);
-  if (!Number.isFinite(n) || n <= 0) return 1;
-  if (n >= 100) return 7;
-  if (n >= 10) return 6;
-  if (n >= 0.01) return 5;
-  return 7;
+function estTokenChars(val) {
+  const n = Math.max(0, Number(val || 0));
+  if (n >= 1_000_000) return n >= 10_000_000 ? 6.4 : 5.6;
+  if (n >= 100_000) return 6.0;
+  if (n >= 10_000) return 5.0;
+  if (n >= 1_000) return 4.1;
+  if (n >= 100) return 3.0;
+  if (n >= 10) return 2.0;
+  return 1.0;
+}
+
+function estCostWidth(st) {
+  const c = st?.costUsd;
+  if (c == null || !Number.isFinite(Number(c))) {
+    return st?.isPricingPending ? estProportionalTextWidth(t('fmt.pricingPending')) : 1;
+  }
+  return estProportionalTextWidth(formatUsd(Number(c)));
 }
 
 function estSegmentChars(seg, st) {
@@ -168,19 +194,27 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
   let bestCostObj = firstStep;
 
   let bestBadgeText = '';
+  let bestBadgeWidth = -1;
   let bestBadgeClass = '';
+  let hasBoldFirstCol = false;
   const badgeCandidates = cellCtx?.showAgentBadge ? new Set() : null;
 
   for (let i = 0; i < tableSteps.length; i++) {
     const st = tableSteps[i];
     if (!st || typeof st !== 'object') continue;
 
+    if (!hasBoldFirstCol && (isCompactionStepItem(st) || Number(st?.anomaly?.count) > 0)) {
+      hasBoldFirstCol = true;
+    }
+
     if (badgeCandidates) {
       const bKey = `${st.agentKind || ''}|${st.isSubagent ? 1 : 0}|${st.isSideQuestion ? 1 : 0}|${st.agentOrdinal || 0}|${st.sideIndex || 0}|${st.agentIndex || 0}|${st.agentBadge || ''}`;
       if (!badgeCandidates.has(bKey)) {
         badgeCandidates.add(bKey);
         const text = resolveBadgeTextForStep(st);
-        if (text.length > bestBadgeText.length) {
+        const bw = estProportionalTextWidth(text);
+        if (bw > bestBadgeWidth) {
+          bestBadgeWidth = bw;
           bestBadgeText = text;
           bestBadgeClass = getAgentBadgeClass(st.agentIndex || 0, !st.isSubagent);
         }
@@ -224,17 +258,23 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
 
     if (needTtft) {
       const v = Number(st.ttftSec);
-      if (Number.isFinite(v) && v > maxTtftVal) {
-        maxTtftVal = v;
-        bestTtftObj = st;
+      if (Number.isFinite(v) && v >= 0) {
+        const score = estProportionalTextWidth(formatMetric(v, 's')) * 1e6 + v;
+        if (score > maxTtftVal) {
+          maxTtftVal = score;
+          bestTtftObj = st;
+        }
       }
     }
 
     if (needDuration) {
       const v = Number(st.totalDurationSec ?? st.streamDurationSec);
-      if (Number.isFinite(v) && v > maxDurVal) {
-        maxDurVal = v;
-        bestDurObj = st;
+      if (Number.isFinite(v) && v >= 0) {
+        const score = estProportionalTextWidth(formatMetric(v, 's')) * 1e6 + v;
+        if (score > maxDurVal) {
+          maxDurVal = score;
+          bestDurObj = st;
+        }
       }
     }
 
@@ -320,7 +360,7 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
 
     if (needCost) {
       const c = Number(st.costUsd);
-      const score = estCostChars(c) * 1e6 + (Number.isFinite(c) && c > 0 ? c : 0);
+      const score = estCostWidth(st) * 1e6 + (Number.isFinite(c) && c > 0 ? c : 0);
       if (score > bestCostScore) {
         bestCostScore = score;
         bestCostObj = st;
@@ -331,13 +371,13 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
   if (needStep) colSteps.step = bestStepObj;
   if (needTime) colSteps.time = bestTimeObj || firstStep;
   if (needModel && modelCandidates) {
-    let bestModelLen = -1;
+    let bestModelWidth = -1;
     let bestModelObj = firstStep;
     for (const cand of modelCandidates.values()) {
       const disp = resolveModelDisplayInfo(cand, cellCtx?.displaySettings, { fallback: '—' });
-      const len = disp.baseText?.length || 0;
-      if (len > bestModelLen) {
-        bestModelLen = len;
+      const w = estProportionalTextWidth(disp.baseText || '');
+      if (w > bestModelWidth) {
+        bestModelWidth = w;
         bestModelObj = cand;
       }
     }
@@ -345,19 +385,20 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
   }
   if (needTps) {
     let longestReasonKey = null;
-    let longestReasonLen = 0;
+    let longestReasonWidth = 0;
     if (reasonCandidates) {
       for (const rk of reasonCandidates) {
         const txt = speedReasonText(rk);
-        if (txt && txt.length > longestReasonLen) {
-          longestReasonLen = txt.length;
+        const w = txt ? estProportionalTextWidth(txt) : 0;
+        if (w > longestReasonWidth) {
+          longestReasonWidth = w;
           longestReasonKey = rk;
         }
       }
     }
     colSteps.tps = {
       ...(maxTpsObj || firstStep),
-      tokPerSec: maxTpsVal > 0 ? maxTpsVal : firstStep.tokPerSec,
+      tokPerSec: maxTpsObj ? maxTpsObj.tokPerSec : firstStep.tokPerSec,
       selectedSpeedReason: longestReasonKey,
     };
   }
@@ -380,7 +421,8 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
     colSteps,
     badgeText: bestBadgeText,
     badgeClass: bestBadgeClass,
-    sig: `sizer:${bestBadgeText}:${sigParts.join('|')}`,
+    hasBoldFirstCol,
+    sig: `sizer:${bestBadgeText}:${hasBoldFirstCol ? 1 : 0}:${sigParts.join('|')}`,
   };
 }
 
@@ -648,7 +690,65 @@ export const StepTableWidget = defineComponent({
     let lastFontScale = 1;
     let calibratedSingleRowH = 0;
     let calibratedReasonRowH = 0;
+    let lockedColKey = '';
+    let lockedPaneWidth = 0;
     const rowPool = [];
+
+    function computeColLockKey(ds) {
+      if (!ds?.isVirtualized) return '';
+      return `${ds.locale}:${ds.colOrderSig}:${lastFontScale}:${ds.showAgentBadge ? 1 : 0}:${ds.railActive ? 1 : 0}:${ds.sortKey || ''}:${ds.sortDir || ''}:${ds.sizerSpec?.sig || ''}`;
+    }
+
+    function unlockColumnWidths() {
+      lockedColKey = '';
+      lockedPaneWidth = 0;
+      patchClasses(stepsTableEl, { 'is-cols-locked': false });
+      if (stepsTableEl.style) {
+        stepsTableEl.style.minWidth = '';
+      }
+      const ths = stepsTheadRow.children || [];
+      for (let i = 0; i < ths.length; i++) {
+        if (ths[i]?.style) ths[i].style.width = '';
+      }
+    }
+
+    function lockColumnWidthsIfNeeded() {
+      if (!activeDataset?.isVirtualized) return;
+      const paneW = Number(stepsTablePane.clientWidth || 0);
+      if (paneW <= 0) return;
+      const nextKey = computeColLockKey(activeDataset);
+      if (lockedColKey === nextKey && Math.abs(paneW - lockedPaneWidth) < 1) return;
+
+      const ths = stepsTheadRow.children || [];
+      const colCount = activeDataset.colKeys.length;
+      if (ths.length !== colCount) return;
+
+      // Release fixed layout momentarily if stale so browser resolves natural widths from sizer + header
+      if (stepsTableEl.classList?.contains('is-cols-locked')) {
+        unlockColumnWidths();
+      }
+
+      const widths = [];
+      for (let i = 0; i < colCount; i++) {
+        const w = Number(ths[i]?.getBoundingClientRect?.()?.width || 0);
+        if (!Number.isFinite(w) || w <= 0) return;
+        widths.push(w);
+      }
+      const tableW = Number(stepsTableEl.getBoundingClientRect?.()?.width || 0);
+      if (!Number.isFinite(tableW) || tableW <= 0) return;
+
+      for (let i = 0; i < colCount; i++) {
+        if (ths[i]?.style) {
+          ths[i].style.width = `${widths[i].toFixed(2)}px`;
+        }
+      }
+      if (stepsTableEl.style) {
+        stepsTableEl.style.minWidth = tableW > paneW + 0.5 ? `${tableW.toFixed(2)}px` : '';
+      }
+      patchClasses(stepsTableEl, { 'is-cols-locked': true });
+      lockedColKey = nextKey;
+      lockedPaneWidth = paneW;
+    }
 
     function readUiFontScale() {
       try {
@@ -712,6 +812,7 @@ export const StepTableWidget = defineComponent({
       lastFontScale = nextScale;
       calibratedSingleRowH = 0;
       calibratedReasonRowH = 0;
+      unlockColumnWidths();
       if (activeDataset?.isVirtualized) {
         const rebuilt = buildRowTops(activeDataset.tableSteps.length, activeDataset.hasReasonFlags);
         activeDataset.rowTops = rebuilt.rowTops;
@@ -860,6 +961,7 @@ export const StepTableWidget = defineComponent({
       calibrateRafId = 0;
       if (!activeDataset?.isVirtualized) return;
       if (Number(stepsTablePane.clientHeight || 0) <= 0) return;
+      lockColumnWidthsIfNeeded();
       const needSingle = calibratedSingleRowH <= 0;
       const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
       if (!needSingle && !needReason) return;
@@ -952,7 +1054,12 @@ export const StepTableWidget = defineComponent({
       if (!activeDataset?.isVirtualized) return;
       const needSingle = calibratedSingleRowH <= 0;
       const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
-      if (!needSingle && !needReason) return;
+      const paneW = Number(stepsTablePane.clientWidth || 0);
+      const needColLock =
+        !lockedColKey ||
+        lockedColKey !== computeColLockKey(activeDataset) ||
+        (paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1);
+      if (!needSingle && !needReason && !needColLock) return;
       if (calibrateRafId) return;
       if (typeof requestAnimationFrame === 'function') {
         calibrateRafId = requestAnimationFrame(calibrateRowHeights);
@@ -1185,6 +1292,7 @@ export const StepTableWidget = defineComponent({
         updateRow: (refs, item, _idx, tr) => {
           if (item.isSizer) {
             const spec = item.sizerSpec;
+            patchClasses(tr, { 'has-bold-first': Boolean(spec.hasBoldFirstCol) });
             if (refs.colOrderSig !== colOrderSig) {
               for (const [oldColKey, entry] of refs.cellMap) {
                 if (!wantedSet.has(oldColKey)) {
@@ -1517,6 +1625,10 @@ export const StepTableWidget = defineComponent({
     function refreshViewport() {
       if (!activeDataset?.isVirtualized) return;
       const scaleChanged = syncFontScaleIfChanged();
+      const paneW = Number(stepsTablePane.clientWidth || 0);
+      if (lockedColKey && paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1) {
+        unlockColumnWidths();
+      }
       renderCurrentWindow({ force: scaleChanged, enteringRowKeys: null });
       scheduleCalibrateRowHeights();
     }
@@ -1740,8 +1852,13 @@ export const StepTableWidget = defineComponent({
         totalBodyH,
         sizerSpec,
         effectiveScopes,
+        sortKey: normSortKey,
+        sortDir: normSortDir,
         formattedPrompts: new Map(),
       };
+      if (!isVirtualized || computeColLockKey(activeDataset) !== lockedColKey) {
+        unlockColumnWidths();
+      }
       renderedSliceStart = -1;
       renderedSliceEnd = -1;
       renderedTopSpacerH = -1;
