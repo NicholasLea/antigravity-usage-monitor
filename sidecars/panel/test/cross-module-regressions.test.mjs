@@ -585,7 +585,10 @@ test('bundle validation rejects incompatible imports and duplicate bindings befo
   const iconSource = join(tempDir, 'src', 'icons', 'svgRegistry.js');
   const original = fs.readFileSync(iconSource, 'utf8');
   for (const [prefix, error] of [
-    ["import { SVG_NS /* comment */ as ns } from './SvgIcon.js';", /svgRegistry\.js.*without aliases/],
+    [
+      "import * as ns from '../../shared/settings-normalization.mjs';",
+      /svgRegistry\.js.*only named imports/,
+    ],
     ["import { SVG_NS } from './SvgIcon.js';", /svgRegistry\.js.*SvgIcon\.js.*earlier in jsOrder/],
     ["import './missing.js';", /svgRegistry\.js.*missing\.js.*earlier in jsOrder/],
     ['export const SVG_NS = "duplicate";', /Identifier 'SVG_NS' has already been declared/],
@@ -596,6 +599,13 @@ test('bundle validation rejects incompatible imports and duplicate bindings befo
       assert.equal(fs.readFileSync(join(tempDir, file), 'utf8'), file);
     }
   }
+
+  // Named import aliases (`import { a as b }`) from earlier modules in jsOrder are supported inside the module IIFE
+  fs.writeFileSync(
+    iconSource,
+    `import { normalizeStandalonePort /* comment */ as normPort } from '../../shared/settings-normalization.mjs';\nvoid normPort;\n${original}`
+  );
+  assert.doesNotThrow(() => buildBundle(tempDir));
 
   // Per-module closure isolation: unexported private identifiers never collide across modules
   fs.writeFileSync(iconSource, `const SVG_NS = "private_local";\n${original}`);
@@ -1126,8 +1136,13 @@ test('P1 audit fixes: shared third-party pool & route single-source, pure frozen
 
   assert.equal(normalizeI18nLanguage('system'), 'auto');
   assert.equal(typeof isEquivalentTelemetry, 'function');
-  assert.equal(BRIDGE_API_ROUTE_DEFS.length, 10);
+  assert.equal(BRIDGE_API_ROUTE_DEFS.length, 15);
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/bridge/relaunch'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/session-migration/catalog'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/session-migration/migrate'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/export-file'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/reveal-file'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/quota-reservation/log'));
 
   // 1. Third-party pool parity across backend, CLI statusline, and frontend metricRegistry
   const h = backendHarness();

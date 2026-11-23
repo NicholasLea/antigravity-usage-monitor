@@ -7,6 +7,7 @@
  */
 
 import { isDeepStrictEqual } from 'node:util';
+import { decodeWorkspaceFileUriToPath } from '../shared/workspace-uri.mjs';
 import {
   MEASUREMENT_VERSION,
   accumulateSpeed,
@@ -205,6 +206,20 @@ function resolveTimeWindow(
     default:
       return { key: 'all', label: '全部时间', startMs: 0, endMs: Infinity };
   }
+}
+
+const LOCAL_TIMEZONE_TTL_MS = 30_000;
+let cachedLocalTimeZone = '';
+let cachedLocalTimeZoneAtMs = 0;
+
+function resolveCachedLocalTimeZone() {
+  const nowMs = Date.now();
+  if (cachedLocalTimeZone && nowMs - cachedLocalTimeZoneAtMs < LOCAL_TIMEZONE_TTL_MS) {
+    return cachedLocalTimeZone;
+  }
+  cachedLocalTimeZone = new Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  cachedLocalTimeZoneAtMs = nowMs;
+  return cachedLocalTimeZone;
 }
 
 /**
@@ -532,10 +547,19 @@ function collectUsageEntriesToAggregate(familySet, endpoint = null) {
     const groupCascadeId = String(
       entry?.rootConversationId || entry?.parentConversationId || cidLower
     ).toLowerCase();
+    const rootLive = allLiveByLower.get(groupCascadeId);
+    const entryTitle = String(
+      rootLive?.title || entry?.title || extMatch?.title || ''
+    ).trim();
+    const entryWorkspaceUri = String(
+      rootLive?.workspaceUri || entry?.workspaceUri || extMatch?.workspaceUri || ''
+    ).trim();
     allEntriesToAggregate.push({
       cascadeId: groupCascadeId,
+      title: entryTitle,
       appSource: isRemote ? 'ssh' : entry?.appSource || 'standalone',
       accountName: entry?.accountName || extMatch?.accountName || '',
+      workspaceUri: entryWorkspaceUri,
       steps: entry?.steps || [],
       isCurrentConv: familySet.has(cidLower),
     });
@@ -548,14 +572,206 @@ function collectUsageEntriesToAggregate(familySet, endpoint = null) {
     }
     allEntriesToAggregate.push({
       cascadeId: extCidLower,
+      title: String(ext.title || liveEntry?.title || '').trim(),
       appSource: ext.appSource || 'ide',
       accountName: ext.accountName || liveEntry?.accountName || '',
+      workspaceUri: String(ext.workspaceUri || liveEntry?.workspaceUri || '').trim(),
       steps: ext.steps || [],
       isCurrentConv: familySet.has(extCidLower),
     });
   }
 
   return allEntriesToAggregate;
+}
+
+const MAX_TOP_CONVERSATIONS_LIMIT = 10;
+const MAX_TOP_WORKSPACES_LIMIT = 12;
+const UNBOUND_WORKSPACE_KEY = '__unbound__';
+
+/**
+ * 将 `file://` URI 或本地文件系统路径归一化为稳定的工作区聚合键、项目短名及可读路径。
+ *
+ * @param {string} rawUri
+ * @returns {{ workspaceKey: string, label: string, workspacePath: string }|null}
+ */
+export function normalizeWorkspaceBucket(rawUri) {
+  const decoded = decodeWorkspaceFileUriToPath(rawUri);
+  if (!decoded) return null;
+  const parts = decoded.split('/').filter(Boolean);
+  const label = parts.length > 0 ? parts[parts.length - 1] : decoded;
+  return {
+    workspaceKey: decoded.toLowerCase(),
+    label,
+    workspacePath: decoded,
+  };
+}
+
+function accumulateStepIntoWorkspaceMap(
+  perWorkspaceMap,
+  entry,
+  stepUsage,
+  tMs,
+  st = null,
+  mInfo = null,
+  stepCost = null
+) {
+  const norm = normalizeWorkspaceBucket(entry?.workspaceUri);
+  const key = norm ? norm.workspaceKey : UNBOUND_WORKSPACE_KEY;
+  let acc = perWorkspaceMap.get(key);
+  if (!acc) {
+    acc = {
+      workspaceKey: key,
+      label: norm ? norm.label : '',
+      workspacePath: norm ? norm.workspacePath : '',
+      isUnbound: !norm,
+      sessionIds: new Set(),
+      calls: 0,
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      responseTokens: 0,
+      thinkingTokens: 0,
+      totalTokens: 0,
+      costUsd: 0,
+      unpricedCalls: 0,
+      lastTimestampMs: 0,
+      latestCascadeId: '',
+      perModelStats: new Map(),
+    };
+    perWorkspaceMap.set(key, acc);
+  }
+  const cid = String(entry?.cascadeId || '').trim();
+  if (cid) acc.sessionIds.add(cid);
+  acc.calls += 1;
+  acc.inputTokens += stepUsage.inTok;
+  acc.cacheReadTokens += stepUsage.cacheTok;
+  acc.responseTokens += stepUsage.respTok;
+  acc.thinkingTokens += stepUsage.thinkTok;
+  acc.totalTokens += stepUsage.stepTotalTokens;
+  acc.costUsd += stepUsage.resolvedCost;
+  acc.unpricedCalls += stepUsage.unpriced;
+  if (tMs >= acc.lastTimestampMs) {
+    acc.lastTimestampMs = tMs;
+    if (cid) acc.latestCascadeId = cid;
+  }
+  if (st && mInfo) {
+    accumulateStepIntoModelMap(acc.perModelStats, st, mInfo, stepCost);
+  }
+}
+
+function finalizeTopWorkspacesMap(perWorkspaceMap, maxItems = MAX_TOP_WORKSPACES_LIMIT) {
+  let hasRealWorkspace = false;
+  for (const w of perWorkspaceMap.values()) {
+    if (!w.isUnbound && (w.totalTokens > 0 || w.calls > 0)) {
+      hasRealWorkspace = true;
+      break;
+    }
+  }
+  if (!hasRealWorkspace) return [];
+  return Array.from(perWorkspaceMap.values())
+    .filter((w) => w.totalTokens > 0 || w.calls > 0)
+    .sort((a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens || b.calls - a.calls)
+    .slice(0, maxItems)
+    .map((w) => {
+      const promptTokens = w.inputTokens + w.cacheReadTokens;
+      return {
+        workspaceKey: w.workspaceKey,
+        label: w.label,
+        workspacePath: w.workspacePath,
+        isUnbound: w.isUnbound,
+        sessionCount: w.sessionIds.size,
+        calls: w.calls,
+        inputTokens: w.inputTokens,
+        cacheReadTokens: w.cacheReadTokens,
+        responseTokens: w.responseTokens,
+        thinkingTokens: w.thinkingTokens,
+        totalTokens: w.totalTokens,
+        costUsd: +w.costUsd.toFixed(6),
+        unpricedCalls: w.unpricedCalls,
+        cacheHitPct: promptTokens > 0 ? +((w.cacheReadTokens / promptTokens) * 100).toFixed(1) : 0,
+        lastTimestampMs: w.lastTimestampMs,
+        latestCascadeId: w.latestCascadeId,
+        models: finalizeModelBreakdownMap(w.perModelStats),
+      };
+    });
+}
+
+function accumulateStepIntoConversationMap(
+  perConvMap,
+  entry,
+  srcKey,
+  srcName,
+  stepUsage,
+  tMs,
+  st = null,
+  mInfo = null,
+  stepCost = null
+) {
+  const cid = String(entry?.cascadeId || '').trim();
+  if (!cid) return;
+  let acc = perConvMap.get(cid);
+  if (!acc) {
+    acc = {
+      cascadeId: cid,
+      title: String(entry?.title || '').trim(),
+      appSource: srcKey,
+      sourceName: srcName,
+      calls: 0,
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      responseTokens: 0,
+      thinkingTokens: 0,
+      totalTokens: 0,
+      costUsd: 0,
+      unpricedCalls: 0,
+      lastTimestampMs: 0,
+      perModelStats: new Map(),
+    };
+    perConvMap.set(cid, acc);
+  }
+  if (!acc.title && entry?.title) {
+    acc.title = String(entry.title).trim();
+  }
+  acc.calls += 1;
+  acc.inputTokens += stepUsage.inTok;
+  acc.cacheReadTokens += stepUsage.cacheTok;
+  acc.responseTokens += stepUsage.respTok;
+  acc.thinkingTokens += stepUsage.thinkTok;
+  acc.totalTokens += stepUsage.stepTotalTokens;
+  acc.costUsd += stepUsage.resolvedCost;
+  acc.unpricedCalls += stepUsage.unpriced;
+  if (tMs > acc.lastTimestampMs) {
+    acc.lastTimestampMs = tMs;
+  }
+  if (st && mInfo) {
+    accumulateStepIntoModelMap(acc.perModelStats, st, mInfo, stepCost);
+  }
+}
+
+function finalizeTopConversationsMap(perConvMap, maxItems = MAX_TOP_CONVERSATIONS_LIMIT) {
+  return Array.from(perConvMap.values())
+    .filter((c) => c.totalTokens > 0 || c.calls > 0)
+    .sort((a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens || b.calls - a.calls)
+    .slice(0, maxItems)
+    .map((c) => {
+      const promptTokens = c.inputTokens + c.cacheReadTokens;
+      return {
+        cascadeId: c.cascadeId,
+        title: c.title,
+        appSource: c.appSource,
+        sourceName: c.sourceName,
+        calls: c.calls,
+        inputTokens: c.inputTokens,
+        cacheReadTokens: c.cacheReadTokens,
+        responseTokens: c.responseTokens,
+        thinkingTokens: c.thinkingTokens,
+        totalTokens: c.totalTokens,
+        costUsd: +c.costUsd.toFixed(6),
+        unpricedCalls: c.unpricedCalls,
+        cacheHitPct: promptTokens > 0 ? +((c.cacheReadTokens / promptTokens) * 100).toFixed(1) : 0,
+        lastTimestampMs: c.lastTimestampMs,
+        models: finalizeModelBreakdownMap(c.perModelStats),
+      };
+    });
 }
 
 function buildQuotaPoolCycleMap(quotaPoolsMap, nowMs) {
@@ -578,6 +794,10 @@ function buildQuotaPoolCycleMap(quotaPoolsMap, nowMs) {
         startWkMs,
         b5h: createUsageBucket(),
         bWk: createUsageBucket(),
+        modelCosts5h: new Map(),
+        modelCostsWk: new Map(),
+        lastActivityMs: 0,
+        recent10mSessions: new Map(),
       });
     }
   }
@@ -688,6 +908,8 @@ function buildUsageTrendSeries(
         inputTokens: 0,
         cacheReadTokens: 0,
         outputTokens: 0,
+        thinkingTokens: 0,
+        responseTokens: 0,
         costUsd: 0,
         unpricedCalls: 0,
         calls: 0,
@@ -740,6 +962,8 @@ function buildUsageTrendSeries(
         inputTokens: 0,
         cacheReadTokens: 0,
         outputTokens: 0,
+        thinkingTokens: 0,
+        responseTokens: 0,
         costUsd: 0,
         unpricedCalls: 0,
         calls: 0,
@@ -781,6 +1005,8 @@ function buildUsageTrendSeries(
       bucket.inputTokens += item.inputTokens || 0;
       bucket.cacheReadTokens += item.cacheReadTokens || 0;
       bucket.outputTokens += item.outputTokens || 0;
+      bucket.thinkingTokens += item.thinkingTokens || 0;
+      bucket.responseTokens += item.responseTokens || 0;
       bucket.costUsd += item.costUsd;
       bucket.unpricedCalls = (bucket.unpricedCalls || 0) + item.unpricedCalls;
       bucket.calls += 1;
@@ -801,6 +1027,11 @@ function buildUsageTrendSeries(
             upstreamModelCounts: new Map(),
             family: mInfo.family,
             calls: 0,
+            inputTokens: 0,
+            cacheReadTokens: 0,
+            outputTokens: 0,
+            thinkingTokens: 0,
+            responseTokens: 0,
             totalTokens: 0,
             costUsd: 0,
             unpricedCalls: 0,
@@ -815,6 +1046,11 @@ function buildUsageTrendSeries(
           );
         }
         bModel.calls += 1;
+        bModel.inputTokens += item.inputTokens || 0;
+        bModel.cacheReadTokens += item.cacheReadTokens || 0;
+        bModel.outputTokens += item.outputTokens || 0;
+        bModel.thinkingTokens += item.thinkingTokens || 0;
+        bModel.responseTokens += item.responseTokens || 0;
         bModel.totalTokens += item.tokens;
         bModel.costUsd += item.costUsd;
         bModel.unpricedCalls += item.unpricedCalls || 0;
@@ -872,7 +1108,8 @@ function sameUsageEntries(previous, current) {
   return previous.length === current.length && current.every((entry, index) => {
     const before = previous[index];
     return entry.steps === before.steps && entry.cascadeId === before.cascadeId &&
-      entry.appSource === before.appSource && entry.accountName === before.accountName;
+      entry.appSource === before.appSource && entry.accountName === before.accountName &&
+      entry.workspaceUri === before.workspaceUri;
   });
 }
 
@@ -1150,6 +1387,8 @@ export function aggregateMultiWindowUsage({
   const selectedAccountBucket = accountBuckets[selectedWindow.key] || createUsageBucket();
   const selectedSessionBucket = sessionBuckets[selectedWindow.key] || createUsageBucket();
   const perModelStats = new Map();
+  const perConvStats = new Map();
+  const perWorkspaceStats = new Map();
   const selectedWindowSteps = [];
   let earliestSelectedStepMs = Infinity;
   let latestSelectedStepMs = 0;
@@ -1179,7 +1418,7 @@ export function aggregateMultiWindowUsage({
   const allEntriesToAggregate = collectUsageEntriesToAggregate(familySet, endpoint);
   const familySig = buildFamilySig(familySet);
 
-  const timeZone = modelInputs ? new Intl.DateTimeFormat().resolvedOptions().timeZone : '';
+  const timeZone = modelInputs ? resolveCachedLocalTimeZone() : '';
   const quotaWindows = Array.from(poolCycleBuckets, ([key, { start5hMs, startWkMs }]) => [
     { key: `${key}:5h`, startMs: start5hMs, endMs: nowMs },
     { key: `${key}:week`, startMs: startWkMs, endMs: nowMs },
@@ -1326,11 +1565,38 @@ export function aggregateMultiWindowUsage({
       );
 
       if (includeInQuotaPools && poolBucketEntry && qMs > 0 && qMs <= nowMs) {
+        if (qMs > poolBucketEntry.lastActivityMs) {
+          poolBucketEntry.lastActivityMs = qMs;
+        }
+        if (qMs >= nowMs - 10 * 60 * 1000) {
+          const sessKey = String(cascadeId || '');
+          let sessStat = poolBucketEntry.recent10mSessions.get(sessKey);
+          if (!sessStat) {
+            sessStat = { costUsd: 0, calls: 0, lastActivityMs: 0 };
+            poolBucketEntry.recent10mSessions.set(sessKey, sessStat);
+          }
+          sessStat.costUsd += stepUsage.resolvedCost;
+          sessStat.calls += 1;
+          if (qMs > sessStat.lastActivityMs) sessStat.lastActivityMs = qMs;
+        }
+        const quotaModelKey = mInfo.baseLabel || mInfo.label || '';
         if (qMs >= poolBucketEntry.start5hMs) {
           accumulateStepIntoBucket(poolBucketEntry.b5h, stepUsage, cascadeId);
+          if (quotaModelKey && stepUsage.resolvedCost > 0) {
+            poolBucketEntry.modelCosts5h.set(
+              quotaModelKey,
+              (poolBucketEntry.modelCosts5h.get(quotaModelKey) || 0) + stepUsage.resolvedCost
+            );
+          }
         }
         if (qMs >= poolBucketEntry.startWkMs) {
           accumulateStepIntoBucket(poolBucketEntry.bWk, stepUsage, cascadeId);
+          if (quotaModelKey && stepUsage.resolvedCost > 0) {
+            poolBucketEntry.modelCostsWk.set(
+              quotaModelKey,
+              (poolBucketEntry.modelCostsWk.get(quotaModelKey) || 0) + stepUsage.resolvedCost
+            );
+          }
         }
       }
 
@@ -1401,6 +1667,8 @@ export function aggregateMultiWindowUsage({
             inputTokens: inTok,
             cacheReadTokens: cacheTok,
             outputTokens: outTok,
+            thinkingTokens: thinkTok,
+            responseTokens: respTok,
             costUsd: resolvedCost,
             unpricedCalls: unpriced,
             mInfo,
@@ -1433,6 +1701,26 @@ export function aggregateMultiWindowUsage({
         accumulateStepIntoModelMap(sAgg.perModelStats, st, mInfo, stepCost);
 
         accumulateStepIntoModelMap(perModelStats, st, mInfo, stepCost);
+        accumulateStepIntoConversationMap(
+          perConvStats,
+          entry,
+          srcKey,
+          srcName,
+          stepUsage,
+          tMs,
+          st,
+          mInfo,
+          stepCost
+        );
+        accumulateStepIntoWorkspaceMap(
+          perWorkspaceStats,
+          entry,
+          stepUsage,
+          tMs,
+          st,
+          mInfo,
+          stepCost
+        );
       }
     }
   }
@@ -1489,6 +1777,8 @@ export function aggregateMultiWindowUsage({
   const weekBucket = finalizedPresets.week.account;
   const finalizedQuotaWeekBucket = finalizeUsageBucket(quotaWeekBucket);
   const modelBreakdown = finalizeModelBreakdownMap(perModelStats);
+  const topConversations = finalizeTopConversationsMap(perConvStats);
+  const topWorkspaces = finalizeTopWorkspacesMap(perWorkspaceStats);
 
   const formatCycleSummary = (b) => {
     const fin = finalizeUsageBucket(b);
@@ -1508,10 +1798,33 @@ export function aggregateMultiWindowUsage({
   let rawPoolsWeeklyTokens = 0;
   let rawPoolsWeeklyCostUsd = 0;
   let rawPoolsWeeklyUnpricedCalls = 0;
+  const serializeModelCosts = (mMap) => {
+    const out = {};
+    if (!(mMap instanceof Map)) return out;
+    for (const [mKey, costVal] of mMap.entries()) {
+      if (mKey && Number.isFinite(costVal) && costVal > 0) {
+        out[mKey] = +costVal.toFixed(6);
+      }
+    }
+    return out;
+  };
   for (const [poolKey, entry] of poolCycleBuckets.entries()) {
+    let recent10mCostUsd = 0;
+    for (const sStat of entry.recent10mSessions.values()) {
+      recent10mCostUsd += sStat.costUsd;
+    }
     poolCycleStats.set(poolKey, {
       cycle5h: formatCycleSummary(entry.b5h),
       cycleWeekly: formatCycleSummary(entry.bWk),
+      exactCost5hUsd: +entry.b5h.costUsd.toFixed(6),
+      exactCostWeeklyUsd: +entry.bWk.costUsd.toFixed(6),
+      modelCosts5h: serializeModelCosts(entry.modelCosts5h),
+      modelCostsWeekly: serializeModelCosts(entry.modelCostsWk),
+      recent10m: {
+        lastActivityMs: entry.lastActivityMs,
+        activeSessionCount: entry.recent10mSessions.size,
+        costUsd: +recent10mCostUsd.toFixed(4),
+      },
     });
     rawPoolsWeeklyCalls += entry.bWk.calls;
     rawPoolsWeeklyTokens += entry.bWk.totalTokens;
@@ -1574,6 +1887,8 @@ export function aggregateMultiWindowUsage({
     weekBucket,
     quotaWeekBucket: finalizedQuotaWeekBucket,
     modelBreakdown,
+    topConversations,
+    topWorkspaces,
     poolCycleStats,
     poolsWeeklySummary,
   };
@@ -1650,7 +1965,7 @@ export function aggregateSelectedWindowUsage({
     : collectUsageEntriesToAggregate(familySet, endpoint);
   const familySig = buildFamilySig(familySet);
   const currentYear = new Date(nowMs).getFullYear();
-  const timeZone = modelInputs ? new Intl.DateTimeFormat().resolvedOptions().timeZone : '';
+  const timeZone = modelInputs ? resolveCachedLocalTimeZone() : '';
 
   const snapshot = lastUsageSnapshotsByEndpoint.get(endpointKey) || null;
   const sameSnapshot = Boolean(
@@ -1715,6 +2030,8 @@ export function aggregateSelectedWindowUsage({
           trendSeries: res.trendSeries,
           sourcesBreakdown: res.sourcesBreakdown,
           modelBreakdown: res.modelBreakdown,
+          topConversations: res.topConversations || [],
+          topWorkspaces: res.topWorkspaces || [],
         };
       }
     }
@@ -1755,6 +2072,8 @@ export function aggregateSelectedWindowUsage({
   const selectedSessionBucket = createUsageBucket();
   const perModelStats = new Map();
   const perSourceStats = new Map();
+  const perConvStats = new Map();
+  const perWorkspaceStats = new Map();
   const selectedWindowSteps = [];
   let earliestSelectedStepMs = Infinity;
   let latestSelectedStepMs = 0;
@@ -1878,6 +2197,8 @@ export function aggregateSelectedWindowUsage({
           inputTokens: inTok,
           cacheReadTokens: cacheTok,
           outputTokens: outTok,
+          thinkingTokens: thinkTok,
+          responseTokens: respTok,
           costUsd: resolvedCost,
           unpricedCalls: unpriced,
           mInfo,
@@ -1910,6 +2231,26 @@ export function aggregateSelectedWindowUsage({
       accumulateStepIntoModelMap(sAgg.perModelStats, st, mInfo, stepCost);
 
       accumulateStepIntoModelMap(perModelStats, st, mInfo, stepCost);
+      accumulateStepIntoConversationMap(
+        perConvStats,
+        entry,
+        srcKey,
+        srcName,
+        stepUsage,
+        tMs,
+        st,
+        mInfo,
+        stepCost
+      );
+      accumulateStepIntoWorkspaceMap(
+        perWorkspaceStats,
+        entry,
+        stepUsage,
+        tMs,
+        st,
+        mInfo,
+        stepCost
+      );
     }
   }
 
@@ -1943,6 +2284,8 @@ export function aggregateSelectedWindowUsage({
     }))
     .sort((a, b) => b.totalTokens - a.totalTokens || b.calls - a.calls);
   const modelBreakdown = finalizeModelBreakdownMap(perModelStats);
+  const topConversations = finalizeTopConversationsMap(perConvStats);
+  const topWorkspaces = finalizeTopWorkspacesMap(perWorkspaceStats);
 
   const sliceResult = {
     usageRevision: sameSnapshot ? snapshot.revision : usageSnapshotRevisionSeq,
@@ -1954,6 +2297,8 @@ export function aggregateSelectedWindowUsage({
     trendSeries,
     sourcesBreakdown,
     modelBreakdown,
+    topConversations,
+    topWorkspaces,
   };
 
   if (sameSnapshot) {
@@ -2019,17 +2364,32 @@ export function aggregateSessionUsageForFamily({
     currentAccountName === null ? null : normalizeOwnerAccount(currentAccountName);
 
   const familyEntries = [];
-  for (const [cid, entry] of cacheStore.listCachedTrajectoryEntries()) {
-    if (!entry || !Array.isArray(entry.steps) || entry.steps.length === 0) continue;
-    const cidLower = String(cid || '').toLowerCase();
-    if (!familySet.has(cidLower)) continue;
-    familyEntries.push({
-      cascadeId: cid,
-      appSource: isRemote ? 'ssh' : entry.appSource || 'standalone',
-      accountName: entry.accountName || '',
-      steps: entry.steps,
-      isCurrentConv: true,
-    });
+  if (typeof cacheStore.getCachedTrajectoryEntryByLower === 'function') {
+    for (const fidLower of familySet) {
+      const hit = cacheStore.getCachedTrajectoryEntryByLower(fidLower);
+      const entry = hit?.entry;
+      if (!entry || !Array.isArray(entry.steps) || entry.steps.length === 0) continue;
+      familyEntries.push({
+        cascadeId: hit.id,
+        appSource: isRemote ? 'ssh' : entry.appSource || 'standalone',
+        accountName: entry.accountName || '',
+        steps: entry.steps,
+        isCurrentConv: true,
+      });
+    }
+  } else {
+    for (const [cid, entry] of cacheStore.listCachedTrajectoryEntries()) {
+      if (!entry || !Array.isArray(entry.steps) || entry.steps.length === 0) continue;
+      const cidLower = String(cid || '').toLowerCase();
+      if (!familySet.has(cidLower)) continue;
+      familyEntries.push({
+        cascadeId: cid,
+        appSource: isRemote ? 'ssh' : entry.appSource || 'standalone',
+        accountName: entry.accountName || '',
+        steps: entry.steps,
+        isCurrentConv: true,
+      });
+    }
   }
 
   return computeFamilySessionBuckets({
@@ -2081,6 +2441,8 @@ export function aggregateConsumptionPresetBundle(params) {
       trendSeries: agg.trendSeries,
       sourcesBreakdown: agg.sourcesBreakdown,
       modelBreakdown: agg.modelBreakdown,
+      topConversations: agg.topConversations || [],
+      topWorkspaces: agg.topWorkspaces || [],
     };
   }
 

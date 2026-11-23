@@ -65,31 +65,31 @@ export function hasBuiltinNodeSqlite() {
  * @param {string} dbPath
  * @returns {{ exists: boolean, mtimeMs: number, sig: string }}
  */
-export function computeSqliteWalSig(dbPath) {
-  if (!dbPath || typeof dbPath !== 'string' || !existsSync(dbPath)) {
+export function computeSqliteWalSig(dbPath, { skipWalCheck = false } = {}) {
+  if (!dbPath || typeof dbPath !== 'string') {
     return { exists: false, mtimeMs: 0, sig: '' };
   }
   let dbStat = null;
   try {
-    dbStat = statSync(dbPath);
+    dbStat = statSync(dbPath, { throwIfNoEntry: false });
   } catch {
     return { exists: false, mtimeMs: 0, sig: '' };
   }
   if (!dbStat) return { exists: false, mtimeMs: 0, sig: '' };
 
   let walStat = null;
-  const walPath = `${dbPath}-wal`;
-  if (existsSync(walPath)) {
+  if (!skipWalCheck) {
     try {
-      walStat = statSync(walPath);
+      walStat = statSync(`${dbPath}-wal`, { throwIfNoEntry: false });
     } catch {
       walStat = null;
     }
   }
   const dbMtimeMs = Number(dbStat.mtimeMs || 0);
   const dbSize = Number(dbStat.size || 0);
-  const walMtimeMs = Number(walStat?.mtimeMs || 0);
   const walSize = Number(walStat?.size || 0);
+  // 0 字节的空 .db-wal 不含未 checkpoint 事务帧，忽略其 mtime 避免只读打开或宿主 LRU 驱逐触发死循环重扫
+  const walMtimeMs = walSize > 0 ? Number(walStat?.mtimeMs || 0) : 0;
   return {
     exists: true,
     mtimeMs: Math.max(dbMtimeMs, walMtimeMs),

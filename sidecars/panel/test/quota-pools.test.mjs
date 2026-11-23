@@ -78,6 +78,10 @@ test('Ultra user: Argon and Flash sharing Gemini Models remain a single Gemini p
     Array.from(p.quotas.pools, (pool) => pool.poolKey),
     ['Gemini', 'Claude & GPT']
   );
+  assert.equal(p.account.tierId, 'g1-ultra-lite-tier');
+  assert.equal(p.account.tierName, 'Google AI Ultra');
+  assert.equal(p.account.tierMultiplier, '5x');
+  assert.equal(p.account.planName, '5x');
   assert.equal(p.quotas.activePool.family, 'Gemini');
   assert.equal(p.quotas.activePool.weeklyRemainingPct, 8.7);
   assert.equal(p.quotas.weekly.poolFamily, 'Gemini');
@@ -308,6 +312,27 @@ test('telemetryStore isEquivalentTelemetry detects quota changes in non-active p
   const d = structuredClone(a);
   d.quotas.pools[0].cycle5h = { tokens: 50_000, costUsd: 0.15, calls: 2 };
   assert.equal(ctx.compare(a, d), false, 'Pool cycle5h change must trigger store update');
+  const e = structuredClone(a);
+  e.quotas.pools[0].rateEstimate = {
+    rate5hPctPerUsd: 2,
+    rateWeeklyPctPerUsd: 0.5,
+    eqFull5hUsd: 50,
+    eqFullWeeklyUsd: 200,
+    samples5h: 6,
+    samplesWeekly: 6,
+    models: [
+      {
+        model: 'Gemini 4 Carbon',
+        rate5hPctPerUsd: 2,
+        rateWeeklyPctPerUsd: 0.5,
+        eqFull5hUsd: 50,
+        eqFullWeeklyUsd: 200,
+        multiplier: 3,
+        samples: 6,
+      },
+    ],
+  };
+  assert.equal(ctx.compare(a, e), false, 'Pool rateEstimate change must trigger store update');
   assert.equal(ctx.compare(a, structuredClone(a)), true);
 });
 
@@ -662,4 +687,153 @@ test('per-pool cycle5h and cycleWeekly isolate each pool by its own reset window
   assert.equal(cycleModelsTok, 155_000);
   const cycleSourcesTok = pCycle.consumption.sourcesBreakdown.reduce((sum, s) => sum + s.totalTokens, 0);
   assert.equal(cycleSourcesTok, 155_000);
+});
+
+test('account tier badge distinguishes Ultra 5x (g1-ultra-lite-tier) vs Ultra 20x (g1-ultra-tier) and deduplicates Pro/Free', async () => {
+  const { formatAccountTierBadge } = await import('../src/components/widgets/QuotaPoolsWidget.js');
+
+  const hUltra20 = backendHarness({
+    userStatus: {
+      userTier: { id: 'g1-ultra-tier', name: 'Google AI Ultra' },
+      planStatus: { planInfo: { planName: 'Pro' } },
+    },
+  });
+  const p20 = await hUltra20.buildTelemetryPayloadInternal(null);
+  assert.equal(p20.account.tierMultiplier, '20x');
+  assert.equal(p20.account.planName, '20x');
+  assert.equal(formatAccountTierBadge(p20.account), 'Google AI Ultra · 20x');
+
+  const hUltra5 = backendHarness({
+    userStatus: {
+      userTier: { id: 'g1-ultra-lite-tier', name: 'Google AI Ultra' },
+      planStatus: { planInfo: { planName: 'Pro' } },
+    },
+  });
+  const p5 = await hUltra5.buildTelemetryPayloadInternal(null);
+  assert.equal(p5.account.tierMultiplier, '5x');
+  assert.equal(p5.account.planName, '5x');
+  assert.equal(formatAccountTierBadge(p5.account), 'Google AI Ultra · 5x');
+
+  const hUltraNoId = backendHarness({
+    userStatus: {
+      userTier: { name: 'Google AI Ultra' },
+      planStatus: { planInfo: { planName: 'Pro' } },
+    },
+  });
+  const pNoId = await hUltraNoId.buildTelemetryPayloadInternal(null);
+  assert.equal(pNoId.account.tierMultiplier, '');
+  assert.equal(formatAccountTierBadge(pNoId.account), 'Google AI Ultra');
+
+  const hPro = backendHarness({
+    userStatus: {
+      userTier: { id: 'g1-pro-tier', name: 'Google AI Pro' },
+      planStatus: { planInfo: { planName: 'Pro' } },
+    },
+  });
+  const pPro = await hPro.buildTelemetryPayloadInternal(null);
+  assert.equal(formatAccountTierBadge(pPro.account), 'Google AI Pro');
+
+  assert.equal(
+    formatAccountTierBadge({ tierName: 'Google AI Free', planName: 'Free' }),
+    'Google AI Free'
+  );
+  assert.equal(
+    formatAccountTierBadge({ tierName: 'Google AI', planName: 'Enterprise' }),
+    'Google AI · Enterprise'
+  );
+});
+
+test('argon_weekly capsule & CLI slot enables only when user has an Argon weekly pool and auto-hides otherwise', async () => {
+  const [
+    { normalizeTopbarCapsuleSlots },
+    { hasArgonWeeklyQuotaPool, resolveCapsuleQuotaSlotPct },
+    { formatCliStatusLineCapsule },
+    { getCapsuleMetricOptions, resolveCapsuleMetricPresentation },
+    { setI18nLanguage },
+  ] = await Promise.all([
+    import('../shared/settings-normalization.mjs'),
+    import('../shared/telemetry-display-rules.mjs'),
+    import('../backend/cli-statusline-config.mjs'),
+    import('../src/registries/metricRegistry.js'),
+    import('../src/i18n/index.js'),
+  ]);
+  setI18nLanguage('zh-CN');
+
+  const slots = normalizeTopbarCapsuleSlots(['tps', 'argon_weekly', 'context']);
+  assert.deepEqual(slots, ['tps', 'argon_weekly', 'context']);
+
+  const proQuotas = {
+    pools: [
+      { poolKey: 'Gemini', remainingPct: 90, weeklyRemainingPct: 80 },
+      { poolKey: 'Argon', poolLabel: 'Gemini 4 Argon', weeklyRemainingPct: 42 },
+      { poolKey: 'Claude & GPT', remainingPct: 100, weeklyRemainingPct: 100 },
+    ],
+  };
+  const ultraQuotas = {
+    pools: [
+      { poolKey: 'Gemini', remainingPct: 90, weeklyRemainingPct: 80 },
+      { poolKey: 'Claude & GPT', remainingPct: 100, weeklyRemainingPct: 100 },
+    ],
+  };
+
+  assert.equal(hasArgonWeeklyQuotaPool(proQuotas), true);
+  assert.equal(hasArgonWeeklyQuotaPool(ultraQuotas), false);
+  assert.equal(resolveCapsuleQuotaSlotPct(proQuotas, 'argon_weekly'), 42);
+  assert.equal(resolveCapsuleQuotaSlotPct(ultraQuotas, 'argon_weekly'), null);
+
+  // Picker options show argon_weekly only for Argon pool users (or if already selected)
+  const optsPro = getCapsuleMetricOptions({ quotas: proQuotas });
+  const optsUltra = getCapsuleMetricOptions({ quotas: ultraQuotas });
+  const optsUltraSelected = getCapsuleMetricOptions({
+    quotas: ultraQuotas,
+    selectedSlots: ['argon_weekly'],
+  });
+  assert.equal(optsPro.some((o) => o.value === 'argon_weekly'), true);
+  assert.equal(optsUltra.some((o) => o.value === 'argon_weekly'), false);
+  assert.equal(optsUltraSelected.some((o) => o.value === 'argon_weekly'), true);
+
+  // Topbar capsule presentation renders A周 42% for Pro and hides cleanly for Ultra
+  const presPro = resolveCapsuleMetricPresentation(
+    'argon_weekly',
+    { hasTelemetry: true, quotas: proQuotas },
+    34.56
+  );
+  assert.equal(presPro.hidden, false);
+  assert.equal(presPro.prefix, 'A周');
+  assert.equal(presPro.text, '42%');
+
+  const presUltra = resolveCapsuleMetricPresentation(
+    'argon_weekly',
+    { hasTelemetry: true, quotas: ultraQuotas },
+    34.56
+  );
+  assert.equal(presUltra.hidden, true);
+
+  // CLI status line renders A周 42% for Pro and omits argon_weekly cleanly for Ultra
+  const cliPro = formatCliStatusLineCapsule(
+    { hasTelemetry: true, stepCount: 3, tps: 50, usedPct: 30, quotas: proQuotas },
+    { slots: ['tps', 'argon_weekly', 'context'], language: 'zh-CN', color: false }
+  );
+  assert.match(cliPro, /A周 42%/);
+
+  const cliUltra = formatCliStatusLineCapsule(
+    { hasTelemetry: true, stepCount: 3, tps: 50, usedPct: 30, quotas: ultraQuotas },
+    { slots: ['tps', 'argon_weekly', 'context'], language: 'zh-CN', color: false }
+  );
+  assert.doesNotMatch(cliUltra, /A周/);
+});
+
+test('formatPctNumber collapses boundary 0.0 -> 0 and 100.0 -> 100 while preserving intermediate decimals', async () => {
+  const { formatPctNumber } = await import('../src/core/formatters.js');
+  assert.equal(formatPctNumber(0), '0');
+  assert.equal(formatPctNumber(0, { withSymbol: true }), '0%');
+  assert.equal(formatPctNumber(0.04, { withSymbol: true }), '0%');
+  assert.equal(formatPctNumber(-0.01, { withSymbol: true }), '0%');
+  assert.equal(formatPctNumber(100), '100');
+  assert.equal(formatPctNumber(100, { withSymbol: true }), '100%');
+  assert.equal(formatPctNumber(99.96, { withSymbol: true }), '100%');
+  assert.equal(formatPctNumber(0.5, { withSymbol: true }), '0.5%');
+  assert.equal(formatPctNumber(1.0, { withSymbol: true }), '1.0%');
+  assert.equal(formatPctNumber(50.0, { withSymbol: true }), '50.0%');
+  assert.equal(formatPctNumber(99.9, { withSymbol: true }), '99.9%');
 });

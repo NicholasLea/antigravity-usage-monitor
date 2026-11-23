@@ -8,15 +8,26 @@
  * 4. 跨子系统共享的内存态缓存容器（采用对象属性就地更新设计，兼容 ES Module 与 VM 沙箱）。
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inferCompactionStepModels, normalizeCachedStep } from '../trajectory-metrics.mjs';
+import { writeJsonAtomicSync } from './fs-atomic.mjs';
+import { isPlainObject } from './http-helpers.mjs';
 import { writeTrajectoryCacheFile } from './trajectory-cache-file.mjs';
+import {
+  CACHE_RUNNING_SAVE_INTERVAL_MS,
+  createTrajectoryCacheStore,
+} from './trajectory-cache-store.mjs';
 import { normalizeFullSettings } from './settings-schema.mjs';
 
+export { CACHE_RUNNING_SAVE_INTERVAL_MS, isPlainObject };
+
 export {
+  CLI_STATUSLINE_PRESETS,
+  CONTEXT_AGENT_MODES,
+  DEFAULT_CLI_STATUSLINE_SLOTS,
+  DEFAULT_CONTEXT_AGENT_MODE,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -26,8 +37,10 @@ export {
   DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_TOPBAR_SLOTS,
   FONT_SCALE_KEYS,
+  MAX_CLI_STATUSLINE_SLOTS,
   MAX_POPOVER_WIDTH,
   MAX_TOPBAR_SLOTS,
+  MIN_CLI_STATUSLINE_SLOTS,
   MIN_POPOVER_WIDTH,
   MIN_TOPBAR_SLOTS,
   OVERVIEW_METRIC_KEYS,
@@ -37,6 +50,9 @@ export {
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
   createDefaultSettingsObject,
+  normalizeCliStatusLineSlots,
+  normalizeContextAgentMode,
+  normalizeExperimentalQuotaReservation,
   normalizeFontScale,
   normalizeFullSettings,
   normalizeHoverModules,
@@ -57,6 +73,7 @@ export {
   normalizeWeeklyLimitMode,
   normalizeWindowMountMode,
   parseStepTokenComboSegments,
+  resolveEffectiveCliStatusLineSlots,
 } from './settings-schema.mjs';
 
 /**
@@ -150,6 +167,7 @@ export const SETTINGS_FILE = join(DATA_DIR, 'settings.json');
 export const CACHE_FILE = join(DATA_DIR, 'trajectory_usage_cache.json');
 export const REMOTE_CATALOG_CACHE_FILE = join(DATA_DIR, 'remote_pricing_cache.json');
 export const CLI_STATUS_SNAPSHOT_FILE = join(DATA_DIR, 'cli-status-snapshot.json');
+export const QUOTA_RESERVATION_STATE_FILE = join(DATA_DIR, 'quota_reservation_state.json');
 
 /**
  * 本地对话记录目录、脑图日志目录、守护发现目录与跨端深层统计缓存路径候选列表（联合覆盖 Desktop / CLI / IDE）。
@@ -280,16 +298,6 @@ export const CLOUD_SYNC_RETRY_COOLDOWN_MS = 5 * 60 * 1000;
 export const CACHE_SCHEMA_VERSION = 'v10-model-identity';
 
 /**
- * 判断输入值是否为非数组普通对象（Plain Object）。
- *
- * @param {unknown} v
- * @returns {boolean}
- */
-export function isPlainObject(v) {
-  return Boolean(v) && typeof v === 'object' && !Array.isArray(v);
-}
-
-/**
  * 安全读取并解析本地 JSON 文件；文件不存在或解析失败时返回 `fallback`。
  *
  * @param {string} filePath 目标文件绝对路径
@@ -318,7 +326,7 @@ export function saveJson(filePath, data) {
     if (filePath === CACHE_FILE) {
       writeTrajectoryCacheFile(filePath, data);
     } else {
-      writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+      writeJsonAtomicSync(filePath, data);
     }
     return true;
   } catch (err) {
@@ -344,12 +352,22 @@ export function roundMetric(value) {
   return Number.isFinite(value) ? +value.toFixed(1) : null;
 }
 
+const RUNTIME_CODE_VERSION_TTL_MS = 2_000;
+let cachedRuntimeCodeVersion = '';
+let cachedRuntimeCodeVersionExpiresAt = 0;
+
 /**
  * 计算前端产物与后端源码文件的最大修改时间戳，用于插件热更新后触发客户端重载。
+ * 内置 2 秒短期记忆化缓存，避免桥接守护与轮询循环高频重复执行 ~80 次同步 `statSync` / `readdirSync`。
  *
+ * @param {{ force?: boolean }} [options={}]
  * @returns {string}
  */
-export function computeRuntimeCodeVersion() {
+export function computeRuntimeCodeVersion(options = {}) {
+  const nowMs = Date.now();
+  if (!options?.force && cachedRuntimeCodeVersion && nowMs < cachedRuntimeCodeVersionExpiresAt) {
+    return cachedRuntimeCodeVersion;
+  }
   let maxMtime = 0;
   const candidates = [
     join(HERE, 'app.js'),
@@ -378,168 +396,66 @@ export function computeRuntimeCodeVersion() {
   }
   for (const file of candidates) {
     try {
-      if (existsSync(file)) {
-        const mtime = Math.floor(statSync(file).mtimeMs || 0);
+      const st = statSync(file, { throwIfNoEntry: false });
+      if (st) {
+        const mtime = Math.floor(st.mtimeMs || 0);
         if (mtime > maxMtime) maxMtime = mtime;
       }
     } catch {
       // 忽略单文件 stat 异常
     }
   }
-  return String(maxMtime || Date.now());
+  cachedRuntimeCodeVersion = String(maxMtime || nowMs);
+  cachedRuntimeCodeVersionExpiresAt = nowMs + RUNTIME_CODE_VERSION_TTL_MS;
+  return cachedRuntimeCodeVersion;
 }
 
 // ---------------------------------------------------------------------------
-// 跨模块共享运行时状态容器（启动时自动完成历史轨迹缓存迁移与损坏结构防御）
+// 跨模块共享运行时状态容器（首次访问时惰性加载历史轨迹缓存，避免 CLI 状态栏等无缓存消费者付出 13MB 解析开销）
 // ---------------------------------------------------------------------------
-
-const loadedTrajectoryCache = loadJson(CACHE_FILE, {});
-let initialCacheMigrated =
-  loadedTrajectoryCache !== null &&
-  loadedTrajectoryCache !== undefined &&
-  !isPlainObject(loadedTrajectoryCache);
 
 /**
- * 内存中的会话轨迹步骤缓存：`cascadeId -> { signature, accountName, title, lastModifiedMs, diskMtimeMs, wasRunning, steps }`
+ * 本机内存态轨迹步骤缓存容器（委托 `createTrajectoryCacheStore`，首次读取时惰性加载历史缓存）。
  */
-const trajectoryCache = Object.create(null);
-if (isPlainObject(loadedTrajectoryCache)) {
-  for (const [id, entry] of Object.entries(loadedTrajectoryCache)) {
-    if (!id || !isPlainObject(entry)) {
-      initialCacheMigrated = true;
-      continue;
-    }
-    const rawSteps = Array.isArray(entry.steps) ? entry.steps : [];
-    if (!Array.isArray(entry.steps)) {
-      initialCacheMigrated = true;
-    }
-    const objectSteps = rawSteps.filter((s) => isPlainObject(s));
-    if (objectSteps.length !== rawSteps.length) {
-      initialCacheMigrated = true;
-    }
-    const normalizedSteps = objectSteps.map((s) => {
-      const norm = normalizeCachedStep(s);
-      if (norm !== s) initialCacheMigrated = true;
-      return norm;
-    });
-    const finalSteps = inferCompactionStepModels(normalizedSteps);
-    for (let i = 0; i < finalSteps.length; i++) {
-      if (finalSteps[i] !== normalizedSteps[i]) {
-        initialCacheMigrated = true;
-        break;
-      }
-    }
-    trajectoryCache[id] = { ...entry, steps: finalSteps };
-  }
-}
+const localTrajectoryCacheStore = createTrajectoryCacheStore({
+  cacheFilePath: CACHE_FILE,
+  loadJsonFn: loadJson,
+  writeCacheFn: (targetPath, dataObj) => saveJson(targetPath, dataObj),
+  shouldBypassThrottleFn: (allowThrottleInTest) =>
+    lsRuntimeEndpoint.addr === 'test.invalid' && !allowThrottleInTest,
+  registerExitHook: true,
+});
 
 export function getCachedTrajectory(cascadeId) {
-  return trajectoryCache[cascadeId];
+  return localTrajectoryCacheStore.getCachedTrajectory(cascadeId);
+}
+
+export function getCachedTrajectoryEntryByLower(cascadeId) {
+  return localTrajectoryCacheStore.getCachedTrajectoryEntryByLower(cascadeId);
 }
 
 export function listCachedTrajectoryEntries() {
-  return Object.entries(trajectoryCache);
+  return localTrajectoryCacheStore.listCachedTrajectoryEntries();
 }
 
 export function setCachedTrajectory(cascadeId, entry) {
-  trajectoryCache[cascadeId] = entry;
+  localTrajectoryCacheStore.setCachedTrajectory(cascadeId, entry);
 }
 
 export function removeCachedTrajectory(cascadeId) {
-  delete trajectoryCache[cascadeId];
+  localTrajectoryCacheStore.removeCachedTrajectory(cascadeId);
 }
-
-/**
- * 缓存状态与外部深层统计缓存 Memo。
- * 运行中会话采用 30 秒节流落盘（转入 IDLE、重建缓存或进程退出时立即刷盘），消除高频文件替换开销。
- */
-export const CACHE_RUNNING_SAVE_INTERVAL_MS = 30_000;
-
-const cacheState = {
-  needsSave: initialCacheMigrated,
-  lastSavedAtMs: 0,
-  flushTimer: null,
-};
 
 export function hasPendingTrajectoryCacheSave() {
-  return cacheState.needsSave;
+  return localTrajectoryCacheStore.hasPendingTrajectoryCacheSave();
 }
 
-function cancelPendingCacheFlushTimer() {
-  if (cacheState.flushTimer) {
-    try {
-      clearTimeout(cacheState.flushTimer);
-    } catch {
-      // 忽略沙箱无 clearTimeout 异常
-    }
-    cacheState.flushTimer = null;
-  }
-}
-
-/**
- * 立即将当前内存态 `trajectoryCache` 原子刷入磁盘并清理挂起定时器。
- *
- * @returns {boolean}
- */
 export function flushTrajectoryCacheNow() {
-  cancelPendingCacheFlushTimer();
-  const ok = saveJson(CACHE_FILE, trajectoryCache);
-  cacheState.needsSave = !ok;
-  if (ok) {
-    cacheState.lastSavedAtMs = Date.now();
-  }
-  return ok;
+  return localTrajectoryCacheStore.flushTrajectoryCacheNow();
 }
 
-/**
- * 按当前是否存在运行中会话决定立即写盘还是 30 秒节流延迟写盘。
- * 默认单元测试沙箱（`lsRuntimeEndpoint.addr === 'test.invalid'`）同步落盘以保持断言确定性。
- *
- * @param {{ hasRunningSessions?: boolean, allowThrottleInTest?: boolean }} [options={}]
- */
-export function persistTrajectoryCacheIfNeeded({
-  hasRunningSessions = false,
-  allowThrottleInTest = false,
-} = {}) {
-  if (
-    (lsRuntimeEndpoint.addr === 'test.invalid' && !allowThrottleInTest) ||
-    typeof setTimeout !== 'function'
-  ) {
-    flushTrajectoryCacheNow();
-    return;
-  }
-  const nowMs = Date.now();
-  const elapsedMs = nowMs - (cacheState.lastSavedAtMs || 0);
-  if (
-    !hasRunningSessions ||
-    cacheState.lastSavedAtMs === 0 ||
-    elapsedMs >= CACHE_RUNNING_SAVE_INTERVAL_MS
-  ) {
-    flushTrajectoryCacheNow();
-    return;
-  }
-  cacheState.needsSave = true;
-  if (!cacheState.flushTimer) {
-    const delayMs = Math.max(100, CACHE_RUNNING_SAVE_INTERVAL_MS - elapsedMs);
-    const timer = setTimeout(() => {
-      cacheState.flushTimer = null;
-      if (cacheState.needsSave) {
-        flushTrajectoryCacheNow();
-      }
-    }, delayMs);
-    if (timer && typeof timer.unref === 'function') {
-      timer.unref();
-    }
-    cacheState.flushTimer = timer;
-  }
-}
-
-if (typeof process !== 'undefined' && typeof process?.once === 'function') {
-  process.once('exit', () => {
-    if (cacheState.needsSave) {
-      flushTrajectoryCacheNow();
-    }
-  });
+export function persistTrajectoryCacheIfNeeded(options = {}) {
+  localTrajectoryCacheStore.persistTrajectoryCacheIfNeeded(options);
 }
 
 export const externalDeepStatsMemo = {
@@ -603,13 +519,7 @@ export const pluginUpdateState = {
  * @returns {boolean} 是否成功写回空白缓存文件
  */
 export function clearRuntimeCaches() {
-  if (!saveJson(CACHE_FILE, {})) return false;
-  cancelPendingCacheFlushTimer();
-  for (const key of Object.keys(trajectoryCache)) {
-    delete trajectoryCache[key];
-  }
-  cacheState.needsSave = false;
-  cacheState.lastSavedAtMs = 0;
+  if (!localTrajectoryCacheStore.clearCache()) return false;
   externalDeepStatsMemo.sig = '';
   externalDeepStatsMemo.convos.clear();
   localSummaryMemo.sig = '';

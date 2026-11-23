@@ -17,6 +17,7 @@ import {
   trackEndpointRequestStart,
 } from './endpoint-registry.mjs';
 import { isLocalHostRequest, readLocalAsync } from './http-helpers.mjs';
+import { revealLocalExportFile, writeLocalExportFile } from './file-exporter.mjs';
 import { clearScannerRuntimeMemos } from './local-scanner.mjs';
 import {
   SETTINGS_FILE,
@@ -63,7 +64,12 @@ import {
   resolveDevToolsPortCandidates,
   startDefaultWindowBridge,
 } from './window-bridge.mjs';
-import { ensureCliStatusLineConfigured } from './cli-statusline-config.mjs';
+import { getQuotaReservationLogSnapshot } from './quota-reservation.mjs';
+import { getSessionMigrationCatalog, migrateSessions } from './session-migrator.mjs';
+import {
+  ensureCliStatusLineConfigured,
+  getCliStatusLineRuntimeStatus,
+} from './cli-statusline-config.mjs';
 
 export const bootBundleVersion = computeRuntimeCodeVersion();
 
@@ -86,7 +92,8 @@ function projectDisplayStep(st) {
   const {
     stepIndex, createdAtMs, isCompactionStep, modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
-    streamDurationSec, selectedSpeedReason, anomaly, anomalySig, contextTokens, inputTokens, cacheReadTokens,
+    nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason, anomaly, anomalySig,
+    contextTokens, inputTokens, cacheReadTokens,
     outputTokens, thinkingTokens, responseTokens, cacheHitPct, costUsd, inCostUsd,
     cacheCostUsd, outCostUsd, agentId, agentCascadeId, agentKind, agentOrdinal,
     agentCustomRole, agentLabel, agentBadge, agentRole, agentIndex, isSubagent,
@@ -98,7 +105,7 @@ function projectDisplayStep(st) {
   return {
     stepIndex, createdAtMs, isCompactionStep, modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
-    streamDurationSec, selectedSpeedReason,
+    nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason,
     ...(anomaly ? { anomaly, anomalySig } : {}),
     contextTokens, inputTokens, cacheReadTokens,
     outputTokens, thinkingTokens, responseTokens, cacheHitPct, costUsd, inCostUsd,
@@ -370,12 +377,16 @@ export function executeSettingsAction(data) {
     current.windowMountMode,
     current.enableWindowOverlay
   );
+  const contextWindowScopeChanged =
+    (updated.contextWindowMainEnabled !== false) !== (current.contextWindowMainEnabled !== false) ||
+    (updated.contextWindowSwarmEnabled === true) !== (current.contextWindowSwarmEnabled === true);
   const affectsBackendTelemetry =
     updated.weeklyLimitMode !== current.weeklyLimitMode ||
     updated.weeklyTokenBudget !== current.weeklyTokenBudget ||
     updated.weeklyCostBudget !== current.weeklyCostBudget ||
     updated.enableWindowOverlay !== (current.enableWindowOverlay !== false) ||
-    updated.windowMountMode !== prevMountMode;
+    updated.windowMountMode !== prevMountMode ||
+    contextWindowScopeChanged;
   inFlightRequests.clear();
   if (affectsBackendTelemetry) {
     clearTelemetryBuilderMemo();
@@ -385,6 +396,8 @@ export function executeSettingsAction(data) {
     updated.windowMountMode !== prevMountMode
   ) {
     void notifyWindowOverlaySetting(updated.enableWindowOverlay);
+  } else if (contextWindowScopeChanged) {
+    void notifyModelContextWindowsChanged();
   }
   if ((updated.enableCliStatusLine !== false) !== (current.enableCliStatusLine !== false)) {
     ensureCliStatusLineConfigured({ enabled: updated.enableCliStatusLine !== false });
@@ -508,7 +521,11 @@ export function executeResetSettingsAction() {
     updated.windowMountMode !== prevMountMode
   ) {
     void notifyWindowOverlaySetting(updated.enableWindowOverlay);
-  } else if (Object.keys(current.modelContextWindows).length) {
+  } else if (
+    Object.keys(current.modelContextWindows).length ||
+    current.contextWindowMainEnabled === false ||
+    current.contextWindowSwarmEnabled === true
+  ) {
     void notifyModelContextWindowsChanged();
   }
   if ((updated.enableCliStatusLine !== false) !== (current.enableCliStatusLine !== false)) {
@@ -632,6 +649,142 @@ export async function executeBridgeRelaunchAction() {
   };
 }
 
+export function executeCliStatusLineAction(rawAction) {
+  const action = String(rawAction || '').trim();
+  if (action !== 'force_install' && action !== 'clear_flags') {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'Unsupported CLI statusLine action' }),
+    };
+  }
+
+  let current = loadSettings();
+  if (action === 'force_install' && current.enableCliStatusLine === false) {
+    const nextSettings = normalizeFullSettings({
+      ...current,
+      enableCliStatusLine: true,
+    });
+    if (saveJson(SETTINGS_FILE, nextSettings)) {
+      current = nextSettings;
+    }
+  }
+
+  const result = ensureCliStatusLineConfigured({
+    enabled: true,
+    forceReplaceCustom: action === 'force_install',
+    preserveManagedFlags: false,
+  });
+  const cliStatusLine = getCliStatusLineRuntimeStatus();
+  const ok = Boolean(result?.updated || result?.alreadyConfigured || cliStatusLine.configured);
+  return {
+    status: ok ? 200 : 500,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify({
+      ok,
+      action,
+      result,
+      cliStatusLine,
+      settings: current,
+    }),
+  };
+}
+
+export function executeSessionMigrationCatalogAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        available: false,
+        sqliteSupported: false,
+        clients: [],
+        sessionsByClient: {},
+        desktopProjects: [],
+        error: 'unsupported_remote',
+      }),
+    };
+  }
+  const catalog = getSessionMigrationCatalog();
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(catalog),
+  };
+}
+
+export function executeSessionMigrationMigrateAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'unsupported_remote', results: [] }),
+    };
+  }
+  const cleanData = stripEndpointField(data);
+  const result = migrateSessions(cleanData);
+  if (result.migratedCount > 0) {
+    clearScannerRuntimeMemos(LOCAL_ENDPOINT_ID);
+    clearTelemetryBuilderMemo(LOCAL_ENDPOINT_ID);
+  }
+  return {
+    status: Number(result.status || (result.ok ? 200 : 400)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+export function executeExportFileAction(data, opts = {}) {
+  const result = writeLocalExportFile(data || {}, {
+    ...(opts?.exportDir ? { overrideDir: opts.exportDir } : {}),
+    ...(opts?.homeDir ? { homeDir: opts.homeDir } : {}),
+    ...(opts?.fallbackDataDir ? { fallbackDataDir: opts.fallbackDataDir } : {}),
+  });
+  return {
+    status: Number(result.status || (result.ok ? 200 : 400)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+export function executeQuotaReservationLogAction() {
+  const snapshot = getQuotaReservationLogSnapshot();
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify({ ok: true, ...snapshot }),
+  };
+}
+
+export function executeRevealFileAction(data, opts = {}) {
+  const result = revealLocalExportFile(data?.filePath, {
+    ...(opts?.platform ? { platform: opts.platform } : {}),
+    ...(typeof opts?.spawnFn === 'function' ? { spawnFn: opts.spawnFn } : {}),
+  });
+  return {
+    status: Number(result.status || (result.ok ? 200 : 400)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
 const BRIDGE_ROUTE_LOOKUP = new Map(
   BRIDGE_API_ROUTE_DEFS.map((r) => [`${r.method}:${r.path}`, r.action])
 );
@@ -644,6 +797,24 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
     case 'settings':
       if (isPlainObject(data) && data.__bridgeAction === 'relaunch') {
         return executeBridgeRelaunchAction();
+      }
+      if (isPlainObject(data) && typeof data.__cliStatusLineAction === 'string') {
+        return executeCliStatusLineAction(data.__cliStatusLineAction);
+      }
+      if (isPlainObject(data) && data.__sessionMigrationAction === 'catalog') {
+        return executeSessionMigrationCatalogAction(data, opts);
+      }
+      if (isPlainObject(data) && data.__sessionMigrationAction === 'migrate') {
+        return executeSessionMigrationMigrateAction(data.payload || data, opts);
+      }
+      if (isPlainObject(data) && data.__exportFileAction === 'save') {
+        return executeExportFileAction(data.payload || data, opts);
+      }
+      if (isPlainObject(data) && data.__exportFileAction === 'reveal') {
+        return executeRevealFileAction(data.payload || data, opts);
+      }
+      if (isPlainObject(data) && data.__quotaReservationAction === 'log') {
+        return executeQuotaReservationLogAction();
       }
       return executeSettingsAction(data);
     case 'accounts_get':
@@ -662,6 +833,16 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executePluginUpdateAction();
     case 'bridge_relaunch':
       return executeBridgeRelaunchAction();
+    case 'session_migration_catalog':
+      return executeSessionMigrationCatalogAction(data, opts);
+    case 'session_migration_migrate':
+      return executeSessionMigrationMigrateAction(data, opts);
+    case 'export_file':
+      return executeExportFileAction(data, opts);
+    case 'reveal_file':
+      return executeRevealFileAction(data, opts);
+    case 'quota_reservation_log':
+      return executeQuotaReservationLogAction();
     default:
       return {
         status: 404,

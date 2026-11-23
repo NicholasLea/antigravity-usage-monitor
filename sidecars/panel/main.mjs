@@ -242,5 +242,28 @@ if (isTestHarnessEnv) {
     );
   }
 } else {
+  let processStopping = false;
+  async function handleProcessExitSignal(exitCode = 0) {
+    if (processStopping) return;
+    processStopping = true;
+    const forceTimer = setTimeout(() => process.exit(exitCode), 1800);
+    forceTimer.unref?.();
+    try {
+      if (activeWorker) {
+        const w = activeWorker;
+        activeWorker = null;
+        await stopWorkerGracefully(w);
+      }
+    } finally {
+      clearTimeout(forceTimer);
+      process.exit(exitCode);
+    }
+  }
+  process.once('SIGTERM', () => {
+    void handleProcessExitSignal(0);
+  });
+  process.once('SIGINT', () => {
+    void handleProcessExitSignal(0);
+  });
   void ensureActiveWorker();
 }

@@ -428,6 +428,240 @@ test('future uncatalogued Orchestrator variants never fall back to Carbon identi
   );
 });
 
+test('Orchestrator (Opus 5.5) resolves Claude family, Opus 5.5 pricing, distinct display, and Claude & GPT quota pool across label variants', async () => {
+  const OPUS_ORCH_PH = 'MODEL_PLACEHOLDER_M940';
+  const OPUS_ORCH_PH_2 = 'MODEL_PLACEHOLDER_M941';
+  const OPUS_ORCH_PH_3 = 'MODEL_PLACEHOLDER_M942';
+  const rows = [
+    step(1, OPUS_ORCH_PH),
+    step(2, OPUS_ORCH_PH_2),
+    step(3, OPUS_ORCH_PH_3),
+    step(4, 'MODEL_PLACEHOLDER_M368'),
+  ];
+  const h = backendHarness({
+    clock: () => PROMO_CLOCK_MS,
+    summaries: { test: { stepCount: 4 } },
+    trajectories: {
+      test: {
+        trajectory: {
+          steps: rows,
+          generatorMetadata: [
+            {
+              stepIndices: [1],
+              chatModel: {
+                model: OPUS_ORCH_PH,
+                responseModel: 'claude-opus-5-5',
+                modelDisplayName: 'Orchestrator (Opus 5.5)',
+              },
+            },
+            {
+              stepIndices: [2],
+              chatModel: {
+                model: OPUS_ORCH_PH_2,
+                responseModel: 'claude-opus-5-5-orchestrator',
+                modelDisplayName: 'Orchestrator (Claude Opus 5.5)',
+              },
+            },
+            {
+              stepIndices: [3],
+              chatModel: {
+                model: OPUS_ORCH_PH_3,
+                responseModel: 'claude-orchestrator',
+                modelDisplayName: 'Claude Opus 5.5 (Orchestrator)',
+              },
+            },
+            {
+              stepIndices: [4],
+              chatModel: {
+                model: 'MODEL_PLACEHOLDER_M368',
+                responseModel: 'claude-opus-5-5',
+                modelDisplayName: 'Claude Opus 5.5',
+              },
+            },
+          ],
+        },
+      },
+    },
+  });
+
+  const p = await h.buildTelemetryPayloadInternal('test');
+  const s1 = p.activeConversation.recentSteps.find((s) => s.stepIndex === 1);
+  const s2 = p.activeConversation.recentSteps.find((s) => s.stepIndex === 2);
+  const s3 = p.activeConversation.recentSteps.find((s) => s.stepIndex === 3);
+  const s4 = p.activeConversation.recentSteps.find((s) => s.stepIndex === 4);
+
+  // step() fixture: 1000 input ($4/M = 0.004) + 9000 cache ($0.20/M = 0.0018) + 1000 output ($20/M = 0.02) = 0.0258
+  for (const st of [s1, s2, s3]) {
+    assert.equal(st.modelShort, 'orch-opus-5.5');
+    assert.equal(st.family, 'Claude');
+    assert.equal(st.costUsd, 0.0258);
+  }
+  assert.equal(s1.modelUpstream, 'claude-opus-5-5');
+  assert.equal(s2.modelUpstream, 'claude-opus-5-5-orchestrator (opus-5.5)');
+  assert.equal(s3.modelUpstream, 'claude-orchestrator (opus-5.5)');
+  assert.equal(s4.modelShort, 'opus-5.5');
+  assert.equal(s4.costUsd, 0.0258);
+  assert.equal(p.consumption.account.unpricedCalls, 0);
+
+  // Never misclassified as Carbon/Argon/Neon even if paired with an opaque upstream id
+  assert.equal(h.isCarbonModelIdentifier(OPUS_ORCH_PH, 'gemini-pro-orchestrator', 'Orchestrator (Opus 5.5)'), false);
+  assert.equal(h.isArgonModelIdentifier(OPUS_ORCH_PH, 'claude-opus-5-5-orchestrator', 'Orchestrator (Opus 5.5)'), false);
+  assert.equal(h.isNeonModelIdentifier(OPUS_ORCH_PH, 'claude-opus-5-5-orchestrator', 'Orchestrator (Opus 5.5)'), false);
+
+  // GetUserStatus clientModelConfig without apiProvider and with opaque modelId still classifies as Claude & GPT pool
+  const { quotaPoolsMap, modelQuotas } = h.buildOfficialQuotaPools(null, [
+    {
+      modelOrAlias: { model: 'MODEL_PLACEHOLDER_M949' },
+      modelId: 'orchestrator-v2',
+      label: 'Orchestrator (Opus 5.5)',
+      quotaInfo: { remainingFraction: 0.75, resetTime: '2026-11-25T00:00:00Z' },
+    },
+  ]);
+  const opusQuotaEntry = modelQuotas.find((m) => m.rawKey === 'MODEL_PLACEHOLDER_M949');
+  assert.equal(opusQuotaEntry?.family, 'Claude & GPT');
+  assert.ok(quotaPoolsMap.get('Claude & GPT').models.includes('Orchestrator (Opus 5.5)'));
+  assert.equal(quotaPoolsMap.get('Gemini').models.includes('Orchestrator (Opus 5.5)'), false);
+
+  // Frontend compact/full Orchestrator display works cleanly and stays separate from standalone Opus 5.5
+  assert.equal(resolveModelDisplayInfo(s1, { orchestratorIdMode: 'compact' }).text, 'orchestrator-opus-5.5');
+  assert.equal(resolveModelDisplayInfo(s1, { orchestratorIdMode: 'full' }).text, 'claude-opus-5-5');
+  assert.equal(resolveModelDisplayInfo(s2, { orchestratorIdMode: 'compact' }).text, 'orchestrator-opus-5.5');
+  assert.equal(resolveModelDisplayInfo(s2, { orchestratorIdMode: 'full' }).text, 'claude-opus-5-5-orchestrator (opus-5.5)');
+  assert.equal(resolveModelDisplayInfo(s3, { orchestratorIdMode: 'compact' }).text, 'orchestrator-opus-5.5');
+  assert.equal(resolveModelDisplayInfo(s3, { orchestratorIdMode: 'full' }).text, 'claude-orchestrator (opus-5.5)');
+  assert.equal(
+    resolveModelDisplayInfo(
+      { modelKey: OPUS_ORCH_PH, modelLabel: 'Orchestrator (Opus 5.5)' },
+      { orchestratorIdMode: 'full' }
+    ).text,
+    'orchestrator-opus-5.5',
+    'Non-Gemini Orchestrator without upstream never fabricates gemini-pro-orchestrator-*'
+  );
+  const mergedCompact = mergeModelsByDisplayName(
+    p.modelBreakdown,
+    { modelDisplayMode: 'short', orchestratorIdMode: 'compact' },
+    { preferLabelInShort: true }
+  );
+  assert.ok(mergedCompact.some((m) => m.displayText === 'orchestrator-opus-5.5'));
+  assert.ok(mergedCompact.some((m) => m.displayText === 'Claude Opus 5.5'));
+});
+
+test('Orchestrator executionModel supports Neon and Claude workers without hijacking them into Hydrogen', async () => {
+  const OPUS_ORCH_PH = 'MODEL_PLACEHOLDER_M940';
+  const NEON_WORKER_PH = 'MODEL_PLACEHOLDER_M945';
+  const SONNET_WORKER_PH = 'MODEL_PLACEHOLDER_M946';
+  const UNKNOWN_WORKER_PH = 'MODEL_PLACEHOLDER_M947';
+  const rows = [
+    step(1, OPUS_ORCH_PH),
+    step(2, NEON_WORKER_PH),
+    step(3, 'MODEL_PLACEHOLDER_M535'),
+    step(4, SONNET_WORKER_PH),
+    step(5, UNKNOWN_WORKER_PH),
+  ];
+  const h = backendHarness({
+    clock: () => PROMO_CLOCK_MS,
+    summaries: { test: { stepCount: 5 } },
+    trajectories: {
+      test: {
+        trajectory: {
+          steps: rows,
+          generatorMetadata: [
+            {
+              stepIndices: [1],
+              chatModel: {
+                model: OPUS_ORCH_PH,
+                responseModel: 'claude-opus-5-5',
+                modelDisplayName: 'Orchestrator (Opus 5.5)',
+              },
+              plannerConfig: {
+                planModel: OPUS_ORCH_PH,
+                modelName: 'claude-opus-5-5',
+                planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M535' },
+              },
+            },
+            {
+              stepIndices: [2],
+              chatModel: {
+                model: NEON_WORKER_PH,
+                responseModel: 'gemini-neon-worker-agy',
+                modelDisplayName: 'Gemini Pro',
+              },
+              plannerConfig: {
+                planModel: OPUS_ORCH_PH,
+                modelName: 'claude-opus-5-5-orchestrator',
+                planExecuteConfig: { executionModel: NEON_WORKER_PH },
+              },
+            },
+            {
+              stepIndices: [3],
+              chatModel: {
+                model: 'MODEL_PLACEHOLDER_M535',
+                responseModel: 'gemini-4-neon',
+                modelDisplayName: 'Orchestrator (Opus 5.5)',
+              },
+            },
+            {
+              stepIndices: [4],
+              chatModel: {
+                model: SONNET_WORKER_PH,
+                responseModel: 'claude-sonnet-5-5',
+                modelDisplayName: 'Orchestrator Worker (Sonnet 5.5)',
+              },
+              plannerConfig: {
+                planModel: OPUS_ORCH_PH,
+                modelName: 'claude-opus-5-5-orchestrator',
+                planExecuteConfig: { executionModel: SONNET_WORKER_PH },
+              },
+            },
+            {
+              stepIndices: [5],
+              chatModel: {
+                model: UNKNOWN_WORKER_PH,
+                responseModel: 'mystery-worker-agy',
+                modelDisplayName: 'Orchestrator Worker (Krypton)',
+              },
+            },
+          ],
+        },
+      },
+    },
+  });
+
+  const p = await h.buildTelemetryPayloadInternal('test');
+  const s2 = p.activeConversation.recentSteps.find((s) => s.stepIndex === 2);
+  const s3 = p.activeConversation.recentSteps.find((s) => s.stepIndex === 3);
+  const s4 = p.activeConversation.recentSteps.find((s) => s.stepIndex === 4);
+  const s5 = p.activeConversation.recentSteps.find((s) => s.stepIndex === 5);
+
+  // Dedicated Neon worker (gemini-neon-worker-agy) resolves to Neon Worker with Neon pricing ($3/$0.15/$15 -> 0.0193)
+  assert.equal(s2.modelLabel, 'Orchestrator Worker (Neon)');
+  assert.equal(s2.modelShort, 'neon-4');
+  assert.equal(s2.modelUpstream, 'gemini-neon-worker-agy (neon-4)');
+  assert.equal(s2.family, 'Gemini');
+  assert.equal(s2.costUsd, 0.0193);
+  assert.equal(resolveModelDisplayInfo(s2, { orchestratorIdMode: 'compact' }).text, 'worker-agy-neon');
+  assert.equal(resolveModelDisplayInfo(s2, { orchestratorIdMode: 'full' }).text, 'gemini-neon-worker-agy (neon-4)');
+
+  // Direct M535 Neon execution step with leaked planner name clears leaked label and resolves as Gemini 4 Neon (XHigh)
+  assert.equal(s3.modelLabel, 'Gemini 4 Neon (XHigh)');
+  assert.equal(s3.modelShort, 'neon-4-xhigh');
+  assert.equal(s3.family, 'Gemini');
+  assert.equal(s3.costUsd, 0.0193);
+
+  // Claude Sonnet 5.5 worker keeps Claude family & Sonnet 5.5 pricing ($2/$0.10/$10 -> 0.0129), never Hydrogen
+  assert.equal(s4.modelLabel, 'Orchestrator Worker (Sonnet 5.5)');
+  assert.equal(s4.family, 'Claude');
+  assert.equal(s4.costUsd, 0.0129);
+  assert.equal(resolveModelDisplayInfo(s4, { orchestratorIdMode: 'compact' }).text, 'worker-agy-sonnet-5.5');
+  assert.equal(resolveModelDisplayInfo(s4, { orchestratorIdMode: 'full' }).text, 'claude-sonnet-5-5');
+
+  // Unknown future worker remains unpriced and renders worker-agy-krypton instead of worker-agy-hydrogen
+  assert.equal(s5.modelLabel, 'Orchestrator Worker (Krypton)');
+  assert.equal(s5.costUsd, null);
+  assert.equal(resolveModelDisplayInfo(s5, { orchestratorIdMode: 'compact' }).text, 'worker-agy-krypton');
+  assert.equal(resolveModelDisplayInfo(s5, { orchestratorIdMode: 'full' }).text, 'mystery-worker-agy (krypton)');
+});
+
 test('real-world M669 worker steps (responseModel gemini-flash-worker-agy, displayName Gemini Flash) and uncatalogued executionModel resolve to Hydrogen', async () => {
   const FUTURE_EXEC_PH = 'MODEL_PLACEHOLDER_M799';
   const rows = [step(1, ORCH_CARBON), step(2, ORCH_EXEC_HYDROGEN), step(3, FUTURE_EXEC_PH)];

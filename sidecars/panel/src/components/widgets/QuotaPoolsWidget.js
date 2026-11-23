@@ -13,7 +13,12 @@ import {
   patchStyleVar,
   patchText,
 } from '../../core/domPatch.js';
-import { formatCountdown, formatTokens, formatUsd } from '../../core/formatters.js';
+import {
+  formatCountdown,
+  formatPctNumber,
+  formatTokens,
+  formatUsd,
+} from '../../core/formatters.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 import { getEffectiveLocale, t } from '../../i18n/index.js';
 
@@ -25,7 +30,11 @@ import { getEffectiveLocale, t } from '../../i18n/index.js';
  * @param {{ isPending?: boolean }} [options]
  * @returns {Array<object>}
  */
-export function buildQuotaPoolItems(quotas, minuteTick = 0, { isPending = false } = {}) {
+export function buildQuotaPoolItems(
+  quotas,
+  minuteTick = 0,
+  { isPending = false, showReserved = false } = {}
+) {
   const safeQuotas = quotas || {};
   const activePool = safeQuotas.activePool || {};
   const rawPools =
@@ -52,6 +61,7 @@ export function buildQuotaPoolItems(quotas, minuteTick = 0, { isPending = false 
       isActivePool,
       minuteTick,
       isPending,
+      showReserved: Boolean(showReserved),
     };
   });
   if (
@@ -65,30 +75,48 @@ export function buildQuotaPoolItems(quotas, minuteTick = 0, { isPending = false 
 }
 
 /**
- * 创建单个配额池的 DOM 行结构，内含 5h 限额与每周限额两个可独立显隐的子窗口进度条。
+ * 创建单个配额池的 DOM 行结构，内含 5h 限额及每周限额两个可独立显隐的子窗口进度条。
  */
 export function createPoolQuotaRow() {
   const title5h = h('span', { className: 'quota-win-title', text: '5h' });
   const usage5h = h('span', { className: 'quota-win-usage', hidden: true, text: '' });
   const left5h = h('span', { className: 'quota-win-left' }, [title5h, usage5h]);
-  const meta5h = h('span', { className: 'panel-meta quota-win-meta text-mono', text: '--' });
+  const meta5hBefore = h('span', { text: '--' });
+  const meta5hReserved = h('span', { className: 'quota-reserved-pct', hidden: true, text: '' });
+  const meta5hAfter = h('span', { hidden: true, text: '' });
+  const meta5h = h('span', { className: 'panel-meta quota-win-meta text-mono' }, [
+    meta5hBefore,
+    meta5hReserved,
+    meta5hAfter,
+  ]);
   const fill5h = h('div', { className: 'progress-fill' });
+  const fillReserved5h = h('div', { className: 'progress-fill-reserved' });
+  const track5h = h('div', { className: 'progress-track' }, [fill5h, fillReserved5h]);
   const row5h = h('div', { style: 'display: flex; flex-direction: column; gap: 4px;' }, [
     h('div', { className: 'panel-header quota-win-head' }, [left5h, meta5h]),
-    h('div', { className: 'progress-track' }, [fill5h]),
+    track5h,
   ]);
 
   const titleWk = h('span', { className: 'quota-win-title', text: t('quota.weeklyShort') });
   const usageWk = h('span', { className: 'quota-win-usage', hidden: true, text: '' });
   const leftWk = h('span', { className: 'quota-win-left' }, [titleWk, usageWk]);
-  const metaWk = h('span', { className: 'panel-meta quota-win-meta text-mono', text: '--' });
+  const metaWkBefore = h('span', { text: '--' });
+  const metaWkReserved = h('span', { className: 'quota-reserved-pct', hidden: true, text: '' });
+  const metaWkAfter = h('span', { hidden: true, text: '' });
+  const metaWk = h('span', { className: 'panel-meta quota-win-meta text-mono' }, [
+    metaWkBefore,
+    metaWkReserved,
+    metaWkAfter,
+  ]);
   const fillWk = h('div', { className: 'progress-fill' });
+  const fillReservedWk = h('div', { className: 'progress-fill-reserved' });
+  const trackWk = h('div', { className: 'progress-track' }, [fillWk, fillReservedWk]);
   const rowWk = h('div', { style: 'display: flex; flex-direction: column; gap: 4px;' }, [
     h('div', { className: 'panel-header quota-win-head' }, [leftWk, metaWk]),
-    h('div', { className: 'progress-track' }, [fillWk]),
+    trackWk,
   ]);
 
-  const el = h('div', { style: 'display: flex; flex-direction: column; gap: 8px;' }, [
+  const el = h('div', { className: 'quota-pool-row' }, [
     row5h,
     rowWk,
   ]);
@@ -101,13 +129,23 @@ export function createPoolQuotaRow() {
       title5h,
       usage5h,
       meta5h,
+      meta5hBefore,
+      meta5hReserved,
+      meta5hAfter,
+      track5h,
       fill5h,
+      fillReserved5h,
       rowWk,
       leftWk,
       titleWk,
       usageWk,
       metaWk,
+      metaWkBefore,
+      metaWkReserved,
+      metaWkAfter,
+      trackWk,
       fillWk,
+      fillReservedWk,
     },
   };
 }
@@ -133,18 +171,85 @@ export function formatQuotaSummaryFooter(quotas, account) {
   return { leftText, rightText, tooltip };
 }
 
+function syncQuotaWindowMeter({
+  hasData,
+  usedVal,
+  remVal,
+  resetTime,
+  fallbackMetaText,
+  showReserved,
+  rawReservedPct,
+  leaseCount,
+  metaBeforeEl,
+  metaReservedEl,
+  metaAfterEl,
+  trackEl,
+  fillEl,
+  fillReservedEl,
+}) {
+  const numReserved = showReserved && hasData ? Number(rawReservedPct || 0) : 0;
+  const rsvVal =
+    Number.isFinite(numReserved) && numReserved >= 0.05 ? Math.min(usedVal, numReserved) : 0;
+  const actualVal = Math.max(0, usedVal - rsvVal);
+  const resetStr = hasData ? formatCountdown(resetTime) : '';
+
+  if (hasData && rsvVal > 0) {
+    const rsvStr = formatPctNumber(rsvVal);
+    const actualStr = formatPctNumber(actualVal);
+    const leases = Math.max(1, Number(leaseCount) || 1);
+    const tipText =
+      leases >= 2
+        ? t('quota.reservedTipMulti', { rsv: rsvStr, leases, actual: actualStr })
+        : t('quota.reservedTip', { rsv: rsvStr, actual: actualStr });
+    patchText(
+      metaBeforeEl,
+      t('quota.usedBeforeReserved', { reset: resetStr, used: formatPctNumber(usedVal) })
+    );
+    metaReservedEl.hidden = false;
+    patchText(metaReservedEl, t('quota.reservedTag', { rsv: rsvStr }));
+    patchAttr(metaReservedEl, 'title', tipText);
+    metaAfterEl.hidden = false;
+    patchText(metaAfterEl, t('quota.usedAfterReserved', { rem: formatPctNumber(remVal) }));
+    patchAttr(trackEl, 'title', tipText);
+    const actualWidth = +Math.min(100, actualVal).toFixed(2);
+    const rsvWidth = +Math.min(Math.max(0, 100 - actualWidth), rsvVal).toFixed(2);
+    patchStyleVar(fillEl, '--fill-w', `${actualWidth}%`);
+    patchStyleVar(fillReservedEl, '--reserved-w', `${rsvWidth}%`);
+    patchClasses(fillReservedEl, { 'is-active': true, 'has-sep': actualWidth > 0 });
+  } else {
+    patchText(
+      metaBeforeEl,
+      hasData
+        ? t('quota.usedAndLeft', {
+            reset: resetStr,
+            used: formatPctNumber(usedVal),
+            rem: formatPctNumber(remVal),
+          })
+        : fallbackMetaText
+    );
+    metaReservedEl.hidden = true;
+    patchText(metaReservedEl, '');
+    patchAttr(metaReservedEl, 'title', null);
+    metaAfterEl.hidden = true;
+    patchText(metaAfterEl, '');
+    patchAttr(trackEl, 'title', null);
+    patchStyleVar(fillEl, '--fill-w', `${Math.min(100, usedVal)}%`);
+    patchStyleVar(fillReservedEl, '--reserved-w', '0%');
+    patchClasses(fillReservedEl, { 'is-active': false, 'has-sep': false });
+  }
+
+  patchClasses(fillEl, {
+    'tone-warn': usedVal >= 70 && usedVal < 85,
+    'tone-danger': usedVal >= 85,
+  });
+}
+
 /**
- * 同步单个配额池行的 5h 与每周窗口状态。
+ * 同步单个配额池行的 5h 及每周窗口状态。
  */
 export function syncPoolQuotaRow(refs, item, idx, rowEl) {
-  const { poolData, poolLabel, fallbackWeekly, isActivePool, isPending } = item;
-  patchAttr(
-    rowEl,
-    'style',
-    idx === 0
-      ? 'display: flex; flex-direction: column; gap: 8px;'
-      : 'display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-hairline);'
-  );
+  const { poolData, poolLabel, fallbackWeekly, isActivePool, isPending, showReserved } = item;
+  patchClasses(rowEl, { 'quota-pool-row': true, 'has-divider': idx > 0 });
 
   const has5h = poolData?.usedPct != null && poolData?.remainingPct != null;
   const used5hVal = has5h ? Number(poolData.usedPct) : 0;
@@ -172,6 +277,7 @@ export function syncPoolQuotaRow(refs, item, idx, rowEl) {
   refs.rowWk.style.display = hideWk ? 'none' : 'flex';
 
   const fallbackMetaText = isPending ? t('quota.loading') : t('quota.failed');
+  const allowReserved = Boolean(showReserved && !isPending);
 
   patchText(refs.title5h, `5h (${poolLabel})`);
   const c5h = poolData?.cycle5h;
@@ -196,20 +302,21 @@ export function syncPoolQuotaRow(refs, item, idx, rowEl) {
     patchText(refs.usage5h, '');
     patchAttr(refs.left5h, 'title', null);
   }
-  patchText(
-    refs.meta5h,
-    has5h
-      ? t('quota.usedAndLeft', {
-          reset: formatCountdown(poolData.resetTime),
-          used: used5hVal.toFixed(1),
-          rem: rem5hVal.toFixed(1),
-        })
-      : fallbackMetaText
-  );
-  patchStyleVar(refs.fill5h, '--fill-w', `${Math.min(100, used5hVal)}%`);
-  patchClasses(refs.fill5h, {
-    'tone-warn': used5hVal >= 70 && used5hVal < 85,
-    'tone-danger': used5hVal >= 85,
+  syncQuotaWindowMeter({
+    hasData: has5h,
+    usedVal: used5hVal,
+    remVal: rem5hVal,
+    resetTime: poolData?.resetTime,
+    fallbackMetaText,
+    showReserved: allowReserved,
+    rawReservedPct: poolData?.reservedPct,
+    leaseCount: poolData?.reservedLeaseCount,
+    metaBeforeEl: refs.meta5hBefore,
+    metaReservedEl: refs.meta5hReserved,
+    metaAfterEl: refs.meta5hAfter,
+    trackEl: refs.track5h,
+    fillEl: refs.fill5h,
+    fillReservedEl: refs.fillReserved5h,
   });
 
   const customTitle =
@@ -243,20 +350,21 @@ export function syncPoolQuotaRow(refs, item, idx, rowEl) {
     patchText(refs.usageWk, '');
     patchAttr(refs.leftWk, 'title', null);
   }
-  patchText(
-    refs.metaWk,
-    hasWk
-      ? t('quota.usedAndLeft', {
-          reset: formatCountdown(wkResetRaw),
-          used: usedWkVal.toFixed(1),
-          rem: remWkVal.toFixed(1),
-        })
-      : fallbackMetaText
-  );
-  patchStyleVar(refs.fillWk, '--fill-w', `${Math.min(100, usedWkVal)}%`);
-  patchClasses(refs.fillWk, {
-    'tone-warn': usedWkVal >= 70 && usedWkVal < 85,
-    'tone-danger': usedWkVal >= 85,
+  syncQuotaWindowMeter({
+    hasData: hasWk,
+    usedVal: usedWkVal,
+    remVal: remWkVal,
+    resetTime: wkResetRaw,
+    fallbackMetaText,
+    showReserved: allowReserved && !useCustomWeekly,
+    rawReservedPct: poolData?.weeklyReservedPct,
+    leaseCount: poolData?.weeklyReservedLeaseCount,
+    metaBeforeEl: refs.metaWkBefore,
+    metaReservedEl: refs.metaWkReserved,
+    metaAfterEl: refs.metaWkAfter,
+    trackEl: refs.trackWk,
+    fillEl: refs.fillWk,
+    fillReservedEl: refs.fillReservedWk,
   });
 }
 
@@ -264,15 +372,373 @@ export function quotaPoolRowSig(item, idx) {
   const c5h = item.poolData?.cycle5h;
   const cWk = item.poolData?.cycleWeekly;
   const fw = item.fallbackWeekly;
-  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
+  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
+}
+
+/**
+ * 格式化可用额度面板右上角的账号订阅徽章（区分 Ultra 5x / 20x，并对 Pro / Free 去重）。
+ *
+ * @param {object|null|undefined} account
+ * @returns {string}
+ */
+export function formatAccountTierBadge(account) {
+  const tierName = String(account?.tierName || '').trim() || 'Google AI';
+  const tierId = String(account?.tierId || '').trim().toLowerCase();
+  const explicitMult = String(account?.tierMultiplier || '').trim();
+  const inferredMult =
+    explicitMult ||
+    (/(?:^|[-_\s])5x(?:$|[-_\s])|ultra[-_]?lite/i.test(`${tierId} ${tierName}`)
+      ? '5x'
+      : /(?:^|[-_\s])20x(?:$|[-_\s])/i.test(`${tierId} ${tierName}`) || tierId === 'g1-ultra-tier'
+        ? '20x'
+        : '');
+  const rawPlan = String(account?.planName || '').trim();
+  const isUltra = /\bultra\b/i.test(tierName) || /ultra/i.test(tierId);
+
+  if (isUltra) {
+    if (inferredMult) {
+      const hasMultInTier = new RegExp(`(?:^|\\s|·)${inferredMult}(?:$|\\s)`, 'i').test(tierName);
+      return hasMultInTier ? tierName : `${tierName} · ${inferredMult}`;
+    }
+    if (rawPlan && !/^(?:pro|ultra)$/i.test(rawPlan)) {
+      return `${tierName} · ${rawPlan}`;
+    }
+    return tierName;
+  }
+
+  if (!rawPlan) return tierName;
+  const escapedPlan = rawPlan.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (new RegExp(`(?:^|\\s|·)${escapedPlan}(?:$|\\s)`, 'i').test(tierName)) {
+    return tierName;
+  }
+  return `${tierName} · ${rawPlan}`;
+}
+
+/**
+ * 对账号邮箱或名称做轻量隐私脱敏（如 `sjee80343@gmail.com` -> `sj***43@gmail.com`），
+ * 兼顾多账号辨识度及截图分享隐私安全。
+ *
+ * @param {string|null|undefined} raw
+ * @returns {string}
+ */
+export function maskAccountLabel(raw) {
+  const str = String(raw || '').trim();
+  if (!str) return '';
+  const atIdx = str.indexOf('@');
+  if (atIdx > 0 && atIdx < str.length - 1) {
+    const local = str.slice(0, atIdx);
+    const domain = str.slice(atIdx);
+    const chars = Array.from(local);
+    if (chars.length <= 1) return `*${domain}`;
+    if (chars.length === 2) return `${chars[0]}*${domain}`;
+    if (chars.length <= 4) return `${chars[0]}***${chars[chars.length - 1]}${domain}`;
+    return `${chars.slice(0, 2).join('')}***${chars.slice(-2).join('')}${domain}`;
+  }
+  const chars = Array.from(str);
+  if (chars.length <= 1) return '*';
+  if (chars.length === 2) return `${chars[0]}*`;
+  if (chars.length <= 4) return `${chars[0]}***${chars[chars.length - 1]}`;
+  return `${chars.slice(0, 2).join('')}***${chars[chars.length - 1]}`;
+}
+
+function formatRateEqUsd(val) {
+  const num = Number(val);
+  if (!Number.isFinite(num) || num <= 0) return '--';
+  if (num >= 10) return `$${Math.round(num)}`;
+  return `$${Number(num.toFixed(1))}`;
+}
+
+function formatRatePerUsdValue(rate) {
+  const num = Number(rate);
+  if (!Number.isFinite(num) || num <= 0) return '--';
+  return String(Number(num.toFixed(2)));
+}
+
+function formatRateMultiplier(mult) {
+  const num = Number(mult);
+  if (!Number.isFinite(num) || num <= 0) return '';
+  return `${Number(num.toFixed(1))}x`;
+}
+
+function createRateModelCard({
+  name,
+  isMutedName = false,
+  isFallback = false,
+  multiplier = null,
+  rate5hPctPerUsd = null,
+  rateWeeklyPctPerUsd = null,
+  eqFull5hUsd = null,
+  eqFullWeeklyUsd = null,
+  samples = 0,
+}) {
+  const leftNodes = [
+    h('span', {
+      className: `quota-rate-model-name${isMutedName ? ' is-muted' : ''}`,
+      text: name,
+    }),
+  ];
+  const multText = formatRateMultiplier(multiplier);
+  if (multText) {
+    leftNodes.push(
+      h('span', {
+        className: `quota-rate-mult-badge${Number(multiplier) >= 1.5 ? ' is-high' : ''}`,
+        text: multText,
+      })
+    );
+  }
+
+  const has5hRate = rate5hPctPerUsd != null;
+  const primaryRate = has5hRate ? rate5hPctPerUsd : rateWeeklyPctPerUsd;
+  const subParts = [];
+  if (primaryRate != null) {
+    subParts.push(
+      t('quota.ratePopPerUsd', {
+        win: has5hRate ? '5h' : t('quota.weeklyShort'),
+        rate: formatRatePerUsdValue(primaryRate),
+      })
+    );
+  }
+  if (Number(samples) > 0) {
+    subParts.push(t('quota.ratePopSamples', { n: Number(samples) }));
+  }
+
+  const eqCells = [];
+  if (eqFull5hUsd != null) {
+    eqCells.push(
+      h('div', { className: 'quota-rate-eq-cell' }, [
+        h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEq5hLabel') }),
+        h('span', {
+          className: 'quota-rate-eq-v text-mono',
+          text: `≈ ${formatRateEqUsd(eqFull5hUsd)}`,
+        }),
+      ])
+    );
+  }
+  if (eqFullWeeklyUsd != null) {
+    eqCells.push(
+      h('div', { className: 'quota-rate-eq-cell' }, [
+        h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEqWkLabel') }),
+        h('span', {
+          className: 'quota-rate-eq-v text-mono',
+          text: `≈ ${formatRateEqUsd(eqFullWeeklyUsd)}`,
+        }),
+      ])
+    );
+  }
+
+  const cardChildren = [
+    h('div', { className: 'quota-rate-row-top' }, [
+      h('div', { className: 'quota-rate-model-left' }, leftNodes),
+      ...(subParts.length > 0
+        ? [h('span', { className: 'quota-rate-meta text-mono', text: subParts.join(' · ') })]
+        : []),
+    ]),
+  ];
+  if (eqCells.length > 0) {
+    cardChildren.push(
+      h(
+        'div',
+        { className: `quota-rate-eq-grid${eqCells.length === 1 ? ' is-single' : ''}` },
+        eqCells
+      )
+    );
+  }
+
+  return h('div', { className: `quota-rate-model-row${isFallback ? ' is-fallback' : ''}` }, cardChildren);
+}
+
+function buildRatePopoverSig(data) {
+  const locale = getEffectiveLocale();
+  const acct = String(data?.account?.email || data?.account?.name || '').trim();
+  const pools = Array.isArray(data?.quotas?.pools) ? data.quotas.pools : [];
+  const poolSig = pools
+    .map((p) => `${p.poolKey || ''}:${p.poolLabel || ''}:${JSON.stringify(p.rateEstimate || null)}`)
+    .join('|');
+  return `${locale}|${acct}|${poolSig}`;
 }
 
 export const QuotaPoolsWidget = defineComponent({
   name: 'QuotaPoolsWidget',
-  setup({ props }) {
+  setup({ props, onCleanup }) {
     const compactHover = Boolean(props.compactHover);
     const titleTextEl = h('span', { text: t('module.quotas') });
     const tierBadge = h('span', { className: 'panel-meta', text: 'Google AI · Pro' });
+
+    const ratePopTitleEl = h('span', {
+      className: 'quota-rate-pop-title',
+      text: t('quota.ratePopTitle'),
+    });
+    const ratePopAccountEl = h('span', {
+      className: 'quota-rate-pop-account',
+      text: t('quota.ratePopAccountCurrent'),
+    });
+    const ratePopBodyEl = h('div', { className: 'quota-rate-pop-body' });
+    const ratePopNoteEl = h('div', {
+      className: 'quota-rate-pop-note',
+      text: t('quota.ratePopNote'),
+    });
+    const ratePopoverEl = h(
+      'div',
+      {
+        className: 'quota-rate-popover',
+        role: 'tooltip',
+        hidden: true,
+      },
+      [
+        h('div', { className: 'quota-rate-pop-head' }, [ratePopTitleEl, ratePopAccountEl]),
+        ratePopBodyEl,
+        ratePopNoteEl,
+      ]
+    );
+    ratePopoverEl.hidden = true;
+
+    let ratePopOpen = false;
+    let ratePopCloseTimer = null;
+    let lastRatePopSig = '';
+
+    const cancelRatePopClose = () => {
+      if (ratePopCloseTimer) {
+        clearTimeout(ratePopCloseTimer);
+        ratePopCloseTimer = null;
+      }
+    };
+
+    const setRatePopOpen = (open) => {
+      const next = Boolean(open);
+      ratePopOpen = next;
+      ratePopoverEl.hidden = !next;
+      patchAttr(ratePopoverEl, 'hidden', !next);
+      patchAttr(rateHelpBtn, 'aria-expanded', next ? 'true' : 'false');
+      patchClasses(rateHelpBtn, { 'is-open': next });
+    };
+
+    const openRatePop = () => {
+      cancelRatePopClose();
+      if (!ratePopOpen) setRatePopOpen(true);
+    };
+
+    const scheduleRatePopClose = () => {
+      cancelRatePopClose();
+      ratePopCloseTimer = setTimeout(() => {
+        ratePopCloseTimer = null;
+        setRatePopOpen(false);
+      }, 130);
+    };
+
+    const rateHelpBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'quota-rate-help-btn',
+        'aria-label': t('quota.rateHelpAria'),
+        'aria-haspopup': 'true',
+        'aria-expanded': 'false',
+        onMouseenter: openRatePop,
+        onMouseleave: scheduleRatePopClose,
+        onFocus: openRatePop,
+        onBlur: scheduleRatePopClose,
+        onClick: (ev) => {
+          ev?.stopPropagation?.();
+          cancelRatePopClose();
+          setRatePopOpen(!ratePopOpen);
+        },
+        onKeydown: (ev) => {
+          if (ev?.key === 'Escape' && ratePopOpen) {
+            ev.stopPropagation?.();
+            cancelRatePopClose();
+            setRatePopOpen(false);
+          }
+        },
+      },
+      [createSvgIcon('help-circle', { size: 13 })]
+    );
+
+    ratePopoverEl.addEventListener?.('mouseenter', openRatePop);
+    ratePopoverEl.addEventListener?.('mouseleave', scheduleRatePopClose);
+    onCleanup?.(() => {
+      cancelRatePopClose();
+    });
+
+    function syncRatePopoverContent(data) {
+      const sig = buildRatePopoverSig(data);
+      if (sig === lastRatePopSig) return;
+      lastRatePopSig = sig;
+
+      patchText(ratePopTitleEl, t('quota.ratePopTitle'));
+      patchText(ratePopNoteEl, t('quota.ratePopNote'));
+      patchAttr(rateHelpBtn, 'aria-label', t('quota.rateHelpAria'));
+
+      const acctMasked = maskAccountLabel(data?.account?.email || data?.account?.name || '');
+      patchText(
+        ratePopAccountEl,
+        acctMasked
+          ? t('quota.ratePopAccountScope', { account: acctMasked })
+          : t('quota.ratePopAccountCurrent')
+      );
+      patchAttr(ratePopAccountEl, 'title', acctMasked || null);
+
+      while (ratePopBodyEl.firstChild) {
+        ratePopBodyEl.removeChild(ratePopBodyEl.firstChild);
+      }
+
+      const rawPools = Array.isArray(data?.quotas?.pools) ? data.quotas.pools : [];
+      const populatedGroups = [];
+
+      for (const p of rawPools) {
+        const est = p?.rateEstimate;
+        if (!est || typeof est !== 'object') continue;
+        const models = Array.isArray(est.models) ? est.models : [];
+        const hasPoolFallback =
+          models.length === 0 &&
+          (Number.isFinite(est.rate5hPctPerUsd) || Number.isFinite(est.rateWeeklyPctPerUsd));
+        if (models.length === 0 && !hasPoolFallback) continue;
+
+        const poolLabel = p.poolLabel || p.family || p.poolKey || 'Pool';
+        const rows =
+          models.length > 0
+            ? models.map((item) =>
+                createRateModelCard({
+                  name: item.model,
+                  multiplier: item.multiplier,
+                  rate5hPctPerUsd: item.rate5hPctPerUsd,
+                  rateWeeklyPctPerUsd: item.rateWeeklyPctPerUsd,
+                  eqFull5hUsd: item.eqFull5hUsd,
+                  eqFullWeeklyUsd: item.eqFullWeeklyUsd,
+                  samples: item.samples,
+                })
+              )
+            : [
+                createRateModelCard({
+                  name: t('quota.ratePopPoolFallback'),
+                  isMutedName: true,
+                  isFallback: true,
+                  rate5hPctPerUsd: est.rate5hPctPerUsd,
+                  rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
+                  eqFull5hUsd: est.eqFull5hUsd,
+                  eqFullWeeklyUsd: est.eqFullWeeklyUsd,
+                  samples: Math.max(Number(est.samples5h) || 0, Number(est.samplesWeekly) || 0),
+                }),
+              ];
+
+        populatedGroups.push(
+          h('div', { className: 'quota-rate-pool-group' }, [
+            h('div', { className: 'quota-rate-pool-label', text: poolLabel }),
+            h('div', { className: 'quota-rate-model-list' }, rows),
+          ])
+        );
+      }
+
+      if (populatedGroups.length === 0) {
+        ratePopBodyEl.appendChild(
+          h('div', { className: 'quota-rate-pop-empty', text: t('quota.ratePopEmpty') })
+        );
+      } else {
+        for (const grp of populatedGroups) {
+          ratePopBodyEl.appendChild(grp);
+        }
+      }
+    }
+
     const poolsListEl = h(
       'div',
       compactHover
@@ -289,34 +755,46 @@ export const QuotaPoolsWidget = defineComponent({
       });
     }
 
-    const initFoot = formatQuotaSummaryFooter(null, null);
-    const wkFootLeft = h('span', { className: 'text-muted', text: initFoot.leftText });
-    const wkFootRight = h('span', {
-      className: 'text-muted',
-      text: compactHover ? initFoot.rightText : '',
-    });
+    const legendActualTextEl = h('span', { text: t('quota.legendActual') });
+    const legendReservedTextEl = h('span', { text: t('quota.legendReserved') });
+    const reserveLegendEl = h(
+      'div',
+      { className: 'quota-reserve-legend', hidden: true },
+      [
+        h('span', { className: 'quota-legend-item' }, [
+          h('span', { className: 'quota-legend-line is-actual', 'aria-hidden': 'true' }),
+          legendActualTextEl,
+        ]),
+        h('span', { className: 'quota-legend-item' }, [
+          h('span', { className: 'quota-legend-line is-reserved', 'aria-hidden': 'true' }),
+          legendReservedTextEl,
+        ]),
+      ]
+    );
 
-    const quotaPanel = h('section', { className: 'panel' }, [
+    const quotaPanel = h('section', { className: 'panel quota-panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('pulse', { size: 13 }),
           titleTextEl,
+          rateHelpBtn,
         ]),
         tierBadge,
       ]),
       poolsListEl,
-      h(
-        'div',
-        compactHover
-          ? { className: 'panel-header wm-hover-quota-foot' }
-          : { className: 'panel-header', style: 'font-size: var(--fs-md); padding-top: 2px;' },
-        [wkFootLeft, wkFootRight]
-      ),
+      reserveLegendEl,
+      ratePopoverEl,
     ]);
+
+    syncRatePopoverContent(null);
 
     function update({ data, minuteTick } = {}) {
       patchText(titleTextEl, t('module.quotas'));
+      patchText(legendActualTextEl, t('quota.legendActual'));
+      patchText(legendReservedTextEl, t('quota.legendReserved'));
+      syncRatePopoverContent(data);
       if (!data) {
+        reserveLegendEl.hidden = true;
         if (compactHover) {
           patchKeyedList(poolsListEl, buildQuotaPoolItems(null, 0, { isPending: true }), {
             keyFn: (item) => item.key,
@@ -324,36 +802,26 @@ export const QuotaPoolsWidget = defineComponent({
             createRow: createPoolQuotaRow,
             updateRow: syncPoolQuotaRow,
           });
-          const pendingFoot = formatQuotaSummaryFooter(null, null);
-          patchText(wkFootLeft, pendingFoot.leftText);
-          patchText(wkFootRight, pendingFoot.rightText);
         }
         return;
       }
 
       const quotas = data.quotas || {};
+      const showReserved = data.settings?.experimentalQuotaReservation !== false;
+      reserveLegendEl.hidden = !showReserved;
       const effTick = Number.isFinite(minuteTick) ? minuteTick : Math.floor(Date.now() / 30000);
-      patchText(
-        tierBadge,
-        `${data.account?.tierName || 'Google AI'} · ${data.account?.planName || 'Pro'}`
-      );
-      patchKeyedList(poolsListEl, buildQuotaPoolItems(quotas, effTick), {
+      patchText(tierBadge, formatAccountTierBadge(data.account));
+      patchKeyedList(poolsListEl, buildQuotaPoolItems(quotas, effTick, { showReserved }), {
         keyFn: (item) => item.key,
         sigFn: quotaPoolRowSig,
         createRow: createPoolQuotaRow,
         updateRow: syncPoolQuotaRow,
       });
-
-      const footSummary = formatQuotaSummaryFooter(quotas, data.account);
-      patchText(wkFootLeft, footSummary.leftText);
-      patchText(wkFootRight, footSummary.rightText);
-      patchAttr(wkFootLeft, 'title', footSummary.tooltip);
-      patchAttr(wkFootRight, 'title', footSummary.tooltip);
     }
 
     return {
       el: quotaPanel,
-      refs: { update, poolsListEl },
+      refs: { update, poolsListEl, rateHelpBtn, ratePopoverEl },
     };
   },
 });

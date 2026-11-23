@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, truncateSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readLocalSqliteTrajectory } from '../backend/cli-sqlite-reader.mjs';
+import { computeSqliteWalSig, readLocalSqliteTrajectory } from '../backend/cli-sqlite-reader.mjs';
 import { backendHarness } from './backend-harness.mjs';
 import { i18nStore } from '../src/i18n/index.js';
 import {
@@ -785,4 +785,179 @@ test('SQLite trajectory reader scans backwards past trailing plannerConfig-only 
     gm0?.chatModel?.chatStartMetadata?.contextWindowMetadata?.tokenBreakdown?.groups?.length > 0,
     'must decode tokenBreakdown on gen_metadata[0] even with 3 trailing plannerConfig-only records'
   );
+});
+
+test('computeSqliteWalSig ignores zero-byte .db-wal mtime churn while detecting non-empty WAL writes', (t) => {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'agy-sqlite-empty-wal-'));
+  t.after(() => rmSync(tempRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+
+  const dbPath = join(tempRoot, 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111.db');
+  const walPath = `${dbPath}-wal`;
+  writeFileSync(dbPath, Buffer.from('sqlite-main-placeholder'));
+  const baseSec = 1_795_000_000;
+  utimesSync(dbPath, baseSec, baseSec);
+
+  const sigNoWal = computeSqliteWalSig(dbPath);
+  assert.equal(sigNoWal.exists, true);
+  assert.ok(sigNoWal.sig.endsWith('|0:0'), `expected |0:0 suffix, got ${sigNoWal.sig}`);
+
+  // Creating and touching a 0-byte .db-wal (e.g. SQLite WAL open/close or host LRU eviction)
+  // must NOT change sig or mtimeMs.
+  writeFileSync(walPath, Buffer.alloc(0));
+  utimesSync(walPath, baseSec + 120, baseSec + 120);
+  const sigEmptyWal1 = computeSqliteWalSig(dbPath);
+  assert.deepEqual(sigEmptyWal1, sigNoWal);
+
+  utimesSync(walPath, baseSec + 360, baseSec + 360);
+  const sigEmptyWal2 = computeSqliteWalSig(dbPath);
+  assert.deepEqual(sigEmptyWal2, sigNoWal);
+
+  // Real uncheckpointed WAL write (size > 0) MUST change sig and advance mtimeMs.
+  writeFileSync(walPath, Buffer.alloc(4096, 1));
+  utimesSync(walPath, baseSec + 500, baseSec + 500);
+  const sigNonEmptyWal = computeSqliteWalSig(dbPath);
+  assert.notEqual(sigNonEmptyWal.sig, sigNoWal.sig);
+  assert.ok(sigNonEmptyWal.mtimeMs > sigNoWal.mtimeMs);
+  assert.ok(sigNonEmptyWal.sig.endsWith(':4096'));
+
+  // Truncating the WAL back to 0 bytes converges back to the canonical |0:0 signature.
+  truncateSync(walPath, 0);
+  utimesSync(walPath, baseSec + 900, baseSec + 900);
+  const sigTruncatedWal = computeSqliteWalSig(dbPath);
+  assert.deepEqual(sigTruncatedWal, sigNoWal);
+});
+
+test('legacy pre-PR#38 empty-WAL sqlite cache signatures migrate in-place without re-reading SQLite', async (t) => {
+  const { normalizeEmptyWalSqliteSig } = await import('../backend/local-scanner.mjs');
+
+  assert.equal(
+    normalizeEmptyWalSqliteSig('v10-model-identity:sqlite:12:2026-11-22T10:00:00Z:1795400000:50000|1795412345:0'),
+    'v10-model-identity:sqlite:12:2026-11-22T10:00:00Z:1795400000:50000|0:0'
+  );
+  assert.equal(
+    normalizeEmptyWalSqliteSig('v10-model-identity:sqlite:12:2026-11-22T10:00:00Z:1795400000:50000|1795412345:4096'),
+    'v10-model-identity:sqlite:12:2026-11-22T10:00:00Z:1795400000:50000|1795412345:4096',
+    'non-empty WAL signature must NOT be collapsed'
+  );
+
+  // End-to-end verification in isolated subprocess: pre-seed trajectory_usage_cache.json with legacy |<walMtime>:0
+  // signature for a real .db + 0-byte .db-wal, verify enumerateAndSyncConversations does NOT re-read SQLite
+  // (keeping sentinel step marker intact) and normalizes cached signature to |0:0.
+  let sqliteMod = null;
+  try {
+    sqliteMod = await import('node:sqlite');
+  } catch {
+    sqliteMod = null;
+  }
+  if (!sqliteMod?.DatabaseSync) {
+    t.skip('node:sqlite DatabaseSync unavailable');
+    return;
+  }
+  const { DatabaseSync } = sqliteMod;
+  const tempRoot = mkdtempSync(join(tmpdir(), 'agy-sqlite-smooth-upgrade-'));
+  t.after(() => rmSync(tempRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+
+  const geminiDir = join(tempRoot, '.gemini');
+  const convDir = join(geminiDir, 'antigravity', 'conversations');
+  const dataDir = join(geminiDir, 'antigravity', 'sidecar_data', 'usage-monitor', 'panel', 'data');
+  mkdirSync(convDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true });
+
+  const cid = '99999999-9999-4999-8999-999999999999';
+  const dbPath = join(convDir, `${cid}.db`);
+  const walPath = `${dbPath}-wal`;
+  const db = new DatabaseSync(dbPath);
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE trajectory_meta (trajectory_id TEXT, cascade_id TEXT, trajectory_type INTEGER, source INTEGER);
+    CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);
+    CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+  `);
+  db.prepare('INSERT INTO trajectory_meta VALUES (?, ?, 1, 1)').run(cid, cid);
+  db.close();
+
+  const baseSec = 1_795_000_000;
+  writeFileSync(walPath, Buffer.alloc(0));
+  utimesSync(dbPath, baseSec, baseSec);
+  utimesSync(walPath, baseSec + 120, baseSec + 120);
+
+  const curSig = computeSqliteWalSig(dbPath);
+  assert.ok(curSig.sig.endsWith('|0:0'));
+  const legacyDiskSig = curSig.sig.replace(/\|0:0$/, `|${(baseSec + 120) * 1000}:0`);
+  const legacyFullSig = `v10-model-identity:sqlite:1::${legacyDiskSig}`;
+
+  // Write a sentinel cached step so if SQLite were re-read (empty steps table), the sentinel would vanish!
+  const cacheFile = join(dataDir, 'trajectory_usage_cache.json');
+  writeFileSync(
+    cacheFile,
+    JSON.stringify({
+      [cid]: {
+        title: 'Pre-PR38 Cached Session',
+        signature: legacyFullSig,
+        lastModifiedMs: baseSec * 1000,
+        diskMtimeMs: baseSec * 1000,
+        wasRunning: false,
+        offlineSqliteTelemetry: true,
+        contextLimitTelemetry: true,
+        contextGroupsTelemetry: 2,
+        turnRailTelemetry: true,
+        anomalyTelemetry: true,
+        subagentRefs: [],
+        steps: [
+          {
+            stepIndex: 0,
+            turnIndex: 1,
+            model: 'MODEL_PLACEHOLDER_M429',
+            responseModel: 'gemini-4-carbon-high',
+            inputTokens: 1234,
+            cacheReadTokens: 0,
+            outputTokens: 567,
+            thinkingTokens: 0,
+            responseTokens: 567,
+            createdAtMs: baseSec * 1000,
+            completedAtMs: (baseSec + 2) * 1000,
+            durationSec: 2,
+            ttftSec: 0.5,
+            streamSec: 1.5,
+            contextBreakdown: { toolResultsTokens: 0 },
+          },
+        ],
+      },
+    }),
+    'utf8'
+  );
+
+  const execFileAsync = promisify(execFile);
+  const scannerUrl = new URL('../backend/local-scanner.mjs', import.meta.url).href;
+  const configUrl = new URL('../backend/config.mjs', import.meta.url).href;
+  const script = `
+    import { readFileSync } from 'node:fs';
+    import { enumerateAndSyncConversations } from ${JSON.stringify(scannerUrl)};
+    import { CACHE_FILE, flushTrajectoryCacheNow, getCachedTrajectory } from ${JSON.stringify(configUrl)};
+    await enumerateAndSyncConversations({ summariesObj: {}, requestedConvId: '' });
+    const entry = getCachedTrajectory(${JSON.stringify(cid)});
+    flushTrajectoryCacheNow();
+    const onDisk = JSON.parse(readFileSync(CACHE_FILE, 'utf8'));
+    console.log(JSON.stringify({
+      memSig: entry?.signature || '',
+      diskSig: onDisk[${JSON.stringify(cid)}]?.signature || '',
+      stepCount: entry?.steps?.length || 0,
+      firstInput: entry?.steps?.[0]?.inputTokens || 0,
+    }));
+  `;
+  const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '-e', script], {
+    env: {
+      ...process.env,
+      ANTIGRAVITY_GEMINI_DIR: geminiDir,
+      ANTIGRAVITY_APP_DATA_DIR: '',
+      USAGE_MONITOR_APP_DATA_DIR: '',
+      ANTIGRAVITY_EXECUTABLE_DATA_DIR: dataDir,
+      ANTIGRAVITY_LS_ADDRESS: 'test.invalid',
+    },
+  });
+  const out = JSON.parse(stdout.trim().split('\n').pop());
+  assert.equal(out.stepCount, 1, 'cached sentinel step preserved (SQLite was NOT re-read)');
+  assert.equal(out.firstInput, 1234, 'cached usage preserved intact');
+  assert.ok(out.memSig.endsWith('|0:0'), `in-memory signature normalized to |0:0: ${out.memSig}`);
+  assert.ok(out.diskSig.endsWith('|0:0'), `persisted signature normalized to |0:0: ${out.diskSig}`);
 });

@@ -193,6 +193,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"] .segmented {
+  --seg-pad: 2px;
   padding: 2px;
   border-radius: var(--radius-xs);
   background: var(--modern-inline-track-bg);
@@ -474,8 +475,8 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: transparent;
 }
 
-[data-modern-ui="true"] .cons-pop-models {
-  border-top-color: var(--modern-surface-hover);
+[data-modern-ui="true"] .cons-pop-channels {
+  border-top-color: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
 [data-modern-ui="true"] .cons-source-bar-hit:hover .cons-source-model-bar,
@@ -628,15 +629,9 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   margin: 4px 2px 2px;
 }
 
-[data-modern-ui="true"] .sstep-anomaly-dot,
-[data-modern-ui="true"] .sstep-scatter-dot.is-anomaly {
-  fill: var(--modern-surface-card);
-}
-
 /* --- 6. 设置表单、折叠面板、槽位排序与输入控件去边框 --- */
 [data-modern-ui="true"] .collapsible-body,
 [data-modern-ui="true"] .settings-action-block + .settings-action-block,
-[data-modern-ui="true"] .settings-account-entry,
 [data-modern-ui="true"] .dt-time-row {
   border-top: none;
 }
@@ -650,11 +645,16 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .structure-preview-empty,
 [data-modern-ui="true"] .preview-sidebar-note,
 [data-modern-ui="true"] .preview-capsule-bar,
+[data-modern-ui="true"] .cli-status-preview,
 [data-modern-ui="true"] .preview-capsule-bar.is-composer .wm-multi-btn,
 [data-modern-ui="true"] .preview-capsule-bar.is-composer .wm-capsule-btn,
 [data-modern-ui="true"] .preview-composer-chip {
   border: none;
   background: var(--modern-surface-subtle);
+}
+
+[data-modern-ui="true"][data-color-scheme="light"] .quota-pool-row.has-divider {
+  border-top-color: hsl(216 24% 92%);
 }
 
 [data-modern-ui="true"] .slot-add-btn,
@@ -671,8 +671,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .number-input,
 [data-modern-ui="true"] .dt-trigger,
 [data-modern-ui="true"] .dt-mini-step,
-[data-modern-ui="true"] .settings-text-input,
-[data-modern-ui="true"] .settings-account-form input {
+[data-modern-ui="true"] .settings-text-input {
   border: none;
   background: var(--modern-surface-subtle);
   transition:
@@ -691,19 +690,119 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 
 [data-modern-ui="true"] .number-input:focus-within,
 [data-modern-ui="true"] .settings-text-input:focus,
-[data-modern-ui="true"] .settings-account-form input:focus {
+[data-modern-ui="true"] .ui-search-wrap:focus-within,
+[data-modern-ui="true"] .smig-search-wrap:focus-within,
+[data-modern-ui="true"] .steps-search-wrap:focus-within {
   border: none;
   box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent-primary) 55%, transparent);
 }
 
+[data-modern-ui="true"] .ui-search-wrap,
+[data-modern-ui="true"] .smig-search-wrap,
+[data-modern-ui="true"] .steps-search-wrap {
+  border: none;
+  background: var(--modern-surface-subtle);
+}
+
+[data-modern-ui="true"] .smig-scroll-host {
+  border: none;
+  background: transparent;
+}
+
+[data-modern-ui="true"] .smig-list {
+  padding: 2px 6px 2px 0;
+}
+
+[data-modern-ui="true"] .smig-item {
+  border: none;
+  background: transparent;
+  transition:
+    background-color 150ms var(--ease-modern),
+    transform 140ms var(--ease-modern);
+}
+
+[data-modern-ui="true"] .smig-item:hover:not(:disabled) {
+  border: none;
+  background: var(--modern-surface-hover);
+}
+
+[data-modern-ui="true"] .smig-item:active:not(:disabled) {
+  transform: scale(0.992);
+}
+
+[data-modern-ui="true"] .smig-item.is-selected {
+  border: none;
+  background: var(--accent-primary-soft);
+}
+
+[data-modern-ui="true"] .smig-item.is-selected:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+}
+
+[data-modern-ui="true"] .smig-item.is-selected .smig-item-title {
+  color: var(--modern-active-accent);
+}
+
+[data-modern-ui="true"] .smig-checkbox {
+  border-color: color-mix(in srgb, var(--text-primary) 28%, transparent);
+  background: var(--modern-surface-subtle);
+}
+
+[data-modern-ui="true"] .smig-checkbox.is-checked {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+}
+
+[data-modern-ui="true"] .smig-result,
+[data-modern-ui="true"] .smig-cmd-row {
+  border: none;
+}
+
+[data-modern-ui="true"] .smig-result {
+  background: var(--modern-surface-subtle);
+}
+
+[data-modern-ui="true"] .smig-result.is-ok {
+  background: var(--metric-ok-soft);
+}
+
+[data-modern-ui="true"] .smig-result.is-err {
+  background: var(--metric-danger-soft);
+}
+
+[data-modern-ui="true"] .smig-cmd-row {
+  background: var(--modern-surface-subtle);
+}
+
 /* --- 7. 全景悬浮窗与工具提示浮层：零边框 + 空气阴影 + 0.15s 平滑跟随过渡 --- */
 [data-modern-ui="true"] .select-menu,
+[data-modern-ui="true"] .action-menu-popover,
+[data-modern-ui="true"] .app-toast,
 [data-modern-ui="true"] .dt-popover,
 [data-modern-ui="true"] .sstep-tooltip {
   border: none;
   background: var(--modern-surface-card);
   box-shadow: var(--shadow-popover);
   animation: anim-modern-tip-fade 120ms var(--ease-modern);
+}
+
+[data-modern-ui="true"] .action-menu-trigger:hover,
+[data-modern-ui="true"] .action-menu.is-open .action-menu-trigger,
+[data-modern-ui="true"] .action-menu-item:hover:not(:disabled) {
+  background: var(--modern-surface-hover);
+}
+
+[data-modern-ui="true"] .app-toast-action {
+  border: none;
+}
+
+[data-modern-ui="true"] .select-search-wrap {
+  border: none;
+  background: var(--modern-surface-subtle);
+}
+
+[data-modern-ui="true"] .select-search-wrap:focus-within {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent-primary) 50%, transparent);
 }
 
 [data-modern-ui="true"] .select-menu.is-above,
@@ -714,7 +813,9 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .trend-tooltip,
 [data-modern-ui="true"] .cons-breakdown-popover,
 [data-modern-ui="true"] .turn-prompt-tip,
-[data-modern-ui="true"] .step-anomaly-tip {
+[data-modern-ui="true"] .step-anomaly-tip,
+[data-modern-ui="true"] .quota-rate-popover,
+:host([data-modern-ui="true"]) .quota-rate-popover {
   border: none;
   background: var(--modern-surface-card);
   box-shadow: var(--shadow-popover);
@@ -722,14 +823,30 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"] .step-anomaly-tip-list,
-[data-modern-ui="true"] .step-anomaly-tip-hint {
-  border-top-color: var(--modern-surface-hover);
+[data-modern-ui="true"] .step-anomaly-tip-hint,
+[data-modern-ui="true"] .quota-rate-pop-head,
+[data-modern-ui="true"] .quota-rate-pool-group + .quota-rate-pool-group,
+[data-modern-ui="true"] .quota-rate-model-row + .quota-rate-model-row,
+[data-modern-ui="true"] .quota-rate-pop-note,
+:host([data-modern-ui="true"]) .quota-rate-pop-head,
+:host([data-modern-ui="true"]) .quota-rate-pool-group + .quota-rate-pool-group,
+:host([data-modern-ui="true"]) .quota-rate-model-row + .quota-rate-model-row,
+:host([data-modern-ui="true"]) .quota-rate-pop-note {
+  border-color: var(--modern-surface-hover);
 }
 
-[data-modern-ui="true"] .trend-tooltip:not(.is-hm-top):not(.is-hm-bottom) {
+[data-modern-ui="true"] .trend-tooltip:not(.is-hm-top):not(.is-hm-bottom):not(.is-rich-breakdown) {
   top: 2px;
   bottom: auto;
   transform: translate3d(var(--tip-shift, -50%), var(--tip-y, 0px), 0);
+}
+
+[data-modern-ui="true"] .trend-tooltip.is-rich-breakdown {
+  top: 0;
+  bottom: auto;
+  left: 0;
+  transform: translate3d(var(--tip-x, 0px), var(--tip-y, 0px), 0)
+    translateX(var(--tip-shift, 0px));
 }
 
 [data-modern-ui="true"] .trend-tooltip.is-tracking {
@@ -740,13 +857,20 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
     transform 150ms var(--ease-modern);
 }
 
+[data-modern-ui="true"] .trend-tooltip.is-rich-breakdown.is-tracking {
+  transition: transform 150ms var(--ease-modern);
+}
+
 [data-modern-ui="true"] .trend-hover-dot.is-tracking {
   transition:
     cx 150ms var(--ease-modern),
     cy 150ms var(--ease-modern);
 }
 
-[data-modern-ui="true"] .cons-breakdown-popover.is-tracking,
+[data-modern-ui="true"] .cons-breakdown-popover.is-tracking {
+  transition: transform 150ms var(--ease-modern);
+}
+
 [data-modern-ui="true"] .turn-prompt-tip.is-tracking {
   transition:
     left 150ms var(--ease-modern),
@@ -835,8 +959,10 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 :host([data-modern-ui="true"]) .wm-slot-text.wm-ctx-pct[data-od-active="1"],
+:host([data-modern-ui="true"]) .wm-slot-text.wm-quota-text[data-od-active="1"],
 :host([data-modern-ui="true"]) .wm-multi-label[data-od-active="1"],
 [data-modern-ui="true"] .wm-slot-text.wm-ctx-pct[data-od-active="1"],
+[data-modern-ui="true"] .wm-slot-text.wm-quota-text[data-od-active="1"],
 [data-modern-ui="true"] .wm-multi-label[data-od-active="1"] {
   justify-content: flex-start;
 }

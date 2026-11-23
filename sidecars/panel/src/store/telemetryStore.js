@@ -26,6 +26,9 @@ import {
   resolveSettingsModernUi,
 } from '../core/appearance.js';
 import {
+  CLI_STATUSLINE_PRESETS,
+  DEFAULT_CLI_STATUSLINE_SLOTS,
+  DEFAULT_CONTEXT_AGENT_MODE,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -39,6 +42,9 @@ import {
   OVERVIEW_MODULE_KEYS,
   STEP_TABLE_COLUMN_KEYS,
   TOPBAR_SLOT_KEYS,
+  normalizeCliStatusLineSlots,
+  normalizeContextAgentMode,
+  normalizeExperimentalQuotaReservation,
   normalizeHoverModules,
   normalizeModelDisplayMode,
   normalizeOrchestratorIdMode,
@@ -53,6 +59,7 @@ import {
   normalizeWeeklyLimitMode,
   normalizeWindowMountMode,
   parseStepTokenComboSegments,
+  resolveEffectiveCliStatusLineSlots,
 } from '../../shared/settings-normalization.mjs';
 import {
   LOCAL_ENDPOINT_ID,
@@ -354,6 +361,8 @@ function recordConsumptionSliceToCache(
     account: cons.account,
     trendSeries: Array.isArray(cons.trendSeries) ? cons.trendSeries : [],
     sourcesBreakdown: Array.isArray(cons.sourcesBreakdown) ? cons.sourcesBreakdown : [],
+    topConversations: Array.isArray(cons.topConversations) ? cons.topConversations : [],
+    topWorkspaces: Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [],
     modelBreakdown: Array.isArray(modelBreakdown) ? modelBreakdown : [],
   });
 }
@@ -371,6 +380,10 @@ function applyCachedConsumptionSlice(baseTelemetry, cachedEntry, targetRevision 
       account: cachedEntry.account ?? prevCons.account,
       trendSeries: cachedEntry.trendSeries,
       sourcesBreakdown: cachedEntry.sourcesBreakdown,
+      topConversations: Array.isArray(cachedEntry.topConversations)
+        ? cachedEntry.topConversations
+        : [],
+      topWorkspaces: Array.isArray(cachedEntry.topWorkspaces) ? cachedEntry.topWorkspaces : [],
     },
     modelBreakdown: cachedEntry.modelBreakdown,
   };
@@ -434,6 +447,9 @@ function reconcileIncomingTelemetrySettings(payload, reqSettingsRev) {
 
 export const CLIENT_TOPBAR_SLOT_KEYS = TOPBAR_SLOT_KEYS;
 export const DEFAULT_CLIENT_TOPBAR_SLOTS = DEFAULT_TOPBAR_SLOTS;
+export const DEFAULT_CLIENT_CONTEXT_AGENT_MODE = DEFAULT_CONTEXT_AGENT_MODE;
+export const CLIENT_CLI_STATUSLINE_PRESETS = CLI_STATUSLINE_PRESETS;
+export const DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS = DEFAULT_CLI_STATUSLINE_SLOTS;
 export const CLIENT_OVERVIEW_MODULE_KEYS = OVERVIEW_MODULE_KEYS;
 export const DEFAULT_CLIENT_OVERVIEW_MODULES = DEFAULT_OVERVIEW_MODULES;
 export const DEFAULT_CLIENT_HOVER_MODULES = DEFAULT_HOVER_MODULES;
@@ -452,6 +468,36 @@ export const normalizeClientPopoverWidthMode = normalizePopoverWidthMode;
 export const normalizeClientPopoverWidth = normalizePopoverWidth;
 export const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 export const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
+export const normalizeClientContextAgentMode = normalizeContextAgentMode;
+export const normalizeClientExperimentalQuotaReservation = normalizeExperimentalQuotaReservation;
+export const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
+
+/**
+ * 根据偏好设置返回默认上下文代理目标（`'main'` 锁定主代理，`'auto'` 跟随活跃）。
+ *
+ * @param {Record<string, any>|null|undefined} settings
+ * @returns {'main'|'auto'}
+ */
+export function getDefaultCtxInspectorAgentId(settings) {
+  return normalizeContextAgentMode(settings?.contextAgentMode) === 'auto' ? 'auto' : 'main';
+}
+
+/**
+ * 计算顶栏挂载胶囊及悬停速览浮窗应使用的上下文代理目标：
+ * - 当 `contextAgentMode === 'main'`（默认）时始终锁定 `'main'`，不被后台子代理或面板临时点选带偏；
+ * - 当 `contextAgentMode === 'auto'` 时跟随面板当前 `ctxInspectorAgentId`（含手动点选 `主`）。
+ *
+ * @param {Record<string, any>|null|undefined} telemetry
+ * @param {string} [ctxInspectorAgentId='auto']
+ * @returns {string}
+ */
+export function resolveOverlayCtxInspectorAgentId(telemetry, ctxInspectorAgentId = 'auto') {
+  if (normalizeContextAgentMode(telemetry?.settings?.contextAgentMode) === 'main') {
+    return 'main';
+  }
+  return ctxInspectorAgentId || 'auto';
+}
+export const resolveEffectiveClientCliStatusLineSlots = resolveEffectiveCliStatusLineSlots;
 export const normalizeClientHoverModules = normalizeHoverModules;
 export const normalizeClientOverviewModules = normalizeOverviewModules;
 export const normalizeClientOverviewMetrics = normalizeOverviewMetrics;
@@ -492,6 +538,20 @@ export function isEquivalentTelemetry(prev, next) {
     return false;
   }
   if (Boolean(pSet?.contextWindowRiskAccepted) !== Boolean(nSet?.contextWindowRiskAccepted)) {
+    return false;
+  }
+  if (
+    (pSet?.contextWindowMainEnabled !== false) !== (nSet?.contextWindowMainEnabled !== false) ||
+    Boolean(pSet?.contextWindowSwarmEnabled) !== Boolean(nSet?.contextWindowSwarmEnabled)
+  ) {
+    return false;
+  }
+  if (
+    (prev.cloudCodeProxy?.state || 'disabled') !== (next.cloudCodeProxy?.state || 'disabled') ||
+    Number(prev.cloudCodeProxy?.ruleCount || 0) !== Number(next.cloudCodeProxy?.ruleCount || 0) ||
+    String(prev.cloudCodeProxy?.error || '') !== String(next.cloudCodeProxy?.error || '') ||
+    Number(prev.cloudCodeProxy?.syncedAtMs || 0) !== Number(next.cloudCodeProxy?.syncedAtMs || 0)
+  ) {
     return false;
   }
   if (
@@ -540,7 +600,14 @@ export function isEquivalentTelemetry(prev, next) {
   if ((pSet?.enableCliStatusLine !== false) !== (nSet?.enableCliStatusLine !== false)) {
     return false;
   }
+  if (!sameArr(pSet?.cliStatusLineSlots, nSet?.cliStatusLineSlots)) return false;
   if ((pSet?.showTopbarMultiSession !== false) !== (nSet?.showTopbarMultiSession !== false)) {
+    return false;
+  }
+  if (
+    normalizeClientContextAgentMode(pSet?.contextAgentMode) !==
+    normalizeClientContextAgentMode(nSet?.contextAgentMode)
+  ) {
     return false;
   }
   if (Boolean(pSet?.showStepTurnRail) !== Boolean(nSet?.showStepTurnRail)) {
@@ -550,6 +617,15 @@ export function isEquivalentTelemetry(prev, next) {
     return false;
   }
   if (Boolean(pSet?.showStepSpeedColor) !== Boolean(nSet?.showStepSpeedColor)) {
+    return false;
+  }
+  if (Boolean(pSet?.showStepFilterToolbar) !== Boolean(nSet?.showStepFilterToolbar)) {
+    return false;
+  }
+  if (
+    normalizeClientExperimentalQuotaReservation(pSet?.experimentalQuotaReservation) !==
+    normalizeClientExperimentalQuotaReservation(nSet?.experimentalQuotaReservation)
+  ) {
     return false;
   }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
@@ -568,6 +644,16 @@ export function isEquivalentTelemetry(prev, next) {
     Boolean(pWb?.launcherConfigured) !== Boolean(nWb?.launcherConfigured) ||
     Boolean(pWb?.canRelaunch) !== Boolean(nWb?.canRelaunch) ||
     Number(pWb?.aliveCount || 0) !== Number(nWb?.aliveCount || 0)
+  ) {
+    return false;
+  }
+  const pCli = prev.cliStatusLine;
+  const nCli = next.cliStatusLine;
+  if (
+    Boolean(pCli?.installed) !== Boolean(nCli?.installed) ||
+    Boolean(pCli?.configured) !== Boolean(nCli?.configured) ||
+    Boolean(pCli?.preservedCustom) !== Boolean(nCli?.preservedCustom) ||
+    String(pCli?.managedFlags || '') !== String(nCli?.managedFlags || '')
   ) {
     return false;
   }
@@ -720,6 +806,9 @@ export function isEquivalentTelemetry(prev, next) {
         bs?.createdAtMs !== as?.createdAtMs ||
         bs?.totalDurationSec !== as?.totalDurationSec ||
         bs?.streamDurationSec !== as?.streamDurationSec ||
+        bs?.nativeStreamSec !== as?.nativeStreamSec ||
+        bs?.thinkingDurationSec !== as?.thinkingDurationSec ||
+        Boolean(bs?.hasToolCalls) !== Boolean(as?.hasToolCalls) ||
         bs?.modelKey !== as?.modelKey ||
         bs?.modelShort !== as?.modelShort ||
         bs?.modelLabel !== as?.modelLabel ||
@@ -777,6 +866,9 @@ export function isEquivalentTelemetry(prev, next) {
       before.createdAtMs !== after.createdAtMs ||
       before.totalDurationSec !== after.totalDurationSec ||
       before.streamDurationSec !== after.streamDurationSec ||
+      before.nativeStreamSec !== after.nativeStreamSec ||
+      before.thinkingDurationSec !== after.thinkingDurationSec ||
+      Boolean(before.hasToolCalls) !== Boolean(after.hasToolCalls) ||
       before.modelKey !== after.modelKey ||
       before.modelShort !== after.modelShort ||
       before.modelLabel !== after.modelLabel ||
@@ -847,7 +939,14 @@ export function isEquivalentTelemetry(prev, next) {
         a[k]?.costUsd !== b[k]?.costUsd ||
         a[k]?.unpricedCalls !== b[k]?.unpricedCalls ||
         a[k]?.totalTokens !== b[k]?.totalTokens ||
+        a[k]?.inputTokens !== b[k]?.inputTokens ||
+        a[k]?.cacheReadTokens !== b[k]?.cacheReadTokens ||
+        a[k]?.thinkingTokens !== b[k]?.thinkingTokens ||
+        a[k]?.responseTokens !== b[k]?.responseTokens ||
         a[k]?.calls !== b[k]?.calls ||
+        (a[k]?.avgTokPerSec ?? null) !== (b[k]?.avgTokPerSec ?? null) ||
+        (a[k]?.avgTtftSec ?? null) !== (b[k]?.avgTtftSec ?? null) ||
+        (a[k]?.cacheHitPct ?? null) !== (b[k]?.cacheHitPct ?? null) ||
         Number(a[k]?.anomalyCount || 0) !== Number(b[k]?.anomalyCount || 0) ||
         Number(a[k]?.anomalySteps || 0) !== Number(b[k]?.anomalySteps || 0)
       ) {
@@ -863,6 +962,10 @@ export function isEquivalentTelemetry(prev, next) {
   for (let i = 0; i < pTrend.length; i++) {
     if (
       pTrend[i]?.tokens !== nTrend[i]?.tokens ||
+      pTrend[i]?.inputTokens !== nTrend[i]?.inputTokens ||
+      pTrend[i]?.cacheReadTokens !== nTrend[i]?.cacheReadTokens ||
+      pTrend[i]?.thinkingTokens !== nTrend[i]?.thinkingTokens ||
+      pTrend[i]?.responseTokens !== nTrend[i]?.responseTokens ||
       pTrend[i]?.calls !== nTrend[i]?.calls ||
       pTrend[i]?.label !== nTrend[i]?.label ||
       pTrend[i]?.fullLabel !== nTrend[i]?.fullLabel ||
@@ -911,12 +1014,47 @@ export function isEquivalentTelemetry(prev, next) {
     }
   }
 
+  const pTopConvs = prev.consumption?.topConversations || [];
+  const nTopConvs = next.consumption?.topConversations || [];
+  if (pTopConvs.length !== nTopConvs.length) return false;
+  for (let i = 0; i < pTopConvs.length; i++) {
+    if (
+      pTopConvs[i]?.cascadeId !== nTopConvs[i]?.cascadeId ||
+      pTopConvs[i]?.title !== nTopConvs[i]?.title ||
+      pTopConvs[i]?.totalTokens !== nTopConvs[i]?.totalTokens ||
+      pTopConvs[i]?.costUsd !== nTopConvs[i]?.costUsd ||
+      pTopConvs[i]?.calls !== nTopConvs[i]?.calls ||
+      !areModelSlicesEqual(pTopConvs[i]?.models, nTopConvs[i]?.models)
+    ) {
+      return false;
+    }
+  }
+
+  const pTopWs = prev.consumption?.topWorkspaces || [];
+  const nTopWs = next.consumption?.topWorkspaces || [];
+  if (pTopWs.length !== nTopWs.length) return false;
+  for (let i = 0; i < pTopWs.length; i++) {
+    if (
+      pTopWs[i]?.workspaceKey !== nTopWs[i]?.workspaceKey ||
+      pTopWs[i]?.label !== nTopWs[i]?.label ||
+      pTopWs[i]?.sessionCount !== nTopWs[i]?.sessionCount ||
+      pTopWs[i]?.totalTokens !== nTopWs[i]?.totalTokens ||
+      pTopWs[i]?.costUsd !== nTopWs[i]?.costUsd ||
+      pTopWs[i]?.calls !== nTopWs[i]?.calls ||
+      !areModelSlicesEqual(pTopWs[i]?.models, nTopWs[i]?.models)
+    ) {
+      return false;
+    }
+  }
+
   // 8. 比对账号订阅档位与动态多配额池
   if (
     prev.account?.email !== next.account?.email ||
     prev.account?.name !== next.account?.name ||
     prev.account?.status !== next.account?.status ||
+    prev.account?.tierId !== next.account?.tierId ||
     prev.account?.tierName !== next.account?.tierName ||
+    prev.account?.tierMultiplier !== next.account?.tierMultiplier ||
     prev.account?.planName !== next.account?.planName ||
     prev.account?.aiCredits !== next.account?.aiCredits
   ) {
@@ -954,16 +1092,22 @@ export function isEquivalentTelemetry(prev, next) {
       pPools[i]?.poolLabel !== nPools[i]?.poolLabel ||
       pPools[i]?.usedPct !== nPools[i]?.usedPct ||
       pPools[i]?.remainingPct !== nPools[i]?.remainingPct ||
+      pPools[i]?.reservedPct !== nPools[i]?.reservedPct ||
+      pPools[i]?.reservedLeaseCount !== nPools[i]?.reservedLeaseCount ||
       pPools[i]?.resetTime !== nPools[i]?.resetTime ||
       pPools[i]?.weeklyUsedPct !== nPools[i]?.weeklyUsedPct ||
       pPools[i]?.weeklyRemainingPct !== nPools[i]?.weeklyRemainingPct ||
+      pPools[i]?.weeklyReservedPct !== nPools[i]?.weeklyReservedPct ||
+      pPools[i]?.weeklyReservedLeaseCount !== nPools[i]?.weeklyReservedLeaseCount ||
       pPools[i]?.weeklyResetTime !== nPools[i]?.weeklyResetTime ||
       pPools[i]?.cycle5h?.tokens !== nPools[i]?.cycle5h?.tokens ||
       pPools[i]?.cycle5h?.costUsd !== nPools[i]?.cycle5h?.costUsd ||
       pPools[i]?.cycle5h?.calls !== nPools[i]?.cycle5h?.calls ||
       pPools[i]?.cycleWeekly?.tokens !== nPools[i]?.cycleWeekly?.tokens ||
       pPools[i]?.cycleWeekly?.costUsd !== nPools[i]?.cycleWeekly?.costUsd ||
-      pPools[i]?.cycleWeekly?.calls !== nPools[i]?.cycleWeekly?.calls
+      pPools[i]?.cycleWeekly?.calls !== nPools[i]?.cycleWeekly?.calls ||
+      JSON.stringify(pPools[i]?.rateEstimate || null) !==
+        JSON.stringify(nPools[i]?.rateEstimate || null)
     ) {
       return false;
     }
@@ -981,6 +1125,7 @@ export function isEquivalentTelemetry(prev, next) {
       pConvs[i]?.subagentCount !== nConvs[i]?.subagentCount ||
       (pConvs[i]?.swarmCount || 0) !== (nConvs[i]?.swarmCount || 0) ||
       (pConvs[i]?.swarmTitle || '') !== (nConvs[i]?.swarmTitle || '') ||
+      (pConvs[i]?.workspaceName || '') !== (nConvs[i]?.workspaceName || '') ||
       pConvs[i]?.totalStepCount !== nConvs[i]?.totalStepCount
     ) {
       return false;
@@ -1223,6 +1368,8 @@ async function requestTelemetry(params, force) {
             account: latestSt.telemetry.consumption.account,
             trendSeries: latestSt.telemetry.consumption.trendSeries,
             sourcesBreakdown: latestSt.telemetry.consumption.sourcesBreakdown,
+            topConversations: latestSt.telemetry.consumption.topConversations,
+            topWorkspaces: latestSt.telemetry.consumption.topWorkspaces,
           },
           modelBreakdown: latestSt.telemetry.modelBreakdown,
         };
@@ -1662,6 +1809,9 @@ export async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showTopbarMultiSession')) {
     safePatch.showTopbarMultiSession = Boolean(safePatch.showTopbarMultiSession);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'contextAgentMode')) {
+    safePatch.contextAgentMode = normalizeClientContextAgentMode(safePatch.contextAgentMode);
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepTurnRail')) {
     safePatch.showStepTurnRail = Boolean(safePatch.showStepTurnRail);
   }
@@ -1671,8 +1821,19 @@ export async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepSpeedColor')) {
     safePatch.showStepSpeedColor = Boolean(safePatch.showStepSpeedColor);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepFilterToolbar')) {
+    safePatch.showStepFilterToolbar = Boolean(safePatch.showStepFilterToolbar);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalQuotaReservation')) {
+    safePatch.experimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
+      safePatch.experimentalQuotaReservation
+    );
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'topbarCapsuleSlots')) {
     safePatch.topbarCapsuleSlots = normalizeClientTopbarSlots(safePatch.topbarCapsuleSlots);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'cliStatusLineSlots')) {
+    safePatch.cliStatusLineSlots = normalizeClientCliStatusLineSlots(safePatch.cliStatusLineSlots);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverModules')) {
     safePatch.hoverModules = normalizeClientHoverModules(safePatch.hoverModules);
@@ -1710,6 +1871,12 @@ export async function saveSettingsPatch(patch) {
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowRiskAccepted')) {
     safePatch.contextWindowRiskAccepted = Boolean(safePatch.contextWindowRiskAccepted);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowMainEnabled')) {
+    safePatch.contextWindowMainEnabled = Boolean(safePatch.contextWindowMainEnabled);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowSwarmEnabled')) {
+    safePatch.contextWindowSwarmEnabled = Boolean(safePatch.contextWindowSwarmEnabled);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'orchestratorIdMode')) {
     safePatch.orchestratorIdMode = normalizeClientOrchestratorIdMode(safePatch.orchestratorIdMode);
@@ -1917,6 +2084,65 @@ export async function triggerBridgeHostRelaunch() {
       body: { __bridgeAction: 'relaunch' },
     });
   }
+}
+
+export async function triggerCliStatusLineAction(action) {
+  const res = await callSidecarApi('/api/settings', {
+    method: 'POST',
+    body: { __cliStatusLineAction: String(action || 'force_install') },
+  });
+  const cur = telemetryStore.getState().telemetry;
+  if (cur && res && typeof res === 'object') {
+    const nextTelemetry = {
+      ...cur,
+      ...(res.cliStatusLine ? { cliStatusLine: res.cliStatusLine } : {}),
+      ...(res.settings ? { settings: { ...cur.settings, ...res.settings } } : {}),
+    };
+    telemetryStore.setState({ telemetry: nextTelemetry });
+  }
+  void fetchTelemetry({ force: true }).catch(() => {});
+  return res;
+}
+
+export async function fetchSessionMigrationCatalog() {
+  try {
+    return await callSidecarApi('/api/session-migration/catalog', { method: 'GET' });
+  } catch {
+    return callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __sessionMigrationAction: 'catalog' },
+    });
+  }
+}
+
+export async function fetchQuotaReservationLog() {
+  try {
+    return await callSidecarApi('/api/quota-reservation/log', { method: 'GET' });
+  } catch {
+    return callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __quotaReservationAction: 'log' },
+    });
+  }
+}
+
+export async function executeSessionMigration(payload) {
+  let res;
+  try {
+    res = await callSidecarApi('/api/session-migration/migrate', {
+      method: 'POST',
+      body: payload || {},
+    });
+  } catch {
+    res = await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __sessionMigrationAction: 'migrate', payload: payload || {} },
+    });
+  }
+  if (res?.migratedCount > 0) {
+    void fetchTelemetry({ force: true }).catch(() => {});
+  }
+  return res;
 }
 
 export async function triggerPluginUpdate() {

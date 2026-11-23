@@ -16,10 +16,14 @@ import {
 import {
   buildStepAnomalyDiagnostic,
   buildStepCompactionDiagnostic,
+  buildStepTimingDiagnostic,
+  hasStepTimingData,
   resolveModelDisplayInfo,
   speedReasonText,
 } from '../../core/formatters.js';
+import { getStepSelectionKey } from '../../core/stepInspector.js';
 import { getEffectiveLocale, t } from '../../i18n/index.js';
+import { createSvgIcon, patchSvgIcon } from '../../icons/SvgIcon.js';
 import {
   DEFAULT_STEP_COLUMN_KEYS,
   STEP_COLUMN_REGISTRY,
@@ -389,6 +393,8 @@ export const StepTableWidget = defineComponent({
       typeof props.onSelectAgentScopes === 'function' ? props.onSelectAgentScopes : null;
     const onVirtualHeightChange =
       typeof props.onVirtualHeightChange === 'function' ? props.onVirtualHeightChange : null;
+    const onSortChange =
+      typeof props.onSortChange === 'function' ? props.onSortChange : null;
 
     const stepsTheadRow = h('tr');
     const stepsThead = h('thead', {}, [stepsTheadRow]);
@@ -397,16 +403,72 @@ export const StepTableWidget = defineComponent({
     function syncTableHeaderColumns(colKeys, headerCtx = {}) {
       const locale = getEffectiveLocale();
       const fmtKey = normalizeClientStepTokenComboFormat(headerCtx?.stepTokenComboFormat);
+      const activeSortKey = String(headerCtx?.sortKey || '');
+      const activeSortDir = headerCtx?.sortDir === 'asc' || headerCtx?.sortDir === 'desc'
+        ? headerCtx.sortDir
+        : '';
       const ctx = { stepTokenComboFormat: fmtKey };
       patchKeyedList(stepsTheadRow, colKeys, {
         keyFn: (colKey) => colKey,
-        sigFn: (colKey) => `${locale}:${colKey}:${fmtKey}:${STEP_COLUMN_REGISTRY[colKey].thLabel(ctx)}`,
+        sigFn: (colKey) => {
+          const isSorted = activeSortKey === colKey && Boolean(activeSortDir);
+          return `${locale}:${colKey}:${fmtKey}:${STEP_COLUMN_REGISTRY[colKey].thLabel(ctx)}:${onSortChange ? 1 : 0}:${isSorted ? activeSortDir : ''}`;
+        },
         createRow: (colKey) => {
-          const th = h('th', { text: STEP_COLUMN_REGISTRY[colKey].thLabel(ctx) });
-          return { el: th, refs: { th } };
+          const labelSpan = h('span', {
+            className: 'step-th-label',
+            text: STEP_COLUMN_REGISTRY[colKey].thLabel(ctx),
+          });
+          const sortIcon = createSvgIcon('chevron-down', {
+            size: 10,
+            className: 'step-sort-icon',
+          });
+          patchAttr(sortIcon, 'hidden', true);
+          const innerWrap = h('span', { className: 'step-th-inner' }, [labelSpan, sortIcon]);
+          const th = h('th', {}, [innerWrap]);
+          return { el: th, refs: { th, labelSpan, sortIcon } };
         },
         updateRow: (refs, colKey) => {
-          patchText(refs.th, STEP_COLUMN_REGISTRY[colKey].thLabel(ctx));
+          const labelText = STEP_COLUMN_REGISTRY[colKey].thLabel(ctx);
+          patchText(refs.labelSpan, labelText);
+          const sortable = Boolean(
+            onSortChange && typeof STEP_COLUMN_REGISTRY[colKey]?.sortValue === 'function'
+          );
+          const isSorted = sortable && activeSortKey === colKey && Boolean(activeSortDir);
+          patchClasses(refs.th, {
+            'is-sortable': sortable,
+            'is-sorted': isSorted,
+          });
+          patchAttr(
+            refs.th,
+            'aria-sort',
+            isSorted ? (activeSortDir === 'asc' ? 'ascending' : 'descending') : sortable ? 'none' : null
+          );
+          patchAttr(
+            refs.th,
+            'title',
+            sortable ? t('steps.sortClickTip', { col: labelText }) : null
+          );
+          patchAttr(refs.sortIcon, 'hidden', !isSorted);
+          if (isSorted) {
+            patchSvgIcon(refs.sortIcon, activeSortDir === 'asc' ? 'chevron-up' : 'chevron-down');
+          }
+          refs.th.onclick = sortable
+            ? () => {
+                const defaultDir = STEP_COLUMN_REGISTRY[colKey]?.defaultSortDir || 'desc';
+                let nextKey = colKey;
+                let nextDir = defaultDir;
+                if (activeSortKey === colKey) {
+                  if (activeSortDir === defaultDir) {
+                    nextDir = defaultDir === 'desc' ? 'asc' : 'desc';
+                  } else {
+                    nextKey = '';
+                    nextDir = '';
+                  }
+                }
+                onSortChange(nextKey, nextDir);
+              }
+            : null;
         },
       });
     }
@@ -514,6 +576,7 @@ export const StepTableWidget = defineComponent({
       patchClasses(anomalyTipEl, {
         'is-danger': diag.severity === 'danger',
         'is-compaction': diag.severity === 'compaction',
+        'is-timing': diag.severity === 'timing',
       });
       patchText(anomalyTipTitleEl, diag.title);
       patchAttr(anomalyTipSubEl, 'hidden', !diag.sub);
@@ -524,10 +587,23 @@ export const StepTableWidget = defineComponent({
       }
       const rows = Array.isArray(diag.rows) ? diag.rows : [];
       for (const row of rows) {
-        const lineEl = h('div', {
-          className: `step-anomaly-tip-row${row.danger ? ' is-danger' : ''}`,
-          text: row.text,
-        });
+        const hasKvValue = row.value !== undefined && row.value !== null && row.value !== '';
+        const lineEl = hasKvValue
+          ? h(
+              'div',
+              { className: `step-anomaly-tip-row is-kv${row.danger ? ' is-danger' : ''}` },
+              [
+                h('span', { className: 'step-anomaly-tip-k', text: row.text }),
+                h('span', {
+                  className: `step-anomaly-tip-v text-mono${row.toneClass ? ` ${row.toneClass}` : ''}`,
+                  text: row.value,
+                }),
+              ]
+            )
+          : h('div', {
+              className: `step-anomaly-tip-row${row.danger ? ' is-danger' : ''}`,
+              text: row.text,
+            });
         const itemChildren = [lineEl];
         if (row.detail) {
           itemChildren.push(
@@ -552,6 +628,7 @@ export const StepTableWidget = defineComponent({
     }
 
     const hoverRows = new WeakMap();
+    const timingHoverRows = new WeakMap();
     let lastRenderedRows = null;
     let lastRenderOptions = '';
     let trackedCascadeId = null;
@@ -644,9 +721,11 @@ export const StepTableWidget = defineComponent({
     }
 
     function getStepRowIdentity(st, fallbackCascadeId) {
-      const agentKey = String(st?.agentCascadeId || fallbackCascadeId || 'conv');
+      const agentKey = String(
+        st?.agentCascadeId || st?.agentId || st?.cascadeId || fallbackCascadeId || 'conv'
+      );
       const stepNum = Number(st?.stepIndex);
-      const rowKey = `${agentKey}-${st?.stepIndex}`;
+      const rowKey = getStepSelectionKey(st, fallbackCascadeId);
       return { agentKey, stepNum, rowKey };
     }
 
@@ -707,15 +786,18 @@ export const StepTableWidget = defineComponent({
     }
 
     function moveAlongTurnRail(event) {
-      const { badge, prompt, rowDiagGetter } = hoverRows.get(this);
+      const { badge, prompt, rowDiagGetter, timingDiagGetter } = hoverRows.get(this);
       const rect = this.getBoundingClientRect?.();
       const relX = rect ? (event?.clientX ?? 0) - rect.left : 0;
       if (event?.target !== badge && relX <= 18) {
         showTurnTip(this, prompt);
       } else {
         hideTurnTip();
-        if (rowDiagGetter) {
-          showAnomalyTip(this, rowDiagGetter());
+        const diag = timingDiagGetter?.() || rowDiagGetter?.();
+        if (diag) {
+          showAnomalyTip(this, diag);
+        } else {
+          hideAnomalyTip();
         }
       }
     }
@@ -724,7 +806,9 @@ export const StepTableWidget = defineComponent({
       const entry = hoverRows.get(this);
       hideTurnTip();
       if (entry?.rowDiagGetter && entry.tr && event?.relatedTarget && entry.tr.contains?.(event.relatedTarget)) {
-        showAnomalyTip(this, entry.rowDiagGetter());
+        showAnomalyTip(entry.rowAnchorEl || this, entry.rowDiagGetter());
+      } else if (entry?.timingDiagGetter) {
+        hideAnomalyTip();
       }
     }
 
@@ -733,6 +817,43 @@ export const StepTableWidget = defineComponent({
       cell.onmouseenter = null;
       cell.onmousemove = null;
       cell.onmouseleave = null;
+    }
+
+    function enterTimingCell() {
+      const entry = timingHoverRows.get(this);
+      if (!entry) return;
+      const diag = entry.timingDiagGetter?.();
+      if (diag) {
+        showAnomalyTip(this, diag);
+      }
+    }
+
+    function leaveTimingCell(event) {
+      const entry = timingHoverRows.get(this);
+      if (
+        entry?.rowDiagGetter &&
+        entry.tr &&
+        event?.relatedTarget &&
+        entry.tr.contains?.(event.relatedTarget)
+      ) {
+        showAnomalyTip(entry.rowAnchorEl || entry.tr, entry.rowDiagGetter());
+        return;
+      }
+      hideAnomalyTip();
+    }
+
+    function clearTimingCellHover(cell) {
+      if (!cell || !timingHoverRows.delete(cell)) return;
+      cell.onmouseenter = null;
+      cell.onmouseleave = null;
+    }
+
+    function clearRowTimingHovers(refs) {
+      if (!refs?.timingHoverTds) return;
+      for (const td of refs.timingHoverTds) {
+        clearTimingCellHover(td);
+      }
+      refs.timingHoverTds.clear();
     }
 
     function calibrateRowHeights() {
@@ -980,7 +1101,7 @@ export const StepTableWidget = defineComponent({
           logicalIdx: idx,
           isStripeEven: (idx & 1) === 1,
           hasReason: Boolean(hasReasonFlags && hasReasonFlags[idx]),
-          rowKey: `${st.agentCascadeId || cascadeId || 'conv'}-${st.stepIndex}`,
+          rowKey: getStepSelectionKey(st, cascadeId),
           hasTurn,
           hasUp,
           hasDown,
@@ -1057,6 +1178,7 @@ export const StepTableWidget = defineComponent({
               railEl: null,
               agentBadgeEl: null,
               hoverTd: null,
+              timingHoverTds: new Set(),
             },
           };
         },
@@ -1139,6 +1261,7 @@ export const StepTableWidget = defineComponent({
               clearCellHover(refs.hoverTd);
               refs.hoverTd = null;
             }
+            clearRowTimingHovers(refs);
             for (const [oldColKey, entry] of refs.cellMap) {
               if (!wantedSet.has(oldColKey)) {
                 if (refs.railEl?.parentNode === entry.td) {
@@ -1244,6 +1367,7 @@ export const StepTableWidget = defineComponent({
                   : t('steps.badgeFilterAgent', { agent: agentName })
               );
               refs.agentBadgeEl.onclick = (e) => {
+                e?.stopPropagation?.();
                 if (e && (e.ctrlKey || e.metaKey || e.shiftKey) && effectiveScopes[0] !== 'all') {
                   const next = effectiveScopes.includes(targetScope)
                     ? effectiveScopes.filter((id) => id !== targetScope)
@@ -1295,6 +1419,10 @@ export const StepTableWidget = defineComponent({
             );
           }
 
+          const hasTimingTip = hasStepTimingData(st);
+          const timingDiagGetter = hasTimingTip ? () => buildStepTimingDiagnostic(st) : null;
+          const isFirstTimingCol = firstColKey === 'ttft' || firstColKey === 'duration';
+
           const hoverTd = showRowRail && prompt ? firstTd : null;
           if (refs.hoverTd !== hoverTd) clearCellHover(refs.hoverTd);
           refs.hoverTd = hoverTd;
@@ -1302,7 +1430,9 @@ export const StepTableWidget = defineComponent({
             hoverRows.set(hoverTd, {
               badge: refs.agentBadgeEl,
               prompt,
+              rowAnchorEl: firstTd || tr,
               rowDiagGetter,
+              timingDiagGetter: isFirstTimingCol ? timingDiagGetter : null,
               tr,
             });
             const useWholeCellTurnTip = firstColKey === 'step' && !hasRowTip;
@@ -1310,6 +1440,30 @@ export const StepTableWidget = defineComponent({
             hoverTd.onmousemove = useWholeCellTurnTip ? moveInStepCell : moveAlongTurnRail;
             hoverTd.onmouseleave = leaveStepCell;
           }
+
+          if (!refs.timingHoverTds) refs.timingHoverTds = new Set();
+          const nextTimingTds = new Set();
+          if (timingDiagGetter) {
+            for (const timingColKey of ['ttft', 'duration']) {
+              const timingTd = refs.cellMap.get(timingColKey)?.td || null;
+              if (!timingTd || timingTd === hoverTd) continue;
+              nextTimingTds.add(timingTd);
+              timingHoverRows.set(timingTd, {
+                tr,
+                rowAnchorEl: firstTd || tr,
+                rowDiagGetter,
+                timingDiagGetter,
+              });
+              timingTd.onmouseenter = enterTimingCell;
+              timingTd.onmouseleave = leaveTimingCell;
+            }
+          }
+          for (const prevTd of refs.timingHoverTds) {
+            if (!nextTimingTds.has(prevTd)) {
+              clearTimingCellHover(prevTd);
+            }
+          }
+          refs.timingHoverTds = nextTimingTds;
 
           if (enteringRowKeys?.has(item.rowKey)) {
             clearRowEnterState(tr);
@@ -1328,6 +1482,7 @@ export const StepTableWidget = defineComponent({
             clearCellHover(refs.hoverTd);
             refs.hoverTd = null;
           }
+          clearRowTimingHovers(refs);
           clearRowEnterState(tr);
           if (!refs?.isSpacer && !refs?.isSizer && tr) {
             patchClasses(tr, {
@@ -1414,6 +1569,8 @@ export const StepTableWidget = defineComponent({
         displaySettings = {},
         allConversationSteps = null,
         allowNewRowFade = false,
+        sortKey = '',
+        sortDir = '',
       } = {}
     ) {
       const normCascadeId = String(cascadeId || '');
@@ -1476,11 +1633,15 @@ export const StepTableWidget = defineComponent({
 
       const colOrderSig = colKeys.join(',');
       const normTokenFmt = normalizeClientStepTokenComboFormat(stepTokenComboFormat);
+      const normSortKey = String(sortKey || '');
+      const normSortDir = sortDir === 'asc' || sortDir === 'desc' ? sortDir : '';
+      const isCustomSorted = Boolean(normSortKey && normSortDir);
+      const effectiveTurnRail = Boolean(showStepTurnRail && !isCustomSorted);
       const renderOptions = JSON.stringify([
         cascadeId, locale, colOrderSig, effectiveScopes, hasSubagents, isMergedMultiAgents,
-        showStepTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
+        effectiveTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
         displaySettings.modelDisplayMode, displaySettings.showUpstreamModel,
-        displaySettings.orchestratorIdMode,
+        displaySettings.orchestratorIdMode, normSortKey, normSortDir,
       ]);
       if (
         lastRenderOptions === renderOptions &&
@@ -1497,7 +1658,11 @@ export const StepTableWidget = defineComponent({
 
       syncFontScaleIfChanged();
       const wantedSet = new Set(colKeys);
-      syncTableHeaderColumns(colKeys, { stepTokenComboFormat: normTokenFmt });
+      syncTableHeaderColumns(colKeys, {
+        stepTokenComboFormat: normTokenFmt,
+        sortKey: normSortKey,
+        sortDir: normSortDir,
+      });
 
       const showAgentBadge = Boolean(hasSubagents && showStepAgentBadge);
       const cellCtx = {
@@ -1513,7 +1678,7 @@ export const StepTableWidget = defineComponent({
 
       const useRootTurn = Boolean(hasSubagents && isMergedMultiAgents);
       let railActive = false;
-      if (showStepTurnRail) {
+      if (effectiveTurnRail) {
         for (let i = 0; i < tableSteps.length; i++) {
           const st = tableSteps[i];
           const tIdx = useRootTurn ? (st?.rootTurnIndex ?? st?.turnIndex) : st?.turnIndex;
@@ -1566,7 +1731,7 @@ export const StepTableWidget = defineComponent({
         cellCtx,
         railActive,
         showAgentBadge,
-        showStepTurnRail,
+        showStepTurnRail: effectiveTurnRail,
         useRootTurn,
         isVirtualized,
         hasReasonFlags,

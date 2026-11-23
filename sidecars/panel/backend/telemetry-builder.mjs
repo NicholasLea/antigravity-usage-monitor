@@ -31,6 +31,7 @@ import {
 } from './config.mjs';
 import { getEndpointCacheStore } from './endpoint-registry.mjs';
 import { getContextWindowGroups, getContextWindowModels } from './context-windows.mjs';
+import { getCliStatusLineRuntimeStatus } from './cli-statusline-config.mjs';
 import { readLocalSummarySnapshot } from './cli-sqlite-reader.mjs';
 import { enumerateAndSyncConversations } from './local-scanner.mjs';
 import { ensureLsEndpointDiscovered } from './ls-discovery.mjs';
@@ -44,6 +45,8 @@ import {
 } from './model-pricing.mjs';
 import { getCloudStatus, getPricingPhaseEpoch, pricingCatalogRevision } from './pricing-catalog.mjs';
 import { buildOfficialQuotaPools } from './quota-pools.mjs';
+import { updatePoolQuotaReservationEstimates } from './quota-reservation.mjs';
+import { getDefaultCloudCodeProxyStatus } from './cloudcode-proxy.mjs';
 import { getDefaultWindowBridgeStatus } from './window-bridge.mjs';
 import {
   aggregateConsumptionPresetBundle,
@@ -53,9 +56,10 @@ import {
   buildScopedModelBreakdown,
   clearUsageAggregatorMemo,
   getNextMondayResetIso,
+  normalizeWorkspaceBucket,
 } from './usage-aggregator.mjs';
 
-const MAX_RECENT_CONVERSATIONS = 30;
+const MAX_RECENT_QUICK_STATS = 30;
 const MAX_CONVERSATION_ASSEMBLY_CACHE = 8;
 const MAX_TELEMETRY_SNAPSHOT_ENDPOINTS = 8;
 const POOL_PRIORITY_ORDER = ['Gemini', 'Argon', 'Carbon', 'Claude & GPT'];
@@ -92,6 +96,9 @@ function roundSessionCost(val) {
 function findTrajectoryCacheEntry(cascadeId, cacheStore = null) {
   if (!cascadeId) return null;
   const store = cacheStore || getEndpointCacheStore(null);
+  if (typeof store.getCachedTrajectoryEntryByLower === 'function') {
+    return store.getCachedTrajectoryEntryByLower(cascadeId)?.entry || null;
+  }
   const entry = store.getCachedTrajectory(cascadeId);
   if (entry) return entry;
   const targetLower = String(cascadeId).toLowerCase();
@@ -807,6 +814,105 @@ function getTelemetrySources(
   return pending;
 }
 
+function classifySubagentDisplayMeta(subSum, subEntry, idx, counters) {
+  const subSpec = subSum.subagentSpec || subEntry?.subagentSpec || null;
+  const isSideQ = Boolean(
+    subSum.isSideQuestion || subEntry?.isSideQuestion || subSpec?.typeName === 'side_question'
+  );
+  const rawRole =
+    subSpec?.role || subSum.agentScriptName || subEntry?.agentScriptName || subSpec?.typeName || '';
+  const parsedSwarm = !isSideQ
+    ? parseSwarmWorkerRole({
+        role: subSpec?.role || '',
+        typeName: subSpec?.typeName || '',
+        agentScriptName: subSum.agentScriptName || subEntry?.agentScriptName || '',
+        memberName: subSum.swarmMemberName || '',
+      })
+    : { isSwarmWorker: false };
+  const isSwarmW = Boolean(!isSideQ && (subSum.isSwarmWorker || parsedSwarm.isSwarmWorker));
+  const isSubRunning = subSum.status === 'CASCADE_RUN_STATUS_RUNNING';
+  const isKilled = Boolean(subSum.killed || subSum.swarmState === 'killed');
+  const subIndex = idx + 1;
+  let sideIndex = 0;
+  let agentKind = 'subagent';
+  let agentOrdinal = 0;
+  let customRole = '';
+  let swarmState = '';
+  let isSwarmAuxiliary = false;
+  let shortLabel = '';
+  let badgeText = '';
+  let roleLabel = '';
+  let runningRole = '';
+  let typeName = '';
+  let agentLabel = '';
+
+  if (isSideQ) {
+    sideIndex = ++counters.side;
+    agentKind = 'side_question';
+    agentOrdinal = sideIndex;
+    shortLabel = `旁路提问 #${sideIndex}`;
+    badgeText = `旁${sideIndex}`;
+    const cleanSideRole =
+      rawRole &&
+      rawRole !== '旁路提问' &&
+      rawRole !== 'Side Question' &&
+      rawRole !== 'side_question'
+        ? rawRole
+        : '';
+    customRole = cleanSideRole;
+    roleLabel = cleanSideRole || '旁路提问';
+    runningRole = cleanSideRole || shortLabel;
+    typeName = 'side_question';
+    agentLabel = cleanSideRole ? `${shortLabel} · ${cleanSideRole}` : shortLabel;
+  } else if (isSwarmW) {
+    const swOrd = ++counters.swarm;
+    agentKind = 'swarm_worker';
+    agentOrdinal = swOrd;
+    const memberTag = parsedSwarm.memberName ? `@${parsedSwarm.memberName}` : '';
+    customRole = memberTag;
+    shortLabel = `蜂群 #${swOrd}`;
+    badgeText = `蜂${swOrd}`;
+    roleLabel = memberTag || '蜂群';
+    runningRole = memberTag || shortLabel;
+    typeName = 'worker';
+    agentLabel = memberTag ? `${shortLabel} · ${memberTag}` : shortLabel;
+    swarmState = isKilled ? 'killed' : isSubRunning ? 'working' : subSum.swarmState || 'waiting';
+    isSwarmAuxiliary = Boolean(subSum.isSwarmAuxiliary || parsedSwarm.isAuxiliary);
+  } else {
+    const subOrd = ++counters.normal;
+    agentKind = 'subagent';
+    agentOrdinal = subOrd;
+    customRole = rawRole && rawRole !== '子代理' && rawRole !== 'Subagent' ? rawRole : '';
+    shortLabel = `子代理 #${subOrd}`;
+    badgeText = `子${subOrd}`;
+    roleLabel = rawRole || '子代理';
+    runningRole = rawRole || shortLabel;
+    typeName = subSpec?.typeName || '';
+    agentLabel = rawRole ? `${shortLabel} · ${rawRole}` : shortLabel;
+  }
+
+  return {
+    subSpec,
+    isSideQ,
+    isSwarmW,
+    isSubRunning,
+    isKilled,
+    subIndex,
+    sideIndex,
+    agentKind,
+    agentOrdinal,
+    customRole,
+    swarmState,
+    isSwarmAuxiliary,
+    shortLabel,
+    badgeText,
+    roleLabel,
+    runningRole,
+    typeName,
+    agentLabel,
+  };
+}
+
 function buildActiveConversationAssembly({
   activeCascadeId,
   activeConvSummary,
@@ -938,9 +1044,7 @@ function buildActiveConversationAssembly({
   let totalFamilyCacheReadTokens = sessionCacheReadTokens;
   let totalFamilyOutputTokens = sessionOutputTokens;
 
-  let normalSubCount = 0;
-  let swarmWorkerCount = 0;
-  let sideQuestionCount = 0;
+  const subCounters = { normal: 0, swarm: 0, side: 0 };
   for (let idx = 0; idx < subagentSummaries.length; idx++) {
     const subSum = subagentSummaries[idx];
     const subCid = subSum.cascadeId;
@@ -949,78 +1053,21 @@ function buildActiveConversationAssembly({
     const subRawSteps = subRawStepsList[idx];
     for (const step of subRawSteps) allCombinedRawSteps.push(step);
 
-    const subSpec = subSum.subagentSpec || subEntry?.subagentSpec || null;
-    const isSideQ = Boolean(
-      subSum.isSideQuestion || subEntry?.isSideQuestion || subSpec?.typeName === 'side_question'
-    );
-    const rawRole =
-      subSpec?.role || subSum.agentScriptName || subEntry?.agentScriptName || subSpec?.typeName || '';
-    const parsedSwarm = !isSideQ
-      ? parseSwarmWorkerRole({
-          role: subSpec?.role || '',
-          typeName: subSpec?.typeName || '',
-          agentScriptName: subSum.agentScriptName || subEntry?.agentScriptName || '',
-          memberName: subSum.swarmMemberName || '',
-        })
-      : { isSwarmWorker: false };
-    const isSwarmW = Boolean(!isSideQ && (subSum.isSwarmWorker || parsedSwarm.isSwarmWorker));
-    const subIndex = idx + 1;
-    let sideIndex = 0;
-    let agentKind = 'subagent';
-    let agentOrdinal = 0;
-    let customRole = '';
-    let swarmState = '';
-    let isSwarmAuxiliary = false;
-    let shortLabel = '';
-    let badgeText = '';
-    let roleLabel = '';
-    let typeName = '';
-    let agentLabel = '';
-    if (isSideQ) {
-      sideIndex = ++sideQuestionCount;
-      agentKind = 'side_question';
-      agentOrdinal = sideIndex;
-      shortLabel = `旁路提问 #${sideIndex}`;
-      badgeText = `旁${sideIndex}`;
-      const cleanSideRole =
-        rawRole &&
-        rawRole !== '旁路提问' &&
-        rawRole !== 'Side Question' &&
-        rawRole !== 'side_question'
-          ? rawRole
-          : '';
-      customRole = cleanSideRole;
-      roleLabel = cleanSideRole || '旁路提问';
-      typeName = 'side_question';
-      agentLabel = cleanSideRole ? `${shortLabel} · ${cleanSideRole}` : shortLabel;
-    } else if (isSwarmW) {
-      const swOrd = ++swarmWorkerCount;
-      agentKind = 'swarm_worker';
-      agentOrdinal = swOrd;
-      const memberTag = parsedSwarm.memberName ? `@${parsedSwarm.memberName}` : '';
-      customRole = memberTag;
-      shortLabel = `蜂群 #${swOrd}`;
-      badgeText = `蜂${swOrd}`;
-      roleLabel = memberTag || '蜂群';
-      typeName = 'worker';
-      agentLabel = memberTag ? `${shortLabel} · ${memberTag}` : shortLabel;
-      swarmState = subSum.killed
-        ? 'killed'
-        : subSum.status === 'CASCADE_RUN_STATUS_RUNNING'
-          ? 'working'
-          : subSum.swarmState || 'waiting';
-      isSwarmAuxiliary = Boolean(subSum.isSwarmAuxiliary || parsedSwarm.isAuxiliary);
-    } else {
-      const subOrd = ++normalSubCount;
-      agentKind = 'subagent';
-      agentOrdinal = subOrd;
-      customRole = rawRole && rawRole !== '子代理' && rawRole !== 'Subagent' ? rawRole : '';
-      shortLabel = `子代理 #${subOrd}`;
-      badgeText = `子${subOrd}`;
-      roleLabel = rawRole || '子代理';
-      typeName = subSpec?.typeName || '';
-      agentLabel = rawRole ? `${shortLabel} · ${rawRole}` : shortLabel;
-    }
+    const {
+      isSideQ,
+      subIndex,
+      sideIndex,
+      agentKind,
+      agentOrdinal,
+      customRole,
+      swarmState,
+      isSwarmAuxiliary,
+      shortLabel,
+      badgeText,
+      roleLabel,
+      typeName,
+      agentLabel,
+    } = classifySubagentDisplayMeta(subSum, subEntry, idx, subCounters);
 
     const subUnit = buildAgentUnitTelemetry({
       agentId: subCid,
@@ -1175,11 +1222,11 @@ function buildActiveConversationAssembly({
         mainAgentTelemetry;
 
     const roleSummaryParts = [];
-    if (swarmWorkerCount > 0) roleSummaryParts.push(`${swarmWorkerCount} 蜂群`);
-    if (normalSubCount > 0) roleSummaryParts.push(`${normalSubCount} 子代理`);
-    if (sideQuestionCount > 0) {
+    if (subCounters.swarm > 0) roleSummaryParts.push(`${subCounters.swarm} 蜂群`);
+    if (subCounters.normal > 0) roleSummaryParts.push(`${subCounters.normal} 子代理`);
+    if (subCounters.side > 0) {
       roleSummaryParts.push(
-        roleSummaryParts.length > 0 ? `${sideQuestionCount} 旁问` : `${sideQuestionCount} 旁路提问`
+        roleSummaryParts.length > 0 ? `${subCounters.side} 旁问` : `${subCounters.side} 旁路提问`
       );
     }
     const aggregatedRoleLabel =
@@ -1286,9 +1333,9 @@ function buildActiveConversationAssembly({
     stepCount: enrichedActiveSteps.length,
     hasSubagents: subAgentTelemetries.length > 0,
     subagentCount: subAgentTelemetries.length,
-    swarmCount: swarmWorkerCount,
-    normalSubagentCount: normalSubCount,
-    sideQuestionCount,
+    swarmCount: subCounters.swarm,
+    normalSubagentCount: subCounters.normal,
+    sideQuestionCount: subCounters.side,
     totalStepsAllAgents: subAgentTelemetries.length
       ? allCombinedEnrichedSteps.length
       : enrichedActiveSteps.length,
@@ -1659,6 +1706,8 @@ export async function buildTelemetryPayloadInternal(
     weekBucket,
     quotaWeekBucket,
     modelBreakdown,
+    topConversations,
+    topWorkspaces,
     poolCycleStats,
     poolsWeeklySummary,
   } = aggregateMultiWindowUsage({
@@ -1680,6 +1729,15 @@ export async function buildTelemetryPayloadInternal(
     poolObj.cycleWeekly = pStats?.cycleWeekly || createEmptyCycleSummary();
   }
 
+  updatePoolQuotaReservationEstimates({
+    endpointId,
+    accountScope: accountScope || '',
+    quotaPoolsMap,
+    poolCycleStats,
+    quotaFetchedAtMs: officialQuotaInfo?.fetchedAtMs || 0,
+    nowMs: Date.now(),
+  });
+
   // 6. 组装当前活跃配额池与每周限额视图数据
   const { activePoolQuota, weeklyQuota } = buildActivePoolAndWeeklyQuotas({
     activePoolKey,
@@ -1699,13 +1757,39 @@ export async function buildTelemetryPayloadInternal(
   const realAiCredits = Number(g1CreditEntry?.creditAmount || 0);
   const uiBundleVersion = computeRuntimeCodeVersion();
 
-  const rawTierName = userStatus?.userTier?.name || '';
-  const inferredPlanFallback = /\bfree\b/i.test(rawTierName)
+  const rawTierId = String(userStatus?.userTier?.id || '').trim();
+  const rawTierName = String(userStatus?.userTier?.name || '').trim();
+  const rawTierDesc = String(userStatus?.userTier?.description || '').trim();
+  const rawPlanName = String(userStatus?.planStatus?.planInfo?.planName || '').trim();
+  const tierIdLower = rawTierId.toLowerCase();
+  const tierText = `${rawTierId} ${rawTierName} ${rawTierDesc}`;
+  const resolvedTierMultiplier = /(?:^|[-_\s])5x(?:$|[-_\s])|ultra[-_]?lite/i.test(tierText)
+    ? '5x'
+    : /(?:^|[-_\s])20x(?:$|[-_\s])/i.test(tierText) ||
+        tierIdLower === 'g1-ultra-tier' ||
+        (/^g1-ultra(?:-[a-z0-9]+)?-tier$/i.test(tierIdLower) && !/lite|5x/i.test(tierIdLower))
+      ? '20x'
+      : '';
+  const resolvedTierName =
+    rawTierName ||
+    (/ultra/i.test(tierIdLower)
+      ? 'Google AI Ultra'
+      : /pro/i.test(tierIdLower)
+        ? 'Google AI Pro'
+        : /free|standard/i.test(tierIdLower)
+          ? 'Google AI Free'
+          : 'Google AI');
+  const isUltraTier = /\bultra\b/i.test(resolvedTierName) || /ultra/i.test(tierIdLower);
+  const inferredPlanFallback = /\bfree\b/i.test(resolvedTierName)
     ? 'Free'
-    : /\bultra\b/i.test(rawTierName)
-      ? 'Ultra'
+    : isUltraTier
+      ? resolvedTierMultiplier || 'Ultra'
       : 'Pro';
-  const resolvedPlanName = userStatus?.planStatus?.planInfo?.planName || inferredPlanFallback;
+  // Google 上游对 Ultra 订阅的 planStatus.planInfo.planName 仍会返回 "Pro"，按 userTier.id 还原 5x / 20x
+  const resolvedPlanName = isUltraTier
+    ? resolvedTierMultiplier ||
+      (rawPlanName && !/^pro$/i.test(rawPlanName) ? rawPlanName : 'Ultra')
+    : rawPlanName || inferredPlanFallback;
 
   // 预计算近期会话与运行中会话的轻量缓存速览指标（零额外 RPC 开销）
   const quickStatsMemo = new Map();
@@ -1805,80 +1889,27 @@ export async function buildTelemetryPayloadInternal(
     const rootFallbackMs =
       rootConv.lastModifiedMs || rootEntry?.lastModifiedMs || rootConv.createdTimeMs || 0;
 
-    let runNormalSubIdx = 0;
-    let runSwarmIdx = 0;
-    let runSideIdx = 0;
+    const runCounters = { normal: 0, swarm: 0, side: 0 };
     const subItems = rawSubs.map((subSum, idx) => {
       const subCid = subSum.cascadeId;
       const subEntry = findTrajectoryCacheEntry(subCid, cacheStore);
-      const subSpec = subSum.subagentSpec || subEntry?.subagentSpec || null;
-      const isSideQ = Boolean(
-        subSum.isSideQuestion || subEntry?.isSideQuestion || subSpec?.typeName === 'side_question'
-      );
-      const rawRole =
-        subSpec?.role ||
-        subSum.agentScriptName ||
-        subEntry?.agentScriptName ||
-        subSpec?.typeName ||
-        '';
-      const parsedSwarm = !isSideQ
-        ? parseSwarmWorkerRole({
-            role: subSpec?.role || '',
-            typeName: subSpec?.typeName || '',
-            agentScriptName: subSum.agentScriptName || subEntry?.agentScriptName || '',
-            memberName: subSum.swarmMemberName || '',
-          })
-        : { isSwarmWorker: false };
-      const isSwarmW = Boolean(!isSideQ && (subSum.isSwarmWorker || parsedSwarm.isSwarmWorker));
-      const subIndex = idx + 1;
-      let sideIndex = 0;
-      let agentKind = 'subagent';
-      let agentOrdinal = 0;
-      let customRole = '';
-      let swarmState = '';
-      let isSwarmAuxiliary = false;
-      let badgeText = '';
-      let shortLabel = '';
-      let role = '';
-      if (isSideQ) {
-        sideIndex = ++runSideIdx;
-        agentKind = 'side_question';
-        agentOrdinal = sideIndex;
-        badgeText = `旁${sideIndex}`;
-        shortLabel = `旁路提问 #${sideIndex}`;
-        const cleanSide =
-          rawRole &&
-          rawRole !== '旁路提问' &&
-          rawRole !== 'Side Question' &&
-          rawRole !== 'side_question'
-            ? rawRole
-            : '';
-        customRole = cleanSide;
-        role = cleanSide || shortLabel;
-      } else if (isSwarmW) {
-        const swOrd = ++runSwarmIdx;
-        agentKind = 'swarm_worker';
-        agentOrdinal = swOrd;
-        const memberTag = parsedSwarm.memberName ? `@${parsedSwarm.memberName}` : '';
-        customRole = memberTag;
-        badgeText = `蜂${swOrd}`;
-        shortLabel = `蜂群 #${swOrd}`;
-        role = memberTag || shortLabel;
-        isSwarmAuxiliary = Boolean(subSum.isSwarmAuxiliary || parsedSwarm.isAuxiliary);
-      } else {
-        const nOrd = ++runNormalSubIdx;
-        agentKind = 'subagent';
-        agentOrdinal = nOrd;
-        customRole = rawRole && rawRole !== '子代理' && rawRole !== 'Subagent' ? rawRole : '';
-        badgeText = `子${nOrd}`;
-        shortLabel = `子代理 #${nOrd}`;
-        role = rawRole || shortLabel;
-      }
-      const isSubRunning = subSum.status === 'CASCADE_RUN_STATUS_RUNNING';
-      const isKilled = Boolean(subSum.killed || subSum.swarmState === 'killed');
-      if (isSwarmW) {
-        swarmState = isKilled ? 'killed' : isSubRunning ? 'working' : subSum.swarmState || 'waiting';
-      }
+      const {
+        subSpec,
+        isSideQ,
+        isSwarmW,
+        isSubRunning,
+        isKilled,
+        subIndex,
+        sideIndex,
+        agentKind,
+        agentOrdinal,
+        customRole,
+        swarmState,
+        isSwarmAuxiliary,
+        badgeText,
+        shortLabel,
+        runningRole: role,
+      } = classifySubagentDisplayMeta(subSum, subEntry, idx, runCounters);
       const stepCount = Number(subSum.stepCount ?? subEntry?.steps?.length ?? 0);
       const subModMs = subSum.lastModifiedMs || subEntry?.lastModifiedMs || 0;
       const liveActivity = isSubRunning
@@ -2047,9 +2078,9 @@ export async function buildTelemetryPayloadInternal(
       lastModifiedMs: rootConv.groupLastModifiedMs || rootConv.lastModifiedMs || 0,
       mainActivity: resolvedMainActivity,
       subagentCount: subItems.length,
-      swarmCount: runSwarmIdx,
-      normalSubagentCount: runNormalSubIdx,
-      sideQuestionCount: runSideIdx,
+      swarmCount: runCounters.swarm,
+      normalSubagentCount: runCounters.normal,
+      sideQuestionCount: runCounters.side,
       runningSubagentCount: runningSubList.length,
       runningSwarmCount: runningSubList.filter((s) => s.agentKind === 'swarm_worker').length,
       subagents: subItems,
@@ -2072,7 +2103,9 @@ export async function buildTelemetryPayloadInternal(
     },
     uiBundleVersion,
     windowBridge: getDefaultWindowBridgeStatus(),
-    settings: loadSettings(),
+    cloudCodeProxy: getDefaultCloudCodeProxyStatus(),
+    cliStatusLine: getCliStatusLineRuntimeStatus(),
+    settings,
     contextWindowModels: getContextWindowGroups(getContextWindowModels(clientConfigs, contextModelCatalog)).map((group) => {
       const latest = group.members.reduce((previous, id) => {
         const reported = reportedContextLimits.get(id);
@@ -2085,23 +2118,35 @@ export async function buildTelemetryPayloadInternal(
       status: accountStatus,
       email: userStatus?.email || '',
       name: userStatus?.name || '',
-      tierName: rawTierName || 'Google AI',
+      tierId: rawTierId,
+      tierName: resolvedTierName,
+      tierMultiplier: resolvedTierMultiplier,
       planName: resolvedPlanName,
       aiCredits: realAiCredits > 0 ? realAiCredits : null,
       totalConversations: conversations.length,
     },
     runningConversations,
-    conversations: conversations.slice(0, MAX_RECENT_CONVERSATIONS).map((c) => {
-      const qStats = getConversationQuickStats(c);
+    conversations: conversations.map((c, idx) => {
       const rawSubs = Array.isArray(c.subagents) ? c.subagents : [];
       const runningSubCount = rawSubs.filter((s) => s.status === 'CASCADE_RUN_STATUS_RUNNING').length;
+      const isConvRunning = c.status === 'CASCADE_RUN_STATUS_RUNNING' || runningSubCount > 0;
+      const includeQuickStats =
+        idx < MAX_RECENT_QUICK_STATS ||
+        isConvRunning ||
+        (Boolean(activeCascadeId) &&
+          String(c.cascadeId || '').toLowerCase() === String(activeCascadeId).toLowerCase());
+      const qStats = includeQuickStats ? getConversationQuickStats(c) : null;
       const cSwarmCount = Number(c.swarmCount ?? rawSubs.filter((s) => s.isSwarmWorker).length);
       const cSideCount = rawSubs.filter((s) => s.isSideQuestion).length;
       const cNormalSubCount = Math.max(0, rawSubs.length - cSwarmCount - cSideCount);
+      const wsInfo = normalizeWorkspaceBucket(
+        c.workspaceUri || findTrajectoryCacheEntry(c.cascadeId, cacheStore)?.workspaceUri || ''
+      );
       return {
         cascadeId: c.cascadeId,
         title: c.title,
         ...(c.swarmTitle ? { swarmTitle: c.swarmTitle } : {}),
+        ...(wsInfo ? { workspaceName: wsInfo.label, workspacePath: wsInfo.workspacePath } : {}),
         stepCount: c.stepCount,
         subagentCount: c.subagentCount || 0,
         swarmCount: cSwarmCount,
@@ -2110,16 +2155,20 @@ export async function buildTelemetryPayloadInternal(
         runningSubagentCount: runningSubCount,
         totalStepCount: c.totalStepCount || c.stepCount || 0,
         ...(rawSubs.length > 0 ? { memberCascadeIds: rawSubs.map((s) => s.cascadeId) } : {}),
-        isRunning: c.status === 'CASCADE_RUN_STATUS_RUNNING' || runningSubCount > 0,
+        isRunning: isConvRunning,
         status: c.status,
         lastModifiedTime: c.lastModifiedTime,
         lastModifiedMs: c.groupLastModifiedMs || c.lastModifiedMs,
-        modelShort: qStats.modelShort,
-        modelUpstream: qStats.modelUpstream,
-        latestTokPerSec: qStats.latestTokPerSec,
-        contextUsedPct: qStats.contextUsedPct,
-        sessionCostUsd: qStats.sessionCostUsd,
-        sessionUnpricedCalls: qStats.sessionUnpricedCalls,
+        ...(qStats
+          ? {
+              modelShort: qStats.modelShort,
+              modelUpstream: qStats.modelUpstream,
+              latestTokPerSec: qStats.latestTokPerSec,
+              contextUsedPct: qStats.contextUsedPct,
+              sessionCostUsd: qStats.sessionCostUsd,
+              sessionUnpricedCalls: qStats.sessionUnpricedCalls,
+            }
+          : {}),
       };
     }),
     activeConversation: assembledActiveConversation,
@@ -2136,6 +2185,8 @@ export async function buildTelemetryPayloadInternal(
       presets: finalizedPresets,
       trendSeries,
       sourcesBreakdown,
+      topConversations: enrichTopConversationTitles(topConversations, conversations),
+      topWorkspaces: enrichTopWorkspaces(topWorkspaces, conversations),
       monthlyYear: currentYear,
       monthlySeries,
     },
@@ -2355,6 +2406,59 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
   };
 }
 
+function enrichTopConversationTitles(topList, convSummaries) {
+  if (!Array.isArray(topList) || topList.length === 0) return [];
+  const titleMap = new Map();
+  if (Array.isArray(convSummaries)) {
+    for (const c of convSummaries) {
+      const cid = String(c?.cascadeId || '').toLowerCase();
+      const title = String(c?.title || '').trim();
+      if (cid && title && !titleMap.has(cid)) {
+        titleMap.set(cid, title);
+      }
+      if (Array.isArray(c?.subagents)) {
+        for (const sub of c.subagents) {
+          const sid = String(sub?.cascadeId || '').toLowerCase();
+          if (sid && title && !titleMap.has(sid)) {
+            titleMap.set(sid, title);
+          }
+        }
+      }
+    }
+  }
+  return topList.map((item) => {
+    if (!item || typeof item !== 'object') return item;
+    const cidLower = String(item.cascadeId || '').toLowerCase();
+    const fallbackTitle = titleMap.get(cidLower) || '';
+    const existingTitle = String(item.title || '').trim();
+    const resolvedTitle = existingTitle || fallbackTitle || (item.cascadeId ? item.cascadeId.slice(0, 8) : '—');
+    return {
+      ...item,
+      title: resolvedTitle,
+      canJump: titleMap.has(cidLower),
+    };
+  });
+}
+
+function enrichTopWorkspaces(wsList, convSummaries) {
+  if (!Array.isArray(wsList) || wsList.length === 0) return [];
+  const jumpableIds = new Set();
+  if (Array.isArray(convSummaries)) {
+    for (const c of convSummaries) {
+      const cid = String(c?.cascadeId || '').toLowerCase();
+      if (cid) jumpableIds.add(cid);
+    }
+  }
+  return wsList.map((item) => {
+    if (!item || typeof item !== 'object') return item;
+    const latestCid = String(item.latestCascadeId || '').toLowerCase();
+    return {
+      ...item,
+      canJump: Boolean(latestCid && (jumpableIds.size === 0 || jumpableIds.has(latestCid))),
+    };
+  });
+}
+
 function tryBuildFastConsumptionPayload(filterOpts = {}) {
   const endpoint = filterOpts?.endpoint && filterOpts.endpoint.isRemote ? filterOpts.endpoint : null;
   const snap = resolveValidFastSnapshot(endpoint);
@@ -2382,6 +2486,11 @@ function tryBuildFastConsumptionPayload(filterOpts = {}) {
       account: agg.finalizedSelectedAccount,
       trendSeries: agg.trendSeries,
       sourcesBreakdown: agg.sourcesBreakdown,
+      topConversations: enrichTopConversationTitles(
+        agg.topConversations,
+        snap.sessions?.conversations
+      ),
+      topWorkspaces: enrichTopWorkspaces(agg.topWorkspaces, snap.sessions?.conversations),
     },
     modelBreakdown: agg.modelBreakdown,
   };
@@ -2395,13 +2504,24 @@ function tryBuildConsumptionPresetsPayload(filterOpts = {}) {
     ...snap.aggContext,
     endpoint,
   });
+  const enrichedRanges = {};
+  for (const [rangeKey, entry] of Object.entries(bundle.ranges || {})) {
+    enrichedRanges[rangeKey] = {
+      ...entry,
+      topConversations: enrichTopConversationTitles(
+        entry?.topConversations,
+        snap.sessions?.conversations
+      ),
+      topWorkspaces: enrichTopWorkspaces(entry?.topWorkspaces, snap.sessions?.conversations),
+    };
+  }
   return {
     scope: 'consumption-presets',
     timestamp: new Date().toISOString(),
     endpoint: snap.basePayload.endpoint,
     uiBundleVersion: snap.basePayload.uiBundleVersion || computeRuntimeCodeVersion(),
     usageRevision: bundle.usageRevision,
-    ranges: bundle.ranges,
+    ranges: enrichedRanges,
   };
 }
 
@@ -2417,6 +2537,34 @@ export function buildCliStatusSnapshot(finalPayload, updatedAtMs = Date.now()) {
   const runningList = Array.isArray(finalPayload?.runningConversations)
     ? finalPayload.runningConversations
     : [];
+  const activeSteps = Array.isArray(ac.recentSteps) ? ac.recentSteps : [];
+  let sessionAnomalyCount = 0;
+  let latestAnomaly = null;
+  for (let i = 0; i < activeSteps.length; i += 1) {
+    const a = activeSteps[i]?.anomaly;
+    if (a && Number(a.count) > 0) {
+      sessionAnomalyCount += Number(a.count);
+    }
+  }
+  const lastStepAnomaly = activeSteps.length > 0 ? activeSteps[activeSteps.length - 1]?.anomaly : null;
+  if (lastStepAnomaly && Number(lastStepAnomaly.count) > 0) {
+    latestAnomaly = {
+      primaryKind: String(lastStepAnomaly.primaryKind || 'error'),
+      count: Number(lastStepAnomaly.count),
+      severity: lastStepAnomaly.severity === 'danger' ? 'danger' : 'warn',
+      totalDelaySec: Number(lastStepAnomaly.totalDelaySec || 0),
+    };
+  }
+
+  const waitingCascadeIds = runningList
+    .filter(
+      (item) =>
+        item?.mainActivity?.phase === 'waiting' ||
+        (Array.isArray(item?.subagents) &&
+          item.subagents.some((sub) => sub?.isRunning && sub?.liveActivity?.phase === 'waiting'))
+    )
+    .map((item) => String(item?.cascadeId || '').toLowerCase())
+    .filter(Boolean);
 
   return {
     updatedAtMs,
@@ -2425,7 +2573,8 @@ export function buildCliStatusSnapshot(finalPayload, updatedAtMs = Date.now()) {
       (acc, item) => acc + Number(item?.runningSubagentCount || 0),
       0
     ),
-    hasWaiting: runningList.some((item) => item?.mainActivity?.phase === 'waiting'),
+    hasWaiting: waitingCascadeIds.length > 0,
+    waitingCascadeIds,
     quotas: finalPayload?.quotas || null,
     activeConversation: {
       cascadeId: ac.cascadeId || '',
@@ -2440,6 +2589,8 @@ export function buildCliStatusSnapshot(finalPayload, updatedAtMs = Date.now()) {
       latestCacheHitPct: capSource.latestCacheHitPct ?? ac.latestCacheHitPct ?? null,
       latestPromptTokens: Number(capSource.latestPromptTokens ?? ac.latestPromptTokens ?? 0),
       totalTokens: Number(capSource.totalTokens ?? ac.totalTokens ?? 0),
+      ...(latestAnomaly ? { latestAnomaly } : {}),
+      ...(sessionAnomalyCount > 0 ? { sessionAnomalyCount } : {}),
     },
   };
 }

@@ -8,11 +8,14 @@
 
 import { defineComponent } from '../../core/component.js';
 import { h, patchAttr, patchClasses, patchStyleVar, patchText } from '../../core/domPatch.js';
+import { formatMetric, formatTokens, formatUsd } from '../../core/formatters.js';
 import { getEffectiveLocale, t } from '../../i18n/index.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 import {
   getCapsuleMetricOptions,
   getOverviewMetricOptions,
+  hasArgonWeeklyQuotaPool,
+  resolveSpecificQuotaSlotSummary,
 } from '../../registries/metricRegistry.js';
 import { getStepColumnOptions } from '../../registries/stepColumnRegistry.js';
 import {
@@ -20,6 +23,7 @@ import {
   getOverviewModuleOptions,
 } from '../../registries/widgetRegistry.js';
 import {
+  DEFAULT_CLIENT_CONTEXT_AGENT_MODE,
   DEFAULT_CLIENT_HOVER_MODULES,
   DEFAULT_CLIENT_OVERVIEW_METRICS,
   DEFAULT_CLIENT_OVERVIEW_MODULES,
@@ -29,6 +33,8 @@ import {
   DEFAULT_CLIENT_TOPBAR_SLOTS,
   MAX_CLIENT_POPOVER_WIDTH,
   MIN_CLIENT_POPOVER_WIDTH,
+  normalizeClientCliStatusLineSlots,
+  normalizeClientContextAgentMode,
   normalizeClientHoverModules,
   normalizeClientOverviewMetrics,
   normalizeClientOverviewModules,
@@ -38,7 +44,11 @@ import {
   normalizeClientStepTokenComboFormat,
   normalizeClientTopbarSlots,
   normalizeClientWindowMountMode,
+  resolveEffectiveClientCliStatusLineSlots,
+  resolveOverlayCtxInspectorAgentId,
+  resolveScopedConversation,
   saveSettingsPatch,
+  triggerCliStatusLineAction,
 } from '../../store/telemetryStore.js';
 import { getVisibleMonitorView, uiStore } from '../../store/uiStore.js';
 import { BridgeStatusNotice } from '../../components/settings/BridgeStatusNotice.js';
@@ -48,7 +58,11 @@ import { buildStructurePreviewTelemetry } from '../../components/settings/struct
 import { CustomNumberInput } from '../../components/ui/CustomNumberInput.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
 import { SegmentedControl } from '../../components/ui/SegmentedControl.js';
-import { CapsuleBarWidget } from '../../components/widgets/CapsuleBarWidget.js';
+import { ToggleSwitch } from '../../components/ui/ToggleSwitch.js';
+import {
+  CapsuleBarWidget,
+  buildCapsuleSlotContext,
+} from '../../components/widgets/CapsuleBarWidget.js';
 import { StepTableWidget } from '../../components/widgets/StepTableWidget.js';
 
 const STRUCTURE_THIRD_TABS = Object.freeze([
@@ -71,24 +85,17 @@ function getMountModeOptions() {
   ];
 }
 
-function getMultiToggleOptions() {
-  return [
-    { value: 'show', label: t('settings.str.show') },
-    { value: 'hide', label: t('settings.str.hide') },
-  ];
-}
-
-function getEnableToggleOptions() {
-  return [
-    { value: 'on', label: t('settings.str.on') },
-    { value: 'off', label: t('settings.str.off') },
-  ];
-}
-
 function getPopoverWidthModeOptions() {
   return [
     { value: 'auto', label: t('settings.str.popoverWidthAuto') },
     { value: 'custom', label: t('settings.str.popoverWidthCustom') },
+  ];
+}
+
+function getContextAgentModeOptions() {
+  return [
+    { value: 'main', label: t('settings.str.contextAgentMain') },
+    { value: 'auto', label: t('settings.str.contextAgentAuto') },
   ];
 }
 
@@ -100,6 +107,125 @@ function isSameList(a, b) {
   return true;
 }
 
+function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
+  const safeCtx = slotCtx || {};
+  const quotas = safeCtx.quotas || {};
+  const quotaPct = (key, fallback) => {
+    const summary = resolveSpecificQuotaSlotSummary(quotas, key);
+    return summary && Number.isFinite(summary.roundedPct) ? summary.roundedPct : fallback;
+  };
+  switch (slotKey) {
+    case 'tps': {
+      const val = Number.isFinite(Number(safeCtx.tps)) ? Number(safeCtx.tps).toFixed(1) : '68.4';
+      return { prefix: '', text: `${val} t/s`, tone: 'good', pillPct: null };
+    }
+    case 'avg_tps': {
+      const val = Number.isFinite(Number(safeCtx.avgTps)) ? Number(safeCtx.avgTps).toFixed(1) : '59.6';
+      return {
+        prefix: '',
+        text: isEn ? `avg ${val}` : `均 ${val}`,
+        tone: 'info',
+        pillPct: null,
+      };
+    }
+    case 'ttft': {
+      const val = Number.isFinite(Number(safeCtx.ttft)) ? formatMetric(Number(safeCtx.ttft), 's') : '1.1s';
+      return { prefix: '', text: val, tone: 'good', pillPct: null };
+    }
+    case 'cost': {
+      const num = Number.isFinite(Number(safeCtx.stepCost)) ? Number(safeCtx.stepCost) : 0.042;
+      return { prefix: '', text: `$${num.toFixed(3)}`, tone: 'normal', pillPct: null };
+    }
+    case 'session_cost': {
+      const num = Number.isFinite(Number(safeCtx.sessionCost)) ? Number(safeCtx.sessionCost) : 1.28;
+      return { prefix: '', text: formatUsd(num), tone: 'normal', pillPct: null };
+    }
+    case 'cache_hit': {
+      const pct = Number.isFinite(Number(safeCtx.cacheHitPct))
+        ? Math.round(Number(safeCtx.cacheHitPct))
+        : 95;
+      return {
+        prefix: '',
+        text: isEn ? `cache ${pct}%` : `缓 ${pct}%`,
+        tone: 'good',
+        pillPct: null,
+      };
+    }
+    case 'session_tokens': {
+      const tokStr = Number.isFinite(Number(safeCtx.sessionTokens))
+        ? formatTokens(Number(safeCtx.sessionTokens))
+        : '1.8M';
+      return { prefix: '', text: `${tokStr} tok`, tone: 'muted', pillPct: null };
+    }
+    case 'quota_auto': {
+      const pct = quotaPct('quota_auto', 64);
+      return {
+        prefix: isEn ? '5h ' : '余 ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'gemini_5h': {
+      const pct = quotaPct('gemini_5h', 64);
+      return {
+        prefix: 'G5h ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'gemini_weekly': {
+      const pct = quotaPct('gemini_weekly', 52);
+      return {
+        prefix: isEn ? 'Gw ' : 'G周 ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'argon_weekly': {
+      const pct = quotaPct('argon_weekly', 42);
+      return {
+        prefix: isEn ? 'Aw ' : 'A周 ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'claude_5h': {
+      const pct = quotaPct('claude_5h', 32);
+      return {
+        prefix: 'C5h ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'claude_weekly': {
+      const pct = quotaPct('claude_weekly', 59);
+      return {
+        prefix: isEn ? 'Cw ' : 'C周 ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'context':
+    default: {
+      const pct = Number.isFinite(Number(safeCtx.usedPct))
+        ? Math.round(Number(safeCtx.usedPct))
+        : 56;
+      return {
+        prefix: isEn ? 'Ctx ' : '上下文 ',
+        text: `${pct}%`,
+        tone: 'accent',
+        pillPct: pct,
+      };
+    }
+  }
+}
+
 export const SettingsStructureTab = defineComponent({
   name: 'SettingsStructureTab',
   setup({ props, onCleanup }) {
@@ -108,7 +234,9 @@ export const SettingsStructureTab = defineComponent({
     let draftPopoverWidthMode = 'auto';
     let draftPopoverWidth = DEFAULT_CLIENT_POPOVER_WIDTH;
     let draftEnableCliStatusLine = true;
+    let draftCliStatusLineSlots = null;
     let draftShowTopbarMulti = true;
+    let draftContextAgentMode = DEFAULT_CLIENT_CONTEXT_AGENT_MODE;
     let draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
     let draftHoverModules = [...DEFAULT_CLIENT_HOVER_MODULES];
     let draftOverviewModules = [...DEFAULT_CLIENT_OVERVIEW_MODULES];
@@ -116,12 +244,22 @@ export const SettingsStructureTab = defineComponent({
     let draftShowStepTurnRail = false;
     let draftShowStepAgentBadge = true;
     let draftShowStepSpeedColor = false;
+    let draftShowStepFilterToolbar = false;
     let draftStepTokenComboFormat = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
     let rawStepTokenComboText = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
     let draftStepColumns = [...DEFAULT_CLIENT_STEP_COLUMNS];
     let latestSettings = null;
     let latestWindowBridge = null;
+    let latestCliStatusLine = null;
     let latestHostPlatform = 'win32';
+    let latestQuotas = null;
+
+    function getEffectiveDraftCliSlots() {
+      return resolveEffectiveClientCliStatusLineSlots({
+        cliStatusLineSlots: draftCliStatusLineSlots,
+        topbarCapsuleSlots: draftTopbarSlots,
+      });
+    }
 
     function isStructureVisible() {
       const st = uiStore.getState();
@@ -129,23 +267,34 @@ export const SettingsStructureTab = defineComponent({
     }
 
     function buildDraftTelemetry() {
-      return buildStructurePreviewTelemetry(latestSettings, {
-        windowMountMode: draftWindowMountMode,
-        enableWindowOverlay: draftWindowMountMode !== 'sidebar',
-        popoverWidthMode: draftPopoverWidthMode,
-        popoverWidth: draftPopoverWidth,
-        enableCliStatusLine: draftEnableCliStatusLine,
-        showTopbarMultiSession: draftShowTopbarMulti,
-        topbarCapsuleSlots: draftTopbarSlots,
-        hoverModules: draftHoverModules,
-        overviewModules: draftOverviewModules,
-        overviewMetrics: draftOverviewMetrics,
-        showStepTurnRail: draftShowStepTurnRail,
-        showStepAgentBadge: draftShowStepAgentBadge,
-        showStepSpeedColor: draftShowStepSpeedColor,
-        stepTokenComboFormat: draftStepTokenComboFormat,
-        stepTableColumns: draftStepColumns,
-      });
+      const effectiveCliSlots = getEffectiveDraftCliSlots();
+      const includeArgonPool =
+        hasArgonWeeklyQuotaPool(latestQuotas) ||
+        draftTopbarSlots.includes('argon_weekly') ||
+        effectiveCliSlots.includes('argon_weekly');
+      return buildStructurePreviewTelemetry(
+        latestSettings,
+        {
+          windowMountMode: draftWindowMountMode,
+          enableWindowOverlay: draftWindowMountMode !== 'sidebar',
+          popoverWidthMode: draftPopoverWidthMode,
+          popoverWidth: draftPopoverWidth,
+          enableCliStatusLine: draftEnableCliStatusLine,
+          showTopbarMultiSession: draftShowTopbarMulti,
+          contextAgentMode: draftContextAgentMode,
+          topbarCapsuleSlots: draftTopbarSlots,
+          hoverModules: draftHoverModules,
+          overviewModules: draftOverviewModules,
+          overviewMetrics: draftOverviewMetrics,
+          showStepTurnRail: draftShowStepTurnRail,
+          showStepAgentBadge: draftShowStepAgentBadge,
+          showStepSpeedColor: draftShowStepSpeedColor,
+          showStepFilterToolbar: draftShowStepFilterToolbar,
+          stepTokenComboFormat: draftStepTokenComboFormat,
+          stepTableColumns: draftStepColumns,
+        },
+        { includeArgonPool }
+      );
     }
 
     async function persistStructurePatch(sectionComp, patchObj, successKey = 'settings.saved') {
@@ -242,17 +391,61 @@ export const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.popoverWidthLabel'),
     });
-    const popoverWidthHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.str.popoverWidthHint'),
-    });
     const multiToggleLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.multiToggle'),
     });
+    const contextAgentModeLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.contextAgentModeLabel'),
+    });
     const cliCapsuleLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.cliCapsuleToggle'),
+    });
+    const cliSlotsLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.cliSlotsLabel'),
+    });
+    const cliStatusHintEl = h('span', {
+      className: 'settings-hint-text cli-status-hint',
+    });
+    let cliActionBusy = false;
+    let activeCliStatusAction = '';
+    const cliStatusActionBtn = h('button', {
+      type: 'button',
+      className: 'cli-status-action-btn',
+      hidden: true,
+      text: t('settings.str.cliRestoreBtn'),
+      onClick: async () => {
+        if (cliActionBusy || !activeCliStatusAction) return;
+        cliActionBusy = true;
+        const actionToRun = activeCliStatusAction;
+        patchAttr(cliStatusActionBtn, 'disabled', true);
+        patchText(cliStatusActionBtn, t('settings.str.cliRestoringBtn'));
+        mountSection.refs.showStatus(t('settings.saving'), 0);
+        try {
+          const res = await triggerCliStatusLineAction(actionToRun);
+          if (res?.cliStatusLine) {
+            latestCliStatusLine = res.cliStatusLine;
+          }
+          if (res?.settings && typeof res.settings === 'object') {
+            latestSettings = { ...(latestSettings || {}), ...res.settings };
+            draftEnableCliStatusLine = latestSettings.enableCliStatusLine !== false;
+          }
+          mountSection.refs.showStatus(
+            res?.ok === false ? t('settings.saveFailed') : t('settings.saved'),
+            1800
+          );
+        } catch {
+          mountSection.refs.showStatus(t('settings.saveFailed'), 2500);
+        } finally {
+          cliActionBusy = false;
+          patchAttr(cliStatusActionBtn, 'disabled', false);
+          syncMountSectionMeta();
+          props.onLayoutChange?.();
+        }
+      },
     });
     const capsuleSlotsLabelEl = h('span', {
       className: 'form-label',
@@ -314,10 +507,10 @@ export const SettingsStructureTab = defineComponent({
       },
     });
 
-    const multiSessionToggle = SegmentedControl({
-      ariaLabel: t('settings.str.multiToggle'),
+    const multiSessionToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.multiToggle',
+      preset: 'visibility',
       modelValue: 'show',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowTopbarMulti = val !== 'hide';
         syncMountSectionMeta();
@@ -327,18 +520,103 @@ export const SettingsStructureTab = defineComponent({
       },
     });
 
-    const cliCapsuleToggle = SegmentedControl({
-      ariaLabel: t('settings.str.cliCapsuleToggle'),
+    const contextAgentModeToggle = SegmentedControl({
+      ariaLabel: t('settings.str.contextAgentModeLabel'),
+      modelValue: draftContextAgentMode,
+      options: getContextAgentModeOptions(),
+      onUpdateModelValue: (val) => {
+        const nextMode = normalizeClientContextAgentMode(val);
+        draftContextAgentMode = nextMode;
+        uiStore.setState({ ctxInspectorAgentId: nextMode });
+        syncMountSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(mountSection, {
+          contextAgentMode: nextMode,
+        });
+      },
+    });
+
+    const cliCapsuleToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.cliCapsuleToggle',
+      preset: 'enable',
       modelValue: 'on',
-      options: getEnableToggleOptions(),
       onUpdateModelValue: (val) => {
         draftEnableCliStatusLine = val !== 'off';
         syncMountSectionMeta();
+        props.onLayoutChange?.();
         void persistStructurePatch(mountSection, {
           enableCliStatusLine: draftEnableCliStatusLine,
         });
       },
     });
+
+    const cliPreviewMultiTextEl = h('span', {
+      text: t('settings.str.cliPreviewRunning', { count: 1 }),
+    });
+    const cliPreviewMultiEl = h('span', { className: 'cli-preview-multi' }, [
+      h('span', { className: 'cli-preview-dot', 'aria-hidden': 'true', text: '●' }),
+      cliPreviewMultiTextEl,
+    ]);
+    const cliPreviewSlotParts = [];
+    const cliPreviewSepEls = [];
+    const cliPreviewChildren = [cliPreviewMultiEl];
+    for (let i = 0; i < 6; i += 1) {
+      if (i > 0) {
+        const sepEl = h('span', {
+          className: 'cli-preview-sep',
+          'aria-hidden': 'true',
+          text: '|',
+        });
+        cliPreviewSepEls.push(sepEl);
+        cliPreviewChildren.push(sepEl);
+      }
+      const prefixEl = h('span', { className: 'cli-preview-prefix' });
+      const valueEl = h('span', { className: 'cli-preview-val' });
+      const slotEl = h('span', { className: 'cli-preview-slot' }, [
+        prefixEl,
+        valueEl,
+      ]);
+      cliPreviewSlotParts.push({ slotEl, prefixEl, valueEl });
+      cliPreviewChildren.push(slotEl);
+    }
+    const cliPreviewEl = h('div', { className: 'cli-status-preview' }, cliPreviewChildren);
+
+    const cliSlotsList = EditableSlotList({
+      items: getEffectiveDraftCliSlots(),
+      options: getCapsuleMetricOptions(),
+      minItems: 1,
+      maxItems: 6,
+      addBtnTextFn: (count, max) => t('settings.str.addCliSlot', { count, max }),
+      onPreview: (previewItems) => {
+        draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(previewItems);
+        refreshCliPreview();
+      },
+      onChange: (nextItems) => {
+        draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(nextItems);
+        syncMountSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(mountSection, {
+          cliStatusLineSlots: draftCliStatusLineSlots,
+        });
+      },
+    });
+
+    const cliStatusFooterEl = h('div', { className: 'cli-status-footer', hidden: true }, [
+      cliStatusHintEl,
+      cliStatusActionBtn,
+    ]);
+
+    const cliStatusDetailEl = h('div', { className: 'cli-statusline-detail' }, [
+      cliPreviewEl,
+      h('div', { className: 'form-row' }, [cliSlotsLabelEl, cliSlotsList.el]),
+      cliStatusFooterEl,
+    ]);
+
+    const cliStatusGroupEl = h('div', { className: 'cli-statusline-group', hidden: true }, [
+      h('div', { className: 'settings-divider' }),
+      h('div', { className: 'settings-inline-row' }, [cliCapsuleLabelEl, cliCapsuleToggle.el]),
+      cliStatusDetailEl,
+    ]);
 
     const topbarSlotsList = EditableSlotList({
       items: draftTopbarSlots,
@@ -373,8 +651,11 @@ export const SettingsStructureTab = defineComponent({
         draftPopoverWidth = DEFAULT_CLIENT_POPOVER_WIDTH;
         popoverWidthStepper.setProps({ modelValue: DEFAULT_CLIENT_POPOVER_WIDTH });
         draftEnableCliStatusLine = true;
+        draftCliStatusLineSlots = null;
         draftShowTopbarMulti = true;
+        draftContextAgentMode = DEFAULT_CLIENT_CONTEXT_AGENT_MODE;
         draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
+        uiStore.setState({ ctxInspectorAgentId: DEFAULT_CLIENT_CONTEXT_AGENT_MODE });
         syncMountSectionMeta();
         props.onLayoutChange?.();
         void persistStructurePatch(
@@ -385,7 +666,9 @@ export const SettingsStructureTab = defineComponent({
             popoverWidthMode: 'auto',
             popoverWidth: DEFAULT_CLIENT_POPOVER_WIDTH,
             enableCliStatusLine: true,
+            cliStatusLineSlots: null,
             showTopbarMultiSession: true,
+            contextAgentMode: DEFAULT_CLIENT_CONTEXT_AGENT_MODE,
             topbarCapsuleSlots: [...DEFAULT_CLIENT_TOPBAR_SLOTS],
           },
           'settings.resetDone'
@@ -396,31 +679,72 @@ export const SettingsStructureTab = defineComponent({
         h('div', { className: 'settings-divider' }),
         h('div', { className: 'form-row' }, [mountModeLabelEl, windowMountSelect.el]),
         mountBridgeNotice.el,
-        h('div', { className: 'form-row' }, [
-          h('div', { className: 'settings-inline-row' }, [
-            popoverWidthLabelEl,
-            h('div', { className: 'settings-inline-controls' }, [
-              popoverWidthModeToggle.el,
-              popoverWidthNumWrap,
-            ]),
+        h('div', { className: 'settings-inline-row' }, [
+          popoverWidthLabelEl,
+          h('div', { className: 'settings-inline-controls' }, [
+            popoverWidthModeToggle.el,
+            popoverWidthNumWrap,
           ]),
-          popoverWidthHintEl,
         ]),
         h('div', { className: 'settings-inline-row' }, [
           multiToggleLabelEl,
           multiSessionToggle.el,
         ]),
         h('div', { className: 'settings-inline-row' }, [
-          cliCapsuleLabelEl,
-          cliCapsuleToggle.el,
+          contextAgentModeLabelEl,
+          contextAgentModeToggle.el,
         ]),
         h('div', { className: 'form-row' }, [capsuleSlotsLabelEl, topbarSlotsList.el]),
+        cliStatusGroupEl,
       ],
     });
 
+    function refreshCliPreview(previewData = null) {
+      const effectiveSlots = getEffectiveDraftCliSlots();
+      const isEn = getEffectiveLocale() === 'en-US';
+      const mockData = previewData || buildDraftTelemetry();
+      const { scopedConv, ctxAgent, aggregated } = resolveScopedConversation(
+        mockData,
+        'all',
+        resolveOverlayCtxInspectorAgentId(mockData, 'auto')
+      );
+      const slotCtx = buildCapsuleSlotContext(mockData, { scopedConv, ctxAgent, aggregated });
+      const runningCount = Math.max(
+        1,
+        Array.isArray(mockData?.runningConversations) ? mockData.runningConversations.length : 1
+      );
+      patchAttr(cliPreviewMultiEl, 'hidden', !draftShowTopbarMulti);
+      patchText(cliPreviewMultiTextEl, t('settings.str.cliPreviewRunning', { count: runningCount }));
+      for (let i = 0; i < cliPreviewSlotParts.length; i += 1) {
+        const parts = cliPreviewSlotParts[i];
+        const sepEl = i > 0 ? cliPreviewSepEls[i - 1] : null;
+        const key = effectiveSlots[i];
+        const visible = Boolean(key);
+        patchAttr(parts.slotEl, 'hidden', !visible);
+        if (sepEl) patchAttr(sepEl, 'hidden', !visible);
+        if (visible) {
+          const item = formatCliPreviewSlot(key, slotCtx, isEn);
+          const isPill = Number.isFinite(item.pillPct);
+          patchAttr(parts.slotEl, 'data-metric', key);
+          patchText(parts.prefixEl, item.prefix || '');
+          patchText(parts.valueEl, item.text || '');
+          patchStyleVar(parts.slotEl, '--cli-pill-pct', isPill ? `${item.pillPct}%` : '');
+          patchClasses(parts.slotEl, {
+            'is-pill': isPill,
+            'tone-good': item.tone === 'good',
+            'tone-info': item.tone === 'info',
+            'tone-accent': item.tone === 'accent',
+            'tone-muted': item.tone === 'muted',
+          });
+        }
+      }
+    }
+
     function refreshMountPreview() {
       if (!isStructureVisible() || activeThirdTab !== 'mount') return;
-      capsulePreviewWidget.refs.update({ data: buildDraftTelemetry() });
+      const mockData = buildDraftTelemetry();
+      capsulePreviewWidget.refs.update({ data: mockData });
+      refreshCliPreview(mockData);
     }
 
     function syncMountSectionMeta() {
@@ -446,15 +770,67 @@ export const SettingsStructureTab = defineComponent({
       }
       multiSessionToggle.setProps({
         modelValue: draftShowTopbarMulti ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
+      contextAgentModeToggle.setProps({
+        modelValue: draftContextAgentMode,
+        options: getContextAgentModeOptions(),
+        ariaLabel: t('settings.str.contextAgentModeLabel'),
+      });
+      const cliInstalled = Boolean(latestCliStatusLine?.installed);
+      patchAttr(cliStatusGroupEl, 'hidden', !cliInstalled);
       cliCapsuleToggle.setProps({
         modelValue: draftEnableCliStatusLine ? 'on' : 'off',
-        options: getEnableToggleOptions(),
       });
+      patchAttr(cliStatusDetailEl, 'hidden', !draftEnableCliStatusLine);
+      const effectiveCliSlots = getEffectiveDraftCliSlots();
+      cliSlotsList.refs.setProps({
+        items: effectiveCliSlots,
+        options: getCapsuleMetricOptions({
+          quotas: latestQuotas,
+          selectedSlots: effectiveCliSlots,
+        }),
+        addBtnTextFn: (count, max) => t('settings.str.addCliSlot', { count, max }),
+      });
+      const preservedCustom = Boolean(latestCliStatusLine?.preservedCustom);
+      const isConfigured = Boolean(latestCliStatusLine?.configured);
+      const hasInlineSlotFlags = /(?:^|\s)--(?:slots|preset)(?:=|\s|$)/i.test(
+        String(latestCliStatusLine?.managedFlags || '')
+      );
+      const isPausedInCli = cliInstalled && !preservedCustom && !isConfigured && draftEnableCliStatusLine;
+      const cliHintText = preservedCustom
+        ? t('settings.str.cliCustomCmdHint')
+        : isPausedInCli
+          ? t('settings.str.cliPausedHint')
+          : hasInlineSlotFlags
+            ? t('settings.str.cliFlagsOverrideHint')
+            : '';
+      patchAttr(cliStatusFooterEl, 'hidden', !cliHintText);
+      patchClasses(cliStatusHintEl, { 'is-warn': preservedCustom || isPausedInCli });
+      patchText(cliStatusHintEl, cliHintText);
+      activeCliStatusAction = preservedCustom || isPausedInCli
+        ? 'force_install'
+        : hasInlineSlotFlags
+          ? 'clear_flags'
+          : '';
+      patchAttr(cliStatusActionBtn, 'hidden', !activeCliStatusAction);
+      patchClasses(cliStatusActionBtn, { 'is-warn': preservedCustom });
+      if (!cliActionBusy && activeCliStatusAction) {
+        patchText(
+          cliStatusActionBtn,
+          preservedCustom
+            ? t('settings.str.cliRestoreBtn')
+            : isPausedInCli
+              ? t('settings.str.cliEnableBtn')
+              : t('settings.str.cliClearFlagsBtn')
+        );
+      }
+      refreshCliPreview();
       topbarSlotsList.refs.setProps({
         items: draftTopbarSlots,
-        options: getCapsuleMetricOptions(),
+        options: getCapsuleMetricOptions({
+          quotas: latestQuotas,
+          selectedSlots: draftTopbarSlots,
+        }),
         addBtnTextFn: (count, max) => t('settings.str.addCapsuleSlot', { count, max }),
       });
       mountSection.refs.setBadge(
@@ -465,7 +841,9 @@ export const SettingsStructureTab = defineComponent({
         draftPopoverWidthMode === 'auto' &&
         draftPopoverWidth === DEFAULT_CLIENT_POPOVER_WIDTH &&
         draftEnableCliStatusLine === true &&
+        draftCliStatusLineSlots === null &&
         draftShowTopbarMulti === true &&
+        draftContextAgentMode === DEFAULT_CLIENT_CONTEXT_AGENT_MODE &&
         isSameList(draftTopbarSlots, DEFAULT_CLIENT_TOPBAR_SLOTS);
       mountSection.refs.setResetDisabled(isDefault);
       refreshMountPreview();
@@ -487,6 +865,11 @@ export const SettingsStructureTab = defineComponent({
       preview: true,
       isVisibleFn: () => isStructureVisible() && activeThirdTab === 'hover',
       initialModuleKeys: [],
+      getCtxAgentId: () =>
+        resolveOverlayCtxInspectorAgentId(
+          { settings: { contextAgentMode: draftContextAgentMode } },
+          'auto'
+        ),
     });
     const hoverPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       hoverPreviewTipEl,
@@ -729,6 +1112,10 @@ export const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.stepSpeedColorToggle'),
     });
+    const stepFilterToolbarLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.stepFilterToolbarToggle'),
+    });
     const stepTokenComboLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.stepTokenComboLabel'),
@@ -742,10 +1129,10 @@ export const SettingsStructureTab = defineComponent({
       text: t('settings.str.stepsColsLabel'),
     });
 
-    const stepTurnRailToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepTurnRailToggle'),
+    const stepTurnRailToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepTurnRailToggle',
+      preset: 'visibility',
       modelValue: 'hide',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepTurnRail = val !== 'hide';
         syncStepsSectionMeta();
@@ -755,10 +1142,10 @@ export const SettingsStructureTab = defineComponent({
       },
     });
 
-    const stepAgentBadgeToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepAgentBadgeToggle'),
+    const stepAgentBadgeToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepAgentBadgeToggle',
+      preset: 'visibility',
       modelValue: 'show',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepAgentBadge = val !== 'hide';
         syncStepsSectionMeta();
@@ -768,15 +1155,28 @@ export const SettingsStructureTab = defineComponent({
       },
     });
 
-    const stepSpeedColorToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepSpeedColorToggle'),
+    const stepSpeedColorToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepSpeedColorToggle',
+      preset: 'enable',
       modelValue: 'off',
-      options: getEnableToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepSpeedColor = val !== 'off';
         syncStepsSectionMeta();
         void persistStructurePatch(stepsSection, {
           showStepSpeedColor: draftShowStepSpeedColor,
+        });
+      },
+    });
+
+    const stepFilterToolbarToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepFilterToolbarToggle',
+      preset: 'enable',
+      modelValue: 'off',
+      onUpdateModelValue: (val) => {
+        draftShowStepFilterToolbar = val !== 'off';
+        syncStepsSectionMeta();
+        void persistStructurePatch(stepsSection, {
+          showStepFilterToolbar: draftShowStepFilterToolbar,
         });
       },
     });
@@ -864,6 +1264,7 @@ export const SettingsStructureTab = defineComponent({
         draftShowStepTurnRail = false;
         draftShowStepAgentBadge = true;
         draftShowStepSpeedColor = false;
+        draftShowStepFilterToolbar = false;
         draftStepTokenComboFormat = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
         rawStepTokenComboText = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
         stepTokenComboInput.value = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
@@ -876,6 +1277,7 @@ export const SettingsStructureTab = defineComponent({
             showStepTurnRail: false,
             showStepAgentBadge: true,
             showStepSpeedColor: false,
+            showStepFilterToolbar: false,
             stepTokenComboFormat: DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT,
             stepTableColumns: [...DEFAULT_CLIENT_STEP_COLUMNS],
           },
@@ -896,6 +1298,10 @@ export const SettingsStructureTab = defineComponent({
         h('div', { className: 'settings-inline-row' }, [
           stepSpeedColorLabelEl,
           stepSpeedColorToggle.el,
+        ]),
+        h('div', { className: 'settings-inline-row' }, [
+          stepFilterToolbarLabelEl,
+          stepFilterToolbarToggle.el,
         ]),
         h('div', { className: 'settings-divider' }),
         h('div', { className: 'form-row' }, [
@@ -944,15 +1350,15 @@ export const SettingsStructureTab = defineComponent({
     function syncStepsSectionMeta() {
       stepTurnRailToggle.setProps({
         modelValue: draftShowStepTurnRail ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
       stepAgentBadgeToggle.setProps({
         modelValue: draftShowStepAgentBadge ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
       stepSpeedColorToggle.setProps({
         modelValue: draftShowStepSpeedColor ? 'on' : 'off',
-        options: getEnableToggleOptions(),
+      });
+      stepFilterToolbarToggle.setProps({
+        modelValue: draftShowStepFilterToolbar ? 'on' : 'off',
       });
       if (document?.activeElement !== stepTokenComboInput) {
         stepTokenComboInput.value = rawStepTokenComboText;
@@ -967,6 +1373,7 @@ export const SettingsStructureTab = defineComponent({
         draftShowStepTurnRail === false &&
         draftShowStepAgentBadge === true &&
         draftShowStepSpeedColor === false &&
+        draftShowStepFilterToolbar === false &&
         draftStepTokenComboFormat === DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT &&
         isSameList(draftStepColumns, DEFAULT_CLIENT_STEP_COLUMNS);
       stepsSection.refs.setResetDisabled(isDefault);
@@ -1030,12 +1437,16 @@ export const SettingsStructureTab = defineComponent({
     function renderSettings(
       settings,
       windowBridge = latestWindowBridge,
-      hostPlatform = latestHostPlatform
+      hostPlatform = latestHostPlatform,
+      cliStatusLine = latestCliStatusLine,
+      quotas = latestQuotas
     ) {
       if (!settings) return;
       latestSettings = settings;
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
+      if (cliStatusLine !== undefined) latestCliStatusLine = cliStatusLine;
+      if (quotas !== undefined) latestQuotas = quotas;
       draftWindowMountMode = normalizeClientWindowMountMode(
         settings.windowMountMode,
         settings.enableWindowOverlay
@@ -1043,7 +1454,9 @@ export const SettingsStructureTab = defineComponent({
       draftPopoverWidthMode = normalizeClientPopoverWidthMode(settings.popoverWidthMode);
       draftPopoverWidth = normalizeClientPopoverWidth(settings.popoverWidth);
       draftEnableCliStatusLine = settings.enableCliStatusLine !== false;
+      draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(settings.cliStatusLineSlots);
       draftShowTopbarMulti = settings.showTopbarMultiSession !== false;
+      draftContextAgentMode = normalizeClientContextAgentMode(settings.contextAgentMode);
       draftTopbarSlots = normalizeClientTopbarSlots(settings.topbarCapsuleSlots);
       draftHoverModules = normalizeClientHoverModules(settings.hoverModules);
       draftOverviewModules = normalizeClientOverviewModules(settings.overviewModules);
@@ -1051,6 +1464,7 @@ export const SettingsStructureTab = defineComponent({
       draftShowStepTurnRail = settings.showStepTurnRail === true;
       draftShowStepAgentBadge = settings.showStepAgentBadge !== false;
       draftShowStepSpeedColor = settings.showStepSpeedColor === true;
+      draftShowStepFilterToolbar = settings.showStepFilterToolbar === true;
       draftStepTokenComboFormat = normalizeClientStepTokenComboFormat(
         settings.stepTokenComboFormat
       );
@@ -1073,10 +1487,11 @@ export const SettingsStructureTab = defineComponent({
       mountSection.refs.setResetLabel(t('settings.resetBtn'));
       patchText(mountModeLabelEl, t('settings.str.mountMode'));
       patchText(popoverWidthLabelEl, t('settings.str.popoverWidthLabel'));
-      patchText(popoverWidthHintEl, t('settings.str.popoverWidthHint'));
       popoverWidthStepper.setProps({ ariaLabel: t('settings.str.popoverWidthLabel') });
       patchText(multiToggleLabelEl, t('settings.str.multiToggle'));
+      patchText(contextAgentModeLabelEl, t('settings.str.contextAgentModeLabel'));
       patchText(cliCapsuleLabelEl, t('settings.str.cliCapsuleToggle'));
+      patchText(cliSlotsLabelEl, t('settings.str.cliSlotsLabel'));
       patchText(capsuleSlotsLabelEl, t('settings.str.capsuleSlotsLabel'));
 
       hoverSection.refs.setTitle(t('settings.str.hoverSection'));
@@ -1094,6 +1509,8 @@ export const SettingsStructureTab = defineComponent({
       patchText(stepTurnRailLabelEl, t('settings.str.stepTurnRailToggle'));
       patchText(stepAgentBadgeLabelEl, t('settings.str.stepAgentBadgeToggle'));
       patchText(stepSpeedColorLabelEl, t('settings.str.stepSpeedColorToggle'));
+      patchText(stepFilterToolbarLabelEl, t('settings.str.stepFilterToolbarToggle'));
+      stepFilterToolbarToggle.setProps({ ariaLabel: t('settings.str.stepFilterToolbarToggle') });
       patchText(stepTokenComboLabelEl, t('settings.str.stepTokenComboLabel'));
       patchText(stepTokenComboHintEl, t('settings.str.stepTokenComboHint'));
       patchAttr(stepTokenComboInput, 'placeholder', t('settings.str.stepTokenComboPlaceholder'));
@@ -1146,7 +1563,9 @@ export const SettingsStructureTab = defineComponent({
       popoverWidthStepper.destroy();
       popoverWidthModeToggle.destroy();
       multiSessionToggle.destroy();
+      contextAgentModeToggle.destroy();
       cliCapsuleToggle.destroy();
+      cliSlotsList.destroy();
       topbarSlotsList.destroy();
       hoverModulesList.destroy();
       overviewModulesList.destroy();
@@ -1154,6 +1573,7 @@ export const SettingsStructureTab = defineComponent({
       stepTurnRailToggle.destroy();
       stepAgentBadgeToggle.destroy();
       stepSpeedColorToggle.destroy();
+      stepFilterToolbarToggle.destroy();
       stepColumnsList.destroy();
       mountSection.destroy();
       hoverSection.destroy();
@@ -1172,7 +1592,15 @@ export const SettingsStructureTab = defineComponent({
         stepTablePreview,
         windowMountSelect,
         multiSessionToggle,
+        contextAgentModeToggle,
         cliCapsuleToggle,
+        cliStatusGroupEl,
+        cliStatusDetailEl,
+        cliPreviewEl,
+        cliSlotsList,
+        cliStatusFooterEl,
+        cliStatusHintEl,
+        cliStatusActionBtn,
         topbarSlotsList,
         hoverModulesList,
         overviewModulesList,
@@ -1180,6 +1608,7 @@ export const SettingsStructureTab = defineComponent({
         stepTurnRailToggle,
         stepAgentBadgeToggle,
         stepSpeedColorToggle,
+        stepFilterToolbarToggle,
         stepColumnsList,
         mountSection,
         hoverSection,

@@ -651,6 +651,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     windowMountMode: 'dual',
     enableWindowOverlay: true,
     showTopbarMultiSession: true,
+    contextAgentMode: 'main',
     enableCliStatusLine: true,
     topbarCapsuleSlots: ['tps', 'ttft', 'context'],
     hoverModules: ['metrics', 'context', 'quotas'],
@@ -660,6 +661,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     showStepTurnRail: false,
     showStepAgentBadge: true,
     showStepSpeedColor: false,
+    showStepFilterToolbar: false,
     showUpstreamModel: false,
     orchestratorIdMode: 'compact',
     weeklyLimitMode: 'official',
@@ -1343,9 +1345,16 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const claudeHoverUsages = hoverQuotaPools.children[1].querySelectorAll('.quota-win-usage');
     assert.equal(claudeHoverUsages[0].textContent, '· 0 ($0.00)');
     assert.equal(claudeHoverUsages[1].textContent, '· 7.3M ($3.82)');
-    const hoverFootSpans = hoverTipEl.querySelector('.wm-hover-quota-foot').children;
-    assert.equal(hoverFootSpans[0].textContent, '周期累计: 25.5M ($9.22)');
-    assert.equal(hoverFootSpans[1].textContent, '周期调用: 160 次');
+    assert.equal(
+      hoverTipEl.querySelector('.wm-hover-quota-foot'),
+      null,
+      'Redundant quota cycle summary footer removed now that each pool displays inline cycle usage'
+    );
+    assert.equal(
+      hoverQuotaPools.children[1].classList.contains('has-divider'),
+      true,
+      'Secondary quota pool uses CSS class divider for light/dark polarity control'
+    );
 
     // Verify clicking multi-session button pins open multi-session panel, and clicking capsule switches to 4-tab panel
     multiBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -1621,9 +1630,9 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(mockSettings.enableWindowOverlay, true, 'enableWindowOverlay persisted back to true');
     assert.equal(previewCapsuleBar.getAttribute('data-mount-mode'), 'dual');
 
-    // Toggle popover width mode (auto -> custom 640px -> step +10px -> auto), topbar multi-session switch (show -> hide -> show), and CLI bottom capsule switch (on -> off -> on)
+    // Toggle popover width mode (auto -> custom 640px -> step +10px -> auto), topbar multi-session switch, capsule/hover context agent mode (main -> auto -> main), and CLI bottom capsule switch
     const topbarSegBtns = sec0.querySelectorAll('.seg-btn');
-    assert.equal(topbarSegBtns.length, 6, 'Popover width + Topbar multi-session + CLI bottom capsule toggles render 6 buttons');
+    assert.equal(topbarSegBtns.length, 8, 'Popover width + Topbar multi-session + Capsule/Hover context mode + CLI bottom capsule toggles render 8 buttons');
     const popWidthInput = sec0.querySelector('.num-field');
     const popWidthStepBtns = sec0.querySelectorAll('.num-step-btn');
     assert.ok(popWidthInput, 'CustomNumberInput field exists without native <input type="number">');
@@ -1658,8 +1667,15 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
 
     topbarSegBtns[5].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
-    assert.equal(mockSettings.enableCliStatusLine, false, 'CLI bottom capsule toggle turns off enableCliStatusLine');
+    assert.equal(mockSettings.contextAgentMode, 'auto', 'Capsule/Hover context mode switches to follow active (auto)');
     topbarSegBtns[4].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.contextAgentMode, 'main', 'Capsule/Hover context mode switches back to lock main agent');
+
+    topbarSegBtns[7].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.enableCliStatusLine, false, 'CLI bottom capsule toggle turns off enableCliStatusLine');
+    topbarSegBtns[6].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.enableCliStatusLine, true, 'CLI bottom capsule toggle restores enableCliStatusLine');
 
@@ -1680,9 +1696,12 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     capRowSelects[0].querySelectorAll('.select-option')[9].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(capSlots[0].getAttribute('data-metric'), 'gemini_5h');
-    assert.equal(readCapVal(capSlots[0].children[0]), '余 44%');
+    assert.equal(capSlots[0].querySelector('.wm-slot-prefix')?.textContent, 'G5h');
+    assert.equal(readCapVal(capSlots[0].querySelector('.wm-quota-text')), '44%');
+    assert.equal(capSlots[0].querySelector('.wm-ring-fill')?.classList.contains('is-quota'), true);
     assert.equal(previewCapsuleSlots[0].getAttribute('data-metric'), 'gemini_5h', 'Preview slot 0 mirrors gemini_5h');
-    assert.equal(readCapVal(previewCapsuleSlots[0].children[0]), '余 64%', 'Preview slot 0 renders simulated gemini_5h');
+    assert.equal(previewCapsuleSlots[0].querySelector('.wm-slot-prefix')?.textContent, 'G5h');
+    assert.equal(readCapVal(previewCapsuleSlots[0].querySelector('.wm-quota-text')), '64%', 'Preview slot 0 renders simulated gemini_5h');
     assert.equal(capSlots[1].getAttribute('data-metric'), 'ttft');
     assert.equal(readCapVal(capSlots[1].children[0]), '0.85s');
 
@@ -1699,7 +1718,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     await new Promise((r) => setTimeout(r, 30));
     assert.deepEqual(mockSettings.topbarCapsuleSlots, ['ttft', 'gemini_5h', 'cost']);
     assert.equal(readCapVal(capSlots[0].children[0]), '0.85s');
-    assert.equal(readCapVal(capSlots[1].children[0]), '余 44%');
+    assert.equal(capSlots[1].querySelector('.wm-slot-prefix')?.textContent, 'G5h');
+    assert.equal(readCapVal(capSlots[1].querySelector('.wm-quota-text')), '44%');
 
     // Mouse drag-and-drop reorder: drag Row 0 ('ttft') down below Row 2 ('cost') -> ['gemini_5h', 'cost', 'ttft']
     const capSlotListEl = capSlotWrap.querySelector('.editable-slot-list');
@@ -1834,8 +1854,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.ok(previewCellSubs.includes('有效 23/24 步'), 'Preview Avg TPS card shows populated valid sample ratio');
     assert.equal(
       overviewPreviewHostEl.children[2].querySelector('.panel-meta').textContent,
-      'Google AI Ultra · Pro',
-      'Preview quota badge matches real tier · plan format'
+      'Google AI Ultra · 5x',
+      'Preview quota badge displays Ultra 5x multiplier instead of legacy Pro'
     );
 
     const [ovModWrap, ovMetricWrap] = sec2.querySelectorAll('.editable-slot-wrap');
@@ -1886,8 +1906,9 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.ok(sec3SettingLabels.includes('对话轮次导轨'), 'Turn rail switch rendered in 调用明细字段');
     assert.ok(sec3SettingLabels.includes('主/子代理标识'), 'Main/Sub agent badge switch rendered in 调用明细字段');
     assert.ok(sec3SettingLabels.includes('输出速度多色分级'), 'Speed multi-color switch rendered in 调用明细字段');
+    assert.ok(sec3SettingLabels.includes('搜索及诊断筛选栏'), 'Search & filter toolbar switch rendered in 调用明细字段');
     const sec3SegControls = sec3.querySelectorAll('.segmented');
-    assert.equal(sec3SegControls.length, 3, 'Three independent switches rendered in 调用明细字段');
+    assert.equal(sec3SegControls.length, 4, 'Four independent switches rendered in 调用明细字段');
     const getRowSpeedClasses = (tableEl) =>
       Array.from(tableEl.children[1].children).map(
         (tr) => tr.children[2].querySelector('.cell-value')?.getAttribute('class') || ''
@@ -1925,6 +1946,9 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       true,
       'Preview step table enables multi-color speed tones immediately when showStepSpeedColor is true'
     );
+    sec3SegControls[3].querySelectorAll('.seg-btn')[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(mockSettings.showStepFilterToolbar, true, 'Filter toolbar switch updates showStepFilterToolbar to true');
 
     const stepColWrap = sec3.querySelector('.editable-slot-wrap');
     stepColWrap.querySelector('.slot-add-btn').dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -1935,6 +1959,11 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(previewStepTable.children[0].children[0].children.length, 9, 'Preview step table expands to 9 columns live');
     pillTabs[2].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
+    assert.equal(
+      allPanes[2].querySelector('.steps-filter-toolbar').hasAttribute('hidden'),
+      false,
+      'StepsDetailView shows filter toolbar when showStepFilterToolbar is true'
+    );
     const stepTableWhileCustomOn = allPanes[2].querySelector('.data-table');
     assert.equal(
       stepTableWhileCustomOn.classList.contains('has-turn-rail'),
@@ -1960,6 +1989,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(mockSettings.showStepTurnRail, false, 'Section reset restores showStepTurnRail to false');
     assert.equal(mockSettings.showStepAgentBadge, true, 'Section reset restores showStepAgentBadge to true');
     assert.equal(mockSettings.showStepSpeedColor, false, 'Section reset restores showStepSpeedColor to false');
+    assert.equal(mockSettings.showStepFilterToolbar, false, 'Section reset restores showStepFilterToolbar to false');
     assert.equal(previewStepTable.classList.contains('has-turn-rail'), false, 'Section reset hides turn rail in preview step table');
     assert.equal(
       getRowSpeedClasses(previewStepTable).every((cls) => cls === 'cell-value'),
@@ -2052,8 +2082,10 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const maintBtns = otherPane
       .querySelectorAll('.btn-secondary')
       .filter((btn) => !btn.classList.contains('ctx-risk-accept-btn'));
-    const rebuildBtn = maintBtns[0];
-    const resetAllBtn = maintBtns[1];
+    const exportReserveLogBtn = maintBtns.find((b) => /导出预占日志/.test(b.textContent));
+    assert.ok(exportReserveLogBtn, 'Experimental quota reservation log export button rendered');
+    const rebuildBtn = maintBtns.find((b) => /重建本地轨迹缓存/.test(b.textContent));
+    const resetAllBtn = maintBtns.find((b) => /恢复全部默认设置/.test(b.textContent));
     rebuildBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(cacheRebuildCalls, 1, 'POST /api/cache/rebuild invoked cleanly');
@@ -2148,7 +2180,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const trendTooltipEl = popoverEl.querySelector('.trend-tooltip');
     assert.equal(trendTooltipEl.hasAttribute('hidden'), false, 'Tooltip opens on heatmap cell hover');
     assert.equal(activeCell.classList.contains('is-hovered'), true);
-    assert.match(trendTooltipEl.querySelector('.trend-tip-tokens').textContent, /100\.0k tok/);
+    assert.match(trendTooltipEl.querySelector('.trend-tip-tokens').textContent, /100\.0k TOKEN/);
 
     // Crossing 2px inter-cell gaps keeps highlight/tooltip steady without flickering, and fast jumps snap to nearest cell
     const hmBodyEl = heatmapStageEl.querySelector('.trend-heatmap-body');
@@ -5839,5 +5871,455 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
       value: prevNav,
       configurable: true,
     });
+  }
+});
+
+test('SettingsStructureTab CLI statusLine controls stay hidden unless CLI is detected, render progress-bar previews without preset bloat, and support one-click restore', async () => {
+  const { SettingsStructureTab } = await import('../src/views/settings/SettingsStructureTab.js');
+  const { setI18nLanguage } = await import('../src/i18n/index.js');
+
+  const prevDoc = globalThis.document;
+  const prevFetch = globalThis.fetch;
+  const savedPatches = [];
+  const { document: mockDoc } = createMockDom();
+  globalThis.document = mockDoc;
+  globalThis.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/api/settings') && opts.method === 'POST') {
+      const patch = JSON.parse(opts.body);
+      savedPatches.push(patch);
+      if (patch.__cliStatusLineAction === 'force_install') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            cliStatusLine: {
+              installed: true,
+              configured: true,
+              preservedCustom: false,
+              managedFlags: '',
+            },
+            settings: { enableCliStatusLine: true },
+          }),
+        };
+      }
+      if (patch.__cliStatusLineAction === 'clear_flags') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            cliStatusLine: {
+              installed: true,
+              configured: true,
+              preservedCustom: false,
+              managedFlags: '',
+            },
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => patch };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+
+  try {
+    setI18nLanguage('zh-CN');
+    const strTab = SettingsStructureTab({ onLayoutChange: () => {} });
+    const groupEl = strTab.refs.cliStatusGroupEl;
+    const detailEl = strTab.refs.cliStatusDetailEl;
+    const previewEl = strTab.refs.cliPreviewEl;
+    const hintEl = strTab.refs.cliStatusHintEl;
+    const actionBtn = strTab.refs.cliStatusActionBtn;
+
+    // 1. Default / CLI not detected -> entire CLI group stays hidden, zero redundant preset buttons
+    assert.equal(groupEl.hasAttribute('hidden'), true, 'CLI controls hidden before detection');
+    assert.equal(groupEl.querySelectorAll('.cli-preset-btn').length, 0, 'No redundant preset button row');
+    strTab.refs.renderSettings(
+      { enableCliStatusLine: true, cliStatusLineSlots: null, topbarCapsuleSlots: ['tps', 'ttft', 'context'] },
+      { state: 'active' },
+      'win32',
+      { installed: false, configured: false, preservedCustom: false, managedFlags: '' }
+    );
+    assert.equal(groupEl.hasAttribute('hidden'), true, 'CLI controls stay hidden when CLI is not installed');
+
+    // 2. CLI detected -> group becomes visible with 5 default slots + mini progress bars on quota & context
+    strTab.refs.renderSettings(
+      { enableCliStatusLine: true, cliStatusLineSlots: null, topbarCapsuleSlots: ['tps', 'ttft', 'context'] },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: true, preservedCustom: false, managedFlags: '' }
+    );
+    assert.equal(groupEl.hasAttribute('hidden'), false, 'CLI controls appear once CLI is detected');
+    assert.equal(detailEl.hasAttribute('hidden'), false, 'CLI detail shown when enabled');
+    assert.equal(strTab.refs.cliStatusFooterEl.hasAttribute('hidden'), true, 'No idle sync hint footer when healthy');
+    assert.equal(actionBtn.hasAttribute('hidden'), true, 'No recovery button when healthy');
+    const visibleSlots = () =>
+      previewEl
+        .querySelectorAll('.cli-preview-slot')
+        .filter((el) => !el.hasAttribute('hidden'))
+        .map((el) => el.textContent);
+    assert.deepEqual(visibleSlots(), ['68.4 t/s', '1.1s', '$1.28', '余 52%', '上下文 56%']);
+    assert.equal(
+      previewEl.querySelector('.cli-preview-multi')?.textContent,
+      '●1 运行中',
+      'CLI preview shares the exact same running count (1) as the top Antigravity preview bar'
+    );
+    const pillSlots1 = previewEl
+      .querySelectorAll('.cli-preview-slot.is-pill')
+      .filter((el) => !el.hasAttribute('hidden'));
+    assert.equal(pillSlots1.length, 2, 'Quota and context slots render as background-filled pills');
+
+    // 3. Dedicated 5h / weekly / context slots render distinct pill gauges in live preview
+    strTab.refs.renderSettings(
+      {
+        enableCliStatusLine: true,
+        cliStatusLineSlots: ['gemini_5h', 'gemini_weekly', 'claude_5h', 'claude_weekly', 'context'],
+      },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: true, preservedCustom: false, managedFlags: '' }
+    );
+    assert.deepEqual(visibleSlots(), [
+      'G5h 64%',
+      'G周 52%',
+      'C5h 32%',
+      'C周 59%',
+      '上下文 56%',
+    ]);
+    const pillSlots2 = previewEl
+      .querySelectorAll('.cli-preview-slot.is-pill')
+      .filter((el) => !el.hasAttribute('hidden'));
+    assert.equal(pillSlots2.length, 5);
+
+    // 4. Turning CLI statusLine off collapses detail panel
+    strTab.refs.renderSettings(
+      { enableCliStatusLine: false, cliStatusLineSlots: ['tps', 'ttft', 'context'] },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: false, preservedCustom: false, managedFlags: '' }
+    );
+    assert.equal(groupEl.hasAttribute('hidden'), false, 'Toggle itself remains reachable while CLI is installed');
+    assert.equal(detailEl.hasAttribute('hidden'), true, 'Slot controls hide when CLI statusLine is turned off');
+
+    // 5. Custom/broken third-party command shows amber notice + one-click restore button
+    strTab.refs.renderSettings(
+      { enableCliStatusLine: true, cliStatusLineSlots: null },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: false, preservedCustom: true, managedFlags: '' }
+    );
+    assert.equal(hintEl.classList.contains('is-warn'), true);
+    assert.match(hintEl.textContent, /自定义 statusLine/);
+    assert.equal(actionBtn.hasAttribute('hidden'), false);
+    assert.equal(actionBtn.classList.contains('is-warn'), true);
+    assert.equal(actionBtn.textContent, '一键接管并恢复');
+
+    // Clicking one-click restore sends __cliStatusLineAction: 'force_install' and clears warning
+    actionBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(savedPatches[savedPatches.length - 1]?.__cliStatusLineAction, 'force_install');
+    assert.equal(actionBtn.hasAttribute('hidden'), true, 'Recovery button hides once restored');
+    assert.equal(hintEl.classList.contains('is-warn'), false);
+
+    // 6. Inline CLI launch flags override notice + clear button
+    strTab.refs.renderSettings(
+      { enableCliStatusLine: true, cliStatusLineSlots: null },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: true, preservedCustom: false, managedFlags: '--preset full' }
+    );
+    assert.equal(hintEl.classList.contains('is-warn'), false);
+    assert.match(hintEl.textContent, /命令行参数将优先/);
+    assert.equal(actionBtn.hasAttribute('hidden'), false);
+    assert.equal(actionBtn.textContent, '清除命令行覆盖');
+
+    strTab.destroy();
+  } finally {
+    setI18nLanguage('zh-CN');
+    globalThis.document = prevDoc;
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test('Issue #35: topbar capsule and hover HUD lock to main agent by default, toggle cleanly to follow-active, and preserve manual main selection', async () => {
+  const {
+    buildExportableSettingsJson,
+    parseImportedSettingsJson,
+  } = await import('../src/core/settingsBackup.js');
+
+  // 1. Settings backup exports and re-imports contextAgentMode cleanly
+  const exported = buildExportableSettingsJson({ contextAgentMode: 'auto' });
+  const parsedBackup = parseImportedSettingsJson(exported);
+  assert.equal(parsedBackup.ok, true);
+  assert.equal(parsedBackup.patch.contextAgentMode, 'auto');
+
+  // 2. Compiled app.js E2E with Main Agent (44.3%) vs active running Subagent (63.7%)
+  const appJs = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const stylesCss = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  const rootUuid = '11111111-2222-3333-4444-555555555555';
+  const subUuid = 'sub-worker-5';
+
+  const { document: mockDocument, body, makeElement } = createMockDom({
+    defaultRect: { left: 900, right: 1080, top: 6, bottom: 32, width: 180, height: 26 },
+  });
+  const titlebar = makeElement('div');
+  titlebar.className = 'flex items-center @container/titlebar';
+  const titleRight = makeElement('div');
+  titleRight.className = 'flex items-center gap-1';
+  titlebar.appendChild(titleRight);
+  body.appendChild(titlebar);
+
+  const mockSettings = {
+    language: 'zh-CN',
+    themeAccent: 'host',
+    fontScale: 'md',
+    modernUi: true,
+    windowMountMode: 'dual',
+    enableWindowOverlay: true,
+    showTopbarMultiSession: true,
+    contextAgentMode: 'main',
+    topbarCapsuleSlots: ['tps', 'ttft', 'context'],
+    hoverModules: ['metrics', 'context'],
+    overviewModules: ['metrics', 'context'],
+    overviewMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+    stepTableColumns: ['step', 'model', 'tps', 'ttft', 'tokens_combo', 'cache', 'cost'],
+  };
+
+  const mainContext = {
+    totalTokens: 113408,
+    limitTokens: 256000,
+    compactionLimitTokens: 256000,
+    usedPct: 44.3,
+    messagesTokens: 90000,
+    toolResultsTokens: 54000,
+    assistantTokens: 22000,
+    userInputTokens: 14000,
+    systemPromptTokens: 10000,
+    systemToolsTokens: 13408,
+  };
+  const subContext = {
+    totalTokens: 163072,
+    limitTokens: 256000,
+    compactionLimitTokens: 256000,
+    usedPct: 63.7,
+    messagesTokens: 138000,
+    toolResultsTokens: 96000,
+    assistantTokens: 30000,
+    userInputTokens: 12000,
+    systemPromptTokens: 11000,
+    systemToolsTokens: 14072,
+  };
+
+  const buildPayload = () => ({
+    bundleVersion: 'ver-issue35',
+    settings: { ...mockSettings },
+    quotas: { pools: [] },
+    conversations: [
+      {
+        cascadeId: rootUuid,
+        title: 'Main Task With Active Subagent',
+        isRunning: true,
+        stepCount: 12,
+        subagentCount: 1,
+        contextUsedPct: 44.3,
+      },
+    ],
+    runningConversations: [],
+    activeConversation: {
+      cascadeId: rootUuid,
+      title: 'Main Task With Active Subagent',
+      isRunning: true,
+      hasSubagents: true,
+      subagentCount: 1,
+      stepCount: 12,
+      latestTokPerSec: 65,
+      avgTokPerSec: 60,
+      latestTtftSec: 1.1,
+      context: mainContext,
+      agents: [
+        {
+          agentId: 'main',
+          cascadeId: rootUuid,
+          isMain: true,
+          agentKind: 'main',
+          index: 0,
+          badgeText: '主',
+          role: '主代理',
+          isRunning: false,
+          stepCount: 8,
+          latestTokPerSec: 65,
+          avgTokPerSec: 60,
+          latestTtftSec: 1.1,
+          context: mainContext,
+          recentSteps: [],
+        },
+        {
+          agentId: subUuid,
+          cascadeId: subUuid,
+          isMain: false,
+          agentKind: 'subagent',
+          agentOrdinal: 1,
+          index: 1,
+          badgeText: '子1',
+          shortLabel: '子代理 #1',
+          role: 'Subagent Worker',
+          isRunning: true,
+          stepCount: 4,
+          latestTokPerSec: 88,
+          avgTokPerSec: 80,
+          latestTtftSec: 0.7,
+          context: subContext,
+          recentSteps: [],
+        },
+      ],
+      aggregated: {
+        agentId: 'all',
+        isRunning: true,
+        stepCount: 12,
+        activeAgentId: subUuid,
+        activeAgentKind: 'subagent',
+        activeAgentOrdinal: 1,
+        activeAgentBadge: '子1',
+        latestTokPerSec: 88,
+        avgTokPerSec: 70,
+        latestTtftSec: 0.7,
+        context: subContext,
+      },
+    },
+    consumption: { range: '7d', summary: {}, trendSeries: [], topModels: [], topConversations: [] },
+  });
+
+  const mockLocation = { pathname: `/c/${rootUuid}`, href: `http://localhost/c/${rootUuid}` };
+  const mockWindow = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    location: mockLocation,
+    document: mockDocument,
+    __AGUsageMonitorBridge: { port: 49235, token: 'tok-35', version: 'ver-issue35', platform: 'win32' },
+    addEventListener() {},
+    removeEventListener() {},
+    getComputedStyle: () => ({ display: 'flex', flexDirection: 'row', visibility: 'visible' }),
+    requestAnimationFrame: (cb) => setTimeout(cb, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+    fetch: async (url, opts = {}) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/styles.css')) {
+        return { ok: true, status: 200, text: async () => stylesCss };
+      }
+      if (urlStr.includes('/api/settings') && String(opts.method || '').toUpperCase() === 'POST') {
+        Object.assign(mockSettings, JSON.parse(opts.body || '{}'));
+        return { ok: true, status: 200, json: async () => ({ ok: true, settings: { ...mockSettings } }) };
+      }
+      return { ok: true, status: 200, json: async () => buildPayload() };
+    },
+  };
+  mockWindow.window = mockWindow;
+  mockWindow.globalThis = mockWindow;
+
+  const sandbox = vm.createContext({
+    window: mockWindow,
+    globalThis: mockWindow,
+    document: mockDocument,
+    location: mockLocation,
+    navigator: {},
+    URLSearchParams,
+    AbortController,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    queueMicrotask,
+    fetch: mockWindow.fetch,
+    console,
+  });
+
+  const readVal = (el) => el?.getAttribute?.('data-od-value') || el?.textContent || '';
+
+  vm.runInContext(appJs, sandbox);
+  await new Promise((r) => setTimeout(r, 50));
+
+  const ov = mockWindow.__AGUsageMonitorOverlay;
+  try {
+    assert.ok(ov, 'Overlay initialized');
+    const capsuleHost = mockDocument.getElementById('ag-usage-monitor-capsule');
+    const portalHost = mockDocument.getElementById('ag-usage-monitor-portal');
+    const capsuleBtn = capsuleHost.shadowRoot.querySelector('.wm-capsule-btn');
+    const ctxPctEl = capsuleHost.shadowRoot.querySelector('.wm-ctx-pct');
+    const hoverTipEl = portalHost.shadowRoot.querySelector('.wm-hover-tip');
+
+    // A. Default contextAgentMode === 'main': topbar capsule & hover HUD lock to Main (44% / 44.3%)
+    assert.equal(readVal(ctxPctEl), '44%', 'Topbar capsule locks to Main Agent (44%) despite active subagent (64%)');
+    capsuleBtn.dispatchEvent({ type: 'mouseenter', clientX: 960, clientY: 18 });
+    await new Promise((r) => setTimeout(r, 20));
+    const hoverCtxPanel = hoverTipEl.querySelector('.ctx-legend-grid')?.parentNode;
+    assert.ok(hoverCtxPanel, 'Hover HUD context panel rendered');
+    assert.match(hoverCtxPanel.textContent, /44\.3%/, 'Hover HUD locks to Main Agent 44.3%');
+    assert.match(hoverCtxPanel.textContent, /主代理/, 'Hover HUD shows Main Agent badge');
+
+    // B. Full panel defaults to Main, and clicking subagent pill inside panel does NOT hijack capsule/hover
+    ov.open();
+    await new Promise((r) => setTimeout(r, 25));
+    const popoverEl = portalHost.shadowRoot.querySelector('.wm-popover-panel');
+    const overviewCtxPanel = popoverEl.querySelector('.overview-modules-host .ctx-legend-grid')?.parentNode;
+    assert.ok(overviewCtxPanel, 'Overview context panel rendered');
+    const subPill = overviewCtxPanel.querySelector(`.ctx-agent-pill[data-pill-key="${subUuid}"]`);
+    const mainPill = overviewCtxPanel.querySelector('.ctx-agent-pill[data-pill-key="main"]');
+    assert.equal(mainPill.classList.contains('is-active'), true, 'Full panel defaults to Main Agent pill');
+    assert.match(overviewCtxPanel.textContent, /44\.3%/);
+
+    subPill.onclick({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(subPill.classList.contains('is-active'), true, 'Full panel can still inspect subagent on demand');
+    assert.match(overviewCtxPanel.textContent, /63\.7%/, 'Full panel shows inspected subagent 63.7%');
+    assert.equal(readVal(ctxPctEl), '44%', 'Topbar capsule stays locked to Main Agent (44%) while panel inspects subagent');
+    ov.close();
+    capsuleBtn.dispatchEvent({ type: 'mouseenter', clientX: 960, clientY: 18 });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.match(hoverCtxPanel.textContent, /44\.3%/, 'Hover HUD stays locked to Main Agent (44.3%)');
+
+    // C. Switching toggle to 'auto' (跟随活跃) makes capsule & hover follow active subagent (64% / 63.7%)
+    ov.open();
+    await new Promise((r) => setTimeout(r, 20));
+    const navTabs = popoverEl.querySelectorAll('.pill-tab');
+    navTabs[navTabs.length - 1].dispatchEvent({ type: 'click', stopPropagation() {} }); // Settings
+    await new Promise((r) => setTimeout(r, 20));
+    const settingsRoot = popoverEl.querySelector('.settings-view-root');
+    const subTabs = settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn');
+    subTabs[1].dispatchEvent({ type: 'click', stopPropagation() {} }); // Structure
+    await new Promise((r) => setTimeout(r, 25));
+    const [, structurePane] = settingsRoot.querySelectorAll('.settings-tab-stack');
+    const autoBtn = Array.from(structurePane.querySelectorAll('.seg-btn')).find(
+      (b) => b.textContent.trim() === '跟随活跃'
+    );
+    assert.ok(autoBtn, 'Context agent mode toggle renders 跟随活跃 option');
+    autoBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(mockSettings.contextAgentMode, 'auto');
+    assert.equal(readVal(ctxPctEl), '64%', 'Topbar capsule follows active subagent (64%) when switched to auto');
+    ov.close();
+    capsuleBtn.dispatchEvent({ type: 'mouseenter', clientX: 960, clientY: 18 });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.match(hoverCtxPanel.textContent, /63\.7%/, 'Hover HUD follows active subagent (63.7%) when switched to auto');
+
+    // D. Manual '主' lock in auto mode survives same-session syncHostRoute() without resetting to 'auto'
+    ov.open();
+    await new Promise((r) => setTimeout(r, 20));
+    navTabs[0].dispatchEvent({ type: 'click', stopPropagation() {} }); // Overview
+    await new Promise((r) => setTimeout(r, 20));
+    const mainPillAfterAuto = overviewCtxPanel.querySelector('.ctx-agent-pill[data-pill-key="main"]');
+    mainPillAfterAuto.onclick({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(readVal(ctxPctEl), '44%', 'Manual main pill updates topbar capsule to 44% in auto mode');
+
+    // Simulate host route refresh on the same root conversation (e.g. focus/subagent jitter)
+    mockLocation.pathname = '/';
+    ov.syncHostRoute();
+    mockLocation.pathname = `/c/${rootUuid}`;
+    ov.syncHostRoute();
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(readVal(ctxPctEl), '44%', 'Same-session route refresh preserves manual main lock instead of resetting to auto');
+  } finally {
+    ov?.dispose?.();
   }
 });

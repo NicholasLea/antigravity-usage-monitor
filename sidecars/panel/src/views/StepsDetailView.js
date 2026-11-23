@@ -19,7 +19,9 @@ import {
   formatAnomalyKindLabel,
   formatAnomalyTagText,
   formatMetric,
+  formatPctNumber,
   formatSpeedMetric,
+  formatTimingDetailSec,
   formatTokens,
   formatTokensPrecise,
   formatUsd,
@@ -28,10 +30,28 @@ import {
   normalizeOrchestratorIdDisplayMode,
   resolveModelAnomalySummary,
   resolveModelDisplayInfo,
+  speedReasonText,
 } from '../core/formatters.js';
+import {
+  computeStepQuickChipCounts,
+  filterStepsBySearchAndChip,
+} from '../core/stepInspector.js';
+import {
+  buildStepsExportBaseName,
+  buildStepsMarkdownReport,
+  buildStepsXlsx,
+  sanitizeExportFilename,
+} from '../core/reportExporter.js';
+import {
+  copyTextWithFeedback,
+  exportBinaryFileWithFeedback,
+} from '../core/fileExportClient.js';
+import { createSvgIcon, patchSvgIcon } from '../icons/SvgIcon.js';
+import { ActionMenu } from '../components/ui/ActionMenu.js';
 import { getEffectiveLocale, i18nStore, t } from '../i18n/index.js';
 import {
   formatAgentLabel,
+  getDefaultCtxInspectorAgentId,
   normalizeClientStepColumns,
   normalizeClientStepTokenComboFormat,
   resolveScopedConversation,
@@ -48,10 +68,12 @@ import {
 import { CustomScrollbar } from '../components/ui/CustomScrollbar.js';
 import { CustomSelect } from '../components/ui/CustomSelect.js';
 import { createFourSegmentBar } from '../components/ui/FourSegmentBar.js';
+import { createSearchInput } from '../components/ui/SearchInput.js';
 import { SegmentedControl } from '../components/ui/SegmentedControl.js';
 import { StepTableWidget } from '../components/widgets/StepTableWidget.js';
+import { sortStepsByColumn } from '../registries/stepColumnRegistry.js';
 
-function mergeSelectedAgentUnits(units) {
+export function mergeSelectedAgentUnits(units) {
   const combinedSteps = [];
   const modelMap = new Map();
 
@@ -88,10 +110,15 @@ function mergeSelectedAgentUnits(units) {
           anomalyDangerCount: 0,
           anomalyTotalDelaySec: 0,
           anomalyByKind: {},
-          _speedWeightedSum: 0,
-          _speedWeight: 0,
+          _hasAnySpeedSummary: false,
+          _speedTokens: 0,
+          _speedSeconds: 0,
+          _speedSampleCount: 0,
+          _speedExcludedCount: 0,
+          _speedExcludedReasons: {},
           _ttftWeightedSum: 0,
           _ttftWeight: 0,
+          _ttftSampleCount: 0,
         };
         if (acc.upstreamName) acc.upstreamSet.add(acc.upstreamName);
         modelMap.set(gk, acc);
@@ -138,19 +165,43 @@ function mergeSelectedAgentUnits(units) {
         }
       }
 
-      if (Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0) {
-        const w = Math.max(1, outTok || calls || 1);
-        acc._speedWeightedSum += Number(m.avgTokPerSec) * w;
-        acc._speedWeight += w;
+      const rawSpeedTok = Number(m.speedSummary?.tokens);
+      const rawSpeedSec = Number(m.speedSummary?.seconds);
+      if (
+        Number.isFinite(rawSpeedTok) &&
+        Number.isFinite(rawSpeedSec) &&
+        rawSpeedSec > 0 &&
+        rawSpeedTok >= 0
+      ) {
+        acc._hasAnySpeedSummary = true;
+        acc._speedTokens += rawSpeedTok;
+        acc._speedSeconds += rawSpeedSec;
+      } else if (Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0) {
+        const fallbackTok = outTok > 0 ? outTok : Math.max(1, calls || 1);
+        acc._speedTokens += fallbackTok;
+        acc._speedSeconds += fallbackTok / Number(m.avgTokPerSec);
+      }
+      if (m.speedSummary) {
+        acc._hasAnySpeedSummary = true;
+        acc._speedSampleCount += Math.max(0, Number(m.speedSummary.sampleCount || 0));
+        acc._speedExcludedCount += Math.max(0, Number(m.speedSummary.excludedCount || 0));
+        if (m.speedSummary.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+          for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+            const cnt = Math.max(0, Number(rv || 0));
+            if (cnt > 0) acc._speedExcludedReasons[rk] = (acc._speedExcludedReasons[rk] || 0) + cnt;
+          }
+        }
       }
       if (
         m.avgTtftSec != null &&
         Number.isFinite(Number(m.avgTtftSec)) &&
         Number(m.avgTtftSec) >= 0
       ) {
-        const w = Math.max(1, calls || 1);
+        const ttftSamples = Math.max(0, Number(m.ttftSampleCount || 0));
+        const w = ttftSamples > 0 ? ttftSamples : Math.max(1, calls || 1);
         acc._ttftWeightedSum += Number(m.avgTtftSec) * w;
         acc._ttftWeight += w;
+        acc._ttftSampleCount += ttftSamples;
       }
     }
   }
@@ -165,6 +216,7 @@ function mergeSelectedAgentUnits(units) {
   const mergedModels = Array.from(modelMap.values())
     .map((acc) => {
       const promptTok = acc.inputTokens + acc.cacheReadTokens;
+      const rawAvgTps = acc._speedSeconds > 0 ? acc._speedTokens / acc._speedSeconds : null;
       return {
         label: acc.label,
         shortName: acc.shortName,
@@ -180,10 +232,22 @@ function mergeSelectedAgentUnits(units) {
         totalTokens: acc.totalTokens,
         costUsd: +acc.costUsd.toFixed(6),
         unpricedCalls: acc.unpricedCalls,
-        avgTokPerSec:
-          acc._speedWeight > 0 ? +(acc._speedWeightedSum / acc._speedWeight).toFixed(1) : null,
+        avgTokPerSec: rawAvgTps !== null ? +rawAvgTps.toFixed(1) : null,
         avgTtftSec:
           acc._ttftWeight > 0 ? +(acc._ttftWeightedSum / acc._ttftWeight).toFixed(1) : null,
+        ttftSampleCount: acc._ttftSampleCount,
+        ...(acc._hasAnySpeedSummary
+          ? {
+              speedSummary: {
+                tokens: acc._speedTokens,
+                seconds: +acc._speedSeconds.toFixed(6),
+                sampleCount: acc._speedSampleCount,
+                excludedCount: acc._speedExcludedCount,
+                excludedReasons: acc._speedExcludedReasons,
+                avgTokPerSec: rawAvgTps,
+              },
+            }
+          : {}),
         cacheHitPct: promptTok > 0 ? +((acc.cacheReadTokens / promptTok) * 100).toFixed(1) : 0,
         ...(acc.anomalyCount > 0
           ? {
@@ -229,6 +293,16 @@ export const StepsDetailView = defineComponent({
     let selectedLineModels = ['__all__'];
     let onlyAnomalies = false;
     let anomalyKindFilter = '';
+    let stepSearchQuery = '';
+    let stepQuickChip = '';
+    let currentTableSteps = [];
+    let currentAllConvSteps = [];
+    let currentDisplaySettings = {};
+    let sortKey = '';
+    let sortDir = '';
+    let cachedSortSrc = null;
+    let cachedSortSig = '';
+    let cachedSortedOut = [];
 
     function applyAgentScopesSelection(nextScopes) {
       selectedAgentScopes = nextScopes;
@@ -237,9 +311,18 @@ export const StepsDetailView = defineComponent({
       const prevUiScope = uiStore.getState().selectedAgentScope;
       lastSyncedUiScope = mappedSingle;
       if (prevUiScope !== mappedSingle) {
+        const curCtxId = uiStore.getState().ctxInspectorAgentId;
+        const shouldResetSubCtx =
+          mappedSingle === 'all' && curCtxId && curCtxId !== 'main' && curCtxId !== 'auto';
         uiStore.setState({
           selectedAgentScope: mappedSingle,
-          ...(mappedSingle === 'all' ? { ctxInspectorAgentId: 'auto' } : {}),
+          ...(shouldResetSubCtx
+            ? {
+                ctxInspectorAgentId: getDefaultCtxInspectorAgentId(
+                  telemetryStore.getState().telemetry?.settings
+                ),
+              }
+            : {}),
         });
       } else if (latestSlice) {
         renderStepsData(latestSlice);
@@ -296,6 +379,11 @@ export const StepsDetailView = defineComponent({
     const stepTableWidget = StepTableWidget({
       onSelectAgentScopes: applyAgentScopesSelection,
       onVirtualHeightChange: () => stepsScroll?.refresh(),
+      onSortChange: (nextKey, nextDir) => {
+        sortKey = nextKey || '';
+        sortDir = nextDir || '';
+        if (latestSlice) renderStepsData(latestSlice);
+      },
     });
     const {
       stepsTablePane,
@@ -324,6 +412,7 @@ export const StepsDetailView = defineComponent({
       onclick: () => {
         onlyAnomalies = false;
         anomalyKindFilter = '';
+        if (stepQuickChip === 'anomaly') stepQuickChip = '';
         if (latestSlice) renderStepsData(latestSlice);
       },
     });
@@ -331,6 +420,128 @@ export const StepsDetailView = defineComponent({
       'div',
       { className: 'steps-anomaly-filterbar', hidden: true },
       [anomalyFilterLabelEl, anomalyFilterClearBtn]
+    );
+
+    // --- 步骤搜索栏及快捷诊断芯片 ---
+    const stepSearchBox = createSearchInput({
+      wrapClassName: 'steps-search-wrap',
+      iconClassName: 'steps-search-icon',
+      inputClassName: 'steps-search-input',
+      clearClassName: 'steps-search-clear',
+      placeholder: t('steps.searchPlaceholder'),
+      ariaLabel: t('steps.searchPlaceholder'),
+      clearAriaLabel: t('steps.searchClearAria'),
+      closeIconSize: 11,
+      onInput: (val) => {
+        stepSearchQuery = String(val ?? '');
+        if (latestSlice) renderStepsData(latestSlice);
+      },
+      onClear: () => {
+        stepSearchQuery = '';
+        if (latestSlice) renderStepsData(latestSlice);
+        stepSearchInput.focus?.();
+      },
+      onKeydown: (e) => {
+        if (e?.key === 'Escape') {
+          e.stopPropagation?.();
+          if (stepSearchQuery) {
+            stepSearchQuery = '';
+            stepSearchBox.setValue('');
+            if (latestSlice) renderStepsData(latestSlice);
+          } else {
+            stepSearchInput.blur?.();
+          }
+        }
+      },
+    });
+    const stepSearchWrapEl = stepSearchBox.el;
+    const stepSearchInput = stepSearchBox.inputEl;
+    const stepSearchClearBtn = stepSearchBox.clearBtnEl;
+
+    const QUICK_CHIP_DEFS = [
+      { key: 'anomaly', i18nKey: 'steps.chipAnomaly', tone: 'is-warn' },
+      { key: 'compaction', i18nKey: 'steps.chipCompaction', tone: 'is-info' },
+      { key: 'low_cache', i18nKey: 'steps.chipLowCache', tipKey: 'steps.chipLowCacheTip', tone: 'is-warn' },
+      { key: 'slow_ttft', i18nKey: 'steps.chipSlowTtft', tipKey: 'steps.chipSlowTtftTip', tone: 'is-danger' },
+    ];
+    const quickChipBtns = QUICK_CHIP_DEFS.map((def) => {
+      const btn = h('button', {
+        type: 'button',
+        className: `steps-chip-btn ${def.tone}`,
+        'data-chip': def.key,
+        hidden: true,
+        onclick: () => {
+          if (def.key === 'anomaly') {
+            const nextOn = !(onlyAnomalies || stepQuickChip === 'anomaly');
+            onlyAnomalies = nextOn;
+            anomalyKindFilter = '';
+            stepQuickChip = nextOn ? 'anomaly' : '';
+          } else {
+            const nextKey = stepQuickChip === def.key ? '' : def.key;
+            stepQuickChip = nextKey;
+            if (nextKey) {
+              onlyAnomalies = false;
+              anomalyKindFilter = '';
+            }
+          }
+          if (latestSlice) renderStepsData(latestSlice);
+        },
+      });
+      return { def, btn };
+    });
+    const stepQuickChipsEl = h(
+      'div',
+      { className: 'steps-quick-chips', hidden: true },
+      quickChipBtns.map((c) => c.btn)
+    );
+    const stepsExportMenu = ActionMenu({
+      ariaLabel: t('steps.exportMenuAria'),
+      className: 'steps-export-menu',
+      items: [
+        {
+          key: 'xlsx',
+          icon: 'download',
+          label: t('steps.exportXlsx'),
+          title: t('steps.exportXlsxTip'),
+          onSelect: () => {
+            if (currentTableSteps.length === 0) return;
+            const bytes = buildStepsXlsx(currentTableSteps, {
+              title: latestSlice?.activeConversation?.title || '',
+              cascadeId: latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || '',
+              displaySettings: currentDisplaySettings,
+            });
+            const baseName = buildStepsExportBaseName(
+              latestSlice?.activeConversation?.title || '',
+              latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || ''
+            );
+            void exportBinaryFileWithFeedback(
+              sanitizeExportFilename(baseName, 'xlsx'),
+              bytes
+            );
+          },
+        },
+        {
+          key: 'md',
+          icon: 'copy',
+          label: t('steps.exportMd'),
+          title: t('steps.exportMdTip'),
+          onSelect: () => {
+            if (currentTableSteps.length === 0) return;
+            const md = buildStepsMarkdownReport(currentTableSteps, {
+              title: latestSlice?.activeConversation?.title || '',
+              cascadeId: latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || '',
+              displaySettings: currentDisplaySettings,
+            });
+            void copyTextWithFeedback(md, t('steps.exportMdDone'));
+          },
+        },
+      ],
+    });
+    stepsExportMenu.refs.setHidden(true);
+    const stepsFilterToolbarEl = h(
+      'div',
+      { className: 'steps-filter-toolbar', hidden: true },
+      [stepSearchWrapEl, stepQuickChipsEl]
     );
 
     // --- 子视图 2：总汇总分析面板 ---
@@ -493,9 +704,13 @@ export const StepsDetailView = defineComponent({
         h('div', { className: 'panel-header steps-panel-header' }, [
           h('div', { className: 'steps-header-controls' }, [
             subTabSwitch.el,
-            headerFiltersEl,
+            h('div', { className: 'steps-header-right' }, [
+              headerFiltersEl,
+              stepsExportMenu.el,
+            ]),
           ]),
         ]),
+        stepsFilterToolbarEl,
         anomalyFilterBarEl,
         stepsScroll.el,
         modelsScroll.el,
@@ -571,6 +786,14 @@ export const StepsDetailView = defineComponent({
       patchText(modelsSectionTitleEl, t('steps.modelsTitle'));
       patchText(modelsEmptyEl, t('steps.modelsEmpty'));
       patchText(anomalyFilterClearBtn, t('steps.anomalyFilterAll'));
+      patchAttr(stepSearchInput, 'placeholder', t('steps.searchPlaceholder'));
+      patchAttr(stepSearchInput, 'aria-label', t('steps.searchPlaceholder'));
+      patchAttr(stepSearchClearBtn, 'aria-label', t('steps.searchClearAria'));
+      stepsExportMenu.refs.setAriaLabel(t('steps.exportMenuAria'));
+      stepsExportMenu.refs.updateItemLabels({
+        xlsx: { label: t('steps.exportXlsx'), title: t('steps.exportXlsxTip') },
+        md: { label: t('steps.exportMd'), title: t('steps.exportMdTip') },
+      });
       lastAnomalyStripSig = '';
       lineMetricSwitch.setProps({
         modelValue: selectedLineMetric,
@@ -607,6 +830,12 @@ export const StepsDetailView = defineComponent({
           selectedLineModels = ['__all__'];
           onlyAnomalies = false;
           anomalyKindFilter = '';
+          stepSearchQuery = '';
+          stepSearchInput.value = '';
+          patchAttr(stepSearchClearBtn, 'hidden', true);
+          stepQuickChip = '';
+          sortKey = '';
+          sortDir = '';
         }
         fitLockedCascadeId = currentCid;
         fitUserPicked = false;
@@ -804,16 +1033,72 @@ export const StepsDetailView = defineComponent({
       const modelFilteredSteps = tableModelFilterSet
         ? steps.filter((st) => tableModelFilterSet.has(getStepModelGroupKey(st)))
         : steps;
-      const tableSteps = onlyAnomalies
-        ? modelFilteredSteps.filter((st) => {
-            const a = st?.anomaly;
-            if (!a || !(Number(a.count) > 0)) return false;
-            if (anomalyKindFilter) {
-              return Number(a.kinds?.[anomalyKindFilter] || 0) > 0;
-            }
-            return true;
-          })
-        : modelFilteredSteps;
+
+      const filterToolbarEnabled = slice.showStepFilterToolbar === true;
+      if (!filterToolbarEnabled) {
+        if (stepSearchQuery) {
+          stepSearchQuery = '';
+          stepSearchInput.value = '';
+          patchAttr(stepSearchClearBtn, 'hidden', true);
+        }
+        if (stepQuickChip && stepQuickChip !== 'anomaly') {
+          stepQuickChip = '';
+        }
+      }
+      const chipCounts = computeStepQuickChipCounts(modelFilteredSteps);
+      const effectiveQuickChip = onlyAnomalies
+        ? 'anomaly'
+        : filterToolbarEnabled
+          ? stepQuickChip
+          : '';
+      const showFilterToolbar = filterToolbarEnabled && !showModels && steps.length > 0;
+      patchAttr(stepsFilterToolbarEl, 'hidden', !showFilterToolbar);
+      stepsExportMenu.refs.setHidden(showModels || steps.length === 0);
+      if (showFilterToolbar) {
+        let visibleChipsCount = 0;
+        for (const { def, btn } of quickChipBtns) {
+          const cnt = chipCounts[def.key] || 0;
+          const isActive = effectiveQuickChip === def.key;
+          const showChip = cnt > 0 || isActive;
+          patchAttr(btn, 'hidden', !showChip);
+          if (showChip) {
+            visibleChipsCount += 1;
+            patchText(btn, t(def.i18nKey, { count: cnt }));
+            if (def.tipKey) patchAttr(btn, 'title', t(def.tipKey));
+            patchClasses(btn, { 'is-active': isActive });
+            patchAttr(btn, 'aria-pressed', isActive ? 'true' : 'false');
+          }
+        }
+        patchAttr(stepQuickChipsEl, 'hidden', visibleChipsCount === 0);
+      }
+
+      const filteredTableSteps = filterStepsBySearchAndChip(modelFilteredSteps, {
+        query: filterToolbarEnabled ? stepSearchQuery : '',
+        quickChip: effectiveQuickChip,
+        anomalyKindFilter: onlyAnomalies ? anomalyKindFilter : '',
+        displaySettings,
+      });
+
+      const normTokenFmt = normalizeClientStepTokenComboFormat(slice.stepTokenComboFormat);
+      const sortSig = `${sortKey}:${sortDir}:${normTokenFmt}:${displaySettings.modelDisplayMode}:${displaySettings.showUpstreamModel ? 1 : 0}:${displaySettings.orchestratorIdMode}`;
+      let tableSteps = filteredTableSteps;
+      if (sortKey && sortDir) {
+        if (cachedSortSrc === filteredTableSteps && cachedSortSig === sortSig) {
+          tableSteps = cachedSortedOut;
+        } else {
+          tableSteps = sortStepsByColumn(filteredTableSteps, sortKey, sortDir, {
+            stepTokenComboFormat: normTokenFmt,
+            displaySettings,
+          });
+          cachedSortSrc = filteredTableSteps;
+          cachedSortSig = sortSig;
+          cachedSortedOut = tableSteps;
+        }
+      } else {
+        cachedSortSrc = null;
+        cachedSortSig = '';
+        cachedSortedOut = [];
+      }
 
       const showAnomalyFilterBar = !showModels && onlyAnomalies;
       patchAttr(anomalyFilterBarEl, 'hidden', !showAnomalyFilterBar);
@@ -843,6 +1128,9 @@ export const StepsDetailView = defineComponent({
       const allConversationSteps = hasSubagents
         ? aggregated?.recentSteps || []
         : slice.recentSteps || [];
+      currentTableSteps = tableSteps;
+      currentAllConvSteps = allConversationSteps;
+      currentDisplaySettings = displaySettings;
       const shouldAnimateNewRows = Boolean(
         allowNewRowFade && slice.experimentalModernUi && !showModels
       );
@@ -859,6 +1147,8 @@ export const StepsDetailView = defineComponent({
           displaySettings,
           allConversationSteps,
           allowNewRowFade: shouldAnimateNewRows,
+          sortKey,
+          sortDir,
         });
         stepsScroll.refresh();
         fitPinnedWhileVisible = false;
@@ -1137,7 +1427,7 @@ export const StepsDetailView = defineComponent({
           const anomSig = anomSum
             ? `${anomSum.count}:${anomSum.steps}:${anomSum.primaryKind}:${anomSum.severity}:${anomSum.totalDelaySec}`
             : '';
-          return `${locale}:${m.displayText}:${m.displayTitle}:${m.calls}:${sumCalls}:${displayModels.length}:${m.avgTokPerSec}:${avgTtft}:${m.cacheHitPct}:${m.inputTokens}:${m.cacheReadTokens}:${m.thinkingTokens}:${m.responseTokens}:${m.totalTokens}:${m.costUsd}:${m.unpricedCalls}:${isActiveFit}:${hasMultipleModels}:${anomSig}`;
+          return `${locale}:${m.displayText}:${m.displayTitle}:${m.calls}:${sumCalls}:${sumTokens}:${displayModels.length}:${m.avgTokPerSec}:${avgTtft}:${m.cacheHitPct}:${m.inputTokens}:${m.cacheReadTokens}:${m.thinkingTokens}:${m.responseTokens}:${m.totalTokens}:${m.costUsd}:${m.unpricedCalls}:${isActiveFit}:${hasMultipleModels}:${anomSig}`;
         },
         createRow: () => {
           const nameEl = h('strong', { className: 'smodel-name' });
@@ -1183,6 +1473,8 @@ export const StepsDetailView = defineComponent({
             ]),
           ]);
           const perfEl = h('span', { className: 'smodel-perf text-mono' });
+          const unitCostEl = h('span', { className: 'smodel-unit-cost text-mono', hidden: true });
+          const perfFootEl = h('div', { className: 'smodel-perf-foot' }, [perfEl, unitCostEl]);
 
           const cardEl = h('div', { className: 'smodel-card' }, [
             h('div', { className: 'smodel-head' }, [
@@ -1190,7 +1482,8 @@ export const StepsDetailView = defineComponent({
               h('div', { className: 'smodel-totals' }, [tokEl, costEl]),
             ]),
             segBar.el,
-            h('div', { className: 'smodel-foot' }, [splitEl, perfEl]),
+            h('div', { className: 'smodel-foot' }, [splitEl]),
+            perfFootEl,
           ]);
 
           return {
@@ -1203,6 +1496,7 @@ export const StepsDetailView = defineComponent({
               costEl,
               segBar,
               perfEl,
+              unitCostEl,
               splitEl,
               inLbl,
               cacheLbl,
@@ -1282,7 +1576,8 @@ export const StepsDetailView = defineComponent({
               ? Math.max(0, Number(m.responseTokens))
               : Math.max(0, outTok - thinkTok);
 
-          patchText(refs.tokEl, formatTokensPrecise(m.totalTokens || 0));
+          const modelTok = Math.max(0, Number(m.totalTokens || 0));
+          patchText(refs.tokEl, formatTokensPrecise(modelTok));
           const costNum = Number(m.costUsd || 0);
           const isAllUnpriced =
             calls > 0 && Number(m.unpricedCalls || 0) >= calls && !(costNum > 0);
@@ -1291,11 +1586,16 @@ export const StepsDetailView = defineComponent({
             formatUsd(isAllUnpriced ? null : costNum, { precise: costNum > 0 && costNum < 0.1 })
           );
 
+          const scaleRatio =
+            displayModels.length > 1 && sumTokens > 0 && modelTok > 0
+              ? Math.min(1, Math.max(0.008, modelTok / sumTokens))
+              : 1;
           refs.segBar.update({
             inputTokens: inTok,
             cacheReadTokens: cacheTok,
             responseTokens: respTok,
             thinkingTokens: thinkTok,
+            scaleRatio,
           });
 
           const fbTtft = stepTtftFallbackMap.get(gk);
@@ -1329,6 +1629,19 @@ export const StepsDetailView = defineComponent({
               ttft: formatMetric(resolvedAvgTtft, 's'),
               cache: resolvedCachePct,
             })
+          );
+          const effCostPer1M =
+            !isAllUnpriced && costNum > 0 && modelTok >= 1000
+              ? costNum / (modelTok / 1_000_000)
+              : null;
+          patchAttr(refs.unitCostEl, 'hidden', effCostPer1M === null);
+          patchText(
+            refs.unitCostEl,
+            effCostPer1M !== null
+              ? t('cons.modelUnitCost', {
+                  cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
+                })
+              : ''
           );
 
           const isActiveFit =
@@ -1377,6 +1690,13 @@ export const StepsDetailView = defineComponent({
         hideAnomalyTip();
         subTabSwitch.setValue(tab);
         patchAttr(anomalyFilterBarEl, 'hidden', tab !== 'steps' || !onlyAnomalies);
+        const toolbarAllowed = latestSlice?.showStepFilterToolbar === true;
+        patchAttr(
+          stepsFilterToolbarEl,
+          'hidden',
+          tab !== 'steps' || !toolbarAllowed || (currentTableSteps.length === 0 && !stepSearchQuery && !stepQuickChip)
+        );
+        stepsExportMenu.refs.setHidden(tab !== 'steps' || currentAllConvSteps.length === 0);
         patchAttr(stepsScroll.el, 'hidden', tab !== 'steps');
         patchAttr(modelsScroll.el, 'hidden', tab !== 'models');
         if (getVisibleMonitorView() === 'steps' && latestSlice) {
@@ -1407,6 +1727,7 @@ export const StepsDetailView = defineComponent({
         showStepTurnRail: st.telemetry?.settings?.showStepTurnRail === true,
         showStepAgentBadge: st.telemetry?.settings?.showStepAgentBadge !== false,
         showStepSpeedColor: st.telemetry?.settings?.showStepSpeedColor === true,
+        showStepFilterToolbar: st.telemetry?.settings?.showStepFilterToolbar === true,
         stepTokenComboFormat: normalizeClientStepTokenComboFormat(
           st.telemetry?.settings?.stepTokenComboFormat
         ),
@@ -1473,6 +1794,7 @@ export const StepsDetailView = defineComponent({
     );
 
     onCleanup(() => {
+      stepsExportMenu.destroy();
       modelsAnalyticsPane.removeEventListener('scroll', onModelsPaneScroll);
       unsubUi();
       unsubTelemetry();
@@ -1501,6 +1823,10 @@ export const StepsDetailView = defineComponent({
         turnTipEl,
         anomalyTipEl,
         anomalyFilterBarEl,
+        stepsFilterToolbarEl,
+        stepSearchInput,
+        stepQuickChipsEl,
+        stepsExportMenu,
         modelsAnomalyStripEl,
         modelsListEl,
         inlineScopeSelect,

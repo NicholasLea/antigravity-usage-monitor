@@ -81,6 +81,40 @@
   font-weight: 600;
 }
 
+.data-table th.is-sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--dur-instant) var(--ease-fast);
+}
+
+.data-table th.is-sortable:hover {
+  color: var(--text-primary);
+}
+
+.data-table th.is-sorted {
+  color: var(--accent-primary);
+}
+
+.step-th-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  vertical-align: middle;
+}
+
+.data-table th:last-child .step-th-inner {
+  justify-content: flex-end;
+}
+
+.step-sort-icon {
+  flex-shrink: 0;
+  color: var(--accent-primary);
+}
+
+.step-sort-icon[hidden] {
+  display: none !important;
+}
+
 .data-table tbody tr:not(.step-vspacer):not(.step-vsizer):hover {
   background: var(--surface-hover);
 }
@@ -154,13 +188,23 @@
   flex: 0 0 auto;
 }
 
-.steps-header-filters {
+.steps-header-right {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
   margin-left: auto;
-  flex: 1 1 156px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.steps-header-filters {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
 }
@@ -440,6 +484,10 @@
   border-color: color-mix(in srgb, var(--accent-primary) 46%, var(--border-strong));
 }
 
+.step-anomaly-tip.is-timing {
+  border-color: var(--border-strong);
+}
+
 .step-anomaly-tip[hidden],
 .step-anomaly-tip-sub[hidden],
 .step-anomaly-tip-list[hidden],
@@ -468,6 +516,10 @@
   color: var(--accent-primary);
 }
 
+.step-anomaly-tip.is-timing .step-anomaly-tip-title {
+  color: var(--text-primary);
+}
+
 .step-anomaly-tip-sub {
   font-size: var(--fs-xs);
   color: var(--text-secondary);
@@ -492,6 +544,26 @@
   font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--text-primary);
+}
+
+.step-anomaly-tip-row.is-kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  font-weight: 400;
+}
+
+.step-anomaly-tip-k {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.step-anomaly-tip-v {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  text-align: right;
 }
 
 .step-anomaly-tip-row.is-danger {
@@ -824,18 +896,29 @@
   stroke: var(--metric-danger);
 }
 
-.sstep-anomaly-dot,
-.sstep-scatter-dot.is-anomaly {
-  fill: var(--surface-panel);
-  fill-opacity: 1;
+.sstep-anomaly-dot {
   stroke: var(--metric-warn);
-  stroke-width: 1.6;
+  stroke-width: 1.5;
+  stroke-opacity: 0.82;
+  stroke-linecap: round;
   pointer-events: none;
 }
 
-.sstep-anomaly-dot.is-danger,
-.sstep-scatter-dot.is-anomaly.is-danger {
+.sstep-anomaly-dot.is-danger {
   stroke: var(--metric-danger);
+  stroke-opacity: 0.92;
+}
+
+.sstep-scatter-dot.is-anomaly {
+  fill: var(--metric-warn);
+  fill-opacity: 0.88;
+  stroke: none;
+  pointer-events: none;
+}
+
+.sstep-scatter-dot.is-anomaly.is-danger {
+  fill: var(--metric-danger);
+  fill-opacity: 0.92;
 }
 
 .trend-tip-anomaly {
@@ -1085,13 +1168,13 @@
 }
 
 .smodel-seg-bar {
-  height: 3.5px;
+  height: 5px;
 }
 
 .smodel-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 4px 10px;
   font-size: var(--fs-md);
@@ -1111,9 +1194,130 @@
   font-weight: 600;
 }
 
+.smodel-perf-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  color: var(--text-muted);
+  margin-top: -1px;
+}
+
 .smodel-perf {
-  margin-left: auto;
   font-size: var(--fs-sm);
   color: var(--text-muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.smodel-unit-cost {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.smodel-unit-cost[hidden] {
+  display: none !important;
+}
+
+/* --- 步骤搜索栏、快捷诊断筛选芯片及单步透视抽屉 --- */
+.steps-filter-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px 0 6px;
+}
+
+.steps-filter-toolbar[hidden] {
+  display: none !important;
+}
+
+.steps-search-wrap {
+  flex: 1 1 160px;
+  min-width: 120px;
+  min-height: calc(28px * var(--ui-font-scale, 1));
+}
+
+.steps-search-clear[hidden] {
+  display: none !important;
+}
+
+.steps-quick-chips {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 0 1 auto;
+}
+
+.steps-quick-chips[hidden] {
+  display: none !important;
+}
+
+.steps-export-menu {
+  flex-shrink: 0;
+}
+
+.steps-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--dur-instant) var(--ease-fast),
+    color var(--dur-instant) var(--ease-fast),
+    border-color var(--dur-instant) var(--ease-fast);
+}
+
+.steps-chip-btn[hidden] {
+  display: none !important;
+}
+
+.steps-chip-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.steps-chip-btn.is-active {
+  background: var(--accent-primary-soft);
+  border-color: var(--accent-primary-border);
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.steps-chip-btn.is-warn.is-active {
+  background: var(--metric-warn-soft);
+  border-color: color-mix(in srgb, var(--metric-warn) 42%, var(--border-hairline));
+  color: var(--metric-warn);
+}
+
+.steps-chip-btn.is-danger.is-active {
+  background: var(--metric-danger-soft);
+  border-color: color-mix(in srgb, var(--metric-danger) 42%, var(--border-hairline));
+  color: var(--metric-danger);
+}
+
+.steps-chip-btn.is-info.is-active {
+  background: var(--metric-info-soft);
+  border-color: color-mix(in srgb, var(--metric-info) 42%, var(--border-hairline));
+  color: var(--metric-info);
+}
+
+[data-modern-ui="true"] .steps-chip-btn {
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--modern-surface-subtle);
 }

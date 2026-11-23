@@ -28,6 +28,7 @@ export const TOPBAR_SLOT_KEYS = Object.freeze([
   'quota_auto',
   'gemini_5h',
   'gemini_weekly',
+  'argon_weekly',
   'claude_5h',
   'claude_weekly',
 ]);
@@ -35,6 +36,21 @@ export const TOPBAR_SLOT_KEYS = Object.freeze([
 export const DEFAULT_TOPBAR_SLOTS = Object.freeze(['tps', 'ttft', 'context']);
 export const MIN_TOPBAR_SLOTS = 1;
 export const MAX_TOPBAR_SLOTS = 5;
+
+export const DEFAULT_CLI_STATUSLINE_SLOTS = Object.freeze([
+  'tps',
+  'ttft',
+  'session_cost',
+  'quota_auto',
+  'context',
+]);
+export const MIN_CLI_STATUSLINE_SLOTS = 1;
+export const MAX_CLI_STATUSLINE_SLOTS = 6;
+export const CLI_STATUSLINE_PRESETS = Object.freeze({
+  compact: Object.freeze(['tps', 'ttft', 'context']),
+  balanced: DEFAULT_CLI_STATUSLINE_SLOTS,
+  full: Object.freeze(['tps', 'ttft', 'cache_hit', 'session_cost', 'quota_auto', 'context']),
+});
 
 export const OVERVIEW_MODULE_KEYS = Object.freeze([
   'metrics',
@@ -337,6 +353,69 @@ export function normalizeTopbarCapsuleSlots(raw) {
 }
 
 /**
+ * 归一化 CLI 底部状态栏独立槽位配置（`null` 表示自动跟随宽屏默认或自定义顶栏槽位；
+ * 支持预设名 `compact` / `balanced` / `full`、逗号分隔列表或数组，保留 1~6 个去重合法槽位）。
+ *
+ * @param {unknown} raw
+ * @returns {string[]|null}
+ */
+export function normalizeCliStatusLineSlots(raw) {
+  if (raw === undefined || raw === null) return null;
+  let items = null;
+  if (typeof raw === 'string') {
+    const clean = raw.trim();
+    const lower = clean.toLowerCase();
+    if (!clean || lower === 'auto' || lower === 'default') {
+      return null;
+    }
+    if (Object.prototype.hasOwnProperty.call(CLI_STATUSLINE_PRESETS, lower)) {
+      return [...CLI_STATUSLINE_PRESETS[lower]];
+    }
+    items = clean.split(/[\s,|:]+/);
+  } else if (Array.isArray(raw)) {
+    items = raw;
+  } else {
+    return null;
+  }
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    const val = String(item ?? '').trim();
+    if (!val || val === 'none') continue;
+    const mapped = val === 'step_cost' ? 'cost' : val;
+    if (!TOPBAR_SLOT_KEYS.includes(mapped) || seen.has(mapped)) continue;
+    seen.add(mapped);
+    out.push(mapped);
+    if (out.length >= MAX_CLI_STATUSLINE_SLOTS) break;
+  }
+  return out.length >= MIN_CLI_STATUSLINE_SLOTS ? out : null;
+}
+
+/**
+ * 解析当前生效的 CLI 底栏槽位列表：
+ * 1. 若用户显式设置了 `cliStatusLineSlots`，优先使用；
+ * 2. 若用户自定义了非默认 `topbarCapsuleSlots`，沿用其自定义顺序保持兼容；
+ * 3. 否则采用面向宽终端的 5 槽默认组合（速度 / 首字 / 费用 / 配额 / 上下文）。
+ *
+ * @param {object|null|undefined} settings
+ * @returns {string[]}
+ */
+export function resolveEffectiveCliStatusLineSlots(settings) {
+  const customCli = normalizeCliStatusLineSlots(settings?.cliStatusLineSlots);
+  if (customCli && customCli.length > 0) {
+    return customCli;
+  }
+  const topbar = normalizeTopbarCapsuleSlots(settings?.topbarCapsuleSlots);
+  const isDefaultTopbar =
+    topbar.length === DEFAULT_TOPBAR_SLOTS.length &&
+    topbar.every((k, i) => k === DEFAULT_TOPBAR_SLOTS[i]);
+  if (!isDefaultTopbar) {
+    return topbar;
+  }
+  return [...DEFAULT_CLI_STATUSLINE_SLOTS];
+}
+
+/**
  * 归一化实时监控第一行指标矩阵的槽位与顺序（1~4 项，默认 4 项）。
  *
  * @param {unknown} raw
@@ -454,6 +533,37 @@ export function normalizeStandalonePort(port) {
  * @returns {boolean}
  */
 export function normalizeModernUi(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
+  }
+  return Boolean(val);
+}
+
+export const CONTEXT_AGENT_MODES = Object.freeze(['main', 'auto']);
+export const DEFAULT_CONTEXT_AGENT_MODE = 'main';
+
+/**
+ * 归一化顶栏胶囊及悬停速览浮窗的上下文代理来源（默认 `'main'` 锁定主代理，可选 `'auto'` 跟随活跃）。
+ *
+ * @param {unknown} raw
+ * @returns {'main'|'auto'}
+ */
+export function normalizeContextAgentMode(raw) {
+  const val = String(raw || '').trim().toLowerCase();
+  return val === 'auto' ? 'auto' : 'main';
+}
+
+/**
+ * 归一化配额预占估算开关（默认 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+export function normalizeExperimentalQuotaReservation(val) {
   if (val === undefined || val === null || val === '') return true;
   if (typeof val === 'string') {
     const lower = val.trim().toLowerCase();

@@ -216,10 +216,14 @@ async function postLsRpcOnce(baseUrl, csrfToken, method, body, timeoutMs) {
   });
 }
 
+const REMOTE_TIER2_MIN_REMAINING_MS = 1500;
+
 async function callRemoteEndpointLsRpc(endpoint, method, body, timeoutMs) {
   if (!REMOTE_ALLOWED_LS_METHODS.has(method)) {
     throw new Error(`RPC method ${method} is not allowed on remote endpoints`);
   }
+  const safeTimeoutMs = Math.max(1000, Number(timeoutMs) || 5000);
+  const deadlineMs = Date.now() + safeTimeoutMs;
   const baseUrl = String(endpoint.baseUrl || endpoint.origin || '').trim().replace(/\/+$/, '');
   const csrfToken = String(endpoint.csrfToken || '').trim();
   const windowInvoker = getRemoteWindowRpcInvoker();
@@ -235,8 +239,8 @@ async function callRemoteEndpointLsRpc(endpoint, method, body, timeoutMs) {
       const urlStr = `${baseUrl}/exa.language_server_pb.LanguageServerService/${method}`;
       const bodyText = JSON.stringify(body || {});
       const res = urlStr.startsWith('https://')
-        ? await postLoopbackHttpsJson(urlStr, csrfToken, bodyText, timeoutMs)
-        : await postLsRpcOnce(baseUrl, csrfToken, method, body || {}, timeoutMs);
+        ? await postLoopbackHttpsJson(urlStr, csrfToken, bodyText, safeTimeoutMs)
+        : await postLsRpcOnce(baseUrl, csrfToken, method, body || {}, safeTimeoutMs);
       if (res?.ok) {
         return await res.json();
       }
@@ -264,7 +268,15 @@ async function callRemoteEndpointLsRpc(endpoint, method, body, timeoutMs) {
   }
 
   if (typeof windowInvoker === 'function') {
-    return windowInvoker(endpoint, method, body || {}, timeoutMs);
+    const remainingMs = canTryTier1 ? deadlineMs - Date.now() : safeTimeoutMs;
+    if (!canTryTier1 || remainingMs >= REMOTE_TIER2_MIN_REMAINING_MS) {
+      return windowInvoker(
+        endpoint,
+        method,
+        body || {},
+        Math.max(1000, Math.min(safeTimeoutMs, remainingMs))
+      );
+    }
   }
 
   if (tier1Err) {

@@ -15,12 +15,11 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   unlinkSync,
-  writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { writeTextFileAtomicSync } from './fs-atomic.mjs';
 import {
   BRIDGE_API_PATHS,
   CONTEXT_WINDOWS_GLOBAL_KEY,
@@ -60,6 +59,7 @@ import {
 } from './endpoint-registry.mjs';
 import { getLocalHubPorts } from './ls-discovery.mjs';
 import { callLsRpc, getContextModelCatalog } from './ls-rpc.mjs';
+import { getDefaultCloudCodeProxy } from './cloudcode-proxy.mjs';
 
 const windowBridgeRef = `window[${JSON.stringify(WINDOW_BRIDGE_KEY)}]`;
 const windowOverlayRef = `window[${JSON.stringify(WINDOW_OVERLAY_KEY)}]`;
@@ -71,6 +71,7 @@ const overlayMethods = Object.fromEntries(
 );
 
 const BRIDGE_MAX_BODY_BYTES = 64 * 1024;
+const BRIDGE_MAX_EXPORT_BODY_BYTES = 8 * 1024 * 1024;
 const ALLOWED_BRIDGE_PATHS = new Set(BRIDGE_API_PATHS);
 
 /**
@@ -456,18 +457,7 @@ function patchSingleHostArgvFile(argvPath, { createDir = false, missingReason = 
         argvPath,
       };
     }
-    const tmpPath = `${argvPath}.tmp-${process.pid}`;
-    try {
-      writeFileSync(tmpPath, patched.text, 'utf8');
-      renameSync(tmpPath, argvPath);
-    } catch {
-      try {
-        unlinkSync(tmpPath);
-      } catch {
-        // 忽略临时文件清理异常
-      }
-      writeFileSync(argvPath, patched.text, 'utf8');
-    }
+    writeTextFileAtomicSync(argvPath, patched.text);
     return {
       checked: true,
       updated: true,
@@ -1091,7 +1081,13 @@ export function createWindowBridgeController(options) {
     WebSocketImpl = globalThis.WebSocket,
     bindRemoteRpcInvoker = false,
     getLocalHubPortsFn = getLocalHubPorts,
+    cloudCodeProxy = null,
+    manageCloudCodeProxy = false,
+    resolveLocalContextRulesFn = null,
   } = options || {};
+
+  const activeCloudCodeProxy =
+    cloudCodeProxy || (manageCloudCodeProxy ? getDefaultCloudCodeProxy() : null);
 
   function isPidAlive(pid) {
     if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -1327,11 +1323,16 @@ export function createWindowBridgeController(options) {
               res.writeHead(out.status || 200, hdrs);
               res.end(out.body);
             })
-            .catch(() => {
+            .catch((err) => {
               if (!res.headersSent) {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
               }
-              res.end(JSON.stringify({ error: 'Internal bridge error' }));
+              res.end(
+                JSON.stringify({
+                  error: 'Internal bridge error',
+                  detail: String(err?.message || err || ''),
+                })
+              );
             });
           return;
         }
@@ -1342,12 +1343,16 @@ export function createWindowBridgeController(options) {
           return;
         }
 
+        const maxBodyBytes =
+          parsedUrl.pathname === '/api/export-file'
+            ? BRIDGE_MAX_EXPORT_BODY_BYTES
+            : BRIDGE_MAX_BODY_BYTES;
         const chunks = [];
         let totalBytes = 0;
         let aborted = false;
         req.on('data', (chunk) => {
           totalBytes += chunk.length;
-          if (totalBytes > BRIDGE_MAX_BODY_BYTES) {
+          if (totalBytes > maxBodyBytes) {
             aborted = true;
             res.writeHead(413, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Payload too large' }));
@@ -1376,11 +1381,16 @@ export function createWindowBridgeController(options) {
               res.writeHead(out.status || 200, hdrs);
               res.end(out.body);
             })
-            .catch(() => {
+            .catch((err) => {
               if (!res.headersSent) {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
               }
-              res.end(JSON.stringify({ error: 'Internal bridge error' }));
+              res.end(
+                JSON.stringify({
+                  error: 'Internal bridge error',
+                  detail: String(err?.message || err || ''),
+                })
+              );
             });
         });
       });
@@ -1673,6 +1683,74 @@ export function createWindowBridgeController(options) {
     return hostLauncherPromise;
   }
 
+  async function resolveFallbackRulesForEndpoint(endpointId, contextWindows) {
+    if (!contextWindows || !Object.keys(contextWindows).length) {
+      return { verified: false, rules: {}, catalog: null };
+    }
+    const epObj =
+      endpointId && endpointId !== LOCAL_ENDPOINT_ID
+        ? getRegisteredRemoteEndpoint(endpointId)
+        : null;
+    if (!epObj && typeof resolveLocalContextRulesFn === 'function') {
+      try {
+        const custom = await resolveLocalContextRulesFn(contextWindows);
+        if (custom && typeof custom === 'object') {
+          return {
+            verified: custom.verified !== false,
+            rules: custom.rules && typeof custom.rules === 'object' ? custom.rules : {},
+            catalog: custom.catalog || null,
+          };
+        }
+      } catch {
+        return { verified: false, rules: {}, catalog: null };
+      }
+    }
+    if (!epObj && (!lsRuntimeEndpoint.baseUrl || lsRuntimeEndpoint.addr === 'test.invalid')) {
+      return { verified: false, rules: {}, catalog: null };
+    }
+    const cacheKey = epObj ? epObj.id : LOCAL_ENDPOINT_ID;
+    let cached = cachedBackendCtxModelsByEndpoint.get(cacheKey) || {
+      expiresAt: 0,
+      verified: false,
+      models: [],
+      catalog: null,
+    };
+    if (Date.now() >= cached.expiresAt) {
+      try {
+        const [stRes, cat] = await Promise.all([
+          callLsRpc('GetUserStatus', {}, 2000, epObj),
+          getContextModelCatalog(epObj),
+        ]);
+        const cfgs = stRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs;
+        if (Array.isArray(cfgs)) {
+          cached = {
+            expiresAt: Date.now() + 10_000,
+            verified: true,
+            models: getContextWindowModels(cfgs, cat),
+            catalog: cat || null,
+          };
+          cachedBackendCtxModelsByEndpoint.delete(cacheKey);
+          if (cachedBackendCtxModelsByEndpoint.size >= 16) {
+            const oldestKey = cachedBackendCtxModelsByEndpoint.keys().next().value;
+            if (oldestKey !== undefined) cachedBackendCtxModelsByEndpoint.delete(oldestKey);
+          }
+          cachedBackendCtxModelsByEndpoint.set(cacheKey, cached);
+        }
+      } catch {
+        // 忽略瞬态 LS 查询失败，保留上次缓存或交由调用方回退
+      }
+    }
+    if (cached.verified) {
+      return {
+        verified: true,
+        rules:
+          cached.models.length > 0 ? resolveContextWindowRules(cached.models, contextWindows) : {},
+        catalog: cached.catalog || null,
+      };
+    }
+    return { verified: false, rules: {}, catalog: null };
+  }
+
   async function runSyncInternal({ forceReinject = false } = {}) {
     if (stopped) return { ok: false, reason: 'stopped' };
     const bundleVersion = String(getBundleVersionFn() || '');
@@ -1689,10 +1767,15 @@ export function createWindowBridgeController(options) {
     const enabled = Boolean(curSettings.enableWindowOverlay !== false && mountMode !== 'sidebar');
     const contextWindows = curSettings.modelContextWindows || {};
     const hasContextWindows = Object.keys(contextWindows).length > 0;
+    const ctxMainEnabled = curSettings.contextWindowMainEnabled !== false;
+    const ctxSwarmEnabled = curSettings.contextWindowSwarmEnabled === true;
+    const needsMainCdpContext = hasContextWindows && ctxMainEnabled;
+    const needsCloudCodeProxy = hasContextWindows && ctxSwarmEnabled;
+    const needsAnyCdpContext = hasContextWindows && (ctxMainEnabled || ctxSwarmEnabled);
 
     let leasedBySelf = false;
     let currentLease = null;
-    if ((enabled || hasContextWindows) && leaseFilePath && !forceReinject) {
+    if ((enabled || needsAnyCdpContext || needsCloudCodeProxy) && leaseFilePath && !forceReinject) {
       const lease = loadJson(leaseFilePath, null);
       currentLease = lease;
       const leasePid = Number(lease?.pid || 0);
@@ -1724,7 +1807,8 @@ export function createWindowBridgeController(options) {
         }
       }
       leasedBySelf = true;
-      lastPersistedLeaseSig = '';
+      const mergedLauncherConfigured = Boolean(argvConfigured || launcherConfigured);
+      lastPersistedLeaseSig = `${lastBridgeStatus.state}:${lastBridgeStatus.aliveCount}:${lastBridgeStatus.targets}:${Boolean(argvUpdatedThisBoot) ? 1 : 0}:${mergedLauncherConfigured ? 1 : 0}:${Boolean(hasReadOnlyShortcuts) ? 1 : 0}:${Boolean(canRelaunch) ? 1 : 0}`;
       saveJson(leaseFilePath, {
         pid: process.pid,
         bundleVersion,
@@ -1734,16 +1818,33 @@ export function createWindowBridgeController(options) {
         aliveCount: lastBridgeStatus.aliveCount,
         targets: lastBridgeStatus.targets,
         argvUpdatedThisBoot: Boolean(argvUpdatedThisBoot),
-        argvConfigured: Boolean(argvConfigured || launcherConfigured),
-        launcherConfigured: Boolean(launcherConfigured || argvConfigured),
+        argvConfigured: mergedLauncherConfigured,
+        launcherConfigured: mergedLauncherConfigured,
         hasReadOnlyShortcuts: Boolean(hasReadOnlyShortcuts),
         canRelaunch: Boolean(canRelaunch),
         updatedAtMs: Date.now(),
       });
     }
 
+    let preResolvedLocalCtx = null;
+    if (activeCloudCodeProxy) {
+      if (needsCloudCodeProxy) {
+        preResolvedLocalCtx = await resolveFallbackRulesForEndpoint(
+          LOCAL_ENDPOINT_ID,
+          contextWindows
+        );
+        await activeCloudCodeProxy.reconcile({
+          enabled: true,
+          rulesByModelId: preResolvedLocalCtx.rules,
+          initialCatalogModels: preResolvedLocalCtx.catalog,
+        });
+      } else {
+        await activeCloudCodeProxy.reconcile({ enabled: false, rulesByModelId: {} });
+      }
+    }
+
     const shouldCheckLaunchers =
-      (enabled || hasContextWindows) &&
+      (enabled || needsMainCdpContext) &&
       autoConfigureIdeArgv &&
       (lastLauncherProvisionAtMs === 0 ||
         Date.now() - lastLauncherProvisionAtMs >= launcherRecheckIntervalMs);
@@ -1758,7 +1859,7 @@ export function createWindowBridgeController(options) {
       if (provPending) {
         await provPending.catch(() => {});
       }
-      updateBridgeStatus(enabled || hasContextWindows ? 'no_devtools_port' : 'disabled', {
+      updateBridgeStatus(enabled || needsMainCdpContext ? 'no_devtools_port' : 'disabled', {
         enabled,
         leasedBySelf,
         bundleVersion,
@@ -1776,7 +1877,7 @@ export function createWindowBridgeController(options) {
       if (provPending) {
         await provPending.catch(() => {});
       }
-      updateBridgeStatus(enabled || hasContextWindows ? 'cdp_unreachable' : 'disabled', {
+      updateBridgeStatus(enabled || needsMainCdpContext ? 'cdp_unreachable' : 'disabled', {
         enabled,
         leasedBySelf,
         bundleVersion,
@@ -1802,7 +1903,7 @@ export function createWindowBridgeController(options) {
 
     if (
       !enabled &&
-      !hasContextWindows &&
+      !needsAnyCdpContext &&
       !hadContextWindows &&
       !hadInjectedTargets &&
       !hadInjectedChatFrames &&
@@ -1942,58 +2043,24 @@ export function createWindowBridgeController(options) {
       }
     }
 
-    if (hasContextWindows || hadContextWindows) {
-      async function resolveFallbackRulesForEndpoint(endpointId) {
-        if (!hasContextWindows) return { verified: false, rules: {} };
-        const epObj = endpointId && endpointId !== LOCAL_ENDPOINT_ID
-          ? getRegisteredRemoteEndpoint(endpointId)
-          : null;
-        if (!epObj && (!lsRuntimeEndpoint.baseUrl || lsRuntimeEndpoint.addr === 'test.invalid')) {
-          return { verified: false, rules: {} };
-        }
-        const cacheKey = epObj ? epObj.id : LOCAL_ENDPOINT_ID;
-        let cached = cachedBackendCtxModelsByEndpoint.get(cacheKey) || {
-          expiresAt: 0,
-          verified: false,
-          models: [],
-        };
-        if (Date.now() >= cached.expiresAt) {
-          try {
-            const [stRes, cat] = await Promise.all([
-              callLsRpc('GetUserStatus', {}, 2000, epObj),
-              getContextModelCatalog(epObj),
-            ]);
-            const cfgs = stRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs;
-            if (Array.isArray(cfgs)) {
-              cached = {
-                expiresAt: Date.now() + 10_000,
-                verified: true,
-                models: getContextWindowModels(cfgs, cat),
-              };
-              cachedBackendCtxModelsByEndpoint.delete(cacheKey);
-              if (cachedBackendCtxModelsByEndpoint.size >= 16) {
-                const oldestKey = cachedBackendCtxModelsByEndpoint.keys().next().value;
-                if (oldestKey !== undefined) cachedBackendCtxModelsByEndpoint.delete(oldestKey);
-              }
-              cachedBackendCtxModelsByEndpoint.set(cacheKey, cached);
-            }
-          } catch {
-            // 忽略瞬态 LS 查询失败，保留上次缓存或交由调用方回退
+    if (needsAnyCdpContext || hadContextWindows) {
+      const localFallbackRes = needsAnyCdpContext
+        ? preResolvedLocalCtx ||
+          (await resolveFallbackRulesForEndpoint(LOCAL_ENDPOINT_ID, contextWindows))
+        : { verified: false, rules: {}, catalog: null };
+      const localFallbackRules = localFallbackRes.rules;
+      const pinMainBackToDefaults = needsCloudCodeProxy && !ctxMainEnabled;
+      const pinBackRules = {};
+      if (pinMainBackToDefaults) {
+        const upstreamDefaults = activeCloudCodeProxy?.getUpstreamDefaults?.() || {};
+        for (const modelId of Object.keys(localFallbackRules)) {
+          const defaultLimit = Number(upstreamDefaults[modelId]);
+          if (Number.isSafeInteger(defaultLimit) && defaultLimit > 0) {
+            pinBackRules[modelId] = defaultLimit;
           }
         }
-        if (cached.verified) {
-          return {
-            verified: true,
-            rules: cached.models.length > 0
-              ? resolveContextWindowRules(cached.models, contextWindows)
-              : {},
-          };
-        }
-        return { verified: false, rules: {} };
       }
 
-      const localFallbackRes = await resolveFallbackRulesForEndpoint(LOCAL_ENDPOINT_ID);
-      const localFallbackRules = localFallbackRes.rules;
       const remoteFallbackRulesById = new Map();
       const uniqueRemoteIds = new Set(
         targets
@@ -2005,13 +2072,15 @@ export function createWindowBridgeController(options) {
           cachedBackendCtxModelsByEndpoint.delete(cachedKey);
         }
       }
-      await Promise.allSettled(
-        Array.from(uniqueRemoteIds).map(async (epId) => {
-          const res = await resolveFallbackRulesForEndpoint(epId);
-          // 仅在远端未能验证模型目录时安全回退本机规则；远端已验证但返回空规则时绝不套用本机高配规则
-          remoteFallbackRulesById.set(epId, res.verified ? res.rules : localFallbackRules);
-        })
-      );
+      if (needsMainCdpContext) {
+        await Promise.allSettled(
+          Array.from(uniqueRemoteIds).map(async (epId) => {
+            const res = await resolveFallbackRulesForEndpoint(epId, contextWindows);
+            // 仅在远端未能验证模型目录时安全回退本机规则；远端已验证但返回空规则时绝不套用本机高配规则
+            remoteFallbackRulesById.set(epId, res.verified ? res.rules : localFallbackRules);
+          })
+        );
+      }
 
       const ctxEvalTasks = [];
       const seenCtxUrls = new Set();
@@ -2020,31 +2089,59 @@ export function createWindowBridgeController(options) {
         const wsUrl = String(target.webSocketDebuggerUrl || '').trim();
         if (!wsUrl || seenCtxUrls.has(wsUrl)) continue;
         seenCtxUrls.add(wsUrl);
-        const epFallback =
-          target.isRemoteEndpoint && target.endpointId
-            ? remoteFallbackRulesById.get(target.endpointId) || localFallbackRules
-            : localFallbackRules;
-        const expr = createContextWindowSyncExpression(
-          contextWindows,
-          contextWindowBootId,
-          epFallback,
-          true
-        );
+        let expr;
+        if (!needsAnyCdpContext) {
+          expr = createContextWindowSyncExpression({}, contextWindowBootId, {}, true, null);
+        } else if (pinMainBackToDefaults) {
+          // 仅启用子代理与蜂群时：本地主窗口显式回填上游默认上限把主代理钉回默认；远端主窗口不注入覆盖
+          expr = target.isRemoteEndpoint
+            ? createContextWindowSyncExpression({}, contextWindowBootId, {}, true, null)
+            : createContextWindowSyncExpression(
+                contextWindows,
+                contextWindowBootId,
+                pinBackRules,
+                true,
+                pinBackRules
+              );
+        } else {
+          const epFallback =
+            target.isRemoteEndpoint && target.endpointId
+              ? remoteFallbackRulesById.get(target.endpointId) || localFallbackRules
+              : localFallbackRules;
+          expr = createContextWindowSyncExpression(
+            contextWindows,
+            contextWindowBootId,
+            epFallback,
+            true,
+            null
+          );
+        }
         ctxEvalTasks.push(evaluateOnTarget(wsUrl, expr));
       }
-      const ideChatExpr = createContextWindowSyncExpression(
-        contextWindows,
-        contextWindowBootId,
-        localFallbackRules,
-        false
-      );
+      const ideChatExpr = !needsAnyCdpContext
+        ? createContextWindowSyncExpression({}, contextWindowBootId, {}, false, null)
+        : pinMainBackToDefaults
+          ? createContextWindowSyncExpression(
+              contextWindows,
+              contextWindowBootId,
+              pinBackRules,
+              false,
+              pinBackRules
+            )
+          : createContextWindowSyncExpression(
+              contextWindows,
+              contextWindowBootId,
+              localFallbackRules,
+              false,
+              null
+            );
       for (const chatUrl of collectAllChatDebuggerUrls(targets)) {
         if (!chatUrl || seenCtxUrls.has(chatUrl)) continue;
         seenCtxUrls.add(chatUrl);
         ctxEvalTasks.push(evaluateOnTarget(chatUrl, ideChatExpr));
       }
       await Promise.allSettled(ctxEvalTasks);
-      hadContextWindows = hasContextWindows;
+      hadContextWindows = needsAnyCdpContext;
     }
 
     const disposeExpr = `(() => {
@@ -2527,6 +2624,9 @@ export function createWindowBridgeController(options) {
     hadInjectedTargets = false;
     hadInjectedChatFrames = false;
     hadContextWindows = false;
+    if (activeCloudCodeProxy) {
+      await activeCloudCodeProxy.stop().catch(() => {});
+    }
     if (bindRemoteRpcInvoker) {
       setRemoteWindowRpcInvoker(null);
     }
@@ -2543,7 +2643,9 @@ export function createWindowBridgeController(options) {
       hadInjectedTargets = true;
       hadInjectedChatFrames = true;
       const cur = getSettingsFn() || {};
-      const hasCtx = Object.keys(cur.modelContextWindows || {}).length > 0;
+      const hasCtx =
+        Object.keys(cur.modelContextWindows || {}).length > 0 &&
+        cur.contextWindowMainEnabled !== false;
       if (!hasCtx && autoConfigureIdeArgv) {
         launcherConfigured = false;
         hasReadOnlyShortcuts = false;
@@ -2569,7 +2671,9 @@ export function createWindowBridgeController(options) {
     const cur = getSettingsFn() || {};
     const mountMode = normalizeWindowMountMode(cur.windowMountMode, cur.enableWindowOverlay);
     const overlayOn = Boolean(cur.enableWindowOverlay !== false && mountMode !== 'sidebar');
-    const hasCtx = Object.keys(cur.modelContextWindows || {}).length > 0;
+    const hasCtx =
+      Object.keys(cur.modelContextWindows || {}).length > 0 &&
+      cur.contextWindowMainEnabled !== false;
     if (hasCtx) {
       lastLauncherProvisionAtMs = 0;
     } else if (!overlayOn && autoConfigureIdeArgv) {
@@ -2635,6 +2739,7 @@ export function startDefaultWindowBridge(options) {
     defaultBridgeController = createWindowBridgeController({
       leaseFilePath: join(DATA_DIR, 'window-bridge-lease.json'),
       bindRemoteRpcInvoker: true,
+      manageCloudCodeProxy: true,
       ...options,
     });
     defaultBridgeController.start();

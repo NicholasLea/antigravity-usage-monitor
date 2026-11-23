@@ -12,6 +12,7 @@ import {
   fetchTelemetry,
   formatAgentBadgeText,
   formatConversationMeta,
+  getDefaultCtxInspectorAgentId,
   normalizeClientUpdateMode,
   resolveHostRouteMatch,
   selectConversation,
@@ -22,7 +23,23 @@ import { uiStore } from '../../store/uiStore.js';
 import { CustomSelect } from '../ui/CustomSelect.js';
 
 function formatConvOptionMeta(c) {
-  return formatConversationMeta(c);
+  const base = formatConversationMeta(c);
+  const wsName = String(c?.workspaceName || '').trim();
+  if (!wsName) return base;
+  return base ? `${wsName} · ${base}` : wsName;
+}
+
+function formatConvOptionTitle(c) {
+  const parts = [];
+  const label = String(c?.title || c?.cascadeId?.slice?.(0, 8) || '').trim();
+  if (c?.swarmTitle && c.swarmTitle !== c.title) {
+    parts.push(`${label} · ${c.swarmTitle}`);
+  }
+  const wsPath = String(c?.workspacePath || c?.workspaceName || '').trim();
+  if (wsPath) {
+    parts.push(wsPath);
+  }
+  return parts.length > 0 ? parts.join(' · ') : '';
 }
 
 export const TopSessionHeader = defineComponent({
@@ -31,6 +48,9 @@ export const TopSessionHeader = defineComponent({
     const convSelect = CustomSelect({
       modelValue: telemetryStore.getState().selectedConversationId,
       placeholder: t('header.followLatest'),
+      searchable: true,
+      searchThreshold: 6,
+      searchPlaceholder: t('header.searchSessionPlaceholder'),
       options: [{ value: '', label: t('header.followLatest') }],
       onUpdateModelValue: (nextConvId) => {
         uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
@@ -106,6 +126,7 @@ export const TopSessionHeader = defineComponent({
 
     let lastActiveCascadeId = '';
     let lastAppliedHostChildRouteId = '';
+    let preChildCtxInspectorAgentId = '';
 
     function syncSessionScopeOnCascadeChange(telemetry, telSlice = telemetryStore.getState()) {
       const currentCascadeId = telemetry?.activeConversation?.cascadeId || '';
@@ -114,15 +135,22 @@ export const TopSessionHeader = defineComponent({
       const selectedId = String(telSlice?.selectedConversationId || '').trim();
       const hostRouteId = String(telSlice?.hostRouteConversationId || '').trim();
       const hostRouteLower = hostRouteId.toLowerCase();
+      const defaultCtxId = getDefaultCtxInspectorAgentId(telemetry?.settings);
 
       if (!selectedId && hostRouteLower) {
         const routeMatch = resolveHostRouteMatch(telemetry, hostRouteId);
         if (routeMatch?.isChildRoute && routeMatch.childAgent?.agentId) {
           lastActiveCascadeId = currentCascadeId;
           if (lastAppliedHostChildRouteId !== hostRouteLower) {
+            const uiSt = uiStore.getState();
+            if (!lastAppliedHostChildRouteId) {
+              preChildCtxInspectorAgentId =
+                uiSt.ctxInspectorAgentId === 'main' || uiSt.ctxInspectorAgentId === 'auto'
+                  ? uiSt.ctxInspectorAgentId
+                  : defaultCtxId;
+            }
             lastAppliedHostChildRouteId = hostRouteLower;
             const targetAgentId = routeMatch.childAgent.agentId;
-            const uiSt = uiStore.getState();
             if (
               uiSt.selectedAgentScope !== targetAgentId ||
               uiSt.ctxInspectorAgentId !== targetAgentId
@@ -136,23 +164,30 @@ export const TopSessionHeader = defineComponent({
           return;
         }
         if (lastAppliedHostChildRouteId && !routeMatch?.isChildRoute) {
+          const restoreCtxId =
+            preChildCtxInspectorAgentId === 'main' || preChildCtxInspectorAgentId === 'auto'
+              ? preChildCtxInspectorAgentId
+              : defaultCtxId;
           lastAppliedHostChildRouteId = '';
+          preChildCtxInspectorAgentId = '';
           const uiSt = uiStore.getState();
-          if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== 'auto') {
-            uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
+          if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== restoreCtxId) {
+            uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: restoreCtxId });
           }
           lastActiveCascadeId = currentCascadeId;
           return;
         }
       } else if (lastAppliedHostChildRouteId) {
         lastAppliedHostChildRouteId = '';
+        preChildCtxInspectorAgentId = '';
       }
 
       if (lastActiveCascadeId && currentCascadeId !== lastActiveCascadeId) {
         lastActiveCascadeId = currentCascadeId;
+        preChildCtxInspectorAgentId = '';
         const uiSt = uiStore.getState();
-        if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== 'auto') {
-          uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
+        if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== defaultCtxId) {
+          uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: defaultCtxId });
         }
       } else {
         lastActiveCascadeId = currentCascadeId;
@@ -210,14 +245,15 @@ export const TopSessionHeader = defineComponent({
           meta: defaultOptMeta,
           ...(hostMatchedConv?.swarmTitle ? { title: hostMatchedConv.swarmTitle } : {}),
         },
-        ...convs.map((c) => ({
-          value: c.cascadeId,
-          label: c.title || c.cascadeId.slice(0, 8),
-          meta: formatConvOptionMeta(c),
-          ...(c.swarmTitle && c.swarmTitle !== c.title
-            ? { title: `${c.title || c.cascadeId.slice(0, 8)} · ${c.swarmTitle}` }
-            : {}),
-        })),
+        ...convs.map((c) => {
+          const optTitle = formatConvOptionTitle(c);
+          return {
+            value: c.cascadeId,
+            label: c.title || c.cascadeId.slice(0, 8),
+            meta: formatConvOptionMeta(c),
+            ...(optTitle ? { title: optTitle } : {}),
+          };
+        }),
       ];
       const lockedId = telSt.selectedConversationId;
       if (lockedId && !convs.some((c) => c.cascadeId === lockedId)) {
@@ -236,6 +272,7 @@ export const TopSessionHeader = defineComponent({
       convSelect.setProps({
         modelValue: telSt.selectedConversationId,
         placeholder: t('header.followLatest'),
+        searchPlaceholder: t('header.searchSessionPlaceholder'),
         options,
       });
 

@@ -13,6 +13,7 @@ import { resolveCapsuleMetricPresentation } from '../../registries/metricRegistr
 import {
   normalizeClientTopbarSlots,
   normalizeClientWindowMountMode,
+  resolveOverlayCtxInspectorAgentId,
   resolveScopedConversation,
 } from '../../store/telemetryStore.js';
 import { buildFallbackRunningConversations } from './LiveActivityWidget.js';
@@ -309,6 +310,7 @@ export function createCapsuleSlotNode(slotIndex, initialMetric) {
 
   const isNone = initialMetric === 'none';
   const isCtx = initialMetric === 'context';
+  const prefixSpan = h('span', { className: 'wm-slot-prefix' });
   const textSpan = h('span', {
     className: isCtx ? 'wm-slot-text wm-ctx-pct' : 'wm-slot-text',
     text: isNone
@@ -319,7 +321,7 @@ export function createCapsuleSlotNode(slotIndex, initialMetric) {
           ? '-- t/s'
           : initialMetric === 'ttft'
             ? '--s'
-            : t('capsule.quotaUnknown'),
+            : '--%',
   });
   const el = h(
     'span',
@@ -345,8 +347,10 @@ export function createCapsuleSlotNode(slotIndex, initialMetric) {
     el,
     ringSvg,
     ringFill,
+    prefixSpan,
     textSpan,
     ringMounted: isCtx,
+    prefixMounted: false,
   };
 }
 
@@ -373,11 +377,23 @@ export function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCt
     patchAttr(slot.el, 'data-vis-rank', String(visRank));
 
     if (pres.showRing && !slot.ringMounted) {
-      slot.el.insertBefore(slot.ringSvg, slot.textSpan);
+      slot.el.insertBefore(slot.ringSvg, slot.el.firstChild || slot.textSpan);
       slot.ringMounted = true;
     } else if (!pres.showRing && slot.ringMounted) {
       slot.ringSvg.remove();
       slot.ringMounted = false;
+    }
+
+    const prefixText = String(pres.prefix || '');
+    if (prefixText) {
+      patchText(slot.prefixSpan, prefixText);
+      if (!slot.prefixMounted) {
+        slot.el.insertBefore(slot.prefixSpan, slot.textSpan);
+        slot.prefixMounted = true;
+      }
+    } else if (slot.prefixMounted) {
+      slot.prefixSpan.remove();
+      slot.prefixMounted = false;
     }
 
     const toneCls =
@@ -390,7 +406,12 @@ export function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCt
 
     if (pres.showRing) {
       slot.ringFill.setAttribute('stroke-dashoffset', String(pres.dashOffset));
-      patchClasses(slot.ringFill, { 'tone-warn': pres.warn, 'tone-danger': pres.danger });
+      patchClasses(slot.ringFill, {
+        'is-quota': pres.ringKind === 'quota',
+        'is-empty': pres.ringEmpty === true,
+        'tone-warn': pres.warn,
+        'tone-danger': pres.danger,
+      });
     }
   }
 
@@ -536,7 +557,7 @@ export const CapsuleBarWidget = defineComponent({
       const { agents, scopedConv, ctxAgent, aggregated } = resolveScopedConversation(
         data,
         'all',
-        'auto'
+        resolveOverlayCtxInspectorAgentId(data, 'auto')
       );
       const slotCtx = buildCapsuleSlotContext(data, { scopedConv, ctxAgent, aggregated });
       const { runningCount, hasWaiting, multiBtnText } = resolveMultiSessionCapsuleState(data, {

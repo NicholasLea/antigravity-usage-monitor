@@ -107,7 +107,9 @@ export const SettingsView = defineComponent({
           structureTab.refs.renderSettings(
             settings,
             telemetry?.windowBridge,
-            telemetry?.hostPlatform
+            telemetry?.hostPlatform,
+            telemetry?.cliStatusLine,
+            telemetry?.quotas
           );
         }
       } else if (settingsSubTab === 'other') {
@@ -116,7 +118,8 @@ export const SettingsView = defineComponent({
             settings,
             telemetry.contextWindowModels || [],
             telemetry?.windowBridge,
-            telemetry?.hostPlatform
+            telemetry?.hostPlatform,
+            telemetry?.cloudCodeProxy
           );
         }
       } else if (accountTab && settingsSubTab === 'account') {
@@ -132,6 +135,8 @@ export const SettingsView = defineComponent({
       (st) => ({
         settings: st.telemetry?.settings,
         windowBridge: st.telemetry?.windowBridge,
+        cloudCodeProxy: st.telemetry?.cloudCodeProxy,
+        cliStatusLine: st.telemetry?.cliStatusLine,
         hostPlatform: st.telemetry?.hostPlatform,
         cloudStatus: st.telemetry?.cloudStatus,
         contextWindowModels: st.telemetry?.contextWindowModels,

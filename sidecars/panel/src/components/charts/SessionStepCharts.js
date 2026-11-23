@@ -12,6 +12,7 @@ import { h, patchAttr, patchClasses, patchStyleVar, patchText } from '../../core
 import {
   formatAgentBadgeText,
   formatMetric,
+  formatPctNumber,
   formatSpeedMetric,
   formatStepAnomalyInlineSummary,
   formatTokens,
@@ -573,7 +574,7 @@ function formatYAxisTick(metric, val, step) {
     return step >= 1 ? `${Math.round(val)}s` : `${val.toFixed(1)}s`;
   }
   if (metric === 'cache') {
-    return step >= 1 ? `${Math.round(val)}%` : `${val.toFixed(1)}%`;
+    return step >= 1 ? `${Math.round(val)}%` : formatPctNumber(val, { withSymbol: true });
   }
   if (metric === 'cost') {
     if (step >= 1) return `$${Math.round(val)}`;
@@ -648,7 +649,7 @@ function formatChartMetricValue(metric, val) {
     case 'ttft':
       return formatMetric(val, 's');
     case 'cache':
-      return `${val.toFixed(1)}%`;
+      return formatPctNumber(val, { withSymbol: true });
     case 'cost':
       return formatUsd(val, { precise: true });
     default:
@@ -667,7 +668,7 @@ function formatChartMetricCompact(metric, val) {
     case 'ttft':
       return formatMetric(val, 's');
     case 'cache':
-      return `${val.toFixed(1)}%`;
+      return formatPctNumber(val, { withSymbol: true });
     case 'cost':
       return formatUsd(val, { precise: true });
     default:
@@ -822,7 +823,14 @@ export function createSessionLineChart() {
   let hoveredIdx = -1;
   let tickElsByIdx = new Map();
   let lastSig = '';
+  let lastPreSig = '';
+  let lastSummaryBadge = '';
   let lastUpdateParams = null;
+  let cachedPlotSvgRect = null;
+
+  function invalidatePlotSvgRect() {
+    cachedPlotSvgRect = null;
+  }
 
   function syncViewWidth() {
     const measured = Math.round(
@@ -935,8 +943,14 @@ export function createSessionLineChart() {
 
   plotStage.addEventListener('mousemove', (e) => {
     if (!currentPoints.length) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
+    if (!cachedPlotSvgRect) {
+      cachedPlotSvgRect = svg.getBoundingClientRect();
+    }
+    const rect = cachedPlotSvgRect;
+    if (!rect || rect.width <= 0) {
+      cachedPlotSvgRect = null;
+      return;
+    }
     const relX = ((e.clientX - rect.left) / rect.width) * viewW;
     const { leftX, spanX } = resolvePlotBounds(viewW);
     const ratio = (relX - leftX) / Math.max(1, spanX);
@@ -946,14 +960,19 @@ export function createSessionLineChart() {
     );
     showHoverAt(idx);
   });
-  plotStage.addEventListener('mouseleave', clearHover);
+  plotStage.addEventListener('mouseleave', () => {
+    invalidatePlotSvgRect();
+    clearHover();
+  });
 
   let resizeObs = null;
   let onWinResize = null;
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
+      invalidatePlotSvgRect();
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
+        lastPreSig = '';
         update(lastUpdateParams);
       }
     });
@@ -1034,6 +1053,9 @@ export function createSessionLineChart() {
     if (!matchedSteps.length) {
       currentPoints = [];
       lastSig = 'empty';
+      lastPreSig = '';
+      lastSummaryBadge = t('chart.step.zeroSteps');
+      invalidatePlotSvgRect();
       patchAttr(areaPath, 'd', '');
       patchAttr(linePath, 'd', '');
       while (multiAreaGroup.firstChild) multiAreaGroup.removeChild(multiAreaGroup.firstChild);
@@ -1045,7 +1067,23 @@ export function createSessionLineChart() {
       patchAttr(peakPill, 'hidden', true);
       patchAttr(emptyHintEl, 'hidden', false);
       clearHover();
-      return { summaryBadge: t('chart.step.zeroSteps') };
+      return { summaryBadge: lastSummaryBadge };
+    }
+
+    const locale = getEffectiveLocale();
+    const extColorSig = modelColorByGroup
+      ? Array.from(modelColorByGroup.entries())
+          .map(([k, v]) => `${k}=${v}`)
+          .join(',')
+      : '';
+    let preStepParts = `${matchedSteps.length}:`;
+    for (let i = 0; i < matchedSteps.length; i += 1) {
+      const s = matchedSteps[i];
+      preStepParts += `${s.stepIndex ?? i},${s.agentIndex ?? 0},${s.modelKey || s.modelShort || ''},${s.inputTokens || 0},${s.cacheReadTokens || 0},${s.outputTokens || 0},${s.contextTokens || 0},${s.tokPerSec ?? ''},${s.ttftSec ?? ''},${s.costUsd ?? ''},${s.anomalySig || ''};`;
+    }
+    const preSig = `${locale}|${viewW}|${metric}|${showAgentPrefix}|${displaySettings?.modelDisplayMode || ''}|${Boolean(displaySettings?.showUpstreamModel)}|${displaySettings?.orchestratorIdMode || ''}|${targetKeys.join(',')}|${extColorSig}|${preStepParts}`;
+    if (preSig === lastPreSig && lastSummaryBadge) {
+      return { summaryBadge: lastSummaryBadge };
     }
 
     const modelColorMap = new Map();
@@ -1253,7 +1291,6 @@ export function createSessionLineChart() {
     const validPoints = points.filter((p) => p.valid);
     patchAttr(emptyHintEl, 'hidden', validPoints.length > 0);
 
-    const locale = getEffectiveLocale();
     const colorSig = Array.from(modelColorMap.entries())
       .map(([k, v]) => `${k}=${v}`)
       .join(',');
@@ -1311,16 +1348,15 @@ export function createSessionLineChart() {
             patchStyleVar(mLine, '--sstep-fit-accent', seriesColor);
             multiLineGroup.appendChild(mLine);
 
-            if (seriesPts.length <= 36) {
-              for (const pt of seriesPts) {
-                const dot = document.createElementNS(SVG_NS, 'circle');
-                dot.setAttribute('cx', pt.x.toFixed(1));
-                dot.setAttribute('cy', pt.y.toFixed(1));
-                dot.setAttribute('r', seriesPts.length > 20 ? '1.7' : '2.1');
-                dot.setAttribute('class', 'sstep-node-dot');
-                patchStyleVar(dot, '--dot-stroke', seriesColor);
-                dotsGroup.appendChild(dot);
-              }
+            if (seriesPts.length === 1) {
+              const pt = seriesPts[0];
+              const dot = document.createElementNS(SVG_NS, 'circle');
+              dot.setAttribute('cx', pt.x.toFixed(1));
+              dot.setAttribute('cy', pt.y.toFixed(1));
+              dot.setAttribute('r', '2.1');
+              dot.setAttribute('class', 'sstep-node-dot');
+              patchStyleVar(dot, '--dot-stroke', seriesColor);
+              dotsGroup.appendChild(dot);
             }
           }
         }
@@ -1344,40 +1380,30 @@ export function createSessionLineChart() {
           patchAttr(linePath, 'd', lineD);
           patchAttr(areaPath, 'd', `${lineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`);
         }
-
-        if (points.length <= 64) {
-          for (const pt of points) {
-            const dot = document.createElementNS(SVG_NS, 'circle');
-            dot.setAttribute('cx', pt.x.toFixed(1));
-            dot.setAttribute('cy', pt.y.toFixed(1));
-            if (pt.valid) {
-              dot.setAttribute('r', points.length > 36 ? '1.8' : '2.3');
-              dot.setAttribute('class', 'sstep-node-dot');
-              patchStyleVar(
-                dot,
-                '--dot-stroke',
-                modelColorMap.size > 1 ? pt.dotColor : accentColor
-              );
-            } else {
-              dot.setAttribute('r', '1.6');
-              dot.setAttribute('class', 'sstep-node-dot is-skipped');
-            }
-            dotsGroup.appendChild(dot);
-          }
-        }
       }
 
+      const anomalyTicks = [];
       for (const pt of points) {
         if (!pt.valid || !pt.anomalySummary) continue;
-        const aDot = document.createElementNS(SVG_NS, 'circle');
-        aDot.setAttribute('cx', pt.x.toFixed(1));
-        aDot.setAttribute('cy', pt.y.toFixed(1));
-        aDot.setAttribute('r', '2.9');
-        aDot.setAttribute(
+        anomalyTicks.push(pt);
+      }
+      anomalyTicks.sort((a, b) =>
+        a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+      );
+      const tickTopY = (BOTTOM_Y - 5).toFixed(1);
+      const tickBotY = BOTTOM_Y.toFixed(1);
+      for (const pt of anomalyTicks) {
+        const xStr = pt.x.toFixed(1);
+        const aTick = document.createElementNS(SVG_NS, 'line');
+        aTick.setAttribute('x1', xStr);
+        aTick.setAttribute('x2', xStr);
+        aTick.setAttribute('y1', tickTopY);
+        aTick.setAttribute('y2', tickBotY);
+        aTick.setAttribute(
           'class',
-          `sstep-anomaly-dot${pt.anomalySeverity === 'danger' ? ' is-danger' : ''}`
+          `sstep-anomaly-dot sstep-anomaly-tick${pt.anomalySeverity === 'danger' ? ' is-danger' : ''}`
         );
-        anomalyDotsGroup.appendChild(aDot);
+        anomalyDotsGroup.appendChild(aTick);
       }
 
       const tickIndices = computeStepTickIndices(points.length);
@@ -1510,6 +1536,8 @@ export function createSessionLineChart() {
       });
     }
 
+    lastPreSig = preSig;
+    lastSummaryBadge = summaryBadge;
     return { summaryBadge };
   }
 
@@ -1774,10 +1802,17 @@ export function createModelFitChart() {
     patchClasses(tooltipEl, { 'is-tracking': false });
   }
 
+  let cachedFitSvgRect = null;
   plotStage.addEventListener('mousemove', (e) => {
     if (!currentSamples.length) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
+    if (!cachedFitSvgRect) {
+      cachedFitSvgRect = svg.getBoundingClientRect();
+    }
+    const rect = cachedFitSvgRect;
+    if (!rect || rect.width <= 0) {
+      cachedFitSvgRect = null;
+      return;
+    }
     const relX = ((e.clientX - rect.left) / rect.width) * viewW;
     let lo = 0;
     let hi = currentSamples.length - 1;
@@ -1795,12 +1830,16 @@ export function createModelFitChart() {
     }
     showHoverAt(bestIdx);
   });
-  plotStage.addEventListener('mouseleave', clearHover);
+  plotStage.addEventListener('mouseleave', () => {
+    cachedFitSvgRect = null;
+    clearHover();
+  });
 
   let resizeObs = null;
   let onWinResize = null;
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
+      cachedFitSvgRect = null;
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
         update(lastUpdateParams);
@@ -2288,11 +2327,14 @@ export function createModelFitChart() {
             multiCurveGroup.appendChild(curveEl);
           }
         }
+        anomalyOverlayDots.sort((a, b) =>
+          a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+        );
         for (const sp of anomalyOverlayDots) {
           const aDot = document.createElementNS(SVG_NS, 'circle');
           aDot.setAttribute('cx', sp.x.toFixed(1));
           aDot.setAttribute('cy', sp.rawY.toFixed(1));
-          aDot.setAttribute('r', '2.9');
+          aDot.setAttribute('r', dotRadius);
           aDot.setAttribute(
             'class',
             `sstep-scatter-dot is-anomaly${sp.anomalySeverity === 'danger' ? ' is-danger' : ''}`
@@ -2462,11 +2504,14 @@ export function createModelFitChart() {
         dot.setAttribute('class', 'sstep-scatter-dot');
         scatterTarget.appendChild(dot);
       }
+      singleAnomalyDots.sort((a, b) =>
+        a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+      );
       for (const s of singleAnomalyDots) {
         const aDot = document.createElementNS(SVG_NS, 'circle');
         aDot.setAttribute('cx', s.x.toFixed(1));
         aDot.setAttribute('cy', s.rawY.toFixed(1));
-        aDot.setAttribute('r', '2.9');
+        aDot.setAttribute('r', dotRadius);
         aDot.setAttribute(
           'class',
           `sstep-scatter-dot is-anomaly${s.anomalySeverity === 'danger' ? ' is-danger' : ''}`

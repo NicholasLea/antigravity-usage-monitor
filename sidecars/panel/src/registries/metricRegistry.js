@@ -24,17 +24,28 @@ import { OVERVIEW_METRIC_KEYS, TOPBAR_SLOT_KEYS } from '../../shared/settings-no
 import {
   formatCompactCapsuleCost,
   formatCompactCapsuleTtft,
+  hasArgonWeeklyQuotaPool,
   resolveCapsuleQuotaSlotPct,
 } from '../../shared/telemetry-display-rules.mjs';
 
-export { OVERVIEW_METRIC_KEYS, formatCompactCapsuleCost, formatCompactCapsuleTtft };
+export {
+  OVERVIEW_METRIC_KEYS,
+  formatCompactCapsuleCost,
+  formatCompactCapsuleTtft,
+  hasArgonWeeklyQuotaPool,
+};
 export const CAPSULE_METRIC_KEYS = TOPBAR_SLOT_KEYS;
 
-export function getCapsuleMetricOptions() {
-  return CAPSULE_METRIC_KEYS.map((key) => ({
-    value: key,
-    label: t(`capMetric.${key}`),
-  }));
+export function getCapsuleMetricOptions({ quotas = null, selectedSlots = [] } = {}) {
+  const showArgonWeekly =
+    hasArgonWeeklyQuotaPool(quotas) ||
+    (Array.isArray(selectedSlots) && selectedSlots.includes('argon_weekly'));
+  return CAPSULE_METRIC_KEYS.filter((key) => key !== 'argon_weekly' || showArgonWeekly).map(
+    (key) => ({
+      value: key,
+      label: t(`capMetric.${key}`),
+    })
+  );
 }
 
 export function getOverviewMetricOptions() {
@@ -96,9 +107,26 @@ export function resolveQuotaCapsuleSummary(quotas) {
       ? `${tightest.label} ${tightest.windowTag} · ${runnerUp.windowTag} ${runnerPct}%`
       : `${tightest.label} ${tightest.windowTag} · ${runnerUp.label} ${runnerUp.windowTag} ${runnerPct}%`
     : `${tightest.label} · ${tightest.windowTag}`;
+  const tightestIsClaude = /claude|gpt|fable|oss|third/i.test(String(tightest.label || ''));
+  const tightestIsArgon = !tightestIsClaude && /\bargon\b/i.test(String(tightest.label || ''));
+  const tightestIsGemini =
+    !tightestIsClaude && !tightestIsArgon && /gemini|carbon|neon|flash|pro/i.test(String(tightest.label || ''));
+  const tightestWinShort = tightest.windowTag === '5h' ? '5h' : isEnglishLocale() ? 'w' : '周';
+  const poolPrefix = tightestIsClaude
+    ? `C${tightestWinShort}`
+    : tightestIsArgon
+      ? `A${tightestWinShort}`
+      : tightestIsGemini
+        ? `G${tightestWinShort}`
+        : tightest.windowTag === '5h'
+          ? '5h'
+          : isEnglishLocale()
+            ? 'Wk'
+            : '周';
   return {
     roundedPct: rounded,
     shortText: t('capsule.quotaLeft', { pct: rounded }),
+    poolPrefix,
     subLabelText,
     detailText: candidates
       .map((c) => {
@@ -107,6 +135,17 @@ export function resolveQuotaCapsuleSummary(quotas) {
       })
       .join(' · '),
   };
+}
+
+function resolveQuotaCapsulePrefix(metricKey, quotaSum) {
+  const isEn = isEnglishLocale();
+  if (metricKey === 'gemini_5h') return 'G5h';
+  if (metricKey === 'gemini_weekly') return isEn ? 'Gw' : 'G周';
+  if (metricKey === 'argon_weekly') return isEn ? 'Aw' : 'A周';
+  if (metricKey === 'claude_5h') return 'C5h';
+  if (metricKey === 'claude_weekly') return isEn ? 'Cw' : 'C周';
+  if (quotaSum?.poolPrefix) return quotaSum.poolPrefix;
+  return isEn ? 'Q' : '余';
 }
 
 /**
@@ -323,22 +362,46 @@ export function resolveCapsuleMetricPresentation(metricKey, slotCtx, ringCircumf
     };
   }
 
+  if (metricKey === 'argon_weekly' && slotCtx.hasTelemetry && !hasArgonWeeklyQuotaPool(slotCtx.quotas)) {
+    return {
+      hidden: true,
+      metric: 'none',
+      segClass: 'wm-cap-slot',
+      textClass: 'wm-slot-text',
+      showRing: false,
+      dashOffset: ringCircumference,
+      text: '',
+      toneClass: '',
+      running: false,
+      warn: false,
+      danger: false,
+    };
+  }
+
   const quotaSum = !slotCtx.hasTelemetry
     ? null
     : metricKey === 'quota_auto'
       ? resolveQuotaCapsuleSummary(slotCtx.quotas)
       : resolveSpecificQuotaSlotSummary(slotCtx.quotas, metricKey);
-  const isDanger = Boolean(quotaSum && quotaSum.roundedPct <= 15);
-  const isWarn = Boolean(quotaSum && !isDanger && quotaSum.roundedPct <= 30);
+  const hasQuotaPct = Boolean(quotaSum && Number.isFinite(quotaSum.roundedPct));
+  const clampedPct = hasQuotaPct ? Math.max(0, Math.min(100, quotaSum.roundedPct)) : 0;
+  const quotaDashOffset = hasQuotaPct
+    ? +(ringCircumference * (1 - clampedPct / 100)).toFixed(2)
+    : ringCircumference;
+  const isDanger = Boolean(hasQuotaPct && clampedPct <= 15);
+  const isWarn = Boolean(hasQuotaPct && !isDanger && clampedPct <= 30);
   const toneClass = isDanger ? 'tone-danger' : isWarn ? 'tone-warn' : '';
   return {
     hidden: false,
     metric: metricKey,
     segClass: 'wm-cap-slot wm-seg-quota',
     textClass: 'wm-slot-text wm-quota-text',
-    showRing: false,
-    dashOffset: ringCircumference,
-    text: quotaSum ? quotaSum.shortText : t('capsule.quotaUnknown'),
+    showRing: true,
+    ringKind: 'quota',
+    ringEmpty: !hasQuotaPct,
+    dashOffset: quotaDashOffset,
+    prefix: resolveQuotaCapsulePrefix(metricKey, quotaSum),
+    text: hasQuotaPct ? `${clampedPct}%` : '--%',
     toneClass,
     running: false,
     warn: isWarn,

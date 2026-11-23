@@ -21,6 +21,7 @@ import { ensureCliStatusLineConfigured } from './cli-statusline-config.mjs';
 import { syncCloudCatalog } from './plugin-updater.mjs';
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
+const MAX_EXPORT_JSON_BODY_BYTES = 8 * 1024 * 1024;
 const AUTH_COOKIE_NAME = 'ag_um_token';
 const NO_STORE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -511,12 +512,32 @@ export function createStandaloneWebServer(options = {}) {
       }
 
       if (pathname.startsWith('/api/')) {
+        if (
+          (pathname === '/api/export-file' || pathname === '/api/reveal-file') &&
+          !isLoopbackRemoteAddress(req.socket?.remoteAddress)
+        ) {
+          sendResponse(
+            res,
+            403,
+            'application/json; charset=utf-8',
+            JSON.stringify({
+              ok: false,
+              fallbackBrowser: true,
+              error: 'Local file export is restricted to loopback clients',
+            })
+          );
+          return;
+        }
         let data = undefined;
         if (method === 'GET') {
           data = Object.fromEntries(urlObj.searchParams.entries());
           delete data.token;
         } else if (method === 'POST') {
-          const rawBody = await readRawBody(req, MAX_JSON_BODY_BYTES);
+          const maxBody =
+            pathname === '/api/export-file' || pathname === '/api/settings'
+              ? MAX_EXPORT_JSON_BODY_BYTES
+              : MAX_JSON_BODY_BYTES;
+          const rawBody = await readRawBody(req, maxBody);
           if (rawBody.trim()) {
             try {
               data = JSON.parse(rawBody);
@@ -531,6 +552,25 @@ export function createStandaloneWebServer(options = {}) {
             }
           } else {
             data = {};
+          }
+          if (
+            pathname === '/api/settings' &&
+            data &&
+            typeof data === 'object' &&
+            typeof data.__exportFileAction === 'string' &&
+            !isLoopbackRemoteAddress(req.socket?.remoteAddress)
+          ) {
+            sendResponse(
+              res,
+              403,
+              'application/json; charset=utf-8',
+              JSON.stringify({
+                ok: false,
+                fallbackBrowser: true,
+                error: 'Local file export is restricted to loopback clients',
+              })
+            );
+            return;
           }
         } else {
           sendResponse(

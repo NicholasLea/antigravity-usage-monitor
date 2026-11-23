@@ -6,6 +6,8 @@
  * 2. 严禁基于速率上限裁剪异常值或动态篡改分母（如扣除思考时间或仅取流式片段耗时），保证统计口径客观一致。
  */
 
+import { extractCleanUserRequestBody } from './shared/prompt-clean.mjs';
+
 /** 速度测量口径版本号；当耗时或样本过滤算法变更时递增，用于触发旧版缓存测量字段失效重算 */
 export const MEASUREMENT_VERSION = 4;
 
@@ -884,14 +886,18 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
   const orchestratorExecModels = new Set();
   const collectOrchestratorExecModel = (pc) => {
     const execModel = pc?.planExecuteConfig?.executionModel;
+    if (typeof execModel !== 'string' || !execModel.trim()) {
+      return;
+    }
+    const cleanExec = execModel.trim();
+    const cleanPlan = String(pc?.planModel || '').trim();
     if (
-      typeof execModel === 'string' &&
-      execModel.trim() &&
       /orchestrator|MODEL_PLACEHOLDER_M(?:667|681|537)\b/i.test(
-        `${pc?.modelName || ''} ${pc?.planModel || ''}`
-      )
+        `${pc?.modelName || ''} ${cleanPlan}`
+      ) ||
+      (cleanPlan && cleanExec !== cleanPlan)
     ) {
-      orchestratorExecModels.add(execModel.trim());
+      orchestratorExecModels.add(cleanExec);
     }
   };
   let latestBreakdownChat = null;
@@ -1016,14 +1022,7 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
         .filter(Boolean)
         .join('\n');
     } else if (typeof step?.content === 'string' && step.content.trim()) {
-      const withoutSummary = step.content
-        .replace(/<CONTEXT_SUMMARY>[\s\S]*?<\/CONTEXT_SUMMARY>/gi, '')
-        .replace(/<SYSTEM_MESSAGE>[\s\S]*$/i, '');
-      const reqMatches = [...withoutSummary.matchAll(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/gi)];
-      raw =
-        reqMatches.length > 0
-          ? reqMatches[reqMatches.length - 1][1]
-          : withoutSummary.replace(/<ADDITIONAL_METADATA>[\s\S]*$/i, '');
+      raw = extractCleanUserRequestBody(step.content);
     }
     const cleaned = String(raw || '')
       .split(/\r?\n/)
@@ -1319,17 +1318,31 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
     ].find(isValidModelValue);
 
     const resolvedModelKey = identity ? identity[1].trim() : 'unknown';
-    const rawDisplayName = chat?.modelDisplayName || '';
+    const rawDisplayName = String(chat?.modelDisplayName || '').trim();
+    const isExplicitNamedWorker = /\bOrchestrator\s+Worker\s*\([^)]+\)/i.test(rawDisplayName);
+    const isLeakedPlannerOrchDisplay =
+      Boolean(rawDisplayName) &&
+      /\borchestrator\b/i.test(rawDisplayName) &&
+      !isExplicitNamedWorker;
     const isGenericWorkerDisplay =
       !rawDisplayName ||
-      /\borchestrator\b/i.test(rawDisplayName) ||
-      /^gemini\s+(?:flash|pro)(?:\s+worker)?$/i.test(rawDisplayName.trim());
-    const resolvedDisplayName =
-      (orchestratorExecModels.has(resolvedModelKey) ||
-        /^gemini-flash-worker-agy$/i.test(rawResponseModel || '')) &&
-      isGenericWorkerDisplay
-        ? 'Orchestrator Worker (Hydrogen)'
-        : rawDisplayName;
+      isLeakedPlannerOrchDisplay ||
+      /^gemini\s+(?:flash|pro)(?:\s+worker)?$/i.test(rawDisplayName);
+    const isHydrogenWorkerStep =
+      resolvedModelKey === 'MODEL_PLACEHOLDER_M669' ||
+      /^gemini-flash-worker-agy$/i.test(rawResponseModel || '');
+    const isNeonWorkerStep = /^gemini-(?:4-)?neon-worker-agy$/i.test(rawResponseModel || '');
+    const isExecWorkerStep = orchestratorExecModels.has(resolvedModelKey);
+
+    let resolvedDisplayName = rawDisplayName;
+    if (isHydrogenWorkerStep && isGenericWorkerDisplay) {
+      resolvedDisplayName = 'Orchestrator Worker (Hydrogen)';
+    } else if (isNeonWorkerStep && isGenericWorkerDisplay) {
+      resolvedDisplayName = 'Orchestrator Worker (Neon)';
+    } else if (isExecWorkerStep && isLeakedPlannerOrchDisplay) {
+      // 非 Hydrogen 执行模型（如 Neon / Claude Worker）若继承了主编排器展示名，清空以交由自身模型身份解析
+      resolvedDisplayName = '';
+    }
 
     const anomalyRec = buildStepAnomalyRecord(s, m, chat, stepPendingErrors);
 

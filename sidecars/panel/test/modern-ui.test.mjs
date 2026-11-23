@@ -548,26 +548,37 @@ test('SegmentedControl variable-width glider snaps cleanly on reveal and glides 
   );
   stepTable.destroy();
 
-  // 10. TrendAreaChart tooltip arms 0.15s .is-tracking transition after initial snap and translates --tip-y smoothly
+  // 10. TrendAreaChart tooltip arms 0.15s .is-tracking transition after initial snap and follows pointer steadily without top/bottom jumps
   const trendChart = createTrendAreaChart();
-  Object.assign(trendChart.el, { offsetHeight: 210 });
+  Object.assign(trendChart.el, {
+    clientWidth: 460,
+    offsetHeight: 210,
+    getBoundingClientRect: () => ({ left: 0, top: 240, width: 460, height: 210, right: 460, bottom: 450 }),
+  });
   const tipEl = trendChart.el.querySelector('.trend-tooltip');
-  Object.assign(tipEl, { offsetHeight: 82 });
+  Object.assign(tipEl, { offsetWidth: 216, offsetHeight: 82 });
+  const plotStage = trendChart.el.querySelector('.trend-plot-stage');
+  const svgEl = trendChart.el.querySelector('.trend-svg');
+  svgEl.getBoundingClientRect = () => ({ left: 0, top: 246, width: 460, height: 184, right: 460, bottom: 430 });
   trendChart.update([
     { index: 0, label: '00:00', fullLabel: '11月19日 00:00 - 01:00', tokens: 1000, calls: 2, costUsd: 0.1 },
     { index: 1, label: '10:00', fullLabel: '11月19日 10:00 - 11:00', tokens: 25_000_000, calls: 80, costUsd: 6.37 },
   ]);
-  const ticks = trendChart.el.querySelectorAll('.trend-x-tick');
   queuedRaf = null;
-  ticks[0].onclick(); // low valley -> --tip-y = 0px, initial snap has is-tracking = false
-  assert.equal(tipEl.style.getPropertyValue('--tip-y'), '0px');
+  plotStage.dispatchEvent({ type: 'mousemove', clientX: 80, clientY: 360 });
+  const firstY = tipEl.style.getPropertyValue('--tip-y');
+  assert.equal(firstY, '24px');
   assert.equal(tipEl.classList.contains('is-tracking'), false);
   queuedRaf?.();
   assert.equal(tipEl.classList.contains('is-tracking'), true);
 
-  ticks[1].onclick(); // high peak -> --tip-y = 210 - 82 - 22 = 106px while is-tracking remains true
-  assert.equal(tipEl.style.getPropertyValue('--tip-y'), '106px');
+  // Sweeping horizontally from valley to peak at steady cursor Y keeps --tip-y rock steady (no top/bottom ping-pong)
+  plotStage.dispatchEvent({ type: 'mousemove', clientX: 400, clientY: 360 });
+  assert.equal(tipEl.style.getPropertyValue('--tip-y'), firstY);
   assert.equal(tipEl.classList.contains('is-tracking'), true);
+  // Moving cursor vertically shifts --tip-y smoothly with cursor
+  plotStage.dispatchEvent({ type: 'mousemove', clientX: 400, clientY: 390 });
+  assert.equal(tipEl.style.getPropertyValue('--tip-y'), '54px');
   trendChart.destroy();
 
   // 11. ContextWindowWidget + LiveActivityWidget use pure SVG chevrons and animate expand/collapse under [data-modern-ui="true"]
@@ -1207,5 +1218,22 @@ test('Capsule odometer digit rolling (0.15s) and color transition (0.1s) stay st
     builtStyles,
     /(?:^|\n)\.wm-od-track\s*\{/,
     'Odometer roll CSS must ONLY exist under [data-modern-ui="true"]'
+  );
+  // 5. Breakdown popovers translate on GPU layer only (no top/left layout transition jitter)
+  assert.match(
+    builtStyles,
+    /\.cons-breakdown-popover\s*\{[^}]*left:\s*0;[^}]*top:\s*0;[^}]*transform:\s*translate3d\(var\(--pop-x,\s*8px\),\s*var\(--pop-y,\s*8px\),\s*0\);[^}]*will-change:\s*transform;/
+  );
+  assert.match(
+    builtStyles,
+    /\[data-modern-ui="true"\]\s+\.cons-breakdown-popover\.is-tracking\s*\{\s*transition:\s*transform\s+150ms\s+var\(--ease-modern\);\s*\}/
+  );
+  assert.match(
+    builtStyles,
+    /\.trend-tooltip\.is-rich-breakdown\s*\{[^}]*left:\s*0;[^}]*transform:\s*translate3d\(var\(--tip-x,\s*0px\),\s*var\(--tip-y,\s*0px\),\s*0\)/
+  );
+  assert.match(
+    builtStyles,
+    /\[data-modern-ui="true"\]\s+\.trend-tooltip\.is-rich-breakdown\.is-tracking\s*\{\s*transition:\s*transform\s+150ms\s+var\(--ease-modern\);\s*\}/
   );
 });

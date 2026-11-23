@@ -9,6 +9,16 @@ import { h, patchAttr, patchClasses, patchText } from '../../core/domPatch.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 import { setI18nLanguage, t } from '../../i18n/index.js';
 import {
+  buildExportableSettingsJson,
+  parseImportedSettingsJson,
+} from '../../core/settingsBackup.js';
+import {
+  copyTextWithFeedback,
+  exportTextFileWithFeedback,
+} from '../../core/fileExportClient.js';
+import {
+  fetchQuotaReservationLog,
+  normalizeClientExperimentalQuotaReservation,
   normalizeClientModelDisplayMode,
   normalizeClientOrchestratorIdMode,
   rebuildTrajectoryCache,
@@ -17,7 +27,25 @@ import {
   saveSettingsPatch,
 } from '../../store/telemetryStore.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
+import { ToggleSwitch } from '../../components/ui/ToggleSwitch.js';
 import { BridgeStatusNotice } from '../../components/settings/BridgeStatusNotice.js';
+import { SessionMigrationCard } from '../../components/settings/SessionMigrationCard.js';
+
+function formatQuotaReservationLogForClipboard(snapshot) {
+  const safe = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  const buckets = Array.isArray(safe.buckets) ? safe.buckets : [];
+  const events = Array.isArray(safe.events) ? safe.events : [];
+  const bucketLines = buckets.map((b) => `    ${JSON.stringify(b)}`).join(',\n');
+  const eventLines = events.map((e) => `    ${JSON.stringify(e)}`).join(',\n');
+  return [
+    '{',
+    `  "generatedAt": ${JSON.stringify(safe.generatedAt || new Date().toISOString())},`,
+    `  "count": ${events.length},`,
+    `  "buckets": [${bucketLines ? `\n${bucketLines}\n  ` : ''}],`,
+    `  "events": [${eventLines ? `\n${eventLines}\n  ` : ''}]`,
+    '}',
+  ].join('\n');
+}
 
 function getStepModelDisplayOptions() {
   return [
@@ -39,16 +67,22 @@ export const SettingsOtherTab = defineComponent({
   setup({ onCleanup, getProps }) {
     let draftModelDisplayMode = 'short';
     let draftOrchestratorIdMode = 'compact';
+    let draftExperimentalQuotaReservation = true;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
+    let draftContextMainEnabled = true;
+    let draftContextSwarmEnabled = false;
+    let savingContextScope = false;
     let latestSettings = null;
     let latestWindowBridge = null;
+    let latestCloudCodeProxy = null;
     let latestHostPlatform = 'win32';
     let contextWindowModels = [];
     let contextModelId = '';
     let savingContextWindow = false;
     let contextFeedback = '';
     let modelTimer = null;
+    let expTimer = null;
     let maintTimer = null;
     let resetConfirmTimer = null;
     let resetConfirmArmed = false;
@@ -60,11 +94,30 @@ export const SettingsOtherTab = defineComponent({
       style: 'font-size: var(--fs-md);',
       text: '',
     });
+    const expStatusText = h('span', {
+      className: 'text-muted',
+      style: 'font-size: var(--fs-md);',
+      text: '',
+    });
     const maintStatusText = h('span', {
       className: 'text-muted',
       style: 'font-size: var(--fs-md);',
       text: '',
     });
+
+    function showExpFeedback(text, autoClearMs = 1500) {
+      if (expTimer) {
+        clearTimeout(expTimer);
+        expTimer = null;
+      }
+      patchText(expStatusText, text);
+      if (text && autoClearMs > 0) {
+        expTimer = setTimeout(() => {
+          expTimer = null;
+          patchText(expStatusText, '');
+        }, autoClearMs);
+      }
+    }
 
     function showModelFeedback(text, autoClearMs = 1500) {
       if (modelTimer) {
@@ -158,6 +211,111 @@ export const SettingsOtherTab = defineComponent({
       h('div', { className: 'form-row' }, [orchFormatLabelEl, orchestratorIdSelect.el]),
     ]);
 
+    // --- Card 2: 试验性功能 ---
+    const expTitleEl = h('span', { text: t('settings.oth.expTitle') });
+    const quotaReserveLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.quotaReserveLabel'),
+    });
+    const quotaReserveBadgeEl = h('span', {
+      className: 'settings-experimental-badge',
+      text: t('settings.oth.expBadge'),
+    });
+    const quotaReserveDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.quotaReserveDesc'),
+    });
+    const quotaReserveLogLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.quotaReserveLogLabel'),
+    });
+    const quotaReserveLogDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.quotaReserveLogDesc'),
+    });
+    const exportReserveLogBtnText = h('span', {
+      text: t('settings.oth.exportReserveLogBtn'),
+    });
+    let isExportingReserveLog = false;
+
+    const exportReserveLogBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          if (isExportingReserveLog) return;
+          isExportingReserveLog = true;
+          patchAttr(exportReserveLogBtn, 'disabled', true);
+          try {
+            const snapshot = await fetchQuotaReservationLog();
+            const text = formatQuotaReservationLogForClipboard(snapshot);
+            const count = Array.isArray(snapshot?.events) ? snapshot.events.length : 0;
+            const successMsg =
+              count > 0
+                ? t('settings.oth.exportReserveLogCopied', { count })
+                : t('settings.oth.exportReserveLogEmpty');
+            const ok = await copyTextWithFeedback(text, successMsg);
+            showExpFeedback(ok ? successMsg : t('settings.oth.exportReserveLogFailed'), 2800);
+          } catch {
+            showExpFeedback(t('settings.oth.exportReserveLogFailed'), 2800);
+          } finally {
+            isExportingReserveLog = false;
+            patchAttr(exportReserveLogBtn, 'disabled', false);
+          }
+        },
+      },
+      [createSvgIcon('copy', { size: 12 }), exportReserveLogBtnText]
+    );
+
+    const quotaReserveToggle = ToggleSwitch({
+      modelValue: 'on',
+      ariaLabelKey: 'settings.oth.quotaReserveLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        const nextEnabled = val === 'on';
+        draftExperimentalQuotaReservation = nextEnabled;
+        quotaReserveToggle.setProps({
+          modelValue: nextEnabled ? 'on' : 'off',
+        });
+        showExpFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ experimentalQuotaReservation: nextEnabled });
+          showExpFeedback(t('settings.saved'), 1500);
+        } catch {
+          if (latestSettings) renderSettings(latestSettings);
+          showExpFeedback(t('settings.saveFailed'), 2500);
+        }
+      },
+    });
+
+    const experimentalPanel = h('section', { className: 'panel', hidden: true }, [
+      h('div', { className: 'panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('pulse', { size: 13 }),
+          expTitleEl,
+        ]),
+        expStatusText,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [
+          h('div', { className: 'settings-experimental-label-group' }, [
+            quotaReserveLabelEl,
+            quotaReserveBadgeEl,
+          ]),
+          quotaReserveDescEl,
+        ]),
+        quotaReserveToggle.el,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [
+          quotaReserveLogLabelEl,
+          quotaReserveLogDescEl,
+        ]),
+        exportReserveLogBtn,
+      ]),
+    ]);
+
     // --- Card 2: 按模型设置上下文窗口 ---
     const baselineTitleEl = h('span', { text: t('settings.oth.baselineTitle') });
     const ctxModelLabel = h('span', { className: 'form-label' });
@@ -166,6 +324,8 @@ export const SettingsOtherTab = defineComponent({
     const ctxStatus = h('span', { className: 'text-muted', role: 'status' });
     const ctxModelSelect = CustomSelect({
       className: 'settings-context-model',
+      searchable: true,
+      searchThreshold: 8,
       options: [],
       onUpdateModelValue: (id) => {
         if (!draftContextRiskAccepted || savingContextWindow) return;
@@ -194,10 +354,79 @@ export const SettingsOtherTab = defineComponent({
       },
     });
     const ctxBridgeNotice = BridgeStatusNotice({ contextMode: true });
+    const ctxMainLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.oth.ctxMainLabel'),
+    });
+    const ctxMainToggle = ToggleSwitch({
+      modelValue: 'on',
+      ariaLabelKey: 'settings.oth.ctxMainLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        if (!draftContextRiskAccepted || savingContextScope) return;
+        const nextEnabled = val === 'on';
+        const prevEnabled = draftContextMainEnabled;
+        savingContextScope = true;
+        draftContextMainEnabled = nextEnabled;
+        latestSettings = { ...(latestSettings || {}), contextWindowMainEnabled: nextEnabled };
+        contextFeedback = 'settings.saving';
+        renderContextWindows();
+        try {
+          await saveSettingsPatch({ contextWindowMainEnabled: nextEnabled });
+          contextFeedback = 'settings.saved';
+        } catch {
+          draftContextMainEnabled = prevEnabled;
+          latestSettings = { ...(latestSettings || {}), contextWindowMainEnabled: prevEnabled };
+          contextFeedback = 'settings.saveFailed';
+        } finally {
+          savingContextScope = false;
+          renderContextWindows();
+        }
+      },
+    });
+    const ctxSwarmLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.oth.ctxSwarmLabel'),
+    });
+    const ctxSwarmToggle = ToggleSwitch({
+      modelValue: 'off',
+      ariaLabelKey: 'settings.oth.ctxSwarmLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        if (!draftContextRiskAccepted || savingContextScope) return;
+        const nextEnabled = val === 'on';
+        const prevEnabled = draftContextSwarmEnabled;
+        savingContextScope = true;
+        draftContextSwarmEnabled = nextEnabled;
+        latestSettings = { ...(latestSettings || {}), contextWindowSwarmEnabled: nextEnabled };
+        contextFeedback = 'settings.saving';
+        renderContextWindows();
+        try {
+          await saveSettingsPatch({ contextWindowSwarmEnabled: nextEnabled });
+          contextFeedback = 'settings.saved';
+        } catch {
+          draftContextSwarmEnabled = prevEnabled;
+          latestSettings = { ...(latestSettings || {}), contextWindowSwarmEnabled: prevEnabled };
+          contextFeedback = 'settings.saveFailed';
+        } finally {
+          savingContextScope = false;
+          renderContextWindows();
+        }
+      },
+    });
+    const ctxMainRow = h('div', { className: 'form-row' }, [ctxMainLabelEl, ctxMainToggle.el]);
+    const ctxSwarmRow = h('div', { className: 'form-row' }, [ctxSwarmLabelEl, ctxSwarmToggle.el]);
+    const ctxSyncStatusEl = h('span', {
+      className: 'settings-hint-text ctx-sync-status is-error',
+      hidden: true,
+    });
     const ctxModelRow = h('div', { className: 'form-row' }, [ctxModelLabel, ctxModelSelect.el]);
     const ctxWindowRow = h('div', { className: 'form-row' }, [ctxWindowLabel, ctxWindowSelect.el]);
     const ctxControlsBody = h('div', { className: 'ctx-controls-body is-locked' }, [
       ctxBridgeNotice.el,
+      ctxMainRow,
+      ctxSwarmRow,
+      ctxSyncStatusEl,
       ctxModelRow,
       ctxWindowRow,
       h('div', { className: 'form-row' }, [ctxHint]),
@@ -276,8 +505,27 @@ export const SettingsOtherTab = defineComponent({
       const saved = latestSettings?.modelContextWindows || {};
       const wbState = String(latestWindowBridge?.state || '').trim();
       const isBridgeMissing = wbState === 'no_devtools_port' || wbState === 'cdp_unreachable';
+      const proxyState = String(latestCloudCodeProxy?.state || 'disabled');
+      const isProxyActive = Boolean(latestCloudCodeProxy?.active && proxyState === 'active');
+
+      patchText(ctxMainLabelEl, t('settings.oth.ctxMainLabel'));
+      ctxMainToggle.setProps({
+        modelValue: draftContextMainEnabled ? 'on' : 'off',
+      });
+      patchText(ctxSwarmLabelEl, t('settings.oth.ctxSwarmLabel'));
+      ctxSwarmToggle.setProps({
+        modelValue: draftContextSwarmEnabled ? 'on' : 'off',
+      });
+
+      const syncErrorText =
+        draftContextSwarmEnabled && proxyState === 'error' && latestCloudCodeProxy?.error
+          ? t('settings.oth.ctxSwarmError', { error: latestCloudCodeProxy.error })
+          : '';
+      patchAttr(ctxSyncStatusEl, 'hidden', !syncErrorText);
+      patchText(ctxSyncStatusEl, syncErrorText);
+
       ctxBridgeNotice.refs.update({
-        visible: unlocked,
+        visible: unlocked && draftContextMainEnabled,
         windowBridge: latestWindowBridge,
         hostPlatform: latestHostPlatform,
       });
@@ -325,7 +573,13 @@ export const SettingsOtherTab = defineComponent({
             else if (value) {
               const name = formatLimit(value);
               if (!isAvailable(model, value)) meta = t('settings.oth.ctxUnavailable', { name });
-              else if (isBridgeMissing) meta = t('settings.oth.ctxPendingBridge', { name });
+              else if (
+                isBridgeMissing &&
+                draftContextMainEnabled &&
+                !(draftContextSwarmEnabled && isProxyActive)
+              ) {
+                meta = t('settings.oth.ctxPendingBridge', { name });
+              }
               else if (/^\d+$/.test(value) && model.reportedLimitTokens && Number(value) !== model.reportedLimitTokens) {
                 meta = t('settings.oth.ctxConfiguredReported', {
                   name,
@@ -472,6 +726,107 @@ export const SettingsOtherTab = defineComponent({
       [resetBtnText]
     );
 
+    const backupLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.backupLabel'),
+    });
+    const backupDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.backupDesc'),
+    });
+    const exportJsonBtnText = h('span', { text: t('settings.oth.exportJsonBtn') });
+    const importJsonBtnText = h('span', { text: t('settings.oth.importJsonBtn') });
+    let isImportingSettings = false;
+
+    async function applyImportedSettingsText(rawText) {
+      const parsed = parseImportedSettingsJson(rawText);
+      if (!parsed.ok) {
+        showMaintFeedback(t('settings.oth.importInvalid'), 3200);
+        return false;
+      }
+      isImportingSettings = true;
+      patchAttr(importJsonBtn, 'disabled', true);
+      showMaintFeedback(t('settings.saving'), 0);
+      try {
+        await saveSettingsPatch(parsed.patch);
+        if (parsed.patch.language) {
+          setI18nLanguage(parsed.patch.language);
+        }
+        showMaintFeedback(
+          t('settings.oth.importDone', { count: parsed.appliedCount }),
+          2800
+        );
+        return true;
+      } catch {
+        showMaintFeedback(t('settings.saveFailed'), 2800);
+        return false;
+      } finally {
+        isImportingSettings = false;
+        patchAttr(importJsonBtn, 'disabled', false);
+      }
+    }
+
+    const importFileInput = h('input', {
+      type: 'file',
+      accept: '.json,application/json',
+      className: 'settings-hidden-file-input',
+      hidden: true,
+    });
+    importFileInput.addEventListener?.('change', async () => {
+      const file = importFileInput.files?.[0];
+      importFileInput.value = '';
+      if (!file || isImportingSettings) return;
+      try {
+        const text =
+          typeof file.text === 'function' ? await file.text() : String(file.content || '');
+        await applyImportedSettingsText(text);
+      } catch {
+        showMaintFeedback(t('settings.oth.importInvalid'), 3200);
+      }
+    });
+
+    const exportJsonBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          const json = buildExportableSettingsJson(latestSettings || {});
+          const res = await exportTextFileWithFeedback(
+            'antigravity-usage-monitor-settings.json',
+            json,
+            'application/json;charset=utf-8'
+          );
+          if (res?.ok) {
+            showMaintFeedback(
+              res.filePath ? `${t('settings.oth.exportDone')} · ${res.filePath}` : t('settings.oth.exportDone'),
+              4200
+            );
+          }
+        },
+      },
+      [createSvgIcon('download', { size: 12 }), exportJsonBtnText]
+    );
+
+    const importJsonBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: () => {
+          if (isImportingSettings) return;
+          importFileInput.click?.();
+        },
+      },
+      [createSvgIcon('upload', { size: 12 }), importJsonBtnText]
+    );
+
+    const backupActionsWrap = h('div', { className: 'settings-backup-actions' }, [
+      exportJsonBtn,
+      importJsonBtn,
+      importFileInput,
+    ]);
+
     const maintPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
@@ -488,32 +843,53 @@ export const SettingsOtherTab = defineComponent({
         h('div', { className: 'settings-action-info' }, [resetLabelEl, resetDescEl]),
         resetAllBtn,
       ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [backupLabelEl, backupDescEl]),
+        backupActionsWrap,
+      ]),
     ]);
+
+    const sessionMigrationCard = SessionMigrationCard({
+      onLayoutChange: () => {
+        getProps()?.onLayoutChange?.();
+      },
+    });
 
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       modelPanel,
+      experimentalPanel,
       baselinePanel,
       maintPanel,
+      sessionMigrationCard.el,
     ]);
 
     function renderSettings(
       settings,
       models = contextWindowModels,
       windowBridge = latestWindowBridge,
-      hostPlatform = latestHostPlatform
+      hostPlatform = latestHostPlatform,
+      cloudCodeProxy = latestCloudCodeProxy
     ) {
       if (!settings) return;
       latestSettings = settings;
       contextWindowModels = models;
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
+      if (cloudCodeProxy !== undefined) latestCloudCodeProxy = cloudCodeProxy;
       draftModelDisplayMode = normalizeClientModelDisplayMode(
         settings.modelDisplayMode,
         settings.showUpstreamModel
       );
       draftOrchestratorIdMode = normalizeClientOrchestratorIdMode(settings.orchestratorIdMode);
+      draftExperimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
+        settings.experimentalQuotaReservation
+      );
       if (!acceptingContextRisk) {
         draftContextRiskAccepted = Boolean(settings.contextWindowRiskAccepted);
+      }
+      if (!savingContextScope) {
+        draftContextMainEnabled = settings.contextWindowMainEnabled !== false;
+        draftContextSwarmEnabled = settings.contextWindowSwarmEnabled === true;
       }
       stepModelSelect.setProps({
         modelValue: draftModelDisplayMode,
@@ -523,16 +899,34 @@ export const SettingsOtherTab = defineComponent({
         modelValue: draftOrchestratorIdMode,
         options: getOrchestratorIdDisplayOptions(),
       });
+      quotaReserveToggle.setProps({
+        modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
+      });
       renderContextWindows();
+      void sessionMigrationCard.refs.ensureLoaded();
     }
 
     function refreshLabels() {
       patchText(modelCardTitleEl, t('settings.oth.modelTitle'));
       patchText(modelFormatLabelEl, t('settings.oth.modelFormat'));
       patchText(orchFormatLabelEl, t('settings.oth.orchFormat'));
+      patchText(expTitleEl, t('settings.oth.expTitle'));
+      patchText(quotaReserveLabelEl, t('settings.oth.quotaReserveLabel'));
+      patchText(quotaReserveBadgeEl, t('settings.oth.expBadge'));
+      patchText(quotaReserveDescEl, t('settings.oth.quotaReserveDesc'));
+      patchText(quotaReserveLogLabelEl, t('settings.oth.quotaReserveLogLabel'));
+      patchText(quotaReserveLogDescEl, t('settings.oth.quotaReserveLogDesc'));
+      patchText(exportReserveLogBtnText, t('settings.oth.exportReserveLogBtn'));
+      quotaReserveToggle.setProps({
+        modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
+      });
       patchText(baselineTitleEl, t('settings.oth.baselineTitle'));
       renderContextWindows();
       patchText(maintTitleEl, t('settings.oth.maintTitle'));
+      patchText(backupLabelEl, t('settings.oth.backupLabel'));
+      patchText(backupDescEl, t('settings.oth.backupDesc'));
+      patchText(exportJsonBtnText, t('settings.oth.exportJsonBtn'));
+      patchText(importJsonBtnText, t('settings.oth.importJsonBtn'));
       patchText(cacheLabelEl, t('settings.oth.cacheLabel'));
       patchText(cacheDescEl, t('settings.oth.cacheDesc'));
       patchText(resetLabelEl, t('settings.oth.resetLabel'));
@@ -556,17 +950,23 @@ export const SettingsOtherTab = defineComponent({
         modelValue: draftOrchestratorIdMode,
         options: getOrchestratorIdDisplayOptions(),
       });
+      sessionMigrationCard.refs.refreshLabels();
     }
 
     onCleanup(() => {
       if (modelTimer) clearTimeout(modelTimer);
+      if (expTimer) clearTimeout(expTimer);
       if (maintTimer) clearTimeout(maintTimer);
       if (resetConfirmTimer) clearTimeout(resetConfirmTimer);
       stepModelSelect.destroy();
       orchestratorIdSelect.destroy();
+      quotaReserveToggle.destroy();
       ctxBridgeNotice.destroy();
+      ctxMainToggle.destroy();
+      ctxSwarmToggle.destroy();
       ctxModelSelect.destroy();
       ctxWindowSelect.destroy();
+      sessionMigrationCard.destroy();
     });
 
     return {
@@ -574,11 +974,20 @@ export const SettingsOtherTab = defineComponent({
       refs: {
         stepModelSelect,
         orchestratorIdSelect,
+        quotaReserveToggle,
+        exportReserveLogBtn,
         ctxBridgeNotice,
+        ctxMainToggle,
+        ctxSwarmToggle,
         ctxModelSelect,
         ctxWindowSelect,
+        sessionMigrationCard,
         rebuildCacheBtn,
         resetAllBtn,
+        exportJsonBtn,
+        importJsonBtn,
+        importFileInput,
+        applyImportedSettingsText,
         renderSettings,
         refreshLabels,
       },

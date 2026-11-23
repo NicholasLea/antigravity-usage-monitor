@@ -2,7 +2,7 @@
 'use strict';
 
 // --- shared/settings-normalization.mjs ---
-const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, normalizeExperimentalModernUi } = (() => {
+const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi } = (() => {
 /**
  * @fileoverview 前后端与 CLI 共用的偏好设置枚举常量、默认值与无状态纯函数归一化规则。
  */
@@ -33,6 +33,7 @@ const TOPBAR_SLOT_KEYS = Object.freeze([
   'quota_auto',
   'gemini_5h',
   'gemini_weekly',
+  'argon_weekly',
   'claude_5h',
   'claude_weekly',
 ]);
@@ -40,6 +41,21 @@ const TOPBAR_SLOT_KEYS = Object.freeze([
 const DEFAULT_TOPBAR_SLOTS = Object.freeze(['tps', 'ttft', 'context']);
 const MIN_TOPBAR_SLOTS = 1;
 const MAX_TOPBAR_SLOTS = 5;
+
+const DEFAULT_CLI_STATUSLINE_SLOTS = Object.freeze([
+  'tps',
+  'ttft',
+  'session_cost',
+  'quota_auto',
+  'context',
+]);
+const MIN_CLI_STATUSLINE_SLOTS = 1;
+const MAX_CLI_STATUSLINE_SLOTS = 6;
+const CLI_STATUSLINE_PRESETS = Object.freeze({
+  compact: Object.freeze(['tps', 'ttft', 'context']),
+  balanced: DEFAULT_CLI_STATUSLINE_SLOTS,
+  full: Object.freeze(['tps', 'ttft', 'cache_hit', 'session_cost', 'quota_auto', 'context']),
+});
 
 const OVERVIEW_MODULE_KEYS = Object.freeze([
   'metrics',
@@ -342,6 +358,69 @@ function normalizeTopbarCapsuleSlots(raw) {
 }
 
 /**
+ * 归一化 CLI 底部状态栏独立槽位配置（`null` 表示自动跟随宽屏默认或自定义顶栏槽位；
+ * 支持预设名 `compact` / `balanced` / `full`、逗号分隔列表或数组，保留 1~6 个去重合法槽位）。
+ *
+ * @param {unknown} raw
+ * @returns {string[]|null}
+ */
+function normalizeCliStatusLineSlots(raw) {
+  if (raw === undefined || raw === null) return null;
+  let items = null;
+  if (typeof raw === 'string') {
+    const clean = raw.trim();
+    const lower = clean.toLowerCase();
+    if (!clean || lower === 'auto' || lower === 'default') {
+      return null;
+    }
+    if (Object.prototype.hasOwnProperty.call(CLI_STATUSLINE_PRESETS, lower)) {
+      return [...CLI_STATUSLINE_PRESETS[lower]];
+    }
+    items = clean.split(/[\s,|:]+/);
+  } else if (Array.isArray(raw)) {
+    items = raw;
+  } else {
+    return null;
+  }
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    const val = String(item ?? '').trim();
+    if (!val || val === 'none') continue;
+    const mapped = val === 'step_cost' ? 'cost' : val;
+    if (!TOPBAR_SLOT_KEYS.includes(mapped) || seen.has(mapped)) continue;
+    seen.add(mapped);
+    out.push(mapped);
+    if (out.length >= MAX_CLI_STATUSLINE_SLOTS) break;
+  }
+  return out.length >= MIN_CLI_STATUSLINE_SLOTS ? out : null;
+}
+
+/**
+ * 解析当前生效的 CLI 底栏槽位列表：
+ * 1. 若用户显式设置了 `cliStatusLineSlots`，优先使用；
+ * 2. 若用户自定义了非默认 `topbarCapsuleSlots`，沿用其自定义顺序保持兼容；
+ * 3. 否则采用面向宽终端的 5 槽默认组合（速度 / 首字 / 费用 / 配额 / 上下文）。
+ *
+ * @param {object|null|undefined} settings
+ * @returns {string[]}
+ */
+function resolveEffectiveCliStatusLineSlots(settings) {
+  const customCli = normalizeCliStatusLineSlots(settings?.cliStatusLineSlots);
+  if (customCli && customCli.length > 0) {
+    return customCli;
+  }
+  const topbar = normalizeTopbarCapsuleSlots(settings?.topbarCapsuleSlots);
+  const isDefaultTopbar =
+    topbar.length === DEFAULT_TOPBAR_SLOTS.length &&
+    topbar.every((k, i) => k === DEFAULT_TOPBAR_SLOTS[i]);
+  if (!isDefaultTopbar) {
+    return topbar;
+  }
+  return [...DEFAULT_CLI_STATUSLINE_SLOTS];
+}
+
+/**
  * 归一化实时监控第一行指标矩阵的槽位与顺序（1~4 项，默认 4 项）。
  *
  * @param {unknown} raw
@@ -469,6 +548,37 @@ function normalizeModernUi(val) {
   return Boolean(val);
 }
 
+const CONTEXT_AGENT_MODES = Object.freeze(['main', 'auto']);
+const DEFAULT_CONTEXT_AGENT_MODE = 'main';
+
+/**
+ * 归一化顶栏胶囊及悬停速览浮窗的上下文代理来源（默认 `'main'` 锁定主代理，可选 `'auto'` 跟随活跃）。
+ *
+ * @param {unknown} raw
+ * @returns {'main'|'auto'}
+ */
+function normalizeContextAgentMode(raw) {
+  const val = String(raw || '').trim().toLowerCase();
+  return val === 'auto' ? 'auto' : 'main';
+}
+
+/**
+ * 归一化配额预占估算开关（默认 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+function normalizeExperimentalQuotaReservation(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
+  }
+  return Boolean(val);
+}
+
 /**
  * 归一化旧版实验性新 UI 字段（保留兼容，缺省返回 `false`）。
  *
@@ -482,11 +592,11 @@ function normalizeExperimentalModernUi(val) {
   }
   return Boolean(val);
 }
-return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, normalizeExperimentalModernUi };
+return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi };
 })();
 
 // --- shared/telemetry-display-rules.mjs ---
-const { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyCacheTier, classifyStepCostTier, classifyTtftTier, formatCompactTokens, formatCompactCapsuleCost, formatCompactCapsuleTtft, resolveCapsuleQuotaSlotPct, scaleBucketsExact } = (() => {
+const { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyCacheTier, classifyStepCostTier, classifyTtftTier, formatCompactTokens, formatCompactCapsuleCost, formatCompactCapsuleTtft, hasArgonWeeklyQuotaPool, resolveCapsuleQuotaSlotPct, scaleBucketsExact } = (() => {
 /**
  * @fileoverview 跨 Backend / Frontend / CLI 共用的纯展示阈值、紧凑格式化、第三方配额分池与精确整数缩放规则。
  */
@@ -585,8 +695,40 @@ function formatCompactCapsuleTtft(ttftSec) {
   return `${Math.round(val)}s`;
 }
 
+function readPoolWeeklyRemainingPct(pool) {
+  if (!pool || typeof pool !== 'object') return null;
+  const raw = pool.weeklyRemainingPct ?? pool.remainingWeeklyPct;
+  return raw != null && Number.isFinite(Number(raw)) ? Number(raw) : null;
+}
+
+function isArgonPoolObject(pool) {
+  if (!pool || typeof pool !== 'object') return false;
+  if (pool.poolKey === 'Argon' || pool.family === 'Argon') return true;
+  return /\bargon\b/i.test(String(pool.poolKey || pool.poolLabel || pool.family || ''));
+}
+
 /**
- * 解析胶囊指定配额槽位（`quota_auto` / `gemini_5h` / `gemini_weekly` / `claude_5h` / `claude_weekly`）的整数剩余百分比。
+ * 判断当前配额摘要中是否存在独立的 Argon 周限配额池（如 Google AI Pro 账号）。
+ *
+ * @param {object|null|undefined} quotas
+ * @returns {boolean}
+ */
+function hasArgonWeeklyQuotaPool(quotas) {
+  if (!quotas || typeof quotas !== 'object') return false;
+  const pools = Array.isArray(quotas.pools) ? quotas.pools : [];
+  const argonPool = pools.find(isArgonPoolObject);
+  if (argonPool && readPoolWeeklyRemainingPct(argonPool) != null) {
+    return true;
+  }
+  const activePool = quotas.activePool;
+  if (activePool && isArgonPoolObject(activePool) && readPoolWeeklyRemainingPct(activePool) != null) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 解析胶囊指定配额槽位（`quota_auto` / `gemini_5h` / `gemini_weekly` / `argon_weekly` / `claude_5h` / `claude_weekly`）的整数剩余百分比。
  *
  * @param {object|null|undefined} quotas
  * @param {string} slotKey
@@ -603,8 +745,9 @@ function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     if (activePool && Number.isFinite(Number(activePool.remainingPct))) {
       candidates.push(Number(activePool.remainingPct));
     }
-    if (activePool && Number.isFinite(Number(activePool.weeklyRemainingPct))) {
-      candidates.push(Number(activePool.weeklyRemainingPct));
+    const activeWk = readPoolWeeklyRemainingPct(activePool);
+    if (activeWk != null) {
+      candidates.push(activeWk);
     }
     if (!candidates.length && weekly && Number.isFinite(Number(weekly.remainingPct))) {
       candidates.push(Number(weekly.remainingPct));
@@ -612,13 +755,22 @@ function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     if (!candidates.length && pools.length > 0) {
       for (const p of pools) {
         if (p && Number.isFinite(Number(p.remainingPct))) candidates.push(Number(p.remainingPct));
-        if (p && Number.isFinite(Number(p.weeklyRemainingPct))) {
-          candidates.push(Number(p.weeklyRemainingPct));
-        }
+        const pWk = readPoolWeeklyRemainingPct(p);
+        if (pWk != null) candidates.push(pWk);
       }
     }
     if (!candidates.length) return null;
     return Math.max(0, Math.min(100, Math.round(Math.min(...candidates))));
+  }
+
+  if (slotKey === 'argon_weekly') {
+    const argonPool = pools.find(isArgonPoolObject);
+    let argonPct = readPoolWeeklyRemainingPct(argonPool);
+    if (argonPct == null && isArgonPoolObject(activePool)) {
+      argonPct = readPoolWeeklyRemainingPct(activePool);
+    }
+    if (argonPct == null || !Number.isFinite(argonPct)) return null;
+    return Math.max(0, Math.min(100, Math.round(argonPct)));
   }
 
   const isClaude = slotKey.startsWith('claude_');
@@ -629,11 +781,11 @@ function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     const claudePool =
       pools.find((p) => p?.poolKey === 'Claude & GPT') ||
       pools.find((p) => isThirdPartyPoolText(p?.poolKey || p?.poolLabel || ''));
-    const cand = isWeekly ? claudePool?.weeklyRemainingPct : claudePool?.remainingPct;
+    const cand = isWeekly ? readPoolWeeklyRemainingPct(claudePool) : claudePool?.remainingPct;
     if (cand != null && Number.isFinite(Number(cand))) {
       rawPct = Number(cand);
     } else if (activePool && isThirdPartyPoolText(activePool.family || activePool.poolLabel || '')) {
-      const fb = isWeekly ? activePool.weeklyRemainingPct : activePool.remainingPct;
+      const fb = isWeekly ? readPoolWeeklyRemainingPct(activePool) : activePool.remainingPct;
       if (fb != null && Number.isFinite(Number(fb))) rawPct = Number(fb);
     }
   } else {
@@ -647,12 +799,12 @@ function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
     const geminiFamilyPools = pools.filter((p) =>
       /gemini|carbon|argon/i.test(String(p?.poolKey || p?.poolLabel || ''))
     );
-    const primaryCand = isWeekly ? stdGemini?.weeklyRemainingPct : stdGemini?.remainingPct;
+    const primaryCand = isWeekly ? readPoolWeeklyRemainingPct(stdGemini) : stdGemini?.remainingPct;
     if (primaryCand != null && Number.isFinite(Number(primaryCand))) {
       rawPct = Number(primaryCand);
     } else {
       const familyVals = geminiFamilyPools
-        .map((p) => (isWeekly ? p?.weeklyRemainingPct : p?.remainingPct))
+        .map((p) => (isWeekly ? readPoolWeeklyRemainingPct(p) : p?.remainingPct))
         .filter((v) => v != null && Number.isFinite(Number(v)))
         .map(Number);
       if (familyVals.length > 0) {
@@ -661,7 +813,7 @@ function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
         activePool &&
         !isThirdPartyPoolText(activePool.family || activePool.poolLabel || '')
       ) {
-        const fb = isWeekly ? activePool.weeklyRemainingPct : activePool.remainingPct;
+        const fb = isWeekly ? readPoolWeeklyRemainingPct(activePool) : activePool.remainingPct;
         if (fb != null && Number.isFinite(Number(fb))) rawPct = Number(fb);
       }
       if (
@@ -730,7 +882,7 @@ function scaleBucketsExact(buckets, keys, targetTotal) {
   }
   return out;
 }
-return { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyCacheTier, classifyStepCostTier, classifyTtftTier, formatCompactTokens, formatCompactCapsuleCost, formatCompactCapsuleTtft, resolveCapsuleQuotaSlotPct, scaleBucketsExact };
+return { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyCacheTier, classifyStepCostTier, classifyTtftTier, formatCompactTokens, formatCompactCapsuleCost, formatCompactCapsuleTtft, hasArgonWeeklyQuotaPool, resolveCapsuleQuotaSlotPct, scaleBucketsExact };
 })();
 
 // --- shared/window-bridge-protocol.mjs ---
@@ -765,6 +917,23 @@ const BRIDGE_API_ROUTE_DEFS = Object.freeze([
   Object.freeze({ path: '/api/cloud-sync', method: 'POST', action: 'cloud_sync' }),
   Object.freeze({ path: '/api/plugin-update', method: 'POST', action: 'plugin_update' }),
   Object.freeze({ path: '/api/bridge/relaunch', method: 'POST', action: 'bridge_relaunch' }),
+  Object.freeze({
+    path: '/api/session-migration/catalog',
+    method: 'GET',
+    action: 'session_migration_catalog',
+  }),
+  Object.freeze({
+    path: '/api/session-migration/migrate',
+    method: 'POST',
+    action: 'session_migration_migrate',
+  }),
+  Object.freeze({ path: '/api/export-file', method: 'POST', action: 'export_file' }),
+  Object.freeze({ path: '/api/reveal-file', method: 'POST', action: 'reveal_file' }),
+  Object.freeze({
+    path: '/api/quota-reservation/log',
+    method: 'GET',
+    action: 'quota_reservation_log',
+  }),
 ]);
 
 const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path));
@@ -800,6 +969,11 @@ const SVG_ICON_DEFS = Object.freeze({
     { tag: 'path', attrs: { d: 'M8 2.2L1.8 13.2h12.4L8 2.2z' } },
     { tag: 'path', attrs: { d: 'M8 6.2v3.4' } },
     { tag: 'circle', attrs: { cx: '8', cy: '11.5', r: '0.6', fill: 'currentColor', stroke: 'none' } },
+  ],
+  'help-circle': [
+    { tag: 'circle', attrs: { cx: '8', cy: '8', r: '6' } },
+    { tag: 'path', attrs: { d: 'M6.2 6.3a1.9 1.9 0 0 1 3.6.7c0 1.15-1.8 1.35-1.8 2.5' } },
+    { tag: 'circle', attrs: { cx: '8', cy: '11.8', r: '0.65', fill: 'currentColor', stroke: 'none' } },
   ],
   'chevron-down': [
     { tag: 'path', attrs: { d: 'M4 6.2l4 4 4-4' } },
@@ -871,6 +1045,31 @@ const SVG_ICON_DEFS = Object.freeze({
   copy: [
     { tag: 'rect', attrs: { x: '5.2', y: '5.2', width: '8.3', height: '8.3', rx: '1.3' } },
     { tag: 'path', attrs: { d: 'M3.5 10.8H2.8a1.3 1.3 0 0 1-1.3-1.3V3.3A1.3 1.3 0 0 1 2.8 2h6.2a1.3 1.3 0 0 1 1.3 1.3v.7' } },
+  ],
+  search: [
+    { tag: 'circle', attrs: { cx: '7.2', cy: '7.2', r: '4.5' } },
+    { tag: 'path', attrs: { d: 'M10.6 10.6L14 14' } },
+  ],
+  download: [
+    { tag: 'path', attrs: { d: 'M8 2.4v7.6M5 7.2L8 10.2l3-3' } },
+    { tag: 'path', attrs: { d: 'M2.6 11.4v1.4a1 1 0 0 0 1 1h8.8a1 1 0 0 0 1-1v-1.4' } },
+  ],
+  upload: [
+    { tag: 'path', attrs: { d: 'M8 10.2V2.6M5 5.4L8 2.4l3 3' } },
+    { tag: 'path', attrs: { d: 'M2.6 11.4v1.4a1 1 0 0 0 1 1h8.8a1 1 0 0 0 1-1v-1.4' } },
+  ],
+  'more-vertical': [
+    { tag: 'circle', attrs: { cx: '8', cy: '3.6', r: '1.15', fill: 'currentColor', stroke: 'none' } },
+    { tag: 'circle', attrs: { cx: '8', cy: '8', r: '1.15', fill: 'currentColor', stroke: 'none' } },
+    { tag: 'circle', attrs: { cx: '8', cy: '12.4', r: '1.15', fill: 'currentColor', stroke: 'none' } },
+  ],
+  folder: [
+    {
+      tag: 'path',
+      attrs: {
+        d: 'M2.2 4.3a1.3 1.3 0 0 1 1.3-1.3h3l1.3 1.5h4.7a1.3 1.3 0 0 1 1.3 1.3v5.9a1.3 1.3 0 0 1-1.3 1.3H3.5a1.3 1.3 0 0 1-1.3-1.3V4.3z',
+      },
+    },
   ],
   grip: [
     { tag: 'circle', attrs: { cx: '6', cy: '4', r: '1.05', fill: 'currentColor', stroke: 'none' } },
@@ -1092,6 +1291,10 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.statusQuotaCached': '额度缓存',
   'header.statusQuotaOffline': '额度离线',
   'header.statusLive': '监控中',
+  'header.searchSessionPlaceholder': '搜索会话标题、项目或 ID…',
+  'select.searchPlaceholder': '输入关键词筛选…',
+  'select.noMatches': '没有匹配的选项',
+  'select.clearSearch': '清空搜索',
 
   // Formatters & Common Labels
   'fmt.pending': '待定',
@@ -1181,6 +1384,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'capMetric.quota_auto': '自动紧俏额度',
   'capMetric.gemini_5h': 'Gemini 5h 额度',
   'capMetric.gemini_weekly': 'Gemini 周额度',
+  'capMetric.argon_weekly': 'Argon 周额度',
   'capMetric.claude_5h': 'Claude 5h 额度',
   'capMetric.claude_weekly': 'Claude 周额度',
 
@@ -1238,6 +1442,13 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.loading': '读取中...',
   'quota.failed': '获取失败 (--%)',
   'quota.usedAndLeft': '{reset} · 已用 {used}% (余 {rem}%)',
+  'quota.usedBeforeReserved': '{reset} · 已用 {used}% (',
+  'quota.reservedTag': '预占 {rsv}%',
+  'quota.usedAfterReserved': ' · 余 {rem}%)',
+  'quota.reservedTip': '预占估算（试验性）：约 {rsv}%（实际已用约 {actual}%），静默约 10 分钟后未用差额自动退还',
+  'quota.reservedTipMulti': '预占估算（试验性）：约 {rsv}%（检测到 {leases} 笔叠加租约，实际已用约 {actual}%），静默约 10 分钟后未用差额自动退还',
+  'quota.legendActual': '实占',
+  'quota.legendReserved': '预占',
   'quota.cycle5hTitle': '当前 5h 周期累计 ({pool})：{tok} Tokens · {cost} · {calls} 次调用',
   'quota.cycleWkCustomTitle': '本周自然周累计：{tok} Tokens · {cost} · {calls} 次调用',
   'quota.cycleWkPoolTitle': '当前周限周期累计 ({pool})：{tok} Tokens · {cost} · {calls} 次调用',
@@ -1248,6 +1459,17 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.footCallsCycle': '周期调用: {calls} 次',
   'quota.footTipCustom': '按本机自然周（周一 00:00 起）统计',
   'quota.footTipCycle': '按各配额池独立周限重置周期分别统计并汇总',
+  'quota.rateHelpAria': '查看当前账号实测倍率预估',
+  'quota.ratePopTitle': '实测倍率预估',
+  'quota.ratePopAccountScope': '{account}',
+  'quota.ratePopAccountCurrent': '当前账号',
+  'quota.ratePopPoolFallback': '池综合均值',
+  'quota.ratePopEq5hLabel': '5h 满池',
+  'quota.ratePopEqWkLabel': '周限满池',
+  'quota.ratePopPerUsd': '{win} {rate}%/$',
+  'quota.ratePopSamples': '{n} 样本',
+  'quota.ratePopEmpty': '暂未采集到足够的单模型干净样本（每模型需至少 3 次无抖动扣费），正常使用后自动生成。',
+  'quota.ratePopNote': '按单模型纯净步实测折算，同池最省为 1x，按账号隔离。',
 
   // Live Activity Widget
   'live.currentSession': '当前会话',
@@ -1313,6 +1535,40 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.footOutput': '输出 ',
   'cons.footThinking': '思考 ',
   'cons.footCalls': '调用 ',
+  'cons.rankTabAria': '排行视图切换',
+  'cons.rankTabModelsCount': '模型排行 ({count})',
+  'cons.rankTabSessions': '会话排行',
+  'cons.rankTabSessionsCount': '会话排行 ({count})',
+  'cons.rankTabWorkspaces': '项目排行',
+  'cons.rankTabWorkspacesCount': '项目排行 ({count})',
+  'cons.workspaceUnbound': '未绑定工作区',
+  'cons.workspaceSessions': '{count} 会话',
+  'cons.workspaceJumpTip': '点击跳转到该项目最近会话',
+  'cons.exportMenuAria': '导出及报告选项',
+  'cons.exportXlsx': '导出 Excel (.xlsx)',
+  'cons.exportXlsxTip': '导出多工作表排版精美的 Excel 报表（自动列宽、千分位及对齐）',
+  'cons.exportCsv': '导出 CSV',
+  'cons.exportCsvTip': '导出当前统计区间用量明细为 CSV',
+  'cons.exportCsvDone': '已导出',
+  'cons.exportMd': '复制 Markdown 报告',
+  'cons.exportMdTip': '复制当前统计区间 Markdown 汇总报告',
+  'cons.exportMdDone': '已复制用量 Markdown 报告',
+  'cons.topConvsEmpty': '当前时间范围暂无会话消耗记录',
+  'cons.topConvsSortAria': '会话排行排序方式',
+  'cons.topConvsSortCost': '费用',
+  'cons.topConvsSortTokens': 'Token',
+  'cons.topConvCacheMeta': '缓存 {pct}%',
+  'cons.topConvJumpTip': '点击跳转到该会话调用记录',
+  'cons.modelsSortAria': '模型排行排序方式',
+  'cons.modelsSortTokens': 'Token',
+  'cons.modelsSortCost': '费用',
+  'cons.modelsSortSpeed': '均速',
+  'cons.modelsSortCalls': '调用',
+  'cons.modelUnitCost': '均价 {cost}/1M',
+  'cons.speedRelTip': '相对本时段最快模型的均速比例',
+  'cons.focusTtft': '首字 {ttft}',
+  'cons.focusSpeedMeta': '首字 {ttft} · 缓存 {cache}% · 输出 {out}',
+  'cons.focusCallsMeta': '单次均耗 {avgTok} · 费用 {cost}',
 
   // Steps Detail View & Step Column Registry
   'steps.title': '调用记录',
@@ -1389,6 +1645,17 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.compactionSummaryRow': '输入 {input} → 摘要输出 {output}',
   'steps.compactionDetailHint': '系统自动触发的上下文压缩步骤，用于折叠历史对话以释放窗口空间',
   'steps.compactionAnomalyHint': '该步骤同时为系统自动压缩步骤',
+  'steps.timingStepTitle': '#{step} · 耗时拆解',
+  'steps.timingTotalSub': '总计 {sec}',
+  'steps.timingTtftLabel': '首字等待 (TTFT)',
+  'steps.timingStreamLabel': '流式返回',
+  'steps.timingAfterTtftLabel': '首字后耗时',
+  'steps.timingThinkLabel': '原生思考计时',
+  'steps.timingTotalLabel': '端到端总耗时',
+  'steps.timingOverlapHint': '原生思考计时可能重叠首字或流式阶段，不可直接相加',
+  'steps.timingToolBufferedHint': '含工具调用，缓冲返回时流式耗时较短',
+  'steps.timingAnomalyHint': '含 {count} 次异常',
+  'steps.timingAnomalyDelayHint': '含 {count} 次异常 · 退避 {sec}s',
   'steps.anomalyTerminalTag': '中止',
   'steps.anomalyModelTitle': '{model} · 异常 {count} 次',
   'steps.anomalyModelSub': '涉及 {steps} 步',
@@ -1397,6 +1664,36 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.anomalySummaryMeta': '异常 {count} 次（{steps} 步）',
   'steps.anomalyFilterLabel': '仅看异常 ({count})',
   'steps.anomalyFilterAll': '返回全部步骤',
+  'steps.sortClickTip': '点击按「{col}」排序',
+  'steps.searchPlaceholder': '搜索 #步号、模型、提问或异常...',
+  'steps.searchClearAria': '清空步骤搜索',
+  'steps.chipAnomaly': '异常 {count}',
+  'steps.chipCompaction': '压缩 {count}',
+  'steps.chipLowCache': '低缓存 {count}',
+  'steps.chipLowCacheTip': '筛选缓存命中率低于 50% 的步骤',
+  'steps.chipSlowTtft': '慢首字 {count}',
+  'steps.chipSlowTtftTip': '筛选首字延迟 >= 30s 的严重卡顿步骤',
+  'steps.exportMenuAria': '导出及报告选项',
+  'steps.exportXlsx': '导出 Excel (.xlsx)',
+  'steps.exportXlsxTip': '导出排版精美的步骤明细及模型汇总 Excel 报表',
+  'steps.exportCsv': '导出 CSV',
+  'steps.exportCsvTip': '导出当前步骤明细为 CSV 文件',
+  'steps.exportCsvDone': '已导出',
+  'steps.exportMd': '复制 Markdown 报告',
+  'steps.exportMdTip': '复制当前步骤 Markdown 诊断报告',
+  'steps.exportMdDone': '已复制步骤 Markdown 报告',
+
+  // Export & Toast Feedback
+  'export.savedLocal': '已导出 {file}',
+  'export.savedPicked': '已保存 {file}',
+  'export.savedBrowser': '已下载 {file}',
+  'export.savedBrowserHint': '文件已交给浏览器默认下载目录',
+  'export.openFolder': '打开位置',
+  'export.failed': '导出失败，请稍后重试',
+  'export.hostUnavailable': '本机导出通道暂未就绪，请重启 Antigravity 后重试',
+  'export.copied': '已复制到剪贴板',
+  'export.copyFailed': '复制失败，请检查剪贴板权限',
+  'export.closeToast': '关闭提示',
 
   // Step Table Columns (Headers & Option Labels)
   'stepCol.step.th': '步序',
@@ -1582,7 +1879,20 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.popoverWidthCustom': '指定宽度',
   'settings.str.popoverWidthHint': '自适应模式下在调用明细等宽表格视图自动撑宽免水平滚动；指定宽度范围 440~1080 px',
   'settings.str.multiToggle': '实时运行会话入口',
+  'settings.str.contextAgentModeLabel': '胶囊及悬浮上下文',
+  'settings.str.contextAgentMain': '锁定主代理',
+  'settings.str.contextAgentAuto': '跟随活跃',
   'settings.str.cliCapsuleToggle': 'CLI 底部状态胶囊',
+  'settings.str.cliSlotsLabel': 'CLI 槽位顺序 (左 → 右，1~6 项，可拖拽)',
+  'settings.str.addCliSlot': '添加 CLI 槽位 ({count}/{max})',
+  'settings.str.cliCustomCmdHint': '检测到自定义 statusLine 命令，为避免误覆盖默认不会自动改写',
+  'settings.str.cliPausedHint': 'CLI 端当前已暂停或未写入 statusLine 配置',
+  'settings.str.cliFlagsOverrideHint': '检测到 CLI 启动参数包含显式槽位覆盖，命令行参数将优先于此处配置',
+  'settings.str.cliRestoreBtn': '一键接管并恢复',
+  'settings.str.cliEnableBtn': '重新写入并启用',
+  'settings.str.cliClearFlagsBtn': '清除命令行覆盖',
+  'settings.str.cliRestoringBtn': '正在写入...',
+  'settings.str.cliPreviewRunning': '{count} 运行中',
   'settings.str.show': '显示',
   'settings.str.hide': '隐藏',
   'settings.str.on': '开启',
@@ -1607,6 +1917,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.stepTurnRailToggle': '对话轮次导轨',
   'settings.str.stepAgentBadgeToggle': '主/子代理标识',
   'settings.str.stepSpeedColorToggle': '输出速度多色分级',
+  'settings.str.stepFilterToolbarToggle': '搜索及诊断筛选栏',
   'settings.str.stepTokenComboLabel': '自定义 Token 组合格式',
   'settings.str.stepTokenComboPlaceholder': '例如 context:new:cache 或 in:out:cache',
   'settings.str.stepTokenComboHint': '可用字段：context(上下文)、in/new(新输入)、out(输出)、cache(缓存)、think(思考)、reply(正文)、total(总计)，以 : 或 / 分隔（1~4 项）',
@@ -1632,11 +1943,24 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.orchFormat': 'Orchestrator 系列 ID',
   'settings.oth.orchCompact': '精简代号 (如 orchestrator-argon)',
   'settings.oth.orchFull': '原始完整 ID (如 gemini-pro-orchestrator)',
+  'settings.oth.expTitle': '试验性功能',
+  'settings.oth.expBadge': '试验性',
+  'settings.oth.quotaReserveLabel': '配额预占估算',
+  'settings.oth.quotaReserveDesc': '在可用额度中估算 5h / 周限的 0.5% / 1% 租约预占，并用紫色标注占比及进度条段',
+  'settings.oth.quotaReserveLogLabel': '预占观测日志',
+  'settings.oth.quotaReserveLogDesc': '将配额跳变及退还观测记录复制到剪贴板，重启后自动保留，便于分析触发阈值',
+  'settings.oth.exportReserveLogBtn': '导出预占日志',
+  'settings.oth.exportReserveLogCopied': '已复制 {count} 条观测日志到剪贴板',
+  'settings.oth.exportReserveLogEmpty': '暂无跳变记录，已复制当前摘要到剪贴板',
+  'settings.oth.exportReserveLogFailed': '获取或复制预占日志失败',
   'settings.oth.baselineTitle': '模型上下文设置',
   'settings.oth.ctxRiskTitle': '非官方能力风险提示',
   'settings.oth.ctxRiskBody': 'Google 官方并未授权在 Antigravity App / IDE 中修改模型上下文上限。擅自修改可能导致 Antigravity 或 GCP 服务被禁用，甚至触发账号封禁；启用该功能即默认由你自行承担全部风险。你最好清楚自己在做什么！',
   'settings.oth.ctxRiskAcceptBtn': '我已知晓风险，继续使用',
   'settings.oth.ctxModel': '模型',
+  'settings.oth.ctxMainLabel': '主代理',
+  'settings.oth.ctxSwarmLabel': '子代理与蜂群',
+  'settings.oth.ctxSwarmError': '本地同步异常：{error}',
   'settings.oth.ctxBaselineLabel': '上下文窗口上限',
   'settings.oth.ctxChooseModel': '选择模型',
   'settings.oth.ctxDefault': '跟随宿主设置',
@@ -1666,6 +1990,48 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.resetConfirmBtn': '再次点击确认重置',
   'settings.oth.resettingBtn': '重置中…',
   'settings.oth.resetAllDone': '已恢复全部默认设置',
+  'settings.oth.backupLabel': '配置备份及恢复',
+  'settings.oth.backupDesc': '导出或导入外观、胶囊、列配置等便携偏好 JSON',
+  'settings.oth.exportJsonBtn': '导出 JSON',
+  'settings.oth.importJsonBtn': '导入 JSON',
+  'settings.oth.exportDone': '配置 JSON 已导出',
+  'settings.oth.importDone': '已恢复 {count} 项偏好设置',
+  'settings.oth.importInvalid': '导入失败：JSON 无效或未包含可识别的偏好项',
+  'settings.oth.migTitle': '跨端会话迁移',
+  'settings.oth.migDesc': '按需把选定会话迁往另一端，迁移前自动备份摘要库和源库',
+  'settings.oth.migRefreshBtn': '刷新列表',
+  'settings.oth.migSourceLabel': '来源端',
+  'settings.oth.migTargetLabel': '目标端',
+  'settings.oth.migModeLabel': '迁移方式',
+  'settings.oth.migModeMove': '完整迁移（推荐）',
+  'settings.oth.migModeClone': '克隆副本',
+  'settings.oth.migModeMoveHint': '分配目标端独立会话 ID 并完整保留全部历史步序明细，备份后移出源端',
+  'settings.oth.migModeCloneHint': '保留源会话并生成新 ID，新副本仅统计迁入后的新步骤',
+  'settings.oth.migProjectLabel': '绑定目标项目',
+  'settings.oth.migProjectOutside': '独立会话（无所属项目）',
+  'settings.oth.migClientDesktop': '桌面端 App / 新版 IDE',
+  'settings.oth.migClientCli': 'Antigravity CLI',
+  'settings.oth.migClientIdeLegacy': '旧版 IDE (.db)',
+  'settings.oth.migSearchPlaceholder': '按标题或工作区筛选会话…',
+  'settings.oth.migSelectAll': '全选',
+  'settings.oth.migClearSel': '清空',
+  'settings.oth.migSelectedCount': '已选 {selected} / {total}',
+  'settings.oth.migRunningTag': '运行中',
+  'settings.oth.migStepsUnit': '{count} 步',
+  'settings.oth.migEmpty': '当前来源端暂无可迁移会话',
+  'settings.oth.migNoMatch': '没有匹配的会话',
+  'settings.oth.migActionBtn': '迁移选定会话 ({count})',
+  'settings.oth.migRunningBtn': '迁移中…',
+  'settings.oth.migDoneDesktop': '已成功迁移 {count} 条会话到「{project}」，在桌面端按 Ctrl+R 即可在左侧看到',
+  'settings.oth.migDoneCli': '已成功迁移 {count} 条会话到 CLI，可使用下方命令恢复对话',
+  'settings.oth.migPartialWarn': '（另有 {failed} 条跳过或失败）',
+  'settings.oth.migReloadBtn': '刷新窗口',
+  'settings.oth.migCopyCmd': '复制命令',
+  'settings.oth.migCopied': '已复制',
+  'settings.oth.migErrLocked': '源会话文件正被原端占用，请先关闭对应终端/窗口后重试，或切换为「克隆副本」',
+  'settings.oth.migErrExists': '目标端已存在同 ID 会话，无需重复移动（可切换为「克隆副本」）',
+  'settings.oth.migErrRunning': '该会话正在运行中，请待空闲后再迁移',
+  'settings.oth.migFailed': '迁移失败：{reason}',
 
   // Structured Live Activity Actions
   'live.act.run_command': '执行命令',
@@ -1761,6 +2127,21 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'chart.trend.hmActivePeak': '活跃 {active}/{total} 天 · 峰值 {label} · {tokens}',
   'chart.trend.hmActiveZero': '活跃 0/{total} 天',
   'chart.trend.peakPill': '峰值 {label} · {tokens}',
+
+  // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
+  'ui.dt.wdayMon': '一',
+  'ui.dt.wdayTue': '二',
+  'ui.dt.wdayWed': '三',
+  'ui.dt.wdayThu': '四',
+  'ui.dt.wdayFri': '五',
+  'ui.dt.wdaySat': '六',
+  'ui.dt.wdaySun': '日',
+  'ui.dt.prevMonth': '上个月',
+  'ui.dt.nextMonth': '下个月',
+  'ui.dt.hourMinute': '时 / 分',
+  'ui.num.decrease': '减少数值',
+  'ui.num.increase': '增加数值',
+  'ui.seg.defaultAria': '分段切换器',
 });
 return { I18N_MESSAGES_ZH_CN };
 })();
@@ -1801,6 +2182,10 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'header.statusQuotaCached': 'Quota Cached',
   'header.statusQuotaOffline': 'Quota Offline',
   'header.statusLive': 'Monitoring',
+  'header.searchSessionPlaceholder': 'Search sessions, projects, or ID…',
+  'select.searchPlaceholder': 'Filter options…',
+  'select.noMatches': 'No matching items',
+  'select.clearSearch': 'Clear search',
 
   // Formatters & Common Labels
   'fmt.pending': 'N/A',
@@ -1890,6 +2275,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'capMetric.quota_auto': 'Auto Tightest Quota',
   'capMetric.gemini_5h': 'Gemini 5h Quota',
   'capMetric.gemini_weekly': 'Gemini Weekly Quota',
+  'capMetric.argon_weekly': 'Argon Weekly Quota',
   'capMetric.claude_5h': 'Claude 5h Quota',
   'capMetric.claude_weekly': 'Claude Weekly Quota',
 
@@ -1947,6 +2333,13 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.loading': 'Loading...',
   'quota.failed': 'Unavailable (--%)',
   'quota.usedAndLeft': '{reset} · Used {used}% ({rem}% left)',
+  'quota.usedBeforeReserved': '{reset} · Used {used}% (',
+  'quota.reservedTag': '{rsv}% rsv',
+  'quota.usedAfterReserved': ' · {rem}% left)',
+  'quota.reservedTip': 'Estimated lease reservation (Experimental): ~{rsv}% (~{actual}% actual used); unused share refunds after ~10 min idle',
+  'quota.reservedTipMulti': 'Estimated lease reservation (Experimental): ~{rsv}% ({leases} stacked leases, ~{actual}% actual used); unused share refunds after ~10 min idle',
+  'quota.legendActual': 'Actual',
+  'quota.legendReserved': 'Reserved',
   'quota.cycle5hTitle': 'Current 5h cycle ({pool}): {tok} Tokens · {cost} · {calls} calls',
   'quota.cycleWkCustomTitle': 'Current calendar week: {tok} Tokens · {cost} · {calls} calls',
   'quota.cycleWkPoolTitle': 'Current weekly cycle ({pool}): {tok} Tokens · {cost} · {calls} calls',
@@ -1957,6 +2350,17 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.footCallsCycle': 'Cycle Calls: {calls}',
   'quota.footTipCustom': 'Counted since Monday 00:00 local time',
   'quota.footTipCycle': 'Summed across each quota pool weekly reset window',
+  'quota.rateHelpAria': 'View empirical burn-rate estimates for this account',
+  'quota.ratePopTitle': 'Estimated Burn Rates',
+  'quota.ratePopAccountScope': '{account}',
+  'quota.ratePopAccountCurrent': 'Current account',
+  'quota.ratePopPoolFallback': 'Pool average',
+  'quota.ratePopEq5hLabel': '5h full',
+  'quota.ratePopEqWkLabel': 'Weekly full',
+  'quota.ratePopPerUsd': '{win} {rate}%/$',
+  'quota.ratePopSamples': '{n} samples',
+  'quota.ratePopEmpty': 'Not enough clean single-model samples yet (at least 3 clean steps per model). Estimates appear automatically during use.',
+  'quota.ratePopNote': 'Measured from clean single-model steps; lowest burn in pool = 1x. Account isolated.',
 
   // Live Activity Widget
   'live.currentSession': 'Current Session',
@@ -2022,6 +2426,40 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.footOutput': 'Out ',
   'cons.footThinking': 'Think ',
   'cons.footCalls': 'Calls ',
+  'cons.rankTabAria': 'Switch ranking view',
+  'cons.rankTabModelsCount': 'Models ({count})',
+  'cons.rankTabSessions': 'Sessions',
+  'cons.rankTabSessionsCount': 'Sessions ({count})',
+  'cons.rankTabWorkspaces': 'Projects',
+  'cons.rankTabWorkspacesCount': 'Projects ({count})',
+  'cons.workspaceUnbound': 'Unbound Workspace',
+  'cons.workspaceSessions': '{count} sessions',
+  'cons.workspaceJumpTip': 'Click to inspect latest session in this project',
+  'cons.exportMenuAria': 'Export and report actions',
+  'cons.exportXlsx': 'Export Excel (.xlsx)',
+  'cons.exportXlsxTip': 'Export styled multi-sheet Excel workbook with auto column width and alignment',
+  'cons.exportCsv': 'Export CSV',
+  'cons.exportCsvTip': 'Export current usage range as CSV',
+  'cons.exportCsvDone': 'Exported',
+  'cons.exportMd': 'Copy Markdown Report',
+  'cons.exportMdTip': 'Copy Markdown summary report for current range',
+  'cons.exportMdDone': 'Usage Markdown report copied',
+  'cons.topConvsEmpty': 'No session usage in this range',
+  'cons.topConvsSortAria': 'Sort sessions ranking',
+  'cons.topConvsSortCost': 'Cost',
+  'cons.topConvsSortTokens': 'Tokens',
+  'cons.topConvCacheMeta': 'Cache {pct}%',
+  'cons.topConvJumpTip': 'Click to inspect this session in Steps',
+  'cons.modelsSortAria': 'Sort models ranking',
+  'cons.modelsSortTokens': 'Tokens',
+  'cons.modelsSortCost': 'Cost',
+  'cons.modelsSortSpeed': 'Speed',
+  'cons.modelsSortCalls': 'Calls',
+  'cons.modelUnitCost': 'Eff. {cost}/1M',
+  'cons.speedRelTip': 'Speed relative to fastest model in this range',
+  'cons.focusTtft': 'TTFT {ttft}',
+  'cons.focusSpeedMeta': 'TTFT {ttft} · Cache {cache}% · Out {out}',
+  'cons.focusCallsMeta': 'Avg {avgTok}/call · Cost {cost}',
 
   // Steps Detail View & Step Column Registry
   'steps.title': 'Step Records',
@@ -2098,6 +2536,17 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.compactionSummaryRow': 'Input {input} → Summary {output}',
   'steps.compactionDetailHint': 'Automatic context compaction step triggered to summarize history and free window space',
   'steps.compactionAnomalyHint': 'This step is also an auto-compaction step',
+  'steps.timingStepTitle': '#{step} · Timing Breakdown',
+  'steps.timingTotalSub': 'Total {sec}',
+  'steps.timingTtftLabel': 'First Token (TTFT)',
+  'steps.timingStreamLabel': 'Streaming',
+  'steps.timingAfterTtftLabel': 'After First Token',
+  'steps.timingThinkLabel': 'Native Thinking',
+  'steps.timingTotalLabel': 'Total Duration',
+  'steps.timingOverlapHint': 'Native thinking timing may overlap TTFT/streaming; not additive',
+  'steps.timingToolBufferedHint': 'Tool call step (buffered return yields short stream)',
+  'steps.timingAnomalyHint': '{count} retries/errors',
+  'steps.timingAnomalyDelayHint': '{count} retries/errors · backoff {sec}s',
   'steps.anomalyTerminalTag': 'Stopped',
   'steps.anomalyModelTitle': '{model} · {count} Retries / Errors',
   'steps.anomalyModelSub': '{steps} steps affected',
@@ -2106,6 +2555,36 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.anomalySummaryMeta': '{count} retries/errors ({steps} steps)',
   'steps.anomalyFilterLabel': 'Anomalies Only ({count})',
   'steps.anomalyFilterAll': 'Show All Steps',
+  'steps.sortClickTip': 'Click to sort by {col}',
+  'steps.searchPlaceholder': 'Filter #step, model, prompt, or anomaly...',
+  'steps.searchClearAria': 'Clear step filter',
+  'steps.chipAnomaly': 'Anomaly {count}',
+  'steps.chipCompaction': 'Compact {count}',
+  'steps.chipLowCache': 'Low Cache {count}',
+  'steps.chipLowCacheTip': 'Filter steps with cache hit rate below 50%',
+  'steps.chipSlowTtft': 'Slow TTFT {count}',
+  'steps.chipSlowTtftTip': 'Filter severely delayed steps with TTFT >= 30s',
+  'steps.exportMenuAria': 'Export and report actions',
+  'steps.exportXlsx': 'Export Excel (.xlsx)',
+  'steps.exportXlsxTip': 'Export styled multi-sheet Excel workbook for steps and model summary',
+  'steps.exportCsv': 'Export CSV',
+  'steps.exportCsvTip': 'Export current steps table as CSV',
+  'steps.exportCsvDone': 'Exported',
+  'steps.exportMd': 'Copy Markdown Report',
+  'steps.exportMdTip': 'Copy Markdown diagnostic report for current steps',
+  'steps.exportMdDone': 'Steps Markdown report copied',
+
+  // Export & Toast Feedback
+  'export.savedLocal': 'Exported {file}',
+  'export.savedPicked': 'Saved {file}',
+  'export.savedBrowser': 'Downloaded {file}',
+  'export.savedBrowserHint': 'Saved via browser default Downloads folder',
+  'export.openFolder': 'Show in Folder',
+  'export.failed': 'Export failed, please retry',
+  'export.hostUnavailable': 'Local export channel unavailable; please restart Antigravity and retry',
+  'export.copied': 'Copied to clipboard',
+  'export.copyFailed': 'Copy failed, check clipboard permissions',
+  'export.closeToast': 'Dismiss notification',
 
   // Step Table Columns (Headers & Option Labels)
   'stepCol.step.th': 'Step',
@@ -2291,7 +2770,20 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.popoverWidthCustom': 'Custom',
   'settings.str.popoverWidthHint': 'Auto Fit widens wide tables like Step Records to avoid horizontal scroll; Custom accepts 440–1080 px',
   'settings.str.multiToggle': 'Active Sessions Pill',
+  'settings.str.contextAgentModeLabel': 'Capsule & Hover Context',
+  'settings.str.contextAgentMain': 'Lock Main Agent',
+  'settings.str.contextAgentAuto': 'Follow Active',
   'settings.str.cliCapsuleToggle': 'CLI Bottom Capsule',
+  'settings.str.cliSlotsLabel': 'CLI Slot Order (Left → Right, 1–6, draggable)',
+  'settings.str.addCliSlot': 'Add CLI Slot ({count}/{max})',
+  'settings.str.cliCustomCmdHint': 'Custom statusLine command detected; preserved automatically unless you take over',
+  'settings.str.cliPausedHint': 'CLI statusLine is currently paused or not yet configured',
+  'settings.str.cliFlagsOverrideHint': 'Explicit CLI launch flags (--slots / --preset) detected and take precedence over these slots',
+  'settings.str.cliRestoreBtn': 'Take Over & Restore',
+  'settings.str.cliEnableBtn': 'Re-enable in CLI',
+  'settings.str.cliClearFlagsBtn': 'Clear Flag Override',
+  'settings.str.cliRestoringBtn': 'Applying...',
+  'settings.str.cliPreviewRunning': '{count} active',
   'settings.str.show': 'Show',
   'settings.str.hide': 'Hide',
   'settings.str.on': 'On',
@@ -2316,6 +2808,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.stepTurnRailToggle': 'Turn Rail & Preview',
   'settings.str.stepAgentBadgeToggle': 'Main/Sub Agent Badge',
   'settings.str.stepSpeedColorToggle': 'Speed Multi-Color',
+  'settings.str.stepFilterToolbarToggle': 'Search & Filter Bar',
   'settings.str.stepTokenComboLabel': 'Custom Token Combo Format',
   'settings.str.stepTokenComboPlaceholder': 'e.g. context:new:cache or in:out:cache',
   'settings.str.stepTokenComboHint': 'Tokens: context, in/new, out, cache, think, reply, total — separated by : or / (1–4 items)',
@@ -2341,11 +2834,24 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.orchFormat': 'Orchestrator Series ID',
   'settings.oth.orchCompact': 'Compact Alias (e.g. orchestrator-argon)',
   'settings.oth.orchFull': 'Full Upstream ID (e.g. gemini-pro-orchestrator)',
+  'settings.oth.expTitle': 'Experimental',
+  'settings.oth.expBadge': 'Experimental',
+  'settings.oth.quotaReserveLabel': 'Quota Reservation Estimate',
+  'settings.oth.quotaReserveDesc': 'Estimate 0.5% / 1% 5h & weekly lease holds in Available Quotas and highlight the reserved share in violet',
+  'settings.oth.quotaReserveLogLabel': 'Reservation Observation Log',
+  'settings.oth.quotaReserveLogDesc': 'Copy persisted quota jump & refund observations to clipboard (retained across restarts)',
+  'settings.oth.exportReserveLogBtn': 'Export Reserve Log',
+  'settings.oth.exportReserveLogCopied': 'Copied {count} log entries to clipboard',
+  'settings.oth.exportReserveLogEmpty': 'No events yet; copied current summary to clipboard',
+  'settings.oth.exportReserveLogFailed': 'Failed to copy reservation log',
   'settings.oth.baselineTitle': 'Model Context Settings',
   'settings.oth.ctxRiskTitle': 'Unofficial Override Risk Warning',
   'settings.oth.ctxRiskBody': 'Google has not authorized modifying model context limits in Antigravity App / IDE. Altering context limits may get your Antigravity access, GCP services, or Google account disabled or banned; enabling this feature means you assume all associated risks. Make sure you know what you are doing!',
   'settings.oth.ctxRiskAcceptBtn': 'I Understand the Risk, Unlock',
   'settings.oth.ctxModel': 'Model',
+  'settings.oth.ctxMainLabel': 'Main Agent',
+  'settings.oth.ctxSwarmLabel': 'Subagents & Swarm',
+  'settings.oth.ctxSwarmError': 'Local sync failed: {error}',
   'settings.oth.ctxBaselineLabel': 'Context Window Limit',
   'settings.oth.ctxChooseModel': 'Choose a model',
   'settings.oth.ctxDefault': 'Follow host settings',
@@ -2375,6 +2881,48 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.resetConfirmBtn': 'Click Again to Confirm',
   'settings.oth.resettingBtn': 'Resetting…',
   'settings.oth.resetAllDone': 'All preferences restored to defaults',
+  'settings.oth.backupLabel': 'Preferences Backup & Restore',
+  'settings.oth.backupDesc': 'Export or import portable UI, capsule, and table preferences as JSON',
+  'settings.oth.exportJsonBtn': 'Export JSON',
+  'settings.oth.importJsonBtn': 'Import JSON',
+  'settings.oth.exportDone': 'Preferences JSON exported',
+  'settings.oth.importDone': 'Restored {count} preference settings',
+  'settings.oth.importInvalid': 'Import failed: invalid JSON or no recognized settings',
+  'settings.oth.migTitle': 'Cross-Client Session Migration',
+  'settings.oth.migDesc': 'Migrate selected sessions on demand with automatic source and summary backups',
+  'settings.oth.migRefreshBtn': 'Refresh',
+  'settings.oth.migSourceLabel': 'Source Client',
+  'settings.oth.migTargetLabel': 'Target Client',
+  'settings.oth.migModeLabel': 'Migration Mode',
+  'settings.oth.migModeMove': 'Full Move (Recommended)',
+  'settings.oth.migModeClone': 'Clone Copy',
+  'settings.oth.migModeMoveHint': 'Assigns an isolated target ID while preserving all historical steps/details; archives source backup before moving',
+  'settings.oth.migModeCloneHint': 'Keeps source intact with a fresh UUID; only counts new steps generated after cloning',
+  'settings.oth.migProjectLabel': 'Target Project',
+  'settings.oth.migProjectOutside': 'Standalone (No Project)',
+  'settings.oth.migClientDesktop': 'Desktop App / Modern IDE',
+  'settings.oth.migClientCli': 'Antigravity CLI',
+  'settings.oth.migClientIdeLegacy': 'Legacy IDE (.db)',
+  'settings.oth.migSearchPlaceholder': 'Filter sessions by title or workspace…',
+  'settings.oth.migSelectAll': 'Select all',
+  'settings.oth.migClearSel': 'Clear',
+  'settings.oth.migSelectedCount': '{selected} / {total} selected',
+  'settings.oth.migRunningTag': 'Running',
+  'settings.oth.migStepsUnit': '{count} steps',
+  'settings.oth.migEmpty': 'No migratable sessions in this source client',
+  'settings.oth.migNoMatch': 'No matching sessions',
+  'settings.oth.migActionBtn': 'Migrate Selected ({count})',
+  'settings.oth.migRunningBtn': 'Migrating…',
+  'settings.oth.migDoneDesktop': 'Migrated {count} session(s) to "{project}". Press Ctrl+R in Desktop App to refresh the sidebar',
+  'settings.oth.migDoneCli': 'Migrated {count} session(s) to CLI. Use the command below to resume',
+  'settings.oth.migPartialWarn': ' ({failed} skipped or failed)',
+  'settings.oth.migReloadBtn': 'Reload Window',
+  'settings.oth.migCopyCmd': 'Copy',
+  'settings.oth.migCopied': 'Copied',
+  'settings.oth.migErrLocked': 'Source database is locked by its open client. Close that terminal/window first, or switch to Clone Copy',
+  'settings.oth.migErrExists': 'A session with the same ID already exists in target (switch to Clone Copy if you want a duplicate)',
+  'settings.oth.migErrRunning': 'Session is currently running; wait until idle before migrating',
+  'settings.oth.migFailed': 'Migration failed: {reason}',
 
   // Structured Live Activity Actions
   'live.act.run_command': 'Run Command',
@@ -2470,6 +3018,21 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'chart.trend.hmActivePeak': 'Active {active}/{total}d · Peak {label} · {tokens}',
   'chart.trend.hmActiveZero': 'Active 0/{total}d',
   'chart.trend.peakPill': 'Peak {label} · {tokens}',
+
+  // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
+  'ui.dt.wdayMon': 'Mo',
+  'ui.dt.wdayTue': 'Tu',
+  'ui.dt.wdayWed': 'We',
+  'ui.dt.wdayThu': 'Th',
+  'ui.dt.wdayFri': 'Fr',
+  'ui.dt.wdaySat': 'Sa',
+  'ui.dt.wdaySun': 'Su',
+  'ui.dt.prevMonth': 'Previous month',
+  'ui.dt.nextMonth': 'Next month',
+  'ui.dt.hourMinute': 'Hr / Min',
+  'ui.num.decrease': 'Decrease value',
+  'ui.num.increase': 'Increase value',
+  'ui.seg.defaultAria': 'Segmented switcher',
 });
 return { I18N_MESSAGES_EN_US };
 })();
@@ -3479,7 +4042,7 @@ return { defineComponent };
 })();
 
 // --- src/core/formatters.js ---
-const { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
+const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
 /**
  * @fileoverview Pure formatting utilities for speed metrics, token counts,
  * USD estimates, countdown timers, and custom datetime displays.
@@ -3505,6 +4068,26 @@ function formatCachePct(value) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
   const num = Math.max(0, Math.min(100, +Number(value).toFixed(1)));
   return `${num}%`;
+}
+
+/**
+ * 格式化百分比数值文本：常规值保留 1 位小数，将边界值 `0.0` / `100.0` 收口为整数 `0` / `100`。
+ *
+ * @param {number|string|null|undefined} value
+ * @param {{ withSymbol?: boolean }} [options]
+ * @returns {string}
+ */
+function formatPctNumber(value, { withSymbol = false } = {}) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return withSymbol ? '0%' : '0';
+  const rounded = Math.round(num * 10) / 10;
+  const str =
+    Math.abs(rounded) < 1e-9
+      ? '0'
+      : Math.abs(rounded - 100) < 1e-9
+        ? '100'
+        : rounded.toFixed(1);
+  return withSymbol ? `${str}%` : str;
 }
 
 function getSpeedToneClass(tokPerSec) {
@@ -3728,6 +4311,123 @@ function buildStepCompactionDiagnostic(st, displaySettings = {}) {
   };
 }
 
+function finiteNonNegativeSec(val) {
+  if (val === null || val === undefined || val === '') return null;
+  const num = Number(val);
+  return Number.isFinite(num) && num >= 0 ? num : null;
+}
+
+function formatTimingDetailSec(sec) {
+  const num = finiteNonNegativeSec(sec);
+  if (num === null) return '—';
+  if (num > 0 && num < 0.01) return '<0.01s';
+  if (num >= 10) return `${num.toFixed(1)}s`;
+  return `${num.toFixed(2)}s`;
+}
+
+function hasStepTimingData(st) {
+  if (!st || typeof st !== 'object') return false;
+  return (
+    finiteNonNegativeSec(st.nativeTtftSec ?? st.ttftSec) !== null ||
+    finiteNonNegativeSec(st.totalDurationSec ?? st.streamDurationSec) !== null ||
+    finiteNonNegativeSec(st.nativeStreamSec) !== null ||
+    finiteNonNegativeSec(st.thinkingDurationSec) !== null
+  );
+}
+
+function buildStepTimingDiagnostic(st) {
+  if (!st || typeof st !== 'object') return null;
+  const ttft = finiteNonNegativeSec(st.nativeTtftSec ?? st.ttftSec);
+  const total = finiteNonNegativeSec(st.totalDurationSec ?? st.streamDurationSec);
+  const nativeStream = finiteNonNegativeSec(st.nativeStreamSec);
+  const think = finiteNonNegativeSec(st.thinkingDurationSec);
+  if (ttft === null && total === null && nativeStream === null && think === null) {
+    return null;
+  }
+
+  const afterTtft =
+    nativeStream === null && total !== null && ttft !== null && total >= ttft
+      ? +(total - ttft).toFixed(6)
+      : null;
+
+  const rows = [];
+  if (ttft !== null) {
+    let valText = formatTimingDetailSec(ttft);
+    if (total !== null && total > 0 && ttft <= total + 0.01) {
+      const pct = Math.min(100, Math.max(0, Math.round((ttft / total) * 100)));
+      valText = `${valText} (${pct}%)`;
+    }
+    rows.push({
+      text: t('steps.timingTtftLabel'),
+      value: valText,
+      toneClass: getTtftToneClass(ttft),
+    });
+  }
+  if (nativeStream !== null) {
+    rows.push({
+      text: t('steps.timingStreamLabel'),
+      value: formatTimingDetailSec(nativeStream),
+    });
+  } else if (afterTtft !== null) {
+    rows.push({
+      text: t('steps.timingAfterTtftLabel'),
+      value: formatTimingDetailSec(afterTtft),
+    });
+  }
+  if (think !== null) {
+    rows.push({
+      text: t('steps.timingThinkLabel'),
+      value: formatTimingDetailSec(think),
+    });
+  }
+
+  const showTotalInSub = total !== null && rows.length > 0;
+  if (total !== null && !showTotalInSub) {
+    rows.push({
+      text: t('steps.timingTotalLabel'),
+      value: formatTimingDetailSec(total),
+    });
+  }
+
+  const hints = [];
+  const hasOverlap =
+    think !== null &&
+    total !== null &&
+    ((ttft !== null && ttft + think > total + 0.05) ||
+      (nativeStream !== null && ttft !== null && ttft + nativeStream + think > total + 0.05) ||
+      think > total + 0.05);
+  if (hasOverlap) {
+    hints.push(t('steps.timingOverlapHint'));
+  }
+  const streamForToolCheck = nativeStream ?? afterTtft;
+  if (
+    st.hasToolCalls &&
+    streamForToolCheck !== null &&
+    streamForToolCheck < 0.5 &&
+    ttft !== null &&
+    ttft >= 2
+  ) {
+    hints.push(t('steps.timingToolBufferedHint'));
+  }
+  const anomalyCount = Math.max(0, Number(st.anomaly?.count || 0));
+  if (anomalyCount > 0) {
+    const delaySec = Number(st.anomaly?.totalDelaySec || 0);
+    hints.push(
+      delaySec > 0
+        ? t('steps.timingAnomalyDelayHint', { count: anomalyCount, sec: delaySec })
+        : t('steps.timingAnomalyHint', { count: anomalyCount })
+    );
+  }
+
+  return {
+    title: t('steps.timingStepTitle', { step: Number(st.stepIndex ?? 0) }),
+    sub: showTotalInSub ? t('steps.timingTotalSub', { sec: formatTimingDetailSec(total) }) : '',
+    rows,
+    hint: hints.join(' · '),
+    severity: 'timing',
+  };
+}
+
 function buildModelAnomalyDiagnostic(m) {
   const sum = resolveModelAnomalySummary(m);
   if (!sum) return null;
@@ -3818,15 +4518,105 @@ function stripCompactionMarker(rawText) {
 
 const normalizeOrchestratorIdDisplayMode = normalizeOrchestratorIdMode;
 
+function normalizeOrchVariantToken(raw = '') {
+  let s = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!s || /^worker(?:$|-)/.test(s)) return '';
+  s = s.replace(/([a-z]-)(\d+)-(\d+)(?=$|-)/g, '$1$2.$3');
+  s = s
+    .replace(/^(?:claude|anthropic|openai)-(?=.+)/, '')
+    .replace(/^gemini-(?:4-)?(?=(?:carbon|argon|neon|hydrogen|helix)(?:$|-))/, '');
+  return s;
+}
+
+function extractOrchWorkerVariant(fields = [], combinedText = '') {
+  for (const rawField of fields) {
+    const field = String(rawField || '').trim();
+    if (!field) continue;
+    const parenMatch = field.match(/\bOrchestrator\s+Worker\s*\(\s*([^)]+?)\s*\)/i);
+    if (parenMatch) {
+      const v = normalizeOrchVariantToken(parenMatch[1]);
+      if (v) return v;
+    }
+    const compactMatch = field.match(/\bworker-agy-([a-z0-9]+(?:[.-][a-z0-9]+)*)(?=·|\s|$)/i);
+    if (compactMatch) {
+      const v = normalizeOrchVariantToken(compactMatch[1]);
+      if (v) return v;
+    }
+  }
+  if (/\bMODEL_PLACEHOLDER_M669\b|\bgemini-flash-worker-agy\b/i.test(combinedText)) {
+    return 'hydrogen';
+  }
+  const upstreamMatch = combinedText.match(/\b([a-z0-9][a-z0-9.-]*?)-worker-agy\b/i);
+  if (upstreamMatch) {
+    const rawPrefix = upstreamMatch[1].toLowerCase();
+    if (rawPrefix === 'gemini-flash') return 'hydrogen';
+    if (/^gemini-(?:4-)?neon$/i.test(rawPrefix)) return 'neon';
+    if (/^gemini-(?:4-)?argon$/i.test(rawPrefix)) return 'argon';
+    if (/^gemini-(?:4-)?carbon$/i.test(rawPrefix)) return 'carbon';
+    const v = normalizeOrchVariantToken(rawPrefix);
+    if (v && v !== 'gemini-pro') return v;
+  }
+  if (/\bneon\b/i.test(combinedText)) return 'neon';
+  if (/\bhydrogen\b/i.test(combinedText)) return 'hydrogen';
+  if (/\bargon\b/i.test(combinedText)) return 'argon';
+  if (/\bcarbon\b/i.test(combinedText)) return 'carbon';
+  return '';
+}
+
+function extractDynamicOrchVariant(fields = []) {
+  for (const rawField of fields) {
+    const field = String(rawField || '').trim();
+    if (!field) continue;
+    const parenAfter = field.match(/\bOrchestrator\s*\(\s*([^)]+?)\s*\)/i);
+    if (parenAfter) {
+      const v = normalizeOrchVariantToken(parenAfter[1]);
+      if (v) return v;
+    }
+    const parenBefore = field.match(
+      /^([a-z0-9][a-z0-9.\s-]{0,40}?)\s*\(\s*Orchestrator\s*\)(?:\s*\[[^\]]+\])?$/i
+    );
+    if (parenBefore) {
+      const v = normalizeOrchVariantToken(parenBefore[1]);
+      if (v) return v;
+    }
+    const geminiProSlug = field.match(
+      /\bgemini-pro-orchestrator-([a-z0-9]+(?:[.-][a-z0-9]+)*)(?=·|\s|$)/i
+    );
+    if (geminiProSlug) {
+      const v = normalizeOrchVariantToken(geminiProSlug[1]);
+      if (v) return v;
+    }
+    const prefixSlug = field.match(
+      /\b(?:orchestrator|orch)-([a-z0-9]+(?:[.-][a-z0-9]+)*)(?=·|\s|$)/i
+    );
+    if (prefixSlug) {
+      const v = normalizeOrchVariantToken(prefixSlug[1]);
+      if (v) return v;
+    }
+    const suffixSlug = field.match(/\b([a-z0-9]+(?:[.-][a-z0-9]+)*)-orchestrator(?=·|\s|$)/i);
+    if (suffixSlug && !/^gemini-pro$/i.test(suffixSlug[1])) {
+      const v = normalizeOrchVariantToken(suffixSlug[1]);
+      if (v) return v;
+    }
+  }
+  return '';
+}
+
 /**
- * 统一解析步骤、会话摘要或模型汇总行面向用户的模型显示文本与悬停提示。
+ * 统一解析步骤、会话摘要或模型汇总行面向用户的模型显示文本及悬停提示。
  *
  * 规则：
- * - Orchestrator 系列（`Orchestrator (Carbon)`、`Orchestrator (Argon)`、`Orchestrator (Neon)`、`gemini-flash-worker-agy` / `M669`）
- *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-carbon` / `orchestrator-argon` / `orchestrator-neon` / `worker-agy-hydrogen`；
+ * - Orchestrator 系列（如 `Orchestrator (Carbon / Argon / Neon / Opus 5.5)`、`Orchestrator Worker (Hydrogen / Neon / ...)`）
+ *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-<variant>` / `worker-agy-<variant>`；
  *   `'full'` 显示带括号标注的完整上游 ID），不受普通模型显示模式影响；
  * - 其余普通模型遵循 `modelDisplayMode`（`'short'` | `'upstream_compact'` | `'upstream'`，兼容旧版布尔 `showUpstreamModel`）；
- * - 独立拆分 `baseText` 与 `compactionSuffix`（`·压缩`），供步骤表单独保护压缩尾标永不截断。
+ * - 独立拆分 `baseText` 及 `compactionSuffix`（`·压缩`），供步骤表单独保护压缩尾标永不截断。
  *
  * @param {object|null|undefined} target
  * @param {{ modelDisplayMode?: string, showUpstreamModel?: boolean, orchestratorIdMode?: string }|boolean} [settings]
@@ -3878,6 +4668,7 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     target.baseModelUpstream ??
       target.activeModelUpstream ??
       target.modelUpstream ??
+      target.upstreamModel ??
       target.upstreamName ??
       ''
   ).trim();
@@ -3891,22 +4682,16 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
 
   const compactionSuffix = isCompaction ? t('fmt.compactionSuffix') : '';
 
+  const fields = [labelText, shortText, upstreamText, responseText, modelKeyText];
   const combined = `${modelKeyText} ${shortText} ${labelText} ${upstreamText} ${responseText}`;
   const isOrchWorker =
-    /\bMODEL_PLACEHOLDER_M669\b|\b[a-z0-9.-]*worker-agy\b|\bworker-agy-hydrogen\b|\bOrchestrator\s+Worker\b/i.test(
+    /\bMODEL_PLACEHOLDER_M669\b|\b[a-z0-9.-]*worker-agy\b|\bworker-agy-[a-z0-9.-]+\b|\bOrchestrator\s+Worker\b/i.test(
       combined
     );
   const isKnownOrchCarbonPh = /\bMODEL_PLACEHOLDER_M667\b/i.test(combined);
   const isKnownOrchArgonPh = /\bMODEL_PLACEHOLDER_M681\b/i.test(combined);
   const isKnownOrchNeonPh = /\bMODEL_PLACEHOLDER_M537\b/i.test(combined);
-  const dynamicOrchVariantMatch =
-    combined.match(/\bOrchestrator\s*\(\s*([a-z0-9-]+)\s*\)/i) ||
-    combined.match(/\bgemini-pro-orchestrator-([a-z0-9-]+)\b/i) ||
-    combined.match(/\b(?:orchestrator|orch)-([a-z0-9]+)(?=·|\s|$)/i);
-  const dynamicOrchVariant =
-    dynamicOrchVariantMatch && dynamicOrchVariantMatch[1].toLowerCase() !== 'worker'
-      ? dynamicOrchVariantMatch[1].toLowerCase()
-      : '';
+  const dynamicOrchVariant = isOrchWorker ? '' : extractDynamicOrchVariant(fields);
   const hasBareProOrch = /\bgemini-pro-orchestrator\b(?![-_][a-z0-9])/i.test(combined);
   const isOrchSeries =
     isOrchWorker ||
@@ -3920,8 +4705,41 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     let compactId = '';
     let fullId = '';
     if (isOrchWorker) {
-      compactId = 'worker-agy-hydrogen';
-      fullId = 'gemini-flash-worker-agy (hydrogen-4)';
+      const workerVariant = extractOrchWorkerVariant(fields, combined);
+      const cleanUpstream = stripCompactionMarker(upstreamText || responseText || '').trim();
+      if (workerVariant === 'hydrogen') {
+        compactId = 'worker-agy-hydrogen';
+        fullId = 'gemini-flash-worker-agy (hydrogen-4)';
+      } else if (workerVariant === 'neon') {
+        compactId = 'worker-agy-neon';
+        if (cleanUpstream) {
+          if (/\([^)]+\)\s*$/.test(cleanUpstream)) {
+            fullId = cleanUpstream;
+          } else if (/(?:worker-agy)/i.test(cleanUpstream)) {
+            fullId = `${cleanUpstream} (neon-4)`;
+          } else if (/\bneon\b/i.test(cleanUpstream)) {
+            fullId = cleanUpstream;
+          } else {
+            fullId = `${cleanUpstream} (neon-4)`;
+          }
+        } else {
+          fullId = 'gemini-neon-worker-agy (neon-4)';
+        }
+      } else if (workerVariant) {
+        compactId = `worker-agy-${workerVariant}`;
+        const variantDashed = workerVariant.replace(/\./g, '-');
+        const upstreamLower = cleanUpstream.toLowerCase();
+        const mentionsVariant =
+          upstreamLower.includes(workerVariant) || upstreamLower.includes(variantDashed);
+        fullId = cleanUpstream
+          ? mentionsVariant || /\([^)]+\)\s*$/.test(cleanUpstream)
+            ? cleanUpstream
+            : `${cleanUpstream} (${workerVariant})`
+          : `worker-agy-${workerVariant}`;
+      } else {
+        compactId = 'worker-agy';
+        fullId = cleanUpstream || 'worker-agy';
+      }
     } else if (isKnownOrchNeonPh || dynamicOrchVariant === 'neon') {
       compactId = 'orchestrator-neon';
       fullId = 'gemini-pro-orchestrator-neon (neon-4)';
@@ -3938,11 +4756,23 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     } else if (dynamicOrchVariant) {
       compactId = `orchestrator-${dynamicOrchVariant}`;
       const cleanUpstream = stripCompactionMarker(upstreamText || responseText || '').trim();
-      fullId = cleanUpstream
-        ? cleanUpstream.toLowerCase().includes(dynamicOrchVariant)
-          ? cleanUpstream
-          : `${cleanUpstream} (${dynamicOrchVariant})`
-        : `gemini-pro-orchestrator-${dynamicOrchVariant}`;
+      const variantDashed = dynamicOrchVariant.replace(/\./g, '-');
+      const upstreamLower = cleanUpstream.toLowerCase();
+      const mentionsVariant =
+        upstreamLower.includes(dynamicOrchVariant) || upstreamLower.includes(variantDashed);
+      if (cleanUpstream) {
+        fullId =
+          mentionsVariant || /\([^)]+\)\s*$/.test(cleanUpstream)
+            ? cleanUpstream
+            : `${cleanUpstream} (${dynamicOrchVariant})`;
+      } else {
+        const isNonGeminiOrch = /\b(?:claude|anthropic|opus|sonnet|haiku|fable|gpt|openai)\b/i.test(
+          `${combined} ${dynamicOrchVariant}`
+        );
+        fullId = isNonGeminiOrch
+          ? `orchestrator-${dynamicOrchVariant}`
+          : `gemini-pro-orchestrator-${dynamicOrchVariant}`;
+      }
     }
     if (compactId) {
       const baseText = orchestratorMode === 'full' ? fullId : compactId;
@@ -4031,14 +4861,30 @@ function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
     const speedSampleCount = Math.max(0, Number(m.speedSummary?.sampleCount || 0));
     const speedExcludedCount = Math.max(0, Number(m.speedSummary?.excludedCount || 0));
     const speedWeight = speedSampleCount > 0 ? speedSampleCount : Math.max(1, outTok || calls || 1);
-    const hasSpeed = m.avgTokPerSec != null && Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0;
+    const hasSpeed =
+      m.avgTokPerSec != null && Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0;
+    const rawSpeedTokens = Number(m.speedSummary?.tokens);
+    const rawSpeedSeconds = Number(m.speedSummary?.seconds);
+    const hasExactSpeedSummary =
+      Number.isFinite(rawSpeedTokens) &&
+      Number.isFinite(rawSpeedSeconds) &&
+      rawSpeedSeconds > 0 &&
+      rawSpeedTokens >= 0;
 
     const ttftSampleCount = Math.max(0, Number(m.ttftSampleCount || 0));
     const ttftWeight = ttftSampleCount > 0 ? ttftSampleCount : Math.max(1, calls || 1);
-    const hasTtft = m.avgTtftSec != null && Number.isFinite(Number(m.avgTtftSec)) && Number(m.avgTtftSec) >= 0;
+    const hasTtft =
+      m.avgTtftSec != null && Number.isFinite(Number(m.avgTtftSec)) && Number(m.avgTtftSec) >= 0;
 
     let acc = byDisplay.get(key);
     if (!acc) {
+      const initExcludedReasons = {};
+      if (m.speedSummary?.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+        for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+          const cnt = Math.max(0, Number(rv || 0));
+          if (cnt > 0) initExcludedReasons[rk] = cnt;
+        }
+      }
       acc = {
         baseItem: m,
         mergedCount: 1,
@@ -4058,10 +4904,15 @@ function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
         totalTokens: totTok,
         costUsd,
         unpricedCalls,
+        hasAnySpeedSummary: Boolean(m.speedSummary),
+        allSpeedExact: !hasSpeed || hasExactSpeedSummary,
+        speedTokens: hasExactSpeedSummary ? rawSpeedTokens : 0,
+        speedSeconds: hasExactSpeedSummary ? rawSpeedSeconds : 0,
         speedWeightedSum: hasSpeed ? Number(m.avgTokPerSec) * speedWeight : 0,
         speedWeight: hasSpeed ? speedWeight : 0,
         speedSampleCount,
         speedExcludedCount,
+        speedExcludedReasons: initExcludedReasons,
         ttftWeightedSum: hasTtft ? Number(m.avgTtftSec) * ttftWeight : 0,
         ttftWeight: hasTtft ? ttftWeight : 0,
         ttftSampleCount,
@@ -4110,12 +4961,24 @@ function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
       }
     }
 
+    if (m.speedSummary) acc.hasAnySpeedSummary = true;
+    if (hasSpeed && !hasExactSpeedSummary) acc.allSpeedExact = false;
+    if (hasExactSpeedSummary) {
+      acc.speedTokens += rawSpeedTokens;
+      acc.speedSeconds += rawSpeedSeconds;
+    }
     if (hasSpeed) {
       acc.speedWeightedSum += Number(m.avgTokPerSec) * speedWeight;
       acc.speedWeight += speedWeight;
     }
     acc.speedSampleCount += speedSampleCount;
     acc.speedExcludedCount += speedExcludedCount;
+    if (m.speedSummary?.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+      for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+        const cnt = Math.max(0, Number(rv || 0));
+        if (cnt > 0) acc.speedExcludedReasons[rk] = (acc.speedExcludedReasons[rk] || 0) + cnt;
+      }
+    }
 
     if (hasTtft) {
       acc.ttftWeightedSum += Number(m.avgTtftSec) * ttftWeight;
@@ -4135,8 +4998,13 @@ function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
     }
     const promptTok = acc.inputTokens + acc.cacheReadTokens;
     const cacheHitPct = promptTok > 0 ? +((acc.cacheReadTokens / promptTok) * 100).toFixed(1) : 0;
-    const avgTokPerSec =
-      acc.speedWeight > 0 ? +(acc.speedWeightedSum / acc.speedWeight).toFixed(1) : null;
+    const rawAvgTps =
+      acc.allSpeedExact && acc.speedSeconds > 0
+        ? acc.speedTokens / acc.speedSeconds
+        : acc.speedWeight > 0
+          ? acc.speedWeightedSum / acc.speedWeight
+          : null;
+    const avgTokPerSec = rawAvgTps !== null ? +rawAvgTps.toFixed(1) : null;
     const avgTtftSec =
       acc.ttftWeight > 0 ? +(acc.ttftWeightedSum / acc.ttftWeight).toFixed(1) : null;
     const upstreamModels = Array.from(acc.upstreamSet);
@@ -4169,12 +5037,15 @@ function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
             anomalyByKind: acc.anomalyByKind,
           }
         : {}),
-      speedSummary: acc.baseItem.speedSummary
+      speedSummary: acc.hasAnySpeedSummary
         ? {
-            ...acc.baseItem.speedSummary,
+            ...(acc.baseItem.speedSummary || {}),
+            tokens: acc.speedTokens,
+            seconds: +acc.speedSeconds.toFixed(6),
             sampleCount: acc.speedSampleCount,
             excludedCount: acc.speedExcludedCount,
-            avgTokPerSec,
+            excludedReasons: acc.speedExcludedReasons,
+            avgTokPerSec: rawAvgTps,
           }
         : undefined,
       upstreamModels,
@@ -4537,7 +5408,2841 @@ function buildDeterministicModelColorMap(models = []) {
 
   return colorMap;
 }
-return { formatMetric, formatSpeedMetric, formatCachePct, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+})();
+
+// --- src/core/stepInspector.js ---
+const { STEP_LOW_CACHE_MIN_PROMPT_TOKENS, STEP_LOW_CACHE_MAX_PCT, STEP_SLOW_TTFT_MIN_SEC, getStepSelectionKey, isLowCacheStep, isSlowTtftStep, computeStepQuickChipCounts, filterStepsBySearchAndChip, findPrevAgentContextTokens, computeStepTimingWaterfall, buildStepDiagnosticMarkdown, copyPlainTextToClipboard, createCopiedFeedbackController } = (() => {
+/**
+ * @fileoverview 步骤搜索筛选、快捷诊断统计、耗时瀑布计算及单步诊断 Markdown 导出纯函数模块 (`stepInspector.js`)。
+ * 保持零 DOM 耦合和单遍 O(N) 高性能，供 `StepsDetailView` 及单元测试直接复用。
+ */
+
+
+const STEP_LOW_CACHE_MIN_PROMPT_TOKENS = 2000;
+const STEP_LOW_CACHE_MAX_PCT = 50;
+const STEP_SLOW_TTFT_MIN_SEC = 30;
+
+/**
+ * 同 `StepTableWidget` 保持一致的单步稳定选择键。
+ *
+ * @param {object|null|undefined} st
+ * @param {string} [fallbackCascadeId='']
+ * @returns {string}
+ */
+function getStepSelectionKey(st, fallbackCascadeId = '') {
+  if (!st || typeof st !== 'object') return '';
+  const agentKey =
+    st.agentCascadeId || st.agentId || st.cascadeId || fallbackCascadeId || 'conv';
+  return `${agentKey}-${st.stepIndex}`;
+}
+
+function isLowCacheStep(st) {
+  if (!st || st.isCompactionStep) return false;
+  const promptTok = Number(st.inputTokens || 0) + Number(st.cacheReadTokens || 0);
+  if (promptTok < STEP_LOW_CACHE_MIN_PROMPT_TOKENS) return false;
+  const pct =
+    st.cacheHitPct != null && Number.isFinite(Number(st.cacheHitPct))
+      ? Number(st.cacheHitPct)
+      : promptTok > 0
+        ? (Number(st.cacheReadTokens || 0) / promptTok) * 100
+        : 0;
+  return pct < STEP_LOW_CACHE_MAX_PCT;
+}
+
+function isSlowTtftStep(st) {
+  if (!st || st.isCompactionStep) return false;
+  return classifyTtftTier(st.ttftSec) === 'danger';
+}
+
+/**
+ * 单遍 O(N) 统计当前步骤集中各诊断快捷筛选芯片的命中数量。
+ *
+ * @param {Array<object>} steps
+ * @returns {{ anomaly: number, compaction: number, low_cache: number, slow_ttft: number }}
+ */
+function computeStepQuickChipCounts(steps) {
+  let anomaly = 0;
+  let compaction = 0;
+  let lowCache = 0;
+  let slowTtft = 0;
+  if (Array.isArray(steps)) {
+    for (let i = 0; i < steps.length; i += 1) {
+      const st = steps[i];
+      if (!st) continue;
+      if (st.anomaly && Number(st.anomaly.count) > 0) anomaly += 1;
+      if (st.isCompactionStep) compaction += 1;
+      if (isLowCacheStep(st)) lowCache += 1;
+      if (isSlowTtftStep(st)) slowTtft += 1;
+    }
+  }
+  return {
+    anomaly,
+    compaction,
+    low_cache: lowCache,
+    slow_ttft: slowTtft,
+  };
+}
+
+/**
+ * 按快捷诊断芯片、异常类型及多词关键字过滤步骤列表（纯函数 O(N)）。
+ *
+ * @param {Array<object>} steps
+ * @param {{ query?: string, quickChip?: string, anomalyKindFilter?: string, displaySettings?: object }} [opts]
+ * @returns {Array<object>}
+ */
+function filterStepsBySearchAndChip(
+  steps,
+  { query = '', quickChip = '', anomalyKindFilter = '', displaySettings = {} } = {}
+) {
+  if (!Array.isArray(steps) || steps.length === 0) return [];
+  const rawTerms = String(query || '')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  const chip = String(quickChip || '').trim();
+  const kind = String(anomalyKindFilter || '').trim();
+
+  if (!chip && !kind && rawTerms.length === 0) {
+    return steps;
+  }
+
+  const out = [];
+  for (let i = 0; i < steps.length; i += 1) {
+    const st = steps[i];
+    if (!st) continue;
+
+    if (chip === 'anomaly' || kind) {
+      const a = st.anomaly;
+      if (!a || !(Number(a.count) > 0)) continue;
+      if (kind && !(Number(a.kinds?.[kind] || 0) > 0)) continue;
+    } else if (chip === 'compaction') {
+      if (!st.isCompactionStep) continue;
+    } else if (chip === 'low_cache') {
+      if (!isLowCacheStep(st)) continue;
+    } else if (chip === 'slow_ttft') {
+      if (!isSlowTtftStep(st)) continue;
+    }
+
+    if (rawTerms.length > 0) {
+      const modelInfo = resolveModelDisplayInfo(st, displaySettings);
+      const anomalyKinds = st.anomaly?.kinds ? Object.keys(st.anomaly.kinds).join(' ') : '';
+      const anomalyEventsText = Array.isArray(st.anomaly?.events)
+        ? st.anomaly.events
+            .map((ev) => `${ev?.kind || ''} ${ev?.attempt ?? ''} ${ev?.message || ''}`)
+            .join(' ')
+        : '';
+      const anomalyItemsText = Array.isArray(st.anomaly?.items)
+        ? st.anomaly.items
+            .map((it) => `${it?.kind || ''} ${it?.httpStatus || ''} ${it?.detail || ''}`)
+            .join(' ')
+        : '';
+      const haystack = [
+        `#${st.stepIndex ?? ''}`,
+        String(st.stepIndex ?? ''),
+        modelInfo.text,
+        modelInfo.title,
+        st.modelLabel || '',
+        st.modelShort || '',
+        st.modelKey || '',
+        st.modelUpstream || '',
+        st.responseModel || '',
+        st.rawModelId || '',
+        st.upstreamName || '',
+        st.turnPrompt || '',
+        st.rootTurnPrompt || '',
+        st.agentLabel || '',
+        st.agentRole || '',
+        st.agentBadge || '',
+        st.isCompactionStep ? 'compaction 压缩' : '',
+        anomalyKinds,
+        anomalyEventsText,
+        anomalyItemsText,
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      let matchedAll = true;
+      for (let tIdx = 0; tIdx < rawTerms.length; tIdx += 1) {
+        if (!haystack.includes(rawTerms[tIdx])) {
+          matchedAll = false;
+          break;
+        }
+      }
+      if (!matchedAll) continue;
+    }
+
+    out.push(st);
+  }
+  return out;
+}
+
+/**
+ * 在同代理步骤集合中定位目标步骤之前最近一步的上下文 Token 数，用于展示单步上下文增量。
+ *
+ * @param {Array<object>} allSteps
+ * @param {object|null|undefined} targetStep
+ * @returns {number|null}
+ */
+function findPrevAgentContextTokens(allSteps, targetStep) {
+  if (!Array.isArray(allSteps) || !targetStep || targetStep.stepIndex == null) return null;
+  const targetIdx = Number(targetStep.stepIndex);
+  const targetAgent = targetStep.agentId || 'main';
+  if (!Number.isFinite(targetIdx)) return null;
+
+  let bestIdx = -Infinity;
+  let bestCtx = null;
+  for (let i = 0; i < allSteps.length; i += 1) {
+    const st = allSteps[i];
+    if (!st) continue;
+    if ((st.agentId || 'main') !== targetAgent) continue;
+    const idx = Number(st.stepIndex);
+    if (Number.isFinite(idx) && idx < targetIdx && idx > bestIdx) {
+      const ctxVal = Number(
+        st.contextTokens ||
+          Number(st.inputTokens || 0) +
+            Number(st.cacheReadTokens || 0) +
+            Number(st.outputTokens || 0)
+      );
+      if (ctxVal > 0) {
+        bestIdx = idx;
+        bestCtx = ctxVal;
+      }
+    }
+  }
+  return bestCtx;
+}
+
+/**
+ * 计算单步耗时瀑布分段比例（TTFT 首字等待 / 流式输出 / 工具及尾部阶段）。
+ *
+ * @param {object|null|undefined} st
+ * @returns {{ totalSec: number, ttftSec: number, streamSec: number, otherSec: number, thinkingSec: number, ttftPct: number, streamPct: number, otherPct: number }|null}
+ */
+function computeStepTimingWaterfall(st) {
+  if (!st || typeof st !== 'object') return null;
+  const rawTtft = st.ttftSec ?? st.nativeTtftSec;
+  const ttft =
+    rawTtft != null && Number.isFinite(Number(rawTtft)) && Number(rawTtft) >= 0
+      ? Number(rawTtft)
+      : 0;
+  const rawStream = st.nativeStreamSec ?? st.streamDurationSec;
+  const stream =
+    rawStream != null && Number.isFinite(Number(rawStream)) && Number(rawStream) >= 0
+      ? Number(rawStream)
+      : 0;
+  const thinking =
+    st.thinkingDurationSec != null &&
+    Number.isFinite(Number(st.thinkingDurationSec)) &&
+    Number(st.thinkingDurationSec) >= 0
+      ? Number(st.thinkingDurationSec)
+      : 0;
+  const rawDur = st.totalDurationSec ?? st.durationSec;
+  const rawTotal =
+    rawDur != null && Number.isFinite(Number(rawDur)) && Number(rawDur) > 0
+      ? Number(rawDur)
+      : ttft + stream;
+  const totalSec = Math.max(rawTotal, ttft + stream);
+  if (!(totalSec > 0)) return null;
+
+  const effStream = Math.min(stream, Math.max(0, totalSec - ttft));
+  const otherSec = Math.max(0, +(totalSec - ttft - effStream).toFixed(3));
+  const ttftPct = +((ttft / totalSec) * 100).toFixed(2);
+  const streamPct = +((effStream / totalSec) * 100).toFixed(2);
+  const otherPct = Math.max(0, +(100 - ttftPct - streamPct).toFixed(2));
+
+  return {
+    totalSec: +totalSec.toFixed(3),
+    ttftSec: +ttft.toFixed(3),
+    streamSec: +effStream.toFixed(3),
+    otherSec,
+    thinkingSec: +thinking.toFixed(3),
+    ttftPct,
+    streamPct,
+    otherPct,
+  };
+}
+
+/**
+ * 生成结构化的单步诊断 Markdown 文本，便于直接复制到工单、讨论或性能复盘中。
+ *
+ * @param {object} st
+ * @param {{ prevContextTokens?: number|null, displaySettings?: object }} [opts]
+ * @returns {string}
+ */
+function buildStepDiagnosticMarkdown(
+  st,
+  { prevContextTokens = null, displaySettings = {} } = {}
+) {
+  if (!st || typeof st !== 'object') return '';
+  const modelInfo = resolveModelDisplayInfo(st, displaySettings);
+  const timeStr = st.createdAtMs ? formatCompactDateTime(st.createdAtMs) : '—';
+  const promptTok = Number(st.inputTokens || 0) + Number(st.cacheReadTokens || 0);
+  const cachePct =
+    st.cacheHitPct != null && Number.isFinite(Number(st.cacheHitPct))
+      ? formatPctNumber(st.cacheHitPct, { withSymbol: true })
+      : promptTok > 0
+        ? formatPctNumber((Number(st.cacheReadTokens || 0) / promptTok) * 100, {
+            withSymbol: true,
+          })
+        : '0%';
+  const ctxTok = Number(st.contextTokens || promptTok + Number(st.outputTokens || 0));
+  const ctxDelta =
+    prevContextTokens != null && ctxTok > 0
+      ? ` (${ctxTok >= prevContextTokens ? '+' : '-'}${formatTokensPrecise(Math.abs(ctxTok - prevContextTokens))})`
+      : '';
+  const wf = computeStepTimingWaterfall(st);
+  const lines = [
+    `### Step #${st.stepIndex ?? '—'} · ${modelInfo.text}${st.isCompactionStep ? ' [Compaction]' : ''}`,
+    `- **Time**: ${timeStr}`,
+    ...(modelInfo.title && modelInfo.title !== modelInfo.text
+      ? [`- **Model ID**: \`${modelInfo.title}\``]
+      : []),
+    `- **Speed / Timing**: ${formatSpeedMetric(st.tokPerSec, ' tok/s')} | TTFT ${formatMetric(st.ttftSec, 's')} | Total ${wf ? formatTimingDetailSec(wf.totalSec) : '—'}${st.selectedSpeedReason ? ` (${speedReasonText(st.selectedSpeedReason) || st.selectedSpeedReason})` : ''}`,
+    `- **Tokens**: Input ${formatTokensPrecise(st.inputTokens || 0)} | Cache ${formatTokensPrecise(st.cacheReadTokens || 0)} (${cachePct}) | Output ${formatTokensPrecise(st.outputTokens || 0)} (Think ${formatTokensPrecise(st.thinkingTokens || 0)} / Reply ${formatTokensPrecise(st.responseTokens || 0)})`,
+    `- **Context / Cost**: ${formatTokensPrecise(ctxTok)}${ctxDelta} | ${formatUsd(st.costUsd, { precise: true })}`,
+  ];
+  if (st.anomaly && Number(st.anomaly.count) > 0) {
+    const kinds = Object.entries(st.anomaly.kinds || {})
+      .map(([k, v]) => `${formatAnomalyKindLabel(k)}×${v}`)
+      .join(', ');
+    lines.push(`- **Anomalies (${st.anomaly.count})**: ${kinds || st.anomaly.primaryKind || 'error'}`);
+  }
+  const promptText = String(st.turnPrompt || st.rootTurnPrompt || '').trim();
+  if (promptText) {
+    lines.push('', '> ' + promptText.replace(/\r?\n/g, '\n> '));
+  }
+  return lines.join('\n');
+}
+
+/**
+ * 轻量剪贴板复制工具（优先 Clipboard API，降级至隐藏 textarea execCommand）。
+ *
+ * @param {string} text
+ * @returns {Promise<boolean>}
+ */
+async function copyPlainTextToClipboard(text) {
+  const str = String(text ?? '');
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(str);
+      return true;
+    }
+  } catch {
+    // 降级到 DOM 复制
+  }
+  try {
+    if (typeof document !== 'undefined' && document.body && typeof document.execCommand === 'function') {
+      const ta = document.createElement('textarea');
+      ta.value = str;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select?.();
+      const ok = document.execCommand('copy');
+      if (typeof ta.remove === 'function') {
+        ta.remove();
+      } else {
+        document.body.removeChild?.(ta);
+      }
+      return Boolean(ok);
+    }
+  } catch {
+    // 忽略非浏览器环境异常
+  }
+  return false;
+}
+
+/**
+ * 统一的「已复制」临时反馈计时器控制器（自动重置定时器并在组件销毁时清理）。
+ *
+ * @param {{
+ *   durationMs?: number,
+ *   onChange?: (copiedKey: any) => void,
+ *   onCleanup?: (cleanupFn: () => void) => void,
+ * }} [options={}]
+ */
+function createCopiedFeedbackController({
+  durationMs = 1800,
+  onChange = null,
+  onCleanup = null,
+} = {}) {
+  let activeKey = null;
+  let timer = null;
+  let disposed = false;
+
+  function clear() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (activeKey !== null) {
+      activeKey = null;
+      if (!disposed) onChange?.(null);
+    }
+  }
+
+  function trigger(key = true) {
+    if (disposed) return;
+    if (timer) clearTimeout(timer);
+    activeKey = key;
+    onChange?.(activeKey);
+    timer = setTimeout(() => {
+      timer = null;
+      if (disposed) return;
+      activeKey = null;
+      onChange?.(null);
+    }, durationMs);
+    timer?.unref?.();
+  }
+
+  onCleanup?.(() => {
+    disposed = true;
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    activeKey = null;
+  });
+
+  return {
+    isCopied: (key = true) => activeKey === key,
+    getActiveKey: () => activeKey,
+    trigger,
+    clear,
+  };
+}
+return { STEP_LOW_CACHE_MIN_PROMPT_TOKENS, STEP_LOW_CACHE_MAX_PCT, STEP_SLOW_TTFT_MIN_SEC, getStepSelectionKey, isLowCacheStep, isSlowTtftStep, computeStepQuickChipCounts, filterStepsBySearchAndChip, findPrevAgentContextTokens, computeStepTimingWaterfall, buildStepDiagnosticMarkdown, copyPlainTextToClipboard, createCopiedFeedbackController };
+})();
+
+// --- src/core/settingsBackup.js ---
+const { triggerBlobDownload, triggerTextFileDownload, buildExportableSettingsJson, parseImportedSettingsJson } = (() => {
+/**
+ * @fileoverview 偏好设置便携 JSON 备份及恢复工具 (`settingsBackup.js`).
+ * 通过单一声明式字段描述符表同时驱动导出与导入归一化，消除双遍手写 30 个键的漏同步风险。
+ */
+
+
+const SETTINGS_BACKUP_SCHEMA = 'antigravity-usage-monitor.settings';
+const MAX_SETTINGS_IMPORT_BYTES = 128 * 1024;
+
+function sanitizePositiveBudgetNum(val) {
+  const num = Number(val);
+  return Number.isFinite(num) && num > 0 ? num : null;
+}
+
+/**
+ * 在浏览器端通过内存 Blob 触发文件下载（统一承载文本与二进制载荷）。
+ *
+ * @param {string} filename
+ * @param {BlobPart} blobPart
+ * @param {string} [mimeType]
+ * @returns {boolean}
+ */
+function triggerBlobDownload(
+  filename,
+  blobPart,
+  mimeType = 'application/octet-stream'
+) {
+  try {
+    if (
+      typeof Blob === 'undefined' ||
+      typeof URL === 'undefined' ||
+      typeof URL.createObjectURL !== 'function' ||
+      typeof document === 'undefined'
+    ) {
+      return false;
+    }
+    const blob = new Blob([blobPart], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', String(filename || 'export.dat'));
+    a.style.display = 'none';
+    document.body?.appendChild?.(a);
+    a.click?.();
+    a.remove?.();
+    setTimeout(() => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
+    }, 1000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 在浏览器端通过内存 Blob 触发文本文件下载。
+ *
+ * @param {string} filename
+ * @param {string} content
+ * @param {string} [mimeType]
+ * @returns {boolean}
+ */
+function triggerTextFileDownload(
+  filename,
+  content,
+  mimeType = 'application/json;charset=utf-8'
+) {
+  return triggerBlobDownload(
+    String(filename || 'export.json'),
+    String(content ?? ''),
+    mimeType
+  );
+}
+
+const normField = (key, normalizeFn) => ({
+  exportTo: (src, out) => {
+    out[key] = normalizeFn(src[key]);
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key)) patch[key] = normalizeFn(src[key]);
+  },
+});
+
+const boolField = (key, defaultVal) => ({
+  exportTo: (src, out) => {
+    out[key] = defaultVal ? src[key] !== false : src[key] === true;
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key) && typeof src[key] === 'boolean') patch[key] = src[key];
+  },
+});
+
+const arrayField = (key, normalizeFn) => ({
+  exportTo: (src, out) => {
+    out[key] = normalizeFn(src[key]);
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key) && Array.isArray(src[key])) patch[key] = normalizeFn(src[key]);
+  },
+});
+
+const positiveBudgetField = (key, fallbackVal) => ({
+  exportTo: (src, out) => {
+    out[key] = sanitizePositiveBudgetNum(src[key]) ?? fallbackVal;
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key)) {
+      const num = sanitizePositiveBudgetNum(src[key]);
+      if (num !== null) patch[key] = num;
+    }
+  },
+});
+
+const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
+  normField('language', normalizeLanguageSetting),
+  normField('themeAccent', normalizeThemeAccent),
+  normField('fontScale', normalizeFontScale),
+  {
+    exportTo: (src, out) => {
+      out.modernUi = src.modernUi !== undefined ? normalizeModernUi(src.modernUi) : true;
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('modernUi')) {
+        const val = normalizeModernUi(src.modernUi);
+        patch.modernUi = val;
+        patch.experimentalModernUi = val;
+      }
+    },
+  },
+  normField('weeklyLimitMode', normalizeWeeklyLimitMode),
+  positiveBudgetField('weeklyTokenBudget', 150000000),
+  positiveBudgetField('weeklyCostBudget', 100),
+  {
+    exportTo: (src, out) => {
+      const mode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
+      out.modelDisplayMode = mode;
+      out.showUpstreamModel = mode !== 'short';
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('modelDisplayMode') || hasKey('showUpstreamModel')) {
+        const mode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
+        patch.modelDisplayMode = mode;
+        patch.showUpstreamModel = mode !== 'short';
+      }
+    },
+  },
+  normField('orchestratorIdMode', normalizeOrchestratorIdMode),
+  {
+    exportTo: (src, out) => {
+      out.pluginUpdateMode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('pluginUpdateMode') || hasKey('autoUpdatePlugin')) {
+        const mode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);
+        patch.pluginUpdateMode = mode;
+        patch.autoUpdatePlugin = mode === 'auto';
+      }
+    },
+  },
+  {
+    exportTo: (src, out) => {
+      out.windowMountMode = normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay);
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('windowMountMode') || hasKey('enableWindowOverlay')) {
+        const mode = normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay);
+        patch.windowMountMode = mode;
+        patch.enableWindowOverlay = mode !== 'sidebar';
+      }
+    },
+  },
+  normField('popoverWidthMode', normalizePopoverWidthMode),
+  normField('popoverWidth', normalizePopoverWidth),
+  boolField('enableCliStatusLine', true),
+  normField('cliStatusLineSlots', normalizeCliStatusLineSlots),
+  normField('standalonePort', normalizeStandalonePort),
+  boolField('showTopbarMultiSession', true),
+  normField('contextAgentMode', normalizeContextAgentMode),
+  arrayField('topbarCapsuleSlots', normalizeTopbarCapsuleSlots),
+  arrayField('hoverModules', normalizeHoverModules),
+  arrayField('overviewModules', normalizeOverviewModules),
+  arrayField('overviewMetrics', normalizeOverviewMetrics),
+  boolField('showStepTurnRail', false),
+  boolField('showStepAgentBadge', true),
+  boolField('showStepSpeedColor', false),
+  boolField('showStepFilterToolbar', false),
+  normField('stepTokenComboFormat', normalizeStepTokenComboFormat),
+  arrayField('stepTableColumns', normalizeStepTableColumns),
+  normField('experimentalQuotaReservation', normalizeExperimentalQuotaReservation),
+]);
+
+/**
+ * 将当前用户偏好设置序列化为跨设备可迁移的安全 JSON 备份文本（仅包含便携偏好项，不包含凭证或高风险覆盖开关）。
+ *
+ * @param {object} [settings={}]
+ * @returns {string}
+ */
+function buildExportableSettingsJson(settings = {}) {
+  const src = settings && typeof settings === 'object' ? settings : {};
+  const outSettings = {};
+  for (const desc of PORTABLE_SETTING_DESCRIPTORS) {
+    desc.exportTo(src, outSettings);
+  }
+  const payload = {
+    schema: SETTINGS_BACKUP_SCHEMA,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    settings: outSettings,
+  };
+  return `${JSON.stringify(payload, null, 2)}\n`;
+}
+
+/**
+ * 校验并解析导入的偏好设置 JSON，仅提取并归一化白名单内的便携配置项。
+ *
+ * @param {string} rawText
+ * @returns {{ ok: true, patch: object, appliedCount: number } | { ok: false, errorCode: string }}
+ */
+function parseImportedSettingsJson(rawText) {
+  if (typeof rawText !== 'string' || !rawText.trim() || rawText.length > MAX_SETTINGS_IMPORT_BYTES) {
+    return { ok: false, errorCode: 'invalid_json' };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch {
+    return { ok: false, errorCode: 'invalid_json' };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, errorCode: 'invalid_json' };
+  }
+
+  const hasWrappedSettings =
+    parsed.settings && typeof parsed.settings === 'object' && !Array.isArray(parsed.settings);
+  if (parsed.schema !== undefined && parsed.schema !== SETTINGS_BACKUP_SCHEMA) {
+    return { ok: false, errorCode: 'invalid_schema' };
+  }
+  const src = hasWrappedSettings ? parsed.settings : parsed;
+  const hasKey = (k) => Object.prototype.hasOwnProperty.call(src, k);
+  const patch = {};
+
+  for (const desc of PORTABLE_SETTING_DESCRIPTORS) {
+    desc.importTo(src, hasKey, patch);
+  }
+
+  const appliedCount = Object.keys(patch).length;
+  if (appliedCount === 0) {
+    return { ok: false, errorCode: 'empty_patch' };
+  }
+  return { ok: true, patch, appliedCount };
+}
+return { triggerBlobDownload, triggerTextFileDownload, buildExportableSettingsJson, parseImportedSettingsJson };
+})();
+
+// --- src/core/xlsxBuilder.js ---
+const { uint8ArrayToBase64, buildXlsxWorkbookBytes } = (() => {
+/**
+ * @fileoverview 零外部依赖原生 Excel (`.xlsx` / ECMA-376 OOXML) 多工作表构建器 (`xlsxBuilder.js`)。
+ * 内置标准 IEEE 802.3 CRC-32 及 ZIP STORE 封装，支持：
+ * - 多 Sheet 分页、冻结首行表头、自动筛选下拉箭头；
+ * - 按中英文混合视觉宽度精确自动计算最佳列宽（彻底消除截断及 `###` / `1E+08` 科学计数法）；
+ * - 原生数字格式（整数千分位 `#,##0`、货币 `$#,##0.00` / `$#,##0.0000`、原生百分比 `0.0%`、小数 `#,##0.0`）；
+ * - 专业视觉样式（深石板蓝表头、斑马纹、汇总高亮、异常红底警示、压缩蓝底提示）；
+ * - 全部字符串采用 `inlineStr` 并剔除 XML 1.0 非法控制符，天然免疫公式注入及 Excel 损坏警告。
+ */
+
+const INVALID_XML_CTRL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g;
+const INVALID_SHEET_NAME_RE = /[\\/?*[\]:]/g;
+
+// --- 样式索引常量（对应下方 STYLES_XML 中的 cellXfs 顺序） ---
+const STYLE_TEXT_LEFT = 1;
+const STYLE_TEXT_LEFT_ALT = 2;
+const STYLE_TEXT_CENTER = 3;
+const STYLE_TEXT_CENTER_ALT = 4;
+const STYLE_TEXT_RIGHT = 5;
+const STYLE_TEXT_RIGHT_ALT = 6;
+const STYLE_INT = 7;
+const STYLE_INT_ALT = 8;
+const STYLE_DEC1 = 9;
+const STYLE_DEC1_ALT = 10;
+const STYLE_DEC2 = 11;
+const STYLE_DEC2_ALT = 12;
+const STYLE_PCT = 13;
+const STYLE_PCT_ALT = 14;
+const STYLE_USD2 = 15;
+const STYLE_USD2_ALT = 16;
+const STYLE_USD4 = 17;
+const STYLE_USD4_ALT = 18;
+const STYLE_HEADER_LEFT = 19;
+const STYLE_HEADER_CENTER = 20;
+const STYLE_HEADER_RIGHT = 21;
+const STYLE_DANGER_TEXT = 22;
+const STYLE_DANGER_CENTER = 23;
+const STYLE_DANGER_INT = 24;
+const STYLE_DANGER_DEC1 = 25;
+const STYLE_DANGER_DEC2 = 26;
+const STYLE_DANGER_PCT = 27;
+const STYLE_DANGER_USD4 = 28;
+const STYLE_INFO_TEXT = 29;
+const STYLE_INFO_CENTER = 30;
+const STYLE_INFO_INT = 31;
+const STYLE_INFO_DEC1 = 32;
+const STYLE_INFO_DEC2 = 33;
+const STYLE_INFO_PCT = 34;
+const STYLE_INFO_USD4 = 35;
+const STYLE_SUMMARY_LABEL = 36;
+const STYLE_SUMMARY_CENTER = 37;
+const STYLE_SUMMARY_TEXT_RIGHT = 38;
+const STYLE_SUMMARY_INT = 39;
+const STYLE_SUMMARY_DEC1 = 40;
+const STYLE_SUMMARY_DEC2 = 41;
+const STYLE_SUMMARY_PCT = 42;
+const STYLE_SUMMARY_USD2 = 43;
+const STYLE_SUMMARY_USD4 = 44;
+
+const CRC32_TABLE = (() => {
+  const tbl = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let k = 0; k < 8; k += 1) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    tbl[i] = c >>> 0;
+  }
+  return tbl;
+})();
+
+function computeCrc32(bytes) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function encodeUtf8Bytes(str) {
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(String(str ?? ''));
+  }
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(String(str ?? ''), 'utf8'));
+  }
+  const s = unescape(encodeURIComponent(String(str ?? '')));
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i += 1) out[i] = s.charCodeAt(i);
+  return out;
+}
+
+/**
+ * 将 `Uint8Array` 编码为标准 Base64 字符串（兼容浏览器及 Node 环境）。
+ *
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+function uint8ArrayToBase64(bytes) {
+  if (!(bytes instanceof Uint8Array)) return '';
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64');
+  }
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, slice);
+  }
+  return btoa(binary);
+}
+
+/**
+ * 标准零依赖 ZIP STORE 打包器（用于生成严格合规的 `.xlsx` OOXML 容器）。
+ *
+ * @param {Array<{ name: string, data: Uint8Array | string }>} entries
+ * @returns {Uint8Array}
+ */
+function buildZipStoreArchive(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (let i = 0; i < entries.length; i += 1) {
+    const nameBytes = encodeUtf8Bytes(entries[i].name);
+    const dataBytes =
+      entries[i].data instanceof Uint8Array
+        ? entries[i].data
+        : encodeUtf8Bytes(entries[i].data);
+    const crc = computeCrc32(dataBytes);
+    const size = dataBytes.length;
+
+    // Local File Header (30 bytes + filename + data)
+    const lh = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true); // version needed: 2.0
+    lv.setUint16(6, 0x0800, true); // UTF-8 filename flag
+    lv.setUint16(8, 0, true); // compression: STORE
+    lv.setUint16(10, 0, true); // mod time
+    lv.setUint16(12, 0x5821, true); // mod date
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, size, true);
+    lv.setUint32(22, size, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true);
+    lh.set(nameBytes, 30);
+
+    localParts.push(lh, dataBytes);
+
+    // Central Directory Header (46 bytes + filename)
+    const ch = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, 0, true);
+    cv.setUint16(14, 0x5821, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, size, true);
+    cv.setUint32(24, size, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true);
+    cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true);
+    cv.setUint32(42, offset, true);
+    ch.set(nameBytes, 46);
+    centralParts.push(ch);
+
+    offset += lh.length + dataBytes.length;
+  }
+
+  let cdSize = 0;
+  for (let i = 0; i < centralParts.length; i += 1) cdSize += centralParts[i].length;
+
+  // End of Central Directory Record (22 bytes)
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(4, 0, true);
+  ev.setUint16(6, 0, true);
+  ev.setUint16(8, entries.length, true);
+  ev.setUint16(10, entries.length, true);
+  ev.setUint32(12, cdSize, true);
+  ev.setUint32(16, offset, true);
+  ev.setUint16(20, 0, true);
+
+  const totalLen = offset + cdSize + eocd.length;
+  const archive = new Uint8Array(totalLen);
+  let pos = 0;
+  for (let i = 0; i < localParts.length; i += 1) {
+    archive.set(localParts[i], pos);
+    pos += localParts[i].length;
+  }
+  for (let i = 0; i < centralParts.length; i += 1) {
+    archive.set(centralParts[i], pos);
+    pos += centralParts[i].length;
+  }
+  archive.set(eocd, pos);
+  return archive;
+}
+
+function escapeXmlText(val) {
+  return String(val ?? '')
+    .replace(INVALID_XML_CTRL_RE, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function columnIndexToLetter(index) {
+  let n = index + 1;
+  let out = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+/**
+ * 估算文本在 Excel 单元格中的视觉字符宽度（中文/全角约占 2.05 宽，ASCII 约 1.05 宽）。
+ */
+function measureExcelVisualWidth(str) {
+  const s = String(str ?? '').replace(/\r?\n/g, ' ');
+  let w = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    const code = s.charCodeAt(i);
+    if (
+      (code >= 0x2e80 && code <= 0x9fff) ||
+      (code >= 0xac00 && code <= 0xd7af) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xff00 && code <= 0xffef)
+    ) {
+      w += 2.05;
+    } else {
+      w += 1.05;
+    }
+  }
+  return w;
+}
+
+function estimateFormattedValueWidth(val, colType) {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    if (colType === 'int') {
+      return Math.round(val).toLocaleString('en-US').length * 1.1;
+    }
+    if (colType === 'usd2') {
+      return (`$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).length * 1.1;
+    }
+    if (colType === 'usd4') {
+      return (`$${val.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`).length * 1.1;
+    }
+    if (colType === 'pct') {
+      return (`${(val * 100).toFixed(1)}%`).length * 1.1;
+    }
+    if (colType === 'dec1') {
+      return (`${val.toFixed(1)}`).length * 1.1;
+    }
+    if (colType === 'dec2') {
+      return (`${val.toFixed(2)}`).length * 1.1;
+    }
+  }
+  return measureExcelVisualWidth(String(val));
+}
+
+function sanitizeSheetName(rawName, usedNames) {
+  const base =
+    String(rawName || 'Sheet')
+      .replace(INVALID_XML_CTRL_RE, '')
+      .replace(INVALID_SHEET_NAME_RE, ' ')
+      .replace(/^'+|'+$/g, '')
+      .trim()
+      .slice(0, 31) || 'Sheet';
+  let name = base;
+  let seq = 2;
+  while (usedNames.has(name.toLowerCase())) {
+    const suffix = ` ${seq}`;
+    name = `${base.slice(0, Math.max(1, 31 - suffix.length))}${suffix}`;
+    seq += 1;
+  }
+  usedNames.add(name.toLowerCase());
+  return name;
+}
+
+function resolveHeaderStyle(col) {
+  const align =
+    col.align ||
+    (col.type === 'center'
+      ? 'center'
+      : col.type && col.type !== 'text'
+        ? 'right'
+        : 'left');
+  if (align === 'center') return STYLE_HEADER_CENTER;
+  if (align === 'right') return STYLE_HEADER_RIGHT;
+  return STYLE_HEADER_LEFT;
+}
+
+function resolveCellStyle(col, isAlt, rowTone) {
+  const colType = col.type || 'text';
+  if (rowTone === 'summary') {
+    if (colType === 'center') return STYLE_SUMMARY_CENTER;
+    if (colType === 'int') return STYLE_SUMMARY_INT;
+    if (colType === 'dec1') return STYLE_SUMMARY_DEC1;
+    if (colType === 'dec2') return STYLE_SUMMARY_DEC2;
+    if (colType === 'pct') return STYLE_SUMMARY_PCT;
+    if (colType === 'usd2') return STYLE_SUMMARY_USD2;
+    if (colType === 'usd4') return STYLE_SUMMARY_USD4;
+    if (colType === 'text_right' || col.align === 'right') return STYLE_SUMMARY_TEXT_RIGHT;
+    return STYLE_SUMMARY_LABEL;
+  }
+  if (rowTone === 'danger') {
+    if (colType === 'center') return STYLE_DANGER_CENTER;
+    if (colType === 'int') return STYLE_DANGER_INT;
+    if (colType === 'dec1') return STYLE_DANGER_DEC1;
+    if (colType === 'dec2') return STYLE_DANGER_DEC2;
+    if (colType === 'pct') return STYLE_DANGER_PCT;
+    if (colType === 'usd2' || colType === 'usd4') return STYLE_DANGER_USD4;
+    return STYLE_DANGER_TEXT;
+  }
+  if (rowTone === 'info') {
+    if (colType === 'center') return STYLE_INFO_CENTER;
+    if (colType === 'int') return STYLE_INFO_INT;
+    if (colType === 'dec1') return STYLE_INFO_DEC1;
+    if (colType === 'dec2') return STYLE_INFO_DEC2;
+    if (colType === 'pct') return STYLE_INFO_PCT;
+    if (colType === 'usd2' || colType === 'usd4') return STYLE_INFO_USD4;
+    return STYLE_INFO_TEXT;
+  }
+  if (colType === 'center') return isAlt ? STYLE_TEXT_CENTER_ALT : STYLE_TEXT_CENTER;
+  if (colType === 'text_right') return isAlt ? STYLE_TEXT_RIGHT_ALT : STYLE_TEXT_RIGHT;
+  if (colType === 'int') return isAlt ? STYLE_INT_ALT : STYLE_INT;
+  if (colType === 'dec1') return isAlt ? STYLE_DEC1_ALT : STYLE_DEC1;
+  if (colType === 'dec2') return isAlt ? STYLE_DEC2_ALT : STYLE_DEC2;
+  if (colType === 'pct') return isAlt ? STYLE_PCT_ALT : STYLE_PCT;
+  if (colType === 'usd2') return isAlt ? STYLE_USD2_ALT : STYLE_USD2;
+  if (colType === 'usd4') return isAlt ? STYLE_USD4_ALT : STYLE_USD4;
+  return isAlt ? STYLE_TEXT_LEFT_ALT : STYLE_TEXT_LEFT;
+}
+
+function buildStylesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="6">
+    <numFmt numFmtId="164" formatCode="#,##0"/>
+    <numFmt numFmtId="165" formatCode="#,##0.0"/>
+    <numFmt numFmtId="166" formatCode="#,##0.00"/>
+    <numFmt numFmtId="167" formatCode="$#,##0.00"/>
+    <numFmt numFmtId="168" formatCode="$#,##0.0000"/>
+    <numFmt numFmtId="169" formatCode="0.0%"/>
+  </numFmts>
+  <fonts count="5">
+    <font><sz val="10"/><color rgb="FF1E293B"/><name val="Microsoft YaHei UI"/></font>
+    <font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Microsoft YaHei UI"/></font>
+    <font><sz val="10"/><color rgb="FFB91C1C"/><name val="Microsoft YaHei UI"/></font>
+    <font><sz val="10"/><color rgb="FF0369A1"/><name val="Microsoft YaHei UI"/></font>
+    <font><b/><sz val="10"/><color rgb="FF0F172A"/><name val="Microsoft YaHei UI"/></font>
+  </fonts>
+  <fills count="7">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF1E293B"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF8FAFC"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFEF2F2"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF0F9FF"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFEFF6FF"/></patternFill></fill>
+  </fills>
+  <borders count="4">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border>
+      <left style="thin"><color rgb="FFE2E8F0"/></left>
+      <right style="thin"><color rgb="FFE2E8F0"/></right>
+      <top style="thin"><color rgb="FFE2E8F0"/></top>
+      <bottom style="thin"><color rgb="FFE2E8F0"/></bottom>
+      <diagonal/>
+    </border>
+    <border>
+      <left style="thin"><color rgb="FF334155"/></left>
+      <right style="thin"><color rgb="FF334155"/></right>
+      <top style="thin"><color rgb="FF334155"/></top>
+      <bottom style="medium"><color rgb="FF0F172A"/></bottom>
+      <diagonal/>
+    </border>
+    <border>
+      <left style="thin"><color rgb="FFCBD5E1"/></left>
+      <right style="thin"><color rgb="FFCBD5E1"/></right>
+      <top style="thin"><color rgb="FF94A3B8"/></top>
+      <bottom style="medium"><color rgb="FF475569"/></bottom>
+      <diagonal/>
+    </border>
+  </borders>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
+  <cellXfs count="45">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="166" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="166" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="169" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="169" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="167" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="167" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="168" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="168" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="166" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="169" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="168" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="3" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="3" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="166" fontId="3" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="169" fontId="3" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="168" fontId="3" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="6" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="6" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="6" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="166" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="169" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="167" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="168" fontId="4" fillId="6" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+  </cellXfs>
+</styleSheet>`;
+}
+
+function buildWorksheetXml(sheet, isFirstSheet) {
+  const columns = Array.isArray(sheet.columns) ? sheet.columns : [];
+  const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
+  const hasAutoFilter = sheet.autoFilter !== false;
+  const headerPad = hasAutoFilter ? 5.5 : 3.8;
+  const colWidths = columns.map((col) => {
+    const headerW = measureExcelVisualWidth(col.header || '') + headerPad;
+    return Math.max(Number(col.minWidth || 9), headerW);
+  });
+
+  const rowXmls = [];
+  // Row 1: Header
+  const headerCells = [];
+  for (let c = 0; c < columns.length; c += 1) {
+    const ref = `${columnIndexToLetter(c)}1`;
+    const styleId = resolveHeaderStyle(columns[c]);
+    headerCells.push(
+      `<c r="${ref}" t="inlineStr" s="${styleId}"><is><t xml:space="preserve">${escapeXmlText(columns[c].header || '')}</t></is></c>`
+    );
+  }
+  rowXmls.push(`<row r="1" ht="26" customHeight="1">${headerCells.join('')}</row>`);
+
+  // Data Rows
+  for (let r = 0; r < rows.length; r += 1) {
+    const rowObj = rows[r];
+    const rowValues = Array.isArray(rowObj) ? rowObj : Array.isArray(rowObj?.values) ? rowObj.values : [];
+    const rowTone = !Array.isArray(rowObj) && rowObj?.tone ? rowObj.tone : '';
+    const isAlt = r % 2 === 1;
+    const excelRowIdx = r + 2;
+    const cellXmls = [];
+
+    for (let c = 0; c < columns.length; c += 1) {
+      const col = columns[c];
+      const rawVal = rowValues[c];
+      const ref = `${columnIndexToLetter(c)}${excelRowIdx}`;
+      const isCellObj = rawVal && typeof rawVal === 'object' && !Array.isArray(rawVal);
+      const val = isCellObj ? rawVal.value : rawVal;
+      const cellCol = isCellObj && rawVal.type ? { ...col, type: rawVal.type } : col;
+      const styleId = resolveCellStyle(cellCol, isAlt, rowTone);
+
+      const estW = estimateFormattedValueWidth(val, cellCol.type) + 3.8;
+      const maxW = Number(col.maxWidth || 52);
+      if (estW > colWidths[c]) {
+        colWidths[c] = Math.min(maxW, estW);
+      }
+
+      if (val === null || val === undefined || val === '') {
+        cellXmls.push(`<c r="${ref}" s="${styleId}"/>`);
+      } else if (typeof val === 'number' && Number.isFinite(val)) {
+        cellXmls.push(`<c r="${ref}" s="${styleId}"><v>${val}</v></c>`);
+      } else {
+        const textVal = String(val);
+        cellXmls.push(
+          `<c r="${ref}" t="inlineStr" s="${styleId}"><is><t xml:space="preserve">${escapeXmlText(textVal)}</t></is></c>`
+        );
+      }
+    }
+    const rowHeight = rowTone === 'summary' ? 24 : 21;
+    rowXmls.push(`<row r="${excelRowIdx}" ht="${rowHeight}" customHeight="1">${cellXmls.join('')}</row>`);
+  }
+
+  const colsXml = columns
+    .map((_, idx) => {
+      const w = Math.max(8, Math.min(64, +colWidths[idx].toFixed(1)));
+      return `<col min="${idx + 1}" max="${idx + 1}" width="${w}" customWidth="1"/>`;
+    })
+    .join('');
+
+  const lastCol = columnIndexToLetter(Math.max(0, columns.length - 1));
+  const lastRow = Math.max(1, rows.length + 1);
+  // 若末尾包含合计行，自动筛选区自动排除合计行，避免按列排序时把合计行混入明细
+  let filterEndRow = lastRow;
+  while (filterEndRow > 1) {
+    const tailRow = rows[filterEndRow - 2];
+    if (tailRow && !Array.isArray(tailRow) && tailRow.tone === 'summary') {
+      filterEndRow -= 1;
+    } else {
+      break;
+    }
+  }
+  const autoFilterXml =
+    hasAutoFilter && columns.length > 0 && filterEndRow > 1
+      ? `<autoFilter ref="A1:${lastCol}${filterEndRow}"/>`
+      : '';
+  const tabSel = isFirstSheet ? ' tabSelected="1"' : '';
+  const freezeXml =
+    sheet.freezeHeader !== false
+      ? '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
+      : '';
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:${lastCol}${lastRow}"/>
+  <sheetViews><sheetView${tabSel} workbookViewId="0">${freezeXml}</sheetView></sheetViews>
+  <sheetFormatPr defaultRowHeight="21"/>
+  <cols>${colsXml}</cols>
+  <sheetData>${rowXmls.join('')}</sheetData>
+  ${autoFilterXml}
+</worksheet>`;
+}
+
+/**
+ * 将结构化多工作表数据编译为标准 `.xlsx` 二进制字节流 (`Uint8Array`)。
+ *
+ * @param {Array<{
+ *   name: string,
+ *   columns: Array<{ header: string, type?: 'text'|'center'|'int'|'dec1'|'dec2'|'pct'|'usd2'|'usd4', align?: 'left'|'center'|'right', minWidth?: number, maxWidth?: number }>,
+ *   rows: Array<Array<unknown> | { values: Array<unknown>, tone?: ''|'danger'|'info'|'summary' }>,
+ *   autoFilter?: boolean,
+ *   freezeHeader?: boolean,
+ * }>} sheets
+ * @returns {Uint8Array}
+ */
+function buildXlsxWorkbookBytes(sheets) {
+  const validSheets = (Array.isArray(sheets) ? sheets : []).filter(
+    (s) => s && Array.isArray(s.columns) && s.columns.length > 0
+  );
+  if (validSheets.length === 0) {
+    validSheets.push({
+      name: 'Sheet1',
+      columns: [{ header: 'Empty', type: 'text', minWidth: 14 }],
+      rows: [],
+    });
+  }
+
+  const usedNames = new Set();
+  const normalizedSheets = validSheets.map((s) => ({
+    ...s,
+    safeName: sanitizeSheetName(s.name, usedNames),
+  }));
+
+  const contentOverrides = [
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>',
+    ...normalizedSheets.map(
+      (_, idx) =>
+        `<Override PartName="/xl/worksheets/sheet${idx + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+    ),
+  ].join('');
+
+  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  ${contentOverrides}
+</Types>`;
+
+  const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+  const wbSheetsXml = normalizedSheets
+    .map(
+      (s, idx) =>
+        `<sheet name="${escapeXmlText(s.safeName)}" sheetId="${idx + 1}" r:id="rId${idx + 1}"/>`
+    )
+    .join('');
+
+  const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>${wbSheetsXml}</sheets>
+</workbook>`;
+
+  const wbRelsList = [
+    ...normalizedSheets.map(
+      (_, idx) =>
+        `<Relationship Id="rId${idx + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${idx + 1}.xml"/>`
+    ),
+    `<Relationship Id="rId${normalizedSheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`,
+  ].join('');
+
+  const wbRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${wbRelsList}
+</Relationships>`;
+
+  const archiveEntries = [
+    { name: '[Content_Types].xml', data: contentTypesXml },
+    { name: '_rels/.rels', data: rootRelsXml },
+    { name: 'xl/workbook.xml', data: workbookXml },
+    { name: 'xl/_rels/workbook.xml.rels', data: wbRelsXml },
+    { name: 'xl/styles.xml', data: buildStylesXml() },
+    ...normalizedSheets.map((s, idx) => ({
+      name: `xl/worksheets/sheet${idx + 1}.xml`,
+      data: buildWorksheetXml(s, idx === 0),
+    })),
+  ];
+
+  return buildZipStoreArchive(archiveEntries);
+}
+return { uint8ArrayToBase64, buildXlsxWorkbookBytes };
+})();
+
+// --- src/core/reportExporter.js ---
+const { escapeCsvCell, sanitizeExportFilename, buildConsumptionExportBaseName, buildStepsExportBaseName, buildStepsCsv, buildStepsXlsx, buildStepsMarkdownReport, buildConsumptionCsv, buildConsumptionXlsx, buildConsumptionMarkdownReport } = (() => {
+/**
+ * @fileoverview 原生多工作表 Excel (`.xlsx`)、RFC-4180 防公式注入 CSV 及双语 Markdown 诊断报告生成纯函数模块 (`reportExporter.js`)。
+ * 零外部依赖、单遍 O(N) 聚合，供「按步查看」和「用量统计」视图复用。
+ */
+
+
+const PLAIN_SIGNED_NUMBER_RE = /^[+-]?\d+(\.\d+)?$/;
+
+const RANGE_LABELS_ZH = Object.freeze({
+  today: '今日',
+  '24h': '近24小时',
+  '7d': '近7天',
+  '14d': '近14天',
+  '30d': '近30天',
+  all: '全部时间',
+  cycle: '当前周期',
+  custom: '自定义区间',
+});
+
+const RANGE_LABELS_EN = Object.freeze({
+  today: 'Today',
+  '24h': 'Last 24 Hours',
+  '7d': 'Last 7 Days',
+  '14d': 'Last 14 Days',
+  '30d': 'Last 30 Days',
+  all: 'All Time',
+  cycle: 'Current Cycle',
+  custom: 'Custom Range',
+});
+
+const ANOMALY_LABELS_ZH = Object.freeze({
+  timeout: '流空闲 / 连接超时',
+  rate_limit: '429 限流 / 配额耗尽',
+  capacity: '503 上游算力不足',
+  disconnect: '连接中断 / 断流',
+  upstream: '上游 5xx 内部错误',
+  model_output: '模型输出 / 工具参数无效',
+  safety: '内容安全过滤',
+  auth_or_model: '请求受限 / 模型不可用',
+  error: '调用异常',
+  canceled: '用户取消',
+});
+
+const ANOMALY_LABELS_EN = Object.freeze({
+  timeout: 'Stream Idle / Connect Timeout',
+  rate_limit: '429 Rate Limit / Quota Reached',
+  capacity: '503 No Capacity Available',
+  disconnect: 'Connection Reset / Stream Interrupted',
+  upstream: 'Upstream 5xx Internal Error',
+  model_output: 'Invalid Model Output / Tool Call',
+  safety: 'Content Safety Filter',
+  auth_or_model: 'Request / Model Rejected',
+  error: 'Call Error',
+  canceled: 'Canceled by User',
+});
+
+function resolveExportEnglish(locale) {
+  if (typeof locale === 'string' && locale.trim()) {
+    return locale.trim().toLowerCase().startsWith('en');
+  }
+  return isEnglishLocale();
+}
+
+function formatExportDateTime(ms, includeSeconds = true) {
+  const n = Number(ms);
+  if (!(n > 0) || !Number.isFinite(n)) return '';
+  const d = new Date(n);
+  const pad = (v) => String(v).padStart(2, '0');
+  const base = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return includeSeconds ? `${base}:${pad(d.getSeconds())}` : base;
+}
+
+function formatExportDate(ms) {
+  const n = Number(ms);
+  if (!(n > 0) || !Number.isFinite(n)) return '';
+  const d = new Date(n);
+  const pad = (v) => String(v).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function resolveLocalizedRangeLabel(range, en) {
+  const r = range || {};
+  const key = String(r.key || '').trim().toLowerCase();
+  if (en) {
+    return RANGE_LABELS_EN[key] || r.label || key || 'All Time';
+  }
+  return r.label || RANGE_LABELS_ZH[key] || key || '全部时间';
+}
+
+function resolveRangeSpanNote(range) {
+  const startMs = Number(range?.startMs || 0);
+  const endMs = Number(range?.endMs || 0);
+  if (startMs > 0 && endMs > 0) {
+    return `${formatExportDate(startMs)} ~ ${formatExportDate(endMs)}`;
+  }
+  return '';
+}
+
+function computeCacheHitRatio(inTok, cacheTok, fallbackPct = null) {
+  const safeIn = Math.max(0, Number(inTok || 0));
+  const safeCache = Math.max(0, Number(cacheTok || 0));
+  const promptTok = safeIn + safeCache;
+  if (promptTok > 0) {
+    return Math.max(0, Math.min(1, safeCache / promptTok));
+  }
+  if (fallbackPct != null && Number.isFinite(Number(fallbackPct))) {
+    return Math.max(0, Math.min(1, Number(fallbackPct) / 100));
+  }
+  return 0;
+}
+
+function formatLocalizedAnomalyKind(kind, en, explicitLocale) {
+  const k = String(kind || 'error').trim();
+  if (explicitLocale) {
+    const dict = en ? ANOMALY_LABELS_EN : ANOMALY_LABELS_ZH;
+    if (dict[k]) return dict[k];
+  }
+  return formatAnomalyKindLabel(k);
+}
+
+function formatStepAnomaliesText(st, en, explicitLocale) {
+  const anom = st?.anomaly;
+  const count = Number(anom?.count || 0);
+  if (!(count > 0)) return '';
+  const kinds = anom?.kinds && typeof anom.kinds === 'object' ? Object.entries(anom.kinds) : [];
+  if (kinds.length > 0) {
+    return kinds
+      .filter(([, v]) => Number(v || 0) > 0)
+      .map(([k, v]) => `${formatLocalizedAnomalyKind(k, en, explicitLocale)} ×${Number(v)}`)
+      .join('；');
+  }
+  return formatLocalizedAnomalyKind(anom?.primaryKind || 'error', en, explicitLocale);
+}
+
+function formatStepAgentLabel(st, en) {
+  const explicit = String(st?.agentLabel || st?.agentBadge || '').trim();
+  if (explicit) return explicit;
+  if (st?.isSubagent) {
+    return st?.agentId ? String(st.agentId) : en ? 'Subagent' : '子代理';
+  }
+  return en ? 'Main' : '主会话';
+}
+
+function formatTrendWindowLabel(slot, isHourly) {
+  if (Number(slot?.startMs) > 0) {
+    return isHourly
+      ? formatExportDateTime(slot.startMs, false)
+      : formatExportDate(slot.startMs);
+  }
+  return String(slot?.fullLabel || slot?.label || '');
+}
+
+function summarizeStepsForExport(list, displaySettings) {
+  let sumIn = 0;
+  let sumCache = 0;
+  let sumOut = 0;
+  let sumThink = 0;
+  let sumReply = 0;
+  let sumCost = 0;
+  let sumDuration = 0;
+  let maxContext = 0;
+  let tpsTokSum = 0;
+  let tpsSecSum = 0;
+  let tpsCnt = 0;
+  let ttftSum = 0;
+  let ttftCnt = 0;
+  let anomSteps = 0;
+  let anomTotal = 0;
+  let compactionCount = 0;
+  const byModel = new Map();
+
+  for (let i = 0; i < list.length; i += 1) {
+    const st = list[i];
+    if (!st) continue;
+    const inTok = Math.max(0, Number(st.inputTokens || 0));
+    const cacheTok = Math.max(0, Number(st.cacheReadTokens || 0));
+    const outTok = Math.max(0, Number(st.outputTokens || 0));
+    const thinkTok = Math.max(0, Number(st.thinkingTokens || 0));
+    const replyTok =
+      st.responseTokens != null
+        ? Math.max(0, Number(st.responseTokens))
+        : Math.max(0, outTok - thinkTok);
+    const ctxTok = Math.max(0, Number(st.contextTokens || inTok + cacheTok + outTok));
+    const cost = Number(st.costUsd || 0);
+    const rawDur = st.totalDurationSec ?? st.durationSec;
+    const dur = rawDur != null && Number.isFinite(Number(rawDur)) ? Number(rawDur) : 0;
+
+    sumIn += inTok;
+    sumCache += cacheTok;
+    sumOut += outTok;
+    sumThink += thinkTok;
+    sumReply += replyTok;
+    if (ctxTok > maxContext) maxContext = ctxTok;
+    if (Number.isFinite(cost) && cost > 0) sumCost += cost;
+    if (Number.isFinite(dur) && dur > 0) sumDuration += dur;
+
+    const validTps =
+      !st.isCompactionStep &&
+      outTok >= 50 &&
+      !st.selectedSpeedReason &&
+      Number.isFinite(Number(st.tokPerSec)) &&
+      Number(st.tokPerSec) > 0;
+    const stepSpeedSec = validTps
+      ? st.totalDurationSec != null && Number(st.totalDurationSec) >= 0.5
+        ? Number(st.totalDurationSec)
+        : outTok / Number(st.tokPerSec)
+      : 0;
+    const validTtft =
+      !st.isCompactionStep && Number.isFinite(Number(st.ttftSec)) && Number(st.ttftSec) >= 0;
+    if (validTps && stepSpeedSec > 0) {
+      tpsTokSum += outTok;
+      tpsSecSum += stepSpeedSec;
+      tpsCnt += 1;
+    }
+    if (validTtft) {
+      ttftSum += Number(st.ttftSec);
+      ttftCnt += 1;
+    }
+    if (st.isCompactionStep) compactionCount += 1;
+    const ac = Number(st.anomaly?.count || 0);
+    if (ac > 0) {
+      anomSteps += 1;
+      anomTotal += ac;
+    }
+
+    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const mKey = mInfo.text || 'Unknown';
+    let mAcc = byModel.get(mKey);
+    if (!mAcc) {
+      mAcc = {
+        label: mKey,
+        calls: 0,
+        inTok: 0,
+        cacheTok: 0,
+        outTok: 0,
+        cost: 0,
+        tpsTokSum: 0,
+        tpsSecSum: 0,
+        tpsCnt: 0,
+        ttftSum: 0,
+        ttftCnt: 0,
+      };
+      byModel.set(mKey, mAcc);
+    }
+    mAcc.calls += 1;
+    mAcc.inTok += inTok;
+    mAcc.cacheTok += cacheTok;
+    mAcc.outTok += outTok;
+    if (Number.isFinite(cost) && cost > 0) mAcc.cost += cost;
+    if (validTps && stepSpeedSec > 0) {
+      mAcc.tpsTokSum += outTok;
+      mAcc.tpsSecSum += stepSpeedSec;
+      mAcc.tpsCnt += 1;
+    }
+    if (validTtft) {
+      mAcc.ttftSum += Number(st.ttftSec);
+      mAcc.ttftCnt += 1;
+    }
+  }
+
+  const sortedModels = Array.from(byModel.values()).sort(
+    (a, b) =>
+      b.cost - a.cost ||
+      b.inTok + b.cacheTok + b.outTok - (a.inTok + a.cacheTok + a.outTok)
+  );
+
+  return {
+    sumIn,
+    sumCache,
+    sumOut,
+    sumThink,
+    sumReply,
+    sumCost,
+    sumDuration,
+    maxContext,
+    tpsTokSum,
+    tpsSecSum,
+    tpsCnt,
+    ttftSum,
+    ttftCnt,
+    anomSteps,
+    anomTotal,
+    compactionCount,
+    sortedModels,
+  };
+}
+
+/**
+ * RFC-4180 安全转义单个 CSV 单元格，并防御电子表格公式注入（`=`, `+`, `-`, `@`, `\t`, `\r`）。
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function escapeCsvCell(value) {
+  if (value === null || value === undefined) return '';
+  let str = String(value);
+  if (str.length > 0) {
+    const first = str[0];
+    if (
+      first === '=' ||
+      first === '@' ||
+      first === '\t' ||
+      first === '\r' ||
+      ((first === '+' || first === '-') && !PLAIN_SIGNED_NUMBER_RE.test(str.trim()))
+    ) {
+      str = `'${str}`;
+    }
+  }
+  if (/[",\r\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function csvRow(cells) {
+  return cells.map(escapeCsvCell).join(',');
+}
+
+/**
+ * 生成安全跨平台导出文件名（剔除非法路径字符并附加 `YYYYMMDD-HHmm` 时间戳）。
+ *
+ * @param {string} baseName
+ * @param {string} ext
+ * @param {number} [nowMs]
+ * @returns {string}
+ */
+function sanitizeExportFilename(baseName, ext = 'xlsx', nowMs = Date.now()) {
+  const cleanBase =
+    String(baseName || 'usage-report')
+      .replace(/[\\/:*?"<>|\r\n\t]+/g, '-')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 48) || 'usage-report';
+  const d = new Date(Number.isFinite(nowMs) ? nowMs : Date.now());
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+  const cleanExt = String(ext || 'xlsx').replace(/^\.+/, '');
+  return `${cleanBase}-${stamp}.${cleanExt}`;
+}
+
+/**
+ * 生成按当前界面语言本地化的用量统计导出文件前缀。
+ *
+ * @param {object} consumption
+ * @param {string} [fallbackRange='all']
+ * @param {{ locale?: string }} [opts]
+ * @returns {string}
+ */
+function buildConsumptionExportBaseName(
+  consumption,
+  fallbackRange = 'all',
+  { locale } = {}
+) {
+  const en = resolveExportEnglish(locale);
+  const range = consumption?.selectedRange || { key: fallbackRange };
+  const rKey = range.key || fallbackRange || 'all';
+  if (en) {
+    return `usage-${rKey}`;
+  }
+  const zhLabel = resolveLocalizedRangeLabel(range, false);
+  return `用量统计-${zhLabel}`;
+}
+
+/**
+ * 生成按当前界面语言本地化的调用明细导出文件前缀。
+ *
+ * @param {string} [title='']
+ * @param {string} [cascadeId='']
+ * @param {{ locale?: string }} [opts]
+ * @returns {string}
+ */
+function buildStepsExportBaseName(title = '', cascadeId = '', { locale } = {}) {
+  const en = resolveExportEnglish(locale);
+  const name = String(title || cascadeId || '').trim();
+  if (en) {
+    return `steps-${name || 'session'}`;
+  }
+  return `调用明细-${name || '当前会话'}`;
+}
+
+function escapeMdCell(value) {
+  return String(value ?? '—')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\|/g, '\\|')
+    .trim();
+}
+
+/**
+ * 将当前步骤列表导出为带 UTF-8 BOM 的 RFC-4180 安全 CSV 字符串（向后兼容保留）。
+ *
+ * @param {Array<object>} steps
+ * @param {{ displaySettings?: object, includeBom?: boolean }} [opts]
+ * @returns {string}
+ */
+function buildStepsCsv(steps, { displaySettings = {}, includeBom = true } = {}) {
+  const list = Array.isArray(steps) ? steps : [];
+  const header = csvRow([
+    'step',
+    'timestamp',
+    'agent',
+    'model',
+    'raw_model_id',
+    'tok_per_sec',
+    'ttft_sec',
+    'duration_sec',
+    'input_tokens',
+    'cache_read_tokens',
+    'output_tokens',
+    'thinking_tokens',
+    'response_tokens',
+    'context_tokens',
+    'cache_hit_pct',
+    'cost_usd',
+    'compaction',
+    'anomaly_count',
+    'anomalies',
+    'prompt',
+  ]);
+
+  const rows = [header];
+  for (let i = 0; i < list.length; i += 1) {
+    const st = list[i];
+    if (!st) continue;
+    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const inTok = Number(st.inputTokens || 0);
+    const cacheTok = Number(st.cacheReadTokens || 0);
+    const outTok = Number(st.outputTokens || 0);
+    const thinkTok = Number(st.thinkingTokens || 0);
+    const replyTok =
+      st.responseTokens != null ? Number(st.responseTokens) : Math.max(0, outTok - thinkTok);
+    const promptTok = inTok + cacheTok;
+    const cachePct =
+      st.cacheHitPct != null && Number.isFinite(Number(st.cacheHitPct))
+        ? formatPctNumber(st.cacheHitPct)
+        : promptTok > 0
+          ? formatPctNumber((cacheTok / promptTok) * 100)
+          : '0';
+    const ctxTok = Number(st.contextTokens || promptTok + outTok);
+    const anomCount = Number(st.anomaly?.count || 0);
+    const anomDesc =
+      anomCount > 0
+        ? Object.entries(st.anomaly?.kinds || {})
+            .map(([k, v]) => `${k}:${v}`)
+            .join(';') || String(st.anomaly?.primaryKind || 'error')
+        : '';
+    rows.push(
+      csvRow([
+        st.stepIndex ?? '',
+        st.createdAtMs ? new Date(st.createdAtMs).toISOString() : '',
+        st.agentLabel || st.agentBadge || (st.isSubagent ? st.agentId || 'subagent' : 'main'),
+        mInfo.text,
+        st.rawModelId || st.modelKey || '',
+        st.tokPerSec != null && Number.isFinite(Number(st.tokPerSec))
+          ? Number(st.tokPerSec).toFixed(2)
+          : '',
+        st.ttftSec != null && Number.isFinite(Number(st.ttftSec))
+          ? Number(st.ttftSec).toFixed(3)
+          : '',
+        (st.totalDurationSec ?? st.durationSec) != null &&
+        Number.isFinite(Number(st.totalDurationSec ?? st.durationSec))
+          ? Number(st.totalDurationSec ?? st.durationSec).toFixed(3)
+          : '',
+        inTok,
+        cacheTok,
+        outTok,
+        thinkTok,
+        replyTok,
+        ctxTok,
+        cachePct,
+        st.costUsd != null && Number.isFinite(Number(st.costUsd))
+          ? Number(st.costUsd).toFixed(6)
+          : '',
+        st.isCompactionStep ? 'true' : 'false',
+        anomCount,
+        anomDesc,
+        String(st.turnPrompt || st.rootTurnPrompt || '').replace(/\r?\n/g, ' ').trim(),
+      ])
+    );
+  }
+  return `${includeBom ? '\uFEFF' : ''}${rows.join('\r\n')}\r\n`;
+}
+
+/**
+ * 将当前步骤列表导出为精排版、多工作表、双语本地化原生 Excel (`.xlsx`) 二进制工作簿。
+ * 包含「步骤明细 / Steps」（带异常红底标亮、压缩蓝底提示、自动列宽及数字格式）和「模型汇总 / Model Summary」。
+ *
+ * @param {Array<object>} steps
+ * @param {{ title?: string, cascadeId?: string, displaySettings?: object, locale?: string }} [opts]
+ * @returns {Uint8Array}
+ */
+function buildStepsXlsx(
+  steps,
+  { displaySettings = {}, locale } = {}
+) {
+  const en = resolveExportEnglish(locale);
+  const explicitLocale = typeof locale === 'string' && locale.trim().length > 0;
+  const list = Array.isArray(steps) ? steps.filter(Boolean) : [];
+  const agg = summarizeStepsForExport(list, displaySettings);
+
+  const stepRows = [];
+  for (let i = 0; i < list.length; i += 1) {
+    const st = list[i];
+    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const inTok = Math.max(0, Number(st.inputTokens || 0));
+    const cacheTok = Math.max(0, Number(st.cacheReadTokens || 0));
+    const outTok = Math.max(0, Number(st.outputTokens || 0));
+    const thinkTok = Math.max(0, Number(st.thinkingTokens || 0));
+    const replyTok =
+      st.responseTokens != null
+        ? Math.max(0, Number(st.responseTokens))
+        : Math.max(0, outTok - thinkTok);
+    const ctxTok = Math.max(0, Number(st.contextTokens || inTok + cacheTok + outTok));
+    const cacheRatio = computeCacheHitRatio(inTok, cacheTok, st.cacheHitPct);
+    const anomCount = Number(st.anomaly?.count || 0);
+    const anomText = formatStepAnomaliesText(st, en, explicitLocale);
+    const promptText = String(st.turnPrompt || st.rootTurnPrompt || '')
+      .replace(/\r?\n/g, ' ')
+      .trim();
+    const stepNum = Number.isFinite(Number(st.stepIndex)) ? Number(st.stepIndex) : i + 1;
+    const tpsVal =
+      !st.isCompactionStep && st.tokPerSec != null && Number.isFinite(Number(st.tokPerSec))
+        ? Number(st.tokPerSec)
+        : null;
+    const ttftVal =
+      !st.isCompactionStep && st.ttftSec != null && Number.isFinite(Number(st.ttftSec))
+        ? Number(st.ttftSec)
+        : null;
+    const rawDurVal = st.totalDurationSec ?? st.durationSec;
+    const durVal =
+      rawDurVal != null && Number.isFinite(Number(rawDurVal))
+        ? Number(rawDurVal)
+        : null;
+    const costVal =
+      st.costUsd != null && Number.isFinite(Number(st.costUsd)) ? Number(st.costUsd) : null;
+    const typeLabel = st.isCompactionStep
+      ? en
+        ? 'Compaction'
+        : '自动压缩'
+      : en
+        ? 'Normal'
+        : '常规';
+    const tone = anomCount > 0 ? 'danger' : st.isCompactionStep ? 'info' : '';
+
+    stepRows.push({
+      tone,
+      values: [
+        stepNum,
+        formatExportDateTime(st.createdAtMs, true),
+        formatStepAgentLabel(st, en),
+        mInfo.text || '—',
+        typeLabel,
+        tpsVal,
+        ttftVal,
+        durVal,
+        inTok,
+        cacheTok,
+        thinkTok,
+        replyTok,
+        outTok,
+        ctxTok,
+        cacheRatio,
+        costVal,
+        anomText,
+        promptText,
+      ],
+    });
+  }
+
+  if (list.length > 0) {
+    const overallCacheRatio = computeCacheHitRatio(agg.sumIn, agg.sumCache);
+    stepRows.push({
+      tone: 'summary',
+      values: [
+        '',
+        '',
+        '',
+        en ? `Total (${list.length} steps)` : `合计（共 ${list.length} 步）`,
+        agg.compactionCount > 0
+          ? en
+            ? `${agg.compactionCount} compact`
+            : `含 ${agg.compactionCount} 次压缩`
+          : '',
+        agg.tpsSecSum > 0 ? +(agg.tpsTokSum / agg.tpsSecSum).toFixed(1) : null,
+        agg.ttftCnt > 0 ? +(agg.ttftSum / agg.ttftCnt).toFixed(2) : null,
+        agg.sumDuration > 0 ? +agg.sumDuration.toFixed(2) : null,
+        agg.sumIn,
+        agg.sumCache,
+        agg.sumThink,
+        agg.sumReply,
+        agg.sumOut,
+        agg.maxContext,
+        overallCacheRatio,
+        agg.sumCost,
+        agg.anomTotal > 0
+          ? en
+            ? `${agg.anomTotal} events (${agg.anomSteps} steps)`
+            : `共 ${agg.anomTotal} 次（${agg.anomSteps} 步）`
+          : '',
+        '',
+      ],
+    });
+  }
+
+  const sheets = [
+    {
+      name: en ? 'Steps' : '步骤明细',
+      columns: [
+        { header: en ? 'Step' : '步骤', type: 'int', minWidth: 9 },
+        { header: en ? 'Time' : '时间', type: 'center', minWidth: 21 },
+        { header: en ? 'Agent' : '执行体', type: 'center', minWidth: 11 },
+        { header: en ? 'Model' : '模型', type: 'text', minWidth: 18, maxWidth: 38 },
+        { header: en ? 'Type' : '类型', type: 'center', minWidth: 11 },
+        { header: en ? 'Speed (tok/s)' : '速率 (tok/s)', type: 'dec1', minWidth: 14 },
+        { header: en ? 'TTFT (s)' : '首字延迟 (s)', type: 'dec2', minWidth: 13 },
+        { header: en ? 'Duration (s)' : '总耗时 (s)', type: 'dec2', minWidth: 13 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 13 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 14 },
+        { header: en ? 'Thinking' : '思考', type: 'int', minWidth: 11 },
+        { header: en ? 'Reply' : '回复', type: 'int', minWidth: 11 },
+        { header: en ? 'Output' : '总输出', type: 'int', minWidth: 12 },
+        { header: en ? 'Context' : '上下文', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Cost (USD)' : '费用 (USD)', type: 'usd4', minWidth: 14 },
+        { header: en ? 'Anomalies' : '异常诊断', type: 'text', minWidth: 14, maxWidth: 38 },
+        { header: en ? 'Turn Prompt' : '用户指令', type: 'text', minWidth: 24, maxWidth: 52 },
+      ],
+      rows: stepRows,
+    },
+  ];
+
+  if (agg.sortedModels.length > 0) {
+    const modelRows = agg.sortedModels.map((m) => {
+      const mTotal = m.inTok + m.cacheTok + m.outTok;
+      return [
+        m.label,
+        m.calls,
+        m.inTok,
+        m.cacheTok,
+        m.outTok,
+        mTotal,
+        computeCacheHitRatio(m.inTok, m.cacheTok),
+        m.tpsSecSum > 0 ? +(m.tpsTokSum / m.tpsSecSum).toFixed(1) : null,
+        m.ttftCnt > 0 ? +(m.ttftSum / m.ttftCnt).toFixed(2) : null,
+        m.cost,
+      ];
+    });
+    modelRows.push({
+      tone: 'summary',
+      values: [
+        en ? 'Total' : '合计',
+        list.length,
+        agg.sumIn,
+        agg.sumCache,
+        agg.sumOut,
+        agg.sumIn + agg.sumCache + agg.sumOut,
+        computeCacheHitRatio(agg.sumIn, agg.sumCache),
+        agg.tpsSecSum > 0 ? +(agg.tpsTokSum / agg.tpsSecSum).toFixed(1) : null,
+        agg.ttftCnt > 0 ? +(agg.ttftSum / agg.ttftCnt).toFixed(2) : null,
+        agg.sumCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Model Summary' : '模型汇总',
+      columns: [
+        { header: en ? 'Model' : '模型', type: 'text', minWidth: 20, maxWidth: 42 },
+        { header: en ? 'Steps' : '步数', type: 'int', minWidth: 10 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '总输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Avg Speed (tok/s)' : '平均速率 (tok/s)', type: 'dec1', minWidth: 16 },
+        { header: en ? 'Avg TTFT (s)' : '平均首字 (s)', type: 'dec2', minWidth: 14 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd4', minWidth: 16 },
+      ],
+      rows: modelRows,
+    });
+  }
+
+  return buildXlsxWorkbookBytes(sheets);
+}
+
+/**
+ * 生成当前会话（或筛选后步骤子集）的可分享双语 Markdown 诊断报告。
+ *
+ * @param {Array<object>} steps
+ * @param {{ title?: string, cascadeId?: string, displaySettings?: object, filterNote?: string, locale?: string }} [opts]
+ * @returns {string}
+ */
+function buildStepsMarkdownReport(
+  steps,
+  { title = '', cascadeId = '', displaySettings = {}, filterNote = '', locale } = {}
+) {
+  const en = resolveExportEnglish(locale);
+  const explicitLocale = typeof locale === 'string' && locale.trim().length > 0;
+  const list = Array.isArray(steps) ? steps.filter(Boolean) : [];
+  const agg = summarizeStepsForExport(list, displaySettings);
+
+  const totalTok = agg.sumIn + agg.sumCache + agg.sumOut;
+  const cacheHitPct = formatPctNumber(computeCacheHitRatio(agg.sumIn, agg.sumCache) * 100);
+  const avgTps =
+    agg.tpsSecSum > 0 ? formatSpeedMetric(agg.tpsTokSum / agg.tpsSecSum, ' tok/s') : '—';
+  const avgTtft = agg.ttftCnt > 0 ? formatMetric(agg.ttftSum / agg.ttftCnt, 's') : '—';
+  const heading = title
+    ? `# ${title}`
+    : en
+      ? '# Session Telemetry Report'
+      : '# 会话遥测诊断报告';
+
+  const lines = en
+    ? [
+        heading,
+        '',
+        ...(cascadeId ? [`- **Session ID**: \`${cascadeId}\``] : []),
+        ...(filterNote ? [`- **Scope**: ${filterNote}`] : []),
+        `- **Steps**: ${list.length}${agg.compactionCount > 0 ? ` (${agg.compactionCount} compaction)` : ''}${agg.anomTotal > 0 ? ` · **Anomalies**: ${agg.anomTotal} across ${agg.anomSteps} steps` : ''}`,
+        `- **Total Tokens**: ${formatTokensPrecise(totalTok)} (Input ${formatTokensPrecise(agg.sumIn)} / Cache ${formatTokensPrecise(agg.sumCache)} · ${cacheHitPct}% / Output ${formatTokensPrecise(agg.sumOut)})`,
+        `- **Est. Cost**: ${formatUsd(agg.sumCost, { precise: agg.sumCost > 0 && agg.sumCost < 0.1 })} · **Avg Speed**: ${avgTps} · **Avg TTFT**: ${avgTtft}`,
+      ]
+    : [
+        heading,
+        '',
+        ...(cascadeId ? [`- **会话 ID**: \`${cascadeId}\``] : []),
+        ...(filterNote ? [`- **筛选范围**: ${filterNote}`] : []),
+        `- **调用步数**: ${list.length}${agg.compactionCount > 0 ? `（含 ${agg.compactionCount} 次自动压缩）` : ''}${agg.anomTotal > 0 ? ` · **异常事件**: ${agg.anomTotal} 次（涉及 ${agg.anomSteps} 步）` : ''}`,
+        `- **总 Token**: ${formatTokensPrecise(totalTok)}（新输入 ${formatTokensPrecise(agg.sumIn)} / 缓存读取 ${formatTokensPrecise(agg.sumCache)} · ${cacheHitPct}% / 输出 ${formatTokensPrecise(agg.sumOut)}）`,
+        `- **预估费用**: ${formatUsd(agg.sumCost, { precise: agg.sumCost > 0 && agg.sumCost < 0.1 })} · **平均速率**: ${avgTps} · **平均首字**: ${avgTtft}`,
+      ];
+
+  if (agg.sortedModels.length > 0) {
+    lines.push(
+      '',
+      en ? '## Model Breakdown' : '## 模型分布',
+      '',
+      en
+        ? '| Model | Calls | Total Tokens | Cache Hit | Avg Speed | Est. Cost |'
+        : '| 模型 | 调用次数 | 总 Token | 缓存命中率 | 平均速率 | 预估费用 |',
+      '| --- | ---: | ---: | ---: | ---: | ---: |'
+    );
+    for (const m of agg.sortedModels) {
+      const mTotal = m.inTok + m.cacheTok + m.outTok;
+      const mCache = formatPctNumber(computeCacheHitRatio(m.inTok, m.cacheTok) * 100, {
+        withSymbol: true,
+      });
+      const mTps =
+        m.tpsSecSum > 0 ? formatSpeedMetric(m.tpsTokSum / m.tpsSecSum, ' tok/s') : '—';
+      lines.push(
+        `| ${escapeMdCell(m.label)} | ${m.calls} | ${formatTokensPrecise(mTotal)} | ${mCache} | ${mTps} | ${formatUsd(m.cost, { precise: m.cost > 0 && m.cost < 0.1 })} |`
+      );
+    }
+  }
+
+  const topCostly = list
+    .filter((st) => Number(st?.costUsd || 0) > 0)
+    .slice()
+    .sort((a, b) => Number(b.costUsd || 0) - Number(a.costUsd || 0))
+    .slice(0, 5);
+  if (topCostly.length > 0) {
+    lines.push(
+      '',
+      en ? '## Top Costliest Steps' : '## 高成本步骤 Top 5',
+      '',
+      en
+        ? '| Step | Time | Model | Speed | TTFT | Context | Cost |'
+        : '| 步骤 | 时间 | 模型 | 速率 | 首字延迟 | 上下文 | 费用 |',
+      '| ---: | --- | --- | ---: | ---: | ---: | ---: |'
+    );
+    for (const st of topCostly) {
+      const mInfo = resolveModelDisplayInfo(st, displaySettings);
+      const timeStr = st.createdAtMs ? formatCompactDateTime(st.createdAtMs) : '—';
+      const ctxTok = Number(
+        st.contextTokens ||
+          Number(st.inputTokens || 0) + Number(st.cacheReadTokens || 0) + Number(st.outputTokens || 0)
+      );
+      lines.push(
+        `| #${st.stepIndex ?? '—'} | ${timeStr} | ${escapeMdCell(mInfo.text)} | ${formatSpeedMetric(st.tokPerSec, ' tok/s')} | ${formatMetric(st.ttftSec, 's')} | ${formatTokensPrecise(ctxTok)} | ${formatUsd(st.costUsd, { precise: true })} |`
+      );
+    }
+  }
+
+  if (agg.anomTotal > 0) {
+    const anomKindTotals = new Map();
+    for (const st of list) {
+      if (!st?.anomaly?.kinds) continue;
+      for (const [k, v] of Object.entries(st.anomaly.kinds)) {
+        const n = Number(v || 0);
+        if (n > 0) anomKindTotals.set(k, (anomKindTotals.get(k) || 0) + n);
+      }
+    }
+    if (anomKindTotals.size > 0) {
+      const summary = Array.from(anomKindTotals.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${formatLocalizedAnomalyKind(k, en, explicitLocale)} ×${v}`)
+        .join(en ? ', ' : '、');
+      lines.push('', en ? `**Anomaly Summary**: ${summary}` : `**异常汇总**: ${summary}`);
+    }
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+/**
+ * 将历史用量统计视图当前区间数据导出为结构化 CSV（向后兼容保留）。
+ *
+ * @param {object} consumption
+ * @param {Array<object>} modelBreakdown
+ * @param {{ displaySettings?: object, includeBom?: boolean }} [opts]
+ * @returns {string}
+ */
+function buildConsumptionCsv(
+  consumption,
+  modelBreakdown = [],
+  { displaySettings = {}, includeBom = true } = {}
+) {
+  const cons = consumption || {};
+  const acc = cons.account || {};
+  const range = cons.selectedRange || {};
+  const models = mergeModelsByDisplayName(modelBreakdown || [], displaySettings, {
+    preferLabelInShort: true,
+  });
+  const workspaces = Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [];
+  const sessions = Array.isArray(cons.topConversations) ? cons.topConversations : [];
+  const trend = Array.isArray(cons.trendSeries) ? cons.trendSeries : [];
+
+  const rows = [
+    csvRow([
+      'section',
+      'name',
+      'calls',
+      'input_tokens',
+      'cache_read_tokens',
+      'output_tokens',
+      'total_tokens',
+      'cache_hit_pct',
+      'cost_usd',
+      'extra',
+    ]),
+    csvRow([
+      'summary',
+      range.label || range.key || 'all',
+      Number(acc.calls || 0),
+      Number(acc.inputTokens || 0),
+      Number(acc.cacheReadTokens || 0),
+      Number(acc.outputTokens || 0),
+      Number(acc.totalTokens || 0),
+      formatPctNumber(acc.cacheHitPct || 0),
+      Number(acc.costUsd || 0).toFixed(4),
+      `saved_usd=${Number(acc.savedCostUsd || 0).toFixed(4)}`,
+    ]),
+  ];
+
+  for (const m of models) {
+    rows.push(
+      csvRow([
+        'model',
+        m.displayText || m.label || m.shortName || '—',
+        Number(m.calls || 0),
+        Number(m.inputTokens || 0),
+        Number(m.cacheReadTokens || 0),
+        Number(m.outputTokens || 0),
+        Number(m.totalTokens || 0),
+        formatPctNumber(m.cacheHitPct || 0),
+        Number(m.costUsd || 0).toFixed(4),
+        m.avgTokPerSec != null ? `avg_tps=${Number(m.avgTokPerSec).toFixed(1)}` : '',
+      ])
+    );
+  }
+
+  for (const w of workspaces) {
+    rows.push(
+      csvRow([
+        'project',
+        w.label || w.workspacePath || 'unbound',
+        Number(w.calls || 0),
+        Number(w.inputTokens || 0),
+        Number(w.cacheReadTokens || 0),
+        Number(w.responseTokens || 0) + Number(w.thinkingTokens || 0),
+        Number(w.totalTokens || 0),
+        formatPctNumber(w.cacheHitPct || 0),
+        Number(w.costUsd || 0).toFixed(4),
+        `sessions=${Number(w.sessionCount || 0)}`,
+      ])
+    );
+  }
+
+  for (const c of sessions) {
+    rows.push(
+      csvRow([
+        'session',
+        c.title || c.cascadeId || '—',
+        Number(c.calls || 0),
+        Number(c.inputTokens || 0),
+        Number(c.cacheReadTokens || 0),
+        Number(c.responseTokens || 0) + Number(c.thinkingTokens || 0),
+        Number(c.totalTokens || 0),
+        formatPctNumber(c.cacheHitPct || 0),
+        Number(c.costUsd || 0).toFixed(4),
+        c.sourceName || c.appSource || '',
+      ])
+    );
+  }
+
+  for (const slot of trend) {
+    if (!slot || !(Number(slot.tokens || 0) > 0 || Number(slot.calls || 0) > 0)) continue;
+    rows.push(
+      csvRow([
+        'trend',
+        slot.fullLabel || slot.label || '',
+        Number(slot.calls || 0),
+        Number(slot.inputTokens || 0),
+        Number(slot.cacheReadTokens || 0),
+        Number(slot.outputTokens || 0),
+        Number(slot.tokens || 0),
+        '',
+        Number(slot.costUsd || 0).toFixed(4),
+        slot.granularity || '',
+      ])
+    );
+  }
+
+  return `${includeBom ? '\uFEFF' : ''}${rows.join('\r\n')}\r\n`;
+}
+
+/**
+ * 将历史用量统计视图当前区间数据导出为多工作表、全自动列宽及双语本地化原生 Excel (`.xlsx`) 工作簿。
+ * 自动拆分为「用量总览 / 模型排行 / 项目排行 / 会话排行 / 时间趋势 / 客户端来源」独立分页。
+ *
+ * @param {object} consumption
+ * @param {Array<object>} modelBreakdown
+ * @param {{ displaySettings?: object, locale?: string, nowMs?: number }} [opts]
+ * @returns {Uint8Array}
+ */
+function buildConsumptionXlsx(
+  consumption,
+  modelBreakdown = [],
+  { displaySettings = {}, locale, nowMs = Date.now() } = {}
+) {
+  const en = resolveExportEnglish(locale);
+  const cons = consumption || {};
+  const acc = cons.account || {};
+  const range = cons.selectedRange || {};
+  const models = mergeModelsByDisplayName(modelBreakdown || [], displaySettings, {
+    preferLabelInShort: true,
+  });
+  const workspaces = Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [];
+  const sessions = Array.isArray(cons.topConversations) ? cons.topConversations : [];
+  const sources = Array.isArray(cons.sourcesBreakdown) ? cons.sourcesBreakdown : [];
+  const trend = (Array.isArray(cons.trendSeries) ? cons.trendSeries : []).filter(
+    (slot) => slot && (Number(slot.tokens || 0) > 0 || Number(slot.calls || 0) > 0)
+  );
+
+  const rangeLabel = resolveLocalizedRangeLabel(range, en);
+  const spanNote = resolveRangeSpanNote(range);
+  const accIn = Math.max(0, Number(acc.inputTokens || 0));
+  const accCache = Math.max(0, Number(acc.cacheReadTokens || 0));
+  const accOut = Math.max(0, Number(acc.outputTokens || 0));
+  const accThink = Math.max(0, Number(acc.thinkingTokens || 0));
+  const accReply =
+    acc.responseTokens != null
+      ? Math.max(0, Number(acc.responseTokens))
+      : Math.max(0, accOut - accThink);
+  const accTotal = Math.max(0, Number(acc.totalTokens ?? accIn + accCache + accOut));
+  const accCalls = Math.max(0, Number(acc.calls || 0));
+  const accCacheRatio = computeCacheHitRatio(accIn, accCache, acc.cacheHitPct);
+  const accCost = Math.max(0, Number(acc.costUsd || 0));
+  const accSaved = Math.max(0, Number(acc.savedCostUsd || 0));
+
+  const overviewRows = [
+    [en ? 'Time Range' : '统计周期', { value: rangeLabel, type: 'text_right' }, spanNote],
+    [en ? 'Exported At' : '导出时间', { value: formatExportDateTime(nowMs, true), type: 'text_right' }, ''],
+    [
+      en ? 'Total Calls' : '调用次数',
+      { value: accCalls, type: 'int' },
+      en ? 'Completed model requests' : '有效模型请求步数',
+    ],
+    [
+      en ? 'Total Tokens' : '总 Token',
+      { value: accTotal, type: 'int' },
+      en ? 'Fresh input + Cache read + Output' : '新输入 + 缓存读取 + 总输出',
+    ],
+    [
+      en ? 'Fresh Input Tokens' : '新输入 Token',
+      { value: accIn, type: 'int' },
+      en ? 'Uncached prompt tokens' : '未命中缓存的新增提示词',
+    ],
+    [
+      en ? 'Cache Read Tokens' : '缓存读取 Token',
+      { value: accCache, type: 'int' },
+      en ? 'Prompt cache hit tokens' : '命中 Prompt Cache 的复用输入',
+    ],
+    [
+      en ? 'Total Output Tokens' : '总输出 Token',
+      { value: accOut, type: 'int' },
+      accThink > 0
+        ? en
+          ? `Thinking ${accThink.toLocaleString('en-US')} / Reply ${accReply.toLocaleString('en-US')}`
+          : `思考 ${accThink.toLocaleString('en-US')} / 回复 ${accReply.toLocaleString('en-US')}`
+        : en
+          ? 'Generated completion tokens'
+          : '模型生成输出总量',
+    ],
+  ];
+
+  if (accThink > 0 || accReply > 0) {
+    overviewRows.push(
+      [
+        en ? 'Thinking Tokens' : '思考 Token',
+        { value: accThink, type: 'int' },
+        en ? 'Reasoning output tokens' : '内部推理过程消耗',
+      ],
+      [
+        en ? 'Reply Tokens' : '回复 Token',
+        { value: accReply, type: 'int' },
+        en ? 'Visible response tokens' : '正文可见回复消耗',
+      ]
+    );
+  }
+
+  overviewRows.push(
+    [
+      en ? 'Cache Hit Rate' : '缓存命中率',
+      { value: accCacheRatio, type: 'pct' },
+      en ? 'Cache read / (Fresh input + Cache read)' : '缓存读取 / (新输入 + 缓存读取)',
+    ],
+    [
+      en ? 'Cache Saved (USD)' : '缓存节省 (USD)',
+      { value: accSaved, type: 'usd2' },
+      en ? 'Estimated savings from prompt caching' : '相比全量未缓存输入估算节省的费用',
+    ],
+    {
+      tone: 'summary',
+      values: [
+        en ? 'Est. Cost (USD)' : '预估费用 (USD)',
+        { value: accCost, type: 'usd2' },
+        en ? 'Estimated from official model list pricing' : '按模型官方阶梯定价汇总估算',
+      ],
+    }
+  );
+
+  const sheets = [
+    {
+      name: en ? 'Overview' : '用量总览',
+      autoFilter: false,
+      columns: [
+        { header: en ? 'Metric' : '指标项', type: 'text', minWidth: 20 },
+        { header: en ? 'Value' : '数值', type: 'text_right', align: 'right', minWidth: 22 },
+        { header: en ? 'Notes' : '说明', type: 'text', minWidth: 32, maxWidth: 56 },
+      ],
+      rows: overviewRows,
+    },
+  ];
+
+  // Sheet 2: Models
+  if (models.length > 0) {
+    let mCalls = 0;
+    let mIn = 0;
+    let mCache = 0;
+    let mOut = 0;
+    let mTot = 0;
+    let mCost = 0;
+    let tpsTokSum = 0;
+    let tpsSecSum = 0;
+    const modelRows = models.map((m, idx) => {
+      const calls = Math.max(0, Number(m.calls || 0));
+      const inTok = Math.max(0, Number(m.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(m.cacheReadTokens || 0));
+      const outTok = Math.max(0, Number(m.outputTokens || 0));
+      const totTok = Math.max(0, Number(m.totalTokens ?? inTok + cacheTok + outTok));
+      const cost = Math.max(0, Number(m.costUsd || 0));
+      const tps =
+        m.avgTokPerSec != null && Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0
+          ? Number(m.avgTokPerSec)
+          : null;
+      mCalls += calls;
+      mIn += inTok;
+      mCache += cacheTok;
+      mOut += outTok;
+      mTot += totTok;
+      mCost += cost;
+      const rawSpeedTok = Number(m.speedSummary?.tokens);
+      const rawSpeedSec = Number(m.speedSummary?.seconds);
+      if (
+        Number.isFinite(rawSpeedTok) &&
+        Number.isFinite(rawSpeedSec) &&
+        rawSpeedSec > 0 &&
+        rawSpeedTok >= 0
+      ) {
+        tpsTokSum += rawSpeedTok;
+        tpsSecSum += rawSpeedSec;
+      } else if (tps != null) {
+        const fallbackTok = outTok > 0 ? outTok : Math.max(1, calls);
+        tpsTokSum += fallbackTok;
+        tpsSecSum += fallbackTok / tps;
+      }
+      return [
+        idx + 1,
+        m.displayText || m.label || m.shortName || '—',
+        calls,
+        inTok,
+        cacheTok,
+        outTok,
+        totTok,
+        computeCacheHitRatio(inTok, cacheTok, m.cacheHitPct),
+        tps,
+        cost,
+      ];
+    });
+    modelRows.push({
+      tone: 'summary',
+      values: [
+        '',
+        en ? 'Total' : '合计',
+        mCalls,
+        mIn,
+        mCache,
+        mOut,
+        mTot,
+        computeCacheHitRatio(mIn, mCache),
+        tpsSecSum > 0 ? +(tpsTokSum / tpsSecSum).toFixed(1) : null,
+        mCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Models' : '模型排行',
+      columns: [
+        { header: en ? 'Rank' : '排名', type: 'center', minWidth: 8 },
+        { header: en ? 'Model' : '模型', type: 'text', minWidth: 20, maxWidth: 42 },
+        { header: en ? 'Calls' : '调用次数', type: 'int', minWidth: 11 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Avg Speed (tok/s)' : '平均速率 (tok/s)', type: 'dec1', minWidth: 17 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd2', minWidth: 16 },
+      ],
+      rows: modelRows,
+    });
+  }
+
+  // Sheet 3: Projects
+  if (workspaces.length > 0) {
+    let wSess = 0;
+    let wCalls = 0;
+    let wIn = 0;
+    let wCache = 0;
+    let wOut = 0;
+    let wTot = 0;
+    let wCost = 0;
+    const wsRows = workspaces.map((w, idx) => {
+      const sess = Math.max(0, Number(w.sessionCount || 0));
+      const calls = Math.max(0, Number(w.calls || 0));
+      const inTok = Math.max(0, Number(w.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(w.cacheReadTokens || 0));
+      const outTok =
+        w.outputTokens != null
+          ? Math.max(0, Number(w.outputTokens))
+          : Math.max(0, Number(w.responseTokens || 0)) + Math.max(0, Number(w.thinkingTokens || 0));
+      const totTok = Math.max(0, Number(w.totalTokens ?? inTok + cacheTok + outTok));
+      const cost = Math.max(0, Number(w.costUsd || 0));
+      wSess += sess;
+      wCalls += calls;
+      wIn += inTok;
+      wCache += cacheTok;
+      wOut += outTok;
+      wTot += totTok;
+      wCost += cost;
+      return [
+        idx + 1,
+        w.label || w.workspacePath || (en ? 'Unbound' : '未绑定工作区'),
+        w.workspacePath || '',
+        sess,
+        calls,
+        inTok,
+        cacheTok,
+        outTok,
+        totTok,
+        computeCacheHitRatio(inTok, cacheTok, w.cacheHitPct),
+        cost,
+      ];
+    });
+    wsRows.push({
+      tone: 'summary',
+      values: [
+        '',
+        en ? 'Total' : '合计',
+        '',
+        wSess,
+        wCalls,
+        wIn,
+        wCache,
+        wOut,
+        wTot,
+        computeCacheHitRatio(wIn, wCache),
+        wCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Projects' : '项目排行',
+      columns: [
+        { header: en ? 'Rank' : '排名', type: 'center', minWidth: 8 },
+        { header: en ? 'Project' : '项目名称', type: 'text', minWidth: 18, maxWidth: 36 },
+        { header: en ? 'Workspace Path' : '工作区路径', type: 'text', minWidth: 22, maxWidth: 52 },
+        { header: en ? 'Sessions' : '会话数', type: 'int', minWidth: 10 },
+        { header: en ? 'Calls' : '调用次数', type: 'int', minWidth: 11 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd2', minWidth: 16 },
+      ],
+      rows: wsRows,
+    });
+  }
+
+  // Sheet 4: Sessions
+  if (sessions.length > 0) {
+    let sCalls = 0;
+    let sIn = 0;
+    let sCache = 0;
+    let sOut = 0;
+    let sTot = 0;
+    let sCost = 0;
+    const sessRows = sessions.map((c, idx) => {
+      const calls = Math.max(0, Number(c.calls || 0));
+      const inTok = Math.max(0, Number(c.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(c.cacheReadTokens || 0));
+      const outTok =
+        c.outputTokens != null
+          ? Math.max(0, Number(c.outputTokens))
+          : Math.max(0, Number(c.responseTokens || 0)) + Math.max(0, Number(c.thinkingTokens || 0));
+      const totTok = Math.max(0, Number(c.totalTokens ?? inTok + cacheTok + outTok));
+      const cost = Math.max(0, Number(c.costUsd || 0));
+      sCalls += calls;
+      sIn += inTok;
+      sCache += cacheTok;
+      sOut += outTok;
+      sTot += totTok;
+      sCost += cost;
+      return [
+        idx + 1,
+        c.title || c.cascadeId || '—',
+        c.sourceName || c.appSource || '',
+        calls,
+        inTok,
+        cacheTok,
+        outTok,
+        totTok,
+        computeCacheHitRatio(inTok, cacheTok, c.cacheHitPct),
+        cost,
+      ];
+    });
+    sessRows.push({
+      tone: 'summary',
+      values: [
+        '',
+        en ? 'Total' : '合计',
+        '',
+        sCalls,
+        sIn,
+        sCache,
+        sOut,
+        sTot,
+        computeCacheHitRatio(sIn, sCache),
+        sCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Sessions' : '会话排行',
+      columns: [
+        { header: en ? 'Rank' : '排名', type: 'center', minWidth: 8 },
+        { header: en ? 'Session Title' : '会话标题', type: 'text', minWidth: 24, maxWidth: 48 },
+        { header: en ? 'Client Source' : '客户端来源', type: 'text', minWidth: 16 },
+        { header: en ? 'Calls' : '调用次数', type: 'int', minWidth: 11 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd2', minWidth: 16 },
+      ],
+      rows: sessRows,
+    });
+  }
+
+  // Sheet 5: Trend
+  if (trend.length > 0) {
+    let tCalls = 0;
+    let tIn = 0;
+    let tCache = 0;
+    let tOut = 0;
+    let tTot = 0;
+    let tCost = 0;
+    const trendRows = trend.map((slot) => {
+      const isHourly =
+        slot.granularity === 'hour' || String(slot.label || '').includes(':');
+      const calls = Math.max(0, Number(slot.calls || 0));
+      const inTok = Math.max(0, Number(slot.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(slot.cacheReadTokens || 0));
+      const outTok = Math.max(0, Number(slot.outputTokens || 0));
+      const totTok = Math.max(0, Number(slot.tokens ?? inTok + cacheTok + outTok));
+      const cost = Math.max(0, Number(slot.costUsd || 0));
+      tCalls += calls;
+      tIn += inTok;
+      tCache += cacheTok;
+      tOut += outTok;
+      tTot += totTok;
+      tCost += cost;
+      const granLabel = isHourly
+        ? en
+          ? 'Hourly'
+          : '按小时'
+        : en
+          ? 'Daily'
+          : '按天';
+      return [
+        formatTrendWindowLabel(slot, isHourly),
+        granLabel,
+        calls,
+        inTok,
+        cacheTok,
+        outTok,
+        totTok,
+        cost,
+      ];
+    });
+    trendRows.push({
+      tone: 'summary',
+      values: [
+        en ? 'Total' : '合计',
+        '',
+        tCalls,
+        tIn,
+        tCache,
+        tOut,
+        tTot,
+        tCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Trend' : '时间趋势',
+      columns: [
+        { header: en ? 'Time Window' : '时间段', type: 'text', minWidth: 19 },
+        { header: en ? 'Granularity' : '粒度', type: 'center', minWidth: 11 },
+        { header: en ? 'Calls' : '调用次数', type: 'int', minWidth: 11 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd2', minWidth: 16 },
+      ],
+      rows: trendRows,
+    });
+  }
+
+  // Sheet 6: Client Sources
+  if (sources.length > 0) {
+    let srcCalls = 0;
+    let srcIn = 0;
+    let srcCache = 0;
+    let srcOut = 0;
+    let srcTot = 0;
+    let srcCost = 0;
+    const srcRows = sources.map((s) => {
+      const calls = Math.max(0, Number(s.calls || 0));
+      const inTok = Math.max(0, Number(s.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(s.cacheReadTokens || 0));
+      const outTok =
+        s.outputTokens != null
+          ? Math.max(0, Number(s.outputTokens))
+          : Math.max(0, Number(s.responseTokens || 0)) + Math.max(0, Number(s.thinkingTokens || 0));
+      const totTok = Math.max(0, Number(s.totalTokens ?? inTok + cacheTok + outTok));
+      const cost = Math.max(0, Number(s.costUsd || 0));
+      srcCalls += calls;
+      srcIn += inTok;
+      srcCache += cacheTok;
+      srcOut += outTok;
+      srcTot += totTok;
+      srcCost += cost;
+      return [
+        s.name || '—',
+        calls,
+        inTok,
+        cacheTok,
+        outTok,
+        totTok,
+        computeCacheHitRatio(inTok, cacheTok, s.cacheHitPct),
+        cost,
+      ];
+    });
+    srcRows.push({
+      tone: 'summary',
+      values: [
+        en ? 'Total' : '合计',
+        srcCalls,
+        srcIn,
+        srcCache,
+        srcOut,
+        srcTot,
+        computeCacheHitRatio(srcIn, srcCache),
+        srcCost,
+      ],
+    });
+    sheets.push({
+      name: en ? 'Client Sources' : '客户端来源',
+      columns: [
+        { header: en ? 'Client Source' : '客户端来源', type: 'text', minWidth: 18 },
+        { header: en ? 'Calls' : '调用次数', type: 'int', minWidth: 11 },
+        { header: en ? 'Fresh Input' : '新输入', type: 'int', minWidth: 14 },
+        { header: en ? 'Cache Read' : '缓存读取', type: 'int', minWidth: 15 },
+        { header: en ? 'Output' : '输出', type: 'int', minWidth: 13 },
+        { header: en ? 'Total Tokens' : '总 Token', type: 'int', minWidth: 15 },
+        { header: en ? 'Cache Hit %' : '缓存命中率', type: 'pct', minWidth: 13 },
+        { header: en ? 'Est. Cost (USD)' : '预估费用 (USD)', type: 'usd2', minWidth: 16 },
+      ],
+      rows: srcRows,
+    });
+  }
+
+  return buildXlsxWorkbookBytes(sheets);
+}
+
+/**
+ * 生成历史用量统计当前区间的双语 Markdown 汇总报告。
+ *
+ * @param {object} consumption
+ * @param {Array<object>} modelBreakdown
+ * @param {{ displaySettings?: object, locale?: string }} [opts]
+ * @returns {string}
+ */
+function buildConsumptionMarkdownReport(
+  consumption,
+  modelBreakdown = [],
+  { displaySettings = {}, locale } = {}
+) {
+  const en = resolveExportEnglish(locale);
+  const cons = consumption || {};
+  const acc = cons.account || {};
+  const range = cons.selectedRange || {};
+  const models = mergeModelsByDisplayName(modelBreakdown || [], displaySettings, {
+    preferLabelInShort: true,
+  });
+  const workspaces = Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [];
+  const sessions = Array.isArray(cons.topConversations) ? cons.topConversations : [];
+
+  const rangeLabel = resolveLocalizedRangeLabel(range, en);
+  const lines = en
+    ? [
+        `# Usage Report · ${rangeLabel}`,
+        '',
+        `- **Total Tokens**: ${formatTokensPrecise(acc.totalTokens || 0)} (${Number(acc.calls || 0)} calls)`,
+        `- **Est. Cost**: ${formatUsd(acc.costUsd || 0)} (Cache Saved ${formatUsd(acc.savedCostUsd || 0)})`,
+        `- **Cache Hit Rate**: ${formatPctNumber(acc.cacheHitPct || 0, { withSymbol: true })} (Input ${formatTokensPrecise(acc.inputTokens || 0)} / Cache ${formatTokensPrecise(acc.cacheReadTokens || 0)} / Output ${formatTokensPrecise(acc.outputTokens || 0)})`,
+      ]
+    : [
+        `# 用量统计报告 · ${rangeLabel}`,
+        '',
+        `- **总 Token**: ${formatTokensPrecise(acc.totalTokens || 0)}（共 ${Number(acc.calls || 0)} 次调用）`,
+        `- **预估费用**: ${formatUsd(acc.costUsd || 0)}（缓存节省 ${formatUsd(acc.savedCostUsd || 0)}）`,
+        `- **缓存命中率**: ${formatPctNumber(acc.cacheHitPct || 0, { withSymbol: true })}（新输入 ${formatTokensPrecise(acc.inputTokens || 0)} / 缓存读取 ${formatTokensPrecise(acc.cacheReadTokens || 0)} / 输出 ${formatTokensPrecise(acc.outputTokens || 0)}）`,
+      ];
+
+  if (models.length > 0) {
+    lines.push(
+      '',
+      en ? '## Models' : '## 模型排行',
+      '',
+      en
+        ? '| Model | Calls | Tokens | Cache Hit | Avg Speed | Est. Cost |'
+        : '| 模型 | 调用次数 | 总 Token | 缓存命中率 | 平均速率 | 预估费用 |',
+      '| --- | ---: | ---: | ---: | ---: | ---: |'
+    );
+    for (const m of models) {
+      lines.push(
+        `| ${escapeMdCell(m.displayText || m.label || m.shortName)} | ${Number(m.calls || 0)} | ${formatTokensPrecise(m.totalTokens || 0)} | ${formatPctNumber(m.cacheHitPct || 0, { withSymbol: true })} | ${m.avgTokPerSec != null ? formatSpeedMetric(m.avgTokPerSec, ' tok/s') : '—'} | ${formatUsd(m.costUsd || 0)} |`
+      );
+    }
+  }
+
+  if (workspaces.length > 0) {
+    lines.push(
+      '',
+      en ? '## Projects' : '## 项目排行',
+      '',
+      en
+        ? '| Project | Sessions | Calls | Tokens | Cache Hit | Est. Cost |'
+        : '| 项目 | 会话数 | 调用次数 | 总 Token | 缓存命中率 | 预估费用 |',
+      '| --- | ---: | ---: | ---: | ---: | ---: |'
+    );
+    for (const w of workspaces) {
+      lines.push(
+        `| ${escapeMdCell(w.label || w.workspacePath || (en ? 'Unbound' : '未绑定工作区'))} | ${Number(w.sessionCount || 0)} | ${Number(w.calls || 0)} | ${formatTokensPrecise(w.totalTokens || 0)} | ${formatPctNumber(w.cacheHitPct || 0, { withSymbol: true })} | ${formatUsd(w.costUsd || 0)} |`
+      );
+    }
+  }
+
+  if (sessions.length > 0) {
+    lines.push(
+      '',
+      en ? '## Top Sessions' : '## 热门会话',
+      '',
+      en
+        ? '| Session | Calls | Tokens | Cache Hit | Est. Cost |'
+        : '| 会话 | 调用次数 | 总 Token | 缓存命中率 | 预估费用 |',
+      '| --- | ---: | ---: | ---: | ---: |'
+    );
+    for (const c of sessions.slice(0, 8)) {
+      lines.push(
+        `| ${escapeMdCell(c.title || c.cascadeId)} | ${Number(c.calls || 0)} | ${formatTokensPrecise(c.totalTokens || 0)} | ${formatPctNumber(c.cacheHitPct || 0, { withSymbol: true })} | ${formatUsd(c.costUsd || 0)} |`
+      );
+    }
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+return { escapeCsvCell, sanitizeExportFilename, buildConsumptionExportBaseName, buildStepsExportBaseName, buildStepsCsv, buildStepsXlsx, buildStepsMarkdownReport, buildConsumptionCsv, buildConsumptionXlsx, buildConsumptionMarkdownReport };
 })();
 
 // --- src/core/httpClient.js ---
@@ -4827,7 +8532,7 @@ return { abortSidecarApiKey, getWindowBridgeConfig, isWindowOverlayMode, deliver
 })();
 
 // --- src/store/uiStore.js ---
-const { getViewTabs, uiStore, getVisibleMonitorView } = (() => {
+const { getViewTabs, uiStore, showUiToast, dismissUiToast, getVisibleMonitorView } = (() => {
 /**
  * @fileoverview UI navigation and view state store.
  */
@@ -4849,17 +8554,322 @@ const uiStore = createReactiveStore({
   settingsSubTab: 'general', // 'general' | 'structure' | 'account' | 'other'
   settingsStructureTab: 'mount', // 'mount' | 'hover' | 'overview' | 'steps'
   selectedAgentScope: 'all', // 'all' | 'main' | <subagent cascadeId>
-  ctxInspectorAgentId: 'auto', // 'auto' | 'main' | <subagent cascadeId>
+  ctxInspectorAgentId: 'main', // 'main' | 'auto' | <subagent cascadeId>
+  toast: null, // { id, message, detail, actionLabel, onAction, tone, durationMs }
 });
+
+let toastSeq = 0;
+
+/**
+ * 触发全局底部轻量通知条（用于文件导出路径提示、一键定位文件夹及剪贴板复制反馈）。
+ *
+ * @param {{ message: string, detail?: string, actionLabel?: string, onAction?: (() => void) | null, tone?: 'ok' | 'info' | 'warn', durationMs?: number }} toastConfig
+ * @returns {number}
+ */
+function showUiToast(toastConfig) {
+  if (!toastConfig || !toastConfig.message) return 0;
+  toastSeq += 1;
+  uiStore.setState({
+    toast: {
+      id: toastSeq,
+      message: String(toastConfig.message),
+      detail: toastConfig.detail ? String(toastConfig.detail) : '',
+      actionLabel: toastConfig.actionLabel ? String(toastConfig.actionLabel) : '',
+      onAction: typeof toastConfig.onAction === 'function' ? toastConfig.onAction : null,
+      tone: toastConfig.tone || 'ok',
+      durationMs: Number(toastConfig.durationMs) >= 0 ? Number(toastConfig.durationMs) : 5200,
+    },
+  });
+  return toastSeq;
+}
+
+function dismissUiToast(toastId = 0) {
+  const cur = uiStore.getState().toast;
+  if (!cur) return;
+  if (toastId && cur.id !== toastId) return;
+  uiStore.setState({ toast: null });
+}
 
 function getVisibleMonitorView(state = uiStore.getState()) {
   return state.monitorVisible ? state.activeView : null;
 }
-return { getViewTabs, uiStore, getVisibleMonitorView };
+return { getViewTabs, uiStore, showUiToast, dismissUiToast, getVisibleMonitorView };
+})();
+
+// --- src/core/fileExportClient.js ---
+const { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFeedback, copyTextWithFeedback } = (() => {
+/**
+ * @fileoverview 统一文本/二进制文件导出及剪贴板复制客户端 (`fileExportClient.js`)。
+ * 优先调用本机后端 `/api/export-file` 落盘到用户 Downloads（或插件 `.data/exports`）并返回真实绝对路径，
+ * 同时通过全局 Toast 清晰展示保存位置并提供「打开位置」快捷按钮；
+ * 当后端不可达或处于远程浏览器访问时，自动平滑降级到 `showSaveFilePicker` 或浏览器 Blob 下载并给出明确提示。
+ */
+
+
+function isHostEmbeddedWebview() {
+  if (typeof window === 'undefined') return false;
+  return Boolean(window.sidecar?.fetch) || isWindowOverlayMode();
+}
+
+function getPickerTypesForFilename(filename, mimeType) {
+  const lower = String(filename || '').toLowerCase();
+  if (lower.endsWith('.xlsx') || String(mimeType || '').includes('spreadsheetml')) {
+    return [
+      {
+        description: 'Excel Workbook',
+        accept: {
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+        },
+      },
+    ];
+  }
+  if (lower.endsWith('.csv') || String(mimeType || '').includes('csv')) {
+    return [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }];
+  }
+  if (lower.endsWith('.md') || String(mimeType || '').includes('markdown')) {
+    return [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }];
+  }
+  return [{ description: 'JSON', accept: { 'application/json': ['.json'] } }];
+}
+
+/**
+ * 调用本机后端在系统文件管理器中打开并高亮选中已导出的文件。
+ * 兼容热更新后常驻父进程 `main.mjs` 尚未注册新路由的场景，自动回退至 `POST /api/settings` 穿透转发至最新 Worker。
+ *
+ * @param {string} filePath
+ * @returns {Promise<boolean>}
+ */
+async function revealExportedFile(filePath) {
+  if (!filePath) return false;
+  try {
+    const res = await callSidecarApi('/api/reveal-file', {
+      method: 'POST',
+      body: { filePath },
+      cdpTimeoutMs: 4000,
+    });
+    if (res?.ok) return true;
+  } catch (err) {
+    if (err?.httpStatus === 403) return false;
+  }
+  try {
+    const fallbackRes = await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __exportFileAction: 'reveal', payload: { filePath } },
+      cdpTimeoutMs: 4000,
+    });
+    return Boolean(fallbackRes?.ok);
+  } catch {
+    return false;
+  }
+}
+
+async function requestLocalBackendExport(payload) {
+  let remoteForbidden = false;
+  try {
+    const res = await callSidecarApi('/api/export-file', {
+      method: 'POST',
+      body: payload,
+      cdpTimeoutMs: 6000,
+    });
+    if (res && res.ok && res.filePath) {
+      return { res, remoteForbidden: false };
+    }
+    if (res && res.fallbackBrowser) {
+      return { res: null, remoteForbidden: true };
+    }
+  } catch (err) {
+    if (err?.httpStatus === 403) {
+      remoteForbidden = true;
+    }
+  }
+
+  if (remoteForbidden) {
+    return { res: null, remoteForbidden: true };
+  }
+
+  // 兼容热更新后常驻父进程 main.mjs 尚未重注册 /api/export-file 的场景，回退经 POST /api/settings 穿透至最新 Worker
+  try {
+    const fallbackRes = await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __exportFileAction: 'save', payload },
+      cdpTimeoutMs: 6000,
+    });
+    if (fallbackRes && fallbackRes.ok && fallbackRes.filePath) {
+      return { res: fallbackRes, remoteForbidden: false };
+    }
+  } catch {
+    // 忽略回退异常，交由下方分环境处理
+  }
+  return { res: null, remoteForbidden: false };
+}
+
+/**
+ * 共享多阶段导出与 Toast 反馈骨架（本机落盘 -> 宿主拦截保护 -> File System Access Picker -> Blob 下载）。
+ */
+async function runExportPipelineWithFeedback({
+  safeName,
+  mimeType,
+  backendPayload,
+  writablePayload,
+}) {
+  const { res: localRes } = await requestLocalBackendExport(backendPayload);
+  if (localRes && localRes.ok && localRes.filePath) {
+    const savedPath = String(localRes.filePath);
+    const savedName = String(localRes.fileName || safeName);
+    showUiToast({
+      message: t('export.savedLocal', { file: savedName }),
+      detail: savedPath,
+      actionLabel: t('export.openFolder'),
+      onAction: () => {
+        void revealExportedFile(savedPath);
+      },
+      tone: 'ok',
+      durationMs: 7000,
+    });
+    return { ok: true, mode: 'local', filePath: savedPath, fileName: savedName };
+  }
+
+  // 在 Antigravity Sidecar / 双栖 Electron 宿主内，<a download> 会被静默吞掉，绝不误报“已下载到浏览器”
+  if (isHostEmbeddedWebview()) {
+    showUiToast({
+      message: t('export.failed'),
+      detail: t('export.hostUnavailable'),
+      tone: 'warn',
+      durationMs: 5200,
+    });
+    return { ok: false, mode: 'failed' };
+  }
+
+  if (typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function') {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: safeName,
+        types: getPickerTypesForFilename(safeName, mimeType),
+      });
+      const writable = await handle.createWritable();
+      await writable.write(writablePayload);
+      await writable.close();
+      const pickedName = handle.name || safeName;
+      showUiToast({
+        message: t('export.savedPicked', { file: pickedName }),
+        tone: 'ok',
+        durationMs: 4200,
+      });
+      return { ok: true, mode: 'picker', fileName: pickedName };
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        return { ok: false, mode: 'cancelled' };
+      }
+    }
+  }
+
+  const ok = triggerBlobDownload(safeName, writablePayload, mimeType);
+  if (ok) {
+    showUiToast({
+      message: t('export.savedBrowser', { file: safeName }),
+      detail: t('export.savedBrowserHint'),
+      tone: 'info',
+      durationMs: 5000,
+    });
+    return { ok: true, mode: 'browser', fileName: safeName };
+  }
+
+  showUiToast({
+    message: t('export.failed'),
+    tone: 'warn',
+    durationMs: 3600,
+  });
+  return { ok: false, mode: 'failed' };
+}
+
+/**
+ * 统一文本导出入口：优先本机后端落盘（返回精确路径 + 支持一键打开所在目录），
+ * 仅在真正独立浏览器上下文下降级为浏览器保存。
+ *
+ * @param {string} filename
+ * @param {string} content
+ * @param {string} [mimeType='application/json;charset=utf-8']
+ * @returns {Promise<{ ok: boolean, mode: 'local' | 'picker' | 'browser' | 'cancelled' | 'failed', filePath?: string, fileName?: string }>}
+ */
+async function exportTextFileWithFeedback(
+  filename,
+  content,
+  mimeType = 'application/json;charset=utf-8'
+) {
+  const safeName = String(filename || 'export.txt');
+  const text = String(content ?? '');
+  return runExportPipelineWithFeedback({
+    safeName,
+    mimeType,
+    backendPayload: {
+      filename: safeName,
+      content: text,
+      mimeType,
+    },
+    writablePayload: text,
+  });
+}
+
+/**
+ * 统一二进制文件导出入口（用于原生 `.xlsx` Excel 工作簿）。
+ *
+ * @param {string} filename
+ * @param {Uint8Array} bytes
+ * @param {string} [mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+ * @returns {Promise<{ ok: boolean, mode: 'local' | 'picker' | 'browser' | 'cancelled' | 'failed', filePath?: string, fileName?: string }>}
+ */
+async function exportBinaryFileWithFeedback(
+  filename,
+  bytes,
+  mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+) {
+  const safeName = String(filename || 'export.xlsx');
+  if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
+    showUiToast({ message: t('export.failed'), tone: 'warn', durationMs: 3600 });
+    return { ok: false, mode: 'failed' };
+  }
+  return runExportPipelineWithFeedback({
+    safeName,
+    mimeType,
+    backendPayload: {
+      filename: safeName,
+      content: uint8ArrayToBase64(bytes),
+      encoding: 'base64',
+      mimeType,
+    },
+    writablePayload: bytes,
+  });
+}
+
+/**
+ * 复制文本到剪贴板并弹出轻量提示条。
+ *
+ * @param {string} text
+ * @param {string} successMessage
+ * @returns {Promise<boolean>}
+ */
+async function copyTextWithFeedback(text, successMessage) {
+  const ok = await copyPlainTextToClipboard(text);
+  if (ok) {
+    showUiToast({
+      message: successMessage || t('export.copied'),
+      tone: 'ok',
+      durationMs: 2400,
+    });
+  } else {
+    showUiToast({
+      message: t('export.copyFailed'),
+      tone: 'warn',
+      durationMs: 3200,
+    });
+  }
+  return ok;
+}
+return { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFeedback, copyTextWithFeedback };
 })();
 
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 /**
  * @fileoverview Reactive telemetry store with async non-overlapping poll scheduler
  * and granular slice updates.
@@ -5159,6 +9169,8 @@ function recordConsumptionSliceToCache(
     account: cons.account,
     trendSeries: Array.isArray(cons.trendSeries) ? cons.trendSeries : [],
     sourcesBreakdown: Array.isArray(cons.sourcesBreakdown) ? cons.sourcesBreakdown : [],
+    topConversations: Array.isArray(cons.topConversations) ? cons.topConversations : [],
+    topWorkspaces: Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [],
     modelBreakdown: Array.isArray(modelBreakdown) ? modelBreakdown : [],
   });
 }
@@ -5176,6 +9188,10 @@ function applyCachedConsumptionSlice(baseTelemetry, cachedEntry, targetRevision 
       account: cachedEntry.account ?? prevCons.account,
       trendSeries: cachedEntry.trendSeries,
       sourcesBreakdown: cachedEntry.sourcesBreakdown,
+      topConversations: Array.isArray(cachedEntry.topConversations)
+        ? cachedEntry.topConversations
+        : [],
+      topWorkspaces: Array.isArray(cachedEntry.topWorkspaces) ? cachedEntry.topWorkspaces : [],
     },
     modelBreakdown: cachedEntry.modelBreakdown,
   };
@@ -5239,6 +9255,9 @@ function reconcileIncomingTelemetrySettings(payload, reqSettingsRev) {
 
 const CLIENT_TOPBAR_SLOT_KEYS = TOPBAR_SLOT_KEYS;
 const DEFAULT_CLIENT_TOPBAR_SLOTS = DEFAULT_TOPBAR_SLOTS;
+const DEFAULT_CLIENT_CONTEXT_AGENT_MODE = DEFAULT_CONTEXT_AGENT_MODE;
+const CLIENT_CLI_STATUSLINE_PRESETS = CLI_STATUSLINE_PRESETS;
+const DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS = DEFAULT_CLI_STATUSLINE_SLOTS;
 const CLIENT_OVERVIEW_MODULE_KEYS = OVERVIEW_MODULE_KEYS;
 const DEFAULT_CLIENT_OVERVIEW_MODULES = DEFAULT_OVERVIEW_MODULES;
 const DEFAULT_CLIENT_HOVER_MODULES = DEFAULT_HOVER_MODULES;
@@ -5257,6 +9276,36 @@ const normalizeClientPopoverWidthMode = normalizePopoverWidthMode;
 const normalizeClientPopoverWidth = normalizePopoverWidth;
 const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
+const normalizeClientContextAgentMode = normalizeContextAgentMode;
+const normalizeClientExperimentalQuotaReservation = normalizeExperimentalQuotaReservation;
+const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
+
+/**
+ * 根据偏好设置返回默认上下文代理目标（`'main'` 锁定主代理，`'auto'` 跟随活跃）。
+ *
+ * @param {Record<string, any>|null|undefined} settings
+ * @returns {'main'|'auto'}
+ */
+function getDefaultCtxInspectorAgentId(settings) {
+  return normalizeContextAgentMode(settings?.contextAgentMode) === 'auto' ? 'auto' : 'main';
+}
+
+/**
+ * 计算顶栏挂载胶囊及悬停速览浮窗应使用的上下文代理目标：
+ * - 当 `contextAgentMode === 'main'`（默认）时始终锁定 `'main'`，不被后台子代理或面板临时点选带偏；
+ * - 当 `contextAgentMode === 'auto'` 时跟随面板当前 `ctxInspectorAgentId`（含手动点选 `主`）。
+ *
+ * @param {Record<string, any>|null|undefined} telemetry
+ * @param {string} [ctxInspectorAgentId='auto']
+ * @returns {string}
+ */
+function resolveOverlayCtxInspectorAgentId(telemetry, ctxInspectorAgentId = 'auto') {
+  if (normalizeContextAgentMode(telemetry?.settings?.contextAgentMode) === 'main') {
+    return 'main';
+  }
+  return ctxInspectorAgentId || 'auto';
+}
+const resolveEffectiveClientCliStatusLineSlots = resolveEffectiveCliStatusLineSlots;
 const normalizeClientHoverModules = normalizeHoverModules;
 const normalizeClientOverviewModules = normalizeOverviewModules;
 const normalizeClientOverviewMetrics = normalizeOverviewMetrics;
@@ -5297,6 +9346,20 @@ function isEquivalentTelemetry(prev, next) {
     return false;
   }
   if (Boolean(pSet?.contextWindowRiskAccepted) !== Boolean(nSet?.contextWindowRiskAccepted)) {
+    return false;
+  }
+  if (
+    (pSet?.contextWindowMainEnabled !== false) !== (nSet?.contextWindowMainEnabled !== false) ||
+    Boolean(pSet?.contextWindowSwarmEnabled) !== Boolean(nSet?.contextWindowSwarmEnabled)
+  ) {
+    return false;
+  }
+  if (
+    (prev.cloudCodeProxy?.state || 'disabled') !== (next.cloudCodeProxy?.state || 'disabled') ||
+    Number(prev.cloudCodeProxy?.ruleCount || 0) !== Number(next.cloudCodeProxy?.ruleCount || 0) ||
+    String(prev.cloudCodeProxy?.error || '') !== String(next.cloudCodeProxy?.error || '') ||
+    Number(prev.cloudCodeProxy?.syncedAtMs || 0) !== Number(next.cloudCodeProxy?.syncedAtMs || 0)
+  ) {
     return false;
   }
   if (
@@ -5345,7 +9408,14 @@ function isEquivalentTelemetry(prev, next) {
   if ((pSet?.enableCliStatusLine !== false) !== (nSet?.enableCliStatusLine !== false)) {
     return false;
   }
+  if (!sameArr(pSet?.cliStatusLineSlots, nSet?.cliStatusLineSlots)) return false;
   if ((pSet?.showTopbarMultiSession !== false) !== (nSet?.showTopbarMultiSession !== false)) {
+    return false;
+  }
+  if (
+    normalizeClientContextAgentMode(pSet?.contextAgentMode) !==
+    normalizeClientContextAgentMode(nSet?.contextAgentMode)
+  ) {
     return false;
   }
   if (Boolean(pSet?.showStepTurnRail) !== Boolean(nSet?.showStepTurnRail)) {
@@ -5355,6 +9425,15 @@ function isEquivalentTelemetry(prev, next) {
     return false;
   }
   if (Boolean(pSet?.showStepSpeedColor) !== Boolean(nSet?.showStepSpeedColor)) {
+    return false;
+  }
+  if (Boolean(pSet?.showStepFilterToolbar) !== Boolean(nSet?.showStepFilterToolbar)) {
+    return false;
+  }
+  if (
+    normalizeClientExperimentalQuotaReservation(pSet?.experimentalQuotaReservation) !==
+    normalizeClientExperimentalQuotaReservation(nSet?.experimentalQuotaReservation)
+  ) {
     return false;
   }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
@@ -5373,6 +9452,16 @@ function isEquivalentTelemetry(prev, next) {
     Boolean(pWb?.launcherConfigured) !== Boolean(nWb?.launcherConfigured) ||
     Boolean(pWb?.canRelaunch) !== Boolean(nWb?.canRelaunch) ||
     Number(pWb?.aliveCount || 0) !== Number(nWb?.aliveCount || 0)
+  ) {
+    return false;
+  }
+  const pCli = prev.cliStatusLine;
+  const nCli = next.cliStatusLine;
+  if (
+    Boolean(pCli?.installed) !== Boolean(nCli?.installed) ||
+    Boolean(pCli?.configured) !== Boolean(nCli?.configured) ||
+    Boolean(pCli?.preservedCustom) !== Boolean(nCli?.preservedCustom) ||
+    String(pCli?.managedFlags || '') !== String(nCli?.managedFlags || '')
   ) {
     return false;
   }
@@ -5525,6 +9614,9 @@ function isEquivalentTelemetry(prev, next) {
         bs?.createdAtMs !== as?.createdAtMs ||
         bs?.totalDurationSec !== as?.totalDurationSec ||
         bs?.streamDurationSec !== as?.streamDurationSec ||
+        bs?.nativeStreamSec !== as?.nativeStreamSec ||
+        bs?.thinkingDurationSec !== as?.thinkingDurationSec ||
+        Boolean(bs?.hasToolCalls) !== Boolean(as?.hasToolCalls) ||
         bs?.modelKey !== as?.modelKey ||
         bs?.modelShort !== as?.modelShort ||
         bs?.modelLabel !== as?.modelLabel ||
@@ -5582,6 +9674,9 @@ function isEquivalentTelemetry(prev, next) {
       before.createdAtMs !== after.createdAtMs ||
       before.totalDurationSec !== after.totalDurationSec ||
       before.streamDurationSec !== after.streamDurationSec ||
+      before.nativeStreamSec !== after.nativeStreamSec ||
+      before.thinkingDurationSec !== after.thinkingDurationSec ||
+      Boolean(before.hasToolCalls) !== Boolean(after.hasToolCalls) ||
       before.modelKey !== after.modelKey ||
       before.modelShort !== after.modelShort ||
       before.modelLabel !== after.modelLabel ||
@@ -5652,7 +9747,14 @@ function isEquivalentTelemetry(prev, next) {
         a[k]?.costUsd !== b[k]?.costUsd ||
         a[k]?.unpricedCalls !== b[k]?.unpricedCalls ||
         a[k]?.totalTokens !== b[k]?.totalTokens ||
+        a[k]?.inputTokens !== b[k]?.inputTokens ||
+        a[k]?.cacheReadTokens !== b[k]?.cacheReadTokens ||
+        a[k]?.thinkingTokens !== b[k]?.thinkingTokens ||
+        a[k]?.responseTokens !== b[k]?.responseTokens ||
         a[k]?.calls !== b[k]?.calls ||
+        (a[k]?.avgTokPerSec ?? null) !== (b[k]?.avgTokPerSec ?? null) ||
+        (a[k]?.avgTtftSec ?? null) !== (b[k]?.avgTtftSec ?? null) ||
+        (a[k]?.cacheHitPct ?? null) !== (b[k]?.cacheHitPct ?? null) ||
         Number(a[k]?.anomalyCount || 0) !== Number(b[k]?.anomalyCount || 0) ||
         Number(a[k]?.anomalySteps || 0) !== Number(b[k]?.anomalySteps || 0)
       ) {
@@ -5668,6 +9770,10 @@ function isEquivalentTelemetry(prev, next) {
   for (let i = 0; i < pTrend.length; i++) {
     if (
       pTrend[i]?.tokens !== nTrend[i]?.tokens ||
+      pTrend[i]?.inputTokens !== nTrend[i]?.inputTokens ||
+      pTrend[i]?.cacheReadTokens !== nTrend[i]?.cacheReadTokens ||
+      pTrend[i]?.thinkingTokens !== nTrend[i]?.thinkingTokens ||
+      pTrend[i]?.responseTokens !== nTrend[i]?.responseTokens ||
       pTrend[i]?.calls !== nTrend[i]?.calls ||
       pTrend[i]?.label !== nTrend[i]?.label ||
       pTrend[i]?.fullLabel !== nTrend[i]?.fullLabel ||
@@ -5716,12 +9822,47 @@ function isEquivalentTelemetry(prev, next) {
     }
   }
 
+  const pTopConvs = prev.consumption?.topConversations || [];
+  const nTopConvs = next.consumption?.topConversations || [];
+  if (pTopConvs.length !== nTopConvs.length) return false;
+  for (let i = 0; i < pTopConvs.length; i++) {
+    if (
+      pTopConvs[i]?.cascadeId !== nTopConvs[i]?.cascadeId ||
+      pTopConvs[i]?.title !== nTopConvs[i]?.title ||
+      pTopConvs[i]?.totalTokens !== nTopConvs[i]?.totalTokens ||
+      pTopConvs[i]?.costUsd !== nTopConvs[i]?.costUsd ||
+      pTopConvs[i]?.calls !== nTopConvs[i]?.calls ||
+      !areModelSlicesEqual(pTopConvs[i]?.models, nTopConvs[i]?.models)
+    ) {
+      return false;
+    }
+  }
+
+  const pTopWs = prev.consumption?.topWorkspaces || [];
+  const nTopWs = next.consumption?.topWorkspaces || [];
+  if (pTopWs.length !== nTopWs.length) return false;
+  for (let i = 0; i < pTopWs.length; i++) {
+    if (
+      pTopWs[i]?.workspaceKey !== nTopWs[i]?.workspaceKey ||
+      pTopWs[i]?.label !== nTopWs[i]?.label ||
+      pTopWs[i]?.sessionCount !== nTopWs[i]?.sessionCount ||
+      pTopWs[i]?.totalTokens !== nTopWs[i]?.totalTokens ||
+      pTopWs[i]?.costUsd !== nTopWs[i]?.costUsd ||
+      pTopWs[i]?.calls !== nTopWs[i]?.calls ||
+      !areModelSlicesEqual(pTopWs[i]?.models, nTopWs[i]?.models)
+    ) {
+      return false;
+    }
+  }
+
   // 8. 比对账号订阅档位与动态多配额池
   if (
     prev.account?.email !== next.account?.email ||
     prev.account?.name !== next.account?.name ||
     prev.account?.status !== next.account?.status ||
+    prev.account?.tierId !== next.account?.tierId ||
     prev.account?.tierName !== next.account?.tierName ||
+    prev.account?.tierMultiplier !== next.account?.tierMultiplier ||
     prev.account?.planName !== next.account?.planName ||
     prev.account?.aiCredits !== next.account?.aiCredits
   ) {
@@ -5759,16 +9900,22 @@ function isEquivalentTelemetry(prev, next) {
       pPools[i]?.poolLabel !== nPools[i]?.poolLabel ||
       pPools[i]?.usedPct !== nPools[i]?.usedPct ||
       pPools[i]?.remainingPct !== nPools[i]?.remainingPct ||
+      pPools[i]?.reservedPct !== nPools[i]?.reservedPct ||
+      pPools[i]?.reservedLeaseCount !== nPools[i]?.reservedLeaseCount ||
       pPools[i]?.resetTime !== nPools[i]?.resetTime ||
       pPools[i]?.weeklyUsedPct !== nPools[i]?.weeklyUsedPct ||
       pPools[i]?.weeklyRemainingPct !== nPools[i]?.weeklyRemainingPct ||
+      pPools[i]?.weeklyReservedPct !== nPools[i]?.weeklyReservedPct ||
+      pPools[i]?.weeklyReservedLeaseCount !== nPools[i]?.weeklyReservedLeaseCount ||
       pPools[i]?.weeklyResetTime !== nPools[i]?.weeklyResetTime ||
       pPools[i]?.cycle5h?.tokens !== nPools[i]?.cycle5h?.tokens ||
       pPools[i]?.cycle5h?.costUsd !== nPools[i]?.cycle5h?.costUsd ||
       pPools[i]?.cycle5h?.calls !== nPools[i]?.cycle5h?.calls ||
       pPools[i]?.cycleWeekly?.tokens !== nPools[i]?.cycleWeekly?.tokens ||
       pPools[i]?.cycleWeekly?.costUsd !== nPools[i]?.cycleWeekly?.costUsd ||
-      pPools[i]?.cycleWeekly?.calls !== nPools[i]?.cycleWeekly?.calls
+      pPools[i]?.cycleWeekly?.calls !== nPools[i]?.cycleWeekly?.calls ||
+      JSON.stringify(pPools[i]?.rateEstimate || null) !==
+        JSON.stringify(nPools[i]?.rateEstimate || null)
     ) {
       return false;
     }
@@ -5786,6 +9933,7 @@ function isEquivalentTelemetry(prev, next) {
       pConvs[i]?.subagentCount !== nConvs[i]?.subagentCount ||
       (pConvs[i]?.swarmCount || 0) !== (nConvs[i]?.swarmCount || 0) ||
       (pConvs[i]?.swarmTitle || '') !== (nConvs[i]?.swarmTitle || '') ||
+      (pConvs[i]?.workspaceName || '') !== (nConvs[i]?.workspaceName || '') ||
       pConvs[i]?.totalStepCount !== nConvs[i]?.totalStepCount
     ) {
       return false;
@@ -6028,6 +10176,8 @@ async function requestTelemetry(params, force) {
             account: latestSt.telemetry.consumption.account,
             trendSeries: latestSt.telemetry.consumption.trendSeries,
             sourcesBreakdown: latestSt.telemetry.consumption.sourcesBreakdown,
+            topConversations: latestSt.telemetry.consumption.topConversations,
+            topWorkspaces: latestSt.telemetry.consumption.topWorkspaces,
           },
           modelBreakdown: latestSt.telemetry.modelBreakdown,
         };
@@ -6467,6 +10617,9 @@ async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showTopbarMultiSession')) {
     safePatch.showTopbarMultiSession = Boolean(safePatch.showTopbarMultiSession);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'contextAgentMode')) {
+    safePatch.contextAgentMode = normalizeClientContextAgentMode(safePatch.contextAgentMode);
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepTurnRail')) {
     safePatch.showStepTurnRail = Boolean(safePatch.showStepTurnRail);
   }
@@ -6476,8 +10629,19 @@ async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepSpeedColor')) {
     safePatch.showStepSpeedColor = Boolean(safePatch.showStepSpeedColor);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepFilterToolbar')) {
+    safePatch.showStepFilterToolbar = Boolean(safePatch.showStepFilterToolbar);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalQuotaReservation')) {
+    safePatch.experimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
+      safePatch.experimentalQuotaReservation
+    );
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'topbarCapsuleSlots')) {
     safePatch.topbarCapsuleSlots = normalizeClientTopbarSlots(safePatch.topbarCapsuleSlots);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'cliStatusLineSlots')) {
+    safePatch.cliStatusLineSlots = normalizeClientCliStatusLineSlots(safePatch.cliStatusLineSlots);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverModules')) {
     safePatch.hoverModules = normalizeClientHoverModules(safePatch.hoverModules);
@@ -6515,6 +10679,12 @@ async function saveSettingsPatch(patch) {
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowRiskAccepted')) {
     safePatch.contextWindowRiskAccepted = Boolean(safePatch.contextWindowRiskAccepted);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowMainEnabled')) {
+    safePatch.contextWindowMainEnabled = Boolean(safePatch.contextWindowMainEnabled);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowSwarmEnabled')) {
+    safePatch.contextWindowSwarmEnabled = Boolean(safePatch.contextWindowSwarmEnabled);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'orchestratorIdMode')) {
     safePatch.orchestratorIdMode = normalizeClientOrchestratorIdMode(safePatch.orchestratorIdMode);
@@ -6722,6 +10892,65 @@ async function triggerBridgeHostRelaunch() {
       body: { __bridgeAction: 'relaunch' },
     });
   }
+}
+
+async function triggerCliStatusLineAction(action) {
+  const res = await callSidecarApi('/api/settings', {
+    method: 'POST',
+    body: { __cliStatusLineAction: String(action || 'force_install') },
+  });
+  const cur = telemetryStore.getState().telemetry;
+  if (cur && res && typeof res === 'object') {
+    const nextTelemetry = {
+      ...cur,
+      ...(res.cliStatusLine ? { cliStatusLine: res.cliStatusLine } : {}),
+      ...(res.settings ? { settings: { ...cur.settings, ...res.settings } } : {}),
+    };
+    telemetryStore.setState({ telemetry: nextTelemetry });
+  }
+  void fetchTelemetry({ force: true }).catch(() => {});
+  return res;
+}
+
+async function fetchSessionMigrationCatalog() {
+  try {
+    return await callSidecarApi('/api/session-migration/catalog', { method: 'GET' });
+  } catch {
+    return callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __sessionMigrationAction: 'catalog' },
+    });
+  }
+}
+
+async function fetchQuotaReservationLog() {
+  try {
+    return await callSidecarApi('/api/quota-reservation/log', { method: 'GET' });
+  } catch {
+    return callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __quotaReservationAction: 'log' },
+    });
+  }
+}
+
+async function executeSessionMigration(payload) {
+  let res;
+  try {
+    res = await callSidecarApi('/api/session-migration/migrate', {
+      method: 'POST',
+      body: payload || {},
+    });
+  } catch {
+    res = await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __sessionMigrationAction: 'migrate', payload: payload || {} },
+    });
+  }
+  if (res?.migratedCount > 0) {
+    void fetchTelemetry({ force: true }).catch(() => {});
+  }
+  return res;
 }
 
 async function triggerPluginUpdate() {
@@ -6981,7 +11210,7 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
@@ -7106,8 +11335,129 @@ const TopLongPillNav = defineComponent({
 return { TopLongPillNav };
 })();
 
+// --- src/components/ui/SearchInput.js ---
+const { createSearchInput } = (() => {
+/**
+ * @fileoverview Shared compact search input bar (`SearchInput.js`) with leading search icon
+ * and conditional clear button, reused across `CustomSelect`, `StepsDetailView`, and `SessionMigrationCard`.
+ */
+
+
+/**
+ * Creates a unified search input box while preserving caller-specific modifier classes.
+ *
+ * @param {{
+ *   wrapClassName?: string,
+ *   iconClassName?: string,
+ *   inputClassName?: string,
+ *   clearClassName?: string,
+ *   placeholder?: string,
+ *   ariaLabel?: string,
+ *   clearAriaLabel?: string,
+ *   hidden?: boolean,
+ *   stopClickPropagation?: boolean,
+ *   closeIconSize?: number,
+ *   onInput?: (value: string, event: any) => void,
+ *   onClear?: (event: any) => void,
+ *   onKeydown?: (event: any) => void,
+ * }} [options={}]
+ */
+function createSearchInput({
+  wrapClassName = '',
+  iconClassName = '',
+  inputClassName = '',
+  clearClassName = '',
+  placeholder = '',
+  ariaLabel = '',
+  clearAriaLabel = '',
+  hidden = false,
+  stopClickPropagation = false,
+  closeIconSize = 10,
+  onInput = null,
+  onClear = null,
+  onKeydown = null,
+} = {}) {
+  const iconEl = createSvgIcon('search', {
+    size: 12,
+    className: ['ui-search-icon', iconClassName].filter(Boolean).join(' '),
+  });
+
+  const inputEl = h('input', {
+    type: 'text',
+    className: ['ui-search-input', inputClassName].filter(Boolean).join(' '),
+    autocomplete: 'off',
+    spellcheck: 'false',
+    placeholder,
+    ...(ariaLabel ? { 'aria-label': ariaLabel } : {}),
+    ...(stopClickPropagation ? { onClick: (e) => e.stopPropagation?.() } : {}),
+    onInput: (e) => {
+      const val = String(e?.target?.value ?? inputEl.value ?? '');
+      patchAttr(clearBtnEl, 'hidden', !val.trim());
+      onInput?.(val, e);
+    },
+    ...(onKeydown ? { onKeydown } : {}),
+  });
+
+  const clearBtnEl = h(
+    'button',
+    {
+      type: 'button',
+      className: ['ui-search-clear', clearClassName].filter(Boolean).join(' '),
+      hidden: true,
+      ...(clearAriaLabel ? { 'aria-label': clearAriaLabel } : {}),
+      onClick: (e) => {
+        if (stopClickPropagation) e?.stopPropagation?.();
+        inputEl.value = '';
+        patchAttr(clearBtnEl, 'hidden', true);
+        if (onClear) {
+          onClear(e);
+        } else {
+          onInput?.('', e);
+          inputEl.focus?.();
+        }
+      },
+    },
+    [createSvgIcon('close', { size: closeIconSize })]
+  );
+
+  const wrapEl = h(
+    'div',
+    {
+      className: ['ui-search-wrap', wrapClassName].filter(Boolean).join(' '),
+      ...(hidden ? { hidden: true } : {}),
+      ...(stopClickPropagation ? { onClick: (e) => e.stopPropagation?.() } : {}),
+    },
+    [iconEl, inputEl, clearBtnEl]
+  );
+
+  return {
+    el: wrapEl,
+    iconEl,
+    inputEl,
+    clearBtnEl,
+    getValue() {
+      return String(inputEl.value || '');
+    },
+    setValue(nextVal) {
+      const str = String(nextVal ?? '');
+      inputEl.value = str;
+      patchAttr(clearBtnEl, 'hidden', !str.trim());
+    },
+    syncLabels({ placeholder: nextPlaceholder, ariaLabel: nextAria, clearAriaLabel: nextClearAria } = {}) {
+      if (nextPlaceholder !== undefined) patchAttr(inputEl, 'placeholder', nextPlaceholder);
+      if (nextAria !== undefined) patchAttr(inputEl, 'aria-label', nextAria);
+      if (nextClearAria !== undefined) patchAttr(clearBtnEl, 'aria-label', nextClearAria);
+    },
+    focus() {
+      inputEl.focus?.();
+    },
+  };
+}
+return { createSearchInput };
+})();
+
 // --- src/components/ui/CustomSelect.js ---
-const { CustomSelect } = (() => {
+const { filterSelectOptionsByQuery, CustomSelect } = (() => {
 /**
  * @fileoverview Bespoke CustomSelect dropdown component replacing native <select> / <option>.
  * Supports both single-select and multi-select (`multiple: true`) modes, with incremental
@@ -7149,12 +11499,36 @@ function sameStringArray(a, b) {
   return true;
 }
 
+function filterSelectOptionsByQuery(options = [], rawQuery = '') {
+  const q = String(rawQuery || '').trim().toLowerCase();
+  if (!q) return options;
+  const terms = q.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return options;
+  const out = [];
+  for (let i = 0; i < options.length; i++) {
+    const opt = options[i];
+    if (!opt) continue;
+    const haystack =
+      `${opt.label || ''} ${opt.meta || ''} ${opt.title || ''} ${opt.value || ''}`.toLowerCase();
+    let matched = true;
+    for (let k = 0; k < terms.length; k++) {
+      if (!haystack.includes(terms[k])) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) out.push(opt);
+  }
+  return out;
+}
+
 const CustomSelect = defineComponent({
   name: 'CustomSelect',
   setup({ getProps, setProps, emit, onCleanup }) {
     let isOpen = false;
     let focusedIndex = -1;
     let lastOpenMenuLayoutSig = '';
+    let searchQuery = '';
 
     const initialIcon = getProps().icon;
     const leadIcon = createSvgIcon(initialIcon || 'bolt', { size: 13 });
@@ -7179,11 +11553,46 @@ const CustomSelect = defineComponent({
       [leadIcon, triggerLabel, chevronIcon]
     );
 
-    const menuEl = h('div', {
-      className: 'select-menu',
-      role: 'listbox',
+    const searchBox = createSearchInput({
+      wrapClassName: 'select-search-wrap',
+      iconClassName: 'select-search-icon',
+      inputClassName: 'select-search-input',
+      clearClassName: 'select-search-clear',
+      placeholder: getProps().searchPlaceholder || t('select.searchPlaceholder'),
+      clearAriaLabel: t('select.clearSearch'),
       hidden: true,
+      stopClickPropagation: true,
+      closeIconSize: 10,
+      onInput: (val) => {
+        searchQuery = val;
+        focusedIndex = 0;
+        renderMenuOptions();
+      },
+      onClear: () => {
+        clearSearchQuery(true);
+      },
+      onKeydown: handleKeydown,
     });
+    const searchWrap = searchBox.el;
+    const searchInput = searchBox.inputEl;
+    const searchClearBtn = searchBox.clearBtnEl;
+
+    const optionsListEl = h('div', { className: 'select-options-list' });
+    const emptyHintEl = h('div', {
+      className: 'select-empty text-muted',
+      hidden: true,
+      text: t('select.noMatches'),
+    });
+
+    const menuEl = h(
+      'div',
+      {
+        className: 'select-menu',
+        role: 'listbox',
+        hidden: true,
+      },
+      [searchWrap, optionsListEl, emptyHintEl]
+    );
 
     const initialClass = [
       'custom-select',
@@ -7193,6 +11602,28 @@ const CustomSelect = defineComponent({
       .filter(Boolean)
       .join(' ');
     const rootEl = h('div', { className: initialClass }, [triggerBtn, menuEl]);
+
+    function isSearchActiveForOptions(options) {
+      const { searchable = false, searchThreshold = 6 } = getProps();
+      return Boolean(searchable) && options.length >= Math.max(1, Number(searchThreshold) || 6);
+    }
+
+    function getVisibleOptions() {
+      const opts = getProps().options || [];
+      if (!isSearchActiveForOptions(opts) || !searchQuery.trim()) return opts;
+      return filterSelectOptionsByQuery(opts, searchQuery);
+    }
+
+    function clearSearchQuery(refocus = false) {
+      if (!searchQuery && !searchInput.value) return;
+      searchQuery = '';
+      searchInput.value = '';
+      focusedIndex = 0;
+      renderMenuOptions();
+      if (refocus && typeof searchInput.focus === 'function') {
+        searchInput.focus();
+      }
+    }
 
     function getSelectedSet() {
       const { multiple, modelValue, options = [], allValue = '' } = getProps();
@@ -7207,7 +11638,7 @@ const CustomSelect = defineComponent({
       positionAnchoredPopup(rootEl, triggerBtn, menuEl, {
         margin: 6,
         gap: 4,
-        maxHeight: 220,
+        maxHeight: isSearchActiveForOptions(getProps().options || []) ? 268 : 220,
         minFlipSpace: 140,
       });
     }
@@ -7215,7 +11646,7 @@ const CustomSelect = defineComponent({
     let boundReposition = false;
     function handleViewportChange(e) {
       if (!isOpen) return;
-      if (e?.type === 'scroll' && e.target === menuEl) return;
+      if (e?.type === 'scroll' && (e.target === menuEl || e.target === optionsListEl)) return;
       positionMenu();
     }
 
@@ -7234,7 +11665,8 @@ const CustomSelect = defineComponent({
     }
 
     function buildMenuLayoutSig(options = [], labelText = '') {
-      let sig = `${labelText}|${options.length}`;
+      const searchShown = isSearchActiveForOptions(options) ? 1 : 0;
+      let sig = `${labelText}|${searchShown}|${searchQuery}|${options.length}`;
       for (let i = 0; i < options.length; i++) {
         const o = options[i];
         sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.meta ?? ''}`;
@@ -7242,9 +11674,11 @@ const CustomSelect = defineComponent({
       return sig;
     }
 
-    function toggleOpen(nextOpen) {
+    function toggleOpen(nextOpen, { focusSearch = false } = {}) {
       isOpen = Boolean(nextOpen);
       if (isOpen) {
+        searchQuery = '';
+        searchInput.value = '';
         const opts = getProps().options || [];
         const selSet = getSelectedSet();
         focusedIndex = Math.max(
@@ -7254,6 +11688,8 @@ const CustomSelect = defineComponent({
         renderMenuOptions();
         lastOpenMenuLayoutSig = buildMenuLayoutSig(opts, triggerLabel.textContent || '');
       } else {
+        searchQuery = '';
+        searchInput.value = '';
         lastOpenMenuLayoutSig = '';
       }
       patchClasses(rootEl, { 'is-open': isOpen });
@@ -7263,6 +11699,13 @@ const CustomSelect = defineComponent({
       setRepositionListeners(isOpen);
       if (isOpen) {
         positionMenu();
+        if (focusSearch && isSearchActiveForOptions(getProps().options || [])) {
+          queueMicrotask(() => {
+            if (isOpen && typeof searchInput.focus === 'function') {
+              searchInput.focus();
+            }
+          });
+        }
       }
     }
 
@@ -7314,42 +11757,69 @@ const CustomSelect = defineComponent({
     }
 
     function handleKeydown(e) {
-      const opts = getProps().options || [];
-      if (!opts.length) return;
+      const fromSearchInput = e?.target === searchInput;
+      const visibleOpts = getVisibleOptions();
 
       if (e.key === 'ArrowDown') {
+        if (!visibleOpts.length && isOpen) return;
         e.preventDefault();
         if (!isOpen) {
           toggleOpen(true);
-        } else {
-          focusedIndex = (focusedIndex + 1) % opts.length;
+        } else if (visibleOpts.length > 0) {
+          focusedIndex = (focusedIndex + 1) % visibleOpts.length;
           renderMenuOptions();
-          menuEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
+          optionsListEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
         }
       } else if (e.key === 'ArrowUp') {
+        if (!visibleOpts.length && isOpen) return;
         e.preventDefault();
         if (!isOpen) {
           toggleOpen(true);
-        } else {
-          focusedIndex = (focusedIndex - 1 + opts.length) % opts.length;
+        } else if (visibleOpts.length > 0) {
+          focusedIndex = (focusedIndex - 1 + visibleOpts.length) % visibleOpts.length;
           renderMenuOptions();
-          menuEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
+          optionsListEl.children[focusedIndex]?.scrollIntoView?.({ block: 'nearest' });
         }
-      } else if ((e.key === 'Enter' || (e.key === ' ' && isOpen && getProps().multiple)) && isOpen) {
+      } else if (
+        (e.key === 'Enter' || (!fromSearchInput && e.key === ' ' && isOpen && getProps().multiple)) &&
+        isOpen
+      ) {
+        if (!visibleOpts.length) return;
         e.preventDefault();
-        const target = opts[focusedIndex];
+        const target = visibleOpts[focusedIndex] || visibleOpts[0];
         if (target) chooseOption(target);
       } else if (e.key === 'Escape' && isOpen) {
         e.preventDefault();
-        toggleOpen(false);
+        if (fromSearchInput && searchQuery) {
+          clearSearchQuery(true);
+        } else {
+          toggleOpen(false);
+          if (fromSearchInput && typeof triggerBtn.focus === 'function') {
+            triggerBtn.focus();
+          }
+        }
       }
     }
 
     function renderMenuOptions() {
-      const { options = [], multiple = false } = getProps();
+      const { options = [], multiple = false, searchPlaceholder } = getProps();
+      const showSearch = isSearchActiveForOptions(options);
+      const visibleOpts = getVisibleOptions();
+      if (focusedIndex >= visibleOpts.length) {
+        focusedIndex = visibleOpts.length > 0 ? 0 : -1;
+      }
+      patchAttr(searchWrap, 'hidden', !showSearch);
+      patchClasses(menuEl, { 'has-search': showSearch });
+      if (showSearch) {
+        patchAttr(searchInput, 'placeholder', searchPlaceholder || t('select.searchPlaceholder'));
+        patchAttr(searchClearBtn, 'hidden', !searchQuery);
+        patchAttr(searchClearBtn, 'aria-label', t('select.clearSearch'));
+      }
+      patchText(emptyHintEl, t('select.noMatches'));
+      patchAttr(emptyHintEl, 'hidden', !showSearch || visibleOpts.length > 0);
       const selSet = getSelectedSet();
       patchAttr(menuEl, 'aria-multiselectable', multiple ? 'true' : null);
-      patchKeyedList(menuEl, options, {
+      patchKeyedList(optionsListEl, visibleOpts, {
         keyFn: (opt) => opt.value,
         sigFn: (opt, idx) =>
           `${multiple}::${opt.value}::${opt.label}::${opt.meta || ''}::${Boolean(opt.disabled)}::${selSet.has(opt.value)}::${idx === focusedIndex}`,
@@ -7482,15 +11952,181 @@ const CustomSelect = defineComponent({
 
     return {
       el: rootEl,
-      refs: { triggerBtn, triggerLabel, menuEl },
+      refs: { triggerBtn, triggerLabel, menuEl, searchInput, optionsListEl },
       onPropsChange: syncTriggerAndMenu,
       methods: {
         close: () => toggleOpen(false),
+        open: () => toggleOpen(true),
+        openAndFocusSearch: () => toggleOpen(true, { focusSearch: true }),
       },
     };
   },
 });
-return { CustomSelect };
+return { filterSelectOptionsByQuery, CustomSelect };
+})();
+
+// --- src/components/ui/ActionMenu.js ---
+const { ActionMenu } = (() => {
+/**
+ * @fileoverview 紧凑竖向三点 (`⋮`) 下拉单选操作菜单组件 (`ActionMenu.js`)。
+ * 兼容 Shadow DOM (`composedPath`) 外部点击收起及 Escape 键盘关闭，供用量统计、调用明细等工具栏复用。
+ */
+
+
+const ActionMenu = defineComponent({
+  name: 'ActionMenu',
+  setup({ props, onCleanup }) {
+    let isOpen = false;
+    let currentItems = Array.isArray(props?.items) ? props.items.slice() : [];
+    const align = props?.align === 'left' ? 'left' : 'right';
+
+    const triggerBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: `action-menu-trigger${props?.buttonClassName ? ` ${props.buttonClassName}` : ''}`,
+        'aria-haspopup': 'menu',
+        'aria-expanded': 'false',
+        'aria-label': props?.ariaLabel || 'More actions',
+        title: props?.ariaLabel || 'More actions',
+        onclick: (e) => {
+          e?.stopPropagation?.();
+          if (isOpen) {
+            close();
+          } else {
+            open();
+          }
+        },
+      },
+      [createSvgIcon('more-vertical', { size: 13 })]
+    );
+
+    const menuEl = h('div', {
+      className: `action-menu-popover${align === 'left' ? ' align-left' : ' align-right'}`,
+      role: 'menu',
+      hidden: true,
+    });
+
+    const rootEl = h(
+      'div',
+      {
+        className: `action-menu${props?.className ? ` ${props.className}` : ''}`,
+      },
+      [triggerBtn, menuEl]
+    );
+
+    let itemBtns = [];
+
+    function rebuildItems(items) {
+      currentItems = Array.isArray(items) ? items.slice() : [];
+      menuEl.textContent = '';
+      itemBtns = currentItems.map((item) => {
+        const iconNode = item.icon ? createSvgIcon(item.icon, { size: 12 }) : null;
+        const labelNode = h('span', { className: 'action-menu-item-label', text: item.label || '' });
+        const btn = h(
+          'button',
+          {
+            type: 'button',
+            role: 'menuitem',
+            className: 'action-menu-item',
+            'data-action-key': item.key || '',
+            title: item.title || '',
+            disabled: Boolean(item.disabled),
+            onclick: (e) => {
+              e?.stopPropagation?.();
+              close();
+              if (!item.disabled && typeof item.onSelect === 'function') {
+                item.onSelect();
+              }
+            },
+          },
+          iconNode ? [iconNode, labelNode] : [labelNode]
+        );
+        menuEl.appendChild(btn);
+        return { key: item.key, btn, labelNode };
+      });
+    }
+
+    function open() {
+      if (isOpen) return;
+      isOpen = true;
+      patchClasses(rootEl, { 'is-open': true });
+      patchAttr(triggerBtn, 'aria-expanded', 'true');
+      patchAttr(menuEl, 'hidden', false);
+    }
+
+    function close() {
+      if (!isOpen) return;
+      isOpen = false;
+      patchClasses(rootEl, { 'is-open': false });
+      patchAttr(triggerBtn, 'aria-expanded', 'false');
+      patchAttr(menuEl, 'hidden', true);
+    }
+
+    function onDocPointerDown(e) {
+      if (!isOpen) return;
+      if (isEventInside(e, rootEl)) return;
+      close();
+    }
+
+    function onDocKeyDown(e) {
+      if (!isOpen) return;
+      if (e?.key === 'Escape') {
+        e.preventDefault?.();
+        close();
+        triggerBtn.focus?.();
+      }
+    }
+
+    rebuildItems(currentItems);
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener?.('pointerdown', onDocPointerDown, true);
+      document.addEventListener?.('click', onDocPointerDown, true);
+      document.addEventListener?.('keydown', onDocKeyDown, true);
+    }
+
+    onCleanup(() => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener?.('pointerdown', onDocPointerDown, true);
+        document.removeEventListener?.('click', onDocPointerDown, true);
+        document.removeEventListener?.('keydown', onDocKeyDown, true);
+      }
+    });
+
+    return {
+      el: rootEl,
+      refs: {
+        triggerBtn,
+        menuEl,
+        getItemBtn: (key) => itemBtns.find((it) => it.key === key)?.btn || null,
+        isOpen: () => isOpen,
+        open,
+        close,
+        setItems: (nextItems) => {
+          rebuildItems(nextItems);
+        },
+        setAriaLabel: (label) => {
+          patchAttr(triggerBtn, 'aria-label', label);
+          patchAttr(triggerBtn, 'title', label);
+        },
+        setHidden: (hidden) => {
+          if (hidden) close();
+          patchAttr(rootEl, 'hidden', Boolean(hidden));
+        },
+        updateItemLabels: (labelMap) => {
+          for (const it of itemBtns) {
+            const entry = labelMap?.[it.key];
+            if (!entry) continue;
+            if (entry.label !== undefined) patchText(it.labelNode, entry.label);
+            if (entry.title !== undefined) patchAttr(it.btn, 'title', entry.title);
+          }
+        },
+      },
+    };
+  },
+});
+return { ActionMenu };
 })();
 
 // --- src/components/ui/CustomNumberInput.js ---
@@ -7504,7 +12140,7 @@ const { CustomNumberInput } = (() => {
 
 const CustomNumberInput = defineComponent({
   name: 'CustomNumberInput',
-  setup({ getProps, setProps, emit }) {
+  setup({ getProps, setProps, emit, onCleanup }) {
     function clampValue(raw) {
       const { min = -Infinity, max = Infinity, precision = 0 } = getProps();
       const num = Number(raw);
@@ -7531,7 +12167,7 @@ const CustomNumberInput = defineComponent({
       {
         type: 'button',
         className: 'num-step-btn',
-        'aria-label': '减少数值',
+        'aria-label': t('ui.num.decrease'),
         onClick: (e) => {
           e.preventDefault();
           applyStep(-1, e.shiftKey ? 10 : 1);
@@ -7545,7 +12181,7 @@ const CustomNumberInput = defineComponent({
       {
         type: 'button',
         className: 'num-step-btn',
-        'aria-label': '增加数值',
+        'aria-label': t('ui.num.increase'),
         onClick: (e) => {
           e.preventDefault();
           applyStep(1, e.shiftKey ? 10 : 1);
@@ -7609,6 +12245,15 @@ const CustomNumberInput = defineComponent({
     }
 
     const rootEl = h('div', { className: 'number-input' }, [decBtn, textField, incBtn]);
+    const unsubI18n = i18nStore.subscribe(
+      (st) => st.locale,
+      () => {
+        patchAttr(decBtn, 'aria-label', t('ui.num.decrease'));
+        patchAttr(incBtn, 'aria-label', t('ui.num.increase'));
+      },
+      { immediate: false }
+    );
+    onCleanup(unsubI18n);
     syncFieldDisplay();
 
     return {
@@ -7632,7 +12277,15 @@ const { CustomDateTimePicker } = (() => {
  */
 
 
-const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
+const WEEKDAY_KEYS = [
+  'ui.dt.wdayMon',
+  'ui.dt.wdayTue',
+  'ui.dt.wdayWed',
+  'ui.dt.wdayThu',
+  'ui.dt.wdayFri',
+  'ui.dt.wdaySat',
+  'ui.dt.wdaySun',
+];
 
 function buildCalendarDays(viewYear, viewMonth, selectedDate) {
   const firstDay = new Date(viewYear, viewMonth, 1);
@@ -7693,7 +12346,7 @@ const CustomDateTimePicker = defineComponent({
       {
         type: 'button',
         className: 'icon-btn',
-        'aria-label': '上个月',
+        'aria-label': t('ui.dt.prevMonth'),
         onClick: (e) => {
           e.stopPropagation();
           viewMonth -= 1;
@@ -7712,7 +12365,7 @@ const CustomDateTimePicker = defineComponent({
       {
         type: 'button',
         className: 'icon-btn',
-        'aria-label': '下个月',
+        'aria-label': t('ui.dt.nextMonth'),
         onClick: (e) => {
           e.stopPropagation();
           viewMonth += 1;
@@ -7728,11 +12381,10 @@ const CustomDateTimePicker = defineComponent({
 
     const navBar = h('div', { className: 'dt-nav' }, [prevMonthBtn, monthTitle, nextMonthBtn]);
 
-    const weekdayRow = h(
-      'div',
-      { className: 'dt-weekdays' },
-      WEEKDAYS.map((w) => h('span', { className: 'dt-weekday', text: w }))
+    const weekdaySpans = WEEKDAY_KEYS.map((key) =>
+      h('span', { className: 'dt-weekday', text: t(key) })
     );
+    const weekdayRow = h('div', { className: 'dt-weekdays' }, weekdaySpans);
 
     const daysGrid = h('div', { className: 'dt-days' });
 
@@ -7752,8 +12404,9 @@ const CustomDateTimePicker = defineComponent({
       emit('update:modelValue', nextMs);
     }
 
+    const hourMinLabelEl = h('span', { className: 'text-muted', text: t('ui.dt.hourMinute') });
     const timeRow = h('div', { className: 'dt-time-row' }, [
-      h('span', { className: 'text-muted', text: '时 / 分' }),
+      hourMinLabelEl,
       h('div', { className: 'dt-time-controls' }, [
         h('div', { className: 'dt-mini-step' }, [
           h('button', {
@@ -7921,6 +12574,25 @@ const CustomDateTimePicker = defineComponent({
     } else {
       onCleanup(() => setRepositionListeners(false));
     }
+
+    function syncI18nLabels() {
+      patchAttr(prevMonthBtn, 'aria-label', t('ui.dt.prevMonth'));
+      patchAttr(nextMonthBtn, 'aria-label', t('ui.dt.nextMonth'));
+      patchText(hourMinLabelEl, t('ui.dt.hourMinute'));
+      for (let i = 0; i < WEEKDAY_KEYS.length; i += 1) {
+        patchText(weekdaySpans[i], t(WEEKDAY_KEYS[i]));
+      }
+    }
+
+    const unsubI18n = i18nStore.subscribe(
+      (st) => st.locale,
+      () => {
+        syncI18nLabels();
+        syncDisplay();
+      },
+      { immediate: false }
+    );
+    onCleanup(unsubI18n);
 
     syncDisplay();
 
@@ -8133,10 +12805,18 @@ const SegmentedControl = defineComponent({
       {
         className: 'segmented',
         role: 'group',
-        'aria-label': getProps().ariaLabel || '分段切换器',
+        'aria-label': getProps().ariaLabel || t('ui.seg.defaultAria'),
       },
       [gliderEl]
     );
+    const unsubI18n = i18nStore.subscribe(
+      (st) => st.locale,
+      () => {
+        patchAttr(rootEl, 'aria-label', getProps().ariaLabel || t('ui.seg.defaultAria'));
+      },
+      { immediate: false }
+    );
+    onCleanup(unsubI18n);
 
     const btnMap = new Map();
     let orderedBtns = [];
@@ -8334,6 +13014,137 @@ const SegmentedControl = defineComponent({
 return { SegmentedControl };
 })();
 
+// --- src/components/ui/ToggleSwitch.js ---
+const { ToggleSwitch } = (() => {
+/**
+ * @fileoverview Zero-ResizeObserver binary toggle switch (`ToggleSwitch.js`).
+ * Uses a pure-CSS 2-column grid glider (`--seg-active-idx`) so Settings tabs do not
+ * instantiate 10+ ResizeObservers or force synchronous layout measurements for simple
+ * on/off or show/hide switches, while preserving `.segmented` / `.seg-btn` semantics.
+ */
+
+
+const TOGGLE_PRESET_DEFS = Object.freeze({
+  enable: Object.freeze([
+    { value: 'on', labelKey: 'settings.str.on' },
+    { value: 'off', labelKey: 'settings.str.off' },
+  ]),
+  visibility: Object.freeze([
+    { value: 'show', labelKey: 'settings.str.show' },
+    { value: 'hide', labelKey: 'settings.str.hide' },
+  ]),
+  modernUi: Object.freeze([
+    { value: 'on', labelKey: 'settings.gen.modernUiOn' },
+    { value: 'off', labelKey: 'settings.gen.modernUiOff' },
+  ]),
+});
+
+function resolveToggleOptions(props) {
+  if (Array.isArray(props.options) && props.options.length === 2) {
+    return props.options;
+  }
+  const defs = TOGGLE_PRESET_DEFS[props.preset] || TOGGLE_PRESET_DEFS.enable;
+  return [
+    { value: defs[0].value, label: t(defs[0].labelKey) },
+    { value: defs[1].value, label: t(defs[1].labelKey) },
+  ];
+}
+
+const ToggleSwitch = defineComponent({
+  name: 'ToggleSwitch',
+  setup({ getProps, setProps, emit, onCleanup }) {
+    const gliderEl = h('div', { className: 'seg-glider is-ready', 'aria-hidden': 'true' });
+    const btns = [0, 1].map((slotIdx) =>
+      h('button', {
+        type: 'button',
+        className: 'seg-btn',
+        onClick: (e) => {
+          e.stopPropagation();
+          const opts = resolveToggleOptions(getProps());
+          const opt = opts[slotIdx];
+          if (opt) selectValue(opt.value);
+        },
+        onKeydown: (e) => {
+          if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const opts = resolveToggleOptions(getProps());
+            const nextIdx = slotIdx === 0 ? 1 : 0;
+            const targetOpt = opts[nextIdx];
+            if (targetOpt) {
+              selectValue(targetOpt.value);
+              btns[nextIdx]?.focus?.();
+            }
+          }
+        },
+      })
+    );
+
+    const rootEl = h(
+      'div',
+      {
+        className: 'segmented segmented--binary has-glider toggle-switch',
+        role: 'group',
+        'aria-label': getProps().ariaLabel || t('ui.seg.defaultAria'),
+      },
+      [gliderEl, btns[0], btns[1]]
+    );
+
+    function selectValue(nextVal) {
+      if (getProps().modelValue !== nextVal) {
+        setProps({ modelValue: nextVal });
+        emit('update:modelValue', nextVal);
+      }
+    }
+
+    function syncToggle() {
+      const props = getProps();
+      const opts = resolveToggleOptions(props);
+      const aria = props.ariaLabelKey ? t(props.ariaLabelKey) : props.ariaLabel || t('ui.seg.defaultAria');
+      patchAttr(rootEl, 'aria-label', aria);
+
+      let activeIdx = 0;
+      for (let i = 0; i < 2; i += 1) {
+        const opt = opts[i];
+        const btn = btns[i];
+        const active = opt.value === props.modelValue;
+        if (active) activeIdx = i;
+        patchText(btn, opt.label);
+        patchClasses(btn, { 'is-active': active });
+        patchAttr(btn, 'aria-pressed', active ? 'true' : 'false');
+        patchAttr(btn, 'data-seg-value', opt.value);
+      }
+      patchStyleVar(rootEl, '--seg-active-idx', String(activeIdx));
+    }
+
+    const unsubI18n = i18nStore.subscribe(
+      (st) => st.locale,
+      () => {
+        syncToggle();
+      },
+      { immediate: false }
+    );
+    onCleanup(unsubI18n);
+
+    syncToggle();
+
+    return {
+      el: rootEl,
+      onPropsChange: syncToggle,
+      methods: {
+        setValue(val) {
+          setProps({ modelValue: val });
+        },
+        setOptions(options) {
+          setProps({ options });
+        },
+        refreshGeometry() {},
+      },
+    };
+  },
+});
+return { ToggleSwitch };
+})();
+
 // --- src/components/ui/ContextSegmentMeter.js ---
 const { ContextSegmentMeter } = (() => {
 /**
@@ -8418,7 +13229,7 @@ const ContextSegmentMeter = defineComponent({
           slotEl,
           'title',
           isActive
-            ? `${t(item.def.labelKey)} · ${formatTokens(item.val)} (${item.pct.toFixed(1)}%)`
+            ? `${t(item.def.labelKey)} · ${formatTokens(item.val)} (${formatPctNumber(item.pct, { withSymbol: true })})`
             : null
         );
       }
@@ -8503,6 +13314,256 @@ function createFourSegmentBar() {
   return { el, update };
 }
 return { createFourSegmentBar };
+})();
+
+// --- src/components/ui/ConsumptionTooltipContent.js ---
+const { createConsumptionBreakdownContent } = (() => {
+/**
+ * @fileoverview 消耗统计统一悬浮详情内容组件 (ConsumptionTooltipContent).
+ * 供历史趋势（折线/热力图）、客户端来源、会话排行及月度统计悬浮卡片复用：
+ * 1. 顶部标题/日期行 + 右侧调用次数；
+ * 2. 核心大字总量 (`TOKEN`) + 右侧预估费用；
+ * 3. 分模型明细行（模型名/Token/占比 + 同「模型排行」Token 模式一致的四段构成进度条，不显示多余分组标题）；
+ * 4. 底部四通道汇总（输入 / 缓存 / 思考 / 输出）。
+ */
+
+
+function safeNonNeg(val) {
+  const n = Number(val);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function resolveSegmentChannels(seg) {
+  const inputTokens = safeNonNeg(seg?.inputTokens);
+  const cacheReadTokens = safeNonNeg(seg?.cacheReadTokens);
+  const thinkingTokens = safeNonNeg(seg?.thinkingTokens);
+  const responseTokens =
+    seg?.responseTokens != null
+      ? safeNonNeg(seg.responseTokens)
+      : Math.max(0, safeNonNeg(seg?.outputTokens) - thinkingTokens);
+  return { inputTokens, cacheReadTokens, thinkingTokens, responseTokens };
+}
+
+/**
+ * 创建可增量更新的消耗统计悬浮详情内容结构。
+ *
+ * @param {{ showModelDot?: boolean, monoTitle?: boolean }} [options]
+ * @returns {{
+ *   children: HTMLElement[],
+ *   update: (payload: {
+ *     title?: string,
+ *     calls?: number,
+ *     totalTokens?: number,
+ *     costText?: string,
+ *     inputTokens?: number,
+ *     cacheReadTokens?: number,
+ *     thinkingTokens?: number,
+ *     responseTokens?: number,
+ *     outputTokens?: number,
+ *     segments?: Array<object>,
+ *   }) => void,
+ * }}
+ */
+function createConsumptionBreakdownContent({
+  showModelDot = false,
+  monoTitle = false,
+} = {}) {
+  const titleEl = h('span', {
+    className: monoTitle ? 'trend-tip-time text-mono' : 'trend-tip-time',
+  });
+  const callsEl = h('span', { className: 'trend-tip-calls text-mono' });
+  const headEl = h('div', { className: 'trend-tip-head cons-tip-head' }, [titleEl, callsEl]);
+
+  const heroNumEl = h('span', { className: 'cons-tip-hero-num', text: '0' });
+  const heroUnitEl = h('span', { className: 'cons-tip-hero-unit', text: ' TOKEN' });
+  const tokensEl = h('strong', { className: 'trend-tip-tokens cons-tip-hero text-mono' }, [
+    heroNumEl,
+    heroUnitEl,
+  ]);
+  const costEl = h('span', { className: 'trend-tip-cost text-mono' });
+  const mainEl = h('div', { className: 'trend-tip-main cons-tip-main' }, [tokensEl, costEl]);
+
+  function createModelRow() {
+    const dotEl = h('span', {
+      className: 'dot-swatch cons-model-dot',
+      hidden: !showModelDot,
+    });
+    const nameEl = h('span', { className: 'cons-pop-model-name' });
+    const tokEl = h('span', { className: 'cons-pop-model-tok' });
+    const pctEl = h('strong', { className: 'cons-pop-model-pct' });
+    const segBar = createFourSegmentBar();
+    const rowEl = h('div', { className: 'cons-pop-model-row' }, [
+      h('div', { className: 'cons-pop-model-head' }, [
+        h('span', { className: 'cons-pop-model-left' }, [dotEl, nameEl]),
+        h('span', { className: 'cons-pop-model-right text-mono' }, [tokEl, pctEl]),
+      ]),
+      segBar.el,
+    ]);
+    return {
+      el: rowEl,
+      refs: { rowEl, dotEl, nameEl, tokEl, pctEl, segBar },
+    };
+  }
+
+  const modelsEl = h('div', { className: 'cons-pop-models', hidden: true });
+
+  const inLabelEl = h('span', { className: 'cons-pop-chan-label', text: t('cons.legInput') });
+  const inValEl = h('strong', { className: 'cons-pop-chan-val text-mono', text: '0' });
+  const cacheLabelEl = h('span', { className: 'cons-pop-chan-label', text: t('cons.legCache') });
+  const cacheValEl = h('strong', { className: 'cons-pop-chan-val text-mono', text: '0' });
+  const thinkLabelEl = h('span', { className: 'cons-pop-chan-label', text: t('cons.legThinking') });
+  const thinkValEl = h('strong', { className: 'cons-pop-chan-val text-mono', text: '0' });
+  const outLabelEl = h('span', { className: 'cons-pop-chan-label', text: t('cons.legOutput') });
+  const outValEl = h('strong', { className: 'cons-pop-chan-val text-mono', text: '0' });
+
+  const channelsEl = h('div', { className: 'cons-pop-channels', hidden: true }, [
+    h('div', { className: 'cons-pop-chan' }, [
+      h('span', { className: 'cons-pop-chan-head' }, [
+        h('span', { className: 'dot-swatch seg-input' }),
+        inLabelEl,
+      ]),
+      inValEl,
+    ]),
+    h('div', { className: 'cons-pop-chan' }, [
+      h('span', { className: 'cons-pop-chan-head' }, [
+        h('span', { className: 'dot-swatch seg-cached' }),
+        cacheLabelEl,
+      ]),
+      cacheValEl,
+    ]),
+    h('div', { className: 'cons-pop-chan' }, [
+      h('span', { className: 'cons-pop-chan-head' }, [
+        h('span', { className: 'dot-swatch seg-thinking' }),
+        thinkLabelEl,
+      ]),
+      thinkValEl,
+    ]),
+    h('div', { className: 'cons-pop-chan' }, [
+      h('span', { className: 'cons-pop-chan-head' }, [
+        h('span', { className: 'dot-swatch seg-output' }),
+        outLabelEl,
+      ]),
+      outValEl,
+    ]),
+  ]);
+
+  function update(payload = {}) {
+    patchText(titleEl, payload.title || '--');
+    patchText(
+      callsEl,
+      t('cons.callsCount', { calls: Math.max(0, Math.floor(Number(payload.calls) || 0)) })
+    );
+    const totalTokens = safeNonNeg(payload.totalTokens);
+    patchText(heroNumEl, formatTokensPrecise(totalTokens));
+    patchText(heroUnitEl, ' TOKEN');
+    patchText(costEl, payload.costText || '');
+
+    const rows = Array.isArray(payload.segments) ? payload.segments : [];
+    patchAttr(modelsEl, 'hidden', rows.length === 0);
+    patchKeyedList(modelsEl, rows, {
+      keyFn: (r) => r.key,
+      sigFn: (r) =>
+        `${showModelDot ? 1 : 0}:${r.key}:${r.label}:${r.color || ''}:${r.tokText}:${r.pctText}:${r.isOther ? 1 : 0}:${r.tok || 0}:${r.inputTokens || 0}:${r.cacheReadTokens || 0}:${r.thinkingTokens || 0}:${r.responseTokens ?? ''}:${r.outputTokens ?? ''}`,
+      createRow: createModelRow,
+      updateRow: (rRefs, r) => {
+        patchClasses(rRefs.rowEl, { 'is-other': Boolean(r.isOther) });
+        patchAttr(rRefs.dotEl, 'hidden', !showModelDot);
+        if (showModelDot) {
+          patchStyleVar(rRefs.dotEl, '--dot-color', r.color);
+        }
+        patchText(rRefs.nameEl, r.label);
+        patchText(rRefs.tokEl, r.tokText);
+        patchText(rRefs.pctEl, r.pctText);
+
+        const segTok = safeNonNeg(r.tok);
+        const pct = Math.max(0, Math.min(100, Number(r.pct) || 0));
+        const scaleRatio = segTok > 0 ? Math.min(1, Math.max(0.008, pct / 100)) : 0;
+        const ch = resolveSegmentChannels(r);
+        const chSum = ch.inputTokens + ch.cacheReadTokens + ch.thinkingTokens + ch.responseTokens;
+        if (chSum > 0) {
+          rRefs.segBar.update({
+            inputTokens: ch.inputTokens,
+            cacheReadTokens: ch.cacheReadTokens,
+            thinkingTokens: ch.thinkingTokens,
+            responseTokens: ch.responseTokens,
+            scaleRatio,
+          });
+        } else if (segTok > 0) {
+          rRefs.segBar.update({
+            inputTokens: 0,
+            cacheReadTokens: segTok,
+            thinkingTokens: 0,
+            responseTokens: 0,
+            scaleRatio,
+          });
+        } else {
+          rRefs.segBar.update({
+            inputTokens: 0,
+            cacheReadTokens: 0,
+            thinkingTokens: 0,
+            responseTokens: 0,
+            scaleRatio: 0,
+          });
+        }
+      },
+    });
+
+    const hasExplicitChannels =
+      payload.inputTokens !== undefined ||
+      payload.cacheReadTokens !== undefined ||
+      payload.thinkingTokens !== undefined ||
+      payload.responseTokens !== undefined ||
+      payload.outputTokens !== undefined;
+    let inTok = safeNonNeg(payload.inputTokens);
+    let cacheTok = safeNonNeg(payload.cacheReadTokens);
+    let thinkTok = safeNonNeg(payload.thinkingTokens);
+    let respTok =
+      payload.responseTokens != null
+        ? safeNonNeg(payload.responseTokens)
+        : Math.max(0, safeNonNeg(payload.outputTokens) - thinkTok);
+    let hasChannels = hasExplicitChannels;
+
+    if (!hasChannels && rows.length > 0) {
+      let segIn = 0;
+      let segCache = 0;
+      let segThink = 0;
+      let segResp = 0;
+      for (const seg of rows) {
+        const ch = resolveSegmentChannels(seg);
+        segIn += ch.inputTokens;
+        segCache += ch.cacheReadTokens;
+        segThink += ch.thinkingTokens;
+        segResp += ch.responseTokens;
+      }
+      if (segIn + segCache + segThink + segResp > 0) {
+        inTok = segIn;
+        cacheTok = segCache;
+        thinkTok = segThink;
+        respTok = segResp;
+        hasChannels = true;
+      }
+    }
+
+    const showChannels = totalTokens > 0 && hasChannels;
+    patchAttr(channelsEl, 'hidden', !showChannels);
+    if (showChannels) {
+      patchText(inLabelEl, t('cons.legInput'));
+      patchText(cacheLabelEl, t('cons.legCache'));
+      patchText(thinkLabelEl, t('cons.legThinking'));
+      patchText(outLabelEl, t('cons.legOutput'));
+      patchText(inValEl, formatTokensPrecise(inTok));
+      patchText(cacheValEl, formatTokensPrecise(cacheTok));
+      patchText(thinkValEl, formatTokensPrecise(thinkTok));
+      patchText(outValEl, formatTokensPrecise(respTok));
+    }
+  }
+
+  return {
+    children: [headEl, mainEl, modelsEl, channelsEl],
+    update,
+  };
+}
+return { createConsumptionBreakdownContent };
 })();
 
 // --- src/components/charts/TrendAreaChart.js ---
@@ -8694,12 +13755,14 @@ function buildHeatmapMonthTicks(slots, firstDow, totalWeeks) {
 /**
  * 创建交互式历史趋势组件（<=90 天为 SVG 平滑曲线图，>90 天自动切换为类 GitHub 每日小格子热力图）。
  *
+ * @param {{ onSelectSlot?: (slot: object) => void }} [options]
  * @returns {{
  *   el: HTMLElement,
- *   update: (series?: Array<object>) => void
+ *   update: (series?: Array<object>) => void,
+ *   destroy: () => void
  * }}
  */
-function createTrendAreaChart() {
+function createTrendAreaChart({ onSelectSlot = null } = {}) {
   const DEFAULT_VIEW_W = 460;
   const VIEW_H = 184;
   const TOP_Y = 26;
@@ -8777,16 +13840,7 @@ function createTrendAreaChart() {
   linePath.setAttribute('fill', 'none');
   svg.appendChild(linePath);
 
-  const dotsGroup = document.createElementNS(SVG_NS, 'g');
-  dotsGroup.setAttribute('class', 'trend-dots-group');
-  svg.appendChild(dotsGroup);
-
-  const peakDot = document.createElementNS(SVG_NS, 'circle');
-  peakDot.setAttribute('r', '3');
-  peakDot.setAttribute('class', 'trend-peak-dot');
-  svg.appendChild(peakDot);
-
-  // 悬停十字准星与焦点圆点
+  // 悬停十字准星及焦点圆点
   const hoverLine = document.createElementNS(SVG_NS, 'line');
   hoverLine.setAttribute('class', 'trend-hover-line');
   hoverLine.setAttribute('y1', '12');
@@ -8802,53 +13856,25 @@ function createTrendAreaChart() {
 
   const peakPill = h('span', { className: 'trend-peak-pill text-mono', text: '0' });
 
-  function createTooltipModelRow() {
-    const dotEl = h('span', { className: 'dot-swatch cons-model-dot' });
-    const nameEl = h('span', { className: 'cons-pop-model-name' });
-    const tokEl = h('span', { className: 'cons-pop-model-tok' });
-    const pctEl = h('strong', { className: 'cons-pop-model-pct' });
-    const rowEl = h('div', { className: 'cons-pop-model-row' }, [
-      h('span', { className: 'cons-pop-model-left' }, [dotEl, nameEl]),
-      h('span', { className: 'cons-pop-model-right text-mono' }, [tokEl, pctEl]),
-    ]);
-    return {
-      el: rowEl,
-      refs: { rowEl, dotEl, nameEl, tokEl, pctEl },
-    };
-  }
-
-  // 共享悬停详情浮层卡片（曲线图与热力格子图共用，含该时段分模型占比明细）
-  const tipTimeEl = h('span', { className: 'trend-tip-time text-mono' });
-  const tipCallsEl = h('span', { className: 'trend-tip-calls text-mono' });
-  const tipTokensEl = h('strong', { className: 'trend-tip-tokens text-mono' });
-  const tipCostEl = h('span', { className: 'trend-tip-cost text-mono' });
-  const tipInLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legInput') });
-  const tipInValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
-  const tipCacheLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legCache') });
-  const tipCacheValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
-  const tipOutLabelEl = h('span', { className: 'trend-tip-stat-label', text: t('cons.legOutput') });
-  const tipOutValEl = h('span', { className: 'trend-tip-stat-val text-mono' });
-  const tipSubEl = h('div', { className: 'trend-tip-sub is-grid', hidden: true }, [
-    h('div', { className: 'trend-tip-stat' }, [tipInLabelEl, tipInValEl]),
-    h('div', { className: 'trend-tip-stat' }, [tipCacheLabelEl, tipCacheValEl]),
-    h('div', { className: 'trend-tip-stat' }, [tipOutLabelEl, tipOutValEl]),
-  ]);
-  const tipModelsEl = h('div', { className: 'cons-pop-models', hidden: true });
+  // 共享悬停详情浮层卡片（曲线图和热力格子图共用，含分模型四段进度条及底部四通道明细）
+  const tooltipContent = createConsumptionBreakdownContent({
+    showModelDot: false,
+    monoTitle: true,
+  });
 
   const tooltipEl = h(
     'div',
-    { className: 'trend-tooltip', hidden: true },
-    [
-      h('div', { className: 'trend-tip-head' }, [tipTimeEl, tipCallsEl]),
-      h('div', { className: 'trend-tip-main' }, [tipTokensEl, tipCostEl]),
-      tipSubEl,
-      tipModelsEl,
-    ]
+    { className: 'trend-tooltip is-rich-breakdown', hidden: true },
+    tooltipContent.children
   );
 
   // 底部对齐刻度轴（曲线模式）
   const xAxisEl = h('div', { className: 'trend-x-axis' });
-  const plotStage = h('div', { className: 'trend-plot-stage' }, [peakPill, svg]);
+  const plotStage = h(
+    'div',
+    { className: `trend-plot-stage${typeof onSelectSlot === 'function' ? ' is-clickable' : ''}` },
+    [peakPill, svg]
+  );
 
   // 类 GitHub 每日小格子热力图容器（> 90 天模式）
   const wdayMonEl = h('span', { className: 'trend-hm-wday', text: t('chart.trend.wdayMon') });
@@ -8910,6 +13936,7 @@ function createTrendAreaChart() {
   let tickElsByIdx = new Map();
   let hoveredIdx = -1;
   let hoveredCellEl = null;
+  let lastPointer = null;
   let lastRenderSig = '';
   let tipTrackRaf = 0;
 
@@ -8941,102 +13968,150 @@ function createTrendAreaChart() {
   }
 
   function populateTooltipContent(slot) {
-    patchText(tipTimeEl, slot.fullLabel || slot.label || '--');
-    patchText(
-      tipCallsEl,
-      t('cons.callsCount', { calls: Math.max(0, Math.floor(Number(slot.calls) || 0)) })
-    );
     const slotTok = safeSlotTokens(slot.tokens);
-    patchText(tipTokensEl, `${formatTokensPrecise(slotTok)} tok`);
     const slotCost = Number.isFinite(Number(slot.costUsd)) ? Math.max(0, Number(slot.costUsd)) : 0;
-    patchText(
-      tipCostEl,
-      formatUsd(slotCost, {
+    tooltipContent.update({
+      title: slot.fullLabel || slot.label || '--',
+      calls: slot.calls,
+      totalTokens: slotTok,
+      costText: formatUsd(slotCost, {
         precise: slotCost > 0 && slotCost < 0.1,
-      })
-    );
-
-    const hasSubBreakdown =
-      slotTok > 0 &&
-      (slot.inputTokens !== undefined ||
-        slot.cacheReadTokens !== undefined ||
-        slot.outputTokens !== undefined);
-    patchAttr(tipSubEl, 'hidden', !hasSubBreakdown);
-    if (hasSubBreakdown) {
-      patchText(tipInLabelEl, t('cons.legInput'));
-      patchText(tipCacheLabelEl, t('cons.legCache'));
-      patchText(tipOutLabelEl, t('cons.legOutput'));
-      patchText(tipInValEl, formatTokensPrecise(safeSlotTokens(slot.inputTokens)));
-      patchText(tipCacheValEl, formatTokensPrecise(safeSlotTokens(slot.cacheReadTokens)));
-      patchText(tipOutValEl, formatTokensPrecise(safeSlotTokens(slot.outputTokens)));
-    }
-
-    const modelSegs = Array.isArray(slot.modelSegments) ? slot.modelSegments : [];
-    patchAttr(tipModelsEl, 'hidden', modelSegs.length === 0);
-    patchKeyedList(tipModelsEl, modelSegs, {
-      keyFn: (r) => r.key,
-      sigFn: (r) => `${r.key}:${r.label}:${r.color}:${r.tokText}:${r.pctText}:${r.isOther}`,
-      createRow: createTooltipModelRow,
-      updateRow: (rRefs, r) => {
-        patchClasses(rRefs.rowEl, { 'is-other': Boolean(r.isOther) });
-        patchStyleVar(rRefs.dotEl, '--dot-color', r.color);
-        patchText(rRefs.nameEl, r.label);
-        patchText(rRefs.tokEl, r.tokText);
-        patchText(rRefs.pctEl, r.pctText);
-      },
+      }),
+      inputTokens: slot.inputTokens,
+      cacheReadTokens: slot.cacheReadTokens,
+      thinkingTokens: slot.thinkingTokens,
+      responseTokens: slot.responseTokens,
+      outputTokens: slot.outputTokens,
+      segments: Array.isArray(slot.modelSegments) ? slot.modelSegments : [],
     });
   }
 
-  function showLineHoverAtIndex(idx) {
+  let cachedWrapRect = null;
+  let cachedSvgRect = null;
+  let cachedHmGridRect = null;
+  let cachedClipRect = undefined;
+
+  function invalidateHoverRects() {
+    cachedWrapRect = null;
+    cachedSvgRect = null;
+    cachedHmGridRect = null;
+    cachedClipRect = undefined;
+  }
+
+  function getCachedWrapRect() {
+    if (!cachedWrapRect) {
+      cachedWrapRect = chartWrap.getBoundingClientRect?.() || null;
+    }
+    return cachedWrapRect;
+  }
+
+  function positionTooltipNearAnchor(fallbackX, fallbackY, pointer = null) {
+    const wrapRect = getCachedWrapRect();
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
+    const wrapH =
+      wrapRect && wrapRect.height > 0
+        ? wrapRect.height
+        : Number(chartWrap.offsetHeight || VIEW_H);
+
+    const tipW = Number(tooltipEl.offsetWidth || 0) || 216;
+    const tipH = Number(tooltipEl.offsetHeight || 0) || 104;
+
+    const hasPointer =
+      pointer &&
+      Number.isFinite(Number(pointer.clientX)) &&
+      Number.isFinite(Number(pointer.clientY)) &&
+      wrapRect &&
+      wrapRect.width > 0 &&
+      wrapRect.height > 0;
+
+    const anchorX = hasPointer ? Number(pointer.clientX) - wrapRect.left : fallbackX;
+    const anchorY = hasPointer ? Number(pointer.clientY) - wrapRect.top : fallbackY;
+
+    if (cachedClipRect === undefined) {
+      const clipEl = chartWrap.closest?.('.view-pane, .cons-view-stage') || null;
+      cachedClipRect = clipEl?.getBoundingClientRect?.() || null;
+    }
+    const clipRect = cachedClipRect;
+    const hasClip = Boolean(
+      clipRect && clipRect.height > 0 && wrapRect && wrapRect.height > 0
+    );
+    const minY = hasClip ? clipRect.top - wrapRect.top + 6 : -tipH - 16;
+    const maxY = hasClip ? clipRect.bottom - wrapRect.top - tipH - 6 : wrapH + 16;
+
+    const maxLeft = Math.max(4, wrapW - tipW - 4);
+    let leftPx = Math.max(4, Math.min(maxLeft, anchorX - tipW / 2));
+    const aboveY = anchorY - tipH - 14;
+    let topPx;
+
+    if (aboveY >= minY) {
+      topPx = Math.min(maxY, aboveY);
+    } else if (anchorX + 16 + tipW <= wrapW - 4) {
+      leftPx = anchorX + 16;
+      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
+    } else if (anchorX - 16 - tipW >= 4) {
+      leftPx = anchorX - 16 - tipW;
+      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
+    } else {
+      topPx = Math.max(minY, Math.min(maxY, anchorY + 18));
+    }
+
+    patchStyleVar(tooltipEl, '--tip-x', `${Math.round(leftPx)}px`);
+    patchStyleVar(tooltipEl, '--tip-shift', '0px');
+    patchStyleVar(tooltipEl, '--tip-y', `${Math.round(topPx)}px`);
+  }
+
+  function showLineHoverAtIndex(idx, pointer = null) {
     if (currentIsHeatmap || idx < 0 || idx >= currentSlots.length || !currentPts[idx]) {
       clearHover();
       return;
     }
     const wasHidden = tooltipEl.hasAttribute('hidden');
+    const changedIdx = idx !== hoveredIdx;
     hoveredIdx = idx;
+    if (pointer) {
+      lastPointer = pointer;
+    }
     const slot = currentSlots[idx];
     const pt = currentPts[idx];
 
-    patchAttr(hoverLine, 'hidden', false);
-    patchAttr(hoverLine, 'x1', pt.x.toFixed(1));
-    patchAttr(hoverLine, 'x2', pt.x.toFixed(1));
+    if (wasHidden || changedIdx) {
+      patchAttr(hoverLine, 'hidden', false);
+      patchAttr(hoverLine, 'x1', pt.x.toFixed(1));
+      patchAttr(hoverLine, 'x2', pt.x.toFixed(1));
 
-    patchAttr(hoverDot, 'hidden', false);
-    patchAttr(hoverDot, 'cx', pt.x.toFixed(1));
-    patchAttr(hoverDot, 'cy', pt.y.toFixed(1));
+      patchAttr(hoverDot, 'hidden', false);
+      patchAttr(hoverDot, 'cx', pt.x.toFixed(1));
+      patchAttr(hoverDot, 'cy', pt.y.toFixed(1));
 
-    const isLineLow = pt.y < Math.round((TOP_Y + BOTTOM_Y) / 2);
-    patchAttr(peakPill, 'hidden', true);
-    patchClasses(tooltipEl, {
-      'is-hm-bottom': false,
-      'is-hm-top': false,
-      'is-line-low': isLineLow,
-    });
-    patchAttr(tooltipEl, 'hidden', false);
-    populateTooltipContent(slot);
+      patchAttr(peakPill, 'hidden', true);
+      patchClasses(tooltipEl, {
+        'is-hm-bottom': false,
+        'is-hm-top': false,
+        'is-line-low': false,
+      });
+      patchAttr(tooltipEl, 'hidden', false);
+      populateTooltipContent(slot);
 
-    let tipY = 0;
-    if (isLineLow) {
-      const wrapH = Number(chartWrap.offsetHeight || 0);
-      const tipH = Number(tooltipEl.offsetHeight || 0);
-      if (wrapH > 0 && tipH > 0) {
-        tipY = Math.max(0, wrapH - tipH - 22);
+      for (const [tIdx, el] of tickElsByIdx.entries()) {
+        patchClasses(el, { 'is-hovered': tIdx === idx });
       }
     }
 
-    const rawPct = (pt.x / viewW) * 100;
-    const clampedPct = Math.max(1, Math.min(99, rawPct));
-    patchStyleVar(tooltipEl, '--tip-x', `${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-shift', `-${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-y', `${Math.round(tipY)}px`);
+    const wrapRect = getCachedWrapRect();
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
+    const fallbackX = (pt.x / Math.max(1, viewW)) * wrapW;
+    const fallbackY = pt.y + 6;
+    positionTooltipNearAnchor(fallbackX, fallbackY, pointer || lastPointer);
     armTooltipTracking(wasHidden);
-
-    for (const [tIdx, el] of tickElsByIdx.entries()) {
-      patchClasses(el, { 'is-hovered': tIdx === idx });
-    }
   }
 
-  function showHeatmapHoverAtIndex(idx, cellEl) {
+  function showHeatmapHoverAtIndex(idx, cellEl, pointer = null) {
     if (!currentIsHeatmap || idx < 0 || idx >= currentSlots.length) {
       clearHover();
       return;
@@ -9046,7 +14121,12 @@ function createTrendAreaChart() {
       clearHover();
       return;
     }
+    const wasHidden = tooltipEl.hasAttribute('hidden');
+    const changedCell = idx !== hoveredIdx || hoveredCellEl !== targetCell;
     hoveredIdx = idx;
+    if (pointer) {
+      lastPointer = pointer;
+    }
     if (hoveredCellEl && hoveredCellEl !== targetCell) {
       patchClasses(hoveredCellEl, { 'is-hovered': false });
     }
@@ -9057,19 +14137,25 @@ function createTrendAreaChart() {
     const row = Number(targetCell.getAttribute('data-hm-row') || 0);
     const col = Number(targetCell.getAttribute('data-hm-col') || 0);
 
-    const wasHidden = tooltipEl.hasAttribute('hidden');
-    // 上半区（周一~周四）浮层停靠热力图下方，下半区（周五~周日）停靠热力图上方，互不遮挡被悬停格子且永不越界裁剪
-    patchClasses(tooltipEl, {
-      'is-hm-bottom': row <= 3,
-      'is-hm-top': row > 3,
-      'is-line-low': false,
-    });
-    patchAttr(tooltipEl, 'hidden', false);
-    populateTooltipContent(slot);
+    if (wasHidden || changedCell) {
+      patchClasses(tooltipEl, {
+        'is-hm-bottom': false,
+        'is-hm-top': false,
+        'is-line-low': false,
+      });
+      patchAttr(tooltipEl, 'hidden', false);
+      populateTooltipContent(slot);
+    }
 
-    const wrapRect = chartWrap.getBoundingClientRect();
-    const cellRect = targetCell.getBoundingClientRect();
-    let rawPct = 50;
+    const wrapRect = getCachedWrapRect();
+    const cellRect = targetCell.getBoundingClientRect?.() || null;
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
+    let fallbackX =
+      currentHeatmapWeeks > 0 ? ((col + 0.5) / currentHeatmapWeeks) * wrapW : wrapW / 2;
+    let fallbackY = 20 + row * 14;
     if (
       wrapRect &&
       wrapRect.width > 0 &&
@@ -9077,20 +14163,19 @@ function createTrendAreaChart() {
       cellRect.width > 0 &&
       cellRect.width < wrapRect.width
     ) {
-      rawPct = ((cellRect.left + cellRect.width / 2 - wrapRect.left) / wrapRect.width) * 100;
-    } else if (currentHeatmapWeeks > 0) {
-      rawPct = ((col + 0.5) / currentHeatmapWeeks) * 100;
+      fallbackX = cellRect.left + cellRect.width / 2 - wrapRect.left;
+      fallbackY = cellRect.top + cellRect.height / 2 - wrapRect.top;
     }
-    const clampedPct = Math.max(1, Math.min(99, rawPct));
-    patchStyleVar(tooltipEl, '--tip-x', `${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-shift', `-${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-y', '0px');
+
+    positionTooltipNearAnchor(fallbackX, fallbackY, pointer || lastPointer);
     armTooltipTracking(wasHidden);
   }
 
   function clearHover() {
+    invalidateHoverRects();
     cancelTipTrackRaf();
     hoveredIdx = -1;
+    lastPointer = null;
     patchAttr(hoverLine, 'hidden', true);
     patchAttr(hoverDot, 'hidden', true);
     patchAttr(tooltipEl, 'hidden', true);
@@ -9134,8 +14219,14 @@ function createTrendAreaChart() {
 
   function handlePointerMove(e) {
     if (currentIsHeatmap || !currentSlots.length) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
+    if (!cachedSvgRect) {
+      cachedSvgRect = svg.getBoundingClientRect();
+    }
+    const rect = cachedSvgRect;
+    if (!rect || rect.width <= 0) {
+      cachedSvgRect = null;
+      return;
+    }
     const relX = ((e.clientX - rect.left) / rect.width) * viewW;
     const { leftX, spanX } = resolvePlotBounds(viewW);
     const ratio = (relX - leftX) / Math.max(1, spanX);
@@ -9143,7 +14234,11 @@ function createTrendAreaChart() {
       0,
       Math.min(currentSlots.length - 1, Math.round(ratio * (currentSlots.length - 1)))
     );
-    showLineHoverAtIndex(idx);
+    const pointer =
+      Number.isFinite(Number(e?.clientX)) && Number.isFinite(Number(e?.clientY))
+        ? { clientX: Number(e.clientX), clientY: Number(e.clientY) }
+        : null;
+    showLineHoverAtIndex(idx, pointer);
   }
 
   function findDirectHeatmapCell(e) {
@@ -9174,8 +14269,12 @@ function createTrendAreaChart() {
       return null;
     }
 
-    const rect = hmGridEl.getBoundingClientRect?.();
+    if (!cachedHmGridRect) {
+      cachedHmGridRect = hmGridEl.getBoundingClientRect?.() || null;
+    }
+    const rect = cachedHmGridRect;
     if (!rect || !(rect.width > 0) || !(rect.height > 0) || currentHeatmapWeeks <= 0) {
+      cachedHmGridRect = null;
       if (hoveredIdx >= 0 && hoveredIdx < currentSlots.length && currentCellEls[hoveredIdx]) {
         return { idx: hoveredIdx, cellEl: currentCellEls[hoveredIdx] };
       }
@@ -9261,8 +14360,12 @@ function createTrendAreaChart() {
       clearHover();
       return;
     }
-    if (hit.idx !== hoveredIdx || hit.cellEl !== hoveredCellEl) {
-      showHeatmapHoverAtIndex(hit.idx, hit.cellEl);
+    const pointer =
+      Number.isFinite(Number(e?.clientX)) && Number.isFinite(Number(e?.clientY))
+        ? { clientX: Number(e.clientX), clientY: Number(e.clientY) }
+        : null;
+    if (hit.idx !== hoveredIdx || hit.cellEl !== hoveredCellEl || pointer) {
+      showHeatmapHoverAtIndex(hit.idx, hit.cellEl, pointer);
     }
   }
 
@@ -9282,12 +14385,43 @@ function createTrendAreaChart() {
     }
   }
 
+  function handleLineClick(e) {
+    if (currentIsHeatmap || !currentSlots.length || typeof onSelectSlot !== 'function') return;
+    let idx = hoveredIdx;
+    const rect = svg.getBoundingClientRect?.();
+    if (rect && rect.width > 0 && Number.isFinite(Number(e?.clientX))) {
+      const relX = ((e.clientX - rect.left) / rect.width) * viewW;
+      const { leftX, spanX } = resolvePlotBounds(viewW);
+      const ratio = (relX - leftX) / Math.max(1, spanX);
+      idx = Math.max(
+        0,
+        Math.min(currentSlots.length - 1, Math.round(ratio * (currentSlots.length - 1)))
+      );
+    }
+    const slot = currentSlots[idx];
+    if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
+      onSelectSlot(slot);
+    }
+  }
+
+  function handleHeatmapClick(e) {
+    handleHeatmapPointer(e);
+    if (!currentIsHeatmap || !currentSlots.length || typeof onSelectSlot !== 'function') return;
+    const hit = resolveHeatmapCellFromPointer(e);
+    if (!hit || !Number.isFinite(hit.idx)) return;
+    const slot = currentSlots[hit.idx];
+    if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
+      onSelectSlot(slot);
+    }
+  }
+
   plotStage.addEventListener('mousemove', handlePointerMove);
+  plotStage.addEventListener('click', handleLineClick);
   plotStage.addEventListener('mouseleave', clearHover);
 
   hmGridEl.addEventListener('mouseover', handleHeatmapPointer);
   hmGridEl.addEventListener('mousemove', handleHeatmapPointer);
-  hmGridEl.addEventListener('click', handleHeatmapPointer);
+  hmGridEl.addEventListener('click', handleHeatmapClick);
   hmGridEl.addEventListener('mouseleave', clearHover);
   hmScrollEl.addEventListener('wheel', handleHeatmapWheel);
 
@@ -9295,6 +14429,7 @@ function createTrendAreaChart() {
   let onWinResize = null;
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
+      invalidateHoverRects();
       if (!currentIsHeatmap && syncViewWidth() && currentSlots.length > 0) {
         lastRenderSig = '';
         update(currentSlots);
@@ -9313,6 +14448,14 @@ function createTrendAreaChart() {
 
   function destroy() {
     cancelTipTrackRaf();
+    plotStage.removeEventListener('mousemove', handlePointerMove);
+    plotStage.removeEventListener('click', handleLineClick);
+    plotStage.removeEventListener('mouseleave', clearHover);
+    hmGridEl.removeEventListener('mouseover', handleHeatmapPointer);
+    hmGridEl.removeEventListener('mousemove', handleHeatmapPointer);
+    hmGridEl.removeEventListener('click', handleHeatmapClick);
+    hmGridEl.removeEventListener('mouseleave', clearHover);
+    hmScrollEl.removeEventListener('wheel', handleHeatmapWheel);
     resizeObs?.disconnect();
     resizeObs = null;
     if (onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
@@ -9385,9 +14528,14 @@ function createTrendAreaChart() {
       slots
         .map((s) => {
           const mSig = Array.isArray(s?.modelSegments)
-            ? s.modelSegments.map((m) => `${m.key}:${m.color}:${m.pctText}`).join(',')
+            ? s.modelSegments
+                .map(
+                  (m) =>
+                    `${m.key}:${m.color}:${m.pctText}:${m.inputTokens || 0}:${m.cacheReadTokens || 0}:${m.thinkingTokens || 0}:${m.responseTokens || 0}`
+                )
+                .join(',')
             : '';
-          return `${s?.startMs || ''}:${s?.label || ''}:${s?.fullLabel || ''}:${safeSlotTokens(s?.tokens)}:${Number(s?.costUsd || 0)}:${Number(s?.calls || 0)}:${mSig}`;
+          return `${s?.startMs || ''}:${s?.label || ''}:${s?.fullLabel || ''}:${safeSlotTokens(s?.tokens)}:${safeSlotTokens(s?.inputTokens)}:${safeSlotTokens(s?.cacheReadTokens)}:${safeSlotTokens(s?.thinkingTokens)}:${safeSlotTokens(s?.responseTokens)}:${Number(s?.costUsd || 0)}:${Number(s?.calls || 0)}:${mSig}`;
         })
         .join('|');
 
@@ -9487,7 +14635,7 @@ function createTrendAreaChart() {
       if (hoveredIdx >= slots.length) {
         clearHover();
       } else if (hoveredIdx >= 0) {
-        showHeatmapHoverAtIndex(hoveredIdx, currentCellEls[hoveredIdx]);
+        showHeatmapHoverAtIndex(hoveredIdx, currentCellEls[hoveredIdx], lastPointer);
       }
       return;
     }
@@ -9553,29 +14701,16 @@ function createTrendAreaChart() {
           title: slot.fullLabel || slot.label || '',
         });
         patchStyleVar(tickEl, '--tick-x', `${pct.toFixed(2)}%`);
-        tickEl.onclick = () => showLineHoverAtIndex(tIdx);
+        tickEl.onclick = () => {
+          lastPointer = null;
+          showLineHoverAtIndex(tIdx);
+        };
         xAxisEl.appendChild(tickEl);
         tickElsByIdx.set(tIdx, tickEl);
-      }
-
-      // 渲染采样点小圆点（当点数 <= 36 时展示，突出有消耗的整点/日期）
-      while (dotsGroup.firstChild) dotsGroup.removeChild(dotsGroup.firstChild);
-      if (pts.length <= 36) {
-        for (let i = 0; i < pts.length; i++) {
-          if (pts[i].tokens <= 0) continue;
-          const dot = document.createElementNS(SVG_NS, 'circle');
-          dot.setAttribute('cx', pts[i].x.toFixed(1));
-          dot.setAttribute('cy', pts[i].y.toFixed(1));
-          dot.setAttribute('r', '2');
-          dot.setAttribute('class', 'trend-node-dot');
-          dotsGroup.appendChild(dot);
-        }
       }
     }
 
     const peakPt = pts[peakIdx] || { x: viewW / 2, y: BOTTOM_Y };
-    patchAttr(peakDot, 'cx', peakPt.x.toFixed(1));
-    patchAttr(peakDot, 'cy', peakPt.y.toFixed(1));
 
     const peakSlot = slots[peakIdx];
     const peakText =
@@ -9592,7 +14727,7 @@ function createTrendAreaChart() {
     if (hoveredIdx >= slots.length) {
       clearHover();
     } else if (hoveredIdx >= 0) {
-      showLineHoverAtIndex(hoveredIdx);
+      showLineHoverAtIndex(hoveredIdx, lastPointer);
     }
   }
 
@@ -10164,7 +15299,7 @@ function formatYAxisTick(metric, val, step) {
     return step >= 1 ? `${Math.round(val)}s` : `${val.toFixed(1)}s`;
   }
   if (metric === 'cache') {
-    return step >= 1 ? `${Math.round(val)}%` : `${val.toFixed(1)}%`;
+    return step >= 1 ? `${Math.round(val)}%` : formatPctNumber(val, { withSymbol: true });
   }
   if (metric === 'cost') {
     if (step >= 1) return `$${Math.round(val)}`;
@@ -10239,7 +15374,7 @@ function formatChartMetricValue(metric, val) {
     case 'ttft':
       return formatMetric(val, 's');
     case 'cache':
-      return `${val.toFixed(1)}%`;
+      return formatPctNumber(val, { withSymbol: true });
     case 'cost':
       return formatUsd(val, { precise: true });
     default:
@@ -10258,7 +15393,7 @@ function formatChartMetricCompact(metric, val) {
     case 'ttft':
       return formatMetric(val, 's');
     case 'cache':
-      return `${val.toFixed(1)}%`;
+      return formatPctNumber(val, { withSymbol: true });
     case 'cost':
       return formatUsd(val, { precise: true });
     default:
@@ -10413,7 +15548,14 @@ function createSessionLineChart() {
   let hoveredIdx = -1;
   let tickElsByIdx = new Map();
   let lastSig = '';
+  let lastPreSig = '';
+  let lastSummaryBadge = '';
   let lastUpdateParams = null;
+  let cachedPlotSvgRect = null;
+
+  function invalidatePlotSvgRect() {
+    cachedPlotSvgRect = null;
+  }
 
   function syncViewWidth() {
     const measured = Math.round(
@@ -10526,8 +15668,14 @@ function createSessionLineChart() {
 
   plotStage.addEventListener('mousemove', (e) => {
     if (!currentPoints.length) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
+    if (!cachedPlotSvgRect) {
+      cachedPlotSvgRect = svg.getBoundingClientRect();
+    }
+    const rect = cachedPlotSvgRect;
+    if (!rect || rect.width <= 0) {
+      cachedPlotSvgRect = null;
+      return;
+    }
     const relX = ((e.clientX - rect.left) / rect.width) * viewW;
     const { leftX, spanX } = resolvePlotBounds(viewW);
     const ratio = (relX - leftX) / Math.max(1, spanX);
@@ -10537,14 +15685,19 @@ function createSessionLineChart() {
     );
     showHoverAt(idx);
   });
-  plotStage.addEventListener('mouseleave', clearHover);
+  plotStage.addEventListener('mouseleave', () => {
+    invalidatePlotSvgRect();
+    clearHover();
+  });
 
   let resizeObs = null;
   let onWinResize = null;
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
+      invalidatePlotSvgRect();
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
+        lastPreSig = '';
         update(lastUpdateParams);
       }
     });
@@ -10625,6 +15778,9 @@ function createSessionLineChart() {
     if (!matchedSteps.length) {
       currentPoints = [];
       lastSig = 'empty';
+      lastPreSig = '';
+      lastSummaryBadge = t('chart.step.zeroSteps');
+      invalidatePlotSvgRect();
       patchAttr(areaPath, 'd', '');
       patchAttr(linePath, 'd', '');
       while (multiAreaGroup.firstChild) multiAreaGroup.removeChild(multiAreaGroup.firstChild);
@@ -10636,7 +15792,23 @@ function createSessionLineChart() {
       patchAttr(peakPill, 'hidden', true);
       patchAttr(emptyHintEl, 'hidden', false);
       clearHover();
-      return { summaryBadge: t('chart.step.zeroSteps') };
+      return { summaryBadge: lastSummaryBadge };
+    }
+
+    const locale = getEffectiveLocale();
+    const extColorSig = modelColorByGroup
+      ? Array.from(modelColorByGroup.entries())
+          .map(([k, v]) => `${k}=${v}`)
+          .join(',')
+      : '';
+    let preStepParts = `${matchedSteps.length}:`;
+    for (let i = 0; i < matchedSteps.length; i += 1) {
+      const s = matchedSteps[i];
+      preStepParts += `${s.stepIndex ?? i},${s.agentIndex ?? 0},${s.modelKey || s.modelShort || ''},${s.inputTokens || 0},${s.cacheReadTokens || 0},${s.outputTokens || 0},${s.contextTokens || 0},${s.tokPerSec ?? ''},${s.ttftSec ?? ''},${s.costUsd ?? ''},${s.anomalySig || ''};`;
+    }
+    const preSig = `${locale}|${viewW}|${metric}|${showAgentPrefix}|${displaySettings?.modelDisplayMode || ''}|${Boolean(displaySettings?.showUpstreamModel)}|${displaySettings?.orchestratorIdMode || ''}|${targetKeys.join(',')}|${extColorSig}|${preStepParts}`;
+    if (preSig === lastPreSig && lastSummaryBadge) {
+      return { summaryBadge: lastSummaryBadge };
     }
 
     const modelColorMap = new Map();
@@ -10844,7 +16016,6 @@ function createSessionLineChart() {
     const validPoints = points.filter((p) => p.valid);
     patchAttr(emptyHintEl, 'hidden', validPoints.length > 0);
 
-    const locale = getEffectiveLocale();
     const colorSig = Array.from(modelColorMap.entries())
       .map(([k, v]) => `${k}=${v}`)
       .join(',');
@@ -10902,16 +16073,15 @@ function createSessionLineChart() {
             patchStyleVar(mLine, '--sstep-fit-accent', seriesColor);
             multiLineGroup.appendChild(mLine);
 
-            if (seriesPts.length <= 36) {
-              for (const pt of seriesPts) {
-                const dot = document.createElementNS(SVG_NS, 'circle');
-                dot.setAttribute('cx', pt.x.toFixed(1));
-                dot.setAttribute('cy', pt.y.toFixed(1));
-                dot.setAttribute('r', seriesPts.length > 20 ? '1.7' : '2.1');
-                dot.setAttribute('class', 'sstep-node-dot');
-                patchStyleVar(dot, '--dot-stroke', seriesColor);
-                dotsGroup.appendChild(dot);
-              }
+            if (seriesPts.length === 1) {
+              const pt = seriesPts[0];
+              const dot = document.createElementNS(SVG_NS, 'circle');
+              dot.setAttribute('cx', pt.x.toFixed(1));
+              dot.setAttribute('cy', pt.y.toFixed(1));
+              dot.setAttribute('r', '2.1');
+              dot.setAttribute('class', 'sstep-node-dot');
+              patchStyleVar(dot, '--dot-stroke', seriesColor);
+              dotsGroup.appendChild(dot);
             }
           }
         }
@@ -10935,40 +16105,30 @@ function createSessionLineChart() {
           patchAttr(linePath, 'd', lineD);
           patchAttr(areaPath, 'd', `${lineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`);
         }
-
-        if (points.length <= 64) {
-          for (const pt of points) {
-            const dot = document.createElementNS(SVG_NS, 'circle');
-            dot.setAttribute('cx', pt.x.toFixed(1));
-            dot.setAttribute('cy', pt.y.toFixed(1));
-            if (pt.valid) {
-              dot.setAttribute('r', points.length > 36 ? '1.8' : '2.3');
-              dot.setAttribute('class', 'sstep-node-dot');
-              patchStyleVar(
-                dot,
-                '--dot-stroke',
-                modelColorMap.size > 1 ? pt.dotColor : accentColor
-              );
-            } else {
-              dot.setAttribute('r', '1.6');
-              dot.setAttribute('class', 'sstep-node-dot is-skipped');
-            }
-            dotsGroup.appendChild(dot);
-          }
-        }
       }
 
+      const anomalyTicks = [];
       for (const pt of points) {
         if (!pt.valid || !pt.anomalySummary) continue;
-        const aDot = document.createElementNS(SVG_NS, 'circle');
-        aDot.setAttribute('cx', pt.x.toFixed(1));
-        aDot.setAttribute('cy', pt.y.toFixed(1));
-        aDot.setAttribute('r', '2.9');
-        aDot.setAttribute(
+        anomalyTicks.push(pt);
+      }
+      anomalyTicks.sort((a, b) =>
+        a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+      );
+      const tickTopY = (BOTTOM_Y - 5).toFixed(1);
+      const tickBotY = BOTTOM_Y.toFixed(1);
+      for (const pt of anomalyTicks) {
+        const xStr = pt.x.toFixed(1);
+        const aTick = document.createElementNS(SVG_NS, 'line');
+        aTick.setAttribute('x1', xStr);
+        aTick.setAttribute('x2', xStr);
+        aTick.setAttribute('y1', tickTopY);
+        aTick.setAttribute('y2', tickBotY);
+        aTick.setAttribute(
           'class',
-          `sstep-anomaly-dot${pt.anomalySeverity === 'danger' ? ' is-danger' : ''}`
+          `sstep-anomaly-dot sstep-anomaly-tick${pt.anomalySeverity === 'danger' ? ' is-danger' : ''}`
         );
-        anomalyDotsGroup.appendChild(aDot);
+        anomalyDotsGroup.appendChild(aTick);
       }
 
       const tickIndices = computeStepTickIndices(points.length);
@@ -11101,6 +16261,8 @@ function createSessionLineChart() {
       });
     }
 
+    lastPreSig = preSig;
+    lastSummaryBadge = summaryBadge;
     return { summaryBadge };
   }
 
@@ -11365,10 +16527,17 @@ function createModelFitChart() {
     patchClasses(tooltipEl, { 'is-tracking': false });
   }
 
+  let cachedFitSvgRect = null;
   plotStage.addEventListener('mousemove', (e) => {
     if (!currentSamples.length) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
+    if (!cachedFitSvgRect) {
+      cachedFitSvgRect = svg.getBoundingClientRect();
+    }
+    const rect = cachedFitSvgRect;
+    if (!rect || rect.width <= 0) {
+      cachedFitSvgRect = null;
+      return;
+    }
     const relX = ((e.clientX - rect.left) / rect.width) * viewW;
     let lo = 0;
     let hi = currentSamples.length - 1;
@@ -11386,12 +16555,16 @@ function createModelFitChart() {
     }
     showHoverAt(bestIdx);
   });
-  plotStage.addEventListener('mouseleave', clearHover);
+  plotStage.addEventListener('mouseleave', () => {
+    cachedFitSvgRect = null;
+    clearHover();
+  });
 
   let resizeObs = null;
   let onWinResize = null;
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
+      cachedFitSvgRect = null;
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
         update(lastUpdateParams);
@@ -11879,11 +17052,14 @@ function createModelFitChart() {
             multiCurveGroup.appendChild(curveEl);
           }
         }
+        anomalyOverlayDots.sort((a, b) =>
+          a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+        );
         for (const sp of anomalyOverlayDots) {
           const aDot = document.createElementNS(SVG_NS, 'circle');
           aDot.setAttribute('cx', sp.x.toFixed(1));
           aDot.setAttribute('cy', sp.rawY.toFixed(1));
-          aDot.setAttribute('r', '2.9');
+          aDot.setAttribute('r', dotRadius);
           aDot.setAttribute(
             'class',
             `sstep-scatter-dot is-anomaly${sp.anomalySeverity === 'danger' ? ' is-danger' : ''}`
@@ -12053,11 +17229,14 @@ function createModelFitChart() {
         dot.setAttribute('class', 'sstep-scatter-dot');
         scatterTarget.appendChild(dot);
       }
+      singleAnomalyDots.sort((a, b) =>
+        a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+      );
       for (const s of singleAnomalyDots) {
         const aDot = document.createElementNS(SVG_NS, 'circle');
         aDot.setAttribute('cx', s.x.toFixed(1));
         aDot.setAttribute('cy', s.rawY.toFixed(1));
-        aDot.setAttribute('r', '2.9');
+        aDot.setAttribute('r', dotRadius);
         aDot.setAttribute(
           'class',
           `sstep-scatter-dot is-anomaly${s.anomalySeverity === 'danger' ? ' is-danger' : ''}`
@@ -12163,11 +17342,16 @@ const { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions, 
 
 const CAPSULE_METRIC_KEYS = TOPBAR_SLOT_KEYS;
 
-function getCapsuleMetricOptions() {
-  return CAPSULE_METRIC_KEYS.map((key) => ({
-    value: key,
-    label: t(`capMetric.${key}`),
-  }));
+function getCapsuleMetricOptions({ quotas = null, selectedSlots = [] } = {}) {
+  const showArgonWeekly =
+    hasArgonWeeklyQuotaPool(quotas) ||
+    (Array.isArray(selectedSlots) && selectedSlots.includes('argon_weekly'));
+  return CAPSULE_METRIC_KEYS.filter((key) => key !== 'argon_weekly' || showArgonWeekly).map(
+    (key) => ({
+      value: key,
+      label: t(`capMetric.${key}`),
+    })
+  );
 }
 
 function getOverviewMetricOptions() {
@@ -12229,9 +17413,26 @@ function resolveQuotaCapsuleSummary(quotas) {
       ? `${tightest.label} ${tightest.windowTag} · ${runnerUp.windowTag} ${runnerPct}%`
       : `${tightest.label} ${tightest.windowTag} · ${runnerUp.label} ${runnerUp.windowTag} ${runnerPct}%`
     : `${tightest.label} · ${tightest.windowTag}`;
+  const tightestIsClaude = /claude|gpt|fable|oss|third/i.test(String(tightest.label || ''));
+  const tightestIsArgon = !tightestIsClaude && /\bargon\b/i.test(String(tightest.label || ''));
+  const tightestIsGemini =
+    !tightestIsClaude && !tightestIsArgon && /gemini|carbon|neon|flash|pro/i.test(String(tightest.label || ''));
+  const tightestWinShort = tightest.windowTag === '5h' ? '5h' : isEnglishLocale() ? 'w' : '周';
+  const poolPrefix = tightestIsClaude
+    ? `C${tightestWinShort}`
+    : tightestIsArgon
+      ? `A${tightestWinShort}`
+      : tightestIsGemini
+        ? `G${tightestWinShort}`
+        : tightest.windowTag === '5h'
+          ? '5h'
+          : isEnglishLocale()
+            ? 'Wk'
+            : '周';
   return {
     roundedPct: rounded,
     shortText: t('capsule.quotaLeft', { pct: rounded }),
+    poolPrefix,
     subLabelText,
     detailText: candidates
       .map((c) => {
@@ -12240,6 +17441,17 @@ function resolveQuotaCapsuleSummary(quotas) {
       })
       .join(' · '),
   };
+}
+
+function resolveQuotaCapsulePrefix(metricKey, quotaSum) {
+  const isEn = isEnglishLocale();
+  if (metricKey === 'gemini_5h') return 'G5h';
+  if (metricKey === 'gemini_weekly') return isEn ? 'Gw' : 'G周';
+  if (metricKey === 'argon_weekly') return isEn ? 'Aw' : 'A周';
+  if (metricKey === 'claude_5h') return 'C5h';
+  if (metricKey === 'claude_weekly') return isEn ? 'Cw' : 'C周';
+  if (quotaSum?.poolPrefix) return quotaSum.poolPrefix;
+  return isEn ? 'Q' : '余';
 }
 
 /**
@@ -12456,22 +17668,46 @@ function resolveCapsuleMetricPresentation(metricKey, slotCtx, ringCircumference)
     };
   }
 
+  if (metricKey === 'argon_weekly' && slotCtx.hasTelemetry && !hasArgonWeeklyQuotaPool(slotCtx.quotas)) {
+    return {
+      hidden: true,
+      metric: 'none',
+      segClass: 'wm-cap-slot',
+      textClass: 'wm-slot-text',
+      showRing: false,
+      dashOffset: ringCircumference,
+      text: '',
+      toneClass: '',
+      running: false,
+      warn: false,
+      danger: false,
+    };
+  }
+
   const quotaSum = !slotCtx.hasTelemetry
     ? null
     : metricKey === 'quota_auto'
       ? resolveQuotaCapsuleSummary(slotCtx.quotas)
       : resolveSpecificQuotaSlotSummary(slotCtx.quotas, metricKey);
-  const isDanger = Boolean(quotaSum && quotaSum.roundedPct <= 15);
-  const isWarn = Boolean(quotaSum && !isDanger && quotaSum.roundedPct <= 30);
+  const hasQuotaPct = Boolean(quotaSum && Number.isFinite(quotaSum.roundedPct));
+  const clampedPct = hasQuotaPct ? Math.max(0, Math.min(100, quotaSum.roundedPct)) : 0;
+  const quotaDashOffset = hasQuotaPct
+    ? +(ringCircumference * (1 - clampedPct / 100)).toFixed(2)
+    : ringCircumference;
+  const isDanger = Boolean(hasQuotaPct && clampedPct <= 15);
+  const isWarn = Boolean(hasQuotaPct && !isDanger && clampedPct <= 30);
   const toneClass = isDanger ? 'tone-danger' : isWarn ? 'tone-warn' : '';
   return {
     hidden: false,
     metric: metricKey,
     segClass: 'wm-cap-slot wm-seg-quota',
     textClass: 'wm-slot-text wm-quota-text',
-    showRing: false,
-    dashOffset: ringCircumference,
-    text: quotaSum ? quotaSum.shortText : t('capsule.quotaUnknown'),
+    showRing: true,
+    ringKind: 'quota',
+    ringEmpty: !hasQuotaPct,
+    dashOffset: quotaDashOffset,
+    prefix: resolveQuotaCapsulePrefix(metricKey, quotaSum),
+    text: hasQuotaPct ? `${clampedPct}%` : '--%',
     toneClass,
     running: false,
     warn: isWarn,
@@ -13421,7 +18657,7 @@ return { CTX_CHANNEL_DEFS, ContextWindowWidget };
 })();
 
 // --- src/components/widgets/QuotaPoolsWidget.js ---
-const { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, QuotaPoolsWidget } = (() => {
+const { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, formatAccountTierBadge, maskAccountLabel, QuotaPoolsWidget } = (() => {
 /**
  * @fileoverview Standalone decoupled Quota Pools Widget (`QuotaPoolsWidget.js`).
  * Renders dynamic multi-pool quota bars (Gemini, Argon/Carbon, Claude & GPT)
@@ -13437,7 +18673,11 @@ const { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncP
  * @param {{ isPending?: boolean }} [options]
  * @returns {Array<object>}
  */
-function buildQuotaPoolItems(quotas, minuteTick = 0, { isPending = false } = {}) {
+function buildQuotaPoolItems(
+  quotas,
+  minuteTick = 0,
+  { isPending = false, showReserved = false } = {}
+) {
   const safeQuotas = quotas || {};
   const activePool = safeQuotas.activePool || {};
   const rawPools =
@@ -13464,6 +18704,7 @@ function buildQuotaPoolItems(quotas, minuteTick = 0, { isPending = false } = {})
       isActivePool,
       minuteTick,
       isPending,
+      showReserved: Boolean(showReserved),
     };
   });
   if (
@@ -13477,30 +18718,48 @@ function buildQuotaPoolItems(quotas, minuteTick = 0, { isPending = false } = {})
 }
 
 /**
- * 创建单个配额池的 DOM 行结构，内含 5h 限额与每周限额两个可独立显隐的子窗口进度条。
+ * 创建单个配额池的 DOM 行结构，内含 5h 限额及每周限额两个可独立显隐的子窗口进度条。
  */
 function createPoolQuotaRow() {
   const title5h = h('span', { className: 'quota-win-title', text: '5h' });
   const usage5h = h('span', { className: 'quota-win-usage', hidden: true, text: '' });
   const left5h = h('span', { className: 'quota-win-left' }, [title5h, usage5h]);
-  const meta5h = h('span', { className: 'panel-meta quota-win-meta text-mono', text: '--' });
+  const meta5hBefore = h('span', { text: '--' });
+  const meta5hReserved = h('span', { className: 'quota-reserved-pct', hidden: true, text: '' });
+  const meta5hAfter = h('span', { hidden: true, text: '' });
+  const meta5h = h('span', { className: 'panel-meta quota-win-meta text-mono' }, [
+    meta5hBefore,
+    meta5hReserved,
+    meta5hAfter,
+  ]);
   const fill5h = h('div', { className: 'progress-fill' });
+  const fillReserved5h = h('div', { className: 'progress-fill-reserved' });
+  const track5h = h('div', { className: 'progress-track' }, [fill5h, fillReserved5h]);
   const row5h = h('div', { style: 'display: flex; flex-direction: column; gap: 4px;' }, [
     h('div', { className: 'panel-header quota-win-head' }, [left5h, meta5h]),
-    h('div', { className: 'progress-track' }, [fill5h]),
+    track5h,
   ]);
 
   const titleWk = h('span', { className: 'quota-win-title', text: t('quota.weeklyShort') });
   const usageWk = h('span', { className: 'quota-win-usage', hidden: true, text: '' });
   const leftWk = h('span', { className: 'quota-win-left' }, [titleWk, usageWk]);
-  const metaWk = h('span', { className: 'panel-meta quota-win-meta text-mono', text: '--' });
+  const metaWkBefore = h('span', { text: '--' });
+  const metaWkReserved = h('span', { className: 'quota-reserved-pct', hidden: true, text: '' });
+  const metaWkAfter = h('span', { hidden: true, text: '' });
+  const metaWk = h('span', { className: 'panel-meta quota-win-meta text-mono' }, [
+    metaWkBefore,
+    metaWkReserved,
+    metaWkAfter,
+  ]);
   const fillWk = h('div', { className: 'progress-fill' });
+  const fillReservedWk = h('div', { className: 'progress-fill-reserved' });
+  const trackWk = h('div', { className: 'progress-track' }, [fillWk, fillReservedWk]);
   const rowWk = h('div', { style: 'display: flex; flex-direction: column; gap: 4px;' }, [
     h('div', { className: 'panel-header quota-win-head' }, [leftWk, metaWk]),
-    h('div', { className: 'progress-track' }, [fillWk]),
+    trackWk,
   ]);
 
-  const el = h('div', { style: 'display: flex; flex-direction: column; gap: 8px;' }, [
+  const el = h('div', { className: 'quota-pool-row' }, [
     row5h,
     rowWk,
   ]);
@@ -13513,13 +18772,23 @@ function createPoolQuotaRow() {
       title5h,
       usage5h,
       meta5h,
+      meta5hBefore,
+      meta5hReserved,
+      meta5hAfter,
+      track5h,
       fill5h,
+      fillReserved5h,
       rowWk,
       leftWk,
       titleWk,
       usageWk,
       metaWk,
+      metaWkBefore,
+      metaWkReserved,
+      metaWkAfter,
+      trackWk,
       fillWk,
+      fillReservedWk,
     },
   };
 }
@@ -13545,18 +18814,85 @@ function formatQuotaSummaryFooter(quotas, account) {
   return { leftText, rightText, tooltip };
 }
 
+function syncQuotaWindowMeter({
+  hasData,
+  usedVal,
+  remVal,
+  resetTime,
+  fallbackMetaText,
+  showReserved,
+  rawReservedPct,
+  leaseCount,
+  metaBeforeEl,
+  metaReservedEl,
+  metaAfterEl,
+  trackEl,
+  fillEl,
+  fillReservedEl,
+}) {
+  const numReserved = showReserved && hasData ? Number(rawReservedPct || 0) : 0;
+  const rsvVal =
+    Number.isFinite(numReserved) && numReserved >= 0.05 ? Math.min(usedVal, numReserved) : 0;
+  const actualVal = Math.max(0, usedVal - rsvVal);
+  const resetStr = hasData ? formatCountdown(resetTime) : '';
+
+  if (hasData && rsvVal > 0) {
+    const rsvStr = formatPctNumber(rsvVal);
+    const actualStr = formatPctNumber(actualVal);
+    const leases = Math.max(1, Number(leaseCount) || 1);
+    const tipText =
+      leases >= 2
+        ? t('quota.reservedTipMulti', { rsv: rsvStr, leases, actual: actualStr })
+        : t('quota.reservedTip', { rsv: rsvStr, actual: actualStr });
+    patchText(
+      metaBeforeEl,
+      t('quota.usedBeforeReserved', { reset: resetStr, used: formatPctNumber(usedVal) })
+    );
+    metaReservedEl.hidden = false;
+    patchText(metaReservedEl, t('quota.reservedTag', { rsv: rsvStr }));
+    patchAttr(metaReservedEl, 'title', tipText);
+    metaAfterEl.hidden = false;
+    patchText(metaAfterEl, t('quota.usedAfterReserved', { rem: formatPctNumber(remVal) }));
+    patchAttr(trackEl, 'title', tipText);
+    const actualWidth = +Math.min(100, actualVal).toFixed(2);
+    const rsvWidth = +Math.min(Math.max(0, 100 - actualWidth), rsvVal).toFixed(2);
+    patchStyleVar(fillEl, '--fill-w', `${actualWidth}%`);
+    patchStyleVar(fillReservedEl, '--reserved-w', `${rsvWidth}%`);
+    patchClasses(fillReservedEl, { 'is-active': true, 'has-sep': actualWidth > 0 });
+  } else {
+    patchText(
+      metaBeforeEl,
+      hasData
+        ? t('quota.usedAndLeft', {
+            reset: resetStr,
+            used: formatPctNumber(usedVal),
+            rem: formatPctNumber(remVal),
+          })
+        : fallbackMetaText
+    );
+    metaReservedEl.hidden = true;
+    patchText(metaReservedEl, '');
+    patchAttr(metaReservedEl, 'title', null);
+    metaAfterEl.hidden = true;
+    patchText(metaAfterEl, '');
+    patchAttr(trackEl, 'title', null);
+    patchStyleVar(fillEl, '--fill-w', `${Math.min(100, usedVal)}%`);
+    patchStyleVar(fillReservedEl, '--reserved-w', '0%');
+    patchClasses(fillReservedEl, { 'is-active': false, 'has-sep': false });
+  }
+
+  patchClasses(fillEl, {
+    'tone-warn': usedVal >= 70 && usedVal < 85,
+    'tone-danger': usedVal >= 85,
+  });
+}
+
 /**
- * 同步单个配额池行的 5h 与每周窗口状态。
+ * 同步单个配额池行的 5h 及每周窗口状态。
  */
 function syncPoolQuotaRow(refs, item, idx, rowEl) {
-  const { poolData, poolLabel, fallbackWeekly, isActivePool, isPending } = item;
-  patchAttr(
-    rowEl,
-    'style',
-    idx === 0
-      ? 'display: flex; flex-direction: column; gap: 8px;'
-      : 'display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-hairline);'
-  );
+  const { poolData, poolLabel, fallbackWeekly, isActivePool, isPending, showReserved } = item;
+  patchClasses(rowEl, { 'quota-pool-row': true, 'has-divider': idx > 0 });
 
   const has5h = poolData?.usedPct != null && poolData?.remainingPct != null;
   const used5hVal = has5h ? Number(poolData.usedPct) : 0;
@@ -13584,6 +18920,7 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
   refs.rowWk.style.display = hideWk ? 'none' : 'flex';
 
   const fallbackMetaText = isPending ? t('quota.loading') : t('quota.failed');
+  const allowReserved = Boolean(showReserved && !isPending);
 
   patchText(refs.title5h, `5h (${poolLabel})`);
   const c5h = poolData?.cycle5h;
@@ -13608,20 +18945,21 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
     patchText(refs.usage5h, '');
     patchAttr(refs.left5h, 'title', null);
   }
-  patchText(
-    refs.meta5h,
-    has5h
-      ? t('quota.usedAndLeft', {
-          reset: formatCountdown(poolData.resetTime),
-          used: used5hVal.toFixed(1),
-          rem: rem5hVal.toFixed(1),
-        })
-      : fallbackMetaText
-  );
-  patchStyleVar(refs.fill5h, '--fill-w', `${Math.min(100, used5hVal)}%`);
-  patchClasses(refs.fill5h, {
-    'tone-warn': used5hVal >= 70 && used5hVal < 85,
-    'tone-danger': used5hVal >= 85,
+  syncQuotaWindowMeter({
+    hasData: has5h,
+    usedVal: used5hVal,
+    remVal: rem5hVal,
+    resetTime: poolData?.resetTime,
+    fallbackMetaText,
+    showReserved: allowReserved,
+    rawReservedPct: poolData?.reservedPct,
+    leaseCount: poolData?.reservedLeaseCount,
+    metaBeforeEl: refs.meta5hBefore,
+    metaReservedEl: refs.meta5hReserved,
+    metaAfterEl: refs.meta5hAfter,
+    trackEl: refs.track5h,
+    fillEl: refs.fill5h,
+    fillReservedEl: refs.fillReserved5h,
   });
 
   const customTitle =
@@ -13655,20 +18993,21 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
     patchText(refs.usageWk, '');
     patchAttr(refs.leftWk, 'title', null);
   }
-  patchText(
-    refs.metaWk,
-    hasWk
-      ? t('quota.usedAndLeft', {
-          reset: formatCountdown(wkResetRaw),
-          used: usedWkVal.toFixed(1),
-          rem: remWkVal.toFixed(1),
-        })
-      : fallbackMetaText
-  );
-  patchStyleVar(refs.fillWk, '--fill-w', `${Math.min(100, usedWkVal)}%`);
-  patchClasses(refs.fillWk, {
-    'tone-warn': usedWkVal >= 70 && usedWkVal < 85,
-    'tone-danger': usedWkVal >= 85,
+  syncQuotaWindowMeter({
+    hasData: hasWk,
+    usedVal: usedWkVal,
+    remVal: remWkVal,
+    resetTime: wkResetRaw,
+    fallbackMetaText,
+    showReserved: allowReserved && !useCustomWeekly,
+    rawReservedPct: poolData?.weeklyReservedPct,
+    leaseCount: poolData?.weeklyReservedLeaseCount,
+    metaBeforeEl: refs.metaWkBefore,
+    metaReservedEl: refs.metaWkReserved,
+    metaAfterEl: refs.metaWkAfter,
+    trackEl: refs.trackWk,
+    fillEl: refs.fillWk,
+    fillReservedEl: refs.fillReservedWk,
   });
 }
 
@@ -13676,15 +19015,373 @@ function quotaPoolRowSig(item, idx) {
   const c5h = item.poolData?.cycle5h;
   const cWk = item.poolData?.cycleWeekly;
   const fw = item.fallbackWeekly;
-  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
+  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
+}
+
+/**
+ * 格式化可用额度面板右上角的账号订阅徽章（区分 Ultra 5x / 20x，并对 Pro / Free 去重）。
+ *
+ * @param {object|null|undefined} account
+ * @returns {string}
+ */
+function formatAccountTierBadge(account) {
+  const tierName = String(account?.tierName || '').trim() || 'Google AI';
+  const tierId = String(account?.tierId || '').trim().toLowerCase();
+  const explicitMult = String(account?.tierMultiplier || '').trim();
+  const inferredMult =
+    explicitMult ||
+    (/(?:^|[-_\s])5x(?:$|[-_\s])|ultra[-_]?lite/i.test(`${tierId} ${tierName}`)
+      ? '5x'
+      : /(?:^|[-_\s])20x(?:$|[-_\s])/i.test(`${tierId} ${tierName}`) || tierId === 'g1-ultra-tier'
+        ? '20x'
+        : '');
+  const rawPlan = String(account?.planName || '').trim();
+  const isUltra = /\bultra\b/i.test(tierName) || /ultra/i.test(tierId);
+
+  if (isUltra) {
+    if (inferredMult) {
+      const hasMultInTier = new RegExp(`(?:^|\\s|·)${inferredMult}(?:$|\\s)`, 'i').test(tierName);
+      return hasMultInTier ? tierName : `${tierName} · ${inferredMult}`;
+    }
+    if (rawPlan && !/^(?:pro|ultra)$/i.test(rawPlan)) {
+      return `${tierName} · ${rawPlan}`;
+    }
+    return tierName;
+  }
+
+  if (!rawPlan) return tierName;
+  const escapedPlan = rawPlan.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (new RegExp(`(?:^|\\s|·)${escapedPlan}(?:$|\\s)`, 'i').test(tierName)) {
+    return tierName;
+  }
+  return `${tierName} · ${rawPlan}`;
+}
+
+/**
+ * 对账号邮箱或名称做轻量隐私脱敏（如 `sjee80343@gmail.com` -> `sj***43@gmail.com`），
+ * 兼顾多账号辨识度及截图分享隐私安全。
+ *
+ * @param {string|null|undefined} raw
+ * @returns {string}
+ */
+function maskAccountLabel(raw) {
+  const str = String(raw || '').trim();
+  if (!str) return '';
+  const atIdx = str.indexOf('@');
+  if (atIdx > 0 && atIdx < str.length - 1) {
+    const local = str.slice(0, atIdx);
+    const domain = str.slice(atIdx);
+    const chars = Array.from(local);
+    if (chars.length <= 1) return `*${domain}`;
+    if (chars.length === 2) return `${chars[0]}*${domain}`;
+    if (chars.length <= 4) return `${chars[0]}***${chars[chars.length - 1]}${domain}`;
+    return `${chars.slice(0, 2).join('')}***${chars.slice(-2).join('')}${domain}`;
+  }
+  const chars = Array.from(str);
+  if (chars.length <= 1) return '*';
+  if (chars.length === 2) return `${chars[0]}*`;
+  if (chars.length <= 4) return `${chars[0]}***${chars[chars.length - 1]}`;
+  return `${chars.slice(0, 2).join('')}***${chars[chars.length - 1]}`;
+}
+
+function formatRateEqUsd(val) {
+  const num = Number(val);
+  if (!Number.isFinite(num) || num <= 0) return '--';
+  if (num >= 10) return `$${Math.round(num)}`;
+  return `$${Number(num.toFixed(1))}`;
+}
+
+function formatRatePerUsdValue(rate) {
+  const num = Number(rate);
+  if (!Number.isFinite(num) || num <= 0) return '--';
+  return String(Number(num.toFixed(2)));
+}
+
+function formatRateMultiplier(mult) {
+  const num = Number(mult);
+  if (!Number.isFinite(num) || num <= 0) return '';
+  return `${Number(num.toFixed(1))}x`;
+}
+
+function createRateModelCard({
+  name,
+  isMutedName = false,
+  isFallback = false,
+  multiplier = null,
+  rate5hPctPerUsd = null,
+  rateWeeklyPctPerUsd = null,
+  eqFull5hUsd = null,
+  eqFullWeeklyUsd = null,
+  samples = 0,
+}) {
+  const leftNodes = [
+    h('span', {
+      className: `quota-rate-model-name${isMutedName ? ' is-muted' : ''}`,
+      text: name,
+    }),
+  ];
+  const multText = formatRateMultiplier(multiplier);
+  if (multText) {
+    leftNodes.push(
+      h('span', {
+        className: `quota-rate-mult-badge${Number(multiplier) >= 1.5 ? ' is-high' : ''}`,
+        text: multText,
+      })
+    );
+  }
+
+  const has5hRate = rate5hPctPerUsd != null;
+  const primaryRate = has5hRate ? rate5hPctPerUsd : rateWeeklyPctPerUsd;
+  const subParts = [];
+  if (primaryRate != null) {
+    subParts.push(
+      t('quota.ratePopPerUsd', {
+        win: has5hRate ? '5h' : t('quota.weeklyShort'),
+        rate: formatRatePerUsdValue(primaryRate),
+      })
+    );
+  }
+  if (Number(samples) > 0) {
+    subParts.push(t('quota.ratePopSamples', { n: Number(samples) }));
+  }
+
+  const eqCells = [];
+  if (eqFull5hUsd != null) {
+    eqCells.push(
+      h('div', { className: 'quota-rate-eq-cell' }, [
+        h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEq5hLabel') }),
+        h('span', {
+          className: 'quota-rate-eq-v text-mono',
+          text: `≈ ${formatRateEqUsd(eqFull5hUsd)}`,
+        }),
+      ])
+    );
+  }
+  if (eqFullWeeklyUsd != null) {
+    eqCells.push(
+      h('div', { className: 'quota-rate-eq-cell' }, [
+        h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEqWkLabel') }),
+        h('span', {
+          className: 'quota-rate-eq-v text-mono',
+          text: `≈ ${formatRateEqUsd(eqFullWeeklyUsd)}`,
+        }),
+      ])
+    );
+  }
+
+  const cardChildren = [
+    h('div', { className: 'quota-rate-row-top' }, [
+      h('div', { className: 'quota-rate-model-left' }, leftNodes),
+      ...(subParts.length > 0
+        ? [h('span', { className: 'quota-rate-meta text-mono', text: subParts.join(' · ') })]
+        : []),
+    ]),
+  ];
+  if (eqCells.length > 0) {
+    cardChildren.push(
+      h(
+        'div',
+        { className: `quota-rate-eq-grid${eqCells.length === 1 ? ' is-single' : ''}` },
+        eqCells
+      )
+    );
+  }
+
+  return h('div', { className: `quota-rate-model-row${isFallback ? ' is-fallback' : ''}` }, cardChildren);
+}
+
+function buildRatePopoverSig(data) {
+  const locale = getEffectiveLocale();
+  const acct = String(data?.account?.email || data?.account?.name || '').trim();
+  const pools = Array.isArray(data?.quotas?.pools) ? data.quotas.pools : [];
+  const poolSig = pools
+    .map((p) => `${p.poolKey || ''}:${p.poolLabel || ''}:${JSON.stringify(p.rateEstimate || null)}`)
+    .join('|');
+  return `${locale}|${acct}|${poolSig}`;
 }
 
 const QuotaPoolsWidget = defineComponent({
   name: 'QuotaPoolsWidget',
-  setup({ props }) {
+  setup({ props, onCleanup }) {
     const compactHover = Boolean(props.compactHover);
     const titleTextEl = h('span', { text: t('module.quotas') });
     const tierBadge = h('span', { className: 'panel-meta', text: 'Google AI · Pro' });
+
+    const ratePopTitleEl = h('span', {
+      className: 'quota-rate-pop-title',
+      text: t('quota.ratePopTitle'),
+    });
+    const ratePopAccountEl = h('span', {
+      className: 'quota-rate-pop-account',
+      text: t('quota.ratePopAccountCurrent'),
+    });
+    const ratePopBodyEl = h('div', { className: 'quota-rate-pop-body' });
+    const ratePopNoteEl = h('div', {
+      className: 'quota-rate-pop-note',
+      text: t('quota.ratePopNote'),
+    });
+    const ratePopoverEl = h(
+      'div',
+      {
+        className: 'quota-rate-popover',
+        role: 'tooltip',
+        hidden: true,
+      },
+      [
+        h('div', { className: 'quota-rate-pop-head' }, [ratePopTitleEl, ratePopAccountEl]),
+        ratePopBodyEl,
+        ratePopNoteEl,
+      ]
+    );
+    ratePopoverEl.hidden = true;
+
+    let ratePopOpen = false;
+    let ratePopCloseTimer = null;
+    let lastRatePopSig = '';
+
+    const cancelRatePopClose = () => {
+      if (ratePopCloseTimer) {
+        clearTimeout(ratePopCloseTimer);
+        ratePopCloseTimer = null;
+      }
+    };
+
+    const setRatePopOpen = (open) => {
+      const next = Boolean(open);
+      ratePopOpen = next;
+      ratePopoverEl.hidden = !next;
+      patchAttr(ratePopoverEl, 'hidden', !next);
+      patchAttr(rateHelpBtn, 'aria-expanded', next ? 'true' : 'false');
+      patchClasses(rateHelpBtn, { 'is-open': next });
+    };
+
+    const openRatePop = () => {
+      cancelRatePopClose();
+      if (!ratePopOpen) setRatePopOpen(true);
+    };
+
+    const scheduleRatePopClose = () => {
+      cancelRatePopClose();
+      ratePopCloseTimer = setTimeout(() => {
+        ratePopCloseTimer = null;
+        setRatePopOpen(false);
+      }, 130);
+    };
+
+    const rateHelpBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'quota-rate-help-btn',
+        'aria-label': t('quota.rateHelpAria'),
+        'aria-haspopup': 'true',
+        'aria-expanded': 'false',
+        onMouseenter: openRatePop,
+        onMouseleave: scheduleRatePopClose,
+        onFocus: openRatePop,
+        onBlur: scheduleRatePopClose,
+        onClick: (ev) => {
+          ev?.stopPropagation?.();
+          cancelRatePopClose();
+          setRatePopOpen(!ratePopOpen);
+        },
+        onKeydown: (ev) => {
+          if (ev?.key === 'Escape' && ratePopOpen) {
+            ev.stopPropagation?.();
+            cancelRatePopClose();
+            setRatePopOpen(false);
+          }
+        },
+      },
+      [createSvgIcon('help-circle', { size: 13 })]
+    );
+
+    ratePopoverEl.addEventListener?.('mouseenter', openRatePop);
+    ratePopoverEl.addEventListener?.('mouseleave', scheduleRatePopClose);
+    onCleanup?.(() => {
+      cancelRatePopClose();
+    });
+
+    function syncRatePopoverContent(data) {
+      const sig = buildRatePopoverSig(data);
+      if (sig === lastRatePopSig) return;
+      lastRatePopSig = sig;
+
+      patchText(ratePopTitleEl, t('quota.ratePopTitle'));
+      patchText(ratePopNoteEl, t('quota.ratePopNote'));
+      patchAttr(rateHelpBtn, 'aria-label', t('quota.rateHelpAria'));
+
+      const acctMasked = maskAccountLabel(data?.account?.email || data?.account?.name || '');
+      patchText(
+        ratePopAccountEl,
+        acctMasked
+          ? t('quota.ratePopAccountScope', { account: acctMasked })
+          : t('quota.ratePopAccountCurrent')
+      );
+      patchAttr(ratePopAccountEl, 'title', acctMasked || null);
+
+      while (ratePopBodyEl.firstChild) {
+        ratePopBodyEl.removeChild(ratePopBodyEl.firstChild);
+      }
+
+      const rawPools = Array.isArray(data?.quotas?.pools) ? data.quotas.pools : [];
+      const populatedGroups = [];
+
+      for (const p of rawPools) {
+        const est = p?.rateEstimate;
+        if (!est || typeof est !== 'object') continue;
+        const models = Array.isArray(est.models) ? est.models : [];
+        const hasPoolFallback =
+          models.length === 0 &&
+          (Number.isFinite(est.rate5hPctPerUsd) || Number.isFinite(est.rateWeeklyPctPerUsd));
+        if (models.length === 0 && !hasPoolFallback) continue;
+
+        const poolLabel = p.poolLabel || p.family || p.poolKey || 'Pool';
+        const rows =
+          models.length > 0
+            ? models.map((item) =>
+                createRateModelCard({
+                  name: item.model,
+                  multiplier: item.multiplier,
+                  rate5hPctPerUsd: item.rate5hPctPerUsd,
+                  rateWeeklyPctPerUsd: item.rateWeeklyPctPerUsd,
+                  eqFull5hUsd: item.eqFull5hUsd,
+                  eqFullWeeklyUsd: item.eqFullWeeklyUsd,
+                  samples: item.samples,
+                })
+              )
+            : [
+                createRateModelCard({
+                  name: t('quota.ratePopPoolFallback'),
+                  isMutedName: true,
+                  isFallback: true,
+                  rate5hPctPerUsd: est.rate5hPctPerUsd,
+                  rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
+                  eqFull5hUsd: est.eqFull5hUsd,
+                  eqFullWeeklyUsd: est.eqFullWeeklyUsd,
+                  samples: Math.max(Number(est.samples5h) || 0, Number(est.samplesWeekly) || 0),
+                }),
+              ];
+
+        populatedGroups.push(
+          h('div', { className: 'quota-rate-pool-group' }, [
+            h('div', { className: 'quota-rate-pool-label', text: poolLabel }),
+            h('div', { className: 'quota-rate-model-list' }, rows),
+          ])
+        );
+      }
+
+      if (populatedGroups.length === 0) {
+        ratePopBodyEl.appendChild(
+          h('div', { className: 'quota-rate-pop-empty', text: t('quota.ratePopEmpty') })
+        );
+      } else {
+        for (const grp of populatedGroups) {
+          ratePopBodyEl.appendChild(grp);
+        }
+      }
+    }
+
     const poolsListEl = h(
       'div',
       compactHover
@@ -13701,34 +19398,46 @@ const QuotaPoolsWidget = defineComponent({
       });
     }
 
-    const initFoot = formatQuotaSummaryFooter(null, null);
-    const wkFootLeft = h('span', { className: 'text-muted', text: initFoot.leftText });
-    const wkFootRight = h('span', {
-      className: 'text-muted',
-      text: compactHover ? initFoot.rightText : '',
-    });
+    const legendActualTextEl = h('span', { text: t('quota.legendActual') });
+    const legendReservedTextEl = h('span', { text: t('quota.legendReserved') });
+    const reserveLegendEl = h(
+      'div',
+      { className: 'quota-reserve-legend', hidden: true },
+      [
+        h('span', { className: 'quota-legend-item' }, [
+          h('span', { className: 'quota-legend-line is-actual', 'aria-hidden': 'true' }),
+          legendActualTextEl,
+        ]),
+        h('span', { className: 'quota-legend-item' }, [
+          h('span', { className: 'quota-legend-line is-reserved', 'aria-hidden': 'true' }),
+          legendReservedTextEl,
+        ]),
+      ]
+    );
 
-    const quotaPanel = h('section', { className: 'panel' }, [
+    const quotaPanel = h('section', { className: 'panel quota-panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('pulse', { size: 13 }),
           titleTextEl,
+          rateHelpBtn,
         ]),
         tierBadge,
       ]),
       poolsListEl,
-      h(
-        'div',
-        compactHover
-          ? { className: 'panel-header wm-hover-quota-foot' }
-          : { className: 'panel-header', style: 'font-size: var(--fs-md); padding-top: 2px;' },
-        [wkFootLeft, wkFootRight]
-      ),
+      reserveLegendEl,
+      ratePopoverEl,
     ]);
+
+    syncRatePopoverContent(null);
 
     function update({ data, minuteTick } = {}) {
       patchText(titleTextEl, t('module.quotas'));
+      patchText(legendActualTextEl, t('quota.legendActual'));
+      patchText(legendReservedTextEl, t('quota.legendReserved'));
+      syncRatePopoverContent(data);
       if (!data) {
+        reserveLegendEl.hidden = true;
         if (compactHover) {
           patchKeyedList(poolsListEl, buildQuotaPoolItems(null, 0, { isPending: true }), {
             keyFn: (item) => item.key,
@@ -13736,40 +19445,30 @@ const QuotaPoolsWidget = defineComponent({
             createRow: createPoolQuotaRow,
             updateRow: syncPoolQuotaRow,
           });
-          const pendingFoot = formatQuotaSummaryFooter(null, null);
-          patchText(wkFootLeft, pendingFoot.leftText);
-          patchText(wkFootRight, pendingFoot.rightText);
         }
         return;
       }
 
       const quotas = data.quotas || {};
+      const showReserved = data.settings?.experimentalQuotaReservation !== false;
+      reserveLegendEl.hidden = !showReserved;
       const effTick = Number.isFinite(minuteTick) ? minuteTick : Math.floor(Date.now() / 30000);
-      patchText(
-        tierBadge,
-        `${data.account?.tierName || 'Google AI'} · ${data.account?.planName || 'Pro'}`
-      );
-      patchKeyedList(poolsListEl, buildQuotaPoolItems(quotas, effTick), {
+      patchText(tierBadge, formatAccountTierBadge(data.account));
+      patchKeyedList(poolsListEl, buildQuotaPoolItems(quotas, effTick, { showReserved }), {
         keyFn: (item) => item.key,
         sigFn: quotaPoolRowSig,
         createRow: createPoolQuotaRow,
         updateRow: syncPoolQuotaRow,
       });
-
-      const footSummary = formatQuotaSummaryFooter(quotas, data.account);
-      patchText(wkFootLeft, footSummary.leftText);
-      patchText(wkFootRight, footSummary.rightText);
-      patchAttr(wkFootLeft, 'title', footSummary.tooltip);
-      patchAttr(wkFootRight, 'title', footSummary.tooltip);
     }
 
     return {
       el: quotaPanel,
-      refs: { update, poolsListEl },
+      refs: { update, poolsListEl, rateHelpBtn, ratePopoverEl },
     };
   },
 });
-return { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, QuotaPoolsWidget };
+return { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, formatAccountTierBadge, maskAccountLabel, QuotaPoolsWidget };
 })();
 
 // --- src/components/widgets/LiveActivityWidget.js ---
@@ -14679,23 +20378,33 @@ function createDynamicWidgetHost({
   preview = false,
   isVisibleFn = () => true,
   initialModuleKeys = [],
+  getCtxAgentId: customGetCtxAgentId = undefined,
+  setCtxAgentId: customSetCtxAgentId = undefined,
 }) {
   const instances = new Map();
   let currentKeys = [];
-  let previewCtxAgentId = 'auto';
+  let previewCtxAgentId = 'main';
   let latestUpdatePayload = null;
 
-  const getCtxAgentId = preview ? () => previewCtxAgentId : undefined;
-  const setCtxAgentId = preview
-    ? (nextId) => {
-        previewCtxAgentId = String(nextId || 'auto');
-        if (latestUpdatePayload) {
-          for (const key of currentKeys) {
-            instances.get(key)?.refs?.update?.(latestUpdatePayload);
+  const getCtxAgentId =
+    typeof customGetCtxAgentId === 'function'
+      ? customGetCtxAgentId
+      : preview
+        ? () => previewCtxAgentId
+        : undefined;
+  const setCtxAgentId =
+    typeof customSetCtxAgentId === 'function'
+      ? customSetCtxAgentId
+      : preview
+        ? (nextId) => {
+            previewCtxAgentId = String(nextId || 'main');
+            if (latestUpdatePayload) {
+              for (const key of currentKeys) {
+                instances.get(key)?.refs?.update?.(latestUpdatePayload);
+              }
+            }
           }
-        }
-      }
-    : undefined;
+        : undefined;
 
   function syncModules(nextKeys) {
     const validKeys = [];
@@ -14813,7 +20522,7 @@ return { OVERVIEW_WIDGET_KEYS, OVERVIEW_WIDGET_REGISTRY, getOverviewModuleOption
 })();
 
 // --- src/registries/stepColumnRegistry.js ---
-const { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions } = (() => {
+const { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, resolveStepTokenParts, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions, sortStepsByColumn } = (() => {
 /**
  * @fileoverview Decoupled Step Table Column Registry (`stepColumnRegistry.js`).
  * Defines all 12 customizable columns for `StepsDetailView` ("按步查看"),
@@ -14840,6 +20549,14 @@ function resolveStepTokenParts(st) {
   const totalTok = inTok + cacheTok + outTok;
   const ctxTok = Math.max(0, Number(st?.contextTokens ?? totalTok));
   return { inTok, cacheTok, outTok, thinkTok, respTok, totalTok, ctxTok };
+}
+
+function finiteSortNum(val, { allowZero = true } = {}) {
+  if (val == null || val === '') return null;
+  const num = Number(val);
+  if (!Number.isFinite(num)) return null;
+  if (!allowZero && !(num > 0)) return null;
+  return num;
 }
 
 function formatPartWithOptionalCost(tokCount, costVal) {
@@ -14921,6 +20638,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.step.th'),
     optLabel: () => t('stepCol.step.opt'),
     sigPart: (st) => `${st.stepIndex}`,
+    sortValue: (st) => finiteSortNum(st?.stepIndex),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -14936,6 +20654,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.time.th'),
     optLabel: () => t('stepCol.time.opt'),
     sigPart: (st) => `${st.createdAtMs || 0}`,
+    sortValue: (st) => finiteSortNum(st?.createdAtMs, { allowZero: false }),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', { className: 'text-muted' }, [valEl]);
@@ -14952,9 +20671,14 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     key: 'model',
     thLabel: () => t('stepCol.model.th'),
     optLabel: () => t('stepCol.model.opt'),
+    defaultSortDir: 'asc',
     sigPart: (st, ctx) => {
       const disp = resolveModelDisplayInfo(st, ctx.displaySettings, { fallback: '—' });
       return `${disp.baseText}:${disp.title}`;
+    },
+    sortValue: (st, ctx) => {
+      const disp = resolveModelDisplayInfo(st, ctx?.displaySettings, { fallback: '' });
+      return String(disp.baseText || '').toLowerCase() || null;
     },
     createCell: () => {
       const nameEl = h('span', { className: 'step-model-name' });
@@ -14975,6 +20699,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.tps.opt'),
     sigPart: (st, ctx) =>
       `${st.tokPerSec}:${st.selectedSpeedReason || ''}:${ctx?.showStepSpeedColor === true ? 1 : 0}`,
+    sortValue: (st) => finiteSortNum(st?.tokPerSec, { allowZero: false }),
     createCell: () => {
       const speedMain = h('strong', {
         className: 'cell-value tone-muted',
@@ -15018,7 +20743,9 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     key: 'ttft',
     thLabel: () => t('stepCol.ttft.th'),
     optLabel: () => t('stepCol.ttft.opt'),
-    sigPart: (st) => `${st.ttftSec}`,
+    sigPart: (st) =>
+      `${st.ttftSec ?? ''}:${st.totalDurationSec ?? ''}:${st.nativeStreamSec ?? ''}:${st.thinkingDurationSec ?? ''}:${st.hasToolCalls ? 1 : 0}`,
+    sortValue: (st) => finiteSortNum(st?.ttftSec),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15035,7 +20762,9 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     key: 'duration',
     thLabel: () => t('stepCol.duration.th'),
     optLabel: () => t('stepCol.duration.opt'),
-    sigPart: (st) => `${st.totalDurationSec ?? st.streamDurationSec ?? ''}`,
+    sigPart: (st) =>
+      `${st.totalDurationSec ?? st.streamDurationSec ?? ''}:${st.ttftSec ?? ''}:${st.nativeStreamSec ?? ''}:${st.thinkingDurationSec ?? ''}:${st.hasToolCalls ? 1 : 0}`,
+    sortValue: (st) => finiteSortNum(st?.totalDurationSec ?? st?.streamDurationSec),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15053,6 +20782,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.tokens_combo.opt'),
     sigPart: (st) =>
       `${st.contextTokens}:${st.outputTokens}:${st.thinkingTokens}:${st.responseTokens}`,
+    sortValue: (st) => resolveStepTokenParts(st).ctxTok,
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15082,6 +20812,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.tokens_io_cache.opt'),
     sigPart: (st) =>
       `${st.inputTokens || 0}:${st.outputTokens || 0}:${st.cacheReadTokens || 0}:${st.inCostUsd ?? ''}:${st.outCostUsd ?? ''}:${st.cacheCostUsd ?? ''}`,
+    sortValue: (st) => resolveStepTokenParts(st).totalTok,
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15114,6 +20845,19 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
       }),
     sigPart: (st, ctx) =>
       `${normalizeClientStepTokenComboFormat(ctx?.stepTokenComboFormat)}:${st.contextTokens || 0}:${st.inputTokens || 0}:${st.cacheReadTokens || 0}:${st.outputTokens || 0}:${st.thinkingTokens || 0}:${st.responseTokens ?? ''}:${st.costUsd ?? ''}`,
+    sortValue: (st, ctx) => {
+      const firstSeg = parseClientStepTokenComboSegments(ctx?.stepTokenComboFormat)[0] || 'total';
+      const parts = resolveStepTokenParts(st);
+      switch (firstSeg) {
+        case 'context': return parts.ctxTok;
+        case 'in': return parts.inTok;
+        case 'out': return parts.outTok;
+        case 'cache': return parts.cacheTok;
+        case 'think': return parts.thinkTok;
+        case 'reply': return parts.respTok;
+        default: return parts.totalTok;
+      }
+    },
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15140,6 +20884,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.input_tokens.th'),
     optLabel: () => t('stepCol.input_tokens.opt'),
     sigPart: (st) => `${st.inputTokens || 0}`,
+    sortValue: (st) => finiteSortNum(st?.inputTokens ?? 0),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15155,6 +20900,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.cache_tokens.th'),
     optLabel: () => t('stepCol.cache_tokens.opt'),
     sigPart: (st) => `${st.cacheReadTokens || 0}`,
+    sortValue: (st) => finiteSortNum(st?.cacheReadTokens ?? 0),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15170,6 +20916,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.output_tokens.th'),
     optLabel: () => t('stepCol.output_tokens.opt'),
     sigPart: (st) => `${st.outputTokens || 0}`,
+    sortValue: (st) => finiteSortNum(st?.outputTokens ?? 0),
     createCell: () => {
       const valEl = h('span');
       const td = h('td', {}, [valEl]);
@@ -15186,6 +20933,10 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     optLabel: () => t('stepCol.cache.opt'),
     sigPart: (st) =>
       `${st.cacheHitPct ?? 0}:${(st.inputTokens || 0) + (st.cacheReadTokens || 0) > 0 ? 1 : 0}`,
+    sortValue: (st) => {
+      const prompt = Number(st?.inputTokens || 0) + Number(st?.cacheReadTokens || 0);
+      return prompt > 0 ? finiteSortNum(st?.cacheHitPct ?? 0) : null;
+    },
     createCell: () => {
       const valEl = h('span', {
         className: 'cell-value tone-muted',
@@ -15210,6 +20961,7 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.cost.th'),
     optLabel: () => t('stepCol.cost.opt'),
     sigPart: (st) => `${st.costUsd}`,
+    sortValue: (st) => finiteSortNum(st?.costUsd),
     createCell: () => {
       const valEl = h('span', { style: 'font-weight: 600;' });
       const td = h('td', {}, [valEl]);
@@ -15233,7 +20985,46 @@ function getStepColumnOptions(
     label: STEP_COLUMN_REGISTRY[key].optLabel(ctx),
   }));
 }
-return { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions };
+
+/**
+ * 按指定列对步骤数组进行稳定排序（空值/不可用测速值始终置底）。
+ *
+ * @param {Array<object>} steps
+ * @param {string} sortKey
+ * @param {'asc'|'desc'|''} sortDir
+ * @param {object} [ctx]
+ * @returns {Array<object>}
+ */
+function sortStepsByColumn(steps, sortKey, sortDir, ctx = {}) {
+  if (!Array.isArray(steps) || steps.length <= 1 || !sortKey || !sortDir) {
+    return Array.isArray(steps) ? steps : [];
+  }
+  const col = STEP_COLUMN_REGISTRY[sortKey];
+  if (!col || typeof col.sortValue !== 'function') return steps;
+  const mul = sortDir === 'asc' ? 1 : -1;
+  const decorated = steps.map((st, origIdx) => ({
+    st,
+    origIdx,
+    val: col.sortValue(st, ctx),
+  }));
+  decorated.sort((a, b) => {
+    const aNull = a.val === null || a.val === undefined;
+    const bNull = b.val === null || b.val === undefined;
+    if (aNull && bNull) return a.origIdx - b.origIdx;
+    if (aNull) return 1;
+    if (bNull) return -1;
+    let cmp = 0;
+    if (typeof a.val === 'string' || typeof b.val === 'string') {
+      cmp = String(a.val).localeCompare(String(b.val));
+    } else {
+      cmp = Number(a.val) - Number(b.val);
+    }
+    if (cmp !== 0) return cmp * mul;
+    return a.origIdx - b.origIdx;
+  });
+  return decorated.map((d) => d.st);
+}
+return { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, resolveStepTokenParts, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions, sortStepsByColumn };
 })();
 
 // --- src/components/widgets/CapsuleBarWidget.js ---
@@ -15537,6 +21328,7 @@ function createCapsuleSlotNode(slotIndex, initialMetric) {
 
   const isNone = initialMetric === 'none';
   const isCtx = initialMetric === 'context';
+  const prefixSpan = h('span', { className: 'wm-slot-prefix' });
   const textSpan = h('span', {
     className: isCtx ? 'wm-slot-text wm-ctx-pct' : 'wm-slot-text',
     text: isNone
@@ -15547,7 +21339,7 @@ function createCapsuleSlotNode(slotIndex, initialMetric) {
           ? '-- t/s'
           : initialMetric === 'ttft'
             ? '--s'
-            : t('capsule.quotaUnknown'),
+            : '--%',
   });
   const el = h(
     'span',
@@ -15573,8 +21365,10 @@ function createCapsuleSlotNode(slotIndex, initialMetric) {
     el,
     ringSvg,
     ringFill,
+    prefixSpan,
     textSpan,
     ringMounted: isCtx,
+    prefixMounted: false,
   };
 }
 
@@ -15601,11 +21395,23 @@ function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCtx) {
     patchAttr(slot.el, 'data-vis-rank', String(visRank));
 
     if (pres.showRing && !slot.ringMounted) {
-      slot.el.insertBefore(slot.ringSvg, slot.textSpan);
+      slot.el.insertBefore(slot.ringSvg, slot.el.firstChild || slot.textSpan);
       slot.ringMounted = true;
     } else if (!pres.showRing && slot.ringMounted) {
       slot.ringSvg.remove();
       slot.ringMounted = false;
+    }
+
+    const prefixText = String(pres.prefix || '');
+    if (prefixText) {
+      patchText(slot.prefixSpan, prefixText);
+      if (!slot.prefixMounted) {
+        slot.el.insertBefore(slot.prefixSpan, slot.textSpan);
+        slot.prefixMounted = true;
+      }
+    } else if (slot.prefixMounted) {
+      slot.prefixSpan.remove();
+      slot.prefixMounted = false;
     }
 
     const toneCls =
@@ -15618,7 +21424,12 @@ function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCtx) {
 
     if (pres.showRing) {
       slot.ringFill.setAttribute('stroke-dashoffset', String(pres.dashOffset));
-      patchClasses(slot.ringFill, { 'tone-warn': pres.warn, 'tone-danger': pres.danger });
+      patchClasses(slot.ringFill, {
+        'is-quota': pres.ringKind === 'quota',
+        'is-empty': pres.ringEmpty === true,
+        'tone-warn': pres.warn,
+        'tone-danger': pres.danger,
+      });
     }
   }
 
@@ -15764,7 +21575,7 @@ const CapsuleBarWidget = defineComponent({
       const { agents, scopedConv, ctxAgent, aggregated } = resolveScopedConversation(
         data,
         'all',
-        'auto'
+        resolveOverlayCtxInspectorAgentId(data, 'auto')
       );
       const slotCtx = buildCapsuleSlotContext(data, { scopedConv, ctxAgent, aggregated });
       const { runningCount, hasWaiting, multiBtnText } = resolveMultiSessionCapsuleState(data, {
@@ -16165,6 +21976,8 @@ const StepTableWidget = defineComponent({
       typeof props.onSelectAgentScopes === 'function' ? props.onSelectAgentScopes : null;
     const onVirtualHeightChange =
       typeof props.onVirtualHeightChange === 'function' ? props.onVirtualHeightChange : null;
+    const onSortChange =
+      typeof props.onSortChange === 'function' ? props.onSortChange : null;
 
     const stepsTheadRow = h('tr');
     const stepsThead = h('thead', {}, [stepsTheadRow]);
@@ -16173,16 +21986,72 @@ const StepTableWidget = defineComponent({
     function syncTableHeaderColumns(colKeys, headerCtx = {}) {
       const locale = getEffectiveLocale();
       const fmtKey = normalizeClientStepTokenComboFormat(headerCtx?.stepTokenComboFormat);
+      const activeSortKey = String(headerCtx?.sortKey || '');
+      const activeSortDir = headerCtx?.sortDir === 'asc' || headerCtx?.sortDir === 'desc'
+        ? headerCtx.sortDir
+        : '';
       const ctx = { stepTokenComboFormat: fmtKey };
       patchKeyedList(stepsTheadRow, colKeys, {
         keyFn: (colKey) => colKey,
-        sigFn: (colKey) => `${locale}:${colKey}:${fmtKey}:${STEP_COLUMN_REGISTRY[colKey].thLabel(ctx)}`,
+        sigFn: (colKey) => {
+          const isSorted = activeSortKey === colKey && Boolean(activeSortDir);
+          return `${locale}:${colKey}:${fmtKey}:${STEP_COLUMN_REGISTRY[colKey].thLabel(ctx)}:${onSortChange ? 1 : 0}:${isSorted ? activeSortDir : ''}`;
+        },
         createRow: (colKey) => {
-          const th = h('th', { text: STEP_COLUMN_REGISTRY[colKey].thLabel(ctx) });
-          return { el: th, refs: { th } };
+          const labelSpan = h('span', {
+            className: 'step-th-label',
+            text: STEP_COLUMN_REGISTRY[colKey].thLabel(ctx),
+          });
+          const sortIcon = createSvgIcon('chevron-down', {
+            size: 10,
+            className: 'step-sort-icon',
+          });
+          patchAttr(sortIcon, 'hidden', true);
+          const innerWrap = h('span', { className: 'step-th-inner' }, [labelSpan, sortIcon]);
+          const th = h('th', {}, [innerWrap]);
+          return { el: th, refs: { th, labelSpan, sortIcon } };
         },
         updateRow: (refs, colKey) => {
-          patchText(refs.th, STEP_COLUMN_REGISTRY[colKey].thLabel(ctx));
+          const labelText = STEP_COLUMN_REGISTRY[colKey].thLabel(ctx);
+          patchText(refs.labelSpan, labelText);
+          const sortable = Boolean(
+            onSortChange && typeof STEP_COLUMN_REGISTRY[colKey]?.sortValue === 'function'
+          );
+          const isSorted = sortable && activeSortKey === colKey && Boolean(activeSortDir);
+          patchClasses(refs.th, {
+            'is-sortable': sortable,
+            'is-sorted': isSorted,
+          });
+          patchAttr(
+            refs.th,
+            'aria-sort',
+            isSorted ? (activeSortDir === 'asc' ? 'ascending' : 'descending') : sortable ? 'none' : null
+          );
+          patchAttr(
+            refs.th,
+            'title',
+            sortable ? t('steps.sortClickTip', { col: labelText }) : null
+          );
+          patchAttr(refs.sortIcon, 'hidden', !isSorted);
+          if (isSorted) {
+            patchSvgIcon(refs.sortIcon, activeSortDir === 'asc' ? 'chevron-up' : 'chevron-down');
+          }
+          refs.th.onclick = sortable
+            ? () => {
+                const defaultDir = STEP_COLUMN_REGISTRY[colKey]?.defaultSortDir || 'desc';
+                let nextKey = colKey;
+                let nextDir = defaultDir;
+                if (activeSortKey === colKey) {
+                  if (activeSortDir === defaultDir) {
+                    nextDir = defaultDir === 'desc' ? 'asc' : 'desc';
+                  } else {
+                    nextKey = '';
+                    nextDir = '';
+                  }
+                }
+                onSortChange(nextKey, nextDir);
+              }
+            : null;
         },
       });
     }
@@ -16290,6 +22159,7 @@ const StepTableWidget = defineComponent({
       patchClasses(anomalyTipEl, {
         'is-danger': diag.severity === 'danger',
         'is-compaction': diag.severity === 'compaction',
+        'is-timing': diag.severity === 'timing',
       });
       patchText(anomalyTipTitleEl, diag.title);
       patchAttr(anomalyTipSubEl, 'hidden', !diag.sub);
@@ -16300,10 +22170,23 @@ const StepTableWidget = defineComponent({
       }
       const rows = Array.isArray(diag.rows) ? diag.rows : [];
       for (const row of rows) {
-        const lineEl = h('div', {
-          className: `step-anomaly-tip-row${row.danger ? ' is-danger' : ''}`,
-          text: row.text,
-        });
+        const hasKvValue = row.value !== undefined && row.value !== null && row.value !== '';
+        const lineEl = hasKvValue
+          ? h(
+              'div',
+              { className: `step-anomaly-tip-row is-kv${row.danger ? ' is-danger' : ''}` },
+              [
+                h('span', { className: 'step-anomaly-tip-k', text: row.text }),
+                h('span', {
+                  className: `step-anomaly-tip-v text-mono${row.toneClass ? ` ${row.toneClass}` : ''}`,
+                  text: row.value,
+                }),
+              ]
+            )
+          : h('div', {
+              className: `step-anomaly-tip-row${row.danger ? ' is-danger' : ''}`,
+              text: row.text,
+            });
         const itemChildren = [lineEl];
         if (row.detail) {
           itemChildren.push(
@@ -16328,6 +22211,7 @@ const StepTableWidget = defineComponent({
     }
 
     const hoverRows = new WeakMap();
+    const timingHoverRows = new WeakMap();
     let lastRenderedRows = null;
     let lastRenderOptions = '';
     let trackedCascadeId = null;
@@ -16420,9 +22304,11 @@ const StepTableWidget = defineComponent({
     }
 
     function getStepRowIdentity(st, fallbackCascadeId) {
-      const agentKey = String(st?.agentCascadeId || fallbackCascadeId || 'conv');
+      const agentKey = String(
+        st?.agentCascadeId || st?.agentId || st?.cascadeId || fallbackCascadeId || 'conv'
+      );
       const stepNum = Number(st?.stepIndex);
-      const rowKey = `${agentKey}-${st?.stepIndex}`;
+      const rowKey = getStepSelectionKey(st, fallbackCascadeId);
       return { agentKey, stepNum, rowKey };
     }
 
@@ -16483,15 +22369,18 @@ const StepTableWidget = defineComponent({
     }
 
     function moveAlongTurnRail(event) {
-      const { badge, prompt, rowDiagGetter } = hoverRows.get(this);
+      const { badge, prompt, rowDiagGetter, timingDiagGetter } = hoverRows.get(this);
       const rect = this.getBoundingClientRect?.();
       const relX = rect ? (event?.clientX ?? 0) - rect.left : 0;
       if (event?.target !== badge && relX <= 18) {
         showTurnTip(this, prompt);
       } else {
         hideTurnTip();
-        if (rowDiagGetter) {
-          showAnomalyTip(this, rowDiagGetter());
+        const diag = timingDiagGetter?.() || rowDiagGetter?.();
+        if (diag) {
+          showAnomalyTip(this, diag);
+        } else {
+          hideAnomalyTip();
         }
       }
     }
@@ -16500,7 +22389,9 @@ const StepTableWidget = defineComponent({
       const entry = hoverRows.get(this);
       hideTurnTip();
       if (entry?.rowDiagGetter && entry.tr && event?.relatedTarget && entry.tr.contains?.(event.relatedTarget)) {
-        showAnomalyTip(this, entry.rowDiagGetter());
+        showAnomalyTip(entry.rowAnchorEl || this, entry.rowDiagGetter());
+      } else if (entry?.timingDiagGetter) {
+        hideAnomalyTip();
       }
     }
 
@@ -16509,6 +22400,43 @@ const StepTableWidget = defineComponent({
       cell.onmouseenter = null;
       cell.onmousemove = null;
       cell.onmouseleave = null;
+    }
+
+    function enterTimingCell() {
+      const entry = timingHoverRows.get(this);
+      if (!entry) return;
+      const diag = entry.timingDiagGetter?.();
+      if (diag) {
+        showAnomalyTip(this, diag);
+      }
+    }
+
+    function leaveTimingCell(event) {
+      const entry = timingHoverRows.get(this);
+      if (
+        entry?.rowDiagGetter &&
+        entry.tr &&
+        event?.relatedTarget &&
+        entry.tr.contains?.(event.relatedTarget)
+      ) {
+        showAnomalyTip(entry.rowAnchorEl || entry.tr, entry.rowDiagGetter());
+        return;
+      }
+      hideAnomalyTip();
+    }
+
+    function clearTimingCellHover(cell) {
+      if (!cell || !timingHoverRows.delete(cell)) return;
+      cell.onmouseenter = null;
+      cell.onmouseleave = null;
+    }
+
+    function clearRowTimingHovers(refs) {
+      if (!refs?.timingHoverTds) return;
+      for (const td of refs.timingHoverTds) {
+        clearTimingCellHover(td);
+      }
+      refs.timingHoverTds.clear();
     }
 
     function calibrateRowHeights() {
@@ -16756,7 +22684,7 @@ const StepTableWidget = defineComponent({
           logicalIdx: idx,
           isStripeEven: (idx & 1) === 1,
           hasReason: Boolean(hasReasonFlags && hasReasonFlags[idx]),
-          rowKey: `${st.agentCascadeId || cascadeId || 'conv'}-${st.stepIndex}`,
+          rowKey: getStepSelectionKey(st, cascadeId),
           hasTurn,
           hasUp,
           hasDown,
@@ -16833,6 +22761,7 @@ const StepTableWidget = defineComponent({
               railEl: null,
               agentBadgeEl: null,
               hoverTd: null,
+              timingHoverTds: new Set(),
             },
           };
         },
@@ -16915,6 +22844,7 @@ const StepTableWidget = defineComponent({
               clearCellHover(refs.hoverTd);
               refs.hoverTd = null;
             }
+            clearRowTimingHovers(refs);
             for (const [oldColKey, entry] of refs.cellMap) {
               if (!wantedSet.has(oldColKey)) {
                 if (refs.railEl?.parentNode === entry.td) {
@@ -17020,6 +22950,7 @@ const StepTableWidget = defineComponent({
                   : t('steps.badgeFilterAgent', { agent: agentName })
               );
               refs.agentBadgeEl.onclick = (e) => {
+                e?.stopPropagation?.();
                 if (e && (e.ctrlKey || e.metaKey || e.shiftKey) && effectiveScopes[0] !== 'all') {
                   const next = effectiveScopes.includes(targetScope)
                     ? effectiveScopes.filter((id) => id !== targetScope)
@@ -17071,6 +23002,10 @@ const StepTableWidget = defineComponent({
             );
           }
 
+          const hasTimingTip = hasStepTimingData(st);
+          const timingDiagGetter = hasTimingTip ? () => buildStepTimingDiagnostic(st) : null;
+          const isFirstTimingCol = firstColKey === 'ttft' || firstColKey === 'duration';
+
           const hoverTd = showRowRail && prompt ? firstTd : null;
           if (refs.hoverTd !== hoverTd) clearCellHover(refs.hoverTd);
           refs.hoverTd = hoverTd;
@@ -17078,7 +23013,9 @@ const StepTableWidget = defineComponent({
             hoverRows.set(hoverTd, {
               badge: refs.agentBadgeEl,
               prompt,
+              rowAnchorEl: firstTd || tr,
               rowDiagGetter,
+              timingDiagGetter: isFirstTimingCol ? timingDiagGetter : null,
               tr,
             });
             const useWholeCellTurnTip = firstColKey === 'step' && !hasRowTip;
@@ -17086,6 +23023,30 @@ const StepTableWidget = defineComponent({
             hoverTd.onmousemove = useWholeCellTurnTip ? moveInStepCell : moveAlongTurnRail;
             hoverTd.onmouseleave = leaveStepCell;
           }
+
+          if (!refs.timingHoverTds) refs.timingHoverTds = new Set();
+          const nextTimingTds = new Set();
+          if (timingDiagGetter) {
+            for (const timingColKey of ['ttft', 'duration']) {
+              const timingTd = refs.cellMap.get(timingColKey)?.td || null;
+              if (!timingTd || timingTd === hoverTd) continue;
+              nextTimingTds.add(timingTd);
+              timingHoverRows.set(timingTd, {
+                tr,
+                rowAnchorEl: firstTd || tr,
+                rowDiagGetter,
+                timingDiagGetter,
+              });
+              timingTd.onmouseenter = enterTimingCell;
+              timingTd.onmouseleave = leaveTimingCell;
+            }
+          }
+          for (const prevTd of refs.timingHoverTds) {
+            if (!nextTimingTds.has(prevTd)) {
+              clearTimingCellHover(prevTd);
+            }
+          }
+          refs.timingHoverTds = nextTimingTds;
 
           if (enteringRowKeys?.has(item.rowKey)) {
             clearRowEnterState(tr);
@@ -17104,6 +23065,7 @@ const StepTableWidget = defineComponent({
             clearCellHover(refs.hoverTd);
             refs.hoverTd = null;
           }
+          clearRowTimingHovers(refs);
           clearRowEnterState(tr);
           if (!refs?.isSpacer && !refs?.isSizer && tr) {
             patchClasses(tr, {
@@ -17190,6 +23152,8 @@ const StepTableWidget = defineComponent({
         displaySettings = {},
         allConversationSteps = null,
         allowNewRowFade = false,
+        sortKey = '',
+        sortDir = '',
       } = {}
     ) {
       const normCascadeId = String(cascadeId || '');
@@ -17252,11 +23216,15 @@ const StepTableWidget = defineComponent({
 
       const colOrderSig = colKeys.join(',');
       const normTokenFmt = normalizeClientStepTokenComboFormat(stepTokenComboFormat);
+      const normSortKey = String(sortKey || '');
+      const normSortDir = sortDir === 'asc' || sortDir === 'desc' ? sortDir : '';
+      const isCustomSorted = Boolean(normSortKey && normSortDir);
+      const effectiveTurnRail = Boolean(showStepTurnRail && !isCustomSorted);
       const renderOptions = JSON.stringify([
         cascadeId, locale, colOrderSig, effectiveScopes, hasSubagents, isMergedMultiAgents,
-        showStepTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
+        effectiveTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
         displaySettings.modelDisplayMode, displaySettings.showUpstreamModel,
-        displaySettings.orchestratorIdMode,
+        displaySettings.orchestratorIdMode, normSortKey, normSortDir,
       ]);
       if (
         lastRenderOptions === renderOptions &&
@@ -17273,7 +23241,11 @@ const StepTableWidget = defineComponent({
 
       syncFontScaleIfChanged();
       const wantedSet = new Set(colKeys);
-      syncTableHeaderColumns(colKeys, { stepTokenComboFormat: normTokenFmt });
+      syncTableHeaderColumns(colKeys, {
+        stepTokenComboFormat: normTokenFmt,
+        sortKey: normSortKey,
+        sortDir: normSortDir,
+      });
 
       const showAgentBadge = Boolean(hasSubagents && showStepAgentBadge);
       const cellCtx = {
@@ -17289,7 +23261,7 @@ const StepTableWidget = defineComponent({
 
       const useRootTurn = Boolean(hasSubagents && isMergedMultiAgents);
       let railActive = false;
-      if (showStepTurnRail) {
+      if (effectiveTurnRail) {
         for (let i = 0; i < tableSteps.length; i++) {
           const st = tableSteps[i];
           const tIdx = useRootTurn ? (st?.rootTurnIndex ?? st?.turnIndex) : st?.turnIndex;
@@ -17342,7 +23314,7 @@ const StepTableWidget = defineComponent({
         cellCtx,
         railActive,
         showAgentBadge,
-        showStepTurnRail,
+        showStepTurnRail: effectiveTurnRail,
         useRootTurn,
         isVirtualized,
         hasReasonFlags,
@@ -17415,7 +23387,11 @@ const { buildStructurePreviewTelemetry } = (() => {
  */
 
 
-function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) {
+function buildStructurePreviewTelemetry(
+  baseSettings = {},
+  draftOverrides = {},
+  { includeArgonPool = false } = {}
+) {
   const anchorMinMs = Math.floor(Date.now() / 60000) * 60000;
   const reset5hIso = new Date(anchorMinMs + (2 * 60 + 42) * 60000).toISOString();
   const resetWkIso = new Date(anchorMinMs + (4 * 24 * 60 + 180) * 60000).toISOString();
@@ -17594,10 +23570,12 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
       isSubagent: false,
       agentBadge: '主',
       agentLabel: t('fmt.mainAgent'),
-      modelLabel: 'Gemini 4 Carbon (High)',
-      modelShort: 'gemini-4-carbon',
-      rawModel: 'MODEL_PLACEHOLDER_M37',
-      upstreamModel: 'gemini-4-carbon-high',
+      modelKey: 'MODEL_PLACEHOLDER_M667',
+      modelLabel: 'Gemini Pro Orchestrator (Carbon)',
+      modelShort: 'orchestrator-carbon',
+      rawModel: 'MODEL_PLACEHOLDER_M667',
+      modelUpstream: 'gemini-pro-orchestrator',
+      upstreamModel: 'gemini-pro-orchestrator',
       tokPerSec: 17.8,
       ttftSec: 19.4,
       totalDurationSec: 31.2,
@@ -17651,18 +23629,19 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
     outputTokens: 22100,
     totalTokens: 1434500,
     latestModelLabel: 'Gemini 4 Carbon (High)',
-    latestModelShort: 'gemini-4-carbon',
+    latestModelShort: 'carbon-4-high',
     latestRawModel: 'MODEL_PLACEHOLDER_M37',
     latestUpstreamModel: 'gemini-4-carbon-high',
     activeModelLabel: 'Gemini 4 Carbon (High)',
-    activeModelShort: 'gemini-4-carbon',
+    activeModelShort: 'carbon-4-high',
     activeModelUpstream: 'gemini-4-carbon-high',
     sessionUnpricedCalls: 0,
     modelBreakdown: [
       {
         modelKey: 'MODEL_PLACEHOLDER_M37',
-        modelShort: 'gemini-4-carbon',
+        modelShort: 'carbon-4-high',
         modelLabel: 'Gemini 4 Carbon (High)',
+        modelUpstream: 'gemini-4-carbon-high',
         upstreamModel: 'gemini-4-carbon-high',
         calls: 16,
         inputTokens: 152400,
@@ -17682,6 +23661,8 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
     agentId: 'sub-1',
     cascadeId: 'mock-sub-1',
     isMain: false,
+    agentKind: 'subagent',
+    agentOrdinal: 1,
     index: 1,
     badgeText: '子1',
     shortLabel: `${t('fmt.subAgent')} #1`,
@@ -17705,18 +23686,19 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
     outputTokens: 6300,
     totalTokens: 320300,
     latestModelLabel: 'Gemini 3.8 Flash',
-    latestModelShort: 'gemini-3.8-flash',
+    latestModelShort: 'flash-3.8',
     latestRawModel: 'MODEL_PLACEHOLDER_M42',
     latestUpstreamModel: 'gemini-3.8-flash-n',
     activeModelLabel: 'Gemini 3.8 Flash',
-    activeModelShort: 'gemini-3.8-flash',
+    activeModelShort: 'flash-3.8',
     activeModelUpstream: 'gemini-3.8-flash-n',
     sessionUnpricedCalls: 0,
     modelBreakdown: [
       {
         modelKey: 'MODEL_PLACEHOLDER_M42',
-        modelShort: 'gemini-3.8-flash',
+        modelShort: 'flash-3.8',
         modelLabel: 'Gemini 3.8 Flash',
+        modelUpstream: 'gemini-3.8-flash-n',
         upstreamModel: 'gemini-3.8-flash-n',
         calls: 8,
         inputTokens: 34000,
@@ -17739,9 +23721,9 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
     agentKind: 'all',
     agentOrdinal: 0,
     badgeText: t('header.scopeAllShort'),
-    activeAgentId: 'main',
-    activeAgentKind: 'main',
-    activeAgentOrdinal: 0,
+    activeAgentId: 'sub-1',
+    activeAgentKind: 'subagent',
+    activeAgentOrdinal: 1,
     stepCount: 24,
     speedSampleCount: 23,
     speedSummary: { sampleCount: 23, excludedCount: 1 },
@@ -17755,7 +23737,7 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
     cacheReadTokens: 1540000,
     outputTokens: 28400,
     totalTokens: 1754800,
-    activeAgentBadge: t('fmt.mainBadge'),
+    activeAgentBadge: '子1',
     modelBreakdown: [...mainAgent.modelBreakdown, ...subAgent1.modelBreakdown],
     recentSteps: mockSteps,
   };
@@ -17763,8 +23745,10 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
   return {
     settings: mergedSettings,
     account: {
+      tierId: 'g1-ultra-lite-tier',
       tierName: 'Google AI Ultra',
-      planName: 'Pro',
+      tierMultiplier: '5x',
+      planName: '5x',
       aiCredits: 0,
     },
     quotas: {
@@ -17791,13 +23775,32 @@ function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) 
           family: 'Gemini',
           usedPct: 36,
           remainingPct: 64,
+          reservedPct: 1.0,
+          reservedLeaseCount: 1,
           resetTime: reset5hIso,
           weeklyUsedPct: 48,
           weeklyRemainingPct: 52,
+          weeklyReservedPct: 0.5,
+          weeklyReservedLeaseCount: 1,
           weeklyResetTime: resetWkIso,
           cycle5h: { tokens: 1754800, costUsd: 1.28, calls: 24 },
           cycleWeekly: { tokens: 14200000, costUsd: 11.4, calls: 186 },
         },
+        ...(includeArgonPool
+          ? [
+              {
+                poolKey: 'Argon',
+                poolLabel: 'Gemini 4 Argon',
+                family: 'Argon',
+                has5h: false,
+                hasWeekly: true,
+                weeklyUsedPct: 58,
+                weeklyRemainingPct: 42,
+                weeklyResetTime: resetWkIso,
+                cycleWeekly: { tokens: 4200000, costUsd: 6.4, calls: 48 },
+              },
+            ]
+          : []),
         {
           poolKey: 'Claude & GPT',
           poolLabel: 'Claude & GPT',
@@ -18612,31 +24615,6 @@ const { BridgeStatusNotice } = (() => {
 
 const LAUNCH_FLAG_TEXT = '--remote-debugging-port=0';
 
-async function copyTextToClipboard(text) {
-  try {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // Fallback to temporary textarea inside restricted webview contexts
-  }
-  try {
-    if (typeof document === 'undefined' || !document.body) return false;
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', 'true');
-    area.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
-    document.body.appendChild(area);
-    area.select?.();
-    const ok = Boolean(document.execCommand?.('copy'));
-    document.body.removeChild(area);
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
 const BridgeStatusNotice = defineComponent({
   name: 'BridgeStatusNotice',
   setup({ props, onCleanup }) {
@@ -18648,11 +24626,16 @@ const BridgeStatusNotice = defineComponent({
       hostPlatform: 'win32',
     };
     let dismissed = false;
-    let copied = false;
-    let copiedTimer = null;
     let relaunchState = 'idle'; // 'idle' | 'relaunching' | 'failed'
     let relaunchResetTimer = null;
     let destroyed = false;
+    const copyFeedback = createCopiedFeedbackController({
+      durationMs: 1800,
+      onCleanup,
+      onChange: () => {
+        if (!destroyed) syncActionButtons();
+      },
+    });
 
     const headIconEl = createSvgIcon('warning', { size: 13, className: 'settings-bridge-icon' });
     const titleEl = h('strong', { className: 'settings-bridge-title', text: '' });
@@ -18745,18 +24728,9 @@ const BridgeStatusNotice = defineComponent({
         type: 'button',
         className: 'btn-ghost-sm settings-bridge-copy-btn',
         onClick: async () => {
-          await copyTextToClipboard(LAUNCH_FLAG_TEXT);
+          await copyPlainTextToClipboard(LAUNCH_FLAG_TEXT);
           if (destroyed) return;
-          copied = true;
-          if (copiedTimer) clearTimeout(copiedTimer);
-          syncActionButtons();
-          copiedTimer = setTimeout(() => {
-            copiedTimer = null;
-            if (destroyed) return;
-            copied = false;
-            syncActionButtons();
-          }, 1800);
-          copiedTimer?.unref?.();
+          copyFeedback.trigger(true);
         },
       },
       [copyBtnIconEl, copyBtnTextEl]
@@ -18799,10 +24773,11 @@ const BridgeStatusNotice = defineComponent({
               : t('settings.bridge.relaunchBtn')
       );
 
-      patchSvgIcon(copyBtnIconEl, copied ? 'check' : 'copy');
+      const isCopied = copyFeedback.isCopied(true);
+      patchSvgIcon(copyBtnIconEl, isCopied ? 'check' : 'copy');
       patchText(
         copyBtnTextEl,
-        copied
+        isCopied
           ? t('settings.bridge.copiedBtn')
           : t('settings.bridge.copyFlagBtn', { cmd: LAUNCH_FLAG_TEXT })
       );
@@ -18887,10 +24862,6 @@ const BridgeStatusNotice = defineComponent({
 
     onCleanup(() => {
       destroyed = true;
-      if (copiedTimer) {
-        clearTimeout(copiedTimer);
-        copiedTimer = null;
-      }
       if (relaunchResetTimer) {
         clearTimeout(relaunchResetTimer);
         relaunchResetTimer = null;
@@ -18910,6 +24881,750 @@ const BridgeStatusNotice = defineComponent({
   },
 });
 return { BridgeStatusNotice };
+})();
+
+// --- src/components/settings/SessionMigrationCard.js ---
+const { SessionMigrationCard } = (() => {
+/**
+ * @fileoverview 跨端会话按需迁移设置卡片 (`SessionMigrationCard.js`)。
+ * 仅当本机检测到 ≥2 个 Antigravity 客户端目录时展示，支持自由勾选根会话以完整迁移或克隆副本到目标端。
+ */
+
+
+const SMIG_OUTSIDE_PROJECT_ID = 'outside-of-project';
+
+function smigGetClientLabel(clientId) {
+  if (clientId === 'cli') return t('settings.oth.migClientCli');
+  if (clientId === 'ide_legacy') return t('settings.oth.migClientIdeLegacy');
+  return t('settings.oth.migClientDesktop');
+}
+
+function smigGetModeOptions() {
+  return [
+    { value: 'move', label: t('settings.oth.migModeMove') },
+    { value: 'clone', label: t('settings.oth.migModeClone') },
+  ];
+}
+
+function smigFormatAge(epochMs) {
+  const ts = Number(epochMs || 0);
+  if (!Number.isFinite(ts) || ts <= 0) return '';
+  const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  const isEn = isEnglishLocale();
+  if (diffSec < 60) return isEn ? 'just now' : '刚刚';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return isEn ? `${diffMin}m ago` : `${diffMin}分钟前`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return isEn ? `${diffHr}h ago` : `${diffHr}小时前`;
+  const diffDay = Math.floor(diffHr / 24);
+  return isEn ? `${diffDay}d ago` : `${diffDay}天前`;
+}
+
+const SessionMigrationCard = defineComponent({
+  name: 'SessionMigrationCard',
+  setup({ props, onCleanup }) {
+    const loadCatalogFn =
+      typeof props?.loadCatalog === 'function' ? props.loadCatalog : fetchSessionMigrationCatalog;
+    const runMigrateFn =
+      typeof props?.runMigrate === 'function' ? props.runMigrate : executeSessionMigration;
+
+    let catalog = null;
+    let hasLoadedOnce = false;
+    let isLoading = false;
+    let isMigrating = false;
+    let destroyed = false;
+    let bodyMounted = false;
+    let sourceClient = '';
+    let targetClient = '';
+    let migrationMode = 'move';
+    let targetProjectId = '';
+    let searchQuery = '';
+    const selectedIds = new Set();
+    let lastResult = null;
+    let copiedCmdId = '';
+    let copiedTimer = null;
+
+    let titleEl = null;
+    let descEl = null;
+    let refreshBtnText = null;
+    let refreshBtn = null;
+    let sourceLabelEl = null;
+    let targetLabelEl = null;
+    let modeLabelEl = null;
+    let modeSeg = null;
+    let modeHintEl = null;
+    let projectLabelEl = null;
+    let sourceSelect = null;
+    let targetSelect = null;
+    let projectSelect = null;
+    let projectFieldWrap = null;
+    let searchInput = null;
+    let searchClearBtn = null;
+    let toggleAllBtn = null;
+    let selectedCountEl = null;
+    let listEl = null;
+    let listScrollbar = null;
+    let migrateBtnText = null;
+    let migrateBtn = null;
+    let resultBoxEl = null;
+
+    const rootEl = h('section', { className: 'panel smig-panel', hidden: true });
+
+    function ensureBodyMounted() {
+      if (bodyMounted) return;
+      bodyMounted = true;
+
+      titleEl = h('span', { text: t('settings.oth.migTitle') });
+      descEl = h('p', { className: 'settings-hint-text smig-desc', text: t('settings.oth.migDesc') });
+      refreshBtnText = h('span', { text: t('settings.oth.migRefreshBtn') });
+      refreshBtn = h(
+        'button',
+        {
+          type: 'button',
+          className: 'btn-ghost-sm smig-refresh-btn',
+          onClick: () => {
+            void loadCatalog(true);
+          },
+        },
+        [createSvgIcon('refresh', { size: 12 }), refreshBtnText]
+      );
+
+      sourceLabelEl = h('span', { className: 'form-label', text: t('settings.oth.migSourceLabel') });
+      targetLabelEl = h('span', { className: 'form-label', text: t('settings.oth.migTargetLabel') });
+      modeLabelEl = h('span', { className: 'form-label', text: t('settings.oth.migModeLabel') });
+      modeSeg = SegmentedControl({
+        ariaLabel: t('settings.oth.migModeLabel'),
+        modelValue: migrationMode,
+        options: smigGetModeOptions(),
+        onUpdateModelValue: (val) => {
+          if (!val || val === migrationMode) return;
+          migrationMode = val;
+          lastResult = null;
+          syncModeControls();
+          renderResultBox();
+        },
+      });
+      modeSeg.el.classList?.add('smig-mode-seg');
+      modeHintEl = h('span', {
+        className: 'settings-hint-text smig-mode-hint',
+        text: t('settings.oth.migModeMoveHint'),
+      });
+      projectLabelEl = h('span', { className: 'form-label', text: t('settings.oth.migProjectLabel') });
+
+      sourceSelect = CustomSelect({
+        ariaLabel: t('settings.oth.migSourceLabel'),
+        modelValue: '',
+        options: [],
+        onUpdateModelValue: (val) => {
+          if (!val || val === sourceClient) return;
+          sourceClient = val;
+          selectedIds.clear();
+          lastResult = null;
+          ensureValidTarget();
+          syncControlsAndList();
+        },
+      });
+
+      targetSelect = CustomSelect({
+        ariaLabel: t('settings.oth.migTargetLabel'),
+        modelValue: '',
+        options: [],
+        onUpdateModelValue: (val) => {
+          if (!val || val === targetClient) return;
+          targetClient = val;
+          lastResult = null;
+          syncControlsAndList();
+        },
+      });
+
+      projectSelect = CustomSelect({
+        ariaLabel: t('settings.oth.migProjectLabel'),
+        modelValue: '',
+        options: [],
+        className: 'smig-project-select',
+        onUpdateModelValue: (val) => {
+          targetProjectId = String(val || '');
+        },
+      });
+
+      projectFieldWrap = h('div', { className: 'form-row smig-field' }, [
+        projectLabelEl,
+        projectSelect.el,
+      ]);
+
+      const searchBox = createSearchInput({
+        wrapClassName: 'smig-search-wrap',
+        iconClassName: 'smig-search-icon',
+        inputClassName: 'smig-search-input',
+        clearClassName: 'smig-search-clear',
+        placeholder: t('settings.oth.migSearchPlaceholder'),
+        clearAriaLabel: t('select.clearSearch'),
+        closeIconSize: 10,
+        onInput: (val) => {
+          searchQuery = String(val || '').trim();
+          renderSessionList();
+        },
+        onClear: () => {
+          searchQuery = '';
+          renderSessionList();
+          searchInput.focus?.();
+        },
+      });
+      searchInput = searchBox.inputEl;
+      searchClearBtn = searchBox.clearBtnEl;
+      const searchWrap = searchBox.el;
+
+      toggleAllBtn = h('button', {
+        type: 'button',
+        className: 'btn-ghost-sm smig-toggle-all-btn',
+        text: t('settings.oth.migSelectAll'),
+        onClick: () => {
+          const selectable = getFilteredSessions().filter((s) => !s.isRunning);
+          if (selectable.length === 0) return;
+          const allSelected = selectable.every((s) => selectedIds.has(s.cascadeId));
+          if (allSelected) {
+            for (const s of selectable) selectedIds.delete(s.cascadeId);
+          } else {
+            for (const s of selectable) selectedIds.add(s.cascadeId);
+          }
+          renderSessionList();
+        },
+      });
+
+      selectedCountEl = h('span', { className: 'smig-count-meta', text: '' });
+      listEl = h('div', { className: 'smig-list', role: 'list' });
+      listScrollbar = CustomScrollbar({
+        className: 'smig-scroll-host',
+        contentEl: listEl,
+      });
+
+      migrateBtnText = h('span', {
+        text: t('settings.oth.migActionBtn', { count: 0 }),
+      });
+      migrateBtn = h(
+        'button',
+        {
+          type: 'button',
+          className: 'btn-primary smig-migrate-btn',
+          disabled: true,
+          onClick: () => {
+            void handleMigrate();
+          },
+        },
+        [createSvgIcon('copy', { size: 12 }), migrateBtnText]
+      );
+
+      resultBoxEl = h('div', { className: 'smig-result', hidden: true });
+
+      const children = [
+        h('div', { className: 'panel-header' }, [
+          h('span', { className: 'panel-title' }, [
+            createSvgIcon('layers', { size: 13 }),
+            titleEl,
+          ]),
+          refreshBtn,
+        ]),
+        descEl,
+        h('div', { className: 'smig-direction-grid' }, [
+          h('div', { className: 'form-row smig-field' }, [sourceLabelEl, sourceSelect.el]),
+          h('div', { className: 'form-row smig-field' }, [targetLabelEl, targetSelect.el]),
+        ]),
+        h('div', { className: 'smig-mode-block' }, [
+          h('div', { className: 'settings-inline-row smig-mode-row' }, [
+            modeLabelEl,
+            modeSeg.el,
+          ]),
+          modeHintEl,
+        ]),
+        projectFieldWrap,
+        h('div', { className: 'smig-toolbar' }, [
+          searchWrap,
+          toggleAllBtn,
+          selectedCountEl,
+        ]),
+        listScrollbar.el,
+        h('div', { className: 'smig-footer' }, [migrateBtn]),
+        resultBoxEl,
+      ];
+      for (const child of children) {
+        rootEl.appendChild(child);
+      }
+    }
+
+    function getDetectedClients() {
+      return Array.isArray(catalog?.clients) ? catalog.clients.filter((c) => c.exists) : [];
+    }
+
+    function getTargetClientsFor(srcId) {
+      return getDetectedClients().filter((c) => c.canBeTarget && c.id !== srcId);
+    }
+
+    function ensureValidSelectionDefaults() {
+      const detected = getDetectedClients();
+      if (detected.length < 2) {
+        sourceClient = '';
+        targetClient = '';
+        return;
+      }
+      const validSources = detected.filter((c) => getTargetClientsFor(c.id).length > 0);
+      if (!validSources.some((c) => c.id === sourceClient)) {
+        const cliClient = validSources.find((c) => c.id === 'cli' && c.sessionCount > 0);
+        const firstWithSessions = validSources.find((c) => c.sessionCount > 0);
+        sourceClient = (cliClient || firstWithSessions || validSources[0])?.id || '';
+      }
+      ensureValidTarget();
+
+      const projects = Array.isArray(catalog?.desktopProjects) ? catalog.desktopProjects : [];
+      if (!projects.some((p) => p.projectId === targetProjectId)) {
+        const preferred = projects.find((p) => !p.isOutsideProject) || projects[0];
+        targetProjectId = preferred?.projectId || SMIG_OUTSIDE_PROJECT_ID;
+      }
+    }
+
+    function ensureValidTarget() {
+      const targets = getTargetClientsFor(sourceClient);
+      if (!targets.some((c) => c.id === targetClient)) {
+        const preferDesktop = targets.find((c) => c.id === 'desktop');
+        targetClient = (preferDesktop || targets[0])?.id || '';
+      }
+    }
+
+    function getCurrentSourceSessions() {
+      const list = catalog?.sessionsByClient?.[sourceClient];
+      return Array.isArray(list) ? list : [];
+    }
+
+    function getFilteredSessions() {
+      const all = getCurrentSourceSessions();
+      if (!searchQuery) return all;
+      const needle = searchQuery.toLowerCase();
+      return all.filter((item) => {
+        const haystack = [
+          item.title,
+          item.workspaceName,
+          item.workspacePath,
+          item.cascadeId,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(needle);
+      });
+    }
+
+    function resolveProjectDisplayLabel(projectId) {
+      if (!projectId || projectId === SMIG_OUTSIDE_PROJECT_ID) {
+        return t('settings.oth.migProjectOutside');
+      }
+      const projects = Array.isArray(catalog?.desktopProjects) ? catalog.desktopProjects : [];
+      const found = projects.find((p) => p.projectId === projectId);
+      return found?.name || projectId.slice(0, 8);
+    }
+
+    function syncModeControls() {
+      if (!bodyMounted) return;
+      modeSeg?.setProps({
+        ariaLabel: t('settings.oth.migModeLabel'),
+        modelValue: migrationMode,
+        options: smigGetModeOptions(),
+      });
+      patchText(
+        modeHintEl,
+        migrationMode === 'clone'
+          ? t('settings.oth.migModeCloneHint')
+          : t('settings.oth.migModeMoveHint')
+      );
+    }
+
+    function formatMigrationError(code) {
+      if (code === 'source_locked') return t('settings.oth.migErrLocked');
+      if (code === 'target_already_exists') return t('settings.oth.migErrExists');
+      if (code === 'session_running') return t('settings.oth.migErrRunning');
+      return t('settings.oth.migFailed', { reason: code || 'unknown_error' });
+    }
+
+    function syncControlsAndList() {
+      const visible = Boolean(catalog?.available);
+      patchAttr(rootEl, 'hidden', !visible);
+      if (!visible) {
+        props?.onLayoutChange?.();
+        return;
+      }
+      ensureBodyMounted();
+      syncModeControls();
+
+      const detected = getDetectedClients();
+      const sourceOptions = detected
+        .filter((c) => getTargetClientsFor(c.id).length > 0)
+        .map((c) => ({
+          value: c.id,
+          label: smigGetClientLabel(c.id),
+          meta: String(c.sessionCount),
+        }));
+      const targetOptions = getTargetClientsFor(sourceClient).map((c) => ({
+        value: c.id,
+        label: smigGetClientLabel(c.id),
+      }));
+      const projectOptions = (catalog?.desktopProjects || []).map((p) =>
+        p.isOutsideProject
+          ? { value: p.projectId, label: t('settings.oth.migProjectOutside') }
+          : {
+              value: p.projectId,
+              label: p.name || p.projectId.slice(0, 8),
+              meta: p.workspacePath || '',
+            }
+      );
+
+      sourceSelect.setProps({
+        ariaLabel: t('settings.oth.migSourceLabel'),
+        modelValue: sourceClient,
+        options: sourceOptions,
+      });
+      targetSelect.setProps({
+        ariaLabel: t('settings.oth.migTargetLabel'),
+        modelValue: targetClient,
+        options: targetOptions,
+      });
+      projectSelect.setProps({
+        ariaLabel: t('settings.oth.migProjectLabel'),
+        modelValue: targetProjectId,
+        options: projectOptions,
+      });
+      patchAttr(projectFieldWrap, 'hidden', targetClient !== 'desktop');
+
+      renderSessionList();
+      renderResultBox();
+      props?.onLayoutChange?.();
+    }
+
+    function renderSessionList() {
+      const all = getCurrentSourceSessions();
+      const filtered = getFilteredSessions();
+
+      // 清理已不在当前来源中的选中 ID
+      const validSet = new Set(all.filter((s) => !s.isRunning).map((s) => s.cascadeId));
+      for (const id of [...selectedIds]) {
+        if (!validSet.has(id)) selectedIds.delete(id);
+      }
+
+      const selectableFiltered = filtered.filter((s) => !s.isRunning);
+      const allSelected =
+        selectableFiltered.length > 0 &&
+        selectableFiltered.every((s) => selectedIds.has(s.cascadeId));
+      patchText(
+        toggleAllBtn,
+        allSelected ? t('settings.oth.migClearSel') : t('settings.oth.migSelectAll')
+      );
+      patchAttr(toggleAllBtn, 'disabled', selectableFiltered.length === 0 || isMigrating);
+      patchText(
+        selectedCountEl,
+        t('settings.oth.migSelectedCount', {
+          selected: selectedIds.size,
+          total: filtered.length,
+        })
+      );
+
+      while (listEl.firstChild) {
+        listEl.removeChild(listEl.firstChild);
+      }
+
+      if (all.length === 0) {
+        listEl.appendChild(h('div', { className: 'smig-empty', text: t('settings.oth.migEmpty') }));
+      } else if (filtered.length === 0) {
+        listEl.appendChild(
+          h('div', { className: 'smig-empty', text: t('settings.oth.migNoMatch') })
+        );
+      } else {
+        for (const item of filtered) {
+          const checked = selectedIds.has(item.cascadeId);
+          const disabled = Boolean(item.isRunning || isMigrating);
+          const checkIcon = createSvgIcon('check', { size: 10 });
+          patchAttr(checkIcon, 'hidden', !checked);
+          const checkboxEl = h(
+            'span',
+            {
+              className: `select-checkbox smig-checkbox${checked ? ' is-checked' : ''}`,
+              'aria-hidden': 'true',
+            },
+            [checkIcon]
+          );
+
+          const toggleItem = () => {
+            if (item.isRunning || isMigrating) return;
+            if (selectedIds.has(item.cascadeId)) {
+              selectedIds.delete(item.cascadeId);
+            } else {
+              selectedIds.add(item.cascadeId);
+            }
+            renderSessionList();
+          };
+
+          const metaParts = [t('settings.oth.migStepsUnit', { count: item.stepCount })];
+          const age = smigFormatAge(item.lastModifiedMs);
+          if (age) metaParts.push(age);
+
+          const subChildren = [];
+          if (item.workspacePath || item.workspaceName) {
+            subChildren.push(
+              h('span', {
+                className: 'smig-item-ws',
+                text: item.workspacePath || item.workspaceName,
+                title: item.workspacePath || item.workspaceName,
+              })
+            );
+          }
+          if (item.isRunning) {
+            subChildren.push(
+              h('span', {
+                className: 'smig-item-running',
+                text: t('settings.oth.migRunningTag'),
+              })
+            );
+          }
+
+          const rowEl = h(
+            'button',
+            {
+              type: 'button',
+              role: 'checkbox',
+              'aria-checked': checked ? 'true' : 'false',
+              disabled,
+              className: `smig-item${checked ? ' is-selected' : ''}${item.isRunning ? ' is-running' : ''}`,
+              onClick: toggleItem,
+            },
+            [
+              checkboxEl,
+              h('span', { className: 'smig-item-body' }, [
+                h('span', { className: 'smig-item-top' }, [
+                  h('span', {
+                    className: 'smig-item-title',
+                    text: item.title || item.cascadeId.slice(0, 8),
+                    title: item.title || item.cascadeId,
+                  }),
+                  h('span', { className: 'smig-item-meta', text: metaParts.join(' · ') }),
+                ]),
+                ...(subChildren.length > 0
+                  ? [h('span', { className: 'smig-item-sub' }, subChildren)]
+                  : []),
+              ]),
+            ]
+          );
+          listEl.appendChild(rowEl);
+        }
+      }
+
+      listScrollbar?.refresh?.();
+
+      patchAttr(migrateBtn, 'disabled', isMigrating || selectedIds.size === 0 || !targetClient);
+      patchText(
+        migrateBtnText,
+        isMigrating
+          ? t('settings.oth.migRunningBtn')
+          : t('settings.oth.migActionBtn', { count: selectedIds.size })
+      );
+    }
+
+    function renderResultBox() {
+      if (!lastResult) {
+        patchAttr(resultBoxEl, 'hidden', true);
+        return;
+      }
+      patchAttr(resultBoxEl, 'hidden', false);
+      patchClasses(resultBoxEl, {
+        'is-ok': Boolean(lastResult.ok),
+        'is-err': !lastResult.ok,
+      });
+
+      while (resultBoxEl.firstChild) {
+        resultBoxEl.removeChild(resultBoxEl.firstChild);
+      }
+
+      if (!lastResult.ok) {
+        resultBoxEl.appendChild(
+          h('div', {
+            className: 'smig-result-msg',
+            text: formatMigrationError(lastResult.error),
+          })
+        );
+        return;
+      }
+
+      const partialSuffix =
+        lastResult.failedCount > 0
+          ? t('settings.oth.migPartialWarn', { failed: lastResult.failedCount })
+          : '';
+      const baseMsg =
+        lastResult.targetClient === 'cli'
+          ? t('settings.oth.migDoneCli', { count: lastResult.migratedCount })
+          : t('settings.oth.migDoneDesktop', {
+              count: lastResult.migratedCount,
+              project: resolveProjectDisplayLabel(lastResult.targetProjectId),
+            });
+
+      resultBoxEl.appendChild(
+        h('div', { className: 'smig-result-msg', text: `${baseMsg}${partialSuffix}` })
+      );
+
+      if (lastResult.targetClient === 'desktop' && isWindowOverlayMode()) {
+        resultBoxEl.appendChild(
+          h('div', { className: 'smig-result-actions' }, [
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'btn-secondary smig-result-btn',
+                onClick: () => {
+                  if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
+                    window.location.reload();
+                  }
+                },
+              },
+              [createSvgIcon('refresh', { size: 11 }), h('span', { text: t('settings.oth.migReloadBtn') })]
+            ),
+          ])
+        );
+      }
+
+      if (lastResult.targetClient === 'cli') {
+        const okItems = (lastResult.results || []).filter((r) => r.ok && r.resumeCommand);
+        if (okItems.length > 0) {
+          const cmdWrap = h('div', { className: 'smig-cmd-list' });
+          for (const item of okItems.slice(0, 6)) {
+            const isCopied = copiedCmdId === item.newCascadeId;
+            const copyBtn = h(
+              'button',
+              {
+                type: 'button',
+                className: 'btn-ghost-sm smig-cmd-copy',
+                text: isCopied ? t('settings.oth.migCopied') : t('settings.oth.migCopyCmd'),
+                onClick: async () => {
+                  const ok = await copyPlainTextToClipboard(item.resumeCommand);
+                  if (!ok || destroyed) return;
+                  copiedCmdId = item.newCascadeId;
+                  renderResultBox();
+                  if (copiedTimer) clearTimeout(copiedTimer);
+                  copiedTimer = setTimeout(() => {
+                    copiedTimer = null;
+                    if (!destroyed && copiedCmdId === item.newCascadeId) {
+                      copiedCmdId = '';
+                      renderResultBox();
+                    }
+                  }, 2000);
+                },
+              }
+            );
+            cmdWrap.appendChild(
+              h('div', { className: 'smig-cmd-row' }, [
+                h('code', { className: 'smig-cmd-code', text: item.resumeCommand }),
+                copyBtn,
+              ])
+            );
+          }
+          resultBoxEl.appendChild(cmdWrap);
+        }
+      }
+    }
+
+    async function loadCatalog(force = false) {
+      if (isLoading || (hasLoadedOnce && !force)) return;
+      isLoading = true;
+      if (refreshBtn) patchAttr(refreshBtn, 'disabled', true);
+      try {
+        const res = await loadCatalogFn();
+        if (destroyed) return;
+        hasLoadedOnce = true;
+        if (res && typeof res === 'object') {
+          catalog = res;
+          ensureValidSelectionDefaults();
+          syncControlsAndList();
+        }
+      } catch {
+        // 本地目录或 API 暂不可用时静默隐藏卡片，避免干扰其他设置项
+        if (!destroyed && !catalog) {
+          patchAttr(rootEl, 'hidden', true);
+        }
+      } finally {
+        isLoading = false;
+        if (refreshBtn) patchAttr(refreshBtn, 'disabled', false);
+      }
+    }
+
+    async function handleMigrate() {
+      if (isMigrating || selectedIds.size === 0 || !sourceClient || !targetClient) return;
+      isMigrating = true;
+      lastResult = null;
+      renderSessionList();
+      renderResultBox();
+      try {
+        const payload = {
+          sourceClient,
+          targetClient,
+          mode: migrationMode,
+          cascadeIds: [...selectedIds],
+          ...(targetClient === 'desktop' ? { targetProjectId } : {}),
+        };
+        const res = await runMigrateFn(payload);
+        if (destroyed) return;
+        lastResult = res || { ok: false, error: 'empty_response' };
+        if (res?.ok) {
+          selectedIds.clear();
+          void loadCatalog(true);
+        }
+      } catch (err) {
+        if (!destroyed) {
+          lastResult = { ok: false, error: err?.message || 'request_failed' };
+        }
+      } finally {
+        isMigrating = false;
+        if (!destroyed) {
+          renderSessionList();
+          renderResultBox();
+          props?.onLayoutChange?.();
+        }
+      }
+    }
+
+    function refreshLabels() {
+      if (!bodyMounted) return;
+      patchText(titleEl, t('settings.oth.migTitle'));
+      patchText(descEl, t('settings.oth.migDesc'));
+      patchText(refreshBtnText, t('settings.oth.migRefreshBtn'));
+      patchText(sourceLabelEl, t('settings.oth.migSourceLabel'));
+      patchText(targetLabelEl, t('settings.oth.migTargetLabel'));
+      patchText(modeLabelEl, t('settings.oth.migModeLabel'));
+      syncModeControls();
+      patchText(projectLabelEl, t('settings.oth.migProjectLabel'));
+      patchAttr(searchInput, 'placeholder', t('settings.oth.migSearchPlaceholder'));
+      patchAttr(searchClearBtn, 'aria-label', t('select.clearSearch'));
+      if (catalog?.available) {
+        syncControlsAndList();
+      }
+    }
+
+    onCleanup(() => {
+      destroyed = true;
+      if (copiedTimer) {
+        clearTimeout(copiedTimer);
+        copiedTimer = null;
+      }
+      modeSeg?.destroy?.();
+      listScrollbar?.destroy?.();
+      sourceSelect?.destroy?.();
+      targetSelect?.destroy?.();
+      projectSelect?.destroy?.();
+    });
+
+    return {
+      el: rootEl,
+      refs: {
+        ensureLoaded: () => loadCatalog(false),
+        reload: () => loadCatalog(true),
+        refreshLabels,
+      },
+    };
+  },
+});
+return { SessionMigrationCard };
 })();
 
 // --- src/views/settings/SettingsGeneralTab.js ---
@@ -18935,13 +25650,6 @@ function getFontScaleOptions() {
     { value: 'md', label: t('settings.gen.fontMd') },
     { value: 'lg', label: t('settings.gen.fontLg') },
     { value: 'xl', label: t('settings.gen.fontXl') },
-  ];
-}
-
-function getModernUiOptions() {
-  return [
-    { value: 'on', label: t('settings.gen.modernUiOn') },
-    { value: 'off', label: t('settings.gen.modernUiOff') },
   ];
 }
 
@@ -19112,10 +25820,10 @@ const SettingsGeneralTab = defineComponent({
       },
     });
 
-    const modernUiSwitch = SegmentedControl({
-      ariaLabel: t('settings.gen.modernUi'),
+    const modernUiSwitch = ToggleSwitch({
+      ariaLabelKey: 'settings.gen.modernUi',
+      preset: 'modernUi',
       modelValue: 'on',
-      options: getModernUiOptions(),
       onUpdateModelValue: async (val) => {
         const nextModernUi = val !== 'off';
         draftModernUi = nextModernUi;
@@ -19337,7 +26045,6 @@ const SettingsGeneralTab = defineComponent({
       });
       modernUiSwitch.setProps({
         modelValue: draftModernUi ? 'on' : 'off',
-        options: getModernUiOptions(),
       });
       autoUpdateSelect.setProps({
         modelValue: draftPluginUpdateMode,
@@ -19419,9 +26126,7 @@ const SettingsGeneralTab = defineComponent({
         options: getFontScaleOptions(),
       });
       modernUiSwitch.setProps({
-        ariaLabel: t('settings.gen.modernUi'),
         modelValue: draftModernUi ? 'on' : 'off',
-        options: getModernUiOptions(),
       });
       autoUpdateSelect.setProps({
         modelValue: draftPluginUpdateMode,
@@ -19495,24 +26200,17 @@ function getMountModeOptions() {
   ];
 }
 
-function getMultiToggleOptions() {
-  return [
-    { value: 'show', label: t('settings.str.show') },
-    { value: 'hide', label: t('settings.str.hide') },
-  ];
-}
-
-function getEnableToggleOptions() {
-  return [
-    { value: 'on', label: t('settings.str.on') },
-    { value: 'off', label: t('settings.str.off') },
-  ];
-}
-
 function getPopoverWidthModeOptions() {
   return [
     { value: 'auto', label: t('settings.str.popoverWidthAuto') },
     { value: 'custom', label: t('settings.str.popoverWidthCustom') },
+  ];
+}
+
+function getContextAgentModeOptions() {
+  return [
+    { value: 'main', label: t('settings.str.contextAgentMain') },
+    { value: 'auto', label: t('settings.str.contextAgentAuto') },
   ];
 }
 
@@ -19524,6 +26222,125 @@ function isSameList(a, b) {
   return true;
 }
 
+function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
+  const safeCtx = slotCtx || {};
+  const quotas = safeCtx.quotas || {};
+  const quotaPct = (key, fallback) => {
+    const summary = resolveSpecificQuotaSlotSummary(quotas, key);
+    return summary && Number.isFinite(summary.roundedPct) ? summary.roundedPct : fallback;
+  };
+  switch (slotKey) {
+    case 'tps': {
+      const val = Number.isFinite(Number(safeCtx.tps)) ? Number(safeCtx.tps).toFixed(1) : '68.4';
+      return { prefix: '', text: `${val} t/s`, tone: 'good', pillPct: null };
+    }
+    case 'avg_tps': {
+      const val = Number.isFinite(Number(safeCtx.avgTps)) ? Number(safeCtx.avgTps).toFixed(1) : '59.6';
+      return {
+        prefix: '',
+        text: isEn ? `avg ${val}` : `均 ${val}`,
+        tone: 'info',
+        pillPct: null,
+      };
+    }
+    case 'ttft': {
+      const val = Number.isFinite(Number(safeCtx.ttft)) ? formatMetric(Number(safeCtx.ttft), 's') : '1.1s';
+      return { prefix: '', text: val, tone: 'good', pillPct: null };
+    }
+    case 'cost': {
+      const num = Number.isFinite(Number(safeCtx.stepCost)) ? Number(safeCtx.stepCost) : 0.042;
+      return { prefix: '', text: `$${num.toFixed(3)}`, tone: 'normal', pillPct: null };
+    }
+    case 'session_cost': {
+      const num = Number.isFinite(Number(safeCtx.sessionCost)) ? Number(safeCtx.sessionCost) : 1.28;
+      return { prefix: '', text: formatUsd(num), tone: 'normal', pillPct: null };
+    }
+    case 'cache_hit': {
+      const pct = Number.isFinite(Number(safeCtx.cacheHitPct))
+        ? Math.round(Number(safeCtx.cacheHitPct))
+        : 95;
+      return {
+        prefix: '',
+        text: isEn ? `cache ${pct}%` : `缓 ${pct}%`,
+        tone: 'good',
+        pillPct: null,
+      };
+    }
+    case 'session_tokens': {
+      const tokStr = Number.isFinite(Number(safeCtx.sessionTokens))
+        ? formatTokens(Number(safeCtx.sessionTokens))
+        : '1.8M';
+      return { prefix: '', text: `${tokStr} tok`, tone: 'muted', pillPct: null };
+    }
+    case 'quota_auto': {
+      const pct = quotaPct('quota_auto', 64);
+      return {
+        prefix: isEn ? '5h ' : '余 ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'gemini_5h': {
+      const pct = quotaPct('gemini_5h', 64);
+      return {
+        prefix: 'G5h ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'gemini_weekly': {
+      const pct = quotaPct('gemini_weekly', 52);
+      return {
+        prefix: isEn ? 'Gw ' : 'G周 ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'argon_weekly': {
+      const pct = quotaPct('argon_weekly', 42);
+      return {
+        prefix: isEn ? 'Aw ' : 'A周 ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'claude_5h': {
+      const pct = quotaPct('claude_5h', 32);
+      return {
+        prefix: 'C5h ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'claude_weekly': {
+      const pct = quotaPct('claude_weekly', 59);
+      return {
+        prefix: isEn ? 'Cw ' : 'C周 ',
+        text: `${pct}%`,
+        tone: 'good',
+        pillPct: pct,
+      };
+    }
+    case 'context':
+    default: {
+      const pct = Number.isFinite(Number(safeCtx.usedPct))
+        ? Math.round(Number(safeCtx.usedPct))
+        : 56;
+      return {
+        prefix: isEn ? 'Ctx ' : '上下文 ',
+        text: `${pct}%`,
+        tone: 'accent',
+        pillPct: pct,
+      };
+    }
+  }
+}
+
 const SettingsStructureTab = defineComponent({
   name: 'SettingsStructureTab',
   setup({ props, onCleanup }) {
@@ -19532,7 +26349,9 @@ const SettingsStructureTab = defineComponent({
     let draftPopoverWidthMode = 'auto';
     let draftPopoverWidth = DEFAULT_CLIENT_POPOVER_WIDTH;
     let draftEnableCliStatusLine = true;
+    let draftCliStatusLineSlots = null;
     let draftShowTopbarMulti = true;
+    let draftContextAgentMode = DEFAULT_CLIENT_CONTEXT_AGENT_MODE;
     let draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
     let draftHoverModules = [...DEFAULT_CLIENT_HOVER_MODULES];
     let draftOverviewModules = [...DEFAULT_CLIENT_OVERVIEW_MODULES];
@@ -19540,12 +26359,22 @@ const SettingsStructureTab = defineComponent({
     let draftShowStepTurnRail = false;
     let draftShowStepAgentBadge = true;
     let draftShowStepSpeedColor = false;
+    let draftShowStepFilterToolbar = false;
     let draftStepTokenComboFormat = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
     let rawStepTokenComboText = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
     let draftStepColumns = [...DEFAULT_CLIENT_STEP_COLUMNS];
     let latestSettings = null;
     let latestWindowBridge = null;
+    let latestCliStatusLine = null;
     let latestHostPlatform = 'win32';
+    let latestQuotas = null;
+
+    function getEffectiveDraftCliSlots() {
+      return resolveEffectiveClientCliStatusLineSlots({
+        cliStatusLineSlots: draftCliStatusLineSlots,
+        topbarCapsuleSlots: draftTopbarSlots,
+      });
+    }
 
     function isStructureVisible() {
       const st = uiStore.getState();
@@ -19553,23 +26382,34 @@ const SettingsStructureTab = defineComponent({
     }
 
     function buildDraftTelemetry() {
-      return buildStructurePreviewTelemetry(latestSettings, {
-        windowMountMode: draftWindowMountMode,
-        enableWindowOverlay: draftWindowMountMode !== 'sidebar',
-        popoverWidthMode: draftPopoverWidthMode,
-        popoverWidth: draftPopoverWidth,
-        enableCliStatusLine: draftEnableCliStatusLine,
-        showTopbarMultiSession: draftShowTopbarMulti,
-        topbarCapsuleSlots: draftTopbarSlots,
-        hoverModules: draftHoverModules,
-        overviewModules: draftOverviewModules,
-        overviewMetrics: draftOverviewMetrics,
-        showStepTurnRail: draftShowStepTurnRail,
-        showStepAgentBadge: draftShowStepAgentBadge,
-        showStepSpeedColor: draftShowStepSpeedColor,
-        stepTokenComboFormat: draftStepTokenComboFormat,
-        stepTableColumns: draftStepColumns,
-      });
+      const effectiveCliSlots = getEffectiveDraftCliSlots();
+      const includeArgonPool =
+        hasArgonWeeklyQuotaPool(latestQuotas) ||
+        draftTopbarSlots.includes('argon_weekly') ||
+        effectiveCliSlots.includes('argon_weekly');
+      return buildStructurePreviewTelemetry(
+        latestSettings,
+        {
+          windowMountMode: draftWindowMountMode,
+          enableWindowOverlay: draftWindowMountMode !== 'sidebar',
+          popoverWidthMode: draftPopoverWidthMode,
+          popoverWidth: draftPopoverWidth,
+          enableCliStatusLine: draftEnableCliStatusLine,
+          showTopbarMultiSession: draftShowTopbarMulti,
+          contextAgentMode: draftContextAgentMode,
+          topbarCapsuleSlots: draftTopbarSlots,
+          hoverModules: draftHoverModules,
+          overviewModules: draftOverviewModules,
+          overviewMetrics: draftOverviewMetrics,
+          showStepTurnRail: draftShowStepTurnRail,
+          showStepAgentBadge: draftShowStepAgentBadge,
+          showStepSpeedColor: draftShowStepSpeedColor,
+          showStepFilterToolbar: draftShowStepFilterToolbar,
+          stepTokenComboFormat: draftStepTokenComboFormat,
+          stepTableColumns: draftStepColumns,
+        },
+        { includeArgonPool }
+      );
     }
 
     async function persistStructurePatch(sectionComp, patchObj, successKey = 'settings.saved') {
@@ -19666,17 +26506,61 @@ const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.popoverWidthLabel'),
     });
-    const popoverWidthHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.str.popoverWidthHint'),
-    });
     const multiToggleLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.multiToggle'),
     });
+    const contextAgentModeLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.contextAgentModeLabel'),
+    });
     const cliCapsuleLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.cliCapsuleToggle'),
+    });
+    const cliSlotsLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.cliSlotsLabel'),
+    });
+    const cliStatusHintEl = h('span', {
+      className: 'settings-hint-text cli-status-hint',
+    });
+    let cliActionBusy = false;
+    let activeCliStatusAction = '';
+    const cliStatusActionBtn = h('button', {
+      type: 'button',
+      className: 'cli-status-action-btn',
+      hidden: true,
+      text: t('settings.str.cliRestoreBtn'),
+      onClick: async () => {
+        if (cliActionBusy || !activeCliStatusAction) return;
+        cliActionBusy = true;
+        const actionToRun = activeCliStatusAction;
+        patchAttr(cliStatusActionBtn, 'disabled', true);
+        patchText(cliStatusActionBtn, t('settings.str.cliRestoringBtn'));
+        mountSection.refs.showStatus(t('settings.saving'), 0);
+        try {
+          const res = await triggerCliStatusLineAction(actionToRun);
+          if (res?.cliStatusLine) {
+            latestCliStatusLine = res.cliStatusLine;
+          }
+          if (res?.settings && typeof res.settings === 'object') {
+            latestSettings = { ...(latestSettings || {}), ...res.settings };
+            draftEnableCliStatusLine = latestSettings.enableCliStatusLine !== false;
+          }
+          mountSection.refs.showStatus(
+            res?.ok === false ? t('settings.saveFailed') : t('settings.saved'),
+            1800
+          );
+        } catch {
+          mountSection.refs.showStatus(t('settings.saveFailed'), 2500);
+        } finally {
+          cliActionBusy = false;
+          patchAttr(cliStatusActionBtn, 'disabled', false);
+          syncMountSectionMeta();
+          props.onLayoutChange?.();
+        }
+      },
     });
     const capsuleSlotsLabelEl = h('span', {
       className: 'form-label',
@@ -19738,10 +26622,10 @@ const SettingsStructureTab = defineComponent({
       },
     });
 
-    const multiSessionToggle = SegmentedControl({
-      ariaLabel: t('settings.str.multiToggle'),
+    const multiSessionToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.multiToggle',
+      preset: 'visibility',
       modelValue: 'show',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowTopbarMulti = val !== 'hide';
         syncMountSectionMeta();
@@ -19751,18 +26635,103 @@ const SettingsStructureTab = defineComponent({
       },
     });
 
-    const cliCapsuleToggle = SegmentedControl({
-      ariaLabel: t('settings.str.cliCapsuleToggle'),
+    const contextAgentModeToggle = SegmentedControl({
+      ariaLabel: t('settings.str.contextAgentModeLabel'),
+      modelValue: draftContextAgentMode,
+      options: getContextAgentModeOptions(),
+      onUpdateModelValue: (val) => {
+        const nextMode = normalizeClientContextAgentMode(val);
+        draftContextAgentMode = nextMode;
+        uiStore.setState({ ctxInspectorAgentId: nextMode });
+        syncMountSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(mountSection, {
+          contextAgentMode: nextMode,
+        });
+      },
+    });
+
+    const cliCapsuleToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.cliCapsuleToggle',
+      preset: 'enable',
       modelValue: 'on',
-      options: getEnableToggleOptions(),
       onUpdateModelValue: (val) => {
         draftEnableCliStatusLine = val !== 'off';
         syncMountSectionMeta();
+        props.onLayoutChange?.();
         void persistStructurePatch(mountSection, {
           enableCliStatusLine: draftEnableCliStatusLine,
         });
       },
     });
+
+    const cliPreviewMultiTextEl = h('span', {
+      text: t('settings.str.cliPreviewRunning', { count: 1 }),
+    });
+    const cliPreviewMultiEl = h('span', { className: 'cli-preview-multi' }, [
+      h('span', { className: 'cli-preview-dot', 'aria-hidden': 'true', text: '●' }),
+      cliPreviewMultiTextEl,
+    ]);
+    const cliPreviewSlotParts = [];
+    const cliPreviewSepEls = [];
+    const cliPreviewChildren = [cliPreviewMultiEl];
+    for (let i = 0; i < 6; i += 1) {
+      if (i > 0) {
+        const sepEl = h('span', {
+          className: 'cli-preview-sep',
+          'aria-hidden': 'true',
+          text: '|',
+        });
+        cliPreviewSepEls.push(sepEl);
+        cliPreviewChildren.push(sepEl);
+      }
+      const prefixEl = h('span', { className: 'cli-preview-prefix' });
+      const valueEl = h('span', { className: 'cli-preview-val' });
+      const slotEl = h('span', { className: 'cli-preview-slot' }, [
+        prefixEl,
+        valueEl,
+      ]);
+      cliPreviewSlotParts.push({ slotEl, prefixEl, valueEl });
+      cliPreviewChildren.push(slotEl);
+    }
+    const cliPreviewEl = h('div', { className: 'cli-status-preview' }, cliPreviewChildren);
+
+    const cliSlotsList = EditableSlotList({
+      items: getEffectiveDraftCliSlots(),
+      options: getCapsuleMetricOptions(),
+      minItems: 1,
+      maxItems: 6,
+      addBtnTextFn: (count, max) => t('settings.str.addCliSlot', { count, max }),
+      onPreview: (previewItems) => {
+        draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(previewItems);
+        refreshCliPreview();
+      },
+      onChange: (nextItems) => {
+        draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(nextItems);
+        syncMountSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(mountSection, {
+          cliStatusLineSlots: draftCliStatusLineSlots,
+        });
+      },
+    });
+
+    const cliStatusFooterEl = h('div', { className: 'cli-status-footer', hidden: true }, [
+      cliStatusHintEl,
+      cliStatusActionBtn,
+    ]);
+
+    const cliStatusDetailEl = h('div', { className: 'cli-statusline-detail' }, [
+      cliPreviewEl,
+      h('div', { className: 'form-row' }, [cliSlotsLabelEl, cliSlotsList.el]),
+      cliStatusFooterEl,
+    ]);
+
+    const cliStatusGroupEl = h('div', { className: 'cli-statusline-group', hidden: true }, [
+      h('div', { className: 'settings-divider' }),
+      h('div', { className: 'settings-inline-row' }, [cliCapsuleLabelEl, cliCapsuleToggle.el]),
+      cliStatusDetailEl,
+    ]);
 
     const topbarSlotsList = EditableSlotList({
       items: draftTopbarSlots,
@@ -19797,8 +26766,11 @@ const SettingsStructureTab = defineComponent({
         draftPopoverWidth = DEFAULT_CLIENT_POPOVER_WIDTH;
         popoverWidthStepper.setProps({ modelValue: DEFAULT_CLIENT_POPOVER_WIDTH });
         draftEnableCliStatusLine = true;
+        draftCliStatusLineSlots = null;
         draftShowTopbarMulti = true;
+        draftContextAgentMode = DEFAULT_CLIENT_CONTEXT_AGENT_MODE;
         draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
+        uiStore.setState({ ctxInspectorAgentId: DEFAULT_CLIENT_CONTEXT_AGENT_MODE });
         syncMountSectionMeta();
         props.onLayoutChange?.();
         void persistStructurePatch(
@@ -19809,7 +26781,9 @@ const SettingsStructureTab = defineComponent({
             popoverWidthMode: 'auto',
             popoverWidth: DEFAULT_CLIENT_POPOVER_WIDTH,
             enableCliStatusLine: true,
+            cliStatusLineSlots: null,
             showTopbarMultiSession: true,
+            contextAgentMode: DEFAULT_CLIENT_CONTEXT_AGENT_MODE,
             topbarCapsuleSlots: [...DEFAULT_CLIENT_TOPBAR_SLOTS],
           },
           'settings.resetDone'
@@ -19820,31 +26794,72 @@ const SettingsStructureTab = defineComponent({
         h('div', { className: 'settings-divider' }),
         h('div', { className: 'form-row' }, [mountModeLabelEl, windowMountSelect.el]),
         mountBridgeNotice.el,
-        h('div', { className: 'form-row' }, [
-          h('div', { className: 'settings-inline-row' }, [
-            popoverWidthLabelEl,
-            h('div', { className: 'settings-inline-controls' }, [
-              popoverWidthModeToggle.el,
-              popoverWidthNumWrap,
-            ]),
+        h('div', { className: 'settings-inline-row' }, [
+          popoverWidthLabelEl,
+          h('div', { className: 'settings-inline-controls' }, [
+            popoverWidthModeToggle.el,
+            popoverWidthNumWrap,
           ]),
-          popoverWidthHintEl,
         ]),
         h('div', { className: 'settings-inline-row' }, [
           multiToggleLabelEl,
           multiSessionToggle.el,
         ]),
         h('div', { className: 'settings-inline-row' }, [
-          cliCapsuleLabelEl,
-          cliCapsuleToggle.el,
+          contextAgentModeLabelEl,
+          contextAgentModeToggle.el,
         ]),
         h('div', { className: 'form-row' }, [capsuleSlotsLabelEl, topbarSlotsList.el]),
+        cliStatusGroupEl,
       ],
     });
 
+    function refreshCliPreview(previewData = null) {
+      const effectiveSlots = getEffectiveDraftCliSlots();
+      const isEn = getEffectiveLocale() === 'en-US';
+      const mockData = previewData || buildDraftTelemetry();
+      const { scopedConv, ctxAgent, aggregated } = resolveScopedConversation(
+        mockData,
+        'all',
+        resolveOverlayCtxInspectorAgentId(mockData, 'auto')
+      );
+      const slotCtx = buildCapsuleSlotContext(mockData, { scopedConv, ctxAgent, aggregated });
+      const runningCount = Math.max(
+        1,
+        Array.isArray(mockData?.runningConversations) ? mockData.runningConversations.length : 1
+      );
+      patchAttr(cliPreviewMultiEl, 'hidden', !draftShowTopbarMulti);
+      patchText(cliPreviewMultiTextEl, t('settings.str.cliPreviewRunning', { count: runningCount }));
+      for (let i = 0; i < cliPreviewSlotParts.length; i += 1) {
+        const parts = cliPreviewSlotParts[i];
+        const sepEl = i > 0 ? cliPreviewSepEls[i - 1] : null;
+        const key = effectiveSlots[i];
+        const visible = Boolean(key);
+        patchAttr(parts.slotEl, 'hidden', !visible);
+        if (sepEl) patchAttr(sepEl, 'hidden', !visible);
+        if (visible) {
+          const item = formatCliPreviewSlot(key, slotCtx, isEn);
+          const isPill = Number.isFinite(item.pillPct);
+          patchAttr(parts.slotEl, 'data-metric', key);
+          patchText(parts.prefixEl, item.prefix || '');
+          patchText(parts.valueEl, item.text || '');
+          patchStyleVar(parts.slotEl, '--cli-pill-pct', isPill ? `${item.pillPct}%` : '');
+          patchClasses(parts.slotEl, {
+            'is-pill': isPill,
+            'tone-good': item.tone === 'good',
+            'tone-info': item.tone === 'info',
+            'tone-accent': item.tone === 'accent',
+            'tone-muted': item.tone === 'muted',
+          });
+        }
+      }
+    }
+
     function refreshMountPreview() {
       if (!isStructureVisible() || activeThirdTab !== 'mount') return;
-      capsulePreviewWidget.refs.update({ data: buildDraftTelemetry() });
+      const mockData = buildDraftTelemetry();
+      capsulePreviewWidget.refs.update({ data: mockData });
+      refreshCliPreview(mockData);
     }
 
     function syncMountSectionMeta() {
@@ -19870,15 +26885,67 @@ const SettingsStructureTab = defineComponent({
       }
       multiSessionToggle.setProps({
         modelValue: draftShowTopbarMulti ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
+      contextAgentModeToggle.setProps({
+        modelValue: draftContextAgentMode,
+        options: getContextAgentModeOptions(),
+        ariaLabel: t('settings.str.contextAgentModeLabel'),
+      });
+      const cliInstalled = Boolean(latestCliStatusLine?.installed);
+      patchAttr(cliStatusGroupEl, 'hidden', !cliInstalled);
       cliCapsuleToggle.setProps({
         modelValue: draftEnableCliStatusLine ? 'on' : 'off',
-        options: getEnableToggleOptions(),
       });
+      patchAttr(cliStatusDetailEl, 'hidden', !draftEnableCliStatusLine);
+      const effectiveCliSlots = getEffectiveDraftCliSlots();
+      cliSlotsList.refs.setProps({
+        items: effectiveCliSlots,
+        options: getCapsuleMetricOptions({
+          quotas: latestQuotas,
+          selectedSlots: effectiveCliSlots,
+        }),
+        addBtnTextFn: (count, max) => t('settings.str.addCliSlot', { count, max }),
+      });
+      const preservedCustom = Boolean(latestCliStatusLine?.preservedCustom);
+      const isConfigured = Boolean(latestCliStatusLine?.configured);
+      const hasInlineSlotFlags = /(?:^|\s)--(?:slots|preset)(?:=|\s|$)/i.test(
+        String(latestCliStatusLine?.managedFlags || '')
+      );
+      const isPausedInCli = cliInstalled && !preservedCustom && !isConfigured && draftEnableCliStatusLine;
+      const cliHintText = preservedCustom
+        ? t('settings.str.cliCustomCmdHint')
+        : isPausedInCli
+          ? t('settings.str.cliPausedHint')
+          : hasInlineSlotFlags
+            ? t('settings.str.cliFlagsOverrideHint')
+            : '';
+      patchAttr(cliStatusFooterEl, 'hidden', !cliHintText);
+      patchClasses(cliStatusHintEl, { 'is-warn': preservedCustom || isPausedInCli });
+      patchText(cliStatusHintEl, cliHintText);
+      activeCliStatusAction = preservedCustom || isPausedInCli
+        ? 'force_install'
+        : hasInlineSlotFlags
+          ? 'clear_flags'
+          : '';
+      patchAttr(cliStatusActionBtn, 'hidden', !activeCliStatusAction);
+      patchClasses(cliStatusActionBtn, { 'is-warn': preservedCustom });
+      if (!cliActionBusy && activeCliStatusAction) {
+        patchText(
+          cliStatusActionBtn,
+          preservedCustom
+            ? t('settings.str.cliRestoreBtn')
+            : isPausedInCli
+              ? t('settings.str.cliEnableBtn')
+              : t('settings.str.cliClearFlagsBtn')
+        );
+      }
+      refreshCliPreview();
       topbarSlotsList.refs.setProps({
         items: draftTopbarSlots,
-        options: getCapsuleMetricOptions(),
+        options: getCapsuleMetricOptions({
+          quotas: latestQuotas,
+          selectedSlots: draftTopbarSlots,
+        }),
         addBtnTextFn: (count, max) => t('settings.str.addCapsuleSlot', { count, max }),
       });
       mountSection.refs.setBadge(
@@ -19889,7 +26956,9 @@ const SettingsStructureTab = defineComponent({
         draftPopoverWidthMode === 'auto' &&
         draftPopoverWidth === DEFAULT_CLIENT_POPOVER_WIDTH &&
         draftEnableCliStatusLine === true &&
+        draftCliStatusLineSlots === null &&
         draftShowTopbarMulti === true &&
+        draftContextAgentMode === DEFAULT_CLIENT_CONTEXT_AGENT_MODE &&
         isSameList(draftTopbarSlots, DEFAULT_CLIENT_TOPBAR_SLOTS);
       mountSection.refs.setResetDisabled(isDefault);
       refreshMountPreview();
@@ -19911,6 +26980,11 @@ const SettingsStructureTab = defineComponent({
       preview: true,
       isVisibleFn: () => isStructureVisible() && activeThirdTab === 'hover',
       initialModuleKeys: [],
+      getCtxAgentId: () =>
+        resolveOverlayCtxInspectorAgentId(
+          { settings: { contextAgentMode: draftContextAgentMode } },
+          'auto'
+        ),
     });
     const hoverPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       hoverPreviewTipEl,
@@ -20153,6 +27227,10 @@ const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.stepSpeedColorToggle'),
     });
+    const stepFilterToolbarLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.stepFilterToolbarToggle'),
+    });
     const stepTokenComboLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.stepTokenComboLabel'),
@@ -20166,10 +27244,10 @@ const SettingsStructureTab = defineComponent({
       text: t('settings.str.stepsColsLabel'),
     });
 
-    const stepTurnRailToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepTurnRailToggle'),
+    const stepTurnRailToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepTurnRailToggle',
+      preset: 'visibility',
       modelValue: 'hide',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepTurnRail = val !== 'hide';
         syncStepsSectionMeta();
@@ -20179,10 +27257,10 @@ const SettingsStructureTab = defineComponent({
       },
     });
 
-    const stepAgentBadgeToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepAgentBadgeToggle'),
+    const stepAgentBadgeToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepAgentBadgeToggle',
+      preset: 'visibility',
       modelValue: 'show',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepAgentBadge = val !== 'hide';
         syncStepsSectionMeta();
@@ -20192,15 +27270,28 @@ const SettingsStructureTab = defineComponent({
       },
     });
 
-    const stepSpeedColorToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepSpeedColorToggle'),
+    const stepSpeedColorToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepSpeedColorToggle',
+      preset: 'enable',
       modelValue: 'off',
-      options: getEnableToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepSpeedColor = val !== 'off';
         syncStepsSectionMeta();
         void persistStructurePatch(stepsSection, {
           showStepSpeedColor: draftShowStepSpeedColor,
+        });
+      },
+    });
+
+    const stepFilterToolbarToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepFilterToolbarToggle',
+      preset: 'enable',
+      modelValue: 'off',
+      onUpdateModelValue: (val) => {
+        draftShowStepFilterToolbar = val !== 'off';
+        syncStepsSectionMeta();
+        void persistStructurePatch(stepsSection, {
+          showStepFilterToolbar: draftShowStepFilterToolbar,
         });
       },
     });
@@ -20288,6 +27379,7 @@ const SettingsStructureTab = defineComponent({
         draftShowStepTurnRail = false;
         draftShowStepAgentBadge = true;
         draftShowStepSpeedColor = false;
+        draftShowStepFilterToolbar = false;
         draftStepTokenComboFormat = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
         rawStepTokenComboText = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
         stepTokenComboInput.value = DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT;
@@ -20300,6 +27392,7 @@ const SettingsStructureTab = defineComponent({
             showStepTurnRail: false,
             showStepAgentBadge: true,
             showStepSpeedColor: false,
+            showStepFilterToolbar: false,
             stepTokenComboFormat: DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT,
             stepTableColumns: [...DEFAULT_CLIENT_STEP_COLUMNS],
           },
@@ -20320,6 +27413,10 @@ const SettingsStructureTab = defineComponent({
         h('div', { className: 'settings-inline-row' }, [
           stepSpeedColorLabelEl,
           stepSpeedColorToggle.el,
+        ]),
+        h('div', { className: 'settings-inline-row' }, [
+          stepFilterToolbarLabelEl,
+          stepFilterToolbarToggle.el,
         ]),
         h('div', { className: 'settings-divider' }),
         h('div', { className: 'form-row' }, [
@@ -20368,15 +27465,15 @@ const SettingsStructureTab = defineComponent({
     function syncStepsSectionMeta() {
       stepTurnRailToggle.setProps({
         modelValue: draftShowStepTurnRail ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
       stepAgentBadgeToggle.setProps({
         modelValue: draftShowStepAgentBadge ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
       stepSpeedColorToggle.setProps({
         modelValue: draftShowStepSpeedColor ? 'on' : 'off',
-        options: getEnableToggleOptions(),
+      });
+      stepFilterToolbarToggle.setProps({
+        modelValue: draftShowStepFilterToolbar ? 'on' : 'off',
       });
       if (document?.activeElement !== stepTokenComboInput) {
         stepTokenComboInput.value = rawStepTokenComboText;
@@ -20391,6 +27488,7 @@ const SettingsStructureTab = defineComponent({
         draftShowStepTurnRail === false &&
         draftShowStepAgentBadge === true &&
         draftShowStepSpeedColor === false &&
+        draftShowStepFilterToolbar === false &&
         draftStepTokenComboFormat === DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT &&
         isSameList(draftStepColumns, DEFAULT_CLIENT_STEP_COLUMNS);
       stepsSection.refs.setResetDisabled(isDefault);
@@ -20454,12 +27552,16 @@ const SettingsStructureTab = defineComponent({
     function renderSettings(
       settings,
       windowBridge = latestWindowBridge,
-      hostPlatform = latestHostPlatform
+      hostPlatform = latestHostPlatform,
+      cliStatusLine = latestCliStatusLine,
+      quotas = latestQuotas
     ) {
       if (!settings) return;
       latestSettings = settings;
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
+      if (cliStatusLine !== undefined) latestCliStatusLine = cliStatusLine;
+      if (quotas !== undefined) latestQuotas = quotas;
       draftWindowMountMode = normalizeClientWindowMountMode(
         settings.windowMountMode,
         settings.enableWindowOverlay
@@ -20467,7 +27569,9 @@ const SettingsStructureTab = defineComponent({
       draftPopoverWidthMode = normalizeClientPopoverWidthMode(settings.popoverWidthMode);
       draftPopoverWidth = normalizeClientPopoverWidth(settings.popoverWidth);
       draftEnableCliStatusLine = settings.enableCliStatusLine !== false;
+      draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(settings.cliStatusLineSlots);
       draftShowTopbarMulti = settings.showTopbarMultiSession !== false;
+      draftContextAgentMode = normalizeClientContextAgentMode(settings.contextAgentMode);
       draftTopbarSlots = normalizeClientTopbarSlots(settings.topbarCapsuleSlots);
       draftHoverModules = normalizeClientHoverModules(settings.hoverModules);
       draftOverviewModules = normalizeClientOverviewModules(settings.overviewModules);
@@ -20475,6 +27579,7 @@ const SettingsStructureTab = defineComponent({
       draftShowStepTurnRail = settings.showStepTurnRail === true;
       draftShowStepAgentBadge = settings.showStepAgentBadge !== false;
       draftShowStepSpeedColor = settings.showStepSpeedColor === true;
+      draftShowStepFilterToolbar = settings.showStepFilterToolbar === true;
       draftStepTokenComboFormat = normalizeClientStepTokenComboFormat(
         settings.stepTokenComboFormat
       );
@@ -20497,10 +27602,11 @@ const SettingsStructureTab = defineComponent({
       mountSection.refs.setResetLabel(t('settings.resetBtn'));
       patchText(mountModeLabelEl, t('settings.str.mountMode'));
       patchText(popoverWidthLabelEl, t('settings.str.popoverWidthLabel'));
-      patchText(popoverWidthHintEl, t('settings.str.popoverWidthHint'));
       popoverWidthStepper.setProps({ ariaLabel: t('settings.str.popoverWidthLabel') });
       patchText(multiToggleLabelEl, t('settings.str.multiToggle'));
+      patchText(contextAgentModeLabelEl, t('settings.str.contextAgentModeLabel'));
       patchText(cliCapsuleLabelEl, t('settings.str.cliCapsuleToggle'));
+      patchText(cliSlotsLabelEl, t('settings.str.cliSlotsLabel'));
       patchText(capsuleSlotsLabelEl, t('settings.str.capsuleSlotsLabel'));
 
       hoverSection.refs.setTitle(t('settings.str.hoverSection'));
@@ -20518,6 +27624,8 @@ const SettingsStructureTab = defineComponent({
       patchText(stepTurnRailLabelEl, t('settings.str.stepTurnRailToggle'));
       patchText(stepAgentBadgeLabelEl, t('settings.str.stepAgentBadgeToggle'));
       patchText(stepSpeedColorLabelEl, t('settings.str.stepSpeedColorToggle'));
+      patchText(stepFilterToolbarLabelEl, t('settings.str.stepFilterToolbarToggle'));
+      stepFilterToolbarToggle.setProps({ ariaLabel: t('settings.str.stepFilterToolbarToggle') });
       patchText(stepTokenComboLabelEl, t('settings.str.stepTokenComboLabel'));
       patchText(stepTokenComboHintEl, t('settings.str.stepTokenComboHint'));
       patchAttr(stepTokenComboInput, 'placeholder', t('settings.str.stepTokenComboPlaceholder'));
@@ -20570,7 +27678,9 @@ const SettingsStructureTab = defineComponent({
       popoverWidthStepper.destroy();
       popoverWidthModeToggle.destroy();
       multiSessionToggle.destroy();
+      contextAgentModeToggle.destroy();
       cliCapsuleToggle.destroy();
+      cliSlotsList.destroy();
       topbarSlotsList.destroy();
       hoverModulesList.destroy();
       overviewModulesList.destroy();
@@ -20578,6 +27688,7 @@ const SettingsStructureTab = defineComponent({
       stepTurnRailToggle.destroy();
       stepAgentBadgeToggle.destroy();
       stepSpeedColorToggle.destroy();
+      stepFilterToolbarToggle.destroy();
       stepColumnsList.destroy();
       mountSection.destroy();
       hoverSection.destroy();
@@ -20596,7 +27707,15 @@ const SettingsStructureTab = defineComponent({
         stepTablePreview,
         windowMountSelect,
         multiSessionToggle,
+        contextAgentModeToggle,
         cliCapsuleToggle,
+        cliStatusGroupEl,
+        cliStatusDetailEl,
+        cliPreviewEl,
+        cliSlotsList,
+        cliStatusFooterEl,
+        cliStatusHintEl,
+        cliStatusActionBtn,
         topbarSlotsList,
         hoverModulesList,
         overviewModulesList,
@@ -20604,6 +27723,7 @@ const SettingsStructureTab = defineComponent({
         stepTurnRailToggle,
         stepAgentBadgeToggle,
         stepSpeedColorToggle,
+        stepFilterToolbarToggle,
         stepColumnsList,
         mountSection,
         hoverSection,
@@ -20627,6 +27747,22 @@ const { SettingsOtherTab } = (() => {
  */
 
 
+function formatQuotaReservationLogForClipboard(snapshot) {
+  const safe = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  const buckets = Array.isArray(safe.buckets) ? safe.buckets : [];
+  const events = Array.isArray(safe.events) ? safe.events : [];
+  const bucketLines = buckets.map((b) => `    ${JSON.stringify(b)}`).join(',\n');
+  const eventLines = events.map((e) => `    ${JSON.stringify(e)}`).join(',\n');
+  return [
+    '{',
+    `  "generatedAt": ${JSON.stringify(safe.generatedAt || new Date().toISOString())},`,
+    `  "count": ${events.length},`,
+    `  "buckets": [${bucketLines ? `\n${bucketLines}\n  ` : ''}],`,
+    `  "events": [${eventLines ? `\n${eventLines}\n  ` : ''}]`,
+    '}',
+  ].join('\n');
+}
+
 function getStepModelDisplayOptions() {
   return [
     { value: 'short', label: t('settings.oth.modelShort') },
@@ -20647,16 +27783,22 @@ const SettingsOtherTab = defineComponent({
   setup({ onCleanup, getProps }) {
     let draftModelDisplayMode = 'short';
     let draftOrchestratorIdMode = 'compact';
+    let draftExperimentalQuotaReservation = true;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
+    let draftContextMainEnabled = true;
+    let draftContextSwarmEnabled = false;
+    let savingContextScope = false;
     let latestSettings = null;
     let latestWindowBridge = null;
+    let latestCloudCodeProxy = null;
     let latestHostPlatform = 'win32';
     let contextWindowModels = [];
     let contextModelId = '';
     let savingContextWindow = false;
     let contextFeedback = '';
     let modelTimer = null;
+    let expTimer = null;
     let maintTimer = null;
     let resetConfirmTimer = null;
     let resetConfirmArmed = false;
@@ -20668,11 +27810,30 @@ const SettingsOtherTab = defineComponent({
       style: 'font-size: var(--fs-md);',
       text: '',
     });
+    const expStatusText = h('span', {
+      className: 'text-muted',
+      style: 'font-size: var(--fs-md);',
+      text: '',
+    });
     const maintStatusText = h('span', {
       className: 'text-muted',
       style: 'font-size: var(--fs-md);',
       text: '',
     });
+
+    function showExpFeedback(text, autoClearMs = 1500) {
+      if (expTimer) {
+        clearTimeout(expTimer);
+        expTimer = null;
+      }
+      patchText(expStatusText, text);
+      if (text && autoClearMs > 0) {
+        expTimer = setTimeout(() => {
+          expTimer = null;
+          patchText(expStatusText, '');
+        }, autoClearMs);
+      }
+    }
 
     function showModelFeedback(text, autoClearMs = 1500) {
       if (modelTimer) {
@@ -20766,6 +27927,111 @@ const SettingsOtherTab = defineComponent({
       h('div', { className: 'form-row' }, [orchFormatLabelEl, orchestratorIdSelect.el]),
     ]);
 
+    // --- Card 2: 试验性功能 ---
+    const expTitleEl = h('span', { text: t('settings.oth.expTitle') });
+    const quotaReserveLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.quotaReserveLabel'),
+    });
+    const quotaReserveBadgeEl = h('span', {
+      className: 'settings-experimental-badge',
+      text: t('settings.oth.expBadge'),
+    });
+    const quotaReserveDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.quotaReserveDesc'),
+    });
+    const quotaReserveLogLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.quotaReserveLogLabel'),
+    });
+    const quotaReserveLogDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.quotaReserveLogDesc'),
+    });
+    const exportReserveLogBtnText = h('span', {
+      text: t('settings.oth.exportReserveLogBtn'),
+    });
+    let isExportingReserveLog = false;
+
+    const exportReserveLogBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          if (isExportingReserveLog) return;
+          isExportingReserveLog = true;
+          patchAttr(exportReserveLogBtn, 'disabled', true);
+          try {
+            const snapshot = await fetchQuotaReservationLog();
+            const text = formatQuotaReservationLogForClipboard(snapshot);
+            const count = Array.isArray(snapshot?.events) ? snapshot.events.length : 0;
+            const successMsg =
+              count > 0
+                ? t('settings.oth.exportReserveLogCopied', { count })
+                : t('settings.oth.exportReserveLogEmpty');
+            const ok = await copyTextWithFeedback(text, successMsg);
+            showExpFeedback(ok ? successMsg : t('settings.oth.exportReserveLogFailed'), 2800);
+          } catch {
+            showExpFeedback(t('settings.oth.exportReserveLogFailed'), 2800);
+          } finally {
+            isExportingReserveLog = false;
+            patchAttr(exportReserveLogBtn, 'disabled', false);
+          }
+        },
+      },
+      [createSvgIcon('copy', { size: 12 }), exportReserveLogBtnText]
+    );
+
+    const quotaReserveToggle = ToggleSwitch({
+      modelValue: 'on',
+      ariaLabelKey: 'settings.oth.quotaReserveLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        const nextEnabled = val === 'on';
+        draftExperimentalQuotaReservation = nextEnabled;
+        quotaReserveToggle.setProps({
+          modelValue: nextEnabled ? 'on' : 'off',
+        });
+        showExpFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ experimentalQuotaReservation: nextEnabled });
+          showExpFeedback(t('settings.saved'), 1500);
+        } catch {
+          if (latestSettings) renderSettings(latestSettings);
+          showExpFeedback(t('settings.saveFailed'), 2500);
+        }
+      },
+    });
+
+    const experimentalPanel = h('section', { className: 'panel', hidden: true }, [
+      h('div', { className: 'panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('pulse', { size: 13 }),
+          expTitleEl,
+        ]),
+        expStatusText,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [
+          h('div', { className: 'settings-experimental-label-group' }, [
+            quotaReserveLabelEl,
+            quotaReserveBadgeEl,
+          ]),
+          quotaReserveDescEl,
+        ]),
+        quotaReserveToggle.el,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [
+          quotaReserveLogLabelEl,
+          quotaReserveLogDescEl,
+        ]),
+        exportReserveLogBtn,
+      ]),
+    ]);
+
     // --- Card 2: 按模型设置上下文窗口 ---
     const baselineTitleEl = h('span', { text: t('settings.oth.baselineTitle') });
     const ctxModelLabel = h('span', { className: 'form-label' });
@@ -20774,6 +28040,8 @@ const SettingsOtherTab = defineComponent({
     const ctxStatus = h('span', { className: 'text-muted', role: 'status' });
     const ctxModelSelect = CustomSelect({
       className: 'settings-context-model',
+      searchable: true,
+      searchThreshold: 8,
       options: [],
       onUpdateModelValue: (id) => {
         if (!draftContextRiskAccepted || savingContextWindow) return;
@@ -20802,10 +28070,79 @@ const SettingsOtherTab = defineComponent({
       },
     });
     const ctxBridgeNotice = BridgeStatusNotice({ contextMode: true });
+    const ctxMainLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.oth.ctxMainLabel'),
+    });
+    const ctxMainToggle = ToggleSwitch({
+      modelValue: 'on',
+      ariaLabelKey: 'settings.oth.ctxMainLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        if (!draftContextRiskAccepted || savingContextScope) return;
+        const nextEnabled = val === 'on';
+        const prevEnabled = draftContextMainEnabled;
+        savingContextScope = true;
+        draftContextMainEnabled = nextEnabled;
+        latestSettings = { ...(latestSettings || {}), contextWindowMainEnabled: nextEnabled };
+        contextFeedback = 'settings.saving';
+        renderContextWindows();
+        try {
+          await saveSettingsPatch({ contextWindowMainEnabled: nextEnabled });
+          contextFeedback = 'settings.saved';
+        } catch {
+          draftContextMainEnabled = prevEnabled;
+          latestSettings = { ...(latestSettings || {}), contextWindowMainEnabled: prevEnabled };
+          contextFeedback = 'settings.saveFailed';
+        } finally {
+          savingContextScope = false;
+          renderContextWindows();
+        }
+      },
+    });
+    const ctxSwarmLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.oth.ctxSwarmLabel'),
+    });
+    const ctxSwarmToggle = ToggleSwitch({
+      modelValue: 'off',
+      ariaLabelKey: 'settings.oth.ctxSwarmLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        if (!draftContextRiskAccepted || savingContextScope) return;
+        const nextEnabled = val === 'on';
+        const prevEnabled = draftContextSwarmEnabled;
+        savingContextScope = true;
+        draftContextSwarmEnabled = nextEnabled;
+        latestSettings = { ...(latestSettings || {}), contextWindowSwarmEnabled: nextEnabled };
+        contextFeedback = 'settings.saving';
+        renderContextWindows();
+        try {
+          await saveSettingsPatch({ contextWindowSwarmEnabled: nextEnabled });
+          contextFeedback = 'settings.saved';
+        } catch {
+          draftContextSwarmEnabled = prevEnabled;
+          latestSettings = { ...(latestSettings || {}), contextWindowSwarmEnabled: prevEnabled };
+          contextFeedback = 'settings.saveFailed';
+        } finally {
+          savingContextScope = false;
+          renderContextWindows();
+        }
+      },
+    });
+    const ctxMainRow = h('div', { className: 'form-row' }, [ctxMainLabelEl, ctxMainToggle.el]);
+    const ctxSwarmRow = h('div', { className: 'form-row' }, [ctxSwarmLabelEl, ctxSwarmToggle.el]);
+    const ctxSyncStatusEl = h('span', {
+      className: 'settings-hint-text ctx-sync-status is-error',
+      hidden: true,
+    });
     const ctxModelRow = h('div', { className: 'form-row' }, [ctxModelLabel, ctxModelSelect.el]);
     const ctxWindowRow = h('div', { className: 'form-row' }, [ctxWindowLabel, ctxWindowSelect.el]);
     const ctxControlsBody = h('div', { className: 'ctx-controls-body is-locked' }, [
       ctxBridgeNotice.el,
+      ctxMainRow,
+      ctxSwarmRow,
+      ctxSyncStatusEl,
       ctxModelRow,
       ctxWindowRow,
       h('div', { className: 'form-row' }, [ctxHint]),
@@ -20884,8 +28221,27 @@ const SettingsOtherTab = defineComponent({
       const saved = latestSettings?.modelContextWindows || {};
       const wbState = String(latestWindowBridge?.state || '').trim();
       const isBridgeMissing = wbState === 'no_devtools_port' || wbState === 'cdp_unreachable';
+      const proxyState = String(latestCloudCodeProxy?.state || 'disabled');
+      const isProxyActive = Boolean(latestCloudCodeProxy?.active && proxyState === 'active');
+
+      patchText(ctxMainLabelEl, t('settings.oth.ctxMainLabel'));
+      ctxMainToggle.setProps({
+        modelValue: draftContextMainEnabled ? 'on' : 'off',
+      });
+      patchText(ctxSwarmLabelEl, t('settings.oth.ctxSwarmLabel'));
+      ctxSwarmToggle.setProps({
+        modelValue: draftContextSwarmEnabled ? 'on' : 'off',
+      });
+
+      const syncErrorText =
+        draftContextSwarmEnabled && proxyState === 'error' && latestCloudCodeProxy?.error
+          ? t('settings.oth.ctxSwarmError', { error: latestCloudCodeProxy.error })
+          : '';
+      patchAttr(ctxSyncStatusEl, 'hidden', !syncErrorText);
+      patchText(ctxSyncStatusEl, syncErrorText);
+
       ctxBridgeNotice.refs.update({
-        visible: unlocked,
+        visible: unlocked && draftContextMainEnabled,
         windowBridge: latestWindowBridge,
         hostPlatform: latestHostPlatform,
       });
@@ -20933,7 +28289,13 @@ const SettingsOtherTab = defineComponent({
             else if (value) {
               const name = formatLimit(value);
               if (!isAvailable(model, value)) meta = t('settings.oth.ctxUnavailable', { name });
-              else if (isBridgeMissing) meta = t('settings.oth.ctxPendingBridge', { name });
+              else if (
+                isBridgeMissing &&
+                draftContextMainEnabled &&
+                !(draftContextSwarmEnabled && isProxyActive)
+              ) {
+                meta = t('settings.oth.ctxPendingBridge', { name });
+              }
               else if (/^\d+$/.test(value) && model.reportedLimitTokens && Number(value) !== model.reportedLimitTokens) {
                 meta = t('settings.oth.ctxConfiguredReported', {
                   name,
@@ -21080,6 +28442,107 @@ const SettingsOtherTab = defineComponent({
       [resetBtnText]
     );
 
+    const backupLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.backupLabel'),
+    });
+    const backupDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.backupDesc'),
+    });
+    const exportJsonBtnText = h('span', { text: t('settings.oth.exportJsonBtn') });
+    const importJsonBtnText = h('span', { text: t('settings.oth.importJsonBtn') });
+    let isImportingSettings = false;
+
+    async function applyImportedSettingsText(rawText) {
+      const parsed = parseImportedSettingsJson(rawText);
+      if (!parsed.ok) {
+        showMaintFeedback(t('settings.oth.importInvalid'), 3200);
+        return false;
+      }
+      isImportingSettings = true;
+      patchAttr(importJsonBtn, 'disabled', true);
+      showMaintFeedback(t('settings.saving'), 0);
+      try {
+        await saveSettingsPatch(parsed.patch);
+        if (parsed.patch.language) {
+          setI18nLanguage(parsed.patch.language);
+        }
+        showMaintFeedback(
+          t('settings.oth.importDone', { count: parsed.appliedCount }),
+          2800
+        );
+        return true;
+      } catch {
+        showMaintFeedback(t('settings.saveFailed'), 2800);
+        return false;
+      } finally {
+        isImportingSettings = false;
+        patchAttr(importJsonBtn, 'disabled', false);
+      }
+    }
+
+    const importFileInput = h('input', {
+      type: 'file',
+      accept: '.json,application/json',
+      className: 'settings-hidden-file-input',
+      hidden: true,
+    });
+    importFileInput.addEventListener?.('change', async () => {
+      const file = importFileInput.files?.[0];
+      importFileInput.value = '';
+      if (!file || isImportingSettings) return;
+      try {
+        const text =
+          typeof file.text === 'function' ? await file.text() : String(file.content || '');
+        await applyImportedSettingsText(text);
+      } catch {
+        showMaintFeedback(t('settings.oth.importInvalid'), 3200);
+      }
+    });
+
+    const exportJsonBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          const json = buildExportableSettingsJson(latestSettings || {});
+          const res = await exportTextFileWithFeedback(
+            'antigravity-usage-monitor-settings.json',
+            json,
+            'application/json;charset=utf-8'
+          );
+          if (res?.ok) {
+            showMaintFeedback(
+              res.filePath ? `${t('settings.oth.exportDone')} · ${res.filePath}` : t('settings.oth.exportDone'),
+              4200
+            );
+          }
+        },
+      },
+      [createSvgIcon('download', { size: 12 }), exportJsonBtnText]
+    );
+
+    const importJsonBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: () => {
+          if (isImportingSettings) return;
+          importFileInput.click?.();
+        },
+      },
+      [createSvgIcon('upload', { size: 12 }), importJsonBtnText]
+    );
+
+    const backupActionsWrap = h('div', { className: 'settings-backup-actions' }, [
+      exportJsonBtn,
+      importJsonBtn,
+      importFileInput,
+    ]);
+
     const maintPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
@@ -21096,32 +28559,53 @@ const SettingsOtherTab = defineComponent({
         h('div', { className: 'settings-action-info' }, [resetLabelEl, resetDescEl]),
         resetAllBtn,
       ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [backupLabelEl, backupDescEl]),
+        backupActionsWrap,
+      ]),
     ]);
+
+    const sessionMigrationCard = SessionMigrationCard({
+      onLayoutChange: () => {
+        getProps()?.onLayoutChange?.();
+      },
+    });
 
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       modelPanel,
+      experimentalPanel,
       baselinePanel,
       maintPanel,
+      sessionMigrationCard.el,
     ]);
 
     function renderSettings(
       settings,
       models = contextWindowModels,
       windowBridge = latestWindowBridge,
-      hostPlatform = latestHostPlatform
+      hostPlatform = latestHostPlatform,
+      cloudCodeProxy = latestCloudCodeProxy
     ) {
       if (!settings) return;
       latestSettings = settings;
       contextWindowModels = models;
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
+      if (cloudCodeProxy !== undefined) latestCloudCodeProxy = cloudCodeProxy;
       draftModelDisplayMode = normalizeClientModelDisplayMode(
         settings.modelDisplayMode,
         settings.showUpstreamModel
       );
       draftOrchestratorIdMode = normalizeClientOrchestratorIdMode(settings.orchestratorIdMode);
+      draftExperimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
+        settings.experimentalQuotaReservation
+      );
       if (!acceptingContextRisk) {
         draftContextRiskAccepted = Boolean(settings.contextWindowRiskAccepted);
+      }
+      if (!savingContextScope) {
+        draftContextMainEnabled = settings.contextWindowMainEnabled !== false;
+        draftContextSwarmEnabled = settings.contextWindowSwarmEnabled === true;
       }
       stepModelSelect.setProps({
         modelValue: draftModelDisplayMode,
@@ -21131,16 +28615,34 @@ const SettingsOtherTab = defineComponent({
         modelValue: draftOrchestratorIdMode,
         options: getOrchestratorIdDisplayOptions(),
       });
+      quotaReserveToggle.setProps({
+        modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
+      });
       renderContextWindows();
+      void sessionMigrationCard.refs.ensureLoaded();
     }
 
     function refreshLabels() {
       patchText(modelCardTitleEl, t('settings.oth.modelTitle'));
       patchText(modelFormatLabelEl, t('settings.oth.modelFormat'));
       patchText(orchFormatLabelEl, t('settings.oth.orchFormat'));
+      patchText(expTitleEl, t('settings.oth.expTitle'));
+      patchText(quotaReserveLabelEl, t('settings.oth.quotaReserveLabel'));
+      patchText(quotaReserveBadgeEl, t('settings.oth.expBadge'));
+      patchText(quotaReserveDescEl, t('settings.oth.quotaReserveDesc'));
+      patchText(quotaReserveLogLabelEl, t('settings.oth.quotaReserveLogLabel'));
+      patchText(quotaReserveLogDescEl, t('settings.oth.quotaReserveLogDesc'));
+      patchText(exportReserveLogBtnText, t('settings.oth.exportReserveLogBtn'));
+      quotaReserveToggle.setProps({
+        modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
+      });
       patchText(baselineTitleEl, t('settings.oth.baselineTitle'));
       renderContextWindows();
       patchText(maintTitleEl, t('settings.oth.maintTitle'));
+      patchText(backupLabelEl, t('settings.oth.backupLabel'));
+      patchText(backupDescEl, t('settings.oth.backupDesc'));
+      patchText(exportJsonBtnText, t('settings.oth.exportJsonBtn'));
+      patchText(importJsonBtnText, t('settings.oth.importJsonBtn'));
       patchText(cacheLabelEl, t('settings.oth.cacheLabel'));
       patchText(cacheDescEl, t('settings.oth.cacheDesc'));
       patchText(resetLabelEl, t('settings.oth.resetLabel'));
@@ -21164,17 +28666,23 @@ const SettingsOtherTab = defineComponent({
         modelValue: draftOrchestratorIdMode,
         options: getOrchestratorIdDisplayOptions(),
       });
+      sessionMigrationCard.refs.refreshLabels();
     }
 
     onCleanup(() => {
       if (modelTimer) clearTimeout(modelTimer);
+      if (expTimer) clearTimeout(expTimer);
       if (maintTimer) clearTimeout(maintTimer);
       if (resetConfirmTimer) clearTimeout(resetConfirmTimer);
       stepModelSelect.destroy();
       orchestratorIdSelect.destroy();
+      quotaReserveToggle.destroy();
       ctxBridgeNotice.destroy();
+      ctxMainToggle.destroy();
+      ctxSwarmToggle.destroy();
       ctxModelSelect.destroy();
       ctxWindowSelect.destroy();
+      sessionMigrationCard.destroy();
     });
 
     return {
@@ -21182,11 +28690,20 @@ const SettingsOtherTab = defineComponent({
       refs: {
         stepModelSelect,
         orchestratorIdSelect,
+        quotaReserveToggle,
+        exportReserveLogBtn,
         ctxBridgeNotice,
+        ctxMainToggle,
+        ctxSwarmToggle,
         ctxModelSelect,
         ctxWindowSelect,
+        sessionMigrationCard,
         rebuildCacheBtn,
         resetAllBtn,
+        exportJsonBtn,
+        importJsonBtn,
+        importFileInput,
+        applyImportedSettingsText,
         renderSettings,
         refreshLabels,
       },
@@ -21206,7 +28723,23 @@ const { TopSessionHeader } = (() => {
 
 
 function formatConvOptionMeta(c) {
-  return formatConversationMeta(c);
+  const base = formatConversationMeta(c);
+  const wsName = String(c?.workspaceName || '').trim();
+  if (!wsName) return base;
+  return base ? `${wsName} · ${base}` : wsName;
+}
+
+function formatConvOptionTitle(c) {
+  const parts = [];
+  const label = String(c?.title || c?.cascadeId?.slice?.(0, 8) || '').trim();
+  if (c?.swarmTitle && c.swarmTitle !== c.title) {
+    parts.push(`${label} · ${c.swarmTitle}`);
+  }
+  const wsPath = String(c?.workspacePath || c?.workspaceName || '').trim();
+  if (wsPath) {
+    parts.push(wsPath);
+  }
+  return parts.length > 0 ? parts.join(' · ') : '';
 }
 
 const TopSessionHeader = defineComponent({
@@ -21215,6 +28748,9 @@ const TopSessionHeader = defineComponent({
     const convSelect = CustomSelect({
       modelValue: telemetryStore.getState().selectedConversationId,
       placeholder: t('header.followLatest'),
+      searchable: true,
+      searchThreshold: 6,
+      searchPlaceholder: t('header.searchSessionPlaceholder'),
       options: [{ value: '', label: t('header.followLatest') }],
       onUpdateModelValue: (nextConvId) => {
         uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
@@ -21290,6 +28826,7 @@ const TopSessionHeader = defineComponent({
 
     let lastActiveCascadeId = '';
     let lastAppliedHostChildRouteId = '';
+    let preChildCtxInspectorAgentId = '';
 
     function syncSessionScopeOnCascadeChange(telemetry, telSlice = telemetryStore.getState()) {
       const currentCascadeId = telemetry?.activeConversation?.cascadeId || '';
@@ -21298,15 +28835,22 @@ const TopSessionHeader = defineComponent({
       const selectedId = String(telSlice?.selectedConversationId || '').trim();
       const hostRouteId = String(telSlice?.hostRouteConversationId || '').trim();
       const hostRouteLower = hostRouteId.toLowerCase();
+      const defaultCtxId = getDefaultCtxInspectorAgentId(telemetry?.settings);
 
       if (!selectedId && hostRouteLower) {
         const routeMatch = resolveHostRouteMatch(telemetry, hostRouteId);
         if (routeMatch?.isChildRoute && routeMatch.childAgent?.agentId) {
           lastActiveCascadeId = currentCascadeId;
           if (lastAppliedHostChildRouteId !== hostRouteLower) {
+            const uiSt = uiStore.getState();
+            if (!lastAppliedHostChildRouteId) {
+              preChildCtxInspectorAgentId =
+                uiSt.ctxInspectorAgentId === 'main' || uiSt.ctxInspectorAgentId === 'auto'
+                  ? uiSt.ctxInspectorAgentId
+                  : defaultCtxId;
+            }
             lastAppliedHostChildRouteId = hostRouteLower;
             const targetAgentId = routeMatch.childAgent.agentId;
-            const uiSt = uiStore.getState();
             if (
               uiSt.selectedAgentScope !== targetAgentId ||
               uiSt.ctxInspectorAgentId !== targetAgentId
@@ -21320,23 +28864,30 @@ const TopSessionHeader = defineComponent({
           return;
         }
         if (lastAppliedHostChildRouteId && !routeMatch?.isChildRoute) {
+          const restoreCtxId =
+            preChildCtxInspectorAgentId === 'main' || preChildCtxInspectorAgentId === 'auto'
+              ? preChildCtxInspectorAgentId
+              : defaultCtxId;
           lastAppliedHostChildRouteId = '';
+          preChildCtxInspectorAgentId = '';
           const uiSt = uiStore.getState();
-          if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== 'auto') {
-            uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
+          if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== restoreCtxId) {
+            uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: restoreCtxId });
           }
           lastActiveCascadeId = currentCascadeId;
           return;
         }
       } else if (lastAppliedHostChildRouteId) {
         lastAppliedHostChildRouteId = '';
+        preChildCtxInspectorAgentId = '';
       }
 
       if (lastActiveCascadeId && currentCascadeId !== lastActiveCascadeId) {
         lastActiveCascadeId = currentCascadeId;
+        preChildCtxInspectorAgentId = '';
         const uiSt = uiStore.getState();
-        if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== 'auto') {
-          uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
+        if (uiSt.selectedAgentScope !== 'all' || uiSt.ctxInspectorAgentId !== defaultCtxId) {
+          uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: defaultCtxId });
         }
       } else {
         lastActiveCascadeId = currentCascadeId;
@@ -21394,14 +28945,15 @@ const TopSessionHeader = defineComponent({
           meta: defaultOptMeta,
           ...(hostMatchedConv?.swarmTitle ? { title: hostMatchedConv.swarmTitle } : {}),
         },
-        ...convs.map((c) => ({
-          value: c.cascadeId,
-          label: c.title || c.cascadeId.slice(0, 8),
-          meta: formatConvOptionMeta(c),
-          ...(c.swarmTitle && c.swarmTitle !== c.title
-            ? { title: `${c.title || c.cascadeId.slice(0, 8)} · ${c.swarmTitle}` }
-            : {}),
-        })),
+        ...convs.map((c) => {
+          const optTitle = formatConvOptionTitle(c);
+          return {
+            value: c.cascadeId,
+            label: c.title || c.cascadeId.slice(0, 8),
+            meta: formatConvOptionMeta(c),
+            ...(optTitle ? { title: optTitle } : {}),
+          };
+        }),
       ];
       const lockedId = telSt.selectedConversationId;
       if (lockedId && !convs.some((c) => c.cascadeId === lockedId)) {
@@ -21420,6 +28972,7 @@ const TopSessionHeader = defineComponent({
       convSelect.setProps({
         modelValue: telSt.selectedConversationId,
         placeholder: t('header.followLatest'),
+        searchPlaceholder: t('header.searchSessionPlaceholder'),
         options,
       });
 
@@ -21880,7 +29433,58 @@ const ConsumptionView = defineComponent({
     const outputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.replyAndThink', { resp: 0, think: 0 }) });
 
     const overviewSegBar = createFourSegmentBar();
-    const overviewTitleSpan = h('span', { text: t('cons.overviewTitle') });
+    const consExportMenu = ActionMenu({
+      ariaLabel: t('cons.exportMenuAria'),
+      className: 'cons-export-menu',
+      items: [
+        {
+          key: 'xlsx',
+          icon: 'download',
+          label: t('cons.exportXlsx'),
+          title: t('cons.exportXlsxTip'),
+          onSelect: () => {
+            const cons = latestSlice?.consumption;
+            if (!cons) return;
+            const displaySettings = {
+              modelDisplayMode: latestSlice?.modelDisplayMode,
+              showUpstreamModel: latestSlice?.showUpstreamModel,
+              orchestratorIdMode: latestSlice?.orchestratorIdMode,
+            };
+            const bytes = buildConsumptionXlsx(cons, latestSlice?.modelBreakdown || [], {
+              displaySettings,
+            });
+            const baseName = buildConsumptionExportBaseName(
+              cons,
+              latestSlice?.range || 'all'
+            );
+            void exportBinaryFileWithFeedback(
+              sanitizeExportFilename(baseName, 'xlsx'),
+              bytes
+            );
+          },
+        },
+        {
+          key: 'md',
+          icon: 'copy',
+          label: t('cons.exportMd'),
+          title: t('cons.exportMdTip'),
+          onSelect: () => {
+            const cons = latestSlice?.consumption;
+            if (!cons) return;
+            const displaySettings = {
+              modelDisplayMode: latestSlice?.modelDisplayMode,
+              showUpstreamModel: latestSlice?.showUpstreamModel,
+              orchestratorIdMode: latestSlice?.orchestratorIdMode,
+            };
+            const md = buildConsumptionMarkdownReport(cons, latestSlice?.modelBreakdown || [], {
+              displaySettings,
+            });
+            void copyTextWithFeedback(md, t('cons.exportMdDone'));
+          },
+        },
+      ],
+    });
+    consExportMenu.refs.setHidden(true);
     const totalTokensLabel = h('span', { className: 'text-muted', style: 'font-size: var(--fs-md);', text: t('cons.totalTokens') });
     const estCostLabel = h('span', { className: 'text-muted', style: 'font-size: var(--fs-md);', text: t('cons.estCost') });
     const cacheHitRateLabel = h('span', { text: t('cons.cacheHitRate') });
@@ -21891,10 +29495,12 @@ const ConsumptionView = defineComponent({
     const overviewPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header cons-overview-head' }, [
         h('span', { className: 'panel-title' }, [
-          overviewTitleSpan,
           dateSpanBadge,
         ]),
-        timeFilterSwitch.el,
+        h('div', { className: 'cons-overview-controls' }, [
+          timeFilterSwitch.el,
+          consExportMenu.el,
+        ]),
       ]),
       customRangeBar,
       h('div', { className: 'cons-box cons-unified-matrix' }, [
@@ -21954,7 +29560,24 @@ const ConsumptionView = defineComponent({
       overviewSegBar.el,
     ]);
 
-    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 + 悬停精确日期/小时浮层 + 多刻度时间轴) ---
+    function drillDownToTimeRange(startMs, endMs) {
+      const minMs = floorToStartOfMinuteMs(startMs);
+      const maxMs = ceilToEndOfMinuteMs(endMs);
+      if (!(minMs > 0) || !(maxMs > minMs)) return;
+      hideBreakdownPopover();
+      draftStartMs = minMs;
+      draftEndMs = maxMs;
+      hasUncommittedCustomDraft = false;
+      hasCommittedCustomRange = true;
+      startPicker.setValue(minMs);
+      endPicker.setValue(maxMs);
+      selectConsumptionTimeRange('custom', {
+        customStartMs: minMs,
+        customEndMs: maxMs,
+      });
+    }
+
+    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 + 悬停精确日期/小时浮层 + 点击时段下钻) ---
     const trendTitleSpan = h('span', { text: t('cons.trendTitle') });
     const trendRangeBadge = h('span', { className: 'cons-badge', text: t('cons.allTime') });
     const trendGranularityHint = h('span', {
@@ -21962,7 +29585,13 @@ const ConsumptionView = defineComponent({
       style: 'font-size: var(--fs-sm);',
       text: t('cons.trendPointsHintHourly', { points: 0 }),
     });
-    const trendChart = createTrendAreaChart();
+    const trendChart = createTrendAreaChart({
+      onSelectSlot: (slot) => {
+        if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
+          drillDownToTimeRange(slot.startMs, slot.endMs);
+        }
+      },
+    });
 
     const trendPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
@@ -21975,14 +29604,124 @@ const ConsumptionView = defineComponent({
       trendChart.el,
     ]);
 
-    // --- Section 3: 模型排行列表 ---
-    const modelsTitleSpan = h('span', { className: 'panel-title', text: t('cons.topModels') });
+    // --- Section 3: 统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」，右侧联动对应排序切换） ---
+    let activeRankingTab = 'models';
+    let modelsSortBy = 'tokens';
+    let topConvsSortBy = 'cost';
+    let lastModelsCount = 0;
+    let lastWorkspacesCount = 0;
+    let lastConvsCount = 0;
+
+    function getRankingTabOptions(
+      modelsCount = lastModelsCount,
+      convsCount = lastConvsCount,
+      workspacesCount = lastWorkspacesCount
+    ) {
+      const opts = [
+        {
+          value: 'models',
+          label:
+            modelsCount > 0
+              ? t('cons.rankTabModelsCount', { count: modelsCount })
+              : t('cons.topModels'),
+        },
+      ];
+      if (workspacesCount > 0) {
+        opts.push({
+          value: 'workspaces',
+          label: t('cons.rankTabWorkspacesCount', { count: workspacesCount }),
+        });
+      }
+      opts.push({
+        value: 'sessions',
+        label:
+          convsCount > 0
+            ? t('cons.rankTabSessionsCount', { count: convsCount })
+            : t('cons.rankTabSessions'),
+      });
+      return opts;
+    }
+
+    function getModelsSortOptions() {
+      return [
+        { value: 'tokens', label: t('cons.modelsSortTokens') },
+        { value: 'cost', label: t('cons.modelsSortCost') },
+        { value: 'speed', label: t('cons.modelsSortSpeed') },
+        { value: 'calls', label: t('cons.modelsSortCalls') },
+      ];
+    }
+
+    function getTopConvsSortOptions() {
+      return [
+        { value: 'cost', label: t('cons.topConvsSortCost') },
+        { value: 'tokens', label: t('cons.topConvsSortTokens') },
+      ];
+    }
+
+    const rankingTabSwitch = SegmentedControl({
+      ariaLabel: t('cons.rankTabAria'),
+      modelValue: activeRankingTab,
+      options: getRankingTabOptions(0, 0, 0),
+      onUpdateModelValue: (nextTab) => {
+        if (nextTab !== 'models' && nextTab !== 'sessions' && nextTab !== 'workspaces') return;
+        activeRankingTab = nextTab;
+        rankingTabSwitch.setValue(nextTab);
+        if (latestSlice) {
+          renderConsumptionData(latestSlice);
+        }
+      },
+    });
+
+    const modelsSortSwitch = SegmentedControl({
+      ariaLabel: t('cons.modelsSortAria'),
+      modelValue: modelsSortBy,
+      options: getModelsSortOptions(),
+      onUpdateModelValue: (nextSort) => {
+        if (!['tokens', 'cost', 'speed', 'calls'].includes(nextSort)) return;
+        modelsSortBy = nextSort;
+        modelsSortSwitch.setValue(nextSort);
+        if (latestSlice) {
+          renderConsumptionData(latestSlice);
+        }
+      },
+    });
+
+    const topConvsSortSwitch = SegmentedControl({
+      ariaLabel: t('cons.topConvsSortAria'),
+      modelValue: topConvsSortBy,
+      options: getTopConvsSortOptions(),
+      onUpdateModelValue: (nextSort) => {
+        if (nextSort !== 'cost' && nextSort !== 'tokens') return;
+        topConvsSortBy = nextSort;
+        topConvsSortSwitch.setValue(nextSort);
+        if (latestSlice) {
+          renderConsumptionData(latestSlice);
+        }
+      },
+    });
+    patchAttr(topConvsSortSwitch.el, 'hidden', true);
+
+    const rankingSortWrap = h('div', { className: 'cons-ranking-sort-wrap' }, [
+      modelsSortSwitch.el,
+      topConvsSortSwitch.el,
+    ]);
     const modelsListEl = h('div', { className: 'cons-item-list' });
-    const modelsPanel = h('section', { className: 'panel' }, [
-      h('div', { className: 'panel-header' }, [
-        modelsTitleSpan,
+    const topConvsListEl = h('div', { className: 'cons-item-list', hidden: true });
+    const workspacesListEl = h('div', { className: 'cons-item-list', hidden: true });
+    const topConvsEmptyEl = h('div', {
+      className: 'cons-ranking-empty text-muted',
+      hidden: true,
+      text: t('cons.topConvsEmpty'),
+    });
+    const rankingPanel = h('section', { className: 'panel cons-ranking-panel' }, [
+      h('div', { className: 'panel-header cons-ranking-head' }, [
+        rankingTabSwitch.el,
+        rankingSortWrap,
       ]),
       modelsListEl,
+      topConvsListEl,
+      workspacesListEl,
+      topConvsEmptyEl,
     ]);
 
     // --- Section 4: 客户端来源列表 ---
@@ -22011,38 +29750,22 @@ const ConsumptionView = defineComponent({
     });
 
     let activeHoverTargetEl = null;
+    let cachedBreakdownRootRect = null;
+    let cachedBreakdownAnchorRect = null;
 
-    function createPopoverModelRow() {
-      const dotEl = h('span', { className: 'dot-swatch cons-model-dot' });
-      const nameEl = h('span', { className: 'cons-pop-model-name' });
-      const tokEl = h('span', { className: 'cons-pop-model-tok' });
-      const pctEl = h('strong', { className: 'cons-pop-model-pct' });
-      const rowEl = h('div', { className: 'cons-pop-model-row' }, [
-        h('span', { className: 'cons-pop-model-left' }, [dotEl, nameEl]),
-        h('span', { className: 'cons-pop-model-right text-mono' }, [tokEl, pctEl]),
-      ]);
-      return {
-        el: rowEl,
-        refs: { rowEl, dotEl, nameEl, tokEl, pctEl },
-      };
-    }
-
-    const popTitleEl = h('span', { className: 'trend-tip-time' });
-    const popCallsEl = h('span', { className: 'trend-tip-calls text-mono' });
-    const popTokensEl = h('strong', { className: 'trend-tip-tokens text-mono' });
-    const popCostEl = h('span', { className: 'trend-tip-cost text-mono' });
-    const popListEl = h('div', { className: 'cons-pop-models' });
+    const popoverContent = createConsumptionBreakdownContent({
+      showModelDot: true,
+      monoTitle: false,
+    });
     const breakdownPopoverEl = h(
       'div',
-      { className: 'cons-breakdown-popover', hidden: true },
-      [
-        h('div', { className: 'trend-tip-head' }, [popTitleEl, popCallsEl]),
-        h('div', { className: 'trend-tip-main' }, [popTokensEl, popCostEl]),
-        popListEl,
-      ]
+      { className: 'cons-breakdown-popover is-rich-breakdown', hidden: true },
+      popoverContent.children
     );
 
     function hideBreakdownPopover() {
+      cachedBreakdownRootRect = null;
+      cachedBreakdownAnchorRect = null;
       if (activeHoverTargetEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
         activeHoverTargetEl = null;
@@ -22051,82 +29774,99 @@ const ConsumptionView = defineComponent({
       patchClasses(breakdownPopoverEl, { 'is-tracking': false });
     }
 
-    function positionBreakdownPopover(anchorEl, pointerClientX = null) {
-      const rootRect = rootEl.getBoundingClientRect?.() || {
-        left: 0,
-        top: 0,
-        width: 360,
-        height: 600,
-      };
-      const anchorRect = anchorEl?.getBoundingClientRect?.() || {
-        left: 0,
-        top: 0,
-        bottom: 0,
-        width: 0,
-        height: 0,
-      };
-      const tipRect = breakdownPopoverEl.getBoundingClientRect?.() || {
-        width: 220,
-        height: 120,
-      };
+    function positionBreakdownPopover(anchorEl, pointerClientX = null, pointerClientY = null) {
+      if (!cachedBreakdownRootRect) {
+        cachedBreakdownRootRect = rootEl.getBoundingClientRect?.() || {
+          left: 0,
+          top: 0,
+          width: 360,
+          height: 600,
+        };
+      }
+      const rootRect = cachedBreakdownRootRect;
+      if (!cachedBreakdownAnchorRect) {
+        cachedBreakdownAnchorRect = anchorEl?.getBoundingClientRect?.() || {
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 0,
+          height: 0,
+        };
+      }
+      const anchorRect = cachedBreakdownAnchorRect;
+      const tipW = Number(breakdownPopoverEl.offsetWidth || 0) || 216;
+      const tipH = Number(breakdownPopoverEl.offsetHeight || 0) || 108;
       const rootW = rootRect.width > 0 ? rootRect.width : 360;
       const rootH = rootRect.height > 0 ? rootRect.height : 600;
-      const tipW = tipRect.width > 0 ? tipRect.width : 220;
-      const tipH = tipRect.height > 0 ? tipRect.height : 120;
 
-      const centerX =
-        Number.isFinite(pointerClientX) && pointerClientX > 0 && rootRect.width > 0
-          ? pointerClientX - rootRect.left
-          : anchorRect.left - rootRect.left + anchorRect.width / 2;
+      const hasPointerX = Number.isFinite(pointerClientX) && pointerClientX > 0 && rootRect.width > 0;
+      const hasPointerY = Number.isFinite(pointerClientY) && pointerClientY > 0 && rootRect.height > 0;
+
+      const centerX = hasPointerX
+        ? pointerClientX - rootRect.left
+        : anchorRect.left - rootRect.left + anchorRect.width / 2;
+      const anchorY = hasPointerY
+        ? pointerClientY - rootRect.top
+        : anchorRect.top - rootRect.top;
 
       const maxLeft = Math.max(8, rootW - tipW - 8);
-      const leftPx = Math.max(8, Math.min(maxLeft, centerX - tipW / 2));
+      let leftPx = Math.max(8, Math.min(maxLeft, centerX - tipW / 2));
 
-      const aboveTop = anchorRect.top - rootRect.top - tipH - 8;
-      const belowTop = anchorRect.bottom - rootRect.top + 8;
-      const topPx =
-        aboveTop >= 6
-          ? aboveTop
-          : Math.min(Math.max(6, rootH - tipH - 6), Math.max(6, belowTop));
+      const aboveTop = anchorY - tipH - (hasPointerY ? 14 : 8);
+      const belowTop = hasPointerY ? anchorY + 18 : anchorRect.bottom - rootRect.top + 8;
+      let topPx;
+      if (aboveTop >= 6) {
+        topPx = Math.min(Math.max(6, rootH - tipH - 6), aboveTop);
+      } else if (hasPointerX && centerX + 16 + tipW <= rootW - 8) {
+        leftPx = centerX + 16;
+        topPx = Math.max(6, Math.min(Math.max(6, rootH - tipH - 6), anchorY - tipH / 2));
+      } else if (hasPointerX && centerX - 16 - tipW >= 8) {
+        leftPx = centerX - 16 - tipW;
+        topPx = Math.max(6, Math.min(Math.max(6, rootH - tipH - 6), anchorY - tipH / 2));
+      } else {
+        topPx = Math.min(Math.max(6, rootH - tipH - 6), Math.max(6, belowTop));
+      }
 
       patchStyleVar(breakdownPopoverEl, '--pop-x', `${Math.round(leftPx)}px`);
       patchStyleVar(breakdownPopoverEl, '--pop-y', `${Math.round(topPx)}px`);
     }
 
-    function showBreakdownPopover(anchorEl, payload, pointerClientX = null) {
+    function showBreakdownPopover(
+      anchorEl,
+      payload,
+      pointerClientX = null,
+      pointerClientY = null
+    ) {
       if (!payload || !(payload.totalTokens > 0 || payload.calls > 0)) {
         hideBreakdownPopover();
         return;
       }
       if (activeHoverTargetEl && activeHoverTargetEl !== anchorEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
+        cachedBreakdownAnchorRect = null;
+      } else if (!activeHoverTargetEl) {
+        cachedBreakdownRootRect = null;
+        cachedBreakdownAnchorRect = null;
       }
       activeHoverTargetEl = anchorEl;
       patchClasses(anchorEl, { 'is-hovered': true });
 
-      patchText(popTitleEl, payload.title || '—');
-      patchText(popCallsEl, t('cons.callsCount', { calls: payload.calls || 0 }));
-      patchText(popTokensEl, `${formatTokensPrecise(payload.totalTokens || 0)} tok`);
-      patchText(popCostEl, payload.costText || '$0.00');
-
-      const rows = Array.isArray(payload.segments) ? payload.segments : [];
-      patchAttr(popListEl, 'hidden', rows.length === 0);
-      patchKeyedList(popListEl, rows, {
-        keyFn: (r) => r.key,
-        sigFn: (r) => `${r.key}:${r.label}:${r.color}:${r.tokText}:${r.pctText}:${r.isOther}`,
-        createRow: createPopoverModelRow,
-        updateRow: (rRefs, r) => {
-          patchClasses(rRefs.rowEl, { 'is-other': Boolean(r.isOther) });
-          patchStyleVar(rRefs.dotEl, '--dot-color', r.color);
-          patchText(rRefs.nameEl, r.label);
-          patchText(rRefs.tokEl, r.tokText);
-          patchText(rRefs.pctEl, r.pctText);
-        },
+      popoverContent.update({
+        title: payload.title || '—',
+        calls: payload.calls || 0,
+        totalTokens: payload.totalTokens || 0,
+        costText: payload.costText || '$0.00',
+        inputTokens: payload.inputTokens,
+        cacheReadTokens: payload.cacheReadTokens,
+        thinkingTokens: payload.thinkingTokens,
+        responseTokens: payload.responseTokens,
+        outputTokens: payload.outputTokens,
+        segments: Array.isArray(payload.segments) ? payload.segments : [],
       });
 
       const wasHidden = breakdownPopoverEl.hasAttribute('hidden');
       patchAttr(breakdownPopoverEl, 'hidden', false);
-      positionBreakdownPopover(anchorEl, pointerClientX);
+      positionBreakdownPopover(anchorEl, pointerClientX, pointerClientY);
       if (wasHidden) {
         patchClasses(breakdownPopoverEl, { 'is-tracking': false });
         void breakdownPopoverEl.offsetWidth;
@@ -22154,16 +29894,31 @@ const ConsumptionView = defineComponent({
       const monthLabel = h('span', { className: 'month-label', text: t('cons.monthLabel', { m: idx + 1 }) });
       const tokText = h('span', { className: 'month-tok text-mono', text: '' });
 
-      const colState = { hoverPayload: null };
+      const colState = { hoverPayload: null, monthRange: null };
       const colEl = h(
         'div',
         {
           className: 'month-col',
+          onClick: () => {
+            if (colState.monthRange) {
+              drillDownToTimeRange(colState.monthRange.startMs, colState.monthRange.endMs);
+            }
+          },
           onMouseEnter: (e) => {
             if (colState.hoverPayload) {
-              showBreakdownPopover(colEl, colState.hoverPayload, null);
+              showBreakdownPopover(
+                colEl,
+                colState.hoverPayload,
+                e?.clientX ?? null,
+                e?.clientY ?? null
+              );
             } else {
               e?.stopPropagation?.();
+            }
+          },
+          onMouseMove: (e) => {
+            if (colState.hoverPayload && activeHoverTargetEl === colEl) {
+              positionBreakdownPopover(colEl, e?.clientX ?? null, e?.clientY ?? null);
             }
           },
           onMouseLeave: () => {
@@ -22211,7 +29966,7 @@ const ConsumptionView = defineComponent({
       [
         overviewPanel,
         trendPanel,
-        modelsPanel,
+        rankingPanel,
         sourcesPanel,
         monthlyPanel,
       ]
@@ -22263,20 +30018,48 @@ const ConsumptionView = defineComponent({
         const tok = Number(m.totalTokens || 0);
         const pct = sumTok > 0 ? (tok / sumTok) * 100 : 0;
         const label = m.displayText || m.label || m.shortName || '—';
+        const inputTokens = Math.max(0, Number(m.inputTokens || 0));
+        const cacheReadTokens = Math.max(0, Number(m.cacheReadTokens || 0));
+        const thinkingTokens = Math.max(0, Number(m.thinkingTokens || 0));
+        const responseTokens =
+          m.responseTokens != null
+            ? Math.max(0, Number(m.responseTokens))
+            : Math.max(0, Number(m.outputTokens || 0) - thinkingTokens);
         return {
           key: label,
           label,
           tok,
           pct,
+          inputTokens,
+          cacheReadTokens,
+          thinkingTokens,
+          responseTokens,
+          outputTokens: responseTokens + thinkingTokens,
           tokText: formatTokensPrecise(tok),
-          pctText: `${pct.toFixed(1)}%`,
+          pctText: formatPctNumber(pct, { withSymbol: true }),
           color,
           isOther: false,
         };
       });
 
       if (tailModels.length >= 2) {
-        const otherTok = tailModels.reduce((sum, m) => sum + Number(m.totalTokens || 0), 0);
+        let otherTok = 0;
+        let otherIn = 0;
+        let otherCache = 0;
+        let otherThink = 0;
+        let otherResp = 0;
+        for (const m of tailModels) {
+          const mt = Math.max(0, Number(m.thinkingTokens || 0));
+          const mr =
+            m.responseTokens != null
+              ? Math.max(0, Number(m.responseTokens))
+              : Math.max(0, Number(m.outputTokens || 0) - mt);
+          otherTok += Number(m.totalTokens || 0);
+          otherIn += Math.max(0, Number(m.inputTokens || 0));
+          otherCache += Math.max(0, Number(m.cacheReadTokens || 0));
+          otherThink += mt;
+          otherResp += mr;
+        }
         const otherPct = sumTok > 0 ? (otherTok / sumTok) * 100 : 0;
         const otherLabel = t('cons.otherModelsCount', { count: tailModels.length });
         out.push({
@@ -22284,8 +30067,13 @@ const ConsumptionView = defineComponent({
           label: otherLabel,
           tok: otherTok,
           pct: otherPct,
+          inputTokens: otherIn,
+          cacheReadTokens: otherCache,
+          thinkingTokens: otherThink,
+          responseTokens: otherResp,
+          outputTokens: otherResp + otherThink,
           tokText: formatTokensPrecise(otherTok),
-          pctText: `${otherPct.toFixed(1)}%`,
+          pctText: formatPctNumber(otherPct, { withSymbol: true }),
           color: 'var(--cons-other-seg)',
           isOther: true,
         });
@@ -22316,6 +30104,51 @@ const ConsumptionView = defineComponent({
       const outVal = h('strong', { className: 'text-mono' });
       const thinkVal = h('strong', { className: 'text-mono' });
       const callsVal = h('strong', { className: 'text-mono' });
+      const metricBarFillEl = h('div', { className: 'progress-seg cons-metric-fill' });
+      const metricBarEl = h(
+        'div',
+        { className: 'progress-track cons-seg-bar cons-metric-bar', hidden: true },
+        [metricBarFillEl]
+      );
+      const tokenFootEl = h('div', { className: 'cons-item-foot' }, [
+        h('span', { className: 'legend-left' }, [
+          h('span', { className: 'dot-swatch seg-input' }),
+          inLbl,
+          inVal,
+        ]),
+        h('span', { className: 'legend-left' }, [
+          h('span', { className: 'dot-swatch seg-cached' }),
+          cacheLbl,
+          cacheVal,
+        ]),
+        h('span', { className: 'legend-left' }, [
+          h('span', { className: 'dot-swatch seg-thinking' }),
+          thinkLbl,
+          thinkVal,
+        ]),
+        h('span', { className: 'legend-left' }, [
+          h('span', { className: 'dot-swatch seg-output' }),
+          outLbl,
+          outVal,
+        ]),
+        h('span', { className: 'legend-left' }, [
+          callsLbl,
+          callsVal,
+        ]),
+      ]);
+      const perfMainEl = h('span', { className: 'cons-model-perf-main text-mono' });
+      const perfUnitCostEl = h('span', { className: 'cons-model-unit-cost text-mono', hidden: true });
+      const perfFootEl = h('div', { className: 'cons-model-perf-foot', hidden: true }, [
+        perfMainEl,
+        perfUnitCostEl,
+      ]);
+      const focusLeftEl = h('span', { className: 'cons-model-focus-left text-mono' });
+      const focusRightEl = h('span', { className: 'cons-model-focus-right text-mono' });
+      const focusFootEl = h(
+        'div',
+        { className: 'cons-item-foot cons-model-focus-foot', hidden: true },
+        [focusLeftEl, focusRightEl]
+      );
 
       const rowEl = h('div', { className: 'cons-item-row' }, [
         h('div', { className: 'panel-header' }, [
@@ -22327,32 +30160,10 @@ const ConsumptionView = defineComponent({
           ]),
         ]),
         segBar.el,
-        h('div', { className: 'cons-item-foot' }, [
-          h('span', { className: 'legend-left' }, [
-            h('span', { className: 'dot-swatch seg-input' }),
-            inLbl,
-            inVal,
-          ]),
-          h('span', { className: 'legend-left' }, [
-            h('span', { className: 'dot-swatch seg-cached' }),
-            cacheLbl,
-            cacheVal,
-          ]),
-          h('span', { className: 'legend-left' }, [
-            h('span', { className: 'dot-swatch seg-thinking' }),
-            thinkLbl,
-            thinkVal,
-          ]),
-          h('span', { className: 'legend-left' }, [
-            h('span', { className: 'dot-swatch seg-output' }),
-            outLbl,
-            outVal,
-          ]),
-          h('span', { className: 'legend-left' }, [
-            callsLbl,
-            callsVal,
-          ]),
-        ]),
+        metricBarEl,
+        tokenFootEl,
+        perfFootEl,
+        focusFootEl,
       ]);
 
       return {
@@ -22364,6 +30175,9 @@ const ConsumptionView = defineComponent({
           totalTokEl,
           costEl,
           segBar,
+          metricBarEl,
+          metricBarFillEl,
+          tokenFootEl,
           inLbl,
           cacheLbl,
           outLbl,
@@ -22374,38 +30188,187 @@ const ConsumptionView = defineComponent({
           outVal,
           thinkVal,
           callsVal,
+          perfFootEl,
+          perfMainEl,
+          perfUnitCostEl,
+          focusFootEl,
+          focusLeftEl,
+          focusRightEl,
         },
       };
     }
 
     /**
-     * 增量更新热门模型单行的指标文本与按总占比缩放的 4 段比例条宽度。
+     * 增量更新模型排行单行：
+     * - `tokens` 模式展示完整四段 Token 构成及效率副行；
+     * - `cost` / `speed` / `calls` 模式切换对应占比百分比、进度条尺度及聚焦单行脚标。
      */
-    function updateBreakdownItemRow(refs, item, grandTotalTokens) {
+    function updateBreakdownItemRow(refs, item, totalsCtx, sortMode = 'tokens') {
+      const displayLabel = item.label || item.name || item.shortName || '—';
+      patchText(refs.nameTextEl, displayLabel);
+      patchAttr(refs.nameEl, 'title', item.title || displayLabel);
+
+      const total = Number(item.totalTokens || 0);
+      const costVal = Number(item.costUsd || 0);
+      const callsCount = Number(item.calls || 0);
+      const isAllUnpriced =
+        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
+      const costText = formatUsd(isAllUnpriced ? null : costVal, {
+        precise: costVal > 0 && costVal < 0.1,
+      });
+
+      const avgTps =
+        item.avgTokPerSec != null &&
+        Number.isFinite(Number(item.avgTokPerSec)) &&
+        Number(item.avgTokPerSec) > 0
+          ? Number(item.avgTokPerSec)
+          : null;
+      const avgTtft =
+        item.avgTtftSec != null &&
+        Number.isFinite(Number(item.avgTtftSec)) &&
+        Number(item.avgTtftSec) >= 0
+          ? Number(item.avgTtftSec)
+          : null;
+      const hasExplicitCachePct =
+        item.cacheHitPct != null && Number.isFinite(Number(item.cacheHitPct));
+      const promptTok = Number(item.inputTokens || 0) + Number(item.cacheReadTokens || 0);
+      const cachePctVal = hasExplicitCachePct
+        ? Number(item.cacheHitPct)
+        : promptTok > 0 && Number(item.cacheReadTokens || 0) > 0
+          ? +((Number(item.cacheReadTokens || 0) / promptTok) * 100).toFixed(1)
+          : 0;
+      const cachePctStr = formatPctNumber(cachePctVal);
+      const effCostPer1M =
+        !isAllUnpriced && costVal > 0 && total >= 1000 ? costVal / (total / 1_000_000) : null;
+      const outTok = Number(
+        item.outputTokens ??
+          Number(item.responseTokens || 0) + Number(item.thinkingTokens || 0)
+      );
+
+      if (sortMode === 'cost') {
+        const costBase = Number(totalsCtx?.totalCost || 0);
+        const costShare = costBase > 0 ? +((costVal / costBase) * 100).toFixed(1) : 0;
+        const barPct = costBase > 0 && costVal > 0 ? Math.min(100, Math.max(1, (costVal / costBase) * 100)) : 0;
+        patchAttr(refs.pctBadge, 'hidden', false);
+        patchAttr(refs.pctBadge, 'title', null);
+        patchText(refs.pctBadge, formatPctNumber(costShare, { withSymbol: true }));
+        patchText(refs.totalTokEl, isAllUnpriced ? '' : formatCnyApprox(costVal));
+        patchText(refs.costEl, costText);
+
+        patchAttr(refs.segBar.el, 'hidden', true);
+        patchAttr(refs.metricBarEl, 'hidden', false);
+        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${barPct.toFixed(2)}%`);
+        patchClasses(refs.metricBarFillEl, {
+          'tone-cost': true,
+          'tone-speed': false,
+          'tone-calls': false,
+        });
+
+        patchAttr(refs.tokenFootEl, 'hidden', true);
+        patchAttr(refs.perfFootEl, 'hidden', true);
+        patchAttr(refs.focusFootEl, 'hidden', false);
+        const unitPart =
+          effCostPer1M !== null
+            ? t('cons.modelUnitCost', {
+                cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
+              })
+            : '';
+        const cachePart = t('cons.topConvCacheMeta', { pct: cachePctStr });
+        patchText(refs.focusLeftEl, unitPart ? `${unitPart} · ${cachePart}` : cachePart);
+        patchText(
+          refs.focusRightEl,
+          `${formatTokensPrecise(total)} · ${t('cons.callsCount', { calls: callsCount })}`
+        );
+        return;
+      }
+
+      if (sortMode === 'speed') {
+        const maxTps = Number(totalsCtx?.maxAvgTps || 0);
+        const speedPct =
+          maxTps > 0 && avgTps !== null ? Math.min(100, Math.max(2, (avgTps / maxTps) * 100)) : 0;
+        patchAttr(refs.pctBadge, 'hidden', avgTps === null);
+        patchAttr(refs.pctBadge, 'title', avgTps !== null ? t('cons.speedRelTip') : null);
+        patchText(refs.pctBadge, avgTps !== null ? `${Math.round(speedPct)}%` : '');
+        patchText(
+          refs.totalTokEl,
+          avgTtft !== null ? t('cons.focusTtft', { ttft: formatMetric(avgTtft, 's') }) : ''
+        );
+        patchText(refs.costEl, formatSpeedMetric(avgTps, ' tok/s'));
+
+        patchAttr(refs.segBar.el, 'hidden', true);
+        patchAttr(refs.metricBarEl, 'hidden', false);
+        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${speedPct.toFixed(2)}%`);
+        patchClasses(refs.metricBarFillEl, {
+          'tone-cost': false,
+          'tone-speed': true,
+          'tone-calls': false,
+        });
+
+        patchAttr(refs.tokenFootEl, 'hidden', true);
+        patchAttr(refs.perfFootEl, 'hidden', true);
+        patchAttr(refs.focusFootEl, 'hidden', false);
+        patchText(
+          refs.focusLeftEl,
+          t('cons.focusSpeedMeta', {
+            ttft: formatMetric(avgTtft, 's'),
+            cache: cachePctStr,
+            out: formatTokensPrecise(outTok),
+          })
+        );
+        patchText(refs.focusRightEl, t('cons.callsCount', { calls: callsCount }));
+        return;
+      }
+
+      if (sortMode === 'calls') {
+        const callsBase = Number(totalsCtx?.totalCalls || 0);
+        const callsShare = callsBase > 0 ? +((callsCount / callsBase) * 100).toFixed(1) : 0;
+        const barPct =
+          callsBase > 0 && callsCount > 0 ? Math.min(100, Math.max(1, (callsCount / callsBase) * 100)) : 0;
+        patchAttr(refs.pctBadge, 'hidden', false);
+        patchAttr(refs.pctBadge, 'title', null);
+        patchText(refs.pctBadge, formatPctNumber(callsShare, { withSymbol: true }));
+        patchText(refs.totalTokEl, formatTokensPrecise(total));
+        patchText(refs.costEl, t('cons.callsCount', { calls: callsCount }));
+
+        patchAttr(refs.segBar.el, 'hidden', true);
+        patchAttr(refs.metricBarEl, 'hidden', false);
+        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${barPct.toFixed(2)}%`);
+        patchClasses(refs.metricBarFillEl, {
+          'tone-cost': false,
+          'tone-speed': false,
+          'tone-calls': true,
+        });
+
+        patchAttr(refs.tokenFootEl, 'hidden', true);
+        patchAttr(refs.perfFootEl, 'hidden', true);
+        patchAttr(refs.focusFootEl, 'hidden', false);
+        const avgPerCall = callsCount > 0 ? total / callsCount : 0;
+        patchText(
+          refs.focusLeftEl,
+          t('cons.focusCallsMeta', {
+            avgTok: formatTokensPrecise(avgPerCall),
+            cost: costText,
+          })
+        );
+        patchText(refs.focusRightEl, t('cons.topConvCacheMeta', { pct: cachePctStr }));
+        return;
+      }
+
+      // 默认 Token 模式：展示全部四段 Token 构成及效率副行
       patchText(refs.inLbl, t('cons.footInput'));
       patchText(refs.cacheLbl, t('cons.footCache'));
       patchText(refs.outLbl, t('cons.footOutput'));
       patchText(refs.thinkLbl, t('cons.footThinking'));
       patchText(refs.callsLbl, t('cons.footCalls'));
-      const displayLabel = item.label || item.name || item.shortName || '—';
-      patchText(refs.nameTextEl, displayLabel);
-      patchAttr(refs.nameEl, 'title', item.title || displayLabel);
-      const total = Number(item.totalTokens || 0);
+      const grandTotalTokens = Number(totalsCtx?.totalTokens || 0);
       const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
       const scaleRatio =
         grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.008, total / grandTotalTokens)) : 0;
-      patchText(refs.pctBadge, `${share.toFixed(1)}%`);
+      patchAttr(refs.pctBadge, 'hidden', false);
+      patchAttr(refs.pctBadge, 'title', null);
+      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
       patchText(refs.totalTokEl, formatTokensPrecise(total));
-      const costVal = Number(item.costUsd || 0);
-      const callsCount = Number(item.calls || 0);
-      const isAllUnpriced =
-        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
-      patchText(
-        refs.costEl,
-        formatUsd(isAllUnpriced ? null : costVal, {
-          precise: costVal > 0 && costVal < 0.1,
-        })
-      );
+      patchText(refs.costEl, costText);
 
       const responseTok =
         item.responseTokens != null
@@ -22413,6 +30376,8 @@ const ConsumptionView = defineComponent({
           : Math.max(0, Number(item.outputTokens || 0) - Number(item.thinkingTokens || 0));
       const thinkingTok = Number(item.thinkingTokens || 0);
 
+      patchAttr(refs.segBar.el, 'hidden', false);
+      patchAttr(refs.metricBarEl, 'hidden', true);
       refs.segBar.update({
         inputTokens: Number(item.inputTokens || 0),
         cacheReadTokens: Number(item.cacheReadTokens || 0),
@@ -22421,11 +30386,39 @@ const ConsumptionView = defineComponent({
         scaleRatio,
       });
 
+      patchAttr(refs.tokenFootEl, 'hidden', false);
+      patchAttr(refs.focusFootEl, 'hidden', true);
       patchText(refs.inVal, formatTokensPrecise(item.inputTokens || 0));
       patchText(refs.cacheVal, formatTokensPrecise(item.cacheReadTokens || 0));
       patchText(refs.outVal, formatTokensPrecise(responseTok));
       patchText(refs.thinkVal, formatTokensPrecise(thinkingTok));
-      patchText(refs.callsVal, String(Number(item.calls || 0)));
+      patchText(refs.callsVal, String(callsCount));
+
+      const hasPerfMeta = avgTps !== null || avgTtft !== null || effCostPer1M !== null;
+      patchAttr(refs.perfFootEl, 'hidden', !hasPerfMeta);
+      if (hasPerfMeta) {
+        if (avgTps !== null || avgTtft !== null) {
+          patchText(
+            refs.perfMainEl,
+            t('steps.modelPerfFoot', {
+              tps: formatSpeedMetric(avgTps, ' tok/s'),
+              ttft: formatMetric(avgTtft, 's'),
+              cache: cachePctStr,
+            })
+          );
+        } else {
+          patchText(refs.perfMainEl, t('cons.topConvCacheMeta', { pct: cachePctStr }));
+        }
+        patchAttr(refs.perfUnitCostEl, 'hidden', effCostPer1M === null);
+        patchText(
+          refs.perfUnitCostEl,
+          effCostPer1M !== null
+            ? t('cons.modelUnitCost', {
+                cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
+              })
+            : ''
+        );
+      }
     }
 
     function createSourceModelSegment() {
@@ -22462,12 +30455,17 @@ const ConsumptionView = defineComponent({
       const bindPopoverHover = (targetEl) => ({
         onMouseEnter: (e) => {
           if (rowState.hoverPayload) {
-            showBreakdownPopover(targetEl, rowState.hoverPayload, e?.clientX ?? null);
+            showBreakdownPopover(
+              targetEl,
+              rowState.hoverPayload,
+              e?.clientX ?? null,
+              e?.clientY ?? null
+            );
           }
         },
         onMouseMove: (e) => {
           if (rowState.hoverPayload && activeHoverTargetEl === targetEl) {
-            positionBreakdownPopover(targetEl, e?.clientX ?? null);
+            positionBreakdownPopover(targetEl, e?.clientX ?? null, e?.clientY ?? null);
           }
         },
         onMouseLeave: () => {
@@ -22542,7 +30540,7 @@ const ConsumptionView = defineComponent({
       const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
       const scaleRatio =
         grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.01, total / grandTotalTokens)) : 0;
-      patchText(refs.pctBadge, `${share.toFixed(1)}%`);
+      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
       patchText(refs.totalTokEl, formatTokensPrecise(total));
 
       const costVal = Number(item.costUsd || 0);
@@ -22617,6 +30615,269 @@ const ConsumptionView = defineComponent({
               calls: callsCount,
               totalTokens: total,
               costText,
+              inputTokens: item.inputTokens,
+              cacheReadTokens: item.cacheReadTokens,
+              thinkingTokens: item.thinkingTokens,
+              responseTokens: item.responseTokens,
+              outputTokens: item.outputTokens,
+              segments: partitioned,
+            }
+          : null;
+    }
+
+    function createTopConversationRow() {
+      const titleTextEl = h('span', { className: 'cons-row-title-text' });
+      const wsBadgeEl = h('span', { className: 'cons-ws-sessions-tag text-mono', hidden: true });
+      const titleEl = h('strong', { className: 'cons-row-title cons-top-conv-title' }, [
+        titleTextEl,
+        wsBadgeEl,
+      ]);
+      const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
+      const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
+      const costEl = h('strong', { className: 'cons-row-cost text-mono' });
+      const trackEl = h('div', { className: 'progress-track cons-seg-bar cons-source-model-bar' });
+      const rowState = { cascadeId: '', canJump: false, hoverPayload: null };
+
+      const bindPopoverHover = (targetEl) => ({
+        onMouseEnter: (e) => {
+          if (rowState.hoverPayload) {
+            showBreakdownPopover(
+              targetEl,
+              rowState.hoverPayload,
+              e?.clientX ?? null,
+              e?.clientY ?? null
+            );
+          }
+        },
+        onMouseMove: (e) => {
+          if (rowState.hoverPayload && activeHoverTargetEl === targetEl) {
+            positionBreakdownPopover(targetEl, e?.clientX ?? null, e?.clientY ?? null);
+          }
+        },
+        onMouseLeave: () => {
+          if (activeHoverTargetEl === targetEl) hideBreakdownPopover();
+        },
+      });
+
+      const barHitEl = h('div', { className: 'cons-source-bar-hit' }, [trackEl]);
+      const barHandlers = bindPopoverHover(barHitEl);
+      barHitEl.addEventListener('mouseenter', barHandlers.onMouseEnter);
+      barHitEl.addEventListener('mousemove', barHandlers.onMouseMove);
+      barHitEl.addEventListener('mouseleave', barHandlers.onMouseLeave);
+
+      const topModelsEl = h('div', { className: 'cons-source-top-models', hidden: true });
+      const topHandlers = bindPopoverHover(topModelsEl);
+      topModelsEl.addEventListener('mouseenter', topHandlers.onMouseEnter);
+      topModelsEl.addEventListener('mousemove', topHandlers.onMouseMove);
+      topModelsEl.addEventListener('mouseleave', topHandlers.onMouseLeave);
+
+      const fallbackMetaEl = h('span', { className: 'cons-top-conv-meta', hidden: true });
+      const callsLbl = h('span', { text: t('cons.footCalls') });
+      const callsVal = h('strong', { className: 'text-mono' });
+
+      const rowEl = h(
+        'div',
+        {
+          className: 'cons-top-conv-row',
+          onClick: () => {
+            if (!rowState.cascadeId) return;
+            hideBreakdownPopover();
+            selectConversation(rowState.cascadeId);
+            uiStore.setState({
+              activeView: 'steps',
+              stepsSubTab: 'steps',
+              selectedAgentScope: 'all',
+              ctxInspectorAgentId: getDefaultCtxInspectorAgentId(
+                telemetryStore.getState().telemetry?.settings
+              ),
+            });
+          },
+        },
+        [
+          h('div', { className: 'panel-header' }, [
+            titleEl,
+            h('span', { className: 'cons-row-metrics' }, [
+              pctBadge,
+              totalTokEl,
+              costEl,
+            ]),
+          ]),
+          barHitEl,
+          h('div', { className: 'cons-item-foot cons-source-foot' }, [
+            topModelsEl,
+            fallbackMetaEl,
+            h('span', { className: 'legend-left cons-calls-stat' }, [
+              callsLbl,
+              callsVal,
+            ]),
+          ]),
+        ]
+      );
+
+      return {
+        el: rowEl,
+        refs: {
+          rowEl,
+          titleEl,
+          titleTextEl,
+          wsBadgeEl,
+          pctBadge,
+          totalTokEl,
+          costEl,
+          barHitEl,
+          trackEl,
+          topModelsEl,
+          fallbackMetaEl,
+          callsLbl,
+          callsVal,
+          rowState,
+        },
+      };
+    }
+
+    function updateTopConversationRow(refs, item, bases, modelColorMap, sortMode = 'cost') {
+      patchText(refs.callsLbl, t('cons.footCalls'));
+      const isWorkspaceRow = Boolean(item.isWorkspaceRow);
+      const title = isWorkspaceRow
+        ? item.isUnbound
+          ? t('cons.workspaceUnbound')
+          : String(item.label || item.workspacePath || '—').trim()
+        : String(item.title || item.cascadeId || '—').trim();
+      refs.rowState.cascadeId = String(
+        isWorkspaceRow ? item.latestCascadeId || '' : item.cascadeId || ''
+      );
+      refs.rowState.canJump = item.canJump !== false && Boolean(refs.rowState.cascadeId);
+      patchClasses(refs.rowEl, {
+        'is-jumpable': refs.rowState.canJump,
+        'cons-workspace-row': isWorkspaceRow,
+      });
+      const baseTip =
+        isWorkspaceRow && item.workspacePath && item.workspacePath !== title
+          ? `${title} (${item.workspacePath})`
+          : title;
+      const jumpTip = isWorkspaceRow ? t('cons.workspaceJumpTip') : t('cons.topConvJumpTip');
+      patchAttr(refs.rowEl, 'title', refs.rowState.canJump ? `${baseTip} — ${jumpTip}` : baseTip);
+      patchText(refs.titleTextEl, title);
+      if (refs.wsBadgeEl) {
+        const showWsBadge = isWorkspaceRow && Number(item.sessionCount || 0) > 0;
+        patchAttr(refs.wsBadgeEl, 'hidden', !showWsBadge);
+        if (showWsBadge) {
+          patchText(refs.wsBadgeEl, t('cons.workspaceSessions', { count: item.sessionCount }));
+        }
+      }
+
+      const total = Number(item.totalTokens || 0);
+      const costVal = Number(item.costUsd || 0);
+      const callsCount = Number(item.calls || 0);
+      const isAllUnpriced =
+        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
+      const costText = formatUsd(isAllUnpriced ? null : costVal, {
+        precise: costVal > 0 && costVal < 0.1,
+      });
+
+      const tokBase = Number(bases?.tokens || 0);
+      const costBase = Number(bases?.cost || 0);
+      const useCostBasis = sortMode === 'cost' && costBase > 0;
+      const share = useCostBasis
+        ? +((costVal / costBase) * 100).toFixed(1)
+        : tokBase > 0
+          ? +((total / tokBase) * 100).toFixed(1)
+          : 0;
+      const scaleRatio = useCostBasis
+        ? costVal > 0
+          ? Math.min(1, Math.max(0.01, costVal / costBase))
+          : 0
+        : tokBase > 0 && total > 0
+          ? Math.min(1, Math.max(0.01, total / tokBase))
+          : 0;
+
+      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
+      if (sortMode === 'tokens') {
+        patchText(refs.totalTokEl, costText);
+        patchText(refs.costEl, formatTokensPrecise(total));
+      } else {
+        patchText(refs.totalTokEl, formatTokensPrecise(total));
+        patchText(refs.costEl, costText);
+      }
+      patchText(refs.callsVal, String(callsCount));
+
+      // 复用客户端来源同款按模型配色分段进度条、Top 2-3 模型速览及共享悬浮详情浮层
+      const convModels = Array.isArray(item.mergedModels) ? item.mergedModels : [];
+      const partitioned = partitionModelSegments(convModels, modelColorMap, {
+        maxMain: 5,
+        minSharePct: 1.5,
+      });
+      const barItems =
+        partitioned.length > 0
+          ? partitioned.map((seg) => ({
+              key: seg.key,
+              segPct: scaleRatio > 0 ? seg.pct * scaleRatio : 0,
+              color: seg.color,
+            }))
+          : scaleRatio > 0
+            ? [
+                {
+                  key: '__conv_fallback__',
+                  segPct: scaleRatio * 100,
+                  color: 'var(--accent-primary)',
+                },
+              ]
+            : [];
+
+      patchKeyedList(refs.trackEl, barItems, {
+        keyFn: (seg) => seg.key,
+        sigFn: (seg) => `${seg.key}:${seg.segPct.toFixed(2)}:${seg.color}`,
+        createRow: createSourceModelSegment,
+        updateRow: (segRefs, seg) => {
+          patchStyleVar(segRefs.segEl, '--seg-w', `${seg.segPct.toFixed(2)}%`);
+          patchStyleVar(segRefs.segEl, '--seg-color', seg.color);
+        },
+      });
+
+      const topModels = partitioned
+        .filter((seg) => !seg.isOther)
+        .slice(0, 3)
+        .map((seg) => ({
+          key: seg.key,
+          label: seg.label,
+          pctText: formatCompactSourceSharePct(seg.pct),
+          color: seg.color,
+        }));
+      patchAttr(refs.topModelsEl, 'hidden', topModels.length === 0);
+      patchKeyedList(refs.topModelsEl, topModels, {
+        keyFn: (m) => m.key,
+        sigFn: (m) => `${m.key}:${m.label}:${m.pctText}:${m.color}`,
+        createRow: createSourceTopModelItem,
+        updateRow: (mRefs, m) => {
+          patchStyleVar(mRefs.dotEl, '--dot-color', m.color);
+          patchText(mRefs.nameEl, m.label);
+          patchText(mRefs.pctEl, m.pctText);
+          patchAttr(mRefs.itemEl, 'title', `${m.label} (${m.pctText})`);
+        },
+      });
+
+      const showFallbackMeta = topModels.length === 0;
+      patchAttr(refs.fallbackMetaEl, 'hidden', !showFallbackMeta);
+      if (showFallbackMeta) {
+        const srcLabel = item.sourceName || item.appSource || '';
+        const cacheLabel = t('cons.topConvCacheMeta', {
+          pct: formatPctNumber(item.cacheHitPct ?? 0),
+        });
+        patchText(refs.fallbackMetaEl, srcLabel ? `${srcLabel} · ${cacheLabel}` : cacheLabel);
+      }
+
+      refs.rowState.hoverPayload =
+        partitioned.length > 0 && (total > 0 || callsCount > 0)
+          ? {
+              title,
+              calls: callsCount,
+              totalTokens: total,
+              costText,
+              inputTokens: item.inputTokens,
+              cacheReadTokens: item.cacheReadTokens,
+              thinkingTokens: item.thinkingTokens,
+              responseTokens: item.responseTokens,
+              outputTokens: item.outputTokens,
               segments: partitioned,
             }
           : null;
@@ -22686,6 +30947,10 @@ const ConsumptionView = defineComponent({
         acct,
         cons.trendSeries,
         slice.modelBreakdown,
+        activeRankingTab,
+        modelsSortBy,
+        cons.topConversations,
+        topConvsSortBy,
         cons.sourcesBreakdown,
         monthlyYear,
         currentMonthIdx,
@@ -22713,7 +30978,7 @@ const ConsumptionView = defineComponent({
       patchText(heroCostUsd, formatUsd(costUsd));
       patchText(heroCostCny, formatCnyApprox(costUsd));
 
-      patchText(cacheHitPctEl, `${Number(acct.cacheHitPct ?? 0).toFixed(1)}%`);
+      patchText(cacheHitPctEl, formatPctNumber(acct.cacheHitPct ?? 0, { withSymbol: true }));
       patchText(cacheTokensEl, t('cons.cacheHitTokens', { tokens: formatTokensPrecise(cacheTokens) }));
 
       let inPct = 0;
@@ -22752,6 +31017,7 @@ const ConsumptionView = defineComponent({
           think: formatTokensPrecise(thinkingTokens),
         })
       );
+      consExportMenu.refs.setHidden(!(totalTokens > 0 || Number(acct.calls || 0) > 0));
 
       overviewSegBar.update({
         inputTokens,
@@ -22782,8 +31048,53 @@ const ConsumptionView = defineComponent({
 
       const models = mergeModelsByDisplayName(slice.modelBreakdown || [], displaySettings, {
         preferLabelInShort: true,
-      }).sort((a, b) => (b.totalTokens || 0) - (a.totalTokens || 0));
+      }).sort((a, b) => {
+        if (modelsSortBy === 'cost') {
+          return (b.costUsd || 0) - (a.costUsd || 0) || (b.totalTokens || 0) - (a.totalTokens || 0);
+        }
+        if (modelsSortBy === 'speed') {
+          const sa = Number(a.avgTokPerSec) > 0 ? Number(a.avgTokPerSec) : -1;
+          const sb = Number(b.avgTokPerSec) > 0 ? Number(b.avgTokPerSec) : -1;
+          return sb - sa || (b.totalTokens || 0) - (a.totalTokens || 0);
+        }
+        if (modelsSortBy === 'calls') {
+          return (b.calls || 0) - (a.calls || 0) || (b.totalTokens || 0) - (a.totalTokens || 0);
+        }
+        return (b.totalTokens || 0) - (a.totalTokens || 0) || (b.calls || 0) - (a.calls || 0);
+      });
       const modelsTotalTok = models.reduce((s, m) => s + Number(m.totalTokens || 0), 0);
+      const modelsTotalCost = models.reduce((s, m) => s + Math.max(0, Number(m.costUsd || 0)), 0);
+      const modelsTotalCalls = models.reduce((s, m) => s + Math.max(0, Number(m.calls || 0)), 0);
+      const modelsMaxAvgTps = models.reduce((mx, m) => {
+        const v = Number(m.avgTokPerSec || 0);
+        return Number.isFinite(v) && v > mx ? v : mx;
+      }, 0);
+      const modelsTotalsCtx = {
+        totalTokens: modelsTotalTok,
+        totalCost: modelsTotalCost,
+        totalCalls: modelsTotalCalls,
+        maxAvgTps: modelsMaxAvgTps,
+      };
+
+      const rawTopConvs = Array.isArray(cons.topConversations) ? cons.topConversations : [];
+      const allTopConvMergedModels = [];
+      const topConvsWithModels = rawTopConvs.map((c) => {
+        const mergedModels = mergeAndSortBucketModels(c.models);
+        for (const m of mergedModels) {
+          allTopConvMergedModels.push(m);
+        }
+        return { ...c, mergedModels };
+      });
+
+      const rawTopWorkspaces = Array.isArray(cons.topWorkspaces) ? cons.topWorkspaces : [];
+      const allWorkspaceMergedModels = [];
+      const topWorkspacesWithModels = rawTopWorkspaces.map((w) => {
+        const mergedModels = mergeAndSortBucketModels(w.models);
+        for (const m of mergedModels) {
+          allWorkspaceMergedModels.push(m);
+        }
+        return { ...w, isWorkspaceRow: true, mergedModels };
+      });
 
       const rawSources = cons.sourcesBreakdown || [];
       const sourcesTotalTok = rawSources.reduce((s, x) => s + Number(x.totalTokens || 0), 0);
@@ -22837,6 +31148,8 @@ const ConsumptionView = defineComponent({
       const modelColorMap = buildDeterministicModelColorMap([
         ...models,
         ...allSourceMergedModels,
+        ...allTopConvMergedModels,
+        ...allWorkspaceMergedModels,
         ...allMonthMergedModels,
         ...allTrendMergedModels,
       ]);
@@ -22872,19 +31185,112 @@ const ConsumptionView = defineComponent({
       });
       trendChart.update(enrichedTrendSeries);
 
-      // 3. 同步热门模型列表（4 段条按总占比缩放长度）
+      // 3. 同步统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」及对应排序控制）
+      const sortedTopConvs = [...topConvsWithModels].sort((a, b) =>
+        topConvsSortBy === 'tokens'
+          ? (b.totalTokens || 0) - (a.totalTokens || 0) || (b.costUsd || 0) - (a.costUsd || 0)
+          : (b.costUsd || 0) - (a.costUsd || 0) || (b.totalTokens || 0) - (a.totalTokens || 0)
+      );
+      const sortedTopWorkspaces = [...topWorkspacesWithModels].sort((a, b) =>
+        topConvsSortBy === 'tokens'
+          ? (b.totalTokens || 0) - (a.totalTokens || 0) || (b.costUsd || 0) - (a.costUsd || 0)
+          : (b.costUsd || 0) - (a.costUsd || 0) || (b.totalTokens || 0) - (a.totalTokens || 0)
+      );
+      if (activeRankingTab === 'workspaces' && sortedTopWorkspaces.length === 0) {
+        activeRankingTab = 'models';
+      }
+      lastModelsCount = models.length;
+      lastWorkspacesCount = sortedTopWorkspaces.length;
+      lastConvsCount = sortedTopConvs.length;
+      rankingTabSwitch.setProps({
+        ariaLabel: t('cons.rankTabAria'),
+        modelValue: activeRankingTab,
+        options: getRankingTabOptions(
+          models.length,
+          sortedTopConvs.length,
+          sortedTopWorkspaces.length
+        ),
+      });
+      const showSessionsTab = activeRankingTab === 'sessions';
+      const showWorkspacesTab = activeRankingTab === 'workspaces' && sortedTopWorkspaces.length > 0;
+      const showModelsTab = !showSessionsTab && !showWorkspacesTab;
+      patchAttr(modelsSortSwitch.el, 'hidden', !showModelsTab);
+      patchAttr(
+        topConvsSortSwitch.el,
+        'hidden',
+        showModelsTab ||
+          (showSessionsTab && sortedTopConvs.length === 0) ||
+          (showWorkspacesTab && sortedTopWorkspaces.length === 0)
+      );
+      patchAttr(modelsListEl, 'hidden', !showModelsTab);
+      patchAttr(topConvsListEl, 'hidden', !showSessionsTab || sortedTopConvs.length === 0);
+      patchAttr(workspacesListEl, 'hidden', !showWorkspacesTab);
+      patchAttr(topConvsEmptyEl, 'hidden', !showSessionsTab || sortedTopConvs.length > 0);
+      patchText(topConvsEmptyEl, t('cons.topConvsEmpty'));
+
       patchKeyedList(modelsListEl, models, {
         keyFn: (m) => m.displayText || m.label || m.shortName,
         sigFn: (m) =>
-          `${localeSig}:${m.displayText}:${m.displayTitle}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${modelsTotalTok}`,
+          `${localeSig}:${modelsSortBy}:${m.displayText}:${m.displayTitle}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${m.avgTokPerSec ?? ''}:${m.avgTtftSec ?? ''}:${m.cacheHitPct ?? ''}:${modelsTotalTok}:${modelsTotalCost.toFixed(4)}:${modelsTotalCalls}:${modelsMaxAvgTps}`,
         createRow: createBreakdownItemRow,
         updateRow: (refs, m) => {
           updateBreakdownItemRow(
             refs,
             { ...m, label: m.displayText, title: m.displayTitle },
-            modelsTotalTok
+            modelsTotalsCtx,
+            modelsSortBy
           );
         },
+      });
+
+      const topConvsBaseTokens =
+        totalTokens > 0
+          ? totalTokens
+          : sortedTopConvs.reduce((s, c) => s + Number(c.totalTokens || 0), 0);
+      const topConvsBaseCost =
+        costUsd > 0
+          ? costUsd
+          : sortedTopConvs.reduce((s, c) => s + Math.max(0, Number(c.costUsd || 0)), 0);
+      const topConvsBases = { tokens: topConvsBaseTokens, cost: topConvsBaseCost };
+      patchKeyedList(topConvsListEl, sortedTopConvs, {
+        keyFn: (c) => c.cascadeId,
+        sigFn: (c) => {
+          const modelsSig = c.mergedModels
+            .map((m) => {
+              const seed = getCanonicalModelColorSeed(m);
+              return `${m.displayText}:${m.totalTokens}:${m.inputTokens || 0}:${m.cacheReadTokens || 0}:${m.thinkingTokens || 0}:${m.responseTokens || 0}:${m.calls}:${modelColorMap.get(seed) || ''}`;
+            })
+            .join('|');
+          return `${localeSig}:${topConvsSortBy}:${c.cascadeId}:${c.title}:${c.totalTokens}:${c.inputTokens || 0}:${c.cacheReadTokens || 0}:${c.thinkingTokens || 0}:${c.responseTokens || 0}:${c.costUsd}:${c.unpricedCalls}:${c.calls}:${c.cacheHitPct}:${c.sourceName}:${c.canJump ? 1 : 0}:${topConvsBaseTokens}:${topConvsBaseCost.toFixed(4)}:${modelsSig}`;
+        },
+        createRow: createTopConversationRow,
+        updateRow: (refs, c) =>
+          updateTopConversationRow(refs, c, topConvsBases, modelColorMap, topConvsSortBy),
+      });
+
+      const topWsBaseTokens =
+        totalTokens > 0
+          ? totalTokens
+          : sortedTopWorkspaces.reduce((s, w) => s + Number(w.totalTokens || 0), 0);
+      const topWsBaseCost =
+        costUsd > 0
+          ? costUsd
+          : sortedTopWorkspaces.reduce((s, w) => s + Math.max(0, Number(w.costUsd || 0)), 0);
+      const topWsBases = { tokens: topWsBaseTokens, cost: topWsBaseCost };
+      patchKeyedList(workspacesListEl, sortedTopWorkspaces, {
+        keyFn: (w) => w.workspaceKey,
+        sigFn: (w) => {
+          const modelsSig = w.mergedModels
+            .map((m) => {
+              const seed = getCanonicalModelColorSeed(m);
+              return `${m.displayText}:${m.totalTokens}:${m.inputTokens || 0}:${m.cacheReadTokens || 0}:${m.thinkingTokens || 0}:${m.responseTokens || 0}:${m.calls}:${modelColorMap.get(seed) || ''}`;
+            })
+            .join('|');
+          return `${localeSig}:${topConvsSortBy}:${w.workspaceKey}:${w.label}:${w.sessionCount}:${w.totalTokens}:${w.inputTokens || 0}:${w.cacheReadTokens || 0}:${w.thinkingTokens || 0}:${w.responseTokens || 0}:${w.costUsd}:${w.unpricedCalls}:${w.calls}:${w.cacheHitPct}:${w.latestCascadeId}:${w.canJump ? 1 : 0}:${topWsBaseTokens}:${topWsBaseCost.toFixed(4)}:${modelsSig}`;
+        },
+        createRow: createTopConversationRow,
+        updateRow: (refs, w) =>
+          updateTopConversationRow(refs, w, topWsBases, modelColorMap, topConvsSortBy),
       });
 
       // 4. 同步客户端来源列表（长尾合并分段配色 + 右侧总调用数 + 悬停进度条弹出明细浮层）
@@ -22894,10 +31300,10 @@ const ConsumptionView = defineComponent({
           const modelsSig = s.mergedModels
             .map((m) => {
               const seed = getCanonicalModelColorSeed(m);
-              return `${m.displayText}:${m.totalTokens}:${m.calls}:${modelColorMap.get(seed) || ''}`;
+              return `${m.displayText}:${m.totalTokens}:${m.inputTokens || 0}:${m.cacheReadTokens || 0}:${m.thinkingTokens || 0}:${m.responseTokens || 0}:${m.calls}:${modelColorMap.get(seed) || ''}`;
             })
             .join('|');
-          return `${localeSig}:${s.name}:${s.totalTokens}:${s.costUsd}:${s.unpricedCalls}:${s.calls}:${sourcesTotalTok}:${modelsSig}`;
+          return `${localeSig}:${s.name}:${s.totalTokens}:${s.inputTokens || 0}:${s.cacheReadTokens || 0}:${s.thinkingTokens || 0}:${s.responseTokens || 0}:${s.costUsd}:${s.unpricedCalls}:${s.calls}:${sourcesTotalTok}:${modelsSig}`;
         },
         createRow: createSourceBreakdownRow,
         updateRow: (refs, s) => updateSourceBreakdownRow(refs, s, sourcesTotalTok, modelColorMap),
@@ -22926,6 +31332,7 @@ const ConsumptionView = defineComponent({
           patchText(col.costText, '');
           patchText(col.tokText, '');
           col.colState.hoverPayload = null;
+          col.colState.monthRange = null;
           patchKeyedList(col.stackWrap, [], {
             keyFn: (x) => x.key,
             sigFn: (x) => x.key,
@@ -22966,6 +31373,10 @@ const ConsumptionView = defineComponent({
             },
           });
 
+          col.colState.monthRange = {
+            startMs: new Date(monthlyYear, i, 1, 0, 0, 0, 0).getTime(),
+            endMs: new Date(monthlyYear, i + 1, 0, 23, 59, 59, 999).getTime(),
+          };
           col.colState.hoverPayload = {
             title: t('cons.monthFullLabel', { year: monthlyYear, m: i + 1 }),
             calls: mCalls,
@@ -22973,6 +31384,11 @@ const ConsumptionView = defineComponent({
             costText: formatUsd(isMonthUnpriced ? null : cVal, {
               precise: cVal > 0 && cVal < 0.1,
             }),
+            inputTokens: m.inputTokens,
+            cacheReadTokens: m.cacheReadTokens,
+            thinkingTokens: m.thinkingTokens,
+            responseTokens: m.responseTokens,
+            outputTokens: m.outputTokens,
             segments: barPartitioned,
           };
         }
@@ -23045,15 +31461,32 @@ const ConsumptionView = defineComponent({
       });
       patchText(applyCustomBtnLabel, t('cons.applyFilter'));
       patchText(rangeToSpan, t('cons.rangeTo'));
-      patchText(overviewTitleSpan, t('cons.overviewTitle'));
       patchText(totalTokensLabel, t('cons.totalTokens'));
       patchText(estCostLabel, t('cons.estCost'));
       patchText(cacheHitRateLabel, t('cons.cacheHitRate'));
       patchText(newInputLabel, t('cons.newInput'));
       patchText(cacheReadLabel, t('cons.cacheRead'));
       patchText(outputUsageLabel, t('cons.outputUsage'));
+      consExportMenu.refs.setAriaLabel(t('cons.exportMenuAria'));
+      consExportMenu.refs.updateItemLabels({
+        xlsx: { label: t('cons.exportXlsx'), title: t('cons.exportXlsxTip') },
+        md: { label: t('cons.exportMd'), title: t('cons.exportMdTip') },
+      });
       patchText(trendTitleSpan, t('cons.trendTitle'));
-      patchText(modelsTitleSpan, t('cons.topModels'));
+      rankingTabSwitch.setProps({
+        ariaLabel: t('cons.rankTabAria'),
+        modelValue: activeRankingTab,
+        options: getRankingTabOptions(),
+      });
+      modelsSortSwitch.setProps({
+        ariaLabel: t('cons.modelsSortAria'),
+        options: getModelsSortOptions(),
+      });
+      topConvsSortSwitch.setProps({
+        ariaLabel: t('cons.topConvsSortAria'),
+        options: getTopConvsSortOptions(),
+      });
+      patchText(topConvsEmptyEl, t('cons.topConvsEmpty'));
       patchText(sourcesTitleSpan, t('cons.clientSources'));
       patchText(sourcesHoverHint, t('cons.hoverModelsHint'));
       patchText(monthlyTitleSpan, t('cons.monthlyTitle'));
@@ -23081,7 +31514,11 @@ const ConsumptionView = defineComponent({
       unsub();
       unsubView();
       unsubI18n();
+      consExportMenu.destroy();
       trendChart.destroy?.();
+      rankingTabSwitch.destroy();
+      modelsSortSwitch.destroy();
+      topConvsSortSwitch.destroy();
       timeFilterSwitch.destroy();
       startPicker.destroy();
       endPicker.destroy();
@@ -23090,7 +31527,14 @@ const ConsumptionView = defineComponent({
 
     return {
       el: rootEl,
-      refs: { timeFilterSwitch, startPicker, endPicker, viewScrollbar, breakdownPopoverEl },
+      refs: {
+        timeFilterSwitch,
+        startPicker,
+        endPicker,
+        viewScrollbar,
+        breakdownPopoverEl,
+        consExportMenu,
+      },
     };
   },
 });
@@ -23098,7 +31542,7 @@ return { ConsumptionView };
 })();
 
 // --- src/views/StepsDetailView.js ---
-const { StepsDetailView } = (() => {
+const { mergeSelectedAgentUnits, StepsDetailView } = (() => {
 /**
  * @fileoverview View 3: StepsDetailView (步骤明细与总汇总分析视图).
  * 提供“按步查看”与“总汇总”双子视图切换：
@@ -23144,10 +31588,15 @@ function mergeSelectedAgentUnits(units) {
           anomalyDangerCount: 0,
           anomalyTotalDelaySec: 0,
           anomalyByKind: {},
-          _speedWeightedSum: 0,
-          _speedWeight: 0,
+          _hasAnySpeedSummary: false,
+          _speedTokens: 0,
+          _speedSeconds: 0,
+          _speedSampleCount: 0,
+          _speedExcludedCount: 0,
+          _speedExcludedReasons: {},
           _ttftWeightedSum: 0,
           _ttftWeight: 0,
+          _ttftSampleCount: 0,
         };
         if (acc.upstreamName) acc.upstreamSet.add(acc.upstreamName);
         modelMap.set(gk, acc);
@@ -23194,19 +31643,43 @@ function mergeSelectedAgentUnits(units) {
         }
       }
 
-      if (Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0) {
-        const w = Math.max(1, outTok || calls || 1);
-        acc._speedWeightedSum += Number(m.avgTokPerSec) * w;
-        acc._speedWeight += w;
+      const rawSpeedTok = Number(m.speedSummary?.tokens);
+      const rawSpeedSec = Number(m.speedSummary?.seconds);
+      if (
+        Number.isFinite(rawSpeedTok) &&
+        Number.isFinite(rawSpeedSec) &&
+        rawSpeedSec > 0 &&
+        rawSpeedTok >= 0
+      ) {
+        acc._hasAnySpeedSummary = true;
+        acc._speedTokens += rawSpeedTok;
+        acc._speedSeconds += rawSpeedSec;
+      } else if (Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0) {
+        const fallbackTok = outTok > 0 ? outTok : Math.max(1, calls || 1);
+        acc._speedTokens += fallbackTok;
+        acc._speedSeconds += fallbackTok / Number(m.avgTokPerSec);
+      }
+      if (m.speedSummary) {
+        acc._hasAnySpeedSummary = true;
+        acc._speedSampleCount += Math.max(0, Number(m.speedSummary.sampleCount || 0));
+        acc._speedExcludedCount += Math.max(0, Number(m.speedSummary.excludedCount || 0));
+        if (m.speedSummary.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+          for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+            const cnt = Math.max(0, Number(rv || 0));
+            if (cnt > 0) acc._speedExcludedReasons[rk] = (acc._speedExcludedReasons[rk] || 0) + cnt;
+          }
+        }
       }
       if (
         m.avgTtftSec != null &&
         Number.isFinite(Number(m.avgTtftSec)) &&
         Number(m.avgTtftSec) >= 0
       ) {
-        const w = Math.max(1, calls || 1);
+        const ttftSamples = Math.max(0, Number(m.ttftSampleCount || 0));
+        const w = ttftSamples > 0 ? ttftSamples : Math.max(1, calls || 1);
         acc._ttftWeightedSum += Number(m.avgTtftSec) * w;
         acc._ttftWeight += w;
+        acc._ttftSampleCount += ttftSamples;
       }
     }
   }
@@ -23221,6 +31694,7 @@ function mergeSelectedAgentUnits(units) {
   const mergedModels = Array.from(modelMap.values())
     .map((acc) => {
       const promptTok = acc.inputTokens + acc.cacheReadTokens;
+      const rawAvgTps = acc._speedSeconds > 0 ? acc._speedTokens / acc._speedSeconds : null;
       return {
         label: acc.label,
         shortName: acc.shortName,
@@ -23236,10 +31710,22 @@ function mergeSelectedAgentUnits(units) {
         totalTokens: acc.totalTokens,
         costUsd: +acc.costUsd.toFixed(6),
         unpricedCalls: acc.unpricedCalls,
-        avgTokPerSec:
-          acc._speedWeight > 0 ? +(acc._speedWeightedSum / acc._speedWeight).toFixed(1) : null,
+        avgTokPerSec: rawAvgTps !== null ? +rawAvgTps.toFixed(1) : null,
         avgTtftSec:
           acc._ttftWeight > 0 ? +(acc._ttftWeightedSum / acc._ttftWeight).toFixed(1) : null,
+        ttftSampleCount: acc._ttftSampleCount,
+        ...(acc._hasAnySpeedSummary
+          ? {
+              speedSummary: {
+                tokens: acc._speedTokens,
+                seconds: +acc._speedSeconds.toFixed(6),
+                sampleCount: acc._speedSampleCount,
+                excludedCount: acc._speedExcludedCount,
+                excludedReasons: acc._speedExcludedReasons,
+                avgTokPerSec: rawAvgTps,
+              },
+            }
+          : {}),
         cacheHitPct: promptTok > 0 ? +((acc.cacheReadTokens / promptTok) * 100).toFixed(1) : 0,
         ...(acc.anomalyCount > 0
           ? {
@@ -23285,6 +31771,16 @@ const StepsDetailView = defineComponent({
     let selectedLineModels = ['__all__'];
     let onlyAnomalies = false;
     let anomalyKindFilter = '';
+    let stepSearchQuery = '';
+    let stepQuickChip = '';
+    let currentTableSteps = [];
+    let currentAllConvSteps = [];
+    let currentDisplaySettings = {};
+    let sortKey = '';
+    let sortDir = '';
+    let cachedSortSrc = null;
+    let cachedSortSig = '';
+    let cachedSortedOut = [];
 
     function applyAgentScopesSelection(nextScopes) {
       selectedAgentScopes = nextScopes;
@@ -23293,9 +31789,18 @@ const StepsDetailView = defineComponent({
       const prevUiScope = uiStore.getState().selectedAgentScope;
       lastSyncedUiScope = mappedSingle;
       if (prevUiScope !== mappedSingle) {
+        const curCtxId = uiStore.getState().ctxInspectorAgentId;
+        const shouldResetSubCtx =
+          mappedSingle === 'all' && curCtxId && curCtxId !== 'main' && curCtxId !== 'auto';
         uiStore.setState({
           selectedAgentScope: mappedSingle,
-          ...(mappedSingle === 'all' ? { ctxInspectorAgentId: 'auto' } : {}),
+          ...(shouldResetSubCtx
+            ? {
+                ctxInspectorAgentId: getDefaultCtxInspectorAgentId(
+                  telemetryStore.getState().telemetry?.settings
+                ),
+              }
+            : {}),
         });
       } else if (latestSlice) {
         renderStepsData(latestSlice);
@@ -23352,6 +31857,11 @@ const StepsDetailView = defineComponent({
     const stepTableWidget = StepTableWidget({
       onSelectAgentScopes: applyAgentScopesSelection,
       onVirtualHeightChange: () => stepsScroll?.refresh(),
+      onSortChange: (nextKey, nextDir) => {
+        sortKey = nextKey || '';
+        sortDir = nextDir || '';
+        if (latestSlice) renderStepsData(latestSlice);
+      },
     });
     const {
       stepsTablePane,
@@ -23380,6 +31890,7 @@ const StepsDetailView = defineComponent({
       onclick: () => {
         onlyAnomalies = false;
         anomalyKindFilter = '';
+        if (stepQuickChip === 'anomaly') stepQuickChip = '';
         if (latestSlice) renderStepsData(latestSlice);
       },
     });
@@ -23387,6 +31898,128 @@ const StepsDetailView = defineComponent({
       'div',
       { className: 'steps-anomaly-filterbar', hidden: true },
       [anomalyFilterLabelEl, anomalyFilterClearBtn]
+    );
+
+    // --- 步骤搜索栏及快捷诊断芯片 ---
+    const stepSearchBox = createSearchInput({
+      wrapClassName: 'steps-search-wrap',
+      iconClassName: 'steps-search-icon',
+      inputClassName: 'steps-search-input',
+      clearClassName: 'steps-search-clear',
+      placeholder: t('steps.searchPlaceholder'),
+      ariaLabel: t('steps.searchPlaceholder'),
+      clearAriaLabel: t('steps.searchClearAria'),
+      closeIconSize: 11,
+      onInput: (val) => {
+        stepSearchQuery = String(val ?? '');
+        if (latestSlice) renderStepsData(latestSlice);
+      },
+      onClear: () => {
+        stepSearchQuery = '';
+        if (latestSlice) renderStepsData(latestSlice);
+        stepSearchInput.focus?.();
+      },
+      onKeydown: (e) => {
+        if (e?.key === 'Escape') {
+          e.stopPropagation?.();
+          if (stepSearchQuery) {
+            stepSearchQuery = '';
+            stepSearchBox.setValue('');
+            if (latestSlice) renderStepsData(latestSlice);
+          } else {
+            stepSearchInput.blur?.();
+          }
+        }
+      },
+    });
+    const stepSearchWrapEl = stepSearchBox.el;
+    const stepSearchInput = stepSearchBox.inputEl;
+    const stepSearchClearBtn = stepSearchBox.clearBtnEl;
+
+    const QUICK_CHIP_DEFS = [
+      { key: 'anomaly', i18nKey: 'steps.chipAnomaly', tone: 'is-warn' },
+      { key: 'compaction', i18nKey: 'steps.chipCompaction', tone: 'is-info' },
+      { key: 'low_cache', i18nKey: 'steps.chipLowCache', tipKey: 'steps.chipLowCacheTip', tone: 'is-warn' },
+      { key: 'slow_ttft', i18nKey: 'steps.chipSlowTtft', tipKey: 'steps.chipSlowTtftTip', tone: 'is-danger' },
+    ];
+    const quickChipBtns = QUICK_CHIP_DEFS.map((def) => {
+      const btn = h('button', {
+        type: 'button',
+        className: `steps-chip-btn ${def.tone}`,
+        'data-chip': def.key,
+        hidden: true,
+        onclick: () => {
+          if (def.key === 'anomaly') {
+            const nextOn = !(onlyAnomalies || stepQuickChip === 'anomaly');
+            onlyAnomalies = nextOn;
+            anomalyKindFilter = '';
+            stepQuickChip = nextOn ? 'anomaly' : '';
+          } else {
+            const nextKey = stepQuickChip === def.key ? '' : def.key;
+            stepQuickChip = nextKey;
+            if (nextKey) {
+              onlyAnomalies = false;
+              anomalyKindFilter = '';
+            }
+          }
+          if (latestSlice) renderStepsData(latestSlice);
+        },
+      });
+      return { def, btn };
+    });
+    const stepQuickChipsEl = h(
+      'div',
+      { className: 'steps-quick-chips', hidden: true },
+      quickChipBtns.map((c) => c.btn)
+    );
+    const stepsExportMenu = ActionMenu({
+      ariaLabel: t('steps.exportMenuAria'),
+      className: 'steps-export-menu',
+      items: [
+        {
+          key: 'xlsx',
+          icon: 'download',
+          label: t('steps.exportXlsx'),
+          title: t('steps.exportXlsxTip'),
+          onSelect: () => {
+            if (currentTableSteps.length === 0) return;
+            const bytes = buildStepsXlsx(currentTableSteps, {
+              title: latestSlice?.activeConversation?.title || '',
+              cascadeId: latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || '',
+              displaySettings: currentDisplaySettings,
+            });
+            const baseName = buildStepsExportBaseName(
+              latestSlice?.activeConversation?.title || '',
+              latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || ''
+            );
+            void exportBinaryFileWithFeedback(
+              sanitizeExportFilename(baseName, 'xlsx'),
+              bytes
+            );
+          },
+        },
+        {
+          key: 'md',
+          icon: 'copy',
+          label: t('steps.exportMd'),
+          title: t('steps.exportMdTip'),
+          onSelect: () => {
+            if (currentTableSteps.length === 0) return;
+            const md = buildStepsMarkdownReport(currentTableSteps, {
+              title: latestSlice?.activeConversation?.title || '',
+              cascadeId: latestSlice?.cascadeId || latestSlice?.activeConversation?.cascadeId || '',
+              displaySettings: currentDisplaySettings,
+            });
+            void copyTextWithFeedback(md, t('steps.exportMdDone'));
+          },
+        },
+      ],
+    });
+    stepsExportMenu.refs.setHidden(true);
+    const stepsFilterToolbarEl = h(
+      'div',
+      { className: 'steps-filter-toolbar', hidden: true },
+      [stepSearchWrapEl, stepQuickChipsEl]
     );
 
     // --- 子视图 2：总汇总分析面板 ---
@@ -23549,9 +32182,13 @@ const StepsDetailView = defineComponent({
         h('div', { className: 'panel-header steps-panel-header' }, [
           h('div', { className: 'steps-header-controls' }, [
             subTabSwitch.el,
-            headerFiltersEl,
+            h('div', { className: 'steps-header-right' }, [
+              headerFiltersEl,
+              stepsExportMenu.el,
+            ]),
           ]),
         ]),
+        stepsFilterToolbarEl,
         anomalyFilterBarEl,
         stepsScroll.el,
         modelsScroll.el,
@@ -23627,6 +32264,14 @@ const StepsDetailView = defineComponent({
       patchText(modelsSectionTitleEl, t('steps.modelsTitle'));
       patchText(modelsEmptyEl, t('steps.modelsEmpty'));
       patchText(anomalyFilterClearBtn, t('steps.anomalyFilterAll'));
+      patchAttr(stepSearchInput, 'placeholder', t('steps.searchPlaceholder'));
+      patchAttr(stepSearchInput, 'aria-label', t('steps.searchPlaceholder'));
+      patchAttr(stepSearchClearBtn, 'aria-label', t('steps.searchClearAria'));
+      stepsExportMenu.refs.setAriaLabel(t('steps.exportMenuAria'));
+      stepsExportMenu.refs.updateItemLabels({
+        xlsx: { label: t('steps.exportXlsx'), title: t('steps.exportXlsxTip') },
+        md: { label: t('steps.exportMd'), title: t('steps.exportMdTip') },
+      });
       lastAnomalyStripSig = '';
       lineMetricSwitch.setProps({
         modelValue: selectedLineMetric,
@@ -23663,6 +32308,12 @@ const StepsDetailView = defineComponent({
           selectedLineModels = ['__all__'];
           onlyAnomalies = false;
           anomalyKindFilter = '';
+          stepSearchQuery = '';
+          stepSearchInput.value = '';
+          patchAttr(stepSearchClearBtn, 'hidden', true);
+          stepQuickChip = '';
+          sortKey = '';
+          sortDir = '';
         }
         fitLockedCascadeId = currentCid;
         fitUserPicked = false;
@@ -23860,16 +32511,72 @@ const StepsDetailView = defineComponent({
       const modelFilteredSteps = tableModelFilterSet
         ? steps.filter((st) => tableModelFilterSet.has(getStepModelGroupKey(st)))
         : steps;
-      const tableSteps = onlyAnomalies
-        ? modelFilteredSteps.filter((st) => {
-            const a = st?.anomaly;
-            if (!a || !(Number(a.count) > 0)) return false;
-            if (anomalyKindFilter) {
-              return Number(a.kinds?.[anomalyKindFilter] || 0) > 0;
-            }
-            return true;
-          })
-        : modelFilteredSteps;
+
+      const filterToolbarEnabled = slice.showStepFilterToolbar === true;
+      if (!filterToolbarEnabled) {
+        if (stepSearchQuery) {
+          stepSearchQuery = '';
+          stepSearchInput.value = '';
+          patchAttr(stepSearchClearBtn, 'hidden', true);
+        }
+        if (stepQuickChip && stepQuickChip !== 'anomaly') {
+          stepQuickChip = '';
+        }
+      }
+      const chipCounts = computeStepQuickChipCounts(modelFilteredSteps);
+      const effectiveQuickChip = onlyAnomalies
+        ? 'anomaly'
+        : filterToolbarEnabled
+          ? stepQuickChip
+          : '';
+      const showFilterToolbar = filterToolbarEnabled && !showModels && steps.length > 0;
+      patchAttr(stepsFilterToolbarEl, 'hidden', !showFilterToolbar);
+      stepsExportMenu.refs.setHidden(showModels || steps.length === 0);
+      if (showFilterToolbar) {
+        let visibleChipsCount = 0;
+        for (const { def, btn } of quickChipBtns) {
+          const cnt = chipCounts[def.key] || 0;
+          const isActive = effectiveQuickChip === def.key;
+          const showChip = cnt > 0 || isActive;
+          patchAttr(btn, 'hidden', !showChip);
+          if (showChip) {
+            visibleChipsCount += 1;
+            patchText(btn, t(def.i18nKey, { count: cnt }));
+            if (def.tipKey) patchAttr(btn, 'title', t(def.tipKey));
+            patchClasses(btn, { 'is-active': isActive });
+            patchAttr(btn, 'aria-pressed', isActive ? 'true' : 'false');
+          }
+        }
+        patchAttr(stepQuickChipsEl, 'hidden', visibleChipsCount === 0);
+      }
+
+      const filteredTableSteps = filterStepsBySearchAndChip(modelFilteredSteps, {
+        query: filterToolbarEnabled ? stepSearchQuery : '',
+        quickChip: effectiveQuickChip,
+        anomalyKindFilter: onlyAnomalies ? anomalyKindFilter : '',
+        displaySettings,
+      });
+
+      const normTokenFmt = normalizeClientStepTokenComboFormat(slice.stepTokenComboFormat);
+      const sortSig = `${sortKey}:${sortDir}:${normTokenFmt}:${displaySettings.modelDisplayMode}:${displaySettings.showUpstreamModel ? 1 : 0}:${displaySettings.orchestratorIdMode}`;
+      let tableSteps = filteredTableSteps;
+      if (sortKey && sortDir) {
+        if (cachedSortSrc === filteredTableSteps && cachedSortSig === sortSig) {
+          tableSteps = cachedSortedOut;
+        } else {
+          tableSteps = sortStepsByColumn(filteredTableSteps, sortKey, sortDir, {
+            stepTokenComboFormat: normTokenFmt,
+            displaySettings,
+          });
+          cachedSortSrc = filteredTableSteps;
+          cachedSortSig = sortSig;
+          cachedSortedOut = tableSteps;
+        }
+      } else {
+        cachedSortSrc = null;
+        cachedSortSig = '';
+        cachedSortedOut = [];
+      }
 
       const showAnomalyFilterBar = !showModels && onlyAnomalies;
       patchAttr(anomalyFilterBarEl, 'hidden', !showAnomalyFilterBar);
@@ -23899,6 +32606,9 @@ const StepsDetailView = defineComponent({
       const allConversationSteps = hasSubagents
         ? aggregated?.recentSteps || []
         : slice.recentSteps || [];
+      currentTableSteps = tableSteps;
+      currentAllConvSteps = allConversationSteps;
+      currentDisplaySettings = displaySettings;
       const shouldAnimateNewRows = Boolean(
         allowNewRowFade && slice.experimentalModernUi && !showModels
       );
@@ -23915,6 +32625,8 @@ const StepsDetailView = defineComponent({
           displaySettings,
           allConversationSteps,
           allowNewRowFade: shouldAnimateNewRows,
+          sortKey,
+          sortDir,
         });
         stepsScroll.refresh();
         fitPinnedWhileVisible = false;
@@ -24193,7 +32905,7 @@ const StepsDetailView = defineComponent({
           const anomSig = anomSum
             ? `${anomSum.count}:${anomSum.steps}:${anomSum.primaryKind}:${anomSum.severity}:${anomSum.totalDelaySec}`
             : '';
-          return `${locale}:${m.displayText}:${m.displayTitle}:${m.calls}:${sumCalls}:${displayModels.length}:${m.avgTokPerSec}:${avgTtft}:${m.cacheHitPct}:${m.inputTokens}:${m.cacheReadTokens}:${m.thinkingTokens}:${m.responseTokens}:${m.totalTokens}:${m.costUsd}:${m.unpricedCalls}:${isActiveFit}:${hasMultipleModels}:${anomSig}`;
+          return `${locale}:${m.displayText}:${m.displayTitle}:${m.calls}:${sumCalls}:${sumTokens}:${displayModels.length}:${m.avgTokPerSec}:${avgTtft}:${m.cacheHitPct}:${m.inputTokens}:${m.cacheReadTokens}:${m.thinkingTokens}:${m.responseTokens}:${m.totalTokens}:${m.costUsd}:${m.unpricedCalls}:${isActiveFit}:${hasMultipleModels}:${anomSig}`;
         },
         createRow: () => {
           const nameEl = h('strong', { className: 'smodel-name' });
@@ -24239,6 +32951,8 @@ const StepsDetailView = defineComponent({
             ]),
           ]);
           const perfEl = h('span', { className: 'smodel-perf text-mono' });
+          const unitCostEl = h('span', { className: 'smodel-unit-cost text-mono', hidden: true });
+          const perfFootEl = h('div', { className: 'smodel-perf-foot' }, [perfEl, unitCostEl]);
 
           const cardEl = h('div', { className: 'smodel-card' }, [
             h('div', { className: 'smodel-head' }, [
@@ -24246,7 +32960,8 @@ const StepsDetailView = defineComponent({
               h('div', { className: 'smodel-totals' }, [tokEl, costEl]),
             ]),
             segBar.el,
-            h('div', { className: 'smodel-foot' }, [splitEl, perfEl]),
+            h('div', { className: 'smodel-foot' }, [splitEl]),
+            perfFootEl,
           ]);
 
           return {
@@ -24259,6 +32974,7 @@ const StepsDetailView = defineComponent({
               costEl,
               segBar,
               perfEl,
+              unitCostEl,
               splitEl,
               inLbl,
               cacheLbl,
@@ -24338,7 +33054,8 @@ const StepsDetailView = defineComponent({
               ? Math.max(0, Number(m.responseTokens))
               : Math.max(0, outTok - thinkTok);
 
-          patchText(refs.tokEl, formatTokensPrecise(m.totalTokens || 0));
+          const modelTok = Math.max(0, Number(m.totalTokens || 0));
+          patchText(refs.tokEl, formatTokensPrecise(modelTok));
           const costNum = Number(m.costUsd || 0);
           const isAllUnpriced =
             calls > 0 && Number(m.unpricedCalls || 0) >= calls && !(costNum > 0);
@@ -24347,11 +33064,16 @@ const StepsDetailView = defineComponent({
             formatUsd(isAllUnpriced ? null : costNum, { precise: costNum > 0 && costNum < 0.1 })
           );
 
+          const scaleRatio =
+            displayModels.length > 1 && sumTokens > 0 && modelTok > 0
+              ? Math.min(1, Math.max(0.008, modelTok / sumTokens))
+              : 1;
           refs.segBar.update({
             inputTokens: inTok,
             cacheReadTokens: cacheTok,
             responseTokens: respTok,
             thinkingTokens: thinkTok,
+            scaleRatio,
           });
 
           const fbTtft = stepTtftFallbackMap.get(gk);
@@ -24385,6 +33107,19 @@ const StepsDetailView = defineComponent({
               ttft: formatMetric(resolvedAvgTtft, 's'),
               cache: resolvedCachePct,
             })
+          );
+          const effCostPer1M =
+            !isAllUnpriced && costNum > 0 && modelTok >= 1000
+              ? costNum / (modelTok / 1_000_000)
+              : null;
+          patchAttr(refs.unitCostEl, 'hidden', effCostPer1M === null);
+          patchText(
+            refs.unitCostEl,
+            effCostPer1M !== null
+              ? t('cons.modelUnitCost', {
+                  cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
+                })
+              : ''
           );
 
           const isActiveFit =
@@ -24433,6 +33168,13 @@ const StepsDetailView = defineComponent({
         hideAnomalyTip();
         subTabSwitch.setValue(tab);
         patchAttr(anomalyFilterBarEl, 'hidden', tab !== 'steps' || !onlyAnomalies);
+        const toolbarAllowed = latestSlice?.showStepFilterToolbar === true;
+        patchAttr(
+          stepsFilterToolbarEl,
+          'hidden',
+          tab !== 'steps' || !toolbarAllowed || (currentTableSteps.length === 0 && !stepSearchQuery && !stepQuickChip)
+        );
+        stepsExportMenu.refs.setHidden(tab !== 'steps' || currentAllConvSteps.length === 0);
         patchAttr(stepsScroll.el, 'hidden', tab !== 'steps');
         patchAttr(modelsScroll.el, 'hidden', tab !== 'models');
         if (getVisibleMonitorView() === 'steps' && latestSlice) {
@@ -24463,6 +33205,7 @@ const StepsDetailView = defineComponent({
         showStepTurnRail: st.telemetry?.settings?.showStepTurnRail === true,
         showStepAgentBadge: st.telemetry?.settings?.showStepAgentBadge !== false,
         showStepSpeedColor: st.telemetry?.settings?.showStepSpeedColor === true,
+        showStepFilterToolbar: st.telemetry?.settings?.showStepFilterToolbar === true,
         stepTokenComboFormat: normalizeClientStepTokenComboFormat(
           st.telemetry?.settings?.stepTokenComboFormat
         ),
@@ -24529,6 +33272,7 @@ const StepsDetailView = defineComponent({
     );
 
     onCleanup(() => {
+      stepsExportMenu.destroy();
       modelsAnalyticsPane.removeEventListener('scroll', onModelsPaneScroll);
       unsubUi();
       unsubTelemetry();
@@ -24557,6 +33301,10 @@ const StepsDetailView = defineComponent({
         turnTipEl,
         anomalyTipEl,
         anomalyFilterBarEl,
+        stepsFilterToolbarEl,
+        stepSearchInput,
+        stepQuickChipsEl,
+        stepsExportMenu,
         modelsAnomalyStripEl,
         modelsListEl,
         inlineScopeSelect,
@@ -24573,7 +33321,7 @@ const StepsDetailView = defineComponent({
     };
   },
 });
-return { StepsDetailView };
+return { mergeSelectedAgentUnits, StepsDetailView };
 })();
 
 // --- src/views/SettingsView.js ---
@@ -24677,7 +33425,9 @@ const SettingsView = defineComponent({
           structureTab.refs.renderSettings(
             settings,
             telemetry?.windowBridge,
-            telemetry?.hostPlatform
+            telemetry?.hostPlatform,
+            telemetry?.cliStatusLine,
+            telemetry?.quotas
           );
         }
       } else if (settingsSubTab === 'other') {
@@ -24686,7 +33436,8 @@ const SettingsView = defineComponent({
             settings,
             telemetry.contextWindowModels || [],
             telemetry?.windowBridge,
-            telemetry?.hostPlatform
+            telemetry?.hostPlatform,
+            telemetry?.cloudCodeProxy
           );
         }
       } else if (accountTab && settingsSubTab === 'account') {
@@ -24702,6 +33453,8 @@ const SettingsView = defineComponent({
       (st) => ({
         settings: st.telemetry?.settings,
         windowBridge: st.telemetry?.windowBridge,
+        cloudCodeProxy: st.telemetry?.cloudCodeProxy,
+        cliStatusLine: st.telemetry?.cliStatusLine,
         hostPlatform: st.telemetry?.hostPlatform,
         cloudStatus: st.telemetry?.cloudStatus,
         contextWindowModels: st.telemetry?.contextWindowModels,
@@ -24781,6 +33534,27 @@ const { App } = (() => {
  */
 
 
+const APP_VIEW_SHORTCUT_MAP = Object.freeze({
+  1: 'overview',
+  2: 'consumption',
+  3: 'steps',
+  4: 'settings',
+});
+
+function isEditableKeyTarget(e) {
+  const path = typeof e?.composedPath === 'function' ? e.composedPath() : null;
+  const target = (Array.isArray(path) && path[0]) || e?.target;
+  if (!target || typeof target !== 'object') return false;
+  const tag = String(target.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (target.isContentEditable) return true;
+  if (typeof target.getAttribute === 'function') {
+    const ce = target.getAttribute('contenteditable');
+    if (ce === '' || ce === 'true') return true;
+  }
+  return false;
+}
+
 const App = defineComponent({
   name: 'App',
   setup({ onCleanup }) {
@@ -24842,11 +33616,151 @@ const App = defineComponent({
       settingsView.el,
     ]);
 
-    const shellEl = h('main', { className: 'app-shell' }, [
-      h('div', { className: 'top-deck' }, [sessionHeader.el, topPillNav.el]),
-      bannerSlotEl,
-      stageEl,
-    ]);
+    const toastMsgEl = h('span', { className: 'app-toast-msg' });
+    const toastDetailEl = h('span', { className: 'app-toast-detail text-mono', hidden: true });
+    let activeToastAction = null;
+    let activeToastId = 0;
+    let toastAutoTimer = null;
+    let toastRemainingMs = 0;
+    let toastStartedAt = 0;
+
+    function clearToastTimer() {
+      if (toastAutoTimer) {
+        clearTimeout(toastAutoTimer);
+        toastAutoTimer = null;
+      }
+    }
+
+    function scheduleToastAutoClose(toastId, delayMs) {
+      clearToastTimer();
+      if (!(delayMs > 0)) return;
+      toastRemainingMs = delayMs;
+      toastStartedAt = Date.now();
+      toastAutoTimer = setTimeout(() => {
+        toastAutoTimer = null;
+        dismissUiToast(toastId);
+      }, delayMs);
+    }
+
+    const toastActionLabelEl = h('span');
+    const toastActionBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'app-toast-action',
+        hidden: true,
+        onclick: () => {
+          const fn = activeToastAction;
+          if (typeof fn === 'function') fn();
+        },
+      },
+      [createSvgIcon('folder', { size: 12 }), toastActionLabelEl]
+    );
+    const toastCloseBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'app-toast-close',
+        'aria-label': t('export.closeToast'),
+        title: t('export.closeToast'),
+        onclick: () => dismissUiToast(activeToastId),
+      },
+      [createSvgIcon('close', { size: 11 })]
+    );
+    const toastEl = h(
+      'div',
+      {
+        className: 'app-toast',
+        role: 'status',
+        'aria-live': 'polite',
+        hidden: true,
+        onMouseenter: () => {
+          if (toastAutoTimer) {
+            const elapsed = Date.now() - toastStartedAt;
+            toastRemainingMs = Math.max(800, toastRemainingMs - elapsed);
+            clearToastTimer();
+          }
+        },
+        onMouseleave: () => {
+          if (activeToastId && toastRemainingMs > 0 && !toastAutoTimer) {
+            scheduleToastAutoClose(activeToastId, toastRemainingMs);
+          }
+        },
+      },
+      [
+        h('div', { className: 'app-toast-body' }, [toastMsgEl, toastDetailEl]),
+        toastActionBtn,
+        toastCloseBtn,
+      ]
+    );
+
+    function syncToastState(toast) {
+      if (!toast || !toast.message) {
+        clearToastTimer();
+        activeToastId = 0;
+        activeToastAction = null;
+        toastRemainingMs = 0;
+        patchAttr(toastEl, 'hidden', true);
+        return;
+      }
+      activeToastId = toast.id;
+      activeToastAction = toast.onAction;
+      patchText(toastMsgEl, toast.message);
+      const hasDetail = Boolean(toast.detail);
+      patchAttr(toastDetailEl, 'hidden', !hasDetail);
+      if (hasDetail) {
+        patchText(toastDetailEl, toast.detail);
+        patchAttr(toastDetailEl, 'title', toast.detail);
+      }
+      const hasAction = Boolean(toast.actionLabel && typeof toast.onAction === 'function');
+      patchAttr(toastActionBtn, 'hidden', !hasAction);
+      if (hasAction) {
+        patchText(toastActionLabelEl, toast.actionLabel);
+      }
+      patchClasses(toastEl, {
+        'tone-ok': toast.tone === 'ok',
+        'tone-info': toast.tone === 'info',
+        'tone-warn': toast.tone === 'warn',
+      });
+      patchAttr(toastEl, 'hidden', false);
+      scheduleToastAutoClose(toast.id, toast.durationMs);
+    }
+
+    const shellEl = h(
+      'main',
+      {
+        className: 'app-shell',
+        tabIndex: -1,
+        onKeydown: (e) => {
+          if (!e || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+          if (isEditableKeyTarget(e)) return;
+          const key = String(e.key || '');
+          const mappedView = APP_VIEW_SHORTCUT_MAP[key];
+          if (mappedView) {
+            e.preventDefault();
+            if (uiStore.getState().activeView !== mappedView) {
+              uiStore.setState({ activeView: mappedView });
+            }
+            return;
+          }
+          if (key === 'r' || key === 'R') {
+            e.preventDefault();
+            void fetchTelemetry({ force: true });
+            return;
+          }
+          if (key === '/') {
+            e.preventDefault();
+            sessionHeader.refs?.convSelect?.openAndFocusSearch?.();
+          }
+        },
+      },
+      [
+        h('div', { className: 'top-deck' }, [sessionHeader.el, topPillNav.el]),
+        bannerSlotEl,
+        stageEl,
+        toastEl,
+      ]
+    );
 
     function syncStepsBadge() {
       const uiSt = uiStore.getState();
@@ -24889,6 +33803,24 @@ const App = defineComponent({
       }
     );
 
+    let syncedSettingsCtxMode = null;
+
+    function syncContextAgentModeFromSettings(settings) {
+      if (!settings || typeof settings !== 'object') return;
+      const nextMode = getDefaultCtxInspectorAgentId(settings);
+      if (nextMode === syncedSettingsCtxMode) return;
+      const prevSynced = syncedSettingsCtxMode;
+      syncedSettingsCtxMode = nextMode;
+      const curCtx = uiStore.getState().ctxInspectorAgentId;
+      if (prevSynced !== null || curCtx === 'main' || curCtx === 'auto') {
+        if (curCtx !== nextMode) {
+          uiStore.setState({ ctxInspectorAgentId: nextMode });
+        }
+      }
+    }
+
+    syncContextAgentModeFromSettings(telemetryStore.getState().telemetry?.settings);
+
     const unsubStepCount = telemetryStore.subscribe(
       (st) => ({
         stepCount: st.telemetry?.activeConversation?.stepCount ?? 0,
@@ -24896,11 +33828,13 @@ const App = defineComponent({
         subagentCount: st.telemetry?.activeConversation?.subagentCount ?? 0,
         windowMountMode: st.telemetry?.settings?.windowMountMode,
         enableWindowOverlay: st.telemetry?.settings?.enableWindowOverlay,
+        contextAgentMode: st.telemetry?.settings?.contextAgentMode,
         modelContextWindows: st.telemetry?.settings?.modelContextWindows,
         windowBridge: st.telemetry?.windowBridge,
         hostPlatform: st.telemetry?.hostPlatform,
       }),
       () => {
+        syncContextAgentModeFromSettings(telemetryStore.getState().telemetry?.settings);
         syncStepsBadge();
         syncGlobalBridgeBanner();
       }
@@ -24911,19 +33845,29 @@ const App = defineComponent({
       () => syncStepsBadge()
     );
 
+    const unsubToast = uiStore.subscribe(
+      (st) => st.toast,
+      (toast) => syncToastState(toast)
+    );
+    syncToastState(uiStore.getState().toast);
+
     const unsubI18n = i18nStore.subscribe(
       (st) => st.locale,
       () => {
         syncStepsBadge();
         globalBridgeNotice.refs.refreshLabels();
         patchAttr(bannerSlotEl, 'hidden', globalBridgeNotice.el.hasAttribute('hidden'));
+        patchAttr(toastCloseBtn, 'aria-label', t('export.closeToast'));
+        patchAttr(toastCloseBtn, 'title', t('export.closeToast'));
       }
     );
 
     onCleanup(() => {
+      clearToastTimer();
       unsubUi();
       unsubStepCount();
       unsubScopeBadge();
+      unsubToast();
       unsubI18n();
       globalBridgeNotice.destroy();
       sessionHeader.destroy();
@@ -24940,6 +33884,8 @@ const App = defineComponent({
         sessionHeader,
         topPillNav,
         globalBridgeNotice,
+        toastEl,
+        toastActionBtn,
         overviewView,
         consumptionView,
         stepsView,
@@ -25830,6 +34776,51 @@ function getLeftSidebarRightEdge(vw) {
 /**
  * 在主窗口挂载双栖顶栏胶囊与完整四标签悬浮面板，并注册 `window.__AGUsageMonitorOverlay` 生命周期句柄。
  */
+const CAPSULE_EXCLUDED_CSS_SECTIONS = new Set([
+  'src/styles/views-overview.css',
+  'src/styles/views-consumption.css',
+  'src/styles/views-tables.css',
+  'src/styles/views-settings.css',
+  'src/styles/controls.css',
+]);
+
+let sharedOverlayStyleSheetMemo = { rawCss: '', sheet: null };
+
+function buildSlimCapsuleCss(fullCss) {
+  if (!fullCss || !fullCss.includes('/* --- src/styles/')) return fullCss;
+  return fullCss
+    .split(/(?=\/\* --- src\/styles\/)/)
+    .filter((block) => {
+      const m = block.match(/^\/\* --- (src\/styles\/[^\s]+) --- \*\//);
+      return !m || !CAPSULE_EXCLUDED_CSS_SECTIONS.has(m[1]);
+    })
+    .join('');
+}
+
+function attachShadowStyles(shadowRoot, fullCss, { slimCapsule = false } = {}) {
+  if (!shadowRoot) return;
+  if (
+    fullCss &&
+    typeof CSSStyleSheet === 'function' &&
+    Array.isArray(shadowRoot.adoptedStyleSheets)
+  ) {
+    try {
+      if (sharedOverlayStyleSheetMemo.rawCss !== fullCss || !sharedOverlayStyleSheetMemo.sheet) {
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(fullCss);
+        sharedOverlayStyleSheetMemo = { rawCss: fullCss, sheet };
+      }
+      shadowRoot.adoptedStyleSheets = [sharedOverlayStyleSheetMemo.sheet];
+      return;
+    } catch {
+      // 降级到传统 <style> 节点
+    }
+  }
+  const styleEl = document.createElement('style');
+  styleEl.textContent = slimCapsule ? buildSlimCapsuleCss(fullCss) : fullCss;
+  shadowRoot.appendChild(styleEl);
+}
+
 function mountWindowOverlay() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return null;
 
@@ -25997,7 +34988,9 @@ function mountWindowOverlay() {
     uiStore.setState({
       activeView: 'overview',
       selectedAgentScope: 'all',
-      ctxInspectorAgentId: 'auto',
+      ctxInspectorAgentId: getDefaultCtxInspectorAgentId(
+        telemetryStore.getState().telemetry?.settings
+      ),
     });
     void selectConversation(cascadeId);
     setMultiOpen(false);
@@ -26019,10 +35012,7 @@ function mountWindowOverlay() {
     }
   });
   const capsuleShadow = capsuleHost.attachShadow({ mode: 'open' });
-
-  const capsuleStyleEl = document.createElement('style');
-  capsuleStyleEl.textContent = stylesCss;
-  capsuleShadow.appendChild(capsuleStyleEl);
+  attachShadowStyles(capsuleShadow, stylesCss, { slimCapsule: true });
 
   // 左侧无边框多会话实时触发按钮（固定预占宽度，不随运行数跳动）
   const multiDot = h('span', { className: 'wm-multi-dot' });
@@ -26242,10 +35232,7 @@ function mountWindowOverlay() {
   portalHost.id = PORTAL_HOST_ID;
   portalHost.className = 'wm-portal-host';
   const portalShadow = portalHost.attachShadow({ mode: 'open' });
-
-  const portalStyleEl = document.createElement('style');
-  portalStyleEl.textContent = stylesCss;
-  portalShadow.appendChild(portalStyleEl);
+  attachShadowStyles(portalShadow, stylesCss, { slimCapsule: false });
 
   const initialSettings = telemetryStore.getState().telemetry?.settings;
 
@@ -26276,6 +35263,11 @@ function mountWindowOverlay() {
     mode: 'hover',
     isVisibleFn: () => Boolean(tooltipOpen && !disposed),
     initialModuleKeys: DEFAULT_CLIENT_HOVER_MODULES,
+    getCtxAgentId: () =>
+      resolveOverlayCtxInspectorAgentId(
+        telemetryStore.getState().telemetry,
+        uiStore.getState().ctxInspectorAgentId
+      ),
   });
 
   const hoverTipEl = h(
@@ -26351,9 +35343,9 @@ function mountWindowOverlay() {
     [multiHeaderEl, multiEmptyEl, multiRunningWidget.el]
   );
 
-  // 完整四标签悬浮容器
+  // 完整四标签悬浮容器（首次打开主弹窗时按需懒挂载 App，彻底消除宿主窗口冷启动开销）
   uiStore.setState({ monitorVisible: false });
-  const appInstance = App();
+  let appInstance = null;
   const popoverEl = h(
     'div',
     {
@@ -26362,8 +35354,16 @@ function mountWindowOverlay() {
       'aria-label': t('capsule.ariaMonitor'),
       hidden: true,
     },
-    [appInstance.el]
+    []
   );
+
+  function ensureAppMounted() {
+    if (!appInstance) {
+      appInstance = App();
+      popoverEl.appendChild(appInstance.el);
+    }
+    return appInstance;
+  }
 
   function syncPortalAppearance(settings) {
     applyAppearanceToRoot(capsuleHost, settings, { includeFontScale: false });
@@ -27109,6 +36109,7 @@ function mountWindowOverlay() {
   }
 
   function refreshActiveViewScrollbars() {
+    if (!appInstance) return;
     const activeView = uiStore.getState().activeView;
     const refs = appInstance.refs;
     if (activeView === 'overview') {
@@ -27206,6 +36207,9 @@ function mountWindowOverlay() {
     }
     if (popoverOpen === targetOpen) return;
     popoverOpen = targetOpen;
+    if (popoverOpen) {
+      ensureAppMounted();
+    }
     patchClasses(capsuleBtn, { 'is-open': popoverOpen });
     patchClasses(popoverEl, { 'is-instant': Boolean(instant && popoverOpen) });
     patchAttr(capsuleBtn, 'aria-expanded', popoverOpen ? 'true' : 'false');
@@ -27304,12 +36308,16 @@ function mountWindowOverlay() {
       return;
     }
 
+    const overlayCtxAgentId = resolveOverlayCtxInspectorAgentId(
+      telemetry,
+      uiSt.ctxInspectorAgentId
+    );
     const { agents, scopedConv: overviewScopedConv, ctxAgent, aggregated } =
-      resolveScopedConversation(telemetry, 'all', uiSt.ctxInspectorAgentId);
+      resolveScopedConversation(telemetry, 'all', overlayCtxAgentId);
     const { scopedConv: capsuleScopedConv } = resolveScopedConversation(
       telemetry,
       uiSt.selectedAgentScope,
-      uiSt.ctxInspectorAgentId
+      overlayCtxAgentId
     );
     const overviewActive = overviewScopedConv || telemetry.activeConversation || {};
     const slotCtx = buildCapsuleSlotContext(telemetry, {
@@ -27479,11 +36487,26 @@ function mountWindowOverlay() {
     if (currentRouteId === lastObservedRouteId) return;
     lastObservedRouteId = currentRouteId;
     const st = telemetryStore.getState();
+    const activeCascadeId = String(st.telemetry?.activeConversation?.cascadeId || '').trim();
+    const isSameActiveRoot =
+      Boolean(activeCascadeId) &&
+      Boolean(currentRouteId) &&
+      currentRouteId.toLowerCase() === activeCascadeId.toLowerCase();
+    const isChildOfActiveRoot =
+      Boolean(currentRouteId) &&
+      Boolean(resolveHostRouteMatch(st.telemetry, currentRouteId)?.isChildRoute);
+    const shouldPreserveSameSession =
+      !currentRouteId || isSameActiveRoot || isChildOfActiveRoot;
     const nextSelectedId =
       currentRouteId && st.selectedConversationId && st.selectedConversationId !== currentRouteId
         ? ''
         : st.selectedConversationId;
-    uiStore.setState({ selectedAgentScope: 'all', ctxInspectorAgentId: 'auto' });
+    if (!shouldPreserveSameSession) {
+      uiStore.setState({
+        selectedAgentScope: 'all',
+        ctxInspectorAgentId: getDefaultCtxInspectorAgentId(st.telemetry?.settings),
+      });
+    }
     void selectConversation(nextSelectedId, { hostRouteConversationId: currentRouteId });
   }
 
@@ -27542,6 +36565,40 @@ function mountWindowOverlay() {
   };
 
   let hostDomObserver = null;
+  let hostDomRafId = 0;
+  let hostDomMicrotaskPending = false;
+  function flushHostDomMutationCheck() {
+    if (disposed) return;
+    syncHostRouteIfChanged();
+    if (!observedWorkbench) {
+      ensureWorkbenchThemeObserved();
+    }
+    const dock = resolveRuntimeDockTarget();
+    if (!isDockPlacementSynced(dock)) {
+      scheduleDockSync();
+    }
+  }
+  function scheduleHostDomMutationCheck() {
+    if (disposed) return;
+    const rafFn =
+      (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame.bind(window)
+        : null) || (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : null);
+    if (rafFn) {
+      if (hostDomRafId) return;
+      hostDomRafId = rafFn(() => {
+        hostDomRafId = 0;
+        flushHostDomMutationCheck();
+      });
+      return;
+    }
+    if (hostDomMicrotaskPending) return;
+    hostDomMicrotaskPending = true;
+    queueMicrotask(() => {
+      hostDomMicrotaskPending = false;
+      flushHostDomMutationCheck();
+    });
+  }
   try {
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => updateResponsiveLayout());
@@ -27580,14 +36637,7 @@ function mountWindowOverlay() {
           ) {
             return;
           }
-          syncHostRouteIfChanged();
-          if (!observedWorkbench) {
-            ensureWorkbenchThemeObserved();
-          }
-          const dock = resolveRuntimeDockTarget();
-          if (!isDockPlacementSynced(dock)) {
-            scheduleDockSync();
-          }
+          scheduleHostDomMutationCheck();
         });
         hostDomObserver.observe(document.body, {
           childList: true,
@@ -27769,6 +36819,14 @@ function mountWindowOverlay() {
         cancelAnimationFrame(dockRafId);
         dockRafId = 0;
       }
+      if (hostDomRafId) {
+        const cancelRaf =
+          (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function'
+            ? window.cancelAnimationFrame.bind(window)
+            : null) || (typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : null);
+        cancelRaf?.(hostDomRafId);
+        hostDomRafId = 0;
+      }
       stopPolling();
       stopAsyncTelemetryLoop();
       unsubStore();
@@ -27794,10 +36852,13 @@ function mountWindowOverlay() {
       navigator?.windowControlsOverlay?.removeEventListener?.('geometrychange', onWindowResize);
       restorePatchedActionToolbar();
       try {
+        multiRunningWidget.destroy();
+      } catch {}
+      try {
         hoverWidgetHost.destroy();
       } catch {}
       try {
-        appInstance.destroy();
+        appInstance?.destroy?.();
       } catch {}
       try {
         capsuleHost.remove();

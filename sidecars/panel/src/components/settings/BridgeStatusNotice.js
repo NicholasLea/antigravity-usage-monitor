@@ -7,36 +7,15 @@
 import { defineComponent } from '../../core/component.js';
 import { h, patchAttr, patchClasses, patchText } from '../../core/domPatch.js';
 import { isWindowOverlayMode } from '../../core/httpClient.js';
+import {
+  copyPlainTextToClipboard,
+  createCopiedFeedbackController,
+} from '../../core/stepInspector.js';
 import { createSvgIcon, patchSvgIcon } from '../../icons/SvgIcon.js';
 import { t } from '../../i18n/index.js';
 import { triggerBridgeHostRelaunch } from '../../store/telemetryStore.js';
 
 const LAUNCH_FLAG_TEXT = '--remote-debugging-port=0';
-
-async function copyTextToClipboard(text) {
-  try {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // Fallback to temporary textarea inside restricted webview contexts
-  }
-  try {
-    if (typeof document === 'undefined' || !document.body) return false;
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', 'true');
-    area.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
-    document.body.appendChild(area);
-    area.select?.();
-    const ok = Boolean(document.execCommand?.('copy'));
-    document.body.removeChild(area);
-    return ok;
-  } catch {
-    return false;
-  }
-}
 
 export const BridgeStatusNotice = defineComponent({
   name: 'BridgeStatusNotice',
@@ -49,11 +28,16 @@ export const BridgeStatusNotice = defineComponent({
       hostPlatform: 'win32',
     };
     let dismissed = false;
-    let copied = false;
-    let copiedTimer = null;
     let relaunchState = 'idle'; // 'idle' | 'relaunching' | 'failed'
     let relaunchResetTimer = null;
     let destroyed = false;
+    const copyFeedback = createCopiedFeedbackController({
+      durationMs: 1800,
+      onCleanup,
+      onChange: () => {
+        if (!destroyed) syncActionButtons();
+      },
+    });
 
     const headIconEl = createSvgIcon('warning', { size: 13, className: 'settings-bridge-icon' });
     const titleEl = h('strong', { className: 'settings-bridge-title', text: '' });
@@ -146,18 +130,9 @@ export const BridgeStatusNotice = defineComponent({
         type: 'button',
         className: 'btn-ghost-sm settings-bridge-copy-btn',
         onClick: async () => {
-          await copyTextToClipboard(LAUNCH_FLAG_TEXT);
+          await copyPlainTextToClipboard(LAUNCH_FLAG_TEXT);
           if (destroyed) return;
-          copied = true;
-          if (copiedTimer) clearTimeout(copiedTimer);
-          syncActionButtons();
-          copiedTimer = setTimeout(() => {
-            copiedTimer = null;
-            if (destroyed) return;
-            copied = false;
-            syncActionButtons();
-          }, 1800);
-          copiedTimer?.unref?.();
+          copyFeedback.trigger(true);
         },
       },
       [copyBtnIconEl, copyBtnTextEl]
@@ -200,10 +175,11 @@ export const BridgeStatusNotice = defineComponent({
               : t('settings.bridge.relaunchBtn')
       );
 
-      patchSvgIcon(copyBtnIconEl, copied ? 'check' : 'copy');
+      const isCopied = copyFeedback.isCopied(true);
+      patchSvgIcon(copyBtnIconEl, isCopied ? 'check' : 'copy');
       patchText(
         copyBtnTextEl,
-        copied
+        isCopied
           ? t('settings.bridge.copiedBtn')
           : t('settings.bridge.copyFlagBtn', { cmd: LAUNCH_FLAG_TEXT })
       );
@@ -288,10 +264,6 @@ export const BridgeStatusNotice = defineComponent({
 
     onCleanup(() => {
       destroyed = true;
-      if (copiedTimer) {
-        clearTimeout(copiedTimer);
-        copiedTimer = null;
-      }
       if (relaunchResetTimer) {
         clearTimeout(relaunchResetTimer);
         relaunchResetTimer = null;

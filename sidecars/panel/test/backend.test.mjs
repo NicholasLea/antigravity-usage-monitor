@@ -1076,6 +1076,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.equal(def.windowMountMode, 'dual');
   assert.equal(def.enableWindowOverlay, true);
   assert.equal(def.showTopbarMultiSession, true);
+  assert.equal(def.contextAgentMode, 'main');
   assert.equal(def.enableCliStatusLine, true);
   assert.deepEqual([...def.topbarCapsuleSlots], ['tps', 'ttft', 'context']);
   assert.deepEqual([...def.hoverModules], ['metrics', 'context', 'quotas']);
@@ -1084,6 +1085,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.equal(def.showStepTurnRail, false);
   assert.equal(def.showStepAgentBadge, true);
   assert.equal(def.showStepSpeedColor, false);
+  assert.equal(def.showStepFilterToolbar, false);
   assert.deepEqual([...def.stepTableColumns], ['step', 'model', 'tps', 'ttft', 'tokens_combo', 'cache', 'cost']);
   assert.deepEqual({ ...def.modelContextWindows }, {});
 
@@ -1104,12 +1106,16 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.deepEqual([...hDefault.normalizeOverviewModules([])], ['metrics']);
   assert.deepEqual([...hDefault.normalizeOverviewMetrics([])], ['tps']);
   assert.deepEqual([...hDefault.normalizeStepTableColumns(['cost'])], ['cost', 'step']);
+  assert.equal(hDefault.normalizeContextAgentMode('auto'), 'auto');
+  assert.equal(hDefault.normalizeContextAgentMode('main'), 'main');
+  assert.equal(hDefault.normalizeContextAgentMode('unknown'), 'main');
 
   // 4. Updating preferences must not apply legacy global limits or bulk model updates
   const saveRes = hDefault.executeSettingsAction({
     language: 'en-US',
     themeAccent: 'emerald',
     fontScale: 'lg',
+    contextAgentMode: 'auto',
     topbarCapsuleSlots: ['context', 'tps', 'ttft', 'cost'],
     hoverModules: ['metrics', 'context'],
     overviewModules: ['quotas', 'metrics'],
@@ -1118,6 +1124,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
     showStepTurnRail: true,
     showStepAgentBadge: false,
     showStepSpeedColor: true,
+    showStepFilterToolbar: true,
     stepTableColumns: ['step', 'time', 'model', 'duration', 'input_tokens', 'output_tokens', 'cost'],
     contextLimitOverrideTokens: 128000,
     modelContextWindows: { MODEL_PLACEHOLDER_M418: '900K' },
@@ -1126,6 +1133,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.equal(saveRes.updated.language, 'en-US');
   assert.equal(saveRes.updated.themeAccent, 'emerald');
   assert.equal(saveRes.updated.fontScale, 'lg');
+  assert.equal(saveRes.updated.contextAgentMode, 'auto');
   assert.equal(saveRes.updated.topbarCapsuleSlots.length, 4);
   assert.deepEqual([...saveRes.updated.hoverModules], ['metrics', 'context']);
   assert.deepEqual([...saveRes.updated.overviewModules], ['quotas', 'metrics']);
@@ -1134,6 +1142,7 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.equal(saveRes.updated.showStepTurnRail, true);
   assert.equal(saveRes.updated.showStepAgentBadge, false);
   assert.equal(saveRes.updated.showStepSpeedColor, true);
+  assert.equal(saveRes.updated.showStepFilterToolbar, true);
   assert.equal(saveRes.updated.contextLimitOverrideTokens, undefined);
   assert.deepEqual({ ...saveRes.updated.modelContextWindows }, {});
 
@@ -1162,10 +1171,12 @@ test('preferences schema defaults match pre-refactor UI, migrate legacy none slo
   assert.equal(resetRes.updated.language, 'auto');
   assert.equal(resetRes.updated.modernUi, true);
   assert.equal(resetRes.updated.themeAccent, 'host');
+  assert.equal(resetRes.updated.contextAgentMode, 'main');
   assert.equal(resetRes.updated.enableCliStatusLine, true);
   assert.equal(resetRes.updated.showStepTurnRail, false);
   assert.equal(resetRes.updated.showStepAgentBadge, true);
   assert.equal(resetRes.updated.showStepSpeedColor, false);
+  assert.equal(resetRes.updated.showStepFilterToolbar, false);
   assert.deepEqual([...resetRes.updated.topbarCapsuleSlots], ['tps', 'ttft', 'context']);
 });
 
@@ -1847,6 +1858,9 @@ test('Antigravity CLI annotations.pbtxt + SQLite trajectory reader recovers titl
         env: {
           ...process.env,
           ANTIGRAVITY_GEMINI_DIR: tempRoot,
+          ANTIGRAVITY_APP_DATA_DIR: '',
+          USAGE_MONITOR_APP_DATA_DIR: '',
+          ANTIGRAVITY_EXECUTABLE_DATA_DIR: '',
           USAGE_MONITOR_DATA_DIR: join(tempRoot, 'data'),
           ANTIGRAVITY_LS_ADDRESS: 'test.invalid',
           ANTIGRAVITY_CSRF_TOKEN: 'test',
@@ -1945,7 +1959,7 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
     effort: 'high',
   });
 
-  // Capsule formatting in NO_COLOR and 24-bit ANSI modes uses transparent background (zero 48;...m SGR)
+  // Capsule formatting: NO_COLOR renders compact plain text; 24-bit ANSI renders inline pill gauges (48;2;...m) with zero OSC
   const plainCapsule = h.formatCliStatusLineCapsule(
     {
       hasTelemetry: true,
@@ -1963,7 +1977,7 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       color: false,
     }
   );
-  assert.equal(plainCapsule, '● 0 运行中   11.8s | 38.1 t/s | 余 57% | ◎ 17%');
+  assert.equal(plainCapsule, '● 0 运行中   11.8s | 38.1 t/s | 余 57% | 上下文 17%');
 
   const ansiCapsule = h.formatCliStatusLineCapsule(
     {
@@ -1982,14 +1996,15 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       color: true,
     }
   );
-  assert.equal(/\x1b\[48;/.test(ansiCapsule), false, 'Emits zero background SGR codes');
+  assert.equal(/\x1b\[48;2;116;84;22m/.test(ansiCapsule), true, 'Emits warm amber 24-bit pill fill for warn quota/context');
+  assert.equal(/\x1b\[48;2;36;40;50m/.test(ansiCapsule), true, 'Emits dark slate unfilled pill track');
   assert.equal(/\x1b\]/.test(ansiCapsule), false, 'Contains zero OSC sequences so Bubble Tea width never breaks');
   assert.equal(
     ansiCapsule.replace(/\x1b\[[0-9;]*m/g, ''),
-    '● 2 运行中 · 1 子   1.3s | 68.4 t/s | 余 22% | ◎ 75%'
+    '● 2 运行中 · 1 子   1.3s | 68.4 t/s |  余 22%  |  上下文 75% '
   );
 
-  // Full 3-column single-line bar with left shortcuts, centered metrics, and right mode/model/effort
+  // Full 3-column single-line bar with left shortcuts, centered pill metrics, and right mode/model/effort
   const inlineBar120 = h.formatCliStatusLineCapsule(
     {
       hasTelemetry: true,
@@ -2011,12 +2026,47 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       modelEffort: 'medium',
     }
   );
-  assert.equal(/\x1b\[48;/.test(inlineBar120), false, 'Inline 3-column bar has zero background SGR');
+  assert.equal(/\x1b\[48;2;24;96;68m/.test(inlineBar120), true, 'Quota normal pill uses deep emerald fill');
+  assert.equal(/\x1b\[48;2;36;72;128m/.test(inlineBar120), true, 'Context normal pill uses slate-blue fill');
   const plainBar120 = inlineBar120.replace(/\x1b\[[0-9;]*m/g, '');
   assert.ok(plainBar120.startsWith('? for shortcuts  '), 'Keeps ? for shortcuts on the left');
-  assert.ok(plainBar120.includes('● 2 运行中   5.6s | 22.0 t/s | 余 54% | ◎ 2%'), 'Centers capsule metrics inline');
+  assert.ok(
+    plainBar120.includes('● 2 运行中   5.6s | 22.0 t/s |  余 54%  |  上下文  2% '),
+    'Keeps compact pill gauges with right-aligned percentage and full chrome in 120 columns'
+  );
   assert.ok(plainBar120.endsWith('  auto · Gemini 4 Hydrogen · medium'), 'Renders deduplicated mode · model · effort on the right');
   assert.equal(h.cliDisplayWidth(inlineBar120), 119, 'Fits cleanly within terminalWidth - 1 without wrapping');
+
+  // Compact 108-column terminal still fits full 3-column chrome AND pill gauges cleanly (saves ~12 cols over Braille bars)
+  const inlineBar108 = h.formatCliStatusLineCapsule(
+    {
+      hasTelemetry: true,
+      runningCount: 2,
+      runningSubCount: 0,
+      ttft: 5.6,
+      tps: 22.0,
+      usedPct: 2,
+      quotas: { activePool: { remainingPct: 54 } },
+    },
+    {
+      slots: ['ttft', 'tps', 'quota_auto', 'context'],
+      showMultiSession: true,
+      language: 'zh-CN',
+      color: true,
+      terminalWidth: 108,
+      cycleMode: 'auto',
+      modelDisplayName: 'Gemini 4 Hydrogen (Medium)',
+      modelEffort: 'medium',
+    }
+  );
+  const plainBar108 = inlineBar108.replace(/\x1b\[[0-9;]*m/g, '');
+  assert.ok(plainBar108.startsWith('? for shortcuts  '), 'Keeps ? for shortcuts at 108 columns');
+  assert.ok(
+    plainBar108.includes('● 2 运行中   5.6s | 22.0 t/s |  余 54%  |  上下文  2% '),
+    'Fits compact pill gauges and full chrome even at 108 columns'
+  );
+  assert.ok(plainBar108.endsWith('  auto · Gemini 4 Hydrogen · medium'), 'Keeps full right chrome at 108 columns');
+  assert.equal(h.cliDisplayWidth(inlineBar108), 107, '108-col bar fits cleanly within terminalWidth - 1');
 
   // Narrow 80-column terminal gracefully compacts without wrapping
   const inlineBar80 = h.formatCliStatusLineCapsule(
@@ -2041,7 +2091,7 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
     }
   );
   assert.ok(h.cliDisplayWidth(inlineBar80) <= 79, 'Narrow 80-col bar never overflows terminalWidth - 1');
-  assert.ok(inlineBar80.includes('5.6s | 22.0 t/s | 余 54% | ◎ 2%'));
+  assert.ok(inlineBar80.includes('5.6s | 22.0 t/s | 余 54% | 上下文 2%'));
 
   // End-to-end filesystem + subprocess verification
   const tempRoot = mkdtempSync(fileURLToPath(new URL('./.cli-statusline-', import.meta.url)));
@@ -2063,6 +2113,9 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
     const installEnv = {
       ...process.env,
       ANTIGRAVITY_GEMINI_DIR: tempRoot,
+      ANTIGRAVITY_APP_DATA_DIR: '',
+      USAGE_MONITOR_APP_DATA_DIR: '',
+      ANTIGRAVITY_EXECUTABLE_DATA_DIR: '',
       USAGE_MONITOR_DATA_DIR: dataDir,
       USAGE_MONITOR_ALLOW_TEST_CLI_SETTINGS: '1',
     };
@@ -2187,7 +2240,7 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       input: stdinPayload,
       encoding: 'utf8',
     }).trim();
-    assert.equal(capsuleOut, '● 0 运行中   1.8s | 38.1 t/s | 余 57% | ◎ 17%');
+    assert.equal(capsuleOut, '● 0 运行中   1.8s | 38.1 t/s | 余 57% | 上下文 17%');
 
     // Full 3-column single-line E2E with terminal_width + cycle_mode + model + native stdin quota fallback
     const emptySnapDir = join(tempRoot, 'empty-data');
@@ -2222,10 +2275,10 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
       input: fullLineStdin,
       encoding: 'utf8',
     }).replace(/\r?\n$/, '');
-    assert.equal(/\x1b\[48;/.test(fullLineOut), false, 'E2E ANSI output has zero background fill');
+    assert.equal(/\x1b\[48;2;/.test(fullLineOut), true, 'E2E ANSI output renders 24-bit pill background fill');
     const plainFullLine = fullLineOut.replace(/\x1b\[[0-9;]*m/g, '');
     assert.ok(plainFullLine.startsWith('? for shortcuts  '));
-    assert.ok(plainFullLine.includes('● 1 运行中   1.8s | 38.1 t/s | 余 54% | ◎ 2%'));
+    assert.ok(plainFullLine.includes('● 1 运行中   1.8s | 38.1 t/s |  余 54%  |  上下文  2% '));
     assert.ok(plainFullLine.endsWith('  auto · Gemini 4 Hydrogen · medium'));
     assert.equal(h.cliDisplayWidth(fullLineOut), 129);
 
@@ -2236,7 +2289,7 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
         input: stdinPayload,
         encoding: 'utf8',
       }).trim();
-      assert.equal(cmdCapsuleOut, '● 0 运行中   1.8s | 38.1 t/s | 余 57% | ◎ 17%');
+      assert.equal(cmdCapsuleOut, '● 0 运行中   1.8s | 38.1 t/s | 余 57% | 上下文 17%');
 
       const spaceDir = join(tempRoot, 'Dir With Spaces');
       mkdirSync(spaceDir, { recursive: true });
@@ -2252,8 +2305,80 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
         input: stdinPayload,
         encoding: 'utf8',
       }).trim();
-      assert.equal(autorunOut, '● 0 运行中   1.8s | 38.1 t/s | 余 57% | ◎ 17%');
+      assert.equal(autorunOut, '● 0 运行中   1.8s | 38.1 t/s | 余 57% | 上下文 17%');
     }
+
+    // Verify compaction-line precedence: when local trajectory reports maxContextTokens (e.g. 512k),
+    // statusLine aligns with Desktop App's compaction-limit percentage instead of agy's physical 1M used_percentage.
+    const cidLimit = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const limitUsageBuf = Buffer.concat([
+      encodeProtoFieldVarint(1, 1535), // MODEL_PLACEHOLDER_M535 (Gemini 4 Neon)
+      encodeProtoFieldVarint(2, 10040), // inputTokens
+      encodeProtoFieldVarint(3, 1000), // outputTokens
+      encodeProtoFieldVarint(5, 460000), // cacheReadTokens => prompt + output = 471,040
+      encodeProtoFieldVarint(6, 24), // API_PROVIDER_GOOGLE_GEMINI
+    ]);
+    const limitStepMetaBuf = Buffer.concat([
+      encodeProtoFieldBytes(1, encodeProtoFieldVarint(1, 1794762101)),
+      encodeProtoFieldBytes(6, encodeProtoFieldVarint(1, 1794762111)),
+      encodeProtoFieldBytes(7, encodeProtoFieldVarint(1, 1794762111)),
+      encodeProtoFieldBytes(9, limitUsageBuf),
+      encodeProtoFieldBytes(20, encodeProtoFieldVarint(2, 1)),
+    ]);
+    const ctxWinMetaBuf = Buffer.concat([
+      encodeProtoFieldVarint(1, 450000), // estimatedTokensUsed
+      encodeProtoFieldVarint(4, 512000), // maxContextTokens (official compaction threshold)
+    ]);
+    const limitChatModelBuf = Buffer.concat([
+      encodeProtoFieldVarint(3, 1535),
+      encodeProtoFieldBytes(4, limitUsageBuf),
+      encodeProtoFieldBytes(9, encodeProtoFieldBytes(10, ctxWinMetaBuf)), // chatStartMetadata.contextWindowMetadata
+      encodeProtoFieldBytes(
+        11,
+        Buffer.concat([encodeProtoFieldVarint(1, 1), encodeProtoFieldVarint(2, 800000000)])
+      ),
+      encodeProtoFieldBytes(12, encodeProtoFieldVarint(1, 10)),
+    ]);
+    const limitGenMetaBuf = Buffer.concat([
+      encodeProtoFieldBytes(2, Buffer.from([1])),
+      encodeProtoFieldBytes(1, limitChatModelBuf),
+    ]);
+    const limitConvDb = new DatabaseSync(join(convDir, `${cidLimit}.db`));
+    limitConvDb.exec(`
+      CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);
+      CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+    `);
+    limitConvDb.prepare('INSERT INTO steps (idx, step_type, status, metadata) VALUES (?, ?, ?, ?)').run(0, 14, 3, null);
+    limitConvDb
+      .prepare('INSERT INTO steps (idx, step_type, status, metadata) VALUES (?, ?, ?, ?)')
+      .run(1, 15, 3, limitStepMetaBuf);
+    limitConvDb.prepare('INSERT INTO gen_metadata (idx, data) VALUES (?, ?)').run(0, limitGenMetaBuf);
+    limitConvDb.close();
+
+    const limitStdin = JSON.stringify({
+      session_id: cidLimit,
+      agent_state: 'idle',
+      cwd: 'C:\\Work\\MyProject',
+      // agy reports physical 1M ratio (~42%), while compaction limit 471,040 / 512,000 = 92.0%
+      context_window: { used_percentage: 42, total_input_tokens: 470040, total_output_tokens: 1000 },
+    });
+    const limitOut = execFileSync(process.execPath, [statusLineScript], {
+      env: { ...installEnv, NO_COLOR: '1' },
+      input: limitStdin,
+      encoding: 'utf8',
+    }).trim();
+    assert.ok(
+      limitOut.includes('上下文 92%'),
+      `expected compaction-limit 92% instead of physical 42%, got: ${limitOut}`
+    );
+    assert.equal(limitOut.includes('42%'), false);
+    const limitAnsiOut = execFileSync(process.execPath, [statusLineScript], {
+      env: installEnv,
+      input: limitStdin,
+      encoding: 'utf8',
+    }).trim();
+    assert.equal(/\x1b\[48;2;124;42;48m/.test(limitAnsiOut), true, '92% compaction limit uses danger crimson pill');
+    assert.ok(limitAnsiOut.replace(/\x1b\[[0-9;]*m/g, '').includes(' 上下文 92% '));
 
     // Verify real non-test.invalid buildTelemetryPayload writes cli-status-snapshot.json cleanly without throwing
     const builderUrl = new URL('../backend/telemetry-builder.mjs', import.meta.url).href;
@@ -2291,6 +2416,394 @@ test('provisions Antigravity CLI statusLine safely and renders live capsule from
     const afterUninstall = JSON.parse(readFileSync(cliSettingsFile, 'utf8'));
     assert.equal(afterUninstall.selectedAuthType, 'oauth');
     assert.equal(afterUninstall.statusLine, undefined);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('CLI statusLine v1.5.4 upgrades: /statusline inline flags, preserved managed flags, model-aware quota pool, empty-session cleanup, anomaly badge, and narrow-terminal shedding', async () => {
+  const h = backendHarness();
+  const {
+    buildMergedCliCapsuleContext,
+    parseCliStatusLineArgs,
+  } = await import('../cli-statusline.mjs');
+
+  // 1. Slot presets, comma lists (1-6 slots), and backwards-compatible fallback
+  assert.deepEqual(
+    [...h.resolveEffectiveCliStatusLineSlots({ topbarCapsuleSlots: ['tps', 'ttft', 'context'], cliStatusLineSlots: null })],
+    ['tps', 'ttft', 'session_cost', 'quota_auto', 'context']
+  );
+  assert.deepEqual(
+    [...h.resolveEffectiveCliStatusLineSlots({ topbarCapsuleSlots: ['ttft', 'tps', 'quota_auto', 'context'], cliStatusLineSlots: null })],
+    ['ttft', 'tps', 'quota_auto', 'context']
+  );
+  assert.deepEqual([...h.normalizeCliStatusLineSlots('full')], [
+    'tps', 'ttft', 'cache_hit', 'session_cost', 'quota_auto', 'context',
+  ]);
+  assert.deepEqual([...h.normalizeCliStatusLineSlots('compact')], ['tps', 'ttft', 'context']);
+  assert.equal(h.normalizeCliStatusLineSlots('auto'), null);
+
+  // 2. Managed flag extraction & preservation across daemon sync
+  assert.equal(
+    h.extractManagedCliStatusLineFlags('node C:/plugin/cli-statusline.mjs --slots tps,cache_hit,context --no-multi'),
+    '--slots tps,cache_hit,context --no-multi'
+  );
+  assert.equal(
+    h.extractManagedCliStatusLineFlags("node --input-type=module -e import('file:///C:/dir%20a/cli-statusline.mjs#autorun') -- --preset full"),
+    '--preset full'
+  );
+  const preservedFlags = h.applyCliStatusLineToSettingsObject(
+    {
+      statusLine: {
+        type: 'command',
+        command: 'node C:/plugin/cli-statusline.mjs --preset full --no-multi',
+        enabled: true,
+        padding: 0,
+        stack_with_default: true,
+      },
+    },
+    { enabled: true, command: 'node C:/plugin/cli-statusline.mjs' }
+  );
+  assert.equal(preservedFlags.changed, true);
+  assert.equal(
+    preservedFlags.object.statusLine.command,
+    'node C:/plugin/cli-statusline.mjs --preset full --no-multi',
+    'User flags appended via /statusline must survive daemon statusLine reconciliation'
+  );
+
+  // 3. Inline flag parsing
+  const parsedFlags = parseCliStatusLineArgs([
+    '--slots', 'tps,cache_hit,context',
+    '--no-multi',
+    '--no-anomaly',
+    '--lang=en-US',
+    '--no-color',
+  ]);
+  assert.equal(parsedFlags.slotsRaw, 'tps,cache_hit,context');
+  assert.equal(parsedFlags.showMultiSession, false);
+  assert.equal(parsedFlags.showAnomaly, false);
+  assert.equal(parsedFlags.language, 'en-US');
+  assert.equal(parsedFlags.noColor, true);
+
+  // 4. Model-aware active quota pool & expanded agent_state detection (working / tool_use)
+  const mergedClaudeCtx = buildMergedCliCapsuleContext({
+    stdinData: {
+      agent_state: 'tool_use',
+      model: { id: 'claude-opus-4-6-thinking', display_name: 'Claude Opus 4.6 (Thinking)' },
+      context_window: { used_percentage: 22 },
+    },
+    snapshot: {
+      updatedAtMs: Date.now(),
+      runningCount: 0,
+      quotas: {
+        activePool: { poolKey: 'Gemini', poolLabel: 'Gemini', remainingPct: 25 },
+        pools: [
+          { poolKey: 'Gemini', poolLabel: 'Gemini', remainingPct: 25, models: ['Gemini 4 Neon (XHigh)'] },
+          { poolKey: 'Claude & GPT', poolLabel: 'Claude & GPT', remainingPct: 100, models: ['Claude Opus 4.6 (Thinking)'] },
+        ],
+      },
+    },
+  });
+  assert.equal(mergedClaudeCtx.isRunning, true);
+  assert.equal(mergedClaudeCtx.runningCount, 1);
+  assert.equal(mergedClaudeCtx.quotas.activePool.poolKey, 'Claude & GPT');
+  assert.equal(mergedClaudeCtx.quotas.activePool.remainingPct, 100);
+
+  // 5. Fresh session (stepCount: 0) hides empty --s / -- placeholders while keeping status, quota, and context
+  const freshBar = h.formatCliStatusLineCapsule(
+    {
+      hasTelemetry: true,
+      stepCount: 0,
+      isRunning: false,
+      runningCount: 0,
+      tps: null,
+      ttft: null,
+      sessionCost: null,
+      usedPct: 16,
+      quotas: { activePool: { remainingPct: 98 } },
+    },
+    {
+      slots: ['tps', 'ttft', 'session_cost', 'quota_auto', 'context'],
+      language: 'zh-CN',
+      color: false,
+    }
+  );
+  assert.equal(freshBar, '● 0 运行中   空闲 | 余 98% | 上下文 16%');
+
+  // 5b. Dedicated 5h / weekly / context slots in NO_COLOR and pill ANSI modes (zh-CN & en-US)
+  const quotaBarCtx = {
+    hasTelemetry: true,
+    stepCount: 3,
+    usedPct: 56,
+    quotas: {
+      pools: [
+        { poolKey: 'Gemini', family: 'Gemini', remainingPct: 64, weeklyRemainingPct: 88 },
+        { poolKey: 'Claude & GPT', family: 'Claude & GPT', remainingPct: 96, weeklyRemainingPct: 14 },
+      ],
+    },
+  };
+  assert.equal(
+    h.formatCliStatusLineCapsule(quotaBarCtx, {
+      slots: ['gemini_5h', 'gemini_weekly', 'claude_5h', 'claude_weekly', 'context'],
+      showMultiSession: false,
+      language: 'zh-CN',
+      color: false,
+    }),
+    'G5h 64% | G周 88% | C5h 96% | C周 14% | 上下文 56%'
+  );
+  const quotaPillAnsi = h.formatCliStatusLineCapsule(quotaBarCtx, {
+    slots: ['gemini_5h', 'claude_weekly', 'context'],
+    showMultiSession: false,
+    language: 'zh-CN',
+    color: true,
+  });
+  assert.equal(/\x1b\[48;2;24;96;68m/.test(quotaPillAnsi), true, '64% quota uses green pill fill');
+  assert.equal(/\x1b\[48;2;124;42;48m/.test(quotaPillAnsi), true, '14% quota uses danger red pill fill');
+  assert.equal(/\x1b\[48;2;36;72;128m/.test(quotaPillAnsi), true, '56% context uses blue pill fill');
+  assert.equal(
+    quotaPillAnsi.replace(/\x1b\[[0-9;]*m/g, ''),
+    ' G5h 64%  |  C周 14%  |  上下文 56% '
+  );
+  assert.equal(
+    h.formatCliStatusLineCapsule(quotaBarCtx, {
+      slots: ['gemini_weekly', 'claude_weekly', 'context'],
+      showMultiSession: false,
+      language: 'en-US',
+      color: false,
+    }),
+    'Gw 88% | Cw 14% | Ctx 56%'
+  );
+
+  // 5c. Local SQLite WAITING step immediately turns CLI dot amber even while Desktop snapshot is still false
+  const waitingFromLocalDb = buildMergedCliCapsuleContext({
+    stdinData: { agent_state: 'running' },
+    localMetrics: {
+      found: true,
+      cascadeId: '11111111-1111-1111-1111-111111111111',
+      dbMtimeMs: Date.now(),
+      targetIsRunning: true,
+      targetIsWaiting: true,
+      targetWaitingApprovalFresh: true,
+      runningRootCount: 1,
+      stepCount: 5,
+    },
+    snapshot: {
+      updatedAtMs: Date.now() - 1000,
+      runningCount: 1,
+      hasWaiting: false,
+      waitingCascadeIds: [],
+    },
+  });
+  assert.equal(waitingFromLocalDb.runningCount, 1);
+  assert.equal(waitingFromLocalDb.hasWaiting, true);
+  const amberDotLine = h.formatCliStatusLineCapsule(waitingFromLocalDb, {
+    slots: ['tps', 'context'],
+    language: 'zh-CN',
+    color: true,
+  });
+  assert.ok(amberDotLine.includes('\x1b[38;2;251;191;36m● '), 'Waiting session dot must render amber SGR');
+
+  // Once local DB resumes (newer than stale Desktop snapshot), dot returns to green immediately
+  const resumedFromLocalDb = buildMergedCliCapsuleContext({
+    stdinData: { agent_state: 'running' },
+    localMetrics: {
+      found: true,
+      cascadeId: '11111111-1111-1111-1111-111111111111',
+      dbMtimeMs: Date.now(),
+      targetIsRunning: true,
+      targetIsWaiting: false,
+      targetWaitingApprovalFresh: false,
+      runningRootCount: 1,
+      stepCount: 6,
+    },
+    snapshot: {
+      updatedAtMs: Date.now() - 1500,
+      runningCount: 1,
+      hasWaiting: true,
+      waitingCascadeIds: ['11111111-1111-1111-1111-111111111111'],
+    },
+  });
+  assert.equal(resumedFromLocalDb.hasWaiting, false);
+
+  // 6. Anomaly badge (toggleable via showAnomaly) + pill SGR & zero OSC
+  const withAnom = h.formatCliStatusLineCapsule(
+    {
+      hasTelemetry: true,
+      stepCount: 4,
+      runningCount: 1,
+      tps: 44.2,
+      ttft: 2.1,
+      usedPct: 35,
+      latestAnomaly: { primaryKind: 'capacity', count: 1, severity: 'warn' },
+    },
+    {
+      slots: ['tps', 'ttft', 'context'],
+      language: 'zh-CN',
+      color: true,
+    }
+  );
+  assert.equal(/\x1b\[48;2;36;72;128m/.test(withAnom), true);
+  assert.equal(/\x1b\]/.test(withAnom), false);
+  assert.equal(withAnom.replace(/\x1b\[[0-9;]*m/g, ''), '● 1 运行中   44.2 t/s | 2.1s |  上下文 35%  | ! 503');
+
+  const withoutAnom = h.formatCliStatusLineCapsule(
+    {
+      hasTelemetry: true,
+      stepCount: 4,
+      runningCount: 1,
+      tps: 44.2,
+      ttft: 2.1,
+      usedPct: 35,
+      latestAnomaly: { primaryKind: 'capacity', count: 1, severity: 'warn' },
+    },
+    {
+      slots: ['tps', 'ttft', 'context'],
+      language: 'zh-CN',
+      showAnomaly: false,
+      color: false,
+    }
+  );
+  assert.equal(withoutAnom, '● 1 运行中   44.2 t/s | 2.1s | 上下文 35%');
+
+  // 7. Narrow 72-column terminal progressively sheds lower-priority slots without wrapping
+  const narrow72 = h.formatCliStatusLineCapsule(
+    {
+      hasTelemetry: true,
+      stepCount: 6,
+      runningCount: 1,
+      tps: 48.2,
+      ttft: 1.4,
+      cacheHitPct: 95,
+      sessionCost: 1.25,
+      usedPct: 34,
+      quotas: { activePool: { remainingPct: 88 } },
+    },
+    {
+      slots: ['tps', 'ttft', 'cache_hit', 'session_cost', 'quota_auto', 'context'],
+      language: 'zh-CN',
+      color: false,
+      terminalWidth: 72,
+      cycleMode: 'auto',
+      modelDisplayName: 'Gemini 4 Neon (XHigh)',
+      modelEffort: 'xhigh',
+    }
+  );
+  assert.ok(h.cliDisplayWidth(narrow72) <= 71, `Expected <= 71 cols, got ${h.cliDisplayWidth(narrow72)}`);
+  assert.ok(narrow72.includes('上下文 34%'));
+  assert.ok(narrow72.includes('48.2 t/s'));
+
+  // 8. Subprocess E2E: inline flags & --install preserving custom flags
+  const tempRoot = mkdtempSync(fileURLToPath(new URL('./.cli-sl-flags-', import.meta.url)));
+  try {
+    const cliDir = join(tempRoot, 'antigravity-cli');
+    const dataDir = join(tempRoot, 'data');
+    mkdirSync(cliDir, { recursive: true });
+    mkdirSync(dataDir, { recursive: true });
+    const statusLineScript = fileURLToPath(new URL('../cli-statusline.mjs', import.meta.url));
+    const env = {
+      ...process.env,
+      ANTIGRAVITY_GEMINI_DIR: tempRoot,
+      USAGE_MONITOR_DATA_DIR: dataDir,
+      USAGE_MONITOR_ALLOW_TEST_CLI_SETTINGS: '1',
+      NO_COLOR: '1',
+    };
+
+    const installCustom = JSON.parse(
+      execFileSync(process.execPath, [statusLineScript, '--install', '--preset', 'full', '--no-multi'], {
+        env,
+        encoding: 'utf8',
+      }).trim()
+    );
+    assert.equal(installCustom.updated, true);
+    assert.ok(installCustom.command.includes('--preset full --no-multi'));
+
+    const reinstallBare = JSON.parse(
+      execFileSync(process.execPath, [statusLineScript, '--install'], {
+        env,
+        encoding: 'utf8',
+      }).trim()
+    );
+    assert.equal(reinstallBare.updated, false);
+    const savedCliSettings = JSON.parse(readFileSync(join(cliDir, 'settings.json'), 'utf8'));
+    assert.ok(savedCliSettings.statusLine.command.includes('--preset full --no-multi'));
+
+    const inlineOut = execFileSync(
+      process.execPath,
+      [statusLineScript, '--slots', 'tps,quota_auto,context', '--no-multi', '--lang', 'en-US'],
+      {
+        env,
+        input: JSON.stringify({
+          agent_state: 'idle',
+          context_window: { used_percentage: 19 },
+          quota: { Gemini: { remaining_fraction: 0.91 } },
+        }),
+        encoding: 'utf8',
+      }
+    ).trim();
+    assert.equal(inlineOut, 'Idle | 5h 91% | Ctx 19%');
+
+    // 9. Runtime CLI installation & status detection (strictly gated on antigravity-cli dir) + forceReplaceCustom recovery
+    const { ensureCliStatusLineConfigured, getCliStatusLineRuntimeStatus } = await import(
+      '../backend/cli-statusline-config.mjs'
+    );
+    const missingStatus = getCliStatusLineRuntimeStatus({
+      env: { ANTIGRAVITY_GEMINI_DIR: join(tempRoot, 'nonexistent-gemini') },
+    });
+    assert.deepEqual(missingStatus, {
+      installed: false,
+      configured: false,
+      preservedCustom: false,
+      managedFlags: '',
+    });
+
+    const managedStatus = getCliStatusLineRuntimeStatus({
+      env: { ANTIGRAVITY_GEMINI_DIR: tempRoot },
+    });
+    assert.deepEqual(managedStatus, {
+      installed: true,
+      configured: true,
+      preservedCustom: false,
+      managedFlags: '--preset full --no-multi',
+    });
+
+    writeFileSync(
+      join(cliDir, 'settings.json'),
+      JSON.stringify({ statusLine: { type: 'command', command: 'custom-bar' } }),
+      'utf8'
+    );
+    const customStatus = getCliStatusLineRuntimeStatus({
+      env: { ANTIGRAVITY_GEMINI_DIR: tempRoot },
+    });
+    assert.deepEqual(customStatus, {
+      installed: true,
+      configured: false,
+      preservedCustom: true,
+      managedFlags: '',
+    });
+
+    const forceRestored = ensureCliStatusLineConfigured({
+      enabled: true,
+      env,
+      forceReplaceCustom: true,
+      preserveManagedFlags: false,
+    });
+    assert.equal(forceRestored.updated, true);
+    assert.deepEqual(
+      getCliStatusLineRuntimeStatus({ env: { ANTIGRAVITY_GEMINI_DIR: tempRoot } }),
+      {
+        installed: true,
+        configured: true,
+        preservedCustom: false,
+        managedFlags: '',
+      }
+    );
+
+    const noCliPayload = await backendHarness().buildTelemetryPayloadInternal('', false, { range: 'today' });
+    assert.equal(noCliPayload.cliStatusLine?.installed, false);
+    const withCliPayload = await backendHarness({
+      diskDirs: { '/test-home/.gemini/antigravity-cli': [] },
+    }).buildTelemetryPayloadInternal('', false, { range: 'today' });
+    assert.equal(withCliPayload.cliStatusLine?.installed, true);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -2392,6 +2905,9 @@ test('v1.5 feedback settings schema: custom token combo DSL, 3-way model display
       ...process.env,
       USAGE_MONITOR_DATA_DIR: workerTemp,
       ANTIGRAVITY_GEMINI_DIR: workerTemp,
+      ANTIGRAVITY_APP_DATA_DIR: '',
+      USAGE_MONITOR_APP_DATA_DIR: '',
+      ANTIGRAVITY_EXECUTABLE_DATA_DIR: '',
       ANTIGRAVITY_LS_ADDRESS: 'test.invalid',
     },
   });
@@ -2826,4 +3342,116 @@ test('scope=conversation switches sessions with zero LS RPCs, preserves usageRev
   releaseSecondFetch();
   await pendingSwitch;
   assert.equal(telemetryStore.getState().telemetry.activeConversation.recentSteps.length, 2);
+});
+
+test('CLI statusLine supports --style pill|bar|compact switching, flag persistence, and --json snapshot output', async () => {
+  const {
+    buildCliJsonStatusOutput,
+    formatCliStatusLineCapsule,
+    normalizeCliStatusLineGaugeStyle,
+  } = await import('../backend/cli-statusline-config.mjs');
+  const {
+    parseCliStatusLineArgs,
+    buildPersistableStatusLineFlags,
+  } = await import('../cli-statusline.mjs');
+
+  assert.equal(normalizeCliStatusLineGaugeStyle('bar'), 'bar');
+  assert.equal(normalizeCliStatusLineGaugeStyle('compact'), 'compact');
+  assert.equal(normalizeCliStatusLineGaugeStyle('unknown'), 'pill');
+
+  const parsedArgs = parseCliStatusLineArgs([
+    '--slots',
+    'tps,context,gemini_5h',
+    '--style',
+    'bar',
+    '--json',
+    '--no-multi',
+  ]);
+  assert.equal(parsedArgs.style, 'bar');
+  assert.equal(parsedArgs.json, true);
+  assert.equal(parsedArgs.showMultiSession, false);
+  assert.match(buildPersistableStatusLineFlags(parsedArgs), /--style bar/);
+
+  const nowMs = Date.UTC(2026, 10, 22, 12, 0, 0);
+  const slotCtx = {
+    hasTelemetry: true,
+    isRunning: false,
+    hasWaiting: false,
+    runningCount: 1,
+    runningSubCount: 0,
+    stepCount: 5,
+    tps: 52.3,
+    avgTps: 48.0,
+    ttft: 2.1,
+    stepCost: 0.04,
+    sessionCost: 0.32,
+    cacheHitPct: 88.5,
+    latestPromptTokens: 80_000,
+    sessionTokens: 320_000,
+    usedPct: 42,
+    quotas: {
+      activePool: { poolKey: 'Gemini', remainingPct: 40, weeklyRemainingPct: 80 },
+      pools: [
+        {
+          poolKey: 'Gemini',
+          family: 'Gemini',
+          usedPct: 60,
+          remainingPct: 40,
+          resetTime: new Date(nowMs + 3 * 3_600_000).toISOString(),
+          weeklyUsedPct: 20,
+          weeklyRemainingPct: 80,
+          weeklyResetTime: new Date(nowMs + 3.5 * 24 * 3_600_000).toISOString(),
+        },
+      ],
+    },
+  };
+
+  // 1. Pill style emits 24-bit background fill (48;2;)
+  const pillOut = formatCliStatusLineCapsule(slotCtx, {
+    slots: ['tps', 'context', 'gemini_5h'],
+    gaugeStyle: 'pill',
+    language: 'zh-CN',
+    color: true,
+  });
+  assert.match(pillOut, /\x1b\[48;2;/);
+
+  // 2. Bar style emits transparent Braille/block bar without 48;2; background codes
+  const barOut = formatCliStatusLineCapsule(slotCtx, {
+    slots: ['tps', 'context', 'gemini_5h'],
+    gaugeStyle: 'bar',
+    language: 'zh-CN',
+    color: true,
+  });
+  assert.doesNotMatch(barOut, /\x1b\[48;2;/);
+  assert.match(barOut, /[█▏▎▍▌▋▊▉]/);
+  assert.match(barOut, /⢕/);
+
+  // 3. Compact style emits clean text-only gauges without 48;2; or bar glyphs
+  const compactOut = formatCliStatusLineCapsule(slotCtx, {
+    slots: ['tps', 'context', 'gemini_5h'],
+    gaugeStyle: 'compact',
+    language: 'zh-CN',
+    color: true,
+  });
+  assert.doesNotMatch(compactOut, /\x1b\[48;2;/);
+  assert.doesNotMatch(compactOut, /[█⢕]/);
+  assert.match(compactOut, /上下文.*42%/);
+  assert.match(compactOut, /G5h.*40%/);
+
+  // 4. Structured JSON output includes model, speed, context, and quota pool snapshots
+  const jsonSnap = buildCliJsonStatusOutput(slotCtx, {
+    modelDisplayName: 'Gemini 4 Neon',
+    modelEffort: 'xhigh',
+    cycleMode: 'auto',
+    nowMs,
+  });
+  assert.equal(jsonSnap.model.displayName, 'Gemini 4 Neon');
+  assert.equal(jsonSnap.model.effort, 'xhigh');
+  assert.equal(jsonSnap.speed.tps, 52.3);
+  assert.equal(jsonSnap.context.usedPct, 42);
+  assert.equal(jsonSnap.quotas.autoRemainingPct, 40);
+  assert.equal(jsonSnap.quotas.pools.length, 1);
+  assert.equal(jsonSnap.quotas.pools[0].poolKey, 'Gemini');
+  assert.equal(jsonSnap.quotas.pools[0].remaining5hPct, 40);
+  assert.equal(jsonSnap.quotas.pools[0].remainingWeeklyPct, 80);
 });

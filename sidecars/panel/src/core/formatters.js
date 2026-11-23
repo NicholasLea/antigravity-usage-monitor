@@ -37,6 +37,26 @@ export function formatCachePct(value) {
   return `${num}%`;
 }
 
+/**
+ * 格式化百分比数值文本：常规值保留 1 位小数，将边界值 `0.0` / `100.0` 收口为整数 `0` / `100`。
+ *
+ * @param {number|string|null|undefined} value
+ * @param {{ withSymbol?: boolean }} [options]
+ * @returns {string}
+ */
+export function formatPctNumber(value, { withSymbol = false } = {}) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return withSymbol ? '0%' : '0';
+  const rounded = Math.round(num * 10) / 10;
+  const str =
+    Math.abs(rounded) < 1e-9
+      ? '0'
+      : Math.abs(rounded - 100) < 1e-9
+        ? '100'
+        : rounded.toFixed(1);
+  return withSymbol ? `${str}%` : str;
+}
+
 export function getSpeedToneClass(tokPerSec) {
   return `tone-${classifySpeedTier(tokPerSec)}`;
 }
@@ -258,6 +278,123 @@ export function buildStepCompactionDiagnostic(st, displaySettings = {}) {
   };
 }
 
+function finiteNonNegativeSec(val) {
+  if (val === null || val === undefined || val === '') return null;
+  const num = Number(val);
+  return Number.isFinite(num) && num >= 0 ? num : null;
+}
+
+export function formatTimingDetailSec(sec) {
+  const num = finiteNonNegativeSec(sec);
+  if (num === null) return '—';
+  if (num > 0 && num < 0.01) return '<0.01s';
+  if (num >= 10) return `${num.toFixed(1)}s`;
+  return `${num.toFixed(2)}s`;
+}
+
+export function hasStepTimingData(st) {
+  if (!st || typeof st !== 'object') return false;
+  return (
+    finiteNonNegativeSec(st.nativeTtftSec ?? st.ttftSec) !== null ||
+    finiteNonNegativeSec(st.totalDurationSec ?? st.streamDurationSec) !== null ||
+    finiteNonNegativeSec(st.nativeStreamSec) !== null ||
+    finiteNonNegativeSec(st.thinkingDurationSec) !== null
+  );
+}
+
+export function buildStepTimingDiagnostic(st) {
+  if (!st || typeof st !== 'object') return null;
+  const ttft = finiteNonNegativeSec(st.nativeTtftSec ?? st.ttftSec);
+  const total = finiteNonNegativeSec(st.totalDurationSec ?? st.streamDurationSec);
+  const nativeStream = finiteNonNegativeSec(st.nativeStreamSec);
+  const think = finiteNonNegativeSec(st.thinkingDurationSec);
+  if (ttft === null && total === null && nativeStream === null && think === null) {
+    return null;
+  }
+
+  const afterTtft =
+    nativeStream === null && total !== null && ttft !== null && total >= ttft
+      ? +(total - ttft).toFixed(6)
+      : null;
+
+  const rows = [];
+  if (ttft !== null) {
+    let valText = formatTimingDetailSec(ttft);
+    if (total !== null && total > 0 && ttft <= total + 0.01) {
+      const pct = Math.min(100, Math.max(0, Math.round((ttft / total) * 100)));
+      valText = `${valText} (${pct}%)`;
+    }
+    rows.push({
+      text: t('steps.timingTtftLabel'),
+      value: valText,
+      toneClass: getTtftToneClass(ttft),
+    });
+  }
+  if (nativeStream !== null) {
+    rows.push({
+      text: t('steps.timingStreamLabel'),
+      value: formatTimingDetailSec(nativeStream),
+    });
+  } else if (afterTtft !== null) {
+    rows.push({
+      text: t('steps.timingAfterTtftLabel'),
+      value: formatTimingDetailSec(afterTtft),
+    });
+  }
+  if (think !== null) {
+    rows.push({
+      text: t('steps.timingThinkLabel'),
+      value: formatTimingDetailSec(think),
+    });
+  }
+
+  const showTotalInSub = total !== null && rows.length > 0;
+  if (total !== null && !showTotalInSub) {
+    rows.push({
+      text: t('steps.timingTotalLabel'),
+      value: formatTimingDetailSec(total),
+    });
+  }
+
+  const hints = [];
+  const hasOverlap =
+    think !== null &&
+    total !== null &&
+    ((ttft !== null && ttft + think > total + 0.05) ||
+      (nativeStream !== null && ttft !== null && ttft + nativeStream + think > total + 0.05) ||
+      think > total + 0.05);
+  if (hasOverlap) {
+    hints.push(t('steps.timingOverlapHint'));
+  }
+  const streamForToolCheck = nativeStream ?? afterTtft;
+  if (
+    st.hasToolCalls &&
+    streamForToolCheck !== null &&
+    streamForToolCheck < 0.5 &&
+    ttft !== null &&
+    ttft >= 2
+  ) {
+    hints.push(t('steps.timingToolBufferedHint'));
+  }
+  const anomalyCount = Math.max(0, Number(st.anomaly?.count || 0));
+  if (anomalyCount > 0) {
+    const delaySec = Number(st.anomaly?.totalDelaySec || 0);
+    hints.push(
+      delaySec > 0
+        ? t('steps.timingAnomalyDelayHint', { count: anomalyCount, sec: delaySec })
+        : t('steps.timingAnomalyHint', { count: anomalyCount })
+    );
+  }
+
+  return {
+    title: t('steps.timingStepTitle', { step: Number(st.stepIndex ?? 0) }),
+    sub: showTotalInSub ? t('steps.timingTotalSub', { sec: formatTimingDetailSec(total) }) : '',
+    rows,
+    hint: hints.join(' · '),
+    severity: 'timing',
+  };
+}
+
 export function buildModelAnomalyDiagnostic(m) {
   const sum = resolveModelAnomalySummary(m);
   if (!sum) return null;
@@ -349,15 +486,105 @@ function stripCompactionMarker(rawText) {
 
 export const normalizeOrchestratorIdDisplayMode = normalizeOrchestratorIdMode;
 
+function normalizeOrchVariantToken(raw = '') {
+  let s = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!s || /^worker(?:$|-)/.test(s)) return '';
+  s = s.replace(/([a-z]-)(\d+)-(\d+)(?=$|-)/g, '$1$2.$3');
+  s = s
+    .replace(/^(?:claude|anthropic|openai)-(?=.+)/, '')
+    .replace(/^gemini-(?:4-)?(?=(?:carbon|argon|neon|hydrogen|helix)(?:$|-))/, '');
+  return s;
+}
+
+function extractOrchWorkerVariant(fields = [], combinedText = '') {
+  for (const rawField of fields) {
+    const field = String(rawField || '').trim();
+    if (!field) continue;
+    const parenMatch = field.match(/\bOrchestrator\s+Worker\s*\(\s*([^)]+?)\s*\)/i);
+    if (parenMatch) {
+      const v = normalizeOrchVariantToken(parenMatch[1]);
+      if (v) return v;
+    }
+    const compactMatch = field.match(/\bworker-agy-([a-z0-9]+(?:[.-][a-z0-9]+)*)(?=·|\s|$)/i);
+    if (compactMatch) {
+      const v = normalizeOrchVariantToken(compactMatch[1]);
+      if (v) return v;
+    }
+  }
+  if (/\bMODEL_PLACEHOLDER_M669\b|\bgemini-flash-worker-agy\b/i.test(combinedText)) {
+    return 'hydrogen';
+  }
+  const upstreamMatch = combinedText.match(/\b([a-z0-9][a-z0-9.-]*?)-worker-agy\b/i);
+  if (upstreamMatch) {
+    const rawPrefix = upstreamMatch[1].toLowerCase();
+    if (rawPrefix === 'gemini-flash') return 'hydrogen';
+    if (/^gemini-(?:4-)?neon$/i.test(rawPrefix)) return 'neon';
+    if (/^gemini-(?:4-)?argon$/i.test(rawPrefix)) return 'argon';
+    if (/^gemini-(?:4-)?carbon$/i.test(rawPrefix)) return 'carbon';
+    const v = normalizeOrchVariantToken(rawPrefix);
+    if (v && v !== 'gemini-pro') return v;
+  }
+  if (/\bneon\b/i.test(combinedText)) return 'neon';
+  if (/\bhydrogen\b/i.test(combinedText)) return 'hydrogen';
+  if (/\bargon\b/i.test(combinedText)) return 'argon';
+  if (/\bcarbon\b/i.test(combinedText)) return 'carbon';
+  return '';
+}
+
+function extractDynamicOrchVariant(fields = []) {
+  for (const rawField of fields) {
+    const field = String(rawField || '').trim();
+    if (!field) continue;
+    const parenAfter = field.match(/\bOrchestrator\s*\(\s*([^)]+?)\s*\)/i);
+    if (parenAfter) {
+      const v = normalizeOrchVariantToken(parenAfter[1]);
+      if (v) return v;
+    }
+    const parenBefore = field.match(
+      /^([a-z0-9][a-z0-9.\s-]{0,40}?)\s*\(\s*Orchestrator\s*\)(?:\s*\[[^\]]+\])?$/i
+    );
+    if (parenBefore) {
+      const v = normalizeOrchVariantToken(parenBefore[1]);
+      if (v) return v;
+    }
+    const geminiProSlug = field.match(
+      /\bgemini-pro-orchestrator-([a-z0-9]+(?:[.-][a-z0-9]+)*)(?=·|\s|$)/i
+    );
+    if (geminiProSlug) {
+      const v = normalizeOrchVariantToken(geminiProSlug[1]);
+      if (v) return v;
+    }
+    const prefixSlug = field.match(
+      /\b(?:orchestrator|orch)-([a-z0-9]+(?:[.-][a-z0-9]+)*)(?=·|\s|$)/i
+    );
+    if (prefixSlug) {
+      const v = normalizeOrchVariantToken(prefixSlug[1]);
+      if (v) return v;
+    }
+    const suffixSlug = field.match(/\b([a-z0-9]+(?:[.-][a-z0-9]+)*)-orchestrator(?=·|\s|$)/i);
+    if (suffixSlug && !/^gemini-pro$/i.test(suffixSlug[1])) {
+      const v = normalizeOrchVariantToken(suffixSlug[1]);
+      if (v) return v;
+    }
+  }
+  return '';
+}
+
 /**
- * 统一解析步骤、会话摘要或模型汇总行面向用户的模型显示文本与悬停提示。
+ * 统一解析步骤、会话摘要或模型汇总行面向用户的模型显示文本及悬停提示。
  *
  * 规则：
- * - Orchestrator 系列（`Orchestrator (Carbon)`、`Orchestrator (Argon)`、`Orchestrator (Neon)`、`gemini-flash-worker-agy` / `M669`）
- *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-carbon` / `orchestrator-argon` / `orchestrator-neon` / `worker-agy-hydrogen`；
+ * - Orchestrator 系列（如 `Orchestrator (Carbon / Argon / Neon / Opus 5.5)`、`Orchestrator Worker (Hydrogen / Neon / ...)`）
+ *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-<variant>` / `worker-agy-<variant>`；
  *   `'full'` 显示带括号标注的完整上游 ID），不受普通模型显示模式影响；
  * - 其余普通模型遵循 `modelDisplayMode`（`'short'` | `'upstream_compact'` | `'upstream'`，兼容旧版布尔 `showUpstreamModel`）；
- * - 独立拆分 `baseText` 与 `compactionSuffix`（`·压缩`），供步骤表单独保护压缩尾标永不截断。
+ * - 独立拆分 `baseText` 及 `compactionSuffix`（`·压缩`），供步骤表单独保护压缩尾标永不截断。
  *
  * @param {object|null|undefined} target
  * @param {{ modelDisplayMode?: string, showUpstreamModel?: boolean, orchestratorIdMode?: string }|boolean} [settings]
@@ -409,6 +636,7 @@ export function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     target.baseModelUpstream ??
       target.activeModelUpstream ??
       target.modelUpstream ??
+      target.upstreamModel ??
       target.upstreamName ??
       ''
   ).trim();
@@ -422,22 +650,16 @@ export function resolveModelDisplayInfo(target, settings = {}, options = {}) {
 
   const compactionSuffix = isCompaction ? t('fmt.compactionSuffix') : '';
 
+  const fields = [labelText, shortText, upstreamText, responseText, modelKeyText];
   const combined = `${modelKeyText} ${shortText} ${labelText} ${upstreamText} ${responseText}`;
   const isOrchWorker =
-    /\bMODEL_PLACEHOLDER_M669\b|\b[a-z0-9.-]*worker-agy\b|\bworker-agy-hydrogen\b|\bOrchestrator\s+Worker\b/i.test(
+    /\bMODEL_PLACEHOLDER_M669\b|\b[a-z0-9.-]*worker-agy\b|\bworker-agy-[a-z0-9.-]+\b|\bOrchestrator\s+Worker\b/i.test(
       combined
     );
   const isKnownOrchCarbonPh = /\bMODEL_PLACEHOLDER_M667\b/i.test(combined);
   const isKnownOrchArgonPh = /\bMODEL_PLACEHOLDER_M681\b/i.test(combined);
   const isKnownOrchNeonPh = /\bMODEL_PLACEHOLDER_M537\b/i.test(combined);
-  const dynamicOrchVariantMatch =
-    combined.match(/\bOrchestrator\s*\(\s*([a-z0-9-]+)\s*\)/i) ||
-    combined.match(/\bgemini-pro-orchestrator-([a-z0-9-]+)\b/i) ||
-    combined.match(/\b(?:orchestrator|orch)-([a-z0-9]+)(?=·|\s|$)/i);
-  const dynamicOrchVariant =
-    dynamicOrchVariantMatch && dynamicOrchVariantMatch[1].toLowerCase() !== 'worker'
-      ? dynamicOrchVariantMatch[1].toLowerCase()
-      : '';
+  const dynamicOrchVariant = isOrchWorker ? '' : extractDynamicOrchVariant(fields);
   const hasBareProOrch = /\bgemini-pro-orchestrator\b(?![-_][a-z0-9])/i.test(combined);
   const isOrchSeries =
     isOrchWorker ||
@@ -451,8 +673,41 @@ export function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     let compactId = '';
     let fullId = '';
     if (isOrchWorker) {
-      compactId = 'worker-agy-hydrogen';
-      fullId = 'gemini-flash-worker-agy (hydrogen-4)';
+      const workerVariant = extractOrchWorkerVariant(fields, combined);
+      const cleanUpstream = stripCompactionMarker(upstreamText || responseText || '').trim();
+      if (workerVariant === 'hydrogen') {
+        compactId = 'worker-agy-hydrogen';
+        fullId = 'gemini-flash-worker-agy (hydrogen-4)';
+      } else if (workerVariant === 'neon') {
+        compactId = 'worker-agy-neon';
+        if (cleanUpstream) {
+          if (/\([^)]+\)\s*$/.test(cleanUpstream)) {
+            fullId = cleanUpstream;
+          } else if (/(?:worker-agy)/i.test(cleanUpstream)) {
+            fullId = `${cleanUpstream} (neon-4)`;
+          } else if (/\bneon\b/i.test(cleanUpstream)) {
+            fullId = cleanUpstream;
+          } else {
+            fullId = `${cleanUpstream} (neon-4)`;
+          }
+        } else {
+          fullId = 'gemini-neon-worker-agy (neon-4)';
+        }
+      } else if (workerVariant) {
+        compactId = `worker-agy-${workerVariant}`;
+        const variantDashed = workerVariant.replace(/\./g, '-');
+        const upstreamLower = cleanUpstream.toLowerCase();
+        const mentionsVariant =
+          upstreamLower.includes(workerVariant) || upstreamLower.includes(variantDashed);
+        fullId = cleanUpstream
+          ? mentionsVariant || /\([^)]+\)\s*$/.test(cleanUpstream)
+            ? cleanUpstream
+            : `${cleanUpstream} (${workerVariant})`
+          : `worker-agy-${workerVariant}`;
+      } else {
+        compactId = 'worker-agy';
+        fullId = cleanUpstream || 'worker-agy';
+      }
     } else if (isKnownOrchNeonPh || dynamicOrchVariant === 'neon') {
       compactId = 'orchestrator-neon';
       fullId = 'gemini-pro-orchestrator-neon (neon-4)';
@@ -469,11 +724,23 @@ export function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     } else if (dynamicOrchVariant) {
       compactId = `orchestrator-${dynamicOrchVariant}`;
       const cleanUpstream = stripCompactionMarker(upstreamText || responseText || '').trim();
-      fullId = cleanUpstream
-        ? cleanUpstream.toLowerCase().includes(dynamicOrchVariant)
-          ? cleanUpstream
-          : `${cleanUpstream} (${dynamicOrchVariant})`
-        : `gemini-pro-orchestrator-${dynamicOrchVariant}`;
+      const variantDashed = dynamicOrchVariant.replace(/\./g, '-');
+      const upstreamLower = cleanUpstream.toLowerCase();
+      const mentionsVariant =
+        upstreamLower.includes(dynamicOrchVariant) || upstreamLower.includes(variantDashed);
+      if (cleanUpstream) {
+        fullId =
+          mentionsVariant || /\([^)]+\)\s*$/.test(cleanUpstream)
+            ? cleanUpstream
+            : `${cleanUpstream} (${dynamicOrchVariant})`;
+      } else {
+        const isNonGeminiOrch = /\b(?:claude|anthropic|opus|sonnet|haiku|fable|gpt|openai)\b/i.test(
+          `${combined} ${dynamicOrchVariant}`
+        );
+        fullId = isNonGeminiOrch
+          ? `orchestrator-${dynamicOrchVariant}`
+          : `gemini-pro-orchestrator-${dynamicOrchVariant}`;
+      }
     }
     if (compactId) {
       const baseText = orchestratorMode === 'full' ? fullId : compactId;
@@ -562,14 +829,30 @@ export function mergeModelsByDisplayName(models = [], settings = {}, options = {
     const speedSampleCount = Math.max(0, Number(m.speedSummary?.sampleCount || 0));
     const speedExcludedCount = Math.max(0, Number(m.speedSummary?.excludedCount || 0));
     const speedWeight = speedSampleCount > 0 ? speedSampleCount : Math.max(1, outTok || calls || 1);
-    const hasSpeed = m.avgTokPerSec != null && Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0;
+    const hasSpeed =
+      m.avgTokPerSec != null && Number.isFinite(Number(m.avgTokPerSec)) && Number(m.avgTokPerSec) > 0;
+    const rawSpeedTokens = Number(m.speedSummary?.tokens);
+    const rawSpeedSeconds = Number(m.speedSummary?.seconds);
+    const hasExactSpeedSummary =
+      Number.isFinite(rawSpeedTokens) &&
+      Number.isFinite(rawSpeedSeconds) &&
+      rawSpeedSeconds > 0 &&
+      rawSpeedTokens >= 0;
 
     const ttftSampleCount = Math.max(0, Number(m.ttftSampleCount || 0));
     const ttftWeight = ttftSampleCount > 0 ? ttftSampleCount : Math.max(1, calls || 1);
-    const hasTtft = m.avgTtftSec != null && Number.isFinite(Number(m.avgTtftSec)) && Number(m.avgTtftSec) >= 0;
+    const hasTtft =
+      m.avgTtftSec != null && Number.isFinite(Number(m.avgTtftSec)) && Number(m.avgTtftSec) >= 0;
 
     let acc = byDisplay.get(key);
     if (!acc) {
+      const initExcludedReasons = {};
+      if (m.speedSummary?.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+        for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+          const cnt = Math.max(0, Number(rv || 0));
+          if (cnt > 0) initExcludedReasons[rk] = cnt;
+        }
+      }
       acc = {
         baseItem: m,
         mergedCount: 1,
@@ -589,10 +872,15 @@ export function mergeModelsByDisplayName(models = [], settings = {}, options = {
         totalTokens: totTok,
         costUsd,
         unpricedCalls,
+        hasAnySpeedSummary: Boolean(m.speedSummary),
+        allSpeedExact: !hasSpeed || hasExactSpeedSummary,
+        speedTokens: hasExactSpeedSummary ? rawSpeedTokens : 0,
+        speedSeconds: hasExactSpeedSummary ? rawSpeedSeconds : 0,
         speedWeightedSum: hasSpeed ? Number(m.avgTokPerSec) * speedWeight : 0,
         speedWeight: hasSpeed ? speedWeight : 0,
         speedSampleCount,
         speedExcludedCount,
+        speedExcludedReasons: initExcludedReasons,
         ttftWeightedSum: hasTtft ? Number(m.avgTtftSec) * ttftWeight : 0,
         ttftWeight: hasTtft ? ttftWeight : 0,
         ttftSampleCount,
@@ -641,12 +929,24 @@ export function mergeModelsByDisplayName(models = [], settings = {}, options = {
       }
     }
 
+    if (m.speedSummary) acc.hasAnySpeedSummary = true;
+    if (hasSpeed && !hasExactSpeedSummary) acc.allSpeedExact = false;
+    if (hasExactSpeedSummary) {
+      acc.speedTokens += rawSpeedTokens;
+      acc.speedSeconds += rawSpeedSeconds;
+    }
     if (hasSpeed) {
       acc.speedWeightedSum += Number(m.avgTokPerSec) * speedWeight;
       acc.speedWeight += speedWeight;
     }
     acc.speedSampleCount += speedSampleCount;
     acc.speedExcludedCount += speedExcludedCount;
+    if (m.speedSummary?.excludedReasons && typeof m.speedSummary.excludedReasons === 'object') {
+      for (const [rk, rv] of Object.entries(m.speedSummary.excludedReasons)) {
+        const cnt = Math.max(0, Number(rv || 0));
+        if (cnt > 0) acc.speedExcludedReasons[rk] = (acc.speedExcludedReasons[rk] || 0) + cnt;
+      }
+    }
 
     if (hasTtft) {
       acc.ttftWeightedSum += Number(m.avgTtftSec) * ttftWeight;
@@ -666,8 +966,13 @@ export function mergeModelsByDisplayName(models = [], settings = {}, options = {
     }
     const promptTok = acc.inputTokens + acc.cacheReadTokens;
     const cacheHitPct = promptTok > 0 ? +((acc.cacheReadTokens / promptTok) * 100).toFixed(1) : 0;
-    const avgTokPerSec =
-      acc.speedWeight > 0 ? +(acc.speedWeightedSum / acc.speedWeight).toFixed(1) : null;
+    const rawAvgTps =
+      acc.allSpeedExact && acc.speedSeconds > 0
+        ? acc.speedTokens / acc.speedSeconds
+        : acc.speedWeight > 0
+          ? acc.speedWeightedSum / acc.speedWeight
+          : null;
+    const avgTokPerSec = rawAvgTps !== null ? +rawAvgTps.toFixed(1) : null;
     const avgTtftSec =
       acc.ttftWeight > 0 ? +(acc.ttftWeightedSum / acc.ttftWeight).toFixed(1) : null;
     const upstreamModels = Array.from(acc.upstreamSet);
@@ -700,12 +1005,15 @@ export function mergeModelsByDisplayName(models = [], settings = {}, options = {
             anomalyByKind: acc.anomalyByKind,
           }
         : {}),
-      speedSummary: acc.baseItem.speedSummary
+      speedSummary: acc.hasAnySpeedSummary
         ? {
-            ...acc.baseItem.speedSummary,
+            ...(acc.baseItem.speedSummary || {}),
+            tokens: acc.speedTokens,
+            seconds: +acc.speedSeconds.toFixed(6),
             sampleCount: acc.speedSampleCount,
             excludedCount: acc.speedExcludedCount,
-            avgTokPerSec,
+            excludedReasons: acc.speedExcludedReasons,
+            avgTokPerSec: rawAvgTps,
           }
         : undefined,
       upstreamModels,

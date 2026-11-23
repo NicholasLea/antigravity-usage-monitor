@@ -7,6 +7,7 @@
 
 import { defineComponent } from '../../core/component.js';
 import { h, patchAttr, patchClasses, patchStyleVar, patchText } from '../../core/domPatch.js';
+import { i18nStore, t } from '../../i18n/index.js';
 
 export const SegmentedControl = defineComponent({
   name: 'SegmentedControl',
@@ -17,10 +18,18 @@ export const SegmentedControl = defineComponent({
       {
         className: 'segmented',
         role: 'group',
-        'aria-label': getProps().ariaLabel || '分段切换器',
+        'aria-label': getProps().ariaLabel || t('ui.seg.defaultAria'),
       },
       [gliderEl]
     );
+    const unsubI18n = i18nStore.subscribe(
+      (st) => st.locale,
+      () => {
+        patchAttr(rootEl, 'aria-label', getProps().ariaLabel || t('ui.seg.defaultAria'));
+      },
+      { immediate: false }
+    );
+    onCleanup(unsubI18n);
 
     const btnMap = new Map();
     let orderedBtns = [];

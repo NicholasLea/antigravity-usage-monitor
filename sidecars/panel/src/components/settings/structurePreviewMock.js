@@ -7,7 +7,11 @@
 
 import { t } from '../../i18n/index.js';
 
-export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides = {}) {
+export function buildStructurePreviewTelemetry(
+  baseSettings = {},
+  draftOverrides = {},
+  { includeArgonPool = false } = {}
+) {
   const anchorMinMs = Math.floor(Date.now() / 60000) * 60000;
   const reset5hIso = new Date(anchorMinMs + (2 * 60 + 42) * 60000).toISOString();
   const resetWkIso = new Date(anchorMinMs + (4 * 24 * 60 + 180) * 60000).toISOString();
@@ -186,10 +190,12 @@ export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides
       isSubagent: false,
       agentBadge: '主',
       agentLabel: t('fmt.mainAgent'),
-      modelLabel: 'Gemini 4 Carbon (High)',
-      modelShort: 'gemini-4-carbon',
-      rawModel: 'MODEL_PLACEHOLDER_M37',
-      upstreamModel: 'gemini-4-carbon-high',
+      modelKey: 'MODEL_PLACEHOLDER_M667',
+      modelLabel: 'Gemini Pro Orchestrator (Carbon)',
+      modelShort: 'orchestrator-carbon',
+      rawModel: 'MODEL_PLACEHOLDER_M667',
+      modelUpstream: 'gemini-pro-orchestrator',
+      upstreamModel: 'gemini-pro-orchestrator',
       tokPerSec: 17.8,
       ttftSec: 19.4,
       totalDurationSec: 31.2,
@@ -243,18 +249,19 @@ export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides
     outputTokens: 22100,
     totalTokens: 1434500,
     latestModelLabel: 'Gemini 4 Carbon (High)',
-    latestModelShort: 'gemini-4-carbon',
+    latestModelShort: 'carbon-4-high',
     latestRawModel: 'MODEL_PLACEHOLDER_M37',
     latestUpstreamModel: 'gemini-4-carbon-high',
     activeModelLabel: 'Gemini 4 Carbon (High)',
-    activeModelShort: 'gemini-4-carbon',
+    activeModelShort: 'carbon-4-high',
     activeModelUpstream: 'gemini-4-carbon-high',
     sessionUnpricedCalls: 0,
     modelBreakdown: [
       {
         modelKey: 'MODEL_PLACEHOLDER_M37',
-        modelShort: 'gemini-4-carbon',
+        modelShort: 'carbon-4-high',
         modelLabel: 'Gemini 4 Carbon (High)',
+        modelUpstream: 'gemini-4-carbon-high',
         upstreamModel: 'gemini-4-carbon-high',
         calls: 16,
         inputTokens: 152400,
@@ -274,6 +281,8 @@ export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides
     agentId: 'sub-1',
     cascadeId: 'mock-sub-1',
     isMain: false,
+    agentKind: 'subagent',
+    agentOrdinal: 1,
     index: 1,
     badgeText: '子1',
     shortLabel: `${t('fmt.subAgent')} #1`,
@@ -297,18 +306,19 @@ export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides
     outputTokens: 6300,
     totalTokens: 320300,
     latestModelLabel: 'Gemini 3.8 Flash',
-    latestModelShort: 'gemini-3.8-flash',
+    latestModelShort: 'flash-3.8',
     latestRawModel: 'MODEL_PLACEHOLDER_M42',
     latestUpstreamModel: 'gemini-3.8-flash-n',
     activeModelLabel: 'Gemini 3.8 Flash',
-    activeModelShort: 'gemini-3.8-flash',
+    activeModelShort: 'flash-3.8',
     activeModelUpstream: 'gemini-3.8-flash-n',
     sessionUnpricedCalls: 0,
     modelBreakdown: [
       {
         modelKey: 'MODEL_PLACEHOLDER_M42',
-        modelShort: 'gemini-3.8-flash',
+        modelShort: 'flash-3.8',
         modelLabel: 'Gemini 3.8 Flash',
+        modelUpstream: 'gemini-3.8-flash-n',
         upstreamModel: 'gemini-3.8-flash-n',
         calls: 8,
         inputTokens: 34000,
@@ -331,9 +341,9 @@ export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides
     agentKind: 'all',
     agentOrdinal: 0,
     badgeText: t('header.scopeAllShort'),
-    activeAgentId: 'main',
-    activeAgentKind: 'main',
-    activeAgentOrdinal: 0,
+    activeAgentId: 'sub-1',
+    activeAgentKind: 'subagent',
+    activeAgentOrdinal: 1,
     stepCount: 24,
     speedSampleCount: 23,
     speedSummary: { sampleCount: 23, excludedCount: 1 },
@@ -347,7 +357,7 @@ export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides
     cacheReadTokens: 1540000,
     outputTokens: 28400,
     totalTokens: 1754800,
-    activeAgentBadge: t('fmt.mainBadge'),
+    activeAgentBadge: '子1',
     modelBreakdown: [...mainAgent.modelBreakdown, ...subAgent1.modelBreakdown],
     recentSteps: mockSteps,
   };
@@ -355,8 +365,10 @@ export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides
   return {
     settings: mergedSettings,
     account: {
+      tierId: 'g1-ultra-lite-tier',
       tierName: 'Google AI Ultra',
-      planName: 'Pro',
+      tierMultiplier: '5x',
+      planName: '5x',
       aiCredits: 0,
     },
     quotas: {
@@ -383,13 +395,32 @@ export function buildStructurePreviewTelemetry(baseSettings = {}, draftOverrides
           family: 'Gemini',
           usedPct: 36,
           remainingPct: 64,
+          reservedPct: 1.0,
+          reservedLeaseCount: 1,
           resetTime: reset5hIso,
           weeklyUsedPct: 48,
           weeklyRemainingPct: 52,
+          weeklyReservedPct: 0.5,
+          weeklyReservedLeaseCount: 1,
           weeklyResetTime: resetWkIso,
           cycle5h: { tokens: 1754800, costUsd: 1.28, calls: 24 },
           cycleWeekly: { tokens: 14200000, costUsd: 11.4, calls: 186 },
         },
+        ...(includeArgonPool
+          ? [
+              {
+                poolKey: 'Argon',
+                poolLabel: 'Gemini 4 Argon',
+                family: 'Argon',
+                has5h: false,
+                hasWeekly: true,
+                weeklyUsedPct: 58,
+                weeklyRemainingPct: 42,
+                weeklyResetTime: resetWkIso,
+                cycleWeekly: { tokens: 4200000, costUsd: 6.4, calls: 48 },
+              },
+            ]
+          : []),
         {
           poolKey: 'Claude & GPT',
           poolLabel: 'Claude & GPT',

@@ -6,6 +6,10 @@
 
 import { isContextWindowSettingId, isContextWindowOption } from './context-windows.mjs';
 import {
+  CLI_STATUSLINE_PRESETS,
+  CONTEXT_AGENT_MODES,
+  DEFAULT_CLI_STATUSLINE_SLOTS,
+  DEFAULT_CONTEXT_AGENT_MODE,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -14,8 +18,10 @@ import {
   DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_TOPBAR_SLOTS,
   FONT_SCALE_KEYS,
+  MAX_CLI_STATUSLINE_SLOTS,
   MAX_POPOVER_WIDTH,
   MAX_TOPBAR_SLOTS,
+  MIN_CLI_STATUSLINE_SLOTS,
   MIN_POPOVER_WIDTH,
   MIN_TOPBAR_SLOTS,
   OVERVIEW_METRIC_KEYS,
@@ -26,7 +32,10 @@ import {
   SUPPORTED_LANGUAGES,
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
+  normalizeCliStatusLineSlots,
+  normalizeContextAgentMode,
   normalizeExperimentalModernUi,
+  normalizeExperimentalQuotaReservation,
   normalizeFontScale,
   normalizeHoverModules,
   normalizeLanguageSetting,
@@ -46,9 +55,14 @@ import {
   normalizeWeeklyLimitMode,
   normalizeWindowMountMode,
   parseStepTokenComboSegments,
+  resolveEffectiveCliStatusLineSlots,
 } from '../shared/settings-normalization.mjs';
 
 export {
+  CLI_STATUSLINE_PRESETS,
+  CONTEXT_AGENT_MODES,
+  DEFAULT_CLI_STATUSLINE_SLOTS,
+  DEFAULT_CONTEXT_AGENT_MODE,
   DEFAULT_HOVER_MODULES,
   DEFAULT_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_MODULES,
@@ -57,8 +71,10 @@ export {
   DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_TOPBAR_SLOTS,
   FONT_SCALE_KEYS,
+  MAX_CLI_STATUSLINE_SLOTS,
   MAX_POPOVER_WIDTH,
   MAX_TOPBAR_SLOTS,
+  MIN_CLI_STATUSLINE_SLOTS,
   MIN_POPOVER_WIDTH,
   MIN_TOPBAR_SLOTS,
   OVERVIEW_METRIC_KEYS,
@@ -69,7 +85,10 @@ export {
   SUPPORTED_LANGUAGES,
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
+  normalizeCliStatusLineSlots,
+  normalizeContextAgentMode,
   normalizeExperimentalModernUi,
+  normalizeExperimentalQuotaReservation,
   normalizeFontScale,
   normalizeHoverModules,
   normalizeLanguageSetting,
@@ -89,6 +108,7 @@ export {
   normalizeWeeklyLimitMode,
   normalizeWindowMountMode,
   parseStepTokenComboSegments,
+  resolveEffectiveCliStatusLineSlots,
 };
 
 function isSchemaPlainObject(v) {
@@ -127,8 +147,10 @@ export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
   popoverWidthMode: 'auto',
   popoverWidth: DEFAULT_POPOVER_WIDTH,
   enableCliStatusLine: true,
+  cliStatusLineSlots: null,
   standalonePort: 0,
   showTopbarMultiSession: true,
+  contextAgentMode: DEFAULT_CONTEXT_AGENT_MODE,
   topbarCapsuleSlots: DEFAULT_TOPBAR_SLOTS,
   hoverModules: DEFAULT_HOVER_MODULES,
   overviewModules: DEFAULT_OVERVIEW_MODULES,
@@ -136,9 +158,13 @@ export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
   showStepTurnRail: false,
   showStepAgentBadge: true,
   showStepSpeedColor: false,
+  showStepFilterToolbar: false,
   stepTokenComboFormat: DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   stepTableColumns: DEFAULT_STEP_TABLE_COLUMNS,
+  experimentalQuotaReservation: true,
   contextWindowRiskAccepted: false,
+  contextWindowMainEnabled: true,
+  contextWindowSwarmEnabled: false,
   modelContextWindows: Object.freeze({}),
 });
 
@@ -203,8 +229,10 @@ export function normalizeFullSettings(rawInput) {
     popoverWidthMode: normalizePopoverWidthMode(safeRaw.popoverWidthMode),
     popoverWidth: normalizePopoverWidth(safeRaw.popoverWidth),
     enableCliStatusLine: safeRaw.enableCliStatusLine !== false,
+    cliStatusLineSlots: normalizeCliStatusLineSlots(safeRaw.cliStatusLineSlots),
     standalonePort: normalizeStandalonePort(safeRaw.standalonePort),
     showTopbarMultiSession: safeRaw.showTopbarMultiSession !== false,
+    contextAgentMode: normalizeContextAgentMode(safeRaw.contextAgentMode),
     topbarCapsuleSlots: normalizeTopbarCapsuleSlots(safeRaw.topbarCapsuleSlots),
     hoverModules: normalizeHoverModules(safeRaw.hoverModules),
     overviewModules: normalizeOverviewModules(safeRaw.overviewModules),
@@ -212,9 +240,15 @@ export function normalizeFullSettings(rawInput) {
     showStepTurnRail: safeRaw.showStepTurnRail === true,
     showStepAgentBadge: safeRaw.showStepAgentBadge !== false,
     showStepSpeedColor: safeRaw.showStepSpeedColor === true,
+    showStepFilterToolbar: safeRaw.showStepFilterToolbar === true,
     stepTokenComboFormat: normalizeStepTokenComboFormat(safeRaw.stepTokenComboFormat),
     stepTableColumns: normalizeStepTableColumns(safeRaw.stepTableColumns),
+    experimentalQuotaReservation: normalizeExperimentalQuotaReservation(
+      safeRaw.experimentalQuotaReservation
+    ),
     contextWindowRiskAccepted: safeRaw.contextWindowRiskAccepted === true,
+    contextWindowMainEnabled: safeRaw.contextWindowMainEnabled !== false,
+    contextWindowSwarmEnabled: safeRaw.contextWindowSwarmEnabled === true,
     modelContextWindows: normalizeModelContextWindows(safeRaw.modelContextWindows),
   };
 }

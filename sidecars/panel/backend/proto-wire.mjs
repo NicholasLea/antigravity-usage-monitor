@@ -208,3 +208,132 @@ export function decodeProtoMapStringEntry(buf, state, end) {
   state.off = end;
   return [key, val];
 }
+
+// ---------------------------------------------------------------------------
+// 无损 Protobuf Wire 编码及按字段号定向修补原语（保留所有未知/未触碰字段原字节）
+// ---------------------------------------------------------------------------
+
+export function encodeProtoVarint(value) {
+  let n = typeof value === 'bigint' ? value : BigInt(Math.trunc(Number(value) || 0));
+  if (n < 0n) n = BigInt.asUintN(64, n);
+  const bytes = [];
+  do {
+    let b = Number(n & 0x7fn);
+    n >>= 7n;
+    if (n > 0n) b |= 0x80;
+    bytes.push(b);
+  } while (n > 0n);
+  return Buffer.from(bytes);
+}
+
+export function encodeProtoTag(fieldNumber, wireType) {
+  return encodeProtoVarint((BigInt(fieldNumber) << 3n) | BigInt(wireType & 7));
+}
+
+export function encodeProtoVarintField(fieldNumber, value) {
+  return Buffer.concat([encodeProtoTag(fieldNumber, 0), encodeProtoVarint(value)]);
+}
+
+export function encodeProtoBytesField(fieldNumber, payload) {
+  const buf = payload instanceof Buffer ? payload : Buffer.from(payload || []);
+  return Buffer.concat([encodeProtoTag(fieldNumber, 2), encodeProtoVarint(buf.length), buf]);
+}
+
+export function encodeProtoStringField(fieldNumber, text) {
+  return encodeProtoBytesField(fieldNumber, Buffer.from(String(text ?? ''), 'utf8'));
+}
+
+export function encodeProtoTimestamp(epochMs) {
+  const ms = Number(epochMs);
+  if (!Number.isFinite(ms) || ms <= 0) return Buffer.alloc(0);
+  const seconds = Math.floor(ms / 1000);
+  const nanos = Math.floor((ms - seconds * 1000) * 1_000_000);
+  const parts = [encodeProtoVarintField(1, seconds)];
+  if (nanos > 0) {
+    parts.push(encodeProtoVarintField(2, nanos));
+  }
+  return Buffer.concat(parts);
+}
+
+/**
+ * 将原始 Protobuf 二进制消息拆分为顶层原始字段切片，确保未知字段零损透传。
+ *
+ * @param {Uint8Array | Buffer} raw
+ * @returns {Array<{ fn: number, wt: number, raw: Buffer, payload: Buffer }>}
+ */
+export function splitProtoRawFields(raw) {
+  const u8 = toUint8Array(raw);
+  if (!u8 || u8.byteLength === 0) return [];
+  const buf = Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength);
+  const state = { off: 0 };
+  const limit = buf.length;
+  const fields = [];
+  while (state.off < limit) {
+    const start = state.off;
+    const tag = Number(BigInt.asUintN(32, readProtoVarint(buf, state, limit)));
+    const fn = tag >>> 3;
+    const wt = tag & 7;
+    if (fn === 0) break;
+    let payloadStart = state.off;
+    let payloadEnd = state.off;
+    if (wt === 0) {
+      readProtoVarint(buf, state, limit);
+      payloadEnd = state.off;
+    } else if (wt === 1) {
+      state.off = Math.min(limit, state.off + 8);
+      payloadEnd = state.off;
+    } else if (wt === 5) {
+      state.off = Math.min(limit, state.off + 4);
+      payloadEnd = state.off;
+    } else if (wt === 2) {
+      const end = readSubEnd(buf, state, limit);
+      payloadStart = state.off;
+      state.off = end;
+      payloadEnd = end;
+    } else if (wt === 3) {
+      skipProtoField(buf, state, 3, limit);
+      payloadEnd = state.off;
+    } else {
+      break;
+    }
+    fields.push({
+      fn,
+      wt,
+      raw: buf.subarray(start, state.off),
+      payload: buf.subarray(payloadStart, payloadEnd),
+    });
+  }
+  return fields;
+}
+
+/**
+ * 按字段号定向替换、删除（传 `null`）或追加 Protobuf 顶层字段，其余未知字段原字节无损保留。
+ *
+ * @param {Uint8Array | Buffer} raw
+ * @param {Map<number, Buffer | Uint8Array | null>} replacements
+ * @returns {Buffer}
+ */
+export function patchProtoMessageFields(raw, replacements) {
+  const fields = splitProtoRawFields(raw);
+  const handled = new Set();
+  const out = [];
+  for (const field of fields) {
+    if (replacements.has(field.fn)) {
+      if (!handled.has(field.fn)) {
+        handled.add(field.fn);
+        const rep = replacements.get(field.fn);
+        if (rep && rep.length > 0) {
+          out.push(Buffer.from(rep));
+        }
+      }
+    } else {
+      out.push(field.raw);
+    }
+  }
+  for (const [fn, rep] of replacements.entries()) {
+    if (!handled.has(fn) && rep && rep.length > 0) {
+      out.push(Buffer.from(rep));
+    }
+  }
+  return Buffer.concat(out);
+}
