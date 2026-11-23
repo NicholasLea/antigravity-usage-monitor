@@ -6,6 +6,8 @@
  * 2. 严禁基于速率上限裁剪异常值或动态篡改分母（如扣除思考时间或仅取流式片段耗时），保证统计口径客观一致。
  */
 
+import { extractCleanUserRequestBody } from './shared/prompt-clean.mjs';
+
 /** 速度测量口径版本号；当耗时或样本过滤算法变更时递增，用于触发旧版缓存测量字段失效重算 */
 export const MEASUREMENT_VERSION = 4;
 
@@ -1020,14 +1022,7 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
         .filter(Boolean)
         .join('\n');
     } else if (typeof step?.content === 'string' && step.content.trim()) {
-      const withoutSummary = step.content
-        .replace(/<CONTEXT_SUMMARY>[\s\S]*?<\/CONTEXT_SUMMARY>/gi, '')
-        .replace(/<SYSTEM_MESSAGE>[\s\S]*$/i, '');
-      const reqMatches = [...withoutSummary.matchAll(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/gi)];
-      raw =
-        reqMatches.length > 0
-          ? reqMatches[reqMatches.length - 1][1]
-          : withoutSummary.replace(/<ADDITIONAL_METADATA>[\s\S]*$/i, '');
+      raw = extractCleanUserRequestBody(step.content);
     }
     const cleaned = String(raw || '')
       .split(/\r?\n/)

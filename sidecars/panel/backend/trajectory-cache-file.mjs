@@ -57,6 +57,7 @@ export function writeTrajectoryCacheFile(filePath, data) {
   append('}');
 
   const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
+  let renamed = false;
   try {
     const fd = openSync(temporaryPath, 'wx');
     try {
@@ -72,6 +73,7 @@ export function writeTrajectoryCacheFile(filePath, data) {
     }
     const written = statSync(temporaryPath, { bigint: true });
     renameSync(temporaryPath, filePath);
+    renamed = true;
     const file = statSync(filePath, { bigint: true });
     lastWritesByPath.delete(filePath);
     if (isSameFile(written, file)) {
@@ -82,6 +84,8 @@ export function writeTrajectoryCacheFile(filePath, data) {
       lastWritesByPath.set(filePath, { filePath, file, ranges });
     }
   } finally {
-    try { unlinkSync(temporaryPath); } catch {}
+    if (!renamed) {
+      try { unlinkSync(temporaryPath); } catch {}
+    }
   }
 }

@@ -20,11 +20,15 @@ const BACKEND_MODULE_FILES = [
   '../shared/settings-normalization.mjs',
   '../shared/telemetry-display-rules.mjs',
   '../shared/window-bridge-protocol.mjs',
+  '../shared/workspace-uri.mjs',
+  '../shared/prompt-clean.mjs',
+  '../backend/fs-atomic.mjs',
   '../backend/context-windows.mjs',
   '../backend/account-oauth.mjs',
   '../backend/account-switch.mjs',
   '../backend/http-helpers.mjs',
   '../backend/settings-schema.mjs',
+  '../backend/trajectory-cache-store.mjs',
   '../backend/config.mjs',
   '../backend/endpoint-registry.mjs',
   '../backend/sqlite-client.mjs',
@@ -88,18 +92,39 @@ export function backendHarness({
   const mainPath = pluginRootPath ? `${pluginRootPath}/sidecars/panel/main.mjs` : '/test/sidecars/panel/main.mjs';
   const source = stripEsmSyntax(sourceText ?? loadCombinedBackendSource(), mainUrl);
   const state={calls:[],errors:[],saves:[],settings,trajectories,summaries,transcripts,transcriptMtimeMs:1,swarmMembers,swarmMembersMtimeMs:1,userStatus,quotaSummary,localCatalog,remoteCatalog,pluginManifest,hasGitDir,gitConfigText,deepStats,deepStatsMtimeMs:1};
+  const pendingTmpWrites = new Map();
+  const commitSave = (p, s) => {
+    const norm = String(p).replace(/\\/g, '/');
+    const parsed = typeof s === 'string' ? JSON.parse(s) : s;
+    state.saves.push({ path: p, data: parsed });
+    if (norm.endsWith('settings.json')) {
+      state.settings = parsed;
+    }
+    if (norm.endsWith('remote_pricing_cache.json')) {
+      state.remoteCatalog = parsed;
+    }
+  };
   const ctx={
     ...metricsImplementation, URL, AbortSignal, Buffer, TextDecoder, ...timerApi, isDeepStrictEqual, createHash, randomUUID,
     ...(clock ? { Date: class extends Date {
       constructor(...args) { super(...(args.length ? args : [clock()])); }
       static now() { return clock(); }
     } } : {}),
-    process:{platform:'win32',env:{ANTIGRAVITY_EXECUTABLE_DATA_DIR:'/test-data',ANTIGRAVITY_LS_ADDRESS:'test.invalid',ANTIGRAVITY_CSRF_TOKEN:'test'}},
+    process:{pid:12345,platform:'win32',env:{ANTIGRAVITY_EXECUTABLE_DATA_DIR:'/test-data',ANTIGRAVITY_LS_ADDRESS:'test.invalid',ANTIGRAVITY_CSRF_TOKEN:'test'}},
     console:{error:m=>state.errors.push(m)},
     cpSync:()=>{},
     rmSync:()=>{},
-    renameSync:()=>{},
-    unlinkSync:()=>{},
+    renameSync:(from, to)=>{
+      const key = String(from);
+      if (pendingTmpWrites.has(key)) {
+        const staged = pendingTmpWrites.get(key);
+        pendingTmpWrites.delete(key);
+        commitSave(to, staged);
+      }
+    },
+    unlinkSync:(p)=>{
+      pendingTmpWrites.delete(String(p));
+    },
     execFile:execFileImpl || ((cmd,args,opts,cb)=>{
       const fn = typeof opts === 'function' ? opts : cb;
       fn(new Error('execFile not mocked'));
@@ -130,8 +155,9 @@ export function backendHarness({
       if (diskDirs && Array.isArray(diskDirs[norm])) return diskDirs[norm];
       return [];
     },
-    statSync:p=>{
+    statSync:(p, opts)=>{
       const norm = String(p).replace(/\\/g, '/');
+      if (opts?.throwIfNoEntry === false && !ctx.existsSync(p)) return undefined;
       if (norm.endsWith('/.system_generated/logs/transcript.jsonl')) {
         const m = norm.match(/\/brain\/([^/]+)\/\.system_generated\/logs\/transcript\.jsonl$/i);
         const lines = m && state.transcripts?.[m[1]];
@@ -171,18 +197,17 @@ export function backendHarness({
       if (norm.endsWith('remote_pricing_cache.json')) return JSON.stringify(state.remoteCatalog);
       if (norm.endsWith('plugin.json')) return JSON.stringify(state.pluginManifest);
       if (norm.endsWith('/.git/config')) return String(state.gitConfigText || '');
+      if (norm.endsWith('.ps1')) {
+        return fs.readFileSync(new URL(`../backend/${path.basename(norm)}`, import.meta.url), 'utf8');
+      }
       return JSON.stringify(cache);
     },
     writeFileSync:(p,s)=>{
-      const norm = String(p).replace(/\\/g, '/');
-      const parsed = typeof s === 'string' ? JSON.parse(s) : s;
-      state.saves.push({path:p,data:parsed});
-      if (norm.endsWith('settings.json')) {
-        state.settings = parsed;
+      if (/\.tmp-\d+$/.test(String(p))) {
+        pendingTmpWrites.set(String(p), s);
+        return;
       }
-      if (norm.endsWith('remote_pricing_cache.json')) {
-        state.remoteCatalog = parsed;
-      }
+      commitSave(p, s);
     },
     writeTrajectoryCacheFile:(p,data)=>{
       if (state.cacheWriteError) throw state.cacheWriteError;

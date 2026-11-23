@@ -641,60 +641,6 @@
   line-height: 1.35;
 }
 
-.settings-account-identity {
-  overflow-wrap: anywhere;
-  user-select: text;
-}
-
-.settings-account-list,
-.settings-account-form,
-.settings-account-form label {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.settings-account-list:empty {
-  display: none;
-}
-
-.settings-account-entry {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-  border-top: 1px solid var(--border-hairline);
-}
-
-.settings-account-form label {
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-}
-
-.settings-account-form input {
-  min-width: 0;
-  padding: var(--space-2);
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-sm);
-  font: inherit;
-  color: var(--text-primary);
-}
-
-.settings-account-form button {
-  justify-self: start;
-}
-
-.settings-account-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.settings-account-quota {
-  text-align: right;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
 .settings-context-model .select-option-meta {
   max-width: 62%;
   text-align: right;
@@ -1067,69 +1013,9 @@
 }
 
 .smig-search-wrap {
-  display: flex;
-  align-items: center;
-  gap: 5px;
   flex: 1;
   min-width: 0;
   min-height: calc(28px * var(--ui-font-scale, 1));
-  padding: 2px 8px;
-  border-radius: var(--radius-xs);
-  border: 1px solid var(--border-hairline);
-  background: var(--surface-subtle);
-  transition:
-    border-color var(--dur-instant) var(--ease-fast),
-    background-color var(--dur-instant) var(--ease-fast),
-    box-shadow var(--dur-instant) var(--ease-fast);
-}
-
-.smig-search-wrap:focus-within {
-  border-color: var(--accent-primary);
-}
-
-.smig-search-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.smig-search-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-size: var(--fs-md);
-  line-height: 1.3;
-  outline: none;
-  padding: 0;
-}
-
-.smig-search-input::placeholder {
-  color: var(--text-muted);
-}
-
-.smig-search-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    color var(--dur-instant) var(--ease-fast),
-    background-color var(--dur-instant) var(--ease-fast);
-}
-
-.smig-search-clear:hover {
-  color: var(--text-primary);
-  background: var(--surface-hover);
 }
 
 .smig-search-clear[hidden] {

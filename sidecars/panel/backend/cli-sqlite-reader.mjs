@@ -12,6 +12,8 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { extractShortPromptTitle } from '../shared/prompt-clean.mjs';
+import { parseWorkspaceUrisColumn } from '../shared/workspace-uri.mjs';
 import { parseIsoMs } from '../trajectory-metrics.mjs';
 import { ANNOTATION_DIRS, PRODUCT_DATA_ROOTS, localSummaryMemo } from './config.mjs';
 import {
@@ -611,22 +613,7 @@ export function readLocalSummarySnapshot(productRoots = PRODUCT_DATA_ROOTS, { fo
             ? decoded.annotations.sideQuestionCascadeIds
             : [];
           const sideQuestionTitles = decoded?.annotations?.sideQuestionTitles || {};
-          let workspaceUri = '';
-          const rawWsCol = String(row?.workspace_uris || '').trim();
-          if (rawWsCol) {
-            if (rawWsCol.startsWith('[')) {
-              try {
-                const parsedWs = JSON.parse(rawWsCol);
-                if (Array.isArray(parsedWs)) {
-                  workspaceUri = String(parsedWs.find((u) => String(u || '').trim()) || '').trim();
-                }
-              } catch {
-                workspaceUri = rawWsCol;
-              }
-            } else {
-              workspaceUri = rawWsCol;
-            }
-          }
+          const workspaceUri = parseWorkspaceUrisColumn(row?.workspace_uris)[0] || '';
 
           const entry = {
             cascadeId: cidLower,
@@ -1687,15 +1674,7 @@ function mapRunningGenericToolStepType(rawToolName) {
 }
 
 function cleanShortPromptTitle(rawText, maxChars = 80) {
-  const withoutTags = String(rawText || '')
-    .replace(/<CONTEXT_SUMMARY>[\s\S]*?<\/CONTEXT_SUMMARY>/gi, '')
-    .replace(/<SYSTEM_MESSAGE>[\s\S]*$/i, '')
-    .replace(/<ADDITIONAL_METADATA>[\s\S]*$/i, '');
-  const reqMatches = [...withoutTags.matchAll(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/gi)];
-  const target = reqMatches.length > 0 ? reqMatches[reqMatches.length - 1][1] : withoutTags;
-  const singleLine = target.replace(/\s+/g, ' ').trim();
-  if (!singleLine) return '';
-  return singleLine.length <= maxChars ? singleLine : `${singleLine.slice(0, maxChars - 1).trimEnd()}…`;
+  return extractShortPromptTitle(rawText, maxChars);
 }
 
 function hasContextBreakdownPayload(chat) {
@@ -2035,6 +2014,192 @@ export function readLocalSqliteTrajectory(dbFilePath, options = {}) {
           generatorMetadata,
         },
       };
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 轻量读取本地 SQLite 会话库的父/根会话关联（不扫描或解码 `steps` 全表），
+ * 供 `cli-statusline.mjs` 在当前 ID 为子代理时快速跳转至根会话库。
+ *
+ * @param {string} dbFilePath
+ * @returns {{ parentConversationId: string, rootConversationId: string } | null}
+ */
+export function readLocalSqliteParentLink(dbFilePath) {
+  if (!dbFilePath || !existsSync(dbFilePath)) return null;
+  const DatabaseSync = getNodeSqliteDatabaseSync();
+  if (!DatabaseSync) return null;
+
+  const stem = basename(dbFilePath).replace(/\.db$/i, '').trim().toLowerCase();
+  const normCid = UUID_FILE_RE.test(stem) ? stem : '';
+
+  try {
+    return withReadOnlySqliteDb(dbFilePath, (db) => {
+      let parentConversationId = '';
+      let rootConversationId = '';
+      try {
+        const blobRow = db
+          .prepare("SELECT data FROM trajectory_metadata_blob WHERE id = 'main' LIMIT 1")
+          .get();
+        const blobBuf = toUint8Array(blobRow?.data);
+        if (blobBuf && blobBuf.length > 0) {
+          const tm = decodeProtoTrajectoryMetadataSlice(blobBuf, { off: 0 }, blobBuf.length);
+          parentConversationId = tm.parentConversationId || '';
+          rootConversationId = tm.rootConversationId || '';
+        }
+      } catch {
+        // 兼容未包含 trajectory_metadata_blob 的精简库
+      }
+
+      if (!parentConversationId && !rootConversationId) {
+        try {
+          const genRow = db
+            .prepare('SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 1')
+            .get();
+          if (genRow?.data) {
+            const decoded = decodeProtoGeneratorMeta(genRow.data, false);
+            const gmCid = String(decoded?.extraMeta?.cascade_id || '').trim().toLowerCase();
+            if (!gmCid || !normCid || gmCid === normCid) {
+              if (decoded?.extraMeta?.root_cascade_id) {
+                rootConversationId = String(decoded.extraMeta.root_cascade_id).trim().toLowerCase();
+              }
+              if (decoded?.extraMeta?.parent_cascade_id) {
+                parentConversationId = String(decoded.extraMeta.parent_cascade_id).trim().toLowerCase();
+              }
+            }
+          }
+        } catch {
+          // 忽略 gen_metadata 探测异常
+        }
+      }
+
+      return { parentConversationId, rootConversationId };
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 仅读取本地 SQLite 会话库末尾 `tailLimit` 步（`ORDER BY idx DESC LIMIT ?`），
+ * 供旁路运行会话活体检测（`extractLiveActivity`）使用，避免全表扫描与 `gen_metadata` 解码。
+ *
+ * @param {string} dbFilePath
+ * @param {number} [tailLimit=16]
+ * @returns {{ cascadeId: string, steps: object[] } | null}
+ */
+export function readLocalSqliteLiveTail(dbFilePath, tailLimit = 16) {
+  if (!dbFilePath || !existsSync(dbFilePath)) return null;
+  const DatabaseSync = getNodeSqliteDatabaseSync();
+  if (!DatabaseSync) return null;
+
+  const limit = Math.max(1, Math.min(64, Math.floor(Number(tailLimit) || 16)));
+  let normCid = '';
+  const stem = basename(dbFilePath).replace(/\.db$/i, '').trim().toLowerCase();
+  if (UUID_FILE_RE.test(stem)) {
+    normCid = stem;
+  }
+
+  try {
+    return withReadOnlySqliteDb(dbFilePath, (db) => {
+      if (!normCid) {
+        try {
+          const metaRow = db.prepare('SELECT cascade_id FROM trajectory_meta LIMIT 1').get();
+          if (metaRow?.cascade_id) {
+            normCid = String(metaRow.cascade_id).trim().toLowerCase();
+          }
+        } catch {
+          // 忽略无 trajectory_meta 的库
+        }
+      }
+
+      const descRows = db
+        .prepare('SELECT idx, step_type, status, metadata FROM steps ORDER BY idx DESC LIMIT ?')
+        .all(limit);
+      if (!descRows || descRows.length === 0) {
+        return { cascadeId: normCid, steps: [] };
+      }
+
+      const ascRows = descRows.slice().reverse();
+      const ownStepRecords = [];
+      const payloadIndices = [];
+      for (const row of ascRows) {
+        const idx = Number.isFinite(Number(row?.idx)) ? Number(row.idx) : ownStepRecords.length;
+        const stepTypeNum = Number(row?.step_type || 0);
+        const statusNum = Number(row?.status || 0);
+        let metadata = { sourceTrajectoryStepInfo: { stepIndex: idx } };
+        if (row?.metadata && row.metadata.byteLength > 0) {
+          try {
+            metadata = decodeProtoStepMeta(row.metadata, idx);
+          } catch {
+            // 忽略单步元数据解码异常
+          }
+        }
+        const originCid = String(metadata.sourceTrajectoryStepInfo?.cascadeId || '')
+          .trim()
+          .toLowerCase();
+        if (originCid && normCid && originCid !== normCid) continue;
+        ownStepRecords.push({ idx, stepTypeNum, statusNum, metadata });
+        if (stepTypeNum !== 132 || !metadata?.toolCall?.argumentsJson) {
+          payloadIndices.push(idx);
+        }
+      }
+
+      const payloadByIdx = new Map();
+      if (payloadIndices.length > 0) {
+        try {
+          const placeholders = payloadIndices.map(() => '?').join(',');
+          const pRows = db
+            .prepare(`SELECT idx, step_payload FROM steps WHERE idx IN (${placeholders})`)
+            .all(...payloadIndices);
+          for (const pRow of pRows || []) {
+            if (pRow?.step_payload && pRow.step_payload.byteLength > 0) {
+              payloadByIdx.set(Number(pRow.idx), pRow.step_payload);
+            }
+          }
+        } catch {
+          // 兼容不含 step_payload 列的旧表
+        }
+      }
+
+      const steps = [];
+      for (const rec of ownStepRecords) {
+        const isInvSub =
+          rec.stepTypeNum === 127 ||
+          (rec.stepTypeNum === 132 && isInvokeSubagentToolName(rec.metadata?.toolCall?.name));
+        let type = '';
+        if (isInvSub) {
+          type = 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT';
+        } else if (rec.stepTypeNum === 132) {
+          type = mapRunningGenericToolStepType(rec.metadata?.toolCall?.name);
+        } else {
+          type = decodeProtoStepTypeEnum(rec.stepTypeNum);
+        }
+        const status = decodeProtoStepStatusEnum(rec.statusNum);
+        const stepObj = { idx: rec.idx, type, status, metadata: rec.metadata };
+        const rawPayload = payloadByIdx.get(rec.idx);
+        if (rawPayload) {
+          try {
+            const decodedPayload = decodeProtoSelectiveStepPayload(rawPayload, {
+              stepTypeNum: rec.stepTypeNum,
+              isInvokeSubagent: isInvSub,
+              includeSystemMessage: false,
+              keepFullText: true,
+            });
+            if (decodedPayload.userInput) stepObj.userInput = decodedPayload.userInput;
+            if (decodedPayload.plannerResponse) stepObj.plannerResponse = decodedPayload.plannerResponse;
+            if (decodedPayload.errorMessage) stepObj.errorMessage = decodedPayload.errorMessage;
+            if (decodedPayload.invokeSubagent) stepObj.invokeSubagent = decodedPayload.invokeSubagent;
+          } catch {
+            // 忽略单步载荷解析异常
+          }
+        }
+        steps.push(stepObj);
+      }
+
+      return { cascadeId: normCid, steps };
     });
   } catch {
     return null;

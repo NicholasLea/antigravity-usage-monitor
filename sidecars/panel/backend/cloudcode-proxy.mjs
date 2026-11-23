@@ -38,7 +38,7 @@ async function loadCcProxyNodeModules() {
       https: httpsMod.default || httpsMod,
       tls: tlsMod.default || tlsMod,
       zlib: zlibMod.default || zlibMod,
-      execFileSync: cpMod.execFileSync,
+      execFile: cpMod.execFile,
       openSync: fsMod.openSync,
       readSync: fsMod.readSync,
       closeSync: fsMod.closeSync,
@@ -187,6 +187,47 @@ function parseWindowsProxyServerValue(rawVal) {
   return /^https?:\/\//i.test(srv) ? srv : `http://${srv}`;
 }
 
+let winRegProxyMemo = {
+  rawOut: '',
+  fetchedAtMs: 0,
+  inFlight: null,
+};
+
+async function readWindowsInternetSettingsAsync() {
+  const nowMs = Date.now();
+  if (winRegProxyMemo.fetchedAtMs > 0 && nowMs - winRegProxyMemo.fetchedAtMs < CC_PROXY_SYS_PROXY_CACHE_MS) {
+    return winRegProxyMemo.rawOut;
+  }
+  if (winRegProxyMemo.inFlight) {
+    return winRegProxyMemo.inFlight;
+  }
+  winRegProxyMemo.inFlight = (async () => {
+    try {
+      const { execFile } = await loadCcProxyNodeModules();
+      const out = await new Promise((resolveOut) => {
+        execFile(
+          'reg',
+          ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'],
+          { encoding: 'utf8', timeout: 2500, windowsHide: true },
+          (err, stdout) => {
+            resolveOut(err ? '' : String(stdout || ''));
+          }
+        );
+      });
+      winRegProxyMemo.rawOut = out;
+      winRegProxyMemo.fetchedAtMs = Date.now();
+      return out;
+    } catch {
+      winRegProxyMemo.rawOut = '';
+      winRegProxyMemo.fetchedAtMs = Date.now();
+      return '';
+    } finally {
+      winRegProxyMemo.inFlight = null;
+    }
+  })();
+  return winRegProxyMemo.inFlight;
+}
+
 export async function detectSystemHttpsProxy(targetHostname = '', { env = process.env, platform = process.platform } = {}) {
   const noProxy = env?.NO_PROXY || env?.no_proxy || '';
   if (shouldCcProxyBypassHost(targetHostname, noProxy)) return '';
@@ -196,13 +237,8 @@ export async function detectSystemHttpsProxy(targetHostname = '', { env = proces
   if (envProxy) return /^https?:\/\//i.test(envProxy) ? envProxy : `http://${envProxy}`;
   if (platform !== 'win32') return '';
   try {
-    const { execFileSync } = await loadCcProxyNodeModules();
-    const out = execFileSync(
-      'reg',
-      ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'],
-      { encoding: 'utf8', timeout: 2500, windowsHide: true }
-    );
-    if (!/ProxyEnable\s+REG_DWORD\s+0x1\b/i.test(out)) return '';
+    const out = await readWindowsInternetSettingsAsync();
+    if (!out || !/ProxyEnable\s+REG_DWORD\s+0x1\b/i.test(out)) return '';
     const overrideMatch = out.match(/ProxyOverride\s+REG_SZ\s+([^\r\n]+)/i);
     if (overrideMatch && shouldCcProxyBypassHost(targetHostname, overrideMatch[1])) {
       return '';

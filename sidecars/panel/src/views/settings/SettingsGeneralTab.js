@@ -24,6 +24,7 @@ import {
 import { ThemeColorPicker } from '../../components/settings/ThemeColorPicker.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
 import { SegmentedControl } from '../../components/ui/SegmentedControl.js';
+import { ToggleSwitch } from '../../components/ui/ToggleSwitch.js';
 
 function getLanguageOptions() {
   return [
@@ -39,13 +40,6 @@ function getFontScaleOptions() {
     { value: 'md', label: t('settings.gen.fontMd') },
     { value: 'lg', label: t('settings.gen.fontLg') },
     { value: 'xl', label: t('settings.gen.fontXl') },
-  ];
-}
-
-function getModernUiOptions() {
-  return [
-    { value: 'on', label: t('settings.gen.modernUiOn') },
-    { value: 'off', label: t('settings.gen.modernUiOff') },
   ];
 }
 
@@ -216,10 +210,10 @@ export const SettingsGeneralTab = defineComponent({
       },
     });
 
-    const modernUiSwitch = SegmentedControl({
-      ariaLabel: t('settings.gen.modernUi'),
+    const modernUiSwitch = ToggleSwitch({
+      ariaLabelKey: 'settings.gen.modernUi',
+      preset: 'modernUi',
       modelValue: 'on',
-      options: getModernUiOptions(),
       onUpdateModelValue: async (val) => {
         const nextModernUi = val !== 'off';
         draftModernUi = nextModernUi;
@@ -441,7 +435,6 @@ export const SettingsGeneralTab = defineComponent({
       });
       modernUiSwitch.setProps({
         modelValue: draftModernUi ? 'on' : 'off',
-        options: getModernUiOptions(),
       });
       autoUpdateSelect.setProps({
         modelValue: draftPluginUpdateMode,
@@ -523,9 +516,7 @@ export const SettingsGeneralTab = defineComponent({
         options: getFontScaleOptions(),
       });
       modernUiSwitch.setProps({
-        ariaLabel: t('settings.gen.modernUi'),
         modelValue: draftModernUi ? 'on' : 'off',
-        options: getModernUiOptions(),
       });
       autoUpdateSelect.setProps({
         modelValue: draftPluginUpdateMode,

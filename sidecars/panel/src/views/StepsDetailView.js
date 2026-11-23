@@ -74,6 +74,7 @@ import {
 import { CustomScrollbar } from '../components/ui/CustomScrollbar.js';
 import { CustomSelect } from '../components/ui/CustomSelect.js';
 import { createFourSegmentBar } from '../components/ui/FourSegmentBar.js';
+import { createSearchInput } from '../components/ui/SearchInput.js';
 import { SegmentedControl } from '../components/ui/SegmentedControl.js';
 import { StepTableWidget } from '../components/widgets/StepTableWidget.js';
 import { sortStepsByColumn } from '../registries/stepColumnRegistry.js';
@@ -434,40 +435,30 @@ export const StepsDetailView = defineComponent({
     );
 
     // --- 步骤搜索栏及快捷诊断芯片 ---
-    const stepSearchClearBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'steps-search-clear',
-        hidden: true,
-        'aria-label': t('steps.searchClearAria'),
-        onclick: () => {
-          stepSearchQuery = '';
-          stepSearchInput.value = '';
-          patchAttr(stepSearchClearBtn, 'hidden', true);
-          if (latestSlice) renderStepsData(latestSlice);
-          stepSearchInput.focus?.();
-        },
-      },
-      [createSvgIcon('close', { size: 11 })]
-    );
-    const stepSearchInput = h('input', {
-      type: 'text',
-      className: 'steps-search-input',
+    const stepSearchBox = createSearchInput({
+      wrapClassName: 'steps-search-wrap',
+      iconClassName: 'steps-search-icon',
+      inputClassName: 'steps-search-input',
+      clearClassName: 'steps-search-clear',
       placeholder: t('steps.searchPlaceholder'),
-      'aria-label': t('steps.searchPlaceholder'),
-      onInput: (e) => {
-        stepSearchQuery = String(e?.target?.value ?? '');
-        patchAttr(stepSearchClearBtn, 'hidden', !stepSearchQuery.trim());
+      ariaLabel: t('steps.searchPlaceholder'),
+      clearAriaLabel: t('steps.searchClearAria'),
+      closeIconSize: 11,
+      onInput: (val) => {
+        stepSearchQuery = String(val ?? '');
         if (latestSlice) renderStepsData(latestSlice);
+      },
+      onClear: () => {
+        stepSearchQuery = '';
+        if (latestSlice) renderStepsData(latestSlice);
+        stepSearchInput.focus?.();
       },
       onKeydown: (e) => {
         if (e?.key === 'Escape') {
           e.stopPropagation?.();
           if (stepSearchQuery) {
             stepSearchQuery = '';
-            stepSearchInput.value = '';
-            patchAttr(stepSearchClearBtn, 'hidden', true);
+            stepSearchBox.setValue('');
             if (latestSlice) renderStepsData(latestSlice);
           } else {
             stepSearchInput.blur?.();
@@ -475,11 +466,9 @@ export const StepsDetailView = defineComponent({
         }
       },
     });
-    const stepSearchWrapEl = h('div', { className: 'steps-search-wrap' }, [
-      createSvgIcon('search', { size: 12, className: 'steps-search-icon' }),
-      stepSearchInput,
-      stepSearchClearBtn,
-    ]);
+    const stepSearchWrapEl = stepSearchBox.el;
+    const stepSearchInput = stepSearchBox.inputEl;
+    const stepSearchClearBtn = stepSearchBox.clearBtnEl;
 
     const QUICK_CHIP_DEFS = [
       { key: 'anomaly', i18nKey: 'steps.chipAnomaly', tone: 'is-warn' },

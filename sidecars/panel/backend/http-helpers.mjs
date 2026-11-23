@@ -14,6 +14,16 @@ function resolveHttpHelperPanelDir() {
 }
 
 /**
+ * 判断输入值是否为非数组普通对象（Plain Object）。
+ *
+ * @param {unknown} v
+ * @returns {boolean}
+ */
+export function isPlainObject(v) {
+  return Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+}
+
+/**
  * 异步读取 `sidecars/panel` 目录下的静态资源文件（兼容单元测试同步沙箱）。
  *
  * @param {string} relPath 相对路径

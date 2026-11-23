@@ -11,10 +11,11 @@
  *    避免深色背景色块突兀及 OSC 序列干扰 Bubble Tea 宽度计算）。
  */
 
-import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { writeTextFileAtomicSync } from './fs-atomic.mjs';
 import {
   HERE,
   lsRuntimeEndpoint,
@@ -503,18 +504,7 @@ export function ensureCliStatusLineConfigured({
     }
 
     const serialized = `${JSON.stringify(applied.object, null, 2).replace(/\n/g, eol)}${eol}`;
-    const tmpPath = `${settingsPath}.tmp-${process.pid}`;
-    try {
-      writeFileSync(tmpPath, serialized, 'utf8');
-      renameSync(tmpPath, settingsPath);
-    } catch {
-      try {
-        if (existsSync(tmpPath)) unlinkSync(tmpPath);
-      } catch {
-        // 忽略临时文件清理异常
-      }
-      writeFileSync(settingsPath, serialized, 'utf8');
-    }
+    writeTextFileAtomicSync(settingsPath, serialized);
 
     return {
       checked: true,

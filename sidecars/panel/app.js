@@ -5414,7 +5414,7 @@ return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSp
 })();
 
 // --- src/core/stepInspector.js ---
-const { STEP_LOW_CACHE_MIN_PROMPT_TOKENS, STEP_LOW_CACHE_MAX_PCT, STEP_SLOW_TTFT_MIN_SEC, getStepSelectionKey, isLowCacheStep, isSlowTtftStep, computeStepQuickChipCounts, filterStepsBySearchAndChip, findPrevAgentContextTokens, computeStepTimingWaterfall, buildStepDiagnosticMarkdown, copyPlainTextToClipboard } = (() => {
+const { STEP_LOW_CACHE_MIN_PROMPT_TOKENS, STEP_LOW_CACHE_MAX_PCT, STEP_SLOW_TTFT_MIN_SEC, getStepSelectionKey, isLowCacheStep, isSlowTtftStep, computeStepQuickChipCounts, filterStepsBySearchAndChip, findPrevAgentContextTokens, computeStepTimingWaterfall, buildStepDiagnosticMarkdown, copyPlainTextToClipboard, createCopiedFeedbackController } = (() => {
 /**
  * @fileoverview 步骤搜索筛选、快捷诊断统计、耗时瀑布计算及单步诊断 Markdown 导出纯函数模块 (`stepInspector.js`)。
  * 保持零 DOM 耦合和单遍 O(N) 高性能，供 `StepsDetailView` 及单元测试直接复用。
@@ -5744,7 +5744,11 @@ async function copyPlainTextToClipboard(text) {
       document.body.appendChild(ta);
       ta.select?.();
       const ok = document.execCommand('copy');
-      ta.remove?.();
+      if (typeof ta.remove === 'function') {
+        ta.remove();
+      } else {
+        document.body.removeChild?.(ta);
+      }
       return Boolean(ok);
     }
   } catch {
@@ -5752,14 +5756,74 @@ async function copyPlainTextToClipboard(text) {
   }
   return false;
 }
-return { STEP_LOW_CACHE_MIN_PROMPT_TOKENS, STEP_LOW_CACHE_MAX_PCT, STEP_SLOW_TTFT_MIN_SEC, getStepSelectionKey, isLowCacheStep, isSlowTtftStep, computeStepQuickChipCounts, filterStepsBySearchAndChip, findPrevAgentContextTokens, computeStepTimingWaterfall, buildStepDiagnosticMarkdown, copyPlainTextToClipboard };
+
+/**
+ * 统一的「已复制」临时反馈计时器控制器（自动重置定时器并在组件销毁时清理）。
+ *
+ * @param {{
+ *   durationMs?: number,
+ *   onChange?: (copiedKey: any) => void,
+ *   onCleanup?: (cleanupFn: () => void) => void,
+ * }} [options={}]
+ */
+function createCopiedFeedbackController({
+  durationMs = 1800,
+  onChange = null,
+  onCleanup = null,
+} = {}) {
+  let activeKey = null;
+  let timer = null;
+  let disposed = false;
+
+  function clear() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (activeKey !== null) {
+      activeKey = null;
+      if (!disposed) onChange?.(null);
+    }
+  }
+
+  function trigger(key = true) {
+    if (disposed) return;
+    if (timer) clearTimeout(timer);
+    activeKey = key;
+    onChange?.(activeKey);
+    timer = setTimeout(() => {
+      timer = null;
+      if (disposed) return;
+      activeKey = null;
+      onChange?.(null);
+    }, durationMs);
+    timer?.unref?.();
+  }
+
+  onCleanup?.(() => {
+    disposed = true;
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    activeKey = null;
+  });
+
+  return {
+    isCopied: (key = true) => activeKey === key,
+    getActiveKey: () => activeKey,
+    trigger,
+    clear,
+  };
+}
+return { STEP_LOW_CACHE_MIN_PROMPT_TOKENS, STEP_LOW_CACHE_MAX_PCT, STEP_SLOW_TTFT_MIN_SEC, getStepSelectionKey, isLowCacheStep, isSlowTtftStep, computeStepQuickChipCounts, filterStepsBySearchAndChip, findPrevAgentContextTokens, computeStepTimingWaterfall, buildStepDiagnosticMarkdown, copyPlainTextToClipboard, createCopiedFeedbackController };
 })();
 
 // --- src/core/settingsBackup.js ---
-const { triggerTextFileDownload, buildExportableSettingsJson, parseImportedSettingsJson } = (() => {
+const { triggerBlobDownload, triggerTextFileDownload, buildExportableSettingsJson, parseImportedSettingsJson } = (() => {
 /**
  * @fileoverview 偏好设置便携 JSON 备份及恢复工具 (`settingsBackup.js`).
- * 仅处理经过白名单归一化的用户界面偏好项，不包含账号凭证及高风险上下文窗口覆盖。
+ * 通过单一声明式字段描述符表同时驱动导出与导入归一化，消除双遍手写 30 个键的漏同步风险。
  */
 
 
@@ -5772,17 +5836,17 @@ function sanitizePositiveBudgetNum(val) {
 }
 
 /**
- * 在浏览器端通过内存 Blob 触发文件下载（零本地磁盘外部写入）。
+ * 在浏览器端通过内存 Blob 触发文件下载（统一承载文本与二进制载荷）。
  *
  * @param {string} filename
- * @param {string} content
+ * @param {BlobPart} blobPart
  * @param {string} [mimeType]
  * @returns {boolean}
  */
-function triggerTextFileDownload(
+function triggerBlobDownload(
   filename,
-  content,
-  mimeType = 'application/json;charset=utf-8'
+  blobPart,
+  mimeType = 'application/octet-stream'
 ) {
   try {
     if (
@@ -5793,11 +5857,11 @@ function triggerTextFileDownload(
     ) {
       return false;
     }
-    const blob = new Blob([String(content ?? '')], { type: mimeType });
+    const blob = new Blob([blobPart], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.setAttribute('href', url);
-    a.setAttribute('download', String(filename || 'export.json'));
+    a.setAttribute('download', String(filename || 'export.dat'));
     a.style.display = 'none';
     document.body?.appendChild?.(a);
     a.click?.();
@@ -5814,6 +5878,143 @@ function triggerTextFileDownload(
 }
 
 /**
+ * 在浏览器端通过内存 Blob 触发文本文件下载。
+ *
+ * @param {string} filename
+ * @param {string} content
+ * @param {string} [mimeType]
+ * @returns {boolean}
+ */
+function triggerTextFileDownload(
+  filename,
+  content,
+  mimeType = 'application/json;charset=utf-8'
+) {
+  return triggerBlobDownload(
+    String(filename || 'export.json'),
+    String(content ?? ''),
+    mimeType
+  );
+}
+
+const normField = (key, normalizeFn) => ({
+  exportTo: (src, out) => {
+    out[key] = normalizeFn(src[key]);
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key)) patch[key] = normalizeFn(src[key]);
+  },
+});
+
+const boolField = (key, defaultVal) => ({
+  exportTo: (src, out) => {
+    out[key] = defaultVal ? src[key] !== false : src[key] === true;
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key) && typeof src[key] === 'boolean') patch[key] = src[key];
+  },
+});
+
+const arrayField = (key, normalizeFn) => ({
+  exportTo: (src, out) => {
+    out[key] = normalizeFn(src[key]);
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key) && Array.isArray(src[key])) patch[key] = normalizeFn(src[key]);
+  },
+});
+
+const positiveBudgetField = (key, fallbackVal) => ({
+  exportTo: (src, out) => {
+    out[key] = sanitizePositiveBudgetNum(src[key]) ?? fallbackVal;
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key)) {
+      const num = sanitizePositiveBudgetNum(src[key]);
+      if (num !== null) patch[key] = num;
+    }
+  },
+});
+
+const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
+  normField('language', normalizeLanguageSetting),
+  normField('themeAccent', normalizeThemeAccent),
+  normField('fontScale', normalizeFontScale),
+  {
+    exportTo: (src, out) => {
+      out.modernUi = src.modernUi !== undefined ? normalizeModernUi(src.modernUi) : true;
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('modernUi')) {
+        const val = normalizeModernUi(src.modernUi);
+        patch.modernUi = val;
+        patch.experimentalModernUi = val;
+      }
+    },
+  },
+  normField('weeklyLimitMode', normalizeWeeklyLimitMode),
+  positiveBudgetField('weeklyTokenBudget', 150000000),
+  positiveBudgetField('weeklyCostBudget', 100),
+  {
+    exportTo: (src, out) => {
+      const mode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
+      out.modelDisplayMode = mode;
+      out.showUpstreamModel = mode !== 'short';
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('modelDisplayMode') || hasKey('showUpstreamModel')) {
+        const mode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
+        patch.modelDisplayMode = mode;
+        patch.showUpstreamModel = mode !== 'short';
+      }
+    },
+  },
+  normField('orchestratorIdMode', normalizeOrchestratorIdMode),
+  {
+    exportTo: (src, out) => {
+      out.pluginUpdateMode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('pluginUpdateMode') || hasKey('autoUpdatePlugin')) {
+        const mode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);
+        patch.pluginUpdateMode = mode;
+        patch.autoUpdatePlugin = mode === 'auto';
+      }
+    },
+  },
+  {
+    exportTo: (src, out) => {
+      out.windowMountMode = normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay);
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('windowMountMode') || hasKey('enableWindowOverlay')) {
+        const mode = normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay);
+        patch.windowMountMode = mode;
+        patch.enableWindowOverlay = mode !== 'sidebar';
+      }
+    },
+  },
+  normField('popoverWidthMode', normalizePopoverWidthMode),
+  normField('popoverWidth', normalizePopoverWidth),
+  boolField('enableCliStatusLine', true),
+  normField('cliStatusLineSlots', normalizeCliStatusLineSlots),
+  normField('standalonePort', normalizeStandalonePort),
+  boolField('showTopbarMultiSession', true),
+  normField('contextAgentMode', normalizeContextAgentMode),
+  arrayField('topbarCapsuleSlots', normalizeTopbarCapsuleSlots),
+  arrayField('hoverModules', normalizeHoverModules),
+  arrayField('overviewModules', normalizeOverviewModules),
+  arrayField('overviewMetrics', normalizeOverviewMetrics),
+  boolField('showStepTurnRail', false),
+  boolField('showStepAgentBadge', true),
+  boolField('showStepSpeedColor', false),
+  boolField('showStepFilterToolbar', false),
+  normField('stepTokenComboFormat', normalizeStepTokenComboFormat),
+  arrayField('stepTableColumns', normalizeStepTableColumns),
+  normField('experimentalQuotaReservation', normalizeExperimentalQuotaReservation),
+]);
+
+/**
  * 将当前用户偏好设置序列化为跨设备可迁移的安全 JSON 备份文本（仅包含便携偏好项，不包含凭证或高风险覆盖开关）。
  *
  * @param {object} [settings={}]
@@ -5821,46 +6022,15 @@ function triggerTextFileDownload(
  */
 function buildExportableSettingsJson(settings = {}) {
   const src = settings && typeof settings === 'object' ? settings : {};
-  const modelDisplayMode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
-  const modernUi = src.modernUi !== undefined ? normalizeModernUi(src.modernUi) : true;
+  const outSettings = {};
+  for (const desc of PORTABLE_SETTING_DESCRIPTORS) {
+    desc.exportTo(src, outSettings);
+  }
   const payload = {
     schema: SETTINGS_BACKUP_SCHEMA,
     version: 1,
     exportedAt: new Date().toISOString(),
-    settings: {
-      language: normalizeLanguageSetting(src.language),
-      themeAccent: normalizeThemeAccent(src.themeAccent),
-      fontScale: normalizeFontScale(src.fontScale),
-      modernUi,
-      weeklyLimitMode: normalizeWeeklyLimitMode(src.weeklyLimitMode),
-      weeklyTokenBudget: sanitizePositiveBudgetNum(src.weeklyTokenBudget) ?? 150000000,
-      weeklyCostBudget: sanitizePositiveBudgetNum(src.weeklyCostBudget) ?? 100,
-      modelDisplayMode,
-      showUpstreamModel: modelDisplayMode !== 'short',
-      orchestratorIdMode: normalizeOrchestratorIdMode(src.orchestratorIdMode),
-      pluginUpdateMode: normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin),
-      windowMountMode: normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay),
-      popoverWidthMode: normalizePopoverWidthMode(src.popoverWidthMode),
-      popoverWidth: normalizePopoverWidth(src.popoverWidth),
-      enableCliStatusLine: src.enableCliStatusLine !== false,
-      cliStatusLineSlots: normalizeCliStatusLineSlots(src.cliStatusLineSlots),
-      standalonePort: normalizeStandalonePort(src.standalonePort),
-      showTopbarMultiSession: src.showTopbarMultiSession !== false,
-      contextAgentMode: normalizeContextAgentMode(src.contextAgentMode),
-      topbarCapsuleSlots: normalizeTopbarCapsuleSlots(src.topbarCapsuleSlots),
-      hoverModules: normalizeHoverModules(src.hoverModules),
-      overviewModules: normalizeOverviewModules(src.overviewModules),
-      overviewMetrics: normalizeOverviewMetrics(src.overviewMetrics),
-      showStepTurnRail: src.showStepTurnRail === true,
-      showStepAgentBadge: src.showStepAgentBadge !== false,
-      showStepSpeedColor: src.showStepSpeedColor === true,
-      showStepFilterToolbar: src.showStepFilterToolbar === true,
-      stepTokenComboFormat: normalizeStepTokenComboFormat(src.stepTokenComboFormat),
-      stepTableColumns: normalizeStepTableColumns(src.stepTableColumns),
-      experimentalQuotaReservation: normalizeExperimentalQuotaReservation(
-        src.experimentalQuotaReservation
-      ),
-    },
+    settings: outSettings,
   };
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
@@ -5894,98 +6064,8 @@ function parseImportedSettingsJson(rawText) {
   const hasKey = (k) => Object.prototype.hasOwnProperty.call(src, k);
   const patch = {};
 
-  if (hasKey('language')) patch.language = normalizeLanguageSetting(src.language);
-  if (hasKey('themeAccent')) patch.themeAccent = normalizeThemeAccent(src.themeAccent);
-  if (hasKey('fontScale')) patch.fontScale = normalizeFontScale(src.fontScale);
-  if (hasKey('modernUi')) {
-    const val = normalizeModernUi(src.modernUi);
-    patch.modernUi = val;
-    patch.experimentalModernUi = val;
-  }
-  if (hasKey('weeklyLimitMode')) {
-    patch.weeklyLimitMode = normalizeWeeklyLimitMode(src.weeklyLimitMode);
-  }
-  if (hasKey('weeklyTokenBudget')) {
-    const num = sanitizePositiveBudgetNum(src.weeklyTokenBudget);
-    if (num !== null) patch.weeklyTokenBudget = num;
-  }
-  if (hasKey('weeklyCostBudget')) {
-    const num = sanitizePositiveBudgetNum(src.weeklyCostBudget);
-    if (num !== null) patch.weeklyCostBudget = num;
-  }
-  if (hasKey('modelDisplayMode') || hasKey('showUpstreamModel')) {
-    const mode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
-    patch.modelDisplayMode = mode;
-    patch.showUpstreamModel = mode !== 'short';
-  }
-  if (hasKey('orchestratorIdMode')) {
-    patch.orchestratorIdMode = normalizeOrchestratorIdMode(src.orchestratorIdMode);
-  }
-  if (hasKey('pluginUpdateMode') || hasKey('autoUpdatePlugin')) {
-    const mode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);
-    patch.pluginUpdateMode = mode;
-    patch.autoUpdatePlugin = mode === 'auto';
-  }
-  if (hasKey('windowMountMode') || hasKey('enableWindowOverlay')) {
-    const mode = normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay);
-    patch.windowMountMode = mode;
-    patch.enableWindowOverlay = mode !== 'sidebar';
-  }
-  if (hasKey('popoverWidthMode')) {
-    patch.popoverWidthMode = normalizePopoverWidthMode(src.popoverWidthMode);
-  }
-  if (hasKey('popoverWidth')) {
-    patch.popoverWidth = normalizePopoverWidth(src.popoverWidth);
-  }
-  if (hasKey('enableCliStatusLine') && typeof src.enableCliStatusLine === 'boolean') {
-    patch.enableCliStatusLine = src.enableCliStatusLine;
-  }
-  if (hasKey('cliStatusLineSlots')) {
-    patch.cliStatusLineSlots = normalizeCliStatusLineSlots(src.cliStatusLineSlots);
-  }
-  if (hasKey('standalonePort')) {
-    patch.standalonePort = normalizeStandalonePort(src.standalonePort);
-  }
-  if (hasKey('showTopbarMultiSession') && typeof src.showTopbarMultiSession === 'boolean') {
-    patch.showTopbarMultiSession = src.showTopbarMultiSession;
-  }
-  if (hasKey('contextAgentMode')) {
-    patch.contextAgentMode = normalizeContextAgentMode(src.contextAgentMode);
-  }
-  if (hasKey('topbarCapsuleSlots') && Array.isArray(src.topbarCapsuleSlots)) {
-    patch.topbarCapsuleSlots = normalizeTopbarCapsuleSlots(src.topbarCapsuleSlots);
-  }
-  if (hasKey('hoverModules') && Array.isArray(src.hoverModules)) {
-    patch.hoverModules = normalizeHoverModules(src.hoverModules);
-  }
-  if (hasKey('overviewModules') && Array.isArray(src.overviewModules)) {
-    patch.overviewModules = normalizeOverviewModules(src.overviewModules);
-  }
-  if (hasKey('overviewMetrics') && Array.isArray(src.overviewMetrics)) {
-    patch.overviewMetrics = normalizeOverviewMetrics(src.overviewMetrics);
-  }
-  if (hasKey('showStepTurnRail') && typeof src.showStepTurnRail === 'boolean') {
-    patch.showStepTurnRail = src.showStepTurnRail;
-  }
-  if (hasKey('showStepAgentBadge') && typeof src.showStepAgentBadge === 'boolean') {
-    patch.showStepAgentBadge = src.showStepAgentBadge;
-  }
-  if (hasKey('showStepSpeedColor') && typeof src.showStepSpeedColor === 'boolean') {
-    patch.showStepSpeedColor = src.showStepSpeedColor;
-  }
-  if (hasKey('showStepFilterToolbar') && typeof src.showStepFilterToolbar === 'boolean') {
-    patch.showStepFilterToolbar = src.showStepFilterToolbar;
-  }
-  if (hasKey('stepTokenComboFormat')) {
-    patch.stepTokenComboFormat = normalizeStepTokenComboFormat(src.stepTokenComboFormat);
-  }
-  if (hasKey('stepTableColumns') && Array.isArray(src.stepTableColumns)) {
-    patch.stepTableColumns = normalizeStepTableColumns(src.stepTableColumns);
-  }
-  if (hasKey('experimentalQuotaReservation')) {
-    patch.experimentalQuotaReservation = normalizeExperimentalQuotaReservation(
-      src.experimentalQuotaReservation
-    );
+  for (const desc of PORTABLE_SETTING_DESCRIPTORS) {
+    desc.importTo(src, hasKey, patch);
   }
 
   const appliedCount = Object.keys(patch).length;
@@ -5994,7 +6074,7 @@ function parseImportedSettingsJson(rawText) {
   }
   return { ok: true, patch, appliedCount };
 }
-return { triggerTextFileDownload, buildExportableSettingsJson, parseImportedSettingsJson };
+return { triggerBlobDownload, triggerTextFileDownload, buildExportableSettingsJson, parseImportedSettingsJson };
 })();
 
 // --- src/core/xlsxBuilder.js ---
@@ -8521,7 +8601,7 @@ return { getViewTabs, uiStore, showUiToast, dismissUiToast, getVisibleMonitorVie
 // --- src/core/fileExportClient.js ---
 const { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFeedback, copyTextWithFeedback } = (() => {
 /**
- * @fileoverview 统一文本文件导出及剪贴板复制客户端 (`fileExportClient.js`)。
+ * @fileoverview 统一文本/二进制文件导出及剪贴板复制客户端 (`fileExportClient.js`)。
  * 优先调用本机后端 `/api/export-file` 落盘到用户 Downloads（或插件 `.data/exports`）并返回真实绝对路径，
  * 同时通过全局 Toast 清晰展示保存位置并提供「打开位置」快捷按钮；
  * 当后端不可达或处于远程浏览器访问时，自动平滑降级到 `showSaveFilePicker` 或浏览器 Blob 下载并给出明确提示。
@@ -8531,36 +8611,6 @@ const { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFeed
 function isHostEmbeddedWebview() {
   if (typeof window === 'undefined') return false;
   return Boolean(window.sidecar?.fetch) || isWindowOverlayMode();
-}
-
-function triggerBinaryFileDownload(filename, bytes, mimeType) {
-  try {
-    if (
-      typeof Blob === 'undefined' ||
-      typeof URL === 'undefined' ||
-      typeof URL.createObjectURL !== 'function' ||
-      typeof document === 'undefined'
-    ) {
-      return false;
-    }
-    const blob = new Blob([bytes], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.setAttribute('href', url);
-    a.setAttribute('download', String(filename || 'export.xlsx'));
-    a.style.display = 'none';
-    document.body?.appendChild?.(a);
-    a.click?.();
-    a.remove?.();
-    setTimeout(() => {
-      try {
-        URL.revokeObjectURL(url);
-      } catch {}
-    }, 1000);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function getPickerTypesForFilename(filename, mimeType) {
@@ -8656,28 +8706,15 @@ async function requestLocalBackendExport(payload) {
 }
 
 /**
- * 统一文本导出入口：优先本机后端落盘（返回精确路径 + 支持一键打开所在目录），
- * 仅在真正独立浏览器上下文（非 Sidecar / 非 Electron 宿主）下降级为浏览器保存，避免宿主静默吞掉 Blob 下载后误报成功。
- *
- * @param {string} filename
- * @param {string} content
- * @param {string} [mimeType='text/plain;charset=utf-8']
- * @returns {Promise<{ ok: boolean, mode: 'local' | 'picker' | 'browser' | 'cancelled' | 'failed', filePath?: string, fileName?: string }>}
+ * 共享多阶段导出与 Toast 反馈骨架（本机落盘 -> 宿主拦截保护 -> File System Access Picker -> Blob 下载）。
  */
-async function exportTextFileWithFeedback(
-  filename,
-  content,
-  mimeType = 'application/json;charset=utf-8'
-) {
-  const safeName = String(filename || 'export.txt');
-  const text = String(content ?? '');
-
-  // 1. 优先通过本机后端落盘到 Downloads（含 /api/settings 穿透兼容旧常驻 main.mjs）
-  const { res: localRes } = await requestLocalBackendExport({
-    filename: safeName,
-    content: text,
-    mimeType,
-  });
+async function runExportPipelineWithFeedback({
+  safeName,
+  mimeType,
+  backendPayload,
+  writablePayload,
+}) {
+  const { res: localRes } = await requestLocalBackendExport(backendPayload);
   if (localRes && localRes.ok && localRes.filePath) {
     const savedPath = String(localRes.filePath);
     const savedName = String(localRes.fileName || safeName);
@@ -8694,7 +8731,7 @@ async function exportTextFileWithFeedback(
     return { ok: true, mode: 'local', filePath: savedPath, fileName: savedName };
   }
 
-  // 2. 在 Antigravity Sidecar / 双栖 Electron 宿主内，<a download> 会被静默吞掉，绝不误报“已下载到浏览器”
+  // 在 Antigravity Sidecar / 双栖 Electron 宿主内，<a download> 会被静默吞掉，绝不误报“已下载到浏览器”
   if (isHostEmbeddedWebview()) {
     showUiToast({
       message: t('export.failed'),
@@ -8705,7 +8742,6 @@ async function exportTextFileWithFeedback(
     return { ok: false, mode: 'failed' };
   }
 
-  // 3. 普通独立浏览器原生「另存为」对话框
   if (typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function') {
     try {
       const handle = await window.showSaveFilePicker({
@@ -8713,7 +8749,7 @@ async function exportTextFileWithFeedback(
         types: getPickerTypesForFilename(safeName, mimeType),
       });
       const writable = await handle.createWritable();
-      await writable.write(text);
+      await writable.write(writablePayload);
       await writable.close();
       const pickedName = handle.name || safeName;
       showUiToast({
@@ -8726,12 +8762,10 @@ async function exportTextFileWithFeedback(
       if (err && err.name === 'AbortError') {
         return { ok: false, mode: 'cancelled' };
       }
-      // 沙箱/iframe 抛出 SecurityError 等时继续降级到 Blob 下载
     }
   }
 
-  // 4. 独立浏览器标准 Blob 兜底下载
-  const ok = triggerTextFileDownload(safeName, text, mimeType);
+  const ok = triggerBlobDownload(safeName, writablePayload, mimeType);
   if (ok) {
     showUiToast({
       message: t('export.savedBrowser', { file: safeName }),
@@ -8751,8 +8785,35 @@ async function exportTextFileWithFeedback(
 }
 
 /**
+ * 统一文本导出入口：优先本机后端落盘（返回精确路径 + 支持一键打开所在目录），
+ * 仅在真正独立浏览器上下文下降级为浏览器保存。
+ *
+ * @param {string} filename
+ * @param {string} content
+ * @param {string} [mimeType='application/json;charset=utf-8']
+ * @returns {Promise<{ ok: boolean, mode: 'local' | 'picker' | 'browser' | 'cancelled' | 'failed', filePath?: string, fileName?: string }>}
+ */
+async function exportTextFileWithFeedback(
+  filename,
+  content,
+  mimeType = 'application/json;charset=utf-8'
+) {
+  const safeName = String(filename || 'export.txt');
+  const text = String(content ?? '');
+  return runExportPipelineWithFeedback({
+    safeName,
+    mimeType,
+    backendPayload: {
+      filename: safeName,
+      content: text,
+      mimeType,
+    },
+    writablePayload: text,
+  });
+}
+
+/**
  * 统一二进制文件导出入口（用于原生 `.xlsx` Excel 工作簿）。
- * 优先转 Base64 经本机后端落盘到 Downloads 并展示完整路径 + 「打开位置」直达按钮。
  *
  * @param {string} filename
  * @param {Uint8Array} bytes
@@ -8769,80 +8830,17 @@ async function exportBinaryFileWithFeedback(
     showUiToast({ message: t('export.failed'), tone: 'warn', durationMs: 3600 });
     return { ok: false, mode: 'failed' };
   }
-
-  const base64Content = uint8ArrayToBase64(bytes);
-  const { res: localRes } = await requestLocalBackendExport({
-    filename: safeName,
-    content: base64Content,
-    encoding: 'base64',
+  return runExportPipelineWithFeedback({
+    safeName,
     mimeType,
+    backendPayload: {
+      filename: safeName,
+      content: uint8ArrayToBase64(bytes),
+      encoding: 'base64',
+      mimeType,
+    },
+    writablePayload: bytes,
   });
-  if (localRes && localRes.ok && localRes.filePath) {
-    const savedPath = String(localRes.filePath);
-    const savedName = String(localRes.fileName || safeName);
-    showUiToast({
-      message: t('export.savedLocal', { file: savedName }),
-      detail: savedPath,
-      actionLabel: t('export.openFolder'),
-      onAction: () => {
-        void revealExportedFile(savedPath);
-      },
-      tone: 'ok',
-      durationMs: 7000,
-    });
-    return { ok: true, mode: 'local', filePath: savedPath, fileName: savedName };
-  }
-
-  if (isHostEmbeddedWebview()) {
-    showUiToast({
-      message: t('export.failed'),
-      detail: t('export.hostUnavailable'),
-      tone: 'warn',
-      durationMs: 5200,
-    });
-    return { ok: false, mode: 'failed' };
-  }
-
-  if (typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function') {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: safeName,
-        types: getPickerTypesForFilename(safeName, mimeType),
-      });
-      const writable = await handle.createWritable();
-      await writable.write(bytes);
-      await writable.close();
-      const pickedName = handle.name || safeName;
-      showUiToast({
-        message: t('export.savedPicked', { file: pickedName }),
-        tone: 'ok',
-        durationMs: 4200,
-      });
-      return { ok: true, mode: 'picker', fileName: pickedName };
-    } catch (err) {
-      if (err && err.name === 'AbortError') {
-        return { ok: false, mode: 'cancelled' };
-      }
-    }
-  }
-
-  const ok = triggerBinaryFileDownload(safeName, bytes, mimeType);
-  if (ok) {
-    showUiToast({
-      message: t('export.savedBrowser', { file: safeName }),
-      detail: t('export.savedBrowserHint'),
-      tone: 'info',
-      durationMs: 5000,
-    });
-    return { ok: true, mode: 'browser', fileName: safeName };
-  }
-
-  showUiToast({
-    message: t('export.failed'),
-    tone: 'warn',
-    durationMs: 3600,
-  });
-  return { ok: false, mode: 'failed' };
 }
 
 /**
@@ -11337,6 +11335,127 @@ const TopLongPillNav = defineComponent({
 return { TopLongPillNav };
 })();
 
+// --- src/components/ui/SearchInput.js ---
+const { createSearchInput } = (() => {
+/**
+ * @fileoverview Shared compact search input bar (`SearchInput.js`) with leading search icon
+ * and conditional clear button, reused across `CustomSelect`, `StepsDetailView`, and `SessionMigrationCard`.
+ */
+
+
+/**
+ * Creates a unified search input box while preserving caller-specific modifier classes.
+ *
+ * @param {{
+ *   wrapClassName?: string,
+ *   iconClassName?: string,
+ *   inputClassName?: string,
+ *   clearClassName?: string,
+ *   placeholder?: string,
+ *   ariaLabel?: string,
+ *   clearAriaLabel?: string,
+ *   hidden?: boolean,
+ *   stopClickPropagation?: boolean,
+ *   closeIconSize?: number,
+ *   onInput?: (value: string, event: any) => void,
+ *   onClear?: (event: any) => void,
+ *   onKeydown?: (event: any) => void,
+ * }} [options={}]
+ */
+function createSearchInput({
+  wrapClassName = '',
+  iconClassName = '',
+  inputClassName = '',
+  clearClassName = '',
+  placeholder = '',
+  ariaLabel = '',
+  clearAriaLabel = '',
+  hidden = false,
+  stopClickPropagation = false,
+  closeIconSize = 10,
+  onInput = null,
+  onClear = null,
+  onKeydown = null,
+} = {}) {
+  const iconEl = createSvgIcon('search', {
+    size: 12,
+    className: ['ui-search-icon', iconClassName].filter(Boolean).join(' '),
+  });
+
+  const inputEl = h('input', {
+    type: 'text',
+    className: ['ui-search-input', inputClassName].filter(Boolean).join(' '),
+    autocomplete: 'off',
+    spellcheck: 'false',
+    placeholder,
+    ...(ariaLabel ? { 'aria-label': ariaLabel } : {}),
+    ...(stopClickPropagation ? { onClick: (e) => e.stopPropagation?.() } : {}),
+    onInput: (e) => {
+      const val = String(e?.target?.value ?? inputEl.value ?? '');
+      patchAttr(clearBtnEl, 'hidden', !val.trim());
+      onInput?.(val, e);
+    },
+    ...(onKeydown ? { onKeydown } : {}),
+  });
+
+  const clearBtnEl = h(
+    'button',
+    {
+      type: 'button',
+      className: ['ui-search-clear', clearClassName].filter(Boolean).join(' '),
+      hidden: true,
+      ...(clearAriaLabel ? { 'aria-label': clearAriaLabel } : {}),
+      onClick: (e) => {
+        if (stopClickPropagation) e?.stopPropagation?.();
+        inputEl.value = '';
+        patchAttr(clearBtnEl, 'hidden', true);
+        if (onClear) {
+          onClear(e);
+        } else {
+          onInput?.('', e);
+          inputEl.focus?.();
+        }
+      },
+    },
+    [createSvgIcon('close', { size: closeIconSize })]
+  );
+
+  const wrapEl = h(
+    'div',
+    {
+      className: ['ui-search-wrap', wrapClassName].filter(Boolean).join(' '),
+      ...(hidden ? { hidden: true } : {}),
+      ...(stopClickPropagation ? { onClick: (e) => e.stopPropagation?.() } : {}),
+    },
+    [iconEl, inputEl, clearBtnEl]
+  );
+
+  return {
+    el: wrapEl,
+    iconEl,
+    inputEl,
+    clearBtnEl,
+    getValue() {
+      return String(inputEl.value || '');
+    },
+    setValue(nextVal) {
+      const str = String(nextVal ?? '');
+      inputEl.value = str;
+      patchAttr(clearBtnEl, 'hidden', !str.trim());
+    },
+    syncLabels({ placeholder: nextPlaceholder, ariaLabel: nextAria, clearAriaLabel: nextClearAria } = {}) {
+      if (nextPlaceholder !== undefined) patchAttr(inputEl, 'placeholder', nextPlaceholder);
+      if (nextAria !== undefined) patchAttr(inputEl, 'aria-label', nextAria);
+      if (nextClearAria !== undefined) patchAttr(clearBtnEl, 'aria-label', nextClearAria);
+    },
+    focus() {
+      inputEl.focus?.();
+    },
+  };
+}
+return { createSearchInput };
+})();
+
 // --- src/components/ui/CustomSelect.js ---
 const { filterSelectOptionsByQuery, CustomSelect } = (() => {
 /**
@@ -11434,44 +11553,29 @@ const CustomSelect = defineComponent({
       [leadIcon, triggerLabel, chevronIcon]
     );
 
-    const searchIcon = createSvgIcon('search', { size: 12, className: 'select-search-icon' });
-    const searchInput = h('input', {
-      type: 'text',
-      className: 'select-search-input',
-      autocomplete: 'off',
-      spellcheck: 'false',
+    const searchBox = createSearchInput({
+      wrapClassName: 'select-search-wrap',
+      iconClassName: 'select-search-icon',
+      inputClassName: 'select-search-input',
+      clearClassName: 'select-search-clear',
       placeholder: getProps().searchPlaceholder || t('select.searchPlaceholder'),
-      onClick: (e) => e.stopPropagation(),
-      onInput: (e) => {
-        searchQuery = String(e?.target?.value ?? searchInput.value ?? '');
+      clearAriaLabel: t('select.clearSearch'),
+      hidden: true,
+      stopClickPropagation: true,
+      closeIconSize: 10,
+      onInput: (val) => {
+        searchQuery = val;
         focusedIndex = 0;
         renderMenuOptions();
       },
+      onClear: () => {
+        clearSearchQuery(true);
+      },
       onKeydown: handleKeydown,
     });
-    const searchClearBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'select-search-clear',
-        hidden: true,
-        'aria-label': t('select.clearSearch'),
-        onClick: (e) => {
-          e.stopPropagation();
-          clearSearchQuery(true);
-        },
-      },
-      [createSvgIcon('close', { size: 10 })]
-    );
-    const searchWrap = h(
-      'div',
-      {
-        className: 'select-search-wrap',
-        hidden: true,
-        onClick: (e) => e.stopPropagation(),
-      },
-      [searchIcon, searchInput, searchClearBtn]
-    );
+    const searchWrap = searchBox.el;
+    const searchInput = searchBox.inputEl;
+    const searchClearBtn = searchBox.clearBtnEl;
 
     const optionsListEl = h('div', { className: 'select-options-list' });
     const emptyHintEl = h('div', {
@@ -12910,6 +13014,137 @@ const SegmentedControl = defineComponent({
 return { SegmentedControl };
 })();
 
+// --- src/components/ui/ToggleSwitch.js ---
+const { ToggleSwitch } = (() => {
+/**
+ * @fileoverview Zero-ResizeObserver binary toggle switch (`ToggleSwitch.js`).
+ * Uses a pure-CSS 2-column grid glider (`--seg-active-idx`) so Settings tabs do not
+ * instantiate 10+ ResizeObservers or force synchronous layout measurements for simple
+ * on/off or show/hide switches, while preserving `.segmented` / `.seg-btn` semantics.
+ */
+
+
+const TOGGLE_PRESET_DEFS = Object.freeze({
+  enable: Object.freeze([
+    { value: 'on', labelKey: 'settings.str.on' },
+    { value: 'off', labelKey: 'settings.str.off' },
+  ]),
+  visibility: Object.freeze([
+    { value: 'show', labelKey: 'settings.str.show' },
+    { value: 'hide', labelKey: 'settings.str.hide' },
+  ]),
+  modernUi: Object.freeze([
+    { value: 'on', labelKey: 'settings.gen.modernUiOn' },
+    { value: 'off', labelKey: 'settings.gen.modernUiOff' },
+  ]),
+});
+
+function resolveToggleOptions(props) {
+  if (Array.isArray(props.options) && props.options.length === 2) {
+    return props.options;
+  }
+  const defs = TOGGLE_PRESET_DEFS[props.preset] || TOGGLE_PRESET_DEFS.enable;
+  return [
+    { value: defs[0].value, label: t(defs[0].labelKey) },
+    { value: defs[1].value, label: t(defs[1].labelKey) },
+  ];
+}
+
+const ToggleSwitch = defineComponent({
+  name: 'ToggleSwitch',
+  setup({ getProps, setProps, emit, onCleanup }) {
+    const gliderEl = h('div', { className: 'seg-glider is-ready', 'aria-hidden': 'true' });
+    const btns = [0, 1].map((slotIdx) =>
+      h('button', {
+        type: 'button',
+        className: 'seg-btn',
+        onClick: (e) => {
+          e.stopPropagation();
+          const opts = resolveToggleOptions(getProps());
+          const opt = opts[slotIdx];
+          if (opt) selectValue(opt.value);
+        },
+        onKeydown: (e) => {
+          if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const opts = resolveToggleOptions(getProps());
+            const nextIdx = slotIdx === 0 ? 1 : 0;
+            const targetOpt = opts[nextIdx];
+            if (targetOpt) {
+              selectValue(targetOpt.value);
+              btns[nextIdx]?.focus?.();
+            }
+          }
+        },
+      })
+    );
+
+    const rootEl = h(
+      'div',
+      {
+        className: 'segmented segmented--binary has-glider toggle-switch',
+        role: 'group',
+        'aria-label': getProps().ariaLabel || t('ui.seg.defaultAria'),
+      },
+      [gliderEl, btns[0], btns[1]]
+    );
+
+    function selectValue(nextVal) {
+      if (getProps().modelValue !== nextVal) {
+        setProps({ modelValue: nextVal });
+        emit('update:modelValue', nextVal);
+      }
+    }
+
+    function syncToggle() {
+      const props = getProps();
+      const opts = resolveToggleOptions(props);
+      const aria = props.ariaLabelKey ? t(props.ariaLabelKey) : props.ariaLabel || t('ui.seg.defaultAria');
+      patchAttr(rootEl, 'aria-label', aria);
+
+      let activeIdx = 0;
+      for (let i = 0; i < 2; i += 1) {
+        const opt = opts[i];
+        const btn = btns[i];
+        const active = opt.value === props.modelValue;
+        if (active) activeIdx = i;
+        patchText(btn, opt.label);
+        patchClasses(btn, { 'is-active': active });
+        patchAttr(btn, 'aria-pressed', active ? 'true' : 'false');
+        patchAttr(btn, 'data-seg-value', opt.value);
+      }
+      patchStyleVar(rootEl, '--seg-active-idx', String(activeIdx));
+    }
+
+    const unsubI18n = i18nStore.subscribe(
+      (st) => st.locale,
+      () => {
+        syncToggle();
+      },
+      { immediate: false }
+    );
+    onCleanup(unsubI18n);
+
+    syncToggle();
+
+    return {
+      el: rootEl,
+      onPropsChange: syncToggle,
+      methods: {
+        setValue(val) {
+          setProps({ modelValue: val });
+        },
+        setOptions(options) {
+          setProps({ options });
+        },
+        refreshGeometry() {},
+      },
+    };
+  },
+});
+return { ToggleSwitch };
+})();
+
 // --- src/components/ui/ContextSegmentMeter.js ---
 const { ContextSegmentMeter } = (() => {
 /**
@@ -13751,8 +13986,27 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     });
   }
 
+  let cachedWrapRect = null;
+  let cachedSvgRect = null;
+  let cachedHmGridRect = null;
+  let cachedClipRect = undefined;
+
+  function invalidateHoverRects() {
+    cachedWrapRect = null;
+    cachedSvgRect = null;
+    cachedHmGridRect = null;
+    cachedClipRect = undefined;
+  }
+
+  function getCachedWrapRect() {
+    if (!cachedWrapRect) {
+      cachedWrapRect = chartWrap.getBoundingClientRect?.() || null;
+    }
+    return cachedWrapRect;
+  }
+
   function positionTooltipNearAnchor(fallbackX, fallbackY, pointer = null) {
-    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const wrapRect = getCachedWrapRect();
     const wrapW =
       wrapRect && wrapRect.width > 0
         ? wrapRect.width
@@ -13762,13 +14016,8 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         ? wrapRect.height
         : Number(chartWrap.offsetHeight || VIEW_H);
 
-    const tipRect = tooltipEl.getBoundingClientRect?.() || null;
-    const tipW =
-      Number(tooltipEl.offsetWidth || 0) ||
-      (tipRect && tipRect.width > 0 ? tipRect.width : 216);
-    const tipH =
-      Number(tooltipEl.offsetHeight || 0) ||
-      (tipRect && tipRect.height > 0 ? tipRect.height : 104);
+    const tipW = Number(tooltipEl.offsetWidth || 0) || 216;
+    const tipH = Number(tooltipEl.offsetHeight || 0) || 104;
 
     const hasPointer =
       pointer &&
@@ -13781,8 +14030,11 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const anchorX = hasPointer ? Number(pointer.clientX) - wrapRect.left : fallbackX;
     const anchorY = hasPointer ? Number(pointer.clientY) - wrapRect.top : fallbackY;
 
-    const clipEl = chartWrap.closest?.('.view-pane, .cons-view-stage') || null;
-    const clipRect = clipEl?.getBoundingClientRect?.() || null;
+    if (cachedClipRect === undefined) {
+      const clipEl = chartWrap.closest?.('.view-pane, .cons-view-stage') || null;
+      cachedClipRect = clipEl?.getBoundingClientRect?.() || null;
+    }
+    const clipRect = cachedClipRect;
     const hasClip = Boolean(
       clipRect && clipRect.height > 0 && wrapRect && wrapRect.height > 0
     );
@@ -13848,7 +14100,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       }
     }
 
-    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const wrapRect = getCachedWrapRect();
     const wrapW =
       wrapRect && wrapRect.width > 0
         ? wrapRect.width
@@ -13895,7 +14147,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       populateTooltipContent(slot);
     }
 
-    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const wrapRect = getCachedWrapRect();
     const cellRect = targetCell.getBoundingClientRect?.() || null;
     const wrapW =
       wrapRect && wrapRect.width > 0
@@ -13920,6 +14172,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   }
 
   function clearHover() {
+    invalidateHoverRects();
     cancelTipTrackRaf();
     hoveredIdx = -1;
     lastPointer = null;
@@ -13966,8 +14219,14 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
 
   function handlePointerMove(e) {
     if (currentIsHeatmap || !currentSlots.length) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
+    if (!cachedSvgRect) {
+      cachedSvgRect = svg.getBoundingClientRect();
+    }
+    const rect = cachedSvgRect;
+    if (!rect || rect.width <= 0) {
+      cachedSvgRect = null;
+      return;
+    }
     const relX = ((e.clientX - rect.left) / rect.width) * viewW;
     const { leftX, spanX } = resolvePlotBounds(viewW);
     const ratio = (relX - leftX) / Math.max(1, spanX);
@@ -14010,8 +14269,12 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       return null;
     }
 
-    const rect = hmGridEl.getBoundingClientRect?.();
+    if (!cachedHmGridRect) {
+      cachedHmGridRect = hmGridEl.getBoundingClientRect?.() || null;
+    }
+    const rect = cachedHmGridRect;
     if (!rect || !(rect.width > 0) || !(rect.height > 0) || currentHeatmapWeeks <= 0) {
+      cachedHmGridRect = null;
       if (hoveredIdx >= 0 && hoveredIdx < currentSlots.length && currentCellEls[hoveredIdx]) {
         return { idx: hoveredIdx, cellEl: currentCellEls[hoveredIdx] };
       }
@@ -14166,6 +14429,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   let onWinResize = null;
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
+      invalidateHoverRects();
       if (!currentIsHeatmap && syncViewWidth() && currentSlots.length > 0) {
         lastRenderSig = '';
         update(currentSlots);
@@ -15284,7 +15548,14 @@ function createSessionLineChart() {
   let hoveredIdx = -1;
   let tickElsByIdx = new Map();
   let lastSig = '';
+  let lastPreSig = '';
+  let lastSummaryBadge = '';
   let lastUpdateParams = null;
+  let cachedPlotSvgRect = null;
+
+  function invalidatePlotSvgRect() {
+    cachedPlotSvgRect = null;
+  }
 
   function syncViewWidth() {
     const measured = Math.round(
@@ -15397,8 +15668,14 @@ function createSessionLineChart() {
 
   plotStage.addEventListener('mousemove', (e) => {
     if (!currentPoints.length) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
+    if (!cachedPlotSvgRect) {
+      cachedPlotSvgRect = svg.getBoundingClientRect();
+    }
+    const rect = cachedPlotSvgRect;
+    if (!rect || rect.width <= 0) {
+      cachedPlotSvgRect = null;
+      return;
+    }
     const relX = ((e.clientX - rect.left) / rect.width) * viewW;
     const { leftX, spanX } = resolvePlotBounds(viewW);
     const ratio = (relX - leftX) / Math.max(1, spanX);
@@ -15408,14 +15685,19 @@ function createSessionLineChart() {
     );
     showHoverAt(idx);
   });
-  plotStage.addEventListener('mouseleave', clearHover);
+  plotStage.addEventListener('mouseleave', () => {
+    invalidatePlotSvgRect();
+    clearHover();
+  });
 
   let resizeObs = null;
   let onWinResize = null;
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
+      invalidatePlotSvgRect();
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
+        lastPreSig = '';
         update(lastUpdateParams);
       }
     });
@@ -15496,6 +15778,9 @@ function createSessionLineChart() {
     if (!matchedSteps.length) {
       currentPoints = [];
       lastSig = 'empty';
+      lastPreSig = '';
+      lastSummaryBadge = t('chart.step.zeroSteps');
+      invalidatePlotSvgRect();
       patchAttr(areaPath, 'd', '');
       patchAttr(linePath, 'd', '');
       while (multiAreaGroup.firstChild) multiAreaGroup.removeChild(multiAreaGroup.firstChild);
@@ -15507,7 +15792,23 @@ function createSessionLineChart() {
       patchAttr(peakPill, 'hidden', true);
       patchAttr(emptyHintEl, 'hidden', false);
       clearHover();
-      return { summaryBadge: t('chart.step.zeroSteps') };
+      return { summaryBadge: lastSummaryBadge };
+    }
+
+    const locale = getEffectiveLocale();
+    const extColorSig = modelColorByGroup
+      ? Array.from(modelColorByGroup.entries())
+          .map(([k, v]) => `${k}=${v}`)
+          .join(',')
+      : '';
+    let preStepParts = `${matchedSteps.length}:`;
+    for (let i = 0; i < matchedSteps.length; i += 1) {
+      const s = matchedSteps[i];
+      preStepParts += `${s.stepIndex ?? i},${s.agentIndex ?? 0},${s.modelKey || s.modelShort || ''},${s.inputTokens || 0},${s.cacheReadTokens || 0},${s.outputTokens || 0},${s.contextTokens || 0},${s.tokPerSec ?? ''},${s.ttftSec ?? ''},${s.costUsd ?? ''},${s.anomalySig || ''};`;
+    }
+    const preSig = `${locale}|${viewW}|${metric}|${showAgentPrefix}|${displaySettings?.modelDisplayMode || ''}|${Boolean(displaySettings?.showUpstreamModel)}|${displaySettings?.orchestratorIdMode || ''}|${targetKeys.join(',')}|${extColorSig}|${preStepParts}`;
+    if (preSig === lastPreSig && lastSummaryBadge) {
+      return { summaryBadge: lastSummaryBadge };
     }
 
     const modelColorMap = new Map();
@@ -15715,7 +16016,6 @@ function createSessionLineChart() {
     const validPoints = points.filter((p) => p.valid);
     patchAttr(emptyHintEl, 'hidden', validPoints.length > 0);
 
-    const locale = getEffectiveLocale();
     const colorSig = Array.from(modelColorMap.entries())
       .map(([k, v]) => `${k}=${v}`)
       .join(',');
@@ -15961,6 +16261,8 @@ function createSessionLineChart() {
       });
     }
 
+    lastPreSig = preSig;
+    lastSummaryBadge = summaryBadge;
     return { summaryBadge };
   }
 
@@ -16225,10 +16527,17 @@ function createModelFitChart() {
     patchClasses(tooltipEl, { 'is-tracking': false });
   }
 
+  let cachedFitSvgRect = null;
   plotStage.addEventListener('mousemove', (e) => {
     if (!currentSamples.length) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
+    if (!cachedFitSvgRect) {
+      cachedFitSvgRect = svg.getBoundingClientRect();
+    }
+    const rect = cachedFitSvgRect;
+    if (!rect || rect.width <= 0) {
+      cachedFitSvgRect = null;
+      return;
+    }
     const relX = ((e.clientX - rect.left) / rect.width) * viewW;
     let lo = 0;
     let hi = currentSamples.length - 1;
@@ -16246,12 +16555,16 @@ function createModelFitChart() {
     }
     showHoverAt(bestIdx);
   });
-  plotStage.addEventListener('mouseleave', clearHover);
+  plotStage.addEventListener('mouseleave', () => {
+    cachedFitSvgRect = null;
+    clearHover();
+  });
 
   let resizeObs = null;
   let onWinResize = null;
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
+      cachedFitSvgRect = null;
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
         update(lastUpdateParams);
@@ -23993,31 +24306,6 @@ const { BridgeStatusNotice } = (() => {
 
 const LAUNCH_FLAG_TEXT = '--remote-debugging-port=0';
 
-async function copyTextToClipboard(text) {
-  try {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // Fallback to temporary textarea inside restricted webview contexts
-  }
-  try {
-    if (typeof document === 'undefined' || !document.body) return false;
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', 'true');
-    area.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
-    document.body.appendChild(area);
-    area.select?.();
-    const ok = Boolean(document.execCommand?.('copy'));
-    document.body.removeChild(area);
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
 const BridgeStatusNotice = defineComponent({
   name: 'BridgeStatusNotice',
   setup({ props, onCleanup }) {
@@ -24029,11 +24317,16 @@ const BridgeStatusNotice = defineComponent({
       hostPlatform: 'win32',
     };
     let dismissed = false;
-    let copied = false;
-    let copiedTimer = null;
     let relaunchState = 'idle'; // 'idle' | 'relaunching' | 'failed'
     let relaunchResetTimer = null;
     let destroyed = false;
+    const copyFeedback = createCopiedFeedbackController({
+      durationMs: 1800,
+      onCleanup,
+      onChange: () => {
+        if (!destroyed) syncActionButtons();
+      },
+    });
 
     const headIconEl = createSvgIcon('warning', { size: 13, className: 'settings-bridge-icon' });
     const titleEl = h('strong', { className: 'settings-bridge-title', text: '' });
@@ -24126,18 +24419,9 @@ const BridgeStatusNotice = defineComponent({
         type: 'button',
         className: 'btn-ghost-sm settings-bridge-copy-btn',
         onClick: async () => {
-          await copyTextToClipboard(LAUNCH_FLAG_TEXT);
+          await copyPlainTextToClipboard(LAUNCH_FLAG_TEXT);
           if (destroyed) return;
-          copied = true;
-          if (copiedTimer) clearTimeout(copiedTimer);
-          syncActionButtons();
-          copiedTimer = setTimeout(() => {
-            copiedTimer = null;
-            if (destroyed) return;
-            copied = false;
-            syncActionButtons();
-          }, 1800);
-          copiedTimer?.unref?.();
+          copyFeedback.trigger(true);
         },
       },
       [copyBtnIconEl, copyBtnTextEl]
@@ -24180,10 +24464,11 @@ const BridgeStatusNotice = defineComponent({
               : t('settings.bridge.relaunchBtn')
       );
 
-      patchSvgIcon(copyBtnIconEl, copied ? 'check' : 'copy');
+      const isCopied = copyFeedback.isCopied(true);
+      patchSvgIcon(copyBtnIconEl, isCopied ? 'check' : 'copy');
       patchText(
         copyBtnTextEl,
-        copied
+        isCopied
           ? t('settings.bridge.copiedBtn')
           : t('settings.bridge.copyFlagBtn', { cmd: LAUNCH_FLAG_TEXT })
       );
@@ -24268,10 +24553,6 @@ const BridgeStatusNotice = defineComponent({
 
     onCleanup(() => {
       destroyed = true;
-      if (copiedTimer) {
-        clearTimeout(copiedTimer);
-        copiedTimer = null;
-      }
       if (relaunchResetTimer) {
         clearTimeout(relaunchResetTimer);
         relaunchResetTimer = null;
@@ -24302,31 +24583,6 @@ const { SessionMigrationCard } = (() => {
 
 
 const SMIG_OUTSIDE_PROJECT_ID = 'outside-of-project';
-
-async function smigCopyText(text) {
-  try {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // 退回受限 Webview 的隐藏文本域复制
-  }
-  try {
-    if (typeof document === 'undefined' || !document.body) return false;
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', 'true');
-    area.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
-    document.body.appendChild(area);
-    area.select?.();
-    const ok = Boolean(document.execCommand?.('copy'));
-    document.body.removeChild(area);
-    return ok;
-  } catch {
-    return false;
-  }
-}
 
 function smigGetClientLabel(clientId) {
   if (clientId === 'cli') return t('settings.oth.migClientCli');
@@ -24487,41 +24743,27 @@ const SessionMigrationCard = defineComponent({
         projectSelect.el,
       ]);
 
-      searchInput = h('input', {
-        type: 'text',
-        className: 'smig-search-input',
-        autocomplete: 'off',
-        spellcheck: 'false',
+      const searchBox = createSearchInput({
+        wrapClassName: 'smig-search-wrap',
+        iconClassName: 'smig-search-icon',
+        inputClassName: 'smig-search-input',
+        clearClassName: 'smig-search-clear',
         placeholder: t('settings.oth.migSearchPlaceholder'),
-        value: '',
-      });
-      searchClearBtn = h(
-        'button',
-        {
-          type: 'button',
-          className: 'smig-search-clear',
-          hidden: true,
-          'aria-label': t('select.clearSearch'),
-          onClick: () => {
-            searchQuery = '';
-            searchInput.value = '';
-            patchAttr(searchClearBtn, 'hidden', true);
-            renderSessionList();
-            searchInput.focus?.();
-          },
+        clearAriaLabel: t('select.clearSearch'),
+        closeIconSize: 10,
+        onInput: (val) => {
+          searchQuery = String(val || '').trim();
+          renderSessionList();
         },
-        [createSvgIcon('close', { size: 10 })]
-      );
-      searchInput.addEventListener?.('input', () => {
-        searchQuery = String(searchInput.value || '').trim();
-        patchAttr(searchClearBtn, 'hidden', !searchQuery);
-        renderSessionList();
+        onClear: () => {
+          searchQuery = '';
+          renderSessionList();
+          searchInput.focus?.();
+        },
       });
-      const searchWrap = h('div', { className: 'smig-search-wrap' }, [
-        createSvgIcon('search', { size: 12, className: 'smig-search-icon' }),
-        searchInput,
-        searchClearBtn,
-      ]);
+      searchInput = searchBox.inputEl;
+      searchClearBtn = searchBox.clearBtnEl;
+      const searchWrap = searchBox.el;
 
       toggleAllBtn = h('button', {
         type: 'button',
@@ -24947,7 +25189,7 @@ const SessionMigrationCard = defineComponent({
                 className: 'btn-ghost-sm smig-cmd-copy',
                 text: isCopied ? t('settings.oth.migCopied') : t('settings.oth.migCopyCmd'),
                 onClick: async () => {
-                  const ok = await smigCopyText(item.resumeCommand);
+                  const ok = await copyPlainTextToClipboard(item.resumeCommand);
                   if (!ok || destroyed) return;
                   copiedCmdId = item.newCascadeId;
                   renderResultBox();
@@ -25099,13 +25341,6 @@ function getFontScaleOptions() {
     { value: 'md', label: t('settings.gen.fontMd') },
     { value: 'lg', label: t('settings.gen.fontLg') },
     { value: 'xl', label: t('settings.gen.fontXl') },
-  ];
-}
-
-function getModernUiOptions() {
-  return [
-    { value: 'on', label: t('settings.gen.modernUiOn') },
-    { value: 'off', label: t('settings.gen.modernUiOff') },
   ];
 }
 
@@ -25276,10 +25511,10 @@ const SettingsGeneralTab = defineComponent({
       },
     });
 
-    const modernUiSwitch = SegmentedControl({
-      ariaLabel: t('settings.gen.modernUi'),
+    const modernUiSwitch = ToggleSwitch({
+      ariaLabelKey: 'settings.gen.modernUi',
+      preset: 'modernUi',
       modelValue: 'on',
-      options: getModernUiOptions(),
       onUpdateModelValue: async (val) => {
         const nextModernUi = val !== 'off';
         draftModernUi = nextModernUi;
@@ -25501,7 +25736,6 @@ const SettingsGeneralTab = defineComponent({
       });
       modernUiSwitch.setProps({
         modelValue: draftModernUi ? 'on' : 'off',
-        options: getModernUiOptions(),
       });
       autoUpdateSelect.setProps({
         modelValue: draftPluginUpdateMode,
@@ -25583,9 +25817,7 @@ const SettingsGeneralTab = defineComponent({
         options: getFontScaleOptions(),
       });
       modernUiSwitch.setProps({
-        ariaLabel: t('settings.gen.modernUi'),
         modelValue: draftModernUi ? 'on' : 'off',
-        options: getModernUiOptions(),
       });
       autoUpdateSelect.setProps({
         modelValue: draftPluginUpdateMode,
@@ -25656,20 +25888,6 @@ function getMountModeOptions() {
     { value: 'dual', label: t('settings.str.mountDual') },
     { value: 'composer', label: t('settings.str.mountComposer') },
     { value: 'sidebar', label: t('settings.str.mountSidebar') },
-  ];
-}
-
-function getMultiToggleOptions() {
-  return [
-    { value: 'show', label: t('settings.str.show') },
-    { value: 'hide', label: t('settings.str.hide') },
-  ];
-}
-
-function getEnableToggleOptions() {
-  return [
-    { value: 'on', label: t('settings.str.on') },
-    { value: 'off', label: t('settings.str.off') },
   ];
 }
 
@@ -26095,10 +26313,10 @@ const SettingsStructureTab = defineComponent({
       },
     });
 
-    const multiSessionToggle = SegmentedControl({
-      ariaLabel: t('settings.str.multiToggle'),
+    const multiSessionToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.multiToggle',
+      preset: 'visibility',
       modelValue: 'show',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowTopbarMulti = val !== 'hide';
         syncMountSectionMeta();
@@ -26124,10 +26342,10 @@ const SettingsStructureTab = defineComponent({
       },
     });
 
-    const cliCapsuleToggle = SegmentedControl({
-      ariaLabel: t('settings.str.cliCapsuleToggle'),
+    const cliCapsuleToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.cliCapsuleToggle',
+      preset: 'enable',
       modelValue: 'on',
-      options: getEnableToggleOptions(),
       onUpdateModelValue: (val) => {
         draftEnableCliStatusLine = val !== 'off';
         syncMountSectionMeta();
@@ -26358,7 +26576,6 @@ const SettingsStructureTab = defineComponent({
       }
       multiSessionToggle.setProps({
         modelValue: draftShowTopbarMulti ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
       contextAgentModeToggle.setProps({
         modelValue: draftContextAgentMode,
@@ -26369,7 +26586,6 @@ const SettingsStructureTab = defineComponent({
       patchAttr(cliStatusGroupEl, 'hidden', !cliInstalled);
       cliCapsuleToggle.setProps({
         modelValue: draftEnableCliStatusLine ? 'on' : 'off',
-        options: getEnableToggleOptions(),
       });
       patchAttr(cliStatusDetailEl, 'hidden', !draftEnableCliStatusLine);
       const effectiveCliSlots = getEffectiveDraftCliSlots();
@@ -26719,10 +26935,10 @@ const SettingsStructureTab = defineComponent({
       text: t('settings.str.stepsColsLabel'),
     });
 
-    const stepTurnRailToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepTurnRailToggle'),
+    const stepTurnRailToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepTurnRailToggle',
+      preset: 'visibility',
       modelValue: 'hide',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepTurnRail = val !== 'hide';
         syncStepsSectionMeta();
@@ -26732,10 +26948,10 @@ const SettingsStructureTab = defineComponent({
       },
     });
 
-    const stepAgentBadgeToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepAgentBadgeToggle'),
+    const stepAgentBadgeToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepAgentBadgeToggle',
+      preset: 'visibility',
       modelValue: 'show',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepAgentBadge = val !== 'hide';
         syncStepsSectionMeta();
@@ -26745,10 +26961,10 @@ const SettingsStructureTab = defineComponent({
       },
     });
 
-    const stepSpeedColorToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepSpeedColorToggle'),
+    const stepSpeedColorToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepSpeedColorToggle',
+      preset: 'enable',
       modelValue: 'off',
-      options: getEnableToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepSpeedColor = val !== 'off';
         syncStepsSectionMeta();
@@ -26758,10 +26974,10 @@ const SettingsStructureTab = defineComponent({
       },
     });
 
-    const stepFilterToolbarToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepFilterToolbarToggle'),
+    const stepFilterToolbarToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepFilterToolbarToggle',
+      preset: 'enable',
       modelValue: 'off',
-      options: getEnableToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepFilterToolbar = val !== 'off';
         syncStepsSectionMeta();
@@ -26940,19 +27156,15 @@ const SettingsStructureTab = defineComponent({
     function syncStepsSectionMeta() {
       stepTurnRailToggle.setProps({
         modelValue: draftShowStepTurnRail ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
       stepAgentBadgeToggle.setProps({
         modelValue: draftShowStepAgentBadge ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
       stepSpeedColorToggle.setProps({
         modelValue: draftShowStepSpeedColor ? 'on' : 'off',
-        options: getEnableToggleOptions(),
       });
       stepFilterToolbarToggle.setProps({
         modelValue: draftShowStepFilterToolbar ? 'on' : 'off',
-        options: getEnableToggleOptions(),
       });
       if (document?.activeElement !== stepTokenComboInput) {
         stepTokenComboInput.value = rawStepTokenComboText;
@@ -27226,13 +27438,6 @@ const { SettingsOtherTab } = (() => {
  */
 
 
-function getEnableToggleOptions() {
-  return [
-    { value: 'on', label: t('settings.str.on') },
-    { value: 'off', label: t('settings.str.off') },
-  ];
-}
-
 function formatQuotaReservationLogForClipboard(snapshot) {
   const safe = snapshot && typeof snapshot === 'object' ? snapshot : {};
   const buckets = Array.isArray(safe.buckets) ? safe.buckets : [];
@@ -27470,16 +27675,15 @@ const SettingsOtherTab = defineComponent({
       [createSvgIcon('copy', { size: 12 }), exportReserveLogBtnText]
     );
 
-    const quotaReserveToggle = SegmentedControl({
+    const quotaReserveToggle = ToggleSwitch({
       modelValue: 'off',
-      ariaLabel: t('settings.oth.quotaReserveLabel'),
-      options: getEnableToggleOptions(),
+      ariaLabelKey: 'settings.oth.quotaReserveLabel',
+      preset: 'enable',
       onUpdateModelValue: async (val) => {
         const nextEnabled = val === 'on';
         draftExperimentalQuotaReservation = nextEnabled;
         quotaReserveToggle.setProps({
           modelValue: nextEnabled ? 'on' : 'off',
-          options: getEnableToggleOptions(),
         });
         showExpFeedback(t('settings.saving'), 0);
         try {
@@ -27561,10 +27765,10 @@ const SettingsOtherTab = defineComponent({
       className: 'form-label',
       text: t('settings.oth.ctxMainLabel'),
     });
-    const ctxMainToggle = SegmentedControl({
+    const ctxMainToggle = ToggleSwitch({
       modelValue: 'on',
-      ariaLabel: t('settings.oth.ctxMainLabel'),
-      options: getEnableToggleOptions(),
+      ariaLabelKey: 'settings.oth.ctxMainLabel',
+      preset: 'enable',
       onUpdateModelValue: async (val) => {
         if (!draftContextRiskAccepted || savingContextScope) return;
         const nextEnabled = val === 'on';
@@ -27591,10 +27795,10 @@ const SettingsOtherTab = defineComponent({
       className: 'form-label',
       text: t('settings.oth.ctxSwarmLabel'),
     });
-    const ctxSwarmToggle = SegmentedControl({
+    const ctxSwarmToggle = ToggleSwitch({
       modelValue: 'off',
-      ariaLabel: t('settings.oth.ctxSwarmLabel'),
-      options: getEnableToggleOptions(),
+      ariaLabelKey: 'settings.oth.ctxSwarmLabel',
+      preset: 'enable',
       onUpdateModelValue: async (val) => {
         if (!draftContextRiskAccepted || savingContextScope) return;
         const nextEnabled = val === 'on';
@@ -27714,14 +27918,10 @@ const SettingsOtherTab = defineComponent({
       patchText(ctxMainLabelEl, t('settings.oth.ctxMainLabel'));
       ctxMainToggle.setProps({
         modelValue: draftContextMainEnabled ? 'on' : 'off',
-        options: getEnableToggleOptions(),
-        ariaLabel: t('settings.oth.ctxMainLabel'),
       });
       patchText(ctxSwarmLabelEl, t('settings.oth.ctxSwarmLabel'));
       ctxSwarmToggle.setProps({
         modelValue: draftContextSwarmEnabled ? 'on' : 'off',
-        options: getEnableToggleOptions(),
-        ariaLabel: t('settings.oth.ctxSwarmLabel'),
       });
 
       const syncErrorText =
@@ -28108,8 +28308,6 @@ const SettingsOtherTab = defineComponent({
       });
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
-        options: getEnableToggleOptions(),
-        ariaLabel: t('settings.oth.quotaReserveLabel'),
       });
       renderContextWindows();
       void sessionMigrationCard.refs.ensureLoaded();
@@ -28128,8 +28326,6 @@ const SettingsOtherTab = defineComponent({
       patchText(exportReserveLogBtnText, t('settings.oth.exportReserveLogBtn'));
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
-        options: getEnableToggleOptions(),
-        ariaLabel: t('settings.oth.quotaReserveLabel'),
       });
       patchText(baselineTitleEl, t('settings.oth.baselineTitle'));
       renderContextWindows();
@@ -29245,6 +29441,8 @@ const ConsumptionView = defineComponent({
     });
 
     let activeHoverTargetEl = null;
+    let cachedBreakdownRootRect = null;
+    let cachedBreakdownAnchorRect = null;
 
     const popoverContent = createConsumptionBreakdownContent({
       showModelDot: true,
@@ -29257,6 +29455,8 @@ const ConsumptionView = defineComponent({
     );
 
     function hideBreakdownPopover() {
+      cachedBreakdownRootRect = null;
+      cachedBreakdownAnchorRect = null;
       if (activeHoverTargetEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
         activeHoverTargetEl = null;
@@ -29266,27 +29466,29 @@ const ConsumptionView = defineComponent({
     }
 
     function positionBreakdownPopover(anchorEl, pointerClientX = null, pointerClientY = null) {
-      const rootRect = rootEl.getBoundingClientRect?.() || {
-        left: 0,
-        top: 0,
-        width: 360,
-        height: 600,
-      };
-      const anchorRect = anchorEl?.getBoundingClientRect?.() || {
-        left: 0,
-        top: 0,
-        bottom: 0,
-        width: 0,
-        height: 0,
-      };
-      const tipRect = breakdownPopoverEl.getBoundingClientRect?.() || {
-        width: 216,
-        height: 108,
-      };
+      if (!cachedBreakdownRootRect) {
+        cachedBreakdownRootRect = rootEl.getBoundingClientRect?.() || {
+          left: 0,
+          top: 0,
+          width: 360,
+          height: 600,
+        };
+      }
+      const rootRect = cachedBreakdownRootRect;
+      if (!cachedBreakdownAnchorRect) {
+        cachedBreakdownAnchorRect = anchorEl?.getBoundingClientRect?.() || {
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 0,
+          height: 0,
+        };
+      }
+      const anchorRect = cachedBreakdownAnchorRect;
+      const tipW = Number(breakdownPopoverEl.offsetWidth || 0) || 216;
+      const tipH = Number(breakdownPopoverEl.offsetHeight || 0) || 108;
       const rootW = rootRect.width > 0 ? rootRect.width : 360;
       const rootH = rootRect.height > 0 ? rootRect.height : 600;
-      const tipW = tipRect.width > 0 ? tipRect.width : 216;
-      const tipH = tipRect.height > 0 ? tipRect.height : 108;
 
       const hasPointerX = Number.isFinite(pointerClientX) && pointerClientX > 0 && rootRect.width > 0;
       const hasPointerY = Number.isFinite(pointerClientY) && pointerClientY > 0 && rootRect.height > 0;
@@ -29332,6 +29534,10 @@ const ConsumptionView = defineComponent({
       }
       if (activeHoverTargetEl && activeHoverTargetEl !== anchorEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
+        cachedBreakdownAnchorRect = null;
+      } else if (!activeHoverTargetEl) {
+        cachedBreakdownRootRect = null;
+        cachedBreakdownAnchorRect = null;
       }
       activeHoverTargetEl = anchorEl;
       patchClasses(anchorEl, { 'is-hovered': true });
@@ -31392,40 +31598,30 @@ const StepsDetailView = defineComponent({
     );
 
     // --- 步骤搜索栏及快捷诊断芯片 ---
-    const stepSearchClearBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'steps-search-clear',
-        hidden: true,
-        'aria-label': t('steps.searchClearAria'),
-        onclick: () => {
-          stepSearchQuery = '';
-          stepSearchInput.value = '';
-          patchAttr(stepSearchClearBtn, 'hidden', true);
-          if (latestSlice) renderStepsData(latestSlice);
-          stepSearchInput.focus?.();
-        },
-      },
-      [createSvgIcon('close', { size: 11 })]
-    );
-    const stepSearchInput = h('input', {
-      type: 'text',
-      className: 'steps-search-input',
+    const stepSearchBox = createSearchInput({
+      wrapClassName: 'steps-search-wrap',
+      iconClassName: 'steps-search-icon',
+      inputClassName: 'steps-search-input',
+      clearClassName: 'steps-search-clear',
       placeholder: t('steps.searchPlaceholder'),
-      'aria-label': t('steps.searchPlaceholder'),
-      onInput: (e) => {
-        stepSearchQuery = String(e?.target?.value ?? '');
-        patchAttr(stepSearchClearBtn, 'hidden', !stepSearchQuery.trim());
+      ariaLabel: t('steps.searchPlaceholder'),
+      clearAriaLabel: t('steps.searchClearAria'),
+      closeIconSize: 11,
+      onInput: (val) => {
+        stepSearchQuery = String(val ?? '');
         if (latestSlice) renderStepsData(latestSlice);
+      },
+      onClear: () => {
+        stepSearchQuery = '';
+        if (latestSlice) renderStepsData(latestSlice);
+        stepSearchInput.focus?.();
       },
       onKeydown: (e) => {
         if (e?.key === 'Escape') {
           e.stopPropagation?.();
           if (stepSearchQuery) {
             stepSearchQuery = '';
-            stepSearchInput.value = '';
-            patchAttr(stepSearchClearBtn, 'hidden', true);
+            stepSearchBox.setValue('');
             if (latestSlice) renderStepsData(latestSlice);
           } else {
             stepSearchInput.blur?.();
@@ -31433,11 +31629,9 @@ const StepsDetailView = defineComponent({
         }
       },
     });
-    const stepSearchWrapEl = h('div', { className: 'steps-search-wrap' }, [
-      createSvgIcon('search', { size: 12, className: 'steps-search-icon' }),
-      stepSearchInput,
-      stepSearchClearBtn,
-    ]);
+    const stepSearchWrapEl = stepSearchBox.el;
+    const stepSearchInput = stepSearchBox.inputEl;
+    const stepSearchClearBtn = stepSearchBox.clearBtnEl;
 
     const QUICK_CHIP_DEFS = [
       { key: 'anomaly', i18nKey: 'steps.chipAnomaly', tone: 'is-warn' },
@@ -34600,6 +34794,51 @@ function getLeftSidebarRightEdge(vw) {
 /**
  * 在主窗口挂载双栖顶栏胶囊与完整四标签悬浮面板，并注册 `window.__AGUsageMonitorOverlay` 生命周期句柄。
  */
+const CAPSULE_EXCLUDED_CSS_SECTIONS = new Set([
+  'src/styles/views-overview.css',
+  'src/styles/views-consumption.css',
+  'src/styles/views-tables.css',
+  'src/styles/views-settings.css',
+  'src/styles/controls.css',
+]);
+
+let sharedOverlayStyleSheetMemo = { rawCss: '', sheet: null };
+
+function buildSlimCapsuleCss(fullCss) {
+  if (!fullCss || !fullCss.includes('/* --- src/styles/')) return fullCss;
+  return fullCss
+    .split(/(?=\/\* --- src\/styles\/)/)
+    .filter((block) => {
+      const m = block.match(/^\/\* --- (src\/styles\/[^\s]+) --- \*\//);
+      return !m || !CAPSULE_EXCLUDED_CSS_SECTIONS.has(m[1]);
+    })
+    .join('');
+}
+
+function attachShadowStyles(shadowRoot, fullCss, { slimCapsule = false } = {}) {
+  if (!shadowRoot) return;
+  if (
+    fullCss &&
+    typeof CSSStyleSheet === 'function' &&
+    Array.isArray(shadowRoot.adoptedStyleSheets)
+  ) {
+    try {
+      if (sharedOverlayStyleSheetMemo.rawCss !== fullCss || !sharedOverlayStyleSheetMemo.sheet) {
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(fullCss);
+        sharedOverlayStyleSheetMemo = { rawCss: fullCss, sheet };
+      }
+      shadowRoot.adoptedStyleSheets = [sharedOverlayStyleSheetMemo.sheet];
+      return;
+    } catch {
+      // 降级到传统 <style> 节点
+    }
+  }
+  const styleEl = document.createElement('style');
+  styleEl.textContent = slimCapsule ? buildSlimCapsuleCss(fullCss) : fullCss;
+  shadowRoot.appendChild(styleEl);
+}
+
 function mountWindowOverlay() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return null;
 
@@ -34791,10 +35030,7 @@ function mountWindowOverlay() {
     }
   });
   const capsuleShadow = capsuleHost.attachShadow({ mode: 'open' });
-
-  const capsuleStyleEl = document.createElement('style');
-  capsuleStyleEl.textContent = stylesCss;
-  capsuleShadow.appendChild(capsuleStyleEl);
+  attachShadowStyles(capsuleShadow, stylesCss, { slimCapsule: true });
 
   // 左侧无边框多会话实时触发按钮（固定预占宽度，不随运行数跳动）
   const multiDot = h('span', { className: 'wm-multi-dot' });
@@ -35014,10 +35250,7 @@ function mountWindowOverlay() {
   portalHost.id = PORTAL_HOST_ID;
   portalHost.className = 'wm-portal-host';
   const portalShadow = portalHost.attachShadow({ mode: 'open' });
-
-  const portalStyleEl = document.createElement('style');
-  portalStyleEl.textContent = stylesCss;
-  portalShadow.appendChild(portalStyleEl);
+  attachShadowStyles(portalShadow, stylesCss, { slimCapsule: false });
 
   const initialSettings = telemetryStore.getState().telemetry?.settings;
 
@@ -35128,9 +35361,9 @@ function mountWindowOverlay() {
     [multiHeaderEl, multiEmptyEl, multiRunningWidget.el]
   );
 
-  // 完整四标签悬浮容器
+  // 完整四标签悬浮容器（首次打开主弹窗时按需懒挂载 App，彻底消除宿主窗口冷启动开销）
   uiStore.setState({ monitorVisible: false });
-  const appInstance = App();
+  let appInstance = null;
   const popoverEl = h(
     'div',
     {
@@ -35139,8 +35372,16 @@ function mountWindowOverlay() {
       'aria-label': t('capsule.ariaMonitor'),
       hidden: true,
     },
-    [appInstance.el]
+    []
   );
+
+  function ensureAppMounted() {
+    if (!appInstance) {
+      appInstance = App();
+      popoverEl.appendChild(appInstance.el);
+    }
+    return appInstance;
+  }
 
   function syncPortalAppearance(settings) {
     applyAppearanceToRoot(capsuleHost, settings, { includeFontScale: false });
@@ -35886,6 +36127,7 @@ function mountWindowOverlay() {
   }
 
   function refreshActiveViewScrollbars() {
+    if (!appInstance) return;
     const activeView = uiStore.getState().activeView;
     const refs = appInstance.refs;
     if (activeView === 'overview') {
@@ -35983,6 +36225,9 @@ function mountWindowOverlay() {
     }
     if (popoverOpen === targetOpen) return;
     popoverOpen = targetOpen;
+    if (popoverOpen) {
+      ensureAppMounted();
+    }
     patchClasses(capsuleBtn, { 'is-open': popoverOpen });
     patchClasses(popoverEl, { 'is-instant': Boolean(instant && popoverOpen) });
     patchAttr(capsuleBtn, 'aria-expanded', popoverOpen ? 'true' : 'false');
@@ -36338,6 +36583,40 @@ function mountWindowOverlay() {
   };
 
   let hostDomObserver = null;
+  let hostDomRafId = 0;
+  let hostDomMicrotaskPending = false;
+  function flushHostDomMutationCheck() {
+    if (disposed) return;
+    syncHostRouteIfChanged();
+    if (!observedWorkbench) {
+      ensureWorkbenchThemeObserved();
+    }
+    const dock = resolveRuntimeDockTarget();
+    if (!isDockPlacementSynced(dock)) {
+      scheduleDockSync();
+    }
+  }
+  function scheduleHostDomMutationCheck() {
+    if (disposed) return;
+    const rafFn =
+      (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame.bind(window)
+        : null) || (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : null);
+    if (rafFn) {
+      if (hostDomRafId) return;
+      hostDomRafId = rafFn(() => {
+        hostDomRafId = 0;
+        flushHostDomMutationCheck();
+      });
+      return;
+    }
+    if (hostDomMicrotaskPending) return;
+    hostDomMicrotaskPending = true;
+    queueMicrotask(() => {
+      hostDomMicrotaskPending = false;
+      flushHostDomMutationCheck();
+    });
+  }
   try {
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => updateResponsiveLayout());
@@ -36376,14 +36655,7 @@ function mountWindowOverlay() {
           ) {
             return;
           }
-          syncHostRouteIfChanged();
-          if (!observedWorkbench) {
-            ensureWorkbenchThemeObserved();
-          }
-          const dock = resolveRuntimeDockTarget();
-          if (!isDockPlacementSynced(dock)) {
-            scheduleDockSync();
-          }
+          scheduleHostDomMutationCheck();
         });
         hostDomObserver.observe(document.body, {
           childList: true,
@@ -36565,6 +36837,14 @@ function mountWindowOverlay() {
         cancelAnimationFrame(dockRafId);
         dockRafId = 0;
       }
+      if (hostDomRafId) {
+        const cancelRaf =
+          (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function'
+            ? window.cancelAnimationFrame.bind(window)
+            : null) || (typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : null);
+        cancelRaf?.(hostDomRafId);
+        hostDomRafId = 0;
+      }
       stopPolling();
       stopAsyncTelemetryLoop();
       unsubStore();
@@ -36596,7 +36876,7 @@ function mountWindowOverlay() {
         hoverWidgetHost.destroy();
       } catch {}
       try {
-        appInstance.destroy();
+        appInstance?.destroy?.();
       } catch {}
       try {
         capsuleHost.remove();

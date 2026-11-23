@@ -6,6 +6,7 @@
 import { defineComponent } from '../../core/component.js';
 import { h, patchAttr, patchClasses, patchText } from '../../core/domPatch.js';
 import { isWindowOverlayMode } from '../../core/httpClient.js';
+import { copyPlainTextToClipboard } from '../../core/stepInspector.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 import { isEnglishLocale, t } from '../../i18n/index.js';
 import {
@@ -14,34 +15,10 @@ import {
 } from '../../store/telemetryStore.js';
 import { CustomScrollbar } from '../ui/CustomScrollbar.js';
 import { CustomSelect } from '../ui/CustomSelect.js';
+import { createSearchInput } from '../ui/SearchInput.js';
 import { SegmentedControl } from '../ui/SegmentedControl.js';
 
 const SMIG_OUTSIDE_PROJECT_ID = 'outside-of-project';
-
-async function smigCopyText(text) {
-  try {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // 退回受限 Webview 的隐藏文本域复制
-  }
-  try {
-    if (typeof document === 'undefined' || !document.body) return false;
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', 'true');
-    area.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
-    document.body.appendChild(area);
-    area.select?.();
-    const ok = Boolean(document.execCommand?.('copy'));
-    document.body.removeChild(area);
-    return ok;
-  } catch {
-    return false;
-  }
-}
 
 function smigGetClientLabel(clientId) {
   if (clientId === 'cli') return t('settings.oth.migClientCli');
@@ -202,41 +179,27 @@ export const SessionMigrationCard = defineComponent({
         projectSelect.el,
       ]);
 
-      searchInput = h('input', {
-        type: 'text',
-        className: 'smig-search-input',
-        autocomplete: 'off',
-        spellcheck: 'false',
+      const searchBox = createSearchInput({
+        wrapClassName: 'smig-search-wrap',
+        iconClassName: 'smig-search-icon',
+        inputClassName: 'smig-search-input',
+        clearClassName: 'smig-search-clear',
         placeholder: t('settings.oth.migSearchPlaceholder'),
-        value: '',
-      });
-      searchClearBtn = h(
-        'button',
-        {
-          type: 'button',
-          className: 'smig-search-clear',
-          hidden: true,
-          'aria-label': t('select.clearSearch'),
-          onClick: () => {
-            searchQuery = '';
-            searchInput.value = '';
-            patchAttr(searchClearBtn, 'hidden', true);
-            renderSessionList();
-            searchInput.focus?.();
-          },
+        clearAriaLabel: t('select.clearSearch'),
+        closeIconSize: 10,
+        onInput: (val) => {
+          searchQuery = String(val || '').trim();
+          renderSessionList();
         },
-        [createSvgIcon('close', { size: 10 })]
-      );
-      searchInput.addEventListener?.('input', () => {
-        searchQuery = String(searchInput.value || '').trim();
-        patchAttr(searchClearBtn, 'hidden', !searchQuery);
-        renderSessionList();
+        onClear: () => {
+          searchQuery = '';
+          renderSessionList();
+          searchInput.focus?.();
+        },
       });
-      const searchWrap = h('div', { className: 'smig-search-wrap' }, [
-        createSvgIcon('search', { size: 12, className: 'smig-search-icon' }),
-        searchInput,
-        searchClearBtn,
-      ]);
+      searchInput = searchBox.inputEl;
+      searchClearBtn = searchBox.clearBtnEl;
+      const searchWrap = searchBox.el;
 
       toggleAllBtn = h('button', {
         type: 'button',
@@ -662,7 +625,7 @@ export const SessionMigrationCard = defineComponent({
                 className: 'btn-ghost-sm smig-cmd-copy',
                 text: isCopied ? t('settings.oth.migCopied') : t('settings.oth.migCopyCmd'),
                 onClick: async () => {
-                  const ok = await smigCopyText(item.resumeCommand);
+                  const ok = await copyPlainTextToClipboard(item.resumeCommand);
                   if (!ok || destroyed) return;
                   copiedCmdId = item.newCascadeId;
                   renderResultBox();

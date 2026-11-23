@@ -538,6 +538,8 @@ export const ConsumptionView = defineComponent({
     });
 
     let activeHoverTargetEl = null;
+    let cachedBreakdownRootRect = null;
+    let cachedBreakdownAnchorRect = null;
 
     const popoverContent = createConsumptionBreakdownContent({
       showModelDot: true,
@@ -550,6 +552,8 @@ export const ConsumptionView = defineComponent({
     );
 
     function hideBreakdownPopover() {
+      cachedBreakdownRootRect = null;
+      cachedBreakdownAnchorRect = null;
       if (activeHoverTargetEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
         activeHoverTargetEl = null;
@@ -559,27 +563,29 @@ export const ConsumptionView = defineComponent({
     }
 
     function positionBreakdownPopover(anchorEl, pointerClientX = null, pointerClientY = null) {
-      const rootRect = rootEl.getBoundingClientRect?.() || {
-        left: 0,
-        top: 0,
-        width: 360,
-        height: 600,
-      };
-      const anchorRect = anchorEl?.getBoundingClientRect?.() || {
-        left: 0,
-        top: 0,
-        bottom: 0,
-        width: 0,
-        height: 0,
-      };
-      const tipRect = breakdownPopoverEl.getBoundingClientRect?.() || {
-        width: 216,
-        height: 108,
-      };
+      if (!cachedBreakdownRootRect) {
+        cachedBreakdownRootRect = rootEl.getBoundingClientRect?.() || {
+          left: 0,
+          top: 0,
+          width: 360,
+          height: 600,
+        };
+      }
+      const rootRect = cachedBreakdownRootRect;
+      if (!cachedBreakdownAnchorRect) {
+        cachedBreakdownAnchorRect = anchorEl?.getBoundingClientRect?.() || {
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 0,
+          height: 0,
+        };
+      }
+      const anchorRect = cachedBreakdownAnchorRect;
+      const tipW = Number(breakdownPopoverEl.offsetWidth || 0) || 216;
+      const tipH = Number(breakdownPopoverEl.offsetHeight || 0) || 108;
       const rootW = rootRect.width > 0 ? rootRect.width : 360;
       const rootH = rootRect.height > 0 ? rootRect.height : 600;
-      const tipW = tipRect.width > 0 ? tipRect.width : 216;
-      const tipH = tipRect.height > 0 ? tipRect.height : 108;
 
       const hasPointerX = Number.isFinite(pointerClientX) && pointerClientX > 0 && rootRect.width > 0;
       const hasPointerY = Number.isFinite(pointerClientY) && pointerClientY > 0 && rootRect.height > 0;
@@ -625,6 +631,10 @@ export const ConsumptionView = defineComponent({
       }
       if (activeHoverTargetEl && activeHoverTargetEl !== anchorEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
+        cachedBreakdownAnchorRect = null;
+      } else if (!activeHoverTargetEl) {
+        cachedBreakdownRootRect = null;
+        cachedBreakdownAnchorRect = null;
       }
       activeHoverTargetEl = anchorEl;
       patchClasses(anchorEl, { 'is-hovered': true });

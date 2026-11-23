@@ -427,8 +427,27 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
     });
   }
 
+  let cachedWrapRect = null;
+  let cachedSvgRect = null;
+  let cachedHmGridRect = null;
+  let cachedClipRect = undefined;
+
+  function invalidateHoverRects() {
+    cachedWrapRect = null;
+    cachedSvgRect = null;
+    cachedHmGridRect = null;
+    cachedClipRect = undefined;
+  }
+
+  function getCachedWrapRect() {
+    if (!cachedWrapRect) {
+      cachedWrapRect = chartWrap.getBoundingClientRect?.() || null;
+    }
+    return cachedWrapRect;
+  }
+
   function positionTooltipNearAnchor(fallbackX, fallbackY, pointer = null) {
-    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const wrapRect = getCachedWrapRect();
     const wrapW =
       wrapRect && wrapRect.width > 0
         ? wrapRect.width
@@ -438,13 +457,8 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
         ? wrapRect.height
         : Number(chartWrap.offsetHeight || VIEW_H);
 
-    const tipRect = tooltipEl.getBoundingClientRect?.() || null;
-    const tipW =
-      Number(tooltipEl.offsetWidth || 0) ||
-      (tipRect && tipRect.width > 0 ? tipRect.width : 216);
-    const tipH =
-      Number(tooltipEl.offsetHeight || 0) ||
-      (tipRect && tipRect.height > 0 ? tipRect.height : 104);
+    const tipW = Number(tooltipEl.offsetWidth || 0) || 216;
+    const tipH = Number(tooltipEl.offsetHeight || 0) || 104;
 
     const hasPointer =
       pointer &&
@@ -457,8 +471,11 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const anchorX = hasPointer ? Number(pointer.clientX) - wrapRect.left : fallbackX;
     const anchorY = hasPointer ? Number(pointer.clientY) - wrapRect.top : fallbackY;
 
-    const clipEl = chartWrap.closest?.('.view-pane, .cons-view-stage') || null;
-    const clipRect = clipEl?.getBoundingClientRect?.() || null;
+    if (cachedClipRect === undefined) {
+      const clipEl = chartWrap.closest?.('.view-pane, .cons-view-stage') || null;
+      cachedClipRect = clipEl?.getBoundingClientRect?.() || null;
+    }
+    const clipRect = cachedClipRect;
     const hasClip = Boolean(
       clipRect && clipRect.height > 0 && wrapRect && wrapRect.height > 0
     );
@@ -524,7 +541,7 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
       }
     }
 
-    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const wrapRect = getCachedWrapRect();
     const wrapW =
       wrapRect && wrapRect.width > 0
         ? wrapRect.width
@@ -571,7 +588,7 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
       populateTooltipContent(slot);
     }
 
-    const wrapRect = chartWrap.getBoundingClientRect?.() || null;
+    const wrapRect = getCachedWrapRect();
     const cellRect = targetCell.getBoundingClientRect?.() || null;
     const wrapW =
       wrapRect && wrapRect.width > 0
@@ -596,6 +613,7 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
   }
 
   function clearHover() {
+    invalidateHoverRects();
     cancelTipTrackRaf();
     hoveredIdx = -1;
     lastPointer = null;
@@ -642,8 +660,14 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
 
   function handlePointerMove(e) {
     if (currentIsHeatmap || !currentSlots.length) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
+    if (!cachedSvgRect) {
+      cachedSvgRect = svg.getBoundingClientRect();
+    }
+    const rect = cachedSvgRect;
+    if (!rect || rect.width <= 0) {
+      cachedSvgRect = null;
+      return;
+    }
     const relX = ((e.clientX - rect.left) / rect.width) * viewW;
     const { leftX, spanX } = resolvePlotBounds(viewW);
     const ratio = (relX - leftX) / Math.max(1, spanX);
@@ -686,8 +710,12 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
       return null;
     }
 
-    const rect = hmGridEl.getBoundingClientRect?.();
+    if (!cachedHmGridRect) {
+      cachedHmGridRect = hmGridEl.getBoundingClientRect?.() || null;
+    }
+    const rect = cachedHmGridRect;
     if (!rect || !(rect.width > 0) || !(rect.height > 0) || currentHeatmapWeeks <= 0) {
+      cachedHmGridRect = null;
       if (hoveredIdx >= 0 && hoveredIdx < currentSlots.length && currentCellEls[hoveredIdx]) {
         return { idx: hoveredIdx, cellEl: currentCellEls[hoveredIdx] };
       }
@@ -842,6 +870,7 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
   let onWinResize = null;
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
+      invalidateHoverRects();
       if (!currentIsHeatmap && syncViewWidth() && currentSlots.length > 0) {
         lastRenderSig = '';
         update(currentSlots);

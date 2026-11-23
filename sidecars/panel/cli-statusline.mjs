@@ -31,10 +31,12 @@ import {
   summarizeTtft,
 } from './trajectory-metrics.mjs';
 import {
+  readLocalSqliteLiveTail,
+  readLocalSqliteParentLink,
   readLocalSqliteTrajectory,
   readLocalSummaryIndex,
 } from './backend/cli-sqlite-reader.mjs';
-import { withReadOnlySqliteDb } from './backend/sqlite-client.mjs';
+import { computeSqliteWalSig, withReadOnlySqliteDb } from './backend/sqlite-client.mjs';
 import {
   buildCliJsonStatusOutput,
   ensureCliStatusLineConfigured,
@@ -44,14 +46,17 @@ import {
 import {
   CLI_STATUS_SNAPSHOT_FILE,
   CLI_STATUSLINE_PRESETS,
+  DATA_DIR,
   TOPBAR_SLOT_KEYS,
   loadJson,
   loadSettings,
   normalizeCliStatusLineSlots,
   resolveEffectiveCliStatusLineSlots,
+  saveJson,
 } from './backend/config.mjs';
 import { computeStepCost, createStepModelResolver } from './backend/model-pricing.mjs';
 import { isThirdPartyPoolText } from './shared/telemetry-display-rules.mjs';
+import { normalizePathForWorkspaceMatch } from './shared/workspace-uri.mjs';
 
 const CLI_RUNNING_STALE_MS = 10 * 60 * 1000;
 const SNAPSHOT_LIVE_RUNNING_TTL_MS = 20 * 1000;
@@ -124,12 +129,7 @@ function readStdinJsonWithTimeout(timeoutMs = 220) {
 }
 
 function normalizePathForMatch(rawPath) {
-  const clean = String(rawPath || '')
-    .trim()
-    .replace(/^file:\/\/\/?/i, '')
-    .replace(/\\/g, '/')
-    .replace(/\/+$/, '');
-  return process.platform === 'win32' ? clean.toLowerCase() : clean;
+  return normalizePathForWorkspaceMatch(rawPath);
 }
 
 function extractConversationIdFromStdin(stdinData) {
@@ -282,11 +282,133 @@ export function resolveCliLocalSessionMetrics({
     };
   }
 
-  let traj = readLocalSqliteTrajectory(dbPath);
+  const parentLink = readLocalSqliteParentLink(dbPath);
+  if (parentLink?.parentConversationId || parentLink?.rootConversationId) {
+    const candidateRootId = parentLink.rootConversationId || parentLink.parentConversationId;
+    const rootDb = join(convDir, `${candidateRootId}.db`);
+    if (candidateRootId && existsSync(rootDb)) {
+      targetCid = candidateRootId;
+      dbPath = rootDb;
+    }
+  }
+
+  const walInfo = computeSqliteWalSig(dbPath);
+  const dbMtimeMs = walInfo.mtimeMs || 0;
+  const targetLower = String(targetCid || '').toLowerCase();
+  const targetIsRunning = freshRunningRootIds.includes(targetLower);
+
+  const cliTrajMemoFile = join(DATA_DIR, 'cli-statusline-traj-memo.json');
+  const prevMemo = walInfo.sig ? loadJson(cliTrajMemoFile, null) : null;
+  const prevOtherCache =
+    prevMemo && typeof prevMemo.otherWaiting === 'object' && prevMemo.otherWaiting !== null
+      ? prevMemo.otherWaiting
+      : {};
+  const nextOtherCache = {};
+  let memoDirty = false;
+
+  let otherLocalWaiting = false;
+  let checkedOthers = 0;
+  for (const runCid of freshRunningRootIds) {
+    if (!runCid || runCid === targetLower) continue;
+    if (checkedOthers >= 3) break;
+    const otherDb = join(convDir, `${runCid}.db`);
+    const otherWal = computeSqliteWalSig(otherDb);
+    if (!otherWal.exists) continue;
+    checkedOthers += 1;
+    const prevOther = prevOtherCache[otherDb];
+    if (prevOther && prevOther.sig === otherWal.sig && typeof prevOther.waiting === 'boolean') {
+      nextOtherCache[otherDb] = prevOther;
+      if (prevOther.waiting) {
+        otherLocalWaiting = true;
+        break;
+      }
+      continue;
+    }
+    try {
+      const otherTail = readLocalSqliteLiveTail(otherDb, 16);
+      let isWaiting = false;
+      if (otherTail && Array.isArray(otherTail.steps) && otherTail.steps.length > 0) {
+        const otherAct = extractLiveActivity(otherTail.steps, true);
+        isWaiting = Boolean(otherAct?.phase === 'waiting' || otherAct?.waitingApproval);
+      }
+      nextOtherCache[otherDb] = { sig: otherWal.sig, waiting: isWaiting };
+      memoDirty = true;
+      if (isWaiting) {
+        otherLocalWaiting = true;
+        break;
+      }
+    } catch {
+      // 忽略单会话读取异常
+    }
+  }
+
+  const targetMemoKey = walInfo.sig ? `v1::${dbPath}::${walInfo.sig}` : '';
+  if (
+    targetMemoKey &&
+    prevMemo?.targetKey === targetMemoKey &&
+    prevMemo?.metrics &&
+    typeof prevMemo.metrics === 'object'
+  ) {
+    if (memoDirty) {
+      saveJson(cliTrajMemoFile, {
+        targetKey: targetMemoKey,
+        metrics: prevMemo.metrics,
+        otherWaiting: { ...prevOtherCache, ...nextOtherCache },
+      });
+    }
+    const m = prevMemo.metrics;
+    if (!m.found) {
+      return {
+        found: false,
+        cascadeId: targetCid,
+        dbMtimeMs,
+        runningRootCount,
+        runningSubCount,
+        targetIsRunning,
+        targetIsWaiting: Boolean(m.targetIsWaiting),
+        targetWaitingApprovalFresh: Boolean(
+          m.waitingApproval && dbMtimeMs > 0 && nowMs - dbMtimeMs <= CLI_RUNNING_STALE_MS
+        ),
+        otherLocalWaiting,
+      };
+    }
+    return {
+      found: true,
+      cascadeId: targetCid,
+      dbMtimeMs,
+      stepCount: m.stepCount,
+      runningRootCount,
+      runningSubCount,
+      targetIsRunning,
+      targetIsWaiting: Boolean(m.targetIsWaiting),
+      targetWaitingApprovalFresh: Boolean(
+        m.waitingApproval && dbMtimeMs > 0 && nowMs - dbMtimeMs <= CLI_RUNNING_STALE_MS
+      ),
+      otherLocalWaiting,
+      tps: m.tps,
+      avgTps: m.avgTps,
+      ttft: m.ttft,
+      stepCost: m.stepCost,
+      sessionCost: m.sessionCost,
+      cacheHitPct: m.cacheHitPct,
+      latestPromptTokens: m.latestPromptTokens,
+      sessionTokens: m.sessionTokens,
+      latestAnomaly: m.latestAnomaly,
+      sessionAnomalyCount: m.sessionAnomalyCount,
+      latestModelHint: m.latestModelHint,
+      hasReportedLimit: m.hasReportedLimit,
+      usedPct: m.usedPct,
+    };
+  }
+
+  let traj = readLocalSqliteTrajectory(dbPath, {
+    cascadeId: targetCid,
+    isRunning: targetIsRunning,
+  });
   if (traj?.parentConversationId) {
     const rootDb = join(convDir, `${traj.rootConversationId || traj.parentConversationId}.db`);
-    if (existsSync(rootDb)) {
-      const rootTraj = readLocalSqliteTrajectory(rootDb);
+    if (rootDb !== dbPath && existsSync(rootDb)) {
+      const rootTraj = readLocalSqliteTrajectory(rootDb, { isRunning: true });
       if (rootTraj) {
         targetCid = traj.rootConversationId || traj.parentConversationId;
         dbPath = rootDb;
@@ -295,22 +417,14 @@ export function resolveCliLocalSessionMetrics({
     }
   }
 
-  let dbMtimeMs = 0;
-  try {
-    dbMtimeMs = Math.max(dbMtimeMs, statSync(dbPath).mtimeMs || 0);
-  } catch {
-    // 忽略 stat 异常
-  }
-  try {
-    const walPath = `${dbPath}-wal`;
-    if (existsSync(walPath)) {
-      dbMtimeMs = Math.max(dbMtimeMs, statSync(walPath).mtimeMs || 0);
-    }
-  } catch {
-    // 忽略 WAL stat 异常
-  }
-
   if (!traj || !Array.isArray(traj.steps) || traj.steps.length === 0) {
+    if (targetMemoKey) {
+      saveJson(cliTrajMemoFile, {
+        targetKey: targetMemoKey,
+        metrics: { found: false, targetIsWaiting: false, waitingApproval: false },
+        otherWaiting: { ...prevOtherCache, ...nextOtherCache },
+      });
+    }
     return {
       found: false,
       cascadeId: targetCid,
@@ -320,46 +434,30 @@ export function resolveCliLocalSessionMetrics({
       targetIsRunning: freshRunningRootIds.includes(String(targetCid || '').toLowerCase()),
       targetIsWaiting: false,
       targetWaitingApprovalFresh: false,
-      otherLocalWaiting: false,
+      otherLocalWaiting,
     };
   }
 
-  const targetLower = String(targetCid || '').toLowerCase();
-  const targetIsRunning = freshRunningRootIds.includes(targetLower);
   const targetLiveAct = extractLiveActivity(traj.steps, true);
   const targetIsWaiting = Boolean(
     targetLiveAct?.phase === 'waiting' || targetLiveAct?.waitingApproval
   );
+  const waitingApproval = Boolean(targetLiveAct?.waitingApproval);
   const targetWaitingApprovalFresh = Boolean(
-    targetLiveAct?.waitingApproval &&
+    waitingApproval &&
       dbMtimeMs > 0 &&
       nowMs - dbMtimeMs <= CLI_RUNNING_STALE_MS
   );
 
-  let otherLocalWaiting = false;
-  let checkedOthers = 0;
-  for (const runCid of freshRunningRootIds) {
-    if (!runCid || runCid === targetLower) continue;
-    if (checkedOthers >= 3) break;
-    const otherDb = join(convDir, `${runCid}.db`);
-    if (!existsSync(otherDb)) continue;
-    checkedOthers += 1;
-    try {
-      const otherTraj = readLocalSqliteTrajectory(otherDb);
-      if (otherTraj && Array.isArray(otherTraj.steps) && otherTraj.steps.length > 0) {
-        const otherAct = extractLiveActivity(otherTraj.steps, true);
-        if (otherAct?.phase === 'waiting' || otherAct?.waitingApproval) {
-          otherLocalWaiting = true;
-          break;
-        }
-      }
-    } catch {
-      // 忽略单会话读取异常
-    }
-  }
-
   const steps = extractModelSteps(traj.steps, traj.generatorMetadata || []);
   if (steps.length === 0) {
+    if (targetMemoKey) {
+      saveJson(cliTrajMemoFile, {
+        targetKey: targetMemoKey,
+        metrics: { found: false, targetIsWaiting, waitingApproval },
+        otherWaiting: { ...prevOtherCache, ...nextOtherCache },
+      });
+    }
     return {
       found: false,
       cascadeId: targetCid,
@@ -467,17 +565,15 @@ export function resolveCliLocalSessionMetrics({
   const sessionCacheHitPct =
     totalPromptAll > 0 ? +((totalCacheReadTokens / totalPromptAll) * 100).toFixed(1) : null;
 
-  return {
+  const resolvedUsedPct =
+    latestLimitTokens > 0 && latestContextTokens > 0
+      ? Math.min(100, +((latestContextTokens / latestLimitTokens) * 100).toFixed(1))
+      : null;
+  const computedMetrics = {
     found: true,
-    cascadeId: targetCid,
-    dbMtimeMs,
     stepCount: steps.length,
-    runningRootCount,
-    runningSubCount,
-    targetIsRunning,
     targetIsWaiting,
-    targetWaitingApprovalFresh,
-    otherLocalWaiting,
+    waitingApproval,
     tps: latestTps,
     avgTps: speedSum?.avgTokPerSec != null ? +speedSum.avgTokPerSec.toFixed(1) : null,
     ttft: latestTtft ?? ttftSum?.avgSec ?? null,
@@ -490,10 +586,40 @@ export function resolveCliLocalSessionMetrics({
     sessionAnomalyCount,
     latestModelHint,
     hasReportedLimit,
-    usedPct:
-      latestLimitTokens > 0 && latestContextTokens > 0
-        ? Math.min(100, +((latestContextTokens / latestLimitTokens) * 100).toFixed(1))
-        : null,
+    usedPct: resolvedUsedPct,
+  };
+  if (targetMemoKey) {
+    saveJson(cliTrajMemoFile, {
+      targetKey: targetMemoKey,
+      metrics: computedMetrics,
+      otherWaiting: { ...prevOtherCache, ...nextOtherCache },
+    });
+  }
+
+  return {
+    found: true,
+    cascadeId: targetCid,
+    dbMtimeMs,
+    stepCount: computedMetrics.stepCount,
+    runningRootCount,
+    runningSubCount,
+    targetIsRunning,
+    targetIsWaiting,
+    targetWaitingApprovalFresh,
+    otherLocalWaiting,
+    tps: computedMetrics.tps,
+    avgTps: computedMetrics.avgTps,
+    ttft: computedMetrics.ttft,
+    stepCost: computedMetrics.stepCost,
+    sessionCost: computedMetrics.sessionCost,
+    cacheHitPct: computedMetrics.cacheHitPct,
+    latestPromptTokens: computedMetrics.latestPromptTokens,
+    sessionTokens: computedMetrics.sessionTokens,
+    latestAnomaly: computedMetrics.latestAnomaly,
+    sessionAnomalyCount: computedMetrics.sessionAnomalyCount,
+    latestModelHint: computedMetrics.latestModelHint,
+    hasReportedLimit: computedMetrics.hasReportedLimit,
+    usedPct: computedMetrics.usedPct,
   };
 }
 

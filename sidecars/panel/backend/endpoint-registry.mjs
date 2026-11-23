@@ -10,18 +10,15 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { LOCAL_ENDPOINT_ID } from '../shared/window-bridge-protocol.mjs';
-import { inferCompactionStepModels, normalizeCachedStep } from '../trajectory-metrics.mjs';
 import {
-  CACHE_RUNNING_SAVE_INTERVAL_MS,
   DATA_DIR,
   clearRuntimeCaches,
   flushTrajectoryCacheNow,
   getCachedTrajectory,
+  getCachedTrajectoryEntryByLower,
   hasPendingTrajectoryCacheSave,
-  isPlainObject,
   listCachedTrajectoryEntries,
   loadJson,
   lsRuntimeEndpoint,
@@ -30,7 +27,7 @@ import {
   removeCachedTrajectory,
   setCachedTrajectory,
 } from './config.mjs';
-import { writeTrajectoryCacheFile } from './trajectory-cache-file.mjs';
+import { createTrajectoryCacheStore } from './trajectory-cache-store.mjs';
 
 const ENDPOINT_ID_REMOTE_RE = /^remote:[a-zA-Z0-9._:@-]{1,120}$/;
 const ENDPOINT_STALE_TTL_MS = 60_000;
@@ -123,38 +120,6 @@ function buildRemoteCacheFilePath(stableHostKey) {
   return join(ENDPOINT_REMOTE_CACHE_DIR, `ssh-${safePrefix}-${hash}.json`);
 }
 
-function hydrateTrajectoryCacheObject(rawLoaded) {
-  const cacheObj = Object.create(null);
-  let migrated =
-    rawLoaded !== null && rawLoaded !== undefined && !isPlainObject(rawLoaded);
-  if (isPlainObject(rawLoaded)) {
-    for (const [id, entry] of Object.entries(rawLoaded)) {
-      if (!id || !isPlainObject(entry)) {
-        migrated = true;
-        continue;
-      }
-      const rawSteps = Array.isArray(entry.steps) ? entry.steps : [];
-      if (!Array.isArray(entry.steps)) migrated = true;
-      const objectSteps = rawSteps.filter((s) => isPlainObject(s));
-      if (objectSteps.length !== rawSteps.length) migrated = true;
-      const normalizedSteps = objectSteps.map((s) => {
-        const norm = normalizeCachedStep(s);
-        if (norm !== s) migrated = true;
-        return norm;
-      });
-      const finalSteps = inferCompactionStepModels(normalizedSteps);
-      for (let i = 0; i < finalSteps.length; i++) {
-        if (finalSteps[i] !== normalizedSteps[i]) {
-          migrated = true;
-          break;
-        }
-      }
-      cacheObj[id] = { ...entry, steps: finalSteps };
-    }
-  }
-  return { cacheObj, migrated };
-}
-
 function createRemoteQuotaCache() {
   return {
     ts: 0,
@@ -167,108 +132,12 @@ function createRemoteQuotaCache() {
 }
 
 function createRemoteEndpointStore(cacheFilePath) {
-  const loaded = cacheFilePath ? loadJson(cacheFilePath, {}) : {};
-  const { cacheObj, migrated } = hydrateTrajectoryCacheObject(loaded);
-  const state = {
-    needsSave: Boolean(cacheFilePath && migrated),
-    lastSavedAtMs: 0,
-    flushTimer: null,
-  };
-
-  function cancelFlushTimer() {
-    if (state.flushTimer) {
-      try {
-        clearTimeout(state.flushTimer);
-      } catch {
-        // 忽略沙箱异常
-      }
-      state.flushTimer = null;
-    }
-  }
-
-  function writeCacheNow() {
-    cancelFlushTimer();
-    if (!cacheFilePath) {
-      state.needsSave = false;
-      return true;
-    }
-    try {
-      mkdirSync(dirname(cacheFilePath), { recursive: true });
-      writeTrajectoryCacheFile(cacheFilePath, cacheObj);
-      state.needsSave = false;
-      state.lastSavedAtMs = Date.now();
-      return true;
-    } catch (err) {
-      console.error(`Failed writing remote cache ${cacheFilePath}: ${err.message}`);
-      state.needsSave = true;
-      return false;
-    }
-  }
-
-  function persistIfNeeded({ hasRunningSessions = false } = {}) {
-    if (!cacheFilePath) {
-      state.needsSave = false;
-      return;
-    }
-    if (lsRuntimeEndpoint.addr === 'test.invalid' || typeof setTimeout !== 'function') {
-      writeCacheNow();
-      return;
-    }
-    const nowMs = Date.now();
-    const elapsedMs = nowMs - (state.lastSavedAtMs || 0);
-    if (!hasRunningSessions || state.lastSavedAtMs === 0 || elapsedMs >= CACHE_RUNNING_SAVE_INTERVAL_MS) {
-      writeCacheNow();
-      return;
-    }
-    state.needsSave = true;
-    if (!state.flushTimer) {
-      const delayMs = Math.max(100, CACHE_RUNNING_SAVE_INTERVAL_MS - elapsedMs);
-      const timer = setTimeout(() => {
-        state.flushTimer = null;
-        if (state.needsSave) {
-          writeCacheNow();
-        }
-      }, delayMs);
-      timer?.unref?.();
-      state.flushTimer = timer;
-    }
-  }
-
-  function clearCache() {
-    cancelFlushTimer();
-    if (cacheFilePath) {
-      try {
-        mkdirSync(dirname(cacheFilePath), { recursive: true });
-        writeTrajectoryCacheFile(cacheFilePath, {});
-      } catch {
-        return false;
-      }
-    }
-    for (const key of Object.keys(cacheObj)) {
-      delete cacheObj[key];
-    }
-    state.needsSave = false;
-    state.lastSavedAtMs = 0;
-    return true;
-  }
-
-  return {
+  return createTrajectoryCacheStore({
     cacheFilePath,
-    cacheState: state,
-    cancelFlushTimer,
-    getCachedTrajectory: (cascadeId) => cacheObj[cascadeId],
-    listCachedTrajectoryEntries: () => Object.entries(cacheObj),
-    setCachedTrajectory: (cascadeId, entry) => {
-      cacheObj[cascadeId] = entry;
-    },
-    removeCachedTrajectory: (cascadeId) => {
-      delete cacheObj[cascadeId];
-    },
-    hasPendingTrajectoryCacheSave: () => state.needsSave,
-    persistTrajectoryCacheIfNeeded: persistIfNeeded,
-    flushTrajectoryCacheNow: writeCacheNow,
-    clearCache,
-  };
+    loadJsonFn: loadJson,
+    shouldBypassThrottleFn: (allowThrottleInTest) =>
+      lsRuntimeEndpoint.addr === 'test.invalid' && !allowThrottleInTest,
+  });
 }
 
 /**
@@ -445,6 +314,7 @@ export function getEndpointCacheStore(endpointOrId = null) {
     isRemote: false,
     endpointId: LOCAL_ENDPOINT_ID,
     getCachedTrajectory,
+    getCachedTrajectoryEntryByLower,
     listCachedTrajectoryEntries,
     setCachedTrajectory,
     removeCachedTrajectory,

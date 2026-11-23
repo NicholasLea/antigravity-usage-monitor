@@ -1238,70 +1238,9 @@
 }
 
 .steps-search-wrap {
-  display: flex;
-  align-items: center;
-  gap: 5px;
   flex: 1 1 160px;
   min-width: 120px;
   min-height: calc(28px * var(--ui-font-scale, 1));
-  padding: 2px 8px;
-  border-radius: var(--radius-xs);
-  border: 1px solid var(--border-hairline);
-  background: var(--surface-subtle);
-  transition:
-    border-color var(--dur-instant) var(--ease-fast),
-    background-color var(--dur-instant) var(--ease-fast),
-    box-shadow var(--dur-instant) var(--ease-fast);
-}
-
-.steps-search-wrap:focus-within {
-  border-color: var(--accent-primary);
-}
-
-.steps-search-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
-  pointer-events: none;
-}
-
-.steps-search-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-size: var(--fs-md);
-  line-height: 1.3;
-  padding: 0;
-}
-
-.steps-search-input::placeholder {
-  color: var(--text-muted);
-}
-
-.steps-search-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    color var(--dur-instant) var(--ease-fast),
-    background-color var(--dur-instant) var(--ease-fast);
-}
-
-.steps-search-clear:hover {
-  color: var(--text-primary);
-  background: var(--surface-hover);
 }
 
 .steps-search-clear[hidden] {

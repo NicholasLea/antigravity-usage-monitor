@@ -15,12 +15,11 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   unlinkSync,
-  writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { writeTextFileAtomicSync } from './fs-atomic.mjs';
 import {
   BRIDGE_API_PATHS,
   CONTEXT_WINDOWS_GLOBAL_KEY,
@@ -458,18 +457,7 @@ function patchSingleHostArgvFile(argvPath, { createDir = false, missingReason = 
         argvPath,
       };
     }
-    const tmpPath = `${argvPath}.tmp-${process.pid}`;
-    try {
-      writeFileSync(tmpPath, patched.text, 'utf8');
-      renameSync(tmpPath, argvPath);
-    } catch {
-      try {
-        unlinkSync(tmpPath);
-      } catch {
-        // 忽略临时文件清理异常
-      }
-      writeFileSync(argvPath, patched.text, 'utf8');
-    }
+    writeTextFileAtomicSync(argvPath, patched.text);
     return {
       checked: true,
       updated: true,
@@ -1335,11 +1323,16 @@ export function createWindowBridgeController(options) {
               res.writeHead(out.status || 200, hdrs);
               res.end(out.body);
             })
-            .catch(() => {
+            .catch((err) => {
               if (!res.headersSent) {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
               }
-              res.end(JSON.stringify({ error: 'Internal bridge error' }));
+              res.end(
+                JSON.stringify({
+                  error: 'Internal bridge error',
+                  detail: String(err?.message || err || ''),
+                })
+              );
             });
           return;
         }
@@ -1388,11 +1381,16 @@ export function createWindowBridgeController(options) {
               res.writeHead(out.status || 200, hdrs);
               res.end(out.body);
             })
-            .catch(() => {
+            .catch((err) => {
               if (!res.headersSent) {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
               }
-              res.end(JSON.stringify({ error: 'Internal bridge error' }));
+              res.end(
+                JSON.stringify({
+                  error: 'Internal bridge error',
+                  detail: String(err?.message || err || ''),
+                })
+              );
             });
         });
       });
@@ -1809,7 +1807,8 @@ export function createWindowBridgeController(options) {
         }
       }
       leasedBySelf = true;
-      lastPersistedLeaseSig = '';
+      const mergedLauncherConfigured = Boolean(argvConfigured || launcherConfigured);
+      lastPersistedLeaseSig = `${lastBridgeStatus.state}:${lastBridgeStatus.aliveCount}:${lastBridgeStatus.targets}:${Boolean(argvUpdatedThisBoot) ? 1 : 0}:${mergedLauncherConfigured ? 1 : 0}:${Boolean(hasReadOnlyShortcuts) ? 1 : 0}:${Boolean(canRelaunch) ? 1 : 0}`;
       saveJson(leaseFilePath, {
         pid: process.pid,
         bundleVersion,
@@ -1819,8 +1818,8 @@ export function createWindowBridgeController(options) {
         aliveCount: lastBridgeStatus.aliveCount,
         targets: lastBridgeStatus.targets,
         argvUpdatedThisBoot: Boolean(argvUpdatedThisBoot),
-        argvConfigured: Boolean(argvConfigured || launcherConfigured),
-        launcherConfigured: Boolean(launcherConfigured || argvConfigured),
+        argvConfigured: mergedLauncherConfigured,
+        launcherConfigured: mergedLauncherConfigured,
         hasReadOnlyShortcuts: Boolean(hasReadOnlyShortcuts),
         canRelaunch: Boolean(canRelaunch),
         updatedAtMs: Date.now(),

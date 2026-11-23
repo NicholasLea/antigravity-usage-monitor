@@ -932,6 +932,51 @@ function getLeftSidebarRightEdge(vw) {
 /**
  * 在主窗口挂载双栖顶栏胶囊与完整四标签悬浮面板，并注册 `window.__AGUsageMonitorOverlay` 生命周期句柄。
  */
+const CAPSULE_EXCLUDED_CSS_SECTIONS = new Set([
+  'src/styles/views-overview.css',
+  'src/styles/views-consumption.css',
+  'src/styles/views-tables.css',
+  'src/styles/views-settings.css',
+  'src/styles/controls.css',
+]);
+
+let sharedOverlayStyleSheetMemo = { rawCss: '', sheet: null };
+
+function buildSlimCapsuleCss(fullCss) {
+  if (!fullCss || !fullCss.includes('/* --- src/styles/')) return fullCss;
+  return fullCss
+    .split(/(?=\/\* --- src\/styles\/)/)
+    .filter((block) => {
+      const m = block.match(/^\/\* --- (src\/styles\/[^\s]+) --- \*\//);
+      return !m || !CAPSULE_EXCLUDED_CSS_SECTIONS.has(m[1]);
+    })
+    .join('');
+}
+
+function attachShadowStyles(shadowRoot, fullCss, { slimCapsule = false } = {}) {
+  if (!shadowRoot) return;
+  if (
+    fullCss &&
+    typeof CSSStyleSheet === 'function' &&
+    Array.isArray(shadowRoot.adoptedStyleSheets)
+  ) {
+    try {
+      if (sharedOverlayStyleSheetMemo.rawCss !== fullCss || !sharedOverlayStyleSheetMemo.sheet) {
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(fullCss);
+        sharedOverlayStyleSheetMemo = { rawCss: fullCss, sheet };
+      }
+      shadowRoot.adoptedStyleSheets = [sharedOverlayStyleSheetMemo.sheet];
+      return;
+    } catch {
+      // 降级到传统 <style> 节点
+    }
+  }
+  const styleEl = document.createElement('style');
+  styleEl.textContent = slimCapsule ? buildSlimCapsuleCss(fullCss) : fullCss;
+  shadowRoot.appendChild(styleEl);
+}
+
 export function mountWindowOverlay() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return null;
 
@@ -1123,10 +1168,7 @@ export function mountWindowOverlay() {
     }
   });
   const capsuleShadow = capsuleHost.attachShadow({ mode: 'open' });
-
-  const capsuleStyleEl = document.createElement('style');
-  capsuleStyleEl.textContent = stylesCss;
-  capsuleShadow.appendChild(capsuleStyleEl);
+  attachShadowStyles(capsuleShadow, stylesCss, { slimCapsule: true });
 
   // 左侧无边框多会话实时触发按钮（固定预占宽度，不随运行数跳动）
   const multiDot = h('span', { className: 'wm-multi-dot' });
@@ -1346,10 +1388,7 @@ export function mountWindowOverlay() {
   portalHost.id = PORTAL_HOST_ID;
   portalHost.className = 'wm-portal-host';
   const portalShadow = portalHost.attachShadow({ mode: 'open' });
-
-  const portalStyleEl = document.createElement('style');
-  portalStyleEl.textContent = stylesCss;
-  portalShadow.appendChild(portalStyleEl);
+  attachShadowStyles(portalShadow, stylesCss, { slimCapsule: false });
 
   const initialSettings = telemetryStore.getState().telemetry?.settings;
 
@@ -1460,9 +1499,9 @@ export function mountWindowOverlay() {
     [multiHeaderEl, multiEmptyEl, multiRunningWidget.el]
   );
 
-  // 完整四标签悬浮容器
+  // 完整四标签悬浮容器（首次打开主弹窗时按需懒挂载 App，彻底消除宿主窗口冷启动开销）
   uiStore.setState({ monitorVisible: false });
-  const appInstance = App();
+  let appInstance = null;
   const popoverEl = h(
     'div',
     {
@@ -1471,8 +1510,16 @@ export function mountWindowOverlay() {
       'aria-label': t('capsule.ariaMonitor'),
       hidden: true,
     },
-    [appInstance.el]
+    []
   );
+
+  function ensureAppMounted() {
+    if (!appInstance) {
+      appInstance = App();
+      popoverEl.appendChild(appInstance.el);
+    }
+    return appInstance;
+  }
 
   function syncPortalAppearance(settings) {
     applyAppearanceToRoot(capsuleHost, settings, { includeFontScale: false });
@@ -2218,6 +2265,7 @@ export function mountWindowOverlay() {
   }
 
   function refreshActiveViewScrollbars() {
+    if (!appInstance) return;
     const activeView = uiStore.getState().activeView;
     const refs = appInstance.refs;
     if (activeView === 'overview') {
@@ -2315,6 +2363,9 @@ export function mountWindowOverlay() {
     }
     if (popoverOpen === targetOpen) return;
     popoverOpen = targetOpen;
+    if (popoverOpen) {
+      ensureAppMounted();
+    }
     patchClasses(capsuleBtn, { 'is-open': popoverOpen });
     patchClasses(popoverEl, { 'is-instant': Boolean(instant && popoverOpen) });
     patchAttr(capsuleBtn, 'aria-expanded', popoverOpen ? 'true' : 'false');
@@ -2670,6 +2721,40 @@ export function mountWindowOverlay() {
   };
 
   let hostDomObserver = null;
+  let hostDomRafId = 0;
+  let hostDomMicrotaskPending = false;
+  function flushHostDomMutationCheck() {
+    if (disposed) return;
+    syncHostRouteIfChanged();
+    if (!observedWorkbench) {
+      ensureWorkbenchThemeObserved();
+    }
+    const dock = resolveRuntimeDockTarget();
+    if (!isDockPlacementSynced(dock)) {
+      scheduleDockSync();
+    }
+  }
+  function scheduleHostDomMutationCheck() {
+    if (disposed) return;
+    const rafFn =
+      (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame.bind(window)
+        : null) || (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : null);
+    if (rafFn) {
+      if (hostDomRafId) return;
+      hostDomRafId = rafFn(() => {
+        hostDomRafId = 0;
+        flushHostDomMutationCheck();
+      });
+      return;
+    }
+    if (hostDomMicrotaskPending) return;
+    hostDomMicrotaskPending = true;
+    queueMicrotask(() => {
+      hostDomMicrotaskPending = false;
+      flushHostDomMutationCheck();
+    });
+  }
   try {
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => updateResponsiveLayout());
@@ -2708,14 +2793,7 @@ export function mountWindowOverlay() {
           ) {
             return;
           }
-          syncHostRouteIfChanged();
-          if (!observedWorkbench) {
-            ensureWorkbenchThemeObserved();
-          }
-          const dock = resolveRuntimeDockTarget();
-          if (!isDockPlacementSynced(dock)) {
-            scheduleDockSync();
-          }
+          scheduleHostDomMutationCheck();
         });
         hostDomObserver.observe(document.body, {
           childList: true,
@@ -2897,6 +2975,14 @@ export function mountWindowOverlay() {
         cancelAnimationFrame(dockRafId);
         dockRafId = 0;
       }
+      if (hostDomRafId) {
+        const cancelRaf =
+          (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function'
+            ? window.cancelAnimationFrame.bind(window)
+            : null) || (typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : null);
+        cancelRaf?.(hostDomRafId);
+        hostDomRafId = 0;
+      }
       stopPolling();
       stopAsyncTelemetryLoop();
       unsubStore();
@@ -2928,7 +3014,7 @@ export function mountWindowOverlay() {
         hoverWidgetHost.destroy();
       } catch {}
       try {
-        appInstance.destroy();
+        appInstance?.destroy?.();
       } catch {}
       try {
         capsuleHost.remove();

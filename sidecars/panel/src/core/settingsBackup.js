@@ -1,6 +1,6 @@
 /**
  * @fileoverview 偏好设置便携 JSON 备份及恢复工具 (`settingsBackup.js`).
- * 仅处理经过白名单归一化的用户界面偏好项，不包含账号凭证及高风险上下文窗口覆盖。
+ * 通过单一声明式字段描述符表同时驱动导出与导入归一化，消除双遍手写 30 个键的漏同步风险。
  */
 
 import {
@@ -36,17 +36,17 @@ function sanitizePositiveBudgetNum(val) {
 }
 
 /**
- * 在浏览器端通过内存 Blob 触发文件下载（零本地磁盘外部写入）。
+ * 在浏览器端通过内存 Blob 触发文件下载（统一承载文本与二进制载荷）。
  *
  * @param {string} filename
- * @param {string} content
+ * @param {BlobPart} blobPart
  * @param {string} [mimeType]
  * @returns {boolean}
  */
-export function triggerTextFileDownload(
+export function triggerBlobDownload(
   filename,
-  content,
-  mimeType = 'application/json;charset=utf-8'
+  blobPart,
+  mimeType = 'application/octet-stream'
 ) {
   try {
     if (
@@ -57,11 +57,11 @@ export function triggerTextFileDownload(
     ) {
       return false;
     }
-    const blob = new Blob([String(content ?? '')], { type: mimeType });
+    const blob = new Blob([blobPart], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.setAttribute('href', url);
-    a.setAttribute('download', String(filename || 'export.json'));
+    a.setAttribute('download', String(filename || 'export.dat'));
     a.style.display = 'none';
     document.body?.appendChild?.(a);
     a.click?.();
@@ -78,6 +78,143 @@ export function triggerTextFileDownload(
 }
 
 /**
+ * 在浏览器端通过内存 Blob 触发文本文件下载。
+ *
+ * @param {string} filename
+ * @param {string} content
+ * @param {string} [mimeType]
+ * @returns {boolean}
+ */
+export function triggerTextFileDownload(
+  filename,
+  content,
+  mimeType = 'application/json;charset=utf-8'
+) {
+  return triggerBlobDownload(
+    String(filename || 'export.json'),
+    String(content ?? ''),
+    mimeType
+  );
+}
+
+const normField = (key, normalizeFn) => ({
+  exportTo: (src, out) => {
+    out[key] = normalizeFn(src[key]);
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key)) patch[key] = normalizeFn(src[key]);
+  },
+});
+
+const boolField = (key, defaultVal) => ({
+  exportTo: (src, out) => {
+    out[key] = defaultVal ? src[key] !== false : src[key] === true;
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key) && typeof src[key] === 'boolean') patch[key] = src[key];
+  },
+});
+
+const arrayField = (key, normalizeFn) => ({
+  exportTo: (src, out) => {
+    out[key] = normalizeFn(src[key]);
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key) && Array.isArray(src[key])) patch[key] = normalizeFn(src[key]);
+  },
+});
+
+const positiveBudgetField = (key, fallbackVal) => ({
+  exportTo: (src, out) => {
+    out[key] = sanitizePositiveBudgetNum(src[key]) ?? fallbackVal;
+  },
+  importTo: (src, hasKey, patch) => {
+    if (hasKey(key)) {
+      const num = sanitizePositiveBudgetNum(src[key]);
+      if (num !== null) patch[key] = num;
+    }
+  },
+});
+
+const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
+  normField('language', normalizeLanguageSetting),
+  normField('themeAccent', normalizeThemeAccent),
+  normField('fontScale', normalizeFontScale),
+  {
+    exportTo: (src, out) => {
+      out.modernUi = src.modernUi !== undefined ? normalizeModernUi(src.modernUi) : true;
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('modernUi')) {
+        const val = normalizeModernUi(src.modernUi);
+        patch.modernUi = val;
+        patch.experimentalModernUi = val;
+      }
+    },
+  },
+  normField('weeklyLimitMode', normalizeWeeklyLimitMode),
+  positiveBudgetField('weeklyTokenBudget', 150000000),
+  positiveBudgetField('weeklyCostBudget', 100),
+  {
+    exportTo: (src, out) => {
+      const mode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
+      out.modelDisplayMode = mode;
+      out.showUpstreamModel = mode !== 'short';
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('modelDisplayMode') || hasKey('showUpstreamModel')) {
+        const mode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
+        patch.modelDisplayMode = mode;
+        patch.showUpstreamModel = mode !== 'short';
+      }
+    },
+  },
+  normField('orchestratorIdMode', normalizeOrchestratorIdMode),
+  {
+    exportTo: (src, out) => {
+      out.pluginUpdateMode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('pluginUpdateMode') || hasKey('autoUpdatePlugin')) {
+        const mode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);
+        patch.pluginUpdateMode = mode;
+        patch.autoUpdatePlugin = mode === 'auto';
+      }
+    },
+  },
+  {
+    exportTo: (src, out) => {
+      out.windowMountMode = normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay);
+    },
+    importTo: (src, hasKey, patch) => {
+      if (hasKey('windowMountMode') || hasKey('enableWindowOverlay')) {
+        const mode = normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay);
+        patch.windowMountMode = mode;
+        patch.enableWindowOverlay = mode !== 'sidebar';
+      }
+    },
+  },
+  normField('popoverWidthMode', normalizePopoverWidthMode),
+  normField('popoverWidth', normalizePopoverWidth),
+  boolField('enableCliStatusLine', true),
+  normField('cliStatusLineSlots', normalizeCliStatusLineSlots),
+  normField('standalonePort', normalizeStandalonePort),
+  boolField('showTopbarMultiSession', true),
+  normField('contextAgentMode', normalizeContextAgentMode),
+  arrayField('topbarCapsuleSlots', normalizeTopbarCapsuleSlots),
+  arrayField('hoverModules', normalizeHoverModules),
+  arrayField('overviewModules', normalizeOverviewModules),
+  arrayField('overviewMetrics', normalizeOverviewMetrics),
+  boolField('showStepTurnRail', false),
+  boolField('showStepAgentBadge', true),
+  boolField('showStepSpeedColor', false),
+  boolField('showStepFilterToolbar', false),
+  normField('stepTokenComboFormat', normalizeStepTokenComboFormat),
+  arrayField('stepTableColumns', normalizeStepTableColumns),
+  normField('experimentalQuotaReservation', normalizeExperimentalQuotaReservation),
+]);
+
+/**
  * 将当前用户偏好设置序列化为跨设备可迁移的安全 JSON 备份文本（仅包含便携偏好项，不包含凭证或高风险覆盖开关）。
  *
  * @param {object} [settings={}]
@@ -85,46 +222,15 @@ export function triggerTextFileDownload(
  */
 export function buildExportableSettingsJson(settings = {}) {
   const src = settings && typeof settings === 'object' ? settings : {};
-  const modelDisplayMode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
-  const modernUi = src.modernUi !== undefined ? normalizeModernUi(src.modernUi) : true;
+  const outSettings = {};
+  for (const desc of PORTABLE_SETTING_DESCRIPTORS) {
+    desc.exportTo(src, outSettings);
+  }
   const payload = {
     schema: SETTINGS_BACKUP_SCHEMA,
     version: 1,
     exportedAt: new Date().toISOString(),
-    settings: {
-      language: normalizeLanguageSetting(src.language),
-      themeAccent: normalizeThemeAccent(src.themeAccent),
-      fontScale: normalizeFontScale(src.fontScale),
-      modernUi,
-      weeklyLimitMode: normalizeWeeklyLimitMode(src.weeklyLimitMode),
-      weeklyTokenBudget: sanitizePositiveBudgetNum(src.weeklyTokenBudget) ?? 150000000,
-      weeklyCostBudget: sanitizePositiveBudgetNum(src.weeklyCostBudget) ?? 100,
-      modelDisplayMode,
-      showUpstreamModel: modelDisplayMode !== 'short',
-      orchestratorIdMode: normalizeOrchestratorIdMode(src.orchestratorIdMode),
-      pluginUpdateMode: normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin),
-      windowMountMode: normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay),
-      popoverWidthMode: normalizePopoverWidthMode(src.popoverWidthMode),
-      popoverWidth: normalizePopoverWidth(src.popoverWidth),
-      enableCliStatusLine: src.enableCliStatusLine !== false,
-      cliStatusLineSlots: normalizeCliStatusLineSlots(src.cliStatusLineSlots),
-      standalonePort: normalizeStandalonePort(src.standalonePort),
-      showTopbarMultiSession: src.showTopbarMultiSession !== false,
-      contextAgentMode: normalizeContextAgentMode(src.contextAgentMode),
-      topbarCapsuleSlots: normalizeTopbarCapsuleSlots(src.topbarCapsuleSlots),
-      hoverModules: normalizeHoverModules(src.hoverModules),
-      overviewModules: normalizeOverviewModules(src.overviewModules),
-      overviewMetrics: normalizeOverviewMetrics(src.overviewMetrics),
-      showStepTurnRail: src.showStepTurnRail === true,
-      showStepAgentBadge: src.showStepAgentBadge !== false,
-      showStepSpeedColor: src.showStepSpeedColor === true,
-      showStepFilterToolbar: src.showStepFilterToolbar === true,
-      stepTokenComboFormat: normalizeStepTokenComboFormat(src.stepTokenComboFormat),
-      stepTableColumns: normalizeStepTableColumns(src.stepTableColumns),
-      experimentalQuotaReservation: normalizeExperimentalQuotaReservation(
-        src.experimentalQuotaReservation
-      ),
-    },
+    settings: outSettings,
   };
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
@@ -158,98 +264,8 @@ export function parseImportedSettingsJson(rawText) {
   const hasKey = (k) => Object.prototype.hasOwnProperty.call(src, k);
   const patch = {};
 
-  if (hasKey('language')) patch.language = normalizeLanguageSetting(src.language);
-  if (hasKey('themeAccent')) patch.themeAccent = normalizeThemeAccent(src.themeAccent);
-  if (hasKey('fontScale')) patch.fontScale = normalizeFontScale(src.fontScale);
-  if (hasKey('modernUi')) {
-    const val = normalizeModernUi(src.modernUi);
-    patch.modernUi = val;
-    patch.experimentalModernUi = val;
-  }
-  if (hasKey('weeklyLimitMode')) {
-    patch.weeklyLimitMode = normalizeWeeklyLimitMode(src.weeklyLimitMode);
-  }
-  if (hasKey('weeklyTokenBudget')) {
-    const num = sanitizePositiveBudgetNum(src.weeklyTokenBudget);
-    if (num !== null) patch.weeklyTokenBudget = num;
-  }
-  if (hasKey('weeklyCostBudget')) {
-    const num = sanitizePositiveBudgetNum(src.weeklyCostBudget);
-    if (num !== null) patch.weeklyCostBudget = num;
-  }
-  if (hasKey('modelDisplayMode') || hasKey('showUpstreamModel')) {
-    const mode = normalizeModelDisplayMode(src.modelDisplayMode, src.showUpstreamModel);
-    patch.modelDisplayMode = mode;
-    patch.showUpstreamModel = mode !== 'short';
-  }
-  if (hasKey('orchestratorIdMode')) {
-    patch.orchestratorIdMode = normalizeOrchestratorIdMode(src.orchestratorIdMode);
-  }
-  if (hasKey('pluginUpdateMode') || hasKey('autoUpdatePlugin')) {
-    const mode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);
-    patch.pluginUpdateMode = mode;
-    patch.autoUpdatePlugin = mode === 'auto';
-  }
-  if (hasKey('windowMountMode') || hasKey('enableWindowOverlay')) {
-    const mode = normalizeWindowMountMode(src.windowMountMode, src.enableWindowOverlay);
-    patch.windowMountMode = mode;
-    patch.enableWindowOverlay = mode !== 'sidebar';
-  }
-  if (hasKey('popoverWidthMode')) {
-    patch.popoverWidthMode = normalizePopoverWidthMode(src.popoverWidthMode);
-  }
-  if (hasKey('popoverWidth')) {
-    patch.popoverWidth = normalizePopoverWidth(src.popoverWidth);
-  }
-  if (hasKey('enableCliStatusLine') && typeof src.enableCliStatusLine === 'boolean') {
-    patch.enableCliStatusLine = src.enableCliStatusLine;
-  }
-  if (hasKey('cliStatusLineSlots')) {
-    patch.cliStatusLineSlots = normalizeCliStatusLineSlots(src.cliStatusLineSlots);
-  }
-  if (hasKey('standalonePort')) {
-    patch.standalonePort = normalizeStandalonePort(src.standalonePort);
-  }
-  if (hasKey('showTopbarMultiSession') && typeof src.showTopbarMultiSession === 'boolean') {
-    patch.showTopbarMultiSession = src.showTopbarMultiSession;
-  }
-  if (hasKey('contextAgentMode')) {
-    patch.contextAgentMode = normalizeContextAgentMode(src.contextAgentMode);
-  }
-  if (hasKey('topbarCapsuleSlots') && Array.isArray(src.topbarCapsuleSlots)) {
-    patch.topbarCapsuleSlots = normalizeTopbarCapsuleSlots(src.topbarCapsuleSlots);
-  }
-  if (hasKey('hoverModules') && Array.isArray(src.hoverModules)) {
-    patch.hoverModules = normalizeHoverModules(src.hoverModules);
-  }
-  if (hasKey('overviewModules') && Array.isArray(src.overviewModules)) {
-    patch.overviewModules = normalizeOverviewModules(src.overviewModules);
-  }
-  if (hasKey('overviewMetrics') && Array.isArray(src.overviewMetrics)) {
-    patch.overviewMetrics = normalizeOverviewMetrics(src.overviewMetrics);
-  }
-  if (hasKey('showStepTurnRail') && typeof src.showStepTurnRail === 'boolean') {
-    patch.showStepTurnRail = src.showStepTurnRail;
-  }
-  if (hasKey('showStepAgentBadge') && typeof src.showStepAgentBadge === 'boolean') {
-    patch.showStepAgentBadge = src.showStepAgentBadge;
-  }
-  if (hasKey('showStepSpeedColor') && typeof src.showStepSpeedColor === 'boolean') {
-    patch.showStepSpeedColor = src.showStepSpeedColor;
-  }
-  if (hasKey('showStepFilterToolbar') && typeof src.showStepFilterToolbar === 'boolean') {
-    patch.showStepFilterToolbar = src.showStepFilterToolbar;
-  }
-  if (hasKey('stepTokenComboFormat')) {
-    patch.stepTokenComboFormat = normalizeStepTokenComboFormat(src.stepTokenComboFormat);
-  }
-  if (hasKey('stepTableColumns') && Array.isArray(src.stepTableColumns)) {
-    patch.stepTableColumns = normalizeStepTableColumns(src.stepTableColumns);
-  }
-  if (hasKey('experimentalQuotaReservation')) {
-    patch.experimentalQuotaReservation = normalizeExperimentalQuotaReservation(
-      src.experimentalQuotaReservation
-    );
+  for (const desc of PORTABLE_SETTING_DESCRIPTORS) {
+    desc.importTo(src, hasKey, patch);
   }
 
   const appliedCount = Object.keys(patch).length;

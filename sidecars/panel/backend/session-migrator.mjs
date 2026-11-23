@@ -13,6 +13,13 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { extractShortPromptTitle } from '../shared/prompt-clean.mjs';
+import {
+  parseWorkspaceDisplayLabel,
+  parseWorkspaceUrisColumn,
+  toDesktopEncodedWorkspaceUri,
+  toRawWorkspaceFileUri,
+} from '../shared/workspace-uri.mjs';
 import {
   cpSync,
   existsSync,
@@ -115,97 +122,19 @@ function migratorFormatSqliteUtcTime(epochMs) {
  * @returns {string}
  */
 export function migratorToRawFileUri(rawInput) {
-  const raw = String(rawInput || '').trim();
-  if (!raw) return '';
-  if (/^file:\/\//i.test(raw)) {
-    let body = raw.replace(/^file:\/\/\/?/i, '');
-    try {
-      body = decodeURIComponent(body);
-    } catch {
-      body = body.replace(/%3A/gi, ':');
-    }
-    body = body.replace(/\\/g, '/').replace(/^\/+/, '');
-    if (/^[a-zA-Z]:/.test(body)) {
-      return `file:///${body}`;
-    }
-    return `file:///${body}`;
-  }
-  const normalized = raw.replace(/\\/g, '/');
-  if (/^[a-zA-Z]:\//.test(normalized)) {
-    return `file:///${normalized}`;
-  }
-  if (normalized.startsWith('/')) {
-    return `file://${normalized}`;
-  }
-  return `file:///${normalized}`;
+  return toRawWorkspaceFileUri(rawInput);
 }
 
-/**
- * 将 `file://` URI 或本地路径规整为 Antigravity 桌面端标准编码格式（Windows 盘符小写 + `%3A`）。
- *
- * @param {string} rawInput
- * @returns {string}
- */
 export function migratorToDesktopEncodedUri(rawInput) {
-  const raw = String(rawInput || '').trim();
-  if (!raw) return '';
-  if (/^file:\/\/\/[a-z]%3A\//i.test(raw)) {
-    return raw.replace(/^file:\/\/\/([a-zA-Z])%3A\//i, (_, d) => `file:///${d.toLowerCase()}%3A/`);
-  }
-  const unencoded = migratorToRawFileUri(raw);
-  const body = unencoded.replace(/^file:\/\/\//i, '');
-  const winMatch = body.match(/^([a-zA-Z]):(.*)$/);
-  if (winMatch) {
-    const drive = winMatch[1].toLowerCase();
-    const rest = winMatch[2]
-      .split('/')
-      .map((seg) => (seg ? encodeURIComponent(seg) : ''))
-      .join('/');
-    return `file:///${drive}%3A${rest}`;
-  }
-  const encodedPath = body
-    .split('/')
-    .map((seg) => (seg ? encodeURIComponent(seg) : ''))
-    .join('/');
-  return `file:///${encodedPath}`;
+  return toDesktopEncodedWorkspaceUri(rawInput);
 }
 
-/**
- * 从 `file:///` URI 提取可读路径和末级项目显示名。
- *
- * @param {string} rawUri
- * @returns {{ name: string, displayPath: string }}
- */
 export function migratorParseWorkspaceLabel(rawUri) {
-  const raw = String(rawUri || '').trim();
-  if (!raw) return { name: '', displayPath: '' };
-  let decoded = raw.replace(/^file:\/\/\/?/i, '');
-  try {
-    decoded = decodeURIComponent(decoded);
-  } catch {
-    decoded = decoded.replace(/%3A/gi, ':');
-  }
-  decoded = decoded.replace(/\\/g, '/').replace(/\/+$/, '');
-  if (!decoded) return { name: '', displayPath: '' };
-  const parts = decoded.split('/').filter(Boolean);
-  const name = parts.length > 0 ? parts[parts.length - 1] : decoded;
-  return { name, displayPath: decoded };
+  return parseWorkspaceDisplayLabel(rawUri);
 }
 
 function migratorParseWorkspaceUrisColumn(rawVal) {
-  const str = String(rawVal || '').trim();
-  if (!str) return [];
-  if (str.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(str);
-      if (Array.isArray(parsed)) {
-        return parsed.map((item) => String(item || '').trim()).filter(Boolean);
-      }
-    } catch {
-      // 退回单值解析
-    }
-  }
-  return [str];
+  return parseWorkspaceUrisColumn(rawVal);
 }
 
 function migratorEscapePbtxtString(text) {
@@ -217,15 +146,7 @@ function migratorEscapePbtxtString(text) {
 }
 
 function migratorCleanPromptTitle(rawText, maxChars = 72) {
-  const cleaned = String(rawText || '')
-    .replace(/<CONTEXT_SUMMARY>[\s\S]*?<\/CONTEXT_SUMMARY>/gi, '')
-    .replace(/<SYSTEM_MESSAGE>[\s\S]*$/i, '')
-    .replace(/<ADDITIONAL_METADATA>[\s\S]*$/i, '');
-  const reqMatches = [...cleaned.matchAll(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/gi)];
-  const target = reqMatches.length > 0 ? reqMatches[reqMatches.length - 1][1] : cleaned;
-  const singleLine = target.replace(/\s+/g, ' ').trim();
-  if (!singleLine) return '';
-  return singleLine.length <= maxChars ? singleLine : `${singleLine.slice(0, maxChars - 1).trimEnd()}…`;
+  return extractShortPromptTitle(rawText, maxChars);
 }
 
 function migratorDecodeUserPromptFromStepPayload(rawBlob) {
@@ -1129,13 +1050,15 @@ export function migrateSessions(params = {}, options = {}) {
   // 写入目标摘要库前自动留存滚动备份（移动模式同时备份源摘要库）
   const backupRoot = migratorResolveBackupRoot(options.backupDir);
   let backupPath = '';
+  const warnings = [];
   try {
     backupPath = migratorBackupSummaryDb(dstSumDbPath, dstDef.id, backupRoot);
     if (mode === 'move' && existsSync(srcSumDbPath)) {
       migratorBackupSummaryDb(srcSumDbPath, srcDef.id, backupRoot);
     }
-  } catch {
+  } catch (bakErr) {
     backupPath = '';
+    warnings.push(`summary_backup_failed: ${bakErr?.message || 'unknown'}`);
   }
 
   const archiveSrcDir = join(backupRoot, 'archived-sources', srcDef.id);
@@ -1575,6 +1498,7 @@ export function migrateSessions(params = {}, options = {}) {
     migratedCount,
     failedCount,
     backupPath,
+    ...(warnings.length > 0 ? { warnings } : {}),
     needsWindowReload: dstDef.id === 'desktop' && migratedCount > 0,
     results,
   };

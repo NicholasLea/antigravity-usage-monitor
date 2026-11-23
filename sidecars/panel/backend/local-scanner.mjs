@@ -11,6 +11,7 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { extractShortPromptTitle } from '../shared/prompt-clean.mjs';
 import {
   extractLiveActivity,
   extractModelSteps,
@@ -46,6 +47,11 @@ import { PLACEHOLDER_MAP } from './pricing-catalog.mjs';
 const CONV_FILE_RE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(db|pb|db-wal)$/i;
 const TRANSCRIPT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const brainDirListingMemo = new Map();
+const knownExistingTranscriptPaths = new Set();
+let knownBrainCascadeSet = null;
+let knownBrainCascadeSetRootsKey = '';
+
 /**
  * 联合扫描本地多端（Desktop / CLI / IDE）的 `conversations` 与 `brain/<id>/.system_generated/logs/transcript.jsonl`，
  * 按小写 `cascadeId` 归并关联磁盘文件路径。
@@ -76,15 +82,35 @@ function discoverLocalConversationFiles() {
 
   const brainDirs =
     Array.isArray(BRAIN_DIRS) && BRAIN_DIRS.length > 0 ? BRAIN_DIRS : [BRAIN_DIR];
+  const nextBrainUuidSet = new Set();
   for (const dir of brainDirs) {
     if (!dir || !existsSync(dir)) continue;
     try {
-      for (const rawName of readdirSync(dir)) {
-        const name = String(rawName || '').trim();
-        const cascadeId = name.toLowerCase();
-        if (!TRANSCRIPT_UUID_RE.test(cascadeId)) continue;
+      const dirSt = statSync(dir);
+      const dirMtimeMs = Math.floor(dirSt?.mtimeMs || 0);
+      let cachedListing = dirMtimeMs > 0 ? brainDirListingMemo.get(dir) : null;
+      if (!cachedListing || cachedListing.mtimeMs !== dirMtimeMs) {
+        const uuidItems = [];
+        for (const rawName of readdirSync(dir)) {
+          const name = String(rawName || '').trim();
+          const cascadeId = name.toLowerCase();
+          if (!TRANSCRIPT_UUID_RE.test(cascadeId)) continue;
+          uuidItems.push({ name, cascadeId });
+        }
+        cachedListing = { mtimeMs: dirMtimeMs, uuidItems };
+        if (dirMtimeMs > 0) {
+          brainDirListingMemo.set(dir, cachedListing);
+        }
+      }
+      for (const { name, cascadeId } of cachedListing.uuidItems) {
+        nextBrainUuidSet.add(cascadeId);
         const transcriptPath = join(dir, name, '.system_generated', 'logs', 'transcript.jsonl');
-        if (!existsSync(transcriptPath)) continue;
+        if (!knownExistingTranscriptPaths.has(transcriptPath)) {
+          if (!existsSync(transcriptPath)) continue;
+          if (dirMtimeMs > 0) {
+            knownExistingTranscriptPaths.add(transcriptPath);
+          }
+        }
         if (!map.has(cascadeId)) map.set(cascadeId, []);
         map.get(cascadeId).push(transcriptPath);
       }
@@ -92,6 +118,8 @@ function discoverLocalConversationFiles() {
       // 忽略目录读取异常
     }
   }
+  knownBrainCascadeSet = nextBrainUuidSet.size > 0 ? nextBrainUuidSet : null;
+  knownBrainCascadeSetRootsKey = brainDirs.join('|');
 
   const annotationDirs = Array.isArray(ANNOTATION_DIRS) ? ANNOTATION_DIRS : [];
   if (annotationDirs.length > 0 && map.size > 0) {
@@ -381,6 +409,9 @@ export function clearScannerRuntimeMemos(endpointId = null) {
   liveActivityMemo.clear();
   transcriptTailMemo.clear();
   swarmManifestMemo.clear();
+  brainDirListingMemo.clear();
+  knownExistingTranscriptPaths.clear();
+  knownBrainCascadeSet = null;
 }
 
 function findSwarmMembersPath(cascadeId) {
@@ -388,6 +419,13 @@ function findSwarmMembersPath(cascadeId) {
   const normId = String(cascadeId).trim().toLowerCase();
   if (!UUID_RE.test(normId)) return '';
   const dirs = Array.isArray(BRAIN_DIRS) && BRAIN_DIRS.length > 0 ? BRAIN_DIRS : [BRAIN_DIR];
+  if (
+    knownBrainCascadeSet &&
+    knownBrainCascadeSetRootsKey === dirs.join('|') &&
+    !knownBrainCascadeSet.has(normId)
+  ) {
+    return '';
+  }
   let bestPath = '';
   let bestMtime = -1;
   for (const dir of dirs) {
@@ -541,21 +579,7 @@ function inferConversationAppSource(diskFiles = [], extMatch = null) {
 }
 
 function extractOfflineUserTitle(rawContent) {
-  if (typeof rawContent !== 'string' || !rawContent.trim()) return '';
-  const withoutSummary = rawContent
-    .replace(/<CONTEXT_SUMMARY>[\s\S]*?<\/CONTEXT_SUMMARY>/gi, '')
-    .replace(/<SYSTEM_MESSAGE>[\s\S]*$/i, '');
-  const reqMatches = [...withoutSummary.matchAll(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/gi)];
-  const body =
-    reqMatches.length > 0
-      ? reqMatches[reqMatches.length - 1][1]
-      : withoutSummary.replace(/<ADDITIONAL_METADATA>[\s\S]*$/i, '');
-  const firstLine = String(body || '')
-    .split(/\r?\n/)
-    .map((l) => l.replace(/\s+/g, ' ').trim())
-    .find(Boolean);
-  if (!firstLine) return '';
-  return firstLine.length > 48 ? `${firstLine.slice(0, 47)}…` : firstLine;
+  return extractShortPromptTitle(rawContent, 48, { firstLineOnly: true });
 }
 
 const MAX_TITLE_PROBE_CACHE = 2000;
@@ -660,14 +684,28 @@ function hasLocalSqliteDb(diskFiles = []) {
   return Array.isArray(diskFiles) && diskFiles.some((f) => /\.db$/i.test(String(f || '')));
 }
 
-function resolveBestSqliteDbInfo(diskFiles = []) {
+function resolveBestSqliteDbInfo(diskFiles = [], { skipMissingWalFromListing = false } = {}) {
   if (!Array.isArray(diskFiles) || diskFiles.length === 0) return null;
+  let walPathsLower = null;
+  if (skipMissingWalFromListing) {
+    for (const rawPath of diskFiles) {
+      const s = String(rawPath || '').trim();
+      if (/\.db-wal$/i.test(s)) {
+        if (!walPathsLower) walPathsLower = new Set();
+        const fullWal = /[\\/]|^[a-zA-Z]:/.test(s) ? s : join(CONVERSATIONS_DIR, s);
+        walPathsLower.add(fullWal.toLowerCase());
+      }
+    }
+  }
   let best = null;
   for (const rawPath of diskFiles) {
     const p = String(rawPath || '').trim();
     if (!/\.db$/i.test(p)) continue;
     const fullPath = /[\\/]|^[a-zA-Z]:/.test(p) ? p : join(CONVERSATIONS_DIR, p);
-    const walInfo = computeSqliteWalSig(fullPath);
+    const skipWalCheck =
+      skipMissingWalFromListing &&
+      (!walPathsLower || !walPathsLower.has(`${fullPath.toLowerCase()}-wal`));
+    const walInfo = computeSqliteWalSig(fullPath, { skipWalCheck });
     if (!walInfo.exists) continue;
     if (!best || walInfo.mtimeMs > best.mtimeMs) {
       best = {
@@ -1629,7 +1667,9 @@ export async function enumerateAndSyncConversations({
     const localSum = localSummaryByLower.get(cidLower) || null;
     const cached = getEntry(cascadeId);
     const diskFiles = diskConvMap.get(cidLower) || [];
-    const sqliteDbInfo = sqliteAvailable ? resolveBestSqliteDbInfo(diskFiles) : null;
+    const sqliteDbInfo = sqliteAvailable
+      ? resolveBestSqliteDbInfo(diskFiles, { skipMissingWalFromListing: true })
+      : null;
     const dbPath = sqliteDbInfo?.dbPath || '';
     const diskFileSig = sqliteDbInfo?.sig || '';
     const lastModifiedTime = item?.lastModifiedTime || item?.createdTime || '';
@@ -1906,6 +1946,15 @@ export async function enumerateAndSyncConversations({
   }
 
   let lazyExternalByLower = null;
+  const pollSwarmManifestByCid = new Map();
+  const getPollSwarmManifest = (cascadeId) => {
+    if (isRemote || !cascadeId) return null;
+    const key = String(cascadeId).trim().toLowerCase();
+    if (pollSwarmManifestByCid.has(key)) return pollSwarmManifestByCid.get(key);
+    const val = readSwarmManifestForCascade(key);
+    pollSwarmManifestByCid.set(key, val);
+    return val;
+  };
 
   /**
    * 批量拉取会话轨迹并提取步骤、子代理元数据 (`trajectory.metadata`) 与子代理调用引用 (`invokeSubagent`)。
@@ -2063,7 +2112,7 @@ export async function enumerateAndSyncConversations({
             const subagentRefs = extractSubagentRefsFromSteps(rawSteps);
             const rpcSwarmMeta = extractSwarmMetaFromSteps(rawSteps);
             const ownSwarmManifest =
-              !isRemote && !conv.isSubagent ? readSwarmManifestForCascade(cidLower) : null;
+              !isRemote && !conv.isSubagent ? getPollSwarmManifest(cidLower) : null;
             if (ownSwarmManifest?.workerRefs?.length) {
               const seenRefCids = new Set(subagentRefs.map((r) => r.cascadeId));
               for (const wRef of ownSwarmManifest.workerRefs) {
@@ -2422,10 +2471,19 @@ export async function enumerateAndSyncConversations({
     if (hasMissingStepFields(cached)) return true;
     const missingSubagentRefs = !Array.isArray(cached.subagentRefs);
     if (!conv.inSummaries) {
-      if (isRunning || cached.wasRunning) return true;
       if (conv.dbPath && sqliteAvailable) {
-        return cached.signature !== sig;
+        if (Boolean(isRunning) !== Boolean(cached.wasRunning) || cached.signature !== sig) {
+          return true;
+        }
+        if (isRunning) {
+          const prevLive = activeLiveActivityMemo.get(lowerCid);
+          if (prevLive) {
+            conv.liveActivity = prevLive;
+          }
+        }
+        return false;
       }
+      if (isRunning || cached.wasRunning) return true;
       if (
         cached.offlineTranscriptFallback &&
         !cached.offlineSqliteTelemetry &&
@@ -2504,7 +2562,7 @@ export async function enumerateAndSyncConversations({
         const baseRefs = parentConv.subagentRefs || parentCached?.subagentRefs || [];
         const swarmManifest =
           !isRemote && !parentConv.isSubagent
-            ? readSwarmManifestForCascade(parentConv.cascadeId)
+            ? getPollSwarmManifest(parentConv.cascadeId)
             : null;
         let refs = baseRefs;
         if (swarmManifest?.workerRefs?.length) {
@@ -2800,7 +2858,7 @@ export async function enumerateAndSyncConversations({
   for (const rootConv of conversations) {
     const cid = rootConv.cascadeId.toLowerCase();
     const rootCached = getEntry(rootConv.cascadeId);
-    const swarmManifest = isRemote ? null : readSwarmManifestForCascade(cid);
+    const swarmManifest = isRemote ? null : getPollSwarmManifest(cid);
     const swarmTitle = String(swarmManifest?.title || rootCached?.swarmMeta?.title || '').trim();
     if (swarmTitle) {
       rootConv.swarmTitle = swarmTitle;

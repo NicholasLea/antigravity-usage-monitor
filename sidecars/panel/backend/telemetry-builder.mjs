@@ -96,6 +96,9 @@ function roundSessionCost(val) {
 function findTrajectoryCacheEntry(cascadeId, cacheStore = null) {
   if (!cascadeId) return null;
   const store = cacheStore || getEndpointCacheStore(null);
+  if (typeof store.getCachedTrajectoryEntryByLower === 'function') {
+    return store.getCachedTrajectoryEntryByLower(cascadeId)?.entry || null;
+  }
   const entry = store.getCachedTrajectory(cascadeId);
   if (entry) return entry;
   const targetLower = String(cascadeId).toLowerCase();
@@ -811,6 +814,105 @@ function getTelemetrySources(
   return pending;
 }
 
+function classifySubagentDisplayMeta(subSum, subEntry, idx, counters) {
+  const subSpec = subSum.subagentSpec || subEntry?.subagentSpec || null;
+  const isSideQ = Boolean(
+    subSum.isSideQuestion || subEntry?.isSideQuestion || subSpec?.typeName === 'side_question'
+  );
+  const rawRole =
+    subSpec?.role || subSum.agentScriptName || subEntry?.agentScriptName || subSpec?.typeName || '';
+  const parsedSwarm = !isSideQ
+    ? parseSwarmWorkerRole({
+        role: subSpec?.role || '',
+        typeName: subSpec?.typeName || '',
+        agentScriptName: subSum.agentScriptName || subEntry?.agentScriptName || '',
+        memberName: subSum.swarmMemberName || '',
+      })
+    : { isSwarmWorker: false };
+  const isSwarmW = Boolean(!isSideQ && (subSum.isSwarmWorker || parsedSwarm.isSwarmWorker));
+  const isSubRunning = subSum.status === 'CASCADE_RUN_STATUS_RUNNING';
+  const isKilled = Boolean(subSum.killed || subSum.swarmState === 'killed');
+  const subIndex = idx + 1;
+  let sideIndex = 0;
+  let agentKind = 'subagent';
+  let agentOrdinal = 0;
+  let customRole = '';
+  let swarmState = '';
+  let isSwarmAuxiliary = false;
+  let shortLabel = '';
+  let badgeText = '';
+  let roleLabel = '';
+  let runningRole = '';
+  let typeName = '';
+  let agentLabel = '';
+
+  if (isSideQ) {
+    sideIndex = ++counters.side;
+    agentKind = 'side_question';
+    agentOrdinal = sideIndex;
+    shortLabel = `旁路提问 #${sideIndex}`;
+    badgeText = `旁${sideIndex}`;
+    const cleanSideRole =
+      rawRole &&
+      rawRole !== '旁路提问' &&
+      rawRole !== 'Side Question' &&
+      rawRole !== 'side_question'
+        ? rawRole
+        : '';
+    customRole = cleanSideRole;
+    roleLabel = cleanSideRole || '旁路提问';
+    runningRole = cleanSideRole || shortLabel;
+    typeName = 'side_question';
+    agentLabel = cleanSideRole ? `${shortLabel} · ${cleanSideRole}` : shortLabel;
+  } else if (isSwarmW) {
+    const swOrd = ++counters.swarm;
+    agentKind = 'swarm_worker';
+    agentOrdinal = swOrd;
+    const memberTag = parsedSwarm.memberName ? `@${parsedSwarm.memberName}` : '';
+    customRole = memberTag;
+    shortLabel = `蜂群 #${swOrd}`;
+    badgeText = `蜂${swOrd}`;
+    roleLabel = memberTag || '蜂群';
+    runningRole = memberTag || shortLabel;
+    typeName = 'worker';
+    agentLabel = memberTag ? `${shortLabel} · ${memberTag}` : shortLabel;
+    swarmState = isKilled ? 'killed' : isSubRunning ? 'working' : subSum.swarmState || 'waiting';
+    isSwarmAuxiliary = Boolean(subSum.isSwarmAuxiliary || parsedSwarm.isAuxiliary);
+  } else {
+    const subOrd = ++counters.normal;
+    agentKind = 'subagent';
+    agentOrdinal = subOrd;
+    customRole = rawRole && rawRole !== '子代理' && rawRole !== 'Subagent' ? rawRole : '';
+    shortLabel = `子代理 #${subOrd}`;
+    badgeText = `子${subOrd}`;
+    roleLabel = rawRole || '子代理';
+    runningRole = rawRole || shortLabel;
+    typeName = subSpec?.typeName || '';
+    agentLabel = rawRole ? `${shortLabel} · ${rawRole}` : shortLabel;
+  }
+
+  return {
+    subSpec,
+    isSideQ,
+    isSwarmW,
+    isSubRunning,
+    isKilled,
+    subIndex,
+    sideIndex,
+    agentKind,
+    agentOrdinal,
+    customRole,
+    swarmState,
+    isSwarmAuxiliary,
+    shortLabel,
+    badgeText,
+    roleLabel,
+    runningRole,
+    typeName,
+    agentLabel,
+  };
+}
+
 function buildActiveConversationAssembly({
   activeCascadeId,
   activeConvSummary,
@@ -942,9 +1044,7 @@ function buildActiveConversationAssembly({
   let totalFamilyCacheReadTokens = sessionCacheReadTokens;
   let totalFamilyOutputTokens = sessionOutputTokens;
 
-  let normalSubCount = 0;
-  let swarmWorkerCount = 0;
-  let sideQuestionCount = 0;
+  const subCounters = { normal: 0, swarm: 0, side: 0 };
   for (let idx = 0; idx < subagentSummaries.length; idx++) {
     const subSum = subagentSummaries[idx];
     const subCid = subSum.cascadeId;
@@ -953,78 +1053,21 @@ function buildActiveConversationAssembly({
     const subRawSteps = subRawStepsList[idx];
     for (const step of subRawSteps) allCombinedRawSteps.push(step);
 
-    const subSpec = subSum.subagentSpec || subEntry?.subagentSpec || null;
-    const isSideQ = Boolean(
-      subSum.isSideQuestion || subEntry?.isSideQuestion || subSpec?.typeName === 'side_question'
-    );
-    const rawRole =
-      subSpec?.role || subSum.agentScriptName || subEntry?.agentScriptName || subSpec?.typeName || '';
-    const parsedSwarm = !isSideQ
-      ? parseSwarmWorkerRole({
-          role: subSpec?.role || '',
-          typeName: subSpec?.typeName || '',
-          agentScriptName: subSum.agentScriptName || subEntry?.agentScriptName || '',
-          memberName: subSum.swarmMemberName || '',
-        })
-      : { isSwarmWorker: false };
-    const isSwarmW = Boolean(!isSideQ && (subSum.isSwarmWorker || parsedSwarm.isSwarmWorker));
-    const subIndex = idx + 1;
-    let sideIndex = 0;
-    let agentKind = 'subagent';
-    let agentOrdinal = 0;
-    let customRole = '';
-    let swarmState = '';
-    let isSwarmAuxiliary = false;
-    let shortLabel = '';
-    let badgeText = '';
-    let roleLabel = '';
-    let typeName = '';
-    let agentLabel = '';
-    if (isSideQ) {
-      sideIndex = ++sideQuestionCount;
-      agentKind = 'side_question';
-      agentOrdinal = sideIndex;
-      shortLabel = `旁路提问 #${sideIndex}`;
-      badgeText = `旁${sideIndex}`;
-      const cleanSideRole =
-        rawRole &&
-        rawRole !== '旁路提问' &&
-        rawRole !== 'Side Question' &&
-        rawRole !== 'side_question'
-          ? rawRole
-          : '';
-      customRole = cleanSideRole;
-      roleLabel = cleanSideRole || '旁路提问';
-      typeName = 'side_question';
-      agentLabel = cleanSideRole ? `${shortLabel} · ${cleanSideRole}` : shortLabel;
-    } else if (isSwarmW) {
-      const swOrd = ++swarmWorkerCount;
-      agentKind = 'swarm_worker';
-      agentOrdinal = swOrd;
-      const memberTag = parsedSwarm.memberName ? `@${parsedSwarm.memberName}` : '';
-      customRole = memberTag;
-      shortLabel = `蜂群 #${swOrd}`;
-      badgeText = `蜂${swOrd}`;
-      roleLabel = memberTag || '蜂群';
-      typeName = 'worker';
-      agentLabel = memberTag ? `${shortLabel} · ${memberTag}` : shortLabel;
-      swarmState = subSum.killed
-        ? 'killed'
-        : subSum.status === 'CASCADE_RUN_STATUS_RUNNING'
-          ? 'working'
-          : subSum.swarmState || 'waiting';
-      isSwarmAuxiliary = Boolean(subSum.isSwarmAuxiliary || parsedSwarm.isAuxiliary);
-    } else {
-      const subOrd = ++normalSubCount;
-      agentKind = 'subagent';
-      agentOrdinal = subOrd;
-      customRole = rawRole && rawRole !== '子代理' && rawRole !== 'Subagent' ? rawRole : '';
-      shortLabel = `子代理 #${subOrd}`;
-      badgeText = `子${subOrd}`;
-      roleLabel = rawRole || '子代理';
-      typeName = subSpec?.typeName || '';
-      agentLabel = rawRole ? `${shortLabel} · ${rawRole}` : shortLabel;
-    }
+    const {
+      isSideQ,
+      subIndex,
+      sideIndex,
+      agentKind,
+      agentOrdinal,
+      customRole,
+      swarmState,
+      isSwarmAuxiliary,
+      shortLabel,
+      badgeText,
+      roleLabel,
+      typeName,
+      agentLabel,
+    } = classifySubagentDisplayMeta(subSum, subEntry, idx, subCounters);
 
     const subUnit = buildAgentUnitTelemetry({
       agentId: subCid,
@@ -1179,11 +1222,11 @@ function buildActiveConversationAssembly({
         mainAgentTelemetry;
 
     const roleSummaryParts = [];
-    if (swarmWorkerCount > 0) roleSummaryParts.push(`${swarmWorkerCount} 蜂群`);
-    if (normalSubCount > 0) roleSummaryParts.push(`${normalSubCount} 子代理`);
-    if (sideQuestionCount > 0) {
+    if (subCounters.swarm > 0) roleSummaryParts.push(`${subCounters.swarm} 蜂群`);
+    if (subCounters.normal > 0) roleSummaryParts.push(`${subCounters.normal} 子代理`);
+    if (subCounters.side > 0) {
       roleSummaryParts.push(
-        roleSummaryParts.length > 0 ? `${sideQuestionCount} 旁问` : `${sideQuestionCount} 旁路提问`
+        roleSummaryParts.length > 0 ? `${subCounters.side} 旁问` : `${subCounters.side} 旁路提问`
       );
     }
     const aggregatedRoleLabel =
@@ -1290,9 +1333,9 @@ function buildActiveConversationAssembly({
     stepCount: enrichedActiveSteps.length,
     hasSubagents: subAgentTelemetries.length > 0,
     subagentCount: subAgentTelemetries.length,
-    swarmCount: swarmWorkerCount,
-    normalSubagentCount: normalSubCount,
-    sideQuestionCount,
+    swarmCount: subCounters.swarm,
+    normalSubagentCount: subCounters.normal,
+    sideQuestionCount: subCounters.side,
     totalStepsAllAgents: subAgentTelemetries.length
       ? allCombinedEnrichedSteps.length
       : enrichedActiveSteps.length,
@@ -1846,80 +1889,27 @@ export async function buildTelemetryPayloadInternal(
     const rootFallbackMs =
       rootConv.lastModifiedMs || rootEntry?.lastModifiedMs || rootConv.createdTimeMs || 0;
 
-    let runNormalSubIdx = 0;
-    let runSwarmIdx = 0;
-    let runSideIdx = 0;
+    const runCounters = { normal: 0, swarm: 0, side: 0 };
     const subItems = rawSubs.map((subSum, idx) => {
       const subCid = subSum.cascadeId;
       const subEntry = findTrajectoryCacheEntry(subCid, cacheStore);
-      const subSpec = subSum.subagentSpec || subEntry?.subagentSpec || null;
-      const isSideQ = Boolean(
-        subSum.isSideQuestion || subEntry?.isSideQuestion || subSpec?.typeName === 'side_question'
-      );
-      const rawRole =
-        subSpec?.role ||
-        subSum.agentScriptName ||
-        subEntry?.agentScriptName ||
-        subSpec?.typeName ||
-        '';
-      const parsedSwarm = !isSideQ
-        ? parseSwarmWorkerRole({
-            role: subSpec?.role || '',
-            typeName: subSpec?.typeName || '',
-            agentScriptName: subSum.agentScriptName || subEntry?.agentScriptName || '',
-            memberName: subSum.swarmMemberName || '',
-          })
-        : { isSwarmWorker: false };
-      const isSwarmW = Boolean(!isSideQ && (subSum.isSwarmWorker || parsedSwarm.isSwarmWorker));
-      const subIndex = idx + 1;
-      let sideIndex = 0;
-      let agentKind = 'subagent';
-      let agentOrdinal = 0;
-      let customRole = '';
-      let swarmState = '';
-      let isSwarmAuxiliary = false;
-      let badgeText = '';
-      let shortLabel = '';
-      let role = '';
-      if (isSideQ) {
-        sideIndex = ++runSideIdx;
-        agentKind = 'side_question';
-        agentOrdinal = sideIndex;
-        badgeText = `旁${sideIndex}`;
-        shortLabel = `旁路提问 #${sideIndex}`;
-        const cleanSide =
-          rawRole &&
-          rawRole !== '旁路提问' &&
-          rawRole !== 'Side Question' &&
-          rawRole !== 'side_question'
-            ? rawRole
-            : '';
-        customRole = cleanSide;
-        role = cleanSide || shortLabel;
-      } else if (isSwarmW) {
-        const swOrd = ++runSwarmIdx;
-        agentKind = 'swarm_worker';
-        agentOrdinal = swOrd;
-        const memberTag = parsedSwarm.memberName ? `@${parsedSwarm.memberName}` : '';
-        customRole = memberTag;
-        badgeText = `蜂${swOrd}`;
-        shortLabel = `蜂群 #${swOrd}`;
-        role = memberTag || shortLabel;
-        isSwarmAuxiliary = Boolean(subSum.isSwarmAuxiliary || parsedSwarm.isAuxiliary);
-      } else {
-        const nOrd = ++runNormalSubIdx;
-        agentKind = 'subagent';
-        agentOrdinal = nOrd;
-        customRole = rawRole && rawRole !== '子代理' && rawRole !== 'Subagent' ? rawRole : '';
-        badgeText = `子${nOrd}`;
-        shortLabel = `子代理 #${nOrd}`;
-        role = rawRole || shortLabel;
-      }
-      const isSubRunning = subSum.status === 'CASCADE_RUN_STATUS_RUNNING';
-      const isKilled = Boolean(subSum.killed || subSum.swarmState === 'killed');
-      if (isSwarmW) {
-        swarmState = isKilled ? 'killed' : isSubRunning ? 'working' : subSum.swarmState || 'waiting';
-      }
+      const {
+        subSpec,
+        isSideQ,
+        isSwarmW,
+        isSubRunning,
+        isKilled,
+        subIndex,
+        sideIndex,
+        agentKind,
+        agentOrdinal,
+        customRole,
+        swarmState,
+        isSwarmAuxiliary,
+        badgeText,
+        shortLabel,
+        runningRole: role,
+      } = classifySubagentDisplayMeta(subSum, subEntry, idx, runCounters);
       const stepCount = Number(subSum.stepCount ?? subEntry?.steps?.length ?? 0);
       const subModMs = subSum.lastModifiedMs || subEntry?.lastModifiedMs || 0;
       const liveActivity = isSubRunning
@@ -2088,9 +2078,9 @@ export async function buildTelemetryPayloadInternal(
       lastModifiedMs: rootConv.groupLastModifiedMs || rootConv.lastModifiedMs || 0,
       mainActivity: resolvedMainActivity,
       subagentCount: subItems.length,
-      swarmCount: runSwarmIdx,
-      normalSubagentCount: runNormalSubIdx,
-      sideQuestionCount: runSideIdx,
+      swarmCount: runCounters.swarm,
+      normalSubagentCount: runCounters.normal,
+      sideQuestionCount: runCounters.side,
       runningSubagentCount: runningSubList.length,
       runningSwarmCount: runningSubList.filter((s) => s.agentKind === 'swarm_worker').length,
       subagents: subItems,
@@ -2115,7 +2105,7 @@ export async function buildTelemetryPayloadInternal(
     windowBridge: getDefaultWindowBridgeStatus(),
     cloudCodeProxy: getDefaultCloudCodeProxyStatus(),
     cliStatusLine: getCliStatusLineRuntimeStatus(),
-    settings: loadSettings(),
+    settings,
     contextWindowModels: getContextWindowGroups(getContextWindowModels(clientConfigs, contextModelCatalog)).map((group) => {
       const latest = group.members.reduce((previous, id) => {
         const reported = reportedContextLimits.get(id);

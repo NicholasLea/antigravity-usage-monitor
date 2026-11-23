@@ -26,6 +26,8 @@ const REGEX_PRECEDING_KEYWORDS = new Set([
   'await',
 ]);
 
+const REGEX_AFTER_PAREN_KEYWORDS = new Set(['if', 'while', 'for', 'with']);
+
 function isIdentStart(ch) {
   if (!ch) return false;
   const code = ch.charCodeAt(0);
@@ -167,6 +169,24 @@ function scanExportClauseEnd(source, afterExportIdx, onImport, onExport) {
     }
   }
 
+  function emitBraceExports() {
+    if (!braceBody || !onExport) return;
+    const cleaned = braceBody.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, ' ');
+    for (const part of cleaned.split(',')) {
+      const tok = part.trim();
+      if (!tok) continue;
+      const asMatch =
+        /^([$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*)\s+as\s+([$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*)$/u.exec(
+          tok
+        );
+      if (asMatch) {
+        onExport(asMatch[2], true, asMatch[1]);
+      } else {
+        onExport(tok, true, tok);
+      }
+    }
+  }
+
   const peekFrom = skipSpacesAndComments(source, idx);
   if (source.startsWith('from', peekFrom) && !isIdentPart(source[peekFrom + 4])) {
     const specIdx = skipSpacesAndComments(source, peekFrom + 4);
@@ -174,20 +194,25 @@ function scanExportClauseEnd(source, afterExportIdx, onImport, onExport) {
       const specEnd = skipSimpleString(source, specIdx);
       const specifier = source.slice(specIdx + 1, specEnd - 1);
       onImport?.(specifier, braceBody ? `{ ${braceBody} } from` : '');
+      if (braceBody) {
+        const cleaned = braceBody.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, ' ');
+        for (const part of cleaned.split(',')) {
+          const tok = part.trim();
+          if (!tok) continue;
+          const asMatch =
+            /^([$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*)\s+as\s+([$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*)$/u.exec(
+              tok
+            );
+          const exportedName = asMatch ? asMatch[2] : tok;
+          onExport?.(exportedName, true, exportedName);
+        }
+      }
       idx = specEnd;
       return consumeTrailingStatementEnd(source, idx);
     }
   }
 
-  if (braceBody && onExport) {
-    const cleaned = braceBody.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, ' ');
-    for (const part of cleaned.split(',')) {
-      const tok = part.trim();
-      if (!tok) continue;
-      const asMatch = /^([$_\w]+)\s+as\s+([$_\w]+)$/.exec(tok);
-      onExport(asMatch ? asMatch[2] : tok, true);
-    }
-  }
+  emitBraceExports();
   return consumeTrailingStatementEnd(source, idx);
 }
 
@@ -227,9 +252,11 @@ export function stripModuleSyntax(source, onImport, onExport) {
   let i = 0;
   let braceDepth = 0;
   let parenDepth = 0;
+  const parenAllowsRegexStack = [];
   const tplBraceStack = [];
   let canStartRegex = true;
   let prevNonWsChar = '';
+  let pendingRegexParenKeyword = '';
 
   function scanTemplateChunk(startAfterBacktickOrBrace) {
     let idx = startAfterBacktickOrBrace;
@@ -294,6 +321,7 @@ export function stripModuleSyntax(source, onImport, onExport) {
       out += source.slice(i, end);
       canStartRegex = false;
       prevNonWsChar = ch;
+      pendingRegexParenKeyword = '';
       i = end;
       continue;
     }
@@ -301,6 +329,7 @@ export function stripModuleSyntax(source, onImport, onExport) {
     // Template literal start
     if (ch === '`') {
       out += '`';
+      pendingRegexParenKeyword = '';
       i = scanTemplateChunk(i + 1);
       continue;
     }
@@ -329,6 +358,7 @@ export function stripModuleSyntax(source, onImport, onExport) {
       out += source.slice(i, end);
       canStartRegex = false;
       prevNonWsChar = '/';
+      pendingRegexParenKeyword = '';
       i = end;
       continue;
     }
@@ -339,11 +369,13 @@ export function stripModuleSyntax(source, onImport, onExport) {
       out += ch;
       canStartRegex = true;
       prevNonWsChar = ch;
+      pendingRegexParenKeyword = '';
       i += 1;
       continue;
     }
 
     if (ch === '}') {
+      pendingRegexParenKeyword = '';
       if (tplBraceStack.length > 0 && braceDepth === tplBraceStack[tplBraceStack.length - 1] + 1) {
         braceDepth -= 1;
         tplBraceStack.pop();
@@ -361,6 +393,8 @@ export function stripModuleSyntax(source, onImport, onExport) {
 
     if (ch === '(') {
       parenDepth += 1;
+      parenAllowsRegexStack.push(Boolean(pendingRegexParenKeyword));
+      pendingRegexParenKeyword = '';
       out += ch;
       canStartRegex = true;
       prevNonWsChar = ch;
@@ -370,8 +404,10 @@ export function stripModuleSyntax(source, onImport, onExport) {
 
     if (ch === ')') {
       parenDepth = Math.max(0, parenDepth - 1);
+      const allowsRegexAfterParen = parenAllowsRegexStack.pop() ?? false;
+      pendingRegexParenKeyword = '';
       out += ch;
-      canStartRegex = false;
+      canStartRegex = allowsRegexAfterParen;
       prevNonWsChar = ch;
       i += 1;
       continue;
@@ -397,6 +433,7 @@ export function stripModuleSyntax(source, onImport, onExport) {
           i = scanImportDeclarationEnd(source, afterImport, onImport);
           canStartRegex = true;
           prevNonWsChar = ';';
+          pendingRegexParenKeyword = '';
           continue;
         }
       }
@@ -408,6 +445,7 @@ export function stripModuleSyntax(source, onImport, onExport) {
           i = scanExportClauseEnd(source, afterExport, onImport, onExport);
           canStartRegex = true;
           prevNonWsChar = ';';
+          pendingRegexParenKeyword = '';
           continue;
         }
         // `export default ...`
@@ -421,12 +459,14 @@ export function stripModuleSyntax(source, onImport, onExport) {
             recordExportedDeclarationIdent(source, afterDefault, onExport);
             i = afterDefault;
             canStartRegex = false;
+            pendingRegexParenKeyword = '';
             continue;
           }
           out += 'void ';
           i = afterDefault;
           canStartRegex = true;
           prevNonWsChar = 'd';
+          pendingRegexParenKeyword = '';
           continue;
         }
         // `export const|let|var|function|class|async ...`
@@ -441,10 +481,18 @@ export function stripModuleSyntax(source, onImport, onExport) {
           recordExportedDeclarationIdent(source, afterExport, onExport);
           i = afterExport;
           canStartRegex = false;
+          pendingRegexParenKeyword = '';
           continue;
         }
       }
 
+      if (prevNonWsChar !== '.' && REGEX_AFTER_PAREN_KEYWORDS.has(word)) {
+        pendingRegexParenKeyword = word;
+      } else if (pendingRegexParenKeyword === 'for' && word === 'await') {
+        pendingRegexParenKeyword = 'for_await';
+      } else {
+        pendingRegexParenKeyword = '';
+      }
       out += word;
       canStartRegex = REGEX_PRECEDING_KEYWORDS.has(word);
       prevNonWsChar = word[word.length - 1];
@@ -453,6 +501,7 @@ export function stripModuleSyntax(source, onImport, onExport) {
     }
 
     // Numbers & other punctuation
+    pendingRegexParenKeyword = '';
     out += ch;
     if (/[0-9\]`]/.test(ch)) {
       canStartRegex = false;
@@ -468,19 +517,43 @@ export function stripModuleSyntax(source, onImport, onExport) {
   return out;
 }
 
-function validateBundleImport(sourcePath, specifier, clause, bundledPaths, moduleImportedNames) {
+function validateBundleImport(
+  sourcePath,
+  specifier,
+  clause,
+  bundledPaths,
+  moduleImportedNames,
+  moduleImportAliases,
+  outerExportedSymbols
+) {
   const binding = clause.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, ' ').trim();
   if (binding) {
     const named = /^\{([^}]*)\}\s*from$/.exec(binding);
     const identifier = /^[$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*$/u;
+    const aliasPattern =
+      /^([$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*)\s+as\s+([$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*)$/u;
     if (!named) {
-      throw new Error(`${sourcePath}: only named imports without aliases are supported in app.js`);
+      throw new Error(`${sourcePath}: only named imports are supported in app.js`);
     }
     for (const rawItem of named[1].split(',')) {
       const name = rawItem.trim();
       if (!name) continue;
+      const asMatch = aliasPattern.exec(name);
+      if (asMatch) {
+        const [, importedName, localName] = asMatch;
+        if (outerExportedSymbols && !outerExportedSymbols.has(importedName)) {
+          throw new Error(
+            `${sourcePath}: imported symbol '${importedName}' is not exported by an earlier module in jsOrder`
+          );
+        }
+        moduleImportedNames?.add(localName);
+        if (localName !== importedName) {
+          moduleImportAliases?.set(localName, importedName);
+        }
+        continue;
+      }
       if (!identifier.test(name)) {
-        throw new Error(`${sourcePath}: only named imports without aliases are supported in app.js`);
+        throw new Error(`${sourcePath}: unsupported import binding '${name}' in app.js`);
       }
       moduleImportedNames?.add(name);
     }
@@ -538,12 +611,14 @@ export function buildBundle(panelDir = PANEL_DIR) {
     'src/core/fileExportClient.js',
     'src/store/telemetryStore.js',
     'src/components/ui/TopLongPillNav.js',
+    'src/components/ui/SearchInput.js',
     'src/components/ui/CustomSelect.js',
     'src/components/ui/ActionMenu.js',
     'src/components/ui/CustomNumberInput.js',
     'src/components/ui/CustomDateTimePicker.js',
     'src/components/ui/CustomScrollbar.js',
     'src/components/ui/SegmentedControl.js',
+    'src/components/ui/ToggleSwitch.js',
     'src/components/ui/ContextSegmentMeter.js',
     'src/components/ui/FourSegmentBar.js',
     'src/components/ui/ConsumptionTooltipContent.js',
@@ -585,28 +660,50 @@ export function buildBundle(panelDir = PANEL_DIR) {
       if (bundledPaths.has(path)) throw new Error(`${rel}: duplicate entry in jsOrder`);
       const raw = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
       const moduleImportedNames = new Set();
-      const moduleLocalExports = new Set();
+      const moduleImportAliases = new Map();
+      const moduleLocalExports = new Map();
       const stripped = stripModuleSyntax(
         raw,
         (specifier, clause) =>
-          validateBundleImport(path, specifier, clause, bundledPaths, moduleImportedNames),
-        (name, isClauseExport) => {
-          if (isClauseExport && moduleImportedNames.has(name) && outerExportedSymbols.has(name)) {
+          validateBundleImport(
+            path,
+            specifier,
+            clause,
+            bundledPaths,
+            moduleImportedNames,
+            moduleImportAliases,
+            outerExportedSymbols
+          ),
+        (name, isClauseExport, localName = name) => {
+          if (
+            isClauseExport &&
+            localName === name &&
+            moduleImportedNames.has(name) &&
+            outerExportedSymbols.has(name)
+          ) {
             return;
           }
-          moduleLocalExports.add(name);
+          moduleLocalExports.set(name, localName);
         }
       );
       bundledPaths.add(path);
-      const exportList = [...moduleLocalExports];
-      for (const sym of exportList) {
+      const exportEntries = [...moduleLocalExports.entries()];
+      for (const [sym] of exportEntries) {
         outerExportedSymbols.add(sym);
       }
-      const body = stripped.trim();
+      const aliasLines = [...moduleImportAliases.entries()].map(
+        ([localName, importedName]) => `const ${localName} = ${importedName};`
+      );
+      const bodyWithAliases =
+        aliasLines.length > 0 ? `${aliasLines.join('\n')}\n${stripped.trim()}` : stripped.trim();
+      const outerDestructure = exportEntries.map(([exported]) => exported).join(', ');
+      const innerReturnFields = exportEntries
+        .map(([exported, local]) => (exported === local ? exported : `${exported}: ${local}`))
+        .join(', ');
       const wrapped =
-        exportList.length > 0
-          ? `const { ${exportList.join(', ')} } = (() => {\n${body}\nreturn { ${exportList.join(', ')} };\n})();`
-          : `(() => {\n${body}\n})();`;
+        exportEntries.length > 0
+          ? `const { ${outerDestructure} } = (() => {\n${bodyWithAliases}\nreturn { ${innerReturnFields} };\n})();`
+          : `(() => {\n${bodyWithAliases}\n})();`;
       return `// --- ${rel} ---\n${wrapped}`;
     })
     .join('\n\n');

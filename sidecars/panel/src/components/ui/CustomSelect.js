@@ -16,6 +16,7 @@ import {
 } from '../../core/domPatch.js';
 import { isEnglishLocale, t } from '../../i18n/index.js';
 import { createSvgIcon, patchSvgIcon } from '../../icons/SvgIcon.js';
+import { createSearchInput } from './SearchInput.js';
 
 function normalizeMultiSelection(rawValue, options = [], allValue = '') {
   const arr = Array.isArray(rawValue)
@@ -105,44 +106,29 @@ export const CustomSelect = defineComponent({
       [leadIcon, triggerLabel, chevronIcon]
     );
 
-    const searchIcon = createSvgIcon('search', { size: 12, className: 'select-search-icon' });
-    const searchInput = h('input', {
-      type: 'text',
-      className: 'select-search-input',
-      autocomplete: 'off',
-      spellcheck: 'false',
+    const searchBox = createSearchInput({
+      wrapClassName: 'select-search-wrap',
+      iconClassName: 'select-search-icon',
+      inputClassName: 'select-search-input',
+      clearClassName: 'select-search-clear',
       placeholder: getProps().searchPlaceholder || t('select.searchPlaceholder'),
-      onClick: (e) => e.stopPropagation(),
-      onInput: (e) => {
-        searchQuery = String(e?.target?.value ?? searchInput.value ?? '');
+      clearAriaLabel: t('select.clearSearch'),
+      hidden: true,
+      stopClickPropagation: true,
+      closeIconSize: 10,
+      onInput: (val) => {
+        searchQuery = val;
         focusedIndex = 0;
         renderMenuOptions();
       },
+      onClear: () => {
+        clearSearchQuery(true);
+      },
       onKeydown: handleKeydown,
     });
-    const searchClearBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'select-search-clear',
-        hidden: true,
-        'aria-label': t('select.clearSearch'),
-        onClick: (e) => {
-          e.stopPropagation();
-          clearSearchQuery(true);
-        },
-      },
-      [createSvgIcon('close', { size: 10 })]
-    );
-    const searchWrap = h(
-      'div',
-      {
-        className: 'select-search-wrap',
-        hidden: true,
-        onClick: (e) => e.stopPropagation(),
-      },
-      [searchIcon, searchInput, searchClearBtn]
-    );
+    const searchWrap = searchBox.el;
+    const searchInput = searchBox.inputEl;
+    const searchClearBtn = searchBox.clearBtnEl;
 
     const optionsListEl = h('div', { className: 'select-options-list' });
     const emptyHintEl = h('div', {

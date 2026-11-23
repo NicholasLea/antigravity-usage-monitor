@@ -376,32 +376,35 @@
   overflow: hidden;
 }
 
-.select-search-wrap {
+.ui-search-wrap {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 7px;
-  margin-bottom: 4px;
+  padding: 2px 8px;
   border-radius: var(--radius-xs);
   border: 1px solid var(--border-hairline);
-  background: var(--surface-bg);
-  flex-shrink: 0;
+  background: var(--surface-subtle);
+  transition:
+    border-color var(--dur-instant) var(--ease-fast),
+    background-color var(--dur-instant) var(--ease-fast),
+    box-shadow var(--dur-instant) var(--ease-fast);
 }
 
-.select-search-wrap[hidden] {
+.ui-search-wrap[hidden] {
   display: none !important;
 }
 
-.select-search-wrap:focus-within {
+.ui-search-wrap:focus-within {
   border-color: var(--accent-primary);
 }
 
-.select-search-icon {
+.ui-search-icon {
   color: var(--text-muted);
   flex-shrink: 0;
+  pointer-events: none;
 }
 
-.select-search-input {
+.ui-search-input {
   flex: 1;
   min-width: 0;
   border: none;
@@ -414,11 +417,11 @@
   padding: 0;
 }
 
-.select-search-input::placeholder {
+.ui-search-input::placeholder {
   color: var(--text-muted);
 }
 
-.select-search-clear {
+.ui-search-clear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -431,15 +434,25 @@
   color: var(--text-muted);
   cursor: pointer;
   flex-shrink: 0;
+  transition:
+    color var(--dur-instant) var(--ease-fast),
+    background-color var(--dur-instant) var(--ease-fast);
 }
 
-.select-search-clear:hover {
+.ui-search-clear:hover {
   color: var(--text-primary);
   background: var(--surface-hover);
 }
 
-.select-search-clear[hidden] {
+.ui-search-clear[hidden] {
   display: none !important;
+}
+
+.select-search-wrap {
+  padding: 4px 7px;
+  margin-bottom: 4px;
+  background: var(--surface-bg);
+  flex-shrink: 0;
 }
 
 .select-options-list {
@@ -750,6 +763,10 @@
   opacity: 0;
   pointer-events: none;
   z-index: 0;
+}
+
+.segmented:hover .seg-glider,
+.segmented:focus-within .seg-glider {
   will-change: transform, width;
 }
 
@@ -805,6 +822,20 @@
   background: transparent;
   color: var(--accent-primary);
   font-weight: 600;
+}
+
+.segmented--binary {
+  --seg-pad: 0px;
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.segmented--binary.has-glider > .seg-glider {
+  top: var(--seg-pad, 0px);
+  left: var(--seg-pad, 0px);
+  width: calc((100% - 2 * var(--seg-pad, 0px) - 2px) / 2);
+  height: calc(100% - 2 * var(--seg-pad, 0px));
+  transform: translate3d(calc(var(--seg-active-idx, 0) * (100% + 2px)), 0, 0);
 }
 
 /* --- 7. 独立槽位自定义滚动条 (Bespoke Custom Scrollbar) --- */
@@ -866,8 +897,12 @@
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--text-secondary) 32%, transparent);
   transform: translate3d(0, var(--thumb-y, 0px), 0);
-  will-change: transform, height;
   transition: background-color var(--dur-instant) var(--ease-fast);
+}
+
+.custom-scroll-host:hover .scrollbar-thumb,
+.scrollbar-rail.is-dragging .scrollbar-thumb {
+  will-change: transform, height;
 }
 
 .scrollbar-rail:hover .scrollbar-thumb,

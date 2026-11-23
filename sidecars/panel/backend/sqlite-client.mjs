@@ -65,23 +65,22 @@ export function hasBuiltinNodeSqlite() {
  * @param {string} dbPath
  * @returns {{ exists: boolean, mtimeMs: number, sig: string }}
  */
-export function computeSqliteWalSig(dbPath) {
-  if (!dbPath || typeof dbPath !== 'string' || !existsSync(dbPath)) {
+export function computeSqliteWalSig(dbPath, { skipWalCheck = false } = {}) {
+  if (!dbPath || typeof dbPath !== 'string') {
     return { exists: false, mtimeMs: 0, sig: '' };
   }
   let dbStat = null;
   try {
-    dbStat = statSync(dbPath);
+    dbStat = statSync(dbPath, { throwIfNoEntry: false });
   } catch {
     return { exists: false, mtimeMs: 0, sig: '' };
   }
   if (!dbStat) return { exists: false, mtimeMs: 0, sig: '' };
 
   let walStat = null;
-  const walPath = `${dbPath}-wal`;
-  if (existsSync(walPath)) {
+  if (!skipWalCheck) {
     try {
-      walStat = statSync(walPath);
+      walStat = statSync(`${dbPath}-wal`, { throwIfNoEntry: false });
     } catch {
       walStat = null;
     }

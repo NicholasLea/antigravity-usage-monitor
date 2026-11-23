@@ -340,11 +340,75 @@ export async function copyPlainTextToClipboard(text) {
       document.body.appendChild(ta);
       ta.select?.();
       const ok = document.execCommand('copy');
-      ta.remove?.();
+      if (typeof ta.remove === 'function') {
+        ta.remove();
+      } else {
+        document.body.removeChild?.(ta);
+      }
       return Boolean(ok);
     }
   } catch {
     // 忽略非浏览器环境异常
   }
   return false;
+}
+
+/**
+ * 统一的「已复制」临时反馈计时器控制器（自动重置定时器并在组件销毁时清理）。
+ *
+ * @param {{
+ *   durationMs?: number,
+ *   onChange?: (copiedKey: any) => void,
+ *   onCleanup?: (cleanupFn: () => void) => void,
+ * }} [options={}]
+ */
+export function createCopiedFeedbackController({
+  durationMs = 1800,
+  onChange = null,
+  onCleanup = null,
+} = {}) {
+  let activeKey = null;
+  let timer = null;
+  let disposed = false;
+
+  function clear() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (activeKey !== null) {
+      activeKey = null;
+      if (!disposed) onChange?.(null);
+    }
+  }
+
+  function trigger(key = true) {
+    if (disposed) return;
+    if (timer) clearTimeout(timer);
+    activeKey = key;
+    onChange?.(activeKey);
+    timer = setTimeout(() => {
+      timer = null;
+      if (disposed) return;
+      activeKey = null;
+      onChange?.(null);
+    }, durationMs);
+    timer?.unref?.();
+  }
+
+  onCleanup?.(() => {
+    disposed = true;
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    activeKey = null;
+  });
+
+  return {
+    isCopied: (key = true) => activeKey === key,
+    getActiveKey: () => activeKey,
+    trigger,
+    clear,
+  };
 }

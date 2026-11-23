@@ -2516,3 +2516,337 @@ test('P0 regression: V4 display-projected steps open inspector, preserve waterfa
     else process.env.ANTIGRAVITY_GEMINI_DIR = prevGemEnv;
   }
 });
+
+test('P1 regression: O(1) lowercase cache index, SQLite live-tail/parent helpers, lazy App mount, adoptedStyleSheets, rAF observer coalescing, and chart DOMRect caching', async (t) => {
+  const {
+    getCachedTrajectoryEntryByLower,
+    removeCachedTrajectory,
+    setCachedTrajectory,
+  } = await import('../backend/config.mjs');
+  const { mountWindowOverlay } = await import('../src/components/layout/WindowOverlayShell.js');
+  const { WINDOW_BRIDGE_KEY } = await import('../shared/window-bridge-protocol.mjs');
+  const { createSessionLineChart } = await import('../src/components/charts/SessionStepCharts.js');
+  const { createTrendAreaChart } = await import('../src/components/charts/TrendAreaChart.js');
+  const { uiStore } = await import('../src/store/uiStore.js');
+  const { telemetryStore } = await import('../src/store/telemetryStore.js');
+
+  // 1. O(1) case-insensitive trajectory cache index replaces mixed-case keys cleanly
+  const upperId = 'ABCDEF12-3456-4789-8ABC-DEF123456789';
+  const lowerId = upperId.toLowerCase();
+  try {
+    setCachedTrajectory(upperId, { signature: 'v1', steps: [{ stepIndex: 1 }] });
+    const hit1 = getCachedTrajectoryEntryByLower(lowerId);
+    assert.equal(hit1?.id, upperId);
+    assert.equal(hit1?.entry?.steps?.length, 1);
+
+    setCachedTrajectory(lowerId, { signature: 'v2', steps: [{ stepIndex: 1 }, { stepIndex: 2 }] });
+    const hit2 = getCachedTrajectoryEntryByLower(upperId);
+    assert.equal(hit2?.id, lowerId);
+    assert.equal(hit2?.entry?.steps?.length, 2);
+  } finally {
+    removeCachedTrajectory(upperId);
+    removeCachedTrajectory(lowerId);
+  }
+
+  // 2. WindowOverlayShell lazy App() mount, shared CSSStyleSheet, and rAF MutationObserver coalescing
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRo = globalThis.ResizeObserver;
+  const prevMo = globalThis.MutationObserver;
+  const prevCssSheet = globalThis.CSSStyleSheet;
+  const prevUi = uiStore.getState();
+  const prevTel = telemetryStore.getState();
+
+  const { document } = createMockDom();
+  const origAttachShadow = document.createElement('div').constructor.prototype.attachShadow;
+  globalThis.document = document;
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+  let bodyObserverCb = null;
+  globalThis.MutationObserver = class {
+    constructor(cb) {
+      this.cb = cb;
+    }
+    observe(target, opts) {
+      if (target === document.body && opts?.subtree) {
+        bodyObserverCb = this.cb;
+      }
+    }
+    disconnect() {}
+  };
+  class MockCSSStyleSheet {
+    constructor() {
+      this.cssText = '';
+    }
+    replaceSync(text) {
+      this.cssText = text;
+    }
+  }
+  globalThis.CSSStyleSheet = MockCSSStyleSheet;
+
+  // Give Mock ShadowRoots adoptedStyleSheets array support
+  const sampleDiv = document.createElement('div');
+  const proto = Object.getPrototypeOf(sampleDiv);
+  proto.attachShadow = function (init) {
+    const sr = origAttachShadow.call(this, init);
+    sr.adoptedStyleSheets = [];
+    return sr;
+  };
+
+  const rafQueue = [];
+  globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    [WINDOW_BRIDGE_KEY]: {
+      port: 19888,
+      token: 'p1-tok',
+      bundleVersion: '1',
+      stylesCss: '/* --- src/styles/tokens.css --- */\n:host { color: inherit; }',
+    },
+    addEventListener() {},
+    removeEventListener() {},
+    requestAnimationFrame: (fn) => {
+      rafQueue.push(fn);
+      return rafQueue.length;
+    },
+    cancelAnimationFrame: () => {},
+  };
+
+  let ov = null;
+  t.after(() => {
+    ov?.dispose?.();
+    proto.attachShadow = origAttachShadow;
+    uiStore.setState(prevUi, { sync: true });
+    telemetryStore.setState(prevTel, { sync: true });
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.ResizeObserver = prevRo;
+    globalThis.MutationObserver = prevMo;
+    globalThis.CSSStyleSheet = prevCssSheet;
+  });
+
+  ov = mountWindowOverlay();
+  const capsuleHost = document.getElementById('ag-usage-monitor-capsule');
+  const portalHost = document.getElementById('ag-usage-monitor-portal');
+  const popoverEl = portalHost.shadowRoot.querySelector('.wm-popover-panel');
+
+  // Cold start: App() is NOT mounted yet, and both ShadowRoots share the exact same CSSStyleSheet object!
+  assert.equal(popoverEl.children.length, 0, 'App() stays unmounted on cold start');
+  assert.equal(capsuleHost.shadowRoot.adoptedStyleSheets.length, 1);
+  assert.equal(
+    capsuleHost.shadowRoot.adoptedStyleSheets[0],
+    portalHost.shadowRoot.adoptedStyleSheets[0],
+    'Capsule and Portal ShadowRoots share single CSSStyleSheet instance'
+  );
+
+  // Opening popover mounts App() on demand
+  ov.open();
+  assert.equal(popoverEl.children.length, 1, 'App() mounts immediately on first open()');
+
+  // 20 streaming DOM mutations coalesce into 0 synchronous scans and 1 rAF flush
+  let qsCalls = 0;
+  const origQs = document.querySelector.bind(document);
+  document.querySelector = (s) => {
+    qsCalls += 1;
+    return origQs(s);
+  };
+  for (let i = 0; i < 20; i += 1) {
+    bodyObserverCb?.([{ target: document.body, type: 'childList' }]);
+  }
+  assert.equal(qsCalls, 0, 'Zero synchronous DOM queries during streaming burst');
+  while (rafQueue.length > 0) rafQueue.shift()();
+  assert.ok(qsCalls > 0 && qsCalls <= 10, `Coalesced into single frame check (calls=${qsCalls})`);
+  document.querySelector = origQs;
+
+  // 3. Chart mousemove DOMRect caching & preSig fast path
+  const stepChart = createSessionLineChart();
+  document.body.appendChild(stepChart.el);
+  let stepBcr = 0;
+  const stepSvg = stepChart.el.querySelector('svg');
+  stepSvg.getBoundingClientRect = () => {
+    stepBcr += 1;
+    return { left: 0, top: 0, width: 400, height: 140 };
+  };
+  const stepData = [
+    { stepIndex: 1, modelShort: '4-neon', tokPerSec: 60, outputTokens: 120, inputTokens: 1000, cacheReadTokens: 2000 },
+    { stepIndex: 2, modelShort: '4-neon', tokPerSec: 80, outputTokens: 160, inputTokens: 1100, cacheReadTokens: 2200 },
+  ];
+  const r1 = stepChart.update({ steps: stepData, metric: 'tps' });
+  const r2 = stepChart.update({ steps: stepData, metric: 'tps' });
+  assert.equal(r1.summaryBadge, r2.summaryBadge, 'preSig fast-path preserves summaryBadge');
+  stepBcr = 0;
+  for (let i = 0; i < 30; i += 1) {
+    stepSvg.parentNode.dispatchEvent({ type: 'mousemove', clientX: 40 + i * 5, clientY: 50 });
+  }
+  assert.equal(stepBcr, 1, 'SessionLineChart caches SVG DOMRect across mousemove burst');
+  stepSvg.parentNode.dispatchEvent({ type: 'mouseleave' });
+  stepSvg.parentNode.dispatchEvent({ type: 'mousemove', clientX: 60, clientY: 50 });
+  assert.equal(stepBcr, 2, 'mouseleave invalidates cached SVG DOMRect cleanly');
+  stepChart.destroy();
+
+  const trendChart = createTrendAreaChart();
+  document.body.appendChild(trendChart.el);
+  let trendBcr = 0;
+  const rectStub = () => {
+    trendBcr += 1;
+    return { left: 0, top: 0, width: 400, height: 140 };
+  };
+  trendChart.el.getBoundingClientRect = rectStub;
+  const trendSvg = trendChart.el.querySelector('svg');
+  trendSvg.getBoundingClientRect = rectStub;
+  trendChart.update({
+    series: [
+      { label: '10:00', fullLabel: '10:00', tokens: 5000, calls: 1 },
+      { label: '11:00', fullLabel: '11:00', tokens: 8000, calls: 2 },
+    ],
+    rangeKey: '24h',
+  });
+  trendBcr = 0;
+  for (let i = 0; i < 30; i += 1) {
+    trendSvg.parentNode.dispatchEvent({ type: 'mousemove', clientX: 30 + i * 5, clientY: 50 });
+  }
+  assert.equal(trendBcr, 2, 'TrendAreaChart caches svgRect and wrapRect across mousemove burst');
+  trendChart.destroy();
+});
+
+test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic primitives, zero-ResizeObserver ToggleSwitch, SearchInput, and declarative settingsBackup parity', async (t) => {
+  const [{ stripModuleSyntax }, { decodeWorkspaceFileUriToPath, parseWorkspaceUrisColumn }, { extractShortPromptTitle }, { writeJsonAtomicSync }] =
+    await Promise.all([
+      import('../scripts/build-bundle.mjs'),
+      import('../shared/workspace-uri.mjs'),
+      import('../shared/prompt-clean.mjs'),
+      import('../backend/fs-atomic.mjs'),
+    ]);
+
+  // 1. Bundler lexer handles regex literals with unbalanced braces after if/while/for-await parens
+  const sampleMod = [
+    'export function f(c, s) { if (c) /a{b/.test(s); }',
+    'export const afterFn = 42;',
+    'export function g(x) { while (x) /c}d/.test(x); }',
+    'export const afterG = 99;',
+    'export async function h(it) { for await (const x of it) /e{f/.test(x); }',
+    'export const divOk = (10 + 2) / (3 + 1);',
+    'const localHidden = 7;',
+    'export { localHidden as publicAlias };',
+  ].join('\n');
+  const recordedExports = [];
+  const stripped = stripModuleSyntax(sampleMod, null, (exported, isClause, local) => {
+    recordedExports.push({ exported, isClause, local });
+  });
+  assert.equal(/\bexport\b/.test(stripped), false, 'no raw export keyword remains after regex-after-paren');
+  assert.deepEqual(
+    recordedExports.find((e) => e.exported === 'publicAlias'),
+    { exported: 'publicAlias', isClause: true, local: 'localHidden' }
+  );
+
+  // 2. Shared workspace URI & prompt cleaner & atomic JSON writer
+  assert.equal(decodeWorkspaceFileUriToPath('file:///f%3A/ppt/demo/'), 'f:/ppt/demo');
+  assert.equal(decodeWorkspaceFileUriToPath('file:///Users/dev/app/'), '/Users/dev/app');
+  assert.deepEqual(parseWorkspaceUrisColumn('["file:///f%3A/ppt/a",""]'), ['file:///f%3A/ppt/a']);
+  assert.equal(
+    extractShortPromptTitle(
+      '<CONTEXT_SUMMARY>old</CONTEXT_SUMMARY><USER_REQUEST>继续P2\n优化代码</USER_REQUEST><ADDITIONAL_METADATA>t</ADDITIONAL_METADATA>',
+      48,
+      { firstLineOnly: true }
+    ),
+    '继续P2'
+  );
+  const fsCalls = [];
+  writeJsonAtomicSync('/cfg/settings.json', { ok: true }, {
+    fsOps: {
+      mkdirFn: () => fsCalls.push('mkdir'),
+      writeFn: (p) => fsCalls.push(`write:${p.endsWith('.json') ? 'direct' : 'tmp'}`),
+      renameFn: () => fsCalls.push('rename'),
+      unlinkFn: () => fsCalls.push('unlink'),
+    },
+  });
+  assert.deepEqual(fsCalls, ['mkdir', 'write:tmp', 'rename']);
+
+  // 3. ToggleSwitch creates 0 ResizeObservers & SearchInput wires clear/input cleanly
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRO = globalThis.ResizeObserver;
+  const { document } = createMockDom();
+  let roCreated = 0;
+  globalThis.document = document;
+  globalThis.window = { document, addEventListener() {}, removeEventListener() {} };
+  globalThis.ResizeObserver = class {
+    constructor() {
+      roCreated += 1;
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+  t.after(() => {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.ResizeObserver = prevRO;
+  });
+
+  const [{ ToggleSwitch }, { createSearchInput }, { buildExportableSettingsJson, parseImportedSettingsJson }] =
+    await Promise.all([
+      import('../src/components/ui/ToggleSwitch.js'),
+      import('../src/components/ui/SearchInput.js'),
+      import('../src/core/settingsBackup.js'),
+    ]);
+
+  let toggledVal = 'off';
+  const sw = ToggleSwitch({
+    preset: 'enable',
+    modelValue: 'off',
+    onUpdateModelValue: (v) => {
+      toggledVal = v;
+    },
+  });
+  assert.equal(roCreated, 0, 'ToggleSwitch must not allocate any ResizeObserver');
+  assert.equal(sw.el.style.getPropertyValue('--seg-active-idx'), '1');
+  sw.el.querySelectorAll('.seg-btn')[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+  assert.equal(toggledVal, 'on');
+  assert.equal(sw.el.style.getPropertyValue('--seg-active-idx'), '0');
+  sw.destroy();
+
+  let latestQuery = '';
+  const sBox = createSearchInput({
+    wrapClassName: 'steps-search-wrap',
+    placeholder: 'Search',
+    onInput: (v) => {
+      latestQuery = v;
+    },
+  });
+  sBox.inputEl.value = '429';
+  sBox.inputEl.dispatchEvent({ type: 'input', target: sBox.inputEl });
+  assert.equal(latestQuery, '429');
+  assert.equal(sBox.clearBtnEl.hasAttribute('hidden'), false);
+  sBox.clearBtnEl.dispatchEvent({ type: 'click', stopPropagation() {} });
+  assert.equal(latestQuery, '');
+  assert.equal(sBox.clearBtnEl.hasAttribute('hidden'), true);
+
+  // 4. Declarative settingsBackup round-trips all 30 portable keys + coupled legacy flags
+  const exported = buildExportableSettingsJson({
+    language: 'en-US',
+    modernUi: false,
+    modelDisplayMode: 'upstream_compact',
+    pluginUpdateMode: 'auto',
+    windowMountMode: 'composer',
+    showStepFilterToolbar: true,
+    experimentalQuotaReservation: true,
+  });
+  const parsedExport = JSON.parse(exported);
+  assert.equal(Object.keys(parsedExport.settings).length, 30);
+  const reimported = parseImportedSettingsJson(exported);
+  assert.equal(reimported.ok, true);
+  assert.equal(reimported.patch.modernUi, false);
+  assert.equal(reimported.patch.experimentalModernUi, false);
+  assert.equal(reimported.patch.modelDisplayMode, 'upstream_compact');
+  assert.equal(reimported.patch.showUpstreamModel, true);
+  assert.equal(reimported.patch.pluginUpdateMode, 'auto');
+  assert.equal(reimported.patch.autoUpdatePlugin, true);
+  assert.equal(reimported.patch.windowMountMode, 'composer');
+  assert.equal(reimported.patch.enableWindowOverlay, true);
+  assert.equal(reimported.patch.showStepFilterToolbar, true);
+  assert.equal(reimported.patch.experimentalQuotaReservation, true);
+});

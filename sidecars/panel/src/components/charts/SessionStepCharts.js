@@ -823,7 +823,14 @@ export function createSessionLineChart() {
   let hoveredIdx = -1;
   let tickElsByIdx = new Map();
   let lastSig = '';
+  let lastPreSig = '';
+  let lastSummaryBadge = '';
   let lastUpdateParams = null;
+  let cachedPlotSvgRect = null;
+
+  function invalidatePlotSvgRect() {
+    cachedPlotSvgRect = null;
+  }
 
   function syncViewWidth() {
     const measured = Math.round(
@@ -936,8 +943,14 @@ export function createSessionLineChart() {
 
   plotStage.addEventListener('mousemove', (e) => {
     if (!currentPoints.length) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
+    if (!cachedPlotSvgRect) {
+      cachedPlotSvgRect = svg.getBoundingClientRect();
+    }
+    const rect = cachedPlotSvgRect;
+    if (!rect || rect.width <= 0) {
+      cachedPlotSvgRect = null;
+      return;
+    }
     const relX = ((e.clientX - rect.left) / rect.width) * viewW;
     const { leftX, spanX } = resolvePlotBounds(viewW);
     const ratio = (relX - leftX) / Math.max(1, spanX);
@@ -947,14 +960,19 @@ export function createSessionLineChart() {
     );
     showHoverAt(idx);
   });
-  plotStage.addEventListener('mouseleave', clearHover);
+  plotStage.addEventListener('mouseleave', () => {
+    invalidatePlotSvgRect();
+    clearHover();
+  });
 
   let resizeObs = null;
   let onWinResize = null;
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
+      invalidatePlotSvgRect();
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
+        lastPreSig = '';
         update(lastUpdateParams);
       }
     });
@@ -1035,6 +1053,9 @@ export function createSessionLineChart() {
     if (!matchedSteps.length) {
       currentPoints = [];
       lastSig = 'empty';
+      lastPreSig = '';
+      lastSummaryBadge = t('chart.step.zeroSteps');
+      invalidatePlotSvgRect();
       patchAttr(areaPath, 'd', '');
       patchAttr(linePath, 'd', '');
       while (multiAreaGroup.firstChild) multiAreaGroup.removeChild(multiAreaGroup.firstChild);
@@ -1046,7 +1067,23 @@ export function createSessionLineChart() {
       patchAttr(peakPill, 'hidden', true);
       patchAttr(emptyHintEl, 'hidden', false);
       clearHover();
-      return { summaryBadge: t('chart.step.zeroSteps') };
+      return { summaryBadge: lastSummaryBadge };
+    }
+
+    const locale = getEffectiveLocale();
+    const extColorSig = modelColorByGroup
+      ? Array.from(modelColorByGroup.entries())
+          .map(([k, v]) => `${k}=${v}`)
+          .join(',')
+      : '';
+    let preStepParts = `${matchedSteps.length}:`;
+    for (let i = 0; i < matchedSteps.length; i += 1) {
+      const s = matchedSteps[i];
+      preStepParts += `${s.stepIndex ?? i},${s.agentIndex ?? 0},${s.modelKey || s.modelShort || ''},${s.inputTokens || 0},${s.cacheReadTokens || 0},${s.outputTokens || 0},${s.contextTokens || 0},${s.tokPerSec ?? ''},${s.ttftSec ?? ''},${s.costUsd ?? ''},${s.anomalySig || ''};`;
+    }
+    const preSig = `${locale}|${viewW}|${metric}|${showAgentPrefix}|${displaySettings?.modelDisplayMode || ''}|${Boolean(displaySettings?.showUpstreamModel)}|${displaySettings?.orchestratorIdMode || ''}|${targetKeys.join(',')}|${extColorSig}|${preStepParts}`;
+    if (preSig === lastPreSig && lastSummaryBadge) {
+      return { summaryBadge: lastSummaryBadge };
     }
 
     const modelColorMap = new Map();
@@ -1254,7 +1291,6 @@ export function createSessionLineChart() {
     const validPoints = points.filter((p) => p.valid);
     patchAttr(emptyHintEl, 'hidden', validPoints.length > 0);
 
-    const locale = getEffectiveLocale();
     const colorSig = Array.from(modelColorMap.entries())
       .map(([k, v]) => `${k}=${v}`)
       .join(',');
@@ -1500,6 +1536,8 @@ export function createSessionLineChart() {
       });
     }
 
+    lastPreSig = preSig;
+    lastSummaryBadge = summaryBadge;
     return { summaryBadge };
   }
 
@@ -1764,10 +1802,17 @@ export function createModelFitChart() {
     patchClasses(tooltipEl, { 'is-tracking': false });
   }
 
+  let cachedFitSvgRect = null;
   plotStage.addEventListener('mousemove', (e) => {
     if (!currentSamples.length) return;
-    const rect = svg.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
+    if (!cachedFitSvgRect) {
+      cachedFitSvgRect = svg.getBoundingClientRect();
+    }
+    const rect = cachedFitSvgRect;
+    if (!rect || rect.width <= 0) {
+      cachedFitSvgRect = null;
+      return;
+    }
     const relX = ((e.clientX - rect.left) / rect.width) * viewW;
     let lo = 0;
     let hi = currentSamples.length - 1;
@@ -1785,12 +1830,16 @@ export function createModelFitChart() {
     }
     showHoverAt(bestIdx);
   });
-  plotStage.addEventListener('mouseleave', clearHover);
+  plotStage.addEventListener('mouseleave', () => {
+    cachedFitSvgRect = null;
+    clearHover();
+  });
 
   let resizeObs = null;
   let onWinResize = null;
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
+      cachedFitSvgRect = null;
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
         update(lastUpdateParams);

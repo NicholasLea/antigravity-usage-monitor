@@ -58,6 +58,7 @@ import { buildStructurePreviewTelemetry } from '../../components/settings/struct
 import { CustomNumberInput } from '../../components/ui/CustomNumberInput.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
 import { SegmentedControl } from '../../components/ui/SegmentedControl.js';
+import { ToggleSwitch } from '../../components/ui/ToggleSwitch.js';
 import {
   CapsuleBarWidget,
   buildCapsuleSlotContext,
@@ -81,20 +82,6 @@ function getMountModeOptions() {
     { value: 'dual', label: t('settings.str.mountDual') },
     { value: 'composer', label: t('settings.str.mountComposer') },
     { value: 'sidebar', label: t('settings.str.mountSidebar') },
-  ];
-}
-
-function getMultiToggleOptions() {
-  return [
-    { value: 'show', label: t('settings.str.show') },
-    { value: 'hide', label: t('settings.str.hide') },
-  ];
-}
-
-function getEnableToggleOptions() {
-  return [
-    { value: 'on', label: t('settings.str.on') },
-    { value: 'off', label: t('settings.str.off') },
   ];
 }
 
@@ -520,10 +507,10 @@ export const SettingsStructureTab = defineComponent({
       },
     });
 
-    const multiSessionToggle = SegmentedControl({
-      ariaLabel: t('settings.str.multiToggle'),
+    const multiSessionToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.multiToggle',
+      preset: 'visibility',
       modelValue: 'show',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowTopbarMulti = val !== 'hide';
         syncMountSectionMeta();
@@ -549,10 +536,10 @@ export const SettingsStructureTab = defineComponent({
       },
     });
 
-    const cliCapsuleToggle = SegmentedControl({
-      ariaLabel: t('settings.str.cliCapsuleToggle'),
+    const cliCapsuleToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.cliCapsuleToggle',
+      preset: 'enable',
       modelValue: 'on',
-      options: getEnableToggleOptions(),
       onUpdateModelValue: (val) => {
         draftEnableCliStatusLine = val !== 'off';
         syncMountSectionMeta();
@@ -783,7 +770,6 @@ export const SettingsStructureTab = defineComponent({
       }
       multiSessionToggle.setProps({
         modelValue: draftShowTopbarMulti ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
       contextAgentModeToggle.setProps({
         modelValue: draftContextAgentMode,
@@ -794,7 +780,6 @@ export const SettingsStructureTab = defineComponent({
       patchAttr(cliStatusGroupEl, 'hidden', !cliInstalled);
       cliCapsuleToggle.setProps({
         modelValue: draftEnableCliStatusLine ? 'on' : 'off',
-        options: getEnableToggleOptions(),
       });
       patchAttr(cliStatusDetailEl, 'hidden', !draftEnableCliStatusLine);
       const effectiveCliSlots = getEffectiveDraftCliSlots();
@@ -1144,10 +1129,10 @@ export const SettingsStructureTab = defineComponent({
       text: t('settings.str.stepsColsLabel'),
     });
 
-    const stepTurnRailToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepTurnRailToggle'),
+    const stepTurnRailToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepTurnRailToggle',
+      preset: 'visibility',
       modelValue: 'hide',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepTurnRail = val !== 'hide';
         syncStepsSectionMeta();
@@ -1157,10 +1142,10 @@ export const SettingsStructureTab = defineComponent({
       },
     });
 
-    const stepAgentBadgeToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepAgentBadgeToggle'),
+    const stepAgentBadgeToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepAgentBadgeToggle',
+      preset: 'visibility',
       modelValue: 'show',
-      options: getMultiToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepAgentBadge = val !== 'hide';
         syncStepsSectionMeta();
@@ -1170,10 +1155,10 @@ export const SettingsStructureTab = defineComponent({
       },
     });
 
-    const stepSpeedColorToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepSpeedColorToggle'),
+    const stepSpeedColorToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepSpeedColorToggle',
+      preset: 'enable',
       modelValue: 'off',
-      options: getEnableToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepSpeedColor = val !== 'off';
         syncStepsSectionMeta();
@@ -1183,10 +1168,10 @@ export const SettingsStructureTab = defineComponent({
       },
     });
 
-    const stepFilterToolbarToggle = SegmentedControl({
-      ariaLabel: t('settings.str.stepFilterToolbarToggle'),
+    const stepFilterToolbarToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.stepFilterToolbarToggle',
+      preset: 'enable',
       modelValue: 'off',
-      options: getEnableToggleOptions(),
       onUpdateModelValue: (val) => {
         draftShowStepFilterToolbar = val !== 'off';
         syncStepsSectionMeta();
@@ -1365,19 +1350,15 @@ export const SettingsStructureTab = defineComponent({
     function syncStepsSectionMeta() {
       stepTurnRailToggle.setProps({
         modelValue: draftShowStepTurnRail ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
       stepAgentBadgeToggle.setProps({
         modelValue: draftShowStepAgentBadge ? 'show' : 'hide',
-        options: getMultiToggleOptions(),
       });
       stepSpeedColorToggle.setProps({
         modelValue: draftShowStepSpeedColor ? 'on' : 'off',
-        options: getEnableToggleOptions(),
       });
       stepFilterToolbarToggle.setProps({
         modelValue: draftShowStepFilterToolbar ? 'on' : 'off',
-        options: getEnableToggleOptions(),
       });
       if (document?.activeElement !== stepTokenComboInput) {
         stepTokenComboInput.value = rawStepTokenComboText;

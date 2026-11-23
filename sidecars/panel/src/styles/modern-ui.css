@@ -193,6 +193,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"] .segmented {
+  --seg-pad: 2px;
   padding: 2px;
   border-radius: var(--radius-xs);
   background: var(--modern-inline-track-bg);
@@ -631,7 +632,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 /* --- 6. 设置表单、折叠面板、槽位排序与输入控件去边框 --- */
 [data-modern-ui="true"] .collapsible-body,
 [data-modern-ui="true"] .settings-action-block + .settings-action-block,
-[data-modern-ui="true"] .settings-account-entry,
 [data-modern-ui="true"] .dt-time-row {
   border-top: none;
 }
@@ -671,8 +671,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .number-input,
 [data-modern-ui="true"] .dt-trigger,
 [data-modern-ui="true"] .dt-mini-step,
-[data-modern-ui="true"] .settings-text-input,
-[data-modern-ui="true"] .settings-account-form input {
+[data-modern-ui="true"] .settings-text-input {
   border: none;
   background: var(--modern-surface-subtle);
   transition:
@@ -691,13 +690,14 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 
 [data-modern-ui="true"] .number-input:focus-within,
 [data-modern-ui="true"] .settings-text-input:focus,
-[data-modern-ui="true"] .settings-account-form input:focus,
+[data-modern-ui="true"] .ui-search-wrap:focus-within,
 [data-modern-ui="true"] .smig-search-wrap:focus-within,
 [data-modern-ui="true"] .steps-search-wrap:focus-within {
   border: none;
   box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent-primary) 55%, transparent);
 }
 
+[data-modern-ui="true"] .ui-search-wrap,
 [data-modern-ui="true"] .smig-search-wrap,
 [data-modern-ui="true"] .steps-search-wrap {
   border: none;

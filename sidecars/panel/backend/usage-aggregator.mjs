@@ -7,6 +7,7 @@
  */
 
 import { isDeepStrictEqual } from 'node:util';
+import { decodeWorkspaceFileUriToPath } from '../shared/workspace-uri.mjs';
 import {
   MEASUREMENT_VERSION,
   accumulateSpeed,
@@ -205,6 +206,20 @@ function resolveTimeWindow(
     default:
       return { key: 'all', label: '全部时间', startMs: 0, endMs: Infinity };
   }
+}
+
+const LOCAL_TIMEZONE_TTL_MS = 30_000;
+let cachedLocalTimeZone = '';
+let cachedLocalTimeZoneAtMs = 0;
+
+function resolveCachedLocalTimeZone() {
+  const nowMs = Date.now();
+  if (cachedLocalTimeZone && nowMs - cachedLocalTimeZoneAtMs < LOCAL_TIMEZONE_TTL_MS) {
+    return cachedLocalTimeZone;
+  }
+  cachedLocalTimeZone = new Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  cachedLocalTimeZoneAtMs = nowMs;
+  return cachedLocalTimeZone;
 }
 
 /**
@@ -580,28 +595,7 @@ const UNBOUND_WORKSPACE_KEY = '__unbound__';
  * @returns {{ workspaceKey: string, label: string, workspacePath: string }|null}
  */
 export function normalizeWorkspaceBucket(rawUri) {
-  const raw = String(rawUri || '').trim();
-  if (!raw) return null;
-  let decoded = raw;
-  if (/^file:\/\//i.test(decoded)) {
-    decoded = decoded.replace(/^file:\/\//i, '');
-    try {
-      decoded = decodeURIComponent(decoded);
-    } catch {
-      decoded = decoded.replace(/%3A/gi, ':');
-    }
-    // Windows `file:///F:/...` 解码后形如 `/F:/...`，剥离盘符前多余斜杠；POSIX `/Users/...` 保留前导 `/`
-    if (/^\/[A-Za-z]:/.test(decoded)) {
-      decoded = decoded.slice(1);
-    }
-  } else {
-    try {
-      decoded = decodeURIComponent(decoded);
-    } catch {
-      // 保留原始文本
-    }
-  }
-  decoded = decoded.replace(/\\/g, '/').replace(/\/+$/, '');
+  const decoded = decodeWorkspaceFileUriToPath(rawUri);
   if (!decoded) return null;
   const parts = decoded.split('/').filter(Boolean);
   const label = parts.length > 0 ? parts[parts.length - 1] : decoded;
@@ -1422,7 +1416,7 @@ export function aggregateMultiWindowUsage({
   const allEntriesToAggregate = collectUsageEntriesToAggregate(familySet, endpoint);
   const familySig = buildFamilySig(familySet);
 
-  const timeZone = modelInputs ? new Intl.DateTimeFormat().resolvedOptions().timeZone : '';
+  const timeZone = modelInputs ? resolveCachedLocalTimeZone() : '';
   const quotaWindows = Array.from(poolCycleBuckets, ([key, { start5hMs, startWkMs }]) => [
     { key: `${key}:5h`, startMs: start5hMs, endMs: nowMs },
     { key: `${key}:week`, startMs: startWkMs, endMs: nowMs },
@@ -1944,7 +1938,7 @@ export function aggregateSelectedWindowUsage({
     : collectUsageEntriesToAggregate(familySet, endpoint);
   const familySig = buildFamilySig(familySet);
   const currentYear = new Date(nowMs).getFullYear();
-  const timeZone = modelInputs ? new Intl.DateTimeFormat().resolvedOptions().timeZone : '';
+  const timeZone = modelInputs ? resolveCachedLocalTimeZone() : '';
 
   const snapshot = lastUsageSnapshotsByEndpoint.get(endpointKey) || null;
   const sameSnapshot = Boolean(
@@ -2343,17 +2337,32 @@ export function aggregateSessionUsageForFamily({
     currentAccountName === null ? null : normalizeOwnerAccount(currentAccountName);
 
   const familyEntries = [];
-  for (const [cid, entry] of cacheStore.listCachedTrajectoryEntries()) {
-    if (!entry || !Array.isArray(entry.steps) || entry.steps.length === 0) continue;
-    const cidLower = String(cid || '').toLowerCase();
-    if (!familySet.has(cidLower)) continue;
-    familyEntries.push({
-      cascadeId: cid,
-      appSource: isRemote ? 'ssh' : entry.appSource || 'standalone',
-      accountName: entry.accountName || '',
-      steps: entry.steps,
-      isCurrentConv: true,
-    });
+  if (typeof cacheStore.getCachedTrajectoryEntryByLower === 'function') {
+    for (const fidLower of familySet) {
+      const hit = cacheStore.getCachedTrajectoryEntryByLower(fidLower);
+      const entry = hit?.entry;
+      if (!entry || !Array.isArray(entry.steps) || entry.steps.length === 0) continue;
+      familyEntries.push({
+        cascadeId: hit.id,
+        appSource: isRemote ? 'ssh' : entry.appSource || 'standalone',
+        accountName: entry.accountName || '',
+        steps: entry.steps,
+        isCurrentConv: true,
+      });
+    }
+  } else {
+    for (const [cid, entry] of cacheStore.listCachedTrajectoryEntries()) {
+      if (!entry || !Array.isArray(entry.steps) || entry.steps.length === 0) continue;
+      const cidLower = String(cid || '').toLowerCase();
+      if (!familySet.has(cidLower)) continue;
+      familyEntries.push({
+        cascadeId: cid,
+        appSource: isRemote ? 'ssh' : entry.appSource || 'standalone',
+        accountName: entry.accountName || '',
+        steps: entry.steps,
+        isCurrentConv: true,
+      });
+    }
   }
 
   return computeFamilySessionBuckets({

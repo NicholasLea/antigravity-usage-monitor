@@ -27,16 +27,9 @@ import {
   saveSettingsPatch,
 } from '../../store/telemetryStore.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
-import { SegmentedControl } from '../../components/ui/SegmentedControl.js';
+import { ToggleSwitch } from '../../components/ui/ToggleSwitch.js';
 import { BridgeStatusNotice } from '../../components/settings/BridgeStatusNotice.js';
 import { SessionMigrationCard } from '../../components/settings/SessionMigrationCard.js';
-
-function getEnableToggleOptions() {
-  return [
-    { value: 'on', label: t('settings.str.on') },
-    { value: 'off', label: t('settings.str.off') },
-  ];
-}
 
 function formatQuotaReservationLogForClipboard(snapshot) {
   const safe = snapshot && typeof snapshot === 'object' ? snapshot : {};
@@ -275,16 +268,15 @@ export const SettingsOtherTab = defineComponent({
       [createSvgIcon('copy', { size: 12 }), exportReserveLogBtnText]
     );
 
-    const quotaReserveToggle = SegmentedControl({
+    const quotaReserveToggle = ToggleSwitch({
       modelValue: 'off',
-      ariaLabel: t('settings.oth.quotaReserveLabel'),
-      options: getEnableToggleOptions(),
+      ariaLabelKey: 'settings.oth.quotaReserveLabel',
+      preset: 'enable',
       onUpdateModelValue: async (val) => {
         const nextEnabled = val === 'on';
         draftExperimentalQuotaReservation = nextEnabled;
         quotaReserveToggle.setProps({
           modelValue: nextEnabled ? 'on' : 'off',
-          options: getEnableToggleOptions(),
         });
         showExpFeedback(t('settings.saving'), 0);
         try {
@@ -366,10 +358,10 @@ export const SettingsOtherTab = defineComponent({
       className: 'form-label',
       text: t('settings.oth.ctxMainLabel'),
     });
-    const ctxMainToggle = SegmentedControl({
+    const ctxMainToggle = ToggleSwitch({
       modelValue: 'on',
-      ariaLabel: t('settings.oth.ctxMainLabel'),
-      options: getEnableToggleOptions(),
+      ariaLabelKey: 'settings.oth.ctxMainLabel',
+      preset: 'enable',
       onUpdateModelValue: async (val) => {
         if (!draftContextRiskAccepted || savingContextScope) return;
         const nextEnabled = val === 'on';
@@ -396,10 +388,10 @@ export const SettingsOtherTab = defineComponent({
       className: 'form-label',
       text: t('settings.oth.ctxSwarmLabel'),
     });
-    const ctxSwarmToggle = SegmentedControl({
+    const ctxSwarmToggle = ToggleSwitch({
       modelValue: 'off',
-      ariaLabel: t('settings.oth.ctxSwarmLabel'),
-      options: getEnableToggleOptions(),
+      ariaLabelKey: 'settings.oth.ctxSwarmLabel',
+      preset: 'enable',
       onUpdateModelValue: async (val) => {
         if (!draftContextRiskAccepted || savingContextScope) return;
         const nextEnabled = val === 'on';
@@ -519,14 +511,10 @@ export const SettingsOtherTab = defineComponent({
       patchText(ctxMainLabelEl, t('settings.oth.ctxMainLabel'));
       ctxMainToggle.setProps({
         modelValue: draftContextMainEnabled ? 'on' : 'off',
-        options: getEnableToggleOptions(),
-        ariaLabel: t('settings.oth.ctxMainLabel'),
       });
       patchText(ctxSwarmLabelEl, t('settings.oth.ctxSwarmLabel'));
       ctxSwarmToggle.setProps({
         modelValue: draftContextSwarmEnabled ? 'on' : 'off',
-        options: getEnableToggleOptions(),
-        ariaLabel: t('settings.oth.ctxSwarmLabel'),
       });
 
       const syncErrorText =
@@ -913,8 +901,6 @@ export const SettingsOtherTab = defineComponent({
       });
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
-        options: getEnableToggleOptions(),
-        ariaLabel: t('settings.oth.quotaReserveLabel'),
       });
       renderContextWindows();
       void sessionMigrationCard.refs.ensureLoaded();
@@ -933,8 +919,6 @@ export const SettingsOtherTab = defineComponent({
       patchText(exportReserveLogBtnText, t('settings.oth.exportReserveLogBtn'));
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
-        options: getEnableToggleOptions(),
-        ariaLabel: t('settings.oth.quotaReserveLabel'),
       });
       patchText(baselineTitleEl, t('settings.oth.baselineTitle'));
       renderContextWindows();
