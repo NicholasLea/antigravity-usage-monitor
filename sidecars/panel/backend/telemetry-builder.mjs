@@ -325,6 +325,35 @@ const CONTEXT_CHANNEL_KEYS = [
   'userRules',
 ];
 
+const STATIC_CONTEXT_CHANNEL_KEYS = [
+  'systemTools',
+  'mcpTools',
+  'skills',
+  'systemPrompt',
+  'userRules',
+];
+
+function applyFallbackStaticChannels(channels, fallbackStaticContext, capTotal = 0) {
+  if (!fallbackStaticContext || typeof fallbackStaticContext !== 'object') return 0;
+  let staticMap = {
+    systemTools: Math.max(0, Math.round(Number(fallbackStaticContext.systemToolsTokens || 0))),
+    mcpTools: Math.max(0, Math.round(Number(fallbackStaticContext.mcpToolsTokens || 0))),
+    skills: Math.max(0, Math.round(Number(fallbackStaticContext.skillsTokens || 0))),
+    systemPrompt: Math.max(0, Math.round(Number(fallbackStaticContext.systemPromptTokens || 0))),
+    userRules: Math.max(0, Math.round(Number(fallbackStaticContext.userRulesTokens || 0))),
+  };
+  let staticSum = STATIC_CONTEXT_CHANNEL_KEYS.reduce((sum, k) => sum + staticMap[k], 0);
+  if (staticSum <= 0) return 0;
+  if (capTotal > 0 && staticSum > capTotal) {
+    staticMap = scaleBucketsExact(staticMap, STATIC_CONTEXT_CHANNEL_KEYS, Math.round(capTotal));
+    staticSum = STATIC_CONTEXT_CHANNEL_KEYS.reduce((sum, k) => sum + staticMap[k], 0);
+  }
+  for (const k of STATIC_CONTEXT_CHANNEL_KEYS) {
+    channels[k] = staticMap[k];
+  }
+  return staticSum;
+}
+
 function resolveStepOutputTokens(st) {
   const explicitOut = Number(st?.outputTokens || 0);
   if (explicitOut > 0) return explicitOut;
@@ -388,7 +417,8 @@ function extractActiveContextTelemetry(
   enrichedActiveSteps,
   latestEnriched,
   sessionInputTokens,
-  sessionCacheReadTokens
+  sessionCacheReadTokens,
+  fallbackStaticContext = null
 ) {
   let lastCompactionIdx = -1;
   for (let i = enrichedActiveSteps.length - 1; i >= 0; i--) {
@@ -470,6 +500,8 @@ function extractActiveContextTelemetry(
       channels.skills = preChannels.skills;
       channels.systemPrompt = preChannels.systemPrompt;
       channels.userRules = preChannels.userRules;
+    } else if (fallbackStaticContext) {
+      applyFallbackStaticChannels(channels, fallbackStaticContext, 0);
     }
     channels.userInput = 0;
     channels.assistant = 0;
@@ -499,6 +531,59 @@ function extractActiveContextTelemetry(
         runningTotal = mPrompt + mOut;
       }
     }
+  } else if (enrichedActiveSteps.length > 0) {
+    // 当宿主回退或历史裁剪导致全部步骤均无 `contextBreakdown` 且未发生过压缩时，
+    // 基于缓存的 5 通道静态基线（如有）和各步真实计费增量重建上下文通道，避免进度条和 10 项图例全归零。
+    let runningTotal = 0;
+    let seededInitial = false;
+    for (let m = 0; m < enrichedActiveSteps.length; m++) {
+      const stepM = enrichedActiveSteps[m];
+      if (!stepM || stepM.isCompactionStep) continue;
+      const mPrompt =
+        Number(stepM.inputTokens || 0) + Number(stepM.cacheReadTokens || 0);
+      const mOut = resolveStepOutputTokens(stepM);
+      if (!seededInitial) {
+        if (mPrompt <= 0 && mOut <= 0) continue;
+        seededInitial = true;
+        if (mPrompt > 0) {
+          const staticUsed = applyFallbackStaticChannels(
+            channels,
+            fallbackStaticContext,
+            mPrompt
+          );
+          channels.userInput += Math.max(0, mPrompt - staticUsed);
+        }
+        channels.assistant += mOut;
+        runningTotal = mPrompt + mOut;
+      } else if (mPrompt > 0) {
+        if (mPrompt > runningTotal) {
+          const delta = mPrompt - runningTotal;
+          if (enrichedActiveSteps[m - 1]?.hasToolCalls) {
+            channels.toolResults += delta;
+          } else {
+            channels.userInput += delta;
+          }
+        } else if (mPrompt < runningTotal) {
+          channels = scaleBucketsExact(channels, CONTEXT_CHANNEL_KEYS, mPrompt);
+        }
+        channels.assistant += mOut;
+        runningTotal = mPrompt + mOut;
+      }
+    }
+    if (runningTotal === 0) {
+      const estFallback = Math.max(
+        0,
+        Math.round(Number(latestEnriched?.estimatedContextTokens || 0))
+      );
+      if (estFallback > 0) {
+        const staticUsed = applyFallbackStaticChannels(
+          channels,
+          fallbackStaticContext,
+          estFallback
+        );
+        channels.userInput += Math.max(0, estFallback - staticUsed);
+      }
+    }
   }
 
   const ctxUserInput = channels.userInput;
@@ -526,7 +611,7 @@ function extractActiveContextTelemetry(
     ? ctxBreakdownTotal
     : ctxBreakdownTotal > 0
       ? ctxBreakdownTotal
-      : ctxCached + ctxFreshInput + ctxOut;
+      : ctxCached + ctxFreshInput + ctxOut || Number(latestEnriched?.estimatedContextTokens || 0);
   const compactionLimitTokens = Number(
     (isLatestCompaction && !latestEnriched?.reportedContextLimitTokens && fallbackPreCompactionLimit > 0
       ? fallbackPreCompactionLimit
@@ -598,7 +683,14 @@ function sameFallbackUpstreams(prevMap, fallbackModelKeys, upstream) {
   return true;
 }
 
-function prepareAgentSteps(rawSteps, resolveStepModel, upstream, agentFields, reuseInputs) {
+function prepareAgentSteps(
+  rawSteps,
+  resolveStepModel,
+  upstream,
+  agentFields,
+  reuseInputs,
+  fallbackStaticContext = null
+) {
   const facts = readTrajectoryModelFacts(rawSteps);
   for (const [key, model] of facts.upstream) upstream.set(key, model);
   const canCache = Boolean(reuseInputs && Array.isArray(rawSteps));
@@ -610,6 +702,7 @@ function prepareAgentSteps(rawSteps, resolveStepModel, upstream, agentFields, re
       previous.catalogRevision === reuseInputs.catalogRevision &&
       previous.phaseEpoch === reuseInputs.phaseEpoch &&
       isDeepStrictEqual(previous.dynamicModelMap, reuseInputs.dynamicModelMap) &&
+      isDeepStrictEqual(previous.fallbackStaticContext || null, fallbackStaticContext || null) &&
       sameFallbackUpstreams(previous.fallbackUpstreams, facts.fallbackModelKeys, upstream)
     ) {
       return previous.prepared;
@@ -620,8 +713,13 @@ function prepareAgentSteps(rawSteps, resolveStepModel, upstream, agentFields, re
   const prepared = {
     enrichedRes,
     recentSteps: taggedSteps.slice().reverse(),
-    ctxRes: extractActiveContextTelemetry(taggedSteps, enrichedRes.latestEnriched,
-      enrichedRes.sessionInputTokens, enrichedRes.sessionCacheReadTokens),
+    ctxRes: extractActiveContextTelemetry(
+      taggedSteps,
+      enrichedRes.latestEnriched,
+      enrichedRes.sessionInputTokens,
+      enrichedRes.sessionCacheReadTokens,
+      fallbackStaticContext
+    ),
     modelBreakdown: buildScopedModelBreakdown(taggedSteps, resolveStepModel),
   };
   // 按 rawSteps 数组引用缓存各代理（含多代理子代理）步骤富化结果，步骤变更后由 WeakMap 自动淘汰。
@@ -631,6 +729,7 @@ function prepareAgentSteps(rawSteps, resolveStepModel, upstream, agentFields, re
       catalogRevision: reuseInputs.catalogRevision,
       phaseEpoch: reuseInputs.phaseEpoch,
       dynamicModelMap: reuseInputs.dynamicModelMap,
+      fallbackStaticContext: fallbackStaticContext || null,
       fallbackUpstreams: snapshotFallbackUpstreams(facts.fallbackModelKeys, upstream),
       prepared,
     });
@@ -660,6 +759,7 @@ export function buildAgentUnitTelemetry({
   agentLabel,
   status,
   rawSteps,
+  fallbackStaticContext = null,
   liveActivity = null,
   fallbackLastModMs,
   resolveStepModel,
@@ -684,7 +784,8 @@ export function buildAgentUnitTelemetry({
       isSubagent: !isMain,
       ...(isSideQuestion ? { isSideQuestion: true, sideIndex } : {}),
     },
-    reuseInputs
+    reuseInputs,
+    fallbackStaticContext
   );
   const taggedSteps = enrichedRes.enrichedActiveSteps;
   const lastModifiedMs =
@@ -951,6 +1052,7 @@ function buildActiveConversationAssembly({
     activeConvSummary?.lastModifiedMs || activeEntry?.lastModifiedMs || 0,
     activeConvSummary?.liveActivity?.signature || '',
     activeConvSummary?.liveActivity?.startedAtMs || 0,
+    activeEntry?.lastKnownStaticContext || null,
     subagentSummaries.map((subSum, idx) => {
       const subEntry = subEntries[idx];
       const subSpec = subSum.subagentSpec || subEntry?.subagentSpec || null;
@@ -967,6 +1069,7 @@ function buildActiveConversationAssembly({
         subSum.lastModifiedMs || subEntry?.lastModifiedMs || 0,
         subSum.liveActivity?.signature || '',
         subSum.liveActivity?.startedAtMs || 0,
+        subEntry?.lastKnownStaticContext || null,
         subSpec?.role || '',
         subSpec?.typeName || '',
       ];
@@ -1007,6 +1110,7 @@ function buildActiveConversationAssembly({
     agentLabel: '主代理',
     status: activeConvSummary?.status || 'IDLE',
     rawSteps: activeSteps,
+    fallbackStaticContext: activeEntry?.lastKnownStaticContext || null,
     liveActivity: activeConvSummary?.liveActivity || null,
     fallbackLastModMs: activeConvSummary?.lastModifiedMs || activeEntry?.lastModifiedMs || 0,
     resolveStepModel,
@@ -1088,6 +1192,7 @@ function buildActiveConversationAssembly({
       agentLabel,
       status: subSum.status || 'IDLE',
       rawSteps: subRawSteps,
+      fallbackStaticContext: subEntry?.lastKnownStaticContext || null,
       liveActivity: subSum.liveActivity || null,
       fallbackLastModMs: subSum.lastModifiedMs || subEntry?.lastModifiedMs || 0,
       resolveStepModel,
@@ -1884,8 +1989,13 @@ export async function buildTelemetryPayloadInternal(
 
     let contextUsedPct = null;
     if (lastRootStep) {
-      contextUsedPct = extractActiveContextTelemetry(rootSteps, lastRootStep, 0, 0).context
-        .compactionUsedPct;
+      contextUsedPct = extractActiveContextTelemetry(
+        rootSteps,
+        lastRootStep,
+        0,
+        0,
+        rootEntry?.lastKnownStaticContext || null
+      ).context.compactionUsedPct;
     }
 
     let modelShort = '';
@@ -2338,10 +2448,13 @@ function resolveValidFastSnapshot(endpoint = null) {
 
 function entryNeedsLazyTelemetryUpgrade(entry) {
   if (!entry || !Array.isArray(entry.steps) || entry.steps.length === 0) return false;
+  const grpVer = Number(entry.contextGroupsTelemetry || 0);
+  const needsUndoCtxUpgrade =
+    grpVer < 2 || (grpVer === 2 && !entry.steps.some((st) => Boolean(st?.contextBreakdown)));
   return (
     !entry.turnRailTelemetry ||
     !entry.anomalyTelemetry ||
-    entry.contextGroupsTelemetry !== 2
+    needsUndoCtxUpgrade
   );
 }
 

@@ -1807,15 +1807,23 @@ export function readLocalSqliteTrajectory(dbFilePath, options = {}) {
 
       if (ownGenRecords.length > 0) {
         // 从末尾向前定位最近一条包含完整上下文拆解（tokenBreakdown / promptSections / tools / messagePrompts）的记录，
-        // 避免末尾紧跟 CHECKPOINT 压缩步或多条纯 plannerConfig 记录时漏解压缩前的静态上下文构成。
+        // 避免末尾紧跟 CHECKPOINT 压缩步或多条纯 plannerConfig 记录时漏解压缩前的静态上下文构成；
+        // 若末尾完整记录因回退/中断成为 `stepIndices: []`，继续跳过被宿主裁剪的轻量记录并尝试补解更早的完整带索引记录。
+        let foundUnindexedBreakdown = false;
         for (let i = ownGenRecords.length - 1; i >= 0; i--) {
           const rec = ownGenRecords[i];
+          if (foundUnindexedBreakdown && Number(rec?.rawData?.byteLength || 0) <= 2048) {
+            continue;
+          }
           try {
             const fullDecoded = decodeProtoGeneratorMeta(rec.rawData, true);
             if (fullDecoded) {
               rec.gm = fullDecoded;
               if (hasContextBreakdownPayload(fullDecoded.chatModel)) {
-                break;
+                if (Array.isArray(fullDecoded.stepIndices) && fullDecoded.stepIndices.length > 0) {
+                  break;
+                }
+                foundUnindexedBreakdown = true;
               }
             }
           } catch {

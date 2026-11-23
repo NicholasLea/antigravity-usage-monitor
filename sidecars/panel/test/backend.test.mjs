@@ -3455,3 +3455,328 @@ test('CLI statusLine supports --style pill|bar|compact switching, flag persisten
   assert.equal(jsonSnap.quotas.pools[0].remaining5hPct, 40);
   assert.equal(jsonSnap.quotas.pools[0].remainingWeeklyPct, 80);
 });
+
+test('conversation undo preserves 10-channel context breakdown across unindexed tail gen_metadata, stripped history, and cold fallback', async () => {
+  const baseMs = Date.parse('2026-11-23T17:00:00.000Z');
+  const iso = (offsetSec) => new Date(baseMs + offsetSec * 1000).toISOString();
+
+  // Case 1: Undo after a prior compaction leaves trailing gen_metadata with stepIndices: [] and full tokenBreakdown
+  const undoPostCompactSteps = [
+    {
+      type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        createdAt: iso(0),
+        completedAt: iso(2),
+        sourceTrajectoryStepInfo: { stepIndex: 10 },
+        modelUsage: { model: 'MODEL_PLACEHOLDER_M37', inputTokens: '180000', cacheReadTokens: '0', outputTokens: '800' },
+      },
+      plannerResponse: { response: 'before compact' },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_CHECKPOINT',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        createdAt: iso(5),
+        completedAt: iso(7),
+        sourceTrajectoryStepInfo: { stepIndex: 11 },
+        modelUsage: { model: 'MODEL_PLACEHOLDER_M37', inputTokens: '181000', cacheReadTokens: '0', outputTokens: '3200', responseOutputTokens: '3100' },
+      },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        createdAt: iso(15),
+        completedAt: iso(18),
+        sourceTrajectoryStepInfo: { stepIndex: 14 },
+        modelUsage: { model: 'MODEL_PLACEHOLDER_M37', inputTokens: '5000', cacheReadTokens: '95000', outputTokens: '1200' },
+      },
+      plannerResponse: { response: 'post compact step' },
+    },
+    {
+      type: 'CORTEX_STEP_TYPE_USER_INPUT',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: { createdAt: iso(25), sourceTrajectoryStepInfo: { stepIndex: 15 } },
+      userInput: { userResponse: 'undone prompt' },
+    },
+  ];
+  const undoPostCompactGen = [
+    {
+      stepIndices: [14],
+      chatModel: {
+        model: 'MODEL_PLACEHOLDER_M37',
+        chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 99000, maxContextTokens: 256000 } },
+      },
+    },
+    {
+      stepIndices: [],
+      chatModel: {
+        model: 'MODEL_PLACEHOLDER_M37',
+        chatStartMetadata: {
+          contextWindowMetadata: {
+            estimatedTokensUsed: 101200,
+            maxContextTokens: 256000,
+            tokenBreakdown: {
+              groups: [
+                { type: 'TOKEN_TYPE_SYSTEM_PROMPT', numTokens: 6000 },
+                { type: 'TOKEN_TYPE_SKILLS', numTokens: 1800 },
+                { type: 'TOKEN_TYPE_USER_RULES', numTokens: 2200 },
+                {
+                  type: 'TOKEN_TYPE_TOOLS',
+                  numTokens: 7000,
+                  children: [
+                    { name: 'read_file', numTokens: 6500 },
+                    { name: 'mcp_custom_tool', numTokens: 500 },
+                  ],
+                },
+                {
+                  type: 'TOKEN_TYPE_CHAT_MESSAGES',
+                  numTokens: 84200,
+                  children: [
+                    { name: '11: CHECKPOINT', numTokens: 3200 },
+                    { name: '12: USER_INPUT', numTokens: 1000 },
+                    { name: '13: GENERIC', numTokens: 45000 },
+                    { name: '14: PLANNER_RESPONSE', numTokens: 35000 },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+  ];
+
+  const h1 = backendHarness({
+    trajectories: {
+      'conv-undo-si-empty': {
+        trajectory: { steps: undoPostCompactSteps, generatorMetadata: undoPostCompactGen },
+      },
+    },
+    summaries: {
+      'conv-undo-si-empty': {
+        annotations: { title: 'Undo Post Compact' },
+        stepCount: 4,
+        lastModifiedTime: iso(25),
+        status: 'IDLE',
+      },
+    },
+  });
+  const p1 = await h1.buildTelemetryPayloadInternal('conv-undo-si-empty');
+  const ctx1 = p1.activeConversation.context;
+  assert.equal(ctx1.totalTokens, 101200);
+  assert.ok(ctx1.systemPromptTokens > 5500, `sysPrompt=${ctx1.systemPromptTokens}`);
+  assert.ok(ctx1.systemToolsTokens > 6000, `sysTools=${ctx1.systemToolsTokens}`);
+  assert.ok(ctx1.mcpToolsTokens > 400, `mcpTools=${ctx1.mcpToolsTokens}`);
+  assert.ok(ctx1.skillsTokens > 1500, `skills=${ctx1.skillsTokens}`);
+  assert.ok(ctx1.userRulesTokens > 2000, `rules=${ctx1.userRulesTokens}`);
+  assert.equal(
+    ctx1.userInputTokens +
+      ctx1.assistantTokens +
+      ctx1.toolResultsTokens +
+      ctx1.subagentTokens +
+      ctx1.checkpointTokens +
+      ctx1.systemToolsTokens +
+      ctx1.mcpToolsTokens +
+      ctx1.skillsTokens +
+      ctx1.systemPromptTokens +
+      ctx1.userRulesTokens,
+    101200
+  );
+
+  // Case 2: Trailing compaction step with unindexed pre-compaction gen_metadata inherits static channels without inflating checkpoint
+  const h2 = backendHarness({
+    trajectories: {
+      'conv-undo-tail-compact': {
+        trajectory: {
+          steps: undoPostCompactSteps.slice(0, 2),
+          generatorMetadata: [
+            {
+              stepIndices: [10],
+              chatModel: {
+                model: 'MODEL_PLACEHOLDER_M37',
+                chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 180000, maxContextTokens: 512000 } },
+              },
+            },
+            {
+              stepIndices: [],
+              chatModel: {
+                model: 'MODEL_PLACEHOLDER_M37',
+                chatStartMetadata: {
+                  contextWindowMetadata: {
+                    estimatedTokensUsed: 180000,
+                    maxContextTokens: 512000,
+                    tokenBreakdown: {
+                      groups: [
+                        { type: 'TOKEN_TYPE_SYSTEM_PROMPT', numTokens: 10000 },
+                        { type: 'TOKEN_TYPE_TOOLS', numTokens: 8000 },
+                        { type: 'TOKEN_TYPE_SKILLS', numTokens: 2000 },
+                        { type: 'TOKEN_TYPE_USER_RULES', numTokens: 3000 },
+                        { type: 'TOKEN_TYPE_CHAT_MESSAGES', numTokens: 157000 },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+    summaries: {
+      'conv-undo-tail-compact': {
+        annotations: { title: 'Tail Compact' },
+        stepCount: 2,
+        lastModifiedTime: iso(7),
+        status: 'IDLE',
+      },
+    },
+  });
+  const p2 = await h2.buildTelemetryPayloadInternal('conv-undo-tail-compact');
+  const ctx2 = p2.activeConversation.context;
+  assert.equal(ctx2.checkpointTokens, 3100);
+  assert.equal(ctx2.systemPromptTokens, 10000);
+  assert.equal(ctx2.systemToolsTokens, 8000);
+  assert.equal(ctx2.skillsTokens, 2000);
+  assert.equal(ctx2.userRulesTokens, 3000);
+  assert.equal(ctx2.userInputTokens, 0);
+  assert.equal(ctx2.totalTokens, 26100);
+
+  // Case 3: Live multi-turn undo deletes tail gen_metadata leaving only stripped 1KB rows -> cached breakdown + static baseline survive
+  const step1 = {
+    type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      createdAt: iso(0),
+      completedAt: iso(2),
+      sourceTrajectoryStepInfo: { stepIndex: 1 },
+      modelUsage: { model: 'MODEL_PLACEHOLDER_M37', inputTokens: '20000', cacheReadTokens: '0', outputTokens: '1000' },
+    },
+    plannerResponse: { response: 'turn 1', toolCalls: [{ name: 'read_file' }] },
+  };
+  const step2 = {
+    type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      createdAt: iso(10),
+      completedAt: iso(12),
+      sourceTrajectoryStepInfo: { stepIndex: 3 },
+      modelUsage: { model: 'MODEL_PLACEHOLDER_M37', inputTokens: '5000', cacheReadTokens: '21000', outputTokens: '1500' },
+    },
+    plannerResponse: { response: 'turn 2' },
+  };
+  const step3 = {
+    type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      createdAt: iso(20),
+      completedAt: iso(22),
+      sourceTrajectoryStepInfo: { stepIndex: 5 },
+      modelUsage: { model: 'MODEL_PLACEHOLDER_M37', inputTokens: '4000', cacheReadTokens: '27500', outputTokens: '800' },
+    },
+    plannerResponse: { response: 'turn 3' },
+  };
+  const liveTraj = {
+    trajectory: {
+      steps: [step1, step2, step3],
+      generatorMetadata: [
+        { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M37', chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 20000, maxContextTokens: 256000 } } } },
+        { stepIndices: [3], chatModel: { model: 'MODEL_PLACEHOLDER_M37', chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 26000, maxContextTokens: 256000 } } } },
+        {
+          stepIndices: [5],
+          chatModel: {
+            model: 'MODEL_PLACEHOLDER_M37',
+            chatStartMetadata: {
+              contextWindowMetadata: {
+                estimatedTokensUsed: 31500,
+                maxContextTokens: 256000,
+                tokenBreakdown: {
+                  groups: [
+                    { type: 'TOKEN_TYPE_SYSTEM_PROMPT', numTokens: 6000 },
+                    { type: 'TOKEN_TYPE_TOOLS', numTokens: 7000 },
+                    { type: 'TOKEN_TYPE_SKILLS', numTokens: 1500 },
+                    { type: 'TOKEN_TYPE_USER_RULES', numTokens: 2000 },
+                    { type: 'TOKEN_TYPE_CHAT_MESSAGES', numTokens: 15000 },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      ],
+    },
+  };
+  const liveSum = {
+    annotations: { title: 'Live Undo Session' },
+    stepCount: 3,
+    lastModifiedTime: iso(22),
+    status: 'IDLE',
+  };
+  const h3 = backendHarness({
+    trajectories: { 'conv-live-undo': liveTraj },
+    summaries: { 'conv-live-undo': liveSum },
+  });
+  const beforeUndo = await h3.buildTelemetryPayloadInternal('conv-live-undo');
+  assert.equal(beforeUndo.activeConversation.context.totalTokens, 32300);
+
+  // User clicks Confirm Undo back to step 2 -> step3 and its full gen_metadata[2] are deleted!
+  liveTraj.trajectory.steps = [step1, step2];
+  liveTraj.trajectory.generatorMetadata = liveTraj.trajectory.generatorMetadata.slice(0, 2);
+  liveSum.stepCount = 2;
+  liveSum.lastModifiedTime = iso(30);
+
+  const afterUndo = await h3.buildTelemetryPayloadInternal('conv-live-undo');
+  const ctx3 = afterUndo.activeConversation.context;
+  assert.equal(ctx3.totalTokens, 27500);
+  assert.equal(ctx3.systemPromptTokens, 6000);
+  assert.equal(ctx3.systemToolsTokens, 7000);
+  assert.equal(ctx3.skillsTokens, 1500);
+  assert.equal(ctx3.userRulesTokens, 2000);
+  assert.equal(ctx3.assistantTokens, 2500);
+  assert.equal(ctx3.toolResultsTokens, 5000);
+  assert.equal(ctx3.userInputTokens, 3500);
+  assert.equal(
+    ctx3.userInputTokens +
+      ctx3.assistantTokens +
+      ctx3.toolResultsTokens +
+      ctx3.subagentTokens +
+      ctx3.checkpointTokens +
+      ctx3.systemToolsTokens +
+      ctx3.mcpToolsTokens +
+      ctx3.skillsTokens +
+      ctx3.systemPromptTokens +
+      ctx3.userRulesTokens,
+    27500
+  );
+
+  // Case 4: Cold start on an already-undone session with zero breakdowns and no compaction still populates channels (never all-0)
+  const h4 = backendHarness({
+    trajectories: {
+      'conv-cold-undo': {
+        trajectory: {
+          steps: [step1, step2],
+          generatorMetadata: [
+            { stepIndices: [1], chatModel: { model: 'MODEL_PLACEHOLDER_M37', chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 20000, maxContextTokens: 256000 } } } },
+            { stepIndices: [3], chatModel: { model: 'MODEL_PLACEHOLDER_M37', chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 26000, maxContextTokens: 256000 } } } },
+          ],
+        },
+      },
+    },
+    summaries: {
+      'conv-cold-undo': {
+        annotations: { title: 'Cold Undo Session' },
+        stepCount: 2,
+        lastModifiedTime: iso(12),
+        status: 'IDLE',
+      },
+    },
+  });
+  const coldPayload = await h4.buildTelemetryPayloadInternal('conv-cold-undo');
+  const ctx4 = coldPayload.activeConversation.context;
+  assert.equal(ctx4.totalTokens, 27500);
+  assert.equal(ctx4.assistantTokens, 2500);
+  assert.equal(ctx4.toolResultsTokens, 5000);
+  assert.equal(ctx4.userInputTokens, 20000);
+  assert.equal(ctx4.userInputTokens + ctx4.assistantTokens + ctx4.toolResultsTokens, 27500);
+});

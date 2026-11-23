@@ -327,6 +327,146 @@ function normalizeOwnerAccount(value) {
  * - 已存在于旧缓存中的历史步骤保留原归属账号（兼容跨账号续聊同一会话）；
  * - 切换账号后在该会话中新产生的步骤写入当前活跃账号 `step.accountName`，仅供「可用额度」按账号隔离统计。
  */
+const MAX_PRESERVED_BREAKDOWN_STEPS = 64;
+
+function extractStaticContextFromStep(st) {
+  const bd = st?.contextBreakdown;
+  if (!bd || typeof bd !== 'object') return null;
+  const sysPrompt = Math.max(0, Number(bd.systemPromptTokens || 0));
+  const sysTools = Math.max(0, Number(bd.systemToolsTokens || 0));
+  const mcpTools = Math.max(0, Number(bd.mcpToolsTokens || 0));
+  const skills = Math.max(0, Number(bd.skillsTokens || 0));
+  const userRules = Math.max(0, Number(bd.userRulesTokens || 0));
+  const staticSum = sysPrompt + sysTools + mcpTools + skills + userRules;
+  if (staticSum <= 0) return null;
+
+  const rawTotal =
+    Number(bd.totalTokens || 0) ||
+    staticSum +
+      Math.max(0, Number(bd.messagesTokens || 0)) ||
+    staticSum +
+      Math.max(0, Number(bd.userInputTokens || 0)) +
+      Math.max(0, Number(bd.assistantTokens || 0)) +
+      Math.max(0, Number(bd.toolResultsTokens || 0)) +
+      Math.max(0, Number(bd.subagentTokens || 0)) +
+      Math.max(0, Number(bd.checkpointTokens || 0));
+  const promptTokens =
+    Math.max(0, Number(st?.inputTokens || 0)) + Math.max(0, Number(st?.cacheReadTokens || 0));
+  const scale =
+    rawTotal > 0 && promptTokens >= rawTotal * 0.5 ? promptTokens / rawTotal : 1;
+
+  return {
+    systemPromptTokens: Math.round(sysPrompt * scale),
+    systemToolsTokens: Math.round(sysTools * scale),
+    mcpToolsTokens: Math.round(mcpTools * scale),
+    skillsTokens: Math.round(skills * scale),
+    userRulesTokens: Math.round(userRules * scale),
+  };
+}
+
+function isSameHistoricalStep(nextStep, prevStep) {
+  if (!nextStep || !prevStep || typeof nextStep !== 'object' || typeof prevStep !== 'object') {
+    return false;
+  }
+  if (Number(nextStep.stepIndex) !== Number(prevStep.stepIndex)) return false;
+  if (Boolean(nextStep.isCompactionStep) !== Boolean(prevStep.isCompactionStep)) return false;
+  if (
+    Number(nextStep.inputTokens || 0) !== Number(prevStep.inputTokens || 0) ||
+    Number(nextStep.cacheReadTokens || 0) !== Number(prevStep.cacheReadTokens || 0) ||
+    Number(nextStep.outputTokens || 0) !== Number(prevStep.outputTokens || 0)
+  ) {
+    return false;
+  }
+  const nextTs = Number(nextStep.createdAtMs || 0);
+  const prevTs = Number(prevStep.createdAtMs || 0);
+  if (nextTs > 0 && prevTs > 0 && Math.abs(nextTs - prevTs) > 2000) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * 宿主只保留末尾一条完整 `gen_metadata` 并裁剪历史拆解；对话运行或回退重扫时，
+ * 为当前活跃窗口内（最近压缩前锚点至末尾，最多保留 64 步）完全匹配的未变更历史步保留已缓存的 `contextBreakdown`，
+ * 同时维护紧凑的 5 通道静态基线，确保回退到任意较早轮次后上下文窗口拆解不归零。
+ */
+function preserveCachedContextTelemetry(steps, prev) {
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return {
+      steps,
+      lastKnownStaticContext: prev?.lastKnownStaticContext || null,
+    };
+  }
+
+  let preservedSteps = steps;
+  const prevSteps = Array.isArray(prev?.steps) ? prev.steps : [];
+  if (prevSteps.length > 0) {
+    const prevWithBdByIdx = new Map();
+    for (const ps of prevSteps) {
+      if (!ps || typeof ps !== 'object' || !ps.contextBreakdown) continue;
+      const idx = Number(ps.stepIndex);
+      if (Number.isFinite(idx)) {
+        prevWithBdByIdx.set(idx, ps);
+      }
+    }
+
+    if (prevWithBdByIdx.size > 0) {
+      let lastCompIdx = -1;
+      for (let i = steps.length - 1; i >= 0; i -= 1) {
+        if (steps[i]?.isCompactionStep) {
+          lastCompIdx = i;
+          break;
+        }
+      }
+      let keepStartIdx = Math.max(0, steps.length - MAX_PRESERVED_BREAKDOWN_STEPS);
+      if (lastCompIdx >= 0) {
+        const anchorIdx = Math.max(0, lastCompIdx - 1);
+        keepStartIdx = Math.max(keepStartIdx, anchorIdx);
+      }
+
+      let mutated = false;
+      const nextList = steps.map((st, pos) => {
+        if (!st || st.isCompactionStep || st.contextBreakdown || pos < keepStartIdx) {
+          return st;
+        }
+        const idx = Number(st.stepIndex);
+        const matchedPrev = Number.isFinite(idx) ? prevWithBdByIdx.get(idx) : null;
+        if (!matchedPrev || !isSameHistoricalStep(st, matchedPrev)) {
+          return st;
+        }
+        mutated = true;
+        return {
+          ...st,
+          contextBreakdown: matchedPrev.contextBreakdown,
+          ...(!st.reportedContextLimitTokens && matchedPrev.reportedContextLimitTokens
+            ? {
+                reportedContextLimitTokens: matchedPrev.reportedContextLimitTokens,
+                maxContextBudgetTokens: matchedPrev.maxContextBudgetTokens,
+              }
+            : {}),
+        };
+      });
+      if (mutated) {
+        preservedSteps = nextList;
+      }
+    }
+  }
+
+  let lastKnownStaticContext = null;
+  for (let i = preservedSteps.length - 1; i >= 0; i -= 1) {
+    const extracted = extractStaticContextFromStep(preservedSteps[i]);
+    if (extracted) {
+      lastKnownStaticContext = extracted;
+      break;
+    }
+  }
+  if (!lastKnownStaticContext && prev?.lastKnownStaticContext) {
+    lastKnownStaticContext = prev.lastKnownStaticContext;
+  }
+
+  return { steps: preservedSteps, lastKnownStaticContext };
+}
+
 function attachStepAccountOwners(steps, prev, currentAccountName, entryAccountName) {
   if (!Array.isArray(steps) || steps.length === 0) return steps;
   const activeOwner = normalizeOwnerAccount(currentAccountName);
@@ -2199,8 +2339,9 @@ export async function enumerateAndSyncConversations({
             }
 
             const entryAccountName = prev?.accountName || currentAccountName || '';
+            const contextPreserved = preserveCachedContextTelemetry(steps, prev);
             const stepsWithOwners = attachStepAccountOwners(
-              steps,
+              contextPreserved.steps,
               prev,
               currentAccountName,
               entryAccountName
@@ -2218,9 +2359,12 @@ export async function enumerateAndSyncConversations({
               speedClearedTelemetry: true,
               turnRailTelemetry: true,
               wakeupTurnTelemetry: true,
-              contextGroupsTelemetry: 2,
+              contextGroupsTelemetry: 3,
               anomalyTelemetry: 1,
               steps: stepsWithOwners,
+              ...(contextPreserved.lastKnownStaticContext
+                ? { lastKnownStaticContext: contextPreserved.lastKnownStaticContext }
+                : {}),
               subagentRefs,
             };
             if (rpcSwarmMeta) cacheEntry.swarmMeta = rpcSwarmMeta;
@@ -2246,6 +2390,10 @@ export async function enumerateAndSyncConversations({
               !Array.isArray(prev?.subagentRefs) ||
               JSON.stringify(prev?.subagentRefs) !== JSON.stringify(subagentRefs) ||
               !isDeepStrictEqual(prev?.swarmMeta || null, cacheEntry.swarmMeta || null) ||
+              !isDeepStrictEqual(
+                prev?.lastKnownStaticContext || null,
+                cacheEntry.lastKnownStaticContext || null
+              ) ||
               Boolean(prev?.parkedOnSwarmWait) !== Boolean(cacheEntry.parkedOnSwarmWait) ||
               (prev?.rootConversationId || '') !== (cacheEntry.rootConversationId || '') ||
               Boolean(prev?.isSideQuestion) !== Boolean(cacheEntry.isSideQuestion);
@@ -2257,7 +2405,7 @@ export async function enumerateAndSyncConversations({
               !prev.contextLimitTelemetry ||
               !prev.speedClearedTelemetry ||
               !prev.turnRailTelemetry ||
-              !prev.contextGroupsTelemetry ||
+              Number(prev.contextGroupsTelemetry || 0) < 3 ||
               !prev.anomalyTelemetry ||
               metaChanged ||
               !isDeepStrictEqual(prev.steps, stepsWithOwners);
@@ -2307,8 +2455,9 @@ export async function enumerateAndSyncConversations({
                 const resolvedDiskMtime = conv.diskMtimeMs ?? readConversationMtime(diskFiles);
                 const offlineAccountName =
                   prev?.accountName || offlineFallback.accountName || currentAccountName || '';
+                const offlinePreserved = preserveCachedContextTelemetry(offlineFallback.steps, prev);
                 const offlineStepsWithOwners = attachStepAccountOwners(
-                  offlineFallback.steps,
+                  offlinePreserved.steps,
                   prev,
                   offlineFallback.accountName || currentAccountName,
                   offlineAccountName
@@ -2327,9 +2476,12 @@ export async function enumerateAndSyncConversations({
                   contextLimitTelemetry: true,
                   speedClearedTelemetry: true,
                   turnRailTelemetry: true,
-                  contextGroupsTelemetry: 2,
+                  contextGroupsTelemetry: 3,
                   anomalyTelemetry: 1,
                   steps: offlineStepsWithOwners,
+                  ...(offlinePreserved.lastKnownStaticContext
+                    ? { lastKnownStaticContext: offlinePreserved.lastKnownStaticContext }
+                    : {}),
                   subagentRefs: offlineFallback.subagentRefs,
                 };
                 if (conv.isSubagent) {
@@ -2441,8 +2593,12 @@ export async function enumerateAndSyncConversations({
     return !Object.prototype.hasOwnProperty.call(lastCachedStep, 'turnIndex');
   }
   function hasDroppedContextGroups(cached) {
-    if (cached?.contextGroupsTelemetry === 2) return false;
+    const grpVer = Number(cached?.contextGroupsTelemetry || 0);
+    if (grpVer >= 3) return false;
     const steps = cached?.steps || [];
+    if (grpVer === 2) {
+      return steps.length > 0 && !steps.some((st) => Boolean(st?.contextBreakdown));
+    }
     if (steps.some((st) => st?.isCompactionStep)) {
       return true;
     }

@@ -902,6 +902,8 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
   };
   let latestBreakdownChat = null;
   let latestBreakdownStepIdx = -1;
+  let latestBreakdownUnindexed = false;
+  let lastKnownGmStepIdx = -1;
 
   for (const gm of generatorMetadata || []) {
     collectOrchestratorExecModel(gm?.plannerConfig);
@@ -916,9 +918,13 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
         gmMaxIdx = numIdx;
       }
     }
+    if (gmMaxIdx >= 0) {
+      lastKnownGmStepIdx = Math.max(lastKnownGmStepIdx, gmMaxIdx);
+    }
     if (extractContextBreakdown(gm.chatModel)) {
       latestBreakdownChat = gm.chatModel;
-      latestBreakdownStepIdx = gmMaxIdx;
+      latestBreakdownStepIdx = gmMaxIdx >= 0 ? gmMaxIdx : lastKnownGmStepIdx;
+      latestBreakdownUnindexed = gmMaxIdx < 0;
     }
   }
 
@@ -1401,26 +1407,61 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
     }
   }
 
-  // 末尾步骤上下文回填：若最后一个非压缩步骤缺少 contextBreakdown，且最近一次有效的 generatorMetadata 未跨过压缩边界，则补齐
-  if (
-    result.length > 0 &&
-    !result[result.length - 1].isCompactionStep &&
-    !result[result.length - 1].contextBreakdown &&
-    latestBreakdownChat &&
-    (lastCompactionStepIdx < 0 || latestBreakdownStepIdx > lastCompactionStepIdx)
-  ) {
+  // 末尾步骤上下文回填：
+  // 1. 末尾为普通步骤且缺少 contextBreakdown 时，只要最近有效 generatorMetadata 未跨过压缩边界即可补齐
+  //    （含回退/中断后末尾 `stepIndices: []` 沿前序位置继承的拆解；若未索引拆解规模显著高于当前步则跳过，避免放大已回退水位）；
+  // 2. 末尾为压缩步骤且其前序压缩前锚点步骤缺少 contextBreakdown（常见于末尾 `stepIndices: []`）时，回填到该压缩前步骤，
+  //    确保压缩后仍可继承 5 个静态上下文通道（绝不直接写到压缩步自身）。
+  if (result.length > 0 && latestBreakdownChat) {
+    const applyFallbackBreakdown = (targetStep) => {
+      const fallbackBreakdown = extractContextBreakdown(latestBreakdownChat);
+      if (!fallbackBreakdown) return;
+      const targetPrompt =
+        Number(targetStep?.inputTokens || 0) + Number(targetStep?.cacheReadTokens || 0);
+      const bdTotal = Number(fallbackBreakdown.totalTokens || 0);
+      if (
+        latestBreakdownUnindexed &&
+        targetPrompt > 0 &&
+        bdTotal > 0 &&
+        targetPrompt < bdTotal * 0.5
+      ) {
+        return;
+      }
+      const fallbackCtx =
+        latestBreakdownChat?.chatStartMetadata?.contextWindowMetadata;
+      targetStep.contextBreakdown = fallbackBreakdown;
+      if (!targetStep.estimatedContextTokens) {
+        targetStep.estimatedContextTokens = Number(
+          fallbackCtx?.estimatedTokensUsed || fallbackBreakdown?.totalTokens || 0
+        );
+      }
+      if (fallbackCtx?.maxContextTokens) {
+        targetStep.maxContextBudgetTokens = Number(fallbackCtx.maxContextTokens);
+        if (!targetStep.reportedContextLimitTokens) {
+          targetStep.reportedContextLimitTokens = Number(fallbackCtx.maxContextTokens);
+        }
+      }
+    };
+
     const lastStep = result[result.length - 1];
-    const fallbackBreakdown = extractContextBreakdown(latestBreakdownChat);
-    const fallbackCtx =
-      latestBreakdownChat?.chatStartMetadata?.contextWindowMetadata;
-    lastStep.contextBreakdown = fallbackBreakdown;
-    if (!lastStep.estimatedContextTokens) {
-      lastStep.estimatedContextTokens = Number(
-        fallbackCtx?.estimatedTokensUsed || fallbackBreakdown?.totalTokens || 0
-      );
-    }
-    if (fallbackCtx?.maxContextTokens) {
-      lastStep.maxContextBudgetTokens = Number(fallbackCtx.maxContextTokens);
+    if (
+      !lastStep.isCompactionStep &&
+      !lastStep.contextBreakdown &&
+      (lastCompactionStepIdx < 0 || latestBreakdownStepIdx > lastCompactionStepIdx)
+    ) {
+      applyFallbackBreakdown(lastStep);
+    } else if (
+      lastStep.isCompactionStep &&
+      (latestBreakdownStepIdx < 0 || latestBreakdownStepIdx <= lastCompactionStepIdx)
+    ) {
+      for (let i = result.length - 2; i >= 0; i -= 1) {
+        const preStep = result[i];
+        if (!preStep || preStep.isCompactionStep) break;
+        if (!preStep.contextBreakdown) {
+          applyFallbackBreakdown(preStep);
+        }
+        break;
+      }
     }
   }
 
