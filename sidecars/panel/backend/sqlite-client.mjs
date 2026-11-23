@@ -88,8 +88,9 @@ export function computeSqliteWalSig(dbPath) {
   }
   const dbMtimeMs = Number(dbStat.mtimeMs || 0);
   const dbSize = Number(dbStat.size || 0);
-  const walMtimeMs = Number(walStat?.mtimeMs || 0);
   const walSize = Number(walStat?.size || 0);
+  // 0 字节的空 .db-wal 不含未 checkpoint 事务帧，忽略其 mtime 避免只读打开或宿主 LRU 驱逐触发死循环重扫
+  const walMtimeMs = walSize > 0 ? Number(walStat?.mtimeMs || 0) : 0;
   return {
     exists: true,
     mtimeMs: Math.max(dbMtimeMs, walMtimeMs),

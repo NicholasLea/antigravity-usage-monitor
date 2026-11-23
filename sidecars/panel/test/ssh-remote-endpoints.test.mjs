@@ -2265,4 +2265,156 @@ test('Local Swarm ground truth (members.json killed=false & live transcript.json
   assert.equal(byCid2.get(wakingCid)?.swarmState, 'working');
 });
 
+test('remote endpoint caps background history fetches per poll, prioritizes active/selected sessions, records completion-time cooldowns, and trips timeout breaker', async () => {
+  let now = Date.UTC(2026, 10, 22, 12, 0, 0);
+  const h = backendHarness({ clock: () => now });
+  const ep = h.registerRemoteEndpoint({
+    origin: 'https://127.0.0.1:41999',
+    hostLabel: 'slow-ssh-host',
+    stableHostKey: 'slow-ssh-host',
+  });
+
+  const isoAt = (sec) => new Date(Date.UTC(2026, 10, 22, 11, 0, sec)).toISOString();
+  const makeStep = (sec) => ({
+    type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      createdAt: isoAt(sec),
+      completedAt: isoAt(sec + 2),
+      generatorModel: 'gemini-4-carbon-high',
+      modelUsage: {
+        model: 'gemini-4-carbon-high',
+        inputTokens: '100',
+        outputTokens: '50',
+      },
+    },
+  });
+
+  const selectedCid = '11111111-1111-4111-8111-000000000001';
+  const runningCid = '11111111-1111-4111-8111-000000000002';
+  const hist1 = '11111111-1111-4111-8111-000000000003';
+  const hist2 = '11111111-1111-4111-8111-000000000004';
+  const hist3 = '11111111-1111-4111-8111-000000000005';
+  const hist4 = '11111111-1111-4111-8111-000000000006';
+
+  const fetchedPerPoll = [];
+  let currentPollFetches = [];
+  h.setRemoteWindowRpcInvoker(async (_ep, method, body) => {
+    if (method === 'GetUserStatus') return { userStatus: { email: 'remote@example.com' } };
+    if (method === 'RetrieveUserQuotaSummary') return { response: { groups: [] } };
+    if (method === 'GetAllCascadeTrajectories') {
+      return {
+        trajectorySummaries: {
+          [selectedCid]: { stepCount: 1, createdTime: isoAt(10), lastModifiedTime: isoAt(10), status: 'CASCADE_RUN_STATUS_IDLE' },
+          [runningCid]: { stepCount: 1, createdTime: isoAt(20), lastModifiedTime: isoAt(20), status: 'CASCADE_RUN_STATUS_RUNNING' },
+          [hist1]: { stepCount: 1, createdTime: isoAt(60), lastModifiedTime: isoAt(60), status: 'CASCADE_RUN_STATUS_IDLE' },
+          [hist2]: { stepCount: 1, createdTime: isoAt(50), lastModifiedTime: isoAt(50), status: 'CASCADE_RUN_STATUS_IDLE' },
+          [hist3]: { stepCount: 1, createdTime: isoAt(40), lastModifiedTime: isoAt(40), status: 'CASCADE_RUN_STATUS_IDLE' },
+          [hist4]: { stepCount: 1, createdTime: isoAt(30), lastModifiedTime: isoAt(30), status: 'CASCADE_RUN_STATUS_IDLE' },
+        },
+      };
+    }
+    if (method === 'GetCascadeTrajectory') {
+      currentPollFetches.push(body?.cascadeId);
+      return { trajectory: { steps: [makeStep(1)] } };
+    }
+    return {};
+  });
+
+  // Poll 1: Must fetch selectedCid + runningCid + at most 2 background history items (hist1, hist2)
+  currentPollFetches = [];
+  await h.executeTelemetryAction({ conversationId: selectedCid, range: 'today' }, { endpointId: ep.id });
+  fetchedPerPoll.push([...currentPollFetches]);
+  assert.ok(fetchedPerPoll[0].includes(selectedCid));
+  assert.ok(fetchedPerPoll[0].includes(runningCid));
+  assert.ok(fetchedPerPoll[0].includes(hist1));
+  assert.ok(fetchedPerPoll[0].includes(hist2));
+  assert.equal(fetchedPerPoll[0].includes(hist3), false, 'hist3 must be deferred to a later poll');
+  assert.equal(fetchedPerPoll[0].includes(hist4), false, 'hist4 must be deferred to a later poll');
+
+  // Poll 2: Backfills remaining hist3, hist4 (plus runningCid because it is RUNNING)
+  currentPollFetches = [];
+  now += 5_000;
+  await h.executeTelemetryAction({ conversationId: selectedCid, range: 'today' }, { endpointId: ep.id });
+  assert.ok(currentPollFetches.includes(hist3));
+  assert.ok(currentPollFetches.includes(hist4));
+  assert.equal(currentPollFetches.includes(hist1), false, 'cached hist1 must not be re-fetched');
+
+  // Part 2: Consecutive timeout breaker + completion-time cooldown + 404 long cooldown
+  const ep2 = h.registerRemoteEndpoint({
+    origin: 'https://127.0.0.1:42000',
+    hostLabel: 'timeout-ssh-host',
+    stableHostKey: 'timeout-ssh-host',
+  });
+  const t1 = '22222222-2222-4222-8222-000000000001';
+  const t2 = '22222222-2222-4222-8222-000000000002';
+  const t3 = '22222222-2222-4222-8222-000000000003';
+  const missingCid = '22222222-2222-4222-8222-000000000004';
+  const calls2 = [];
+
+  h.setRemoteWindowRpcInvoker(async (_ep, method, body) => {
+    if (method === 'GetUserStatus') return { userStatus: { email: 'remote@example.com' } };
+    if (method === 'RetrieveUserQuotaSummary') return { response: { groups: [] } };
+    if (method === 'GetAllCascadeTrajectories') {
+      return {
+        trajectorySummaries: {
+          [t1]: { stepCount: 1, createdTime: isoAt(90), lastModifiedTime: isoAt(90), status: 'CASCADE_RUN_STATUS_IDLE' },
+          [t2]: { stepCount: 1, createdTime: isoAt(80), lastModifiedTime: isoAt(80), status: 'CASCADE_RUN_STATUS_IDLE' },
+          [t3]: { stepCount: 1, createdTime: isoAt(70), lastModifiedTime: isoAt(70), status: 'CASCADE_RUN_STATUS_IDLE' },
+          [missingCid]: { stepCount: 1, createdTime: isoAt(60), lastModifiedTime: isoAt(60), status: 'CASCADE_RUN_STATUS_IDLE' },
+        },
+      };
+    }
+    if (method === 'GetCascadeTrajectory') {
+      const cid = body?.cascadeId;
+      calls2.push(cid);
+      if (cid === missingCid) {
+        throw new Error('RPC GetCascadeTrajectory failed (404): not_found');
+      }
+      // Simulate slow remote RPC advancing the clock by 70s (> old 60s cooldown) before timing out
+      now += 70_000;
+      throw new Error('signal timed out');
+    }
+    return {};
+  });
+
+  // Poll A: t1 (selected, isReq=true -> 30s cooldown) and t2 (background -> 15m cooldown) both time out
+  // after advancing clock by 70s each -> trips 2-consecutive-timeout breaker, so t3 is NOT attempted.
+  await h.executeTelemetryAction({ conversationId: t1, range: 'today' }, { endpointId: ep2.id });
+  assert.deepEqual(calls2, [t1, t2]);
+
+  // Poll B (+15s after Poll A finished): if failedAt had wrongly used nowPollMs (140s earlier),
+  // BOTH t1 and t2 would already be expired; with completion-time Date.now(), t2 stays in 15m cooldown
+  // (and t1 is still within 30s of its completion if only 15s elapsed since t2 finished? t1 finished 85s ago -> expired,
+  // while t2 finished 15s ago -> still in 15m cooldown). Verify t2 stays suppressed and t3 + missingCid run.
+  calls2.length = 0;
+  now += 15_000;
+  await h.executeTelemetryAction({ conversationId: t3, range: 'today' }, { endpointId: ep2.id });
+  assert.equal(calls2.includes(t2), false, 't2 must stay in 15m remote timeout cooldown');
+  assert.ok(calls2.includes(t3), 'selected t3 must be attempted');
+  assert.ok(calls2.includes(missingCid) || calls2.includes(t1), 'remaining non-cooled entries proceed until breaker');
+
+  // Ensure missingCid hits 404 once if deferred by breaker above
+  if (!calls2.includes(missingCid)) {
+    calls2.length = 0;
+    now += 5_000;
+    await h.executeTelemetryAction({ conversationId: missingCid, range: 'today' }, { endpointId: ep2.id });
+    assert.ok(calls2.includes(missingCid));
+  }
+
+  // Poll C (+10 min later): t2 STILL in 15m timeout cooldown, missingCid STILL in 30m 404 cooldown
+  calls2.length = 0;
+  now += 10 * 60_000;
+  await h.executeTelemetryAction({ conversationId: missingCid, range: 'today' }, { endpointId: ep2.id });
+  assert.equal(calls2.includes(t2), false, 't2 must remain in 15m remote timeout cooldown');
+  assert.equal(calls2.includes(missingCid), false, '404 missingCid must remain in 30m cooldown');
+
+  // Poll D (+10 more min -> 20m since 404): missingCid STILL in 30m 404 cooldown
+  calls2.length = 0;
+  now += 10 * 60_000;
+  await h.executeTelemetryAction({ conversationId: missingCid, range: 'today' }, { endpointId: ep2.id });
+  assert.equal(calls2.includes(missingCid), false, '404 missingCid must stay in 30m cooldown after 20m');
+});
+
+
 
