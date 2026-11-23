@@ -1441,10 +1441,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.weeklyPool': '周限 ({pool})',
   'quota.loading': '读取中...',
   'quota.failed': '获取失败 (--%)',
-  'quota.usedAndLeft': '{reset} · 已用 {used}% (余 {rem}%)',
-  'quota.usedBeforeReserved': '{reset} · 已用 {used}% (',
-  'quota.reservedTag': '预占 {rsv}%',
-  'quota.usedAfterReserved': ' · 余 {rem}%)',
+  'quota.usedAndLeft': '{reset} · 已用 {used}%',
   'quota.reservedTip': '预占估算（试验性）：约 {rsv}%（实际已用约 {actual}%），静默约 10 分钟后未用差额自动退还',
   'quota.reservedTipMulti': '预占估算（试验性）：约 {rsv}%（检测到 {leases} 笔叠加租约，实际已用约 {actual}%），静默约 10 分钟后未用差额自动退还',
   'quota.legendActual': '实占',
@@ -2332,10 +2329,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.weeklyPool': 'Weekly ({pool})',
   'quota.loading': 'Loading...',
   'quota.failed': 'Unavailable (--%)',
-  'quota.usedAndLeft': '{reset} · Used {used}% ({rem}% left)',
-  'quota.usedBeforeReserved': '{reset} · Used {used}% (',
-  'quota.reservedTag': '{rsv}% rsv',
-  'quota.usedAfterReserved': ' · {rem}% left)',
+  'quota.usedAndLeft': '{reset} · Used {used}%',
   'quota.reservedTip': 'Estimated lease reservation (Experimental): ~{rsv}% (~{actual}% actual used); unused share refunds after ~10 min idle',
   'quota.reservedTipMulti': 'Estimated lease reservation (Experimental): ~{rsv}% ({leases} stacked leases, ~{actual}% actual used); unused share refunds after ~10 min idle',
   'quota.legendActual': 'Actual',
@@ -18724,14 +18718,7 @@ function createPoolQuotaRow() {
   const title5h = h('span', { className: 'quota-win-title', text: '5h' });
   const usage5h = h('span', { className: 'quota-win-usage', hidden: true, text: '' });
   const left5h = h('span', { className: 'quota-win-left' }, [title5h, usage5h]);
-  const meta5hBefore = h('span', { text: '--' });
-  const meta5hReserved = h('span', { className: 'quota-reserved-pct', hidden: true, text: '' });
-  const meta5hAfter = h('span', { hidden: true, text: '' });
-  const meta5h = h('span', { className: 'panel-meta quota-win-meta text-mono' }, [
-    meta5hBefore,
-    meta5hReserved,
-    meta5hAfter,
-  ]);
+  const meta5h = h('span', { className: 'panel-meta quota-win-meta text-mono', text: '--' });
   const fill5h = h('div', { className: 'progress-fill' });
   const fillReserved5h = h('div', { className: 'progress-fill-reserved' });
   const track5h = h('div', { className: 'progress-track' }, [fill5h, fillReserved5h]);
@@ -18743,14 +18730,7 @@ function createPoolQuotaRow() {
   const titleWk = h('span', { className: 'quota-win-title', text: t('quota.weeklyShort') });
   const usageWk = h('span', { className: 'quota-win-usage', hidden: true, text: '' });
   const leftWk = h('span', { className: 'quota-win-left' }, [titleWk, usageWk]);
-  const metaWkBefore = h('span', { text: '--' });
-  const metaWkReserved = h('span', { className: 'quota-reserved-pct', hidden: true, text: '' });
-  const metaWkAfter = h('span', { hidden: true, text: '' });
-  const metaWk = h('span', { className: 'panel-meta quota-win-meta text-mono' }, [
-    metaWkBefore,
-    metaWkReserved,
-    metaWkAfter,
-  ]);
+  const metaWk = h('span', { className: 'panel-meta quota-win-meta text-mono', text: '--' });
   const fillWk = h('div', { className: 'progress-fill' });
   const fillReservedWk = h('div', { className: 'progress-fill-reserved' });
   const trackWk = h('div', { className: 'progress-track' }, [fillWk, fillReservedWk]);
@@ -18772,9 +18752,6 @@ function createPoolQuotaRow() {
       title5h,
       usage5h,
       meta5h,
-      meta5hBefore,
-      meta5hReserved,
-      meta5hAfter,
       track5h,
       fill5h,
       fillReserved5h,
@@ -18783,9 +18760,6 @@ function createPoolQuotaRow() {
       titleWk,
       usageWk,
       metaWk,
-      metaWkBefore,
-      metaWkReserved,
-      metaWkAfter,
       trackWk,
       fillWk,
       fillReservedWk,
@@ -18817,15 +18791,12 @@ function formatQuotaSummaryFooter(quotas, account) {
 function syncQuotaWindowMeter({
   hasData,
   usedVal,
-  remVal,
   resetTime,
   fallbackMetaText,
   showReserved,
   rawReservedPct,
   leaseCount,
-  metaBeforeEl,
-  metaReservedEl,
-  metaAfterEl,
+  metaEl,
   trackEl,
   fillEl,
   fillReservedEl,
@@ -18836,6 +18807,16 @@ function syncQuotaWindowMeter({
   const actualVal = Math.max(0, usedVal - rsvVal);
   const resetStr = hasData ? formatCountdown(resetTime) : '';
 
+  patchText(
+    metaEl,
+    hasData
+      ? t('quota.usedAndLeft', {
+          reset: resetStr,
+          used: formatPctNumber(usedVal),
+        })
+      : fallbackMetaText
+  );
+
   if (hasData && rsvVal > 0) {
     const rsvStr = formatPctNumber(rsvVal);
     const actualStr = formatPctNumber(actualVal);
@@ -18844,15 +18825,7 @@ function syncQuotaWindowMeter({
       leases >= 2
         ? t('quota.reservedTipMulti', { rsv: rsvStr, leases, actual: actualStr })
         : t('quota.reservedTip', { rsv: rsvStr, actual: actualStr });
-    patchText(
-      metaBeforeEl,
-      t('quota.usedBeforeReserved', { reset: resetStr, used: formatPctNumber(usedVal) })
-    );
-    metaReservedEl.hidden = false;
-    patchText(metaReservedEl, t('quota.reservedTag', { rsv: rsvStr }));
-    patchAttr(metaReservedEl, 'title', tipText);
-    metaAfterEl.hidden = false;
-    patchText(metaAfterEl, t('quota.usedAfterReserved', { rem: formatPctNumber(remVal) }));
+    patchAttr(metaEl, 'title', tipText);
     patchAttr(trackEl, 'title', tipText);
     const actualWidth = +Math.min(100, actualVal).toFixed(2);
     const rsvWidth = +Math.min(Math.max(0, 100 - actualWidth), rsvVal).toFixed(2);
@@ -18860,21 +18833,7 @@ function syncQuotaWindowMeter({
     patchStyleVar(fillReservedEl, '--reserved-w', `${rsvWidth}%`);
     patchClasses(fillReservedEl, { 'is-active': true, 'has-sep': actualWidth > 0 });
   } else {
-    patchText(
-      metaBeforeEl,
-      hasData
-        ? t('quota.usedAndLeft', {
-            reset: resetStr,
-            used: formatPctNumber(usedVal),
-            rem: formatPctNumber(remVal),
-          })
-        : fallbackMetaText
-    );
-    metaReservedEl.hidden = true;
-    patchText(metaReservedEl, '');
-    patchAttr(metaReservedEl, 'title', null);
-    metaAfterEl.hidden = true;
-    patchText(metaAfterEl, '');
+    patchAttr(metaEl, 'title', null);
     patchAttr(trackEl, 'title', null);
     patchStyleVar(fillEl, '--fill-w', `${Math.min(100, usedVal)}%`);
     patchStyleVar(fillReservedEl, '--reserved-w', '0%');
@@ -18896,7 +18855,6 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
 
   const has5h = poolData?.usedPct != null && poolData?.remainingPct != null;
   const used5hVal = has5h ? Number(poolData.usedPct) : 0;
-  const rem5hVal = has5h ? Number(poolData.remainingPct) : 0;
 
   const useCustomWeekly = Boolean(isActivePool && fallbackWeekly?.isOfficial === false);
   const wkUsedRaw = useCustomWeekly
@@ -18910,7 +18868,6 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
     : poolData?.weeklyResetTime || (isActivePool ? fallbackWeekly?.resetTime : null);
   const hasWk = wkUsedRaw != null && wkRemRaw != null;
   const usedWkVal = hasWk ? Number(wkUsedRaw) : 0;
-  const remWkVal = hasWk ? Number(wkRemRaw) : 0;
 
   const hide5h = !has5h && hasWk;
   const hideWk = !hasWk && has5h;
@@ -18948,15 +18905,12 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
   syncQuotaWindowMeter({
     hasData: has5h,
     usedVal: used5hVal,
-    remVal: rem5hVal,
     resetTime: poolData?.resetTime,
     fallbackMetaText,
     showReserved: allowReserved,
     rawReservedPct: poolData?.reservedPct,
     leaseCount: poolData?.reservedLeaseCount,
-    metaBeforeEl: refs.meta5hBefore,
-    metaReservedEl: refs.meta5hReserved,
-    metaAfterEl: refs.meta5hAfter,
+    metaEl: refs.meta5h,
     trackEl: refs.track5h,
     fillEl: refs.fill5h,
     fillReservedEl: refs.fillReserved5h,
@@ -18996,15 +18950,12 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
   syncQuotaWindowMeter({
     hasData: hasWk,
     usedVal: usedWkVal,
-    remVal: remWkVal,
     resetTime: wkResetRaw,
     fallbackMetaText,
     showReserved: allowReserved && !useCustomWeekly,
     rawReservedPct: poolData?.weeklyReservedPct,
     leaseCount: poolData?.weeklyReservedLeaseCount,
-    metaBeforeEl: refs.metaWkBefore,
-    metaReservedEl: refs.metaWkReserved,
-    metaAfterEl: refs.metaWkAfter,
+    metaEl: refs.metaWk,
     trackEl: refs.trackWk,
     fillEl: refs.fillWk,
     fillReservedEl: refs.fillReservedWk,

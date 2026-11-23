@@ -2317,11 +2317,6 @@ html[data-standalone="true"] .app-shell {
   margin-left: 1px;
 }
 
-.quota-reserved-pct {
-  color: var(--quota-reserved);
-  font-weight: 500;
-}
-
 .quota-reserve-legend {
   display: flex;
   align-items: center;

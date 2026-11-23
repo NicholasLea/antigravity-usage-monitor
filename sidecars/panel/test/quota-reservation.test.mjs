@@ -967,17 +967,19 @@ test('QuotaPoolsWidget & SettingsOtherTab render experimental reservation bar/te
     assert.ok(legendEl, 'quota reservation legend mounted');
     assert.equal(legendEl.hidden, false);
 
-    // Toggle OFF: no reserved highlight and legend hidden
+    // Toggle OFF: no reserved highlight, legend hidden, compact reset + used text only
     widget.refs.update({ data: baseData, minuteTick: 1 });
     assert.equal(legendEl.hidden, true);
-    const rsvTagsOff = widget.el.querySelectorAll('.quota-reserved-pct');
-    assert.equal(rsvTagsOff.length, 2);
-    assert.equal(rsvTagsOff[0].hidden, true);
-    assert.equal(rsvTagsOff[1].hidden, true);
+    const metasOff = widget.el.querySelectorAll('.quota-win-meta');
+    assert.equal(metasOff.length, 2);
+    assert.match(metasOff[0].textContent, /· 已用 4\.1%$/);
+    assert.doesNotMatch(metasOff[0].textContent, /[()（）]|预占|余/);
+    assert.match(metasOff[1].textContent, /· 已用 16\.2%$/);
+    assert.doesNotMatch(metasOff[1].textContent, /[()（）]|预占|余/);
     const fillBarsOff = widget.el.querySelectorAll('.progress-fill');
     assert.equal(fillBarsOff[0].style.getPropertyValue('--fill-w'), '4.1%');
 
-    // Toggle ON: violet reserved bar segment + colored percentage tag + bottom solid/dashed legend
+    // Toggle ON: violet reserved bar segment + hover tooltip + bottom solid/dashed legend, without parenthetical inline text
     widget.refs.update({
       data: { ...baseData, settings: { experimentalQuotaReservation: true } },
       minuteTick: 1,
@@ -987,11 +989,13 @@ test('QuotaPoolsWidget & SettingsOtherTab render experimental reservation bar/te
     assert.ok(legendEl.querySelector('.quota-legend-line.is-reserved'));
     assert.match(legendEl.textContent, /实占/);
     assert.match(legendEl.textContent, /预占/);
-    const rsvTagsOn = widget.el.querySelectorAll('.quota-reserved-pct');
-    assert.equal(rsvTagsOn[0].hidden, false);
-    assert.equal(rsvTagsOn[0].textContent, '预占 1.0%');
-    assert.equal(rsvTagsOn[1].hidden, false);
-    assert.equal(rsvTagsOn[1].textContent, '预占 0.5%');
+    const metasOn = widget.el.querySelectorAll('.quota-win-meta');
+    assert.match(metasOn[0].textContent, /· 已用 4\.1%$/);
+    assert.doesNotMatch(metasOn[0].textContent, /[()（）]|预占|余/);
+    assert.match(metasOn[0].getAttribute('title') || '', /1\.0%/);
+    assert.match(metasOn[1].textContent, /· 已用 16\.2%$/);
+    assert.doesNotMatch(metasOn[1].textContent, /[()（）]|预占|余/);
+    assert.match(metasOn[1].getAttribute('title') || '', /0\.5%/);
 
     const fillBarsOn = widget.el.querySelectorAll('.progress-fill');
     const rsvBarsOn = widget.el.querySelectorAll('.progress-fill-reserved');
