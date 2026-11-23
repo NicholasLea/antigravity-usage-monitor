@@ -200,6 +200,17 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.footCallsCycle': 'Cycle Calls: {calls}',
   'quota.footTipCustom': 'Counted since Monday 00:00 local time',
   'quota.footTipCycle': 'Summed across each quota pool weekly reset window',
+  'quota.rateHelpAria': 'View empirical burn-rate estimates for this account',
+  'quota.ratePopTitle': 'Estimated Burn Rates',
+  'quota.ratePopAccountScope': '{account}',
+  'quota.ratePopAccountCurrent': 'Current account',
+  'quota.ratePopPoolFallback': 'Pool average',
+  'quota.ratePopEq5hLabel': '5h full',
+  'quota.ratePopEqWkLabel': 'Weekly full',
+  'quota.ratePopPerUsd': '{win} {rate}%/$',
+  'quota.ratePopSamples': '{n} samples',
+  'quota.ratePopEmpty': 'Not enough clean single-model samples yet (at least 3 clean steps per model). Estimates appear automatically during use.',
+  'quota.ratePopNote': 'Measured from clean single-model steps; lowest burn in pool = 1x. Account isolated.',
 
   // Live Activity Widget
   'live.currentSession': 'Current Session',

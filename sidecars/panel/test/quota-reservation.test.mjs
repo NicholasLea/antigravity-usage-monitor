@@ -1028,3 +1028,446 @@ test('QuotaPoolsWidget & SettingsOtherTab render experimental reservation bar/te
     });
   }
 });
+
+test('quota-reservation: learns per-model burn rates & 3x/1x multipliers with strict account isolation and persistence', () => {
+  let storedPayload = null;
+  const tracker = createQuotaReservationTracker({
+    loadState: () => storedPayload,
+    saveState: (payload) => {
+      storedPayload = JSON.parse(JSON.stringify(payload));
+    },
+  });
+
+  const makePools = (used5h, usedWk) =>
+    new Map([
+      [
+        'Gemini',
+        {
+          poolKey: 'Gemini',
+          has5h: true,
+          hasWeekly: true,
+          remainingFraction: 1 - used5h / 100,
+          usedPct: used5h,
+          resetTime: new Date(RESET_5H).toISOString(),
+          weeklyRemainingFraction: 1 - usedWk / 100,
+          weeklyUsedPct: usedWk,
+          weeklyResetTime: new Date(RESET_WK).toISOString(),
+        },
+      ],
+    ]);
+
+  const makeStats = (cost5h, costWk, modelCosts5h, modelCostsWeekly, ts) =>
+    new Map([
+      [
+        'Gemini',
+        {
+          cycle5h: { costUsd: cost5h, unpricedCalls: 0 },
+          cycleWeekly: { costUsd: costWk, unpricedCalls: 0 },
+          exactCost5hUsd: cost5h,
+          exactCostWeeklyUsd: costWk,
+          modelCosts5h,
+          modelCostsWeekly,
+          recent10m: { lastActivityMs: ts, activeSessionCount: 1, costUsd: 0.1 },
+        },
+      ],
+    ]);
+
+  let ts = T0;
+  let u5 = 10.0;
+  let uw = 20.0;
+  let carbonCost = 1.0;
+  let neonCost = 0.0;
+
+  // Baseline for Account A
+  const p0 = makePools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'alice@example.com',
+    quotaPoolsMap: p0,
+    poolCycleStats: makeStats(
+      carbonCost,
+      carbonCost,
+      { 'Gemini 4 Carbon': carbonCost },
+      { 'Gemini 4 Carbon': carbonCost },
+      ts
+    ),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(p0.get('Gemini').rateEstimate, null);
+
+  // 3 clean single-model steps on Carbon: 2.0 %/$ (5h), 0.5 %/$ (weekly)
+  let latestPool = null;
+  for (let i = 0; i < 3; i += 1) {
+    ts += 15_000;
+    carbonCost = +(carbonCost + 0.1).toFixed(6);
+    u5 = +(u5 + 0.2).toFixed(6);
+    uw = +(uw + 0.05).toFixed(6);
+    latestPool = makePools(u5, uw);
+    tracker.updatePools({
+      endpointId: 'local',
+      accountScope: 'alice@example.com',
+      quotaPoolsMap: latestPool,
+      poolCycleStats: makeStats(
+        carbonCost,
+        carbonCost,
+        { 'Gemini 4 Carbon': carbonCost },
+        { 'Gemini 4 Carbon': carbonCost },
+        ts
+      ),
+      quotaFetchedAtMs: ts,
+      nowMs: ts,
+    });
+  }
+
+  const estCarbonOnly = latestPool.get('Gemini').rateEstimate;
+  assert.ok(estCarbonOnly, 'rateEstimate appears once 3 clean single-model steps are recorded');
+  assert.equal(estCarbonOnly.models.length, 1);
+  assert.equal(estCarbonOnly.models[0].model, 'Gemini 4 Carbon');
+  assert.equal(estCarbonOnly.models[0].rate5hPctPerUsd, 2);
+  assert.equal(estCarbonOnly.models[0].rateWeeklyPctPerUsd, 0.5);
+  assert.equal(estCarbonOnly.models[0].eqFull5hUsd, 50);
+  assert.equal(estCarbonOnly.models[0].eqFullWeeklyUsd, 200);
+  assert.equal(estCarbonOnly.models[0].multiplier, null, 'single model does not emit relative multiplier');
+  assert.equal(estCarbonOnly.models[0].samples, 3);
+
+  // 3 clean single-model steps on Neon: 0.6667 %/$ (5h), 0.1667 %/$ (weekly) -> 1:3 relative ratio
+  for (let i = 0; i < 3; i += 1) {
+    ts += 15_000;
+    neonCost = +(neonCost + 0.15).toFixed(6);
+    u5 = +(u5 + 0.1).toFixed(6);
+    uw = +(uw + 0.025).toFixed(6);
+    latestPool = makePools(u5, uw);
+    tracker.updatePools({
+      endpointId: 'local',
+      accountScope: 'alice@example.com',
+      quotaPoolsMap: latestPool,
+      poolCycleStats: makeStats(
+        carbonCost + neonCost,
+        carbonCost + neonCost,
+        { 'Gemini 4 Carbon': carbonCost, 'Gemini 4 Neon': neonCost },
+        { 'Gemini 4 Carbon': carbonCost, 'Gemini 4 Neon': neonCost },
+        ts
+      ),
+      quotaFetchedAtMs: ts,
+      nowMs: ts,
+    });
+  }
+
+  const estDual = latestPool.get('Gemini').rateEstimate;
+  assert.equal(estDual.models.length, 2);
+  assert.equal(estDual.models[0].model, 'Gemini 4 Carbon');
+  assert.equal(estDual.models[0].multiplier, 3);
+  assert.equal(estDual.models[0].eqFull5hUsd, 50);
+  assert.equal(estDual.models[0].eqFullWeeklyUsd, 200);
+  assert.equal(estDual.models[1].model, 'Gemini 4 Neon');
+  assert.equal(estDual.models[1].multiplier, 1);
+  assert.equal(estDual.models[1].eqFull5hUsd, 150);
+  assert.equal(estDual.models[1].eqFullWeeklyUsd, 600);
+
+  // Mixed-model step ($0.10 Carbon + $0.15 Neon -> +0.30% 5h, +0.075% weekly):
+  // weighted expected matches official (no false lease) and does not pollute per-model sample counts
+  ts += 15_000;
+  carbonCost = +(carbonCost + 0.1).toFixed(6);
+  neonCost = +(neonCost + 0.15).toFixed(6);
+  u5 = +(u5 + 0.3).toFixed(6);
+  uw = +(uw + 0.075).toFixed(6);
+  const pMixed = makePools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'alice@example.com',
+    quotaPoolsMap: pMixed,
+    poolCycleStats: makeStats(
+      carbonCost + neonCost,
+      carbonCost + neonCost,
+      { 'Gemini 4 Carbon': carbonCost, 'Gemini 4 Neon': neonCost },
+      { 'Gemini 4 Carbon': carbonCost, 'Gemini 4 Neon': neonCost },
+      ts
+    ),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pMixed.get('Gemini').reservedPct, 0);
+  assert.equal(pMixed.get('Gemini').rateEstimate.models[0].samples, 3);
+  assert.equal(pMixed.get('Gemini').rateEstimate.models[1].samples, 3);
+
+  // Strict account isolation: Account B sees null (no cross-account leakage);
+  // case-insensitive Account A lookup still sees its own calibrated estimates
+  ts += 15_000;
+  const pBob = makePools(5.0, 10.0);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'bob@example.com',
+    quotaPoolsMap: pBob,
+    poolCycleStats: makeStats(0.5, 0.5, { 'Gemini 4 Carbon': 0.5 }, { 'Gemini 4 Carbon': 0.5 }, ts),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pBob.get('Gemini').rateEstimate, null, 'other account must not inherit Alice rates');
+
+  // Force a persist tick past QR_PERSIST_MIN_INTERVAL_MS and test reload across restart
+  ts += 40_000;
+  carbonCost = +(carbonCost + 0.1).toFixed(6);
+  u5 = +(u5 + 0.2).toFixed(6);
+  uw = +(uw + 0.05).toFixed(6);
+  const pAliceCase = makePools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'ALICE@EXAMPLE.COM',
+    quotaPoolsMap: pAliceCase,
+    poolCycleStats: makeStats(
+      carbonCost + neonCost,
+      carbonCost + neonCost,
+      { 'Gemini 4 Carbon': carbonCost, 'Gemini 4 Neon': neonCost },
+      { 'Gemini 4 Carbon': carbonCost, 'Gemini 4 Neon': neonCost },
+      ts
+    ),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pAliceCase.get('Gemini').rateEstimate.models[0].samples, 4);
+
+  const reloaded = createQuotaReservationTracker({ loadState: () => storedPayload });
+  const pReloadAlice = makePools(u5, uw);
+  reloaded.updatePools({
+    endpointId: 'local',
+    accountScope: 'alice@example.com',
+    quotaPoolsMap: pReloadAlice,
+    poolCycleStats: makeStats(
+      carbonCost + neonCost,
+      carbonCost + neonCost,
+      { 'Gemini 4 Carbon': carbonCost, 'Gemini 4 Neon': neonCost },
+      { 'Gemini 4 Carbon': carbonCost, 'Gemini 4 Neon': neonCost },
+      ts
+    ),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pReloadAlice.get('Gemini').rateEstimate.models.length, 2);
+  assert.equal(pReloadAlice.get('Gemini').rateEstimate.models[0].multiplier, 3);
+  assert.equal(pReloadAlice.get('Gemini').rateEstimate.models[1].multiplier, 1);
+
+  const snap = reloaded.getLogSnapshot();
+  const alice5h = snap.buckets.find((b) => b.pool === 'Gemini' && b.win === '5h' && b.byModel);
+  assert.ok(alice5h?.byModel?.['Gemini 4 Carbon'], 'snapshot exposes per-model summary');
+  assert.equal(alice5h.byModel['Gemini 4 Carbon'].eqFullUsd, 50);
+
+  const pReloadBob = makePools(5.0, 10.0);
+  reloaded.updatePools({
+    endpointId: 'local',
+    accountScope: 'bob@example.com',
+    quotaPoolsMap: pReloadBob,
+    poolCycleStats: makeStats(0.5, 0.5, { 'Gemini 4 Carbon': 0.5 }, { 'Gemini 4 Carbon': 0.5 }, ts),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pReloadBob.get('Gemini').rateEstimate, null, 'account isolation preserved after restart');
+
+  // Legacy v2 persisted bucket missing lastModelCostsUsd must not pollute modelRates on first upgrade tick
+  const legacyV2 = createQuotaReservationTracker({
+    loadState: () => ({
+      version: 2,
+      savedAt: new Date(T0).toISOString(),
+      buckets: {
+        'local::legacy@example.com::Gemini::5h': {
+          resetTimeMs: RESET_5H,
+          lastQuotaTs: T0,
+          lastOfficialUsedPct: 12.0,
+          lastCycleCostUsd: 18.0,
+          ratePctPerUsd: 0.6667,
+          rateSamples: 10,
+          rateWindow: [0.6667, 0.6667, 0.6667],
+          activeLeases: [],
+        },
+      },
+      events: [],
+    }),
+  });
+  const tUp = T0 + 15_000;
+  const pUp = makePools(12.2, 20.0);
+  legacyV2.updatePools({
+    endpointId: 'local',
+    accountScope: 'legacy@example.com',
+    quotaPoolsMap: pUp,
+    poolCycleStats: makeStats(18.1, 18.1, { 'Gemini 4 Carbon': 18.1 }, { 'Gemini 4 Carbon': 18.1 }, tUp),
+    quotaFetchedAtMs: tUp,
+    nowMs: tUp,
+  });
+  const legacySt = legacyV2._buckets.get('local::legacy@example.com::Gemini::5h');
+  assert.deepEqual(legacySt.modelRates, {}, 'first upgrade tick backfills baseline without recording polluted cumulative delta');
+  assert.equal(legacySt.lastModelCostsUsd['Gemini 4 Carbon'], 18.1);
+});
+
+test('QuotaPoolsWidget renders circle-? hover popover for account-isolated model burn rates', async () => {
+  const { document } = createMockDom();
+  const origDocument = globalThis.document;
+  const origWindow = globalThis.window;
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 960,
+    innerHeight: 720,
+    addEventListener() {},
+    removeEventListener() {},
+    location: { origin: 'http://127.0.0.1:0', href: 'http://127.0.0.1:0/' },
+  };
+
+  try {
+    const [{ setI18nLanguage }, { QuotaPoolsWidget, maskAccountLabel }] = await Promise.all([
+      import('../src/i18n/index.js'),
+      import('../src/components/widgets/QuotaPoolsWidget.js'),
+    ]);
+    setI18nLanguage('zh-CN');
+
+    // Account privacy masking
+    assert.equal(maskAccountLabel('sjee80343@gmail.com'), 'sj***43@gmail.com');
+    assert.equal(maskAccountLabel('alice@example.com'), 'al***ce@example.com');
+    assert.equal(maskAccountLabel('bob@example.com'), 'b***b@example.com');
+    assert.equal(maskAccountLabel('ab@example.com'), 'a*@example.com');
+    assert.equal(maskAccountLabel('Tester'), 'Te***r');
+    assert.equal(maskAccountLabel(''), '');
+
+    const widget = QuotaPoolsWidget();
+    const helpBtn = widget.refs.rateHelpBtn;
+    const popover = widget.refs.ratePopoverEl;
+    assert.ok(helpBtn, 'circle-? help button mounted');
+    assert.ok(popover, 'rate popover mounted');
+    assert.equal(popover.hidden, true);
+    assert.equal(helpBtn.getAttribute('aria-expanded'), 'false');
+
+    // Hover opens empty collecting hint before samples accumulate
+    helpBtn.dispatchEvent({ type: 'mouseenter' });
+    assert.equal(popover.hidden, false);
+    assert.equal(helpBtn.getAttribute('aria-expanded'), 'true');
+    assert.match(popover.textContent, /暂未采集到足够的单模型干净样本/);
+
+    // Populated multi-model rateEstimate for current account
+    const dualData = {
+      account: { email: 'sjee80343@gmail.com', tierName: 'Google AI Ultra', tierMultiplier: '5x' },
+      quotas: {
+        pools: [
+          {
+            poolKey: 'Gemini',
+            poolLabel: 'Gemini',
+            family: 'Gemini',
+            usedPct: 30,
+            remainingPct: 70,
+            weeklyUsedPct: 37,
+            weeklyRemainingPct: 63,
+            rateEstimate: {
+              rate5hPctPerUsd: 2,
+              rateWeeklyPctPerUsd: 0.5,
+              eqFull5hUsd: 50,
+              eqFullWeeklyUsd: 200,
+              samples5h: 26,
+              samplesWeekly: 32,
+              models: [
+                {
+                  model: 'Gemini 4 Carbon',
+                  rate5hPctPerUsd: 2,
+                  rateWeeklyPctPerUsd: 0.5,
+                  eqFull5hUsd: 50,
+                  eqFullWeeklyUsd: 200,
+                  multiplier: 3,
+                  samples: 26,
+                },
+                {
+                  model: 'Gemini 4 Neon',
+                  rate5hPctPerUsd: 0.6667,
+                  rateWeeklyPctPerUsd: 0.1667,
+                  eqFull5hUsd: 150,
+                  eqFullWeeklyUsd: 600,
+                  multiplier: 1,
+                  samples: 12,
+                },
+              ],
+            },
+          },
+        ],
+        weekly: { isOfficial: true },
+      },
+    };
+    widget.refs.update({ data: dualData, minuteTick: 1 });
+    const acctPill = popover.querySelector('.quota-rate-pop-account');
+    assert.equal(acctPill.textContent, 'sj***43@gmail.com');
+    assert.equal(acctPill.getAttribute('title'), 'sj***43@gmail.com');
+    assert.equal(popover.textContent.includes('sjee80343'), false, 'raw email never leaks in popover');
+    const rows = popover.querySelectorAll('.quota-rate-model-row');
+    assert.equal(rows.length, 2);
+    assert.match(rows[0].textContent, /Gemini 4 Carbon/);
+    assert.match(rows[0].textContent, /3x/);
+    assert.match(rows[0].textContent, /5h 满池≈ \$50/);
+    assert.match(rows[0].textContent, /周限满池≈ \$200/);
+    assert.match(rows[0].textContent, /5h 2%\/\$ · 26 样本/);
+    assert.equal(rows[0].querySelector('.quota-rate-mult-badge').classList.contains('is-high'), true);
+    assert.equal(rows[0].querySelector('.quota-rate-eq-grid').classList.contains('is-single'), false);
+
+    assert.match(rows[1].textContent, /Gemini 4 Neon/);
+    assert.match(rows[1].textContent, /1x/);
+    assert.match(rows[1].textContent, /5h 满池≈ \$150/);
+    assert.match(rows[1].textContent, /周限满池≈ \$600/);
+    assert.match(rows[1].textContent, /5h 0\.67%\/\$ · 12 样本/);
+    assert.equal(rows[1].querySelector('.quota-rate-mult-badge').classList.contains('is-high'), false);
+
+    // Switching to another account with pool-average-only fallback refreshes popover cleanly
+    widget.refs.update({
+      data: {
+        account: { email: 'bob@example.com', tierName: 'Google AI Pro' },
+        quotas: {
+          pools: [
+            {
+              poolKey: 'Argon',
+              poolLabel: 'Gemini 4 Argon',
+              family: 'Argon',
+              weeklyUsedPct: 40,
+              weeklyRemainingPct: 60,
+              rateEstimate: {
+                rate5hPctPerUsd: null,
+                rateWeeklyPctPerUsd: 0.5,
+                eqFull5hUsd: null,
+                eqFullWeeklyUsd: 200,
+                samples5h: 0,
+                samplesWeekly: 8,
+                models: [],
+              },
+            },
+          ],
+          weekly: { isOfficial: true },
+        },
+      },
+      minuteTick: 2,
+    });
+    assert.equal(acctPill.textContent, 'b***b@example.com');
+    const fallbackRow = popover.querySelector('.quota-rate-model-row.is-fallback');
+    assert.ok(fallbackRow, 'renders pool-average fallback before per-model reaches 3 samples');
+    assert.match(fallbackRow.textContent, /池综合均值/);
+    assert.match(fallbackRow.textContent, /周限满池≈ \$200/);
+    assert.match(fallbackRow.textContent, /周限 0\.5%\/\$ · 8 样本/);
+    assert.equal(fallbackRow.querySelector('.quota-rate-eq-grid').classList.contains('is-single'), true);
+
+    // Locale switch renders English copy
+    setI18nLanguage('en-US');
+    widget.refs.update({ data: dualData, minuteTick: 3 });
+    assert.match(popover.textContent, /Estimated Burn Rates/);
+    assert.equal(acctPill.textContent, 'sj***43@gmail.com');
+    assert.match(popover.textContent, /5h full≈ \$50/);
+    assert.match(popover.textContent, /Weekly full≈ \$200/);
+
+    // Escape closes popover; click toggles open/close; mouseleave closes after grace delay
+    helpBtn.dispatchEvent({ type: 'keydown', key: 'Escape', stopPropagation() {} });
+    assert.equal(popover.hidden, true);
+    helpBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    assert.equal(popover.hidden, false);
+    helpBtn.dispatchEvent({ type: 'mouseleave' });
+    popover.dispatchEvent({ type: 'mouseenter' });
+    await new Promise((r) => setTimeout(r, 160));
+    assert.equal(popover.hidden, false, 'moving pointer into popover cancels close');
+    popover.dispatchEvent({ type: 'mouseleave' });
+    await new Promise((r) => setTimeout(r, 170));
+    assert.equal(popover.hidden, true, 'leaving popover closes after grace delay');
+
+    widget.destroy();
+  } finally {
+    globalThis.document = origDocument;
+    globalThis.window = origWindow;
+  }
+});

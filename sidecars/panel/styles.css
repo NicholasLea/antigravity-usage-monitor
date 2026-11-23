@@ -2363,6 +2363,226 @@ html[data-standalone="true"] .app-shell {
   );
 }
 
+/* 可用额度标题旁圈问号触发器及实测倍率预估悬浮卡片 */
+.quota-panel {
+  position: relative;
+}
+
+.quota-rate-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-left: -1px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: help;
+  flex-shrink: 0;
+  transition:
+    color var(--dur-instant) var(--ease-fast),
+    background-color var(--dur-instant) var(--ease-fast);
+}
+
+.quota-rate-help-btn:hover,
+.quota-rate-help-btn:focus-visible,
+.quota-rate-help-btn.is-open {
+  color: var(--accent-primary);
+  background: var(--accent-primary-soft);
+  outline: none;
+}
+
+.quota-rate-popover {
+  position: absolute;
+  top: 38px;
+  left: 12px;
+  width: min(332px, calc(100% - 24px));
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-popover);
+  color: var(--text-primary);
+}
+
+.quota-rate-popover[hidden] {
+  display: none;
+}
+
+.quota-rate-pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.quota-rate-pop-title {
+  font-size: var(--fs-base-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.quota-rate-pop-account {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.quota-rate-pop-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quota-rate-pool-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.quota-rate-pool-group + .quota-rate-pool-group {
+  padding-top: 7px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.quota-rate-pool-label {
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.quota-rate-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.quota-rate-model-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.quota-rate-model-row + .quota-rate-model-row {
+  padding-top: 7px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.quota-rate-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.quota-rate-model-left {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.quota-rate-model-name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.quota-rate-model-name.is-muted {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.quota-rate-mult-badge {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.quota-rate-mult-badge.is-high {
+  color: var(--metric-warn);
+}
+
+.quota-rate-meta {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.quota-rate-eq-grid {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quota-rate-eq-grid.is-single {
+  justify-content: flex-start;
+}
+
+.quota-rate-eq-cell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+
+.quota-rate-eq-k {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.quota-rate-eq-v {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.quota-rate-pop-empty {
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.quota-rate-pop-note {
+  padding-top: 6px;
+  border-top: 1px solid var(--border-hairline);
+  font-size: var(--fs-2xs);
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 /* --- 4. 上下文双列图例网格 (Context 10-Channel Legend Grid) --- */
 .ctx-legend-grid {
   display: grid;
@@ -8601,7 +8821,9 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .trend-tooltip,
 [data-modern-ui="true"] .cons-breakdown-popover,
 [data-modern-ui="true"] .turn-prompt-tip,
-[data-modern-ui="true"] .step-anomaly-tip {
+[data-modern-ui="true"] .step-anomaly-tip,
+[data-modern-ui="true"] .quota-rate-popover,
+:host([data-modern-ui="true"]) .quota-rate-popover {
   border: none;
   background: var(--modern-surface-card);
   box-shadow: var(--shadow-popover);
@@ -8609,8 +8831,16 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"] .step-anomaly-tip-list,
-[data-modern-ui="true"] .step-anomaly-tip-hint {
-  border-top-color: var(--modern-surface-hover);
+[data-modern-ui="true"] .step-anomaly-tip-hint,
+[data-modern-ui="true"] .quota-rate-pop-head,
+[data-modern-ui="true"] .quota-rate-pool-group + .quota-rate-pool-group,
+[data-modern-ui="true"] .quota-rate-model-row + .quota-rate-model-row,
+[data-modern-ui="true"] .quota-rate-pop-note,
+:host([data-modern-ui="true"]) .quota-rate-pop-head,
+:host([data-modern-ui="true"]) .quota-rate-pool-group + .quota-rate-pool-group,
+:host([data-modern-ui="true"]) .quota-rate-model-row + .quota-rate-model-row,
+:host([data-modern-ui="true"]) .quota-rate-pop-note {
+  border-color: var(--modern-surface-hover);
 }
 
 [data-modern-ui="true"] .trend-tooltip:not(.is-hm-top):not(.is-hm-bottom) {

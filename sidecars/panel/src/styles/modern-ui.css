@@ -813,7 +813,9 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .trend-tooltip,
 [data-modern-ui="true"] .cons-breakdown-popover,
 [data-modern-ui="true"] .turn-prompt-tip,
-[data-modern-ui="true"] .step-anomaly-tip {
+[data-modern-ui="true"] .step-anomaly-tip,
+[data-modern-ui="true"] .quota-rate-popover,
+:host([data-modern-ui="true"]) .quota-rate-popover {
   border: none;
   background: var(--modern-surface-card);
   box-shadow: var(--shadow-popover);
@@ -821,8 +823,16 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"] .step-anomaly-tip-list,
-[data-modern-ui="true"] .step-anomaly-tip-hint {
-  border-top-color: var(--modern-surface-hover);
+[data-modern-ui="true"] .step-anomaly-tip-hint,
+[data-modern-ui="true"] .quota-rate-pop-head,
+[data-modern-ui="true"] .quota-rate-pool-group + .quota-rate-pool-group,
+[data-modern-ui="true"] .quota-rate-model-row + .quota-rate-model-row,
+[data-modern-ui="true"] .quota-rate-pop-note,
+:host([data-modern-ui="true"]) .quota-rate-pop-head,
+:host([data-modern-ui="true"]) .quota-rate-pool-group + .quota-rate-pool-group,
+:host([data-modern-ui="true"]) .quota-rate-model-row + .quota-rate-model-row,
+:host([data-modern-ui="true"]) .quota-rate-pop-note {
+  border-color: var(--modern-surface-hover);
 }
 
 [data-modern-ui="true"] .trend-tooltip:not(.is-hm-top):not(.is-hm-bottom) {

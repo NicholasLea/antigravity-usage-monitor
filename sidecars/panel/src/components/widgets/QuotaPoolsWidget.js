@@ -414,12 +414,331 @@ export function formatAccountTierBadge(account) {
   return `${tierName} · ${rawPlan}`;
 }
 
+/**
+ * 对账号邮箱或名称做轻量隐私脱敏（如 `sjee80343@gmail.com` -> `sj***43@gmail.com`），
+ * 兼顾多账号辨识度及截图分享隐私安全。
+ *
+ * @param {string|null|undefined} raw
+ * @returns {string}
+ */
+export function maskAccountLabel(raw) {
+  const str = String(raw || '').trim();
+  if (!str) return '';
+  const atIdx = str.indexOf('@');
+  if (atIdx > 0 && atIdx < str.length - 1) {
+    const local = str.slice(0, atIdx);
+    const domain = str.slice(atIdx);
+    const chars = Array.from(local);
+    if (chars.length <= 1) return `*${domain}`;
+    if (chars.length === 2) return `${chars[0]}*${domain}`;
+    if (chars.length <= 4) return `${chars[0]}***${chars[chars.length - 1]}${domain}`;
+    return `${chars.slice(0, 2).join('')}***${chars.slice(-2).join('')}${domain}`;
+  }
+  const chars = Array.from(str);
+  if (chars.length <= 1) return '*';
+  if (chars.length === 2) return `${chars[0]}*`;
+  if (chars.length <= 4) return `${chars[0]}***${chars[chars.length - 1]}`;
+  return `${chars.slice(0, 2).join('')}***${chars[chars.length - 1]}`;
+}
+
+function formatRateEqUsd(val) {
+  const num = Number(val);
+  if (!Number.isFinite(num) || num <= 0) return '--';
+  if (num >= 10) return `$${Math.round(num)}`;
+  return `$${Number(num.toFixed(1))}`;
+}
+
+function formatRatePerUsdValue(rate) {
+  const num = Number(rate);
+  if (!Number.isFinite(num) || num <= 0) return '--';
+  return String(Number(num.toFixed(2)));
+}
+
+function formatRateMultiplier(mult) {
+  const num = Number(mult);
+  if (!Number.isFinite(num) || num <= 0) return '';
+  return `${Number(num.toFixed(1))}x`;
+}
+
+function createRateModelCard({
+  name,
+  isMutedName = false,
+  isFallback = false,
+  multiplier = null,
+  rate5hPctPerUsd = null,
+  rateWeeklyPctPerUsd = null,
+  eqFull5hUsd = null,
+  eqFullWeeklyUsd = null,
+  samples = 0,
+}) {
+  const leftNodes = [
+    h('span', {
+      className: `quota-rate-model-name${isMutedName ? ' is-muted' : ''}`,
+      text: name,
+    }),
+  ];
+  const multText = formatRateMultiplier(multiplier);
+  if (multText) {
+    leftNodes.push(
+      h('span', {
+        className: `quota-rate-mult-badge${Number(multiplier) >= 1.5 ? ' is-high' : ''}`,
+        text: multText,
+      })
+    );
+  }
+
+  const has5hRate = rate5hPctPerUsd != null;
+  const primaryRate = has5hRate ? rate5hPctPerUsd : rateWeeklyPctPerUsd;
+  const subParts = [];
+  if (primaryRate != null) {
+    subParts.push(
+      t('quota.ratePopPerUsd', {
+        win: has5hRate ? '5h' : t('quota.weeklyShort'),
+        rate: formatRatePerUsdValue(primaryRate),
+      })
+    );
+  }
+  if (Number(samples) > 0) {
+    subParts.push(t('quota.ratePopSamples', { n: Number(samples) }));
+  }
+
+  const eqCells = [];
+  if (eqFull5hUsd != null) {
+    eqCells.push(
+      h('div', { className: 'quota-rate-eq-cell' }, [
+        h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEq5hLabel') }),
+        h('span', {
+          className: 'quota-rate-eq-v text-mono',
+          text: `≈ ${formatRateEqUsd(eqFull5hUsd)}`,
+        }),
+      ])
+    );
+  }
+  if (eqFullWeeklyUsd != null) {
+    eqCells.push(
+      h('div', { className: 'quota-rate-eq-cell' }, [
+        h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEqWkLabel') }),
+        h('span', {
+          className: 'quota-rate-eq-v text-mono',
+          text: `≈ ${formatRateEqUsd(eqFullWeeklyUsd)}`,
+        }),
+      ])
+    );
+  }
+
+  const cardChildren = [
+    h('div', { className: 'quota-rate-row-top' }, [
+      h('div', { className: 'quota-rate-model-left' }, leftNodes),
+      ...(subParts.length > 0
+        ? [h('span', { className: 'quota-rate-meta text-mono', text: subParts.join(' · ') })]
+        : []),
+    ]),
+  ];
+  if (eqCells.length > 0) {
+    cardChildren.push(
+      h(
+        'div',
+        { className: `quota-rate-eq-grid${eqCells.length === 1 ? ' is-single' : ''}` },
+        eqCells
+      )
+    );
+  }
+
+  return h('div', { className: `quota-rate-model-row${isFallback ? ' is-fallback' : ''}` }, cardChildren);
+}
+
+function buildRatePopoverSig(data) {
+  const locale = getEffectiveLocale();
+  const acct = String(data?.account?.email || data?.account?.name || '').trim();
+  const pools = Array.isArray(data?.quotas?.pools) ? data.quotas.pools : [];
+  const poolSig = pools
+    .map((p) => `${p.poolKey || ''}:${p.poolLabel || ''}:${JSON.stringify(p.rateEstimate || null)}`)
+    .join('|');
+  return `${locale}|${acct}|${poolSig}`;
+}
+
 export const QuotaPoolsWidget = defineComponent({
   name: 'QuotaPoolsWidget',
-  setup({ props }) {
+  setup({ props, onCleanup }) {
     const compactHover = Boolean(props.compactHover);
     const titleTextEl = h('span', { text: t('module.quotas') });
     const tierBadge = h('span', { className: 'panel-meta', text: 'Google AI · Pro' });
+
+    const ratePopTitleEl = h('span', {
+      className: 'quota-rate-pop-title',
+      text: t('quota.ratePopTitle'),
+    });
+    const ratePopAccountEl = h('span', {
+      className: 'quota-rate-pop-account',
+      text: t('quota.ratePopAccountCurrent'),
+    });
+    const ratePopBodyEl = h('div', { className: 'quota-rate-pop-body' });
+    const ratePopNoteEl = h('div', {
+      className: 'quota-rate-pop-note',
+      text: t('quota.ratePopNote'),
+    });
+    const ratePopoverEl = h(
+      'div',
+      {
+        className: 'quota-rate-popover',
+        role: 'tooltip',
+        hidden: true,
+      },
+      [
+        h('div', { className: 'quota-rate-pop-head' }, [ratePopTitleEl, ratePopAccountEl]),
+        ratePopBodyEl,
+        ratePopNoteEl,
+      ]
+    );
+    ratePopoverEl.hidden = true;
+
+    let ratePopOpen = false;
+    let ratePopCloseTimer = null;
+    let lastRatePopSig = '';
+
+    const cancelRatePopClose = () => {
+      if (ratePopCloseTimer) {
+        clearTimeout(ratePopCloseTimer);
+        ratePopCloseTimer = null;
+      }
+    };
+
+    const setRatePopOpen = (open) => {
+      const next = Boolean(open);
+      ratePopOpen = next;
+      ratePopoverEl.hidden = !next;
+      patchAttr(ratePopoverEl, 'hidden', !next);
+      patchAttr(rateHelpBtn, 'aria-expanded', next ? 'true' : 'false');
+      patchClasses(rateHelpBtn, { 'is-open': next });
+    };
+
+    const openRatePop = () => {
+      cancelRatePopClose();
+      if (!ratePopOpen) setRatePopOpen(true);
+    };
+
+    const scheduleRatePopClose = () => {
+      cancelRatePopClose();
+      ratePopCloseTimer = setTimeout(() => {
+        ratePopCloseTimer = null;
+        setRatePopOpen(false);
+      }, 130);
+    };
+
+    const rateHelpBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'quota-rate-help-btn',
+        'aria-label': t('quota.rateHelpAria'),
+        'aria-haspopup': 'true',
+        'aria-expanded': 'false',
+        onMouseenter: openRatePop,
+        onMouseleave: scheduleRatePopClose,
+        onFocus: openRatePop,
+        onBlur: scheduleRatePopClose,
+        onClick: (ev) => {
+          ev?.stopPropagation?.();
+          cancelRatePopClose();
+          setRatePopOpen(!ratePopOpen);
+        },
+        onKeydown: (ev) => {
+          if (ev?.key === 'Escape' && ratePopOpen) {
+            ev.stopPropagation?.();
+            cancelRatePopClose();
+            setRatePopOpen(false);
+          }
+        },
+      },
+      [createSvgIcon('help-circle', { size: 13 })]
+    );
+
+    ratePopoverEl.addEventListener?.('mouseenter', openRatePop);
+    ratePopoverEl.addEventListener?.('mouseleave', scheduleRatePopClose);
+    onCleanup?.(() => {
+      cancelRatePopClose();
+    });
+
+    function syncRatePopoverContent(data) {
+      const sig = buildRatePopoverSig(data);
+      if (sig === lastRatePopSig) return;
+      lastRatePopSig = sig;
+
+      patchText(ratePopTitleEl, t('quota.ratePopTitle'));
+      patchText(ratePopNoteEl, t('quota.ratePopNote'));
+      patchAttr(rateHelpBtn, 'aria-label', t('quota.rateHelpAria'));
+
+      const acctMasked = maskAccountLabel(data?.account?.email || data?.account?.name || '');
+      patchText(
+        ratePopAccountEl,
+        acctMasked
+          ? t('quota.ratePopAccountScope', { account: acctMasked })
+          : t('quota.ratePopAccountCurrent')
+      );
+      patchAttr(ratePopAccountEl, 'title', acctMasked || null);
+
+      while (ratePopBodyEl.firstChild) {
+        ratePopBodyEl.removeChild(ratePopBodyEl.firstChild);
+      }
+
+      const rawPools = Array.isArray(data?.quotas?.pools) ? data.quotas.pools : [];
+      const populatedGroups = [];
+
+      for (const p of rawPools) {
+        const est = p?.rateEstimate;
+        if (!est || typeof est !== 'object') continue;
+        const models = Array.isArray(est.models) ? est.models : [];
+        const hasPoolFallback =
+          models.length === 0 &&
+          (Number.isFinite(est.rate5hPctPerUsd) || Number.isFinite(est.rateWeeklyPctPerUsd));
+        if (models.length === 0 && !hasPoolFallback) continue;
+
+        const poolLabel = p.poolLabel || p.family || p.poolKey || 'Pool';
+        const rows =
+          models.length > 0
+            ? models.map((item) =>
+                createRateModelCard({
+                  name: item.model,
+                  multiplier: item.multiplier,
+                  rate5hPctPerUsd: item.rate5hPctPerUsd,
+                  rateWeeklyPctPerUsd: item.rateWeeklyPctPerUsd,
+                  eqFull5hUsd: item.eqFull5hUsd,
+                  eqFullWeeklyUsd: item.eqFullWeeklyUsd,
+                  samples: item.samples,
+                })
+              )
+            : [
+                createRateModelCard({
+                  name: t('quota.ratePopPoolFallback'),
+                  isMutedName: true,
+                  isFallback: true,
+                  rate5hPctPerUsd: est.rate5hPctPerUsd,
+                  rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
+                  eqFull5hUsd: est.eqFull5hUsd,
+                  eqFullWeeklyUsd: est.eqFullWeeklyUsd,
+                  samples: Math.max(Number(est.samples5h) || 0, Number(est.samplesWeekly) || 0),
+                }),
+              ];
+
+        populatedGroups.push(
+          h('div', { className: 'quota-rate-pool-group' }, [
+            h('div', { className: 'quota-rate-pool-label', text: poolLabel }),
+            h('div', { className: 'quota-rate-model-list' }, rows),
+          ])
+        );
+      }
+
+      if (populatedGroups.length === 0) {
+        ratePopBodyEl.appendChild(
+          h('div', { className: 'quota-rate-pop-empty', text: t('quota.ratePopEmpty') })
+        );
+      } else {
+        for (const grp of populatedGroups) {
+          ratePopBodyEl.appendChild(grp);
+        }
+      }
+    }
+
     const poolsListEl = h(
       'div',
       compactHover
@@ -453,22 +772,27 @@ export const QuotaPoolsWidget = defineComponent({
       ]
     );
 
-    const quotaPanel = h('section', { className: 'panel' }, [
+    const quotaPanel = h('section', { className: 'panel quota-panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('pulse', { size: 13 }),
           titleTextEl,
+          rateHelpBtn,
         ]),
         tierBadge,
       ]),
       poolsListEl,
       reserveLegendEl,
+      ratePopoverEl,
     ]);
+
+    syncRatePopoverContent(null);
 
     function update({ data, minuteTick } = {}) {
       patchText(titleTextEl, t('module.quotas'));
       patchText(legendActualTextEl, t('quota.legendActual'));
       patchText(legendReservedTextEl, t('quota.legendReserved'));
+      syncRatePopoverContent(data);
       if (!data) {
         reserveLegendEl.hidden = true;
         if (compactHover) {
@@ -497,7 +821,7 @@ export const QuotaPoolsWidget = defineComponent({
 
     return {
       el: quotaPanel,
-      refs: { update, poolsListEl },
+      refs: { update, poolsListEl, rateHelpBtn, ratePopoverEl },
     };
   },
 });

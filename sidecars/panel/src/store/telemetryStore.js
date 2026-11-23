@@ -1105,7 +1105,9 @@ export function isEquivalentTelemetry(prev, next) {
       pPools[i]?.cycle5h?.calls !== nPools[i]?.cycle5h?.calls ||
       pPools[i]?.cycleWeekly?.tokens !== nPools[i]?.cycleWeekly?.tokens ||
       pPools[i]?.cycleWeekly?.costUsd !== nPools[i]?.cycleWeekly?.costUsd ||
-      pPools[i]?.cycleWeekly?.calls !== nPools[i]?.cycleWeekly?.calls
+      pPools[i]?.cycleWeekly?.calls !== nPools[i]?.cycleWeekly?.calls ||
+      JSON.stringify(pPools[i]?.rateEstimate || null) !==
+        JSON.stringify(nPools[i]?.rateEstimate || null)
     ) {
       return false;
     }

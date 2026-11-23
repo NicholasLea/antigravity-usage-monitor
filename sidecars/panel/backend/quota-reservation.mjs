@@ -39,6 +39,9 @@ export const QR_RATE_OUTLIER_MAX_RATIO = 2.0;
 export const QR_RATE_DRIFT_STREAK = 5;
 export const QR_CONSUME_MIN_SHORTFALL_PCT = 0.03;
 export const QR_CONSUME_SHORTFALL_RATIO = 0.35;
+export const QR_MODEL_RATE_MIN_UI_SAMPLES = 3;
+export const QR_MODEL_SINGLE_DOMINANCE_RATIO = 0.95;
+const QR_MAX_MODELS_PER_BUCKET = 16;
 const QR_MAX_TRACKED_BUCKETS = 128;
 const QR_MAX_ACTIVE_LEASES = 16;
 const QR_MAX_EVENT_LOG = 500;
@@ -250,6 +253,193 @@ function qrSanitizePersistedPendingDrop(raw) {
   };
 }
 
+function qrSanitizeModelCosts(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw)) {
+    const cleanKey = String(k || '').trim();
+    const num = Number(v);
+    if (cleanKey && Number.isFinite(num) && num > 0) {
+      out[cleanKey] = num;
+    }
+  }
+  return out;
+}
+
+function qrSanitizePersistedModelRates(raw, { preserveRate = true } = {}) {
+  const out = {};
+  if (!preserveRate || !raw || typeof raw !== 'object') return out;
+  const entries = Object.entries(raw).slice(-QR_MAX_MODELS_PER_BUCKET);
+  for (const [k, item] of entries) {
+    const cleanKey = String(k || '').trim();
+    if (!cleanKey || !item || typeof item !== 'object') continue;
+    const rateWindow = Array.isArray(item.rateWindow)
+      ? item.rateWindow
+          .map((v) => qrClampRate(Number(v)))
+          .filter((v) => v !== null)
+          .slice(-QR_RATE_WINDOW_SIZE)
+      : [];
+    const rate =
+      rateWindow.length > 0
+        ? qrClampRate(qrComputeMedian(rateWindow))
+        : item.ratePctPerUsd !== undefined && item.ratePctPerUsd !== null
+          ? qrClampRate(Number(item.ratePctPerUsd))
+          : null;
+    if (rate === null) continue;
+    out[cleanKey] = {
+      ratePctPerUsd: rate,
+      rateSamples: Math.max(rateWindow.length, Math.floor(Number(item.rateSamples) || 0)),
+      rateWindow,
+      rateOutlierSide: 0,
+      rateOutlierBuf: [],
+      lastSeenMs: Math.max(0, Number(item.lastSeenMs) || 0),
+    };
+  }
+  return out;
+}
+
+function qrGetOrCreateModelRate(st, modelKey, nowMs) {
+  const map = st.modelRates && typeof st.modelRates === 'object' ? st.modelRates : (st.modelRates = {});
+  if (map[modelKey]) return map[modelKey];
+  const keys = Object.keys(map);
+  if (keys.length >= QR_MAX_MODELS_PER_BUCKET) {
+    let oldestKey = keys[0];
+    let oldestMs = Number(map[oldestKey]?.lastSeenMs || 0);
+    for (let i = 1; i < keys.length; i += 1) {
+      const candidateMs = Number(map[keys[i]]?.lastSeenMs || 0);
+      if (candidateMs < oldestMs) {
+        oldestMs = candidateMs;
+        oldestKey = keys[i];
+      }
+    }
+    if (oldestKey) delete map[oldestKey];
+  }
+  const entry = {
+    ratePctPerUsd: null,
+    rateSamples: 0,
+    rateWindow: [],
+    rateOutlierSide: 0,
+    rateOutlierBuf: [],
+    lastSeenMs: nowMs,
+  };
+  map[modelKey] = entry;
+  return entry;
+}
+
+function qrEstimateModelWeightedPct(st, deltaModelCosts, totalDeltaCostUsd, fallbackRate) {
+  if (fallbackRate === null || !Number.isFinite(fallbackRate) || totalDeltaCostUsd <= 0) return 0;
+  const modelRates = st.modelRates && typeof st.modelRates === 'object' ? st.modelRates : null;
+  if (!modelRates || !deltaModelCosts || typeof deltaModelCosts !== 'object') {
+    return totalDeltaCostUsd * fallbackRate;
+  }
+  let attributedCost = 0;
+  let weightedPct = 0;
+  let usedPerModel = false;
+  for (const [mKey, costDelta] of Object.entries(deltaModelCosts)) {
+    if (!Number.isFinite(costDelta) || costDelta <= 0) continue;
+    attributedCost += costDelta;
+    const mr = modelRates[mKey];
+    if (mr && mr.rateSamples >= 2 && Number.isFinite(mr.ratePctPerUsd) && mr.ratePctPerUsd > 0) {
+      weightedPct += costDelta * mr.ratePctPerUsd;
+      usedPerModel = true;
+    } else {
+      weightedPct += costDelta * fallbackRate;
+    }
+  }
+  if (!usedPerModel || attributedCost <= 0) {
+    return totalDeltaCostUsd * fallbackRate;
+  }
+  const unattributedCost = Math.max(0, totalDeltaCostUsd - attributedCost);
+  return weightedPct + unattributedCost * fallbackRate;
+}
+
+function qrBuildPoolRateEstimate(st5h, stWk) {
+  const raw5hPool =
+    st5h && st5h.rateSamples >= QR_MODEL_RATE_MIN_UI_SAMPLES && Number.isFinite(st5h.ratePctPerUsd)
+      ? st5h.ratePctPerUsd
+      : null;
+  const rawWkPool =
+    stWk && stWk.rateSamples >= QR_MODEL_RATE_MIN_UI_SAMPLES && Number.isFinite(stWk.ratePctPerUsd)
+      ? stWk.ratePctPerUsd
+      : null;
+  const rate5hPool = raw5hPool !== null ? +raw5hPool.toFixed(4) : null;
+  const rateWkPool = rawWkPool !== null ? +rawWkPool.toFixed(4) : null;
+
+  const modelKeys = new Set([
+    ...Object.keys(st5h?.modelRates || {}),
+    ...Object.keys(stWk?.modelRates || {}),
+  ]);
+  const models = [];
+  for (const model of modelKeys) {
+    const m5 = st5h?.modelRates?.[model] || null;
+    const mw = stWk?.modelRates?.[model] || null;
+    const rawR5 =
+      m5 && m5.rateSamples >= QR_MODEL_RATE_MIN_UI_SAMPLES && Number.isFinite(m5.ratePctPerUsd)
+        ? m5.ratePctPerUsd
+        : null;
+    const rawRw =
+      mw && mw.rateSamples >= QR_MODEL_RATE_MIN_UI_SAMPLES && Number.isFinite(mw.ratePctPerUsd)
+        ? mw.ratePctPerUsd
+        : null;
+    if (rawR5 === null && rawRw === null) continue;
+    models.push({
+      model,
+      rate5hPctPerUsd: rawR5 !== null ? +rawR5.toFixed(4) : null,
+      rateWeeklyPctPerUsd: rawRw !== null ? +rawRw.toFixed(4) : null,
+      eqFull5hUsd: rawR5 ? +(100 / rawR5).toFixed(1) : null,
+      eqFullWeeklyUsd: rawRw ? +(100 / rawRw).toFixed(1) : null,
+      multiplier: null,
+      samples: Math.max(m5?.rateSamples || 0, mw?.rateSamples || 0),
+      _rawR5: rawR5,
+      _rawRw: rawRw,
+    });
+  }
+
+  if (models.length >= 2) {
+    const allHave5h = models.every((m) => m._rawR5 !== null);
+    const allHaveWk = models.every((m) => m._rawRw !== null);
+    const basisList = allHave5h
+      ? models.map((m) => m._rawR5)
+      : allHaveWk
+        ? models.map((m) => m._rawRw)
+        : null;
+    if (basisList) {
+      const minBasis = Math.min(...basisList);
+      if (minBasis > 0) {
+        for (let i = 0; i < models.length; i += 1) {
+          models[i].multiplier = +(basisList[i] / minBasis).toFixed(1);
+        }
+      }
+    }
+  }
+
+  models.sort(
+    (a, b) =>
+      (b.multiplier ?? 0) - (a.multiplier ?? 0) ||
+      (b._rawR5 ?? b._rawRw ?? 0) - (a._rawR5 ?? a._rawRw ?? 0) ||
+      b.samples - a.samples ||
+      a.model.localeCompare(b.model)
+  );
+  for (const m of models) {
+    delete m._rawR5;
+    delete m._rawRw;
+  }
+
+  if (models.length === 0 && rate5hPool === null && rateWkPool === null) {
+    return null;
+  }
+
+  return {
+    rate5hPctPerUsd: rate5hPool,
+    rateWeeklyPctPerUsd: rateWkPool,
+    eqFull5hUsd: raw5hPool ? +(100 / raw5hPool).toFixed(1) : null,
+    eqFullWeeklyUsd: rawWkPool ? +(100 / rawWkPool).toFixed(1) : null,
+    samples5h: st5h?.rateSamples || 0,
+    samplesWeekly: stWk?.rateSamples || 0,
+    models,
+  };
+}
+
 function qrSanitizePersistedBucket(raw, { preserveRate = true } = {}) {
   if (!raw || typeof raw !== 'object') return null;
   const lastOfficial =
@@ -277,15 +467,18 @@ function qrSanitizePersistedBucket(raw, { preserveRate = true } = {}) {
     lastQuotaTs: Math.max(0, Number(raw.lastQuotaTs) || 0),
     lastOfficialUsedPct: lastOfficial,
     lastCycleCostUsd: Math.max(0, Number(raw.lastCycleCostUsd) || 0),
+    lastModelCostsUsd: qrSanitizeModelCosts(raw.lastModelCostsUsd),
     lastUnpricedCalls: Math.max(0, Number(raw.lastUnpricedCalls) || 0),
     pendingCostUsd: 0,
     pendingCostAtMs: 0,
     pendingCostSinceMs: 0,
+    pendingModelCostsUsd: {},
     ratePctPerUsd: rate,
     rateSamples: preserveRate ? Math.max(rateWindow.length, Math.floor(Number(raw.rateSamples) || 0)) : 0,
     rateWindow,
     rateOutlierSide: 0,
     rateOutlierBuf: [],
+    modelRates: qrSanitizePersistedModelRates(raw.modelRates, { preserveRate }),
     activeLeases: qrSanitizePersistedLeases(raw.activeLeases),
     pendingDrop: preserveRate ? qrSanitizePersistedPendingDrop(raw.pendingDrop) : null,
     lastBounceAtMs: Math.max(0, Number(raw.lastBounceAtMs) || 0),
@@ -336,15 +529,27 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
   function serializeState(nowMs = Date.now()) {
     const serializedBuckets = {};
     for (const [k, st] of buckets.entries()) {
+      const serializedModelRates = {};
+      for (const [mKey, mr] of Object.entries(st.modelRates || {})) {
+        if (!mr || mr.ratePctPerUsd === null) continue;
+        serializedModelRates[mKey] = {
+          ratePctPerUsd: mr.ratePctPerUsd,
+          rateSamples: mr.rateSamples,
+          rateWindow: mr.rateWindow,
+          lastSeenMs: mr.lastSeenMs,
+        };
+      }
       serializedBuckets[k] = {
         resetTimeMs: st.resetTimeMs,
         lastQuotaTs: st.lastQuotaTs,
         lastOfficialUsedPct: st.lastOfficialUsedPct,
         lastCycleCostUsd: st.lastCycleCostUsd,
+        lastModelCostsUsd: st.lastModelCostsUsd || {},
         lastUnpricedCalls: st.lastUnpricedCalls,
         ratePctPerUsd: st.ratePctPerUsd,
         rateSamples: st.rateSamples,
         rateWindow: st.rateWindow,
+        modelRates: serializedModelRates,
         activeLeases: st.activeLeases,
         pendingDrop: st.pendingDrop,
         lastBounceAtMs: st.lastBounceAtMs,
@@ -411,15 +616,18 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       lastQuotaTs: 0,
       lastOfficialUsedPct: null,
       lastCycleCostUsd: 0,
+      lastModelCostsUsd: {},
       lastUnpricedCalls: 0,
       pendingCostUsd: 0,
       pendingCostAtMs: 0,
       pendingCostSinceMs: 0,
+      pendingModelCostsUsd: {},
       ratePctPerUsd: null,
       rateSamples: 0,
       rateWindow: [],
       rateOutlierSide: 0,
       rateOutlierBuf: [],
+      modelRates: {},
       activeLeases: [],
       pendingDrop: null,
       lastBounceAtMs: 0,
@@ -438,6 +646,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
     resetTimeMs = 0,
     quotaFetchedAtMs = 0,
     cycleCostUsd = 0,
+    modelCostsUsd = null,
     unpricedCalls = 0,
     poolLastActivityMs = 0,
     activeSessionCount10m = 0,
@@ -450,6 +659,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
     ensureHydrated();
     const safeUsed = qrClamp(Number(officialUsedPct), 0, 100);
     const safeCost = Math.max(0, Number(cycleCostUsd) || 0);
+    const safeModelCosts = qrSanitizeModelCosts(modelCostsUsd);
     const safeUnpriced = Math.max(0, Number(unpricedCalls) || 0);
     const safeResetMs = Number(resetTimeMs) > 0 ? Number(resetTimeMs) : 0;
     const safeFetchTs = Number(quotaFetchedAtMs) > 0 ? Number(quotaFetchedAtMs) : nowMs;
@@ -483,7 +693,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       );
     };
 
-    // 1. 周期重置检测：静默忽略 0% 空闲池的滑动重置时间漂移；真正跨周期时清空租约但保留单桶费率
+    // 1. 周期重置检测：静默忽略 0% 空闲池的滑动重置时间漂移；真正跨周期时清空租约但保留单桶及单模型费率
     const resetShifted =
       safeResetMs > 0 &&
       st.resetTimeMs > 0 &&
@@ -502,6 +712,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       st.lastQuotaTs = safeFetchTs;
       st.lastOfficialUsedPct = safeUsed;
       st.lastCycleCostUsd = safeCost;
+      st.lastModelCostsUsd = safeModelCosts;
       st.lastUnpricedCalls = safeUnpriced;
       if (isIdleZeroDrift) {
         return qrFormatOutput(st, safeUsed);
@@ -509,6 +720,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       st.pendingCostUsd = 0;
       st.pendingCostAtMs = 0;
       st.pendingCostSinceMs = 0;
+      st.pendingModelCostsUsd = {};
       st.activeLeases = [];
       st.pendingDrop = null;
       const out = qrFormatOutput(st, safeUsed);
@@ -522,6 +734,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       st.lastQuotaTs = safeFetchTs;
       st.lastOfficialUsedPct = safeUsed;
       st.lastCycleCostUsd = safeCost;
+      st.lastModelCostsUsd = safeModelCosts;
       st.lastUnpricedCalls = safeUnpriced;
       if (safeCost >= 0.5 && safeUsed >= 0.3) {
         st.ratePctPerUsd = qrClampRate(safeUsed / safeCost);
@@ -536,10 +749,16 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       st.resetTimeMs = safeResetMs;
     }
 
-    // 3. 同一份缓存配额响应：跳过重复差分，仅检查租约超时清理
+    // 3. 同一份缓存配额响应：跳过重复差分，仅补齐缺失的单模型基线并检查租约超时清理
     const isFreshSample =
       safeFetchTs !== st.lastQuotaTs || Math.abs(safeUsed - st.lastOfficialUsedPct) > 1e-4;
     if (!isFreshSample) {
+      if (
+        Object.keys(st.lastModelCostsUsd || {}).length === 0 &&
+        Object.keys(safeModelCosts).length > 0
+      ) {
+        st.lastModelCostsUsd = safeModelCosts;
+      }
       const beforeCachePrune = st.activeLeases.length;
       qrPruneExpiredLeases(st, nowMs);
       const out = qrFormatOutput(st, safeUsed);
@@ -551,12 +770,55 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
 
     const deltaOfficial = safeUsed - st.lastOfficialUsedPct;
     const rawDeltaCost = Math.max(0, safeCost - st.lastCycleCostUsd);
+    const prevModelCosts = st.lastModelCostsUsd && typeof st.lastModelCostsUsd === 'object' ? st.lastModelCostsUsd : {};
+    const hasValidPrevModelBaseline =
+      st.lastCycleCostUsd <= 1e-6 || Object.keys(prevModelCosts).length > 0;
+    const rawDeltaModelCosts = {};
+    let totalModelDeltaUsd = 0;
+    let dominantModelKey = '';
+    let dominantModelDeltaUsd = 0;
+    if (hasValidPrevModelBaseline) {
+      for (const [mKey, curModelCost] of Object.entries(safeModelCosts)) {
+        const prevModelCost = Number(prevModelCosts[mKey]) || 0;
+        const dModel = curModelCost - prevModelCost;
+        if (dModel > 1e-6) {
+          rawDeltaModelCosts[mKey] = dModel;
+          totalModelDeltaUsd += dModel;
+          if (dModel > dominantModelDeltaUsd) {
+            dominantModelDeltaUsd = dModel;
+            dominantModelKey = mKey;
+          }
+        }
+      }
+    }
+    const modelDeltaMatchesTotal =
+      totalModelDeltaUsd > 0 && totalModelDeltaUsd <= rawDeltaCost * 1.15 + 0.01;
+    const isPureSingleModelStep = Boolean(
+      hasValidPrevModelBaseline &&
+        modelDeltaMatchesTotal &&
+        dominantModelKey &&
+        dominantModelDeltaUsd / totalModelDeltaUsd >= QR_MODEL_SINGLE_DOMINANCE_RATIO &&
+        dominantModelDeltaUsd >= 0.04
+    );
     const deltaUnpriced = Math.max(0, safeUnpriced - st.lastUnpricedCalls);
     const pendingValid =
       st.pendingCostUsd > 0 && nowMs - st.pendingCostAtMs <= QR_PENDING_COST_TTL_MS;
     const effectiveDeltaCost = rawDeltaCost + (pendingValid ? st.pendingCostUsd : 0);
+    const effectiveDeltaModelCosts = { ...rawDeltaModelCosts };
+    if (pendingValid && st.pendingModelCostsUsd && typeof st.pendingModelCostsUsd === 'object') {
+      for (const [mKey, pCost] of Object.entries(st.pendingModelCostsUsd)) {
+        if (Number.isFinite(pCost) && pCost > 0) {
+          effectiveDeltaModelCosts[mKey] = (effectiveDeltaModelCosts[mKey] || 0) + pCost;
+        }
+      }
+    }
     const rate = qrResolveEffectiveRate(st, safeUsed, safeCost);
-    let expectedDeltaPct = rate !== null ? effectiveDeltaCost * rate : 0;
+    let expectedDeltaPct = qrEstimateModelWeightedPct(
+      st,
+      effectiveDeltaModelCosts,
+      effectiveDeltaCost,
+      rate
+    );
     let excessPct = deltaOfficial - expectedDeltaPct;
     const isIdleRefundReady =
       poolLastActivityMs > 0 && nowMs - poolLastActivityMs >= QR_IDLE_CONFIRM_REFUND_MS;
@@ -566,6 +828,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       st.pendingCostUsd = 0;
       st.pendingCostAtMs = 0;
       st.pendingCostSinceMs = 0;
+      st.pendingModelCostsUsd = {};
     };
 
     const confirmRefund = (refundedPct, { keepPendingCost = false } = {}) => {
@@ -732,8 +995,13 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
           deltaOfficial > 0.005 &&
           deltaOfficial < QR_MIN_JUMP_EXCESS_PCT
         ) {
-          // 纯净未租约且无近期副本抖动的单步消耗：进入滚动中位数费率校准池
+          // 纯净未租约且无近期副本抖动的单步消耗：进入滚动中位数费率校准池；纯单模型步同步校准该模型费率
           qrRecordRateSample(st, deltaOfficial / rawDeltaCost);
+          if (isPureSingleModelStep) {
+            const mr = qrGetOrCreateModelRate(st, dominantModelKey, nowMs);
+            qrRecordRateSample(mr, deltaOfficial / dominantModelDeltaUsd);
+            mr.lastSeenMs = nowMs;
+          }
         }
         eventKind = 'normal';
       }
@@ -743,9 +1011,17 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       const hasBufferedLeaseCost = st.pendingCostUsd > 0 && st.pendingCostSinceMs > 0;
       if (st.activeLeases.length > 0) {
         const accCost = rawDeltaCost + (hasBufferedLeaseCost ? st.pendingCostUsd : 0);
+        const accModelCosts = { ...rawDeltaModelCosts };
+        if (hasBufferedLeaseCost && st.pendingModelCostsUsd && typeof st.pendingModelCostsUsd === 'object') {
+          for (const [mKey, pCost] of Object.entries(st.pendingModelCostsUsd)) {
+            if (Number.isFinite(pCost) && pCost > 0) {
+              accModelCosts[mKey] = (accModelCosts[mKey] || 0) + pCost;
+            }
+          }
+        }
         const sinceMs = hasBufferedLeaseCost ? st.pendingCostSinceMs : nowMs;
         if (nowMs - sinceMs >= QR_CONSUME_LAG_GRACE_MS) {
-          const consumedPct = rate !== null ? accCost * rate : 0;
+          const consumedPct = qrEstimateModelWeightedPct(st, accModelCosts, accCost, rate);
           expectedDeltaPct = consumedPct;
           excessPct = deltaOfficial - expectedDeltaPct;
           if (consumedPct > 0) {
@@ -760,6 +1036,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
           st.pendingCostUsd = accCost;
           st.pendingCostAtMs = nowMs;
           st.pendingCostSinceMs = sinceMs;
+          st.pendingModelCostsUsd = accModelCosts;
           eventKind = 'lag_pending';
         }
       } else {
@@ -768,6 +1045,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         st.pendingCostAtMs = nowMs;
         st.pendingCostSinceMs =
           pendingValid && st.pendingCostSinceMs > 0 ? st.pendingCostSinceMs : nowMs;
+        st.pendingModelCostsUsd = effectiveDeltaModelCosts;
         eventKind = 'lag_pending';
       }
     } else if (
@@ -777,7 +1055,12 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       nowMs - st.pendingCostSinceMs >= QR_CONSUME_LAG_GRACE_MS
     ) {
       // 4C-2. 无新增花费但已跨过 25s 延迟观察窗且官方仍原地踏步：确认此前缓冲成本已在租约内消化
-      const consumedPct = rate !== null ? st.pendingCostUsd * rate : 0;
+      const consumedPct = qrEstimateModelWeightedPct(
+        st,
+        st.pendingModelCostsUsd,
+        st.pendingCostUsd,
+        rate
+      );
       expectedDeltaPct = consumedPct;
       excessPct = deltaOfficial - expectedDeltaPct;
       if (consumedPct > 0) {
@@ -793,6 +1076,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
     st.lastQuotaTs = safeFetchTs;
     st.lastOfficialUsedPct = safeUsed;
     st.lastCycleCostUsd = safeCost;
+    st.lastModelCostsUsd = safeModelCosts;
     st.lastUnpricedCalls = safeUnpriced;
 
     // 5. 租约 TTL 超时兜底（租约本身超过 60 分钟无实质扣减或满 90 分钟自动清理）
@@ -824,7 +1108,8 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
     nowMs = Date.now(),
   } = {}) {
     if (!(quotaPoolsMap instanceof Map) || quotaPoolsMap.size === 0) return;
-    const scopePrefix = `${String(endpointId || 'local')}::${String(accountScope || '')}`;
+    const normalizedAccountScope = String(accountScope || '').trim().toLowerCase();
+    const scopePrefix = `${String(endpointId || 'local')}::${normalizedAccountScope}`;
 
     for (const [poolKey, poolObj] of quotaPoolsMap.entries()) {
       if (!poolObj || typeof poolObj !== 'object') continue;
@@ -834,17 +1119,19 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       const activeSessionCount10m = Number(recent10m?.activeSessionCount) || 0;
       const recent10mCostUsd = Number(recent10m?.costUsd) || 0;
 
+      const key5h = `${scopePrefix}::${poolKey}::5h`;
       const used5hExact = poolObj.has5h ? qrResolveExactUsedPct(poolObj, '5h') : null;
       const res5h =
         used5hExact !== null
           ? observeBucket({
-              bucketKey: `${scopePrefix}::${poolKey}::5h`,
+              bucketKey: key5h,
               poolKey,
               win: '5h',
               officialUsedPct: used5hExact,
               resetTimeMs: parseIsoMs(poolObj.resetTime),
               quotaFetchedAtMs,
               cycleCostUsd: pStats?.exactCost5hUsd ?? pStats?.cycle5h?.costUsd ?? 0,
+              modelCostsUsd: pStats?.modelCosts5h || null,
               unpricedCalls: pStats?.cycle5h?.unpricedCalls || 0,
               poolLastActivityMs,
               activeSessionCount10m,
@@ -853,17 +1140,19 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
             })
           : { reservedPct: 0, reservedLeaseCount: 0, reservedExpiresAtMs: null };
 
+      const keyWk = `${scopePrefix}::${poolKey}::weekly`;
       const usedWkExact = poolObj.hasWeekly ? qrResolveExactUsedPct(poolObj, 'weekly') : null;
       const resWk =
         usedWkExact !== null
           ? observeBucket({
-              bucketKey: `${scopePrefix}::${poolKey}::weekly`,
+              bucketKey: keyWk,
               poolKey,
               win: 'weekly',
               officialUsedPct: usedWkExact,
               resetTimeMs: parseIsoMs(poolObj.weeklyResetTime),
               quotaFetchedAtMs,
               cycleCostUsd: pStats?.exactCostWeeklyUsd ?? pStats?.cycleWeekly?.costUsd ?? 0,
+              modelCostsUsd: pStats?.modelCostsWeekly || null,
               unpricedCalls: pStats?.cycleWeekly?.unpricedCalls || 0,
               poolLastActivityMs,
               activeSessionCount10m,
@@ -878,6 +1167,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       poolObj.weeklyReservedPct = resWk.reservedPct;
       poolObj.weeklyReservedLeaseCount = resWk.reservedLeaseCount;
       poolObj.weeklyReservedExpiresAtMs = resWk.reservedExpiresAtMs;
+      poolObj.rateEstimate = qrBuildPoolRateEstimate(buckets.get(key5h) || null, buckets.get(keyWk) || null);
     }
   }
 
@@ -888,6 +1178,15 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       const parts = key.split('::');
       const usedPct = st.lastOfficialUsedPct ?? 0;
       const out = qrFormatOutput(st, usedPct);
+      const byModel = {};
+      for (const [mKey, mr] of Object.entries(st.modelRates || {})) {
+        if (!mr || mr.ratePctPerUsd === null) continue;
+        byModel[mKey] = {
+          ratePctPerUsd: +mr.ratePctPerUsd.toFixed(4),
+          eqFullUsd: +(100 / mr.ratePctPerUsd).toFixed(1),
+          samples: mr.rateSamples,
+        };
+      }
       bucketSummaries.push({
         pool: parts[2] || key,
         win: parts[3] || '',
@@ -897,6 +1196,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         rateSamples: st.rateSamples,
         reservedPct: out.reservedPct,
         leases: out.reservedLeaseCount,
+        ...(Object.keys(byModel).length > 0 ? { byModel } : {}),
       });
     }
     return {

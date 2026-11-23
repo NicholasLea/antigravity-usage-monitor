@@ -22,6 +22,11 @@ export const SVG_ICON_DEFS = Object.freeze({
     { tag: 'path', attrs: { d: 'M8 6.2v3.4' } },
     { tag: 'circle', attrs: { cx: '8', cy: '11.5', r: '0.6', fill: 'currentColor', stroke: 'none' } },
   ],
+  'help-circle': [
+    { tag: 'circle', attrs: { cx: '8', cy: '8', r: '6' } },
+    { tag: 'path', attrs: { d: 'M6.2 6.3a1.9 1.9 0 0 1 3.6.7c0 1.15-1.8 1.35-1.8 2.5' } },
+    { tag: 'circle', attrs: { cx: '8', cy: '11.8', r: '0.65', fill: 'currentColor', stroke: 'none' } },
+  ],
   'chevron-down': [
     { tag: 'path', attrs: { d: 'M4 6.2l4 4 4-4' } },
   ],

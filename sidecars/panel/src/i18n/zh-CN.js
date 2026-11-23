@@ -200,6 +200,17 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.footCallsCycle': '周期调用: {calls} 次',
   'quota.footTipCustom': '按本机自然周（周一 00:00 起）统计',
   'quota.footTipCycle': '按各配额池独立周限重置周期分别统计并汇总',
+  'quota.rateHelpAria': '查看当前账号实测倍率预估',
+  'quota.ratePopTitle': '实测倍率预估',
+  'quota.ratePopAccountScope': '{account}',
+  'quota.ratePopAccountCurrent': '当前账号',
+  'quota.ratePopPoolFallback': '池综合均值',
+  'quota.ratePopEq5hLabel': '5h 满池',
+  'quota.ratePopEqWkLabel': '周限满池',
+  'quota.ratePopPerUsd': '{win} {rate}%/$',
+  'quota.ratePopSamples': '{n} 样本',
+  'quota.ratePopEmpty': '暂未采集到足够的单模型干净样本（每模型需至少 3 次无抖动扣费），正常使用后自动生成。',
+  'quota.ratePopNote': '按单模型纯净步实测折算，同池最省为 1x，按账号隔离。',
 
   // Live Activity Widget
   'live.currentSession': '当前会话',

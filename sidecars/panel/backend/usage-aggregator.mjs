@@ -794,6 +794,8 @@ function buildQuotaPoolCycleMap(quotaPoolsMap, nowMs) {
         startWkMs,
         b5h: createUsageBucket(),
         bWk: createUsageBucket(),
+        modelCosts5h: new Map(),
+        modelCostsWk: new Map(),
         lastActivityMs: 0,
         recent10mSessions: new Map(),
       });
@@ -1577,11 +1579,24 @@ export function aggregateMultiWindowUsage({
           sessStat.calls += 1;
           if (qMs > sessStat.lastActivityMs) sessStat.lastActivityMs = qMs;
         }
+        const quotaModelKey = mInfo.baseLabel || mInfo.label || '';
         if (qMs >= poolBucketEntry.start5hMs) {
           accumulateStepIntoBucket(poolBucketEntry.b5h, stepUsage, cascadeId);
+          if (quotaModelKey && stepUsage.resolvedCost > 0) {
+            poolBucketEntry.modelCosts5h.set(
+              quotaModelKey,
+              (poolBucketEntry.modelCosts5h.get(quotaModelKey) || 0) + stepUsage.resolvedCost
+            );
+          }
         }
         if (qMs >= poolBucketEntry.startWkMs) {
           accumulateStepIntoBucket(poolBucketEntry.bWk, stepUsage, cascadeId);
+          if (quotaModelKey && stepUsage.resolvedCost > 0) {
+            poolBucketEntry.modelCostsWk.set(
+              quotaModelKey,
+              (poolBucketEntry.modelCostsWk.get(quotaModelKey) || 0) + stepUsage.resolvedCost
+            );
+          }
         }
       }
 
@@ -1783,6 +1798,16 @@ export function aggregateMultiWindowUsage({
   let rawPoolsWeeklyTokens = 0;
   let rawPoolsWeeklyCostUsd = 0;
   let rawPoolsWeeklyUnpricedCalls = 0;
+  const serializeModelCosts = (mMap) => {
+    const out = {};
+    if (!(mMap instanceof Map)) return out;
+    for (const [mKey, costVal] of mMap.entries()) {
+      if (mKey && Number.isFinite(costVal) && costVal > 0) {
+        out[mKey] = +costVal.toFixed(6);
+      }
+    }
+    return out;
+  };
   for (const [poolKey, entry] of poolCycleBuckets.entries()) {
     let recent10mCostUsd = 0;
     for (const sStat of entry.recent10mSessions.values()) {
@@ -1793,6 +1818,8 @@ export function aggregateMultiWindowUsage({
       cycleWeekly: formatCycleSummary(entry.bWk),
       exactCost5hUsd: +entry.b5h.costUsd.toFixed(6),
       exactCostWeeklyUsd: +entry.bWk.costUsd.toFixed(6),
+      modelCosts5h: serializeModelCosts(entry.modelCosts5h),
+      modelCostsWeekly: serializeModelCosts(entry.modelCostsWk),
       recent10m: {
         lastActivityMs: entry.lastActivityMs,
         activeSessionCount: entry.recent10mSessions.size,

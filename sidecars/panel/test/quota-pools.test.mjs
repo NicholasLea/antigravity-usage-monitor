@@ -312,6 +312,27 @@ test('telemetryStore isEquivalentTelemetry detects quota changes in non-active p
   const d = structuredClone(a);
   d.quotas.pools[0].cycle5h = { tokens: 50_000, costUsd: 0.15, calls: 2 };
   assert.equal(ctx.compare(a, d), false, 'Pool cycle5h change must trigger store update');
+  const e = structuredClone(a);
+  e.quotas.pools[0].rateEstimate = {
+    rate5hPctPerUsd: 2,
+    rateWeeklyPctPerUsd: 0.5,
+    eqFull5hUsd: 50,
+    eqFullWeeklyUsd: 200,
+    samples5h: 6,
+    samplesWeekly: 6,
+    models: [
+      {
+        model: 'Gemini 4 Carbon',
+        rate5hPctPerUsd: 2,
+        rateWeeklyPctPerUsd: 0.5,
+        eqFull5hUsd: 50,
+        eqFullWeeklyUsd: 200,
+        multiplier: 3,
+        samples: 6,
+      },
+    ],
+  };
+  assert.equal(ctx.compare(a, e), false, 'Pool rateEstimate change must trigger store update');
   assert.equal(ctx.compare(a, structuredClone(a)), true);
 });
 
