@@ -668,6 +668,21 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   border: none;
 }
 
+[data-modern-ui="true"] .ctx-risk-mask {
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--metric-warn) 8%, transparent);
+}
+
+[data-modern-ui="true"] .btn-danger-confirm {
+  border: none !important;
+  background: color-mix(in srgb, var(--metric-danger) 14%, transparent) !important;
+}
+
+[data-modern-ui="true"] .btn-danger-confirm:hover:not(:disabled) {
+  border: none !important;
+  background: color-mix(in srgb, var(--metric-danger) 22%, transparent) !important;
+}
+
 [data-modern-ui="true"] .number-input,
 [data-modern-ui="true"] .dt-trigger,
 [data-modern-ui="true"] .dt-mini-step,

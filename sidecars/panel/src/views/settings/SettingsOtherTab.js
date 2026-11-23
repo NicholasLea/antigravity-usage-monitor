@@ -100,8 +100,7 @@ export const SettingsOtherTab = defineComponent({
       text: '',
     });
     const maintStatusText = h('span', {
-      className: 'text-muted',
-      style: 'font-size: var(--fs-md);',
+      className: 'text-muted settings-panel-status',
       text: '',
     });
 
@@ -139,10 +138,12 @@ export const SettingsOtherTab = defineComponent({
         maintTimer = null;
       }
       patchText(maintStatusText, text);
+      patchAttr(maintStatusText, 'title', text || null);
       if (text && autoClearMs > 0) {
         maintTimer = setTimeout(() => {
           maintTimer = null;
           patchText(maintStatusText, '');
+          patchAttr(maintStatusText, 'title', null);
         }, autoClearMs);
       }
     }
@@ -321,7 +322,10 @@ export const SettingsOtherTab = defineComponent({
     const ctxModelLabel = h('span', { className: 'form-label' });
     const ctxWindowLabel = h('span', { className: 'form-label' });
     const ctxHint = h('span', { className: 'settings-hint-text' });
-    const ctxStatus = h('span', { className: 'text-muted', role: 'status' });
+    const ctxStatus = h('span', {
+      className: 'text-muted settings-panel-status',
+      role: 'status',
+    });
     const ctxModelSelect = CustomSelect({
       className: 'settings-context-model',
       searchable: true,
@@ -611,7 +615,7 @@ export const SettingsOtherTab = defineComponent({
     }
 
     const baselinePanel = h('section', { className: 'panel' }, [
-      h('div', { className: 'panel-header' }, [
+      h('div', { className: 'panel-header settings-panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('layers', { size: 13 }),
           baselineTitleEl,
@@ -828,7 +832,7 @@ export const SettingsOtherTab = defineComponent({
     ]);
 
     const maintPanel = h('section', { className: 'panel' }, [
-      h('div', { className: 'panel-header' }, [
+      h('div', { className: 'panel-header settings-panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('refresh', { size: 13 }),
           maintTitleEl,

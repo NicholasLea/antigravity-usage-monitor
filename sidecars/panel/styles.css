@@ -6191,8 +6191,11 @@ html[data-standalone="true"] .app-shell {
 }
 
 .ctx-controls-body.is-locked {
-  filter: blur(4px);
-  opacity: 0.24;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  filter: none;
   pointer-events: none;
   user-select: none;
 }
@@ -6211,12 +6214,12 @@ html[data-standalone="true"] .app-shell {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
-  gap: var(--space-2);
+  justify-content: flex-start;
+  gap: 8px;
   padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-xs);
-  border: 1px solid color-mix(in srgb, var(--metric-warn) 42%, var(--border-hairline));
-  background: color-mix(in srgb, var(--surface-panel) 88%, var(--metric-warn) 7%);
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--metric-warn) 36%, var(--border-hairline));
+  background: color-mix(in srgb, var(--surface-panel) 93%, var(--metric-warn) 7%);
 }
 
 .ctx-risk-mask[hidden] {
@@ -6244,14 +6247,29 @@ html[data-standalone="true"] .app-shell {
 .ctx-risk-desc {
   margin: 0;
   font-size: var(--fs-sm);
-  line-height: 1.5;
-  color: var(--text-primary);
+  line-height: 1.55;
+  color: var(--text-secondary);
 }
 
 .ctx-risk-accept-btn {
   margin-top: 2px;
-  min-height: calc(26px * var(--ui-font-scale, 1));
-  padding: 2px var(--space-3);
+  min-height: calc(28px * var(--ui-font-scale, 1));
+  padding: 4px var(--space-3);
+  font-size: var(--fs-md);
+}
+
+/* 设置页卡片头部右侧状态提示（长路径自动单行省略，防止把左侧标题挤成 0px 造成文字重叠） */
+.settings-panel-header > .panel-title {
+  flex: 0 0 auto;
+}
+
+.settings-panel-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
   font-size: var(--fs-md);
 }
 
@@ -8455,6 +8473,21 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .settings-bridge-notice,
 [data-modern-ui="true"] .settings-bridge-notice.is-restart {
   border: none;
+}
+
+[data-modern-ui="true"] .ctx-risk-mask {
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--metric-warn) 8%, transparent);
+}
+
+[data-modern-ui="true"] .btn-danger-confirm {
+  border: none !important;
+  background: color-mix(in srgb, var(--metric-danger) 14%, transparent) !important;
+}
+
+[data-modern-ui="true"] .btn-danger-confirm:hover:not(:disabled) {
+  border: none !important;
+  background: color-mix(in srgb, var(--metric-danger) 22%, transparent) !important;
 }
 
 [data-modern-ui="true"] .number-input,
