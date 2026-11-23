@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  QR_CONSUME_LAG_GRACE_MS,
   QR_LEASE_IDLE_EXPIRY_MS,
   QR_REFUND_CONFIRM_WINDOW_MS,
   createQuotaReservationTracker,
@@ -132,9 +133,10 @@ test('quota-reservation: consumes inside active lease and snaps to 0 on partial 
   });
   assert.equal(r1.reservedPct, 1.0);
 
-  // Follow-up turns spend $0.35 inside the lease while official stays flat at 5.0%
+  // Follow-up turns spend $0.35 inside the lease while official stays flat at 5.0%:
+  // first flat tick buffers for reporting-lag grace, follow-up flat poll past grace confirms consume -> 0.6%
   const t2 = t1 + 30_000;
-  const r2 = tracker.observeBucket({
+  const r2Pending = tracker.observeBucket({
     bucketKey: key,
     officialUsedPct: 5.0,
     resetTimeMs: RESET_5H,
@@ -143,10 +145,22 @@ test('quota-reservation: consumes inside active lease and snaps to 0 on partial 
     poolLastActivityMs: t2,
     nowMs: t2,
   });
+  assert.equal(r2Pending.reservedPct, 1.0);
+
+  const t2Confirm = t2 + QR_CONSUME_LAG_GRACE_MS + 1_000;
+  const r2 = tracker.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 5.0,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: t2Confirm,
+    cycleCostUsd: 4.4,
+    poolLastActivityMs: t2,
+    nowMs: t2Confirm,
+  });
   assert.equal(r2.reservedPct, 0.6);
 
   // 10 minutes idle: server refunds remaining 0.6% (official drops 5.0% -> 4.4%)
-  const t3 = t2 + 10 * 60 * 1000;
+  const t3 = t2Confirm + 10 * 60 * 1000;
   const r3 = tracker.observeBucket({
     bucketKey: key,
     officialUsedPct: 4.4,
@@ -575,12 +589,13 @@ test('quota-reservation: ignores sub-epsilon shortfall noise and drops polluted 
     poolLastActivityMs: t1,
     nowMs: t1,
   });
-  // Normal steps at ~0.666 %/$ (0.001% below cold-start 0.667) across 12 minutes -> lease expires normally
+  // Normal steps at ~0.666 %/$ (0.001% below cold-start 0.667) across idle expiry window -> lease expires normally
   let u = 11.0;
   let c = 15.0;
   let now = t1;
+  const stepMs = Math.ceil((QR_LEASE_IDLE_EXPIRY_MS + 60_000) / 12);
   for (let i = 0; i < 12; i += 1) {
-    now += 60_000;
+    now += stepMs;
     c += 0.09;
     u += 0.059;
     tracker.observeBucket({
@@ -617,6 +632,134 @@ test('quota-reservation: ignores sub-epsilon shortfall noise and drops polluted 
   const migSnap = migrated.getLogSnapshot();
   assert.equal(migSnap.count, 1, 'v1 events preserved on upgrade');
   assert.equal(migSnap.buckets[0].ratePctPerUsd, null, 'polluted v1 rate cleared for clean recalibration');
+});
+
+test('quota-reservation: buffers short reporting lag inside lease, survives 35m residency, and clears recovered pendingDrop', () => {
+  const tracker = createQuotaReservationTracker();
+  const key = 'local::u@example.com::Gemini::weekly';
+
+  // Seed baseline at 0.5 %/$ (20% / $40)
+  let ts = T0;
+  tracker.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 20.0,
+    resetTimeMs: RESET_WK,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: 40.0,
+    poolLastActivityMs: ts,
+    nowMs: ts,
+  });
+
+  // Trigger +0.8% lease
+  ts += 10_000;
+  const rLease = tracker.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 20.8,
+    resetTimeMs: RESET_WK,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: 40.0,
+    poolLastActivityMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(rLease.reservedPct, 0.8);
+
+  // Short 8s upstream reporting lag: dCost=$0.20 (exp=0.1%), dUsed=0 -> buffered, then next tick catches up +0.1%
+  ts += 10_000;
+  const rLag = tracker.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 20.8,
+    resetTimeMs: RESET_WK,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: 40.2,
+    poolLastActivityMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(rLag.reservedPct, 0.8, 'first flat tick does not prematurely drain active lease');
+
+  ts += 8_000;
+  const rCatchUp = tracker.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 20.9,
+    resetTimeMs: RESET_WK,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: 40.2,
+    poolLastActivityMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(rCatchUp.reservedPct, 0.8, 'catch-up tick keeps lease intact with zero false consume');
+
+  // Lease stays alive past 35 minutes idle when official has not refunded yet, then clears on real refund
+  const lastActTs = ts;
+  ts += 35 * 60 * 1000;
+  const rStillHeld = tracker.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 20.9,
+    resetTimeMs: RESET_WK,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: 40.2,
+    poolLastActivityMs: lastActTs,
+    nowMs: ts,
+  });
+  assert.equal(rStillHeld.reservedPct, 0.8, 'active lease survives 35m residency before upstream refund');
+
+  ts += 10 * 60 * 1000;
+  const rRefund = tracker.observeBucket({
+    bucketKey: key,
+    officialUsedPct: 20.1,
+    resetTimeMs: RESET_WK,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: 40.2,
+    poolLastActivityMs: lastActTs,
+    nowMs: ts,
+  });
+  assert.equal(rRefund.reservedPct, 0);
+  assert.equal(rRefund.reservedLeaseCount, 0);
+
+  // Small drop (-0.05%) recovered naturally by normal spending clears zombie pendingDrop,
+  // so a subsequent +1.0% jump is cleanly recognized as a real lease
+  const key5h = 'local::u@example.com::Gemini::5h';
+  let t5 = T0;
+  tracker.observeBucket({
+    bucketKey: key5h,
+    officialUsedPct: 20.0,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: t5,
+    cycleCostUsd: 10.0,
+    poolLastActivityMs: t5,
+    nowMs: t5,
+  });
+  t5 += 10_000;
+  tracker.observeBucket({
+    bucketKey: key5h,
+    officialUsedPct: 19.95,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: t5,
+    cycleCostUsd: 10.05,
+    poolLastActivityMs: t5,
+    nowMs: t5,
+  });
+  t5 += 10_000;
+  tracker.observeBucket({
+    bucketKey: key5h,
+    officialUsedPct: 20.05,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: t5,
+    cycleCostUsd: 10.1,
+    poolLastActivityMs: t5,
+    nowMs: t5,
+  });
+  t5 += 10_000;
+  const rNewLease = tracker.observeBucket({
+    bucketKey: key5h,
+    officialUsedPct: 21.05,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: t5,
+    cycleCostUsd: 10.1,
+    poolLastActivityMs: t5,
+    nowMs: t5,
+  });
+  assert.equal(rNewLease.reservedPct, 1.0, 'real +1.0% lease not swallowed by cleared pendingDrop');
+  assert.equal(rNewLease.reservedLeaseCount, 1);
 });
 
 test('experimentalQuotaReservation setting defaults false and round-trips through schema & backup', () => {

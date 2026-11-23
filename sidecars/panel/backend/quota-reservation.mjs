@@ -17,11 +17,12 @@ import {
   saveJson,
 } from './config.mjs';
 
-export const QR_LEASE_TTL_MS = 10 * 60 * 1000;
-export const QR_LEASE_GRACE_MS = 90 * 1000;
+export const QR_LEASE_TTL_MS = 45 * 60 * 1000;
+export const QR_LEASE_GRACE_MS = 15 * 60 * 1000;
 export const QR_LEASE_IDLE_EXPIRY_MS = QR_LEASE_TTL_MS + QR_LEASE_GRACE_MS;
-export const QR_LEASE_MAX_AGE_MS = 22 * 60 * 1000;
+export const QR_LEASE_MAX_AGE_MS = 90 * 60 * 1000;
 export const QR_PENDING_COST_TTL_MS = 60 * 1000;
+export const QR_CONSUME_LAG_GRACE_MS = 25 * 1000;
 export const QR_CYCLE_RESET_SHIFT_MS = 30 * 60 * 1000;
 export const QR_MIN_JUMP_EXCESS_PCT = 0.35;
 export const QR_COLD_START_JUMP_PCT = 0.45;
@@ -29,8 +30,8 @@ export const QR_COLD_START_MAX_COST_USD = 0.25;
 export const QR_REFUND_EPSILON_PCT = 0.04;
 export const QR_MIN_DISPLAY_RESERVED_PCT = 0.05;
 export const QR_IDLE_CONFIRM_REFUND_MS = 5 * 60 * 1000;
-export const QR_REFUND_CONFIRM_WINDOW_MS = 90 * 1000;
-export const QR_REFUND_CONFIRM_MIN_SAMPLES = 3;
+export const QR_REFUND_CONFIRM_WINDOW_MS = 4 * 60 * 1000;
+export const QR_REFUND_CONFIRM_MIN_SAMPLES = 4;
 export const QR_RATE_BOUNCE_COOLDOWN_MS = 60 * 1000;
 export const QR_RATE_WINDOW_SIZE = 20;
 export const QR_RATE_OUTLIER_MIN_RATIO = 0.45;
@@ -279,6 +280,7 @@ function qrSanitizePersistedBucket(raw, { preserveRate = true } = {}) {
     lastUnpricedCalls: Math.max(0, Number(raw.lastUnpricedCalls) || 0),
     pendingCostUsd: 0,
     pendingCostAtMs: 0,
+    pendingCostSinceMs: 0,
     ratePctPerUsd: rate,
     rateSamples: preserveRate ? Math.max(rateWindow.length, Math.floor(Number(raw.rateSamples) || 0)) : 0,
     rateWindow,
@@ -412,6 +414,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       lastUnpricedCalls: 0,
       pendingCostUsd: 0,
       pendingCostAtMs: 0,
+      pendingCostSinceMs: 0,
       ratePctPerUsd: null,
       rateSamples: 0,
       rateWindow: [],
@@ -505,6 +508,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       }
       st.pendingCostUsd = 0;
       st.pendingCostAtMs = 0;
+      st.pendingCostSinceMs = 0;
       st.activeLeases = [];
       st.pendingDrop = null;
       const out = qrFormatOutput(st, safeUsed);
@@ -552,11 +556,17 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       st.pendingCostUsd > 0 && nowMs - st.pendingCostAtMs <= QR_PENDING_COST_TTL_MS;
     const effectiveDeltaCost = rawDeltaCost + (pendingValid ? st.pendingCostUsd : 0);
     const rate = qrResolveEffectiveRate(st, safeUsed, safeCost);
-    const expectedDeltaPct = rate !== null ? effectiveDeltaCost * rate : 0;
-    const excessPct = deltaOfficial - expectedDeltaPct;
+    let expectedDeltaPct = rate !== null ? effectiveDeltaCost * rate : 0;
+    let excessPct = deltaOfficial - expectedDeltaPct;
     const isIdleRefundReady =
       poolLastActivityMs > 0 && nowMs - poolLastActivityMs >= QR_IDLE_CONFIRM_REFUND_MS;
     let eventKind = 'idle';
+
+    const clearPendingCost = () => {
+      st.pendingCostUsd = 0;
+      st.pendingCostAtMs = 0;
+      st.pendingCostSinceMs = 0;
+    };
 
     const confirmRefund = (refundedPct, { keepPendingCost = false } = {}) => {
       const amt = Math.max(0, Number(refundedPct) || 0);
@@ -568,8 +578,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       st.lastBounceAtMs = nowMs;
       st.pendingDrop = null;
       if (!keepPendingCost) {
-        st.pendingCostUsd = 0;
-        st.pendingCostAtMs = 0;
+        clearPendingCost();
       }
       if (qrSumLeases(st.activeLeases) < QR_MIN_DISPLAY_RESERVED_PCT) {
         st.activeLeases = [];
@@ -584,10 +593,9 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         : st.lastOfficialUsedPct;
       const totalDrop = Math.max(0, prevHigh - safeUsed);
       st.lastBounceAtMs = nowMs;
-      st.pendingCostUsd = 0;
-      st.pendingCostAtMs = 0;
+      clearPendingCost();
 
-      if (isIdleRefundReady && st.activeLeases.length > 0) {
+      if (isIdleRefundReady) {
         confirmRefund(totalDrop);
       } else if (st.pendingDrop) {
         st.pendingDrop.preDropUsedPct = prevHigh;
@@ -614,7 +622,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         eventKind = 'drop_pending';
       }
     } else if (st.pendingDrop) {
-      // 4B-Pending. 当前处于回落观察窗内：判断是「弹回高副本」还是「持续低位确认退还」
+      // 4B-Pending. 当前处于回落观察窗内：判断是「弹回高副本」「正常消耗自然越过前高」还是「持续低位确认退还」
       const pd = st.pendingDrop;
       const costSinceDrop = Math.max(0, safeCost - pd.preDropCostUsd);
       const expectedSinceDrop = rate !== null ? costSinceDrop * rate : 0;
@@ -630,8 +638,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         const excessAboveHighWater = safeUsed - (pd.preDropUsedPct + expectedSinceDrop);
         st.pendingDrop = null;
         st.lastBounceAtMs = nowMs;
-        st.pendingCostUsd = 0;
-        st.pendingCostAtMs = 0;
+        clearPendingCost();
         if (rate !== null && excessAboveHighWater >= QR_MIN_JUMP_EXCESS_PCT) {
           st.activeLeases.push({
             amountPct: excessAboveHighWater,
@@ -647,6 +654,11 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         } else {
           eventKind = 'replica_flip';
         }
+      } else if (deltaOfficial > 1e-3 && safeUsed >= pd.preDropUsedPct - 1e-3) {
+        // 正常消耗已自然推高至回落前水位以上，立即解除残留观察窗，防止后续真实租约跳变被吞
+        st.pendingDrop = null;
+        clearPendingCost();
+        eventKind = 'normal';
       } else {
         pd.lowSamples += 1;
         const sustainedLow =
@@ -657,18 +669,21 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
           if (rawDeltaCost > 0 && deltaOfficial <= 1e-3) {
             st.pendingCostUsd = effectiveDeltaCost;
             st.pendingCostAtMs = nowMs;
+            st.pendingCostSinceMs =
+              pendingValid && st.pendingCostSinceMs > 0 ? st.pendingCostSinceMs : nowMs;
           }
           const effectiveDrop = Math.max(0, pd.preDropUsedPct + expectedSinceDrop - safeUsed);
           confirmRefund(effectiveDrop > 0 ? Math.min(pd.dropPct, effectiveDrop) : pd.dropPct, {
             keepPendingCost: deltaOfficial <= 1e-3 && st.pendingCostUsd > 0,
           });
         } else if (deltaOfficial > 1e-3) {
-          st.pendingCostUsd = 0;
-          st.pendingCostAtMs = 0;
+          clearPendingCost();
           eventKind = 'drop_pending';
         } else if (rawDeltaCost > 0) {
           st.pendingCostUsd = effectiveDeltaCost;
           st.pendingCostAtMs = nowMs;
+          st.pendingCostSinceMs =
+            pendingValid && st.pendingCostSinceMs > 0 ? st.pendingCostSinceMs : nowMs;
           eventKind = 'lag_pending';
         }
       }
@@ -722,28 +737,57 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         }
         eventKind = 'normal';
       }
-      st.pendingCostUsd = 0;
-      st.pendingCostAtMs = 0;
+      clearPendingCost();
     } else if (rawDeltaCost > 0) {
-      // 4C. 官方已用比例持平但本地产生真实消耗
+      // 4C. 官方已用比例持平但本地产生真实消耗：先缓冲短期记账延迟，跨过延迟窗仍持平再扣减租约
+      const hasBufferedLeaseCost = st.pendingCostUsd > 0 && st.pendingCostSinceMs > 0;
       if (st.activeLeases.length > 0) {
-        // 正在原地消耗已预借租约：按换算率缩减可退差额并刷新租约活跃时刻
-        const consumedPct = rate !== null ? rawDeltaCost * rate : 0;
-        if (consumedPct > 0) {
-          qrConsumeLeasesFifo(st.activeLeases, consumedPct);
+        const accCost = rawDeltaCost + (hasBufferedLeaseCost ? st.pendingCostUsd : 0);
+        const sinceMs = hasBufferedLeaseCost ? st.pendingCostSinceMs : nowMs;
+        if (nowMs - sinceMs >= QR_CONSUME_LAG_GRACE_MS) {
+          const consumedPct = rate !== null ? accCost * rate : 0;
+          expectedDeltaPct = consumedPct;
+          excessPct = deltaOfficial - expectedDeltaPct;
+          if (consumedPct > 0) {
+            qrConsumeLeasesFifo(st.activeLeases, consumedPct);
+          }
+          for (let i = 0; i < st.activeLeases.length; i += 1) {
+            st.activeLeases[i].lastTouchedMs = nowMs;
+          }
+          clearPendingCost();
+          eventKind = 'consume';
+        } else {
+          st.pendingCostUsd = accCost;
+          st.pendingCostAtMs = nowMs;
+          st.pendingCostSinceMs = sinceMs;
+          eventKind = 'lag_pending';
         }
-        for (let i = 0; i < st.activeLeases.length; i += 1) {
-          st.activeLeases[i].lastTouchedMs = nowMs;
-        }
-        st.pendingCostUsd = 0;
-        st.pendingCostAtMs = 0;
-        eventKind = 'consume';
       } else {
         // 尚未租约：暂存短时待配对成本，吸收 10~30s 记账延迟或小额步长累积
         st.pendingCostUsd = effectiveDeltaCost;
         st.pendingCostAtMs = nowMs;
+        st.pendingCostSinceMs =
+          pendingValid && st.pendingCostSinceMs > 0 ? st.pendingCostSinceMs : nowMs;
         eventKind = 'lag_pending';
       }
+    } else if (
+      st.activeLeases.length > 0 &&
+      st.pendingCostUsd > 0 &&
+      st.pendingCostSinceMs > 0 &&
+      nowMs - st.pendingCostSinceMs >= QR_CONSUME_LAG_GRACE_MS
+    ) {
+      // 4C-2. 无新增花费但已跨过 25s 延迟观察窗且官方仍原地踏步：确认此前缓冲成本已在租约内消化
+      const consumedPct = rate !== null ? st.pendingCostUsd * rate : 0;
+      expectedDeltaPct = consumedPct;
+      excessPct = deltaOfficial - expectedDeltaPct;
+      if (consumedPct > 0) {
+        qrConsumeLeasesFifo(st.activeLeases, consumedPct);
+      }
+      for (let i = 0; i < st.activeLeases.length; i += 1) {
+        st.activeLeases[i].lastTouchedMs = nowMs;
+      }
+      clearPendingCost();
+      eventKind = 'consume';
     }
 
     st.lastQuotaTs = safeFetchTs;
@@ -751,7 +795,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
     st.lastCycleCostUsd = safeCost;
     st.lastUnpricedCalls = safeUnpriced;
 
-    // 5. 租约 TTL 超时兜底（租约本身超过 11.5 分钟无实质扣减或满 22 分钟自动清理）
+    // 5. 租约 TTL 超时兜底（租约本身超过 60 分钟无实质扣减或满 90 分钟自动清理）
     const beforePrune = st.activeLeases.length;
     qrPruneExpiredLeases(st, nowMs);
     if (beforePrune > st.activeLeases.length && eventKind === 'idle') {
