@@ -208,6 +208,12 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.ratePopSamples': '{n} 样本',
   'quota.ratePopEmpty': '暂未采集到足够的单模型干净样本（每模型需至少 3 次无抖动扣费），正常使用后自动生成。',
   'quota.ratePopNote': '按单模型纯净步实测折算，同池最省为 1x，按账号隔离。',
+  'quota.ratePopSharedBadge': '共享活跃',
+  'quota.ratePopSharedBadgeTip': '最近 15 分钟内检测到同池外部消耗，新增预占将在二次验证后展示',
+  'quota.ratePopExternalDetail': '检测到家庭组 / 其他设备消耗（已排除约 {detail}），不计入预占',
+  'quota.ratePopExternalBaseline': '检测到本周期存在家庭组 / 其他设备消耗，预占和费率仅按本机实测校准',
+  'quota.ratePopExt5h': '5h {pct}%',
+  'quota.ratePopExtWk': '周限 {pct}%',
 
   // Live Activity Widget
   'live.currentSession': '当前会话',

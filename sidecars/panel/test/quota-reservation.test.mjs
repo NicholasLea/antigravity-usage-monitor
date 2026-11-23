@@ -783,11 +783,123 @@ test('experimentalQuotaReservation setting defaults true and round-trips through
   assert.equal(disabledParsed.patch.experimentalQuotaReservation, false);
 });
 
-test('backendHarness buildTelemetry populates reservedPct on pools across official quota jumps', async () => {
+test('backendHarness buildTelemetry populates reservedPct when local session is running and flags external_usage when idle', async () => {
+  // 1. Idle machine (no local running conversation / no local cost): external jump must be classified as external_usage (0% reserved)
+  let nowIdle = T0;
+  const hIdle = backendHarness({
+    clock: () => nowIdle,
+    userStatus: { email: 'family-idle@example.com', userTier: { name: 'Google AI Ultra' } },
+    quotaSummary: {
+      groups: [
+        {
+          displayName: 'Gemini Models',
+          buckets: [
+            {
+              bucketId: 'gemini-5h',
+              window: '5h',
+              remainingFraction: 0.96,
+              resetTime: new Date(RESET_5H).toISOString(),
+            },
+            {
+              bucketId: 'gemini-weekly',
+              window: 'weekly',
+              remainingFraction: 0.85,
+              resetTime: new Date(RESET_WK).toISOString(),
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  const idleP1 = await hIdle.buildTelemetryPayloadInternal(null, true);
+  const idleG1 = idleP1.quotas.pools.find((p) => p.poolKey === 'Gemini');
+  assert.equal(idleP1.settings.experimentalQuotaReservation, true);
+  assert.equal(idleG1.reservedPct, 0);
+  assert.equal(idleG1.weeklyReservedPct, 0);
+
+  nowIdle += 20_000;
+  hIdle.state.quotaSummary = {
+    groups: [
+      {
+        displayName: 'Gemini Models',
+        buckets: [
+          {
+            bucketId: 'gemini-5h',
+            window: '5h',
+            remainingFraction: 0.95,
+            resetTime: new Date(RESET_5H).toISOString(),
+          },
+          {
+            bucketId: 'gemini-weekly',
+            window: 'weekly',
+            remainingFraction: 0.845,
+            resetTime: new Date(RESET_WK).toISOString(),
+          },
+        ],
+      },
+    ],
+  };
+
+  const idleP2 = await hIdle.buildTelemetryPayloadInternal(null, true);
+  const idleG2 = idleP2.quotas.pools.find((p) => p.poolKey === 'Gemini');
+  assert.equal(idleG2.reservedPct, 0, 'idle external 5h jump must not create fake reservation');
+  assert.equal(idleG2.weeklyReservedPct, 0, 'idle external weekly jump must not create fake reservation');
+  assert.equal(idleG2.rateEstimate?.externalUsage?.detected, true);
+  assert.equal(idleG2.rateEstimate?.externalUsage?.activeRecently, true);
+  assert.equal(idleG2.rateEstimate?.externalUsage?.used5hPct, 1.0);
+  assert.equal(idleG2.rateEstimate?.externalUsage?.usedWeeklyPct, 0.5);
+
+  const idleLogRes = await hIdle.dispatchBridgeApiRequest('/api/quota-reservation/log', 'GET');
+  assert.equal(idleLogRes.status, 200);
+  const idleLogJson = JSON.parse(idleLogRes.body);
+  assert.ok(
+    idleLogJson.events.some((e) => e.pool === 'Gemini' && e.win === '5h' && e.event === 'external_usage'),
+    'idle 5h jump logged as external_usage'
+  );
+
+  // 2. Active local running Gemini conversation: same quota jump cleanly triggers local reservation leases
   let now = T0;
   const h = backendHarness({
     clock: () => now,
     userStatus: { email: 'tester@example.com', userTier: { name: 'Google AI Ultra' } },
+    summaries: {
+      'conv-local-gem': {
+        summary: 'Local Gemini Session',
+        status: 'CASCADE_RUN_STATUS_RUNNING',
+        stepCount: 1,
+        createdTime: new Date(T0 - 15_000).toISOString(),
+        lastModifiedTime: new Date(T0).toISOString(),
+      },
+    },
+    trajectories: {
+      'conv-local-gem': {
+        trajectory: {
+          generatorMetadata: [
+            {
+              stepIndices: [0],
+              chatModel: {
+                model: 'gemini-4-neon-xhigh',
+                usage: {
+                  inputTokens: 10000,
+                  cacheReadTokens: 0,
+                  outputTokens: 500,
+                },
+              },
+            },
+          ],
+          steps: [
+            {
+              type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+              metadata: {
+                createdAt: new Date(T0).toISOString(),
+                generatorModel: 'gemini-4-neon-xhigh',
+              },
+            },
+          ],
+        },
+      },
+    },
     quotaSummary: {
       groups: [
         {
@@ -813,11 +925,9 @@ test('backendHarness buildTelemetry populates reservedPct on pools across offici
 
   const p1 = await h.buildTelemetryPayloadInternal(null, true);
   const g1 = p1.quotas.pools.find((p) => p.poolKey === 'Gemini');
-  assert.equal(p1.settings.experimentalQuotaReservation, true);
   assert.equal(g1.reservedPct, 0);
   assert.equal(g1.weeklyReservedPct, 0);
 
-  // Advance clock beyond quota cache TTL and simulate a +1.0% 5h lease jump with no local cost change
   now += 20_000;
   h.state.quotaSummary = {
     groups: [
@@ -1483,6 +1593,386 @@ test('QuotaPoolsWidget renders circle-? hover popover for account-isolated model
     popover.dispatchEvent({ type: 'mouseleave' });
     await new Promise((r) => setTimeout(r, 170));
     assert.equal(popover.hidden, true, 'leaving popover closes after grace delay');
+
+    widget.destroy();
+  } finally {
+    globalThis.document = origDocument;
+    globalThis.window = origWindow;
+  }
+});
+
+test('quota-reservation: 3-layer family-group defense blocks idle/proportional jumps, promotes corroborated tentative leases, and evicts unbacked ghost leases', () => {
+  const tracker = createQuotaReservationTracker();
+
+  const makePools = (used5h, usedWk) =>
+    new Map([
+      [
+        'Gemini',
+        {
+          poolKey: 'Gemini',
+          has5h: true,
+          hasWeekly: true,
+          remainingFraction: 1 - used5h / 100,
+          usedPct: used5h,
+          resetTime: new Date(RESET_5H).toISOString(),
+          weeklyRemainingFraction: 1 - usedWk / 100,
+          weeklyUsedPct: usedWk,
+          weeklyResetTime: new Date(RESET_WK).toISOString(),
+        },
+      ],
+    ]);
+
+  const makeStats = (cost5h, costWk, lastActivityMs, sess10m = 1) =>
+    new Map([
+      [
+        'Gemini',
+        {
+          cycle5h: { costUsd: cost5h, unpricedCalls: 0 },
+          cycleWeekly: { costUsd: costWk, unpricedCalls: 0 },
+          exactCost5hUsd: cost5h,
+          exactCostWeeklyUsd: costWk,
+          recent10m: { lastActivityMs, activeSessionCount: sess10m, costUsd: sess10m > 0 ? 0.2 : 0 },
+        },
+      ],
+    ]);
+
+  // 1. Cold-start baseline where family already spent 18% (5h) & 30% (weekly) while local spent $0:
+  // must mark hasExternalUsage without poisoning ratePctPerUsd
+  let ts = T0;
+  let u5 = 18.0;
+  let uw = 30.0;
+  let c5 = 0;
+  let cw = 0;
+  const pBase = makePools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'family@example.com',
+    quotaPoolsMap: pBase,
+    poolCycleStats: makeStats(c5, cw, 0, 0),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pBase.get('Gemini').reservedPct, 0);
+  assert.equal(pBase.get('Gemini').rateEstimate?.externalUsage?.detected, true);
+  assert.equal(pBase.get('Gemini').rateEstimate?.externalUsage?.activeRecently, false);
+  const st5h = tracker._buckets.get('local::family@example.com::Gemini::5h');
+  assert.equal(st5h.ratePctPerUsd, null, 'family cold-start must not fabricate inflated safeUsed/safeCost rate');
+
+  // 2. Calibrate real local burn rates cleanly via 3 single-step turns: 5h = 2.0 %/$, weekly = 0.5 %/$
+  for (let i = 0; i < 3; i += 1) {
+    ts += 20_000;
+    c5 = +(c5 + 0.1).toFixed(4);
+    cw = +(cw + 0.1).toFixed(4);
+    u5 = +(u5 + 0.2).toFixed(4);
+    uw = +(uw + 0.05).toFixed(4);
+    const pCal = makePools(u5, uw);
+    tracker.updatePools({
+      endpointId: 'local',
+      accountScope: 'family@example.com',
+      quotaPoolsMap: pCal,
+      poolCycleStats: makeStats(c5, cw, ts, 1),
+      runningPoolKeys: new Set(['Gemini']),
+      quotaFetchedAtMs: ts,
+      nowMs: ts,
+    });
+    assert.equal(pCal.get('Gemini').reservedPct, 0);
+  }
+  assert.ok(Math.abs(st5h.ratePctPerUsd - 2.0) < 0.05);
+
+  // 3. Layer 1 (Local-Activity Gate): local goes idle for 5 min (or uses Claude only) while family burns +1.2% 5h & +0.3% weekly
+  const lastLocalAct = ts;
+  ts += 5 * 60 * 1000;
+  u5 = +(u5 + 1.2).toFixed(4);
+  uw = +(uw + 0.3).toFixed(4);
+  const pIdleExt = makePools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'family@example.com',
+    quotaPoolsMap: pIdleExt,
+    poolCycleStats: makeStats(c5, cw, lastLocalAct, 0),
+    runningPoolKeys: new Set(['Claude & GPT']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pIdleExt.get('Gemini').reservedPct, 0, 'idle Gemini jump while running Claude is external_usage');
+  assert.equal(pIdleExt.get('Gemini').weeklyReservedPct, 0);
+  assert.equal(pIdleExt.get('Gemini').rateEstimate?.externalUsage?.activeRecently, true);
+  assert.equal(pIdleExt.get('Gemini').rateEstimate?.externalUsage?.used5hPct, 1.2);
+  assert.equal(pIdleExt.get('Gemini').rateEstimate?.externalUsage?.usedWeeklyPct, 0.3);
+
+  // 4. Layer 2 (5h/weekly proportional co-movement): local IS active ($0.05 step -> exp 0.10% / 0.025%),
+  // AND family member simultaneously spends $0.60 (+1.20% 5h, +0.30% weekly) on the same snapshot
+  ts += 30_000;
+  c5 = +(c5 + 0.05).toFixed(4);
+  cw = +(cw + 0.05).toFixed(4);
+  u5 = +(u5 + 1.3).toFixed(4);
+  uw = +(uw + 0.325).toFixed(4);
+  const pCoMove = makePools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'family@example.com',
+    quotaPoolsMap: pCoMove,
+    poolCycleStats: makeStats(c5, cw, ts, 1),
+    runningPoolKeys: new Set(['Gemini']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pCoMove.get('Gemini').reservedPct, 0, 'proportional 5h+weekly jump blocked as external_usage');
+  assert.equal(pCoMove.get('Gemini').weeklyReservedPct, 0);
+  assert.equal(pCoMove.get('Gemini').rateEstimate?.externalUsage?.used5hPct, 2.4);
+
+  // 5. Layer 3a (Shared-active tentative lease -> corroborated promotion on consume):
+  // External usage was seen 30s ago -> a genuine staggered 5h +1.0% lease stays hidden (tentative) first
+  ts += 20_000;
+  c5 = +(c5 + 0.05).toFixed(4);
+  cw = +(cw + 0.05).toFixed(4);
+  u5 = +(u5 + 1.1).toFixed(4); // excess 1.0% on 5h only
+  uw = +(uw + 0.025).toFixed(4); // normal 1:1 on weekly
+  const pTent = makePools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'family@example.com',
+    quotaPoolsMap: pTent,
+    poolCycleStats: makeStats(c5, cw, ts, 1),
+    runningPoolKeys: new Set(['Gemini']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pTent.get('Gemini').reservedPct, 0, 'shared-active new lease stays tentative/hidden until corroborated');
+
+  // Next local spend ($0.15 -> exp 0.30%) is absorbed with flat official (consume past lag grace) -> promotes tentative lease!
+  ts += 15_000;
+  c5 = +(c5 + 0.15).toFixed(4);
+  cw = +(cw + 0.15).toFixed(4);
+  uw = +(uw + 0.075).toFixed(4);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'family@example.com',
+    quotaPoolsMap: makePools(u5, uw),
+    poolCycleStats: makeStats(c5, cw, ts, 1),
+    runningPoolKeys: new Set(['Gemini']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  ts += QR_CONSUME_LAG_GRACE_MS + 1_000;
+  const pPromoted = makePools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'family@example.com',
+    quotaPoolsMap: pPromoted,
+    poolCycleStats: makeStats(c5, cw, ts, 1),
+    runningPoolKeys: new Set(['Gemini']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pPromoted.get('Gemini').reservedPct, 0.7, 'corroborated tentative lease promotes cleanly (1.0% - 0.3% = 0.7%)');
+
+  // 6. Layer 3b (Unbacked single-session ghost lease fast eviction on a fresh solo-looking account):
+  const soloTracker = createQuotaReservationTracker();
+  const sKey = 'local::overlap@example.com::Gemini::5h';
+  let stTs = T0;
+  let su = 10.0;
+  let sc = 5.0; // calibrated 2.0 %/$
+  soloTracker.observeBucket({
+    bucketKey: sKey,
+    officialUsedPct: su,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: stTs,
+    cycleCostUsd: sc,
+    poolLastActivityMs: stTs,
+    activeSessionCount10m: 1,
+    nowMs: stTs,
+  });
+  // Unseen family burst overlaps single local turn -> creates unconfirmed +0.8% lease
+  stTs += 15_000;
+  sc = +(sc + 0.05).toFixed(4);
+  su = +(su + 0.9).toFixed(4);
+  const rGhost = soloTracker.observeBucket({
+    bucketKey: sKey,
+    officialUsedPct: su,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: stTs,
+    cycleCostUsd: sc,
+    poolLastActivityMs: stTs,
+    activeSessionCount10m: 1,
+    nowMs: stTs,
+  });
+  assert.equal(rGhost.reservedPct, 0.8);
+
+  // 3 consecutive normal 1:1 local steps ($0.05 -> +0.10% each, total 0.30% >= 0.25%) with zero absorption -> evicts ghost lease!
+  let rFinal = null;
+  for (let i = 0; i < 3; i += 1) {
+    stTs += 20_000;
+    sc = +(sc + 0.05).toFixed(4);
+    su = +(su + 0.1).toFixed(4);
+    rFinal = soloTracker.observeBucket({
+      bucketKey: sKey,
+      officialUsedPct: su,
+      resetTimeMs: RESET_5H,
+      quotaFetchedAtMs: stTs,
+      cycleCostUsd: sc,
+      poolLastActivityMs: stTs,
+      activeSessionCount10m: 1,
+      nowMs: stTs,
+    });
+  }
+  assert.equal(rFinal.reservedPct, 0, 'unbacked single-session ghost lease fast-evicted after 3 unabsorbed 1:1 steps');
+  assert.equal(soloTracker._buckets.get(sKey).hasExternalUsage, true);
+  assert.ok(
+    soloTracker.getLogSnapshot().events.some((e) => e.event === 'lease_rejected'),
+    'eviction recorded as lease_rejected'
+  );
+});
+
+test('QuotaPoolsWidget ? popover renders family-group/external usage banner and shared-active badge cleanly', async () => {
+  const { document } = createMockDom();
+  const origDocument = globalThis.document;
+  const origWindow = globalThis.window;
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 960,
+    innerHeight: 720,
+    addEventListener() {},
+    removeEventListener() {},
+    location: { origin: 'http://127.0.0.1:0', href: 'http://127.0.0.1:0/' },
+  };
+
+  try {
+    const [{ setI18nLanguage }, { QuotaPoolsWidget }] = await Promise.all([
+      import('../src/i18n/index.js'),
+      import('../src/components/widgets/QuotaPoolsWidget.js'),
+    ]);
+    setI18nLanguage('zh-CN');
+
+    const widget = QuotaPoolsWidget();
+    const popover = widget.refs.ratePopoverEl;
+
+    // 1. Solo account without external usage: no shared badge or external banner
+    widget.refs.update({
+      data: {
+        account: { email: 'solo@example.com', tierName: 'Google AI Ultra' },
+        quotas: {
+          pools: [
+            {
+              poolKey: 'Gemini',
+              poolLabel: 'Gemini',
+              family: 'Gemini',
+              usedPct: 12,
+              remainingPct: 88,
+              rateEstimate: {
+                rate5hPctPerUsd: 2,
+                rateWeeklyPctPerUsd: 0.5,
+                eqFull5hUsd: 50,
+                eqFullWeeklyUsd: 200,
+                samples5h: 5,
+                samplesWeekly: 5,
+                models: [],
+              },
+            },
+          ],
+          weekly: { isOfficial: true },
+        },
+      },
+      minuteTick: 1,
+    });
+    assert.equal(popover.querySelector('.quota-rate-shared-badge'), null);
+    assert.equal(popover.querySelector('.quota-rate-ext-banner'), null);
+
+    // 2. Family-group active external usage with concrete 5h + weekly excluded %
+    const familyData = {
+      account: { email: 'family@example.com', tierName: 'Google AI Ultra' },
+      quotas: {
+        pools: [
+          {
+            poolKey: 'Gemini',
+            poolLabel: 'Gemini',
+            family: 'Gemini',
+            usedPct: 24,
+            remainingPct: 76,
+            weeklyUsedPct: 35,
+            weeklyRemainingPct: 65,
+            rateEstimate: {
+              rate5hPctPerUsd: 2,
+              rateWeeklyPctPerUsd: 0.5,
+              eqFull5hUsd: 50,
+              eqFullWeeklyUsd: 200,
+              samples5h: 6,
+              samplesWeekly: 6,
+              models: [],
+              externalUsage: {
+                detected: true,
+                activeRecently: true,
+                used5hPct: 2.4,
+                usedWeeklyPct: 0.6,
+                events: 3,
+                lastSeenAtMs: Date.now(),
+              },
+            },
+          },
+        ],
+        weekly: { isOfficial: true },
+      },
+    };
+    widget.refs.update({ data: familyData, minuteTick: 2 });
+    const sharedBadge = popover.querySelector('.quota-rate-shared-badge');
+    const extBanner = popover.querySelector('.quota-rate-ext-banner');
+    assert.ok(sharedBadge, 'shared-active badge rendered');
+    assert.equal(sharedBadge.textContent, '共享活跃');
+    assert.ok(extBanner, 'external usage banner rendered');
+    assert.equal(extBanner.classList.contains('is-active'), true);
+    assert.match(extBanner.textContent, /家庭组 \/ 其他设备消耗/);
+    assert.match(extBanner.textContent, /5h 2\.4% · 周限 0\.6%/);
+    assert.equal(extBanner.textContent.includes('与'), false);
+
+    // 3. Baseline-only external detection before any model samples exist
+    widget.refs.update({
+      data: {
+        account: { email: 'family@example.com', tierName: 'Google AI Ultra' },
+        quotas: {
+          pools: [
+            {
+              poolKey: 'Gemini',
+              poolLabel: 'Gemini',
+              family: 'Gemini',
+              usedPct: 18,
+              remainingPct: 82,
+              rateEstimate: {
+                rate5hPctPerUsd: null,
+                rateWeeklyPctPerUsd: null,
+                eqFull5hUsd: null,
+                eqFullWeeklyUsd: null,
+                samples5h: 0,
+                samplesWeekly: 0,
+                models: [],
+                externalUsage: {
+                  detected: true,
+                  activeRecently: false,
+                  used5hPct: 0,
+                  usedWeeklyPct: 0,
+                  events: 0,
+                  lastSeenAtMs: null,
+                },
+              },
+            },
+          ],
+          weekly: { isOfficial: true },
+        },
+      },
+      minuteTick: 3,
+    });
+    assert.equal(popover.querySelector('.quota-rate-shared-badge'), null);
+    const baseBanner = popover.querySelector('.quota-rate-ext-banner');
+    assert.ok(baseBanner);
+    assert.match(baseBanner.textContent, /仅按本机实测校准/);
+
+    // 4. English locale rendering
+    setI18nLanguage('en-US');
+    widget.refs.update({ data: familyData, minuteTick: 4 });
+    assert.equal(popover.querySelector('.quota-rate-shared-badge').textContent, 'Shared active');
+    assert.match(
+      popover.querySelector('.quota-rate-ext-banner').textContent,
+      /Family group \/ other-device usage detected.*5h 2\.4% · Weekly 0\.6%/
+    );
 
     widget.destroy();
   } finally {

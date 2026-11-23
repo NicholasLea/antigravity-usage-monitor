@@ -208,6 +208,12 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.ratePopSamples': '{n} samples',
   'quota.ratePopEmpty': 'Not enough clean single-model samples yet (at least 3 clean steps per model). Estimates appear automatically during use.',
   'quota.ratePopNote': 'Measured from clean single-model steps; lowest burn in pool = 1x. Account isolated.',
+  'quota.ratePopSharedBadge': 'Shared active',
+  'quota.ratePopSharedBadgeTip': 'External pool usage seen within 15 min; new reservations display after verification',
+  'quota.ratePopExternalDetail': 'Family group / other-device usage detected (~{detail} excluded from reservations)',
+  'quota.ratePopExternalBaseline': 'Family group / other-device usage detected this cycle; reservations & rates calibrate on local steps only',
+  'quota.ratePopExt5h': '5h {pct}%',
+  'quota.ratePopExtWk': 'Weekly {pct}%',
 
   // Live Activity Widget
   'live.currentSession': 'Current Session',

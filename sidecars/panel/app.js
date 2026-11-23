@@ -1467,6 +1467,12 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.ratePopSamples': '{n} 样本',
   'quota.ratePopEmpty': '暂未采集到足够的单模型干净样本（每模型需至少 3 次无抖动扣费），正常使用后自动生成。',
   'quota.ratePopNote': '按单模型纯净步实测折算，同池最省为 1x，按账号隔离。',
+  'quota.ratePopSharedBadge': '共享活跃',
+  'quota.ratePopSharedBadgeTip': '最近 15 分钟内检测到同池外部消耗，新增预占将在二次验证后展示',
+  'quota.ratePopExternalDetail': '检测到家庭组 / 其他设备消耗（已排除约 {detail}），不计入预占',
+  'quota.ratePopExternalBaseline': '检测到本周期存在家庭组 / 其他设备消耗，预占和费率仅按本机实测校准',
+  'quota.ratePopExt5h': '5h {pct}%',
+  'quota.ratePopExtWk': '周限 {pct}%',
 
   // Live Activity Widget
   'live.currentSession': '当前会话',
@@ -2355,6 +2361,12 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.ratePopSamples': '{n} samples',
   'quota.ratePopEmpty': 'Not enough clean single-model samples yet (at least 3 clean steps per model). Estimates appear automatically during use.',
   'quota.ratePopNote': 'Measured from clean single-model steps; lowest burn in pool = 1x. Account isolated.',
+  'quota.ratePopSharedBadge': 'Shared active',
+  'quota.ratePopSharedBadgeTip': 'External pool usage seen within 15 min; new reservations display after verification',
+  'quota.ratePopExternalDetail': 'Family group / other-device usage detected (~{detail} excluded from reservations)',
+  'quota.ratePopExternalBaseline': 'Family group / other-device usage detected this cycle; reservations & rates calibrate on local steps only',
+  'quota.ratePopExt5h': '5h {pct}%',
+  'quota.ratePopExtWk': 'Weekly {pct}%',
 
   // Live Activity Widget
   'live.currentSession': 'Current Session',
@@ -19285,7 +19297,8 @@ const QuotaPoolsWidget = defineComponent({
         const hasPoolFallback =
           models.length === 0 &&
           (Number.isFinite(est.rate5hPctPerUsd) || Number.isFinite(est.rateWeeklyPctPerUsd));
-        if (models.length === 0 && !hasPoolFallback) continue;
+        const ext = est.externalUsage && est.externalUsage.detected ? est.externalUsage : null;
+        if (models.length === 0 && !hasPoolFallback && !ext) continue;
 
         const poolLabel = p.poolLabel || p.family || p.poolKey || 'Pool';
         const rows =
@@ -19301,25 +19314,65 @@ const QuotaPoolsWidget = defineComponent({
                   samples: item.samples,
                 })
               )
-            : [
-                createRateModelCard({
-                  name: t('quota.ratePopPoolFallback'),
-                  isMutedName: true,
-                  isFallback: true,
-                  rate5hPctPerUsd: est.rate5hPctPerUsd,
-                  rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
-                  eqFull5hUsd: est.eqFull5hUsd,
-                  eqFullWeeklyUsd: est.eqFullWeeklyUsd,
-                  samples: Math.max(Number(est.samples5h) || 0, Number(est.samplesWeekly) || 0),
-                }),
-              ];
+            : hasPoolFallback
+              ? [
+                  createRateModelCard({
+                    name: t('quota.ratePopPoolFallback'),
+                    isMutedName: true,
+                    isFallback: true,
+                    rate5hPctPerUsd: est.rate5hPctPerUsd,
+                    rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
+                    eqFull5hUsd: est.eqFull5hUsd,
+                    eqFullWeeklyUsd: est.eqFullWeeklyUsd,
+                    samples: Math.max(Number(est.samples5h) || 0, Number(est.samplesWeekly) || 0),
+                  }),
+                ]
+              : [];
 
-        populatedGroups.push(
-          h('div', { className: 'quota-rate-pool-group' }, [
-            h('div', { className: 'quota-rate-pool-label', text: poolLabel }),
-            h('div', { className: 'quota-rate-model-list' }, rows),
-          ])
-        );
+        const headChildren = [h('div', { className: 'quota-rate-pool-label', text: poolLabel })];
+        if (ext?.activeRecently) {
+          headChildren.push(
+            h('span', {
+              className: 'quota-rate-shared-badge',
+              text: t('quota.ratePopSharedBadge'),
+              title: t('quota.ratePopSharedBadgeTip'),
+            })
+          );
+        }
+
+        const groupChildren = [h('div', { className: 'quota-rate-pool-head' }, headChildren)];
+        if (rows.length > 0) {
+          groupChildren.push(h('div', { className: 'quota-rate-model-list' }, rows));
+        } else {
+          groupChildren.push(
+            h('div', { className: 'quota-rate-pop-empty', text: t('quota.ratePopEmpty') })
+          );
+        }
+        if (ext) {
+          const extParts = [];
+          if (Number(ext.used5hPct) >= 0.1) {
+            extParts.push(
+              t('quota.ratePopExt5h', { pct: formatPctNumber(Number(ext.used5hPct)) })
+            );
+          }
+          if (Number(ext.usedWeeklyPct) >= 0.1) {
+            extParts.push(
+              t('quota.ratePopExtWk', { pct: formatPctNumber(Number(ext.usedWeeklyPct)) })
+            );
+          }
+          const extText =
+            extParts.length > 0
+              ? t('quota.ratePopExternalDetail', { detail: extParts.join(' · ') })
+              : t('quota.ratePopExternalBaseline');
+          groupChildren.push(
+            h('div', {
+              className: `quota-rate-ext-banner${ext.activeRecently ? ' is-active' : ''}`,
+              text: extText,
+            })
+          );
+        }
+
+        populatedGroups.push(h('div', { className: 'quota-rate-pool-group' }, groupChildren));
       }
 
       if (populatedGroups.length === 0) {

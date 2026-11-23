@@ -648,7 +648,8 @@ export const QuotaPoolsWidget = defineComponent({
         const hasPoolFallback =
           models.length === 0 &&
           (Number.isFinite(est.rate5hPctPerUsd) || Number.isFinite(est.rateWeeklyPctPerUsd));
-        if (models.length === 0 && !hasPoolFallback) continue;
+        const ext = est.externalUsage && est.externalUsage.detected ? est.externalUsage : null;
+        if (models.length === 0 && !hasPoolFallback && !ext) continue;
 
         const poolLabel = p.poolLabel || p.family || p.poolKey || 'Pool';
         const rows =
@@ -664,25 +665,65 @@ export const QuotaPoolsWidget = defineComponent({
                   samples: item.samples,
                 })
               )
-            : [
-                createRateModelCard({
-                  name: t('quota.ratePopPoolFallback'),
-                  isMutedName: true,
-                  isFallback: true,
-                  rate5hPctPerUsd: est.rate5hPctPerUsd,
-                  rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
-                  eqFull5hUsd: est.eqFull5hUsd,
-                  eqFullWeeklyUsd: est.eqFullWeeklyUsd,
-                  samples: Math.max(Number(est.samples5h) || 0, Number(est.samplesWeekly) || 0),
-                }),
-              ];
+            : hasPoolFallback
+              ? [
+                  createRateModelCard({
+                    name: t('quota.ratePopPoolFallback'),
+                    isMutedName: true,
+                    isFallback: true,
+                    rate5hPctPerUsd: est.rate5hPctPerUsd,
+                    rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
+                    eqFull5hUsd: est.eqFull5hUsd,
+                    eqFullWeeklyUsd: est.eqFullWeeklyUsd,
+                    samples: Math.max(Number(est.samples5h) || 0, Number(est.samplesWeekly) || 0),
+                  }),
+                ]
+              : [];
 
-        populatedGroups.push(
-          h('div', { className: 'quota-rate-pool-group' }, [
-            h('div', { className: 'quota-rate-pool-label', text: poolLabel }),
-            h('div', { className: 'quota-rate-model-list' }, rows),
-          ])
-        );
+        const headChildren = [h('div', { className: 'quota-rate-pool-label', text: poolLabel })];
+        if (ext?.activeRecently) {
+          headChildren.push(
+            h('span', {
+              className: 'quota-rate-shared-badge',
+              text: t('quota.ratePopSharedBadge'),
+              title: t('quota.ratePopSharedBadgeTip'),
+            })
+          );
+        }
+
+        const groupChildren = [h('div', { className: 'quota-rate-pool-head' }, headChildren)];
+        if (rows.length > 0) {
+          groupChildren.push(h('div', { className: 'quota-rate-model-list' }, rows));
+        } else {
+          groupChildren.push(
+            h('div', { className: 'quota-rate-pop-empty', text: t('quota.ratePopEmpty') })
+          );
+        }
+        if (ext) {
+          const extParts = [];
+          if (Number(ext.used5hPct) >= 0.1) {
+            extParts.push(
+              t('quota.ratePopExt5h', { pct: formatPctNumber(Number(ext.used5hPct)) })
+            );
+          }
+          if (Number(ext.usedWeeklyPct) >= 0.1) {
+            extParts.push(
+              t('quota.ratePopExtWk', { pct: formatPctNumber(Number(ext.usedWeeklyPct)) })
+            );
+          }
+          const extText =
+            extParts.length > 0
+              ? t('quota.ratePopExternalDetail', { detail: extParts.join(' · ') })
+              : t('quota.ratePopExternalBaseline');
+          groupChildren.push(
+            h('div', {
+              className: `quota-rate-ext-banner${ext.activeRecently ? ' is-active' : ''}`,
+              text: extText,
+            })
+          );
+        }
+
+        populatedGroups.push(h('div', { className: 'quota-rate-pool-group' }, groupChildren));
       }
 
       if (populatedGroups.length === 0) {

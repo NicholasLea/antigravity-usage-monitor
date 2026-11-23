@@ -2456,10 +2456,49 @@ html[data-standalone="true"] .app-shell {
   border-top: 1px solid var(--border-hairline);
 }
 
+.quota-rate-pool-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .quota-rate-pool-label {
   font-size: var(--fs-2xs);
   font-weight: 600;
   color: var(--text-muted);
+}
+
+.quota-rate-shared-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--metric-warn);
+  background: color-mix(in srgb, var(--metric-warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--metric-warn) 28%, transparent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.quota-rate-ext-banner {
+  margin-top: 2px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: var(--fs-2xs);
+  line-height: 1.45;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--metric-warn) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--metric-warn) 22%, var(--border-hairline));
+}
+
+.quota-rate-ext-banner.is-active {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--metric-warn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--metric-warn) 34%, var(--border-hairline));
 }
 
 .quota-rate-model-list {
