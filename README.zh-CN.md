@@ -33,14 +33,16 @@ Google Antigravity 2.0、Antigravity IDE 与 Antigravity CLI 的本地用量、�
 
 - **实时指标与版面编排**：统计单步输出速度（`tok/s`）、首字延迟（`TTFT`）、会话平均速度、单步/累计费用、缓存命中率、最紧缺配额与已用 Token；可在设置中从 9 项指标中自由勾选并拖拽排序（默认展示 4 项），并调整实时监控各模块顺序。
 - **10 类上下文窗口构成**：展示最近一次请求的上下文占比，按占用列出模型回复、工具结果、用户消息、子代理通知、压缩摘要、系统提示词、系统工具、MCP 工具、Skill 与用户规则，支持在主代理与任意子代理之间切换查看。
-- **配额池监控与过期提示**：追踪 `Gemini`、`Gemini 4 Argon`、`Gemini 4 Carbon` 与 `Claude & GPT` 配额池的 5 小时及每周余量、重置倒计时与周期累计用量；上游接口暂未返回新数据时保留缓存余量并显示陈旧提示。
-- **主/子代理联动与多会话管理**：按时间归并展示主代理与各子代理调用步骤（也可按单一代理过滤），支持可选轮次分组导轨与运行中子代理卡片原地展开，并在顶栏切换最近会话。
-- **调用明细与自定义 Token 格式**：包含「按步查看」与「按模型汇总」（含多模型拟合图）；支持增删与排序 2–14 列、独立开关速度分段配色，除预设的 `上下文 / 思考 / 正文` 和 `输入 / 输出 / 缓存` 外，可通过 `context:new:cache`、`in:out:cache` 等语法自定义 Token 组合展示。
-- **历史用量与来源统计**：按今天、1 天、7 天、14 天、30 天、全部或自定义起止日期时间统计总 Token、新输入与缓存读取节省金额、输出/思考拆分、按小时/按天趋势折线图、模型排行、客户端来源（App / IDE / CLI）与月度柱状图。
-- **多端胶囊与悬浮速览**：支持 Antigravity 2.0 顶栏/输入框停靠胶囊与右侧辅助栏、Antigravity IDE 顶栏/输入框胶囊、Antigravity CLI（`agy`）单行 24-bit ANSI `statusLine` 与独立 Web 页面；支持自定义 1–5 个胶囊指标槽位、悬停速览卡片内容以及自动适宽（或 `440~1080 px` 固定宽度）。
-- **不修改 `app.asar`**：桌面端与 IDE 的胶囊挂载及上下文请求改写均在运行时通过本地 CDP 内存注入完成（IDE 首次启用时仅向 `~/.antigravity-ide/argv.json` 写入 `"remote-debugging-port": "0"`，保留注释与原有配置），不触碰宿主安装包与 `app.asar`。
-- **按模型设置上下文窗口**：支持按模型系列（跨思考档位）统一指定上下文上限或跟随宿主默认；桌面端与 IDE 在请求层生效，CLI 通过环境变量 `AGY_CLI_AUTO_COMPACT_OVERRIDE` 控制。
-- **外观定制、离线读取与云端同步**：提供简体中文 / English / 自动跟随宿主语言、`sm / md / lg / xl` 字号、6 种主题强调色（含跟随宿主主题）；离线支持直读 CLI SQLite + WAL、`annotations/*.pbtxt`、`transcript.jsonl` 与 `.deep_stats_cache.json`；内置 GitHub [`pricing-catalog.json`](pricing-catalog.json) 同步、压缩步骤模型推断、面板内更新（手动 / 自动 / 关闭）及缓存重建与配置重置。
+- **配额池监控、预占估算及速率参考**：追踪 `Gemini`、`Gemini 4 Argon`、`Gemini 4 Carbon` 及 `Claude & GPT` 配额池的 5 小时及每周用量、重置倒计时、周期累计消耗及 Ultra `5x / 20x` 倍率标识；内置租约预占斜纹指示段及按账号隔离的模型消耗速率/等效满池费用悬浮卡（`?`），上游暂未返回新数据时保留缓存状态及提示。
+- **主/子代理、Swarm 蜂群及 SSH 多远端隔离**：按时间归并展示主代理、子代理及原生 Swarm Worker 调用步骤（也可按单一代理过滤），支持轮次分组导轨及运行中任务原地展开，并对多个 SSH Remote 远端窗口按端点独立隔离轨迹缓存及配额状态。
+- **调用明细、耗时拆解及异常筛选**：包含「按步查看」及「按模型汇总」（含多模型 LOESS 吞吐/TTFT 拟合曲线）；支持表头点击排序、首字延迟/总耗时分阶段悬停拆解、压缩行强调色高亮及悬停诊断、可选实时搜索及 9 类异常/慢首字/低缓存快捷诊断筛选条；支持定制 2–14 列及 `context:in:cache` 等自定义 Token 语法。
+- **历史用量、项目工作区归因及日历热力图**：按今天、1 天、7 天、14 天、30 天、全部或自定义时间窗统计总 Token、缓存节省金额、输出/思考拆分、平滑小时/日趋势折线（跨度 `>90` 天自动切换为每日日历热力图）、**模型 / 项目工作区 / 会话**三合一排行、客户端来源（App / IDE / CLI）及月度堆叠柱状图，均配备跟手悬浮明细卡。
+- **原生多表 `.xlsx` 报表导出及配置备份**：支持将用量统计及调用明细直接导出为多工作表双语 Excel（`.xlsx`）工作簿或复制 Markdown 汇总报告（落盘至 `~/Downloads` 并弹出「打开位置」定位提示），同时支持便携 JSON 偏好配置备份导入导出。
+- **跨客户端会话无损迁移**：在「偏好设置 → 其他」提供 `CLI ↔ 桌面端 / 新版 IDE` 及 `旧版 IDE (.db)` 按需会话迁移及克隆副本工具，自动重写独立 UUID 防止跨端镜像互删及重复计费。
+- **多端胶囊及 CLI `statusLine` 多模式**：支持 Antigravity 2.0 顶栏/输入框胶囊（含环形额度指示及主代理上下文锁定）及右侧辅助栏、Antigravity IDE 顶栏/输入框胶囊、Antigravity CLI（`agy`）单行 24-bit ANSI `statusLine`（支持 `--style pill|bar|compact`、`--preset compact|balanced|full` 及 `--json` 快照输出）以及独立 Web 页面。
+- **不修改 `app.asar` 及 Desktop 2.33.0+ 自动补齐**：桌面端和 IDE 的胶囊挂载及上下文改写均通过本地 CDP 内存注入完成；自动补齐 Desktop `2.33.0+` 用户快捷方式/启动项（支持面板内一键脱离作业树带参重拉）及 `~/.antigravity-ide/argv.json`，绝不触碰宿主安装包及 `app.asar`。
+- **按模型设置上下文窗口（主代理 + 子代理/Swarm）**：支持按模型系列指定上下文上限或跟随宿主默认，提供独立的主代理开关（CDP 请求钩子）及子代理 / Swarm Worker 同步开关（本机回环 CloudCode 透明反代），CLI 端通过 `AGY_CLI_AUTO_COMPACT_OVERRIDE` 控制。
+- **外观定制、离线读取及云端同步**：提供简体中文 / English / 跟随宿主语言、无边框 Modern UI、`sm / md / lg / xl` 字号、6 种主题强调色；离线直读 CLI SQLite + WAL、`annotations/*.pbtxt`、`transcript.jsonl` 及 `.deep_stats_cache.json`；内置 GitHub [`pricing-catalog.json`](pricing-catalog.json) 同步及面板内更新（手动 / 自动 / 关闭）。
 
 ---
 
@@ -64,7 +66,7 @@ Google Antigravity 2.0、Antigravity IDE 与 Antigravity CLI 的本地用量、�
       <br />
       <b>Antigravity CLI (<code>agy</code>)</b>
       <br />
-      <sub>终端底栏单行 24-bit ANSI 无背景色 <code>statusLine</code>，显示活跃会话数、输出速率、首字延迟与上下文占比</sub>
+      <sub>终端底栏单行 24-bit ANSI <code>statusLine</code>，支持彩色胶囊/进度条/紧凑三档样式，实时显示活跃数、输出速率、首字延迟、单步费用及配额/上下文占比</sub>
     </td>
   </tr>
 </table>
@@ -74,25 +76,25 @@ Google Antigravity 2.0、Antigravity IDE 与 Antigravity CLI 的本地用量、�
 <table>
   <tr>
     <td align="center" width="33.3%">
-      <img src="assets/context.png" alt="实时监控与上下文窗口" />
+      <img src="assets/context.png" alt="实时监控及上下文窗口" />
       <br />
       <b>实时监控</b>
       <br />
-      <sub>输出速率、首字延迟、10 类上下文明细、配额池与运行中任务</sub>
+      <sub>输出速率、首字延迟、10 类上下文构成、带预占估算的配额池及蜂群/子代理运行任务</sub>
     </td>
     <td align="center" width="33.3%">
-      <img src="assets/analytics.png" alt="历史用量与趋势统计" />
+      <img src="assets/analytics.png" alt="历史用量及趋势统计" />
       <br />
       <b>用量统计</b>
       <br />
-      <sub>Token 汇总、缓存命中率、趋势曲线与分模型用量排行</sub>
+      <sub>Token 汇总、缓存命中率、平滑趋势曲线及模型/项目/会话三合一排行</sub>
     </td>
     <td align="center" width="33.3%">
-      <img src="assets/subagents.png" alt="主代理与子代理调用明细" />
+      <img src="assets/subagents.png" alt="主代理、蜂群及子代理调用明细" />
       <br />
       <b>调用明细</b>
       <br />
-      <sub>按步列出代理归属、模型、速率、首字延迟、Token 构成与费用</sub>
+      <sub>支持排序的主代理、蜂群及子代理调用记录，含轮次导轨、压缩行高亮及费用拆解</sub>
     </td>
   </tr>
 </table>
@@ -101,15 +103,15 @@ Google Antigravity 2.0、Antigravity IDE 与 Antigravity CLI 的本地用量、�
 
 ## 客户端支持
 
-| 客户端 / 运行环境 | 状态胶囊 / 底栏 | 监控面板 | 离线 SQLite 与日志读取 | 按模型上下文限制 | 修改 `app.asar` |
+| 客户端 / 运行环境 | 状态胶囊 / 底栏 | 监控面板 | 离线 SQLite 及日志读取 | 按模型上下文限制 | 修改 `app.asar` |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Antigravity 2.0 桌面端** | 顶栏 / 输入框停靠 | 悬浮窗 + 右侧辅助栏 | 支持 | 请求级重写钩子 | 否 |
-| **Antigravity IDE** | 顶栏 / 输入框停靠 | 点击胶囊展开面板 | 支持 | 请求级重写钩子 | 否 |
+| **Antigravity 2.0 桌面端** | 顶栏 / 输入框停靠 | 悬浮窗 + 右侧辅助栏 | 支持 | CDP 钩子 + 本机 CloudCode 反代 | 否 |
+| **Antigravity IDE** | 顶栏 / 输入框停靠 | 点击胶囊展开面板 | 支持 | CDP 钩子 + 本机 CloudCode 反代 | 否 |
 | **Antigravity CLI (`agy`)** | 终端底栏 `statusLine` | 独立 Web (`--port`) | 支持（`node:sqlite` + `.pbtxt`） | `AGY_CLI_AUTO_COMPACT_OVERRIDE` | 否 |
-| **无头服务器 / SSH 远程** | 终端底栏 `statusLine` | SSH 隧道 / `--token` Web | 支持 | `AGY_CLI_AUTO_COMPACT_OVERRIDE` | 否 |
+| **无头服务器 / SSH 远程** | 按端点胶囊 / ANSI `statusLine` | SSH 悬浮窗 / `--token` Web | 支持 | 按端点钩子 / 环境变量 | 否 |
 
 > [!NOTE]
-> 在 **Antigravity IDE** 中首次启用插件时，后台会通过零工具开销的 MCP 保活入口（不消耗上下文 Token）向 `~/.antigravity-ide/argv.json` 写入 `"remote-debugging-port": "0"`（保留原有注释与配置项）。首次启用后需重启一次 IDE，顶栏胶囊才能正常挂载。
+> 在 **Antigravity Desktop 2.33.0+** 和 **Antigravity IDE** 中启用插件时，后台会通过零工具开销的 MCP 保活入口（不消耗上下文 Token）自动补齐桌面端用户快捷方式启动参数或向 `~/.antigravity-ide/argv.json` 写入 `"remote-debugging-port": "0"`（保留原有注释及配置项）。桌面端可直接点击面板顶部的「一键带参重拉」生效，IDE 首次启用后重启一次即可挂载顶栏胶囊。
 
 ---
 
@@ -223,7 +225,7 @@ ssh -L 8787:127.0.0.1:8787 user@your-server
 
 ## 本地开发
 
-前后端代码采用纯 Node.js ESM 与原生 Web Components 编写，**无外部 npm 依赖**（建议使用 Node.js 22.5+ 以使用内置 `node:sqlite`）。
+前后端代码采用纯 Node.js ESM 及自研轻量响应式组件和增量 DOM 修补内核（`defineComponent` + `domPatch`，宿主悬浮窗采用 Shadow DOM 样式隔离）编写，**无外部 npm 依赖**（建议使用 Node.js 22.5+ 以使用内置 `node:sqlite`）。
 
 ```bash
 cd sidecars/panel

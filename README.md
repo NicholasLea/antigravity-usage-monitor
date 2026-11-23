@@ -33,14 +33,16 @@ English · [简体中文](README.zh-CN.md)
 
 - **Live Metrics & Customizable Layout**: Tracks output speed (`tok/s`), time-to-first-token (`TTFT`), session average speed, step/session USD cost, cache hit rate, tightest remaining quota, and session tokens. You can choose and reorder the overview metric cards (4 shown by default out of 9 options) and section blocks.
 - **10-Category Context Breakdown**: Shows the token breakdown of the latest request across assistant replies, tool results, user messages, subagent notifications, checkpoints, system prompts, system tools, MCP tools, skills, and user rules, with a switcher between the main agent and spawned subagents.
-- **Quota Pool Tracking**: Reads 5-hour and weekly quotas, reset timers, and cycle consumption across `Gemini`, `Gemini 4 Argon`, `Gemini 4 Carbon`, and `Claude & GPT` pools, preserving cached pool status with a stale badge when upstream quota data is temporarily unavailable.
-- **Main Agent, Subagents & Multi-Session Views**: Merges main agent and subagent steps in chronological order (or filters by individual agent), renders optional turn rails, expands running subagent tasks inline, and provides a recent-conversation selector in the header.
-- **Call Details & Custom Token Formats**: Includes **By Step** and **By Model** tabs (with multi-model throughput charts). Supports 2–14 configurable columns, optional speed color grading, preset `Ctx / Think / Reply` and `In / Out / Cache` columns, and custom token combination strings such as `context:new:cache` or `in:out:cache`.
-- **Historical Usage & Breakdowns**: Summarizes tokens, uncached input vs. cache-read savings, thinking/output split, hourly/daily trend curves, model rankings, client attribution (`Desktop App` / `IDE` / `CLI`), and monthly bar charts across `Today`, `1d`, `7d`, `14d`, `30d`, `All`, or custom date/time ranges.
-- **Multi-Client Capsules & Hover Popover**: Integrates as a titlebar or composer capsule and auxiliary sidebar in Antigravity 2.0, a titlebar/composer capsule in Antigravity IDE, a single-line 24-bit ANSI `statusLine` in Antigravity CLI (`agy`), and a standalone local web UI. Supports 1–5 customizable capsule slots, configurable hover cards, and `Auto Fit` or fixed (`440–1080 px`) popover widths.
-- **No `app.asar` Modification**: Titlebar/composer injection and context request hooks run in memory over local CDP (`DevToolsActivePort`). On Antigravity IDE, the only host file updated is adding `"remote-debugging-port": "0"` to `~/.antigravity-ide/argv.json`; installation binaries and `app.asar` are never altered.
-- **Per-Model Context Windows**: Sets context window limits per model series (across thinking levels) or follows host defaults under Settings. Desktop/IDE applies rules at runtime on outbound requests; CLI applies `AGY_CLI_AUTO_COMPACT_OVERRIDE`.
-- **Appearance, Offline Storage & Cloud Updates**: Supports `zh-CN` / `en-US` / host language, `sm / md / lg / xl` font scaling, 6 theme accents plus host matching, offline reading from CLI SQLite + WAL, `annotations/*.pbtxt`, `transcript.jsonl`, and `.deep_stats_cache.json`, GitHub [`pricing-catalog.json`](pricing-catalog.json) sync, in-panel release updates (`manual` / `auto` / `off`), and cache rebuild/settings reset tools.
+- **Quota Pool Tracking, Lease Reservation & Burn-Rate Reference**: Reads 5-hour and weekly quotas, reset timers, and cycle consumption across `Gemini`, `Gemini 4 Argon`, `Gemini 4 Carbon`, and `Claude & GPT` pools (plus Ultra `5x / 20x` tier badges), renders an in-flight lease reservation segment with an account-isolated per-model burn-rate & equivalent full-pool cost popover (`?`), and preserves cached quota data with a stale notice when upstream is temporarily unavailable.
+- **Main Agent, Subagents, Swarm & SSH Isolation**: Merges main agent, subagent, and Native Swarm worker steps in chronological order (or filters by individual agent), renders optional turn rails, expands running tasks inline, and isolates per-window caches and quotas across multiple SSH Remote windows (`endpointId`).
+- **Call Details, Timing Tooltips & Anomaly Chips**: Includes **By Step** and **By Model** tabs (with multi-model LOESS throughput/TTFT fit charts), clickable column sorting, hover TTFT/duration stage breakdowns, accent-highlighted compaction rows with diagnostic tooltips, and an optional live search & 9-category anomaly/compaction/low-cache/slow-TTFT filter toolbar. Supports 2–14 configurable columns and custom token DSL strings such as `context:in:cache`.
+- **Historical Usage, Project Attribution & Heatmap**: Summarizes tokens, uncached input vs. cache-read savings, thinking/output split, smooth hourly/daily trend curves (switching automatically to a GitHub-style daily calendar heatmap over `>90` days), **Model / Project (Workspace) / Session** rankings, client attribution (`Desktop App` / `IDE` / `CLI`), and monthly bar charts with pointer-following breakdown popovers across `Today`, `1d`, `7d`, `14d`, `30d`, `All`, or custom date/time ranges.
+- **Native `.xlsx` / Markdown Exports & Settings Backup**: Exports multi-sheet localized Excel (`.xlsx`) workbooks and Markdown summaries for both Usage Statistics and Call Details directly to `~/Downloads` with an in-app reveal toast, plus portable JSON preference backup/import.
+- **Cross-Client Session Migration**: Built-in opt-in session migrator (`Preferences → Other`) moves or clones conversations across `Antigravity CLI` ↔ `Desktop App / IDE` and `Legacy IDE (.db)` with isolated UUID rewriting to prevent cross-client mirror collisions or double billing.
+- **Multi-Client Capsules & CLI `statusLine` Modes**: Integrates as a titlebar or composer capsule (with ring quota gauges and main-agent context lock) and auxiliary sidebar in Antigravity 2.0, a titlebar/composer capsule in Antigravity IDE, a single-line 24-bit ANSI `statusLine` in Antigravity CLI (`--style pill|bar|compact`, `--preset compact|balanced|full`, `--json`), and a standalone local web UI.
+- **No `app.asar` Modification & Desktop 2.33.0+ Auto-Provisioning**: Titlebar/composer injection and context hooks run in memory over local CDP (`DevToolsActivePort`). Automatically provisions Desktop `2.33.0+` user shortcuts/launchers (with one-click out-of-job host relaunch) and `~/.antigravity-ide/argv.json` without touching installation binaries or `app.asar`.
+- **Per-Model Context Windows (Main & Subagent/Swarm)**: Sets context window limits per model series or follows host defaults, with independent toggles for the main agent (CDP request hook), spawned subagents / Swarm workers (local loopback CloudCode proxy), and CLI (`AGY_CLI_AUTO_COMPACT_OVERRIDE`).
+- **Appearance, Offline Storage & Cloud Updates**: Supports `zh-CN` / `en-US` / host language, borderless Modern UI, `sm / md / lg / xl` font scaling, 6 theme accents plus host matching, offline reading from CLI SQLite + WAL, `annotations/*.pbtxt`, `transcript.jsonl`, and `.deep_stats_cache.json`, GitHub [`pricing-catalog.json`](pricing-catalog.json) sync, and in-panel release updates (`manual` / `auto` / `off`).
 
 ---
 
@@ -64,7 +66,7 @@ English · [简体中文](README.zh-CN.md)
       <br />
       <b>Antigravity CLI (<code>agy</code>)</b>
       <br />
-      <sub>Single-line transparent 24-bit ANSI bottom <code>statusLine</code> with active count, TPS, TTFT, and context percentage</sub>
+      <sub>Single-line 24-bit ANSI bottom <code>statusLine</code> with active count, TPS, TTFT, step cost, and color-coded quota/context pill gauges</sub>
     </td>
   </tr>
 </table>
@@ -78,21 +80,21 @@ English · [简体中文](README.zh-CN.md)
       <br />
       <b>Live Overview</b>
       <br />
-      <sub>TPS, TTFT, 10-category context bar, quota pools, and active tasks</sub>
+      <sub>TPS, TTFT, 10-category context bar, quota pools with lease reservation, and live Swarm/subagent tasks</sub>
     </td>
     <td align="center" width="33.3%">
       <img src="assets/analytics.png" alt="Usage Statistics" />
       <br />
       <b>Usage Statistics</b>
       <br />
-      <sub>Token totals, cache hit rate, trend chart, and model breakdown</sub>
+      <sub>Token totals, cache hit rate, smooth trend chart, and Model / Project / Session rankings</sub>
     </td>
     <td align="center" width="33.3%">
       <img src="assets/subagents.png" alt="Call Details and Subagents" />
       <br />
       <b>Call Details</b>
       <br />
-      <sub>Step-by-step agent badge, model, speed, TTFT, tokens, and cost</sub>
+      <sub>Sortable main, Swarm, and subagent step rows with turn rail, compaction highlight, tokens, and cost</sub>
     </td>
   </tr>
 </table>
@@ -103,13 +105,13 @@ English · [简体中文](README.zh-CN.md)
 
 | Client | Status Capsule / Bar | Panel UI | Offline SQLite &amp; Logs | Per-Model Context Limit | Modifies `app.asar` |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Antigravity 2.0 (Desktop)** | Titlebar / Composer | Popover + Right Sidebar | Yes | Window Request Hook | No |
-| **Antigravity IDE** | Titlebar / Composer | Capsule Popover | Yes | Window Request Hook | No |
+| **Antigravity 2.0 (Desktop)** | Titlebar / Composer | Popover + Right Sidebar | Yes | CDP Hook + Local CloudCode Proxy | No |
+| **Antigravity IDE** | Titlebar / Composer | Capsule Popover | Yes | CDP Hook + Local CloudCode Proxy | No |
 | **Antigravity CLI (`agy`)** | Native ANSI `statusLine` | Standalone Web (`--port`) | Yes (`node:sqlite` + `.pbtxt`) | `AGY_CLI_AUTO_COMPACT_OVERRIDE` | No |
-| **Remote / Headless Linux** | Native ANSI `statusLine` | SSH Tunnel / `--token` Web | Yes | `AGY_CLI_AUTO_COMPACT_OVERRIDE` | No |
+| **SSH Remote / Headless Linux** | Per-Endpoint Capsule / ANSI `statusLine` | SSH Overlay / `--token` Web | Yes | Per-Endpoint Hook / Env | No |
 
 > [!NOTE]
-> On **Antigravity IDE**, enabling the plugin automatically adds `"remote-debugging-port": "0"` to `~/.antigravity-ide/argv.json` (preserving comments and existing keys) via a zero-tool MCP keep-alive entry (`0` context tokens). Restart Antigravity IDE once after the first activation so the titlebar capsule can attach.
+> On **Antigravity Desktop 2.33.0+** and **Antigravity IDE**, enabling the plugin automatically provisions user launch shortcuts / `~/.antigravity-ide/argv.json` with `"remote-debugging-port": "0"` via a zero-tool MCP keep-alive entry (`0` context tokens). On Desktop `2.33.0+` you can click **One-Click Relaunch** directly inside the panel banner; on IDE, restart once after first activation so the titlebar capsule can attach.
 
 ---
 
@@ -223,7 +225,7 @@ ssh -L 8787:127.0.0.1:8787 user@your-server
 
 ## Local Development
 
-All backend and frontend modules use Node.js ESM and native Web Components with **no external npm dependencies** (Node.js 22.5+ is recommended for built-in `node:sqlite`).
+All backend and frontend modules use pure Node.js ESM and a lightweight custom reactive component & incremental DOM patch engine (`defineComponent` + `domPatch`, with Shadow DOM isolation for host overlays) and **no external npm dependencies** (Node.js 22.5+ is recommended for built-in `node:sqlite`).
 
 ```bash
 cd sidecars/panel
