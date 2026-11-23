@@ -563,15 +563,18 @@ function normalizeContextAgentMode(raw) {
 }
 
 /**
- * 归一化实验性配额预占估算开关（默认 `false`）。
+ * 归一化配额预占估算开关（默认 `true`）。
  *
  * @param {unknown} val
  * @returns {boolean}
  */
 function normalizeExperimentalQuotaReservation(val) {
+  if (val === undefined || val === null || val === '') return true;
   if (typeof val === 'string') {
     const lower = val.trim().toLowerCase();
-    return lower === 'true' || lower === '1' || lower === 'on';
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
   }
   return Boolean(val);
 }
@@ -19447,7 +19450,7 @@ const QuotaPoolsWidget = defineComponent({
       }
 
       const quotas = data.quotas || {};
-      const showReserved = data.settings?.experimentalQuotaReservation === true;
+      const showReserved = data.settings?.experimentalQuotaReservation !== false;
       reserveLegendEl.hidden = !showReserved;
       const effTick = Number.isFinite(minuteTick) ? minuteTick : Math.floor(Date.now() / 30000);
       patchText(tierBadge, formatAccountTierBadge(data.account));
@@ -27780,7 +27783,7 @@ const SettingsOtherTab = defineComponent({
   setup({ onCleanup, getProps }) {
     let draftModelDisplayMode = 'short';
     let draftOrchestratorIdMode = 'compact';
-    let draftExperimentalQuotaReservation = false;
+    let draftExperimentalQuotaReservation = true;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
     let draftContextMainEnabled = true;
@@ -27982,7 +27985,7 @@ const SettingsOtherTab = defineComponent({
     );
 
     const quotaReserveToggle = ToggleSwitch({
-      modelValue: 'off',
+      modelValue: 'on',
       ariaLabelKey: 'settings.oth.quotaReserveLabel',
       preset: 'enable',
       onUpdateModelValue: async (val) => {
@@ -28002,7 +28005,7 @@ const SettingsOtherTab = defineComponent({
       },
     });
 
-    const experimentalPanel = h('section', { className: 'panel' }, [
+    const experimentalPanel = h('section', { className: 'panel', hidden: true }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('pulse', { size: 13 }),

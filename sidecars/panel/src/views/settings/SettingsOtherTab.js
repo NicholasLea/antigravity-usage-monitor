@@ -67,7 +67,7 @@ export const SettingsOtherTab = defineComponent({
   setup({ onCleanup, getProps }) {
     let draftModelDisplayMode = 'short';
     let draftOrchestratorIdMode = 'compact';
-    let draftExperimentalQuotaReservation = false;
+    let draftExperimentalQuotaReservation = true;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
     let draftContextMainEnabled = true;
@@ -269,7 +269,7 @@ export const SettingsOtherTab = defineComponent({
     );
 
     const quotaReserveToggle = ToggleSwitch({
-      modelValue: 'off',
+      modelValue: 'on',
       ariaLabelKey: 'settings.oth.quotaReserveLabel',
       preset: 'enable',
       onUpdateModelValue: async (val) => {
@@ -289,7 +289,7 @@ export const SettingsOtherTab = defineComponent({
       },
     });
 
-    const experimentalPanel = h('section', { className: 'panel' }, [
+    const experimentalPanel = h('section', { className: 'panel', hidden: true }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('pulse', { size: 13 }),

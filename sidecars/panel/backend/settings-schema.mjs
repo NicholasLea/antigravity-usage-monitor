@@ -161,7 +161,7 @@ export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
   showStepFilterToolbar: false,
   stepTokenComboFormat: DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   stepTableColumns: DEFAULT_STEP_TABLE_COLUMNS,
-  experimentalQuotaReservation: false,
+  experimentalQuotaReservation: true,
   contextWindowRiskAccepted: false,
   contextWindowMainEnabled: true,
   contextWindowSwarmEnabled: false,

@@ -1219,4 +1219,21 @@ test('Capsule odometer digit rolling (0.15s) and color transition (0.1s) stay st
     /(?:^|\n)\.wm-od-track\s*\{/,
     'Odometer roll CSS must ONLY exist under [data-modern-ui="true"]'
   );
+  // 5. Breakdown popovers translate on GPU layer only (no top/left layout transition jitter)
+  assert.match(
+    builtStyles,
+    /\.cons-breakdown-popover\s*\{[^}]*left:\s*0;[^}]*top:\s*0;[^}]*transform:\s*translate3d\(var\(--pop-x,\s*8px\),\s*var\(--pop-y,\s*8px\),\s*0\);[^}]*will-change:\s*transform;/
+  );
+  assert.match(
+    builtStyles,
+    /\[data-modern-ui="true"\]\s+\.cons-breakdown-popover\.is-tracking\s*\{\s*transition:\s*transform\s+150ms\s+var\(--ease-modern\);\s*\}/
+  );
+  assert.match(
+    builtStyles,
+    /\.trend-tooltip\.is-rich-breakdown\s*\{[^}]*left:\s*0;[^}]*transform:\s*translate3d\(var\(--tip-x,\s*0px\),\s*var\(--tip-y,\s*0px\),\s*0\)/
+  );
+  assert.match(
+    builtStyles,
+    /\[data-modern-ui="true"\]\s+\.trend-tooltip\.is-rich-breakdown\.is-tracking\s*\{\s*transition:\s*transform\s+150ms\s+var\(--ease-modern\);\s*\}/
+  );
 });

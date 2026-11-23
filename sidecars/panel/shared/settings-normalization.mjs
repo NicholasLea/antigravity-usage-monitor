@@ -558,15 +558,18 @@ export function normalizeContextAgentMode(raw) {
 }
 
 /**
- * 归一化实验性配额预占估算开关（默认 `false`）。
+ * 归一化配额预占估算开关（默认 `true`）。
  *
  * @param {unknown} val
  * @returns {boolean}
  */
 export function normalizeExperimentalQuotaReservation(val) {
+  if (val === undefined || val === null || val === '') return true;
   if (typeof val === 'string') {
     const lower = val.trim().toLowerCase();
-    return lower === 'true' || lower === '1' || lower === 'on';
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
   }
   return Boolean(val);
 }

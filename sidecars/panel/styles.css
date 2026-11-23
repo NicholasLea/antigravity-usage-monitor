@@ -3778,8 +3778,11 @@ html[data-standalone="true"] .app-shell {
 /* --- 共享模型构成悬浮详情卡 (Trend Heatmap / Client Sources / Sessions / Monthly Popover) --- */
 .cons-breakdown-popover {
   position: absolute;
-  left: var(--pop-x, 8px);
-  top: var(--pop-y, 8px);
+  left: 0;
+  top: 0;
+  transform: translate3d(var(--pop-x, 8px), var(--pop-y, 8px), 0);
+  will-change: transform;
+  contain: layout style;
   width: max-content;
   min-width: 224px;
   max-width: min(316px, calc(100% - 16px));
@@ -3798,8 +3801,11 @@ html[data-standalone="true"] .app-shell {
 .trend-tooltip.is-rich-breakdown {
   top: 0;
   bottom: auto;
-  left: var(--tip-x, 0px);
-  transform: translate3d(var(--tip-shift, 0px), var(--tip-y, 0px), 0);
+  left: 0;
+  transform: translate3d(var(--tip-x, 0px), var(--tip-y, 0px), 0)
+    translateX(var(--tip-shift, 0px));
+  will-change: transform;
+  contain: layout style;
 }
 
 .trend-tooltip.is-rich-breakdown,
@@ -8584,7 +8590,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   border-color: var(--modern-surface-hover);
 }
 
-[data-modern-ui="true"] .trend-tooltip:not(.is-hm-top):not(.is-hm-bottom) {
+[data-modern-ui="true"] .trend-tooltip:not(.is-hm-top):not(.is-hm-bottom):not(.is-rich-breakdown) {
   top: 2px;
   bottom: auto;
   transform: translate3d(var(--tip-shift, -50%), var(--tip-y, 0px), 0);
@@ -8593,7 +8599,9 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .trend-tooltip.is-rich-breakdown {
   top: 0;
   bottom: auto;
-  transform: translate3d(var(--tip-shift, 0px), var(--tip-y, 0px), 0);
+  left: 0;
+  transform: translate3d(var(--tip-x, 0px), var(--tip-y, 0px), 0)
+    translateX(var(--tip-shift, 0px));
 }
 
 [data-modern-ui="true"] .trend-tooltip.is-tracking {
@@ -8604,13 +8612,20 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
     transform 150ms var(--ease-modern);
 }
 
+[data-modern-ui="true"] .trend-tooltip.is-rich-breakdown.is-tracking {
+  transition: transform 150ms var(--ease-modern);
+}
+
 [data-modern-ui="true"] .trend-hover-dot.is-tracking {
   transition:
     cx 150ms var(--ease-modern),
     cy 150ms var(--ease-modern);
 }
 
-[data-modern-ui="true"] .cons-breakdown-popover.is-tracking,
+[data-modern-ui="true"] .cons-breakdown-popover.is-tracking {
+  transition: transform 150ms var(--ease-modern);
+}
+
 [data-modern-ui="true"] .turn-prompt-tip.is-tracking {
   transition:
     left 150ms var(--ease-modern),

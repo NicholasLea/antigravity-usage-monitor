@@ -807,7 +807,7 @@ export const QuotaPoolsWidget = defineComponent({
       }
 
       const quotas = data.quotas || {};
-      const showReserved = data.settings?.experimentalQuotaReservation === true;
+      const showReserved = data.settings?.experimentalQuotaReservation !== false;
       reserveLegendEl.hidden = !showReserved;
       const effTick = Number.isFinite(minuteTick) ? minuteTick : Math.floor(Date.now() / 30000);
       patchText(tierBadge, formatAccountTierBadge(data.account));

@@ -762,9 +762,12 @@ test('quota-reservation: buffers short reporting lag inside lease, survives 35m 
   assert.equal(rNewLease.reservedLeaseCount, 1);
 });
 
-test('experimentalQuotaReservation setting defaults false and round-trips through schema & backup', () => {
+test('experimentalQuotaReservation setting defaults true and round-trips through schema & backup', () => {
   const def = normalizeFullSettings({});
-  assert.equal(def.experimentalQuotaReservation, false);
+  assert.equal(def.experimentalQuotaReservation, true);
+
+  const disabled = normalizeFullSettings({ experimentalQuotaReservation: false });
+  assert.equal(disabled.experimentalQuotaReservation, false);
 
   const enabled = normalizeFullSettings({ experimentalQuotaReservation: true });
   assert.equal(enabled.experimentalQuotaReservation, true);
@@ -773,6 +776,11 @@ test('experimentalQuotaReservation setting defaults false and round-trips throug
   const parsed = parseImportedSettingsJson(json);
   assert.equal(parsed.ok, true);
   assert.equal(parsed.patch.experimentalQuotaReservation, true);
+
+  const disabledJson = buildExportableSettingsJson(disabled);
+  const disabledParsed = parseImportedSettingsJson(disabledJson);
+  assert.equal(disabledParsed.ok, true);
+  assert.equal(disabledParsed.patch.experimentalQuotaReservation, false);
 });
 
 test('backendHarness buildTelemetry populates reservedPct on pools across official quota jumps', async () => {
@@ -805,7 +813,7 @@ test('backendHarness buildTelemetry populates reservedPct on pools across offici
 
   const p1 = await h.buildTelemetryPayloadInternal(null, true);
   const g1 = p1.quotas.pools.find((p) => p.poolKey === 'Gemini');
-  assert.equal(p1.settings.experimentalQuotaReservation, false);
+  assert.equal(p1.settings.experimentalQuotaReservation, true);
   assert.equal(g1.reservedPct, 0);
   assert.equal(g1.weeklyReservedPct, 0);
 
@@ -950,10 +958,17 @@ test('QuotaPoolsWidget & SettingsOtherTab render experimental reservation bar/te
       },
     };
 
-    // Toggle OFF: no reserved highlight and legend hidden
-    widget.refs.update({ data: baseData, minuteTick: 1 });
+    // Default (omitted setting): enabled by default
+    widget.refs.update({
+      data: { ...baseData, settings: {} },
+      minuteTick: 1,
+    });
     const legendEl = widget.el.querySelector('.quota-reserve-legend');
     assert.ok(legendEl, 'quota reservation legend mounted');
+    assert.equal(legendEl.hidden, false);
+
+    // Toggle OFF: no reserved highlight and legend hidden
+    widget.refs.update({ data: baseData, minuteTick: 1 });
     assert.equal(legendEl.hidden, true);
     const rsvTagsOff = widget.el.querySelectorAll('.quota-reserved-pct');
     assert.equal(rsvTagsOff.length, 2);

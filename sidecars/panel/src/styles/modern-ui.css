@@ -835,7 +835,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   border-color: var(--modern-surface-hover);
 }
 
-[data-modern-ui="true"] .trend-tooltip:not(.is-hm-top):not(.is-hm-bottom) {
+[data-modern-ui="true"] .trend-tooltip:not(.is-hm-top):not(.is-hm-bottom):not(.is-rich-breakdown) {
   top: 2px;
   bottom: auto;
   transform: translate3d(var(--tip-shift, -50%), var(--tip-y, 0px), 0);
@@ -844,7 +844,9 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .trend-tooltip.is-rich-breakdown {
   top: 0;
   bottom: auto;
-  transform: translate3d(var(--tip-shift, 0px), var(--tip-y, 0px), 0);
+  left: 0;
+  transform: translate3d(var(--tip-x, 0px), var(--tip-y, 0px), 0)
+    translateX(var(--tip-shift, 0px));
 }
 
 [data-modern-ui="true"] .trend-tooltip.is-tracking {
@@ -855,13 +857,20 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
     transform 150ms var(--ease-modern);
 }
 
+[data-modern-ui="true"] .trend-tooltip.is-rich-breakdown.is-tracking {
+  transition: transform 150ms var(--ease-modern);
+}
+
 [data-modern-ui="true"] .trend-hover-dot.is-tracking {
   transition:
     cx 150ms var(--ease-modern),
     cy 150ms var(--ease-modern);
 }
 
-[data-modern-ui="true"] .cons-breakdown-popover.is-tracking,
+[data-modern-ui="true"] .cons-breakdown-popover.is-tracking {
+  transition: transform 150ms var(--ease-modern);
+}
+
 [data-modern-ui="true"] .turn-prompt-tip.is-tracking {
   transition:
     left 150ms var(--ease-modern),

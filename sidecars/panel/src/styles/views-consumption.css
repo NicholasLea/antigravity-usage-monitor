@@ -1007,8 +1007,11 @@
 /* --- 共享模型构成悬浮详情卡 (Trend Heatmap / Client Sources / Sessions / Monthly Popover) --- */
 .cons-breakdown-popover {
   position: absolute;
-  left: var(--pop-x, 8px);
-  top: var(--pop-y, 8px);
+  left: 0;
+  top: 0;
+  transform: translate3d(var(--pop-x, 8px), var(--pop-y, 8px), 0);
+  will-change: transform;
+  contain: layout style;
   width: max-content;
   min-width: 224px;
   max-width: min(316px, calc(100% - 16px));
@@ -1027,8 +1030,11 @@
 .trend-tooltip.is-rich-breakdown {
   top: 0;
   bottom: auto;
-  left: var(--tip-x, 0px);
-  transform: translate3d(var(--tip-shift, 0px), var(--tip-y, 0px), 0);
+  left: 0;
+  transform: translate3d(var(--tip-x, 0px), var(--tip-y, 0px), 0)
+    translateX(var(--tip-shift, 0px));
+  will-change: transform;
+  contain: layout style;
 }
 
 .trend-tooltip.is-rich-breakdown,
