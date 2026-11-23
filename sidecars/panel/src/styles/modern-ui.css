@@ -479,6 +479,8 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   border-top-color: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
+[data-modern-ui="true"] .cons-source-hover-zone.is-interactive:hover .cons-source-model-bar,
+[data-modern-ui="true"] .cons-source-hover-zone.is-hovered .cons-source-model-bar,
 [data-modern-ui="true"] .cons-source-bar-hit:hover .cons-source-model-bar,
 [data-modern-ui="true"] .cons-source-bar-hit.is-hovered .cons-source-model-bar,
 [data-modern-ui="true"] .month-col.is-interactive:hover .month-stack,

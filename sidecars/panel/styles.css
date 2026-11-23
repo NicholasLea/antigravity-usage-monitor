@@ -3696,12 +3696,27 @@ html[data-standalone="true"] .app-shell {
   container-type: inline-size;
 }
 
-.cons-source-bar-hit {
-  padding: 5px 0;
-  margin: -5px 0;
+.cons-source-hover-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 4px 0 2px;
+  margin: -4px 0 -2px;
+  min-width: 0;
+}
+
+.cons-source-hover-zone.is-interactive {
   cursor: pointer;
 }
 
+.cons-source-bar-hit {
+  padding: 0;
+  margin: 0;
+  cursor: inherit;
+}
+
+.cons-source-hover-zone.is-interactive:hover .cons-source-model-bar,
+.cons-source-hover-zone.is-hovered .cons-source-model-bar,
 .cons-source-bar-hit:hover .cons-source-model-bar,
 .cons-source-bar-hit.is-hovered .cons-source-model-bar {
   box-shadow: 0 0 0 1px var(--border-strong);
@@ -3764,6 +3779,8 @@ html[data-standalone="true"] .app-shell {
   transition: color 120ms ease;
 }
 
+.cons-source-hover-zone.is-interactive:hover .cons-source-top-name,
+.cons-source-hover-zone.is-hovered .cons-source-top-name,
 .cons-source-top-models:hover .cons-source-top-name,
 .cons-source-top-models.is-hovered .cons-source-top-name {
   color: var(--text-primary);
@@ -4041,17 +4058,20 @@ html[data-standalone="true"] .app-shell {
 /* --- 6. 12 个月垂直堆叠柱状图 (12-Month Stacked Bar Chart) --- */
 .monthly-grid {
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 3px;
-  align-items: end;
-  padding-top: var(--space-2);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0;
+  align-items: stretch;
+  margin: var(--space-2) -1.5px 0;
 }
 
 .month-col {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-end;
   gap: 3px;
+  padding: 0 1.5px;
+  box-sizing: border-box;
   min-width: 0;
 }
 
@@ -8303,6 +8323,8 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   border-top-color: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
+[data-modern-ui="true"] .cons-source-hover-zone.is-interactive:hover .cons-source-model-bar,
+[data-modern-ui="true"] .cons-source-hover-zone.is-hovered .cons-source-model-bar,
 [data-modern-ui="true"] .cons-source-bar-hit:hover .cons-source-model-bar,
 [data-modern-ui="true"] .cons-source-bar-hit.is-hovered .cons-source-model-bar,
 [data-modern-ui="true"] .month-col.is-interactive:hover .month-stack,

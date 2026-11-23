@@ -538,6 +538,7 @@ export const ConsumptionView = defineComponent({
     });
 
     let activeHoverTargetEl = null;
+    let activeHoverPayload = null;
     let cachedBreakdownRootRect = null;
     let cachedBreakdownAnchorRect = null;
 
@@ -554,6 +555,7 @@ export const ConsumptionView = defineComponent({
     function hideBreakdownPopover() {
       cachedBreakdownRootRect = null;
       cachedBreakdownAnchorRect = null;
+      activeHoverPayload = null;
       if (activeHoverTargetEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
         activeHoverTargetEl = null;
@@ -629,6 +631,9 @@ export const ConsumptionView = defineComponent({
         hideBreakdownPopover();
         return;
       }
+      const wasHidden = breakdownPopoverEl.hasAttribute('hidden');
+      const sameTargetAndPayload =
+        !wasHidden && activeHoverTargetEl === anchorEl && activeHoverPayload === payload;
       if (activeHoverTargetEl && activeHoverTargetEl !== anchorEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
         cachedBreakdownAnchorRect = null;
@@ -637,22 +642,24 @@ export const ConsumptionView = defineComponent({
         cachedBreakdownAnchorRect = null;
       }
       activeHoverTargetEl = anchorEl;
+      activeHoverPayload = payload;
       patchClasses(anchorEl, { 'is-hovered': true });
 
-      popoverContent.update({
-        title: payload.title || '—',
-        calls: payload.calls || 0,
-        totalTokens: payload.totalTokens || 0,
-        costText: payload.costText || '$0.00',
-        inputTokens: payload.inputTokens,
-        cacheReadTokens: payload.cacheReadTokens,
-        thinkingTokens: payload.thinkingTokens,
-        responseTokens: payload.responseTokens,
-        outputTokens: payload.outputTokens,
-        segments: Array.isArray(payload.segments) ? payload.segments : [],
-      });
+      if (!sameTargetAndPayload) {
+        popoverContent.update({
+          title: payload.title || '—',
+          calls: payload.calls || 0,
+          totalTokens: payload.totalTokens || 0,
+          costText: payload.costText || '$0.00',
+          inputTokens: payload.inputTokens,
+          cacheReadTokens: payload.cacheReadTokens,
+          thinkingTokens: payload.thinkingTokens,
+          responseTokens: payload.responseTokens,
+          outputTokens: payload.outputTokens,
+          segments: Array.isArray(payload.segments) ? payload.segments : [],
+        });
+      }
 
-      const wasHidden = breakdownPopoverEl.hasAttribute('hidden');
       patchAttr(breakdownPopoverEl, 'hidden', false);
       positionBreakdownPopover(anchorEl, pointerClientX, pointerClientY);
       if (wasHidden) {
@@ -673,6 +680,19 @@ export const ConsumptionView = defineComponent({
     function createMonthModelSegment() {
       const segEl = h('div', { className: 'month-seg cons-model-seg' });
       return { el: segEl, refs: { segEl } };
+    }
+
+    let monthlyGridEl = null;
+    const monthlyColByEl = new Map();
+
+    function findMonthlyColForNode(node) {
+      let cur = node;
+      while (cur && cur !== monthlyGridEl) {
+        const hit = monthlyColByEl.get(cur);
+        if (hit) return hit;
+        cur = cur.parentNode || null;
+      }
+      return null;
     }
 
     const monthlyCols = Array.from({ length: 12 }, (_, idx) => {
@@ -701,6 +721,9 @@ export const ConsumptionView = defineComponent({
                 e?.clientY ?? null
               );
             } else {
+              if (activeHoverTargetEl && monthlyColByEl.has(activeHoverTargetEl)) {
+                hideBreakdownPopover();
+              }
               e?.stopPropagation?.();
             }
           },
@@ -709,8 +732,16 @@ export const ConsumptionView = defineComponent({
               positionBreakdownPopover(colEl, e?.clientX ?? null, e?.clientY ?? null);
             }
           },
-          onMouseLeave: () => {
-            if (activeHoverTargetEl === colEl) hideBreakdownPopover();
+          onMouseLeave: (e) => {
+            if (activeHoverTargetEl !== colEl) return;
+            const nextEl = e?.relatedTarget || null;
+            if (nextEl) {
+              const nextCol = findMonthlyColForNode(nextEl);
+              if ((nextCol && nextCol.colState.hoverPayload) || nextEl === monthlyGridEl) {
+                return;
+              }
+            }
+            hideBreakdownPopover();
           },
         },
         [
@@ -720,7 +751,7 @@ export const ConsumptionView = defineComponent({
           tokText,
         ]
       );
-      return {
+      const colRec = {
         el: colEl,
         costText,
         stackWrap,
@@ -729,7 +760,22 @@ export const ConsumptionView = defineComponent({
         tokText,
         colState,
       };
+      monthlyColByEl.set(colEl, colRec);
+      return colRec;
     });
+
+    monthlyGridEl = h(
+      'div',
+      {
+        className: 'monthly-grid',
+        onMouseLeave: () => {
+          if (activeHoverTargetEl && monthlyColByEl.has(activeHoverTargetEl)) {
+            hideBreakdownPopover();
+          }
+        },
+      },
+      monthlyCols.map((c) => c.el)
+    );
 
     const monthlyPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
@@ -739,11 +785,7 @@ export const ConsumptionView = defineComponent({
         ]),
         monthlyHoverHint,
       ]),
-      h(
-        'div',
-        { className: 'monthly-grid' },
-        monthlyCols.map((c) => c.el)
-      ),
+      monthlyGridEl,
     ]);
 
     const scrollInner = h(
@@ -1232,6 +1274,54 @@ export const ConsumptionView = defineComponent({
     /**
      * 创建客户端来源单行 DOM 结构（保留长尾合并分段配色进度条、单行不换行的 Top 2-3 模型速览和右侧总调用数，悬停进度条或速览区弹出完整明细浮层）。
      */
+    function isNodeInside(root, node) {
+      if (!root || !node) return false;
+      if (typeof root.contains === 'function') return root.contains(node);
+      let cur = node;
+      while (cur) {
+        if (cur === root) return true;
+        cur = cur.parentNode || null;
+      }
+      return false;
+    }
+
+    function attachUnifiedHoverZone(zoneEl, compatTargets, rowState) {
+      zoneEl.addEventListener('mouseenter', (e) => {
+        if (rowState.hoverPayload) {
+          showBreakdownPopover(zoneEl, rowState.hoverPayload, e?.clientX ?? null, e?.clientY ?? null);
+        }
+      });
+      zoneEl.addEventListener('mousemove', (e) => {
+        if (rowState.hoverPayload && activeHoverTargetEl === zoneEl) {
+          positionBreakdownPopover(zoneEl, e?.clientX ?? null, e?.clientY ?? null);
+        }
+      });
+      zoneEl.addEventListener('mouseleave', () => {
+        if (activeHoverTargetEl === zoneEl) hideBreakdownPopover();
+      });
+
+      for (const childEl of compatTargets) {
+        if (!childEl) continue;
+        childEl.addEventListener('mouseenter', (e) => {
+          if (rowState.hoverPayload) {
+            showBreakdownPopover(zoneEl, rowState.hoverPayload, e?.clientX ?? null, e?.clientY ?? null);
+          }
+        });
+        childEl.addEventListener('mousemove', (e) => {
+          if (rowState.hoverPayload && activeHoverTargetEl === zoneEl) {
+            positionBreakdownPopover(zoneEl, e?.clientX ?? null, e?.clientY ?? null);
+          }
+        });
+        childEl.addEventListener('mouseleave', (e) => {
+          const nextEl = e?.relatedTarget || null;
+          if (isNodeInside(zoneEl, nextEl)) {
+            return;
+          }
+          if (activeHoverTargetEl === zoneEl) hideBreakdownPopover();
+        });
+      }
+    }
+
     function createSourceBreakdownRow() {
       const nameTextEl = h('span', { className: 'cons-row-title-text' });
       const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl]);
@@ -1240,26 +1330,7 @@ export const ConsumptionView = defineComponent({
       const costEl = h('strong', { className: 'cons-row-cost text-mono' });
       const trackEl = h('div', { className: 'progress-track cons-seg-bar cons-source-model-bar' });
       const rowState = { hoverPayload: null };
-      const bindPopoverHover = (targetEl) => ({
-        onMouseEnter: (e) => {
-          if (rowState.hoverPayload) {
-            showBreakdownPopover(
-              targetEl,
-              rowState.hoverPayload,
-              e?.clientX ?? null,
-              e?.clientY ?? null
-            );
-          }
-        },
-        onMouseMove: (e) => {
-          if (rowState.hoverPayload && activeHoverTargetEl === targetEl) {
-            positionBreakdownPopover(targetEl, e?.clientX ?? null, e?.clientY ?? null);
-          }
-        },
-        onMouseLeave: () => {
-          if (activeHoverTargetEl === targetEl) hideBreakdownPopover();
-        },
-      });
+
       const barHitEl = h(
         'div',
         {
@@ -1267,19 +1338,22 @@ export const ConsumptionView = defineComponent({
         },
         [trackEl]
       );
-      const barHandlers = bindPopoverHover(barHitEl);
-      barHitEl.addEventListener('mouseenter', barHandlers.onMouseEnter);
-      barHitEl.addEventListener('mousemove', barHandlers.onMouseMove);
-      barHitEl.addEventListener('mouseleave', barHandlers.onMouseLeave);
-
       const topModelsEl = h('div', { className: 'cons-source-top-models', hidden: true });
-      const topHandlers = bindPopoverHover(topModelsEl);
-      topModelsEl.addEventListener('mouseenter', topHandlers.onMouseEnter);
-      topModelsEl.addEventListener('mousemove', topHandlers.onMouseMove);
-      topModelsEl.addEventListener('mouseleave', topHandlers.onMouseLeave);
 
       const callsLbl = h('span', { text: t('cons.footCalls') });
       const callsVal = h('strong', { className: 'text-mono' });
+
+      const hoverZoneEl = h('div', { className: 'cons-source-hover-zone' }, [
+        barHitEl,
+        h('div', { className: 'cons-item-foot cons-source-foot' }, [
+          topModelsEl,
+          h('span', { className: 'legend-left cons-calls-stat' }, [
+            callsLbl,
+            callsVal,
+          ]),
+        ]),
+      ]);
+      attachUnifiedHoverZone(hoverZoneEl, [barHitEl, topModelsEl], rowState);
 
       const rowEl = h('div', { className: 'cons-item-row cons-source-row' }, [
         h('div', { className: 'panel-header' }, [
@@ -1290,14 +1364,7 @@ export const ConsumptionView = defineComponent({
             costEl,
           ]),
         ]),
-        barHitEl,
-        h('div', { className: 'cons-item-foot cons-source-foot' }, [
-          topModelsEl,
-          h('span', { className: 'legend-left cons-calls-stat' }, [
-            callsLbl,
-            callsVal,
-          ]),
-        ]),
+        hoverZoneEl,
       ]);
 
       return {
@@ -1308,6 +1375,7 @@ export const ConsumptionView = defineComponent({
           pctBadge,
           totalTokEl,
           costEl,
+          hoverZoneEl,
           barHitEl,
           trackEl,
           topModelsEl,
@@ -1411,6 +1479,7 @@ export const ConsumptionView = defineComponent({
               segments: partitioned,
             }
           : null;
+      patchClasses(refs.hoverZoneEl, { 'is-interactive': Boolean(refs.rowState.hoverPayload) });
     }
 
     function createTopConversationRow() {
@@ -1426,42 +1495,25 @@ export const ConsumptionView = defineComponent({
       const trackEl = h('div', { className: 'progress-track cons-seg-bar cons-source-model-bar' });
       const rowState = { cascadeId: '', canJump: false, hoverPayload: null };
 
-      const bindPopoverHover = (targetEl) => ({
-        onMouseEnter: (e) => {
-          if (rowState.hoverPayload) {
-            showBreakdownPopover(
-              targetEl,
-              rowState.hoverPayload,
-              e?.clientX ?? null,
-              e?.clientY ?? null
-            );
-          }
-        },
-        onMouseMove: (e) => {
-          if (rowState.hoverPayload && activeHoverTargetEl === targetEl) {
-            positionBreakdownPopover(targetEl, e?.clientX ?? null, e?.clientY ?? null);
-          }
-        },
-        onMouseLeave: () => {
-          if (activeHoverTargetEl === targetEl) hideBreakdownPopover();
-        },
-      });
-
       const barHitEl = h('div', { className: 'cons-source-bar-hit' }, [trackEl]);
-      const barHandlers = bindPopoverHover(barHitEl);
-      barHitEl.addEventListener('mouseenter', barHandlers.onMouseEnter);
-      barHitEl.addEventListener('mousemove', barHandlers.onMouseMove);
-      barHitEl.addEventListener('mouseleave', barHandlers.onMouseLeave);
-
       const topModelsEl = h('div', { className: 'cons-source-top-models', hidden: true });
-      const topHandlers = bindPopoverHover(topModelsEl);
-      topModelsEl.addEventListener('mouseenter', topHandlers.onMouseEnter);
-      topModelsEl.addEventListener('mousemove', topHandlers.onMouseMove);
-      topModelsEl.addEventListener('mouseleave', topHandlers.onMouseLeave);
 
       const fallbackMetaEl = h('span', { className: 'cons-top-conv-meta', hidden: true });
       const callsLbl = h('span', { text: t('cons.footCalls') });
       const callsVal = h('strong', { className: 'text-mono' });
+
+      const hoverZoneEl = h('div', { className: 'cons-source-hover-zone' }, [
+        barHitEl,
+        h('div', { className: 'cons-item-foot cons-source-foot' }, [
+          topModelsEl,
+          fallbackMetaEl,
+          h('span', { className: 'legend-left cons-calls-stat' }, [
+            callsLbl,
+            callsVal,
+          ]),
+        ]),
+      ]);
+      attachUnifiedHoverZone(hoverZoneEl, [barHitEl, topModelsEl], rowState);
 
       const rowEl = h(
         'div',
@@ -1490,15 +1542,7 @@ export const ConsumptionView = defineComponent({
               costEl,
             ]),
           ]),
-          barHitEl,
-          h('div', { className: 'cons-item-foot cons-source-foot' }, [
-            topModelsEl,
-            fallbackMetaEl,
-            h('span', { className: 'legend-left cons-calls-stat' }, [
-              callsLbl,
-              callsVal,
-            ]),
-          ]),
+          hoverZoneEl,
         ]
       );
 
@@ -1512,6 +1556,7 @@ export const ConsumptionView = defineComponent({
           pctBadge,
           totalTokEl,
           costEl,
+          hoverZoneEl,
           barHitEl,
           trackEl,
           topModelsEl,
@@ -1669,6 +1714,7 @@ export const ConsumptionView = defineComponent({
               segments: partitioned,
             }
           : null;
+      patchClasses(refs.hoverZoneEl, { 'is-interactive': Boolean(refs.rowState.hoverPayload) });
     }
 
     let latestSlice = null;

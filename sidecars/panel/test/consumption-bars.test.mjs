@@ -486,25 +486,39 @@ test('ConsumptionView: Top Models color dot + % bar, clutter-free Client Sources
     ['输入', '缓存', '思考', '输出']
   );
 
+  const appHoverZone = sourceRows[0].querySelector('.cons-source-hover-zone');
+  const appTopModelsEl = sourceRows[0].querySelector('.cons-source-top-models');
+  assert.ok(appHoverZone, 'Client source row should wrap bar and top models in a unified hover zone');
+
+  // Moving seamlessly from progress bar into gap / top-models keeps popover visible without flicker
+  appBarHit.dispatchEvent({ type: 'mouseleave', relatedTarget: appHoverZone });
+  assert.equal(popover.hasAttribute('hidden'), false, 'Moving into unified hover zone gap must not hide popover');
+  appBarHit.dispatchEvent({ type: 'mouseleave', relatedTarget: appTopModelsEl });
+  assert.equal(popover.hasAttribute('hidden'), false, 'Moving from bar to model names must not hide popover');
+
   appBarHit.dispatchEvent({ type: 'mouseleave' });
   assert.equal(popover.hasAttribute('hidden'), true);
 
-  const appTopModelsEl = sourceRows[0].querySelector('.cons-source-top-models');
   appTopModelsEl.dispatchEvent({ type: 'mouseenter', clientX: 90 });
   assert.equal(popover.hasAttribute('hidden'), false);
   assert.equal(popover.querySelector('.trend-tip-time')?.textContent, 'Antigravity App');
-  appTopModelsEl.dispatchEvent({ type: 'mouseleave' });
+  appTopModelsEl.dispatchEvent({ type: 'mouseleave', relatedTarget: appBarHit });
+  assert.equal(popover.hasAttribute('hidden'), false, 'Moving back from model names to bar must not hide popover');
+  appHoverZone.dispatchEvent({ type: 'mouseleave' });
   assert.equal(popover.hasAttribute('hidden'), true);
 
-  // Verify single-line non-wrapping CSS rules exist for client source top models
+  // Verify single-line non-wrapping CSS rules and zero-gap hover layout rules
   const { readFileSync } = await import('node:fs');
   const consCss = readFileSync(new URL('../src/styles/views-consumption.css', import.meta.url), 'utf8');
+  assert.match(consCss, /\.cons-source-hover-zone\s*\{[\s\S]*flex-direction:\s*column/);
   assert.match(consCss, /\.cons-source-foot\s*\{[\s\S]*flex-wrap:\s*nowrap/);
   assert.match(consCss, /\.cons-source-top-models\s*\{[\s\S]*flex-wrap:\s*nowrap/);
   assert.match(consCss, /@container\s*\(max-width:\s*340px\)\s*\{\s*\.cons-source-top-item:nth-child\(n\s*\+\s*3\)/);
+  assert.match(consCss, /\.monthly-grid\s*\{[\s\S]*gap:\s*0/);
 
   // 3. Monthly Breakdown: old 4-channel legend removed; Nov column renders model-colored vertical segments & unified hover popover
   assert.equal(view.el.querySelectorAll('.monthly-legend').length, 0);
+  const monthlyGrid = view.el.querySelector('.monthly-grid');
   const monthCols = view.el.querySelectorAll('.month-col');
   const novCol = monthCols[10];
   const novSegs = novCol.querySelectorAll('.month-seg.cons-model-seg');
@@ -519,6 +533,16 @@ test('ConsumptionView: Top Models color dot + % bar, clutter-free Client Sources
   assert.equal(popover.querySelector('.trend-tip-time')?.textContent, '2026年 11月');
   assert.equal(popover.querySelectorAll('.cons-pop-model-row').length, 4);
   assert.equal(popover.querySelector('.cons-pop-channels')?.hasAttribute('hidden'), false);
+
+  // Seam/sibling handoff inside monthly-grid keeps popover open; empty month or exiting grid hides it
+  novCol.dispatchEvent({ type: 'mouseleave', relatedTarget: monthlyGrid });
+  assert.equal(popover.hasAttribute('hidden'), false, 'Sub-pixel seam inside monthly-grid must not flicker popover');
+  monthCols[0].dispatchEvent({ type: 'mouseenter' });
+  assert.equal(popover.hasAttribute('hidden'), true, 'Hovering zero-data month must hide popover');
+  novCol.dispatchEvent({ type: 'mouseenter' });
+  assert.equal(popover.hasAttribute('hidden'), false);
+  monthlyGrid.dispatchEvent({ type: 'mouseleave' });
+  assert.equal(popover.hasAttribute('hidden'), true, 'Leaving monthly-grid must hide popover');
 
   // 4. Usage Trend: taller 184px viewBox & hovering x-axis tick opens redesigned tooltip (hero TOKEN, 4-seg model bars, no subtitle/dot clutter, bottom 4 channels)
   const trendSvg = view.el.querySelector('.trend-svg');
