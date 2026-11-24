@@ -1,7 +1,7 @@
 /**
- * @fileoverview 本机安全文本文件导出及系统文件管理器定位模块 (`file-exporter.mjs`)。
- * 仅允许导出受控白名单文本扩展名（.json / .csv / .md / .txt），严格清洗文件名防止路径穿越，
- * 并仅对本次进程实际导出的文件路径开放系统文件管理器定位能力。
+ * @fileoverview 本机安全文件导出及系统文件管理器定位模块 (`file-exporter.mjs`)。
+ * 仅允许导出受控白名单扩展名（.json / .csv / .md / .txt / .xlsx，含 UTF-8 文本和 Base64 二进制工作簿），
+ * 严格清洗文件名防止路径穿越，并仅对本次进程实际导出的文件路径开放系统文件管理器定位能力。
  */
 
 import { spawn } from 'node:child_process';

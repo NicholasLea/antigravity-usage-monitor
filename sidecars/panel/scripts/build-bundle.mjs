@@ -636,6 +636,7 @@ export function buildBundle(panelDir = PANEL_DIR) {
     'src/registries/stepColumnRegistry.js',
     'src/components/widgets/CapsuleBarWidget.js',
     'src/components/widgets/StepTableWidget.js',
+    'src/components/widgets/ConsumptionBreakdownRows.js',
     'src/components/settings/structurePreviewMock.js',
     'src/components/settings/CollapsibleSection.js',
     'src/components/settings/EditableSlotList.js',
@@ -652,6 +653,7 @@ export function buildBundle(panelDir = PANEL_DIR) {
     'src/views/StepsDetailView.js',
     'src/views/SettingsView.js',
     'src/App.js',
+    'src/components/layout/overlayHostAnchors.js',
     'src/components/layout/WindowOverlayShell.js',
     'src/main.js',
   ];
