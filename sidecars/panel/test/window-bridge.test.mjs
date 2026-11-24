@@ -2062,6 +2062,30 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     await new Promise((r) => setTimeout(r, 35));
     assert.equal(accountPane.hasAttribute('hidden'), false);
     assert.equal(accountPane.querySelector('.settings-account-identity').textContent, 'test@example.com');
+    assert.equal(accountPane.querySelector('.account-active-dot'), null, 'Active account must not render a green dot');
+
+    // Quota trend chart is visible even before risk acceptance, using full 184px .trend-svg height and all 8 presets
+    const quotaTrendPanel = accountPane.querySelector('.account-quota-trend-panel');
+    assert.ok(quotaTrendPanel && !quotaTrendPanel.hasAttribute('hidden'), 'Quota trend chart card must be visible');
+    const quotaTrendSvg = quotaTrendPanel.querySelector('svg.trend-svg');
+    assert.ok(quotaTrendSvg, 'Quota trend chart must reuse 184px .trend-svg');
+    assert.equal(quotaTrendSvg.getAttribute('viewBox'), '0 0 460 184');
+    const trendSegLabels = quotaTrendPanel.querySelectorAll('.seg-btn').map((b) => b.textContent);
+    for (const expectedRange of ['周期', '今天', '1天', '7天', '14天', '30天', '全部', '自定义']) {
+      assert.ok(trendSegLabels.includes(expectedRange), `Quota trend chart must include ${expectedRange}`);
+    }
+
+    // Default risk gate locks multi-account management until explicitly accepted
+    const accountRiskMask = accountPane.querySelector('.settings-account-risk-mask');
+    assert.ok(accountRiskMask && !accountRiskMask.hasAttribute('hidden'), 'Multi-account risk mask must be visible by default');
+    assert.equal(accountRequests.some((item) => item.action === 'quota'), false, 'Must not poll backup quotas before risk acceptance');
+
+    const accountRiskAcceptBtn = accountPane.querySelector('.settings-account-risk-accept');
+    accountRiskAcceptBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(mockSettings.accountSwitchRiskAccepted, true);
+    assert.equal(accountRiskMask.hasAttribute('hidden'), true);
+
     assert.ok(accountPane.querySelectorAll('.settings-account-quota').some((el) => el.textContent === '5 小时 70%'));
     assert.ok(accountRequests.some((item) => item.action === 'quota' && item.email === 'next@example.com'));
     const googleLogin = accountPane.querySelector('.settings-account-login');

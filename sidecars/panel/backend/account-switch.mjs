@@ -12,6 +12,10 @@ import {
   retrieveCredentialQuota,
 } from './account-oauth.mjs';
 import {
+  recordAccountQuotaSnapshot,
+  removeAccountQuotaHistory,
+} from './account-quota-history.mjs';
+import {
   checkVaultUnlockCooldown,
   createVaultSecurityMetadata,
   decryptVaultEntryCredential,
@@ -36,7 +40,7 @@ const ACCOUNT_ERRORS = new Set([
   'oauthUnavailable', 'quotaUnavailable',
   'switchStartFailed', 'clientCloseFailed', 'clientRestartFailed',
   'vaultLocked', 'wrongPassword', 'invalidPassword', 'passwordRateLimited',
-  'vaultDecryptFailed', 'invalidActionNonce',
+  'vaultDecryptFailed', 'invalidActionNonce', 'riskNotAccepted',
 ]);
 
 const ALLOWED_ACTIONS = new Set([
@@ -717,6 +721,7 @@ export async function handleAccountCredentialAction(
     if (action === 'remove') {
       const activeSec = await ensureUnlockedVaultContext();
       clearTransientAccessTokens(email);
+      removeAccountQuotaHistory(email);
       return publicList(
         await runStore({
           action,
@@ -806,6 +811,9 @@ export async function handleAccountCredentialAction(
         expectedCredential: expectedCredForQuota,
         quota: quotaPayload,
       });
+      if (useDiskSigCache) {
+        recordAccountQuotaSnapshot(email, pools, fetchedAt, { isActiveHost: false });
+      }
       return { email, pools, fetchedAt, ...tierMeta };
     }
 

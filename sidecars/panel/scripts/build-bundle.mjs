@@ -628,6 +628,7 @@ export function buildBundle(panelDir = PANEL_DIR) {
     'src/components/widgets/MetricMatrixWidget.js',
     'src/components/widgets/ContextWindowWidget.js',
     'src/components/widgets/QuotaPoolsWidget.js',
+    'src/components/widgets/AccountQuotaTrendCard.js',
     'src/components/widgets/LiveActivityWidget.js',
     'src/registries/widgetRegistry.js',
     'src/registries/stepColumnRegistry.js',

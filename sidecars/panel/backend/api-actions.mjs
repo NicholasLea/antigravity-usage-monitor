@@ -9,6 +9,10 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { BRIDGE_API_ROUTE_DEFS, LOCAL_ENDPOINT_ID } from '../shared/window-bridge-protocol.mjs';
+import {
+  getAccountQuotaHistoryPayload,
+  getLatestRecordedHostEmail,
+} from './account-quota-history.mjs';
 import { handleAccountCredentialAction, warmAccountPublicListCache } from './account-switch.mjs';
 import { issueAccountActionNonce, verifyAccountActionNonce } from './account-vault-crypto.mjs';
 import {
@@ -644,6 +648,38 @@ export async function executeAccountCredentialAction(data, opts = {}) {
   }
   const cleanData = stripEndpointField(data);
   const action = cleanData?.action || 'list';
+  const riskAccepted =
+    opts?.bypassRiskCheck === true || loadSettings().accountSwitchRiskAccepted === true;
+  if (!riskAccepted) {
+    if (action !== 'list') {
+      return {
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'Cache-Control': 'no-store' },
+        body: JSON.stringify({
+          error: 'riskNotAccepted',
+          actionNonce: issueAccountActionNonce(),
+        }),
+      };
+    }
+    const hostEmail = getLatestRecordedHostEmail();
+    return {
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        supported: process.platform === 'win32',
+        riskLocked: true,
+        accounts: [],
+        selectedEmail: '',
+        quotas: {},
+        quotaHistory: getAccountQuotaHistoryPayload({
+          allowedEmails: hostEmail ? [hostEmail] : [],
+        }),
+        actionNonce: issueAccountActionNonce(),
+      }),
+    };
+  }
   if (NONCE_PROTECTED_ACCOUNT_ACTIONS.has(action) && !verifyAccountActionNonce(cleanData?.actionNonce)) {
     return {
       status: 200,
@@ -663,9 +699,25 @@ export async function executeAccountCredentialAction(data, opts = {}) {
   if (action === 'switch' && !result?.error) {
     clearTelemetryBuilderMemo(LOCAL_ENDPOINT_ID);
   }
+  const hostEmail = getLatestRecordedHostEmail();
+  const allowedHistoryEmails = Array.isArray(result?.accounts)
+    ? [...new Set([...result.accounts, ...(hostEmail ? [hostEmail] : [])])]
+    : hostEmail
+      ? [hostEmail]
+      : null;
   const enriched =
     result && typeof result === 'object'
-      ? { ...result, actionNonce: issueAccountActionNonce() }
+      ? {
+          ...result,
+          ...(action === 'list' || Array.isArray(result.accounts)
+            ? {
+                quotaHistory: getAccountQuotaHistoryPayload({
+                  allowedEmails: allowedHistoryEmails,
+                }),
+              }
+            : {}),
+          actionNonce: issueAccountActionNonce(),
+        }
       : result;
   return {
     status: 200,
@@ -904,8 +956,9 @@ export function bootWindowBridgeRuntime({ allowDynamicLs = false, onRestart = nu
   if (lsRuntimeEndpoint.addr === 'test.invalid') return null;
   if (!allowDynamicLs && !lsRuntimeEndpoint.addr) return null;
 
-  ensureCliStatusLineConfigured({ enabled: loadSettings().enableCliStatusLine !== false });
-  if (allowDynamicLs) {
+  const bootSettings = loadSettings();
+  ensureCliStatusLineConfigured({ enabled: bootSettings.enableCliStatusLine !== false });
+  if (allowDynamicLs && bootSettings.accountSwitchRiskAccepted === true) {
     setTimeout(() => {
       void warmAccountPublicListCache();
     }, 80).unref?.();

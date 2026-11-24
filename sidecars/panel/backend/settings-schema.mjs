@@ -169,6 +169,7 @@ export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
   stepTableColumns: DEFAULT_STEP_TABLE_COLUMNS,
   experimentalQuotaReservation: true,
   accountQuotaRefreshMinutes: DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES,
+  accountSwitchRiskAccepted: false,
   contextWindowRiskAccepted: false,
   contextWindowMainEnabled: true,
   contextWindowSwarmEnabled: false,
@@ -256,6 +257,7 @@ export function normalizeFullSettings(rawInput) {
     accountQuotaRefreshMinutes: normalizeAccountQuotaRefreshMinutes(
       safeRaw.accountQuotaRefreshMinutes
     ),
+    accountSwitchRiskAccepted: safeRaw.accountSwitchRiskAccepted === true,
     contextWindowRiskAccepted: safeRaw.contextWindowRiskAccepted === true,
     contextWindowMainEnabled: safeRaw.contextWindowMainEnabled !== false,
     contextWindowSwarmEnabled: safeRaw.contextWindowSwarmEnabled === true,

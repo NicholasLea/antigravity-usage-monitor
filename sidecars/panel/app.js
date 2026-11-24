@@ -1883,6 +1883,13 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.account.passwordRateLimited': '密码连续输错次数过多，请稍候再试。',
   'settings.account.vaultDecryptFailed': '凭证解密校验失败，请确认密码或重置凭证库。',
   'settings.account.invalidActionNonce': '安全校验令牌已过期，请重试。',
+  'settings.account.riskNotAccepted': '请先确认并接受非官方能力风险提示。',
+  'settings.account.riskBody': 'Google 官方并未授权在 Antigravity App / IDE 中通过第三方插件导入、保存、切换账号凭证或后台查询多账号配额。擅自启用可能导致 Antigravity 或 GCP 服务被禁用，甚至触发账号封禁；启用该功能即默认由你自行承担全部风险。你最好清楚自己在做什么！',
+  'settings.account.trendTitle': '额度变化',
+  'settings.account.trendWinAria': '配额窗口切换',
+  'settings.account.win5h': '5 小时',
+  'settings.account.winWeekly': '每周',
+  'settings.account.trendEmpty': '当前时间范围内暂无配额记录。',
   'settings.saving': '保存中…',
   'settings.saved': '已保存',
   'settings.saveFailed': '保存失败',
@@ -2862,6 +2869,13 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.account.passwordRateLimited': 'Too many failed attempts. Wait a moment and try again.',
   'settings.account.vaultDecryptFailed': 'Vault decryption check failed.',
   'settings.account.invalidActionNonce': 'Security token expired. Please try again.',
+  'settings.account.riskNotAccepted': 'Acknowledge the unofficial feature risk warning first.',
+  'settings.account.riskBody': 'Google has not authorized importing, storing, or switching Antigravity credentials or polling multi-account quotas in Antigravity App / IDE. Enabling multi-account management may get your Antigravity access, GCP services, or Google account disabled or banned; enabling this feature means you assume all associated risks. Make sure you know what you are doing!',
+  'settings.account.trendTitle': 'Quota Trend',
+  'settings.account.trendWinAria': 'Quota window selector',
+  'settings.account.win5h': '5 Hours',
+  'settings.account.winWeekly': 'Weekly',
+  'settings.account.trendEmpty': 'No quota history recorded in the selected time range.',
   'settings.subTab.aria': 'Preferences category tabs',
   'settings.saving': 'Saving…',
   'settings.saved': 'Saved',
@@ -9802,6 +9816,9 @@ function isEquivalentTelemetry(prev, next) {
   ) {
     return false;
   }
+  if (Boolean(pSet?.accountSwitchRiskAccepted) !== Boolean(nSet?.accountSwitchRiskAccepted)) {
+    return false;
+  }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
   if (!sameArr(pSet?.hoverModules, nSet?.hoverModules)) return false;
   if (!sameArr(pSet?.overviewModules, nSet?.overviewModules)) return false;
@@ -11065,6 +11082,9 @@ async function saveSettingsPatch(patch) {
     safePatch.accountQuotaRefreshMinutes = normalizeClientAccountQuotaRefreshMinutes(
       safePatch.accountQuotaRefreshMinutes
     );
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'accountSwitchRiskAccepted')) {
+    safePatch.accountSwitchRiskAccepted = Boolean(safePatch.accountSwitchRiskAccepted);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'topbarCapsuleSlots')) {
     safePatch.topbarCapsuleSlots = normalizeClientTopbarSlots(safePatch.topbarCapsuleSlots);
@@ -20959,6 +20979,1080 @@ const QuotaPoolsWidget = defineComponent({
 return { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, formatAccountTierBadge, maskAccountLabel, QuotaPoolsWidget };
 })();
 
+// --- src/components/widgets/AccountQuotaTrendCard.js ---
+const { resolveQuotaWindowBounds, buildQuotaWindowSeries, AccountQuotaTrendCard } = (() => {
+/**
+ * @fileoverview Per-account quota remaining-% trajectory chart (`AccountQuotaTrendCard.js`).
+ * Full-bleed edge-to-edge plot (`x = 1 .. viewW - 1`), X-axis clamped to earliest recorded
+ * sample when history is shorter than the selected preset, and adaptive integer Y-scale so
+ * real quota movements never compress into a tiny corner with wasted whitespace.
+ */
+
+
+const POOL_COLORS = Object.freeze({
+  Gemini: 'var(--accent-primary)',
+  'Claude & GPT': 'var(--metric-ok)',
+  Argon: 'var(--ctx-thinking)',
+  Carbon: 'var(--metric-warn)',
+});
+
+const POOL_ORDER = ['Gemini', 'Argon', 'Carbon', 'Claude & GPT'];
+
+let quotaChartUid = 0;
+
+function floorMinute(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return 0;
+  const d = new Date(n);
+  d.setSeconds(0, 0);
+  return d.getTime();
+}
+
+function ceilMinute(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return 0;
+  const d = new Date(n);
+  d.setSeconds(59, 999);
+  return d.getTime();
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function formatAxisTickTime(ms, spanMs) {
+  const d = new Date(ms);
+  const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  if (spanMs <= 36 * 3600_000) {
+    return hm;
+  }
+  const md = `${d.getMonth() + 1}/${pad2(d.getDate())}`;
+  if (spanMs <= 7 * 86400_000) {
+    return `${md} ${pad2(d.getHours())}h`;
+  }
+  return md;
+}
+
+function formatHoverTimestamp(ms) {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function buildHorizontalTangentSpline(pts) {
+  if (pts.length === 0) return '';
+  if (pts.length === 1) return `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+  let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i];
+    const p1 = pts[i + 1];
+    const dx = (p1.x - p0.x) * 0.38;
+    d += ` C ${(p0.x + dx).toFixed(1)} ${p0.y.toFixed(1)}, ${(p1.x - dx).toFixed(1)} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
+  }
+  return d;
+}
+
+/**
+ * Computes tight, integer-aligned `[yMin, yMid, yMax]` bounds (`0..100%`) around
+ * observed `[dataMin, dataMax]` so small-to-moderate quota changes use the full
+ * vertical canvas instead of leaving 80%+ empty bottom space.
+ */
+function computeAdaptiveQuotaScale(dataMin, dataMax) {
+  const lo = Math.max(0, Math.min(100, Number.isFinite(dataMin) ? dataMin : 0));
+  const hi = Math.max(lo, Math.min(100, Number.isFinite(dataMax) ? dataMax : 100));
+  const rawSpan = hi - lo;
+  const pad = Math.max(1.5, rawSpan * 0.14);
+
+  let yMax = hi >= 98.5 ? 100 : Math.min(100, Math.ceil((hi + pad) / 10) * 10);
+  let yMin = lo <= 2 ? 0 : Math.max(0, Math.floor((lo - pad) / 10) * 10);
+
+  if (yMax - yMin < 10) {
+    if (yMax >= 100) {
+      yMax = 100;
+      yMin = 90;
+    } else if (yMin <= 0) {
+      yMin = 0;
+      yMax = 10;
+    } else {
+      yMin = Math.max(0, yMax - 10);
+    }
+  }
+  // Ensure `(yMax - yMin)` is even so midpoint tick is always an exact integer
+  if ((yMax - yMin) % 2 !== 0) {
+    if (yMin > 0) yMin -= 1;
+    else if (yMax < 100) yMax += 1;
+  }
+  const yMid = Math.round((yMin + yMax) / 2);
+  return { yMin, yMid, yMax, span: Math.max(1, yMax - yMin) };
+}
+
+const IMPULSE_GLITCH_MAX_SPAN_MS = 20 * 60_000;
+const IMPULSE_GLITCH_MIN_JUMP_PCT = 3;
+const IMPULSE_GLITCH_MAX_NEIGHBOR_DIFF_PCT = 1.2;
+const CYCLE_RESET_JUMP_MIN_PCT = 3.5;
+
+function stripIsolatedImpulseSpikes(pts) {
+  if (pts.length < 3) return pts;
+  const out = pts.slice();
+  let i = 1;
+  while (i < out.length - 1) {
+    const prev = out[i - 1];
+    const cur = out[i];
+    const next = out[i + 1];
+    const spanMs = next.ts - prev.ts;
+    if (
+      spanMs >= 0 &&
+      spanMs <= IMPULSE_GLITCH_MAX_SPAN_MS &&
+      cur.val - prev.val >= IMPULSE_GLITCH_MIN_JUMP_PCT &&
+      cur.val - next.val >= IMPULSE_GLITCH_MIN_JUMP_PCT &&
+      Math.abs(next.val - prev.val) <= IMPULSE_GLITCH_MAX_NEIGHBOR_DIFF_PCT
+    ) {
+      out.splice(i, 1);
+      if (i > 1) i -= 1;
+      continue;
+    }
+    i += 1;
+  }
+  return out;
+}
+
+function resolveQuotaWindowBounds({
+  pools,
+  selectedRange,
+  selectedWin,
+  selectedPool,
+  customStartMs = 0,
+  customEndMs = 0,
+  nowMs = Date.now(),
+}) {
+  if (selectedRange === 'custom') {
+    return {
+      startMs: Math.min(customStartMs, customEndMs),
+      endMs: Math.max(customStartMs, customEndMs),
+    };
+  }
+  if (selectedRange === 'today') {
+    const d = new Date(nowMs);
+    d.setHours(0, 0, 0, 0);
+    return { startMs: d.getTime(), endMs: nowMs };
+  }
+  if (selectedRange === '24h') return { startMs: nowMs - 24 * 3600_000, endMs: nowMs };
+  if (selectedRange === '7d') return { startMs: nowMs - 7 * 86400_000, endMs: nowMs };
+  if (selectedRange === '14d') return { startMs: nowMs - 14 * 86400_000, endMs: nowMs };
+  if (selectedRange === '30d') return { startMs: nowMs - 30 * 86400_000, endMs: nowMs };
+  if (selectedRange === 'all') {
+    let minTs = Infinity;
+    for (const p of pools) {
+      for (const pt of p.points) {
+        if (pt[0] > 0 && pt[0] < minTs) minTs = pt[0];
+      }
+    }
+    const safeStart =
+      Number.isFinite(minTs) && minTs < nowMs - 60_000 ? minTs : nowMs - 5 * 3600_000;
+    return { startMs: safeStart, endMs: nowMs };
+  }
+
+  const targetPools =
+    selectedPool !== 'all' ? pools.filter((p) => p.poolKey === selectedPool) : pools;
+  const refPools = targetPools.length ? targetPools : pools;
+  const isWeekly = selectedWin === 'weekly';
+  const winDurationMs = isWeekly ? 7 * 86400_000 : 5 * 3600_000;
+
+  let activeMinResetMs = Infinity;
+  let anyMinResetMs = Infinity;
+  for (const p of refPools) {
+    const rMs = isWeekly ? p.resetWeeklyMs : p.reset5hMs;
+    const liveVal = isWeekly ? p.liveWk : p.live5h;
+    if (!(rMs > nowMs)) continue;
+    if (rMs < anyMinResetMs) anyMinResetMs = rMs;
+    if (liveVal !== null && liveVal !== undefined && liveVal < 99.95 && rMs < activeMinResetMs) {
+      activeMinResetMs = rMs;
+    }
+  }
+  const chosenResetMs = Number.isFinite(activeMinResetMs)
+    ? activeMinResetMs
+    : Number.isFinite(anyMinResetMs)
+      ? anyMinResetMs
+      : 0;
+  const startMs = chosenResetMs > nowMs ? chosenResetMs - winDurationMs : nowMs - winDurationMs;
+  return { startMs: Math.min(startMs, nowMs - 60_000), endMs: nowMs };
+}
+
+/**
+ * Extracts per-pool trajectories for the requested window, ensuring `'cycle'` mode
+ * strictly excludes pre-reset points from any previous expired cycle (eliminating
+ * artificial `84% -> 100%` vertical reset spikes at cycle start).
+ */
+function buildQuotaWindowSeries({
+  visiblePools,
+  rawBounds,
+  selectedRange,
+  selectedWin,
+  nowMs = Date.now(),
+}) {
+  const isCycleMode = selectedRange === 'cycle';
+  const isWeekly = selectedWin === 'weekly';
+  const valIdx = isWeekly ? 2 : 1;
+  const winDurationMs = isWeekly ? 7 * 86400_000 : 5 * 3600_000;
+
+  const staged = [];
+  let hasStartAnchor = false;
+  let earliestInWinTs = Infinity;
+
+  for (const p of visiblePools) {
+    const cleanedAll = [];
+    for (let i = 0; i < p.points.length; i++) {
+      const pt = p.points[i];
+      const v = pt[valIdx];
+      if (v === null || v === undefined || !Number.isFinite(Number(v))) continue;
+      cleanedAll.push({
+        ts: pt[0],
+        val: Math.max(0, Math.min(100, Number(v))),
+      });
+    }
+    const sanitized = stripIsolatedImpulseSpikes(cleanedAll);
+    if (sanitized.length === 0) continue;
+
+    const pResetMs = isWeekly ? p.resetWeeklyMs : p.reset5hMs;
+    const pLiveVal = isWeekly ? p.liveWk : p.live5h;
+    const poolCutoffMs =
+      isCycleMode && pResetMs > nowMs && pLiveVal !== null && pLiveVal < 99.95
+        ? Math.max(rawBounds.startMs, pResetMs - winDurationMs)
+        : rawBounds.startMs;
+
+    let carryBefore = null;
+    let inWinPts = [];
+    for (let i = 0; i < sanitized.length; i++) {
+      const sp = sanitized[i];
+      if (sp.ts <= poolCutoffMs) {
+        carryBefore = sp;
+      } else if (sp.ts <= rawBounds.endMs) {
+        inWinPts.push(sp);
+      }
+    }
+
+    // In `'cycle'` mode, `< 99.95%` observations at or before `poolCutoffMs` belong
+    // to the previous expired cycle and must never carry forward into the new cycle.
+    if (isCycleMode && carryBefore && carryBefore.val < 99.95) {
+      carryBefore = null;
+    }
+
+    let hadResetInWindow = false;
+    if (isCycleMode && inWinPts.length >= 2) {
+      let lastResetIdx = 0;
+      for (let k = 1; k < inWinPts.length; k++) {
+        const prev = inWinPts[k - 1].val;
+        const cur = inWinPts[k].val;
+        if (cur - prev >= CYCLE_RESET_JUMP_MIN_PCT || (cur >= 99.5 && prev <= 98.5)) {
+          lastResetIdx = k;
+        }
+      }
+      if (lastResetIdx > 0) {
+        inWinPts = inWinPts.slice(lastResetIdx);
+        carryBefore = null;
+        hadResetInWindow = true;
+      }
+    }
+
+    const isMidWindowReset = hadResetInWindow && inWinPts[0].ts - poolCutoffMs > 5 * 60_000;
+    const anchorsCycleOrigin =
+      isCycleMode &&
+      !isMidWindowReset &&
+      !carryBefore &&
+      inWinPts.length > 0 &&
+      inWinPts[0].ts - poolCutoffMs <= 3 * 60_000;
+
+    if (carryBefore || (anchorsCycleOrigin && poolCutoffMs <= rawBounds.startMs + 5000)) {
+      hasStartAnchor = true;
+    }
+    if (inWinPts.length > 0 && inWinPts[0].ts < earliestInWinTs) {
+      earliestInWinTs = inWinPts[0].ts;
+    }
+
+    staged.push({
+      pool: p,
+      poolCutoffMs,
+      carryBefore,
+      inWinPts,
+      isMidWindowReset,
+      anchorsCycleOrigin,
+    });
+  }
+
+  let plottedStartMs = rawBounds.startMs;
+  if (
+    !hasStartAnchor &&
+    selectedRange !== 'custom' &&
+    Number.isFinite(earliestInWinTs) &&
+    earliestInWinTs > rawBounds.startMs
+  ) {
+    plottedStartMs =
+      rawBounds.endMs - earliestInWinTs >= 60_000
+        ? earliestInWinTs
+        : Math.max(rawBounds.startMs, rawBounds.endMs - 5 * 60_000);
+  }
+  const plottedEndMs = Math.max(plottedStartMs + 60_000, rawBounds.endMs);
+
+  const rawBuilt = [];
+  let dataMin = Infinity;
+  let dataMax = -Infinity;
+
+  for (const item of staged) {
+    const { pool, poolCutoffMs, carryBefore, inWinPts, isMidWindowReset, anchorsCycleOrigin } = item;
+    const seriesPts = [];
+    const anchorStartTs = Math.max(plottedStartMs, poolCutoffMs);
+
+    if (carryBefore) {
+      seriesPts.push({ ts: anchorStartTs, val: carryBefore.val });
+    } else if (anchorsCycleOrigin) {
+      const originVal = Math.max(100, inWinPts[0].val);
+      if (inWinPts[0].ts > anchorStartTs) {
+        seriesPts.push({ ts: anchorStartTs, val: Math.min(100, originVal) });
+      }
+    } else if (
+      !isMidWindowReset &&
+      inWinPts.length > 0 &&
+      inWinPts[0].ts > plottedStartMs &&
+      (inWinPts.length === 1 || inWinPts[0].val >= 99.95)
+    ) {
+      seriesPts.push({ ts: plottedStartMs, val: inWinPts[0].val });
+    }
+
+    for (let i = 0; i < inWinPts.length; i++) {
+      const vp = inWinPts[i];
+      if (vp.ts >= plottedStartMs) {
+        seriesPts.push(vp);
+      }
+    }
+
+    if (seriesPts.length > 0 && plottedEndMs <= nowMs + 60_000) {
+      const tail = seriesPts[seriesPts.length - 1];
+      const tailEnd = Math.min(plottedEndMs, nowMs);
+      if (tailEnd > tail.ts + 1000) {
+        seriesPts.push({ ts: tailEnd, val: tail.val });
+      }
+    }
+    if (seriesPts.length === 0) continue;
+
+    for (let i = 0; i < seriesPts.length; i++) {
+      const v = seriesPts[i].val;
+      if (v < dataMin) dataMin = v;
+      if (v > dataMax) dataMax = v;
+    }
+    rawBuilt.push({
+      poolKey: pool.poolKey,
+      label: pool.label,
+      color: POOL_COLORS[pool.poolKey] || 'var(--accent-primary)',
+      rawPoints: seriesPts,
+      latestVal: seriesPts[seriesPts.length - 1].val,
+    });
+  }
+
+  return {
+    plottedStartMs,
+    plottedEndMs,
+    rawBuilt,
+    yScale: rawBuilt.length > 0 ? computeAdaptiveQuotaScale(dataMin, dataMax) : null,
+  };
+}
+
+function getTimeRangeOptions() {
+  return [
+    { value: 'cycle', label: t('cons.rangeCycle') },
+    { value: 'today', label: t('cons.rangeToday') },
+    { value: '24h', label: t('cons.range24h') },
+    { value: '7d', label: t('cons.range7d') },
+    { value: '14d', label: t('cons.range14d') },
+    { value: '30d', label: t('cons.range30d') },
+    { value: 'all', label: t('cons.rangeAll') },
+    { value: 'custom', label: t('cons.rangeCustom') },
+  ];
+}
+
+function getQuotaWindowOptions() {
+  return [
+    { value: '5h', label: t('settings.account.win5h') },
+    { value: 'weekly', label: t('settings.account.winWeekly') },
+  ];
+}
+
+const AccountQuotaTrendCard = defineComponent({
+  name: 'AccountQuotaTrendCard',
+  setup({ onCleanup }) {
+    const VIEW_H = 184;
+    const TOP_Y = 18;
+    const BOTTOM_Y = 166;
+    const SPAN_Y = BOTTOM_Y - TOP_Y;
+    const LEFT_X = 1;
+    const RIGHT_PAD = 1;
+
+    let viewW = 460;
+    let selectedRange = 'cycle';
+    let selectedWin = '5h';
+    let selectedPool = 'all';
+    let selectedAccountEmail = '';
+
+    const initNow = Date.now();
+    let customStartMs = floorMinute(initNow - 24 * 3600_000);
+    let customEndMs = ceilMinute(initNow);
+    let draftStartMs = customStartMs;
+    let draftEndMs = customEndMs;
+
+    let latestState = {
+      activeEmail: '',
+      activePools: [],
+      riskAccepted: false,
+      accounts: [],
+      savedQuotas: new Map(),
+      quotaHistory: {},
+    };
+
+    let plottedSeries = [];
+    let plottedStartMs = 0;
+    let plottedEndMs = 0;
+    let plottedYScale = { yMin: 0, yMid: 50, yMax: 100, span: 100 };
+
+    const cardTitleText = h('span', { text: t('settings.account.trendTitle') });
+    const spanBadgeEl = h('span', { className: 'cons-badge text-mono', text: '' });
+
+    const accountSelect = CustomSelect({
+      className: 'cons-cycle-pool-select account-trend-email-select',
+      modelValue: '',
+      options: [],
+      onUpdateModelValue: (val) => {
+        selectedAccountEmail = String(val || '').trim().toLowerCase();
+        renderChart();
+      },
+    });
+    patchAttr(accountSelect.el, 'hidden', true);
+
+    const poolSelect = CustomSelect({
+      className: 'cons-cycle-pool-select',
+      modelValue: 'all',
+      options: [{ value: 'all', label: t('cons.cyclePoolAll') }],
+      onUpdateModelValue: (val) => {
+        selectedPool = val || 'all';
+        renderChart();
+      },
+    });
+
+    const winSwitch = SegmentedControl({
+      ariaLabel: t('settings.account.trendWinAria'),
+      modelValue: selectedWin,
+      options: getQuotaWindowOptions(),
+      onUpdateModelValue: (val) => {
+        selectedWin = val === 'weekly' ? 'weekly' : '5h';
+        winSwitch.setProps({ modelValue: selectedWin, options: getQuotaWindowOptions() });
+        renderChart();
+      },
+    });
+
+    const rangeSwitch = SegmentedControl({
+      ariaLabel: t('cons.rangeAria'),
+      modelValue: selectedRange,
+      options: getTimeRangeOptions(),
+      onUpdateModelValue: (nextRange) => {
+        selectedRange = nextRange || 'cycle';
+        if (selectedRange === 'custom') {
+          startPicker.setValue(draftStartMs);
+          endPicker.setValue(draftEndMs);
+        }
+        rangeSwitch.setProps({ modelValue: selectedRange, options: getTimeRangeOptions() });
+        renderChart();
+      },
+    });
+
+    const startPicker = CustomDateTimePicker({
+      modelValue: draftStartMs,
+      onUpdateModelValue: (ms) => {
+        draftStartMs = ms;
+        startPicker.setValue(ms);
+      },
+    });
+    const endPicker = CustomDateTimePicker({
+      modelValue: draftEndMs,
+      onUpdateModelValue: (ms) => {
+        draftEndMs = ms;
+        endPicker.setValue(ms);
+      },
+    });
+    const applyCustomLabel = h('span', { text: t('cons.applyFilter') });
+    const applyCustomBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-primary',
+        onClick: () => {
+          const s = Number(draftStartMs || 0);
+          const e = Number(draftEndMs || 0);
+          const lo = floorMinute(s > 0 && e > 0 ? Math.min(s, e) : s);
+          const hi = ceilMinute(s > 0 && e > 0 ? Math.max(s, e) : e);
+          if (lo > 0 && hi > lo) {
+            customStartMs = lo;
+            customEndMs = hi;
+            draftStartMs = lo;
+            draftEndMs = hi;
+            startPicker.setValue(lo);
+            endPicker.setValue(hi);
+            renderChart();
+          }
+        },
+      },
+      [createSvgIcon('check', { size: 12 }), applyCustomLabel]
+    );
+    const rangeToEl = h('span', { className: 'text-muted', text: t('cons.rangeTo') });
+    const customRangeBar = h('div', { className: 'cons-custom-range-bar', hidden: true }, [
+      startPicker.el,
+      rangeToEl,
+      endPicker.el,
+      applyCustomBtn,
+    ]);
+
+    // --- Full-Bleed Edge-to-Edge 184px SVG Stage (reusing TrendAreaChart `.trend-svg`) ---
+    const uid = ++quotaChartUid;
+    const gradId = `acct-quota-grad-${uid}`;
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${viewW} ${VIEW_H}`);
+    svg.setAttribute('class', 'trend-svg');
+    svg.setAttribute('aria-hidden', 'true');
+
+    const defs = document.createElementNS(SVG_NS, 'defs');
+    const grad = document.createElementNS(SVG_NS, 'linearGradient');
+    grad.setAttribute('id', gradId);
+    grad.setAttribute('x1', '0');
+    grad.setAttribute('y1', '0');
+    grad.setAttribute('x2', '0');
+    grad.setAttribute('y2', '1');
+    const stopTop = document.createElementNS(SVG_NS, 'stop');
+    stopTop.setAttribute('offset', '0%');
+    stopTop.setAttribute('stop-color', 'var(--accent-primary)');
+    stopTop.setAttribute('stop-opacity', '0.24');
+    const stopBot = document.createElementNS(SVG_NS, 'stop');
+    stopBot.setAttribute('offset', '100%');
+    stopBot.setAttribute('stop-color', 'var(--accent-primary)');
+    stopBot.setAttribute('stop-opacity', '0.0');
+    grad.appendChild(stopTop);
+    grad.appendChild(stopBot);
+    defs.appendChild(grad);
+    svg.appendChild(defs);
+
+    const gridGroup = document.createElementNS(SVG_NS, 'g');
+    gridGroup.setAttribute('class', 'trend-grid');
+    const gridRowSpecs = [
+      { y: TOP_Y, dy: 3, labeled: true },
+      { y: Math.round(TOP_Y + SPAN_Y * 0.25), dy: 0, labeled: false },
+      { y: Math.round(TOP_Y + SPAN_Y * 0.5), dy: 3, labeled: true },
+      { y: Math.round(TOP_Y + SPAN_Y * 0.75), dy: 0, labeled: false },
+      { y: BOTTOM_Y, dy: -3, labeled: true },
+    ];
+    const gridLines = [];
+    const yLabels = [];
+    for (const row of gridRowSpecs) {
+      const line = document.createElementNS(SVG_NS, 'line');
+      line.setAttribute('x1', '0');
+      line.setAttribute('y1', String(row.y));
+      line.setAttribute('x2', String(viewW));
+      line.setAttribute('y2', String(row.y));
+      gridGroup.appendChild(line);
+      gridLines.push(line);
+
+      if (row.labeled) {
+        const lbl = document.createElementNS(SVG_NS, 'text');
+        lbl.setAttribute('class', 'sstep-axis-label is-y-inline');
+        lbl.setAttribute('x', '3');
+        lbl.setAttribute('y', String(row.y + row.dy));
+        lbl.setAttribute('text-anchor', 'start');
+        yLabels.push(lbl);
+      }
+    }
+    svg.appendChild(gridGroup);
+
+    const seriesGroup = document.createElementNS(SVG_NS, 'g');
+    svg.appendChild(seriesGroup);
+
+    // Append inline Y labels above series fills so halo stroke keeps text crisp
+    const yLabelOverlay = document.createElementNS(SVG_NS, 'g');
+    for (const lbl of yLabels) {
+      yLabelOverlay.appendChild(lbl);
+    }
+    svg.appendChild(yLabelOverlay);
+
+    const hoverLine = document.createElementNS(SVG_NS, 'line');
+    hoverLine.setAttribute('class', 'trend-hover-line');
+    hoverLine.setAttribute('y1', String(TOP_Y));
+    hoverLine.setAttribute('y2', String(BOTTOM_Y));
+    hoverLine.setAttribute('hidden', '');
+    svg.appendChild(hoverLine);
+
+    const hoverDotsGroup = document.createElementNS(SVG_NS, 'g');
+    hoverDotsGroup.setAttribute('hidden', '');
+    svg.appendChild(hoverDotsGroup);
+
+    const tipTimeEl = h('span', { className: 'trend-tip-time text-mono' });
+    const tipWinEl = h('span', { className: 'trend-tip-calls' });
+    const tipRowsHost = h('div', { className: 'account-trend-tip-rows' });
+    const tooltipEl = h('div', { className: 'trend-tooltip', hidden: true }, [
+      h('div', { className: 'trend-tip-head' }, [tipTimeEl, tipWinEl]),
+      tipRowsHost,
+    ]);
+
+    const xAxisEl = h('div', { className: 'trend-x-axis' });
+    const legendRowEl = h('div', { className: 'account-trend-legend' });
+    const emptyStateEl = h('div', { className: 'smodel-empty settings-action-desc', hidden: true });
+
+    const plotStage = h(
+      'div',
+      {
+        className: 'trend-plot-stage',
+        onPointermove: handlePointerMove,
+        onPointerleave: hideHover,
+      },
+      [svg, tooltipEl]
+    );
+    const chartWrap = h('div', { className: 'trend-chart-wrap' }, [
+      plotStage,
+      xAxisEl,
+      legendRowEl,
+    ]);
+
+    const rootEl = h('section', { className: 'panel account-quota-trend-panel' }, [
+      h('div', { className: 'panel-header account-trend-toprow' }, [
+        h('span', { className: 'panel-title cons-overview-title' }, [
+          createSvgIcon('pulse', { size: 13 }),
+          cardTitleText,
+          accountSelect.el,
+          poolSelect.el,
+        ]),
+        winSwitch.el,
+      ]),
+      h('div', { className: 'panel-header cons-overview-head account-trend-subbar' }, [
+        spanBadgeEl,
+        h('div', { className: 'cons-overview-controls' }, [rangeSwitch.el]),
+      ]),
+      customRangeBar,
+      chartWrap,
+      emptyStateEl,
+    ]);
+
+    function valueToSvgY(val) {
+      const clamped = Math.max(plottedYScale.yMin, Math.min(plottedYScale.yMax, val));
+      return BOTTOM_Y - ((clamped - plottedYScale.yMin) / plottedYScale.span) * SPAN_Y;
+    }
+
+    function hideHover() {
+      hoverLine.setAttribute('hidden', '');
+      hoverDotsGroup.setAttribute('hidden', '');
+      patchAttr(tooltipEl, 'hidden', true);
+    }
+
+    function sampleSeriesValueAt(points, targetMs) {
+      if (!points.length) return null;
+      if (targetMs < points[0].ts - 1000) return null;
+      if (targetMs <= points[0].ts) return points[0].val;
+      const last = points[points.length - 1];
+      if (targetMs > last.ts + 60_000) return null;
+      if (targetMs >= last.ts) return last.val;
+      let lo = 0;
+      let hi = points.length - 1;
+      while (lo + 1 < hi) {
+        const mid = (lo + hi) >> 1;
+        if (points[mid].ts <= targetMs) lo = mid;
+        else hi = mid;
+      }
+      const a = points[lo];
+      const b = points[hi];
+      const span = b.ts - a.ts;
+      if (span <= 0) return b.val;
+      return a.val + (b.val - a.val) * ((targetMs - a.ts) / span);
+    }
+
+    function handlePointerMove(ev) {
+      if (!plottedSeries.length || !(plottedEndMs > plottedStartMs)) {
+        hideHover();
+        return;
+      }
+      const rect = svg.getBoundingClientRect?.();
+      const widthPx = Number(rect?.width || viewW);
+      if (!(widthPx > 0)) return;
+      const offsetX = Number(ev.clientX || 0) - Number(rect?.left || 0);
+      const svgX = (offsetX / widthPx) * viewW;
+      const plotW = Math.max(20, viewW - LEFT_X - RIGHT_PAD);
+      const u = Math.max(0, Math.min(1, (svgX - LEFT_X) / plotW));
+      const clampedX = LEFT_X + u * plotW;
+      const targetMs = Math.round(plottedStartMs + u * (plottedEndMs - plottedStartMs));
+
+      hoverLine.setAttribute('x1', clampedX.toFixed(1));
+      hoverLine.setAttribute('x2', clampedX.toFixed(1));
+
+      while (hoverDotsGroup.firstChild) hoverDotsGroup.removeChild(hoverDotsGroup.firstChild);
+      const tipItems = [];
+      for (let i = 0; i < plottedSeries.length; i++) {
+        const s = plottedSeries[i];
+        const val = sampleSeriesValueAt(s.rawPoints, targetMs);
+        if (val === null) continue;
+        const y = valueToSvgY(val);
+        const dot = document.createElementNS(SVG_NS, 'circle');
+        dot.setAttribute('cx', clampedX.toFixed(1));
+        dot.setAttribute('cy', y.toFixed(1));
+        dot.setAttribute('r', '3.2');
+        dot.setAttribute('fill', 'var(--surface-panel)');
+        dot.setAttribute('stroke', s.color);
+        dot.setAttribute('stroke-width', '1.8');
+        hoverDotsGroup.appendChild(dot);
+        tipItems.push({ key: s.poolKey, label: s.label, color: s.color, val });
+      }
+      if (tipItems.length === 0) {
+        hideHover();
+        return;
+      }
+      hoverLine.removeAttribute('hidden');
+      hoverDotsGroup.removeAttribute('hidden');
+
+      patchText(tipTimeEl, formatHoverTimestamp(targetMs));
+      patchText(tipWinEl, t(selectedWin === 'weekly' ? 'settings.account.winWeekly' : 'settings.account.win5h'));
+      patchKeyedList(tipRowsHost, tipItems, {
+        keyFn: (it) => it.key,
+        sigFn: (it) => `${it.label}:${it.val.toFixed(1)}`,
+        createRow: () => {
+          const sw = h('span', { className: 'dot-swatch' });
+          const nm = h('span', { className: 'account-trend-tip-name' });
+          const vl = h('strong', { className: 'text-mono' });
+          const row = h('div', { className: 'account-trend-tip-row' }, [
+            h('span', { className: 'legend-left' }, [sw, nm]),
+            vl,
+          ]);
+          return { el: row, refs: { sw, nm, vl } };
+        },
+        updateRow: (r, it) => {
+          r.sw.style.background = it.color;
+          patchText(r.nm, it.label);
+          patchText(r.vl, `${+it.val.toFixed(1)}%`);
+        },
+      });
+
+      const pctX = (clampedX / viewW) * 100;
+      const shift = pctX < 24 ? '0%' : pctX > 76 ? '-100%' : '-50%';
+      patchStyleVar(tooltipEl, '--tip-x', `${pctX.toFixed(1)}%`);
+      patchStyleVar(tooltipEl, '--tip-shift', shift);
+      patchAttr(tooltipEl, 'hidden', false);
+    }
+
+    function resolveTargetAccountEmail() {
+      const { activeEmail, riskAccepted, accounts } = latestState;
+      if (!riskAccepted) {
+        return activeEmail || '';
+      }
+      const candidates = [];
+      if (activeEmail) candidates.push(activeEmail);
+      for (const addr of accounts) {
+        if (addr && !candidates.includes(addr)) candidates.push(addr);
+      }
+      if (selectedAccountEmail && candidates.includes(selectedAccountEmail)) {
+        return selectedAccountEmail;
+      }
+      selectedAccountEmail = candidates[0] || '';
+      return selectedAccountEmail;
+    }
+
+    function buildMergedPoolsForEmail(email, nowMs) {
+      const histPools = latestState.quotaHistory?.[email]?.pools || {};
+      const livePools =
+        email && email === latestState.activeEmail
+          ? latestState.activePools || []
+          : latestState.savedQuotas.get(email)?.pools || [];
+
+      const merged = new Map();
+      for (const [pk, hEntry] of Object.entries(histPools)) {
+        merged.set(pk, {
+          poolKey: pk,
+          label: hEntry.label || pk,
+          reset5hMs: Number(hEntry.reset5hMs) || 0,
+          resetWeeklyMs: Number(hEntry.resetWeeklyMs) || 0,
+          points: Array.isArray(hEntry.points) ? hEntry.points.slice() : [],
+          live5h: null,
+          liveWk: null,
+        });
+      }
+
+      for (const lp of livePools) {
+        const pk = String(lp?.poolKey || lp?.family || lp?.poolLabel || '').trim();
+        if (!pk || pk === 'Unknown') continue;
+        let item = merged.get(pk);
+        if (!item) {
+          item = {
+            poolKey: pk,
+            label: String(lp?.poolLabel || pk),
+            reset5hMs: 0,
+            resetWeeklyMs: 0,
+            points: [],
+            live5h: null,
+            liveWk: null,
+          };
+          merged.set(pk, item);
+        }
+        if (lp?.poolLabel) item.label = String(lp.poolLabel);
+        const r5Ms = Date.parse(lp?.resetTime || '');
+        const rWMs = Date.parse(lp?.weeklyResetTime || '');
+        if (Number.isFinite(r5Ms) && r5Ms > 0) item.reset5hMs = r5Ms;
+        if (Number.isFinite(rWMs) && rWMs > 0) item.resetWeeklyMs = rWMs;
+        if (Number.isFinite(lp?.remainingPct)) item.live5h = +Number(lp.remainingPct).toFixed(1);
+        if (Number.isFinite(lp?.weeklyRemainingPct)) {
+          item.liveWk = +Number(lp.weeklyRemainingPct).toFixed(1);
+        }
+        if (item.live5h !== null || item.liveWk !== null) {
+          const last = item.points[item.points.length - 1];
+          if (!last || nowMs >= last[0]) {
+            item.points.push([
+              nowMs,
+              item.live5h ?? (last ? last[1] : null),
+              item.liveWk ?? (last ? last[2] : null),
+            ]);
+          }
+        }
+      }
+
+      return Array.from(merged.values()).sort(
+        (a, b) =>
+          (POOL_ORDER.indexOf(a.poolKey) === -1 ? 99 : POOL_ORDER.indexOf(a.poolKey)) -
+          (POOL_ORDER.indexOf(b.poolKey) === -1 ? 99 : POOL_ORDER.indexOf(b.poolKey))
+      );
+    }
+
+    function renderChart() {
+      hideHover();
+      const nowMs = Date.now();
+      void getEffectiveLocale();
+
+      patchText(cardTitleText, t('settings.account.trendTitle'));
+      patchText(rangeToEl, t('cons.rangeTo'));
+      patchText(applyCustomLabel, t('cons.applyFilter'));
+      winSwitch.setProps({ modelValue: selectedWin, options: getQuotaWindowOptions() });
+      rangeSwitch.setProps({ modelValue: selectedRange, options: getTimeRangeOptions() });
+      patchAttr(customRangeBar, 'hidden', selectedRange !== 'custom');
+
+      const targetEmail = resolveTargetAccountEmail();
+      const candidateEmails = [];
+      if (latestState.activeEmail) candidateEmails.push(latestState.activeEmail);
+      if (latestState.riskAccepted) {
+        for (const addr of latestState.accounts) {
+          if (addr && !candidateEmails.includes(addr)) candidateEmails.push(addr);
+        }
+      }
+      const showAccountPicker = latestState.riskAccepted && candidateEmails.length > 1;
+      patchAttr(accountSelect.el, 'hidden', !showAccountPicker);
+      if (showAccountPicker) {
+        accountSelect.setProps({
+          modelValue: targetEmail,
+          options: candidateEmails.map((addr) => ({
+            value: addr,
+            label: addr.split('@')[0] || addr,
+            title: addr,
+          })),
+        });
+      }
+
+      const mergedPools = targetEmail ? buildMergedPoolsForEmail(targetEmail, nowMs) : [];
+      if (selectedPool !== 'all' && !mergedPools.some((p) => p.poolKey === selectedPool)) {
+        selectedPool = 'all';
+      }
+      const poolOpts = [
+        {
+          value: 'all',
+          label: t('cons.cyclePoolAll'),
+        },
+        ...mergedPools.map((p) => ({
+          value: p.poolKey,
+          label: p.poolKey === 'Claude & GPT' ? 'Claude/GPT' : p.label,
+          title: p.label,
+        })),
+      ];
+      poolSelect.setProps({ modelValue: selectedPool, options: poolOpts });
+      patchAttr(poolSelect.el, 'hidden', mergedPools.length <= 1);
+
+      const rawBounds = resolveQuotaWindowBounds({
+        pools: mergedPools,
+        selectedRange,
+        selectedWin,
+        selectedPool,
+        customStartMs,
+        customEndMs,
+        nowMs,
+      });
+      const visiblePools =
+        selectedPool === 'all'
+          ? mergedPools
+          : mergedPools.filter((p) => p.poolKey === selectedPool);
+
+      const built = buildQuotaWindowSeries({
+        visiblePools,
+        rawBounds,
+        selectedRange,
+        selectedWin,
+        nowMs,
+      });
+      plottedStartMs = built.plottedStartMs;
+      plottedEndMs = built.plottedEndMs;
+      const spanMs = plottedEndMs - plottedStartMs;
+      patchText(spanBadgeEl, formatDateSpanBadge(plottedStartMs, plottedEndMs));
+
+      const rawBuilt = built.rawBuilt;
+      const hasPlot = rawBuilt.length > 0;
+      patchAttr(chartWrap, 'hidden', !hasPlot);
+      patchAttr(emptyStateEl, 'hidden', hasPlot);
+      if (!hasPlot) {
+        plottedSeries = [];
+        patchText(emptyStateEl, t('settings.account.trendEmpty'));
+        return;
+      }
+
+      plottedYScale = built.yScale;
+      yLabels[0].textContent = `${plottedYScale.yMax}%`;
+      yLabels[1].textContent = `${plottedYScale.yMid}%`;
+      yLabels[2].textContent = `${plottedYScale.yMin}%`;
+
+      const plotW = Math.max(20, viewW - LEFT_X - RIGHT_PAD);
+      svg.setAttribute('viewBox', `0 0 ${viewW} ${VIEW_H}`);
+      for (const gl of gridLines) {
+        gl.setAttribute('x2', String(viewW));
+      }
+
+      plottedSeries = rawBuilt.map((rb) => ({
+        ...rb,
+        svgPts: rb.rawPoints.map((sp) => {
+          const u = Math.max(0, Math.min(1, (sp.ts - plottedStartMs) / spanMs));
+          return {
+            x: LEFT_X + u * plotW,
+            y: valueToSvgY(sp.val),
+            val: sp.val,
+            ts: sp.ts,
+          };
+        }),
+      }));
+
+      while (seriesGroup.firstChild) seriesGroup.removeChild(seriesGroup.firstChild);
+      for (let i = 0; i < plottedSeries.length; i++) {
+        const s = plottedSeries[i];
+        const lineD = buildHorizontalTangentSpline(s.svgPts);
+        if (s.svgPts.length >= 2) {
+          const first = s.svgPts[0];
+          const last = s.svgPts[s.svgPts.length - 1];
+          const areaEl = document.createElementNS(SVG_NS, 'path');
+          areaEl.setAttribute(
+            'd',
+            `${lineD} L ${last.x.toFixed(1)} ${BOTTOM_Y} L ${first.x.toFixed(1)} ${BOTTOM_Y} Z`
+          );
+          if (plottedSeries.length === 1) {
+            stopTop.setAttribute('stop-color', s.color);
+            stopBot.setAttribute('stop-color', s.color);
+            areaEl.setAttribute('fill', `url(#${gradId})`);
+          } else {
+            areaEl.setAttribute('class', 'sstep-multi-area');
+            areaEl.style.setProperty('--sstep-series-color', s.color);
+          }
+          seriesGroup.appendChild(areaEl);
+        }
+        const pathEl = document.createElementNS(SVG_NS, 'path');
+        pathEl.setAttribute('d', lineD);
+        pathEl.setAttribute('fill', 'none');
+        pathEl.setAttribute('stroke', s.color);
+        pathEl.setAttribute('stroke-width', '1.9');
+        pathEl.setAttribute('stroke-linecap', 'round');
+        seriesGroup.appendChild(pathEl);
+
+        const endPt = s.svgPts[s.svgPts.length - 1];
+        const endDot = document.createElementNS(SVG_NS, 'circle');
+        endDot.setAttribute('cx', endPt.x.toFixed(1));
+        endDot.setAttribute('cy', endPt.y.toFixed(1));
+        endDot.setAttribute('r', '2.7');
+        endDot.setAttribute('fill', s.color);
+        seriesGroup.appendChild(endDot);
+      }
+
+      // Edge-to-edge X-axis ticks (`0% .. 100%`)
+      const tickCount = 5;
+      const ticks = [];
+      for (let k = 0; k < tickCount; k++) {
+        const ratio = k / (tickCount - 1);
+        const tickMs = Math.round(plottedStartMs + ratio * spanMs);
+        const leftPct = ratio * 100;
+        ticks.push({
+          idx: k,
+          leftPct,
+          label: formatAxisTickTime(tickMs, spanMs),
+          edge: k === 0 ? 'start' : k === tickCount - 1 ? 'end' : '',
+        });
+      }
+      patchKeyedList(xAxisEl, ticks, {
+        keyFn: (tk) => tk.idx,
+        sigFn: (tk) => `${tk.leftPct.toFixed(1)}:${tk.label}:${tk.edge}`,
+        createRow: () => {
+          const el = h('span', { className: 'trend-x-tick text-mono' });
+          return { el, refs: { el } };
+        },
+        updateRow: (r, tk) => {
+          patchText(r.el, tk.label);
+          patchStyleVar(r.el, '--tick-x', `${tk.leftPct.toFixed(2)}%`);
+          patchClasses(r.el, {
+            'is-start': tk.edge === 'start',
+            'is-end': tk.edge === 'end',
+          });
+        },
+      });
+
+      patchKeyedList(legendRowEl, plottedSeries, {
+        keyFn: (s) => s.poolKey,
+        sigFn: (s) => `${s.label}:${s.latestVal.toFixed(1)}:${s.color}`,
+        createRow: () => {
+          const sw = h('span', { className: 'dot-swatch' });
+          const nm = h('span', { className: 'account-trend-leg-name' });
+          const vl = h('strong', { className: 'text-mono' });
+          const el = h('span', { className: 'account-trend-leg-item' }, [sw, nm, vl]);
+          return { el, refs: { sw, nm, vl } };
+        },
+        updateRow: (r, s) => {
+          r.sw.style.background = s.color;
+          patchText(r.nm, s.label);
+          patchText(r.vl, `${+s.latestVal.toFixed(1)}%`);
+        },
+      });
+    }
+
+    let resizeObs = null;
+    if (typeof ResizeObserver === 'function') {
+      resizeObs = new ResizeObserver((entries) => {
+        const w = Math.floor(Number(entries?.[0]?.contentRect?.width || 0));
+        if (w >= 180 && Math.abs(w - viewW) >= 2) {
+          viewW = w;
+          renderChart();
+        }
+      });
+      resizeObs.observe(plotStage);
+    }
+
+    onCleanup(() => {
+      resizeObs?.disconnect();
+      accountSelect.destroy();
+      poolSelect.destroy();
+      winSwitch.destroy();
+      rangeSwitch.destroy();
+      startPicker.destroy();
+      endPicker.destroy();
+    });
+
+    function update(nextState) {
+      latestState = { ...latestState, ...nextState };
+      renderChart();
+    }
+
+    renderChart();
+    return {
+      el: rootEl,
+      refs: { update, refreshLabels: renderChart },
+    };
+  },
+});
+return { resolveQuotaWindowBounds, buildQuotaWindowSeries, AccountQuotaTrendCard };
+})();
+
 // --- src/components/widgets/LiveActivityWidget.js ---
 const { buildFallbackRunningConversations, LiveActivityWidget } = (() => {
 /**
@@ -29339,7 +30433,11 @@ return { SettingsStructureTab };
 
 // --- src/views/settings/SettingsAccountTab.js ---
 const { SettingsAccountTab } = (() => {
-/** @fileoverview Unified multi-account switcher, passphrase vault UI, and per-pool quota cards. */
+/**
+ * @fileoverview Multi-account switcher, quota trajectory chart, risk gate, and passphrase vault UI.
+ * Reuses `SegmentedControl`, `CustomSelect`, `AccountQuotaTrendCard`, `.ctx-risk-mask`,
+ * `.settings-bridge-notice`, `.status-tag`, `.btn-ghost-sm`, `.btn-danger-confirm`, and `.quota-pool-row`.
+ */
 
 
 const key = (name) => `settings.account.${name}`;
@@ -29355,7 +30453,7 @@ const errors = new Set([
   'switchStartFailed', 'clientCloseFailed', 'clientRestartFailed',
   'loginStartFailed', 'loginExchangeFailed', 'loginExpired', 'loginDenied',
   'vaultLocked', 'wrongPassword', 'invalidPassword', 'passwordMismatch',
-  'passwordRateLimited', 'vaultDecryptFailed', 'invalidActionNonce',
+  'passwordRateLimited', 'vaultDecryptFailed', 'invalidActionNonce', 'riskNotAccepted',
 ]);
 
 const okToastKeys = new Set([
@@ -29373,6 +30471,13 @@ function getAccountRefreshOptions() {
     { value: 360, label: t(key('refresh6h')) },
     { value: 720, label: t(key('refresh12h')) },
     { value: 1440, label: t(key('refresh24h')) },
+  ];
+}
+
+function getPwdModeOptions() {
+  return [
+    { value: 'change', label: t(key('pwdTabChange')) },
+    { value: 'disable', label: t(key('pwdTabDisable')) },
   ];
 }
 
@@ -29405,8 +30510,9 @@ function renderQuotaRows(container, quotaPools) {
   );
   patchKeyedList(container, pools, {
     keyFn: (pool) => pool.poolKey || pool.poolLabel,
-    sigFn: (pool) =>
+    sigFn: (pool, idx) =>
       JSON.stringify([
+        idx > 0,
         locale,
         pool.poolLabel,
         pool.remainingPct,
@@ -29415,32 +30521,39 @@ function renderQuotaRows(container, quotaPools) {
         pool.weeklyResetTime,
       ]),
     createRow: () => {
-      const poolTitle = h('div', { className: 'account-pool-name' });
+      const poolTitle = h('div', { className: 'account-pool-label' });
 
-      const label5h = h('span', { className: 'settings-account-quota text-mono' });
-      const reset5h = h('span', { className: 'account-meter-reset text-mono', hidden: true });
+      const label5h = h('span', { className: 'quota-win-title settings-account-quota text-mono' });
+      const reset5h = h('span', { className: 'panel-meta quota-win-meta text-mono', hidden: true });
       const fill5h = h('div', { className: 'progress-fill' });
       const meter5h = h('div', { className: 'account-meter-col' }, [
-        h('div', { className: 'account-meter-head' }, [label5h, reset5h]),
-        h('div', { className: 'progress-track account-progress-track' }, [fill5h]),
+        h('div', { className: 'panel-header quota-win-head' }, [
+          h('span', { className: 'quota-win-left' }, [label5h]),
+          reset5h,
+        ]),
+        h('div', { className: 'progress-track' }, [fill5h]),
       ]);
 
-      const labelWk = h('span', { className: 'settings-account-quota text-mono' });
-      const resetWk = h('span', { className: 'account-meter-reset text-mono', hidden: true });
+      const labelWk = h('span', { className: 'quota-win-title settings-account-quota text-mono' });
+      const resetWk = h('span', { className: 'panel-meta quota-win-meta text-mono', hidden: true });
       const fillWk = h('div', { className: 'progress-fill' });
       const meterWk = h('div', { className: 'account-meter-col' }, [
-        h('div', { className: 'account-meter-head' }, [labelWk, resetWk]),
-        h('div', { className: 'progress-track account-progress-track' }, [fillWk]),
+        h('div', { className: 'panel-header quota-win-head' }, [
+          h('span', { className: 'quota-win-left' }, [labelWk]),
+          resetWk,
+        ]),
+        h('div', { className: 'progress-track' }, [fillWk]),
       ]);
 
       const gridEl = h('div', { className: 'account-pool-meters' }, [meter5h, meterWk]);
-      const el = h('div', { className: 'account-pool-group' }, [poolTitle, gridEl]);
+      const el = h('div', { className: 'quota-pool-row' }, [poolTitle, gridEl]);
       return {
         el,
-        refs: { poolTitle, gridEl, meter5h, label5h, reset5h, fill5h, meterWk, labelWk, resetWk, fillWk },
+        refs: { el, poolTitle, gridEl, meter5h, label5h, reset5h, fill5h, meterWk, labelWk, resetWk, fillWk },
       };
     },
-    updateRow: (refs, pool) => {
+    updateRow: (refs, pool, idx) => {
+      patchClasses(refs.el, { 'has-divider': idx > 0 });
       patchText(refs.poolTitle, pool.poolLabel || pool.poolKey);
       const has5h = Number.isFinite(pool.remainingPct);
       const hasWk = Number.isFinite(pool.weeklyRemainingPct);
@@ -29485,18 +30598,22 @@ function isValidVaultPassphrase(raw) {
 const SettingsAccountTab = defineComponent({
   name: 'SettingsAccountTab',
   setup({ props, onCleanup }) {
+    const initialSettings = telemetryStore.getState().telemetry?.settings;
     let account = null;
     let quotas = null;
     let refreshMinutes = normalizeAccountQuotaRefreshMinutes(
-      telemetryStore.getState().telemetry?.settings?.accountQuotaRefreshMinutes ??
-        DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES
+      initialSettings?.accountQuotaRefreshMinutes ?? DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES
     );
+    let draftRiskAccepted = Boolean(initialSettings?.accountSwitchRiskAccepted);
+    let acceptingRisk = false;
+    let riskLockedFromServer = warmAccountCache ? Boolean(warmAccountCache.riskLocked) : true;
     let accounts = warmAccountCache ? [...warmAccountCache.accounts] : [];
     let selectedEmail = warmAccountCache ? warmAccountCache.selectedEmail : '';
     let supported = warmAccountCache ? warmAccountCache.supported : null;
     let vaultSecurity = warmAccountCache?.vaultSecurity
       ? { ...warmAccountCache.vaultSecurity }
       : { enabled: false, unlocked: true };
+    let quotaHistory = warmAccountCache?.quotaHistory ? { ...warmAccountCache.quotaHistory } : {};
     let actionNonce = warmAccountCache?.actionNonce || '';
     let operation = '';
     let status = '';
@@ -29527,10 +30644,12 @@ const SettingsAccountTab = defineComponent({
       if (supported !== true) return;
       warmAccountCache = {
         supported,
+        riskLocked: riskLockedFromServer,
         accounts: [...accounts],
         selectedEmail,
         savedQuotasEntries: [...savedQuotas.entries()],
         vaultSecurity: { ...vaultSecurity },
+        quotaHistory: { ...quotaHistory },
         actionNonce,
       };
     }
@@ -29581,12 +30700,19 @@ const SettingsAccountTab = defineComponent({
       pwdConfirmInput.value = '';
     }
 
+    // --- Section 1: Active Account Card Host ---
+    const activeCardHost = h('div', { className: 'account-cards-stack' });
+
+    // --- Section 2: Quota Trend Line Chart Card ---
+    const quotaTrendCard = AccountQuotaTrendCard();
+
+    // --- Section 3: Multi-Account Toolbar, Drawers, Backup Cards & Risk Gate ---
     const loginBtnLabel = h('span');
     const loginButton = h(
       'button',
       {
         type: 'button',
-        className: 'btn-primary settings-account-login account-toolbar-btn',
+        className: 'btn-primary settings-account-login',
         onClick: () => {
           clearConfirmTarget(false);
           void request('loginStart', { language: getEffectiveLocale() });
@@ -29596,7 +30722,7 @@ const SettingsAccountTab = defineComponent({
     );
     const cancelLogin = h('button', {
       type: 'button',
-      className: 'btn-secondary settings-account-login-cancel account-toolbar-btn',
+      className: 'btn-secondary settings-account-login-cancel',
       hidden: true,
       onClick: () => request('loginCancel', { id: loginSession?.id }),
     });
@@ -29605,7 +30731,7 @@ const SettingsAccountTab = defineComponent({
       'button',
       {
         type: 'button',
-        className: 'btn-secondary account-toolbar-btn',
+        className: 'btn-secondary',
         onClick: () => {
           clearConfirmTarget(false);
           importOpen = !importOpen;
@@ -29626,13 +30752,14 @@ const SettingsAccountTab = defineComponent({
       'button',
       {
         type: 'button',
-        className: 'btn-secondary account-toolbar-btn settings-account-pwd-toggle',
+        className: 'btn-secondary settings-account-pwd-toggle',
         onClick: () => {
           clearConfirmTarget(false);
           pwdDrawerOpen = !pwdDrawerOpen;
           if (pwdDrawerOpen) {
             importOpen = false;
             pwdManageMode = 'change';
+            pwdModeSegment.setProps({ modelValue: 'change', options: getPwdModeOptions() });
           }
           clearPasswordInputs();
           render();
@@ -29649,7 +30776,7 @@ const SettingsAccountTab = defineComponent({
       'button',
       {
         type: 'button',
-        className: 'btn-secondary account-toolbar-btn settings-account-lock-now',
+        className: 'btn-secondary settings-account-lock-now',
         hidden: true,
         onClick: () => {
           clearConfirmTarget(false);
@@ -29691,17 +30818,17 @@ const SettingsAccountTab = defineComponent({
       'button',
       {
         type: 'button',
-        className: 'icon-btn account-reload-btn',
+        className: 'icon-btn',
         onClick: () => request('list'),
       },
       [createSvgIcon('refresh', { size: 13 })]
     );
 
-    // --- Locked Vault Unlock Strip ---
-    const unlockHintLabel = h('span');
+    // Locked Vault Notice (reusing `.settings-bridge-notice`)
+    const unlockHintLabel = h('span', { className: 'settings-bridge-title' });
     const forgotToggleBtn = h('button', {
       type: 'button',
-      className: 'account-link-btn settings-account-forgot-btn',
+      className: 'btn-ghost-sm settings-account-forgot-btn',
       onClick: () => {
         forgotResetOpen = !forgotResetOpen;
         clearConfirmTarget(false);
@@ -29717,7 +30844,7 @@ const SettingsAccountTab = defineComponent({
     });
     const unlockSubmitBtn = h('button', {
       type: 'submit',
-      className: 'btn-primary account-toolbar-btn settings-account-unlock-submit',
+      className: 'btn-primary settings-account-unlock-submit',
     });
     const unlockForm = h(
       'form',
@@ -29728,55 +30855,47 @@ const SettingsAccountTab = defineComponent({
       },
       [unlockInput, unlockSubmitBtn]
     );
-    const resetHintEl = h('span', { className: 'settings-action-desc' });
+    const resetHintEl = h('p', { className: 'settings-bridge-desc', hidden: true });
     const resetVaultBtn = h('button', {
       type: 'button',
-      className: 'btn-secondary account-card-btn account-confirm-danger-btn settings-account-reset-vault',
+      className: 'btn-secondary btn-danger-confirm settings-account-reset-vault',
+      hidden: true,
       onClick: () => {
         armOrRunConfirm('resetVault', 'vault', () => {
           void request('resetVault', { confirmReset: 'RESET' });
         });
       },
     });
-    const resetRow = h('div', { className: 'account-reset-row', hidden: true }, [
-      resetHintEl,
-      resetVaultBtn,
-    ]);
-    const unlockBox = h('div', { className: 'account-unlock-box settings-account-unlock-box', hidden: true }, [
-      h('div', { className: 'account-unlock-head' }, [
-        h('span', { className: 'account-unlock-title' }, [
-          createSvgIcon('lock', { size: 13 }),
-          unlockHintLabel,
+    const unlockBox = h(
+      'div',
+      { className: 'settings-bridge-notice settings-account-unlock-box', hidden: true },
+      [
+        h('div', { className: 'settings-bridge-head' }, [
+          h('span', { className: 'settings-bridge-head-main' }, [
+            createSvgIcon('lock', { size: 13, className: 'settings-bridge-icon' }),
+            unlockHintLabel,
+          ]),
+          forgotToggleBtn,
         ]),
-        forgotToggleBtn,
-      ]),
-      unlockForm,
-      resetRow,
-    ]);
+        unlockForm,
+        resetHintEl,
+        h('div', { className: 'settings-bridge-actions', hidden: true }, [resetVaultBtn]),
+      ]
+    );
+    const resetActionsWrap = resetVaultBtn.parentElement;
 
-    // --- Passphrase Setup / Manage Drawer ---
-    const pwdTabChangeBtn = h('button', {
-      type: 'button',
-      className: 'account-pwd-tab',
-      onClick: () => {
-        pwdManageMode = 'change';
+    // Passphrase Setup / Manage Drawer (reusing `SegmentedControl`!)
+    const pwdModeSegment = SegmentedControl({
+      ariaLabel: t(key('pwdBtnManage')),
+      modelValue: pwdManageMode,
+      options: getPwdModeOptions(),
+      onUpdateModelValue: (val) => {
+        pwdManageMode = val === 'disable' ? 'disable' : 'change';
+        pwdModeSegment.setProps({ modelValue: pwdManageMode, options: getPwdModeOptions() });
         clearPasswordInputs();
         render();
       },
     });
-    const pwdTabDisableBtn = h('button', {
-      type: 'button',
-      className: 'account-pwd-tab',
-      onClick: () => {
-        pwdManageMode = 'disable';
-        clearPasswordInputs();
-        render();
-      },
-    });
-    const pwdTabsWrap = h('div', { className: 'account-pwd-tabs', hidden: true }, [
-      pwdTabChangeBtn,
-      pwdTabDisableBtn,
-    ]);
     const pwdCurrentInput = h('input', {
       type: 'password',
       className: 'settings-text-input account-import-input settings-account-pwd-current',
@@ -29801,9 +30920,9 @@ const SettingsAccountTab = defineComponent({
     });
     const pwdSubmitBtn = h('button', {
       type: 'submit',
-      className: 'btn-primary account-toolbar-btn settings-account-pwd-submit',
+      className: 'btn-primary settings-account-pwd-submit',
     });
-    const pwdHint = h('div', { className: 'settings-action-desc account-import-hint' });
+    const pwdHint = h('div', { className: 'settings-action-desc' });
     const pwdForm = h(
       'form',
       {
@@ -29813,7 +30932,7 @@ const SettingsAccountTab = defineComponent({
         onSubmit: submitPasswordDrawer,
       },
       [
-        pwdTabsWrap,
+        pwdModeSegment.el,
         h('div', { className: 'account-import-row' }, [
           pwdCurrentInput,
           pwdNewInput,
@@ -29824,7 +30943,7 @@ const SettingsAccountTab = defineComponent({
       ]
     );
 
-    // --- Credential Import Drawer ---
+    // Credential Import Drawer
     const credential = h('input', {
       type: 'password',
       className: 'settings-text-input account-import-input',
@@ -29835,9 +30954,9 @@ const SettingsAccountTab = defineComponent({
     });
     const save = h('button', {
       type: 'submit',
-      className: 'btn-primary account-toolbar-btn',
+      className: 'btn-primary',
     });
-    const importHint = h('div', { className: 'settings-action-desc account-import-hint' });
+    const importHint = h('div', { className: 'settings-action-desc' });
     const form = h(
       'form',
       {
@@ -29852,26 +30971,27 @@ const SettingsAccountTab = defineComponent({
       ]
     );
 
-    const loginMessage = h('div', {
-      className: 'settings-action-desc account-flow-msg',
+    // OAuth Browser Login & Switch Notices (reusing `.settings-bridge-notice`)
+    const loginMessage = h('p', {
+      className: 'settings-bridge-desc settings-action-desc',
       role: 'status',
       hidden: true,
     });
     const loginLink = h('a', {
-      className: 'account-flow-link',
+      className: 'settings-bridge-relaunch-btn',
       target: '_blank',
       rel: 'noopener noreferrer',
       hidden: true,
     });
-    const loginStrip = h('div', { className: 'account-flow-strip', hidden: true }, [
-      loginMessage,
-      loginLink,
-    ]);
-    const pending = h('div', {
-      className: 'settings-action-desc account-flow-strip is-warn',
-      role: 'status',
-      hidden: true,
-    });
+    const loginStrip = h(
+      'div',
+      { className: 'settings-bridge-notice is-restart', hidden: true },
+      [loginMessage, h('div', { className: 'settings-bridge-actions' }, [loginLink])]
+    );
+    const loginLinkWrap = loginLink.parentElement;
+
+    const pendingDesc = h('p', { className: 'settings-bridge-desc', role: 'status' });
+    const pending = h('div', { className: 'settings-bridge-notice', hidden: true }, [pendingDesc]);
 
     const toolbarPanel = h('section', { className: 'panel account-toolbar-panel' }, [
       h('div', { className: 'account-toolbar-row' }, [
@@ -29895,36 +31015,261 @@ const SettingsAccountTab = defineComponent({
       pending,
     ]);
 
-    const cardsHost = h('div', { className: 'account-cards-stack' });
+    const backupCardsHost = h('div', { className: 'account-cards-stack' });
     const emptyPanel = h('section', { className: 'panel account-empty-panel', hidden: true }, [
       h('div', { className: 'settings-action-desc account-empty-text' }),
     ]);
     const emptyTextEl = emptyPanel.firstChild;
 
+    // Risk Gate Stage (100% shared `.ctx-risk-stage` / `.ctx-risk-mask` with `SettingsOtherTab`)
+    const riskTitleEl = h('strong', {
+      className: 'ctx-risk-title',
+      text: t('settings.oth.ctxRiskTitle'),
+    });
+    const riskBodyEl = h('p', {
+      className: 'ctx-risk-desc',
+      text: t(key('riskBody')),
+    });
+    const riskAcceptBtnText = h('span', { text: t('settings.oth.ctxRiskAcceptBtn') });
+    const riskAcceptBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary btn-danger-confirm ctx-risk-accept-btn settings-account-risk-accept',
+        onClick: async () => {
+          if (acceptingRisk || draftRiskAccepted) return;
+          acceptingRisk = true;
+          draftRiskAccepted = true;
+          render();
+          try {
+            await saveSettingsPatch({ accountSwitchRiskAccepted: true });
+            await request('list');
+          } catch {
+            draftRiskAccepted = false;
+            setTransientStatus('storeFailed', 2800);
+          } finally {
+            acceptingRisk = false;
+            if (!disposed) render();
+          }
+        },
+      },
+      [createSvgIcon('warning', { size: 12 }), riskAcceptBtnText]
+    );
+    const riskMask = h(
+      'div',
+      {
+        className: 'ctx-risk-mask settings-account-risk-mask',
+        role: 'region',
+        'aria-label': t('settings.oth.ctxRiskTitle'),
+      },
+      [
+        h('div', { className: 'ctx-risk-head' }, [
+          createSvgIcon('warning', { size: 14, className: 'ctx-risk-icon' }),
+          riskTitleEl,
+        ]),
+        riskBodyEl,
+        riskAcceptBtn,
+      ]
+    );
+    const managedControlsBody = h('div', { className: 'ctx-controls-body is-locked' }, [
+      toolbarPanel,
+      backupCardsHost,
+    ]);
+    const riskStage = h('div', { className: 'ctx-risk-stage' }, [managedControlsBody, riskMask]);
+
     function resolveActiveEmail() {
       return account?.status === 'signedIn' ? (account.email || '').trim().toLowerCase() : '';
     }
 
-    function buildUnifiedAccountEntries(activeEmail) {
-      const entries = [];
-      if (activeEmail) {
-        entries.push({
-          email: activeEmail,
-          isActive: true,
-          isSaved: accounts.includes(activeEmail),
-        });
-      }
-      for (let i = 0; i < accounts.length; i++) {
-        const addr = accounts[i];
-        if (addr && addr !== activeEmail) {
-          entries.push({
-            email: addr,
-            isActive: false,
-            isSaved: true,
+    function createAccountCardDom(entry) {
+      const emailEl = h('span', {
+        className: 'settings-account-identity account-card-email',
+        text: entry.email,
+        title: entry.email,
+      });
+      const tierPill = h('span', { className: 'status-tag state-synced', hidden: true });
+      const statePill = h('span', { className: 'status-tag', hidden: true });
+
+      const captureBtn = h('button', {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        hidden: true,
+        onClick: () => {
+          clearConfirmTarget(false);
+          void request('capture');
+        },
+      });
+      const selectBtn = h('button', {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        hidden: true,
+        onClick: () => {
+          armOrRunConfirm('switch', entry.email, () => {
+            const curActive = resolveActiveEmail();
+            void request('switch', {
+              email: entry.email,
+              ...(curActive ? { activeEmail: curActive } : {}),
+            });
           });
-        }
+        },
+      });
+      const loadQuotaBtn = h(
+        'button',
+        {
+          type: 'button',
+          className: 'icon-btn settings-account-load-quota',
+          hidden: true,
+          onClick: () => {
+            clearConfirmTarget(false);
+            void request('quota', { email: entry.email, manual: true });
+          },
+        },
+        [createSvgIcon('refresh', { size: 12 })]
+      );
+      const removeBtn = h(
+        'button',
+        {
+          type: 'button',
+          className: 'icon-btn slot-remove-btn settings-account-remove',
+          hidden: true,
+          onClick: () => {
+            armOrRunConfirm('remove', entry.email, () => {
+              void request('remove', { email: entry.email });
+            });
+          },
+        },
+        [createSvgIcon('close', { size: 12 })]
+      );
+      const removeConfirmBtn = h('button', {
+        type: 'button',
+        className: 'btn-ghost-sm btn-danger-confirm settings-account-remove-confirm',
+        hidden: true,
+        onClick: () => {
+          armOrRunConfirm('remove', entry.email, () => {
+            void request('remove', { email: entry.email });
+          });
+        },
+      });
+
+      const actionsWrap = h('div', { className: 'account-card-actions' }, [
+        captureBtn,
+        selectBtn,
+        loadQuotaBtn,
+        removeBtn,
+        removeConfirmBtn,
+      ]);
+      const poolsWrap = h('div', { className: 'account-pools-stack' });
+      const noteEl = h('div', { className: 'settings-action-desc account-card-note', hidden: true });
+
+      const cardEl = h('section', { className: 'panel account-card' }, [
+        h('div', { className: 'panel-header account-card-head' }, [
+          h('div', { className: 'account-card-meta' }, [emailEl, tierPill, statePill]),
+          actionsWrap,
+        ]),
+        poolsWrap,
+        noteEl,
+      ]);
+      return {
+        el: cardEl,
+        refs: {
+          cardEl,
+          emailEl,
+          tierPill,
+          statePill,
+          actionsWrap,
+          captureBtn,
+          selectBtn,
+          loadQuotaBtn,
+          removeBtn,
+          removeConfirmBtn,
+          poolsWrap,
+          noteEl,
+        },
+      };
+    }
+
+    function updateAccountCardDom(row, entry, ctx) {
+      const addr = entry.email;
+      const active = entry.isActive;
+      const isSaved = entry.isSaved;
+      const written = addr === selectedEmail && !active && switchState?.state === 'written';
+      const cached = active ? null : savedQuotas.get(addr);
+      const tierText = active
+        ? ctx.activeTierBadge
+        : cached?.tierName || cached?.tierId
+          ? formatAccountTierBadge({
+              tierId: cached.tierId,
+              tierName: cached.tierName,
+              tierMultiplier: cached.tierMultiplier,
+            })
+          : '';
+      const isSpinning = !active && quotaVisibleLoading.has(addr);
+      const canSwitch = !active && isSaved && ctx.riskAccepted;
+      const armedSwitch = confirmTarget?.type === 'switch' && confirmTarget.key === addr;
+      const armedRemove = confirmTarget?.type === 'remove' && confirmTarget.key === addr;
+
+      patchClasses(row.cardEl, { 'is-active-account': active });
+      patchText(row.emailEl, addr);
+      patchAttr(row.emailEl, 'title', addr);
+
+      patchText(row.tierPill, tierText);
+      patchAttr(row.tierPill, 'hidden', !tierText);
+
+      patchText(row.statePill, active ? t(key('active')) : written ? t(key('written')) : '');
+      patchClasses(row.statePill, { 'state-warn': written && !active });
+      patchAttr(row.statePill, 'hidden', !active && !written);
+
+      const showCapture = active && !isSaved && ctx.riskAccepted && supported !== false;
+      const showRemove = isSaved && ctx.riskAccepted;
+      const showQuotaRefresh = !active && isSaved && ctx.riskAccepted;
+      const hasAnyAction = showCapture || canSwitch || showQuotaRefresh || showRemove;
+      patchAttr(row.actionsWrap, 'hidden', !hasAnyAction);
+
+      patchText(row.captureBtn, t(key('capture')));
+      patchAttr(row.captureBtn, 'hidden', !showCapture);
+      patchAttr(row.captureBtn, 'disabled', !ctx.canWrite);
+
+      patchText(row.selectBtn, t(key(armedSwitch ? 'switchConfirm' : 'switch')));
+      patchAttr(row.selectBtn, 'title', t(key('switchHint')));
+      patchClasses(row.selectBtn, {
+        'settings-account-switch': canSwitch,
+        'btn-danger-confirm': armedSwitch,
+      });
+      patchAttr(row.selectBtn, 'hidden', !canSwitch);
+      patchAttr(row.selectBtn, 'disabled', !ctx.canWrite);
+
+      patchAttr(row.loadQuotaBtn, 'title', t(key(isSpinning ? 'loadingQuota' : 'loadQuota')));
+      patchAttr(row.loadQuotaBtn, 'aria-label', t(key('loadQuota')));
+      patchClasses(row.loadQuotaBtn, { 'is-spinning': isSpinning });
+      patchAttr(row.loadQuotaBtn, 'hidden', !showQuotaRefresh);
+      patchAttr(row.loadQuotaBtn, 'disabled', !ctx.canWrite || isSpinning);
+
+      patchAttr(row.removeBtn, 'title', t(key('remove')));
+      patchAttr(row.removeBtn, 'aria-label', t(key('remove')));
+      patchAttr(row.removeBtn, 'hidden', !showRemove || armedRemove);
+      patchAttr(row.removeBtn, 'disabled', !ctx.canWrite);
+
+      patchText(row.removeConfirmBtn, t(key('removeConfirm')));
+      patchAttr(row.removeConfirmBtn, 'hidden', !showRemove || !armedRemove);
+      patchAttr(row.removeConfirmBtn, 'disabled', !ctx.canWrite);
+
+      const displayedPools = active ? quotas?.pools || [] : cached?.pools || [];
+      const poolCount = renderQuotaRows(row.poolsWrap, displayedPools);
+      const quotaError = active ? '' : quotaErrors.get(addr);
+
+      let noteText = '';
+      if (quotaError) {
+        noteText = t(key(quotaError));
+      } else if (active && poolCount > 0 && quotas?.meta?.isStale) {
+        noteText = t(key('quotaStale'));
+      } else if (active && poolCount === 0) {
+        noteText = t(key('noQuota'));
+      } else if (!active && cached && poolCount === 0) {
+        noteText = t(key('emptyCredentialQuota'));
       }
-      return entries;
+      patchText(row.noteEl, noteText);
+      patchClasses(row.noteEl, { 'is-error': Boolean(quotaError) });
+      patchAttr(row.noteEl, 'hidden', !noteText);
     }
 
     function render() {
@@ -29933,8 +31278,13 @@ const SettingsAccountTab = defineComponent({
       if (activeEmail && selectedEmail === activeEmail && switchState?.state !== 'starting') {
         selectedEmail = '';
       }
+      const riskAccepted = Boolean(draftRiskAccepted);
+      if (!riskAccepted) {
+        refreshIntervalSelect.close?.();
+      }
       const vaultLocked = isVaultLocked();
       const canOperateVault =
+        riskAccepted &&
         supported === true &&
         !operation &&
         status !== 'restarting' &&
@@ -29945,6 +31295,55 @@ const SettingsAccountTab = defineComponent({
         signedIn && (account?.tierName || account?.planName)
           ? formatAccountTierBadge(account)
           : '';
+      const cardCtx = { riskAccepted, canWrite, activeTierBadge };
+
+      // 1. Active Logged-in Account Card
+      const activeEntries = activeEmail
+        ? [
+            {
+              email: activeEmail,
+              isActive: true,
+              isSaved: riskAccepted && accounts.includes(activeEmail),
+            },
+          ]
+        : [];
+      patchAttr(activeCardHost, 'hidden', activeEntries.length === 0);
+      patchKeyedList(activeCardHost, activeEntries, {
+        keyFn: (entry) => entry.email,
+        sigFn: (entry) =>
+          JSON.stringify([
+            locale,
+            entry.isSaved,
+            riskAccepted,
+            canWrite,
+            confirmTarget?.key === entry.email ? confirmTarget.type : '',
+            quotas,
+            activeTierBadge,
+          ]),
+        createRow: createAccountCardDom,
+        updateRow: (row, entry) => updateAccountCardDom(row, entry, cardCtx),
+      });
+
+      // 2. Quota Trend Line Chart Card (always visible; locked to activeEmail when !riskAccepted)
+      quotaTrendCard.refs.update({
+        activeEmail,
+        activePools: quotas?.pools || [],
+        riskAccepted,
+        accounts,
+        savedQuotas,
+        quotaHistory,
+      });
+
+      // 3. Risk Gate Stage & Multi-Account Controls
+      patchClasses(managedControlsBody, { 'is-locked': !riskAccepted });
+      patchAttr(managedControlsBody, 'inert', !riskAccepted);
+      patchAttr(managedControlsBody, 'aria-hidden', riskAccepted ? null : 'true');
+      patchAttr(riskMask, 'hidden', riskAccepted);
+      patchAttr(riskMask, 'aria-label', t('settings.oth.ctxRiskTitle'));
+      patchText(riskTitleEl, t('settings.oth.ctxRiskTitle'));
+      patchText(riskBodyEl, t(key('riskBody')));
+      patchText(riskAcceptBtnText, t('settings.oth.ctxRiskAcceptBtn'));
+      patchAttr(riskAcceptBtn, 'disabled', acceptingRisk);
 
       const loginActive = ['waiting', 'exchanging', 'saving'].includes(loginSession?.status);
       patchText(loginBtnLabel, t(key('googleLogin')));
@@ -29969,32 +31368,34 @@ const SettingsAccountTab = defineComponent({
       patchAttr(lockNowBtn, 'hidden', !vaultSecurity.enabled || vaultLocked || supported === false);
       patchAttr(lockNowBtn, 'disabled', !canOperateVault);
 
-      // Unlock strip (only when passphrase enabled & locked)
-      patchAttr(unlockBox, 'hidden', supported !== true || !vaultLocked);
+      // Unlock Notice
+      patchAttr(unlockBox, 'hidden', !riskAccepted || supported !== true || !vaultLocked);
       patchText(unlockHintLabel, t(key('vaultLockedHint')));
       patchText(forgotToggleBtn, t(key('forgotPwdToggle')));
       patchAttr(unlockInput, 'placeholder', t(key('unlockPlaceholder')));
       patchAttr(unlockInput, 'disabled', !canOperateVault);
       patchText(unlockSubmitBtn, t(key('unlockBtn')));
       patchAttr(unlockSubmitBtn, 'disabled', !canOperateVault);
-      patchAttr(resetRow, 'hidden', !forgotResetOpen || !vaultLocked);
+      const showResetSection = forgotResetOpen && vaultLocked;
+      patchAttr(resetHintEl, 'hidden', !showResetSection);
+      patchAttr(resetActionsWrap, 'hidden', !showResetSection);
+      patchAttr(resetVaultBtn, 'hidden', !showResetSection);
       patchText(resetHintEl, t(key('resetVaultHint')));
       const armedVaultReset =
         confirmTarget?.type === 'resetVault' && confirmTarget.key === 'vault';
       patchText(resetVaultBtn, t(key(armedVaultReset ? 'resetVaultConfirm' : 'resetVaultBtn')));
       patchAttr(resetVaultBtn, 'disabled', !canOperateVault);
 
-      // Passphrase setup / manage drawer
-      const showPwdDrawer = pwdDrawerOpen && !vaultLocked && supported === true;
+      // Passphrase Drawer (`SegmentedControl` for Change / Disable)
+      const showPwdDrawer = riskAccepted && pwdDrawerOpen && !vaultLocked && supported === true;
       patchAttr(pwdForm, 'hidden', !showPwdDrawer);
       if (showPwdDrawer) {
         const isSetNew = !vaultSecurity.enabled;
         const isDisableMode = !isSetNew && pwdManageMode === 'disable';
-        patchAttr(pwdTabsWrap, 'hidden', isSetNew);
-        patchText(pwdTabChangeBtn, t(key('pwdTabChange')));
-        patchClasses(pwdTabChangeBtn, { 'is-active': pwdManageMode === 'change' });
-        patchText(pwdTabDisableBtn, t(key('pwdTabDisable')));
-        patchClasses(pwdTabDisableBtn, { 'is-active': isDisableMode });
+        patchAttr(pwdModeSegment.el, 'hidden', isSetNew);
+        if (!isSetNew) {
+          pwdModeSegment.setProps({ modelValue: pwdManageMode, options: getPwdModeOptions() });
+        }
 
         patchAttr(pwdCurrentInput, 'hidden', isSetNew);
         patchAttr(pwdCurrentInput, 'placeholder', t(key('pwdCurrentPlaceholder')));
@@ -30015,7 +31416,7 @@ const SettingsAccountTab = defineComponent({
         patchClasses(pwdSubmitBtn, {
           'btn-primary': !isDisableMode,
           'btn-secondary': isDisableMode,
-          'account-confirm-danger-btn': isDisableMode,
+          'btn-danger-confirm': isDisableMode,
         });
         patchAttr(pwdSubmitBtn, 'disabled', !canOperateVault);
         patchText(pwdHint, t(key(isSetNew ? 'pwdSetHint' : 'pwdManageHint')));
@@ -30034,7 +31435,7 @@ const SettingsAccountTab = defineComponent({
       patchAttr(reload, 'disabled', Boolean(operation));
       patchClasses(reload, { 'is-spinning': operation === 'list' });
 
-      patchAttr(form, 'hidden', !importOpen || vaultLocked || supported === false);
+      patchAttr(form, 'hidden', !riskAccepted || !importOpen || vaultLocked || supported === false);
       patchAttr(credential, 'placeholder', t(key('credentialPlaceholder')));
       patchAttr(credential, 'disabled', !canWrite);
       patchText(save, t(key('save')));
@@ -30073,11 +31474,8 @@ const SettingsAccountTab = defineComponent({
       patchText(loginLink, t(key('openLoginPage')));
       patchAttr(loginLink, 'href', authUrl || null);
       patchAttr(loginLink, 'hidden', !authUrl);
-      patchClasses(loginStrip, {
-        'is-error': loginIsError,
-        'is-ok': loginSession?.status === 'success',
-        'is-info': loginActive,
-      });
+      patchAttr(loginLinkWrap, 'hidden', !authUrl);
+      patchClasses(loginStrip, { 'is-restart': !loginIsError });
       patchAttr(loginStrip, 'hidden', !hasLoginSession || !loginMessageKey);
 
       const failedSwitch =
@@ -30097,7 +31495,6 @@ const SettingsAccountTab = defineComponent({
       patchClasses(feedback, {
         'is-error': isFeedbackError,
         'is-ok': isFeedbackOk,
-        'is-info': !isFeedbackError && !isFeedbackOk && Boolean(message),
       });
       patchAttr(feedback, 'hidden', !message);
 
@@ -30106,16 +31503,38 @@ const SettingsAccountTab = defineComponent({
         activeEmail !== selectedEmail &&
         switchState?.state === 'written' &&
         status !== 'restarting';
-      patchText(pending, waiting ? t(key('pending'), { email: selectedEmail }) : '');
+      patchText(pendingDesc, waiting ? t(key('pending'), { email: selectedEmail }) : '');
       patchAttr(pending, 'hidden', !waiting);
 
-      const entries = buildUnifiedAccountEntries(activeEmail);
-      patchAttr(cardsHost, 'hidden', entries.length === 0);
+      const backupEntries = riskAccepted
+        ? accounts
+            .filter((addr) => addr && addr !== activeEmail)
+            .map((addr) => ({ email: addr, isActive: false, isSaved: true }))
+        : [];
+      patchAttr(backupCardsHost, 'hidden', backupEntries.length === 0);
+      patchKeyedList(backupCardsHost, backupEntries, {
+        keyFn: (entry) => entry.email,
+        sigFn: (entry) =>
+          JSON.stringify([
+            locale,
+            selectedEmail,
+            switchState?.state || '',
+            canWrite,
+            confirmTarget?.key === entry.email ? confirmTarget.type : '',
+            savedQuotas.get(entry.email),
+            quotaVisibleLoading.has(entry.email),
+            quotaErrors.get(entry.email),
+          ]),
+        createRow: createAccountCardDom,
+        updateRow: (row, entry) => updateAccountCardDom(row, entry, cardCtx),
+      });
+
+      const showEmpty = !activeEmail && (!riskAccepted || backupEntries.length === 0);
       patchText(
         emptyTextEl,
         t(
           key(
-            supported === null
+            supported === null && !activeEmail
               ? 'loading'
               : account?.status === 'signedOut'
                 ? 'signedOut'
@@ -30123,217 +31542,7 @@ const SettingsAccountTab = defineComponent({
           )
         )
       );
-      patchAttr(emptyPanel, 'hidden', entries.length > 0);
-
-      patchKeyedList(cardsHost, entries, {
-        keyFn: (entry) => entry.email,
-        sigFn: (entry) =>
-          JSON.stringify([
-            locale,
-            entry.isActive,
-            entry.isSaved,
-            selectedEmail,
-            switchState?.state || '',
-            canWrite,
-            confirmTarget?.key === entry.email ? confirmTarget.type : '',
-            entry.isActive ? null : savedQuotas.get(entry.email),
-            quotaVisibleLoading.has(entry.email),
-            entry.isActive ? null : quotaErrors.get(entry.email),
-            entry.isActive ? quotas : null,
-            entry.isActive ? activeTierBadge : '',
-          ]),
-        createRow: (entry) => {
-          const activeDot = h('span', { className: 'dot-swatch account-active-dot', hidden: true });
-          const emailEl = h('span', {
-            className: 'settings-account-identity account-card-email',
-            text: entry.email,
-            title: entry.email,
-          });
-          const tierPill = h('span', { className: 'account-tag is-tier', hidden: true });
-          const statePill = h('span', { className: 'account-tag', hidden: true });
-
-          const captureBtn = h('button', {
-            type: 'button',
-            className: 'btn-secondary account-card-btn',
-            hidden: true,
-            onClick: () => {
-              clearConfirmTarget(false);
-              void request('capture');
-            },
-          });
-          const selectBtn = h('button', {
-            type: 'button',
-            className: 'btn-secondary account-card-btn',
-            hidden: true,
-            onClick: () => {
-              armOrRunConfirm('switch', entry.email, () => {
-                const curActive = resolveActiveEmail();
-                void request('switch', {
-                  email: entry.email,
-                  ...(curActive ? { activeEmail: curActive } : {}),
-                });
-              });
-            },
-          });
-          const loadQuotaBtn = h(
-            'button',
-            {
-              type: 'button',
-              className: 'icon-btn settings-account-load-quota account-icon-btn',
-              hidden: true,
-              onClick: () => {
-                clearConfirmTarget(false);
-                void request('quota', { email: entry.email, manual: true });
-              },
-            },
-            [createSvgIcon('refresh', { size: 12 })]
-          );
-          const removeBtn = h(
-            'button',
-            {
-              type: 'button',
-              className: 'icon-btn slot-remove-btn settings-account-remove account-icon-btn',
-              hidden: true,
-              onClick: () => {
-                armOrRunConfirm('remove', entry.email, () => {
-                  void request('remove', { email: entry.email });
-                });
-              },
-            },
-            [createSvgIcon('close', { size: 12 })]
-          );
-          const removeConfirmBtn = h('button', {
-            type: 'button',
-            className:
-              'btn-secondary account-card-btn account-confirm-danger-btn settings-account-remove-confirm',
-            hidden: true,
-            onClick: () => {
-              armOrRunConfirm('remove', entry.email, () => {
-                void request('remove', { email: entry.email });
-              });
-            },
-          });
-
-          const poolsWrap = h('div', { className: 'account-pools-stack' });
-          const noteEl = h('div', { className: 'settings-action-desc account-card-note', hidden: true });
-
-          const cardEl = h('section', { className: 'panel account-card' }, [
-            h('div', { className: 'panel-header account-card-head' }, [
-              h('div', { className: 'account-card-meta' }, [
-                activeDot,
-                emailEl,
-                tierPill,
-                statePill,
-              ]),
-              h('div', { className: 'account-card-actions' }, [
-                captureBtn,
-                selectBtn,
-                loadQuotaBtn,
-                removeBtn,
-                removeConfirmBtn,
-              ]),
-            ]),
-            poolsWrap,
-            noteEl,
-          ]);
-          return {
-            el: cardEl,
-            refs: {
-              cardEl,
-              activeDot,
-              emailEl,
-              tierPill,
-              statePill,
-              captureBtn,
-              selectBtn,
-              loadQuotaBtn,
-              removeBtn,
-              removeConfirmBtn,
-              poolsWrap,
-              noteEl,
-            },
-          };
-        },
-        updateRow: (row, entry) => {
-          const addr = entry.email;
-          const active = entry.isActive;
-          const isSaved = entry.isSaved;
-          const written = addr === selectedEmail && !active && switchState?.state === 'written';
-          const cached = active ? null : savedQuotas.get(addr);
-          const tierText = active
-            ? activeTierBadge
-            : cached?.tierName || cached?.tierId
-              ? formatAccountTierBadge({
-                  tierId: cached.tierId,
-                  tierName: cached.tierName,
-                  tierMultiplier: cached.tierMultiplier,
-                })
-              : '';
-          const isSpinning = !active && quotaVisibleLoading.has(addr);
-          const canSwitch = !active && isSaved;
-          const armedSwitch = confirmTarget?.type === 'switch' && confirmTarget.key === addr;
-          const armedRemove = confirmTarget?.type === 'remove' && confirmTarget.key === addr;
-
-          patchClasses(row.cardEl, { 'is-active-account': active });
-          patchAttr(row.activeDot, 'hidden', !active);
-          patchText(row.emailEl, addr);
-          patchAttr(row.emailEl, 'title', addr);
-
-          patchText(row.tierPill, tierText);
-          patchAttr(row.tierPill, 'hidden', !tierText);
-
-          patchText(row.statePill, active ? t(key('active')) : written ? t(key('written')) : '');
-          patchClasses(row.statePill, { 'is-active': active, 'is-written': written });
-          patchAttr(row.statePill, 'hidden', !active && !written);
-
-          patchText(row.captureBtn, t(key('capture')));
-          patchAttr(row.captureBtn, 'hidden', !active || isSaved || supported === false);
-          patchAttr(row.captureBtn, 'disabled', !canWrite);
-
-          patchText(row.selectBtn, t(key(armedSwitch ? 'switchConfirm' : 'switch')));
-          patchAttr(row.selectBtn, 'title', t(key('switchHint')));
-          patchClasses(row.selectBtn, {
-            'settings-account-switch': canSwitch,
-            'is-confirm-warn': armedSwitch,
-          });
-          patchAttr(row.selectBtn, 'hidden', !canSwitch);
-          patchAttr(row.selectBtn, 'disabled', !canWrite);
-
-          patchAttr(row.loadQuotaBtn, 'title', t(key(isSpinning ? 'loadingQuota' : 'loadQuota')));
-          patchAttr(row.loadQuotaBtn, 'aria-label', t(key('loadQuota')));
-          patchClasses(row.loadQuotaBtn, { 'is-spinning': isSpinning });
-          // Active account exclusively uses host telemetry — hide OAuth quota refresh on active card
-          patchAttr(row.loadQuotaBtn, 'hidden', active || !isSaved);
-          patchAttr(row.loadQuotaBtn, 'disabled', !canWrite || isSpinning);
-
-          patchAttr(row.removeBtn, 'title', t(key('remove')));
-          patchAttr(row.removeBtn, 'aria-label', t(key('remove')));
-          patchAttr(row.removeBtn, 'hidden', !isSaved || armedRemove);
-          patchAttr(row.removeBtn, 'disabled', !canWrite);
-
-          patchText(row.removeConfirmBtn, t(key('removeConfirm')));
-          patchAttr(row.removeConfirmBtn, 'hidden', !isSaved || !armedRemove);
-          patchAttr(row.removeConfirmBtn, 'disabled', !canWrite);
-
-          const displayedPools = active ? quotas?.pools || [] : cached?.pools || [];
-          const poolCount = renderQuotaRows(row.poolsWrap, displayedPools);
-          const quotaError = active ? '' : quotaErrors.get(addr);
-
-          let noteText = '';
-          if (quotaError) {
-            noteText = t(key(quotaError));
-          } else if (active && poolCount > 0 && quotas?.meta?.isStale) {
-            noteText = t(key('quotaStale'));
-          } else if (active && poolCount === 0) {
-            noteText = t(key('noQuota'));
-          } else if (!active && cached && poolCount === 0) {
-            noteText = t(key('emptyCredentialQuota'));
-          }
-          patchText(row.noteEl, noteText);
-          patchClasses(row.noteEl, { 'is-error': Boolean(quotaError) });
-          patchAttr(row.noteEl, 'hidden', !noteText);
-        },
-      });
+      patchAttr(emptyPanel, 'hidden', !showEmpty);
 
       props.onLayoutChange?.();
     }
@@ -30369,6 +31578,7 @@ const SettingsAccountTab = defineComponent({
     }
 
     async function request(action, fields = {}) {
+      if (action !== 'list' && !draftRiskAccepted) return;
       if (action === 'quota') return refreshQuota(fields.email, Boolean(fields.manual));
       if (operation) return;
       operation = action;
@@ -30387,6 +31597,9 @@ const SettingsAccountTab = defineComponent({
         if (typeof result?.actionNonce === 'string' && result.actionNonce) {
           actionNonce = result.actionNonce;
         }
+        if (result?.quotaHistory && typeof result.quotaHistory === 'object') {
+          quotaHistory = { ...quotaHistory, ...result.quotaHistory };
+        }
         if (result?.error) {
           if (result.error === 'unsupported') supported = false;
           if (result.error === 'vaultLocked') {
@@ -30402,6 +31615,7 @@ const SettingsAccountTab = defineComponent({
           return;
         }
         supported = result?.supported === true;
+        riskLockedFromServer = Boolean(result?.riskLocked);
         accounts = result?.accounts || [];
         selectedEmail = result?.selectedEmail || '';
         switchState = result?.switchState || null;
@@ -30422,7 +31636,7 @@ const SettingsAccountTab = defineComponent({
           savedQuotas.set(addr, snapshot);
         }
         syncWarmCache();
-        if (action !== 'switch' && !isVaultLocked()) {
+        if (action !== 'switch' && draftRiskAccepted && !riskLockedFromServer && !isVaultLocked()) {
           void refreshSavedQuotas();
         }
         if (action === 'save' || action === 'capture') {
@@ -30478,7 +31692,7 @@ const SettingsAccountTab = defineComponent({
         return;
       }
       await request('list');
-      if (!disposed && !isVaultLocked() && email !== resolveActiveEmail()) {
+      if (!disposed && draftRiskAccepted && !isVaultLocked() && email !== resolveActiveEmail()) {
         void refreshQuota(email, false);
       }
     }
@@ -30513,13 +31727,12 @@ const SettingsAccountTab = defineComponent({
     }
 
     async function refreshSavedQuotas() {
-      if (refreshingSavedQuotas || isVaultLocked()) return;
+      if (refreshingSavedQuotas || !draftRiskAccepted || isVaultLocked()) return;
       refreshingSavedQuotas = true;
       try {
         const activeEmail = resolveActiveEmail();
         const ttlMs = refreshMinutes * 60_000;
         const staleTargets = accounts.filter((addr) => {
-          // Active account exclusively uses host telemetry — never poll via OAuth
           if (!addr || addr === activeEmail) return false;
           const cached = savedQuotas.get(addr);
           if (needsLegacyUltraTierRefresh(cached)) return true;
@@ -30527,7 +31740,7 @@ const SettingsAccountTab = defineComponent({
         });
         const BATCH_SIZE = 3;
         for (let i = 0; i < staleTargets.length; i += BATCH_SIZE) {
-          if (disposed || operation === 'switch' || isVaultLocked()) break;
+          if (disposed || operation === 'switch' || !draftRiskAccepted || isVaultLocked()) break;
           const batch = staleTargets.slice(i, i + BATCH_SIZE);
           await Promise.all(batch.map((addr) => refreshQuota(addr, false)));
         }
@@ -30538,7 +31751,14 @@ const SettingsAccountTab = defineComponent({
 
     async function refreshQuota(addr, manual = false) {
       const activeEmail = resolveActiveEmail();
-      if (!addr || addr === activeEmail || isVaultLocked() || quotaInFlight.has(addr) || disposed) {
+      if (
+        !addr ||
+        addr === activeEmail ||
+        !draftRiskAccepted ||
+        isVaultLocked() ||
+        quotaInFlight.has(addr) ||
+        disposed
+      ) {
         return;
       }
       const hasCachedPools = Boolean(savedQuotas.get(addr)?.pools?.length);
@@ -30570,9 +31790,10 @@ const SettingsAccountTab = defineComponent({
           const nextTierId = result.tierId || prev.tierId || '';
           const nextTierName = result.tierName || prev.tierName || '';
           const nextTierMult = result.tierMultiplier || prev.tierMultiplier || '';
+          const fetchedAt = result.fetchedAt || Date.now();
           savedQuotas.set(addr, {
             pools: result.pools,
-            fetchedAt: result.fetchedAt || Date.now(),
+            fetchedAt,
             ...(nextTierId ? { tierId: nextTierId } : {}),
             ...(nextTierName ? { tierName: nextTierName } : {}),
             ...(nextTierMult ? { tierMultiplier: nextTierMult } : {}),
@@ -30661,24 +31882,41 @@ const SettingsAccountTab = defineComponent({
         settingsData?.accountQuotaRefreshMinutes !== undefined
           ? normalizeAccountQuotaRefreshMinutes(settingsData.accountQuotaRefreshMinutes)
           : refreshMinutes;
-      if (account === value && quotas === quotaData && refreshMinutes === nextRefreshMins) return;
+      const nextRiskAccepted =
+        acceptingRisk || settingsData?.accountSwitchRiskAccepted === undefined
+          ? draftRiskAccepted
+          : Boolean(settingsData.accountSwitchRiskAccepted);
+      if (
+        account === value &&
+        quotas === quotaData &&
+        refreshMinutes === nextRefreshMins &&
+        draftRiskAccepted === nextRiskAccepted
+      ) {
+        return;
+      }
+      const becameRiskUnlocked = !draftRiskAccepted && nextRiskAccepted;
       account = value;
       quotas = quotaData;
       refreshMinutes = nextRefreshMins;
+      draftRiskAccepted = nextRiskAccepted;
       render();
+      if (becameRiskUnlocked && riskLockedFromServer && !operation) {
+        void request('list');
+      }
     }
 
     const quotaScheduleTimer = setInterval(() => {
-      if (!disposed && accounts.length > 0 && !operation && !isVaultLocked()) {
+      if (!disposed && draftRiskAccepted && accounts.length > 0 && !operation && !isVaultLocked()) {
         void refreshSavedQuotas();
       }
     }, 60_000);
     quotaScheduleTimer.unref?.();
 
     const root = h('div', { className: 'settings-tab-stack settings-account-root' }, [
-      toolbarPanel,
-      cardsHost,
+      quotaTrendCard.el,
+      activeCardHost,
       emptyPanel,
+      riskStage,
     ]);
     render();
     onCleanup(() => {
@@ -30688,6 +31926,8 @@ const SettingsAccountTab = defineComponent({
       if (statusClearTimer) clearTimeout(statusClearTimer);
       if (confirmClearTimer) clearTimeout(confirmClearTimer);
       refreshIntervalSelect.destroy();
+      pwdModeSegment.destroy();
+      quotaTrendCard.destroy();
       loginGeneration += 1;
       credential.value = '';
       clearPasswordInputs();
@@ -30696,9 +31936,17 @@ const SettingsAccountTab = defineComponent({
       el: root,
       refs: {
         renderAccount,
-        refreshLabels: render,
+        refreshLabels: () => {
+          quotaTrendCard.refs.refreshLabels();
+          render();
+        },
         preload: () => (supported === null ? request('list') : Promise.resolve()),
-        load: () => (supported === null ? request('list') : refreshSavedQuotas()),
+        load: () =>
+          supported === null || (draftRiskAccepted && riskLockedFromServer)
+            ? request('list')
+            : draftRiskAccepted
+              ? refreshSavedQuotas()
+              : Promise.resolve(),
       },
     };
   },

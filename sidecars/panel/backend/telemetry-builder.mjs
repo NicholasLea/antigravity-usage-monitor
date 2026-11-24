@@ -45,6 +45,7 @@ import {
 } from './model-pricing.mjs';
 import { getCloudStatus, getPricingPhaseEpoch, pricingCatalogRevision } from './pricing-catalog.mjs';
 import { buildOfficialQuotaPools } from './quota-pools.mjs';
+import { recordAccountQuotaSnapshot } from './account-quota-history.mjs';
 import { updatePoolQuotaReservationEstimates } from './quota-reservation.mjs';
 import { getDefaultCloudCodeProxyStatus } from './cloudcode-proxy.mjs';
 import { getDefaultWindowBridgeStatus } from './window-bridge.mjs';
@@ -2293,6 +2294,20 @@ export async function buildTelemetryPayloadInternal(
     const order = { Gemini: 0, Argon: 1, Carbon: 2, 'Claude & GPT': 3 };
     return (order[a.family] ?? 99) - (order[b.family] ?? 99);
   });
+  if (
+    !isRemote &&
+    accountStatus === 'signedIn' &&
+    userStatus?.email &&
+    officialQuotaInfo?.data &&
+    !officialQuotaInfo.isStale
+  ) {
+    recordAccountQuotaSnapshot(
+      userStatus.email,
+      sortedQuotaPools,
+      officialQuotaInfo.fetchedAtMs || Date.now(),
+      { isActiveHost: true }
+    );
+  }
   const weeklyCapacityEstimate = buildWeeklyCapacityEstimate({
     sortedPools: sortedQuotaPools,
     isCustomWeeklyMode,

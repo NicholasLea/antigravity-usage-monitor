@@ -662,6 +662,9 @@ export function isEquivalentTelemetry(prev, next) {
   ) {
     return false;
   }
+  if (Boolean(pSet?.accountSwitchRiskAccepted) !== Boolean(nSet?.accountSwitchRiskAccepted)) {
+    return false;
+  }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
   if (!sameArr(pSet?.hoverModules, nSet?.hoverModules)) return false;
   if (!sameArr(pSet?.overviewModules, nSet?.overviewModules)) return false;
@@ -1925,6 +1928,9 @@ export async function saveSettingsPatch(patch) {
     safePatch.accountQuotaRefreshMinutes = normalizeClientAccountQuotaRefreshMinutes(
       safePatch.accountQuotaRefreshMinutes
     );
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'accountSwitchRiskAccepted')) {
+    safePatch.accountSwitchRiskAccepted = Boolean(safePatch.accountSwitchRiskAccepted);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'topbarCapsuleSlots')) {
     safePatch.topbarCapsuleSlots = normalizeClientTopbarSlots(safePatch.topbarCapsuleSlots);

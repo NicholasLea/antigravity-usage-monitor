@@ -24,7 +24,15 @@ import {
   resetVaultUnlockFailures,
   verifyAccountActionNonce,
 } from '../backend/account-vault-crypto.mjs';
+import {
+  createAccountQuotaHistoryTracker,
+  sanitizeQuotaHistoryPoints,
+} from '../backend/account-quota-history.mjs';
 import { executeAccountCredentialAction } from '../backend/api-actions.mjs';
+import {
+  buildQuotaWindowSeries,
+  resolveQuotaWindowBounds,
+} from '../src/components/widgets/AccountQuotaTrendCard.js';
 
 test('accepts a shared OAuth credential or refresh token, and rejects other credential types', () => {
   const refreshToken = '1//synthetic-refresh-token-for-test';
@@ -412,13 +420,70 @@ test('enforces OAuth client_id allowlist, minimizes at-rest vault payload, and v
   assert.equal(verifyAccountActionNonce(`${nonce}x`, 1_700_000_000_000), false);
   assert.equal(verifyAccountActionNonce(nonce, 1_700_000_000_000 + 45 * 60_000), false);
 
-  const missingNonceRes = await executeAccountCredentialAction({
+  // Default risk gate blocks mutations until accepted, and list returns riskLocked without vault access
+  const riskBlockedRes = await executeAccountCredentialAction({
     action: 'remove',
     email: 'a@example.com',
   });
+  assert.equal(JSON.parse(riskBlockedRes.body).error, 'riskNotAccepted');
+
+  const riskLockedList = JSON.parse((await executeAccountCredentialAction(undefined)).body);
+  assert.equal(riskLockedList.riskLocked, true);
+  assert.deepEqual(riskLockedList.accounts, []);
+
+  // Once risk check passes, mutations still require a valid HMAC actionNonce
+  const missingNonceRes = await executeAccountCredentialAction(
+    { action: 'remove', email: 'a@example.com' },
+    { bypassRiskCheck: true }
+  );
   const missingBody = JSON.parse(missingNonceRes.body);
   assert.equal(missingBody.error, 'invalidActionNonce');
   assert.equal(typeof missingBody.actionNonce, 'string');
+
+  // Quota history tracker compresses flat heartbeats while preserving real dips and QR seeds
+  let persistedHistory = null;
+  const histTracker = createAccountQuotaHistoryTracker({
+    loadState: () => null,
+    saveState: (p) => {
+      persistedHistory = p;
+    },
+    loadSeedEvents: () => ({
+      events: [
+        { ts: '2026-11-24T08:00:00.000Z', pool: 'Gemini', win: '5h', usedPct: 4.0 },
+        { ts: '2026-11-24T09:00:00.000Z', pool: 'Gemini', win: '5h', usedPct: 10.4 },
+      ],
+    }),
+  });
+  const baseTs = Date.parse('2026-11-24T10:00:00.000Z');
+  histTracker.recordSnapshot(
+    'owner@example.com',
+    [
+      { poolKey: 'Gemini', remainingPct: 89.6, weeklyRemainingPct: 89.4 },
+      { poolKey: 'Claude & GPT', remainingPct: 100, weeklyRemainingPct: 100 },
+    ],
+    baseTs,
+    { isActiveHost: true }
+  );
+  histTracker.recordSnapshot(
+    'owner@example.com',
+    [{ poolKey: 'Claude & GPT', remainingPct: 100, weeklyRemainingPct: 100 }],
+    baseTs + 20 * 60_000
+  );
+  histTracker.recordSnapshot(
+    'owner@example.com',
+    [{ poolKey: 'Claude & GPT', remainingPct: 100, weeklyRemainingPct: 100 }],
+    baseTs + 40 * 60_000
+  );
+  histTracker.flush(baseTs + 40 * 60_000);
+  const payload = histTracker.getHistoryPayload({ allowedEmails: ['owner@example.com'] });
+  assert.equal(
+    payload['owner@example.com'].pools['Claude & GPT'].points.length,
+    2,
+    'Collinear flat heartbeats must compress in-place to start + latest endpoints'
+  );
+  assert.equal(payload['owner@example.com'].pools.Gemini.points[0][1], 96);
+  assert.equal(payload['owner@example.com'].pools.Gemini.points.at(-1)[1], 89.6);
+  assert.ok(persistedHistory?.accounts?.['owner@example.com']);
 });
 
 test('secondary passphrase encrypts credentials with scrypt + AES-256-GCM, preserves cached list while locked, throttles brute force, and rotates/resets cleanly', { skip: process.platform !== 'win32' }, async (t) => {
@@ -594,4 +659,109 @@ test('secondary passphrase encrypts credentials with scrypt + AES-256-GCM, prese
     options
   );
   assert.deepEqual(resetRes.accounts, []);
+});
+
+test('cycle quota chart strips pre-reset tail points and cross-account impulse spikes', () => {
+  const cycleStartMs = 1795518262000; // 20:04:22
+  const reset5hMs = cycleStartMs + 5 * 3600_000; // 01:04:22
+  const nowMs = cycleStartMs + 3.5 * 3600_000;
+
+  // Unused 100% pool appears first with rolling reset (now + 5h), active Gemini pool second
+  const pools = [
+    {
+      poolKey: 'Argon',
+      label: 'Argon',
+      reset5hMs: nowMs + 5 * 3600_000 - 15_000,
+      resetWeeklyMs: nowMs + 7 * 86400_000,
+      live5h: 100,
+      liveWk: 100,
+      points: [[nowMs, 100, 100]],
+    },
+    {
+      poolKey: 'Gemini',
+      label: 'Gemini',
+      reset5hMs,
+      resetWeeklyMs: nowMs + 6 * 86400_000,
+      live5h: 88.2,
+      liveWk: 89.2,
+      points: [
+        [cycleStartMs - 47_000, 84.5, 92.4], // 20:03:35 pre-reset old cycle point
+        [cycleStartMs + 3_582, 100, 92.4], // 20:04:25 fresh cycle reset
+        [cycleStartMs + 58 * 60_000, 94.8, 90.6], // 21:02:00
+        [cycleStartMs + 61 * 60_000, 100, 100], // 21:05:19 isolated cross-account init spike
+        [cycleStartMs + 63 * 60_000, 94.7, 90.6], // 21:07:33 back to real slope
+        [nowMs, 88.2, 89.2],
+      ],
+    },
+  ];
+
+  const bounds = resolveQuotaWindowBounds({
+    pools,
+    selectedRange: 'cycle',
+    selectedWin: '5h',
+    selectedPool: 'all',
+    nowMs,
+  });
+  assert.equal(bounds.startMs, cycleStartMs, 'Active consumed pool must anchor cycle start');
+
+  const built = buildQuotaWindowSeries({
+    visiblePools: pools,
+    rawBounds: bounds,
+    selectedRange: 'cycle',
+    selectedWin: '5h',
+    nowMs,
+  });
+  const geminiSeries = built.rawBuilt.find((s) => s.poolKey === 'Gemini');
+  assert.ok(geminiSeries);
+  assert.equal(
+    geminiSeries.rawPoints[0].val,
+    100,
+    'Cycle start must begin at 100% without carrying 84.5% from the expired cycle'
+  );
+  for (let i = 1; i < geminiSeries.rawPoints.length; i++) {
+    const jump = geminiSeries.rawPoints[i].val - geminiSeries.rawPoints[i - 1].val;
+    assert.ok(jump < 1, `Unexpected upward spike inside cycle series: +${jump}`);
+  }
+
+  // Even when a stale pre-reset poll lands slightly inside cycleStartMs due to clock jitter,
+  // cycle mode must slice after the reset jump instead of drawing an upward vertical wall.
+  const jitterBuilt = buildQuotaWindowSeries({
+    visiblePools: [
+      {
+        poolKey: 'Gemini',
+        label: 'Gemini',
+        reset5hMs,
+        resetWeeklyMs: 0,
+        live5h: 95,
+        liveWk: null,
+        points: [
+          [cycleStartMs + 2_000, 84.5, 92.4],
+          [cycleStartMs + 15_000, 100, 92.4],
+          [nowMs, 95, 91.8],
+        ],
+      },
+    ],
+    rawBounds: bounds,
+    selectedRange: 'cycle',
+    selectedWin: '5h',
+    nowMs,
+  });
+  assert.equal(jitterBuilt.rawBuilt[0].rawPoints[0].val, 100);
+
+  // Backend history sanitizer removes isolated cross-account impulse spikes while keeping real resets
+  const persistedPts = [
+    [cycleStartMs - 60_000, 84.5, 92.4],
+    [cycleStartMs + 3_000, 100, 92.4],
+    [cycleStartMs + 58 * 60_000, 94.8, 90.6],
+    [cycleStartMs + 61 * 60_000, 100, 100],
+    [cycleStartMs + 63 * 60_000, 94.7, 90.6],
+  ];
+  assert.equal(sanitizeQuotaHistoryPoints(persistedPts), true);
+  assert.equal(persistedPts.length, 4);
+  assert.equal(persistedPts[1][1], 100, 'Genuine 5h reset stays intact for multi-cycle views');
+  assert.equal(
+    persistedPts.some((p) => p[0] === cycleStartMs + 61 * 60_000),
+    false,
+    'Isolated cross-account [100, 100] spike is removed'
+  );
 });

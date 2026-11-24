@@ -1,4 +1,8 @@
-/** @fileoverview Unified multi-account switcher, passphrase vault UI, and per-pool quota cards. */
+/**
+ * @fileoverview Multi-account switcher, quota trajectory chart, risk gate, and passphrase vault UI.
+ * Reuses `SegmentedControl`, `CustomSelect`, `AccountQuotaTrendCard`, `.ctx-risk-mask`,
+ * `.settings-bridge-notice`, `.status-tag`, `.btn-ghost-sm`, `.btn-danger-confirm`, and `.quota-pool-row`.
+ */
 
 import { defineComponent } from '../../core/component.js';
 import {
@@ -14,6 +18,8 @@ import { callSidecarApi } from '../../core/httpClient.js';
 import { createSvgIcon, patchSvgIcon } from '../../icons/SvgIcon.js';
 import { getEffectiveLocale, t } from '../../i18n/index.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
+import { SegmentedControl } from '../../components/ui/SegmentedControl.js';
+import { AccountQuotaTrendCard } from '../../components/widgets/AccountQuotaTrendCard.js';
 import { formatAccountTierBadge } from '../../components/widgets/QuotaPoolsWidget.js';
 import {
   DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES,
@@ -34,7 +40,7 @@ const errors = new Set([
   'switchStartFailed', 'clientCloseFailed', 'clientRestartFailed',
   'loginStartFailed', 'loginExchangeFailed', 'loginExpired', 'loginDenied',
   'vaultLocked', 'wrongPassword', 'invalidPassword', 'passwordMismatch',
-  'passwordRateLimited', 'vaultDecryptFailed', 'invalidActionNonce',
+  'passwordRateLimited', 'vaultDecryptFailed', 'invalidActionNonce', 'riskNotAccepted',
 ]);
 
 const okToastKeys = new Set([
@@ -52,6 +58,13 @@ function getAccountRefreshOptions() {
     { value: 360, label: t(key('refresh6h')) },
     { value: 720, label: t(key('refresh12h')) },
     { value: 1440, label: t(key('refresh24h')) },
+  ];
+}
+
+function getPwdModeOptions() {
+  return [
+    { value: 'change', label: t(key('pwdTabChange')) },
+    { value: 'disable', label: t(key('pwdTabDisable')) },
   ];
 }
 
@@ -84,8 +97,9 @@ function renderQuotaRows(container, quotaPools) {
   );
   patchKeyedList(container, pools, {
     keyFn: (pool) => pool.poolKey || pool.poolLabel,
-    sigFn: (pool) =>
+    sigFn: (pool, idx) =>
       JSON.stringify([
+        idx > 0,
         locale,
         pool.poolLabel,
         pool.remainingPct,
@@ -94,32 +108,39 @@ function renderQuotaRows(container, quotaPools) {
         pool.weeklyResetTime,
       ]),
     createRow: () => {
-      const poolTitle = h('div', { className: 'account-pool-name' });
+      const poolTitle = h('div', { className: 'account-pool-label' });
 
-      const label5h = h('span', { className: 'settings-account-quota text-mono' });
-      const reset5h = h('span', { className: 'account-meter-reset text-mono', hidden: true });
+      const label5h = h('span', { className: 'quota-win-title settings-account-quota text-mono' });
+      const reset5h = h('span', { className: 'panel-meta quota-win-meta text-mono', hidden: true });
       const fill5h = h('div', { className: 'progress-fill' });
       const meter5h = h('div', { className: 'account-meter-col' }, [
-        h('div', { className: 'account-meter-head' }, [label5h, reset5h]),
-        h('div', { className: 'progress-track account-progress-track' }, [fill5h]),
+        h('div', { className: 'panel-header quota-win-head' }, [
+          h('span', { className: 'quota-win-left' }, [label5h]),
+          reset5h,
+        ]),
+        h('div', { className: 'progress-track' }, [fill5h]),
       ]);
 
-      const labelWk = h('span', { className: 'settings-account-quota text-mono' });
-      const resetWk = h('span', { className: 'account-meter-reset text-mono', hidden: true });
+      const labelWk = h('span', { className: 'quota-win-title settings-account-quota text-mono' });
+      const resetWk = h('span', { className: 'panel-meta quota-win-meta text-mono', hidden: true });
       const fillWk = h('div', { className: 'progress-fill' });
       const meterWk = h('div', { className: 'account-meter-col' }, [
-        h('div', { className: 'account-meter-head' }, [labelWk, resetWk]),
-        h('div', { className: 'progress-track account-progress-track' }, [fillWk]),
+        h('div', { className: 'panel-header quota-win-head' }, [
+          h('span', { className: 'quota-win-left' }, [labelWk]),
+          resetWk,
+        ]),
+        h('div', { className: 'progress-track' }, [fillWk]),
       ]);
 
       const gridEl = h('div', { className: 'account-pool-meters' }, [meter5h, meterWk]);
-      const el = h('div', { className: 'account-pool-group' }, [poolTitle, gridEl]);
+      const el = h('div', { className: 'quota-pool-row' }, [poolTitle, gridEl]);
       return {
         el,
-        refs: { poolTitle, gridEl, meter5h, label5h, reset5h, fill5h, meterWk, labelWk, resetWk, fillWk },
+        refs: { el, poolTitle, gridEl, meter5h, label5h, reset5h, fill5h, meterWk, labelWk, resetWk, fillWk },
       };
     },
-    updateRow: (refs, pool) => {
+    updateRow: (refs, pool, idx) => {
+      patchClasses(refs.el, { 'has-divider': idx > 0 });
       patchText(refs.poolTitle, pool.poolLabel || pool.poolKey);
       const has5h = Number.isFinite(pool.remainingPct);
       const hasWk = Number.isFinite(pool.weeklyRemainingPct);
@@ -164,18 +185,22 @@ function isValidVaultPassphrase(raw) {
 export const SettingsAccountTab = defineComponent({
   name: 'SettingsAccountTab',
   setup({ props, onCleanup }) {
+    const initialSettings = telemetryStore.getState().telemetry?.settings;
     let account = null;
     let quotas = null;
     let refreshMinutes = normalizeAccountQuotaRefreshMinutes(
-      telemetryStore.getState().telemetry?.settings?.accountQuotaRefreshMinutes ??
-        DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES
+      initialSettings?.accountQuotaRefreshMinutes ?? DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES
     );
+    let draftRiskAccepted = Boolean(initialSettings?.accountSwitchRiskAccepted);
+    let acceptingRisk = false;
+    let riskLockedFromServer = warmAccountCache ? Boolean(warmAccountCache.riskLocked) : true;
     let accounts = warmAccountCache ? [...warmAccountCache.accounts] : [];
     let selectedEmail = warmAccountCache ? warmAccountCache.selectedEmail : '';
     let supported = warmAccountCache ? warmAccountCache.supported : null;
     let vaultSecurity = warmAccountCache?.vaultSecurity
       ? { ...warmAccountCache.vaultSecurity }
       : { enabled: false, unlocked: true };
+    let quotaHistory = warmAccountCache?.quotaHistory ? { ...warmAccountCache.quotaHistory } : {};
     let actionNonce = warmAccountCache?.actionNonce || '';
     let operation = '';
     let status = '';
@@ -206,10 +231,12 @@ export const SettingsAccountTab = defineComponent({
       if (supported !== true) return;
       warmAccountCache = {
         supported,
+        riskLocked: riskLockedFromServer,
         accounts: [...accounts],
         selectedEmail,
         savedQuotasEntries: [...savedQuotas.entries()],
         vaultSecurity: { ...vaultSecurity },
+        quotaHistory: { ...quotaHistory },
         actionNonce,
       };
     }
@@ -260,12 +287,19 @@ export const SettingsAccountTab = defineComponent({
       pwdConfirmInput.value = '';
     }
 
+    // --- Section 1: Active Account Card Host ---
+    const activeCardHost = h('div', { className: 'account-cards-stack' });
+
+    // --- Section 2: Quota Trend Line Chart Card ---
+    const quotaTrendCard = AccountQuotaTrendCard();
+
+    // --- Section 3: Multi-Account Toolbar, Drawers, Backup Cards & Risk Gate ---
     const loginBtnLabel = h('span');
     const loginButton = h(
       'button',
       {
         type: 'button',
-        className: 'btn-primary settings-account-login account-toolbar-btn',
+        className: 'btn-primary settings-account-login',
         onClick: () => {
           clearConfirmTarget(false);
           void request('loginStart', { language: getEffectiveLocale() });
@@ -275,7 +309,7 @@ export const SettingsAccountTab = defineComponent({
     );
     const cancelLogin = h('button', {
       type: 'button',
-      className: 'btn-secondary settings-account-login-cancel account-toolbar-btn',
+      className: 'btn-secondary settings-account-login-cancel',
       hidden: true,
       onClick: () => request('loginCancel', { id: loginSession?.id }),
     });
@@ -284,7 +318,7 @@ export const SettingsAccountTab = defineComponent({
       'button',
       {
         type: 'button',
-        className: 'btn-secondary account-toolbar-btn',
+        className: 'btn-secondary',
         onClick: () => {
           clearConfirmTarget(false);
           importOpen = !importOpen;
@@ -305,13 +339,14 @@ export const SettingsAccountTab = defineComponent({
       'button',
       {
         type: 'button',
-        className: 'btn-secondary account-toolbar-btn settings-account-pwd-toggle',
+        className: 'btn-secondary settings-account-pwd-toggle',
         onClick: () => {
           clearConfirmTarget(false);
           pwdDrawerOpen = !pwdDrawerOpen;
           if (pwdDrawerOpen) {
             importOpen = false;
             pwdManageMode = 'change';
+            pwdModeSegment.setProps({ modelValue: 'change', options: getPwdModeOptions() });
           }
           clearPasswordInputs();
           render();
@@ -328,7 +363,7 @@ export const SettingsAccountTab = defineComponent({
       'button',
       {
         type: 'button',
-        className: 'btn-secondary account-toolbar-btn settings-account-lock-now',
+        className: 'btn-secondary settings-account-lock-now',
         hidden: true,
         onClick: () => {
           clearConfirmTarget(false);
@@ -370,17 +405,17 @@ export const SettingsAccountTab = defineComponent({
       'button',
       {
         type: 'button',
-        className: 'icon-btn account-reload-btn',
+        className: 'icon-btn',
         onClick: () => request('list'),
       },
       [createSvgIcon('refresh', { size: 13 })]
     );
 
-    // --- Locked Vault Unlock Strip ---
-    const unlockHintLabel = h('span');
+    // Locked Vault Notice (reusing `.settings-bridge-notice`)
+    const unlockHintLabel = h('span', { className: 'settings-bridge-title' });
     const forgotToggleBtn = h('button', {
       type: 'button',
-      className: 'account-link-btn settings-account-forgot-btn',
+      className: 'btn-ghost-sm settings-account-forgot-btn',
       onClick: () => {
         forgotResetOpen = !forgotResetOpen;
         clearConfirmTarget(false);
@@ -396,7 +431,7 @@ export const SettingsAccountTab = defineComponent({
     });
     const unlockSubmitBtn = h('button', {
       type: 'submit',
-      className: 'btn-primary account-toolbar-btn settings-account-unlock-submit',
+      className: 'btn-primary settings-account-unlock-submit',
     });
     const unlockForm = h(
       'form',
@@ -407,55 +442,47 @@ export const SettingsAccountTab = defineComponent({
       },
       [unlockInput, unlockSubmitBtn]
     );
-    const resetHintEl = h('span', { className: 'settings-action-desc' });
+    const resetHintEl = h('p', { className: 'settings-bridge-desc', hidden: true });
     const resetVaultBtn = h('button', {
       type: 'button',
-      className: 'btn-secondary account-card-btn account-confirm-danger-btn settings-account-reset-vault',
+      className: 'btn-secondary btn-danger-confirm settings-account-reset-vault',
+      hidden: true,
       onClick: () => {
         armOrRunConfirm('resetVault', 'vault', () => {
           void request('resetVault', { confirmReset: 'RESET' });
         });
       },
     });
-    const resetRow = h('div', { className: 'account-reset-row', hidden: true }, [
-      resetHintEl,
-      resetVaultBtn,
-    ]);
-    const unlockBox = h('div', { className: 'account-unlock-box settings-account-unlock-box', hidden: true }, [
-      h('div', { className: 'account-unlock-head' }, [
-        h('span', { className: 'account-unlock-title' }, [
-          createSvgIcon('lock', { size: 13 }),
-          unlockHintLabel,
+    const unlockBox = h(
+      'div',
+      { className: 'settings-bridge-notice settings-account-unlock-box', hidden: true },
+      [
+        h('div', { className: 'settings-bridge-head' }, [
+          h('span', { className: 'settings-bridge-head-main' }, [
+            createSvgIcon('lock', { size: 13, className: 'settings-bridge-icon' }),
+            unlockHintLabel,
+          ]),
+          forgotToggleBtn,
         ]),
-        forgotToggleBtn,
-      ]),
-      unlockForm,
-      resetRow,
-    ]);
+        unlockForm,
+        resetHintEl,
+        h('div', { className: 'settings-bridge-actions', hidden: true }, [resetVaultBtn]),
+      ]
+    );
+    const resetActionsWrap = resetVaultBtn.parentElement;
 
-    // --- Passphrase Setup / Manage Drawer ---
-    const pwdTabChangeBtn = h('button', {
-      type: 'button',
-      className: 'account-pwd-tab',
-      onClick: () => {
-        pwdManageMode = 'change';
+    // Passphrase Setup / Manage Drawer (reusing `SegmentedControl`!)
+    const pwdModeSegment = SegmentedControl({
+      ariaLabel: t(key('pwdBtnManage')),
+      modelValue: pwdManageMode,
+      options: getPwdModeOptions(),
+      onUpdateModelValue: (val) => {
+        pwdManageMode = val === 'disable' ? 'disable' : 'change';
+        pwdModeSegment.setProps({ modelValue: pwdManageMode, options: getPwdModeOptions() });
         clearPasswordInputs();
         render();
       },
     });
-    const pwdTabDisableBtn = h('button', {
-      type: 'button',
-      className: 'account-pwd-tab',
-      onClick: () => {
-        pwdManageMode = 'disable';
-        clearPasswordInputs();
-        render();
-      },
-    });
-    const pwdTabsWrap = h('div', { className: 'account-pwd-tabs', hidden: true }, [
-      pwdTabChangeBtn,
-      pwdTabDisableBtn,
-    ]);
     const pwdCurrentInput = h('input', {
       type: 'password',
       className: 'settings-text-input account-import-input settings-account-pwd-current',
@@ -480,9 +507,9 @@ export const SettingsAccountTab = defineComponent({
     });
     const pwdSubmitBtn = h('button', {
       type: 'submit',
-      className: 'btn-primary account-toolbar-btn settings-account-pwd-submit',
+      className: 'btn-primary settings-account-pwd-submit',
     });
-    const pwdHint = h('div', { className: 'settings-action-desc account-import-hint' });
+    const pwdHint = h('div', { className: 'settings-action-desc' });
     const pwdForm = h(
       'form',
       {
@@ -492,7 +519,7 @@ export const SettingsAccountTab = defineComponent({
         onSubmit: submitPasswordDrawer,
       },
       [
-        pwdTabsWrap,
+        pwdModeSegment.el,
         h('div', { className: 'account-import-row' }, [
           pwdCurrentInput,
           pwdNewInput,
@@ -503,7 +530,7 @@ export const SettingsAccountTab = defineComponent({
       ]
     );
 
-    // --- Credential Import Drawer ---
+    // Credential Import Drawer
     const credential = h('input', {
       type: 'password',
       className: 'settings-text-input account-import-input',
@@ -514,9 +541,9 @@ export const SettingsAccountTab = defineComponent({
     });
     const save = h('button', {
       type: 'submit',
-      className: 'btn-primary account-toolbar-btn',
+      className: 'btn-primary',
     });
-    const importHint = h('div', { className: 'settings-action-desc account-import-hint' });
+    const importHint = h('div', { className: 'settings-action-desc' });
     const form = h(
       'form',
       {
@@ -531,26 +558,27 @@ export const SettingsAccountTab = defineComponent({
       ]
     );
 
-    const loginMessage = h('div', {
-      className: 'settings-action-desc account-flow-msg',
+    // OAuth Browser Login & Switch Notices (reusing `.settings-bridge-notice`)
+    const loginMessage = h('p', {
+      className: 'settings-bridge-desc settings-action-desc',
       role: 'status',
       hidden: true,
     });
     const loginLink = h('a', {
-      className: 'account-flow-link',
+      className: 'settings-bridge-relaunch-btn',
       target: '_blank',
       rel: 'noopener noreferrer',
       hidden: true,
     });
-    const loginStrip = h('div', { className: 'account-flow-strip', hidden: true }, [
-      loginMessage,
-      loginLink,
-    ]);
-    const pending = h('div', {
-      className: 'settings-action-desc account-flow-strip is-warn',
-      role: 'status',
-      hidden: true,
-    });
+    const loginStrip = h(
+      'div',
+      { className: 'settings-bridge-notice is-restart', hidden: true },
+      [loginMessage, h('div', { className: 'settings-bridge-actions' }, [loginLink])]
+    );
+    const loginLinkWrap = loginLink.parentElement;
+
+    const pendingDesc = h('p', { className: 'settings-bridge-desc', role: 'status' });
+    const pending = h('div', { className: 'settings-bridge-notice', hidden: true }, [pendingDesc]);
 
     const toolbarPanel = h('section', { className: 'panel account-toolbar-panel' }, [
       h('div', { className: 'account-toolbar-row' }, [
@@ -574,36 +602,261 @@ export const SettingsAccountTab = defineComponent({
       pending,
     ]);
 
-    const cardsHost = h('div', { className: 'account-cards-stack' });
+    const backupCardsHost = h('div', { className: 'account-cards-stack' });
     const emptyPanel = h('section', { className: 'panel account-empty-panel', hidden: true }, [
       h('div', { className: 'settings-action-desc account-empty-text' }),
     ]);
     const emptyTextEl = emptyPanel.firstChild;
 
+    // Risk Gate Stage (100% shared `.ctx-risk-stage` / `.ctx-risk-mask` with `SettingsOtherTab`)
+    const riskTitleEl = h('strong', {
+      className: 'ctx-risk-title',
+      text: t('settings.oth.ctxRiskTitle'),
+    });
+    const riskBodyEl = h('p', {
+      className: 'ctx-risk-desc',
+      text: t(key('riskBody')),
+    });
+    const riskAcceptBtnText = h('span', { text: t('settings.oth.ctxRiskAcceptBtn') });
+    const riskAcceptBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary btn-danger-confirm ctx-risk-accept-btn settings-account-risk-accept',
+        onClick: async () => {
+          if (acceptingRisk || draftRiskAccepted) return;
+          acceptingRisk = true;
+          draftRiskAccepted = true;
+          render();
+          try {
+            await saveSettingsPatch({ accountSwitchRiskAccepted: true });
+            await request('list');
+          } catch {
+            draftRiskAccepted = false;
+            setTransientStatus('storeFailed', 2800);
+          } finally {
+            acceptingRisk = false;
+            if (!disposed) render();
+          }
+        },
+      },
+      [createSvgIcon('warning', { size: 12 }), riskAcceptBtnText]
+    );
+    const riskMask = h(
+      'div',
+      {
+        className: 'ctx-risk-mask settings-account-risk-mask',
+        role: 'region',
+        'aria-label': t('settings.oth.ctxRiskTitle'),
+      },
+      [
+        h('div', { className: 'ctx-risk-head' }, [
+          createSvgIcon('warning', { size: 14, className: 'ctx-risk-icon' }),
+          riskTitleEl,
+        ]),
+        riskBodyEl,
+        riskAcceptBtn,
+      ]
+    );
+    const managedControlsBody = h('div', { className: 'ctx-controls-body is-locked' }, [
+      toolbarPanel,
+      backupCardsHost,
+    ]);
+    const riskStage = h('div', { className: 'ctx-risk-stage' }, [managedControlsBody, riskMask]);
+
     function resolveActiveEmail() {
       return account?.status === 'signedIn' ? (account.email || '').trim().toLowerCase() : '';
     }
 
-    function buildUnifiedAccountEntries(activeEmail) {
-      const entries = [];
-      if (activeEmail) {
-        entries.push({
-          email: activeEmail,
-          isActive: true,
-          isSaved: accounts.includes(activeEmail),
-        });
-      }
-      for (let i = 0; i < accounts.length; i++) {
-        const addr = accounts[i];
-        if (addr && addr !== activeEmail) {
-          entries.push({
-            email: addr,
-            isActive: false,
-            isSaved: true,
+    function createAccountCardDom(entry) {
+      const emailEl = h('span', {
+        className: 'settings-account-identity account-card-email',
+        text: entry.email,
+        title: entry.email,
+      });
+      const tierPill = h('span', { className: 'status-tag state-synced', hidden: true });
+      const statePill = h('span', { className: 'status-tag', hidden: true });
+
+      const captureBtn = h('button', {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        hidden: true,
+        onClick: () => {
+          clearConfirmTarget(false);
+          void request('capture');
+        },
+      });
+      const selectBtn = h('button', {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        hidden: true,
+        onClick: () => {
+          armOrRunConfirm('switch', entry.email, () => {
+            const curActive = resolveActiveEmail();
+            void request('switch', {
+              email: entry.email,
+              ...(curActive ? { activeEmail: curActive } : {}),
+            });
           });
-        }
+        },
+      });
+      const loadQuotaBtn = h(
+        'button',
+        {
+          type: 'button',
+          className: 'icon-btn settings-account-load-quota',
+          hidden: true,
+          onClick: () => {
+            clearConfirmTarget(false);
+            void request('quota', { email: entry.email, manual: true });
+          },
+        },
+        [createSvgIcon('refresh', { size: 12 })]
+      );
+      const removeBtn = h(
+        'button',
+        {
+          type: 'button',
+          className: 'icon-btn slot-remove-btn settings-account-remove',
+          hidden: true,
+          onClick: () => {
+            armOrRunConfirm('remove', entry.email, () => {
+              void request('remove', { email: entry.email });
+            });
+          },
+        },
+        [createSvgIcon('close', { size: 12 })]
+      );
+      const removeConfirmBtn = h('button', {
+        type: 'button',
+        className: 'btn-ghost-sm btn-danger-confirm settings-account-remove-confirm',
+        hidden: true,
+        onClick: () => {
+          armOrRunConfirm('remove', entry.email, () => {
+            void request('remove', { email: entry.email });
+          });
+        },
+      });
+
+      const actionsWrap = h('div', { className: 'account-card-actions' }, [
+        captureBtn,
+        selectBtn,
+        loadQuotaBtn,
+        removeBtn,
+        removeConfirmBtn,
+      ]);
+      const poolsWrap = h('div', { className: 'account-pools-stack' });
+      const noteEl = h('div', { className: 'settings-action-desc account-card-note', hidden: true });
+
+      const cardEl = h('section', { className: 'panel account-card' }, [
+        h('div', { className: 'panel-header account-card-head' }, [
+          h('div', { className: 'account-card-meta' }, [emailEl, tierPill, statePill]),
+          actionsWrap,
+        ]),
+        poolsWrap,
+        noteEl,
+      ]);
+      return {
+        el: cardEl,
+        refs: {
+          cardEl,
+          emailEl,
+          tierPill,
+          statePill,
+          actionsWrap,
+          captureBtn,
+          selectBtn,
+          loadQuotaBtn,
+          removeBtn,
+          removeConfirmBtn,
+          poolsWrap,
+          noteEl,
+        },
+      };
+    }
+
+    function updateAccountCardDom(row, entry, ctx) {
+      const addr = entry.email;
+      const active = entry.isActive;
+      const isSaved = entry.isSaved;
+      const written = addr === selectedEmail && !active && switchState?.state === 'written';
+      const cached = active ? null : savedQuotas.get(addr);
+      const tierText = active
+        ? ctx.activeTierBadge
+        : cached?.tierName || cached?.tierId
+          ? formatAccountTierBadge({
+              tierId: cached.tierId,
+              tierName: cached.tierName,
+              tierMultiplier: cached.tierMultiplier,
+            })
+          : '';
+      const isSpinning = !active && quotaVisibleLoading.has(addr);
+      const canSwitch = !active && isSaved && ctx.riskAccepted;
+      const armedSwitch = confirmTarget?.type === 'switch' && confirmTarget.key === addr;
+      const armedRemove = confirmTarget?.type === 'remove' && confirmTarget.key === addr;
+
+      patchClasses(row.cardEl, { 'is-active-account': active });
+      patchText(row.emailEl, addr);
+      patchAttr(row.emailEl, 'title', addr);
+
+      patchText(row.tierPill, tierText);
+      patchAttr(row.tierPill, 'hidden', !tierText);
+
+      patchText(row.statePill, active ? t(key('active')) : written ? t(key('written')) : '');
+      patchClasses(row.statePill, { 'state-warn': written && !active });
+      patchAttr(row.statePill, 'hidden', !active && !written);
+
+      const showCapture = active && !isSaved && ctx.riskAccepted && supported !== false;
+      const showRemove = isSaved && ctx.riskAccepted;
+      const showQuotaRefresh = !active && isSaved && ctx.riskAccepted;
+      const hasAnyAction = showCapture || canSwitch || showQuotaRefresh || showRemove;
+      patchAttr(row.actionsWrap, 'hidden', !hasAnyAction);
+
+      patchText(row.captureBtn, t(key('capture')));
+      patchAttr(row.captureBtn, 'hidden', !showCapture);
+      patchAttr(row.captureBtn, 'disabled', !ctx.canWrite);
+
+      patchText(row.selectBtn, t(key(armedSwitch ? 'switchConfirm' : 'switch')));
+      patchAttr(row.selectBtn, 'title', t(key('switchHint')));
+      patchClasses(row.selectBtn, {
+        'settings-account-switch': canSwitch,
+        'btn-danger-confirm': armedSwitch,
+      });
+      patchAttr(row.selectBtn, 'hidden', !canSwitch);
+      patchAttr(row.selectBtn, 'disabled', !ctx.canWrite);
+
+      patchAttr(row.loadQuotaBtn, 'title', t(key(isSpinning ? 'loadingQuota' : 'loadQuota')));
+      patchAttr(row.loadQuotaBtn, 'aria-label', t(key('loadQuota')));
+      patchClasses(row.loadQuotaBtn, { 'is-spinning': isSpinning });
+      patchAttr(row.loadQuotaBtn, 'hidden', !showQuotaRefresh);
+      patchAttr(row.loadQuotaBtn, 'disabled', !ctx.canWrite || isSpinning);
+
+      patchAttr(row.removeBtn, 'title', t(key('remove')));
+      patchAttr(row.removeBtn, 'aria-label', t(key('remove')));
+      patchAttr(row.removeBtn, 'hidden', !showRemove || armedRemove);
+      patchAttr(row.removeBtn, 'disabled', !ctx.canWrite);
+
+      patchText(row.removeConfirmBtn, t(key('removeConfirm')));
+      patchAttr(row.removeConfirmBtn, 'hidden', !showRemove || !armedRemove);
+      patchAttr(row.removeConfirmBtn, 'disabled', !ctx.canWrite);
+
+      const displayedPools = active ? quotas?.pools || [] : cached?.pools || [];
+      const poolCount = renderQuotaRows(row.poolsWrap, displayedPools);
+      const quotaError = active ? '' : quotaErrors.get(addr);
+
+      let noteText = '';
+      if (quotaError) {
+        noteText = t(key(quotaError));
+      } else if (active && poolCount > 0 && quotas?.meta?.isStale) {
+        noteText = t(key('quotaStale'));
+      } else if (active && poolCount === 0) {
+        noteText = t(key('noQuota'));
+      } else if (!active && cached && poolCount === 0) {
+        noteText = t(key('emptyCredentialQuota'));
       }
-      return entries;
+      patchText(row.noteEl, noteText);
+      patchClasses(row.noteEl, { 'is-error': Boolean(quotaError) });
+      patchAttr(row.noteEl, 'hidden', !noteText);
     }
 
     function render() {
@@ -612,8 +865,13 @@ export const SettingsAccountTab = defineComponent({
       if (activeEmail && selectedEmail === activeEmail && switchState?.state !== 'starting') {
         selectedEmail = '';
       }
+      const riskAccepted = Boolean(draftRiskAccepted);
+      if (!riskAccepted) {
+        refreshIntervalSelect.close?.();
+      }
       const vaultLocked = isVaultLocked();
       const canOperateVault =
+        riskAccepted &&
         supported === true &&
         !operation &&
         status !== 'restarting' &&
@@ -624,6 +882,55 @@ export const SettingsAccountTab = defineComponent({
         signedIn && (account?.tierName || account?.planName)
           ? formatAccountTierBadge(account)
           : '';
+      const cardCtx = { riskAccepted, canWrite, activeTierBadge };
+
+      // 1. Active Logged-in Account Card
+      const activeEntries = activeEmail
+        ? [
+            {
+              email: activeEmail,
+              isActive: true,
+              isSaved: riskAccepted && accounts.includes(activeEmail),
+            },
+          ]
+        : [];
+      patchAttr(activeCardHost, 'hidden', activeEntries.length === 0);
+      patchKeyedList(activeCardHost, activeEntries, {
+        keyFn: (entry) => entry.email,
+        sigFn: (entry) =>
+          JSON.stringify([
+            locale,
+            entry.isSaved,
+            riskAccepted,
+            canWrite,
+            confirmTarget?.key === entry.email ? confirmTarget.type : '',
+            quotas,
+            activeTierBadge,
+          ]),
+        createRow: createAccountCardDom,
+        updateRow: (row, entry) => updateAccountCardDom(row, entry, cardCtx),
+      });
+
+      // 2. Quota Trend Line Chart Card (always visible; locked to activeEmail when !riskAccepted)
+      quotaTrendCard.refs.update({
+        activeEmail,
+        activePools: quotas?.pools || [],
+        riskAccepted,
+        accounts,
+        savedQuotas,
+        quotaHistory,
+      });
+
+      // 3. Risk Gate Stage & Multi-Account Controls
+      patchClasses(managedControlsBody, { 'is-locked': !riskAccepted });
+      patchAttr(managedControlsBody, 'inert', !riskAccepted);
+      patchAttr(managedControlsBody, 'aria-hidden', riskAccepted ? null : 'true');
+      patchAttr(riskMask, 'hidden', riskAccepted);
+      patchAttr(riskMask, 'aria-label', t('settings.oth.ctxRiskTitle'));
+      patchText(riskTitleEl, t('settings.oth.ctxRiskTitle'));
+      patchText(riskBodyEl, t(key('riskBody')));
+      patchText(riskAcceptBtnText, t('settings.oth.ctxRiskAcceptBtn'));
+      patchAttr(riskAcceptBtn, 'disabled', acceptingRisk);
 
       const loginActive = ['waiting', 'exchanging', 'saving'].includes(loginSession?.status);
       patchText(loginBtnLabel, t(key('googleLogin')));
@@ -648,32 +955,34 @@ export const SettingsAccountTab = defineComponent({
       patchAttr(lockNowBtn, 'hidden', !vaultSecurity.enabled || vaultLocked || supported === false);
       patchAttr(lockNowBtn, 'disabled', !canOperateVault);
 
-      // Unlock strip (only when passphrase enabled & locked)
-      patchAttr(unlockBox, 'hidden', supported !== true || !vaultLocked);
+      // Unlock Notice
+      patchAttr(unlockBox, 'hidden', !riskAccepted || supported !== true || !vaultLocked);
       patchText(unlockHintLabel, t(key('vaultLockedHint')));
       patchText(forgotToggleBtn, t(key('forgotPwdToggle')));
       patchAttr(unlockInput, 'placeholder', t(key('unlockPlaceholder')));
       patchAttr(unlockInput, 'disabled', !canOperateVault);
       patchText(unlockSubmitBtn, t(key('unlockBtn')));
       patchAttr(unlockSubmitBtn, 'disabled', !canOperateVault);
-      patchAttr(resetRow, 'hidden', !forgotResetOpen || !vaultLocked);
+      const showResetSection = forgotResetOpen && vaultLocked;
+      patchAttr(resetHintEl, 'hidden', !showResetSection);
+      patchAttr(resetActionsWrap, 'hidden', !showResetSection);
+      patchAttr(resetVaultBtn, 'hidden', !showResetSection);
       patchText(resetHintEl, t(key('resetVaultHint')));
       const armedVaultReset =
         confirmTarget?.type === 'resetVault' && confirmTarget.key === 'vault';
       patchText(resetVaultBtn, t(key(armedVaultReset ? 'resetVaultConfirm' : 'resetVaultBtn')));
       patchAttr(resetVaultBtn, 'disabled', !canOperateVault);
 
-      // Passphrase setup / manage drawer
-      const showPwdDrawer = pwdDrawerOpen && !vaultLocked && supported === true;
+      // Passphrase Drawer (`SegmentedControl` for Change / Disable)
+      const showPwdDrawer = riskAccepted && pwdDrawerOpen && !vaultLocked && supported === true;
       patchAttr(pwdForm, 'hidden', !showPwdDrawer);
       if (showPwdDrawer) {
         const isSetNew = !vaultSecurity.enabled;
         const isDisableMode = !isSetNew && pwdManageMode === 'disable';
-        patchAttr(pwdTabsWrap, 'hidden', isSetNew);
-        patchText(pwdTabChangeBtn, t(key('pwdTabChange')));
-        patchClasses(pwdTabChangeBtn, { 'is-active': pwdManageMode === 'change' });
-        patchText(pwdTabDisableBtn, t(key('pwdTabDisable')));
-        patchClasses(pwdTabDisableBtn, { 'is-active': isDisableMode });
+        patchAttr(pwdModeSegment.el, 'hidden', isSetNew);
+        if (!isSetNew) {
+          pwdModeSegment.setProps({ modelValue: pwdManageMode, options: getPwdModeOptions() });
+        }
 
         patchAttr(pwdCurrentInput, 'hidden', isSetNew);
         patchAttr(pwdCurrentInput, 'placeholder', t(key('pwdCurrentPlaceholder')));
@@ -694,7 +1003,7 @@ export const SettingsAccountTab = defineComponent({
         patchClasses(pwdSubmitBtn, {
           'btn-primary': !isDisableMode,
           'btn-secondary': isDisableMode,
-          'account-confirm-danger-btn': isDisableMode,
+          'btn-danger-confirm': isDisableMode,
         });
         patchAttr(pwdSubmitBtn, 'disabled', !canOperateVault);
         patchText(pwdHint, t(key(isSetNew ? 'pwdSetHint' : 'pwdManageHint')));
@@ -713,7 +1022,7 @@ export const SettingsAccountTab = defineComponent({
       patchAttr(reload, 'disabled', Boolean(operation));
       patchClasses(reload, { 'is-spinning': operation === 'list' });
 
-      patchAttr(form, 'hidden', !importOpen || vaultLocked || supported === false);
+      patchAttr(form, 'hidden', !riskAccepted || !importOpen || vaultLocked || supported === false);
       patchAttr(credential, 'placeholder', t(key('credentialPlaceholder')));
       patchAttr(credential, 'disabled', !canWrite);
       patchText(save, t(key('save')));
@@ -752,11 +1061,8 @@ export const SettingsAccountTab = defineComponent({
       patchText(loginLink, t(key('openLoginPage')));
       patchAttr(loginLink, 'href', authUrl || null);
       patchAttr(loginLink, 'hidden', !authUrl);
-      patchClasses(loginStrip, {
-        'is-error': loginIsError,
-        'is-ok': loginSession?.status === 'success',
-        'is-info': loginActive,
-      });
+      patchAttr(loginLinkWrap, 'hidden', !authUrl);
+      patchClasses(loginStrip, { 'is-restart': !loginIsError });
       patchAttr(loginStrip, 'hidden', !hasLoginSession || !loginMessageKey);
 
       const failedSwitch =
@@ -776,7 +1082,6 @@ export const SettingsAccountTab = defineComponent({
       patchClasses(feedback, {
         'is-error': isFeedbackError,
         'is-ok': isFeedbackOk,
-        'is-info': !isFeedbackError && !isFeedbackOk && Boolean(message),
       });
       patchAttr(feedback, 'hidden', !message);
 
@@ -785,16 +1090,38 @@ export const SettingsAccountTab = defineComponent({
         activeEmail !== selectedEmail &&
         switchState?.state === 'written' &&
         status !== 'restarting';
-      patchText(pending, waiting ? t(key('pending'), { email: selectedEmail }) : '');
+      patchText(pendingDesc, waiting ? t(key('pending'), { email: selectedEmail }) : '');
       patchAttr(pending, 'hidden', !waiting);
 
-      const entries = buildUnifiedAccountEntries(activeEmail);
-      patchAttr(cardsHost, 'hidden', entries.length === 0);
+      const backupEntries = riskAccepted
+        ? accounts
+            .filter((addr) => addr && addr !== activeEmail)
+            .map((addr) => ({ email: addr, isActive: false, isSaved: true }))
+        : [];
+      patchAttr(backupCardsHost, 'hidden', backupEntries.length === 0);
+      patchKeyedList(backupCardsHost, backupEntries, {
+        keyFn: (entry) => entry.email,
+        sigFn: (entry) =>
+          JSON.stringify([
+            locale,
+            selectedEmail,
+            switchState?.state || '',
+            canWrite,
+            confirmTarget?.key === entry.email ? confirmTarget.type : '',
+            savedQuotas.get(entry.email),
+            quotaVisibleLoading.has(entry.email),
+            quotaErrors.get(entry.email),
+          ]),
+        createRow: createAccountCardDom,
+        updateRow: (row, entry) => updateAccountCardDom(row, entry, cardCtx),
+      });
+
+      const showEmpty = !activeEmail && (!riskAccepted || backupEntries.length === 0);
       patchText(
         emptyTextEl,
         t(
           key(
-            supported === null
+            supported === null && !activeEmail
               ? 'loading'
               : account?.status === 'signedOut'
                 ? 'signedOut'
@@ -802,217 +1129,7 @@ export const SettingsAccountTab = defineComponent({
           )
         )
       );
-      patchAttr(emptyPanel, 'hidden', entries.length > 0);
-
-      patchKeyedList(cardsHost, entries, {
-        keyFn: (entry) => entry.email,
-        sigFn: (entry) =>
-          JSON.stringify([
-            locale,
-            entry.isActive,
-            entry.isSaved,
-            selectedEmail,
-            switchState?.state || '',
-            canWrite,
-            confirmTarget?.key === entry.email ? confirmTarget.type : '',
-            entry.isActive ? null : savedQuotas.get(entry.email),
-            quotaVisibleLoading.has(entry.email),
-            entry.isActive ? null : quotaErrors.get(entry.email),
-            entry.isActive ? quotas : null,
-            entry.isActive ? activeTierBadge : '',
-          ]),
-        createRow: (entry) => {
-          const activeDot = h('span', { className: 'dot-swatch account-active-dot', hidden: true });
-          const emailEl = h('span', {
-            className: 'settings-account-identity account-card-email',
-            text: entry.email,
-            title: entry.email,
-          });
-          const tierPill = h('span', { className: 'account-tag is-tier', hidden: true });
-          const statePill = h('span', { className: 'account-tag', hidden: true });
-
-          const captureBtn = h('button', {
-            type: 'button',
-            className: 'btn-secondary account-card-btn',
-            hidden: true,
-            onClick: () => {
-              clearConfirmTarget(false);
-              void request('capture');
-            },
-          });
-          const selectBtn = h('button', {
-            type: 'button',
-            className: 'btn-secondary account-card-btn',
-            hidden: true,
-            onClick: () => {
-              armOrRunConfirm('switch', entry.email, () => {
-                const curActive = resolveActiveEmail();
-                void request('switch', {
-                  email: entry.email,
-                  ...(curActive ? { activeEmail: curActive } : {}),
-                });
-              });
-            },
-          });
-          const loadQuotaBtn = h(
-            'button',
-            {
-              type: 'button',
-              className: 'icon-btn settings-account-load-quota account-icon-btn',
-              hidden: true,
-              onClick: () => {
-                clearConfirmTarget(false);
-                void request('quota', { email: entry.email, manual: true });
-              },
-            },
-            [createSvgIcon('refresh', { size: 12 })]
-          );
-          const removeBtn = h(
-            'button',
-            {
-              type: 'button',
-              className: 'icon-btn slot-remove-btn settings-account-remove account-icon-btn',
-              hidden: true,
-              onClick: () => {
-                armOrRunConfirm('remove', entry.email, () => {
-                  void request('remove', { email: entry.email });
-                });
-              },
-            },
-            [createSvgIcon('close', { size: 12 })]
-          );
-          const removeConfirmBtn = h('button', {
-            type: 'button',
-            className:
-              'btn-secondary account-card-btn account-confirm-danger-btn settings-account-remove-confirm',
-            hidden: true,
-            onClick: () => {
-              armOrRunConfirm('remove', entry.email, () => {
-                void request('remove', { email: entry.email });
-              });
-            },
-          });
-
-          const poolsWrap = h('div', { className: 'account-pools-stack' });
-          const noteEl = h('div', { className: 'settings-action-desc account-card-note', hidden: true });
-
-          const cardEl = h('section', { className: 'panel account-card' }, [
-            h('div', { className: 'panel-header account-card-head' }, [
-              h('div', { className: 'account-card-meta' }, [
-                activeDot,
-                emailEl,
-                tierPill,
-                statePill,
-              ]),
-              h('div', { className: 'account-card-actions' }, [
-                captureBtn,
-                selectBtn,
-                loadQuotaBtn,
-                removeBtn,
-                removeConfirmBtn,
-              ]),
-            ]),
-            poolsWrap,
-            noteEl,
-          ]);
-          return {
-            el: cardEl,
-            refs: {
-              cardEl,
-              activeDot,
-              emailEl,
-              tierPill,
-              statePill,
-              captureBtn,
-              selectBtn,
-              loadQuotaBtn,
-              removeBtn,
-              removeConfirmBtn,
-              poolsWrap,
-              noteEl,
-            },
-          };
-        },
-        updateRow: (row, entry) => {
-          const addr = entry.email;
-          const active = entry.isActive;
-          const isSaved = entry.isSaved;
-          const written = addr === selectedEmail && !active && switchState?.state === 'written';
-          const cached = active ? null : savedQuotas.get(addr);
-          const tierText = active
-            ? activeTierBadge
-            : cached?.tierName || cached?.tierId
-              ? formatAccountTierBadge({
-                  tierId: cached.tierId,
-                  tierName: cached.tierName,
-                  tierMultiplier: cached.tierMultiplier,
-                })
-              : '';
-          const isSpinning = !active && quotaVisibleLoading.has(addr);
-          const canSwitch = !active && isSaved;
-          const armedSwitch = confirmTarget?.type === 'switch' && confirmTarget.key === addr;
-          const armedRemove = confirmTarget?.type === 'remove' && confirmTarget.key === addr;
-
-          patchClasses(row.cardEl, { 'is-active-account': active });
-          patchAttr(row.activeDot, 'hidden', !active);
-          patchText(row.emailEl, addr);
-          patchAttr(row.emailEl, 'title', addr);
-
-          patchText(row.tierPill, tierText);
-          patchAttr(row.tierPill, 'hidden', !tierText);
-
-          patchText(row.statePill, active ? t(key('active')) : written ? t(key('written')) : '');
-          patchClasses(row.statePill, { 'is-active': active, 'is-written': written });
-          patchAttr(row.statePill, 'hidden', !active && !written);
-
-          patchText(row.captureBtn, t(key('capture')));
-          patchAttr(row.captureBtn, 'hidden', !active || isSaved || supported === false);
-          patchAttr(row.captureBtn, 'disabled', !canWrite);
-
-          patchText(row.selectBtn, t(key(armedSwitch ? 'switchConfirm' : 'switch')));
-          patchAttr(row.selectBtn, 'title', t(key('switchHint')));
-          patchClasses(row.selectBtn, {
-            'settings-account-switch': canSwitch,
-            'is-confirm-warn': armedSwitch,
-          });
-          patchAttr(row.selectBtn, 'hidden', !canSwitch);
-          patchAttr(row.selectBtn, 'disabled', !canWrite);
-
-          patchAttr(row.loadQuotaBtn, 'title', t(key(isSpinning ? 'loadingQuota' : 'loadQuota')));
-          patchAttr(row.loadQuotaBtn, 'aria-label', t(key('loadQuota')));
-          patchClasses(row.loadQuotaBtn, { 'is-spinning': isSpinning });
-          // Active account exclusively uses host telemetry — hide OAuth quota refresh on active card
-          patchAttr(row.loadQuotaBtn, 'hidden', active || !isSaved);
-          patchAttr(row.loadQuotaBtn, 'disabled', !canWrite || isSpinning);
-
-          patchAttr(row.removeBtn, 'title', t(key('remove')));
-          patchAttr(row.removeBtn, 'aria-label', t(key('remove')));
-          patchAttr(row.removeBtn, 'hidden', !isSaved || armedRemove);
-          patchAttr(row.removeBtn, 'disabled', !canWrite);
-
-          patchText(row.removeConfirmBtn, t(key('removeConfirm')));
-          patchAttr(row.removeConfirmBtn, 'hidden', !isSaved || !armedRemove);
-          patchAttr(row.removeConfirmBtn, 'disabled', !canWrite);
-
-          const displayedPools = active ? quotas?.pools || [] : cached?.pools || [];
-          const poolCount = renderQuotaRows(row.poolsWrap, displayedPools);
-          const quotaError = active ? '' : quotaErrors.get(addr);
-
-          let noteText = '';
-          if (quotaError) {
-            noteText = t(key(quotaError));
-          } else if (active && poolCount > 0 && quotas?.meta?.isStale) {
-            noteText = t(key('quotaStale'));
-          } else if (active && poolCount === 0) {
-            noteText = t(key('noQuota'));
-          } else if (!active && cached && poolCount === 0) {
-            noteText = t(key('emptyCredentialQuota'));
-          }
-          patchText(row.noteEl, noteText);
-          patchClasses(row.noteEl, { 'is-error': Boolean(quotaError) });
-          patchAttr(row.noteEl, 'hidden', !noteText);
-        },
-      });
+      patchAttr(emptyPanel, 'hidden', !showEmpty);
 
       props.onLayoutChange?.();
     }
@@ -1048,6 +1165,7 @@ export const SettingsAccountTab = defineComponent({
     }
 
     async function request(action, fields = {}) {
+      if (action !== 'list' && !draftRiskAccepted) return;
       if (action === 'quota') return refreshQuota(fields.email, Boolean(fields.manual));
       if (operation) return;
       operation = action;
@@ -1066,6 +1184,9 @@ export const SettingsAccountTab = defineComponent({
         if (typeof result?.actionNonce === 'string' && result.actionNonce) {
           actionNonce = result.actionNonce;
         }
+        if (result?.quotaHistory && typeof result.quotaHistory === 'object') {
+          quotaHistory = { ...quotaHistory, ...result.quotaHistory };
+        }
         if (result?.error) {
           if (result.error === 'unsupported') supported = false;
           if (result.error === 'vaultLocked') {
@@ -1081,6 +1202,7 @@ export const SettingsAccountTab = defineComponent({
           return;
         }
         supported = result?.supported === true;
+        riskLockedFromServer = Boolean(result?.riskLocked);
         accounts = result?.accounts || [];
         selectedEmail = result?.selectedEmail || '';
         switchState = result?.switchState || null;
@@ -1101,7 +1223,7 @@ export const SettingsAccountTab = defineComponent({
           savedQuotas.set(addr, snapshot);
         }
         syncWarmCache();
-        if (action !== 'switch' && !isVaultLocked()) {
+        if (action !== 'switch' && draftRiskAccepted && !riskLockedFromServer && !isVaultLocked()) {
           void refreshSavedQuotas();
         }
         if (action === 'save' || action === 'capture') {
@@ -1157,7 +1279,7 @@ export const SettingsAccountTab = defineComponent({
         return;
       }
       await request('list');
-      if (!disposed && !isVaultLocked() && email !== resolveActiveEmail()) {
+      if (!disposed && draftRiskAccepted && !isVaultLocked() && email !== resolveActiveEmail()) {
         void refreshQuota(email, false);
       }
     }
@@ -1192,13 +1314,12 @@ export const SettingsAccountTab = defineComponent({
     }
 
     async function refreshSavedQuotas() {
-      if (refreshingSavedQuotas || isVaultLocked()) return;
+      if (refreshingSavedQuotas || !draftRiskAccepted || isVaultLocked()) return;
       refreshingSavedQuotas = true;
       try {
         const activeEmail = resolveActiveEmail();
         const ttlMs = refreshMinutes * 60_000;
         const staleTargets = accounts.filter((addr) => {
-          // Active account exclusively uses host telemetry — never poll via OAuth
           if (!addr || addr === activeEmail) return false;
           const cached = savedQuotas.get(addr);
           if (needsLegacyUltraTierRefresh(cached)) return true;
@@ -1206,7 +1327,7 @@ export const SettingsAccountTab = defineComponent({
         });
         const BATCH_SIZE = 3;
         for (let i = 0; i < staleTargets.length; i += BATCH_SIZE) {
-          if (disposed || operation === 'switch' || isVaultLocked()) break;
+          if (disposed || operation === 'switch' || !draftRiskAccepted || isVaultLocked()) break;
           const batch = staleTargets.slice(i, i + BATCH_SIZE);
           await Promise.all(batch.map((addr) => refreshQuota(addr, false)));
         }
@@ -1217,7 +1338,14 @@ export const SettingsAccountTab = defineComponent({
 
     async function refreshQuota(addr, manual = false) {
       const activeEmail = resolveActiveEmail();
-      if (!addr || addr === activeEmail || isVaultLocked() || quotaInFlight.has(addr) || disposed) {
+      if (
+        !addr ||
+        addr === activeEmail ||
+        !draftRiskAccepted ||
+        isVaultLocked() ||
+        quotaInFlight.has(addr) ||
+        disposed
+      ) {
         return;
       }
       const hasCachedPools = Boolean(savedQuotas.get(addr)?.pools?.length);
@@ -1249,9 +1377,10 @@ export const SettingsAccountTab = defineComponent({
           const nextTierId = result.tierId || prev.tierId || '';
           const nextTierName = result.tierName || prev.tierName || '';
           const nextTierMult = result.tierMultiplier || prev.tierMultiplier || '';
+          const fetchedAt = result.fetchedAt || Date.now();
           savedQuotas.set(addr, {
             pools: result.pools,
-            fetchedAt: result.fetchedAt || Date.now(),
+            fetchedAt,
             ...(nextTierId ? { tierId: nextTierId } : {}),
             ...(nextTierName ? { tierName: nextTierName } : {}),
             ...(nextTierMult ? { tierMultiplier: nextTierMult } : {}),
@@ -1340,24 +1469,41 @@ export const SettingsAccountTab = defineComponent({
         settingsData?.accountQuotaRefreshMinutes !== undefined
           ? normalizeAccountQuotaRefreshMinutes(settingsData.accountQuotaRefreshMinutes)
           : refreshMinutes;
-      if (account === value && quotas === quotaData && refreshMinutes === nextRefreshMins) return;
+      const nextRiskAccepted =
+        acceptingRisk || settingsData?.accountSwitchRiskAccepted === undefined
+          ? draftRiskAccepted
+          : Boolean(settingsData.accountSwitchRiskAccepted);
+      if (
+        account === value &&
+        quotas === quotaData &&
+        refreshMinutes === nextRefreshMins &&
+        draftRiskAccepted === nextRiskAccepted
+      ) {
+        return;
+      }
+      const becameRiskUnlocked = !draftRiskAccepted && nextRiskAccepted;
       account = value;
       quotas = quotaData;
       refreshMinutes = nextRefreshMins;
+      draftRiskAccepted = nextRiskAccepted;
       render();
+      if (becameRiskUnlocked && riskLockedFromServer && !operation) {
+        void request('list');
+      }
     }
 
     const quotaScheduleTimer = setInterval(() => {
-      if (!disposed && accounts.length > 0 && !operation && !isVaultLocked()) {
+      if (!disposed && draftRiskAccepted && accounts.length > 0 && !operation && !isVaultLocked()) {
         void refreshSavedQuotas();
       }
     }, 60_000);
     quotaScheduleTimer.unref?.();
 
     const root = h('div', { className: 'settings-tab-stack settings-account-root' }, [
-      toolbarPanel,
-      cardsHost,
+      quotaTrendCard.el,
+      activeCardHost,
       emptyPanel,
+      riskStage,
     ]);
     render();
     onCleanup(() => {
@@ -1367,6 +1513,8 @@ export const SettingsAccountTab = defineComponent({
       if (statusClearTimer) clearTimeout(statusClearTimer);
       if (confirmClearTimer) clearTimeout(confirmClearTimer);
       refreshIntervalSelect.destroy();
+      pwdModeSegment.destroy();
+      quotaTrendCard.destroy();
       loginGeneration += 1;
       credential.value = '';
       clearPasswordInputs();
@@ -1375,9 +1523,17 @@ export const SettingsAccountTab = defineComponent({
       el: root,
       refs: {
         renderAccount,
-        refreshLabels: render,
+        refreshLabels: () => {
+          quotaTrendCard.refs.refreshLabels();
+          render();
+        },
         preload: () => (supported === null ? request('list') : Promise.resolve()),
-        load: () => (supported === null ? request('list') : refreshSavedQuotas()),
+        load: () =>
+          supported === null || (draftRiskAccepted && riskLockedFromServer)
+            ? request('list')
+            : draftRiskAccepted
+              ? refreshSavedQuotas()
+              : Promise.resolve(),
       },
     };
   },
