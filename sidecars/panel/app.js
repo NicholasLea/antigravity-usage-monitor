@@ -1291,6 +1291,8 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.statusQuotaCached': '额度缓存',
   'header.statusQuotaOffline': '额度离线',
   'header.statusLive': '监控中',
+  'header.scopeAll': '全部代理',
+  'header.scopeAllShort': '全',
   'header.searchSessionPlaceholder': '搜索会话标题、项目或 ID…',
   'select.searchPlaceholder': '输入关键词筛选…',
   'select.noMatches': '没有匹配的选项',
@@ -2192,6 +2194,8 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'header.statusQuotaCached': 'Quota Cached',
   'header.statusQuotaOffline': 'Quota Offline',
   'header.statusLive': 'Monitoring',
+  'header.scopeAll': 'All Agents',
+  'header.scopeAllShort': 'All',
   'header.searchSessionPlaceholder': 'Search sessions, projects, or ID…',
   'select.searchPlaceholder': 'Filter options…',
   'select.noMatches': 'No matching items',
@@ -4062,7 +4066,7 @@ return { defineComponent };
 })();
 
 // --- src/core/formatters.js ---
-const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
+const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
 /**
  * @fileoverview Pure formatting utilities for speed metrics, token counts,
  * USD estimates, countdown timers, and custom datetime displays.
@@ -4072,6 +4076,14 @@ const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpe
 const EN_MONTH_SHORT = Object.freeze([
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]);
+
+const ZH_WEEKDAY_SHORT = Object.freeze([
+  '周日', '周一', '周二', '周三', '周四', '周五', '周六',
+]);
+
+const EN_WEEKDAY_SHORT = Object.freeze([
+  'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
 ]);
 
 function formatMetric(value, unit = '') {
@@ -4161,6 +4173,59 @@ function formatDateSpanBadge(startMs, endMs) {
     return `${s.getFullYear()}年${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getFullYear()}年${e.getMonth() + 1}月${e.getDate()}日`;
   }
   return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getMonth() + 1}月${e.getDate()}日`;
+}
+
+function formatTrendSlotFullLabel(slot, { locale, showFullYear = false } = {}) {
+  const en =
+    typeof locale === 'string' && locale.trim()
+      ? locale.trim().toLowerCase().startsWith('en')
+      : isEnglishLocale();
+  const sMs = Number(slot?.startMs);
+  if (Number.isFinite(sMs) && sMs > 0) {
+    const sd = new Date(sMs);
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const rawFull = String(slot?.fullLabel || '');
+    const includeYear = Boolean(
+      showFullYear || /^\d{4}年/.test(rawFull) || sd.getFullYear() !== new Date().getFullYear()
+    );
+    const gran = String(slot?.granularity || '').toLowerCase();
+    const isSubDay =
+      gran === 'minute' ||
+      gran === 'hour' ||
+      (!gran && Number(slot?.endMs) > sMs && Number(slot.endMs) - sMs <= 3600_000 * 2);
+
+    if (isSubDay) {
+      const eMs = Number(slot?.endMs);
+      const ed = Number.isFinite(eMs) && eMs > 0 ? new Date(eMs) : new Date(sMs + 3600_000);
+      const hh = `${pad2(sd.getHours())}:${pad2(sd.getMinutes())}`;
+      const endHh = `${pad2(ed.getHours())}:${pad2(ed.getMinutes())}`;
+      if (en) {
+        const mon = EN_MONTH_SHORT[sd.getMonth()] || '';
+        return includeYear
+          ? `${mon} ${sd.getDate()}, ${sd.getFullYear()}, ${hh} - ${endHh}`
+          : `${mon} ${sd.getDate()}, ${hh} - ${endHh}`;
+      }
+      const yearPrefix = includeYear ? `${sd.getFullYear()}年` : '';
+      return `${yearPrefix}${sd.getMonth() + 1}月${sd.getDate()}日 ${hh} - ${endHh}`;
+    }
+
+    if (en) {
+      const mon = EN_MONTH_SHORT[sd.getMonth()] || '';
+      const wday = EN_WEEKDAY_SHORT[sd.getDay()] || '';
+      return includeYear
+        ? `${mon} ${sd.getDate()}, ${sd.getFullYear()} (${wday})`
+        : `${mon} ${sd.getDate()} (${wday})`;
+    }
+    const yearPrefix = includeYear ? `${sd.getFullYear()}年` : '';
+    return `${yearPrefix}${sd.getMonth() + 1}月${sd.getDate()}日 (${ZH_WEEKDAY_SHORT[sd.getDay()] || ''})`;
+  }
+
+  const rawFull = String(slot?.fullLabel || '').trim();
+  const rawShort = String(slot?.label || '').trim();
+  if (en && rawFull && /[\u4e00-\u9fff]/.test(rawFull)) {
+    return rawShort || rawFull;
+  }
+  return rawFull || rawShort;
 }
 
 function formatUsd(amount, { precise = false } = {}) {
@@ -5428,7 +5493,7 @@ function buildDeterministicModelColorMap(models = []) {
 
   return colorMap;
 }
-return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
 })();
 
 // --- src/core/stepInspector.js ---
@@ -6754,8 +6819,10 @@ const { escapeCsvCell, sanitizeExportFilename, buildConsumptionExportBaseName, b
 const PLAIN_SIGNED_NUMBER_RE = /^[+-]?\d+(\.\d+)?$/;
 
 const RANGE_LABELS_ZH = Object.freeze({
+  '5h': '近5小时',
   today: '今日',
   '24h': '近24小时',
+  week: '本周',
   '7d': '近7天',
   '14d': '近14天',
   '30d': '近30天',
@@ -6765,8 +6832,10 @@ const RANGE_LABELS_ZH = Object.freeze({
 });
 
 const RANGE_LABELS_EN = Object.freeze({
+  '5h': 'Last 5 Hours',
   today: 'Today',
   '24h': 'Last 24 Hours',
+  week: 'This Week',
   '7d': 'Last 7 Days',
   '14d': 'Last 14 Days',
   '30d': 'Last 30 Days',
@@ -7567,8 +7636,10 @@ function buildStepsMarkdownReport(
 function buildConsumptionCsv(
   consumption,
   modelBreakdown = [],
-  { displaySettings = {}, includeBom = true } = {}
+  { displaySettings = {}, includeBom = true, locale } = {}
 ) {
+  const en = resolveExportEnglish(locale);
+  const effectiveLocale = en ? 'en-US' : 'zh-CN';
   const cons = consumption || {};
   const acc = cons.account || {};
   const range = cons.selectedRange || {};
@@ -7594,7 +7665,7 @@ function buildConsumptionCsv(
     ]),
     csvRow([
       'summary',
-      range.label || range.key || 'all',
+      resolveLocalizedRangeLabel(range, en),
       Number(acc.calls || 0),
       Number(acc.inputTokens || 0),
       Number(acc.cacheReadTokens || 0),
@@ -7662,7 +7733,7 @@ function buildConsumptionCsv(
     rows.push(
       csvRow([
         'trend',
-        slot.fullLabel || slot.label || '',
+        formatTrendSlotFullLabel(slot, { locale: effectiveLocale }) || slot.label || '',
         Number(slot.calls || 0),
         Number(slot.inputTokens || 0),
         Number(slot.cacheReadTokens || 0),
@@ -14342,7 +14413,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const slotTok = safeSlotTokens(slot.tokens);
     const slotCost = Number.isFinite(Number(slot.costUsd)) ? Math.max(0, Number(slot.costUsd)) : 0;
     tooltipContent.update({
-      title: slot.fullLabel || slot.label || '--',
+      title: formatTrendSlotFullLabel(slot) || slot.label || '--',
       calls: slot.calls,
       totalTokens: slotTok,
       costText: formatUsd(slotCost, {
@@ -15121,7 +15192,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         const tickEl = h('span', {
           className: `trend-x-tick text-mono${isFirst ? ' is-start' : isLast ? ' is-end' : ''}`,
           text: slot.label || '',
-          title: slot.fullLabel || slot.label || '',
+          title: formatTrendSlotFullLabel(slot) || slot.label || '',
         });
         patchStyleVar(tickEl, '--tick-x', `${pct.toFixed(2)}%`);
         tickEl.onclick = () => {
@@ -22324,11 +22395,7 @@ function estTokenChars(val) {
 }
 
 function estCostWidth(st) {
-  const c = st?.costUsd;
-  if (c == null || !Number.isFinite(Number(c))) {
-    return st?.isPricingPending ? estProportionalTextWidth(t('fmt.pricingPending')) : 1;
-  }
-  return estProportionalTextWidth(formatUsd(Number(c)));
+  return estProportionalTextWidth(formatUsd(st?.costUsd, { precise: true }));
 }
 
 function estSegmentChars(seg, st) {

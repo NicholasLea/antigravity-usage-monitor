@@ -32,6 +32,8 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'header.statusQuotaCached': 'Quota Cached',
   'header.statusQuotaOffline': 'Quota Offline',
   'header.statusLive': 'Monitoring',
+  'header.scopeAll': 'All Agents',
+  'header.scopeAllShort': 'All',
   'header.searchSessionPlaceholder': 'Search sessions, projects, or ID…',
   'select.searchPlaceholder': 'Filter options…',
   'select.noMatches': 'No matching items',

@@ -32,6 +32,8 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.statusQuotaCached': '额度缓存',
   'header.statusQuotaOffline': '额度离线',
   'header.statusLive': '监控中',
+  'header.scopeAll': '全部代理',
+  'header.scopeAllShort': '全',
   'header.searchSessionPlaceholder': '搜索会话标题、项目或 ID…',
   'select.searchPlaceholder': '输入关键词筛选…',
   'select.noMatches': '没有匹配的选项',

@@ -11,6 +11,7 @@ import {
   formatPctNumber,
   formatSpeedMetric,
   formatTokensPrecise,
+  formatTrendSlotFullLabel,
   formatUsd,
   mergeModelsByDisplayName,
   resolveModelDisplayInfo,
@@ -20,8 +21,10 @@ import { buildXlsxWorkbookBytes } from './xlsxBuilder.js';
 const PLAIN_SIGNED_NUMBER_RE = /^[+-]?\d+(\.\d+)?$/;
 
 const RANGE_LABELS_ZH = Object.freeze({
+  '5h': '近5小时',
   today: '今日',
   '24h': '近24小时',
+  week: '本周',
   '7d': '近7天',
   '14d': '近14天',
   '30d': '近30天',
@@ -31,8 +34,10 @@ const RANGE_LABELS_ZH = Object.freeze({
 });
 
 const RANGE_LABELS_EN = Object.freeze({
+  '5h': 'Last 5 Hours',
   today: 'Today',
   '24h': 'Last 24 Hours',
+  week: 'This Week',
   '7d': 'Last 7 Days',
   '14d': 'Last 14 Days',
   '30d': 'Last 30 Days',
@@ -833,8 +838,10 @@ export function buildStepsMarkdownReport(
 export function buildConsumptionCsv(
   consumption,
   modelBreakdown = [],
-  { displaySettings = {}, includeBom = true } = {}
+  { displaySettings = {}, includeBom = true, locale } = {}
 ) {
+  const en = resolveExportEnglish(locale);
+  const effectiveLocale = en ? 'en-US' : 'zh-CN';
   const cons = consumption || {};
   const acc = cons.account || {};
   const range = cons.selectedRange || {};
@@ -860,7 +867,7 @@ export function buildConsumptionCsv(
     ]),
     csvRow([
       'summary',
-      range.label || range.key || 'all',
+      resolveLocalizedRangeLabel(range, en),
       Number(acc.calls || 0),
       Number(acc.inputTokens || 0),
       Number(acc.cacheReadTokens || 0),
@@ -928,7 +935,7 @@ export function buildConsumptionCsv(
     rows.push(
       csvRow([
         'trend',
-        slot.fullLabel || slot.label || '',
+        formatTrendSlotFullLabel(slot, { locale: effectiveLocale }) || slot.label || '',
         Number(slot.calls || 0),
         Number(slot.inputTokens || 0),
         Number(slot.cacheReadTokens || 0),

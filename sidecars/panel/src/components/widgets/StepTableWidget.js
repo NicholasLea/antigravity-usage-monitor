@@ -94,11 +94,7 @@ function estTokenChars(val) {
 }
 
 function estCostWidth(st) {
-  const c = st?.costUsd;
-  if (c == null || !Number.isFinite(Number(c))) {
-    return st?.isPricingPending ? estProportionalTextWidth(t('fmt.pricingPending')) : 1;
-  }
-  return estProportionalTextWidth(formatUsd(Number(c)));
+  return estProportionalTextWidth(formatUsd(st?.costUsd, { precise: true }));
 }
 
 function estSegmentChars(seg, st) {

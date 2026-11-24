@@ -13,7 +13,11 @@ import {
   patchStyleVar,
   patchText,
 } from '../../core/domPatch.js';
-import { formatTokensPrecise, formatUsd } from '../../core/formatters.js';
+import {
+  formatTokensPrecise,
+  formatTrendSlotFullLabel,
+  formatUsd,
+} from '../../core/formatters.js';
 import { SVG_NS } from '../../icons/SvgIcon.js';
 import { getEffectiveLocale, t } from '../../i18n/index.js';
 import { createConsumptionBreakdownContent } from '../ui/ConsumptionTooltipContent.js';
@@ -738,7 +742,7 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const slotTok = safeSlotTokens(slot.tokens);
     const slotCost = Number.isFinite(Number(slot.costUsd)) ? Math.max(0, Number(slot.costUsd)) : 0;
     tooltipContent.update({
-      title: slot.fullLabel || slot.label || '--',
+      title: formatTrendSlotFullLabel(slot) || slot.label || '--',
       calls: slot.calls,
       totalTokens: slotTok,
       costText: formatUsd(slotCost, {
@@ -1517,7 +1521,7 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
         const tickEl = h('span', {
           className: `trend-x-tick text-mono${isFirst ? ' is-start' : isLast ? ' is-end' : ''}`,
           text: slot.label || '',
-          title: slot.fullLabel || slot.label || '',
+          title: formatTrendSlotFullLabel(slot) || slot.label || '',
         });
         patchStyleVar(tickEl, '--tick-x', `${pct.toFixed(2)}%`);
         tickEl.onclick = () => {

@@ -1507,3 +1507,137 @@ test('5h quota cycle includes cycle-opening compaction CHECKPOINT and cross-boun
   assert.equal(payload.consumption.account.calls, 4);
   assert.equal(payload.consumption.account.totalTokens, 491_000);
 });
+
+test('i18n static t(...) key completeness guard, scopeAll formatters, and localized en-US trend/CSV date labels', async () => {
+  const { I18N_MESSAGES_ZH_CN } = await import('../src/i18n/zh-CN.js');
+  const { I18N_MESSAGES_EN_US } = await import('../src/i18n/en-US.js');
+  const { setI18nLanguage } = await import('../src/i18n/index.js');
+  const {
+    formatAgentBadgeText,
+    formatAgentLabel,
+    formatTrendSlotFullLabel,
+  } = await import('../src/core/formatters.js');
+  const { buildStructurePreviewTelemetry } = await import('../src/components/settings/structurePreviewMock.js');
+  const { buildConsumptionCsv } = await import('../src/core/reportExporter.js');
+  const { createTrendAreaChart } = await import('../src/components/charts/TrendAreaChart.js');
+  const { createMockDom } = await import('./mock-dom.mjs');
+
+  // 1. Every static t('...') call across sidecars/panel/src/** resolves in both zh-CN and en-US
+  const srcRoot = fileURLToPath(new URL('../src', import.meta.url));
+  const walkJs = (dir) => {
+    const out = [];
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, ent.name);
+      if (ent.isDirectory()) out.push(...walkJs(p));
+      else if (ent.name.endsWith('.js') || ent.name.endsWith('.mjs')) out.push(p);
+    }
+    return out;
+  };
+  const zhKeys = new Set(Object.keys(I18N_MESSAGES_ZH_CN));
+  const enKeys = new Set(Object.keys(I18N_MESSAGES_EN_US));
+  assert.deepEqual([...zhKeys].filter((k) => !enKeys.has(k)), []);
+  assert.deepEqual([...enKeys].filter((k) => !zhKeys.has(k)), []);
+
+  const missingKeys = [];
+  for (const filePath of walkJs(srcRoot)) {
+    const srcText = fs.readFileSync(filePath, 'utf8');
+    const re = /(?<![.\w])t\(\s*(['"])([^'"]+)\1/g;
+    let m;
+    while ((m = re.exec(srcText)) !== null) {
+      const k = m[2];
+      if (!zhKeys.has(k) || !enKeys.has(k)) {
+        missingKeys.push(`${filePath}:${k}`);
+      }
+    }
+  }
+  assert.deepEqual(missingKeys, []);
+
+  // 2. agentKind === 'all' & structurePreviewMock never leak raw key strings
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    location: { origin: 'http://127.0.0.1:41234', href: 'http://127.0.0.1:41234/' },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+
+  try {
+    setI18nLanguage('zh-CN');
+    assert.equal(formatAgentBadgeText({ agentKind: 'all' }), '全');
+    assert.equal(formatAgentLabel({ agentKind: 'all' }), '全部代理');
+    assert.equal(buildStructurePreviewTelemetry().activeConversation.aggregated.badgeText, '全');
+
+    setI18nLanguage('en-US');
+    assert.equal(formatAgentBadgeText({ agentKind: 'all' }), 'All');
+    assert.equal(formatAgentLabel({ agentKind: 'all' }), 'All Agents');
+    assert.equal(buildStructurePreviewTelemetry().activeConversation.aggregated.badgeText, 'All');
+
+    // 3. TrendAreaChart tooltip + X-axis tick title & CSV export localize dates in en-US without hardcoded Chinese
+    const localStart = new Date(new Date().getFullYear(), 10, 24, 10, 0, 0, 0).getTime();
+    const localEnd = localStart + 3600_000;
+    const hourlySlot = {
+      index: 0,
+      startMs: localStart,
+      endMs: localEnd,
+      granularity: 'hour',
+      label: '10:00',
+      fullLabel: '11月24日 10:00 - 11:00',
+      tokens: 12_000,
+      inputTokens: 8_000,
+      cacheReadTokens: 3_000,
+      outputTokens: 1_000,
+      costUsd: 0.05,
+      calls: 2,
+    };
+    const dailySlot = {
+      index: 0,
+      startMs: new Date(2025, 10, 24, 0, 0, 0, 0).getTime(),
+      endMs: new Date(2025, 10, 25, 0, 0, 0, 0).getTime(),
+      granularity: 'day',
+      label: '11/24',
+      fullLabel: '2025年11月24日 (周一)',
+      tokens: 25_000,
+      calls: 4,
+      costUsd: 0.12,
+    };
+
+    assert.equal(formatTrendSlotFullLabel(hourlySlot, { locale: 'en-US' }), 'Nov 24, 10:00 - 11:00');
+    assert.equal(formatTrendSlotFullLabel(hourlySlot, { locale: 'zh-CN' }), '11月24日 10:00 - 11:00');
+    assert.equal(formatTrendSlotFullLabel(dailySlot, { locale: 'en-US' }), 'Nov 24, 2025 (Mon)');
+    assert.equal(formatTrendSlotFullLabel(dailySlot, { locale: 'zh-CN' }), '2025年11月24日 (周一)');
+
+    const chart = createTrendAreaChart();
+    setI18nLanguage('en-US');
+    chart.update([hourlySlot, { ...hourlySlot, index: 1, startMs: localEnd, endMs: localEnd + 3600_000, label: '11:00', fullLabel: '11月24日 11:00 - 12:00' }]);
+    const enTicks = chart.el.querySelectorAll('.trend-x-tick');
+    assert.equal(enTicks[0].getAttribute('title'), 'Nov 24, 10:00 - 11:00');
+    enTicks[0].onclick?.();
+    assert.match(chart.el.textContent, /Nov 24, 10:00 - 11:00/);
+    assert.doesNotMatch(chart.el.textContent, /11月24日/);
+
+    setI18nLanguage('zh-CN');
+    chart.update([hourlySlot, { ...hourlySlot, index: 1, startMs: localEnd, endMs: localEnd + 3600_000, label: '11:00', fullLabel: '11月24日 11:00 - 12:00' }]);
+    const zhTicks = chart.el.querySelectorAll('.trend-x-tick');
+    assert.equal(zhTicks[0].getAttribute('title'), '11月24日 10:00 - 11:00');
+    chart.destroy();
+
+    const csvEn = buildConsumptionCsv(
+      {
+        selectedRange: { key: 'cycle', label: '当前周期' },
+        account: { calls: 2, inputTokens: 8000, cacheReadTokens: 3000, outputTokens: 1000, totalTokens: 12000, cacheHitPct: 27.3, costUsd: 0.05, savedCostUsd: 0.01 },
+        trendSeries: [hourlySlot],
+      },
+      [],
+      { locale: 'en-US', includeBom: false }
+    );
+    assert.match(csvEn, /summary,Current Cycle,/);
+    assert.match(csvEn, /trend,"Nov 24, 10:00 - 11:00",/);
+    assert.doesNotMatch(csvEn, /[\u4e00-\u9fff]/);
+  } finally {
+    setI18nLanguage('zh-CN');
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  }
+});
