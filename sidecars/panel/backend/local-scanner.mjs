@@ -31,6 +31,7 @@ import {
   DEEP_STATS_CACHE_CANDIDATES,
   externalDeepStatsMemo,
   loadJson,
+  localSummaryMemo,
 } from './config.mjs';
 import { getEndpointCacheStore, getRegisteredRemoteEndpoint } from './endpoint-registry.mjs';
 import {
@@ -40,6 +41,7 @@ import {
   readLocalImageDimensionsFromUri,
   readLocalSqliteTrajectory,
   readLocalSummaryIndex,
+  readLocalSummarySnapshot,
 } from './cli-sqlite-reader.mjs';
 import { callLsRpc } from './ls-rpc.mjs';
 import { formatGenericModelSlug, getBaseModelLabel } from './model-pricing.mjs';
@@ -551,6 +553,50 @@ const failedFetchCooldownMap = new Map();
 const liveActivityMemo = new Map();
 const transcriptTailMemo = new Map();
 const swarmManifestMemo = new Map();
+let lastKnownLocalLiveCascadeIds = null;
+
+/**
+ * 收集目标端点当前仍存活的原始会话源 ID 集合（供「重建缓存」区分“存活待重扫会话”和“原对话已被删除需永久归档留存会话”）。
+ *
+ * @param {object|null} [endpoint=null]
+ * @returns {Set<string> | null}
+ */
+export function collectAuthoritativeLiveCascadeIds(endpoint = null) {
+  if (endpoint && endpoint.isRemote) {
+    return endpoint.lastKnownLiveCascadeIds instanceof Set
+      ? new Set(endpoint.lastKnownLiveCascadeIds)
+      : null;
+  }
+  const convDirs =
+    Array.isArray(CONVERSATION_DIRS) && CONVERSATION_DIRS.length > 0
+      ? CONVERSATION_DIRS
+      : [CONVERSATIONS_DIR];
+  const hasAnyLocalConvDir = convDirs.some((d) => Boolean(d && existsSync(d)));
+  localSummaryMemo.sig = '';
+  localSummaryMemo.byRootsKey.clear();
+  brainDirListingMemo.clear();
+  knownExistingTranscriptPaths.clear();
+  const diskConvMap = discoverLocalConversationFiles();
+  const localSnap = readLocalSummarySnapshot();
+  if (!hasAnyLocalConvDir && diskConvMap.size === 0 && !localSnap.available) {
+    return lastKnownLocalLiveCascadeIds instanceof Set
+      ? new Set(lastKnownLocalLiveCascadeIds)
+      : null;
+  }
+  const liveIds = new Set();
+  for (const id of diskConvMap.keys()) liveIds.add(String(id).toLowerCase());
+  for (const id of localSnap.byId.keys()) liveIds.add(String(id).toLowerCase());
+  const localStore = getEndpointCacheStore(null);
+  for (const [rawKey, entry] of localStore.listCachedTrajectoryEntries()) {
+    const lower = String(rawKey || '').toLowerCase();
+    if (!liveIds.has(lower)) continue;
+    for (const ref of entry?.subagentRefs || []) {
+      const refLower = String(ref?.cascadeId || '').trim().toLowerCase();
+      if (refLower) liveIds.add(refLower);
+    }
+  }
+  return liveIds;
+}
 
 export function clearScannerRuntimeMemos(endpointId = null) {
   if (endpointId && endpointId !== 'local') {
@@ -558,6 +604,7 @@ export function clearScannerRuntimeMemos(endpointId = null) {
     if (ep) {
       ep.failedFetchCooldownMap.clear();
       ep.liveActivityMemo.clear();
+      ep.lastKnownLiveCascadeIds = null;
     }
     return;
   }
@@ -568,6 +615,7 @@ export function clearScannerRuntimeMemos(endpointId = null) {
   brainDirListingMemo.clear();
   knownExistingTranscriptPaths.clear();
   knownBrainCascadeSet = null;
+  lastKnownLocalLiveCascadeIds = null;
 }
 
 function findSwarmMembersPath(cascadeId) {
@@ -1700,6 +1748,10 @@ export async function enumerateAndSyncConversations({
   const isRemote = Boolean(endpoint && endpoint.isRemote);
   const cacheStore = getEndpointCacheStore(endpoint);
   const getEntry = cacheStore.getCachedTrajectory;
+  const getHydratedEntry =
+    typeof cacheStore.getHydratedTrajectory === 'function'
+      ? cacheStore.getHydratedTrajectory
+      : getEntry;
   const setEntry = cacheStore.setCachedTrajectory;
   const removeEntry = cacheStore.removeCachedTrajectory;
   const listEntries = cacheStore.listCachedTrajectoryEntries;
@@ -1828,6 +1880,29 @@ export async function enumerateAndSyncConversations({
 
   const localSummaryByLower = isRemote ? new Map() : readLocalSummaryIndex();
   const sqliteAvailable = isRemote ? false : hasBuiltinNodeSqlite();
+  const observedLiveIds = new Set();
+  for (const k of summariesByLower.keys()) observedLiveIds.add(k);
+  for (const k of localSummaryByLower.keys()) observedLiveIds.add(k);
+  for (const k of diskConvMap.keys()) observedLiveIds.add(k);
+  for (const [rawKey, entry] of listEntries()) {
+    const lower = String(rawKey || '').toLowerCase();
+    if (!observedLiveIds.has(lower)) continue;
+    for (const ref of entry?.subagentRefs || []) {
+      const refCid = String(ref?.cascadeId || '').trim().toLowerCase();
+      if (refCid) observedLiveIds.add(refCid);
+    }
+  }
+  const hasAuthoritativeSourceSnapshot = isRemote
+    ? summariesByLower.size > 0
+    : summariesByLower.size > 0 || localSummaryByLower.size > 0 || diskConvMap.size > 0;
+  if (hasAuthoritativeSourceSnapshot) {
+    if (isRemote && endpoint) {
+      endpoint.lastKnownLiveCascadeIds = observedLiveIds;
+    } else if (!isRemote) {
+      lastKnownLocalLiveCascadeIds = observedLiveIds;
+    }
+  }
+  const normalizedPollAccount = normalizeOwnerAccount(currentAccountName);
   const STALE_LOCAL_RUNNING_MAX_AGE_MS = 10 * 60_000;
   const reqLower = String(requestedConvId || '').trim().toLowerCase();
   const rawConversations = [];
@@ -2082,6 +2157,9 @@ export async function enumerateAndSyncConversations({
    * 检查缓存条目是否缺少最新分解字段（含 10 通道上下文细分字段 `toolResultsTokens`）。
    */
   function hasMissingStepFields(cached) {
+    if (cached?._stepFlags) {
+      return Boolean(cached._stepFlags.hasMissingStepFields);
+    }
     const steps = cached?.steps || [];
     const lastCachedStep = steps[steps.length - 1];
     if (!lastCachedStep) return false;
@@ -2149,7 +2227,7 @@ export async function enumerateAndSyncConversations({
           const cooldownKey = `${conv.cascadeId.toLowerCase()}::${sig}`;
           const isRunning = conv.status === 'CASCADE_RUN_STATUS_RUNNING';
           const isReq = Boolean(reqLower && conv.cascadeId.toLowerCase() === reqLower);
-          const prev = getEntry(conv.cascadeId);
+          const prev = getHydratedEntry(conv.cascadeId);
           let partialTailSteps = [];
           let hasTailStepInfo = false;
           try {
@@ -2222,6 +2300,15 @@ export async function enumerateAndSyncConversations({
               }
             }
             const steps = extractModelSteps(rawSteps, generatorMeta);
+            if (
+              steps.length === 0 &&
+              (prev?.steps?.length || 0) > 0 &&
+              !prev.offlineTranscriptFallback &&
+              !conv.inSummaries &&
+              !conv.dbPath
+            ) {
+              throw new Error('Empty orphan trajectory; retaining cached usage');
+            }
             const nextLast = steps[steps.length - 1];
 
             // 提取轨迹内携带的子代理归属元数据、旁路提问父归属与派生的子代理引用列表
@@ -2603,6 +2690,9 @@ export async function enumerateAndSyncConversations({
     (c) => c.cascadeId.toLowerCase() === contextTelemetryCascadeId
   )?.rootConversationId || contextTelemetryCascadeId;
   function hasMissingTurnRailFields(cached) {
+    if (cached?._stepFlags) {
+      return Boolean(cached._stepFlags.hasMissingTurnRailFields);
+    }
     const steps = cached?.steps || [];
     const lastCachedStep = steps[steps.length - 1];
     if (!lastCachedStep) return false;
@@ -2613,6 +2703,9 @@ export async function enumerateAndSyncConversations({
     if (grpVer >= 3) return false;
     const steps = cached?.steps || [];
     if (grpVer === 2) {
+      if (cached?._stepFlags) {
+        return steps.length > 0 && !cached._stepFlags.hasAnyContextBreakdown;
+      }
       return steps.length > 0 && !steps.some((st) => Boolean(st?.contextBreakdown));
     }
     if (steps.some((st) => st?.isCompactionStep)) {
@@ -2640,6 +2733,9 @@ export async function enumerateAndSyncConversations({
 
   function needsWakeupTurnRefresh(conv, cached) {
     if (!conv?.isSubagent || conv.isSideQuestion || cached?.wakeupTurnTelemetry) return false;
+    if (cached?._stepFlags) {
+      return (cached.steps?.length || 0) > 0 && !cached._stepFlags.hasAnyTurnIndex;
+    }
     const steps = cached?.steps || [];
     return steps.length > 0 && steps.every((s) => !s?.turnIndex);
   }
@@ -2649,9 +2745,44 @@ export async function enumerateAndSyncConversations({
     const sig = buildConvSig(conv);
     if (isFetchInCooldown(conv, sig)) return false;
     const isRunning = conv.status === 'CASCADE_RUN_STATUS_RUNNING';
-    const cached = getEntry(conv.cascadeId);
+    let cached = getEntry(conv.cascadeId);
     if (!cached || conv.needsInitialLoad) return true;
     const lowerCid = conv.cascadeId.toLowerCase();
+    const hasLiveBacking = Boolean(
+      conv.inSummaries ||
+        conv.dbPath ||
+        (diskConvMap.get(lowerCid)?.length || 0) > 0 ||
+        observedLiveIds.has(lowerCid)
+    );
+    if (cached.archived && hasLiveBacking) {
+      const unarchived = { ...cached };
+      delete unarchived.archived;
+      setEntry(conv.cascadeId, unarchived);
+      cached = getEntry(conv.cascadeId) || unarchived;
+      cacheDirty = true;
+    } else if (
+      !hasLiveBacking &&
+      (cached.steps?.length || 0) > 0 &&
+      !cached.offlineTranscriptFallback
+    ) {
+      if (cached.archived) {
+        return false;
+      }
+      if (hasAuthoritativeSourceSnapshot) {
+        const cachedOwner = normalizeOwnerAccount(cached.accountName);
+        const sameOrUnknownAccount =
+          !normalizedPollAccount || !cachedOwner || cachedOwner === normalizedPollAccount;
+        const parentRefLower = String(
+          conv.rootConversationId || conv.parentConversationId || ''
+        ).toLowerCase();
+        const linkedToLiveParent = Boolean(parentRefLower && observedLiveIds.has(parentRefLower));
+        if (sameOrUnknownAccount && !linkedToLiveParent) {
+          setEntry(conv.cascadeId, { ...cached, archived: true });
+          cacheDirty = true;
+          return false;
+        }
+      }
+    }
     const isSelectedFamily =
       lowerCid === contextTelemetryCascadeId ||
       lowerCid === selectedRootId ||
@@ -2748,7 +2879,10 @@ export async function enumerateAndSyncConversations({
       }
     }
     // 保留已有效的历史测速，按批补读需要确认原始状态与生成结束时间的旧步骤。
-    if (!cached.speedClearedTelemetry && readStepFieldChecks(cached.steps).hasIncompleteTiming) {
+    const hasIncompleteTiming = cached?._stepFlags
+      ? Boolean(cached._stepFlags.hasIncompleteTiming)
+      : readStepFieldChecks(cached.steps).hasIncompleteTiming;
+    if (!cached.speedClearedTelemetry && hasIncompleteTiming) {
       if (conv.cascadeId.toLowerCase() === selectedRootId || conv.rootConversationId === selectedRootId) return true;
       if (remainingTimingRefreshes > 0) {
         remainingTimingRefreshes -= 1;

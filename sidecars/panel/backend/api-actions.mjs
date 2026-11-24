@@ -18,7 +18,10 @@ import {
 } from './endpoint-registry.mjs';
 import { isLocalHostRequest, readLocalAsync } from './http-helpers.mjs';
 import { revealLocalExportFile, writeLocalExportFile } from './file-exporter.mjs';
-import { clearScannerRuntimeMemos } from './local-scanner.mjs';
+import {
+  clearScannerRuntimeMemos,
+  collectAuthoritativeLiveCascadeIds,
+} from './local-scanner.mjs';
 import {
   SETTINGS_FILE,
   clearRuntimeCaches,
@@ -556,9 +559,12 @@ export function executeRebuildCacheAction(data = undefined, opts = {}) {
   if (!epCtx.ok) {
     return buildEndpointErrorResponse(epCtx);
   }
+  const liveCascadeIds = collectAuthoritativeLiveCascadeIds(
+    epCtx.isRemote ? epCtx.endpoint : null
+  );
   const ok = epCtx.isRemote
-    ? clearRemoteEndpointCaches(epCtx.id)
-    : clearRuntimeCaches();
+    ? clearRemoteEndpointCaches(epCtx.id, { liveCascadeIds })
+    : clearRuntimeCaches({ liveCascadeIds });
   if (!ok) {
     return {
       ok: false,

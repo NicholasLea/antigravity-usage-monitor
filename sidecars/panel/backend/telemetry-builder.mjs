@@ -93,9 +93,16 @@ function roundSessionCost(val) {
   return val < 0.01 ? +val.toFixed(4) : +val.toFixed(2);
 }
 
-function findTrajectoryCacheEntry(cascadeId, cacheStore = null) {
+function findTrajectoryCacheEntry(cascadeId, cacheStore = null, { hydrate = false } = {}) {
   if (!cascadeId) return null;
   const store = cacheStore || getEndpointCacheStore(null);
+  if (hydrate && typeof store.getHydratedTrajectoryEntryByLower === 'function') {
+    return store.getHydratedTrajectoryEntryByLower(cascadeId)?.entry || null;
+  }
+  if (hydrate && typeof store.getHydratedTrajectory === 'function') {
+    const hit = store.getHydratedTrajectory(cascadeId);
+    if (hit) return hit;
+  }
   if (typeof store.getCachedTrajectoryEntryByLower === 'function') {
     return store.getCachedTrajectoryEntryByLower(cascadeId)?.entry || null;
   }
@@ -149,6 +156,16 @@ function buildKnownUpstreamModelMap(contextLimits, cacheStore = null) {
     const facts = readTrajectoryModelFacts(entry.steps);
     for (const [key, model] of facts.upstream) knownUpstreamByModelKey.set(key, model);
     if (entry.subagentSpec) continue;
+    if (Array.isArray(entry._stepFlags?.modelLimits) && entry._stepFlags.modelLimits.length > 0) {
+      for (const [key, tokens, at] of entry._stepFlags.modelLimits) {
+        if (!key || !(tokens > 0)) continue;
+        const previous = contextLimits.get(key);
+        if (!previous || at > previous.at) {
+          contextLimits.set(key, { tokens, at });
+        }
+      }
+      continue;
+    }
     if (facts.limits) {
       for (const [key, limit] of facts.limits) {
         const previous = contextLimits.get(key);
@@ -1054,7 +1071,7 @@ function buildActiveConversationAssembly({
   const cacheKey = `${epKey}::${String(activeCascadeId || '__empty__').toLowerCase()}`;
 
   const subEntries = subagentSummaries.map((subSum) =>
-    findTrajectoryCacheEntry(subSum.cascadeId, cacheStore)
+    findTrajectoryCacheEntry(subSum.cascadeId, cacheStore, { hydrate: true })
   );
   const subRawStepsList = subEntries.map((entry) => entry?.steps || []);
   const combinedFallbackKeys = new Set();
@@ -1768,7 +1785,7 @@ export async function buildTelemetryPayloadInternal(
   // 3. 计算当前活跃根会话及其子代理的步骤指标、10 通道上下文拆解与按模型汇总
   const reportedContextLimits = new Map();
   const knownUpstreamByModelKey = buildKnownUpstreamModelMap(reportedContextLimits, cacheStore);
-  const activeEntry = findTrajectoryCacheEntry(activeCascadeId, cacheStore);
+  const activeEntry = findTrajectoryCacheEntry(activeCascadeId, cacheStore, { hydrate: true });
   const modelInputs = {
     catalogRevision: pricingCatalogRevision,
     phaseEpoch: getPricingPhaseEpoch(),
@@ -1972,7 +1989,7 @@ export async function buildTelemetryPayloadInternal(
     if (cidKey && quickStatsMemo.has(cidKey)) {
       return quickStatsMemo.get(cidKey);
     }
-    const rootEntry = findTrajectoryCacheEntry(rootConv?.cascadeId, cacheStore);
+    const rootEntry = findTrajectoryCacheEntry(rootConv?.cascadeId, cacheStore, { hydrate: true });
     const rootSteps = rootEntry?.steps || [];
     const rawSubs = Array.isArray(rootConv?.subagents) ? rootConv.subagents : [];
 
@@ -2478,7 +2495,9 @@ function resolveValidFastSnapshot(endpoint = null) {
 }
 
 function entryNeedsLazyTelemetryUpgrade(entry) {
-  if (!entry || !Array.isArray(entry.steps) || entry.steps.length === 0) return false;
+  if (!entry || entry.archived || !Array.isArray(entry.steps) || entry.steps.length === 0) {
+    return false;
+  }
   const grpVer = Number(entry.contextGroupsTelemetry || 0);
   const needsUndoCtxUpgrade =
     grpVer < 2 || (grpVer === 2 && !entry.steps.some((st) => Boolean(st?.contextBreakdown)));
@@ -2508,7 +2527,7 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
   if (!activeConvSummary?.cascadeId) return null;
 
   const activeCascadeId = activeConvSummary.cascadeId;
-  const activeEntry = findTrajectoryCacheEntry(activeCascadeId, cacheStore);
+  const activeEntry = findTrajectoryCacheEntry(activeCascadeId, cacheStore, { hydrate: true });
   if (!activeEntry) return null;
 
   const subagentSummaries = Array.isArray(activeConvSummary.subagents)
@@ -2523,7 +2542,7 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
         needsBackgroundSync = true;
         break;
       }
-      const subEntry = findTrajectoryCacheEntry(subSum?.cascadeId, cacheStore);
+      const subEntry = findTrajectoryCacheEntry(subSum?.cascadeId, cacheStore, { hydrate: true });
       if (!subEntry || entryNeedsLazyTelemetryUpgrade(subEntry)) {
         needsBackgroundSync = true;
         break;

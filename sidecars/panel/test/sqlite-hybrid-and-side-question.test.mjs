@@ -936,16 +936,21 @@ test('legacy pre-PR#38 empty-WAL sqlite cache signatures migrate in-place withou
   const scannerUrl = new URL('../backend/local-scanner.mjs', import.meta.url).href;
   const configUrl = new URL('../backend/config.mjs', import.meta.url).href;
   const script = `
-    import { readFileSync } from 'node:fs';
+    import { existsSync } from 'node:fs';
     import { enumerateAndSyncConversations } from ${JSON.stringify(scannerUrl)};
-    import { CACHE_FILE, flushTrajectoryCacheNow, getCachedTrajectory } from ${JSON.stringify(configUrl)};
+    import { CACHE_FILE, TRAJECTORY_DB_FILE, flushTrajectoryCacheNow, getCachedTrajectory } from ${JSON.stringify(configUrl)};
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
     await enumerateAndSyncConversations({ summariesObj: {}, requestedConvId: '' });
     const entry = getCachedTrajectory(${JSON.stringify(cid)});
     flushTrajectoryCacheNow();
-    const onDisk = JSON.parse(readFileSync(CACHE_FILE, 'utf8'));
+    const db = new DatabaseSync(TRAJECTORY_DB_FILE, { readOnly: true });
+    const row = db.prepare('SELECT meta_json FROM conversations WHERE lower_id = ?').get(${JSON.stringify(cid.toLowerCase())});
+    db.close();
+    const onDiskMeta = row?.meta_json ? JSON.parse(row.meta_json) : {};
     console.log(JSON.stringify({
       memSig: entry?.signature || '',
-      diskSig: onDisk[${JSON.stringify(cid)}]?.signature || '',
+      diskSig: onDiskMeta?.signature || '',
+      migratedBakExists: existsSync(CACHE_FILE + '.bak'),
       stepCount: entry?.steps?.length || 0,
       firstInput: entry?.steps?.[0]?.inputTokens || 0,
     }));
@@ -961,6 +966,7 @@ test('legacy pre-PR#38 empty-WAL sqlite cache signatures migrate in-place withou
     },
   });
   const out = JSON.parse(stdout.trim().split('\n').pop());
+  assert.equal(out.migratedBakExists, true, 'legacy JSON cache automatically migrated and archived to .bak');
   assert.equal(out.stepCount, 1, 'cached sentinel step preserved (SQLite was NOT re-read)');
   assert.equal(out.firstInput, 1234, 'cached usage preserved intact');
   assert.ok(out.memSig.endsWith('|0:0'), `in-memory signature normalized to |0:0: ${out.memSig}`);

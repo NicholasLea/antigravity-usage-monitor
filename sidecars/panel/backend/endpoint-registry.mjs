@@ -18,6 +18,8 @@ import {
   flushTrajectoryCacheNow,
   getCachedTrajectory,
   getCachedTrajectoryEntryByLower,
+  getHydratedTrajectory,
+  getHydratedTrajectoryEntryByLower,
   hasPendingTrajectoryCacheSave,
   listCachedTrajectoryEntries,
   loadJson,
@@ -108,8 +110,8 @@ export function buildRemoteEndpointIdentity({ origin = '', hostLabel = '', stabl
   };
 }
 
-function buildRemoteCacheFilePath(stableHostKey) {
-  if (!stableHostKey) return '';
+function buildRemoteCacheFilePaths(stableHostKey) {
+  if (!stableHostKey) return { cacheFilePath: '', sqliteFilePath: '' };
   const safePrefix = stableHostKey
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '_')
@@ -117,7 +119,10 @@ function buildRemoteCacheFilePath(stableHostKey) {
     .slice(0, 32) || 'ssh';
   const hash = createHash('sha256').update(stableHostKey.toLowerCase()).digest('hex').slice(0, 12);
   // 前缀加上 `ssh-` 可彻底规避 Windows 保留文件名（CON/NUL/PRN/AUX/COM1 等）
-  return join(ENDPOINT_REMOTE_CACHE_DIR, `ssh-${safePrefix}-${hash}.json`);
+  return {
+    cacheFilePath: join(ENDPOINT_REMOTE_CACHE_DIR, `ssh-${safePrefix}-${hash}.json`),
+    sqliteFilePath: join(ENDPOINT_REMOTE_CACHE_DIR, `ssh-${safePrefix}-${hash}.sqlite`),
+  };
 }
 
 function createRemoteQuotaCache() {
@@ -131,9 +136,10 @@ function createRemoteQuotaCache() {
   };
 }
 
-function createRemoteEndpointStore(cacheFilePath) {
+function createRemoteEndpointStore(cacheFilePath, sqliteFilePath = '') {
   return createTrajectoryCacheStore({
     cacheFilePath,
+    sqliteFilePath,
     loadJsonFn: loadJson,
     shouldBypassThrottleFn: (allowThrottleInTest) =>
       lsRuntimeEndpoint.addr === 'test.invalid' && !allowThrottleInTest,
@@ -175,9 +181,9 @@ export function registerRemoteEndpoint(info = {}) {
 
   let entry = remoteEndpointRegistry.get(identity.id);
   if (!entry) {
-    const cacheFilePath = identity.hasStableHostKey
-      ? buildRemoteCacheFilePath(identity.stableHostKey)
-      : '';
+    const { cacheFilePath, sqliteFilePath } = identity.hasStableHostKey
+      ? buildRemoteCacheFilePaths(identity.stableHostKey)
+      : { cacheFilePath: '', sqliteFilePath: '' };
     entry = {
       id: identity.id,
       instanceId: ++nextEndpointInstanceId,
@@ -192,11 +198,12 @@ export function registerRemoteEndpoint(info = {}) {
       lastSeenMs: nowMs,
       preferTier2UntilMs: 0,
       inFlightCount: 0,
-      store: createRemoteEndpointStore(cacheFilePath),
+      store: createRemoteEndpointStore(cacheFilePath, sqliteFilePath),
       quotaSummaryCache: createRemoteQuotaCache(),
       contextModelCatalog: null,
       failedFetchCooldownMap: new Map(),
       liveActivityMemo: new Map(),
+      lastKnownLiveCascadeIds: null,
     };
     remoteEndpointRegistry.set(identity.id, entry);
   } else {
@@ -315,6 +322,8 @@ export function getEndpointCacheStore(endpointOrId = null) {
     endpointId: LOCAL_ENDPOINT_ID,
     getCachedTrajectory,
     getCachedTrajectoryEntryByLower,
+    getHydratedTrajectory,
+    getHydratedTrajectoryEntryByLower,
     listCachedTrajectoryEntries,
     setCachedTrajectory,
     removeCachedTrajectory,
@@ -344,15 +353,21 @@ export function getEndpointQuotaCache(endpointOrId = null) {
  * 清空目标远端端点的内存与持久化缓存（包含配额、模型目录、扫描冷却表与实时活动缓存）。
  *
  * @param {string} endpointId
+ * @param {{ liveCascadeIds?: Iterable<string> | null }} [options]
  * @returns {boolean}
  */
-export function clearRemoteEndpointCaches(endpointId) {
+export function clearRemoteEndpointCaches(endpointId, options = {}) {
   const ep = getRegisteredRemoteEndpoint(endpointId);
   if (!ep) return false;
-  const ok = ep.store.clearCache();
+  const liveCascadeIds =
+    options && Object.prototype.hasOwnProperty.call(options, 'liveCascadeIds')
+      ? options.liveCascadeIds
+      : ep.lastKnownLiveCascadeIds;
+  const ok = ep.store.clearCache({ liveCascadeIds });
   if (!ok) return false;
   ep.failedFetchCooldownMap.clear();
   ep.liveActivityMemo.clear();
+  ep.lastKnownLiveCascadeIds = null;
   ep.contextModelCatalog = null;
   ep.quotaSummaryCache.ts = 0;
   ep.quotaSummaryCache.lastAttemptTs = 0;

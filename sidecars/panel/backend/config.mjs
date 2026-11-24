@@ -165,6 +165,7 @@ function resolveDefaultDataDir() {
 export const DATA_DIR = resolveDefaultDataDir();
 export const SETTINGS_FILE = join(DATA_DIR, 'settings.json');
 export const CACHE_FILE = join(DATA_DIR, 'trajectory_usage_cache.json');
+export const TRAJECTORY_DB_FILE = join(DATA_DIR, 'trajectory_store.sqlite');
 export const REMOTE_CATALOG_CACHE_FILE = join(DATA_DIR, 'remote_pricing_cache.json');
 export const CLI_STATUS_SNAPSHOT_FILE = join(DATA_DIR, 'cli-status-snapshot.json');
 export const QUOTA_RESERVATION_STATE_FILE = join(DATA_DIR, 'quota_reservation_state.json');
@@ -419,6 +420,7 @@ export function computeRuntimeCodeVersion(options = {}) {
  */
 const localTrajectoryCacheStore = createTrajectoryCacheStore({
   cacheFilePath: CACHE_FILE,
+  sqliteFilePath: TRAJECTORY_DB_FILE,
   loadJsonFn: loadJson,
   writeCacheFn: (targetPath, dataObj) => saveJson(targetPath, dataObj),
   shouldBypassThrottleFn: (allowThrottleInTest) =>
@@ -426,12 +428,24 @@ const localTrajectoryCacheStore = createTrajectoryCacheStore({
   registerExitHook: true,
 });
 
+export function getLocalTrajectoryCacheStore() {
+  return localTrajectoryCacheStore;
+}
+
 export function getCachedTrajectory(cascadeId) {
   return localTrajectoryCacheStore.getCachedTrajectory(cascadeId);
 }
 
 export function getCachedTrajectoryEntryByLower(cascadeId) {
   return localTrajectoryCacheStore.getCachedTrajectoryEntryByLower(cascadeId);
+}
+
+export function getHydratedTrajectory(cascadeId) {
+  return localTrajectoryCacheStore.getHydratedTrajectory(cascadeId);
+}
+
+export function getHydratedTrajectoryEntryByLower(cascadeId) {
+  return localTrajectoryCacheStore.getHydratedTrajectoryEntryByLower(cascadeId);
 }
 
 export function listCachedTrajectoryEntries() {
@@ -518,8 +532,8 @@ export const pluginUpdateState = {
  *
  * @returns {boolean} 是否成功写回空白缓存文件
  */
-export function clearRuntimeCaches() {
-  if (!localTrajectoryCacheStore.clearCache()) return false;
+export function clearRuntimeCaches(options = {}) {
+  if (!localTrajectoryCacheStore.clearCache(options)) return false;
   externalDeepStatsMemo.sig = '';
   externalDeepStatsMemo.convos.clear();
   localSummaryMemo.sig = '';
