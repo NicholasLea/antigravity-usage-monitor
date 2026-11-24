@@ -6710,3 +6710,270 @@ test('Antigravity IDE dual mode (双栖挂载) probes live chat iframe DOM casca
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('IDE chat iframe route probe disambiguates multi-view DOM, aborts hanging siblings early in parallel, and rejects non-UUID payloads with static fallback', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-ide-route-edge-'));
+  const roamingDir = path.join(tmpDir, 'Roaming');
+  fs.mkdirSync(path.join(roamingDir, 'Antigravity IDE'), { recursive: true });
+
+  const convHidden = 'aaaaaaaa-1111-4222-8333-aaaaaaaaaaaa';
+  const convZero = 'bbbbbbbb-1111-4222-8333-bbbbbbbbbbbb';
+  const convVis1 = 'cccccccc-1111-4222-8333-cccccccccccc';
+  const convVis2 = 'dddddddd-1111-4222-8333-dddddddddddd';
+  const convStatic = 'eeeeeeee-1111-4222-8333-eeeeeeeeeeee';
+
+  const multiState = {
+    focusedViewId: convVis2,
+    selectedRowId: '',
+  };
+  const focusToken = { tag: 'textarea' };
+  const makeViewNode = (id, { hidden = false, width = 760, height = 900 } = {}) => ({
+    getAttribute: (name) => (name === 'data-cascade-id' ? id : null),
+    hasAttribute: (name) => (name === 'hidden' ? hidden : false),
+    getBoundingClientRect: () => ({ width, height }),
+    contains: (el) => el === focusToken && multiState.focusedViewId === id,
+  });
+
+  const multiDoc = {
+    hidden: false,
+    get activeElement() {
+      return multiState.focusedViewId ? focusToken : null;
+    },
+    hasFocus: () => true,
+    querySelector: (sel) => {
+      if (sel.includes('conversation-row-')) {
+        return multiState.selectedRowId
+          ? { getAttribute: (n) => (n === 'data-cascade-id' ? multiState.selectedRowId : null) }
+          : null;
+      }
+      if (sel.includes('conversation-view')) {
+        return makeViewNode(convHidden, { hidden: true });
+      }
+      return null;
+    },
+    querySelectorAll: (sel) => {
+      if (!sel.includes('conversation-view')) return [];
+      return [
+        makeViewNode(convHidden, { hidden: true }),
+        makeViewNode(convZero, { width: 0, height: 0 }),
+        makeViewNode(convVis1),
+        makeViewNode(convVis2),
+      ];
+    },
+  };
+  const multiChatCtx = vm.createContext({
+    window: {
+      innerWidth: 760,
+      innerHeight: 900,
+      location: { pathname: '/', href: 'http://127.0.0.1:56598/?extensionView=true' },
+    },
+    document: multiDoc,
+    console,
+  });
+  multiChatCtx.window.window = multiChatCtx.window;
+  multiChatCtx.window.document = multiDoc;
+
+  const wbCtx = vm.createContext({
+    window: {
+      innerWidth: 1440,
+      innerHeight: 900,
+      location: { pathname: '/out/vs/code/electron-browser/workbench/workbench.html' },
+    },
+    document: { hidden: false, querySelector: () => null, querySelectorAll: () => [] },
+    console,
+  });
+  wbCtx.window.window = wbCtx.window;
+
+  let scenario = 'multi_with_hanging';
+  let hangSocketClosed = false;
+
+  class EdgeProbeMockWS {
+    constructor(url) {
+      this.url = url;
+      this.listeners = new Map();
+      this.closed = false;
+      queueMicrotask(() => {
+        if (this.closed) return;
+        const pathname = new URL(this.url).pathname;
+        if (pathname === '/devtools/page/CHAT-ERR') {
+          this._emit('error', new Error('simulated CDP disconnect'));
+          return;
+        }
+        this._emit('open', {});
+      });
+    }
+    addEventListener(type, fn) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(fn);
+    }
+    send(raw) {
+      const msg = JSON.parse(raw);
+      if (msg.method !== 'Runtime.evaluate') return;
+      const pathname = new URL(this.url).pathname;
+      if (pathname === '/devtools/page/CHAT-HANG') {
+        // Intentionally never reply to verify parallel probing + early abort
+        return;
+      }
+      if (pathname === '/devtools/page/CHAT-MALFORMED') {
+        queueMicrotask(() =>
+          this._emit('message', {
+            data: JSON.stringify({
+              id: msg.id,
+              result: { result: { value: { routeCascadeId: 'not-a-valid-uuid', visible: true, focused: true } } },
+            }),
+          })
+        );
+        return;
+      }
+      const targetCtx = pathname === '/devtools/page/WB-1' ? wbCtx : multiChatCtx;
+      const val = vm.runInContext(msg.params.expression, targetCtx);
+      queueMicrotask(() =>
+        this._emit('message', {
+          data: JSON.stringify({ id: msg.id, result: { result: { value: val } } }),
+        })
+      );
+    }
+    close() {
+      this.closed = true;
+      if (new URL(this.url).pathname === '/devtools/page/CHAT-HANG') {
+        hangSocketClosed = true;
+      }
+    }
+    _emit(type, ev) {
+      for (const fn of this.listeners.get(type) || []) fn(ev);
+    }
+  }
+
+  const cdpSrv = http.createServer((req, res) => {
+    if (req.url !== '/json/list') {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    const p = cdpSrv.address().port;
+    const targets = [
+      {
+        id: 'WB-1',
+        type: 'page',
+        url: 'vscode-file://vscode-app/c:/Antigravity%20IDE/resources/app/out/vs/code/electron-browser/workbench/workbench.html',
+        webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/WB-1`,
+      },
+      {
+        id: 'WV-1',
+        parentId: 'WB-1',
+        type: 'iframe',
+        url: 'vscode-webview://edge/index.html?purpose=webviewView',
+      },
+    ];
+    if (scenario === 'multi_with_hanging') {
+      targets.push(
+        {
+          id: 'CHAT-HANG',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-HANG`,
+        },
+        {
+          id: 'CHAT-LIVE',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-LIVE`,
+        }
+      );
+    } else {
+      targets.push(
+        {
+          id: 'CHAT-ERR',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: `http://127.0.0.1:56598/c/${convStatic}?extensionView=true&extensionVariant=vs-code`,
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-ERR`,
+        },
+        {
+          id: 'CHAT-MALFORMED',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-MALFORMED`,
+        }
+      );
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(targets));
+  });
+
+  await new Promise((resolve) => cdpSrv.listen(0, '127.0.0.1', resolve));
+  fs.writeFileSync(
+    path.join(roamingDir, 'Antigravity IDE', 'DevToolsActivePort'),
+    `${cdpSrv.address().port}\n/devtools/browser/ide-edge-route`,
+    'utf8'
+  );
+
+  const mockDualAppJs = `
+    (() => {
+      const br = window.__AGUsageMonitorBridge;
+      let alive = true;
+      window.__syncHostRouteHistory = [];
+      window.__AGUsageMonitorOverlay = {
+        bundleVersion: br.bundleVersion,
+        ensureAlive: () => alive,
+        getDockKind: () => 'ide-titlebar',
+        getMountMode: () => 'dual',
+        applyMountMode: () => alive,
+        syncHostRoute: () => {
+          window.__syncHostRouteHistory.push(String(br.hostRouteCascadeId || ''));
+        },
+        dispose: () => { alive = false; },
+      };
+    })();
+  `;
+
+  const bridgeCtrl = createWindowBridgeController({
+    handleApiRequest: async () => ({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ settings: { windowMountMode: 'dual', enableWindowOverlay: true } }),
+    }),
+    readAssetFn: async (rel) => (rel === 'styles.css' ? ':host{}' : mockDualAppJs),
+    getSettingsFn: () => ({ windowMountMode: 'dual', enableWindowOverlay: true }),
+    getBundleVersionFn: () => 'edge-route-v1',
+    cdpTimeoutMs: 3500,
+    env: { APPDATA: roamingDir, LOCALAPPDATA: tmpDir },
+    platform: 'win32',
+    homeDir: tmpDir,
+    WebSocketImpl: EdgeProbeMockWS,
+  });
+
+  try {
+    // 1. Preceding hanging chat iframe must NOT stall focused sibling, and activeElement picks convVis2 over hidden/zero/vis1
+    const t0 = Date.now();
+    await bridgeCtrl.syncAllWindows();
+    const elapsedMs = Date.now() - t0;
+    assert.ok(elapsedMs < 600, `Expected parallel early-abort under 600ms, got ${elapsedMs}ms`);
+    assert.equal(hangSocketClosed, true, 'Hanging sibling CDP socket must be closed on early abort');
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convVis2);
+
+    // 2. Without activeElement focus, selectedRow intersection with visible views picks convVis2
+    multiState.focusedViewId = '';
+    multiState.selectedRowId = convVis2;
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convVis2);
+
+    // 3. Without focus or matching selectedRow, ignores hidden & zero-rect views and picks first visible convVis1
+    multiState.selectedRowId = convHidden;
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convVis1);
+
+    // 4. When all chat probes error or return malformed non-UUIDs, Node guard filters them and falls back to static URL route
+    scenario = 'error_and_malformed';
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convStatic);
+    assert.deepEqual(Array.from(wbCtx.window.__syncHostRouteHistory), [convVis1, convStatic]);
+  } finally {
+    await bridgeCtrl.stop();
+    await new Promise((resolve) => cdpSrv.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

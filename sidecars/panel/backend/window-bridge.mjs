@@ -74,6 +74,71 @@ const BRIDGE_MAX_BODY_BYTES = 64 * 1024;
 // 8 MiB 原始导出文件经 Base64 (4/3x) 编码和 JSON 封装后约 10.7 MiB，预留 12 MiB 请求体上限
 const BRIDGE_MAX_EXPORT_BODY_BYTES = 12 * 1024 * 1024;
 const ALLOWED_BRIDGE_PATHS = new Set(BRIDGE_API_PATHS);
+const CASCADE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const IDE_ROUTE_PROBE_MAX_TIMEOUT_MS = 1000;
+
+function sanitizeRouteCascadeId(raw) {
+  const id = String(raw || '').trim();
+  return CASCADE_UUID_RE.test(id) ? id : '';
+}
+
+const WINDOW_VISIBLE_EXPR = `Boolean(
+  (window.innerWidth === undefined || Number(window.innerWidth) > 80) &&
+  (window.innerHeight === undefined || Number(window.innerHeight) > 80) &&
+  !(typeof document !== 'undefined' && document?.hidden === true)
+)`;
+
+/**
+ * 构建单一事实来源的页面内会话路由提取 IIFE 片段，供常规保活探测与 IDE 聊天 iframe 路由探测共用：
+ * 优先解析 `/c/<uuid>`，其次在非隐藏且非零尺寸的 `conversation-view` 中按聚焦态、选中行交集及首个可见视图裁决。
+ *
+ * @returns {string}
+ */
+function buildDomRouteCascadeIdSnippet() {
+  return `(() => {
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const m = String(window.location?.pathname || '').match(/^\\/c\\/([0-9a-f-]{36})(?:\\/|$)/i);
+    if (m && uuidRe.test(m[1])) return m[1];
+    if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return '';
+    const selectedRow = document.querySelector(
+      '[data-testid^="conversation-row-"][data-selected="true"][data-cascade-id]'
+    );
+    const selectedRowId = String(selectedRow?.getAttribute?.('data-cascade-id') || '').trim();
+    if (typeof document.querySelectorAll === 'function') {
+      const views = document.querySelectorAll('[data-testid="conversation-view"][data-cascade-id]');
+      const visibleIds = [];
+      let focusedId = '';
+      const activeEl = document.activeElement || null;
+      for (const viewEl of views) {
+        const cid = String(viewEl?.getAttribute?.('data-cascade-id') || '').trim();
+        if (!uuidRe.test(cid)) continue;
+        if (viewEl.hasAttribute?.('hidden')) continue;
+        if (viewEl.getBoundingClientRect) {
+          const r = viewEl.getBoundingClientRect();
+          if (r.width <= 0 && r.height <= 0) continue;
+        }
+        visibleIds.push(cid);
+        if (activeEl && viewEl.contains?.(activeEl)) {
+          focusedId = cid;
+        }
+      }
+      if (focusedId) return focusedId;
+      if (
+        selectedRowId &&
+        uuidRe.test(selectedRowId) &&
+        visibleIds.some((id) => id.toLowerCase() === selectedRowId.toLowerCase())
+      ) {
+        return selectedRowId;
+      }
+      if (visibleIds.length > 0) return visibleIds[0];
+    }
+    const singleView = document.querySelector('[data-testid="conversation-view"][data-cascade-id]');
+    const singleViewId = String(singleView?.getAttribute?.('data-cascade-id') || '').trim();
+    if (uuidRe.test(singleViewId)) return singleViewId;
+    if (uuidRe.test(selectedRowId)) return selectedRowId;
+    return '';
+  })()`;
+}
 
 /**
  * 解析各操作系统下 Antigravity 2.0 与 Antigravity IDE 写入 `DevToolsActivePort` 的候选路径列表。
@@ -1578,20 +1643,29 @@ export function createWindowBridgeController(options) {
     return { reachableCount, targets: merged };
   }
 
-  async function evaluateOnTarget(wsUrl, expression, timeoutMsOverride = 0) {
+  async function evaluateOnTarget(wsUrl, expression, timeoutMsOverride = 0, signal = null) {
     const WS = WebSocketImpl || globalThis.WebSocket;
     if (typeof WS !== 'function') {
       throw new Error('WebSocket runtime unavailable');
     }
+    if (signal?.aborted) {
+      throw new Error('CDP Runtime.evaluate aborted');
+    }
     const effectiveTimeoutMs = Math.max(500, Number(timeoutMsOverride) || cdpTimeoutMs);
     let ws = null;
     let timer = null;
+    let onAbort = null;
     try {
       ws = new WS(wsUrl);
       const evalResult = await new Promise((resolve, reject) => {
         timer = setTimeout(() => {
           reject(new Error('CDP Runtime.evaluate timeout'));
         }, effectiveTimeoutMs);
+
+        if (signal && typeof signal.addEventListener === 'function') {
+          onAbort = () => reject(new Error('CDP Runtime.evaluate aborted'));
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
 
         const onOpen = () => {
           try {
@@ -1634,6 +1708,9 @@ export function createWindowBridgeController(options) {
       return evalResult;
     } finally {
       if (timer) clearTimeout(timer);
+      if (onAbort && signal && typeof signal.removeEventListener === 'function') {
+        signal.removeEventListener('abort', onAbort);
+      }
       if (ws) {
         try {
           ws.close();
@@ -2229,6 +2306,7 @@ export function createWindowBridgeController(options) {
     }
 
     const { port, token } = await ensureBridgeServer();
+    const domRouteExpr = buildDomRouteCascadeIdSnippet();
     const probeExpr = `(() => {
       try {
         const ov = ${windowOverlayRef};
@@ -2236,28 +2314,11 @@ export function createWindowBridgeController(options) {
         const alive = Boolean(ov && typeof ov[${overlayMethods.ensureAlive}] === 'function' && ov[${overlayMethods.ensureAlive}]());
         const dockKind = String(ov?.[${overlayMethods.getDockKind}]?.() || '');
         const clientMountMode = String(ov?.[${overlayMethods.getMountMode}]?.() || '');
-        const visible = Boolean(
-          (window.innerWidth === undefined || Number(window.innerWidth) > 80) &&
-          (window.innerHeight === undefined || Number(window.innerHeight) > 80) &&
-          !(typeof document !== 'undefined' && document?.hidden === true)
-        );
+        const visible = ${WINDOW_VISIBLE_EXPR};
         const rpcBatch = Array.isArray(br?.rpcQueue) && br.rpcQueue.length > 0
           ? br.rpcQueue.splice(0, 8)
           : [];
-        let routeCascadeId = '';
-        if (!alive) {
-          const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          const m = String(window.location?.pathname || '').match(/^\\/c\\/([0-9a-f-]{36})(?:\\/|$)/i);
-          if (m && uuidRe.test(m[1])) {
-            routeCascadeId = m[1];
-          } else if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
-            const el =
-              document.querySelector('[data-testid="conversation-view"][data-cascade-id]') ||
-              document.querySelector('[data-testid^="conversation-row-"][data-selected="true"][data-cascade-id]');
-            const cand = String(el?.getAttribute?.('data-cascade-id') || '').trim();
-            if (uuidRe.test(cand)) routeCascadeId = cand;
-          }
-        }
+        const routeCascadeId = !alive ? ${domRouteExpr} : '';
         return {
           alive,
           dockKind,
@@ -2280,94 +2341,103 @@ export function createWindowBridgeController(options) {
 
     const ideChatRouteProbeExpr = `(() => {
       try {
-        const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const visible = Boolean(
-          (window.innerWidth === undefined || Number(window.innerWidth) > 80) &&
-          (window.innerHeight === undefined || Number(window.innerHeight) > 80) &&
-          !(typeof document !== 'undefined' && document?.hidden === true)
-        );
+        const visible = ${WINDOW_VISIBLE_EXPR};
         const focused = Boolean(
           typeof document !== 'undefined' && typeof document.hasFocus === 'function' && document.hasFocus()
         );
-        let routeCascadeId = '';
-        const m = String(window.location?.pathname || '').match(/^\\/c\\/([0-9a-f-]{36})(?:\\/|$)/i);
-        if (m && uuidRe.test(m[1])) {
-          routeCascadeId = m[1];
-        } else if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
-          const selectedRow = document.querySelector(
-            '[data-testid^="conversation-row-"][data-selected="true"][data-cascade-id]'
-          );
-          const selectedRowId = String(selectedRow?.getAttribute?.('data-cascade-id') || '').trim();
-          if (typeof document.querySelectorAll === 'function') {
-            const views = document.querySelectorAll('[data-testid="conversation-view"][data-cascade-id]');
-            const visibleIds = [];
-            let focusedId = '';
-            const activeEl = document.activeElement || null;
-            for (const viewEl of views) {
-              const cid = String(viewEl?.getAttribute?.('data-cascade-id') || '').trim();
-              if (!uuidRe.test(cid)) continue;
-              if (viewEl.hasAttribute?.('hidden')) continue;
-              if (viewEl.getBoundingClientRect) {
-                const r = viewEl.getBoundingClientRect();
-                if (r.width <= 0 && r.height <= 0) continue;
-              }
-              visibleIds.push(cid);
-              if (activeEl && viewEl.contains?.(activeEl)) {
-                focusedId = cid;
-              }
-            }
-            if (focusedId) {
-              routeCascadeId = focusedId;
-            } else if (
-              selectedRowId &&
-              uuidRe.test(selectedRowId) &&
-              visibleIds.some((id) => id.toLowerCase() === selectedRowId.toLowerCase())
-            ) {
-              routeCascadeId = selectedRowId;
-            } else if (visibleIds.length > 0) {
-              routeCascadeId = visibleIds[0];
-            }
-          }
-          if (!routeCascadeId) {
-            const singleView = document.querySelector('[data-testid="conversation-view"][data-cascade-id]');
-            const singleViewId = String(singleView?.getAttribute?.('data-cascade-id') || '').trim();
-            if (uuidRe.test(singleViewId)) {
-              routeCascadeId = singleViewId;
-            } else if (uuidRe.test(selectedRowId)) {
-              routeCascadeId = selectedRowId;
-            }
-          }
-        }
+        const routeCascadeId = ${domRouteExpr};
         return { routeCascadeId, visible, focused };
       } catch {
         return { routeCascadeId: '', visible: false, focused: false };
       }
     })()`;
 
+    const ideRouteProbeTimeoutMs = Math.max(
+      500,
+      Math.min(Number(cdpTimeoutMs) || IDE_ROUTE_PROBE_MAX_TIMEOUT_MS, IDE_ROUTE_PROBE_MAX_TIMEOUT_MS)
+    );
+
     async function resolveIdeWorkbenchRouteId(targetObj) {
-      const staticRouteId = String(targetObj?.ideRouteCascadeId || '').trim();
+      const staticRouteId = sanitizeRouteCascadeId(targetObj?.ideRouteCascadeId);
       const chatList = Array.isArray(targetObj?.ideChatTargets) ? targetObj.ideChatTargets : [];
-      let bestRouteId = '';
-      let bestRank = 0;
-      for (const chatTarget of chatList) {
-        const chatWsUrl = String(chatTarget?.webSocketDebuggerUrl || '').trim();
-        if (!chatWsUrl) continue;
+      const probeUrls = chatList
+        .map((chatTarget) => String(chatTarget?.webSocketDebuggerUrl || '').trim())
+        .filter(Boolean);
+      if (probeUrls.length === 0) {
+        return staticRouteId;
+      }
+
+      if (probeUrls.length === 1) {
         try {
-          const res = await evaluateOnTarget(chatWsUrl, ideChatRouteProbeExpr);
-          const val = res?.result?.result?.value;
-          const cid = String(val?.routeCascadeId || '').trim();
-          if (!cid) continue;
-          const rank = val?.focused && val?.visible ? 3 : val?.visible ? 2 : 1;
-          if (rank > bestRank) {
-            bestRank = rank;
-            bestRouteId = cid;
-            if (bestRank === 3) break;
-          }
+          const res = await evaluateOnTarget(probeUrls[0], ideChatRouteProbeExpr, ideRouteProbeTimeoutMs);
+          const cid = sanitizeRouteCascadeId(res?.result?.result?.value?.routeCascadeId);
+          return cid || staticRouteId;
         } catch {
-          // 单个聊天子视图探测异常不阻断其他视图与静态路由兜底
+          return staticRouteId;
         }
       }
-      return bestRouteId || staticRouteId;
+
+      const abortCtrl = typeof AbortController === 'function' ? new AbortController() : null;
+      const results = new Array(probeUrls.length).fill(null);
+      let settledCount = 0;
+      let resolved = false;
+
+      return new Promise((resolve) => {
+        const pickBest = () => {
+          let bestRouteId = '';
+          let bestRank = 0;
+          for (const item of results) {
+            if (!item || !item.cid) continue;
+            if (item.rank > bestRank) {
+              bestRank = item.rank;
+              bestRouteId = item.cid;
+              if (bestRank === 3) break;
+            }
+          }
+          return bestRouteId || staticRouteId;
+        };
+
+        const finishEarly = (routeId) => {
+          if (resolved) return;
+          resolved = true;
+          try {
+            abortCtrl?.abort();
+          } catch {
+            // 忽略中止异常
+          }
+          resolve(routeId);
+        };
+
+        probeUrls.forEach((chatWsUrl, idx) => {
+          evaluateOnTarget(
+            chatWsUrl,
+            ideChatRouteProbeExpr,
+            ideRouteProbeTimeoutMs,
+            abortCtrl?.signal || null
+          )
+            .then((res) => {
+              const val = res?.result?.result?.value;
+              const cid = sanitizeRouteCascadeId(val?.routeCascadeId);
+              if (cid) {
+                const rank = val?.focused && val?.visible ? 3 : val?.visible ? 2 : 1;
+                results[idx] = { cid, rank };
+                if (rank === 3) {
+                  finishEarly(cid);
+                }
+              }
+            })
+            .catch(() => {
+              // 单个聊天子视图探测异常、超时或提前中止均不阻断其他视图及静态路由兜底
+            })
+            .finally(() => {
+              settledCount += 1;
+              if (!resolved && settledCount === probeUrls.length) {
+                resolved = true;
+                resolve(pickBest());
+              }
+            });
+        });
+      });
     }
 
     let cachedAssets = null;
@@ -2380,7 +2450,7 @@ export function createWindowBridgeController(options) {
       const wsUrl = String(targetObj?.webSocketDebuggerUrl || '').trim();
       if (!wsUrl) return { alive: false, dockKind: '', visible: false };
       let probedRouteId = '';
-      const ideRouteId = String(ideRouteOverride || targetObj.ideRouteCascadeId || '').trim();
+      const ideRouteId = sanitizeRouteCascadeId(ideRouteOverride || targetObj.ideRouteCascadeId);
       const targetEndpointId = String(targetObj.endpointId || LOCAL_ENDPOINT_ID);
       const targetIsRemote = Boolean(targetObj.isRemoteEndpoint && targetEndpointId !== LOCAL_ENDPOINT_ID);
       const targetEndpointLabel = targetIsRemote ? String(targetObj.endpointLabel || 'SSH') : '';
@@ -2388,7 +2458,7 @@ export function createWindowBridgeController(options) {
       if (!forceReinject) {
         const probeRes = await evaluateOnTarget(wsUrl, probeExpr);
         const snap = probeRes?.result?.result?.value;
-        probedRouteId = String(snap?.routeCascadeId || '').trim();
+        probedRouteId = sanitizeRouteCascadeId(snap?.routeCascadeId);
         if (snap && snap.alive === true) {
           const snapVerNum = Number(snap.bundleVersion) || 0;
           const curVerNum = Number(bundleVersion) || 0;
