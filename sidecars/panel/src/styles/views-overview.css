@@ -676,7 +676,7 @@
   position: absolute;
   top: 38px;
   left: 12px;
-  width: min(332px, calc(100% - 24px));
+  width: min(352px, calc(100% - 24px));
   z-index: 45;
   display: flex;
   flex-direction: column;
@@ -721,10 +721,69 @@
   min-width: 0;
 }
 
+.quota-rate-wk-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.quota-rate-wk-summary[hidden] {
+  display: none;
+}
+
+.quota-rate-wk-k {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.quota-rate-wk-sub {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-2xs);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.quota-rate-wk-v {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.quota-rate-wk-usd {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.quota-rate-wk-tok {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .quota-rate-pop-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: min(300px, 58vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .quota-rate-pool-group {
@@ -855,9 +914,11 @@
 
 .quota-rate-eq-grid {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  column-gap: 10px;
+  row-gap: 3px;
 }
 
 .quota-rate-eq-grid.is-single {
@@ -882,6 +943,14 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.quota-rate-eq-tok {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
   white-space: nowrap;
 }
 

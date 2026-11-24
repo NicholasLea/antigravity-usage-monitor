@@ -842,10 +842,12 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .step-anomaly-tip-list,
 [data-modern-ui="true"] .step-anomaly-tip-hint,
 [data-modern-ui="true"] .quota-rate-pop-head,
+[data-modern-ui="true"] .quota-rate-wk-summary,
 [data-modern-ui="true"] .quota-rate-pool-group + .quota-rate-pool-group,
 [data-modern-ui="true"] .quota-rate-model-row + .quota-rate-model-row,
 [data-modern-ui="true"] .quota-rate-pop-note,
 :host([data-modern-ui="true"]) .quota-rate-pop-head,
+:host([data-modern-ui="true"]) .quota-rate-wk-summary,
 :host([data-modern-ui="true"]) .quota-rate-pool-group + .quota-rate-pool-group,
 :host([data-modern-ui="true"]) .quota-rate-model-row + .quota-rate-model-row,
 :host([data-modern-ui="true"]) .quota-rate-pop-note {

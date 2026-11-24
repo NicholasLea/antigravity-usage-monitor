@@ -2249,6 +2249,16 @@ export async function buildTelemetryPayloadInternal(
     });
   }
 
+  const sortedQuotaPools = Array.from(quotaPoolsMap.values()).sort((a, b) => {
+    const order = { Gemini: 0, Argon: 1, Carbon: 2, 'Claude & GPT': 3 };
+    return (order[a.family] ?? 99) - (order[b.family] ?? 99);
+  });
+  const weeklyCapacityEstimate = buildWeeklyCapacityEstimate({
+    sortedPools: sortedQuotaPools,
+    isCustomWeeklyMode,
+    hasOfficialData: Boolean(officialQuotaInfo?.data),
+  });
+
   const finalPayload = {
     timestamp: new Date().toISOString(),
     hostPlatform: process.platform || 'unknown',
@@ -2356,11 +2366,9 @@ export async function buildTelemetryPayloadInternal(
         errorMessage: officialQuotaInfo?.error || null,
       },
       activePool: activePoolQuota,
-      pools: Array.from(quotaPoolsMap.values()).sort((a, b) => {
-        const order = { Gemini: 0, Argon: 1, Carbon: 2, 'Claude & GPT': 3 };
-        return (order[a.family] ?? 99) - (order[b.family] ?? 99);
-      }),
+      pools: sortedQuotaPools,
       weekly: weeklyQuota,
+      weeklyCapacityEstimate,
     },
     modelBreakdown,
   };
@@ -2556,12 +2564,127 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
     quotas: {
       activePool: activePoolQuota,
       weekly: weeklyQuota,
+      weeklyCapacityEstimate: snap.basePayload.quotas?.weeklyCapacityEstimate || null,
     },
     consumption: {
       session: sessionUsage.finalizedSelectedSession,
       sessionPresets: sessionUsage.sessionPresets,
     },
     needsBackgroundSync,
+  };
+}
+
+function buildWeeklyCapacityEstimate({
+  sortedPools = [],
+  isCustomWeeklyMode = false,
+  hasOfficialData = false,
+} = {}) {
+  if (isCustomWeeklyMode) {
+    return {
+      status: 'custom_mode',
+      totalEqWeeklyUsd: null,
+      totalEqWeeklyTokens: null,
+      readyPoolCount: 0,
+      totalPoolCount: 0,
+      hasPreliminary: false,
+      pools: [],
+    };
+  }
+  const rawPools = Array.isArray(sortedPools) ? sortedPools : [];
+  const candidatePools = rawPools.filter(
+    (p) =>
+      p &&
+      (p.hasWeekly ||
+        p.weeklyUsedPct != null ||
+        Number.isFinite(p.rateEstimate?.eqFullWeeklyUsd))
+  );
+  const targetPools = candidatePools.length > 0 ? candidatePools : rawPools;
+  if (!hasOfficialData && targetPools.length === 0) {
+    return {
+      status: 'unavailable',
+      totalEqWeeklyUsd: null,
+      totalEqWeeklyTokens: null,
+      readyPoolCount: 0,
+      totalPoolCount: 0,
+      hasPreliminary: false,
+      pools: [],
+    };
+  }
+
+  let sumUsd = 0;
+  let sumTokens = 0;
+  let readyPoolCount = 0;
+  let tokenReadyPoolCount = 0;
+  let hasPreliminary = false;
+  const pools = [];
+
+  for (const p of targetPools) {
+    const est = p?.rateEstimate && typeof p.rateEstimate === 'object' ? p.rateEstimate : null;
+    let eqUsd =
+      Number.isFinite(est?.eqFullWeeklyUsd) && est.eqFullWeeklyUsd > 0
+        ? Number(est.eqFullWeeklyUsd)
+        : null;
+    let eqTok =
+      Number.isFinite(est?.eqFullWeeklyTokens) && est.eqFullWeeklyTokens > 0
+        ? Math.round(Number(est.eqFullWeeklyTokens))
+        : null;
+    if (eqUsd === null && Array.isArray(est?.models) && est.models.length > 0) {
+      const wkModels = est.models.filter(
+        (m) => Number.isFinite(m?.eqFullWeeklyUsd) && m.eqFullWeeklyUsd > 0
+      );
+      if (wkModels.length > 0) {
+        eqUsd =
+          wkModels.reduce((acc, m) => acc + Number(m.eqFullWeeklyUsd), 0) / wkModels.length;
+        const tokModels = wkModels.filter(
+          (m) => Number.isFinite(m?.eqFullWeeklyTokens) && m.eqFullWeeklyTokens > 0
+        );
+        if (tokModels.length === wkModels.length) {
+          eqTok = Math.round(
+            tokModels.reduce((acc, m) => acc + Number(m.eqFullWeeklyTokens), 0) / tokModels.length
+          );
+        }
+      }
+    }
+
+    const isPrelim = Boolean(est?.isPreliminaryWeekly);
+    if (eqUsd !== null) {
+      readyPoolCount += 1;
+      sumUsd += eqUsd;
+      if (isPrelim) hasPreliminary = true;
+      if (eqTok !== null) {
+        tokenReadyPoolCount += 1;
+        sumTokens += eqTok;
+      }
+    }
+
+    pools.push({
+      poolKey: p.poolKey || p.family || '',
+      poolLabel: p.poolLabel || p.family || p.poolKey || 'Pool',
+      usedWeeklyPct: Number.isFinite(Number(p.weeklyUsedPct)) ? +Number(p.weeklyUsedPct).toFixed(1) : null,
+      eqFullWeeklyUsd: eqUsd !== null ? +eqUsd.toFixed(1) : null,
+      eqFullWeeklyTokens: eqTok,
+      source: est?.sourceWeekly || null,
+      isPreliminary: isPrelim,
+    });
+  }
+
+  const totalPoolCount = pools.length;
+  const status =
+    readyPoolCount === 0
+      ? 'collecting'
+      : readyPoolCount < totalPoolCount
+        ? 'partial'
+        : 'ready';
+
+  return {
+    status,
+    totalEqWeeklyUsd: readyPoolCount > 0 ? +sumUsd.toFixed(1) : null,
+    totalEqWeeklyTokens:
+      readyPoolCount > 0 && tokenReadyPoolCount === readyPoolCount ? Math.round(sumTokens) : null,
+    readyPoolCount,
+    totalPoolCount,
+    hasPreliminary,
+    pools,
   };
 }
 

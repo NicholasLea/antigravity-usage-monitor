@@ -794,8 +794,12 @@ function buildQuotaPoolCycleMap(quotaPoolsMap, nowMs) {
         startWkMs,
         b5h: createUsageBucket(),
         bWk: createUsageBucket(),
+        pricedTokens5h: 0,
+        pricedTokensWk: 0,
         modelCosts5h: new Map(),
         modelCostsWk: new Map(),
+        modelTokens5h: new Map(),
+        modelTokensWk: new Map(),
         lastActivityMs: 0,
         recent10mSessions: new Map(),
       });
@@ -1610,20 +1614,38 @@ export function aggregateMultiWindowUsage({
         const quotaModelKey = mInfo.baseLabel || mInfo.label || '';
         if (qMs >= poolBucketEntry.start5hMs) {
           accumulateStepIntoBucket(poolBucketEntry.b5h, stepUsage, cascadeId);
+          if (stepUsage.resolvedCost > 0 && stepTotalTokens > 0) {
+            poolBucketEntry.pricedTokens5h += stepTotalTokens;
+          }
           if (quotaModelKey && stepUsage.resolvedCost > 0) {
             poolBucketEntry.modelCosts5h.set(
               quotaModelKey,
               (poolBucketEntry.modelCosts5h.get(quotaModelKey) || 0) + stepUsage.resolvedCost
             );
+            if (stepTotalTokens > 0) {
+              poolBucketEntry.modelTokens5h.set(
+                quotaModelKey,
+                (poolBucketEntry.modelTokens5h.get(quotaModelKey) || 0) + stepTotalTokens
+              );
+            }
           }
         }
         if (qMs >= poolBucketEntry.startWkMs) {
           accumulateStepIntoBucket(poolBucketEntry.bWk, stepUsage, cascadeId);
+          if (stepUsage.resolvedCost > 0 && stepTotalTokens > 0) {
+            poolBucketEntry.pricedTokensWk += stepTotalTokens;
+          }
           if (quotaModelKey && stepUsage.resolvedCost > 0) {
             poolBucketEntry.modelCostsWk.set(
               quotaModelKey,
               (poolBucketEntry.modelCostsWk.get(quotaModelKey) || 0) + stepUsage.resolvedCost
             );
+            if (stepTotalTokens > 0) {
+              poolBucketEntry.modelTokensWk.set(
+                quotaModelKey,
+                (poolBucketEntry.modelTokensWk.get(quotaModelKey) || 0) + stepTotalTokens
+              );
+            }
           }
         }
       }
@@ -1836,6 +1858,16 @@ export function aggregateMultiWindowUsage({
     }
     return out;
   };
+  const serializeModelTokens = (mMap) => {
+    const out = {};
+    if (!(mMap instanceof Map)) return out;
+    for (const [mKey, tokVal] of mMap.entries()) {
+      if (mKey && Number.isFinite(tokVal) && tokVal > 0) {
+        out[mKey] = Math.round(tokVal);
+      }
+    }
+    return out;
+  };
   for (const [poolKey, entry] of poolCycleBuckets.entries()) {
     let recent10mCostUsd = 0;
     for (const sStat of entry.recent10mSessions.values()) {
@@ -1844,10 +1876,14 @@ export function aggregateMultiWindowUsage({
     poolCycleStats.set(poolKey, {
       cycle5h: formatCycleSummary(entry.b5h),
       cycleWeekly: formatCycleSummary(entry.bWk),
+      pricedTokens5h: Math.round(entry.pricedTokens5h || 0),
+      pricedTokensWeekly: Math.round(entry.pricedTokensWk || 0),
       exactCost5hUsd: +entry.b5h.costUsd.toFixed(6),
       exactCostWeeklyUsd: +entry.bWk.costUsd.toFixed(6),
       modelCosts5h: serializeModelCosts(entry.modelCosts5h),
       modelCostsWeekly: serializeModelCosts(entry.modelCostsWk),
+      modelTokens5h: serializeModelTokens(entry.modelTokens5h),
+      modelTokensWeekly: serializeModelTokens(entry.modelTokensWk),
       recent10m: {
         lastActivityMs: entry.lastActivityMs,
         activeSessionCount: entry.recent10mSessions.size,

@@ -33,6 +33,7 @@ export const QR_IDLE_CONFIRM_REFUND_MS = 5 * 60 * 1000;
 export const QR_REFUND_CONFIRM_WINDOW_MS = 4 * 60 * 1000;
 export const QR_REFUND_CONFIRM_MIN_SAMPLES = 4;
 export const QR_RATE_BOUNCE_COOLDOWN_MS = 60 * 1000;
+export const QR_REPLICA_BOUNCE_MEMORY_MS = 30 * 60 * 1000;
 export const QR_RATE_WINDOW_SIZE = 20;
 export const QR_RATE_OUTLIER_MIN_RATIO = 0.45;
 export const QR_RATE_OUTLIER_MAX_RATIO = 2.0;
@@ -60,6 +61,21 @@ export const QR_TENTATIVE_LEASE_TTL_MS = 3 * 60 * 1000;
 const QR_MAX_MODELS_PER_BUCKET = 16;
 const QR_MAX_TRACKED_BUCKETS = 128;
 const QR_MAX_ACTIVE_LEASES = 16;
+const QR_MAX_SLOPE_SAMPLES = 24;
+const QR_SLOPE_MIN_DELTA_PCT = 0.25;
+const QR_SLOPE_MIN_DELTA_COST_USD = 0.15;
+const QR_SLOPE_UNLOCK_5H_PCT = 2.5;
+const QR_SLOPE_UNLOCK_WK_PCT = 1.5;
+const QR_SLOPE_UNLOCK_MIN_CALLS = 5;
+const QR_COLD_RATIO_5H_PCT = 3.0;
+const QR_COLD_RATIO_WK_PCT = 2.0;
+const QR_COLD_RATIO_SOLO_PCT = 5.0;
+const QR_COLD_RATIO_MIN_CALLS = 5;
+const QR_COLD_RATIO_SOLO_MIN_CALLS = 3;
+const QR_COLD_RATIO_5H_MIN_COST_USD = 0.15;
+const QR_COLD_RATIO_WK_MIN_COST_USD = 0.25;
+const QR_DENSITY_MIN_TOKENS = 10_000;
+const QR_DENSITY_MIN_COST_USD = 0.05;
 const QR_MAX_EVENT_LOG = 500;
 const QR_PERSIST_MIN_INTERVAL_MS = 5000;
 const QR_STATE_SCHEMA_VERSION = 2;
@@ -75,6 +91,172 @@ function qrRound1(val) {
 function qrClampRate(rate) {
   if (!Number.isFinite(rate) || rate <= 0) return null;
   return qrClamp(rate, 0.005, 50);
+}
+
+function qrClampUsdPerMTok(val) {
+  const num = Number(val);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return qrClamp(num, 0.02, 500);
+}
+
+function qrBlendUsdPerMTok(prevDensity, costUsd, pricedTokens) {
+  const prev = qrClampUsdPerMTok(prevDensity);
+  const safeCost = Number(costUsd) || 0;
+  const safeTokens = Number(pricedTokens) || 0;
+  if (safeTokens < QR_DENSITY_MIN_TOKENS || safeCost < QR_DENSITY_MIN_COST_USD) {
+    return prev;
+  }
+  const curr = qrClampUsdPerMTok(safeCost / (safeTokens / 1_000_000));
+  if (curr === null) return prev;
+  if (prev === null) return curr;
+  const w = safeCost / (safeCost + 1.0);
+  return qrClampUsdPerMTok(prev * (1 - w) + curr * w);
+}
+
+function qrDeriveEqFullTokens(rawEqFullUsd, usdPerMTok) {
+  const usd = Number(rawEqFullUsd);
+  const density = qrClampUsdPerMTok(usdPerMTok);
+  if (!Number.isFinite(usd) || usd <= 0 || density === null) return null;
+  const tok = Math.round((usd / density) * 1_000_000);
+  return Number.isFinite(tok) && tok > 0 ? tok : null;
+}
+
+function qrComputeTheilSenSlope(samples) {
+  if (!Array.isArray(samples) || samples.length < 2) return null;
+  if (samples.length === 2) {
+    const du = samples[1].u - samples[0].u;
+    const dc = samples[1].c - samples[0].c;
+    return dc >= 0.05 && du > 0 ? qrClampRate(du / dc) : null;
+  }
+  const slopes = [];
+  for (let i = 0; i < samples.length - 1; i += 1) {
+    for (let j = i + 1; j < samples.length; j += 1) {
+      const du = samples[j].u - samples[i].u;
+      const dc = samples[j].c - samples[i].c;
+      if (dc >= 0.05 && du > 0) {
+        const s = qrClampRate(du / dc);
+        if (s !== null) slopes.push(s);
+      }
+    }
+  }
+  return slopes.length > 0 ? qrClampRate(qrComputeMedian(slopes)) : null;
+}
+
+function qrSanitizeSlopeSamples(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (let i = 0; i < raw.length && out.length < QR_MAX_SLOPE_SAMPLES; i += 1) {
+    const item = raw[i];
+    if (!item || typeof item !== 'object') continue;
+    const u = Number(item.u);
+    const c = Number(item.c);
+    const n = Math.floor(Number(item.n) || 0);
+    const unp = Math.max(0, Math.floor(Number(item.unp) || 0));
+    if (!Number.isFinite(u) || u < 0 || !Number.isFinite(c) || c < 0 || n < 0) continue;
+    out.push({ u: qrClamp(u, 0, 100), c, n, ...(unp > 0 ? { unp } : {}) });
+  }
+  return out;
+}
+
+function qrSanitizeModelTokens(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw)) {
+    const cleanKey = String(k || '').trim();
+    const num = Math.floor(Number(v) || 0);
+    if (cleanKey && Number.isFinite(num) && num > 0) {
+      out[cleanKey] = num;
+    }
+  }
+  return out;
+}
+
+function qrRefreshBucketDensities(st, safeCost, safePricedTokens, safeModelCosts, safeModelTokens) {
+  if (!st || typeof st !== 'object') return;
+  const nextPoolDensity = qrBlendUsdPerMTok(st.priorUsdPerMTok, safeCost, safePricedTokens);
+  if (nextPoolDensity !== null) {
+    st.usdPerMTok = nextPoolDensity;
+  }
+  const priorModels =
+    st.priorModelUsdPerMTok && typeof st.priorModelUsdPerMTok === 'object'
+      ? st.priorModelUsdPerMTok
+      : {};
+  const nextModels = { ...priorModels };
+  if (safeModelCosts && safeModelTokens) {
+    for (const [mKey, mCost] of Object.entries(safeModelCosts)) {
+      const mTok = Number(safeModelTokens[mKey]) || 0;
+      const blended = qrBlendUsdPerMTok(priorModels[mKey] ?? null, mCost, mTok);
+      if (blended !== null) {
+        nextModels[mKey] = +blended.toFixed(4);
+      }
+    }
+  }
+  const entries = Object.entries(nextModels).slice(-QR_MAX_MODELS_PER_BUCKET);
+  st.modelUsdPerMTok = Object.fromEntries(entries);
+}
+
+function qrComputeNetLocalUsedPct(st, officialUsedPct) {
+  const safeOfficial = qrClamp(Number(officialUsedPct) || 0, 0, 100);
+  if (!st || typeof st !== 'object') return safeOfficial;
+  const leaseSum = qrSumLeases(st.activeLeases || [], { includeTentative: true });
+  const extPct = Math.max(0, Number(st.externalUsedPct) || 0);
+  return Math.max(0, safeOfficial - leaseSum - extPct);
+}
+
+function qrSanitizeModelDensities(raw, { preserveRate = true } = {}) {
+  const out = {};
+  if (!preserveRate || !raw || typeof raw !== 'object') return out;
+  const entries = Object.entries(raw).slice(-QR_MAX_MODELS_PER_BUCKET);
+  for (const [k, v] of entries) {
+    const cleanKey = String(k || '').trim();
+    const clamped = qrClampUsdPerMTok(v);
+    if (cleanKey && clamped !== null) {
+      out[cleanKey] = +clamped.toFixed(4);
+    }
+  }
+  return out;
+}
+
+function qrResetSlopeAnchor(st, netUsedPct, safeCost, safeCalls, safeUnpriced = 0) {
+  if (!st || typeof st !== 'object') return;
+  const calls = Math.max(0, Math.floor(Number(safeCalls) || 0));
+  const unp = Math.max(0, Math.floor(Number(safeUnpriced) || 0));
+  const u = qrClamp(Number(netUsedPct) || 0, 0, 100);
+  const c = Math.max(0, Number(safeCost) || 0);
+  st.slopeSamples = [{ u: +u.toFixed(4), c: +c.toFixed(6), n: calls, ...(unp > 0 ? { unp } : {}) }];
+}
+
+function qrUpdateSlopeSamples(st, netUsedPct, safeCost, safeCalls, safeUnpriced = 0) {
+  if (!st || st.pendingDrop !== null) return;
+  const calls = Math.max(0, Math.floor(Number(safeCalls) || 0));
+  const unp = Math.max(0, Math.floor(Number(safeUnpriced) || 0));
+  const u = qrClamp(Number(netUsedPct) || 0, 0, 100);
+  const c = Math.max(0, Number(safeCost) || 0);
+  const arr = Array.isArray(st.slopeSamples) ? st.slopeSamples : (st.slopeSamples = []);
+  if (arr.length === 0) {
+    arr.push({ u: +u.toFixed(4), c: +c.toFixed(6), n: calls, ...(unp > 0 ? { unp } : {}) });
+    return;
+  }
+  const last = arr[arr.length - 1];
+  const lastUnp = Math.max(0, Math.floor(Number(last.unp) || 0));
+  if (u < last.u - 0.15 || c < last.c - 1e-4 || calls < last.n || unp !== lastUnp) {
+    st.slopeSamples = [{ u: +u.toFixed(4), c: +c.toFixed(6), n: calls, ...(unp > 0 ? { unp } : {}) }];
+    return;
+  }
+  const du = u - last.u;
+  const dc = c - last.c;
+  const dn = calls - last.n;
+  if (
+    dn > 0 &&
+    ((du >= QR_SLOPE_MIN_DELTA_PCT && dc >= 0.02) ||
+      (dc >= QR_SLOPE_MIN_DELTA_COST_USD && du > 1e-3))
+  ) {
+    arr.push({ u: +u.toFixed(4), c: +c.toFixed(6), n: calls, ...(unp > 0 ? { unp } : {}) });
+    if (arr.length > QR_MAX_SLOPE_SAMPLES) {
+      // 保留首锚点 arr[0] 以维持整周期跨度，淘汰最早的中间点
+      arr.splice(1, arr.length - QR_MAX_SLOPE_SAMPLES);
+    }
+  }
 }
 
 function qrResolveExactUsedPct(poolObj, win) {
@@ -184,8 +366,13 @@ function qrResolveEffectiveRate(state, officialUsedPct, cycleCostUsd) {
   if (state.ratePctPerUsd !== null && Number.isFinite(state.ratePctPerUsd)) {
     return state.ratePctPerUsd;
   }
-  // 一旦检测到同池存在家庭组 / 其他设备外部消耗，禁止用累计总占比 / 本机花费做冷启动反推
-  if (!state.hasExternalUsage && cycleCostUsd >= 0.5 && officialUsedPct >= 0.3) {
+  // 一旦检测到同池存在家庭组 / 其他设备外部消耗或未计价调用，禁止用累计总占比 / 本机花费做冷启动反推
+  if (
+    !state.hasExternalUsage &&
+    (state.lastUnpricedCalls || 0) === 0 &&
+    cycleCostUsd >= 0.5 &&
+    officialUsedPct >= 0.3
+  ) {
     return qrClampRate(officialUsedPct / cycleCostUsd);
   }
   return null;
@@ -396,17 +583,93 @@ function qrEstimateModelWeightedPct(st, deltaModelCosts, totalDeltaCostUsd, fall
   return weightedPct + unattributedCost * fallbackRate;
 }
 
+function qrResolveBucketDisplayRate(st, win) {
+  if (!st || typeof st !== 'object') return null;
+  const cleanWin = Array.isArray(st.rateWindow) ? st.rateWindow : [];
+  const calibratedSamples = cleanWin.length > 0 ? cleanWin.length : st.rateSamples;
+  if (calibratedSamples >= QR_MODEL_RATE_MIN_UI_SAMPLES && Number.isFinite(st.ratePctPerUsd)) {
+    return {
+      rate: st.ratePctPerUsd,
+      source: 'calibrated',
+      isPreliminary: false,
+      samples: Math.max(cleanWin.length, st.rateSamples),
+    };
+  }
+
+  let tier2Rate = null;
+  const slopePts = Array.isArray(st.slopeSamples) ? st.slopeSamples : [];
+  if (slopePts.length >= 2) {
+    const first = slopePts[0];
+    const last = slopePts[slopePts.length - 1];
+    const spanPct = last.u - first.u;
+    const spanCost = last.c - first.c;
+    const spanCalls = last.n - first.n;
+    const minSpanPct = win === '5h' ? QR_SLOPE_UNLOCK_5H_PCT : QR_SLOPE_UNLOCK_WK_PCT;
+    if (
+      spanPct >= minSpanPct &&
+      spanCost >= QR_SLOPE_MIN_DELTA_COST_USD &&
+      spanCalls >= QR_SLOPE_UNLOCK_MIN_CALLS
+    ) {
+      tier2Rate = qrComputeTheilSenSlope(slopePts);
+    }
+  }
+
+  let tier3Rate = null;
+  if (!st.hasExternalUsage && (st.lastUnpricedCalls || 0) === 0 && st.lastOfficialUsedPct !== null) {
+    const out = qrFormatOutput(st, st.lastOfficialUsedPct);
+    const netUsedPct = Math.max(
+      0,
+      st.lastOfficialUsedPct - out.reservedPct - (Number(st.externalUsedPct) || 0)
+    );
+    const calls = Math.max(0, Number(st.lastCycleCalls) || 0);
+    const cost = Math.max(0, Number(st.lastCycleCostUsd) || 0);
+    const minCost = win === '5h' ? QR_COLD_RATIO_5H_MIN_COST_USD : QR_COLD_RATIO_WK_MIN_COST_USD;
+    const minPct = win === '5h' ? QR_COLD_RATIO_5H_PCT : QR_COLD_RATIO_WK_PCT;
+    const unlocked =
+      cost >= minCost &&
+      ((netUsedPct >= minPct && calls >= QR_COLD_RATIO_MIN_CALLS) ||
+        (netUsedPct >= QR_COLD_RATIO_SOLO_PCT && calls >= QR_COLD_RATIO_SOLO_MIN_CALLS));
+    if (unlocked) {
+      tier3Rate = qrClampRate(netUsedPct / cost);
+    }
+  }
+
+  const prelimRate = tier2Rate ?? tier3Rate;
+  if (prelimRate === null) return null;
+  const prelimSource = tier2Rate !== null ? 'anchor_slope' : 'cycle_ratio';
+  if (cleanWin.length > 0) {
+    const cleanMed = qrComputeMedian(cleanWin);
+    if (cleanMed !== null) {
+      const w = cleanWin.length / (cleanWin.length + QR_MODEL_RATE_MIN_UI_SAMPLES);
+      const blended = qrClampRate(cleanMed * w + prelimRate * (1 - w));
+      if (blended !== null) {
+        return {
+          rate: blended,
+          source: prelimSource,
+          isPreliminary: true,
+          samples: cleanWin.length,
+        };
+      }
+    }
+  }
+  return {
+    rate: prelimRate,
+    source: prelimSource,
+    isPreliminary: true,
+    samples: 0,
+  };
+}
+
 function qrBuildPoolRateEstimate(st5h, stWk, nowMs = Date.now()) {
-  const raw5hPool =
-    st5h && st5h.rateSamples >= QR_MODEL_RATE_MIN_UI_SAMPLES && Number.isFinite(st5h.ratePctPerUsd)
-      ? st5h.ratePctPerUsd
-      : null;
-  const rawWkPool =
-    stWk && stWk.rateSamples >= QR_MODEL_RATE_MIN_UI_SAMPLES && Number.isFinite(stWk.ratePctPerUsd)
-      ? stWk.ratePctPerUsd
-      : null;
+  const resolved5h = qrResolveBucketDisplayRate(st5h, '5h');
+  const resolvedWk = qrResolveBucketDisplayRate(stWk, 'weekly');
+  const raw5hPool = resolved5h ? resolved5h.rate : null;
+  const rawWkPool = resolvedWk ? resolvedWk.rate : null;
   const rate5hPool = raw5hPool !== null ? +raw5hPool.toFixed(4) : null;
   const rateWkPool = rawWkPool !== null ? +rawWkPool.toFixed(4) : null;
+  const fallbackPoolDensity = stWk?.usdPerMTok ?? st5h?.usdPerMTok ?? null;
+  const density5hPool = st5h?.usdPerMTok ?? fallbackPoolDensity;
+  const densityWkPool = stWk?.usdPerMTok ?? fallbackPoolDensity;
 
   const modelKeys = new Set([
     ...Object.keys(st5h?.modelRates || {}),
@@ -425,12 +688,22 @@ function qrBuildPoolRateEstimate(st5h, stWk, nowMs = Date.now()) {
         ? mw.ratePctPerUsd
         : null;
     if (rawR5 === null && rawRw === null) continue;
+    const rawEq5hUsd = rawR5 ? 100 / rawR5 : null;
+    const rawEqWkUsd = rawRw ? 100 / rawRw : null;
+    const modelDensity5h =
+      st5h?.modelUsdPerMTok?.[model] ?? stWk?.modelUsdPerMTok?.[model] ?? density5hPool;
+    const modelDensityWk =
+      stWk?.modelUsdPerMTok?.[model] ?? st5h?.modelUsdPerMTok?.[model] ?? densityWkPool;
+    const eq5hTok = qrDeriveEqFullTokens(rawEq5hUsd, modelDensity5h);
+    const eqWkTok = qrDeriveEqFullTokens(rawEqWkUsd, modelDensityWk);
     models.push({
       model,
       rate5hPctPerUsd: rawR5 !== null ? +rawR5.toFixed(4) : null,
       rateWeeklyPctPerUsd: rawRw !== null ? +rawRw.toFixed(4) : null,
-      eqFull5hUsd: rawR5 ? +(100 / rawR5).toFixed(1) : null,
-      eqFullWeeklyUsd: rawRw ? +(100 / rawRw).toFixed(1) : null,
+      eqFull5hUsd: rawEq5hUsd ? +rawEq5hUsd.toFixed(1) : null,
+      eqFullWeeklyUsd: rawEqWkUsd ? +rawEqWkUsd.toFixed(1) : null,
+      ...(eq5hTok !== null ? { eqFull5hTokens: eq5hTok } : {}),
+      ...(eqWkTok !== null ? { eqFullWeeklyTokens: eqWkTok } : {}),
       multiplier: null,
       samples: Math.max(m5?.rateSamples || 0, mw?.rateSamples || 0),
       _rawR5: rawR5,
@@ -493,13 +766,24 @@ function qrBuildPoolRateEstimate(st5h, stWk, nowMs = Date.now()) {
     return null;
   }
 
+  const rawPoolEq5hUsd = raw5hPool ? 100 / raw5hPool : null;
+  const rawPoolEqWkUsd = rawWkPool ? 100 / rawWkPool : null;
+  const poolEq5hTok = qrDeriveEqFullTokens(rawPoolEq5hUsd, density5hPool);
+  const poolEqWkTok = qrDeriveEqFullTokens(rawPoolEqWkUsd, densityWkPool);
+
   return {
     rate5hPctPerUsd: rate5hPool,
     rateWeeklyPctPerUsd: rateWkPool,
-    eqFull5hUsd: raw5hPool ? +(100 / raw5hPool).toFixed(1) : null,
-    eqFullWeeklyUsd: rawWkPool ? +(100 / rawWkPool).toFixed(1) : null,
-    samples5h: st5h?.rateSamples || 0,
-    samplesWeekly: stWk?.rateSamples || 0,
+    eqFull5hUsd: rawPoolEq5hUsd ? +rawPoolEq5hUsd.toFixed(1) : null,
+    eqFullWeeklyUsd: rawPoolEqWkUsd ? +rawPoolEqWkUsd.toFixed(1) : null,
+    ...(poolEq5hTok !== null ? { eqFull5hTokens: poolEq5hTok } : {}),
+    ...(poolEqWkTok !== null ? { eqFullWeeklyTokens: poolEqWkTok } : {}),
+    samples5h: resolved5h ? resolved5h.samples : st5h?.rateSamples || 0,
+    samplesWeekly: resolvedWk ? resolvedWk.samples : stWk?.rateSamples || 0,
+    source5h: resolved5h ? resolved5h.source : null,
+    sourceWeekly: resolvedWk ? resolvedWk.source : null,
+    isPreliminary5h: Boolean(resolved5h?.isPreliminary),
+    isPreliminaryWeekly: Boolean(resolvedWk?.isPreliminary),
     models,
     ...(externalUsage ? { externalUsage } : {}),
   };
@@ -578,6 +862,50 @@ function qrDetectProportionalExternalJump(st5h, stWk, params5h, paramsWk) {
   return usdRatio >= QR_CO_MOVE_MIN_USD_RATIO && usdRatio <= QR_CO_MOVE_MAX_USD_RATIO;
 }
 
+function qrReconcileExternalUsageBound(st, safeUsed, safeCost, safeModelCosts, nowMs) {
+  if (!st || (!st.hasExternalUsage && !(Number(st.externalUsedPct) > 0))) return false;
+  const leaseSum = qrSumLeases(st.activeLeases || [], { includeTentative: true });
+  const cleanWin = Array.isArray(st.rateWindow) ? st.rateWindow : [];
+  const isCalibrated =
+    cleanWin.length >= QR_MODEL_RATE_MIN_UI_SAMPLES &&
+    (st.lastUnpricedCalls || 0) === 0 &&
+    Number.isFinite(st.ratePctPerUsd) &&
+    st.ratePctPerUsd > 0;
+  const localExpectedPct = isCalibrated
+    ? qrEstimateModelWeightedPct(st, safeModelCosts, safeCost, st.ratePctPerUsd)
+    : 0;
+  // 本周期累计外部消耗物理上不可能超过（官方累计已用 - 活跃租约 - 已校准本机保守下界）
+  const localConservativeFloor = localExpectedPct * 0.9;
+  const maxExternalBound = Math.max(0, safeUsed - leaseSum - localConservativeFloor);
+  let mutated = false;
+  const curExtPct = Number(st.externalUsedPct) || 0;
+  if (curExtPct > maxExternalBound + 1e-3) {
+    const clamped = maxExternalBound < QR_MIN_DISPLAY_RESERVED_PCT ? 0 : maxExternalBound;
+    if (Math.abs(curExtPct - clamped) > 1e-3) {
+      st.externalUsedPct = clamped;
+      mutated = true;
+    }
+  }
+  const recentExt =
+    (Number(st.lastExternalUsageAtMs) || 0) > 0 &&
+    nowMs >= st.lastExternalUsageAtMs &&
+    nowMs - st.lastExternalUsageAtMs <= QR_EXTERNAL_ACTIVE_WINDOW_MS;
+  if (
+    isCalibrated &&
+    st.hasExternalUsage &&
+    !recentExt &&
+    (Number(st.externalUsedPct) || 0) === 0 &&
+    safeUsed >= 0.05 &&
+    maxExternalBound < QR_EXTERNAL_MIN_IDLE_DELTA_PCT
+  ) {
+    st.hasExternalUsage = false;
+    st.externalEvents = 0;
+    st.lastExternalUsageAtMs = 0;
+    mutated = true;
+  }
+  return mutated;
+}
+
 function qrSanitizePersistedBucket(raw, { preserveRate = true } = {}) {
   if (!raw || typeof raw !== 'object') return null;
   const lastOfficial =
@@ -605,8 +933,20 @@ function qrSanitizePersistedBucket(raw, { preserveRate = true } = {}) {
     lastQuotaTs: Math.max(0, Number(raw.lastQuotaTs) || 0),
     lastOfficialUsedPct: lastOfficial,
     lastCycleCostUsd: Math.max(0, Number(raw.lastCycleCostUsd) || 0),
+    lastCycleCalls: Math.max(0, Math.floor(Number(raw.lastCycleCalls) || 0)),
+    lastPricedTokens: Math.max(0, Math.floor(Number(raw.lastPricedTokens) || 0)),
     lastModelCostsUsd: qrSanitizeModelCosts(raw.lastModelCostsUsd),
     lastUnpricedCalls: Math.max(0, Number(raw.lastUnpricedCalls) || 0),
+    usdPerMTok: preserveRate ? qrClampUsdPerMTok(raw.usdPerMTok) : null,
+    priorUsdPerMTok: preserveRate
+      ? qrClampUsdPerMTok(raw.priorUsdPerMTok ?? raw.usdPerMTok)
+      : null,
+    modelUsdPerMTok: qrSanitizeModelDensities(raw.modelUsdPerMTok, { preserveRate }),
+    priorModelUsdPerMTok: qrSanitizeModelDensities(
+      raw.priorModelUsdPerMTok ?? raw.modelUsdPerMTok,
+      { preserveRate }
+    ),
+    slopeSamples: preserveRate ? qrSanitizeSlopeSamples(raw.slopeSamples) : [],
     pendingCostUsd: 0,
     pendingCostAtMs: 0,
     pendingCostSinceMs: 0,
@@ -622,6 +962,7 @@ function qrSanitizePersistedBucket(raw, { preserveRate = true } = {}) {
     lastBounceAtMs: Math.max(0, Number(raw.lastBounceAtMs) || 0),
     lastRefundAtMs: Math.max(0, Number(raw.lastRefundAtMs) || 0),
     lastRefundPct: Math.max(0, Number(raw.lastRefundPct) || 0),
+    lastRefundHighWaterPct: qrClamp(Math.max(0, Number(raw.lastRefundHighWaterPct) || 0), 0, 100),
     hasExternalUsage: raw.hasExternalUsage === true,
     lastExternalUsageAtMs: Math.max(0, Number(raw.lastExternalUsageAtMs) || 0),
     externalUsedPct: Math.max(0, Number(raw.externalUsedPct) || 0),
@@ -639,6 +980,8 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
   const eventLog = [];
   let hydrated = typeof loadState !== 'function';
   let lastPersistMs = 0;
+  let batchingDepth = 0;
+  let batchPendingEvent = null;
 
   function ensureHydrated() {
     if (hydrated) return;
@@ -686,8 +1029,25 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         lastQuotaTs: st.lastQuotaTs,
         lastOfficialUsedPct: st.lastOfficialUsedPct,
         lastCycleCostUsd: st.lastCycleCostUsd,
+        lastCycleCalls: st.lastCycleCalls || 0,
+        lastPricedTokens: st.lastPricedTokens || 0,
         lastModelCostsUsd: st.lastModelCostsUsd || {},
         lastUnpricedCalls: st.lastUnpricedCalls,
+        ...(st.usdPerMTok !== null && Number.isFinite(st.usdPerMTok)
+          ? { usdPerMTok: +st.usdPerMTok.toFixed(4) }
+          : {}),
+        ...(st.priorUsdPerMTok !== null && Number.isFinite(st.priorUsdPerMTok)
+          ? { priorUsdPerMTok: +st.priorUsdPerMTok.toFixed(4) }
+          : {}),
+        ...(st.modelUsdPerMTok && Object.keys(st.modelUsdPerMTok).length > 0
+          ? { modelUsdPerMTok: st.modelUsdPerMTok }
+          : {}),
+        ...(st.priorModelUsdPerMTok && Object.keys(st.priorModelUsdPerMTok).length > 0
+          ? { priorModelUsdPerMTok: st.priorModelUsdPerMTok }
+          : {}),
+        ...(Array.isArray(st.slopeSamples) && st.slopeSamples.length > 0
+          ? { slopeSamples: st.slopeSamples }
+          : {}),
         ratePctPerUsd: st.ratePctPerUsd,
         rateSamples: st.rateSamples,
         rateWindow: st.rateWindow,
@@ -697,6 +1057,9 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         lastBounceAtMs: st.lastBounceAtMs,
         lastRefundAtMs: st.lastRefundAtMs,
         lastRefundPct: st.lastRefundPct,
+        ...(Number(st.lastRefundHighWaterPct) > 0
+          ? { lastRefundHighWaterPct: +Number(st.lastRefundHighWaterPct).toFixed(4) }
+          : {}),
         hasExternalUsage: Boolean(st.hasExternalUsage),
         lastExternalUsageAtMs: st.lastExternalUsageAtMs || 0,
         externalUsedPct: +(Number(st.externalUsedPct) || 0).toFixed(3),
@@ -730,6 +1093,12 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       eventKind === 'refund' ||
       eventKind === 'reset' ||
       eventKind === 'expire';
+    if (batchingDepth > 0) {
+      if (isUrgent || !batchPendingEvent) {
+        batchPendingEvent = isUrgent ? 'lease' : eventKind;
+      }
+      return;
+    }
     if (!isUrgent && lastPersistMs > 0 && nowMs - lastPersistMs < QR_PERSIST_MIN_INTERVAL_MS) {
       return;
     }
@@ -765,8 +1134,15 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       lastQuotaTs: 0,
       lastOfficialUsedPct: null,
       lastCycleCostUsd: 0,
+      lastCycleCalls: 0,
+      lastPricedTokens: 0,
       lastModelCostsUsd: {},
       lastUnpricedCalls: 0,
+      usdPerMTok: null,
+      priorUsdPerMTok: null,
+      modelUsdPerMTok: {},
+      priorModelUsdPerMTok: {},
+      slopeSamples: [],
       pendingCostUsd: 0,
       pendingCostAtMs: 0,
       pendingCostSinceMs: 0,
@@ -782,6 +1158,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       lastBounceAtMs: 0,
       lastRefundAtMs: 0,
       lastRefundPct: 0,
+      lastRefundHighWaterPct: 0,
       hasExternalUsage: false,
       lastExternalUsageAtMs: 0,
       externalUsedPct: 0,
@@ -799,7 +1176,10 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
     resetTimeMs = 0,
     quotaFetchedAtMs = 0,
     cycleCostUsd = 0,
+    cycleCalls = 0,
+    pricedTokens = 0,
     modelCostsUsd = null,
+    modelTokens = null,
     unpricedCalls = 0,
     poolLastActivityMs = 0,
     activeSessionCount10m = 0,
@@ -815,7 +1195,10 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
     ensureHydrated();
     const safeUsed = qrClamp(Number(officialUsedPct), 0, 100);
     const safeCost = Math.max(0, Number(cycleCostUsd) || 0);
+    const safeCalls = Math.max(0, Math.floor(Number(cycleCalls) || 0));
+    const safePricedTokens = Math.max(0, Math.floor(Number(pricedTokens) || 0));
     const safeModelCosts = qrSanitizeModelCosts(modelCostsUsd);
+    const safeModelTokens = qrSanitizeModelTokens(modelTokens);
     const safeUnpriced = Math.max(0, Number(unpricedCalls) || 0);
     const safeResetMs = Number(resetTimeMs) > 0 ? Number(resetTimeMs) : 0;
     const safeFetchTs = Number(quotaFetchedAtMs) > 0 ? Number(quotaFetchedAtMs) : nowMs;
@@ -868,33 +1251,57 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       st.lastQuotaTs = safeFetchTs;
       st.lastOfficialUsedPct = safeUsed;
       st.lastCycleCostUsd = safeCost;
+      st.lastCycleCalls = safeCalls;
+      st.lastPricedTokens = safePricedTokens;
       st.lastModelCostsUsd = safeModelCosts;
       st.lastUnpricedCalls = safeUnpriced;
       if (isIdleZeroDrift) {
+        qrRefreshBucketDensities(st, safeCost, safePricedTokens, safeModelCosts, safeModelTokens);
         return qrFormatOutput(st, safeUsed);
       }
+      if (st.usdPerMTok !== null && Number.isFinite(st.usdPerMTok)) {
+        st.priorUsdPerMTok = st.usdPerMTok;
+      }
+      if (st.modelUsdPerMTok && Object.keys(st.modelUsdPerMTok).length > 0) {
+        st.priorModelUsdPerMTok = {
+          ...(st.priorModelUsdPerMTok || {}),
+          ...st.modelUsdPerMTok,
+        };
+      }
+      st.slopeSamples = [];
       st.pendingCostUsd = 0;
       st.pendingCostAtMs = 0;
       st.pendingCostSinceMs = 0;
       st.pendingModelCostsUsd = {};
       st.activeLeases = [];
       st.pendingDrop = null;
+      st.lastRefundHighWaterPct = 0;
       st.hasExternalUsage =
         safeUsed >= QR_EXTERNAL_BASELINE_USED_PCT &&
         safeCost < QR_EXTERNAL_BASELINE_MAX_LOCAL_COST_USD;
       st.externalUsedPct = 0;
       st.externalEvents = 0;
+      qrRefreshBucketDensities(st, safeCost, safePricedTokens, safeModelCosts, safeModelTokens);
+      qrUpdateSlopeSamples(
+        st,
+        qrComputeNetLocalUsedPct(st, safeUsed),
+        safeCost,
+        safeCalls,
+        safeUnpriced
+      );
       const out = qrFormatOutput(st, safeUsed);
       recordLog('reset', { deltaOfficial: safeUsed - prevUsed, ...out });
       return out;
     }
 
-    // 2. 首次观测：建立基线并按当前周期已有消耗做冷启动费率估计（检测到外部消耗时跳过累计比值反推）
+    // 2. 首次观测：建立基线并按当前周期已有消耗做冷启动费率估计（检测到外部消耗或未计价调用时跳过累计比值反推）
     if (st.lastOfficialUsedPct === null) {
       st.resetTimeMs = safeResetMs;
       st.lastQuotaTs = safeFetchTs;
       st.lastOfficialUsedPct = safeUsed;
       st.lastCycleCostUsd = safeCost;
+      st.lastCycleCalls = safeCalls;
+      st.lastPricedTokens = safePricedTokens;
       st.lastModelCostsUsd = safeModelCosts;
       st.lastUnpricedCalls = safeUnpriced;
       if (
@@ -902,10 +1309,23 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         safeCost < QR_EXTERNAL_BASELINE_MAX_LOCAL_COST_USD
       ) {
         st.hasExternalUsage = true;
-      } else if (!st.hasExternalUsage && safeCost >= 0.5 && safeUsed >= 0.3) {
+      } else if (
+        !st.hasExternalUsage &&
+        safeUnpriced === 0 &&
+        safeCost >= 0.5 &&
+        safeUsed >= 0.3
+      ) {
         st.ratePctPerUsd = qrClampRate(safeUsed / safeCost);
         st.rateSamples = 1;
       }
+      qrRefreshBucketDensities(st, safeCost, safePricedTokens, safeModelCosts, safeModelTokens);
+      qrUpdateSlopeSamples(
+        st,
+        qrComputeNetLocalUsedPct(st, safeUsed),
+        safeCost,
+        safeCalls,
+        safeUnpriced
+      );
       const out = qrFormatOutput(st, safeUsed);
       recordLog('baseline', out);
       return out;
@@ -925,11 +1345,35 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       ) {
         st.lastModelCostsUsd = safeModelCosts;
       }
+      if (st.lastCycleCalls === 0 || Math.abs(safeCost - st.lastCycleCostUsd) <= 1e-4) {
+        st.lastCycleCalls = safeCalls;
+      }
+      st.lastPricedTokens = safePricedTokens;
+      const prevDensity = st.usdPerMTok;
+      qrRefreshBucketDensities(st, safeCost, safePricedTokens, safeModelCosts, safeModelTokens);
+      const extReconciled = qrReconcileExternalUsageBound(
+        st,
+        safeUsed,
+        st.lastCycleCostUsd,
+        st.lastModelCostsUsd,
+        nowMs
+      );
       const beforeCachePrune = st.activeLeases.length;
       qrPruneExpiredLeases(st, nowMs);
       const out = qrFormatOutput(st, safeUsed);
       if (beforeCachePrune > st.activeLeases.length) {
+        qrResetSlopeAnchor(
+          st,
+          qrComputeNetLocalUsedPct(st, safeUsed),
+          st.lastCycleCostUsd,
+          st.lastCycleCalls,
+          st.lastUnpricedCalls
+        );
         recordLog('expire', out);
+      } else if (extReconciled) {
+        persistIfNeeded('external_usage', nowMs);
+      } else if (prevDensity === null && st.usdPerMTok !== null) {
+        persistIfNeeded('normal', nowMs);
       }
       return out;
     }
@@ -1018,10 +1462,27 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       st.pendingModelCostsUsd = {};
     };
 
-    const confirmRefund = (refundedPct, { keepPendingCost = false } = {}) => {
+    const confirmRefund = (
+      refundedPct,
+      { keepPendingCost = false, preRefundHighPct = 0 } = {}
+    ) => {
       const amt = Math.max(0, Number(refundedPct) || 0);
-      if (amt > 0) {
-        qrConsumeLeasesFifo(st.activeLeases, amt);
+      const prevHighWater =
+        st.lastRefundAtMs > 0 && nowMs - st.lastRefundAtMs <= QR_REPLICA_BOUNCE_MEMORY_MS
+          ? Number(st.lastRefundHighWaterPct) || 0
+          : 0;
+      st.lastRefundHighWaterPct = Math.max(
+        prevHighWater,
+        Number(preRefundHighPct) || 0,
+        Number(st.lastOfficialUsedPct) || 0
+      );
+      const leaseConsumed = amt > 0 ? qrConsumeLeasesFifo(st.activeLeases, amt) : 0;
+      const unbackedDrop = Math.max(0, amt - leaseConsumed);
+      if (unbackedDrop > 0 && (Number(st.externalUsedPct) || 0) > 0) {
+        st.externalUsedPct = Math.max(0, (Number(st.externalUsedPct) || 0) - unbackedDrop);
+        if (st.externalUsedPct < QR_MIN_DISPLAY_RESERVED_PCT) {
+          st.externalUsedPct = 0;
+        }
       }
       st.lastRefundAtMs = nowMs;
       st.lastRefundPct = amt;
@@ -1049,7 +1510,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
       clearPendingCost();
 
       if (isIdleRefundReady) {
-        confirmRefund(totalDrop);
+        confirmRefund(totalDrop, { preRefundHighPct: prevHigh });
       } else if (st.pendingDrop) {
         st.pendingDrop.preDropUsedPct = prevHigh;
         st.pendingDrop.lowestUsedPct = Math.min(st.pendingDrop.lowestUsedPct, safeUsed);
@@ -1059,7 +1520,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
           st.pendingDrop.lowSamples >= QR_REFUND_CONFIRM_MIN_SAMPLES &&
           nowMs - st.pendingDrop.droppedAtMs >= QR_REFUND_CONFIRM_WINDOW_MS
         ) {
-          confirmRefund(st.pendingDrop.dropPct);
+          confirmRefund(st.pendingDrop.dropPct, { preRefundHighPct: prevHigh });
         } else {
           eventKind = 'drop_pending';
         }
@@ -1141,6 +1602,7 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
           const effectiveDrop = Math.max(0, pd.preDropUsedPct + expectedSinceDrop - safeUsed);
           confirmRefund(effectiveDrop > 0 ? Math.min(pd.dropPct, effectiveDrop) : pd.dropPct, {
             keepPendingCost: deltaOfficial <= 1e-3 && st.pendingCostUsd > 0,
+            preRefundHighPct: pd.preDropUsedPct,
           });
         } else if (deltaOfficial > 1e-3) {
           clearPendingCost();
@@ -1154,9 +1616,19 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         }
       }
     } else if (deltaOfficial > 1e-3) {
-      // 4B. 官方已用比例上升：先筛除外部/家庭组消耗，再区分租约跳变、真实租约内消费及常规消耗
+      // 4B. 官方已用比例上升：先筛除退还后多副本回弹及外部/家庭组消耗，再区分租约跳变、租约内消费及常规消耗
+      const isPostRefundReplicaBounce =
+        !forceExternalJump &&
+        !hasLocalPoolActivity &&
+        st.lastRefundAtMs > 0 &&
+        nowMs >= st.lastRefundAtMs &&
+        nowMs - st.lastRefundAtMs <= QR_REPLICA_BOUNCE_MEMORY_MS &&
+        (Number(st.lastRefundHighWaterPct) || 0) > 0 &&
+        safeUsed <= (Number(st.lastRefundHighWaterPct) || 0) + QR_REFUND_EPSILON_PCT;
       const isIdleExternalUsage =
-        !hasLocalPoolActivity && deltaOfficial >= QR_EXTERNAL_MIN_IDLE_DELTA_PCT;
+        !isPostRefundReplicaBounce &&
+        !hasLocalPoolActivity &&
+        deltaOfficial >= QR_EXTERNAL_MIN_IDLE_DELTA_PCT;
       const detectedWithRate = rate !== null && excessPct >= QR_MIN_JUMP_EXCESS_PCT;
       const detectedColdStart =
         rate === null &&
@@ -1168,7 +1640,10 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         expectedDeltaPct > 0 &&
         shortfall >= Math.max(QR_CONSUME_MIN_SHORTFALL_PCT, expectedDeltaPct * QR_CONSUME_SHORTFALL_RATIO);
 
-      if (forceExternalJump || isIdleExternalUsage) {
+      if (isPostRefundReplicaBounce) {
+        st.lastBounceAtMs = nowMs;
+        eventKind = 'replica_flip';
+      } else if (forceExternalJump || isIdleExternalUsage) {
         const extAmt =
           forceExternalJump && excessPct > 0 ? excessPct : deltaOfficial;
         recordExternalDelta(extAmt);
@@ -1323,14 +1798,33 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
     st.lastQuotaTs = safeFetchTs;
     st.lastOfficialUsedPct = safeUsed;
     st.lastCycleCostUsd = safeCost;
+    st.lastCycleCalls = safeCalls;
+    st.lastPricedTokens = safePricedTokens;
     st.lastModelCostsUsd = safeModelCosts;
     st.lastUnpricedCalls = safeUnpriced;
 
     // 5. 租约 TTL 超时兜底（租约本身超过 60 分钟无实质扣减或满 90 分钟自动清理）
     const beforePrune = st.activeLeases.length;
     qrPruneExpiredLeases(st, nowMs);
-    if (beforePrune > st.activeLeases.length && eventKind === 'idle') {
+    const prunedExpiredLeases = beforePrune > st.activeLeases.length;
+    if (prunedExpiredLeases && eventKind === 'idle') {
       eventKind = 'expire';
+    }
+
+    const prevDensity = st.usdPerMTok;
+    qrRefreshBucketDensities(st, safeCost, safePricedTokens, safeModelCosts, safeModelTokens);
+    const extReconciled = qrReconcileExternalUsageBound(
+      st,
+      safeUsed,
+      safeCost,
+      safeModelCosts,
+      nowMs
+    );
+    const netLocalUsed = qrComputeNetLocalUsedPct(st, safeUsed);
+    if (prunedExpiredLeases) {
+      qrResetSlopeAnchor(st, netLocalUsed, safeCost, safeCalls, safeUnpriced);
+    } else {
+      qrUpdateSlopeSamples(st, netLocalUsed, safeCost, safeCalls, safeUnpriced);
     }
 
     const out = qrFormatOutput(st, safeUsed);
@@ -1342,6 +1836,10 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
         excessPct,
         ...out,
       });
+    } else if (extReconciled) {
+      persistIfNeeded('external_usage', nowMs);
+    } else if (prevDensity === null && st.usdPerMTok !== null) {
+      persistIfNeeded('normal', nowMs);
     }
     return out;
   }
@@ -1361,119 +1859,145 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
     const normalizedAccountScope = String(accountScope || '').trim().toLowerCase();
     const scopePrefix = `${String(endpointId || 'local')}::${normalizedAccountScope}`;
 
-    for (const [poolKey, poolObj] of quotaPoolsMap.entries()) {
-      if (!poolObj || typeof poolObj !== 'object') continue;
-      const pStats = poolCycleStats instanceof Map ? poolCycleStats.get(poolKey) : null;
-      const recent10m = pStats?.recent10m || null;
-      const poolLastActivityMs = Number(recent10m?.lastActivityMs) || 0;
-      const activeSessionCount10m = Number(recent10m?.activeSessionCount) || 0;
-      const recent10mCostUsd = Number(recent10m?.costUsd) || 0;
-      const hasRunningLocalSession = Boolean(
-        hasUnknownRunningPool ||
-          (runningPoolKeys instanceof Set && runningPoolKeys.has(poolKey))
-      );
+    batchingDepth += 1;
+    try {
+      for (const [poolKey, poolObj] of quotaPoolsMap.entries()) {
+        if (!poolObj || typeof poolObj !== 'object') continue;
+        const pStats = poolCycleStats instanceof Map ? poolCycleStats.get(poolKey) : null;
+        const recent10m = pStats?.recent10m || null;
+        const poolLastActivityMs = Number(recent10m?.lastActivityMs) || 0;
+        const activeSessionCount10m = Number(recent10m?.activeSessionCount) || 0;
+        const recent10mCostUsd = Number(recent10m?.costUsd) || 0;
+        const hasRunningLocalSession = Boolean(
+          hasUnknownRunningPool ||
+            (runningPoolKeys instanceof Set && runningPoolKeys.has(poolKey))
+        );
 
-      const key5h = `${scopePrefix}::${poolKey}::5h`;
-      const keyWk = `${scopePrefix}::${poolKey}::weekly`;
-      const used5hExact = poolObj.has5h ? qrResolveExactUsedPct(poolObj, '5h') : null;
-      const usedWkExact = poolObj.hasWeekly ? qrResolveExactUsedPct(poolObj, 'weekly') : null;
-      const reset5hMs = parseIsoMs(poolObj.resetTime);
-      const resetWkMs = parseIsoMs(poolObj.weeklyResetTime);
-      const cost5hUsd = pStats?.exactCost5hUsd ?? pStats?.cycle5h?.costUsd ?? 0;
-      const costWkUsd = pStats?.exactCostWeeklyUsd ?? pStats?.cycleWeekly?.costUsd ?? 0;
-      const modelCosts5h = pStats?.modelCosts5h || null;
-      const modelCostsWk = pStats?.modelCostsWeekly || null;
+        const key5h = `${scopePrefix}::${poolKey}::5h`;
+        const keyWk = `${scopePrefix}::${poolKey}::weekly`;
+        const used5hExact = poolObj.has5h ? qrResolveExactUsedPct(poolObj, '5h') : null;
+        const usedWkExact = poolObj.hasWeekly ? qrResolveExactUsedPct(poolObj, 'weekly') : null;
+        const reset5hMs = parseIsoMs(poolObj.resetTime);
+        const resetWkMs = parseIsoMs(poolObj.weeklyResetTime);
+        const cost5hUsd = pStats?.exactCost5hUsd ?? pStats?.cycle5h?.costUsd ?? 0;
+        const costWkUsd = pStats?.exactCostWeeklyUsd ?? pStats?.cycleWeekly?.costUsd ?? 0;
+        const calls5h = pStats?.cycle5h?.calls || 0;
+        const callsWk = pStats?.cycleWeekly?.calls || 0;
+        const unpriced5h = pStats?.cycle5h?.unpricedCalls || 0;
+        const unpricedWk = pStats?.cycleWeekly?.unpricedCalls || 0;
+        const pricedTokens5h =
+          pStats?.pricedTokens5h ?? (unpriced5h === 0 ? pStats?.cycle5h?.tokens || 0 : 0);
+        const pricedTokensWk =
+          pStats?.pricedTokensWeekly ?? (unpricedWk === 0 ? pStats?.cycleWeekly?.tokens || 0 : 0);
+        const modelCosts5h = pStats?.modelCosts5h || null;
+        const modelCostsWk = pStats?.modelCostsWeekly || null;
+        const modelTokens5h = pStats?.modelTokens5h || null;
+        const modelTokensWk = pStats?.modelTokensWeekly || null;
 
-      const prev5hSt = buckets.get(key5h) || null;
-      const prevWkSt = buckets.get(keyWk) || null;
-      const peerExtTs5h = Number(prevWkSt?.lastExternalUsageAtMs) || 0;
-      const peerExtTsWk = Number(prev5hSt?.lastExternalUsageAtMs) || 0;
+        const prev5hSt = buckets.get(key5h) || null;
+        const prevWkSt = buckets.get(keyWk) || null;
+        const peerExtTs5h = Number(prevWkSt?.lastExternalUsageAtMs) || 0;
+        const peerExtTsWk = Number(prev5hSt?.lastExternalUsageAtMs) || 0;
 
-      // 第 2 层：同一快照下 5h / 周限按已校准费率等比同涨 -> 判定为同一笔家庭组/外部真实消耗而非租约
-      const isProportionalExternal =
-        used5hExact !== null && usedWkExact !== null
-          ? qrDetectProportionalExternalJump(
-              prev5hSt,
-              prevWkSt,
-              {
+        // 第 2 层：同一快照下 5h / 周限按已校准费率等比同涨 -> 判定为同一笔家庭组/外部真实消耗而非租约
+        const isProportionalExternal =
+          used5hExact !== null && usedWkExact !== null
+            ? qrDetectProportionalExternalJump(
+                prev5hSt,
+                prevWkSt,
+                {
+                  officialUsedPct: used5hExact,
+                  resetTimeMs: reset5hMs,
+                  quotaFetchedAtMs,
+                  cycleCostUsd: cost5hUsd,
+                  modelCostsUsd: modelCosts5h,
+                  nowMs,
+                },
+                {
+                  officialUsedPct: usedWkExact,
+                  resetTimeMs: resetWkMs,
+                  quotaFetchedAtMs,
+                  cycleCostUsd: costWkUsd,
+                  modelCostsUsd: modelCostsWk,
+                  nowMs,
+                }
+              )
+            : false;
+
+        const res5h =
+          used5hExact !== null
+            ? observeBucket({
+                bucketKey: key5h,
+                poolKey,
+                win: '5h',
                 officialUsedPct: used5hExact,
                 resetTimeMs: reset5hMs,
                 quotaFetchedAtMs,
                 cycleCostUsd: cost5hUsd,
+                cycleCalls: calls5h,
+                pricedTokens: pricedTokens5h,
                 modelCostsUsd: modelCosts5h,
+                modelTokens: modelTokens5h,
+                unpricedCalls: unpriced5h,
+                poolLastActivityMs,
+                activeSessionCount10m,
+                recent10mCostUsd,
+                hasRunningLocalSession,
+                forceExternalJump: isProportionalExternal,
+                peerLastExternalUsageAtMs: peerExtTs5h,
                 nowMs,
-              },
-              {
+              })
+            : { reservedPct: 0, reservedLeaseCount: 0, reservedExpiresAtMs: null };
+
+        const updated5hExtTs = Math.max(
+          peerExtTsWk,
+          Number(buckets.get(key5h)?.lastExternalUsageAtMs) || 0
+        );
+
+        const resWk =
+          usedWkExact !== null
+            ? observeBucket({
+                bucketKey: keyWk,
+                poolKey,
+                win: 'weekly',
                 officialUsedPct: usedWkExact,
                 resetTimeMs: resetWkMs,
                 quotaFetchedAtMs,
                 cycleCostUsd: costWkUsd,
+                cycleCalls: callsWk,
+                pricedTokens: pricedTokensWk,
                 modelCostsUsd: modelCostsWk,
+                modelTokens: modelTokensWk,
+                unpricedCalls: unpricedWk,
+                poolLastActivityMs,
+                activeSessionCount10m,
+                recent10mCostUsd,
+                hasRunningLocalSession,
+                forceExternalJump: isProportionalExternal,
+                peerLastExternalUsageAtMs: updated5hExtTs,
                 nowMs,
-              }
-            )
-          : false;
+              })
+            : { reservedPct: 0, reservedLeaseCount: 0, reservedExpiresAtMs: null };
 
-      const res5h =
-        used5hExact !== null
-          ? observeBucket({
-              bucketKey: key5h,
-              poolKey,
-              win: '5h',
-              officialUsedPct: used5hExact,
-              resetTimeMs: reset5hMs,
-              quotaFetchedAtMs,
-              cycleCostUsd: cost5hUsd,
-              modelCostsUsd: modelCosts5h,
-              unpricedCalls: pStats?.cycle5h?.unpricedCalls || 0,
-              poolLastActivityMs,
-              activeSessionCount10m,
-              recent10mCostUsd,
-              hasRunningLocalSession,
-              forceExternalJump: isProportionalExternal,
-              peerLastExternalUsageAtMs: peerExtTs5h,
-              nowMs,
-            })
-          : { reservedPct: 0, reservedLeaseCount: 0, reservedExpiresAtMs: null };
-
-      const updated5hExtTs = Math.max(
-        peerExtTsWk,
-        Number(buckets.get(key5h)?.lastExternalUsageAtMs) || 0
-      );
-
-      const resWk =
-        usedWkExact !== null
-          ? observeBucket({
-              bucketKey: keyWk,
-              poolKey,
-              win: 'weekly',
-              officialUsedPct: usedWkExact,
-              resetTimeMs: resetWkMs,
-              quotaFetchedAtMs,
-              cycleCostUsd: costWkUsd,
-              modelCostsUsd: modelCostsWk,
-              unpricedCalls: pStats?.cycleWeekly?.unpricedCalls || 0,
-              poolLastActivityMs,
-              activeSessionCount10m,
-              recent10mCostUsd,
-              hasRunningLocalSession,
-              forceExternalJump: isProportionalExternal,
-              peerLastExternalUsageAtMs: updated5hExtTs,
-              nowMs,
-            })
-          : { reservedPct: 0, reservedLeaseCount: 0, reservedExpiresAtMs: null };
-
-      poolObj.reservedPct = res5h.reservedPct;
-      poolObj.reservedLeaseCount = res5h.reservedLeaseCount;
-      poolObj.reservedExpiresAtMs = res5h.reservedExpiresAtMs;
-      poolObj.weeklyReservedPct = resWk.reservedPct;
-      poolObj.weeklyReservedLeaseCount = resWk.reservedLeaseCount;
-      poolObj.weeklyReservedExpiresAtMs = resWk.reservedExpiresAtMs;
-      poolObj.rateEstimate = qrBuildPoolRateEstimate(
-        buckets.get(key5h) || null,
-        buckets.get(keyWk) || null,
-        nowMs
-      );
+        poolObj.reservedPct = res5h.reservedPct;
+        poolObj.reservedLeaseCount = res5h.reservedLeaseCount;
+        poolObj.reservedExpiresAtMs = res5h.reservedExpiresAtMs;
+        poolObj.weeklyReservedPct = resWk.reservedPct;
+        poolObj.weeklyReservedLeaseCount = resWk.reservedLeaseCount;
+        poolObj.weeklyReservedExpiresAtMs = resWk.reservedExpiresAtMs;
+        poolObj.rateEstimate = qrBuildPoolRateEstimate(
+          buckets.get(key5h) || null,
+          buckets.get(keyWk) || null,
+          nowMs
+        );
+      }
+    } finally {
+      batchingDepth = Math.max(0, batchingDepth - 1);
+      if (batchingDepth === 0 && batchPendingEvent) {
+        const pending = batchPendingEvent;
+        batchPendingEvent = null;
+        persistIfNeeded(pending, nowMs);
+      }
     }
   }
 
@@ -1525,6 +2049,8 @@ export function createQuotaReservationTracker({ loadState = null, saveState = nu
     buckets.clear();
     eventLog.length = 0;
     lastPersistMs = 0;
+    batchingDepth = 0;
+    batchPendingEvent = null;
     hydrated = true;
   }
 

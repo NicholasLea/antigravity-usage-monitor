@@ -1449,6 +1449,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.cycle5hTitle': '当前 5h 周期累计 ({pool})：{tok} Tokens · {cost} · {calls} 次调用',
   'quota.cycleWkCustomTitle': '本周自然周累计：{tok} Tokens · {cost} · {calls} 次调用',
   'quota.cycleWkPoolTitle': '当前周限周期累计 ({pool})：{tok} Tokens · {cost} · {calls} 次调用',
+  'quota.cycleFullSuffix': '满池约 {full}',
   'quota.footTokensCustom': '本周累计: {tok} ({cost})',
   'quota.footTokensCycle': '周期累计: {tok} ({cost})',
   'quota.footCredits': 'AI 积分: {credits}',
@@ -1460,13 +1461,18 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.ratePopTitle': '实测倍率预估',
   'quota.ratePopAccountScope': '{account}',
   'quota.ratePopAccountCurrent': '当前账号',
+  'quota.ratePopWkCapTitle': '预测周额度',
+  'quota.ratePopWkCapPrelim': '· 初估',
+  'quota.ratePopWkCapPartial': '· {ready}/{total} 池',
   'quota.ratePopPoolFallback': '池综合均值',
   'quota.ratePopEq5hLabel': '5h 满池',
   'quota.ratePopEqWkLabel': '周限满池',
   'quota.ratePopPerUsd': '{win} {rate}%/$',
   'quota.ratePopSamples': '{n} 样本',
-  'quota.ratePopEmpty': '暂未采集到足够的单模型干净样本（每模型需至少 3 次无抖动扣费），正常使用后自动生成。',
-  'quota.ratePopNote': '按单模型纯净步实测折算，同池最省为 1x，按账号隔离。',
+  'quota.ratePopPrelimSlope': '斜率初估',
+  'quota.ratePopPrelimCycle': '周期初估',
+  'quota.ratePopEmpty': '暂未采集到足够的单模型干净样本（周限满 2% 或单模型满 3 次无抖动扣费后自动生成）。',
+  'quota.ratePopNote': '按净消耗及精确计价折算，同池最省为 1x，按账号隔离。',
   'quota.ratePopSharedBadge': '共享活跃',
   'quota.ratePopSharedBadgeTip': '最近 15 分钟内检测到同池外部消耗，新增预占将在二次验证后展示',
   'quota.ratePopExternalDetail': '检测到家庭组 / 其他设备消耗（已排除约 {detail}），不计入预占',
@@ -2343,6 +2349,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.cycle5hTitle': 'Current 5h cycle ({pool}): {tok} Tokens · {cost} · {calls} calls',
   'quota.cycleWkCustomTitle': 'Current calendar week: {tok} Tokens · {cost} · {calls} calls',
   'quota.cycleWkPoolTitle': 'Current weekly cycle ({pool}): {tok} Tokens · {cost} · {calls} calls',
+  'quota.cycleFullSuffix': 'Full ~{full}',
   'quota.footTokensCustom': 'Week Total: {tok} ({cost})',
   'quota.footTokensCycle': 'Cycle Total: {tok} ({cost})',
   'quota.footCredits': 'AI Credits: {credits}',
@@ -2354,13 +2361,18 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.ratePopTitle': 'Estimated Burn Rates',
   'quota.ratePopAccountScope': '{account}',
   'quota.ratePopAccountCurrent': 'Current account',
+  'quota.ratePopWkCapTitle': 'Est. Weekly Quota',
+  'quota.ratePopWkCapPrelim': '· est.',
+  'quota.ratePopWkCapPartial': '· {ready}/{total} pools',
   'quota.ratePopPoolFallback': 'Pool average',
   'quota.ratePopEq5hLabel': '5h full',
   'quota.ratePopEqWkLabel': 'Weekly full',
   'quota.ratePopPerUsd': '{win} {rate}%/$',
   'quota.ratePopSamples': '{n} samples',
-  'quota.ratePopEmpty': 'Not enough clean single-model samples yet (at least 3 clean steps per model). Estimates appear automatically during use.',
-  'quota.ratePopNote': 'Measured from clean single-model steps; lowest burn in pool = 1x. Account isolated.',
+  'quota.ratePopPrelimSlope': 'slope est.',
+  'quota.ratePopPrelimCycle': 'cycle est.',
+  'quota.ratePopEmpty': 'Not enough clean samples yet (unlocks at 2% weekly burn or 3 clean single-model steps).',
+  'quota.ratePopNote': 'Measured from net burn & priced steps; lowest in pool = 1x. Account isolated.',
   'quota.ratePopSharedBadge': 'Shared active',
   'quota.ratePopSharedBadgeTip': 'External pool usage seen within 15 min; new reservations display after verification',
   'quota.ratePopExternalDetail': 'Family group / other-device usage detected (~{detail} excluded from reservations)',
@@ -9935,6 +9947,12 @@ function isEquivalentTelemetry(prev, next) {
     ) {
       return false;
     }
+  }
+  if (
+    JSON.stringify(prev.quotas?.weeklyCapacityEstimate || null) !==
+    JSON.stringify(next.quotas?.weeklyCapacityEstimate || null)
+  ) {
+    return false;
   }
 
   const pConvs = prev.conversations || [];
@@ -19298,21 +19316,24 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
 
   patchText(refs.title5h, `5h (${poolLabel})`);
   const c5h = poolData?.cycle5h;
+  const est = poolData?.rateEstimate;
   if (!isPending && has5h && c5h && (c5h.tokens != null || c5h.costUsd != null)) {
     const tok5h = formatTokens(c5h.tokens || 0);
     const cost5h = formatUsd(c5h.costUsd || 0);
     const calls5h = Number(c5h.calls || 0);
+    const full5hRef = formatPoolFullCapRef(est?.eqFull5hUsd, est?.eqFull5hTokens);
+    const baseTip5h = t('quota.cycle5hTitle', {
+      pool: poolLabel,
+      tok: tok5h,
+      cost: cost5h,
+      calls: calls5h,
+    });
     refs.usage5h.hidden = false;
     patchText(refs.usage5h, `· ${tok5h} (${cost5h})`);
     patchAttr(
       refs.left5h,
       'title',
-      t('quota.cycle5hTitle', {
-        pool: poolLabel,
-        tok: tok5h,
-        cost: cost5h,
-        calls: calls5h,
-      })
+      full5hRef ? `${baseTip5h} · ${t('quota.cycleFullSuffix', { full: full5hRef })}` : baseTip5h
     );
   } else {
     refs.usage5h.hidden = true;
@@ -19345,19 +19366,23 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
     const tokWk = formatTokens(cWk.tokens || 0);
     const costWk = formatUsd(cWk.costUsd || 0);
     const callsWk = Number(cWk.calls || 0);
+    const fullWkRef = !useCustomWeekly
+      ? formatPoolFullCapRef(est?.eqFullWeeklyUsd, est?.eqFullWeeklyTokens)
+      : '';
+    const baseTipWk = useCustomWeekly
+      ? t('quota.cycleWkCustomTitle', { tok: tokWk, cost: costWk, calls: callsWk })
+      : t('quota.cycleWkPoolTitle', {
+          pool: poolLabel,
+          tok: tokWk,
+          cost: costWk,
+          calls: callsWk,
+        });
     refs.usageWk.hidden = false;
     patchText(refs.usageWk, `· ${tokWk} (${costWk})`);
     patchAttr(
       refs.leftWk,
       'title',
-      useCustomWeekly
-        ? t('quota.cycleWkCustomTitle', { tok: tokWk, cost: costWk, calls: callsWk })
-        : t('quota.cycleWkPoolTitle', {
-            pool: poolLabel,
-            tok: tokWk,
-            cost: costWk,
-            calls: callsWk,
-          })
+      fullWkRef ? `${baseTipWk} · ${t('quota.cycleFullSuffix', { full: fullWkRef })}` : baseTipWk
     );
   } else {
     refs.usageWk.hidden = true;
@@ -19382,8 +19407,9 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
 function quotaPoolRowSig(item, idx) {
   const c5h = item.poolData?.cycle5h;
   const cWk = item.poolData?.cycleWeekly;
+  const est = item.poolData?.rateEstimate;
   const fw = item.fallbackWeekly;
-  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
+  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${est?.eqFull5hUsd}:${est?.eqFull5hTokens}:${est?.eqFullWeeklyUsd}:${est?.eqFullWeeklyTokens}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
 }
 
 /**
@@ -19459,6 +19485,99 @@ function formatRateEqUsd(val) {
   return `$${Number(num.toFixed(1))}`;
 }
 
+function formatPoolFullCapRef(eqUsd, eqTok) {
+  const usdNum = Number(eqUsd);
+  if (!Number.isFinite(usdNum) || usdNum <= 0) return '';
+  const usdStr = formatRateEqUsd(usdNum);
+  const tokNum = Number(eqTok);
+  if (Number.isFinite(tokNum) && tokNum > 0) {
+    return `${usdStr} (${formatTokens(tokNum)})`;
+  }
+  return usdStr;
+}
+
+function resolveWeeklyCapacitySummary(quotas) {
+  if (!quotas || typeof quotas !== 'object') return null;
+  if (quotas.weekly?.isOfficial === false) return null;
+  const direct = quotas.weeklyCapacityEstimate;
+  if (direct && typeof direct === 'object') {
+    if (
+      direct.status === 'custom_mode' ||
+      !Number.isFinite(Number(direct.totalEqWeeklyUsd)) ||
+      Number(direct.totalEqWeeklyUsd) <= 0
+    ) {
+      return null;
+    }
+    return direct;
+  }
+
+  const rawPools = Array.isArray(quotas.pools) ? quotas.pools : [];
+  const candidatePools = rawPools.filter(
+    (p) =>
+      p &&
+      (p.hasWeekly ||
+        p.weeklyUsedPct != null ||
+        Number.isFinite(p.rateEstimate?.eqFullWeeklyUsd))
+  );
+  const targetPools = candidatePools.length > 0 ? candidatePools : rawPools;
+  if (targetPools.length === 0) return null;
+
+  let sumUsd = 0;
+  let sumTokens = 0;
+  let readyPoolCount = 0;
+  let tokenReadyPoolCount = 0;
+  let hasPreliminary = false;
+
+  for (const p of targetPools) {
+    const est = p?.rateEstimate && typeof p.rateEstimate === 'object' ? p.rateEstimate : null;
+    let eqUsd =
+      Number.isFinite(est?.eqFullWeeklyUsd) && est.eqFullWeeklyUsd > 0
+        ? Number(est.eqFullWeeklyUsd)
+        : null;
+    let eqTok =
+      Number.isFinite(est?.eqFullWeeklyTokens) && est.eqFullWeeklyTokens > 0
+        ? Math.round(Number(est.eqFullWeeklyTokens))
+        : null;
+    if (eqUsd === null && Array.isArray(est?.models) && est.models.length > 0) {
+      const wkModels = est.models.filter(
+        (m) => Number.isFinite(m?.eqFullWeeklyUsd) && m.eqFullWeeklyUsd > 0
+      );
+      if (wkModels.length > 0) {
+        eqUsd =
+          wkModels.reduce((acc, m) => acc + Number(m.eqFullWeeklyUsd), 0) / wkModels.length;
+        const tokModels = wkModels.filter(
+          (m) => Number.isFinite(m?.eqFullWeeklyTokens) && m.eqFullWeeklyTokens > 0
+        );
+        if (tokModels.length === wkModels.length) {
+          eqTok = Math.round(
+            tokModels.reduce((acc, m) => acc + Number(m.eqFullWeeklyTokens), 0) / tokModels.length
+          );
+        }
+      }
+    }
+    if (eqUsd !== null) {
+      readyPoolCount += 1;
+      sumUsd += eqUsd;
+      if (est?.isPreliminaryWeekly) hasPreliminary = true;
+      if (eqTok !== null) {
+        tokenReadyPoolCount += 1;
+        sumTokens += eqTok;
+      }
+    }
+  }
+
+  if (readyPoolCount === 0) return null;
+  const totalPoolCount = targetPools.length;
+  return {
+    status: readyPoolCount < totalPoolCount ? 'partial' : 'ready',
+    totalEqWeeklyUsd: +sumUsd.toFixed(1),
+    totalEqWeeklyTokens: tokenReadyPoolCount === readyPoolCount ? Math.round(sumTokens) : null,
+    readyPoolCount,
+    totalPoolCount,
+    hasPreliminary,
+  };
+}
+
 function formatRatePerUsdValue(rate) {
   const num = Number(rate);
   if (!Number.isFinite(num) || num <= 0) return '--';
@@ -19480,7 +19599,11 @@ function createRateModelCard({
   rateWeeklyPctPerUsd = null,
   eqFull5hUsd = null,
   eqFullWeeklyUsd = null,
+  eqFull5hTokens = null,
+  eqFullWeeklyTokens = null,
   samples = 0,
+  source = null,
+  isPreliminary = false,
 }) {
   const leftNodes = [
     h('span', {
@@ -19509,32 +19632,50 @@ function createRateModelCard({
       })
     );
   }
-  if (Number(samples) > 0) {
+  if (isPreliminary) {
+    subParts.push(
+      source === 'anchor_slope' ? t('quota.ratePopPrelimSlope') : t('quota.ratePopPrelimCycle')
+    );
+  } else if (Number(samples) > 0) {
     subParts.push(t('quota.ratePopSamples', { n: Number(samples) }));
   }
 
   const eqCells = [];
   if (eqFull5hUsd != null) {
-    eqCells.push(
-      h('div', { className: 'quota-rate-eq-cell' }, [
-        h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEq5hLabel') }),
+    const cell5hChildren = [
+      h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEq5hLabel') }),
+      h('span', {
+        className: 'quota-rate-eq-v text-mono',
+        text: `≈ ${formatRateEqUsd(eqFull5hUsd)}`,
+      }),
+    ];
+    if (Number.isFinite(Number(eqFull5hTokens)) && Number(eqFull5hTokens) > 0) {
+      cell5hChildren.push(
         h('span', {
-          className: 'quota-rate-eq-v text-mono',
-          text: `≈ ${formatRateEqUsd(eqFull5hUsd)}`,
-        }),
-      ])
-    );
+          className: 'quota-rate-eq-tok text-mono',
+          text: `· ${formatTokens(Number(eqFull5hTokens))}`,
+        })
+      );
+    }
+    eqCells.push(h('div', { className: 'quota-rate-eq-cell' }, cell5hChildren));
   }
   if (eqFullWeeklyUsd != null) {
-    eqCells.push(
-      h('div', { className: 'quota-rate-eq-cell' }, [
-        h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEqWkLabel') }),
+    const cellWkChildren = [
+      h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEqWkLabel') }),
+      h('span', {
+        className: 'quota-rate-eq-v text-mono',
+        text: `≈ ${formatRateEqUsd(eqFullWeeklyUsd)}`,
+      }),
+    ];
+    if (Number.isFinite(Number(eqFullWeeklyTokens)) && Number(eqFullWeeklyTokens) > 0) {
+      cellWkChildren.push(
         h('span', {
-          className: 'quota-rate-eq-v text-mono',
-          text: `≈ ${formatRateEqUsd(eqFullWeeklyUsd)}`,
-        }),
-      ])
-    );
+          className: 'quota-rate-eq-tok text-mono',
+          text: `· ${formatTokens(Number(eqFullWeeklyTokens))}`,
+        })
+      );
+    }
+    eqCells.push(h('div', { className: 'quota-rate-eq-cell' }, cellWkChildren));
   }
 
   const cardChildren = [
@@ -19561,11 +19702,13 @@ function createRateModelCard({
 function buildRatePopoverSig(data) {
   const locale = getEffectiveLocale();
   const acct = String(data?.account?.email || data?.account?.name || '').trim();
+  const isOfficial = data?.quotas?.weekly?.isOfficial !== false;
+  const wkCapSig = JSON.stringify(data?.quotas?.weeklyCapacityEstimate || null);
   const pools = Array.isArray(data?.quotas?.pools) ? data.quotas.pools : [];
   const poolSig = pools
     .map((p) => `${p.poolKey || ''}:${p.poolLabel || ''}:${JSON.stringify(p.rateEstimate || null)}`)
     .join('|');
-  return `${locale}|${acct}|${poolSig}`;
+  return `${locale}|${acct}|${isOfficial}|${wkCapSig}|${poolSig}`;
 }
 
 const QuotaPoolsWidget = defineComponent({
@@ -19583,6 +19726,27 @@ const QuotaPoolsWidget = defineComponent({
       className: 'quota-rate-pop-account',
       text: t('quota.ratePopAccountCurrent'),
     });
+    const ratePopWkLabelEl = h('span', { text: t('quota.ratePopWkCapTitle') });
+    const ratePopWkSubEl = h('span', {
+      className: 'quota-rate-wk-sub',
+      hidden: true,
+      text: '',
+    });
+    const ratePopWkUsdEl = h('span', { className: 'quota-rate-wk-usd text-mono', text: '--' });
+    const ratePopWkTokEl = h('span', {
+      className: 'quota-rate-wk-tok text-mono',
+      hidden: true,
+      text: '',
+    });
+    const ratePopWkSummaryEl = h(
+      'div',
+      { className: 'quota-rate-wk-summary', hidden: true },
+      [
+        h('span', { className: 'quota-rate-wk-k' }, [ratePopWkLabelEl, ratePopWkSubEl]),
+        h('span', { className: 'quota-rate-wk-v' }, [ratePopWkUsdEl, ratePopWkTokEl]),
+      ]
+    );
+    ratePopWkSummaryEl.hidden = true;
     const ratePopBodyEl = h('div', { className: 'quota-rate-pop-body' });
     const ratePopNoteEl = h('div', {
       className: 'quota-rate-pop-note',
@@ -19597,6 +19761,7 @@ const QuotaPoolsWidget = defineComponent({
       },
       [
         h('div', { className: 'quota-rate-pop-head' }, [ratePopTitleEl, ratePopAccountEl]),
+        ratePopWkSummaryEl,
         ratePopBodyEl,
         ratePopNoteEl,
       ]
@@ -19688,6 +19853,38 @@ const QuotaPoolsWidget = defineComponent({
       );
       patchAttr(ratePopAccountEl, 'title', acctMasked || null);
 
+      const wkCap = resolveWeeklyCapacitySummary(data?.quotas);
+      if (wkCap) {
+        ratePopWkSummaryEl.hidden = false;
+        patchAttr(ratePopWkSummaryEl, 'hidden', false);
+        patchText(ratePopWkLabelEl, t('quota.ratePopWkCapTitle'));
+        const wkSubText =
+          wkCap.status === 'partial' && Number(wkCap.totalPoolCount) > 0
+            ? t('quota.ratePopWkCapPartial', {
+                ready: Number(wkCap.readyPoolCount) || 0,
+                total: Number(wkCap.totalPoolCount) || 0,
+              })
+            : wkCap.hasPreliminary
+              ? t('quota.ratePopWkCapPrelim')
+              : '';
+        ratePopWkSubEl.hidden = !wkSubText;
+        patchAttr(ratePopWkSubEl, 'hidden', !wkSubText);
+        patchText(ratePopWkSubEl, wkSubText);
+        patchText(ratePopWkUsdEl, `≈ ${formatRateEqUsd(wkCap.totalEqWeeklyUsd)}`);
+        const hasWkTok =
+          Number.isFinite(Number(wkCap.totalEqWeeklyTokens)) &&
+          Number(wkCap.totalEqWeeklyTokens) > 0;
+        ratePopWkTokEl.hidden = !hasWkTok;
+        patchAttr(ratePopWkTokEl, 'hidden', !hasWkTok);
+        patchText(
+          ratePopWkTokEl,
+          hasWkTok ? `· ${formatTokens(Number(wkCap.totalEqWeeklyTokens))}` : ''
+        );
+      } else {
+        ratePopWkSummaryEl.hidden = true;
+        patchAttr(ratePopWkSummaryEl, 'hidden', true);
+      }
+
       while (ratePopBodyEl.firstChild) {
         ratePopBodyEl.removeChild(ratePopBodyEl.firstChild);
       }
@@ -19706,19 +19903,45 @@ const QuotaPoolsWidget = defineComponent({
         if (models.length === 0 && !hasPoolFallback && !ext) continue;
 
         const poolLabel = p.poolLabel || p.family || p.poolKey || 'Pool';
+        const fallbackPrimaryIs5h = est.rate5hPctPerUsd != null;
+        const anyModelHasWeekly = models.some((m) => m?.eqFullWeeklyUsd != null);
+        const needsWeeklyFallbackRow =
+          models.length > 0 &&
+          !anyModelHasWeekly &&
+          Number.isFinite(est.rateWeeklyPctPerUsd) &&
+          est.eqFullWeeklyUsd != null;
         const rows =
           models.length > 0
-            ? models.map((item) =>
-                createRateModelCard({
-                  name: item.model,
-                  multiplier: item.multiplier,
-                  rate5hPctPerUsd: item.rate5hPctPerUsd,
-                  rateWeeklyPctPerUsd: item.rateWeeklyPctPerUsd,
-                  eqFull5hUsd: item.eqFull5hUsd,
-                  eqFullWeeklyUsd: item.eqFullWeeklyUsd,
-                  samples: item.samples,
-                })
-              )
+            ? [
+                ...models.map((item) =>
+                  createRateModelCard({
+                    name: item.model,
+                    multiplier: item.multiplier,
+                    rate5hPctPerUsd: item.rate5hPctPerUsd,
+                    rateWeeklyPctPerUsd: item.rateWeeklyPctPerUsd,
+                    eqFull5hUsd: item.eqFull5hUsd,
+                    eqFullWeeklyUsd: item.eqFullWeeklyUsd,
+                    eqFull5hTokens: item.eqFull5hTokens,
+                    eqFullWeeklyTokens: item.eqFullWeeklyTokens,
+                    samples: item.samples,
+                  })
+                ),
+                ...(needsWeeklyFallbackRow
+                  ? [
+                      createRateModelCard({
+                        name: t('quota.ratePopPoolFallback'),
+                        isMutedName: true,
+                        isFallback: true,
+                        rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
+                        eqFullWeeklyUsd: est.eqFullWeeklyUsd,
+                        eqFullWeeklyTokens: est.eqFullWeeklyTokens,
+                        samples: Number(est.samplesWeekly) || 0,
+                        source: est.sourceWeekly || null,
+                        isPreliminary: Boolean(est.isPreliminaryWeekly),
+                      }),
+                    ]
+                  : []),
+              ]
             : hasPoolFallback
               ? [
                   createRateModelCard({
@@ -19729,7 +19952,13 @@ const QuotaPoolsWidget = defineComponent({
                     rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
                     eqFull5hUsd: est.eqFull5hUsd,
                     eqFullWeeklyUsd: est.eqFullWeeklyUsd,
+                    eqFull5hTokens: est.eqFull5hTokens,
+                    eqFullWeeklyTokens: est.eqFullWeeklyTokens,
                     samples: Math.max(Number(est.samples5h) || 0, Number(est.samplesWeekly) || 0),
+                    source: fallbackPrimaryIs5h ? est.source5h || null : est.sourceWeekly || null,
+                    isPreliminary: fallbackPrimaryIs5h
+                      ? Boolean(est.isPreliminary5h)
+                      : Boolean(est.isPreliminaryWeekly),
                   }),
                 ]
               : [];

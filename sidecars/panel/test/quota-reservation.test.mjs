@@ -1980,3 +1980,903 @@ test('QuotaPoolsWidget ? popover renders family-group/external usage banner and 
     globalThis.window = origWindow;
   }
 });
+
+test('quota-reservation: 3-tier hybrid estimator unlocks cycle_ratio & anchor_slope, derives full-pool tokens, and retains density across reset & restart', () => {
+  let storedPayload = null;
+  const tracker = createQuotaReservationTracker({
+    saveState: (p) => {
+      storedPayload = JSON.parse(JSON.stringify(p));
+    },
+  });
+
+  const makePools = (used5h, usedWk, reset5h = RESET_5H, resetWk = RESET_WK) =>
+    new Map([
+      [
+        'Claude & GPT',
+        {
+          poolKey: 'Claude & GPT',
+          poolLabel: 'Claude & GPT',
+          family: 'Claude & GPT',
+          has5h: true,
+          hasWeekly: true,
+          remainingFraction: 1 - used5h / 100,
+          usedPct: used5h,
+          resetTime: new Date(reset5h).toISOString(),
+          weeklyRemainingFraction: 1 - usedWk / 100,
+          weeklyUsedPct: usedWk,
+          weeklyResetTime: new Date(resetWk).toISOString(),
+        },
+      ],
+    ]);
+
+  const makeStats = ({
+    cost5h,
+    costWk,
+    calls5h,
+    callsWk,
+    tok5h,
+    tokWk,
+    modelCosts5h = {},
+    modelCostsWk = {},
+    modelTokens5h = {},
+    modelTokensWk = {},
+    ts = T0,
+  }) =>
+    new Map([
+      [
+        'Claude & GPT',
+        {
+          cycle5h: { costUsd: cost5h, calls: calls5h, tokens: tok5h, unpricedCalls: 0 },
+          cycleWeekly: { costUsd: costWk, calls: callsWk, tokens: tokWk, unpricedCalls: 0 },
+          pricedTokens5h: tok5h,
+          pricedTokensWeekly: tokWk,
+          exactCost5hUsd: cost5h,
+          exactCostWeeklyUsd: costWk,
+          modelCosts5h,
+          modelCostsWeekly: modelCostsWk,
+          modelTokens5h,
+          modelTokensWeekly: modelTokensWk,
+          recent10m: { lastActivityMs: ts, activeSessionCount: 1, costUsd: 0.2 },
+        },
+      ],
+    ]);
+
+  // 1. Cold-start Tier 3 (cycle_ratio): solo account at 3.2% 5h / 2.4% weekly across 6 calls ($1.20, 300k tok -> $4/MTok)
+  // Unlocks immediately without waiting for 3 clean single-step diffs, while keeping reservedPct = 0
+  const pCold = makePools(3.2, 2.4);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'tier3@example.com',
+    quotaPoolsMap: pCold,
+    poolCycleStats: makeStats({
+      cost5h: 1.6,
+      costWk: 1.2,
+      calls5h: 6,
+      callsWk: 6,
+      tok5h: 400_000,
+      tokWk: 300_000,
+      modelCosts5h: { 'Claude Sonnet 4.6': 1.6 },
+      modelCostsWk: { 'Claude Sonnet 4.6': 1.2 },
+      modelTokens5h: { 'Claude Sonnet 4.6': 400_000 },
+      modelTokensWk: { 'Claude Sonnet 4.6': 300_000 },
+      ts: T0,
+    }),
+    quotaFetchedAtMs: T0,
+    nowMs: T0,
+  });
+  const coldPool = pCold.get('Claude & GPT');
+  assert.equal(coldPool.reservedPct, 0);
+  assert.equal(coldPool.weeklyReservedPct, 0);
+  assert.equal(coldPool.rateEstimate?.source5h, 'cycle_ratio');
+  assert.equal(coldPool.rateEstimate?.sourceWeekly, 'cycle_ratio');
+  assert.equal(coldPool.rateEstimate?.isPreliminary5h, true);
+  assert.equal(coldPool.rateEstimate?.isPreliminaryWeekly, true);
+  assert.equal(coldPool.rateEstimate?.eqFull5hUsd, 50);
+  assert.equal(coldPool.rateEstimate?.eqFullWeeklyUsd, 50);
+  assert.equal(coldPool.rateEstimate?.eqFull5hTokens, 12_500_000);
+  assert.equal(coldPool.rateEstimate?.eqFullWeeklyTokens, 12_500_000);
+
+  // 2. Mid-cycle / shared-account Tier 2 (anchor_slope + Theil-Sen):
+  // Baseline starts at 28% weekly with $0 local cost -> hasExternalUsage = true, Tier 3 blocked
+  let ts = T0;
+  let u5 = 15.0;
+  let uw = 28.0;
+  let c = 0;
+  let n = 0;
+  let tok = 0;
+  const pExt0 = makePools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'slope@example.com',
+    quotaPoolsMap: pExt0,
+    poolCycleStats: makeStats({ cost5h: 0, costWk: 0, calls5h: 0, callsWk: 0, tok5h: 0, tokWk: 0, ts }),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pExt0.get('Claude & GPT').rateEstimate?.eqFullWeeklyUsd, null, 'Tier 3 blocked on external baseline');
+
+  // Local runs 3 multi-model batched checkpoints (+0.6% weekly / +$0.30 / +2 calls each; total +1.8% >= 1.5%, +6 calls >= 5, $4/MTok)
+  // Note: delta5h = +0.6% (>= 0.35% lease jump threshold on uncalibrated or multi-step), so clean single-step rateSamples stays 0,
+  // proving Tier 2 anchor_slope independently recovers 2.0 %/$ -> $50 full weekly!
+  let pSlope = null;
+  for (let step = 0; step < 3; step += 1) {
+    ts += 30_000;
+    c = +(c + 0.3).toFixed(4);
+    n += 2;
+    tok += 75_000;
+    u5 = +(u5 + 0.3).toFixed(4);
+    uw = +(uw + 0.6).toFixed(4);
+    pSlope = makePools(u5, uw);
+    tracker.updatePools({
+      endpointId: 'local',
+      accountScope: 'slope@example.com',
+      quotaPoolsMap: pSlope,
+      poolCycleStats: makeStats({
+        cost5h: c,
+        costWk: c,
+        calls5h: n,
+        callsWk: n,
+        tok5h: tok,
+        tokWk: tok,
+        modelCosts5h: { 'Claude Sonnet 4.6': c * 0.6, 'Claude Opus 4.6': c * 0.4 },
+        modelCostsWk: { 'Claude Sonnet 4.6': c * 0.6, 'Claude Opus 4.6': c * 0.4 },
+        modelTokens5h: { 'Claude Sonnet 4.6': Math.round(tok * 0.75), 'Claude Opus 4.6': Math.round(tok * 0.25) },
+        modelTokensWk: { 'Claude Sonnet 4.6': Math.round(tok * 0.75), 'Claude Opus 4.6': Math.round(tok * 0.25) },
+        ts,
+      }),
+      runningPoolKeys: new Set(['Claude & GPT']),
+      quotaFetchedAtMs: ts,
+      nowMs: ts,
+    });
+  }
+  const slopeEst = pSlope.get('Claude & GPT').rateEstimate;
+  assert.equal(slopeEst?.sourceWeekly, 'anchor_slope');
+  assert.equal(slopeEst?.isPreliminaryWeekly, true);
+  assert.equal(slopeEst?.eqFullWeeklyUsd, 50);
+  assert.equal(slopeEst?.eqFullWeeklyTokens, 12_500_000);
+
+  // 3. Three clean single-model steps on Sonnet ($0.10 -> +0.2% weekly = 2.0 %/$) promote pool & model to Tier 1 calibrated
+  let sonnetExtraCost = 0;
+  let sonnetExtraTok = 0;
+  let pCal = null;
+  for (let i = 0; i < 3; i += 1) {
+    ts += 20_000;
+    c = +(c + 0.1).toFixed(4);
+    sonnetExtraCost = +(sonnetExtraCost + 0.1).toFixed(4);
+    sonnetExtraTok += 25_000;
+    n += 1;
+    tok += 25_000;
+    u5 = +(u5 + 0.2).toFixed(4);
+    uw = +(uw + 0.2).toFixed(4);
+    pCal = makePools(u5, uw);
+    tracker.updatePools({
+      endpointId: 'local',
+      accountScope: 'slope@example.com',
+      quotaPoolsMap: pCal,
+      poolCycleStats: makeStats({
+        cost5h: c,
+        costWk: c,
+        calls5h: n,
+        callsWk: n,
+        tok5h: tok,
+        tokWk: tok,
+        modelCosts5h: { 'Claude Sonnet 4.6': 0.54 + sonnetExtraCost, 'Claude Opus 4.6': 0.36 },
+        modelCostsWk: { 'Claude Sonnet 4.6': 0.54 + sonnetExtraCost, 'Claude Opus 4.6': 0.36 },
+        modelTokens5h: { 'Claude Sonnet 4.6': 168_750 + sonnetExtraTok, 'Claude Opus 4.6': 56_250 },
+        modelTokensWk: { 'Claude Sonnet 4.6': 168_750 + sonnetExtraTok, 'Claude Opus 4.6': 56_250 },
+        ts,
+      }),
+      runningPoolKeys: new Set(['Claude & GPT']),
+      quotaFetchedAtMs: ts,
+      nowMs: ts,
+    });
+  }
+  const calEst = pCal.get('Claude & GPT').rateEstimate;
+  assert.equal(calEst?.sourceWeekly, 'calibrated');
+  assert.equal(calEst?.isPreliminaryWeekly, false);
+  assert.equal(calEst?.eqFullWeeklyUsd, 50);
+  assert.equal(calEst?.eqFullWeeklyTokens, 12_500_000);
+  assert.ok(calEst?.models?.[0]?.eqFullWeeklyTokens > 10_000_000, 'per-model eqFullWeeklyTokens populated');
+
+  // 4. Weekly rollover reset back to 0% ($0 cost, 0 tokens) + reload from persisted v2 payload:
+  // priorUsdPerMTok preserves full-pool token capacity with zero Monday-reset amnesia!
+  ts += 7 * 24 * 3600 * 1000;
+  const pReset = makePools(0, 0, RESET_5H + 7 * 24 * 3600 * 1000, RESET_WK + 7 * 24 * 3600 * 1000);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'slope@example.com',
+    quotaPoolsMap: pReset,
+    poolCycleStats: makeStats({ cost5h: 0, costWk: 0, calls5h: 0, callsWk: 0, tok5h: 0, tokWk: 0, ts }),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pReset.get('Claude & GPT').rateEstimate?.eqFullWeeklyUsd, 50);
+  assert.equal(pReset.get('Claude & GPT').rateEstimate?.eqFullWeeklyTokens, 12_500_000);
+
+  assert.equal(storedPayload?.version, 2, 'keeps v2 schema version backward-compatible');
+  const reloaded = createQuotaReservationTracker({ loadState: () => storedPayload });
+  const pAfterRestart = makePools(0, 0, RESET_5H + 7 * 24 * 3600 * 1000, RESET_WK + 7 * 24 * 3600 * 1000);
+  reloaded.updatePools({
+    endpointId: 'local',
+    accountScope: 'slope@example.com',
+    quotaPoolsMap: pAfterRestart,
+    poolCycleStats: makeStats({ cost5h: 0, costWk: 0, calls5h: 0, callsWk: 0, tok5h: 0, tokWk: 0, ts }),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pAfterRestart.get('Claude & GPT').rateEstimate?.eqFullWeeklyUsd, 50);
+  assert.equal(pAfterRestart.get('Claude & GPT').rateEstimate?.eqFullWeeklyTokens, 12_500_000);
+});
+
+test('QuotaPoolsWidget ? popover renders Est. Weekly Quota summary row, preliminary labels, and full-pool token references', async () => {
+  const { document } = createMockDom();
+  const origDocument = globalThis.document;
+  const origWindow = globalThis.window;
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 960,
+    innerHeight: 720,
+    addEventListener() {},
+    removeEventListener() {},
+    location: { origin: 'http://127.0.0.1:0', href: 'http://127.0.0.1:0/' },
+  };
+
+  try {
+    const [{ setI18nLanguage }, { QuotaPoolsWidget }] = await Promise.all([
+      import('../src/i18n/index.js'),
+      import('../src/components/widgets/QuotaPoolsWidget.js'),
+    ]);
+    setI18nLanguage('zh-CN');
+
+    const widget = QuotaPoolsWidget();
+    const popover = widget.refs.ratePopoverEl;
+
+    // 1. Collecting state: top weekly summary hidden until at least 1 pool has a weekly capacity estimate
+    assert.equal(popover.querySelector('.quota-rate-wk-summary')?.hidden, true);
+
+    // 2. Partial + Preliminary state (Claude ready via anchor_slope, Gemini still collecting)
+    widget.refs.update({
+      data: {
+        account: { email: 'sjee80343@gmail.com', tierName: 'Google AI Pro' },
+        quotas: {
+          pools: [
+            {
+              poolKey: 'Claude & GPT',
+              poolLabel: 'Claude & GPT',
+              family: 'Claude & GPT',
+              has5h: true,
+              hasWeekly: true,
+              usedPct: 14,
+              remainingPct: 86,
+              weeklyUsedPct: 30,
+              weeklyRemainingPct: 70,
+              cycleWeekly: { tokens: 3_100_000, costUsd: 15, calls: 42 },
+              rateEstimate: {
+                rate5hPctPerUsd: null,
+                rateWeeklyPctPerUsd: 2.0833,
+                eqFull5hUsd: null,
+                eqFullWeeklyUsd: 48,
+                eqFullWeeklyTokens: 9_900_000,
+                samples5h: 0,
+                samplesWeekly: 0,
+                sourceWeekly: 'anchor_slope',
+                isPreliminaryWeekly: true,
+                models: [],
+              },
+            },
+            {
+              poolKey: 'Gemini',
+              poolLabel: 'Gemini',
+              family: 'Gemini',
+              hasWeekly: true,
+              weeklyUsedPct: 0.4,
+              weeklyRemainingPct: 99.6,
+              rateEstimate: null,
+            },
+          ],
+          weekly: { isOfficial: true },
+        },
+      },
+      minuteTick: 1,
+    });
+
+    const wkSummary = popover.querySelector('.quota-rate-wk-summary');
+    assert.equal(wkSummary.hidden, false);
+    assert.match(wkSummary.textContent, /预测周额度.*· 1\/2 池.*≈ \$48.*· 9\.9M/);
+    const fallbackRow = popover.querySelector('.quota-rate-model-row.is-fallback');
+    assert.ok(fallbackRow);
+    assert.match(fallbackRow.textContent, /池综合均值/);
+    assert.match(fallbackRow.textContent, /周限 2\.08%\/\$ · 斜率初估/);
+    assert.match(fallbackRow.textContent, /周限满池≈ \$48· 9\.9M/);
+
+    const wkRowLeft = widget.refs.poolsListEl.querySelectorAll('.quota-win-left')[1];
+    assert.match(wkRowLeft.getAttribute('title') || '', /满池约 \$48 \(9\.9M\)/);
+
+    // 3. All pools calibrated & ready: sums USD + Tokens cleanly ($50 + $35 = $85, 10.3M + 14.2M = 24.5M)
+    const allReadyData = {
+      account: { email: 'sjee80343@gmail.com', tierName: 'Google AI Pro' },
+      quotas: {
+        pools: [
+          {
+            poolKey: 'Claude & GPT',
+            poolLabel: 'Claude & GPT',
+            family: 'Claude & GPT',
+            has5h: true,
+            hasWeekly: true,
+            usedPct: 14,
+            remainingPct: 86,
+            weeklyUsedPct: 30,
+            weeklyRemainingPct: 70,
+            cycleWeekly: { tokens: 3_100_000, costUsd: 15, calls: 42 },
+            rateEstimate: {
+              rate5hPctPerUsd: 2,
+              rateWeeklyPctPerUsd: 2,
+              eqFull5hUsd: 50,
+              eqFullWeeklyUsd: 50,
+              eqFull5hTokens: 10_300_000,
+              eqFullWeeklyTokens: 10_300_000,
+              samples5h: 8,
+              samplesWeekly: 8,
+              source5h: 'calibrated',
+              sourceWeekly: 'calibrated',
+              isPreliminary5h: false,
+              isPreliminaryWeekly: false,
+              models: [
+                {
+                  model: 'Claude Sonnet 4.6',
+                  rate5hPctPerUsd: 2,
+                  rateWeeklyPctPerUsd: 2,
+                  eqFull5hUsd: 50,
+                  eqFullWeeklyUsd: 50,
+                  eqFull5hTokens: 10_300_000,
+                  eqFullWeeklyTokens: 10_300_000,
+                  multiplier: null,
+                  samples: 8,
+                },
+              ],
+            },
+          },
+          {
+            poolKey: 'Gemini',
+            poolLabel: 'Gemini',
+            family: 'Gemini',
+            has5h: true,
+            hasWeekly: true,
+            usedPct: 10,
+            remainingPct: 90,
+            weeklyUsedPct: 20,
+            weeklyRemainingPct: 80,
+            rateEstimate: {
+              rate5hPctPerUsd: 2.8571,
+              rateWeeklyPctPerUsd: 2.8571,
+              eqFull5hUsd: 35,
+              eqFullWeeklyUsd: 35,
+              eqFull5hTokens: 14_200_000,
+              eqFullWeeklyTokens: 14_200_000,
+              samples5h: 6,
+              samplesWeekly: 6,
+              source5h: 'calibrated',
+              sourceWeekly: 'calibrated',
+              isPreliminary5h: false,
+              isPreliminaryWeekly: false,
+              models: [],
+            },
+          },
+        ],
+        weekly: { isOfficial: true },
+      },
+    };
+    widget.refs.update({ data: allReadyData, minuteTick: 2 });
+    assert.equal(wkSummary.hidden, false);
+    assert.equal(wkSummary.querySelector('.quota-rate-wk-sub').hidden, true);
+    assert.match(wkSummary.textContent, /预测周额度≈ \$85· 24\.5M/);
+
+    // 4. English locale switch updates weekly summary, model cards, and row title tooltip without reload
+    setI18nLanguage('en-US');
+    widget.refs.update({ data: allReadyData, minuteTick: 3 });
+    assert.match(wkSummary.textContent, /Est\. Weekly Quota≈ \$85· 24\.5M/);
+    assert.match(
+      widget.refs.poolsListEl.querySelectorAll('.quota-win-left')[1].getAttribute('title') || '',
+      /Full ~\$50 \(10\.3M\)/
+    );
+
+    // 5. Custom local weekly budget mode hides official weekly capacity summary
+    widget.refs.update({
+      data: {
+        ...allReadyData,
+        quotas: {
+          ...allReadyData.quotas,
+          weekly: { isOfficial: false },
+        },
+      },
+      minuteTick: 4,
+    });
+    assert.equal(wkSummary.hidden, true);
+
+    // 6. Pool with 5h-only model card + pool-level preliminary weekly estimate renders supplementary weekly fallback row
+    setI18nLanguage('zh-CN');
+    widget.refs.update({
+      data: {
+        account: { email: 'sjee80343@gmail.com', tierName: 'Google AI Pro' },
+        quotas: {
+          pools: [
+            {
+              poolKey: 'Gemini',
+              poolLabel: 'Gemini',
+              family: 'Gemini',
+              has5h: true,
+              hasWeekly: true,
+              usedPct: 8,
+              remainingPct: 92,
+              weeklyUsedPct: 12,
+              weeklyRemainingPct: 88,
+              rateEstimate: {
+                rate5hPctPerUsd: 0.6667,
+                rateWeeklyPctPerUsd: 0.1667,
+                eqFull5hUsd: 150,
+                eqFullWeeklyUsd: 600,
+                eqFull5hTokens: 50_000_000,
+                eqFullWeeklyTokens: 200_000_000,
+                samples5h: 4,
+                samplesWeekly: 0,
+                source5h: 'calibrated',
+                sourceWeekly: 'anchor_slope',
+                isPreliminary5h: false,
+                isPreliminaryWeekly: true,
+                models: [
+                  {
+                    model: 'Gemini 3.1 Pro',
+                    rate5hPctPerUsd: 0.6667,
+                    rateWeeklyPctPerUsd: null,
+                    eqFull5hUsd: 150,
+                    eqFullWeeklyUsd: null,
+                    eqFull5hTokens: 50_000_000,
+                    multiplier: null,
+                    samples: 4,
+                  },
+                ],
+              },
+            },
+          ],
+          weekly: { isOfficial: true },
+        },
+      },
+      minuteTick: 5,
+    });
+    assert.equal(wkSummary.hidden, false);
+    assert.match(wkSummary.textContent, /预测周额度.*· 初估.*≈ \$600.*· 200\.0M/);
+    const mixedRows = popover.querySelectorAll('.quota-rate-model-row');
+    assert.equal(mixedRows.length, 2, 'renders 5h model card + supplementary pool weekly fallback row');
+    assert.match(mixedRows[0].textContent, /Gemini 3\.1 Pro.*5h 满池≈ \$150/);
+    assert.match(mixedRows[1].textContent, /池综合均值.*斜率初估.*周限满池≈ \$600· 200\.0M/);
+
+    widget.destroy();
+  } finally {
+    globalThis.document = origDocument;
+    globalThis.window = origWindow;
+  }
+});
+
+test('quota-reservation: batches multi-pool persistence and isolates slope/calibration from unpriced calls, lease expiry & cold-start', () => {
+  let saveCalls = 0;
+  let stored = null;
+  const tracker = createQuotaReservationTracker({
+    saveState: (p) => {
+      saveCalls += 1;
+      stored = JSON.parse(JSON.stringify(p));
+    },
+  });
+
+  // 1. Batched persistence across multiple pools on non-urgent baseline/normal ticks:
+  // Both pools' 5h AND weekly buckets must be persisted in a single atomic save
+  let ts = T0;
+  const mkMultiPools = (c5, cw, g5, gw) =>
+    new Map([
+      [
+        'Claude & GPT',
+        {
+          poolKey: 'Claude & GPT',
+          poolLabel: 'Claude & GPT',
+          family: 'Claude & GPT',
+          has5h: true,
+          hasWeekly: true,
+          remainingFraction: 1 - c5 / 100,
+          usedPct: c5,
+          resetTime: new Date(RESET_5H).toISOString(),
+          weeklyRemainingFraction: 1 - cw / 100,
+          weeklyUsedPct: cw,
+          weeklyResetTime: new Date(RESET_WK).toISOString(),
+        },
+      ],
+      [
+        'Gemini',
+        {
+          poolKey: 'Gemini',
+          poolLabel: 'Gemini',
+          family: 'Gemini',
+          has5h: true,
+          hasWeekly: true,
+          remainingFraction: 1 - g5 / 100,
+          usedPct: g5,
+          resetTime: new Date(RESET_5H).toISOString(),
+          weeklyRemainingFraction: 1 - gw / 100,
+          weeklyUsedPct: gw,
+          weeklyResetTime: new Date(RESET_WK).toISOString(),
+        },
+      ],
+    ]);
+
+  const mkMultiStats = (cc, gc, cCalls, gCalls, cUnp = 0) =>
+    new Map([
+      [
+        'Claude & GPT',
+        {
+          cycle5h: { costUsd: cc, calls: cCalls, tokens: 300_000, unpricedCalls: cUnp },
+          cycleWeekly: { costUsd: cc, calls: cCalls, tokens: 300_000, unpricedCalls: cUnp },
+          pricedTokens5h: 300_000,
+          pricedTokensWeekly: 300_000,
+          exactCost5hUsd: cc,
+          exactCostWeeklyUsd: cc,
+          modelCosts5h: { 'Claude Sonnet 4.6': cc },
+          modelCostsWeekly: { 'Claude Sonnet 4.6': cc },
+          modelTokens5h: { 'Claude Sonnet 4.6': 300_000 },
+          modelTokensWeekly: { 'Claude Sonnet 4.6': 300_000 },
+          recent10m: { lastActivityMs: ts, activeSessionCount: 1, costUsd: 0.1 },
+        },
+      ],
+      [
+        'Gemini',
+        {
+          cycle5h: { costUsd: gc, calls: gCalls, tokens: 500_000, unpricedCalls: 0 },
+          cycleWeekly: { costUsd: gc, calls: gCalls, tokens: 500_000, unpricedCalls: 0 },
+          pricedTokens5h: 500_000,
+          pricedTokensWeekly: 500_000,
+          exactCost5hUsd: gc,
+          exactCostWeeklyUsd: gc,
+          modelCosts5h: { 'Gemini 3.1 Pro': gc },
+          modelCostsWeekly: { 'Gemini 3.1 Pro': gc },
+          modelTokens5h: { 'Gemini 3.1 Pro': 500_000 },
+          modelTokensWeekly: { 'Gemini 3.1 Pro': 500_000 },
+          recent10m: { lastActivityMs: ts, activeSessionCount: 1, costUsd: 0.1 },
+        },
+      ],
+    ]);
+
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'batch@example.com',
+    quotaPoolsMap: mkMultiPools(2.0, 2.0, 1.0, 1.0),
+    poolCycleStats: mkMultiStats(1.0, 2.0, 5, 5),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(saveCalls, 1, 'updatePools coalesces multi-pool baseline into 1 disk write');
+  assert.ok(stored?.buckets?.['local::batch@example.com::Claude & GPT::weekly'], 'Claude weekly persisted');
+  assert.ok(stored?.buckets?.['local::batch@example.com::Gemini::weekly'], '2nd pool Gemini weekly persisted');
+  assert.ok(
+    stored.buckets['local::batch@example.com::Gemini::weekly'].usdPerMTok > 0,
+    '2nd pool weekly token density persisted'
+  );
+
+  // 2. Cold-start seeded bucket (rateSamples = 1, rateWindow = []) requires 3 genuine clean steps before calibrated
+  for (let step = 1; step <= 2; step += 1) {
+    ts += 20_000;
+    const p2 = mkMultiPools(2.0 + step * 0.2, 2.0 + step * 0.2, 1.0, 1.0);
+    tracker.updatePools({
+      endpointId: 'local',
+      accountScope: 'batch@example.com',
+      quotaPoolsMap: p2,
+      poolCycleStats: mkMultiStats(1.0 + step * 0.1, 2.0, 5 + step, 5),
+      runningPoolKeys: new Set(['Claude & GPT']),
+      quotaFetchedAtMs: ts,
+      nowMs: ts,
+    });
+    const estStep = p2.get('Claude & GPT').rateEstimate;
+    assert.equal(
+      estStep?.isPreliminaryWeekly,
+      true,
+      `step ${step} (< 3 clean steps) stays preliminary despite cold-start seed`
+    );
+  }
+  ts += 20_000;
+  const pStep3 = mkMultiPools(2.6, 2.6, 1.0, 1.0);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'batch@example.com',
+    quotaPoolsMap: pStep3,
+    poolCycleStats: mkMultiStats(1.3, 2.0, 8, 5),
+    runningPoolKeys: new Set(['Claude & GPT']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pStep3.get('Claude & GPT').rateEstimate?.isPreliminaryWeekly, false, '3rd genuine clean step promotes to calibrated');
+  assert.equal(stored?.buckets?.['local::batch@example.com::Claude & GPT::weekly']?.rateWindow?.length, 3, 'normal tick persisted weekly rateWindow');
+
+  // 3. Unpriced calls & expired leases do NOT poison Tier 2 anchor_slope
+  ts = T0;
+  const makeWkPool = (uw) =>
+    new Map([
+      [
+        'Argon',
+        {
+          poolKey: 'Argon',
+          poolLabel: 'Argon',
+          family: 'Argon',
+          has5h: false,
+          hasWeekly: true,
+          weeklyRemainingFraction: 1 - uw / 100,
+          weeklyUsedPct: uw,
+          weeklyResetTime: new Date(RESET_WK).toISOString(),
+        },
+      ],
+    ]);
+  const makeWkStats = (cost, calls, unp) =>
+    new Map([
+      [
+        'Argon',
+        {
+          cycle5h: { costUsd: 0, calls: 0, tokens: 0, unpricedCalls: 0 },
+          cycleWeekly: { costUsd: cost, calls, tokens: 100_000, unpricedCalls: unp },
+          pricedTokensWeekly: 100_000,
+          exactCostWeeklyUsd: cost,
+          recent10m: { lastActivityMs: ts, activeSessionCount: 2, costUsd: 0.1 },
+        },
+      ],
+    ]);
+
+  // Baseline on shared pool (20% with $0 local -> Tier 3 blocked)
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'guard@example.com',
+    quotaPoolsMap: makeWkPool(20.0),
+    poolCycleStats: makeWkStats(0, 0, 0),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  // Unpriced burst burns +3.0% alongside tiny $0.03 priced spend -> must reset slope anchor, NOT record 100 %/$
+  ts += 30_000;
+  const pUnp = makeWkPool(23.0);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'guard@example.com',
+    quotaPoolsMap: pUnp,
+    poolCycleStats: makeWkStats(0.03, 6, 5),
+    runningPoolKeys: new Set(['Argon']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pUnp.get('Argon').rateEstimate?.eqFullWeeklyUsd ?? null, null, 'unpriced burst does not unlock poisoned slope');
+
+  // Subsequent priced multi-step burn (+1.6% across +$0.80, 6 calls, unp stays 5) cleanly calibrates 2.0 %/$ -> $50!
+  for (let k = 1; k <= 2; k += 1) {
+    ts += 30_000;
+    const pPriced = makeWkPool(23.0 + k * 0.8);
+    tracker.updatePools({
+      endpointId: 'local',
+      accountScope: 'guard@example.com',
+      quotaPoolsMap: pPriced,
+      poolCycleStats: makeWkStats(0.03 + k * 0.4, 6 + k * 3, 5),
+      runningPoolKeys: new Set(['Argon']),
+      quotaFetchedAtMs: ts,
+      nowMs: ts,
+    });
+    if (k === 2) {
+      assert.equal(pPriced.get('Argon').rateEstimate?.sourceWeekly, 'anchor_slope');
+      assert.equal(pPriced.get('Argon').rateEstimate?.eqFullWeeklyUsd, 50);
+    }
+  }
+
+  // Trigger a 2.0% cold-start/active lease jump, then let it expire after 91 minutes -> expiry jump must reset slope anchor
+  ts += 30_000;
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'guard@example.com',
+    quotaPoolsMap: makeWkPool(26.6),
+    poolCycleStats: makeWkStats(0.85, 13, 5),
+    runningPoolKeys: new Set(['Argon']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  const argonSt = tracker._buckets.get('local::guard@example.com::Argon::weekly');
+  assert.ok(argonSt.activeLeases.length > 0, 'lease recorded before TTL expiry');
+  ts += 91 * 60 * 1000;
+  const pExpired = makeWkPool(26.65);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'guard@example.com',
+    quotaPoolsMap: pExpired,
+    poolCycleStats: makeWkStats(0.88, 14, 5),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(argonSt.activeLeases.length, 0, 'lease expired');
+  assert.equal(argonSt.slopeSamples.length, 1, 'slope anchor reset cleanly on lease TTL expiry');
+});
+
+test('quota-reservation: suppresses post-refund idle replica ping-pong and self-heals false externalUsage while preserving real shared pools', () => {
+  const tracker = createQuotaReservationTracker();
+  const keyWk = 'local::solo-bounce@example.com::Gemini::weekly';
+  let ts = T0;
+
+  // 1. Calibrate solo account cleanly at 0.125 %/$ ($800 full weekly): 3 clean steps + active lease up to 1.048%
+  tracker.observeBucket({
+    bucketKey: keyWk,
+    officialUsedPct: 0.3,
+    resetTimeMs: RESET_WK,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: 2.4,
+    cycleCalls: 30,
+    poolLastActivityMs: ts,
+    activeSessionCount10m: 1,
+    nowMs: ts,
+  });
+  for (let i = 1; i <= 3; i += 1) {
+    ts += 20_000;
+    tracker.observeBucket({
+      bucketKey: keyWk,
+      officialUsedPct: +(0.3 + i * 0.025).toFixed(4),
+      resetTimeMs: RESET_WK,
+      quotaFetchedAtMs: ts,
+      cycleCostUsd: +(2.4 + i * 0.2).toFixed(4),
+      cycleCalls: 30 + i,
+      poolLastActivityMs: ts,
+      activeSessionCount10m: 1,
+      nowMs: ts,
+    });
+  }
+  const lastActiveTs = ts;
+  // Active lease jumps 0.375% -> 1.048%
+  ts += 15_000;
+  tracker.observeBucket({
+    bucketKey: keyWk,
+    officialUsedPct: 1.048,
+    resetTimeMs: RESET_WK,
+    quotaFetchedAtMs: ts,
+    cycleCostUsd: 3.0688,
+    cycleCalls: 34,
+    poolLastActivityMs: lastActiveTs,
+    activeSessionCount10m: 1,
+    nowMs: ts,
+  });
+
+  // User goes idle for 10 min -> upstream settles down to 0.356%, then multi-replica LB bounces 1.048% <-> 0.356% repeatedly
+  const bounceSchedule = [
+    [10 * 60 * 1000, 0.356],
+    [15 * 60 * 1000, 1.048],
+    [12 * 60 * 1000, 0.356],
+    [11 * 1000, 1.048],
+    [7 * 60 * 1000, 0.356],
+  ];
+  for (const [dt, pct] of bounceSchedule) {
+    ts += dt;
+    tracker.observeBucket({
+      bucketKey: keyWk,
+      officialUsedPct: pct,
+      resetTimeMs: RESET_WK,
+      quotaFetchedAtMs: ts,
+      cycleCostUsd: 3.0688,
+      cycleCalls: 34,
+      poolLastActivityMs: lastActiveTs,
+      activeSessionCount10m: 0,
+      nowMs: ts,
+    });
+  }
+  const stBounce = tracker._buckets.get(keyWk);
+  assert.equal(stBounce.hasExternalUsage, false, 'idle post-refund replica bounce must not flag external usage');
+  assert.equal(stBounce.externalUsedPct, 0, 'ping-pong must never accumulate externalUsedPct');
+
+  // 2. Self-healing of already-polluted persisted state vs preservation of genuine shared state
+  let healedSaved = null;
+  const persisted = {
+    version: 2,
+    savedAt: new Date(T0).toISOString(),
+    buckets: {
+      'local::polluted@example.com::Gemini::weekly': {
+        resetTimeMs: RESET_WK,
+        lastQuotaTs: T0,
+        lastOfficialUsedPct: 0.4012,
+        lastCycleCostUsd: 3.53,
+        lastCycleCalls: 44,
+        lastPricedTokens: 9_803_219,
+        lastUnpricedCalls: 0,
+        usdPerMTok: 0.36,
+        ratePctPerUsd: 0.125,
+        rateSamples: 20,
+        rateWindow: [0.125, 0.125, 0.125, 0.125],
+        hasExternalUsage: true,
+        lastExternalUsageAtMs: T0 - 3 * 3600 * 1000,
+        externalUsedPct: 2.018,
+        externalEvents: 4,
+      },
+      'local::shared@example.com::Gemini::weekly': {
+        resetTimeMs: RESET_WK,
+        lastQuotaTs: T0,
+        lastOfficialUsedPct: 49.82,
+        lastCycleCostUsd: 196.93,
+        lastCycleCalls: 120,
+        lastPricedTokens: 60_000_000,
+        lastUnpricedCalls: 0,
+        usdPerMTok: 3.28,
+        ratePctPerUsd: 0.1667,
+        rateSamples: 55,
+        rateWindow: [0.1667, 0.1667, 0.1667, 0.1667],
+        hasExternalUsage: true,
+        lastExternalUsageAtMs: T0 - 3 * 3600 * 1000,
+        externalUsedPct: 0.571,
+        externalEvents: 1,
+      },
+    },
+    events: [],
+  };
+  const healer = createQuotaReservationTracker({
+    loadState: () => persisted,
+    saveState: (p) => {
+      healedSaved = p;
+    },
+  });
+  const mkPollPools = (uw) =>
+    new Map([
+      [
+        'Gemini',
+        {
+          poolKey: 'Gemini',
+          poolLabel: 'Gemini',
+          family: 'Gemini',
+          has5h: false,
+          hasWeekly: true,
+          weeklyUsedPct: uw,
+          weeklyResetTime: new Date(RESET_WK).toISOString(),
+        },
+      ],
+    ]);
+  const pPolluted = mkPollPools(0.4012);
+  healer.updatePools({
+    endpointId: 'local',
+    accountScope: 'polluted@example.com',
+    quotaPoolsMap: pPolluted,
+    poolCycleStats: new Map([
+      [
+        'Gemini',
+        {
+          cycleWeekly: { costUsd: 3.53, calls: 44, tokens: 9_803_219, unpricedCalls: 0 },
+          pricedTokensWeekly: 9_803_219,
+          exactCostWeeklyUsd: 3.53,
+        },
+      ],
+    ]),
+    quotaFetchedAtMs: T0,
+    nowMs: T0 + 60_000,
+  });
+  assert.equal(
+    pPolluted.get('Gemini').rateEstimate?.externalUsage ?? null,
+    null,
+    'polluted solo bucket self-heals false externalUsage banner immediately even on cached quota poll'
+  );
+  assert.equal(healedSaved?.buckets?.['local::polluted@example.com::Gemini::weekly']?.hasExternalUsage, false);
+  assert.equal(healedSaved?.buckets?.['local::polluted@example.com::Gemini::weekly']?.externalUsedPct, 0);
+
+  const pShared = mkPollPools(49.82);
+  healer.updatePools({
+    endpointId: 'local',
+    accountScope: 'shared@example.com',
+    quotaPoolsMap: pShared,
+    poolCycleStats: new Map([
+      [
+        'Gemini',
+        {
+          cycleWeekly: { costUsd: 196.93, calls: 120, tokens: 60_000_000, unpricedCalls: 0 },
+          pricedTokensWeekly: 60_000_000,
+          exactCostWeeklyUsd: 196.93,
+        },
+      ],
+    ]),
+    quotaFetchedAtMs: T0,
+    nowMs: T0 + 60_000,
+  });
+  assert.equal(
+    pShared.get('Gemini').rateEstimate?.externalUsage?.detected,
+    true,
+    'genuine shared pool with 17% unexplained burn retains externalUsage detection'
+  );
+  assert.equal(pShared.get('Gemini').rateEstimate?.externalUsage?.usedWeeklyPct, 0.6);
+});

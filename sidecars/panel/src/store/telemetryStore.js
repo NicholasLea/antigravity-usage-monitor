@@ -1114,6 +1114,12 @@ export function isEquivalentTelemetry(prev, next) {
       return false;
     }
   }
+  if (
+    JSON.stringify(prev.quotas?.weeklyCapacityEstimate || null) !==
+    JSON.stringify(next.quotas?.weeklyCapacityEstimate || null)
+  ) {
+    return false;
+  }
 
   const pConvs = prev.conversations || [];
   const nConvs = next.conversations || [];
