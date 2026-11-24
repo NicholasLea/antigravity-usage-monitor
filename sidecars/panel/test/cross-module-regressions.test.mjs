@@ -1866,6 +1866,64 @@ test('ConsumptionView and TrendAreaChart patch text DOM nodes in-place without o
     assert.equal(secondGridCells.length, firstGridCells.length);
     assert.equal(secondGridCells[10], firstGridCells[10], 'Heatmap cell DOM node reused in-place');
 
+    // Switch to 'cycle' with multiple quota pools -> compact inline pool selector becomes visible (and stays hidden on 'today'/'all')
+    assert.equal(view.refs.cyclePoolSelect.el.hasAttribute('hidden'), true, 'Hidden outside cycle range');
+    const cyclePoolsFixture = [
+      {
+        poolKey: 'Gemini',
+        poolLabel: 'Gemini',
+        weeklyRemainingPct: 99.7,
+        cycleWeekly: { calls: 12, tokens: 2_480_000, costUsd: 0.86 },
+      },
+      {
+        poolKey: 'Claude & GPT',
+        poolLabel: 'Claude & GPT',
+        weeklyRemainingPct: 38.0,
+        cycleWeekly: { calls: 690, tokens: 172_580_000, costUsd: 61.38 },
+      },
+    ];
+    const baseCyclePayload = makeRangePayload('cycle', 2_480_000, ['12:00', '14:00', '16:00', '18:00']);
+    baseCyclePayload.quotas = { pools: cyclePoolsFixture };
+    baseCyclePayload.consumption.selectedRange = {
+      key: 'cycle',
+      pool: 'Gemini',
+      poolLabel: 'Gemini',
+      label: '当前周期 · Gemini',
+      startMs: 1_760_040_000_000,
+      endMs: 1_760_061_600_000,
+    };
+    telemetryStore.setState(
+      {
+        selectedTimeRange: 'cycle',
+        selectedCyclePool: 'Gemini',
+        telemetry: baseCyclePayload,
+      },
+      { sync: true }
+    );
+    assert.equal(view.refs.cyclePoolSelect.el.hasAttribute('hidden'), false, 'Shown on cycle with >=2 pools');
+    assert.equal(view.refs.cyclePoolSelect.refs.triggerLabel.textContent, 'Gemini');
+    const badges = view.el.querySelectorAll('.cons-badge');
+    assert.match(badges[1]?.textContent || '', /当前周期 · Gemini/);
+
+    // Open dropdown and verify localized pool metadata + switch back to 'today' hides dropdown
+    view.refs.cyclePoolSelect.open();
+    const optTexts = [...view.refs.cyclePoolSelect.refs.optionsListEl.children].map(
+      (btn) => btn.textContent
+    );
+    assert.equal(optTexts.length, 3);
+    assert.match(optTexts[0], /全部池.*\$62\.24/);
+    assert.match(optTexts[1], /Gemini.*剩 99\.7% · \$0\.86/);
+    assert.match(optTexts[2], /Claude & GPT.*剩 38\.0% · \$61\.38/);
+
+    telemetryStore.setState(
+      {
+        selectedTimeRange: 'today',
+        telemetry: makeRangePayload('today', 100_000, ['00:00', '06:00', '12:00', '18:00']),
+      },
+      { sync: true }
+    );
+    assert.equal(view.refs.cyclePoolSelect.el.hasAttribute('hidden'), true, 'Re-hidden on today');
+
     view.destroy();
     telemetryStore.setState(prevTelState, { sync: true });
     uiStore.setState(prevUiState, { sync: true });

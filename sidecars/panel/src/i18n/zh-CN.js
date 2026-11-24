@@ -240,6 +240,13 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
 
   // Consumption View
   'cons.rangeCycle': '周期',
+  'cons.cyclePoolAll': '全部池',
+  'cons.cyclePoolAllShort': '全部',
+  'cons.cyclePoolAria': '当前周期配额池筛选',
+  'cons.cyclePoolRemMeta': '剩 {pct}',
+  'cons.currentCycle': '当前周期',
+  'cons.cycleFallbackWeek': '本周',
+  'cons.cycleFallbackWeekTip': '未获取官方周限重置时间，暂按自然本周一统计',
   'cons.rangeToday': '今天',
   'cons.range24h': '1天',
   'cons.range7d': '7天',

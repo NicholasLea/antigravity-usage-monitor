@@ -469,8 +469,8 @@ export const CustomSelect = defineComponent({
         const fallbackText = modelValue
           ? `${placeholder} (${String(modelValue).slice(0, 8)})`
           : placeholder;
-        labelText = selectedOpt ? selectedOpt.label : fallbackText;
-        titleText = labelText;
+        labelText = selectedOpt ? selectedOpt.shortLabel || selectedOpt.label : fallbackText;
+        titleText = selectedOpt ? selectedOpt.title || selectedOpt.label : fallbackText;
       }
 
       patchText(triggerLabel, labelText);

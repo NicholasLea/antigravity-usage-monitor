@@ -240,6 +240,13 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
 
   // Consumption View
   'cons.rangeCycle': 'Cycle',
+  'cons.cyclePoolAll': 'All Pools',
+  'cons.cyclePoolAllShort': 'All',
+  'cons.cyclePoolAria': 'Filter current cycle by quota pool',
+  'cons.cyclePoolRemMeta': '{pct} left',
+  'cons.currentCycle': 'Current Cycle',
+  'cons.cycleFallbackWeek': 'This Week',
+  'cons.cycleFallbackWeekTip': 'Official weekly reset time unavailable; using calendar week from Monday',
   'cons.rangeToday': 'Today',
   'cons.range24h': '24h',
   'cons.range7d': '7d',

@@ -1499,6 +1499,13 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
 
   // Consumption View
   'cons.rangeCycle': '周期',
+  'cons.cyclePoolAll': '全部池',
+  'cons.cyclePoolAllShort': '全部',
+  'cons.cyclePoolAria': '当前周期配额池筛选',
+  'cons.cyclePoolRemMeta': '剩 {pct}',
+  'cons.currentCycle': '当前周期',
+  'cons.cycleFallbackWeek': '本周',
+  'cons.cycleFallbackWeekTip': '未获取官方周限重置时间，暂按自然本周一统计',
   'cons.rangeToday': '今天',
   'cons.range24h': '1天',
   'cons.range7d': '7天',
@@ -2398,6 +2405,13 @@ const I18N_MESSAGES_EN_US = Object.freeze({
 
   // Consumption View
   'cons.rangeCycle': 'Cycle',
+  'cons.cyclePoolAll': 'All Pools',
+  'cons.cyclePoolAllShort': 'All',
+  'cons.cyclePoolAria': 'Filter current cycle by quota pool',
+  'cons.cyclePoolRemMeta': '{pct} left',
+  'cons.currentCycle': 'Current Cycle',
+  'cons.cycleFallbackWeek': 'This Week',
+  'cons.cycleFallbackWeekTip': 'Official weekly reset time unavailable; using calendar week from Monday',
   'cons.rangeToday': 'Today',
   'cons.range24h': '24h',
   'cons.range7d': '7d',
@@ -4153,16 +4167,33 @@ function formatCnyApprox(usdAmount, rate = 7.2) {
 function formatDateSpanBadge(startMs, endMs) {
   const s = startMs && Number.isFinite(startMs) ? new Date(startMs) : new Date();
   const e = endMs && Number.isFinite(endMs) ? new Date(endMs) : new Date();
+  const sameYear = s.getFullYear() === e.getFullYear();
+  const sameMonth = sameYear && s.getMonth() === e.getMonth();
+  const sameDay = sameMonth && s.getDate() === e.getDate();
+
   if (isEnglishLocale()) {
     const sMon = EN_MONTH_SHORT[s.getMonth()] || '';
     const eMon = EN_MONTH_SHORT[e.getMonth()] || '';
-    if (s.getFullYear() !== e.getFullYear()) {
+    if (!sameYear) {
       return `${sMon} ${s.getDate()}, ${s.getFullYear()} ~ ${eMon} ${e.getDate()}, ${e.getFullYear()}`;
+    }
+    if (sameDay) {
+      return `${sMon} ${s.getDate()}`;
+    }
+    if (sameMonth) {
+      return `${sMon} ${s.getDate()} ~ ${e.getDate()}`;
     }
     return `${sMon} ${s.getDate()} ~ ${eMon} ${e.getDate()}`;
   }
-  if (s.getFullYear() !== e.getFullYear()) {
+
+  if (!sameYear) {
     return `${s.getFullYear()}年${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getFullYear()}年${e.getMonth() + 1}月${e.getDate()}日`;
+  }
+  if (sameDay) {
+    return `${s.getMonth() + 1}月${s.getDate()}日`;
+  }
+  if (sameMonth) {
+    return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getDate()}日`;
   }
   return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getMonth() + 1}月${e.getDate()}日`;
 }
@@ -6909,10 +6940,18 @@ function formatExportDate(ms) {
 function resolveLocalizedRangeLabel(range, en) {
   const r = range || {};
   const key = String(r.key || '').trim().toLowerCase();
+  const poolSuffix =
+    key === 'cycle' && r.pool && r.pool !== 'all' ? ` · ${r.poolLabel || r.pool}` : '';
   if (en) {
-    return RANGE_LABELS_EN[key] || r.label || key || 'All Time';
+    const baseEn =
+      key === 'cycle' && r.isFallbackWeek
+        ? 'This Week'
+        : RANGE_LABELS_EN[key] || r.label || key || 'All Time';
+    return `${baseEn}${poolSuffix}`;
   }
-  return r.label || RANGE_LABELS_ZH[key] || key || '全部时间';
+  if (r.label) return r.label;
+  const baseZh = RANGE_LABELS_ZH[key] || key || '全部时间';
+  return `${baseZh}${poolSuffix}`;
 }
 
 function resolveRangeSpanNote(range) {
@@ -8989,7 +9028,7 @@ return { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFee
 })();
 
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 /**
  * @fileoverview Reactive telemetry store with async non-overlapping poll scheduler
  * and granular slice updates.
@@ -9076,6 +9115,7 @@ const telemetryStore = createReactiveStore({
   selectedConversationId: initialConversationId,
   hostRouteConversationId: extractHostRouteCascadeId(),
   selectedTimeRange: 'today',
+  selectedCyclePool: 'all',
   customStartMs: Date.now() - 24 * 3600 * 1000,
   customEndMs: Date.now(),
   syncState: 'idle', // 'idle' | 'syncing' | 'synced' | 'error'
@@ -9097,7 +9137,7 @@ let inFlightTelemetryPoll = null;
 let inFlightPresetsPrefetch = null;
 let lastPrefetchedUsageRevision = 0;
 let consumptionCacheScopeSig = '';
-const MAX_CONSUMPTION_RANGE_CACHE = 12;
+const MAX_CONSUMPTION_RANGE_CACHE = 24;
 const MAX_CONVERSATION_VIEW_CACHE = 12;
 const CONSUMPTION_PRESET_KEYS = ['cycle', 'today', '24h', '7d', '14d', '30d', 'all'];
 const consumptionRangeCache = new Map();
@@ -9119,10 +9159,18 @@ const TELEMETRY_RECOMPUTE_SETTING_KEYS = new Set([
   'enableWindowOverlay',
 ]);
 
-function makeConsumptionRangeCacheKey(range, customStartMs = 0, customEndMs = 0) {
+function makeConsumptionRangeCacheKey(
+  range,
+  customStartMs = 0,
+  customEndMs = 0,
+  cyclePool = 'all'
+) {
   const key = String(range || 'all');
   if (key === 'custom') {
     return `custom:${Number(customStartMs || 0)}:${Number(customEndMs || 0)}`;
+  }
+  if (key === 'cycle' && cyclePool && cyclePool !== 'all') {
+    return `cycle:${String(cyclePool)}`;
   }
   return key;
 }
@@ -9150,6 +9198,17 @@ function buildConsumptionScopeSig(payload) {
   return `${String(ep.id || LOCAL_ENDPOINT_ID)}|${String(acct.status || '')}|${String(acct.email || acct.name || '').toLowerCase()}|${String(set.weeklyLimitMode || '')}|${String(cloud.catalogVersion || '')}`;
 }
 
+function reconcileSelectedCyclePool(payload) {
+  const curPool = telemetryStore.getState().selectedCyclePool || 'all';
+  if (curPool === 'all') return;
+  const pools = payload?.quotas?.pools;
+  if (!Array.isArray(pools) || pools.length === 0) return;
+  const exists = pools.some((p) => String(p?.poolKey || p?.family || '') === curPool);
+  if (!exists) {
+    telemetryStore.setState({ selectedCyclePool: 'all' });
+  }
+}
+
 function syncConsumptionCacheScope(payload) {
   const nextSig = buildConsumptionScopeSig(payload);
   if (!nextSig) return;
@@ -9158,6 +9217,7 @@ function syncConsumptionCacheScope(payload) {
     clearConversationViewCache();
   }
   consumptionCacheScopeSig = nextSig;
+  reconcileSelectedCyclePool(payload);
 }
 
 function recordConversationViewToCache(payload) {
@@ -9273,14 +9333,19 @@ function putConsumptionRangeCacheEntry(cacheKey, entry) {
 function recordConsumptionSliceToCache(
   cons,
   modelBreakdown,
-  { customStartMs = 0, customEndMs = 0, usageRevision = 0 } = {}
+  { customStartMs = 0, customEndMs = 0, cyclePool = 'all', usageRevision = 0 } = {}
 ) {
   const rangeKey = String(cons?.selectedRange?.key || '');
   if (!rangeKey) return;
+  const resolvedPool =
+    rangeKey === 'cycle'
+      ? String(cons?.selectedRange?.pool || cyclePool || 'all')
+      : 'all';
   const cacheKey = makeConsumptionRangeCacheKey(
     rangeKey,
     rangeKey === 'custom' ? customStartMs || cons.selectedRange?.startMs || 0 : 0,
-    rangeKey === 'custom' ? customEndMs || cons.selectedRange?.endMs || 0 : 0
+    rangeKey === 'custom' ? customEndMs || cons.selectedRange?.endMs || 0 : 0,
+    resolvedPool
   );
   putConsumptionRangeCacheEntry(cacheKey, {
     revision: Number(cons.revision ?? usageRevision ?? 0),
@@ -9828,11 +9893,14 @@ function isEquivalentTelemetry(prev, next) {
     }
   }
 
-  // 5. 比对消费统计所选时间区间、当前会话累计消费与账号全局累计消费
+  // 5. 比对消费统计所选时间区间、当前会话累计消费和账号全局累计消费
   const pRange = prev.consumption?.selectedRange;
   const nRange = next.consumption?.selectedRange;
   if (pRange?.key !== nRange?.key) return false;
-  if (nRange?.key === 'custom') {
+  if ((pRange?.pool || 'all') !== (nRange?.pool || 'all')) return false;
+  if ((pRange?.label || '') !== (nRange?.label || '')) return false;
+  if (Boolean(pRange?.isFallbackWeek) !== Boolean(nRange?.isFallbackWeek)) return false;
+  if (nRange?.key === 'custom' || nRange?.key === 'cycle') {
     if (pRange?.startMs !== nRange?.startMs || pRange?.endMs !== nRange?.endMs) return false;
   }
 
@@ -10159,6 +10227,13 @@ async function fetchTelemetry({ force = false } = {}) {
   const params = new URLSearchParams();
   if (effectiveConvId) params.set('conversationId', effectiveConvId);
   if (current.selectedTimeRange) params.set('range', current.selectedTimeRange);
+  if (
+    current.selectedTimeRange === 'cycle' &&
+    current.selectedCyclePool &&
+    current.selectedCyclePool !== 'all'
+  ) {
+    params.set('pool', current.selectedCyclePool);
+  }
   if (current.selectedTimeRange === 'custom') {
     if (current.customStartMs > 0) params.set('startMs', String(current.customStartMs));
     if (current.customEndMs > 0) params.set('endMs', String(current.customEndMs));
@@ -10206,6 +10281,7 @@ async function requestTelemetry(params, force) {
   const reqSeq = ++latestRequestSeq;
   const reqSettingsRev = settingsRevision;
   const reqRange = String(params.get('range') || '');
+  const reqPool = String(params.get('pool') || 'all');
   const reqStartMs = Number(params.get('startMs') || 0);
   const reqEndMs = Number(params.get('endMs') || 0);
   const startMs = Date.now();
@@ -10265,14 +10341,17 @@ async function requestTelemetry(params, force) {
       recordConsumptionSliceToCache(resolvedPayload.consumption, resolvedPayload.modelBreakdown, {
         customStartMs: reqStartMs,
         customEndMs: reqEndMs,
+        cyclePool: reqPool,
       });
     }
 
     const latestSt = telemetryStore.getState();
     const incomingRev = Number(resolvedPayload?.consumption?.revision || 0);
+    const activePoolPref = latestSt.selectedCyclePool || 'all';
     const matchesCurrentRange =
       !reqRange ||
       (reqRange === latestSt.selectedTimeRange &&
+        (reqRange !== 'cycle' || reqPool === activePoolPref) &&
         (reqRange !== 'custom' ||
           (reqStartMs === Number(latestSt.customStartMs || 0) &&
             reqEndMs === Number(latestSt.customEndMs || 0))));
@@ -10284,7 +10363,8 @@ async function requestTelemetry(params, force) {
       const activeKey = makeConsumptionRangeCacheKey(
         latestSt.selectedTimeRange,
         latestSt.customStartMs,
-        latestSt.customEndMs
+        latestSt.customEndMs,
+        activePoolPref
       );
       const cachedActive = consumptionRangeCache.get(activeKey);
       if (cachedActive) {
@@ -10293,7 +10373,9 @@ async function requestTelemetry(params, force) {
           needsSilentRangeRevalidate = true;
         }
       } else if (
-        latestSt.telemetry?.consumption?.selectedRange?.key === latestSt.selectedTimeRange
+        latestSt.telemetry?.consumption?.selectedRange?.key === latestSt.selectedTimeRange &&
+        (latestSt.selectedTimeRange !== 'cycle' ||
+          (latestSt.telemetry?.consumption?.selectedRange?.pool || 'all') === activePoolPref)
       ) {
         resolvedPayload = {
           ...resolvedPayload,
@@ -10345,6 +10427,7 @@ async function requestTelemetry(params, force) {
           range: latestSt.selectedTimeRange,
           customStartMs: latestSt.customStartMs,
           customEndMs: latestSt.customEndMs,
+          cyclePool: latestSt.selectedCyclePool || 'all',
         });
       }
       return resolvedPayload;
@@ -10370,15 +10453,20 @@ async function fetchConsumptionRangeSlice({
   range,
   customStartMs = 0,
   customEndMs = 0,
+  cyclePool = 'all',
 } = {}) {
   const reqEpoch = endpointSwitchEpoch;
   const reqSeq = ++latestConsumptionReqSeq;
   const targetRange = String(range || 'today');
+  const targetPool = targetRange === 'cycle' ? String(cyclePool || 'all') : 'all';
   const current = telemetryStore.getState();
   const effectiveConvId = current.selectedConversationId || current.hostRouteConversationId || '';
   const params = new URLSearchParams();
   if (effectiveConvId) params.set('conversationId', effectiveConvId);
   params.set('range', targetRange);
+  if (targetRange === 'cycle' && targetPool !== 'all') {
+    params.set('pool', targetPool);
+  }
   if (targetRange === 'custom') {
     if (customStartMs > 0) params.set('startMs', String(customStartMs));
     if (customEndMs > 0) params.set('endMs', String(customEndMs));
@@ -10397,6 +10485,7 @@ async function fetchConsumptionRangeSlice({
       recordConsumptionSliceToCache(payload.consumption, payload.modelBreakdown, {
         customStartMs,
         customEndMs,
+        cyclePool: targetPool,
         usageRevision: usageRev,
       });
       if (reqSeq !== latestConsumptionReqSeq) return payload;
@@ -10404,6 +10493,7 @@ async function fetchConsumptionRangeSlice({
       const latestSt = telemetryStore.getState();
       const stillMatches =
         latestSt.selectedTimeRange === targetRange &&
+        (targetRange !== 'cycle' || (latestSt.selectedCyclePool || 'all') === targetPool) &&
         (targetRange !== 'custom' ||
           (Number(latestSt.customStartMs || 0) === Number(customStartMs || 0) &&
             Number(latestSt.customEndMs || 0) === Number(customEndMs || 0)));
@@ -10509,6 +10599,13 @@ async function selectConversation(
   const params = new URLSearchParams();
   if (effectiveConvId) params.set('conversationId', effectiveConvId);
   if (current.selectedTimeRange) params.set('range', current.selectedTimeRange);
+  if (
+    current.selectedTimeRange === 'cycle' &&
+    current.selectedCyclePool &&
+    current.selectedCyclePool !== 'all'
+  ) {
+    params.set('pool', current.selectedCyclePool);
+  }
   if (current.selectedTimeRange === 'custom') {
     if (current.customStartMs > 0) params.set('startMs', String(current.customStartMs));
     if (current.customEndMs > 0) params.set('endMs', String(current.customEndMs));
@@ -10615,7 +10712,7 @@ async function selectConversation(
  */
 function selectConsumptionTimeRange(
   nextRange,
-  { customStartMs = undefined, customEndMs = undefined } = {}
+  { customStartMs = undefined, customEndMs = undefined, cyclePool = undefined } = {}
 ) {
   const targetRange = String(nextRange || 'today');
   const prevSt = telemetryStore.getState();
@@ -10627,14 +10724,26 @@ function selectConsumptionTimeRange(
     targetRange === 'custom'
       ? Number(customEndMs !== undefined ? customEndMs : prevSt.customEndMs || 0)
       : prevSt.customEndMs;
+  const nextCyclePool =
+    targetRange === 'cycle'
+      ? String(cyclePool !== undefined ? cyclePool || 'all' : prevSt.selectedCyclePool || 'all')
+      : prevSt.selectedCyclePool || 'all';
 
   const statePatch = { selectedTimeRange: targetRange };
+  if (cyclePool !== undefined) {
+    statePatch.selectedCyclePool = nextCyclePool;
+  }
   if (targetRange === 'custom') {
     statePatch.customStartMs = nextStartMs;
     statePatch.customEndMs = nextEndMs;
   }
 
-  const cacheKey = makeConsumptionRangeCacheKey(targetRange, nextStartMs, nextEndMs);
+  const cacheKey = makeConsumptionRangeCacheKey(
+    targetRange,
+    nextStartMs,
+    nextEndMs,
+    targetRange === 'cycle' ? nextCyclePool : 'all'
+  );
   const cached = consumptionRangeCache.get(cacheKey);
   const prevTelemetry = prevSt.telemetry;
 
@@ -10653,6 +10762,7 @@ function selectConsumptionTimeRange(
       range: targetRange,
       customStartMs: nextStartMs,
       customEndMs: nextEndMs,
+      cyclePool: nextCyclePool,
     });
   }
 
@@ -10661,7 +10771,12 @@ function selectConsumptionTimeRange(
     range: targetRange,
     customStartMs: nextStartMs,
     customEndMs: nextEndMs,
+    cyclePool: nextCyclePool,
   });
+}
+
+function selectConsumptionCyclePool(nextPool = 'all') {
+  return selectConsumptionTimeRange('cycle', { cyclePool: String(nextPool || 'all') });
 }
 
 /**
@@ -11338,7 +11453,7 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
@@ -12044,8 +12159,8 @@ const CustomSelect = defineComponent({
         const fallbackText = modelValue
           ? `${placeholder} (${String(modelValue).slice(0, 8)})`
           : placeholder;
-        labelText = selectedOpt ? selectedOpt.label : fallbackText;
-        titleText = labelText;
+        labelText = selectedOpt ? selectedOpt.shortLabel || selectedOpt.label : fallbackText;
+        titleText = selectedOpt ? selectedOpt.title || selectedOpt.label : fallbackText;
       }
 
       patchText(triggerLabel, labelText);
@@ -30029,6 +30144,86 @@ function ceilToEndOfMinuteMs(ms) {
   return d.getTime();
 }
 
+function formatCyclePoolShortLabel(poolKey, poolLabel) {
+  if (poolKey === 'Argon') return 'Argon';
+  if (poolKey === 'Carbon') return 'Carbon';
+  if (poolKey === 'Claude & GPT') return 'Claude/GPT';
+  return poolLabel || poolKey;
+}
+
+function buildCyclePoolSelectOptions(pools, isCustomWeeklyMode = false) {
+  const list = Array.isArray(pools) ? pools : [];
+  let sumCycleCost = 0;
+  let hasAnyCycleCost = false;
+  for (let i = 0; i < list.length; i++) {
+    const c = Number(list[i]?.cycleWeekly?.costUsd);
+    if (Number.isFinite(c) && c >= 0 && list[i]?.cycleWeekly) {
+      sumCycleCost += c;
+      hasAnyCycleCost = true;
+    }
+  }
+  const allLabel = t('cons.cyclePoolAll');
+  const opts = [
+    {
+      value: 'all',
+      label: allLabel,
+      shortLabel: t('cons.cyclePoolAllShort'),
+      meta: !isCustomWeeklyMode && hasAnyCycleCost ? formatUsd(sumCycleCost) : '',
+      title: allLabel,
+    },
+  ];
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    const key = String(p?.poolKey || p?.family || '').trim();
+    if (!key || key === 'Unknown') continue;
+    const label = String(p?.poolLabel || key).trim();
+    const shortLabel = formatCyclePoolShortLabel(key, label);
+    const metaParts = [];
+    if (
+      !isCustomWeeklyMode &&
+      p?.weeklyRemainingPct != null &&
+      Number.isFinite(Number(p.weeklyRemainingPct))
+    ) {
+      metaParts.push(
+        t('cons.cyclePoolRemMeta', {
+          pct: formatPctNumber(p.weeklyRemainingPct, { withSymbol: true }),
+        })
+      );
+    }
+    if (!isCustomWeeklyMode && p?.cycleWeekly && Number.isFinite(Number(p.cycleWeekly.costUsd))) {
+      metaParts.push(formatUsd(p.cycleWeekly.costUsd));
+    }
+    const meta = metaParts.join(' · ');
+    opts.push({
+      value: key,
+      label,
+      shortLabel,
+      meta,
+      title: meta ? `${label} (${meta})` : label,
+    });
+  }
+  return opts;
+}
+
+function formatCycleMinuteSpanTip(startMs, endMs, isFallbackWeek = false) {
+  const s = Number(startMs);
+  const e = Number(endMs);
+  if (!(s > 0 && e > 0 && Number.isFinite(s) && Number.isFinite(e))) return null;
+  const sd = new Date(s);
+  const ed = new Date(e);
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const sTime = `${pad2(sd.getHours())}:${pad2(sd.getMinutes())}`;
+  const eTime = `${pad2(ed.getHours())}:${pad2(ed.getMinutes())}`;
+  const sameDay =
+    sd.getFullYear() === ed.getFullYear() &&
+    sd.getMonth() === ed.getMonth() &&
+    sd.getDate() === ed.getDate();
+  const sDate = `${sd.getMonth() + 1}/${pad2(sd.getDate())}`;
+  const eDate = `${ed.getMonth() + 1}/${pad2(ed.getDate())}`;
+  const base = sameDay ? `${sDate} ${sTime} ~ ${eTime}` : `${sDate} ${sTime} ~ ${eDate} ${eTime}`;
+  return isFallbackWeek ? `${base} · ${t('cons.cycleFallbackWeekTip')}` : base;
+}
+
 const ConsumptionView = defineComponent({
   name: 'ConsumptionView',
   setup({ onCleanup }) {
@@ -30134,6 +30329,16 @@ const ConsumptionView = defineComponent({
 
     // --- Section 1: 用量概览矩阵 (上层 3 列核心总量 + 下层 3 列新输入/缓存读取/输出拆分 + 底部 4 段比例条) ---
     const dateSpanBadge = h('span', { className: 'cons-badge text-mono', text: '-- ~ --' });
+    const cyclePoolSelect = CustomSelect({
+      className: 'cons-cycle-pool-select',
+      modelValue: telemetryStore.getState().selectedCyclePool || 'all',
+      options: buildCyclePoolSelectOptions([]),
+      onUpdateModelValue: (nextPool) => {
+        selectConsumptionCyclePool(nextPool || 'all');
+      },
+    });
+    patchAttr(cyclePoolSelect.el, 'hidden', true);
+    patchAttr(cyclePoolSelect.refs.triggerBtn, 'aria-label', t('cons.cyclePoolAria'));
     const heroTotalTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
     const heroTotalCalls = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.callsCount', { calls: 0 }) });
     const heroCostUsd = h('strong', { className: 'cons-hero-cost text-mono', text: '$0.00' });
@@ -30271,8 +30476,9 @@ const ConsumptionView = defineComponent({
 
     const overviewPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header cons-overview-head' }, [
-        h('span', { className: 'panel-title' }, [
+        h('span', { className: 'panel-title cons-overview-title' }, [
           dateSpanBadge,
+          cyclePoolSelect.el,
         ]),
         h('div', { className: 'cons-overview-controls' }, [
           timeFilterSwitch.el,
@@ -31725,7 +31931,7 @@ const ConsumptionView = defineComponent({
       const cons = slice.consumption || {};
       const rangeInfo = cons.selectedRange || {};
 
-      // 始终在 0ms 同步顶部时间段滑块与自定义日期条显隐，给予即刻交互反馈
+      // 始终在 0ms 同步顶部时间段滑块、周期池选择器及自定义日期条显隐，给予即刻交互反馈
       timeFilterSwitch.setValue(slice.range);
       patchAttr(customRangeBar, 'hidden', slice.range !== 'custom');
       if (!hasUncommittedCustomDraft) {
@@ -31735,17 +31941,45 @@ const ConsumptionView = defineComponent({
         endPicker.setValue(draftEndMs);
       }
 
+      const isCustomWeeklyMode =
+        slice.weeklyLimitMode === 'custom_tokens' || slice.weeklyLimitMode === 'custom_cost';
+      const cyclePoolOptions =
+        slice.range === 'cycle'
+          ? buildCyclePoolSelectOptions(slice.quotaPools, isCustomWeeklyMode)
+          : [];
+      const activePoolFilter = slice.range === 'cycle' ? slice.cyclePool || 'all' : 'all';
+      const showCyclePoolSelect = slice.range === 'cycle' && cyclePoolOptions.length > 2;
+      if (!showCyclePoolSelect) {
+        cyclePoolSelect.close?.();
+        patchAttr(cyclePoolSelect.el, 'hidden', true);
+      } else {
+        cyclePoolSelect.setProps({
+          modelValue: activePoolFilter,
+          options: cyclePoolOptions,
+        });
+        patchAttr(cyclePoolSelect.el, 'hidden', false);
+      }
+
       // 极少数缓存未命中时（如自定义新区间或进页瞬间抢点），跳过用旧趋势/模型跑无效半更新重绘，待几毫秒后单帧原子绘制
-      if (rangeInfo.key && slice.range && rangeInfo.key !== slice.range) {
+      const payloadPool = rangeInfo.key === 'cycle' ? rangeInfo.pool || 'all' : 'all';
+      if (
+        (rangeInfo.key && slice.range && rangeInfo.key !== slice.range) ||
+        (slice.range === 'cycle' && rangeInfo.pool && payloadPool !== activePoolFilter)
+      ) {
         return;
       }
 
       const preset =
-        slice.range !== 'custom' && cons.presets?.[slice.range]
+        slice.range !== 'custom' &&
+        !(slice.range === 'cycle' && activePoolFilter !== 'all') &&
+        cons.presets?.[slice.range]
           ? cons.presets[slice.range]
           : null;
       const acct = cons.account || preset?.account || {};
       const dateSpan = formatDateSpanBadge(rangeInfo.startMs, rangeInfo.endMs);
+      const cycleOptionsSig = showCyclePoolSelect
+        ? cyclePoolOptions.map((o) => `${o.value}:${o.label}:${o.meta || ''}`).join('|')
+        : '';
       const now = new Date();
       const currentMonthIdx = now.getMonth();
       const monthlyYear = cons.monthlyYear || now.getFullYear();
@@ -31753,6 +31987,9 @@ const ConsumptionView = defineComponent({
       const renderTuple = [
         locale,
         slice.range,
+        activePoolFilter,
+        cycleOptionsSig,
+        Boolean(rangeInfo.isFallbackWeek),
         slice.customStartMs,
         slice.customEndMs,
         slice.modelDisplayMode,
@@ -31773,13 +32010,36 @@ const ConsumptionView = defineComponent({
         cons.monthlySeries,
       ];
       if (isSameRenderTuple(lastRenderedTuple, renderTuple)) return;
-      drawConsumptionData(slice, { cons, preset, acct, rangeInfo, dateSpan, currentMonthIdx, monthlyYear });
+      drawConsumptionData(slice, {
+        cons,
+        preset,
+        acct,
+        rangeInfo,
+        activePoolFilter,
+        dateSpan,
+        currentMonthIdx,
+        monthlyYear,
+      });
       lastRenderedTuple = renderTuple;
     }
 
-    function drawConsumptionData(slice, { cons, preset, acct, rangeInfo, dateSpan, currentMonthIdx, monthlyYear }) {
-      // 1. 同步用量概览矩阵与顶部 4 段比例条
+    function drawConsumptionData(
+      slice,
+      { cons, preset, acct, rangeInfo, activePoolFilter, dateSpan, currentMonthIdx, monthlyYear }
+    ) {
+      // 1. 同步用量概览矩阵及顶部 4 段比例条
       patchText(dateSpanBadge, dateSpan);
+      patchAttr(
+        dateSpanBadge,
+        'title',
+        slice.range === 'cycle'
+          ? formatCycleMinuteSpanTip(
+              rangeInfo.startMs,
+              rangeInfo.endMs,
+              Boolean(rangeInfo.isFallbackWeek)
+            )
+          : null
+      );
       const totalTokens = Number(acct.totalTokens || 0);
       const inputTokens = Number(acct.inputTokens || 0);
       const cacheTokens = Number(acct.cacheReadTokens || 0);
@@ -31970,11 +32230,18 @@ const ConsumptionView = defineComponent({
         ...allTrendMergedModels,
       ]);
 
-      // 2. 同步历史趋势交互式 SVG 面积图 / 类 GitHub 每日热力图（>90天）与悬停分模型浮层
-      const rangeBadgeText = isEnglishLocale()
-        ? getConsumptionTimeRangeOptions().find((o) => o.value === slice.range)?.label ||
-          t('cons.allTime')
-        : preset?.label || rangeInfo.label || t('cons.allTime');
+      // 2. 同步历史趋势交互式 SVG 面积图 / 类 GitHub 每日热力图（>90天）及悬停分模型浮层
+      const rangeBadgeText =
+        slice.range === 'cycle'
+          ? `${rangeInfo.isFallbackWeek || slice.weeklyLimitMode === 'custom_tokens' || slice.weeklyLimitMode === 'custom_cost' ? t('cons.cycleFallbackWeek') : t('cons.currentCycle')}${
+              activePoolFilter && activePoolFilter !== 'all'
+                ? ` · ${rangeInfo.poolLabel || activePoolFilter}`
+                : ''
+            }`
+          : isEnglishLocale()
+            ? getConsumptionTimeRangeOptions().find((o) => o.value === slice.range)?.label ||
+              t('cons.allTime')
+            : preset?.label || rangeInfo.label || t('cons.allTime');
       patchText(trendRangeBadge, rangeBadgeText);
       const firstTrendSlot = rawTrendSeries[0] || null;
       const isMinuteTrend = firstTrendSlot?.granularity === 'minute';
@@ -32134,7 +32401,7 @@ const ConsumptionView = defineComponent({
         updateRow: (refs, s) => updateSourceBreakdownRow(refs, s, sourcesTotalTok, modelColorMap),
       });
 
-      const nextRangeSig = `${slice.range || ''}:${slice.customStartMs || 0}:${slice.customEndMs || 0}`;
+      const nextRangeSig = `${slice.range || ''}:${activePoolFilter || 'all'}:${slice.customStartMs || 0}:${slice.customEndMs || 0}`;
       const nextRankingKey = showWorkspacesTab
         ? 'workspaces'
         : showSessionsTab
@@ -32270,8 +32537,11 @@ const ConsumptionView = defineComponent({
     const unsub = telemetryStore.subscribe(
       (st) => ({
         range: st.selectedTimeRange,
+        cyclePool: st.selectedCyclePool || 'all',
         customStartMs: st.customStartMs,
         customEndMs: st.customEndMs,
+        quotaPools: st.telemetry?.quotas?.pools,
+        weeklyLimitMode: st.telemetry?.settings?.weeklyLimitMode,
         consumption: st.telemetry?.consumption,
         modelBreakdown: st.telemetry?.modelBreakdown,
         modelDisplayMode: normalizeModelDisplayMode(
@@ -32325,6 +32595,7 @@ const ConsumptionView = defineComponent({
         ariaLabel: t('cons.rangeAria'),
         options: getConsumptionTimeRangeOptions(),
       });
+      patchAttr(cyclePoolSelect.refs.triggerBtn, 'aria-label', t('cons.cyclePoolAria'));
       patchText(applyCustomBtnLabel, t('cons.applyFilter'));
       patchText(rangeToSpan, t('cons.rangeTo'));
       patchText(totalTokensLabel, t('cons.totalTokens'));
@@ -32382,6 +32653,7 @@ const ConsumptionView = defineComponent({
       unsubView();
       unsubI18n();
       consExportMenu.destroy();
+      cyclePoolSelect.destroy();
       trendChart.destroy?.();
       rankingTabSwitch.destroy();
       modelsSortSwitch.destroy();
@@ -32396,6 +32668,7 @@ const ConsumptionView = defineComponent({
       el: rootEl,
       refs: {
         timeFilterSwitch,
+        cyclePoolSelect,
         startPicker,
         endPicker,
         viewScrollbar,

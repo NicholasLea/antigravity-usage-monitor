@@ -570,6 +570,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"] .form-row > .custom-select > .select-trigger,
+[data-modern-ui="true"] .cons-cycle-pool-select .select-trigger,
 [data-modern-ui="true"] .steps-inline-scope-select .select-trigger,
 [data-modern-ui="true"] .steps-inline-model-select .select-trigger,
 [data-modern-ui="true"] .sstep-fit-model-select .select-trigger {
@@ -580,6 +581,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"] .form-row > .custom-select > .select-trigger:hover,
+[data-modern-ui="true"] .cons-cycle-pool-select .select-trigger:hover,
 [data-modern-ui="true"] .steps-inline-scope-select .select-trigger:hover,
 [data-modern-ui="true"] .steps-inline-model-select .select-trigger:hover,
 [data-modern-ui="true"] .sstep-fit-model-select .select-trigger:hover {
@@ -587,6 +589,7 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"] .form-row > .custom-select.is-open > .select-trigger,
+[data-modern-ui="true"] .cons-cycle-pool-select.is-open .select-trigger,
 [data-modern-ui="true"] .steps-inline-scope-select.is-open .select-trigger,
 [data-modern-ui="true"] .steps-inline-model-select.is-open .select-trigger,
 [data-modern-ui="true"] .sstep-fit-model-select.is-open .select-trigger {

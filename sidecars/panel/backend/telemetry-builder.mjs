@@ -2382,6 +2382,9 @@ export async function buildTelemetryPayloadInternal(
       revision: usageRevision,
       selectedRange: {
         key: selectedWindow.key,
+        ...(selectedWindow.pool ? { pool: selectedWindow.pool } : {}),
+        ...(selectedWindow.poolLabel ? { poolLabel: selectedWindow.poolLabel } : {}),
+        ...(selectedWindow.isFallbackWeek ? { isFallbackWeek: true } : {}),
         label: selectedWindow.label,
         startMs: trendStartMs,
         endMs: trendEndMs,
@@ -2802,6 +2805,9 @@ function tryBuildFastConsumptionPayload(filterOpts = {}) {
       revision: agg.usageRevision,
       selectedRange: {
         key: agg.selectedWindow.key,
+        ...(agg.selectedWindow.pool ? { pool: agg.selectedWindow.pool } : {}),
+        ...(agg.selectedWindow.poolLabel ? { poolLabel: agg.selectedWindow.poolLabel } : {}),
+        ...(agg.selectedWindow.isFallbackWeek ? { isFallbackWeek: true } : {}),
         label: agg.selectedWindow.label,
         startMs: agg.trendStartMs,
         endMs: agg.trendEndMs,
@@ -2969,7 +2975,7 @@ export function buildTelemetryPayload(
       }
     }
   }
-  const rangeSig = `${filterOpts.range || 'all'}:${filterOpts.startMs || 0}:${filterOpts.endMs || 0}`;
+  const rangeSig = `${filterOpts.range || 'all'}:${filterOpts.pool || 'all'}:${filterOpts.startMs || 0}:${filterOpts.endMs || 0}`;
   const key = `${endpointKey}::${requestedConvId || '__auto__'}::${forceQuotaRefresh ? 'force' : 'normal'}::${rangeSig}`;
   if (inFlightRequests.has(key)) {
     return inFlightRequests.get(key);

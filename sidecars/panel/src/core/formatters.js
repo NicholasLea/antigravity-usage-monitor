@@ -104,16 +104,33 @@ export function formatCnyApprox(usdAmount, rate = 7.2) {
 export function formatDateSpanBadge(startMs, endMs) {
   const s = startMs && Number.isFinite(startMs) ? new Date(startMs) : new Date();
   const e = endMs && Number.isFinite(endMs) ? new Date(endMs) : new Date();
+  const sameYear = s.getFullYear() === e.getFullYear();
+  const sameMonth = sameYear && s.getMonth() === e.getMonth();
+  const sameDay = sameMonth && s.getDate() === e.getDate();
+
   if (isEnglishLocale()) {
     const sMon = EN_MONTH_SHORT[s.getMonth()] || '';
     const eMon = EN_MONTH_SHORT[e.getMonth()] || '';
-    if (s.getFullYear() !== e.getFullYear()) {
+    if (!sameYear) {
       return `${sMon} ${s.getDate()}, ${s.getFullYear()} ~ ${eMon} ${e.getDate()}, ${e.getFullYear()}`;
+    }
+    if (sameDay) {
+      return `${sMon} ${s.getDate()}`;
+    }
+    if (sameMonth) {
+      return `${sMon} ${s.getDate()} ~ ${e.getDate()}`;
     }
     return `${sMon} ${s.getDate()} ~ ${eMon} ${e.getDate()}`;
   }
-  if (s.getFullYear() !== e.getFullYear()) {
+
+  if (!sameYear) {
     return `${s.getFullYear()}年${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getFullYear()}年${e.getMonth() + 1}月${e.getDate()}日`;
+  }
+  if (sameDay) {
+    return `${s.getMonth() + 1}月${s.getDate()}日`;
+  }
+  if (sameMonth) {
+    return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getDate()}日`;
   }
   return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getMonth() + 1}月${e.getDate()}日`;
 }
