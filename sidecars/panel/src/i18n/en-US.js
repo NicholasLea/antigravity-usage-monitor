@@ -12,6 +12,8 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
 
   // Top Session Header
   'header.followLatest': 'Follow Latest Session',
+  'header.followCurrentWindow': 'Follow Current Window',
+  'header.autoFollowBadge': 'Auto',
   'header.currentWindowNamed': 'Current ({title})',
   'header.latestNamed': 'Latest ({title})',
   'header.lockedSession': 'Pinned Session ({id})',
@@ -19,6 +21,9 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'header.convMetaWithSubs': 'Main {main} · {subs} sub ({total} steps)',
   'header.convMetaWithSwarm': 'Main {main} · {swarm} swarm ({total} steps)',
   'header.convMetaWithSwarmAndSubs': 'Main {main} · {swarm} swarm · {subs} sub ({total} steps)',
+  'header.convCompactSubs': '{subs} sub · {total} steps',
+  'header.convCompactSwarm': '{swarm} swm · {total} steps',
+  'header.convCompactSwarmAndSubs': '{swarm} swm {subs} sub · {total} steps',
   'header.convMetaSteps': '{count} steps',
   'header.hasUpdate': 'Update',
   'header.upgradeToVer': 'Update v{ver}',

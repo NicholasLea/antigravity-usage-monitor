@@ -62,7 +62,7 @@ export function filterSelectOptionsByQuery(options = [], rawQuery = '') {
     const opt = options[i];
     if (!opt) continue;
     const haystack =
-      `${opt.label || ''} ${opt.meta || ''} ${opt.title || ''} ${opt.value || ''}`.toLowerCase();
+      `${opt.label || ''} ${opt.subLabel || ''} ${opt.meta || ''} ${opt.searchText || ''} ${opt.title || ''} ${opt.value || ''}`.toLowerCase();
     let matched = true;
     for (let k = 0; k < terms.length; k++) {
       if (!haystack.includes(terms[k])) {
@@ -222,7 +222,7 @@ export const CustomSelect = defineComponent({
       let sig = `${labelText}|${searchShown}|${searchQuery}|${options.length}`;
       for (let i = 0; i < options.length; i++) {
         const o = options[i];
-        sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.meta ?? ''}`;
+        sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.subLabel ?? ''}:${o?.meta ?? ''}`;
       }
       return sig;
     }
@@ -375,15 +375,17 @@ export const CustomSelect = defineComponent({
       patchKeyedList(optionsListEl, visibleOpts, {
         keyFn: (opt) => opt.value,
         sigFn: (opt, idx) =>
-          `${multiple}::${opt.value}::${opt.label}::${opt.meta || ''}::${Boolean(opt.disabled)}::${selSet.has(opt.value)}::${idx === focusedIndex}`,
+          `${multiple}::${opt.value}::${opt.label}::${opt.subLabel || ''}::${opt.meta || ''}::${Boolean(opt.dimMeta)}::${Boolean(opt.dividerAfter)}::${opt.title || ''}::${Boolean(opt.disabled)}::${selSet.has(opt.value)}::${idx === focusedIndex}`,
         createRow: (opt) => {
           const checkboxIcon = createSvgIcon('check', { size: 10 });
           const checkboxBox = h('span', { className: 'select-checkbox', hidden: true }, [
             checkboxIcon,
           ]);
           const textSpan = h('span', { className: 'select-option-text' });
+          const subSpan = h('span', { className: 'text-muted select-option-sub', hidden: true });
+          const bodyWrap = h('span', { className: 'select-option-body' }, [textSpan, subSpan]);
           const metaSpan = h('span', { className: 'text-muted select-option-meta' });
-          const checkIcon = createSvgIcon('check', { size: 12 });
+          const checkIcon = createSvgIcon('check', { size: 12, className: 'select-option-check' });
           const btn = h(
             'button',
             {
@@ -397,9 +399,12 @@ export const CustomSelect = defineComponent({
                 chooseOption(latestOpt);
               },
             },
-            [checkboxBox, textSpan, metaSpan, checkIcon]
+            [checkboxBox, bodyWrap, metaSpan, checkIcon]
           );
-          return { el: btn, refs: { checkboxBox, checkboxIcon, textSpan, metaSpan, checkIcon } };
+          return {
+            el: btn,
+            refs: { checkboxBox, checkboxIcon, textSpan, subSpan, metaSpan, checkIcon },
+          };
         },
         updateRow: (refs, opt, idx, el) => {
           const isMulti = Boolean(getProps().multiple);
@@ -410,14 +415,20 @@ export const CustomSelect = defineComponent({
           patchClasses(refs.checkboxBox, { 'is-checked': selected });
           patchAttr(refs.checkboxIcon, 'hidden', !selected);
           patchText(refs.textSpan, opt.label);
+          patchText(refs.subSpan, opt.subLabel || '');
+          patchAttr(refs.subSpan, 'hidden', !opt.subLabel);
           patchText(refs.metaSpan, opt.meta || '');
           patchAttr(refs.metaSpan, 'hidden', !opt.meta);
+          patchClasses(refs.metaSpan, { 'is-dim': Boolean(opt.dimMeta) });
           patchAttr(refs.checkIcon, 'hidden', isMulti || !selected);
           patchClasses(el, {
             'is-selected': selected,
             'is-focused': focused,
             'is-disabled': isDisabled,
+            'has-sub': Boolean(opt.subLabel),
+            'has-divider-after': Boolean(opt.dividerAfter),
           });
+          patchAttr(el, 'title', opt.title || null);
           patchAttr(el, 'disabled', isDisabled);
           patchAttr(el, 'aria-disabled', isDisabled ? 'true' : null);
           patchAttr(el, 'aria-selected', selected ? 'true' : 'false');

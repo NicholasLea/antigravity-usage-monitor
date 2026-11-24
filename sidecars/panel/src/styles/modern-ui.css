@@ -623,15 +623,16 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: var(--accent-primary-soft);
 }
 
-[data-modern-ui="true"] .steps-anomaly-filterbar,
-[data-modern-ui="true"] .steps-anomaly-strip {
+[data-modern-ui="true"] .steps-anomaly-filterbar {
   border: none;
   border-radius: var(--radius-xs);
-  background: var(--metric-warn-soft);
+  background: var(--modern-surface-subtle);
+  margin: 4px 2px 2px;
 }
 
-[data-modern-ui="true"] .steps-anomaly-filterbar {
-  margin: 4px 2px 2px;
+[data-modern-ui="true"] .steps-anomaly-strip {
+  border: none;
+  background: transparent;
 }
 
 /* --- 6. 设置表单、折叠面板、槽位排序与输入控件去边框 --- */

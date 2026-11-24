@@ -1348,6 +1348,10 @@ export const StepsDetailView = defineComponent({
         const sortedKinds = Object.entries(sumAnomalyByKind)
           .filter(([, v]) => v > 0)
           .sort((a, b) => b[1] - a[1]);
+        const hasDangerKind = sortedKinds.some(
+          ([kind]) => kind === 'rate_limit' || kind === 'auth_or_model'
+        );
+        patchClasses(modelsAnomalyStripEl, { 'has-danger': hasDangerKind });
         const stripSig = `${locale}:${sumAnomalyCount}:${sumAnomalySteps}:${sortedKinds.map(([k, v]) => `${k}=${v}`).join(',')}`;
         if (stripSig !== lastAnomalyStripSig) {
           lastAnomalyStripSig = stripSig;
@@ -1430,15 +1434,19 @@ export const StepsDetailView = defineComponent({
           return `${locale}:${m.displayText}:${m.displayTitle}:${m.calls}:${sumCalls}:${sumTokens}:${displayModels.length}:${m.avgTokPerSec}:${avgTtft}:${m.cacheHitPct}:${m.inputTokens}:${m.cacheReadTokens}:${m.thinkingTokens}:${m.responseTokens}:${m.totalTokens}:${m.costUsd}:${m.unpricedCalls}:${isActiveFit}:${hasMultipleModels}:${anomSig}`;
         },
         createRow: () => {
-          const nameEl = h('strong', { className: 'smodel-name' });
-          const callsPillEl = h('span', { className: 'smodel-calls-pill text-mono' });
+          const nameEl = h('strong', { className: 'cons-row-title-text smodel-name' });
           const anomalyTagEl = h('span', {
             className: 'step-anomaly-tag smodel-anomaly-tag text-mono',
             title: '',
             hidden: true,
           });
-          const tokEl = h('span', { className: 'smodel-tok text-mono' });
-          const costEl = h('strong', { className: 'smodel-cost text-mono' });
+          const titleWrapEl = h('strong', { className: 'cons-row-title smodel-ident' }, [
+            nameEl,
+            anomalyTagEl,
+          ]);
+          const pctBadgeEl = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
+          const tokEl = h('span', { className: 'cons-row-tok smodel-tok text-mono' });
+          const costEl = h('strong', { className: 'cons-row-cost smodel-cost text-mono' });
           const segBar = createFourSegmentBar();
           segBar.el.classList.add('smodel-seg-bar');
 
@@ -1446,11 +1454,13 @@ export const StepsDetailView = defineComponent({
           const cacheLbl = h('span', { text: t('cons.footCache') });
           const thinkLbl = h('span', { text: t('cons.footThinking') });
           const outLbl = h('span', { text: t('cons.footOutput') });
+          const callsLbl = h('span', { text: t('cons.footCalls') });
           const inVal = h('strong', { className: 'text-mono' });
           const cacheVal = h('strong', { className: 'text-mono' });
           const thinkVal = h('strong', { className: 'text-mono' });
           const outVal = h('strong', { className: 'text-mono' });
-          const splitEl = h('div', { className: 'smodel-split' }, [
+          const callsVal = h('strong', { className: 'text-mono' });
+          const footEl = h('div', { className: 'cons-item-foot smodel-foot' }, [
             h('span', { className: 'legend-left' }, [
               h('span', { className: 'dot-swatch seg-input' }),
               inLbl,
@@ -1471,18 +1481,29 @@ export const StepsDetailView = defineComponent({
               outLbl,
               outVal,
             ]),
+            h('span', { className: 'legend-left' }, [callsLbl, callsVal]),
           ]);
-          const perfEl = h('span', { className: 'smodel-perf text-mono' });
-          const unitCostEl = h('span', { className: 'smodel-unit-cost text-mono', hidden: true });
-          const perfFootEl = h('div', { className: 'smodel-perf-foot' }, [perfEl, unitCostEl]);
+          const perfEl = h('span', { className: 'cons-model-perf-main smodel-perf text-mono' });
+          const unitCostEl = h('span', {
+            className: 'cons-model-unit-cost smodel-unit-cost text-mono',
+            hidden: true,
+          });
+          const perfFootEl = h('div', { className: 'cons-model-perf-foot smodel-perf-foot' }, [
+            perfEl,
+            unitCostEl,
+          ]);
 
-          const cardEl = h('div', { className: 'smodel-card' }, [
-            h('div', { className: 'smodel-head' }, [
-              h('div', { className: 'smodel-ident' }, [nameEl, callsPillEl, anomalyTagEl]),
-              h('div', { className: 'smodel-totals' }, [tokEl, costEl]),
+          const cardEl = h('div', { className: 'cons-item-row smodel-card' }, [
+            h('div', { className: 'panel-header smodel-head' }, [
+              titleWrapEl,
+              h('span', { className: 'cons-row-metrics smodel-totals' }, [
+                pctBadgeEl,
+                tokEl,
+                costEl,
+              ]),
             ]),
             segBar.el,
-            h('div', { className: 'smodel-foot' }, [splitEl]),
+            footEl,
             perfFootEl,
           ]);
 
@@ -1490,22 +1511,23 @@ export const StepsDetailView = defineComponent({
             el: cardEl,
             refs: {
               nameEl,
-              callsPillEl,
+              pctBadgeEl,
               anomalyTagEl,
               tokEl,
               costEl,
               segBar,
               perfEl,
               unitCostEl,
-              splitEl,
               inLbl,
               cacheLbl,
               thinkLbl,
               outLbl,
+              callsLbl,
               inVal,
               cacheVal,
               thinkVal,
               outVal,
+              callsVal,
               cardTitle: '',
               isHoveringAnomaly: false,
             },
@@ -1525,13 +1547,6 @@ export const StepsDetailView = defineComponent({
           patchAttr(refs.nameEl, 'title', dispTitle);
 
           const calls = Math.max(0, Number(m.calls || 0));
-          const callSharePct = sumCalls > 0 ? Math.round((calls / sumCalls) * 100) : 0;
-          patchText(
-            refs.callsPillEl,
-            displayModels.length > 1
-              ? t('steps.modelCallsShare', { calls, pct: callSharePct })
-              : t('steps.modelCallsOnly', { calls })
-          );
 
           const effM = effectiveAnomalyModels.get(m) || m;
           const anomSum = resolveModelAnomalySummary(effM);
@@ -1577,6 +1592,9 @@ export const StepsDetailView = defineComponent({
               : Math.max(0, outTok - thinkTok);
 
           const modelTok = Math.max(0, Number(m.totalTokens || 0));
+          const tokSharePct =
+            sumTokens > 0 ? (modelTok / sumTokens) * 100 : sumCalls > 0 ? (calls / sumCalls) * 100 : 0;
+          patchText(refs.pctBadgeEl, formatPctNumber(tokSharePct, { withSymbol: true }));
           patchText(refs.tokEl, formatTokensPrecise(modelTok));
           const costNum = Number(m.costUsd || 0);
           const isAllUnpriced =
@@ -1617,10 +1635,12 @@ export const StepsDetailView = defineComponent({
           patchText(refs.cacheLbl, t('cons.footCache'));
           patchText(refs.thinkLbl, t('cons.footThinking'));
           patchText(refs.outLbl, t('cons.footOutput'));
+          patchText(refs.callsLbl, t('cons.footCalls'));
           patchText(refs.inVal, formatTokensPrecise(inTok));
           patchText(refs.cacheVal, formatTokensPrecise(cacheTok));
           patchText(refs.thinkVal, formatTokensPrecise(thinkTok));
           patchText(refs.outVal, formatTokensPrecise(respTok));
+          patchText(refs.callsVal, String(calls));
 
           patchText(
             refs.perfEl,

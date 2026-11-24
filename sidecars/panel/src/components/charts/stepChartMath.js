@@ -695,10 +695,22 @@ export function downsampleStepPointsForPlot(points, maxPoints = 208) {
   for (let b = 0; b < bucketCount; b += 1) {
     const bStart = 1 + Math.floor((b * interiorLen) / bucketCount);
     const bEnd = Math.max(bStart + 1, 1 + Math.floor(((b + 1) * interiorLen) / bucketCount));
-    const pickIdx =
-      globalPeakIdx >= bStart && globalPeakIdx < bEnd
-        ? globalPeakIdx
-        : bStart + Math.floor((bEnd - bStart) / 2);
+    let pickIdx = -1;
+    if (globalPeakIdx >= bStart && globalPeakIdx < bEnd) {
+      pickIdx = globalPeakIdx;
+    } else {
+      for (let k = bStart; k < bEnd; k += 1) {
+        if (points[k]?.anomalySummary) {
+          if (pickIdx < 0 || points[k]?.anomalySeverity === 'danger') {
+            pickIdx = k;
+            if (points[k]?.anomalySeverity === 'danger') break;
+          }
+        }
+      }
+      if (pickIdx < 0) {
+        pickIdx = bStart + Math.floor((bEnd - bStart) / 2);
+      }
+    }
     const picked = points[pickIdx];
     if (picked && picked !== out[out.length - 1]) {
       out.push(picked);
@@ -709,4 +721,44 @@ export function downsampleStepPointsForPlot(points, maxPoints = 208) {
     out.push(lastPt);
   }
   return out;
+}
+
+/**
+ * Evaluates the exact `y` coordinate on `buildSplinePath(plotPoints)` at horizontal coordinate `targetX`
+ * so overlay markers (such as anomaly dots) sit flush on the rendered curve even between downsampled knots.
+ *
+ * @param {Array<{ x: number, y: number }>} plotPoints
+ * @param {number} targetX
+ * @returns {number}
+ */
+export function evalStepSplineYAtX(plotPoints, targetX) {
+  if (!Array.isArray(plotPoints) || plotPoints.length === 0) return 0;
+  if (plotPoints.length === 1 || targetX <= plotPoints[0].x) return plotPoints[0].y;
+  const last = plotPoints[plotPoints.length - 1];
+  if (targetX >= last.x) return last.y;
+
+  let loIdx = 0;
+  let hiIdx = plotPoints.length - 1;
+  while (loIdx + 1 < hiIdx) {
+    const mid = (loIdx + hiIdx) >>> 1;
+    if (plotPoints[mid].x <= targetX) loIdx = mid;
+    else hiIdx = mid;
+  }
+  const p0 = plotPoints[loIdx];
+  const p1 = plotPoints[hiIdx];
+  const dx = p1.x - p0.x;
+  if (!(dx > 1e-6)) return p0.y;
+
+  const uTarget = Math.max(0, Math.min(1, (targetX - p0.x) / dx));
+  let sLo = 0;
+  let sHi = 1;
+  for (let it = 0; it < 14; it += 1) {
+    const s = (sLo + sHi) * 0.5;
+    const inv = 1 - s;
+    const u = 3 * inv * inv * s * 0.38 + 3 * inv * s * s * 0.62 + s * s * s;
+    if (u < uTarget) sLo = s;
+    else sHi = s;
+  }
+  const s = (sLo + sHi) * 0.5;
+  return p0.y + (p1.y - p0.y) * s * s * (3 - 2 * s);
 }

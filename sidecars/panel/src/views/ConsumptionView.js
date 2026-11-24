@@ -316,17 +316,14 @@ export const ConsumptionView = defineComponent({
     const cacheHitPctEl = h('strong', { className: 'cons-hero-cache text-mono', text: '0%' });
     const cacheTokensEl = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.cacheHitTokens', { tokens: 0 }) });
 
-    const inputSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-input); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const inputMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const inputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.uncachedInput') });
+    const inputSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const inputMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
-    const cacheSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-cached); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const cacheMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const cacheSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.savedCost', { cost: '$0.00' }) });
+    const cacheSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const cacheMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
-    const outputSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-output); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const outputMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const outputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.replyAndThink', { resp: 0, think: 0 }) });
+    const outputSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const outputMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
     const overviewSegBar = createFourSegmentBar();
     const consExportMenu = ActionMenu({
@@ -408,37 +405,25 @@ export const ConsumptionView = defineComponent({
       ]),
       h('div', { className: 'cons-split-3 cons-matrix-bottom' }, [
         h('div', { className: 'cons-col' }, [
-          h('div', { className: 'cons-sub-head' }, [
-            h('span', { className: 'legend-left cons-sub-label' }, [
-              h('span', { className: 'dot-swatch seg-input' }),
-              newInputLabel,
-            ]),
-            inputSharePct,
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-input' }),
+            newInputLabel,
           ]),
-          inputMainTokens,
-          inputSubText,
+          h('div', { className: 'cons-baseline' }, [inputMainTokens, inputSharePct]),
         ]),
         h('div', { className: 'cons-col is-bordered-col' }, [
-          h('div', { className: 'cons-sub-head' }, [
-            h('span', { className: 'legend-left cons-sub-label' }, [
-              h('span', { className: 'dot-swatch seg-cached' }),
-              cacheReadLabel,
-            ]),
-            cacheSharePct,
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-cached' }),
+            cacheReadLabel,
           ]),
-          cacheMainTokens,
-          cacheSubText,
+          h('div', { className: 'cons-baseline' }, [cacheMainTokens, cacheSharePct]),
         ]),
         h('div', { className: 'cons-col is-bordered-col' }, [
-          h('div', { className: 'cons-sub-head' }, [
-            h('span', { className: 'legend-left cons-sub-label' }, [
-              h('span', { className: 'dot-swatch seg-output' }),
-              outputUsageLabel,
-            ]),
-            outputSharePct,
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-output' }),
+            outputUsageLabel,
           ]),
-          outputMainTokens,
-          outputSubText,
+          h('div', { className: 'cons-baseline' }, [outputMainTokens, outputSharePct]),
         ]),
       ]),
     ]);
@@ -1151,7 +1136,6 @@ export const ConsumptionView = defineComponent({
       const responseTokens = Number(acct.responseTokens || 0);
       const thinkingTokens = Number(acct.thinkingTokens || 0);
       const costUsd = Number(acct.costUsd || 0);
-      const savedCostUsd = Number(acct.savedCostUsd || 0);
 
       patchText(heroTotalTokens, formatTokensPrecise(totalTokens));
       patchText(heroTotalCalls, t('cons.callsCount', { calls: acct.calls || 0 }));
@@ -1177,26 +1161,12 @@ export const ConsumptionView = defineComponent({
 
       patchText(inputSharePct, `${inPct}%`);
       patchText(inputMainTokens, formatTokensPrecise(inputTokens));
-      patchText(inputSubText, t('cons.uncachedInput'));
 
       patchText(cacheSharePct, `${cachePct}%`);
       patchText(cacheMainTokens, formatTokensPrecise(cacheTokens));
-      patchText(
-        cacheSubText,
-        t('cons.savedCost', {
-          cost: formatUsd(savedCostUsd, { precise: savedCostUsd > 0 && savedCostUsd < 0.01 }),
-        })
-      );
 
       patchText(outputSharePct, `${outPct}%`);
       patchText(outputMainTokens, formatTokensPrecise(outputTokens));
-      patchText(
-        outputSubText,
-        t('cons.replyAndThink', {
-          resp: formatTokensPrecise(responseTokens),
-          think: formatTokensPrecise(thinkingTokens),
-        })
-      );
       consExportMenu.refs.setHidden(!(totalTokens > 0 || Number(acct.calls || 0) > 0));
 
       overviewSegBar.update({

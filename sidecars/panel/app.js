@@ -1296,6 +1296,8 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
 
   // Top Session Header
   'header.followLatest': '跟随最新会话',
+  'header.followCurrentWindow': '跟随当前窗口会话',
+  'header.autoFollowBadge': '自动',
   'header.currentWindowNamed': '当前窗口 ({title})',
   'header.latestNamed': '最新 ({title})',
   'header.lockedSession': '已锁定会话 ({id})',
@@ -1303,6 +1305,9 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.convMetaWithSubs': '主{main} · {subs}子 (共{total}步)',
   'header.convMetaWithSwarm': '主{main} · {swarm}蜂 (共{total}步)',
   'header.convMetaWithSwarmAndSubs': '主{main} · {swarm}蜂 · {subs}子 (共{total}步)',
+  'header.convCompactSubs': '{subs}子 · {total}步',
+  'header.convCompactSwarm': '{swarm}蜂 · {total}步',
+  'header.convCompactSwarmAndSubs': '{swarm}蜂{subs}子 · {total}步',
   'header.convMetaSteps': '{count}步',
   'header.hasUpdate': '有新版本',
   'header.upgradeToVer': '升级 v{ver}',
@@ -2283,6 +2288,8 @@ const I18N_MESSAGES_EN_US = Object.freeze({
 
   // Top Session Header
   'header.followLatest': 'Follow Latest Session',
+  'header.followCurrentWindow': 'Follow Current Window',
+  'header.autoFollowBadge': 'Auto',
   'header.currentWindowNamed': 'Current ({title})',
   'header.latestNamed': 'Latest ({title})',
   'header.lockedSession': 'Pinned Session ({id})',
@@ -2290,6 +2297,9 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'header.convMetaWithSubs': 'Main {main} · {subs} sub ({total} steps)',
   'header.convMetaWithSwarm': 'Main {main} · {swarm} swarm ({total} steps)',
   'header.convMetaWithSwarmAndSubs': 'Main {main} · {swarm} swarm · {subs} sub ({total} steps)',
+  'header.convCompactSubs': '{subs} sub · {total} steps',
+  'header.convCompactSwarm': '{swarm} swm · {total} steps',
+  'header.convCompactSwarmAndSubs': '{swarm} swm {subs} sub · {total} steps',
   'header.convMetaSteps': '{count} steps',
   'header.hasUpdate': 'Update',
   'header.upgradeToVer': 'Update v{ver}',
@@ -11961,7 +11971,7 @@ function filterSelectOptionsByQuery(options = [], rawQuery = '') {
     const opt = options[i];
     if (!opt) continue;
     const haystack =
-      `${opt.label || ''} ${opt.meta || ''} ${opt.title || ''} ${opt.value || ''}`.toLowerCase();
+      `${opt.label || ''} ${opt.subLabel || ''} ${opt.meta || ''} ${opt.searchText || ''} ${opt.title || ''} ${opt.value || ''}`.toLowerCase();
     let matched = true;
     for (let k = 0; k < terms.length; k++) {
       if (!haystack.includes(terms[k])) {
@@ -12121,7 +12131,7 @@ const CustomSelect = defineComponent({
       let sig = `${labelText}|${searchShown}|${searchQuery}|${options.length}`;
       for (let i = 0; i < options.length; i++) {
         const o = options[i];
-        sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.meta ?? ''}`;
+        sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.subLabel ?? ''}:${o?.meta ?? ''}`;
       }
       return sig;
     }
@@ -12274,15 +12284,17 @@ const CustomSelect = defineComponent({
       patchKeyedList(optionsListEl, visibleOpts, {
         keyFn: (opt) => opt.value,
         sigFn: (opt, idx) =>
-          `${multiple}::${opt.value}::${opt.label}::${opt.meta || ''}::${Boolean(opt.disabled)}::${selSet.has(opt.value)}::${idx === focusedIndex}`,
+          `${multiple}::${opt.value}::${opt.label}::${opt.subLabel || ''}::${opt.meta || ''}::${Boolean(opt.dimMeta)}::${Boolean(opt.dividerAfter)}::${opt.title || ''}::${Boolean(opt.disabled)}::${selSet.has(opt.value)}::${idx === focusedIndex}`,
         createRow: (opt) => {
           const checkboxIcon = createSvgIcon('check', { size: 10 });
           const checkboxBox = h('span', { className: 'select-checkbox', hidden: true }, [
             checkboxIcon,
           ]);
           const textSpan = h('span', { className: 'select-option-text' });
+          const subSpan = h('span', { className: 'text-muted select-option-sub', hidden: true });
+          const bodyWrap = h('span', { className: 'select-option-body' }, [textSpan, subSpan]);
           const metaSpan = h('span', { className: 'text-muted select-option-meta' });
-          const checkIcon = createSvgIcon('check', { size: 12 });
+          const checkIcon = createSvgIcon('check', { size: 12, className: 'select-option-check' });
           const btn = h(
             'button',
             {
@@ -12296,9 +12308,12 @@ const CustomSelect = defineComponent({
                 chooseOption(latestOpt);
               },
             },
-            [checkboxBox, textSpan, metaSpan, checkIcon]
+            [checkboxBox, bodyWrap, metaSpan, checkIcon]
           );
-          return { el: btn, refs: { checkboxBox, checkboxIcon, textSpan, metaSpan, checkIcon } };
+          return {
+            el: btn,
+            refs: { checkboxBox, checkboxIcon, textSpan, subSpan, metaSpan, checkIcon },
+          };
         },
         updateRow: (refs, opt, idx, el) => {
           const isMulti = Boolean(getProps().multiple);
@@ -12309,14 +12324,20 @@ const CustomSelect = defineComponent({
           patchClasses(refs.checkboxBox, { 'is-checked': selected });
           patchAttr(refs.checkboxIcon, 'hidden', !selected);
           patchText(refs.textSpan, opt.label);
+          patchText(refs.subSpan, opt.subLabel || '');
+          patchAttr(refs.subSpan, 'hidden', !opt.subLabel);
           patchText(refs.metaSpan, opt.meta || '');
           patchAttr(refs.metaSpan, 'hidden', !opt.meta);
+          patchClasses(refs.metaSpan, { 'is-dim': Boolean(opt.dimMeta) });
           patchAttr(refs.checkIcon, 'hidden', isMulti || !selected);
           patchClasses(el, {
             'is-selected': selected,
             'is-focused': focused,
             'is-disabled': isDisabled,
+            'has-sub': Boolean(opt.subLabel),
+            'has-divider-after': Boolean(opt.dividerAfter),
           });
+          patchAttr(el, 'title', opt.title || null);
           patchAttr(el, 'disabled', isDisabled);
           patchAttr(el, 'aria-disabled', isDisabled ? 'true' : null);
           patchAttr(el, 'aria-selected', selected ? 'true' : 'false');
@@ -17054,7 +17075,7 @@ return { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart };
 })();
 
 // --- src/components/charts/stepChartMath.js ---
-const { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact, downsampleStepPointsForPlot } = (() => {
+const { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact, downsampleStepPointsForPlot, evalStepSplineYAtX } = (() => {
 /**
  * @fileoverview Pure regression math (OLS + IRLS-LOESS), nice axis tick generators,
  * SVG spline/polyline path builders, and step metric formatters extracted from SessionStepCharts.js.
@@ -17742,10 +17763,22 @@ function downsampleStepPointsForPlot(points, maxPoints = 208) {
   for (let b = 0; b < bucketCount; b += 1) {
     const bStart = 1 + Math.floor((b * interiorLen) / bucketCount);
     const bEnd = Math.max(bStart + 1, 1 + Math.floor(((b + 1) * interiorLen) / bucketCount));
-    const pickIdx =
-      globalPeakIdx >= bStart && globalPeakIdx < bEnd
-        ? globalPeakIdx
-        : bStart + Math.floor((bEnd - bStart) / 2);
+    let pickIdx = -1;
+    if (globalPeakIdx >= bStart && globalPeakIdx < bEnd) {
+      pickIdx = globalPeakIdx;
+    } else {
+      for (let k = bStart; k < bEnd; k += 1) {
+        if (points[k]?.anomalySummary) {
+          if (pickIdx < 0 || points[k]?.anomalySeverity === 'danger') {
+            pickIdx = k;
+            if (points[k]?.anomalySeverity === 'danger') break;
+          }
+        }
+      }
+      if (pickIdx < 0) {
+        pickIdx = bStart + Math.floor((bEnd - bStart) / 2);
+      }
+    }
     const picked = points[pickIdx];
     if (picked && picked !== out[out.length - 1]) {
       out.push(picked);
@@ -17757,7 +17790,47 @@ function downsampleStepPointsForPlot(points, maxPoints = 208) {
   }
   return out;
 }
-return { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact, downsampleStepPointsForPlot };
+
+/**
+ * Evaluates the exact `y` coordinate on `buildSplinePath(plotPoints)` at horizontal coordinate `targetX`
+ * so overlay markers (such as anomaly dots) sit flush on the rendered curve even between downsampled knots.
+ *
+ * @param {Array<{ x: number, y: number }>} plotPoints
+ * @param {number} targetX
+ * @returns {number}
+ */
+function evalStepSplineYAtX(plotPoints, targetX) {
+  if (!Array.isArray(plotPoints) || plotPoints.length === 0) return 0;
+  if (plotPoints.length === 1 || targetX <= plotPoints[0].x) return plotPoints[0].y;
+  const last = plotPoints[plotPoints.length - 1];
+  if (targetX >= last.x) return last.y;
+
+  let loIdx = 0;
+  let hiIdx = plotPoints.length - 1;
+  while (loIdx + 1 < hiIdx) {
+    const mid = (loIdx + hiIdx) >>> 1;
+    if (plotPoints[mid].x <= targetX) loIdx = mid;
+    else hiIdx = mid;
+  }
+  const p0 = plotPoints[loIdx];
+  const p1 = plotPoints[hiIdx];
+  const dx = p1.x - p0.x;
+  if (!(dx > 1e-6)) return p0.y;
+
+  const uTarget = Math.max(0, Math.min(1, (targetX - p0.x) / dx));
+  let sLo = 0;
+  let sHi = 1;
+  for (let it = 0; it < 14; it += 1) {
+    const s = (sLo + sHi) * 0.5;
+    const inv = 1 - s;
+    const u = 3 * inv * inv * s * 0.38 + 3 * inv * s * s * 0.62 + s * s * s;
+    if (u < uTarget) sLo = s;
+    else sHi = s;
+  }
+  const s = (sLo + sHi) * 0.5;
+  return p0.y + (p1.y - p0.y) * s * s * (3 - 2 * s);
+}
+return { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact, downsampleStepPointsForPlot, evalStepSplineYAtX };
 })();
 
 // --- src/components/charts/SessionStepCharts.js ---
@@ -17933,6 +18006,7 @@ function createSessionLineChart() {
   let lastLineMode = '';
   let lastSingleLineKey = '';
   const multiSeriesNodesByKey = new Map();
+  const anomalyDotElsByKey = new Map();
 
   const singleCurveMorphCtrl = createCubicCurveMorphController();
   const multiCurveMorphCtrl = createMultiSeriesCurveMorphController();
@@ -18200,6 +18274,7 @@ function createSessionLineChart() {
       while (multiLineGroup.firstChild) multiLineGroup.removeChild(multiLineGroup.firstChild);
       while (dotsGroup.firstChild) dotsGroup.removeChild(dotsGroup.firstChild);
       while (anomalyDotsGroup.firstChild) anomalyDotsGroup.removeChild(anomalyDotsGroup.firstChild);
+      anomalyDotElsByKey.clear();
       while (xAxisEl.firstChild) xAxisEl.removeChild(xAxisEl.firstChild);
       patchAttr(modelLegendEl, 'hidden', true);
       patchAttr(peakPill, 'hidden', true);
@@ -18465,7 +18540,8 @@ function createSessionLineChart() {
     if (sig !== lastSig) {
       lastSig = sig;
       while (dotsGroup.firstChild) dotsGroup.removeChild(dotsGroup.firstChild);
-      while (anomalyDotsGroup.firstChild) anomalyDotsGroup.removeChild(anomalyDotsGroup.firstChild);
+      const plottedSeriesByKey = new Map();
+      let singlePlottedPts = null;
 
       if (isMultiCompare) {
         if (lastLineMode === 'single') {
@@ -18500,6 +18576,7 @@ function createSessionLineChart() {
           const rawSeriesPts = points.filter((p) => p.modelGroupKey === gk && p.valid);
           const seriesPts = downsampleStepPointsForPlot(rawSeriesPts, maxPlotPoints);
           if (seriesPts.length === 0) continue;
+          plottedSeriesByKey.set(gk, seriesPts);
 
           if (seriesPts.length === 1) {
             const singleDot = document.createElementNS(SVG_NS, 'circle');
@@ -18581,6 +18658,7 @@ function createSessionLineChart() {
           nodes.mLine.remove();
         }
         const plotValidPoints = downsampleStepPointsForPlot(validPoints, maxPlotPoints);
+        singlePlottedPts = plotValidPoints;
         if (plotValidPoints.length === 0) {
           singleCurveMorphCtrl.reset();
           patchAttr(linePath, 'd', '');
@@ -18624,28 +18702,64 @@ function createSessionLineChart() {
         }
       }
 
-      const anomalyTicks = [];
+      const clusteredAnomalies = [];
       for (const pt of points) {
         if (!pt.valid || !pt.anomalySummary) continue;
-        anomalyTicks.push(pt);
+        const curvePts = isMultiCompare
+          ? plottedSeriesByKey.get(pt.modelGroupKey)
+          : singlePlottedPts;
+        if (!curvePts || curvePts.length === 0) continue;
+        const onCurveY =
+          curvePts.length === 1 ? curvePts[0].y : evalStepSplineYAtX(curvePts, pt.x);
+        const prevCluster = clusteredAnomalies[clusteredAnomalies.length - 1];
+        if (
+          prevCluster &&
+          (!isMultiCompare || prevCluster.modelGroupKey === pt.modelGroupKey) &&
+          Math.abs(pt.x - prevCluster.x) < 3.0
+        ) {
+          if (pt.anomalySeverity === 'danger' && prevCluster.severity !== 'danger') {
+            prevCluster.key = `${pt.stepTag}:${pt.modelGroupKey}`;
+            prevCluster.x = pt.x;
+            prevCluster.y = onCurveY;
+            prevCluster.severity = 'danger';
+          }
+          continue;
+        }
+        clusteredAnomalies.push({
+          key: `${pt.stepTag}:${pt.modelGroupKey}`,
+          modelGroupKey: pt.modelGroupKey,
+          x: pt.x,
+          y: onCurveY,
+          severity: pt.anomalySeverity === 'danger' ? 'danger' : 'warn',
+        });
       }
-      anomalyTicks.sort((a, b) =>
-        a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+      clusteredAnomalies.sort((a, b) =>
+        a.severity === 'danger' ? 1 : b.severity === 'danger' ? -1 : 0
       );
-      const tickTopY = (BOTTOM_Y - 5).toFixed(1);
-      const tickBotY = BOTTOM_Y.toFixed(1);
-      for (const pt of anomalyTicks) {
-        const xStr = pt.x.toFixed(1);
-        const aTick = document.createElementNS(SVG_NS, 'line');
-        aTick.setAttribute('x1', xStr);
-        aTick.setAttribute('x2', xStr);
-        aTick.setAttribute('y1', tickTopY);
-        aTick.setAttribute('y2', tickBotY);
-        aTick.setAttribute(
+
+      const activeAnomalyKeys = new Set();
+      for (const item of clusteredAnomalies) {
+        activeAnomalyKeys.add(item.key);
+        let dotEl = anomalyDotElsByKey.get(item.key);
+        if (!dotEl) {
+          dotEl = document.createElementNS(SVG_NS, 'circle');
+          dotEl.setAttribute('r', '2.1');
+          anomalyDotElsByKey.set(item.key, dotEl);
+        }
+        patchAttr(dotEl, 'cx', item.x.toFixed(1));
+        patchAttr(dotEl, 'cy', item.y.toFixed(1));
+        patchAttr(
+          dotEl,
           'class',
-          `sstep-anomaly-dot sstep-anomaly-tick${pt.anomalySeverity === 'danger' ? ' is-danger' : ''}`
+          `sstep-anomaly-dot${item.severity === 'danger' ? ' is-danger' : ''}`
         );
-        anomalyDotsGroup.appendChild(aTick);
+        anomalyDotsGroup.appendChild(dotEl);
+      }
+      for (const [k, el] of anomalyDotElsByKey.entries()) {
+        if (!activeAnomalyKeys.has(k)) {
+          el.remove();
+          anomalyDotElsByKey.delete(k);
+        }
       }
 
       const tickIndices = computeStepTickIndices(currentPoints.length);
@@ -35343,18 +35457,49 @@ const { TopSessionHeader } = (() => {
  */
 
 
-function formatConvOptionMeta(c) {
-  const base = formatConversationMeta(c);
-  const wsName = String(c?.workspaceName || '').trim();
-  if (!wsName) return base;
-  return base ? `${wsName} · ${base}` : wsName;
+const INLINE_UUID_RE =
+  /(?<![0-9a-f-])([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])/gi;
+
+function compactInlineUuids(text) {
+  const str = String(text || '').trim();
+  if (!str || str.length < 36) return str;
+  return str.replace(INLINE_UUID_RE, '$1…');
+}
+
+function formatCompactConvStepsMeta(c) {
+  if (!c) return '';
+  const main = Number(c.stepCount || 0);
+  const totalSubs = Number(c.subagentCount || 0);
+  const swarm = Number(c.swarmCount || 0);
+  const otherSubs = Math.max(0, totalSubs - swarm);
+  const total = Number(c.totalStepCount ?? c.totalStepsAllAgents ?? main);
+  if (swarm > 0 && otherSubs > 0) {
+    return t('header.convCompactSwarmAndSubs', { swarm, subs: otherSubs, total });
+  }
+  if (swarm > 0) {
+    return t('header.convCompactSwarm', { swarm, total });
+  }
+  if (totalSubs > 0) {
+    return t('header.convCompactSubs', { subs: totalSubs, total });
+  }
+  return t('header.convMetaSteps', { count: main });
+}
+
+function resolveConvTotalSteps(c) {
+  if (!c) return 0;
+  const main = Number(c.stepCount || 0);
+  return Number(c.totalStepCount ?? c.totalStepsAllAgents ?? main);
 }
 
 function formatConvOptionTitle(c) {
   const parts = [];
   const label = String(c?.title || c?.cascadeId?.slice?.(0, 8) || '').trim();
-  if (c?.swarmTitle && c.swarmTitle !== c.title) {
-    parts.push(`${label} · ${c.swarmTitle}`);
+  if (label) {
+    parts.push(c?.swarmTitle && c.swarmTitle !== c.title ? `${label} · ${c.swarmTitle}` : label);
+  }
+  const fullMeta = formatConversationMeta(c);
+  if (fullMeta) {
+    parts.push(fullMeta);
   }
   const wsPath = String(c?.workspacePath || c?.workspaceName || '').trim();
   if (wsPath) {
@@ -35367,6 +35512,7 @@ const TopSessionHeader = defineComponent({
   name: 'TopSessionHeader',
   setup({ onCleanup }) {
     const convSelect = CustomSelect({
+      className: 'session-select',
       modelValue: telemetryStore.getState().selectedConversationId,
       placeholder: t('header.followLatest'),
       searchable: true,
@@ -35541,53 +35687,63 @@ const TopSessionHeader = defineComponent({
         routeMatch?.isChildRoute && routeMatch.childAgent
           ? formatAgentBadgeText(routeMatch.childAgent)
           : '';
-      const hostBaseTitle = hostMatchedConv?.title || hostRouteId.slice(0, 8);
+      const hostBaseTitle = compactInlineUuids(
+        hostMatchedConv?.title || hostRouteId.slice(0, 8)
+      );
       const hostDisplayTitle = childRouteBadge
         ? `${hostBaseTitle} · ${childRouteBadge}`
         : hostBaseTitle;
-      const defaultOptLabel = hostRouteId
+      const defaultTriggerLabel = hostRouteId
         ? t('header.currentWindowNamed', {
             title: hostDisplayTitle,
           })
         : convs[0]?.title
-          ? t('header.latestNamed', { title: convs[0].title })
+          ? t('header.latestNamed', { title: compactInlineUuids(convs[0].title) })
           : t('header.followLatest');
-      const defaultOptMeta = hostRouteId
-        ? hostMatchedConv
-          ? formatConvOptionMeta(hostMatchedConv)
-          : ''
-        : convs[0]
-          ? formatConvOptionMeta(convs[0])
-          : '';
+
+      const lockedId = telSt.selectedConversationId;
+      const defaultMenuLabel = hostRouteId
+        ? t('header.followCurrentWindow')
+        : t('header.followLatest');
+
       const options = [
         {
           value: '',
-          label: defaultOptLabel,
-          meta: defaultOptMeta,
+          label: defaultMenuLabel,
+          shortLabel: defaultTriggerLabel,
+          meta: t('header.autoFollowBadge'),
+          dividerAfter: convs.length > 0 || Boolean(lockedId),
           ...(hostMatchedConv?.swarmTitle ? { title: hostMatchedConv.swarmTitle } : {}),
         },
         ...convs.map((c) => {
+          const rawTitle = c.title || c.cascadeId.slice(0, 8);
+          const cleanLabel = compactInlineUuids(rawTitle);
+          const wsName = String(c?.workspaceName || '').trim();
           const optTitle = formatConvOptionTitle(c);
           return {
             value: c.cascadeId,
-            label: c.title || c.cascadeId.slice(0, 8),
-            meta: formatConvOptionMeta(c),
+            label: cleanLabel,
+            meta: formatCompactConvStepsMeta(c),
+            dimMeta: resolveConvTotalSteps(c) === 0,
+            searchText: `${rawTitle} ${wsName} ${c.workspacePath || ''} ${c.swarmTitle || ''}`,
             ...(optTitle ? { title: optTitle } : {}),
           };
         }),
       ];
-      const lockedId = telSt.selectedConversationId;
       if (lockedId && !convs.some((c) => c.cascadeId === lockedId)) {
         const isLoadedLocked = actConv?.cascadeId === lockedId;
-        const lockedTitle =
+        const rawLockedTitle =
           isLoadedLocked && actConv?.title
             ? actConv.title
             : t('header.lockedSession', { id: String(lockedId).slice(0, 8) });
-        const lockedMeta = isLoadedLocked ? formatConvOptionMeta(actConv) : t('header.lockedMeta');
+        const lockedLabel = compactInlineUuids(rawLockedTitle);
+        const lockedWs = isLoadedLocked ? String(actConv?.workspaceName || '').trim() : '';
+        const lockedMeta = isLoadedLocked ? formatCompactConvStepsMeta(actConv) : t('header.lockedMeta');
         options.splice(1, 0, {
           value: lockedId,
-          label: lockedTitle,
+          label: lockedLabel,
           meta: lockedMeta,
+          searchText: `${rawLockedTitle} ${lockedWs}`,
         });
       }
       convSelect.setProps({
@@ -36141,17 +36297,14 @@ const ConsumptionView = defineComponent({
     const cacheHitPctEl = h('strong', { className: 'cons-hero-cache text-mono', text: '0%' });
     const cacheTokensEl = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.cacheHitTokens', { tokens: 0 }) });
 
-    const inputSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-input); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const inputMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const inputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.uncachedInput') });
+    const inputSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const inputMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
-    const cacheSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-cached); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const cacheMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const cacheSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.savedCost', { cost: '$0.00' }) });
+    const cacheSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const cacheMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
-    const outputSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-output); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const outputMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const outputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.replyAndThink', { resp: 0, think: 0 }) });
+    const outputSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const outputMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
     const overviewSegBar = createFourSegmentBar();
     const consExportMenu = ActionMenu({
@@ -36233,37 +36386,25 @@ const ConsumptionView = defineComponent({
       ]),
       h('div', { className: 'cons-split-3 cons-matrix-bottom' }, [
         h('div', { className: 'cons-col' }, [
-          h('div', { className: 'cons-sub-head' }, [
-            h('span', { className: 'legend-left cons-sub-label' }, [
-              h('span', { className: 'dot-swatch seg-input' }),
-              newInputLabel,
-            ]),
-            inputSharePct,
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-input' }),
+            newInputLabel,
           ]),
-          inputMainTokens,
-          inputSubText,
+          h('div', { className: 'cons-baseline' }, [inputMainTokens, inputSharePct]),
         ]),
         h('div', { className: 'cons-col is-bordered-col' }, [
-          h('div', { className: 'cons-sub-head' }, [
-            h('span', { className: 'legend-left cons-sub-label' }, [
-              h('span', { className: 'dot-swatch seg-cached' }),
-              cacheReadLabel,
-            ]),
-            cacheSharePct,
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-cached' }),
+            cacheReadLabel,
           ]),
-          cacheMainTokens,
-          cacheSubText,
+          h('div', { className: 'cons-baseline' }, [cacheMainTokens, cacheSharePct]),
         ]),
         h('div', { className: 'cons-col is-bordered-col' }, [
-          h('div', { className: 'cons-sub-head' }, [
-            h('span', { className: 'legend-left cons-sub-label' }, [
-              h('span', { className: 'dot-swatch seg-output' }),
-              outputUsageLabel,
-            ]),
-            outputSharePct,
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-output' }),
+            outputUsageLabel,
           ]),
-          outputMainTokens,
-          outputSubText,
+          h('div', { className: 'cons-baseline' }, [outputMainTokens, outputSharePct]),
         ]),
       ]),
     ]);
@@ -36976,7 +37117,6 @@ const ConsumptionView = defineComponent({
       const responseTokens = Number(acct.responseTokens || 0);
       const thinkingTokens = Number(acct.thinkingTokens || 0);
       const costUsd = Number(acct.costUsd || 0);
-      const savedCostUsd = Number(acct.savedCostUsd || 0);
 
       patchText(heroTotalTokens, formatTokensPrecise(totalTokens));
       patchText(heroTotalCalls, t('cons.callsCount', { calls: acct.calls || 0 }));
@@ -37002,26 +37142,12 @@ const ConsumptionView = defineComponent({
 
       patchText(inputSharePct, `${inPct}%`);
       patchText(inputMainTokens, formatTokensPrecise(inputTokens));
-      patchText(inputSubText, t('cons.uncachedInput'));
 
       patchText(cacheSharePct, `${cachePct}%`);
       patchText(cacheMainTokens, formatTokensPrecise(cacheTokens));
-      patchText(
-        cacheSubText,
-        t('cons.savedCost', {
-          cost: formatUsd(savedCostUsd, { precise: savedCostUsd > 0 && savedCostUsd < 0.01 }),
-        })
-      );
 
       patchText(outputSharePct, `${outPct}%`);
       patchText(outputMainTokens, formatTokensPrecise(outputTokens));
-      patchText(
-        outputSubText,
-        t('cons.replyAndThink', {
-          resp: formatTokensPrecise(responseTokens),
-          think: formatTokensPrecise(thinkingTokens),
-        })
-      );
       consExportMenu.refs.setHidden(!(totalTokens > 0 || Number(acct.calls || 0) > 0));
 
       overviewSegBar.update({
@@ -38913,6 +39039,10 @@ const StepsDetailView = defineComponent({
         const sortedKinds = Object.entries(sumAnomalyByKind)
           .filter(([, v]) => v > 0)
           .sort((a, b) => b[1] - a[1]);
+        const hasDangerKind = sortedKinds.some(
+          ([kind]) => kind === 'rate_limit' || kind === 'auth_or_model'
+        );
+        patchClasses(modelsAnomalyStripEl, { 'has-danger': hasDangerKind });
         const stripSig = `${locale}:${sumAnomalyCount}:${sumAnomalySteps}:${sortedKinds.map(([k, v]) => `${k}=${v}`).join(',')}`;
         if (stripSig !== lastAnomalyStripSig) {
           lastAnomalyStripSig = stripSig;
@@ -38995,15 +39125,19 @@ const StepsDetailView = defineComponent({
           return `${locale}:${m.displayText}:${m.displayTitle}:${m.calls}:${sumCalls}:${sumTokens}:${displayModels.length}:${m.avgTokPerSec}:${avgTtft}:${m.cacheHitPct}:${m.inputTokens}:${m.cacheReadTokens}:${m.thinkingTokens}:${m.responseTokens}:${m.totalTokens}:${m.costUsd}:${m.unpricedCalls}:${isActiveFit}:${hasMultipleModels}:${anomSig}`;
         },
         createRow: () => {
-          const nameEl = h('strong', { className: 'smodel-name' });
-          const callsPillEl = h('span', { className: 'smodel-calls-pill text-mono' });
+          const nameEl = h('strong', { className: 'cons-row-title-text smodel-name' });
           const anomalyTagEl = h('span', {
             className: 'step-anomaly-tag smodel-anomaly-tag text-mono',
             title: '',
             hidden: true,
           });
-          const tokEl = h('span', { className: 'smodel-tok text-mono' });
-          const costEl = h('strong', { className: 'smodel-cost text-mono' });
+          const titleWrapEl = h('strong', { className: 'cons-row-title smodel-ident' }, [
+            nameEl,
+            anomalyTagEl,
+          ]);
+          const pctBadgeEl = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
+          const tokEl = h('span', { className: 'cons-row-tok smodel-tok text-mono' });
+          const costEl = h('strong', { className: 'cons-row-cost smodel-cost text-mono' });
           const segBar = createFourSegmentBar();
           segBar.el.classList.add('smodel-seg-bar');
 
@@ -39011,11 +39145,13 @@ const StepsDetailView = defineComponent({
           const cacheLbl = h('span', { text: t('cons.footCache') });
           const thinkLbl = h('span', { text: t('cons.footThinking') });
           const outLbl = h('span', { text: t('cons.footOutput') });
+          const callsLbl = h('span', { text: t('cons.footCalls') });
           const inVal = h('strong', { className: 'text-mono' });
           const cacheVal = h('strong', { className: 'text-mono' });
           const thinkVal = h('strong', { className: 'text-mono' });
           const outVal = h('strong', { className: 'text-mono' });
-          const splitEl = h('div', { className: 'smodel-split' }, [
+          const callsVal = h('strong', { className: 'text-mono' });
+          const footEl = h('div', { className: 'cons-item-foot smodel-foot' }, [
             h('span', { className: 'legend-left' }, [
               h('span', { className: 'dot-swatch seg-input' }),
               inLbl,
@@ -39036,18 +39172,29 @@ const StepsDetailView = defineComponent({
               outLbl,
               outVal,
             ]),
+            h('span', { className: 'legend-left' }, [callsLbl, callsVal]),
           ]);
-          const perfEl = h('span', { className: 'smodel-perf text-mono' });
-          const unitCostEl = h('span', { className: 'smodel-unit-cost text-mono', hidden: true });
-          const perfFootEl = h('div', { className: 'smodel-perf-foot' }, [perfEl, unitCostEl]);
+          const perfEl = h('span', { className: 'cons-model-perf-main smodel-perf text-mono' });
+          const unitCostEl = h('span', {
+            className: 'cons-model-unit-cost smodel-unit-cost text-mono',
+            hidden: true,
+          });
+          const perfFootEl = h('div', { className: 'cons-model-perf-foot smodel-perf-foot' }, [
+            perfEl,
+            unitCostEl,
+          ]);
 
-          const cardEl = h('div', { className: 'smodel-card' }, [
-            h('div', { className: 'smodel-head' }, [
-              h('div', { className: 'smodel-ident' }, [nameEl, callsPillEl, anomalyTagEl]),
-              h('div', { className: 'smodel-totals' }, [tokEl, costEl]),
+          const cardEl = h('div', { className: 'cons-item-row smodel-card' }, [
+            h('div', { className: 'panel-header smodel-head' }, [
+              titleWrapEl,
+              h('span', { className: 'cons-row-metrics smodel-totals' }, [
+                pctBadgeEl,
+                tokEl,
+                costEl,
+              ]),
             ]),
             segBar.el,
-            h('div', { className: 'smodel-foot' }, [splitEl]),
+            footEl,
             perfFootEl,
           ]);
 
@@ -39055,22 +39202,23 @@ const StepsDetailView = defineComponent({
             el: cardEl,
             refs: {
               nameEl,
-              callsPillEl,
+              pctBadgeEl,
               anomalyTagEl,
               tokEl,
               costEl,
               segBar,
               perfEl,
               unitCostEl,
-              splitEl,
               inLbl,
               cacheLbl,
               thinkLbl,
               outLbl,
+              callsLbl,
               inVal,
               cacheVal,
               thinkVal,
               outVal,
+              callsVal,
               cardTitle: '',
               isHoveringAnomaly: false,
             },
@@ -39090,13 +39238,6 @@ const StepsDetailView = defineComponent({
           patchAttr(refs.nameEl, 'title', dispTitle);
 
           const calls = Math.max(0, Number(m.calls || 0));
-          const callSharePct = sumCalls > 0 ? Math.round((calls / sumCalls) * 100) : 0;
-          patchText(
-            refs.callsPillEl,
-            displayModels.length > 1
-              ? t('steps.modelCallsShare', { calls, pct: callSharePct })
-              : t('steps.modelCallsOnly', { calls })
-          );
 
           const effM = effectiveAnomalyModels.get(m) || m;
           const anomSum = resolveModelAnomalySummary(effM);
@@ -39142,6 +39283,9 @@ const StepsDetailView = defineComponent({
               : Math.max(0, outTok - thinkTok);
 
           const modelTok = Math.max(0, Number(m.totalTokens || 0));
+          const tokSharePct =
+            sumTokens > 0 ? (modelTok / sumTokens) * 100 : sumCalls > 0 ? (calls / sumCalls) * 100 : 0;
+          patchText(refs.pctBadgeEl, formatPctNumber(tokSharePct, { withSymbol: true }));
           patchText(refs.tokEl, formatTokensPrecise(modelTok));
           const costNum = Number(m.costUsd || 0);
           const isAllUnpriced =
@@ -39182,10 +39326,12 @@ const StepsDetailView = defineComponent({
           patchText(refs.cacheLbl, t('cons.footCache'));
           patchText(refs.thinkLbl, t('cons.footThinking'));
           patchText(refs.outLbl, t('cons.footOutput'));
+          patchText(refs.callsLbl, t('cons.footCalls'));
           patchText(refs.inVal, formatTokensPrecise(inTok));
           patchText(refs.cacheVal, formatTokensPrecise(cacheTok));
           patchText(refs.thinkVal, formatTokensPrecise(thinkTok));
           patchText(refs.outVal, formatTokensPrecise(respTok));
+          patchText(refs.callsVal, String(calls));
 
           patchText(
             refs.perfEl,

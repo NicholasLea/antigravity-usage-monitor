@@ -45,6 +45,30 @@
   min-width: 0;
 }
 
+.session-select .select-menu {
+  min-width: 100%;
+  width: min(444px, calc(100vw - 28px));
+  max-width: calc(100vw - 24px);
+}
+
+.session-select .select-menu.has-search {
+  max-height: 304px;
+}
+
+.session-select .select-option {
+  padding: 5px 8px;
+  gap: 8px;
+}
+
+.session-select .select-option-check {
+  flex-shrink: 0;
+}
+
+.session-select .select-option-check[hidden] {
+  display: inline-flex !important;
+  visibility: hidden;
+}
+
 .session-right {
   display: flex;
   align-items: center;
@@ -512,19 +536,64 @@
   background: transparent;
 }
 
-.select-option-text {
+.select-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   flex: 1;
+  min-width: 0;
+}
+
+.select-option-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.select-option-sub {
+  font-size: var(--fs-xs);
+  line-height: 1.25;
+  font-family: var(--font-mono);
+  font-weight: 400;
+  opacity: 0.72;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-option.is-selected .select-option-sub {
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+.select-option.has-divider-after {
+  position: relative;
+  margin-bottom: 5px;
+}
+
+.select-option.has-divider-after::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -3px;
+  height: 1px;
+  background: var(--border-hairline);
+  pointer-events: none;
+}
+
 .select-option-meta {
   font-size: var(--fs-md);
   flex-shrink: 0;
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
   white-space: nowrap;
+}
+
+.select-option-meta.is-dim {
+  opacity: 0.48;
 }
 
 .select-checkbox {

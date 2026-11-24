@@ -1779,8 +1779,18 @@ test('Feature 13: TopSessionHeader exposes project/workspace tags on sessions an
   header.refs.convSelect.open();
 
   const optionEls = header.refs.convSelect.el.querySelectorAll('.select-option');
-  const billingOpt = optionEls.find((el) => (el.textContent || '').includes('billing-service'));
-  assert.ok(billingOpt, 'Session dropdown option displays workspaceName tag');
+  const billingOpt = optionEls.find((el) => el.getAttribute('data-value') === 'proj-conv-1');
+  assert.ok(billingOpt, 'Session dropdown renders proj-conv-1 option');
+  assert.equal(
+    (billingOpt.textContent || '').includes('billing-service'),
+    false,
+    'Session dropdown hides noisy workspaceName from visible row text'
+  );
+  assert.match(
+    billingOpt.getAttribute('title') || '',
+    /billing-service/,
+    'Session dropdown preserves workspace path in hover tooltip'
+  );
 
   const searchInput = header.refs.convSelect.el.querySelector('.select-search-input');
   assert.ok(searchInput, 'Search input present for >6 sessions');
@@ -1790,7 +1800,8 @@ test('Feature 13: TopSessionHeader exposes project/workspace tags on sessions an
     .querySelectorAll('.select-option')
     .filter((el) => !el.hasAttribute('hidden'));
   assert.equal(visibleOpts.length, 1);
-  assert.match(visibleOpts[0].textContent, /web-dashboard/);
+  assert.equal(visibleOpts[0].getAttribute('data-value'), 'proj-conv-2');
+  assert.match(visibleOpts[0].getAttribute('title') || '', /web-dashboard/);
 });
 
 test('Feature 14: compact vertical ActionMenu replaces export bars, backend exports files safely with reveal whitelist and toast feedback', async (t) => {

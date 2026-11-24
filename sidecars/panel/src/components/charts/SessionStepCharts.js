@@ -35,6 +35,7 @@ import {
   computePublicationFit,
   computeStepTickIndices,
   downsampleStepPointsForPlot,
+  evalStepSplineYAtX,
   formatChartMetricCompact,
   formatChartMetricValue,
   formatStepAxisTag,
@@ -217,6 +218,7 @@ export function createSessionLineChart() {
   let lastLineMode = '';
   let lastSingleLineKey = '';
   const multiSeriesNodesByKey = new Map();
+  const anomalyDotElsByKey = new Map();
 
   const singleCurveMorphCtrl = createCubicCurveMorphController();
   const multiCurveMorphCtrl = createMultiSeriesCurveMorphController();
@@ -484,6 +486,7 @@ export function createSessionLineChart() {
       while (multiLineGroup.firstChild) multiLineGroup.removeChild(multiLineGroup.firstChild);
       while (dotsGroup.firstChild) dotsGroup.removeChild(dotsGroup.firstChild);
       while (anomalyDotsGroup.firstChild) anomalyDotsGroup.removeChild(anomalyDotsGroup.firstChild);
+      anomalyDotElsByKey.clear();
       while (xAxisEl.firstChild) xAxisEl.removeChild(xAxisEl.firstChild);
       patchAttr(modelLegendEl, 'hidden', true);
       patchAttr(peakPill, 'hidden', true);
@@ -749,7 +752,8 @@ export function createSessionLineChart() {
     if (sig !== lastSig) {
       lastSig = sig;
       while (dotsGroup.firstChild) dotsGroup.removeChild(dotsGroup.firstChild);
-      while (anomalyDotsGroup.firstChild) anomalyDotsGroup.removeChild(anomalyDotsGroup.firstChild);
+      const plottedSeriesByKey = new Map();
+      let singlePlottedPts = null;
 
       if (isMultiCompare) {
         if (lastLineMode === 'single') {
@@ -784,6 +788,7 @@ export function createSessionLineChart() {
           const rawSeriesPts = points.filter((p) => p.modelGroupKey === gk && p.valid);
           const seriesPts = downsampleStepPointsForPlot(rawSeriesPts, maxPlotPoints);
           if (seriesPts.length === 0) continue;
+          plottedSeriesByKey.set(gk, seriesPts);
 
           if (seriesPts.length === 1) {
             const singleDot = document.createElementNS(SVG_NS, 'circle');
@@ -865,6 +870,7 @@ export function createSessionLineChart() {
           nodes.mLine.remove();
         }
         const plotValidPoints = downsampleStepPointsForPlot(validPoints, maxPlotPoints);
+        singlePlottedPts = plotValidPoints;
         if (plotValidPoints.length === 0) {
           singleCurveMorphCtrl.reset();
           patchAttr(linePath, 'd', '');
@@ -908,28 +914,64 @@ export function createSessionLineChart() {
         }
       }
 
-      const anomalyTicks = [];
+      const clusteredAnomalies = [];
       for (const pt of points) {
         if (!pt.valid || !pt.anomalySummary) continue;
-        anomalyTicks.push(pt);
+        const curvePts = isMultiCompare
+          ? plottedSeriesByKey.get(pt.modelGroupKey)
+          : singlePlottedPts;
+        if (!curvePts || curvePts.length === 0) continue;
+        const onCurveY =
+          curvePts.length === 1 ? curvePts[0].y : evalStepSplineYAtX(curvePts, pt.x);
+        const prevCluster = clusteredAnomalies[clusteredAnomalies.length - 1];
+        if (
+          prevCluster &&
+          (!isMultiCompare || prevCluster.modelGroupKey === pt.modelGroupKey) &&
+          Math.abs(pt.x - prevCluster.x) < 3.0
+        ) {
+          if (pt.anomalySeverity === 'danger' && prevCluster.severity !== 'danger') {
+            prevCluster.key = `${pt.stepTag}:${pt.modelGroupKey}`;
+            prevCluster.x = pt.x;
+            prevCluster.y = onCurveY;
+            prevCluster.severity = 'danger';
+          }
+          continue;
+        }
+        clusteredAnomalies.push({
+          key: `${pt.stepTag}:${pt.modelGroupKey}`,
+          modelGroupKey: pt.modelGroupKey,
+          x: pt.x,
+          y: onCurveY,
+          severity: pt.anomalySeverity === 'danger' ? 'danger' : 'warn',
+        });
       }
-      anomalyTicks.sort((a, b) =>
-        a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+      clusteredAnomalies.sort((a, b) =>
+        a.severity === 'danger' ? 1 : b.severity === 'danger' ? -1 : 0
       );
-      const tickTopY = (BOTTOM_Y - 5).toFixed(1);
-      const tickBotY = BOTTOM_Y.toFixed(1);
-      for (const pt of anomalyTicks) {
-        const xStr = pt.x.toFixed(1);
-        const aTick = document.createElementNS(SVG_NS, 'line');
-        aTick.setAttribute('x1', xStr);
-        aTick.setAttribute('x2', xStr);
-        aTick.setAttribute('y1', tickTopY);
-        aTick.setAttribute('y2', tickBotY);
-        aTick.setAttribute(
+
+      const activeAnomalyKeys = new Set();
+      for (const item of clusteredAnomalies) {
+        activeAnomalyKeys.add(item.key);
+        let dotEl = anomalyDotElsByKey.get(item.key);
+        if (!dotEl) {
+          dotEl = document.createElementNS(SVG_NS, 'circle');
+          dotEl.setAttribute('r', '2.1');
+          anomalyDotElsByKey.set(item.key, dotEl);
+        }
+        patchAttr(dotEl, 'cx', item.x.toFixed(1));
+        patchAttr(dotEl, 'cy', item.y.toFixed(1));
+        patchAttr(
+          dotEl,
           'class',
-          `sstep-anomaly-dot sstep-anomaly-tick${pt.anomalySeverity === 'danger' ? ' is-danger' : ''}`
+          `sstep-anomaly-dot${item.severity === 'danger' ? ' is-danger' : ''}`
         );
-        anomalyDotsGroup.appendChild(aTick);
+        anomalyDotsGroup.appendChild(dotEl);
+      }
+      for (const [k, el] of anomalyDotElsByKey.entries()) {
+        if (!activeAnomalyKeys.has(k)) {
+          el.remove();
+          anomalyDotElsByKey.delete(k);
+        }
       }
 
       const tickIndices = computeStepTickIndices(currentPoints.length);

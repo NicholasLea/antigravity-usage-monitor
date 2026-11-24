@@ -509,7 +509,8 @@
   .trend-hm-cell,
   .trend-tooltip.is-tracking,
   .trend-hover-dot.is-tracking,
-  .sstep-hover-raw-dot.is-tracking {
+  .sstep-hover-raw-dot.is-tracking,
+  .sstep-anomaly-dot {
     transition: none !important;
   }
   .cons-item-list.is-bars-revealing .progress-track {

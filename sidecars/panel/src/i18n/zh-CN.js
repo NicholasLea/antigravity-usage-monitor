@@ -12,6 +12,8 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
 
   // Top Session Header
   'header.followLatest': '跟随最新会话',
+  'header.followCurrentWindow': '跟随当前窗口会话',
+  'header.autoFollowBadge': '自动',
   'header.currentWindowNamed': '当前窗口 ({title})',
   'header.latestNamed': '最新 ({title})',
   'header.lockedSession': '已锁定会话 ({id})',
@@ -19,6 +21,9 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.convMetaWithSubs': '主{main} · {subs}子 (共{total}步)',
   'header.convMetaWithSwarm': '主{main} · {swarm}蜂 (共{total}步)',
   'header.convMetaWithSwarmAndSubs': '主{main} · {swarm}蜂 · {subs}子 (共{total}步)',
+  'header.convCompactSubs': '{subs}子 · {total}步',
+  'header.convCompactSwarm': '{swarm}蜂 · {total}步',
+  'header.convCompactSwarmAndSubs': '{swarm}蜂{subs}子 · {total}步',
   'header.convMetaSteps': '{count}步',
   'header.hasUpdate': '有新版本',
   'header.upgradeToVer': '升级 v{ver}',

@@ -638,11 +638,10 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 6px;
-  padding: 4px 8px;
-  border: 1px solid color-mix(in srgb, var(--metric-warn) 26%, var(--border-hairline));
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--metric-warn) 7%, var(--surface-panel));
+  gap: 4px 8px;
+  padding: 2px 2px 3px;
+  border: none;
+  background: transparent;
 }
 
 .steps-anomaly-strip[hidden] {
@@ -650,18 +649,35 @@
 }
 
 .steps-anomaly-strip-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: none;
   background: transparent;
   padding: 0;
   font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--metric-warn);
+  font-weight: 500;
+  color: var(--text-secondary);
   cursor: pointer;
   white-space: nowrap;
+  transition: color var(--dur-instant) var(--ease-fast);
+}
+
+.steps-anomaly-strip-meta::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--metric-warn);
+  flex-shrink: 0;
+}
+
+.steps-anomaly-strip.has-danger .steps-anomaly-strip-meta::before {
+  background: var(--metric-danger);
 }
 
 .steps-anomaly-strip-meta:hover {
-  text-decoration: underline;
+  color: var(--text-primary);
 }
 
 .steps-anomaly-strip-tags {
@@ -669,6 +685,41 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.steps-anomaly-strip .smodel-anomaly-tag,
+.smodel-ident .smodel-anomaly-tag {
+  margin-left: 0;
+  padding: 1px 6px;
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  line-height: 1.35;
+  border-radius: var(--radius-pill);
+  border: none;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  cursor: pointer;
+  transition:
+    color var(--dur-instant) var(--ease-fast),
+    background-color var(--dur-instant) var(--ease-fast);
+}
+
+.steps-anomaly-strip .smodel-anomaly-tag:hover,
+.smodel-ident .smodel-anomaly-tag:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 11%, transparent);
+}
+
+.steps-anomaly-strip .smodel-anomaly-tag.is-danger,
+.smodel-ident .smodel-anomaly-tag.is-danger {
+  color: color-mix(in srgb, var(--metric-danger) 78%, var(--text-primary));
+  background: color-mix(in srgb, var(--metric-danger) 9%, transparent);
+}
+
+.steps-anomaly-strip .smodel-anomaly-tag.is-danger:hover,
+.smodel-ident .smodel-anomaly-tag.is-danger:hover {
+  color: var(--metric-danger);
+  background: color-mix(in srgb, var(--metric-danger) 15%, transparent);
 }
 
 /* --- 3. 按模型汇总分析视图：双趋势图与极简模型总览 (Models Analytics Pane) --- */
@@ -920,16 +971,16 @@
 }
 
 .sstep-anomaly-dot {
-  stroke: var(--metric-warn);
-  stroke-width: 1.5;
-  stroke-opacity: 0.82;
-  stroke-linecap: round;
+  fill: var(--metric-warn);
+  stroke: none;
   pointer-events: none;
+  transition:
+    cx 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    cy 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .sstep-anomaly-dot.is-danger {
-  stroke: var(--metric-danger);
-  stroke-opacity: 0.92;
+  fill: var(--metric-danger);
 }
 
 .sstep-scatter-dot.is-anomaly {
@@ -1161,25 +1212,15 @@
   white-space: nowrap;
 }
 
-.smodel-calls-pill {
-  flex-shrink: 0;
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  padding: 1px 5px;
-  color: var(--text-secondary);
-  background: var(--surface-track);
-  border-radius: var(--radius-xs);
-}
-
 .smodel-totals {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
 
 .smodel-tok {
-  font-size: var(--fs-base-sm);
+  font-size: var(--fs-base);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -1197,22 +1238,13 @@
 .smodel-foot {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 4px 10px;
   font-size: var(--fs-md);
   color: var(--text-secondary);
 }
 
-.smodel-split {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  color: var(--text-secondary);
-}
-
-.smodel-split strong {
+.smodel-foot strong {
   color: var(--text-primary);
   font-weight: 600;
 }
