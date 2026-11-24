@@ -418,14 +418,22 @@ export function computeRuntimeCodeVersion(options = {}) {
 /**
  * 本机内存态轨迹步骤缓存容器（委托 `createTrajectoryCacheStore`，首次读取时惰性加载历史缓存）。
  */
+const isUnscopedHostTestRunner = Boolean(
+  typeof process !== 'undefined' &&
+    process?.env?.NODE_TEST_CONTEXT &&
+    !process?.env?.USAGE_MONITOR_APP_DATA_DIR &&
+    !process?.env?.ANTIGRAVITY_APP_DATA_DIR &&
+    !process?.env?.ANTIGRAVITY_GEMINI_DIR
+);
+
 const localTrajectoryCacheStore = createTrajectoryCacheStore({
-  cacheFilePath: CACHE_FILE,
-  sqliteFilePath: TRAJECTORY_DB_FILE,
+  cacheFilePath: isUnscopedHostTestRunner ? '' : CACHE_FILE,
+  sqliteFilePath: isUnscopedHostTestRunner ? '' : TRAJECTORY_DB_FILE,
   loadJsonFn: loadJson,
   writeCacheFn: (targetPath, dataObj) => saveJson(targetPath, dataObj),
   shouldBypassThrottleFn: (allowThrottleInTest) =>
     lsRuntimeEndpoint.addr === 'test.invalid' && !allowThrottleInTest,
-  registerExitHook: true,
+  registerExitHook: !isUnscopedHostTestRunner,
 });
 
 export function getLocalTrajectoryCacheStore() {

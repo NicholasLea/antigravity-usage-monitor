@@ -231,6 +231,33 @@ export function splitStepForStorage(step) {
  * @param {(val: string) => string} [internFn]
  * @returns {object}
  */
+function isSqliteCorruptError(err) {
+  const msg = String(err?.message || err?.errstr || err?.code || '');
+  return /SQLITE_CORRUPT|SQLITE_NOTADB|database disk image is malformed|file is not a database/i.test(
+    msg
+  );
+}
+
+function tslQuarantineCorruptDbFiles(sqliteFilePath) {
+  if (!sqliteFilePath || !existsSync(sqliteFilePath)) return '';
+  const stamp = Date.now();
+  const quarantineBase = `${sqliteFilePath}.corrupt.${stamp}`;
+  for (const suffix of ['', '-wal', '-shm']) {
+    const src = `${sqliteFilePath}${suffix}`;
+    if (!existsSync(src)) continue;
+    try {
+      renameSync(src, `${quarantineBase}${suffix}`);
+    } catch {
+      try {
+        rmSync(src, { force: true });
+      } catch {
+        // Ignore cleanup failure
+      }
+    }
+  }
+  return quarantineBase;
+}
+
 export function buildSlimStepFromAccounting(rawAccounting, internFn = (v) => v || '') {
   if (!Array.isArray(rawAccounting)) {
     if (isPlainObject(rawAccounting)) {
@@ -273,6 +300,12 @@ export function buildSlimStepFromAccounting(rawAccounting, internFn = (v) => v |
   if (t[20]) {
     slim.anomaly = t[20];
   }
+  Object.defineProperty(slim, '_isSlimStep', {
+    value: true,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  });
   return slim;
 }
 
@@ -473,12 +506,9 @@ export function createTrajectorySqliteLedger({
     return dedupedByLower;
   }
 
-  /**
-   * Initializes schema, migrates legacy `.json` inside a single `BEGIN IMMEDIATE` transaction if needed,
-   * and hydrates all conversations in cold slim accounting mode.
-   */
-  function openAndHydrateInitial() {
+  function openAndHydrateInitialCore() {
     let migratedLegacy = false;
+    const bakJsonPath = legacyJsonPath ? `${legacyJsonPath}.bak` : '';
     const hasLegacyJsonOnDisk = Boolean(
       legacyJsonPath && typeof loadJsonFn === 'function' && existsSync(legacyJsonPath)
     );
@@ -493,8 +523,12 @@ export function createTrajectorySqliteLedger({
         if (migRow?.value === '1') return;
 
         let rawLoaded = null;
-        if (legacyJsonPath && typeof loadJsonFn === 'function' && existsSync(legacyJsonPath)) {
-          rawLoaded = loadJsonFn(legacyJsonPath, null);
+        if (typeof loadJsonFn === 'function') {
+          if (legacyJsonPath && existsSync(legacyJsonPath)) {
+            rawLoaded = loadJsonFn(legacyJsonPath, null);
+          } else if (!dbExistsBefore && bakJsonPath && existsSync(bakJsonPath)) {
+            rawLoaded = loadJsonFn(bakJsonPath, null);
+          }
         }
 
         db.exec('BEGIN IMMEDIATE');
@@ -564,6 +598,27 @@ export function createTrajectorySqliteLedger({
     }
 
     return hydrateAllSlimFromDb();
+  }
+
+  /**
+   * Initializes schema, migrates legacy `.json` inside a single `BEGIN IMMEDIATE` transaction if needed,
+   * self-heals corrupted SQLite images by quarantining `.corrupt.<ts>` and recovering from `.json.bak`,
+   * and hydrates all conversations in cold slim accounting mode.
+   */
+  function openAndHydrateInitial() {
+    try {
+      return openAndHydrateInitialCore();
+    } catch (err) {
+      if (!isSqliteCorruptError(err)) {
+        throw err;
+      }
+      persistedByLower.clear();
+      const quarantined = tslQuarantineCorruptDbFiles(sqliteFilePath);
+      console.error(
+        `Quarantined corrupt SQLite trajectory ledger (${quarantined || sqliteFilePath}): ${err.message}`
+      );
+      return openAndHydrateInitialCore();
+    }
   }
 
   function hydrateAllSlimFromDb() {
@@ -656,8 +711,13 @@ export function createTrajectorySqliteLedger({
         return slimSteps.map((s) => ({ ...s }));
       }
       const hydrated = new Array(detailRows.length);
+      const hydratedStepSigs = new Array(detailRows.length);
+      let posAligned = true;
       for (let i = 0; i < detailRows.length; i += 1) {
         const r = detailRows[i];
+        if (Number(r.pos) !== i) {
+          posAligned = false;
+        }
         let acc = null;
         let det = null;
         try {
@@ -672,7 +732,16 @@ export function createTrajectorySqliteLedger({
             det = null;
           }
         }
+        hydratedStepSigs[i] = r.detail_json
+          ? `${r.accounting_json}\n${r.detail_json}`
+          : String(r.accounting_json || '');
         hydrated[i] = mergeStepFromStorage(acc, det, internString);
+      }
+      if (posAligned) {
+        const prevDigest = persistedByLower.get(lower);
+        if (prevDigest && prevDigest.cascadeId === dbCid && !prevDigest.stepSigs) {
+          prevDigest.stepSigs = hydratedStepSigs;
+        }
       }
       return hydrated;
     });
@@ -738,15 +807,21 @@ export function createTrajectorySqliteLedger({
             INSERT OR REPLACE INTO steps (cascade_id, pos, accounting_json, detail_json)
             VALUES (?, ?, ?, ?)
           `);
+          const upSlimStepKeepDetail = db.prepare(`
+            INSERT INTO steps (cascade_id, pos, accounting_json, detail_json)
+            VALUES (?, ?, ?, NULL)
+            ON CONFLICT(cascade_id, pos) DO UPDATE SET
+              accounting_json = excluded.accounting_json
+          `);
           const truncSteps = db.prepare('DELETE FROM steps WHERE cascade_id = ? AND pos >= ?');
-          const delOldCidSteps = db.prepare('DELETE FROM steps WHERE cascade_id = ?');
+          const rekeyStepsCid = db.prepare('UPDATE steps SET cascade_id = ? WHERE cascade_id = ?');
 
           for (const { cascadeId, entry } of upserts) {
             if (!cascadeId || !entry || typeof entry !== 'object') continue;
             const lower = String(cascadeId).toLowerCase();
             const prevDbRow = selExisting.get(lower);
             if (prevDbRow?.cascade_id && prevDbRow.cascade_id !== cascadeId) {
-              delOldCidSteps.run(prevDbRow.cascade_id);
+              rekeyStepsCid.run(cascadeId, prevDbRow.cascade_id);
             }
 
             const prevDigest = persistedByLower.get(lower) || null;
@@ -756,16 +831,38 @@ export function createTrajectorySqliteLedger({
             const steps = Array.isArray(entry.steps) ? entry.steps : [];
 
             // When an entry is still in `_coldSteps` mode (only metadata such as `signature`, `title`,
-            // or `archived` changed without mutating steps), update ONLY `conversations` in O(1)
-            // without touching `steps` (`detail_json` on disk stays 100% intact)!
-            if (entry._coldSteps && prevDbRow && prevDbRow.step_count === steps.length) {
-              if (
-                prevDigest &&
-                prevDigest.cascadeId === cascadeId &&
-                prevDigest.metaJson === metaJson &&
-                prevDigest.archivedInt === archivedInt
-              ) {
+            // `workspaceUri`, or `archived` changed without hydrating `detail_json`), NEVER overwrite
+            // `detail_json` with NULL or truncate newer steps written concurrently by a peer process.
+            if (entry._coldSteps) {
+              if (prevDbRow) {
+                const preservedStepCount = Math.max(steps.length, Number(prevDbRow.step_count || 0));
+                if (
+                  prevDigest &&
+                  prevDigest.cascadeId === cascadeId &&
+                  prevDigest.metaJson === metaJson &&
+                  prevDigest.archivedInt === archivedInt &&
+                  prevDbRow.cascade_id === cascadeId &&
+                  Number(prevDbRow.step_count || 0) === preservedStepCount
+                ) {
+                  continue;
+                }
+                seq += 1;
+                upConv.run(cascadeId, lower, archivedInt, preservedStepCount, seq, nowMs, metaJson);
+                persistedByLower.set(lower, {
+                  cascadeId,
+                  metaJson,
+                  archivedInt,
+                  stepSigs:
+                    preservedStepCount === steps.length ? prevDigest?.stepSigs || null : null,
+                });
                 continue;
+              }
+
+              // Cold entry flushed when row was absent in `conversations` (e.g. after external reset):
+              // insert accounting tuples without ever clobbering any existing `detail_json`.
+              for (let pos = 0; pos < steps.length; pos += 1) {
+                const { accountingTuple } = splitStepForStorage(steps[pos]);
+                upSlimStepKeepDetail.run(cascadeId, pos, JSON.stringify(accountingTuple));
               }
               seq += 1;
               upConv.run(cascadeId, lower, archivedInt, steps.length, seq, nowMs, metaJson);
@@ -773,7 +870,7 @@ export function createTrajectorySqliteLedger({
                 cascadeId,
                 metaJson,
                 archivedInt,
-                stepSigs: prevDigest?.stepSigs || null,
+                stepSigs: null,
               });
               continue;
             }
@@ -786,13 +883,19 @@ export function createTrajectorySqliteLedger({
             let anyStepWritten = false;
 
             for (let pos = 0; pos < steps.length; pos += 1) {
-              const { accountingTuple, detailObj } = splitStepForStorage(steps[pos]);
+              const rawStep = steps[pos];
+              const { accountingTuple, detailObj } = splitStepForStorage(rawStep);
               const accJson = JSON.stringify(accountingTuple);
               const detJson = detailObj ? JSON.stringify(detailObj) : null;
+              const isUnexpandedSlim = Boolean(rawStep?._isSlimStep === true && detJson === null);
               const sig = detJson ? `${accJson}\n${detJson}` : accJson;
               nextStepSigs[pos] = sig;
               if (!prevStepSigs || prevStepSigs[pos] !== sig) {
-                upStep.run(cascadeId, pos, accJson, detJson);
+                if (isUnexpandedSlim) {
+                  upSlimStepKeepDetail.run(cascadeId, pos, accJson);
+                } else {
+                  upStep.run(cascadeId, pos, accJson, detJson);
+                }
                 anyStepWritten = true;
               }
             }

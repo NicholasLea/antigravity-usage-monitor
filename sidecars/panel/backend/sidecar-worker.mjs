@@ -14,6 +14,7 @@ import {
   dispatchBridgeApiRequest,
 } from './api-actions.mjs';
 import { computeRuntimeCodeVersion } from './config.mjs';
+import { flushAllEndpointCachesNow } from './endpoint-registry.mjs';
 
 let shuttingDown = false;
 let reloadRequested = false;
@@ -50,6 +51,11 @@ async function gracefulStop() {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(driftWatchTimer);
+  try {
+    flushAllEndpointCachesNow();
+  } catch {
+    // Ignore cache flush errors
+  }
   try {
     await bridgeController?.stop?.({ disposeWindows: false });
   } catch {

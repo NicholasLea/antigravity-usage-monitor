@@ -587,12 +587,34 @@ export function collectAuthoritativeLiveCascadeIds(endpoint = null) {
   for (const id of diskConvMap.keys()) liveIds.add(String(id).toLowerCase());
   for (const id of localSnap.byId.keys()) liveIds.add(String(id).toLowerCase());
   const localStore = getEndpointCacheStore(null);
-  for (const [rawKey, entry] of localStore.listCachedTrajectoryEntries()) {
-    const lower = String(rawKey || '').toLowerCase();
-    if (!liveIds.has(lower)) continue;
-    for (const ref of entry?.subagentRefs || []) {
-      const refLower = String(ref?.cascadeId || '').trim().toLowerCase();
-      if (refLower) liveIds.add(refLower);
+  const cachedEntries = localStore.listCachedTrajectoryEntries();
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const [rawKey, entry] of cachedEntries) {
+      const lower = String(rawKey || '').toLowerCase();
+      if (!lower) continue;
+      if (liveIds.has(lower)) {
+        for (const ref of entry?.subagentRefs || []) {
+          const refLower = String(ref?.cascadeId || '').trim().toLowerCase();
+          if (refLower && !liveIds.has(refLower)) {
+            liveIds.add(refLower);
+            expanded = true;
+          }
+        }
+      } else {
+        const parentLower = String(entry?.parentConversationId || entry?.parentCascadeId || '')
+          .trim()
+          .toLowerCase();
+        const rootLower = String(entry?.rootConversationId || '').trim().toLowerCase();
+        if (
+          (parentLower && liveIds.has(parentLower)) ||
+          (rootLower && liveIds.has(rootLower))
+        ) {
+          liveIds.add(lower);
+          expanded = true;
+        }
+      }
     }
   }
   return liveIds;
@@ -1846,19 +1868,24 @@ export async function enumerateAndSyncConversations({
       // 标准 UUID 统一收敛为小写键，避免大小写分裂产生双份条目
       const normalizedKey = UUID_RE.test(rawCacheKey) ? lower : rawCacheKey;
       if (normalizedKey !== rawCacheKey) {
-        setEntry(normalizedKey, getEntry(rawCacheKey));
-        removeEntry(rawCacheKey);
-        cacheDirty = true;
+        const prevVal = getEntry(rawCacheKey);
+        if (prevVal) {
+          setEntry(normalizedKey, prevVal);
+          cacheDirty = true;
+        }
       }
       canonicalIdByLower.set(lower, normalizedKey);
     } else if (existingCanon !== rawCacheKey) {
       const targetEntry = getEntry(existingCanon);
       const dupEntry = getEntry(rawCacheKey);
-      if (!targetEntry || (dupEntry?.steps?.length || 0) > (targetEntry?.steps?.length || 0)) {
-        setEntry(existingCanon, dupEntry);
+      const winner =
+        !targetEntry || (dupEntry?.steps?.length || 0) > (targetEntry?.steps?.length || 0)
+          ? dupEntry
+          : targetEntry;
+      if (winner) {
+        setEntry(existingCanon, winner);
+        cacheDirty = true;
       }
-      removeEntry(rawCacheKey);
-      cacheDirty = true;
     }
   }
 
@@ -3279,12 +3306,18 @@ export async function enumerateAndSyncConversations({
     }
     if (!isMeaningfulTitle(rootConv.title, cid)) {
       const localSumTitle = localSummaryByLower.get(cid)?.title || '';
-      const stepTurnTitle = extractFirstStepTurnTitle(rootCached?.steps);
       let recoveredTitle = pickFirstMeaningfulTitle(cid, [
         localSumTitle,
         rootCached?.title,
-        stepTurnTitle,
       ]);
+      if (!recoveredTitle && rootCached) {
+        const titleSourceEntry = rootCached._coldSteps
+          ? getHydratedEntry(rootConv.cascadeId) || rootCached
+          : rootCached;
+        recoveredTitle = pickFirstMeaningfulTitle(cid, [
+          extractFirstStepTurnTitle(titleSourceEntry?.steps),
+        ]);
+      }
       if (!recoveredTitle && !isRemote) {
         recoveredTitle = probeLocalFallbackTitle(
           cid,
@@ -3293,8 +3326,9 @@ export async function enumerateAndSyncConversations({
       }
       if (recoveredTitle) {
         rootConv.title = recoveredTitle;
-        if (rootCached && rootCached.title !== recoveredTitle) {
-          setEntry(rootConv.cascadeId, { ...rootCached, title: recoveredTitle });
+        const curRootCached = getEntry(rootConv.cascadeId) || rootCached;
+        if (curRootCached && curRootCached.title !== recoveredTitle) {
+          setEntry(rootConv.cascadeId, { ...curRootCached, title: recoveredTitle });
           titleBackfillDirty = true;
         }
       }

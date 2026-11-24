@@ -20,7 +20,7 @@ import {
 } from './trajectory-sqlite-ledger.mjs';
 
 export const CACHE_RUNNING_SAVE_INTERVAL_MS = 30_000;
-export const DEFAULT_HOT_SESSION_LRU_LIMIT = 24;
+export const DEFAULT_HOT_SESSION_LRU_LIMIT = 64;
 const TCS_WAL_SYNC_MIN_INTERVAL_MS = 250;
 
 function tcsMarkColdSlimSteps(steps) {
@@ -242,18 +242,22 @@ export function createTrajectoryCacheStore({
 
   function ensureLoaded() {
     if (loadedOnce) return;
-    loadedOnce = true;
     if (useSqlite && sqliteLedger) {
       const hydrated = sqliteLedger.openAndHydrateInitial();
       cacheObj = hydrated.cacheObj;
+      loadedOnce = true;
       rebuildLowerIndexFromCacheObj(true);
       lastWalSyncCheckMs = Date.now();
       return;
     }
-    if (!cacheFilePath || typeof loadJsonFn !== 'function') return;
+    if (!cacheFilePath || typeof loadJsonFn !== 'function') {
+      loadedOnce = true;
+      return;
+    }
     const loaded = loadJsonFn(cacheFilePath, {});
     const hydrated = hydrateTrajectoryCacheObject(loaded);
     cacheObj = hydrated.cacheObj;
+    loadedOnce = true;
     for (const key of Object.keys(cacheObj)) {
       byLower.set(key.toLowerCase(), key);
     }

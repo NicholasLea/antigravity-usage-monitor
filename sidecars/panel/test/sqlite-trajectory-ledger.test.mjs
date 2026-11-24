@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isDeepStrictEqual, promisify } from 'node:util';
 import { MODEL_IDENTITY_VERSION } from '../trajectory-metrics.mjs';
-import { createTrajectoryCacheStore } from '../backend/trajectory-cache-store.mjs';
+import {
+  DEFAULT_HOT_SESSION_LRU_LIMIT,
+  createTrajectoryCacheStore,
+} from '../backend/trajectory-cache-store.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -508,4 +511,161 @@ test('Deleting source conversation in Antigravity + clicking Rebuild Cache perma
   assert.equal(out.deletedTurnPrompt, 'Keep my billing forever', 'deleted conversation detail_json preserved');
   assert.equal(out.deletedViewSteps, 1, 'clicking archived deleted conversation still renders step details');
   assert.equal(existsSync(liveDbFile), true);
+});
+
+test('SQLite hardening: cold metadata vs peer append safety, mixed-case re-keying, corrupt DB quarantine + .bak recovery, and 64-session LRU', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'ag-um-sqlite-hardening-'));
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // 1. Default hot LRU comfortably holds 30 quick-stat sessions + active subagents without cyclic thrashing
+  assert.equal(DEFAULT_HOT_SESSION_LRU_LIMIT, 64);
+
+  const dbPath = join(dir, 'trajectory_store.sqlite');
+  const jsonPath = join(dir, 'trajectory_usage_cache.json');
+  const mixedUpperCid = 'ABCDEF99-1111-4222-8333-444455556666';
+  const mixedLowerCid = mixedUpperCid.toLowerCase();
+  const conflictCid = '11112222-3333-4444-8555-666677778888';
+
+  // Seed initial DB via Store Writer
+  const writer = createTrajectoryCacheStore({
+    cacheFilePath: jsonPath,
+    sqliteFilePath: dbPath,
+    enableSqlite: true,
+    loadJsonFn: loadJsonHelper,
+  });
+  writer.setCachedTrajectory(mixedUpperCid, {
+    signature: 'v4:init',
+    title: 'Mixed Case Session',
+    steps: [makeRichStep(1, { turnPrompt: 'Mixed case prompt 1' })],
+  });
+  writer.setCachedTrajectory(conflictCid, {
+    signature: 'v4:s2',
+    title: 'Initial Title',
+    steps: [
+      makeRichStep(1, { turnPrompt: 'Step 1 intact' }),
+      makeRichStep(2, { turnPrompt: 'Step 2 intact' }),
+    ],
+  });
+  assert.equal(writer.flushTrajectoryCacheNow(), true);
+
+  // Open Peer A (cold reader/writer) BEFORE Peer B appends Step #3
+  const peerA = createTrajectoryCacheStore({
+    cacheFilePath: jsonPath,
+    sqliteFilePath: dbPath,
+    enableSqlite: true,
+    loadJsonFn: loadJsonHelper,
+  });
+  const coldConflict = peerA.getCachedTrajectory(conflictCid);
+  assert.equal(coldConflict.steps.length, 2);
+  assert.equal(peerA.isConversationCold(conflictCid), true);
+
+  // Peer B appends Step #3 (with rich detail_json) to conflictCid and flushes first
+  const peerB = createTrajectoryCacheStore({
+    cacheFilePath: jsonPath,
+    sqliteFilePath: dbPath,
+    enableSqlite: true,
+    loadJsonFn: loadJsonHelper,
+  });
+  const hydratedB = peerB.getHydratedTrajectory(conflictCid);
+  peerB.setCachedTrajectory(conflictCid, {
+    ...hydratedB,
+    signature: 'v4:s3',
+    steps: [...hydratedB.steps, makeRichStep(3, { turnPrompt: 'Step 3 from Peer B' })],
+  });
+  assert.equal(peerB.flushTrajectoryCacheNow(), true);
+
+  // Peer A (still holding stale 2-step cold entry!) updates metadata & re-keys mixedUpperCid -> mixedLowerCid
+  peerA.setCachedTrajectory(conflictCid, {
+    ...coldConflict,
+    workspaceUri: 'file:///workspace/project-a',
+  });
+  const coldMixed = peerA.getCachedTrajectory(mixedUpperCid);
+  assert.equal(peerA.isConversationCold(mixedUpperCid), true);
+  peerA.setCachedTrajectory(mixedLowerCid, { ...coldMixed, title: 'Normalized Lower Title' });
+  assert.equal(peerA.flushTrajectoryCacheNow(), true);
+
+  // Also test array-copied slim steps ([...coldEntry.steps]) losing array-level _isColdSlimSteps
+  const peerC = createTrajectoryCacheStore({
+    cacheFilePath: jsonPath,
+    sqliteFilePath: dbPath,
+    enableSqlite: true,
+    loadJsonFn: loadJsonHelper,
+  });
+  const coldMixedC = peerC.getCachedTrajectory(mixedLowerCid);
+  peerC.setCachedTrajectory(mixedLowerCid, {
+    ...coldMixedC,
+    steps: [...coldMixedC.steps],
+  });
+  assert.equal(peerC.flushTrajectoryCacheNow(), true);
+
+  // Verify fresh reader sees ALL 3 steps + ALL detail_json on conflictCid AND preserved detail_json on mixedLowerCid!
+  const verifier = createTrajectoryCacheStore({
+    cacheFilePath: jsonPath,
+    sqliteFilePath: dbPath,
+    enableSqlite: true,
+    loadJsonFn: loadJsonHelper,
+  });
+  const verifiedConflict = verifier.getHydratedTrajectory(conflictCid);
+  assert.equal(verifiedConflict.steps.length, 3, 'Peer B step #3 was NOT truncated by Peer A cold metadata flush');
+  assert.equal(verifiedConflict.steps[0].turnPrompt, 'Step 1 intact');
+  assert.equal(verifiedConflict.steps[1].turnPrompt, 'Step 2 intact');
+  assert.equal(verifiedConflict.steps[2].turnPrompt, 'Step 3 from Peer B');
+  assert.equal(verifiedConflict.steps[2].contextBreakdown.totalTokens, 50_600);
+
+  const verifiedMixed = verifier.getHydratedTrajectory(mixedLowerCid);
+  assert.equal(verifiedMixed.title, 'Normalized Lower Title');
+  assert.equal(verifiedMixed.steps.length, 1);
+  assert.equal(verifiedMixed.steps[0].turnPrompt, 'Mixed case prompt 1', 'mixed-case re-keying + array-spread preserved detail_json');
+
+  // 2. Corrupt SQLite file self-healing + automatic recovery from trajectory_usage_cache.json.bak
+  const corruptDir = mkdtempSync(join(tmpdir(), 'ag-um-sqlite-corrupt-'));
+  t.after(() => {
+    rmSync(corruptDir, { recursive: true, force: true });
+  });
+  const corruptDbPath = join(corruptDir, 'trajectory_store.sqlite');
+  const corruptJsonPath = join(corruptDir, 'trajectory_usage_cache.json');
+  const bakCid = '99998888-7777-4666-8555-444433332222';
+  writeFileSync(corruptDbPath, 'CORRUPT_HEADER_NOT_A_VALID_SQLITE_3_DATABASE_IMAGE', 'utf8');
+  writeFileSync(
+    `${corruptJsonPath}.bak`,
+    JSON.stringify({
+      [bakCid]: {
+        signature: 'v4:bak',
+        title: 'Recovered From Backup',
+        steps: [makeRichStep(1, { turnPrompt: 'Backup survived corruption' })],
+      },
+    }),
+    'utf8'
+  );
+
+  const healedStore = createTrajectoryCacheStore({
+    cacheFilePath: corruptJsonPath,
+    sqliteFilePath: corruptDbPath,
+    enableSqlite: true,
+    loadJsonFn: loadJsonHelper,
+  });
+  const recovered = healedStore.getHydratedTrajectory(bakCid);
+  assert.ok(recovered, 'corrupt SQLite quarantined and recovered from .json.bak');
+  assert.equal(recovered.title, 'Recovered From Backup');
+  assert.equal(recovered.steps[0].turnPrompt, 'Backup survived corruption');
+  const quarantinedFiles = readdirSync(corruptDir).filter((f) => f.includes('.corrupt.'));
+  assert.equal(quarantinedFiles.length >= 1, true, 'corrupt DB preserved as .corrupt.<ts>');
+
+  // 3. Transient startup load error does NOT latch loadedOnce permanently
+  let failFirstLoad = true;
+  const retryStore = createTrajectoryCacheStore({
+    cacheFilePath: '/virtual/retry.json',
+    enableSqlite: false,
+    loadJsonFn: () => {
+      if (failFirstLoad) {
+        failFirstLoad = false;
+        throw new Error('transient EBUSY');
+      }
+      return { [bakCid]: { signature: 'v4:ok', steps: [makeRichStep(1)] } };
+    },
+  });
+  assert.throws(() => retryStore.getCachedTrajectory(bakCid), /transient EBUSY/);
+  assert.equal(retryStore.getCachedTrajectory(bakCid)?.steps?.length, 1, 'second read succeeds cleanly');
 });

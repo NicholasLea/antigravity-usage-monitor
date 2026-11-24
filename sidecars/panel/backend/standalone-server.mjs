@@ -16,6 +16,7 @@ import {
   readLocalAsync,
 } from './api-actions.mjs';
 import { loadSettings, lsRuntimeEndpoint, setLsRuntimeEndpoint } from './config.mjs';
+import { flushAllEndpointCachesNow } from './endpoint-registry.mjs';
 import { ensureLsEndpointDiscovered } from './ls-discovery.mjs';
 import { ensureCliStatusLineConfigured } from './cli-statusline-config.mjs';
 import { syncCloudCatalog } from './plugin-updater.mjs';
@@ -643,6 +644,7 @@ export function createStandaloneWebServer(options = {}) {
   }
 
   async function stop() {
+    flushAllEndpointCachesNow();
     const srv = server;
     server = null;
     boundPort = 0;

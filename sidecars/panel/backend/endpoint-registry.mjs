@@ -476,13 +476,28 @@ export function getRemoteWindowRpcInvoker() {
   return registeredWindowRpcInvoker;
 }
 
-if (typeof process !== 'undefined' && typeof process?.once === 'function') {
-  process.once('exit', () => {
-    for (const ep of remoteEndpointRegistry.values()) {
+export function flushAllEndpointCachesNow() {
+  try {
+    if (hasPendingTrajectoryCacheSave()) {
+      flushTrajectoryCacheNow();
+    }
+  } catch {
+    // 忽略关闭阶段本机刷盘异常
+  }
+  for (const ep of remoteEndpointRegistry.values()) {
+    try {
       if (ep.store.hasPendingTrajectoryCacheSave()) {
         ep.store.flushTrajectoryCacheNow();
       }
       ep.store.cancelFlushTimer();
+    } catch {
+      // 忽略关闭阶段远端端点刷盘异常
     }
+  }
+}
+
+if (typeof process !== 'undefined' && typeof process?.once === 'function') {
+  process.once('exit', () => {
+    flushAllEndpointCachesNow();
   });
 }
