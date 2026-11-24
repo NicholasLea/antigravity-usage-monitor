@@ -406,11 +406,7 @@ export const ConsumptionView = defineComponent({
     let lastAnimatedRankingKey = '';
     let lastAnimatedSortSig = '';
     const consAnimTimers = new Map();
-    const TRANSIENT_CONS_CLASSES = [
-      'is-range-switching',
-      'is-tab-entering',
-      'is-bars-revealing',
-    ];
+    const TRANSIENT_CONS_CLASSES = ['is-bars-revealing'];
 
     function cleanupConsAnim(el) {
       const rec = consAnimTimers.get(el);
@@ -2228,13 +2224,7 @@ export const ConsumptionView = defineComponent({
         !tabSwitched &&
         nextSortSig !== lastAnimatedSortSig;
 
-      if (rangeSwitched) {
-        triggerConsAnim(unifiedMatrixEl, 'is-range-switching');
-        triggerConsAnim(activeRankingEl, 'is-range-switching');
-        triggerConsAnim(sourcesListEl, 'is-range-switching');
-      } else if (tabSwitched) {
-        triggerConsAnim(activeRankingEl, 'is-tab-entering');
-      } else if (sortSwitched) {
+      if (tabSwitched || sortSwitched) {
         triggerConsAnim(activeRankingEl, 'is-bars-revealing');
       }
       if (!hasCompletedInitialDraw) {

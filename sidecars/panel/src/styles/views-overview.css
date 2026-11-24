@@ -699,8 +699,6 @@
   justify-content: space-between;
   gap: 10px;
   min-width: 0;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border-hairline);
 }
 
 .quota-rate-pop-title {
@@ -721,65 +719,10 @@
   min-width: 0;
 }
 
-.quota-rate-wk-summary {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  padding-bottom: 7px;
-  border-bottom: 1px solid var(--border-hairline);
-}
-
-.quota-rate-wk-summary[hidden] {
-  display: none;
-}
-
-.quota-rate-wk-k {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  min-width: 0;
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.quota-rate-wk-sub {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-2xs);
-  font-weight: 400;
-  color: var(--text-muted);
-}
-
-.quota-rate-wk-v {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.quota-rate-wk-usd {
-  font-size: var(--fs-md);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.quota-rate-wk-tok {
-  font-size: var(--fs-xs);
-  font-weight: 400;
-  color: var(--text-muted);
-}
-
 .quota-rate-pop-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   max-height: min(300px, 58vh);
   overflow-x: hidden;
   overflow-y: auto;
@@ -790,11 +733,6 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-}
-
-.quota-rate-pool-group + .quota-rate-pool-group {
-  padding-top: 7px;
-  border-top: 1px solid var(--border-hairline);
 }
 
 .quota-rate-pool-head {
@@ -845,7 +783,7 @@
 .quota-rate-model-list {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
 }
 
 .quota-rate-model-row {
@@ -853,11 +791,6 @@
   flex-direction: column;
   gap: 3px;
   min-width: 0;
-}
-
-.quota-rate-model-row + .quota-rate-model-row {
-  padding-top: 7px;
-  border-top: 1px solid var(--border-hairline);
 }
 
 .quota-rate-row-top {
@@ -958,14 +891,6 @@
   font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--text-secondary);
-}
-
-.quota-rate-pop-note {
-  padding-top: 6px;
-  border-top: 1px solid var(--border-hairline);
-  font-size: var(--fs-2xs);
-  line-height: 1.45;
-  color: var(--text-muted);
 }
 
 /* --- 4. 上下文双列图例网格 (Context 10-Channel Legend Grid) --- */

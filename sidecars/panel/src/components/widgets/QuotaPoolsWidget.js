@@ -424,88 +424,6 @@ function formatPoolFullCapRef(eqUsd, eqTok) {
   return usdStr;
 }
 
-function resolveWeeklyCapacitySummary(quotas) {
-  if (!quotas || typeof quotas !== 'object') return null;
-  if (quotas.weekly?.isOfficial === false) return null;
-  const direct = quotas.weeklyCapacityEstimate;
-  if (direct && typeof direct === 'object') {
-    if (
-      direct.status === 'custom_mode' ||
-      !Number.isFinite(Number(direct.totalEqWeeklyUsd)) ||
-      Number(direct.totalEqWeeklyUsd) <= 0
-    ) {
-      return null;
-    }
-    return direct;
-  }
-
-  const rawPools = Array.isArray(quotas.pools) ? quotas.pools : [];
-  const candidatePools = rawPools.filter(
-    (p) =>
-      p &&
-      (p.hasWeekly ||
-        p.weeklyUsedPct != null ||
-        Number.isFinite(p.rateEstimate?.eqFullWeeklyUsd))
-  );
-  const targetPools = candidatePools.length > 0 ? candidatePools : rawPools;
-  if (targetPools.length === 0) return null;
-
-  let sumUsd = 0;
-  let sumTokens = 0;
-  let readyPoolCount = 0;
-  let tokenReadyPoolCount = 0;
-  let hasPreliminary = false;
-
-  for (const p of targetPools) {
-    const est = p?.rateEstimate && typeof p.rateEstimate === 'object' ? p.rateEstimate : null;
-    let eqUsd =
-      Number.isFinite(est?.eqFullWeeklyUsd) && est.eqFullWeeklyUsd > 0
-        ? Number(est.eqFullWeeklyUsd)
-        : null;
-    let eqTok =
-      Number.isFinite(est?.eqFullWeeklyTokens) && est.eqFullWeeklyTokens > 0
-        ? Math.round(Number(est.eqFullWeeklyTokens))
-        : null;
-    if (eqUsd === null && Array.isArray(est?.models) && est.models.length > 0) {
-      const wkModels = est.models.filter(
-        (m) => Number.isFinite(m?.eqFullWeeklyUsd) && m.eqFullWeeklyUsd > 0
-      );
-      if (wkModels.length > 0) {
-        eqUsd =
-          wkModels.reduce((acc, m) => acc + Number(m.eqFullWeeklyUsd), 0) / wkModels.length;
-        const tokModels = wkModels.filter(
-          (m) => Number.isFinite(m?.eqFullWeeklyTokens) && m.eqFullWeeklyTokens > 0
-        );
-        if (tokModels.length === wkModels.length) {
-          eqTok = Math.round(
-            tokModels.reduce((acc, m) => acc + Number(m.eqFullWeeklyTokens), 0) / tokModels.length
-          );
-        }
-      }
-    }
-    if (eqUsd !== null) {
-      readyPoolCount += 1;
-      sumUsd += eqUsd;
-      if (est?.isPreliminaryWeekly) hasPreliminary = true;
-      if (eqTok !== null) {
-        tokenReadyPoolCount += 1;
-        sumTokens += eqTok;
-      }
-    }
-  }
-
-  if (readyPoolCount === 0) return null;
-  const totalPoolCount = targetPools.length;
-  return {
-    status: readyPoolCount < totalPoolCount ? 'partial' : 'ready',
-    totalEqWeeklyUsd: +sumUsd.toFixed(1),
-    totalEqWeeklyTokens: tokenReadyPoolCount === readyPoolCount ? Math.round(sumTokens) : null,
-    readyPoolCount,
-    totalPoolCount,
-    hasPreliminary,
-  };
-}
-
 function formatRatePerUsdValue(rate) {
   const num = Number(rate);
   if (!Number.isFinite(num) || num <= 0) return '--';
@@ -630,13 +548,11 @@ function createRateModelCard({
 function buildRatePopoverSig(data) {
   const locale = getEffectiveLocale();
   const acct = String(data?.account?.email || data?.account?.name || '').trim();
-  const isOfficial = data?.quotas?.weekly?.isOfficial !== false;
-  const wkCapSig = JSON.stringify(data?.quotas?.weeklyCapacityEstimate || null);
   const pools = Array.isArray(data?.quotas?.pools) ? data.quotas.pools : [];
   const poolSig = pools
     .map((p) => `${p.poolKey || ''}:${p.poolLabel || ''}:${JSON.stringify(p.rateEstimate || null)}`)
     .join('|');
-  return `${locale}|${acct}|${isOfficial}|${wkCapSig}|${poolSig}`;
+  return `${locale}|${acct}|${poolSig}`;
 }
 
 export const QuotaPoolsWidget = defineComponent({
@@ -654,32 +570,7 @@ export const QuotaPoolsWidget = defineComponent({
       className: 'quota-rate-pop-account',
       text: t('quota.ratePopAccountCurrent'),
     });
-    const ratePopWkLabelEl = h('span', { text: t('quota.ratePopWkCapTitle') });
-    const ratePopWkSubEl = h('span', {
-      className: 'quota-rate-wk-sub',
-      hidden: true,
-      text: '',
-    });
-    const ratePopWkUsdEl = h('span', { className: 'quota-rate-wk-usd text-mono', text: '--' });
-    const ratePopWkTokEl = h('span', {
-      className: 'quota-rate-wk-tok text-mono',
-      hidden: true,
-      text: '',
-    });
-    const ratePopWkSummaryEl = h(
-      'div',
-      { className: 'quota-rate-wk-summary', hidden: true },
-      [
-        h('span', { className: 'quota-rate-wk-k' }, [ratePopWkLabelEl, ratePopWkSubEl]),
-        h('span', { className: 'quota-rate-wk-v' }, [ratePopWkUsdEl, ratePopWkTokEl]),
-      ]
-    );
-    ratePopWkSummaryEl.hidden = true;
     const ratePopBodyEl = h('div', { className: 'quota-rate-pop-body' });
-    const ratePopNoteEl = h('div', {
-      className: 'quota-rate-pop-note',
-      text: t('quota.ratePopNote'),
-    });
     const ratePopoverEl = h(
       'div',
       {
@@ -689,9 +580,7 @@ export const QuotaPoolsWidget = defineComponent({
       },
       [
         h('div', { className: 'quota-rate-pop-head' }, [ratePopTitleEl, ratePopAccountEl]),
-        ratePopWkSummaryEl,
         ratePopBodyEl,
-        ratePopNoteEl,
       ]
     );
     ratePopoverEl.hidden = true;
@@ -769,7 +658,6 @@ export const QuotaPoolsWidget = defineComponent({
       lastRatePopSig = sig;
 
       patchText(ratePopTitleEl, t('quota.ratePopTitle'));
-      patchText(ratePopNoteEl, t('quota.ratePopNote'));
       patchAttr(rateHelpBtn, 'aria-label', t('quota.rateHelpAria'));
 
       const acctMasked = maskAccountLabel(data?.account?.email || data?.account?.name || '');
@@ -780,38 +668,6 @@ export const QuotaPoolsWidget = defineComponent({
           : t('quota.ratePopAccountCurrent')
       );
       patchAttr(ratePopAccountEl, 'title', acctMasked || null);
-
-      const wkCap = resolveWeeklyCapacitySummary(data?.quotas);
-      if (wkCap) {
-        ratePopWkSummaryEl.hidden = false;
-        patchAttr(ratePopWkSummaryEl, 'hidden', false);
-        patchText(ratePopWkLabelEl, t('quota.ratePopWkCapTitle'));
-        const wkSubText =
-          wkCap.status === 'partial' && Number(wkCap.totalPoolCount) > 0
-            ? t('quota.ratePopWkCapPartial', {
-                ready: Number(wkCap.readyPoolCount) || 0,
-                total: Number(wkCap.totalPoolCount) || 0,
-              })
-            : wkCap.hasPreliminary
-              ? t('quota.ratePopWkCapPrelim')
-              : '';
-        ratePopWkSubEl.hidden = !wkSubText;
-        patchAttr(ratePopWkSubEl, 'hidden', !wkSubText);
-        patchText(ratePopWkSubEl, wkSubText);
-        patchText(ratePopWkUsdEl, `≈ ${formatRateEqUsd(wkCap.totalEqWeeklyUsd)}`);
-        const hasWkTok =
-          Number.isFinite(Number(wkCap.totalEqWeeklyTokens)) &&
-          Number(wkCap.totalEqWeeklyTokens) > 0;
-        ratePopWkTokEl.hidden = !hasWkTok;
-        patchAttr(ratePopWkTokEl, 'hidden', !hasWkTok);
-        patchText(
-          ratePopWkTokEl,
-          hasWkTok ? `· ${formatTokens(Number(wkCap.totalEqWeeklyTokens))}` : ''
-        );
-      } else {
-        ratePopWkSummaryEl.hidden = true;
-        patchAttr(ratePopWkSummaryEl, 'hidden', true);
-      }
 
       while (ratePopBodyEl.firstChild) {
         ratePopBodyEl.removeChild(ratePopBodyEl.firstChild);

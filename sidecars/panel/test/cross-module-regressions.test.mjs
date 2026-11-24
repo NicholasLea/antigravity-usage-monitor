@@ -1673,3 +1673,204 @@ test('xlsxBuilder enforces 32,767 UTF-16 cell limit without splitting surrogate 
   const cellA3 = cellMatches[1][1];
   assert.equal(cellA3, 'ok\uFFFDmid\uFFFDend');
 });
+
+test('ConsumptionView and TrendAreaChart patch text DOM nodes in-place without opacity flicker classes on date range switches', async () => {
+  const consCss = fs.readFileSync(
+    fileURLToPath(new URL('../src/styles/views-consumption.css', import.meta.url)),
+    'utf8'
+  );
+  for (const bannedToken of [
+    'is-range-switching',
+    'is-tab-entering',
+    'is-switching',
+    'is-stage-entering',
+    'anim-cons-content-switch',
+    'anim-cons-axis-fade',
+    'anim-cons-stage-in',
+  ]) {
+    assert.equal(
+      consCss.includes(bannedToken),
+      false,
+      `Expected views-consumption.css not to contain text-opacity flicker rule "${bannedToken}"`
+    );
+  }
+
+  const { createMockDom } = await import('./mock-dom.mjs');
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    location: { origin: 'http://127.0.0.1:41234', href: 'http://127.0.0.1:41234/' },
+    getComputedStyle: () => ({ overflow: 'visible', overflowX: 'visible', overflowY: 'visible' }),
+    matchMedia: () => ({ matches: false }),
+    requestAnimationFrame: (cb) => setTimeout(() => cb(performance.now()), 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+    addEventListener() {},
+    removeEventListener() {},
+  };
+
+  try {
+    const { ConsumptionView } = await import('../src/views/ConsumptionView.js');
+    const { telemetryStore } = await import('../src/store/telemetryStore.js');
+    const { uiStore } = await import('../src/store/uiStore.js');
+    const prevTelState = { ...telemetryStore.getState() };
+    const prevUiState = { ...uiStore.getState() };
+
+    uiStore.setState(
+      { activeView: 'consumption', monitorVisible: true, settingsOpen: false },
+      { sync: true }
+    );
+    const view = ConsumptionView();
+    document.body.appendChild(view.el);
+
+    const makeRangePayload = (rangeKey, tokBase, labels) => ({
+      settings: { modelDisplayMode: 'short', showUpstreamModel: false, orchestratorIdMode: 'label' },
+      consumption: {
+        revision: 0,
+        selectedRange: {
+          key: rangeKey,
+          label: rangeKey,
+          startMs: 1_760_000_000_000,
+          endMs: 1_760_086_400_000,
+        },
+        account: {
+          totalTokens: tokBase,
+          inputTokens: Math.round(tokBase * 0.2),
+          cacheReadTokens: Math.round(tokBase * 0.7),
+          outputTokens: Math.round(tokBase * 0.1),
+          responseTokens: Math.round(tokBase * 0.07),
+          thinkingTokens: Math.round(tokBase * 0.03),
+          calls: 12,
+          costUsd: 1.25,
+          savedCostUsd: 0.85,
+          cacheHitPct: 77.8,
+        },
+        trendSeries: labels.map((lbl, idx) => ({
+          index: idx,
+          startMs: 1_760_000_000_000 + idx * 3_600_000,
+          endMs: 1_760_000_000_000 + (idx + 1) * 3_600_000,
+          granularity: labels.length > 90 ? 'day' : 'hour',
+          label: lbl,
+          fullLabel: lbl,
+          tokens: 1_000 * (idx + 1),
+          calls: 1,
+          costUsd: 0.05,
+        })),
+        sourcesBreakdown: [
+          {
+            name: 'antigravity',
+            label: 'Antigravity IDE',
+            totalTokens: tokBase,
+            calls: 12,
+            costUsd: 1.25,
+            models: [{ label: 'Claude Opus 4.6', shortName: 'Claude Opus 4.6', totalTokens: tokBase, calls: 12 }],
+          },
+        ],
+        topConversations: [],
+        topWorkspaces: [],
+        monthlyYear: 2026,
+        monthlySeries: Array.from({ length: 12 }, (_, m) => ({
+          month: m + 1,
+          totalTokens: m === 10 ? tokBase : 0,
+          costUsd: m === 10 ? 1.25 : 0,
+          calls: m === 10 ? 12 : 0,
+        })),
+      },
+      modelBreakdown: [
+        {
+          label: 'Claude Opus 4.6',
+          shortName: 'Claude Opus 4.6',
+          totalTokens: tokBase,
+          inputTokens: Math.round(tokBase * 0.2),
+          cacheReadTokens: Math.round(tokBase * 0.7),
+          responseTokens: Math.round(tokBase * 0.07),
+          thinkingTokens: Math.round(tokBase * 0.03),
+          outputTokens: Math.round(tokBase * 0.1),
+          calls: 12,
+          costUsd: 1.25,
+        },
+      ],
+    });
+
+    telemetryStore.setState(
+      {
+        selectedTimeRange: 'today',
+        telemetry: makeRangePayload('today', 100_000, ['00:00', '06:00', '12:00', '18:00']),
+      },
+      { sync: true }
+    );
+
+    const matrixEl = view.el.querySelector('.cons-unified-matrix');
+    const heroNumEl = view.el.querySelector('.cons-hero-num');
+    const modelRowEl = view.el.querySelector('.cons-item-row');
+    const modelTitleTextEl = modelRowEl.querySelector('.cons-row-title-text');
+    const sourceRowEl = view.el.querySelector('.cons-source-row');
+    const xAxisEl = view.el.querySelector('.trend-x-axis');
+    const initialTicks = xAxisEl.querySelectorAll('.trend-x-tick');
+    assert.equal(initialTicks.length, 4);
+
+    // Switch to 7d: same model, same source, updated numbers & tick labels -> all DOM nodes reused in-place, zero opacity flicker classes
+    telemetryStore.setState(
+      {
+        selectedTimeRange: '7d',
+        telemetry: makeRangePayload('7d', 450_000, ['11/18', '11/20', '11/22', '11/24']),
+      },
+      { sync: true }
+    );
+
+    assert.equal(view.el.querySelector('.cons-hero-num'), heroNumEl, 'Hero token element persists');
+    assert.equal(view.el.querySelector('.cons-item-row'), modelRowEl, 'Model row element persists');
+    assert.equal(
+      view.el.querySelector('.cons-item-row .cons-row-title-text'),
+      modelTitleTextEl,
+      'Model title text node persists'
+    );
+    assert.equal(view.el.querySelector('.cons-source-row'), sourceRowEl, 'Source row element persists');
+
+    const nextTicks = xAxisEl.querySelectorAll('.trend-x-tick');
+    assert.equal(nextTicks.length, 4);
+    for (let i = 0; i < 4; i++) {
+      assert.equal(nextTicks[i], initialTicks[i], `Trend X-axis tick #${i} reused in-place`);
+    }
+    assert.equal(nextTicks[0].textContent, '11/18');
+
+    for (const cls of ['is-range-switching', 'is-tab-entering', 'is-switching', 'is-stage-entering']) {
+      assert.equal(matrixEl.classList.contains(cls), false);
+      assert.equal(modelRowEl.parentNode.classList.contains(cls), false);
+      assert.equal(sourceRowEl.parentNode.classList.contains(cls), false);
+      assert.equal(xAxisEl.classList.contains(cls), false);
+    }
+
+    // Switch to >90d heatmap and update counts -> month labels and grid cells reuse pooled nodes in-place
+    const hmLabelsA = Array.from({ length: 95 }, (_, idx) => `08/${String((idx % 28) + 1).padStart(2, '0')}`);
+    telemetryStore.setState(
+      {
+        selectedTimeRange: 'all',
+        telemetry: makeRangePayload('all', 900_000, hmLabelsA),
+      },
+      { sync: true }
+    );
+    const hmGridEl = view.el.querySelector('.trend-hm-grid');
+    const firstGridCells = [...hmGridEl.children];
+    assert.ok(firstGridCells.length >= 95);
+
+    telemetryStore.setState(
+      {
+        selectedTimeRange: 'all',
+        telemetry: makeRangePayload('all', 950_000, hmLabelsA),
+      },
+      { sync: true }
+    );
+    const secondGridCells = [...hmGridEl.children];
+    assert.equal(secondGridCells.length, firstGridCells.length);
+    assert.equal(secondGridCells[10], firstGridCells[10], 'Heatmap cell DOM node reused in-place');
+
+    view.destroy();
+    telemetryStore.setState(prevTelState, { sync: true });
+    uiStore.setState(prevUiState, { sync: true });
+  } finally {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  }
+});

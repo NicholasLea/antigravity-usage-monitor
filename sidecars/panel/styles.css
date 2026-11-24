@@ -2417,8 +2417,6 @@ html[data-standalone="true"] .app-shell {
   justify-content: space-between;
   gap: 10px;
   min-width: 0;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border-hairline);
 }
 
 .quota-rate-pop-title {
@@ -2439,65 +2437,10 @@ html[data-standalone="true"] .app-shell {
   min-width: 0;
 }
 
-.quota-rate-wk-summary {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  padding-bottom: 7px;
-  border-bottom: 1px solid var(--border-hairline);
-}
-
-.quota-rate-wk-summary[hidden] {
-  display: none;
-}
-
-.quota-rate-wk-k {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  min-width: 0;
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.quota-rate-wk-sub {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-2xs);
-  font-weight: 400;
-  color: var(--text-muted);
-}
-
-.quota-rate-wk-v {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.quota-rate-wk-usd {
-  font-size: var(--fs-md);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.quota-rate-wk-tok {
-  font-size: var(--fs-xs);
-  font-weight: 400;
-  color: var(--text-muted);
-}
-
 .quota-rate-pop-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   max-height: min(300px, 58vh);
   overflow-x: hidden;
   overflow-y: auto;
@@ -2508,11 +2451,6 @@ html[data-standalone="true"] .app-shell {
   display: flex;
   flex-direction: column;
   gap: 5px;
-}
-
-.quota-rate-pool-group + .quota-rate-pool-group {
-  padding-top: 7px;
-  border-top: 1px solid var(--border-hairline);
 }
 
 .quota-rate-pool-head {
@@ -2563,7 +2501,7 @@ html[data-standalone="true"] .app-shell {
 .quota-rate-model-list {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
 }
 
 .quota-rate-model-row {
@@ -2571,11 +2509,6 @@ html[data-standalone="true"] .app-shell {
   flex-direction: column;
   gap: 3px;
   min-width: 0;
-}
-
-.quota-rate-model-row + .quota-rate-model-row {
-  padding-top: 7px;
-  border-top: 1px solid var(--border-hairline);
 }
 
 .quota-rate-row-top {
@@ -2676,14 +2609,6 @@ html[data-standalone="true"] .app-shell {
   font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--text-secondary);
-}
-
-.quota-rate-pop-note {
-  padding-top: 6px;
-  border-top: 1px solid var(--border-hairline);
-  font-size: var(--fs-2xs);
-  line-height: 1.45;
-  color: var(--text-muted);
 }
 
 /* --- 4. 上下文双列图例网格 (Context 10-Channel Legend Grid) --- */
@@ -3280,36 +3205,7 @@ html[data-standalone="true"] .app-shell {
 }
 
 .trend-peak-pill.is-ready {
-  transition:
-    left 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes anim-cons-axis-fade {
-  from {
-    opacity: 0.3;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes anim-cons-stage-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes anim-cons-content-switch {
-  from {
-    opacity: 0.52;
-  }
-  to {
-    opacity: 1;
-  }
+  transition: left 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes anim-cons-bar-grow {
@@ -3321,25 +3217,6 @@ html[data-standalone="true"] .app-shell {
   }
 }
 
-.trend-x-axis.is-switching,
-.trend-v-grid.is-switching {
-  animation: anim-cons-axis-fade 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.trend-plot-stage.is-stage-entering,
-.trend-heatmap-stage.is-stage-entering,
-.cons-item-list.is-tab-entering,
-.cons-ranking-empty.is-tab-entering {
-  animation: anim-cons-stage-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.cons-unified-matrix.is-range-switching,
-.cons-item-list.is-range-switching,
-.cons-ranking-empty.is-range-switching {
-  animation: anim-cons-content-switch 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.cons-item-list.is-tab-entering .progress-track,
 .cons-item-list.is-bars-revealing .progress-track {
   transform-origin: left center;
   animation: anim-cons-bar-grow 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -3352,15 +3229,6 @@ html[data-standalone="true"] .app-shell {
   .trend-hm-cell {
     transition: none !important;
   }
-  .trend-x-axis.is-switching,
-  .trend-v-grid.is-switching,
-  .trend-plot-stage.is-stage-entering,
-  .trend-heatmap-stage.is-stage-entering,
-  .cons-item-list.is-tab-entering,
-  .cons-ranking-empty.is-tab-entering,
-  .cons-unified-matrix.is-range-switching,
-  .cons-item-list.is-range-switching,
-  .cons-ranking-empty.is-range-switching,
   .cons-item-list.is-bars-revealing .progress-track {
     animation: none !important;
   }
@@ -8860,18 +8728,15 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"] .step-anomaly-tip-list,
-[data-modern-ui="true"] .step-anomaly-tip-hint,
-[data-modern-ui="true"] .quota-rate-pop-head,
-[data-modern-ui="true"] .quota-rate-wk-summary,
-[data-modern-ui="true"] .quota-rate-pool-group + .quota-rate-pool-group,
-[data-modern-ui="true"] .quota-rate-model-row + .quota-rate-model-row,
-[data-modern-ui="true"] .quota-rate-pop-note,
-:host([data-modern-ui="true"]) .quota-rate-pop-head,
-:host([data-modern-ui="true"]) .quota-rate-wk-summary,
-:host([data-modern-ui="true"]) .quota-rate-pool-group + .quota-rate-pool-group,
-:host([data-modern-ui="true"]) .quota-rate-model-row + .quota-rate-model-row,
-:host([data-modern-ui="true"]) .quota-rate-pop-note {
+[data-modern-ui="true"] .step-anomaly-tip-hint {
   border-color: var(--modern-surface-hover);
+}
+
+[data-modern-ui="true"] .quota-rate-shared-badge,
+[data-modern-ui="true"] .quota-rate-ext-banner,
+:host([data-modern-ui="true"]) .quota-rate-shared-badge,
+:host([data-modern-ui="true"]) .quota-rate-ext-banner {
+  border: none;
 }
 
 [data-modern-ui="true"] .trend-tooltip:not(.is-hm-top):not(.is-hm-bottom):not(.is-rich-breakdown) {

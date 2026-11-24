@@ -553,8 +553,6 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
   let hoveredCellEl = null;
   let lastPointer = null;
   let lastRenderSig = '';
-  let lastTickLabelsSig = '';
-  let hasRenderedOnce = false;
   let hasRenderedLineOnce = false;
   let peakReadyArmed = false;
   let peakReadyRaf = 0;
@@ -562,39 +560,12 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
   let morphRafId = 0;
   let committedSegs = [];
   let liveMorphSegs = null;
-  const transientClassTimers = new Map();
+  const vGridLinePool = [];
+  const xAxisTickPool = [];
+  const hmMonthPool = [];
+  const hmCellPool = [];
 
   const CURVE_MORPH_DURATION_MS = 240;
-
-  function cleanupTransientClass(el) {
-    const rec = transientClassTimers.get(el);
-    if (!rec) return;
-    clearTimeout(rec.tid);
-    el?.removeEventListener?.('animationend', rec.onEnd);
-    el?.classList?.remove(rec.cls);
-    transientClassTimers.delete(el);
-  }
-
-  function triggerTransientClass(el, cls, fallbackMs = 650) {
-    if (!el || !el.classList) return;
-    cleanupTransientClass(el);
-    el.classList.remove(cls);
-    void el.offsetWidth;
-    const onEnd = (ev) => {
-      if (ev && ev.target && ev.target !== el) return;
-      cleanupTransientClass(el);
-    };
-    const tid = setTimeout(() => cleanupTransientClass(el), fallbackMs);
-    transientClassTimers.set(el, { cls, tid, onEnd });
-    el.addEventListener?.('animationend', onEnd);
-    el.classList.add(cls);
-  }
-
-  function clearAllTransientTimers() {
-    for (const el of Array.from(transientClassTimers.keys())) {
-      cleanupTransientClass(el);
-    }
-  }
 
   function cancelCurveMorph() {
     if (
@@ -1221,7 +1192,6 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
     cancelTipTrackRaf();
     cancelCurveMorph();
     cancelPeakReadyRaf();
-    clearAllTransientTimers();
     plotStage.removeEventListener('mousemove', handlePointerMove);
     plotStage.removeEventListener('click', handleLineClick);
     plotStage.removeEventListener('mouseleave', clearHover);
@@ -1270,14 +1240,6 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
     patchAttr(plotStage, 'hidden', useHeatmap);
     patchAttr(xAxisEl, 'hidden', useHeatmap);
     patchAttr(heatmapStage, 'hidden', !useHeatmap);
-    if (hasRenderedOnce && modeChanged && canAnimateInBrowser()) {
-      if (useHeatmap) {
-        triggerTransientClass(heatmapStage, 'is-stage-entering');
-      } else {
-        triggerTransientClass(plotStage, 'is-stage-entering');
-        triggerTransientClass(xAxisEl, 'is-switching');
-      }
-    }
 
     if (!useHeatmap) {
       syncViewWidth();
@@ -1351,51 +1313,97 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
         patchStyleVar(hmBodyEl, '--hm-weeks', String(totalWeeks));
         patchStyleVar(hmBodyEl, '--hm-gap', `${gapPx}px`);
 
-        // 重建顶部对齐月份标签
-        while (hmMonthsEl.firstChild) hmMonthsEl.removeChild(hmMonthsEl.firstChild);
+        // 就地增量补丁顶部对齐月份标签，避免文字节点销毁重建
         const monthTicks = buildHeatmapMonthTicks(slots, firstDow, totalWeeks);
-        for (const mt of monthTicks) {
-          const mEl = h('span', { className: 'trend-hm-month text-mono', text: mt.text });
+        for (let i = 0; i < monthTicks.length; i++) {
+          const mt = monthTicks[i];
+          let mEl = hmMonthPool[i];
+          if (!mEl) {
+            mEl = h('span', { className: 'trend-hm-month text-mono' });
+            hmMonthPool.push(mEl);
+          }
+          patchText(mEl, mt.text);
           patchStyleVar(mEl, '--hm-col', String(mt.col));
-          hmMonthsEl.appendChild(mEl);
+          if (hmMonthsEl.children[i] !== mEl) {
+            hmMonthsEl.insertBefore(mEl, hmMonthsEl.children[i] || null);
+          }
+        }
+        while (hmMonthsEl.children.length > monthTicks.length) {
+          hmMonthsEl.removeChild(hmMonthsEl.lastChild);
         }
 
-        // 重建 7 行 × N 周列的每日小格子（一格一天），使用 DocumentFragment 一次性批量挂载减少重排
-        while (hmGridEl.firstChild) hmGridEl.removeChild(hmGridEl.firstChild);
-        hoveredCellEl = null;
+        // 就地增量复用 7 行 × N 周列的每日小格子，首次批量新增节点使用 DocumentFragment 挂载
         currentCellEls = new Array(slots.length);
-        const gridFrag =
-          typeof document !== 'undefined' && typeof document.createDocumentFragment === 'function'
+        const prevMountedCount = hmGridEl.children.length;
+        const newCellsFrag =
+          totalCells > prevMountedCount &&
+          typeof document !== 'undefined' &&
+          typeof document.createDocumentFragment === 'function'
             ? document.createDocumentFragment()
             : null;
-        const gridTarget = gridFrag || hmGridEl;
 
-        for (let pad = 0; pad < firstDow; pad++) {
-          gridTarget.appendChild(
-            h('span', { className: 'trend-hm-cell is-pad', 'aria-hidden': 'true' })
-          );
+        for (let nodeIdx = 0; nodeIdx < totalCells; nodeIdx++) {
+          let cellEl = hmCellPool[nodeIdx];
+          if (!cellEl) {
+            cellEl = h('span', { className: 'trend-hm-cell' });
+            hmCellPool.push(cellEl);
+          }
+          if (nodeIdx < firstDow) {
+            patchClasses(cellEl, {
+              'is-pad': true,
+              'is-hovered': false,
+              'lv-0': false,
+              'lv-1': false,
+              'lv-2': false,
+              'lv-3': false,
+              'lv-4': false,
+            });
+            patchAttr(cellEl, 'aria-hidden', 'true');
+            patchAttr(cellEl, 'role', null);
+            patchAttr(cellEl, 'data-slot-idx', null);
+            patchAttr(cellEl, 'data-hm-col', null);
+            patchAttr(cellEl, 'data-hm-row', null);
+          } else {
+            const i = nodeIdx - firstDow;
+            const slot = slots[i];
+            const tok = safeSlotTokens(slot?.tokens);
+            const lv = resolveHeatmapLevel(tok, thresholds);
+            const col = Math.floor(nodeIdx / 7);
+            const row = nodeIdx % 7;
+            patchClasses(cellEl, {
+              'is-pad': false,
+              'is-hovered': hoveredIdx === i,
+              'lv-0': lv === 0,
+              'lv-1': lv === 1,
+              'lv-2': lv === 2,
+              'lv-3': lv === 3,
+              'lv-4': lv === 4,
+            });
+            patchAttr(cellEl, 'aria-hidden', null);
+            patchAttr(cellEl, 'role', 'gridcell');
+            patchAttr(cellEl, 'data-slot-idx', String(i));
+            patchAttr(cellEl, 'data-hm-col', String(col));
+            patchAttr(cellEl, 'data-hm-row', String(row));
+            currentCellEls[i] = cellEl;
+          }
+          if (nodeIdx < prevMountedCount) {
+            if (hmGridEl.children[nodeIdx] !== cellEl) {
+              hmGridEl.insertBefore(cellEl, hmGridEl.children[nodeIdx] || null);
+            }
+          } else if (newCellsFrag) {
+            newCellsFrag.appendChild(cellEl);
+          } else {
+            hmGridEl.appendChild(cellEl);
+          }
         }
-
-        for (let i = 0; i < slots.length; i++) {
-          const slot = slots[i];
-          const tok = safeSlotTokens(slot?.tokens);
-          const lv = resolveHeatmapLevel(tok, thresholds);
-          const gridPos = firstDow + i;
-          const col = Math.floor(gridPos / 7);
-          const row = gridPos % 7;
-          const cellEl = h('span', {
-            className: `trend-hm-cell lv-${lv}`,
-            'data-slot-idx': String(i),
-            'data-hm-col': String(col),
-            'data-hm-row': String(row),
-            role: 'gridcell',
-          });
-          gridTarget.appendChild(cellEl);
-          currentCellEls[i] = cellEl;
+        if (newCellsFrag) {
+          hmGridEl.appendChild(newCellsFrag);
         }
-        if (gridFrag) {
-          hmGridEl.appendChild(gridFrag);
+        while (hmGridEl.children.length > totalCells) {
+          hmGridEl.removeChild(hmGridEl.lastChild);
         }
+        hoveredCellEl =
+          hoveredIdx >= 0 && hoveredIdx < slots.length ? currentCellEls[hoveredIdx] || null : null;
 
         if (typeof requestAnimationFrame === 'function') {
           requestAnimationFrame(() => {
@@ -1423,7 +1431,6 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
       } else if (hoveredIdx >= 0) {
         showHeatmapHoverAtIndex(hoveredIdx, currentCellEls[hoveredIdx], lastPointer);
       }
-      hasRenderedOnce = true;
       return;
     }
 
@@ -1484,21 +1491,11 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
       }
       hasRenderedLineOnce = true;
 
-      // 渲染对齐底部刻度的垂直参考网格线及 X 轴标签（起止标签严格左右贴边）
+      // 就地增量补丁垂直参考网格线及底部 X 轴标签，保持文字常驻不重排不闪烁
       const tickIndices = computeTickIndices(slots);
-      const nextTickLabelsSig = tickIndices
-        .map((tIdx) => `${tIdx}:${slots[tIdx]?.label || ''}`)
-        .join('|');
-      const ticksChanged =
-        hasRenderedOnce &&
-        !modeChanged &&
-        lastTickLabelsSig !== '' &&
-        nextTickLabelsSig !== lastTickLabelsSig;
-      lastTickLabelsSig = nextTickLabelsSig;
-
-      while (vGridGroup.firstChild) vGridGroup.removeChild(vGridGroup.firstChild);
-      while (xAxisEl.firstChild) xAxisEl.removeChild(xAxisEl.firstChild);
       tickElsByIdx = new Map();
+      let vLineCount = 0;
+      let tickCount = 0;
 
       for (let i = 0; i < tickIndices.length; i++) {
         const tIdx = tickIndices[i];
@@ -1507,34 +1504,57 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
         if (!pt || !slot) continue;
 
         if (i > 0 && i < tickIndices.length - 1) {
-          const vLine = document.createElementNS(SVG_NS, 'line');
-          vLine.setAttribute('x1', pt.x.toFixed(1));
-          vLine.setAttribute('y1', '16');
-          vLine.setAttribute('x2', pt.x.toFixed(1));
-          vLine.setAttribute('y2', String(BOTTOM_Y));
-          vGridGroup.appendChild(vLine);
+          let vLine = vGridLinePool[vLineCount];
+          if (!vLine) {
+            vLine = document.createElementNS(SVG_NS, 'line');
+            vLine.setAttribute('y1', '16');
+            vLine.setAttribute('y2', String(BOTTOM_Y));
+            vGridLinePool.push(vLine);
+          }
+          const xFixed = pt.x.toFixed(1);
+          patchAttr(vLine, 'x1', xFixed);
+          patchAttr(vLine, 'x2', xFixed);
+          if (vGridGroup.children[vLineCount] !== vLine) {
+            vGridGroup.insertBefore(vLine, vGridGroup.children[vLineCount] || null);
+          }
+          vLineCount++;
         }
 
         const isFirst = !isSingle && i === 0;
         const isLast = !isSingle && i === tickIndices.length - 1;
         const pct = isFirst ? 0 : isLast ? 100 : (pt.x / viewW) * 100;
-        const tickEl = h('span', {
-          className: `trend-x-tick text-mono${isFirst ? ' is-start' : isLast ? ' is-end' : ''}`,
-          text: slot.label || '',
-          title: formatTrendSlotFullLabel(slot) || slot.label || '',
+        let tickRec = xAxisTickPool[tickCount];
+        if (!tickRec) {
+          const el = h('span', { className: 'trend-x-tick text-mono' });
+          const rec = { el, slotIdx: tIdx };
+          el.onclick = () => {
+            lastPointer = null;
+            showLineHoverAtIndex(rec.slotIdx);
+          };
+          tickRec = rec;
+          xAxisTickPool.push(tickRec);
+        }
+        tickRec.slotIdx = tIdx;
+        patchClasses(tickRec.el, {
+          'is-start': isFirst,
+          'is-end': isLast,
+          'is-hovered': hoveredIdx === tIdx,
         });
-        patchStyleVar(tickEl, '--tick-x', `${pct.toFixed(2)}%`);
-        tickEl.onclick = () => {
-          lastPointer = null;
-          showLineHoverAtIndex(tIdx);
-        };
-        xAxisEl.appendChild(tickEl);
-        tickElsByIdx.set(tIdx, tickEl);
+        patchText(tickRec.el, slot.label || '');
+        patchAttr(tickRec.el, 'title', formatTrendSlotFullLabel(slot) || slot.label || '');
+        patchStyleVar(tickRec.el, '--tick-x', `${pct.toFixed(2)}%`);
+        if (xAxisEl.children[tickCount] !== tickRec.el) {
+          xAxisEl.insertBefore(tickRec.el, xAxisEl.children[tickCount] || null);
+        }
+        tickElsByIdx.set(tIdx, tickRec.el);
+        tickCount++;
       }
 
-      if (ticksChanged && canAnimateInBrowser()) {
-        triggerTransientClass(xAxisEl, 'is-switching');
-        triggerTransientClass(vGridGroup, 'is-switching');
+      while (vGridGroup.children.length > vLineCount) {
+        vGridGroup.removeChild(vGridGroup.lastChild);
+      }
+      while (xAxisEl.children.length > tickCount) {
+        xAxisEl.removeChild(xAxisEl.lastChild);
       }
     }
 
@@ -1568,7 +1588,6 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
     } else if (hoveredIdx >= 0) {
       showLineHoverAtIndex(hoveredIdx, lastPointer);
     }
-    hasRenderedOnce = true;
   }
 
   return { el: chartWrap, update, destroy };

@@ -406,36 +406,7 @@
 }
 
 .trend-peak-pill.is-ready {
-  transition:
-    left 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes anim-cons-axis-fade {
-  from {
-    opacity: 0.3;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes anim-cons-stage-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes anim-cons-content-switch {
-  from {
-    opacity: 0.52;
-  }
-  to {
-    opacity: 1;
-  }
+  transition: left 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes anim-cons-bar-grow {
@@ -447,25 +418,6 @@
   }
 }
 
-.trend-x-axis.is-switching,
-.trend-v-grid.is-switching {
-  animation: anim-cons-axis-fade 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.trend-plot-stage.is-stage-entering,
-.trend-heatmap-stage.is-stage-entering,
-.cons-item-list.is-tab-entering,
-.cons-ranking-empty.is-tab-entering {
-  animation: anim-cons-stage-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.cons-unified-matrix.is-range-switching,
-.cons-item-list.is-range-switching,
-.cons-ranking-empty.is-range-switching {
-  animation: anim-cons-content-switch 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.cons-item-list.is-tab-entering .progress-track,
 .cons-item-list.is-bars-revealing .progress-track {
   transform-origin: left center;
   animation: anim-cons-bar-grow 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -478,15 +430,6 @@
   .trend-hm-cell {
     transition: none !important;
   }
-  .trend-x-axis.is-switching,
-  .trend-v-grid.is-switching,
-  .trend-plot-stage.is-stage-entering,
-  .trend-heatmap-stage.is-stage-entering,
-  .cons-item-list.is-tab-entering,
-  .cons-ranking-empty.is-tab-entering,
-  .cons-unified-matrix.is-range-switching,
-  .cons-item-list.is-range-switching,
-  .cons-ranking-empty.is-range-switching,
   .cons-item-list.is-bars-revealing .progress-track {
     animation: none !important;
   }

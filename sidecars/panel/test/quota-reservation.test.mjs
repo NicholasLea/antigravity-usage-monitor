@@ -2208,7 +2208,7 @@ test('quota-reservation: 3-tier hybrid estimator unlocks cycle_ratio & anchor_sl
   assert.equal(pAfterRestart.get('Claude & GPT').rateEstimate?.eqFullWeeklyTokens, 12_500_000);
 });
 
-test('QuotaPoolsWidget ? popover renders Est. Weekly Quota summary row, preliminary labels, and full-pool token references', async () => {
+test('QuotaPoolsWidget ? popover renders preliminary labels and full-pool token references without weekly summary row, footer note, or divider rules', async () => {
   const { document } = createMockDom();
   const origDocument = globalThis.document;
   const origWindow = globalThis.window;
@@ -2231,8 +2231,9 @@ test('QuotaPoolsWidget ? popover renders Est. Weekly Quota summary row, prelimin
     const widget = QuotaPoolsWidget();
     const popover = widget.refs.ratePopoverEl;
 
-    // 1. Collecting state: top weekly summary hidden until at least 1 pool has a weekly capacity estimate
-    assert.equal(popover.querySelector('.quota-rate-wk-summary')?.hidden, true);
+    // 1. Minimalist layout: no redundant weekly summary row or footer note element
+    assert.equal(popover.querySelector('.quota-rate-wk-summary'), null);
+    assert.equal(popover.querySelector('.quota-rate-pop-note'), null);
 
     // 2. Partial + Preliminary state (Claude ready via anchor_slope, Gemini still collecting)
     widget.refs.update({
@@ -2280,9 +2281,8 @@ test('QuotaPoolsWidget ? popover renders Est. Weekly Quota summary row, prelimin
       minuteTick: 1,
     });
 
-    const wkSummary = popover.querySelector('.quota-rate-wk-summary');
-    assert.equal(wkSummary.hidden, false);
-    assert.match(wkSummary.textContent, /预测周额度.*· 1\/2 池.*≈ \$48.*· 9\.9M/);
+    assert.doesNotMatch(popover.textContent, /预测周额度/);
+    assert.doesNotMatch(popover.textContent, /同池最省/);
     const fallbackRow = popover.querySelector('.quota-rate-model-row.is-fallback');
     assert.ok(fallbackRow);
     assert.match(fallbackRow.textContent, /池综合均值/);
@@ -2292,7 +2292,7 @@ test('QuotaPoolsWidget ? popover renders Est. Weekly Quota summary row, prelimin
     const wkRowLeft = widget.refs.poolsListEl.querySelectorAll('.quota-win-left')[1];
     assert.match(wkRowLeft.getAttribute('title') || '', /满池约 \$48 \(9\.9M\)/);
 
-    // 3. All pools calibrated & ready: sums USD + Tokens cleanly ($50 + $35 = $85, 10.3M + 14.2M = 24.5M)
+    // 3. All pools calibrated & ready: renders per-pool model & fallback cards cleanly
     const allReadyData = {
       account: { email: 'sjee80343@gmail.com', tierName: 'Google AI Pro' },
       quotas: {
@@ -2367,33 +2367,21 @@ test('QuotaPoolsWidget ? popover renders Est. Weekly Quota summary row, prelimin
       },
     };
     widget.refs.update({ data: allReadyData, minuteTick: 2 });
-    assert.equal(wkSummary.hidden, false);
-    assert.equal(wkSummary.querySelector('.quota-rate-wk-sub').hidden, true);
-    assert.match(wkSummary.textContent, /预测周额度≈ \$85· 24\.5M/);
+    assert.match(popover.textContent, /Claude Sonnet 4\.6.*5h 满池≈ \$50· 10\.3M.*周限满池≈ \$50· 10\.3M/);
+    assert.match(popover.textContent, /Gemini.*池综合均值.*5h 满池≈ \$35· 14\.2M/);
 
-    // 4. English locale switch updates weekly summary, model cards, and row title tooltip without reload
+    // 4. English locale switch updates model cards and row title tooltip without reload
     setI18nLanguage('en-US');
     widget.refs.update({ data: allReadyData, minuteTick: 3 });
-    assert.match(wkSummary.textContent, /Est\. Weekly Quota≈ \$85· 24\.5M/);
+    assert.doesNotMatch(popover.textContent, /Est\. Weekly Quota/);
+    assert.doesNotMatch(popover.textContent, /lowest in pool/);
+    assert.match(popover.textContent, /5h full≈ \$50· 10\.3M.*Weekly full≈ \$50· 10\.3M/);
     assert.match(
       widget.refs.poolsListEl.querySelectorAll('.quota-win-left')[1].getAttribute('title') || '',
       /Full ~\$50 \(10\.3M\)/
     );
 
-    // 5. Custom local weekly budget mode hides official weekly capacity summary
-    widget.refs.update({
-      data: {
-        ...allReadyData,
-        quotas: {
-          ...allReadyData.quotas,
-          weekly: { isOfficial: false },
-        },
-      },
-      minuteTick: 4,
-    });
-    assert.equal(wkSummary.hidden, true);
-
-    // 6. Pool with 5h-only model card + pool-level preliminary weekly estimate renders supplementary weekly fallback row
+    // 5. Pool with 5h-only model card + pool-level preliminary weekly estimate renders supplementary weekly fallback row
     setI18nLanguage('zh-CN');
     widget.refs.update({
       data: {
@@ -2443,8 +2431,6 @@ test('QuotaPoolsWidget ? popover renders Est. Weekly Quota summary row, prelimin
       },
       minuteTick: 5,
     });
-    assert.equal(wkSummary.hidden, false);
-    assert.match(wkSummary.textContent, /预测周额度.*· 初估.*≈ \$600.*· 200\.0M/);
     const mixedRows = popover.querySelectorAll('.quota-rate-model-row');
     assert.equal(mixedRows.length, 2, 'renders 5h model card + supplementary pool weekly fallback row');
     assert.match(mixedRows[0].textContent, /Gemini 3\.1 Pro.*5h 满池≈ \$150/);
