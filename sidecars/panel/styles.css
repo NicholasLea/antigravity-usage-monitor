@@ -3151,6 +3151,31 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- 4. 历史趋势交互式 SVG 平滑曲线图 (Interactive Historical Trend SVG Chart) --- */
+.cons-trend-head {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cons-trend-head-right {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.cons-trend-hint[hidden],
+.cons-hm-mode-switch[hidden] {
+  display: none !important;
+}
+
+.cons-hm-mode-switch.segmented {
+  gap: 1px;
+}
+
+.cons-hm-mode-switch .seg-btn {
+  padding: 1px 7px;
+  font-size: var(--fs-xs);
+}
+
 .trend-chart-wrap {
   position: relative;
   width: 100%;
@@ -3598,6 +3623,20 @@ html[data-standalone="true"] .app-shell {
   outline: 1.5px solid var(--text-primary);
   outline-offset: 0.5px;
   z-index: 2;
+}
+
+.trend-hm-cell.is-bar-hovered {
+  filter: brightness(1.22);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 52%, transparent);
+  z-index: 2;
+}
+
+.trend-hm-cell.is-month-edge:not(.lv-0) {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--surface-panel) 55%, transparent);
+}
+
+.trend-hm-cell.is-month-edge.is-bar-hovered:not(.lv-0) {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 52%, transparent);
 }
 
 .trend-hm-footer {

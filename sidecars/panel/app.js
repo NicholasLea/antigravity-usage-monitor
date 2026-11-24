@@ -1530,7 +1530,11 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.replyAndThink': '思考 {think} · 回复 {resp}',
   'cons.trendTitle': '用量趋势',
   'cons.allTime': '全部时间',
-  'cons.trendHeatmapHint': '按日 ({days}天) · 悬停查看',
+  'cons.hmModeAria': '热力图查看维度',
+  'cons.hmModeDay': '日',
+  'cons.hmModeWeek': '周',
+  'cons.hmModeMonth': '月',
+  'cons.hmModeAll': '全部',
   'cons.trendPointsHintMinute': '按 {minutes} 分钟 ({points}点) · 悬停查看',
   'cons.trendPointsHintHourly': '按小时 ({points}点) · 悬停查看',
   'cons.trendPointsHintDaily': '按日 ({points}点) · 悬停查看',
@@ -2141,6 +2145,12 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'chart.trend.hmMore': '多',
   'chart.trend.hmActivePeak': '活跃 {active}/{total} 天 · 峰值 {label} · {tokens}',
   'chart.trend.hmActiveZero': '活跃 0/{total} 天',
+  'chart.trend.hmWeekPeak': '活跃 {active}/{total} 周 · 峰值 {label} · {tokens}',
+  'chart.trend.hmWeekZero': '活跃 0/{total} 周',
+  'chart.trend.hmMonthPeak': '活跃 {active}/{total} 月 · 峰值 {label} · {tokens}',
+  'chart.trend.hmMonthZero': '活跃 0/{total} 月',
+  'chart.trend.hmCumSummary': '累计 {days} 天 · 总计 {tokens} · {cost}',
+  'chart.trend.hmCumThrough': '截至 {date} 累计',
   'chart.trend.peakPill': '峰值 {label} · {tokens}',
 
   // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
@@ -2436,7 +2446,11 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.replyAndThink': 'Think {think} · Reply {resp}',
   'cons.trendTitle': 'Usage Trend',
   'cons.allTime': 'All Time',
-  'cons.trendHeatmapHint': 'Daily ({days}d) · Hover for details',
+  'cons.hmModeAria': 'Heatmap view mode',
+  'cons.hmModeDay': 'Day',
+  'cons.hmModeWeek': 'Week',
+  'cons.hmModeMonth': 'Month',
+  'cons.hmModeAll': 'Total',
   'cons.trendPointsHintMinute': '{minutes}m ({points} pts) · Hover for details',
   'cons.trendPointsHintHourly': 'Hourly ({points} pts) · Hover for details',
   'cons.trendPointsHintDaily': 'Daily ({points} pts) · Hover for details',
@@ -3047,6 +3061,12 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'chart.trend.hmMore': 'More',
   'chart.trend.hmActivePeak': 'Active {active}/{total}d · Peak {label} · {tokens}',
   'chart.trend.hmActiveZero': 'Active 0/{total}d',
+  'chart.trend.hmWeekPeak': 'Active {active}/{total}w · Peak {label} · {tokens}',
+  'chart.trend.hmWeekZero': 'Active 0/{total}w',
+  'chart.trend.hmMonthPeak': 'Active {active}/{total}m · Peak {label} · {tokens}',
+  'chart.trend.hmMonthZero': 'Active 0/{total}m',
+  'chart.trend.hmCumSummary': 'Cumulative {days}d · Total {tokens} · {cost}',
+  'chart.trend.hmCumThrough': 'Cumulative through {date}',
   'chart.trend.peakPill': 'Peak {label} · {tokens}',
 
   // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
@@ -14165,6 +14185,332 @@ function buildHeatmapMonthTicks(slots, firstDow, totalWeeks) {
   return ticks;
 }
 
+const EN_SHORT_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+function normalizeHeatmapMode(mode) {
+  return mode === 'week' || mode === 'month' || mode === 'all' ? mode : 'day';
+}
+
+function createHeatmapAggAcc(extra = {}) {
+  return {
+    tokens: 0,
+    inputTokens: 0,
+    cacheReadTokens: 0,
+    thinkingTokens: 0,
+    responseTokens: 0,
+    outputTokens: 0,
+    costUsd: 0,
+    calls: 0,
+    minStartMs: Infinity,
+    maxEndMs: 0,
+    firstLabel: '',
+    lastLabel: '',
+    modelMap: new Map(),
+    ...extra,
+  };
+}
+
+function mergeSlotIntoHeatmapAcc(acc, slot) {
+  if (!slot) return;
+  const tok = safeSlotTokens(slot.tokens);
+  const inTok = safeSlotTokens(slot.inputTokens);
+  const cacheTok = safeSlotTokens(slot.cacheReadTokens);
+  const thinkTok = safeSlotTokens(slot.thinkingTokens);
+  const respTok = safeSlotTokens(slot.responseTokens);
+  const outTok =
+    slot.outputTokens !== undefined && slot.outputTokens !== null
+      ? safeSlotTokens(slot.outputTokens)
+      : thinkTok + respTok;
+  acc.tokens += tok;
+  acc.inputTokens += inTok;
+  acc.cacheReadTokens += cacheTok;
+  acc.thinkingTokens += thinkTok;
+  acc.responseTokens += respTok;
+  acc.outputTokens += outTok;
+  acc.costUsd += Math.max(0, Number(slot.costUsd || 0));
+  acc.calls += Math.max(0, Number(slot.calls || 0));
+
+  const sMs = Number(slot.startMs);
+  const eMs = Number(slot.endMs);
+  if (Number.isFinite(sMs) && sMs > 0 && sMs < acc.minStartMs) {
+    acc.minStartMs = sMs;
+  }
+  if (Number.isFinite(eMs) && eMs > acc.maxEndMs) {
+    acc.maxEndMs = eMs;
+  } else if (Number.isFinite(sMs) && sMs > 0 && sMs + 86_400_000 > acc.maxEndMs) {
+    acc.maxEndMs = sMs + 86_400_000;
+  }
+  const lbl = String(slot.label || '');
+  if (!acc.firstLabel && lbl) acc.firstLabel = lbl;
+  if (lbl) acc.lastLabel = lbl;
+
+  const srcModels = Array.isArray(slot.mergedModels)
+    ? slot.mergedModels
+    : Array.isArray(slot.models)
+      ? slot.models
+      : null;
+  if (srcModels) {
+    for (let i = 0; i < srcModels.length; i++) {
+      const m = srcModels[i];
+      if (!m) continue;
+      const key = String(m.displayText || m.label || m.shortName || '');
+      if (!key) continue;
+      let cur = acc.modelMap.get(key);
+      if (!cur) {
+        cur = {
+          ...m,
+          calls: 0,
+          inputTokens: 0,
+          cacheReadTokens: 0,
+          thinkingTokens: 0,
+          responseTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          costUsd: 0,
+        };
+        acc.modelMap.set(key, cur);
+      }
+      cur.calls += Math.max(0, Number(m.calls || 0));
+      cur.inputTokens += safeSlotTokens(m.inputTokens);
+      cur.cacheReadTokens += safeSlotTokens(m.cacheReadTokens);
+      cur.thinkingTokens += safeSlotTokens(m.thinkingTokens);
+      cur.responseTokens += safeSlotTokens(m.responseTokens);
+      cur.outputTokens += safeSlotTokens(m.outputTokens);
+      cur.totalTokens += safeSlotTokens(m.totalTokens);
+      cur.costUsd += Math.max(0, Number(m.costUsd || 0));
+    }
+  }
+}
+
+function finalizeHeatmapBucket(acc, customTitle, shortLabel, buildSegmentsFn) {
+  const hasStart = Number.isFinite(acc.minStartMs) && acc.minStartMs < Infinity && acc.minStartMs > 0;
+  const startMs = hasStart ? acc.minStartMs : 0;
+  const endMs =
+    hasStart && acc.maxEndMs > startMs
+      ? Math.max(startMs + 60_000, acc.maxEndMs - 1)
+      : 0;
+  let modelSegments = [];
+  if (typeof buildSegmentsFn === 'function' && acc.modelMap.size > 0) {
+    const mergedList = Array.from(acc.modelMap.values(), (m) => ({ ...m })).sort(
+      (a, b) => (b.totalTokens || 0) - (a.totalTokens || 0) || (b.calls || 0) - (a.calls || 0)
+    );
+    modelSegments = buildSegmentsFn(mergedList) || [];
+  }
+  return {
+    startMs,
+    endMs,
+    label: shortLabel || customTitle,
+    fullLabel: customTitle,
+    customTitle,
+    tokens: acc.tokens,
+    inputTokens: acc.inputTokens,
+    cacheReadTokens: acc.cacheReadTokens,
+    thinkingTokens: acc.thinkingTokens,
+    responseTokens: acc.responseTokens,
+    outputTokens: acc.outputTokens,
+    costUsd: +acc.costUsd.toFixed(4),
+    calls: acc.calls,
+    modelSegments,
+  };
+}
+
+function buildHeatmapBarView(slots, firstDow, totalWeeks, mode, buildSegmentsFn) {
+  if (mode === 'week') {
+    const weekAccs = Array.from({ length: totalWeeks }, () => createHeatmapAggAcc());
+    for (let i = 0; i < slots.length; i++) {
+      const col = Math.floor((firstDow + i) / 7);
+      if (col >= 0 && col < totalWeeks) {
+        mergeSlotIntoHeatmapAcc(weekAccs[col], slots[i]);
+      }
+    }
+    let maxTok = 0;
+    let peakIdx = 0;
+    let activeWeeks = 0;
+    const nonZero = [];
+    const buckets = weekAccs.map((acc, idx) => {
+      if (acc.tokens > 0) {
+        activeWeeks++;
+        nonZero.push(acc.tokens);
+      }
+      if (acc.tokens >= maxTok) {
+        maxTok = acc.tokens;
+        peakIdx = idx;
+      }
+      const hasValidRange = Number.isFinite(acc.minStartMs) && acc.minStartMs < Infinity && acc.minStartMs > 0;
+      const spanTitle = hasValidRange
+        ? formatDateSpanBadge(acc.minStartMs, Math.max(acc.minStartMs, acc.maxEndMs - 1))
+        : acc.firstLabel && acc.lastLabel && acc.firstLabel !== acc.lastLabel
+          ? `${acc.firstLabel} ~ ${acc.lastLabel}`
+          : acc.firstLabel || '--';
+      const shortLbl =
+        acc.firstLabel && acc.lastLabel && acc.firstLabel !== acc.lastLabel
+          ? `${acc.firstLabel}~${acc.lastLabel.split('/').pop()}`
+          : acc.firstLabel || spanTitle;
+      return finalizeHeatmapBucket(acc, spanTitle, shortLbl, buildSegmentsFn);
+    });
+    nonZero.sort((a, b) => a - b);
+    const thresholds = computeHeatmapThresholds(nonZero, maxTok);
+    const colSpecs = buckets.map((b, col) => {
+      const litRows =
+        b.tokens > 0 && maxTok > 0 ? Math.max(1, Math.min(7, Math.ceil((b.tokens / maxTok) * 7))) : 0;
+      return {
+        bucketIdx: col,
+        litRows,
+        lv: litRows > 0 ? resolveHeatmapLevel(b.tokens, thresholds) : 0,
+        isMonthEdge: false,
+      };
+    });
+    const peakB = buckets[peakIdx];
+    const summaryText =
+      maxTok > 0 && peakB
+        ? t('chart.trend.hmWeekPeak', {
+            active: activeWeeks,
+            total: totalWeeks,
+            label: peakB.label,
+            tokens: formatTokensPrecise(maxTok),
+          })
+        : t('chart.trend.hmWeekZero', { total: totalWeeks });
+    return { buckets, colSpecs, summaryText };
+  }
+
+  if (mode === 'month') {
+    const monthIndexByKey = new Map();
+    const monthAccs = [];
+    const colMonthCounts = Array.from({ length: totalWeeks }, () => new Map());
+
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      const parts = parseSlotCalendarParts(slot);
+      const mKey = `${parts.year}-${parts.month}`;
+      let mIdx = monthIndexByKey.get(mKey);
+      if (mIdx === undefined) {
+        mIdx = monthAccs.length;
+        monthIndexByKey.set(mKey, mIdx);
+        monthAccs.push(createHeatmapAggAcc({ year: parts.year, month: parts.month }));
+      }
+      mergeSlotIntoHeatmapAcc(monthAccs[mIdx], slot);
+      const col = Math.floor((firstDow + i) / 7);
+      if (col >= 0 && col < totalWeeks) {
+        colMonthCounts[col].set(mIdx, (colMonthCounts[col].get(mIdx) || 0) + 1);
+      }
+    }
+
+    const colMonthIdx = new Array(totalWeeks).fill(0);
+    for (let col = 0; col < totalWeeks; col++) {
+      let bestM = col > 0 ? colMonthIdx[col - 1] : 0;
+      let bestCnt = -1;
+      for (const [mIdx, cnt] of colMonthCounts[col].entries()) {
+        if (cnt >= bestCnt) {
+          bestCnt = cnt;
+          bestM = mIdx;
+        }
+      }
+      colMonthIdx[col] = bestM;
+    }
+    if (monthAccs.length > 0 && totalWeeks >= monthAccs.length) {
+      colMonthIdx[0] = 0;
+      colMonthIdx[totalWeeks - 1] = monthAccs.length - 1;
+    }
+
+    let maxTok = 0;
+    let peakIdx = 0;
+    let activeMonths = 0;
+    const nonZero = [];
+    const en = isEnglishLocale();
+    const buckets = monthAccs.map((acc, idx) => {
+      if (acc.tokens > 0) {
+        activeMonths++;
+        nonZero.push(acc.tokens);
+      }
+      if (acc.tokens >= maxTok) {
+        maxTok = acc.tokens;
+        peakIdx = idx;
+      }
+      const mNum = acc.month || 1;
+      const enShort = EN_SHORT_MONTHS[mNum - 1] || `M${mNum}`;
+      const fullTitle = en ? `${enShort} ${acc.year}` : t('cons.monthFullLabel', { year: acc.year, m: mNum });
+      const shortLbl = en ? enShort : t('cons.monthLabel', { m: mNum });
+      return finalizeHeatmapBucket(acc, fullTitle, shortLbl, buildSegmentsFn);
+    });
+    nonZero.sort((a, b) => a - b);
+    const thresholds = computeHeatmapThresholds(nonZero, maxTok);
+    const colSpecs = colMonthIdx.map((mIdx, col) => {
+      const b = buckets[mIdx] || { tokens: 0 };
+      const litRows =
+        b.tokens > 0 && maxTok > 0 ? Math.max(1, Math.min(7, Math.ceil((b.tokens / maxTok) * 7))) : 0;
+      return {
+        bucketIdx: mIdx,
+        litRows,
+        lv: litRows > 0 ? resolveHeatmapLevel(b.tokens, thresholds) : 0,
+        isMonthEdge: col > 0 && mIdx !== colMonthIdx[col - 1],
+      };
+    });
+    const peakB = buckets[peakIdx];
+    const summaryText =
+      maxTok > 0 && peakB
+        ? t('chart.trend.hmMonthPeak', {
+            active: activeMonths,
+            total: buckets.length,
+            label: peakB.label,
+            tokens: formatTokensPrecise(maxTok),
+          })
+        : t('chart.trend.hmMonthZero', { total: Math.max(1, buckets.length) });
+    return { buckets, colSpecs, summaryText };
+  }
+
+  // mode === 'all' (累计总量爬升柱阵)
+  const runAcc = createHeatmapAggAcc();
+  const buckets = new Array(totalWeeks);
+  for (let col = 0; col < totalWeeks; col++) {
+    for (let row = 0; row < 7; row++) {
+      const sIdx = col * 7 + row - firstDow;
+      if (sIdx >= 0 && sIdx < slots.length) {
+        mergeSlotIntoHeatmapAcc(runAcc, slots[sIdx]);
+      }
+    }
+    const hasEnd = Number.isFinite(runAcc.minStartMs) && runAcc.minStartMs < Infinity && runAcc.maxEndMs > 0;
+    const endDayMs = hasEnd ? Math.max(runAcc.minStartMs, runAcc.maxEndMs - 1) : 0;
+    const endDateStr = endDayMs > 0 ? formatDateSpanBadge(endDayMs, endDayMs) : runAcc.lastLabel || '--';
+    const cumTitle = t('chart.trend.hmCumThrough', { date: endDateStr });
+    buckets[col] = finalizeHeatmapBucket(runAcc, cumTitle, endDateStr, buildSegmentsFn);
+  }
+  const grandTotal = buckets[totalWeeks - 1]?.tokens || 0;
+  const grandCost = buckets[totalWeeks - 1]?.costUsd || 0;
+  const colSpecs = buckets.map((b, col) => {
+    const litRows =
+      b.tokens > 0 && grandTotal > 0
+        ? Math.max(1, Math.min(7, Math.ceil((b.tokens / grandTotal) * 7)))
+        : 0;
+    const ratio = grandTotal > 0 ? b.tokens / grandTotal : 0;
+    const lv = litRows === 0 ? 0 : ratio > 0.75 ? 4 : ratio > 0.5 ? 3 : ratio > 0.25 ? 2 : 1;
+    return {
+      bucketIdx: col,
+      litRows,
+      lv,
+      isMonthEdge: false,
+    };
+  });
+  const summaryText = t('chart.trend.hmCumSummary', {
+    days: slots.length,
+    tokens: formatTokensPrecise(grandTotal),
+    cost: formatUsd(grandCost),
+  });
+  return { buckets, colSpecs, summaryText };
+}
+
 /**
  * 创建交互式历史趋势组件（<=90 天为 SVG 平滑曲线图，>90 天自动切换为类 GitHub 每日小格子热力图）。
  *
@@ -14342,10 +14688,18 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   let currentSlots = [];
   let currentPts = [];
   let currentIsHeatmap = false;
+  let currentHmMode = 'day';
+  let lastBuildSegmentsFn = null;
   let currentHeatmapWeeks = 0;
   let currentHeatmapFirstDow = 0;
   let currentHeatmapGapPx = 2;
   let currentCellEls = [];
+  let currentHmBuckets = [];
+  let currentHmBucketCells = [];
+  let currentHmAnchorCells = [];
+  let currentColBucketIdx = [];
+  let hoveredHighlightEls = [];
+  let lastHeatmapSummaryText = '';
   let tickElsByIdx = new Map();
   let hoveredIdx = -1;
   let hoveredCellEl = null;
@@ -14511,7 +14865,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const slotTok = safeSlotTokens(slot.tokens);
     const slotCost = Number.isFinite(Number(slot.costUsd)) ? Math.max(0, Number(slot.costUsd)) : 0;
     tooltipContent.update({
-      title: formatTrendSlotFullLabel(slot) || slot.label || '--',
+      title: slot.customTitle || formatTrendSlotFullLabel(slot) || slot.label || '--',
       calls: slot.calls,
       totalTokens: slotTok,
       costText: formatUsd(slotCost, {
@@ -14652,11 +15006,14 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   }
 
   function showHeatmapHoverAtIndex(idx, cellEl, pointer = null) {
-    if (!currentIsHeatmap || idx < 0 || idx >= currentSlots.length) {
+    if (!currentIsHeatmap || idx < 0 || idx >= currentHmBuckets.length) {
       clearHover();
       return;
     }
-    const targetCell = cellEl || currentCellEls[idx] || null;
+    const isBarMode = currentHmMode !== 'day';
+    const targetCell = isBarMode
+      ? currentHmAnchorCells[idx] || cellEl || null
+      : cellEl || currentHmAnchorCells[idx] || currentCellEls[idx] || null;
     if (!targetCell) {
       clearHover();
       return;
@@ -14667,13 +15024,29 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     if (pointer) {
       lastPointer = pointer;
     }
-    if (hoveredCellEl && hoveredCellEl !== targetCell) {
-      patchClasses(hoveredCellEl, { 'is-hovered': false });
-    }
-    hoveredCellEl = targetCell;
-    patchClasses(targetCell, { 'is-hovered': true });
 
-    const slot = currentSlots[idx];
+    if (changedCell || hoveredHighlightEls.length === 0) {
+      for (let i = 0; i < hoveredHighlightEls.length; i++) {
+        patchClasses(hoveredHighlightEls[i], {
+          'is-hovered': false,
+          'is-bar-hovered': false,
+        });
+      }
+      const nextHighlight =
+        currentHmBucketCells[idx] && currentHmBucketCells[idx].length > 0
+          ? currentHmBucketCells[idx]
+          : [targetCell];
+      for (let i = 0; i < nextHighlight.length; i++) {
+        patchClasses(nextHighlight[i], {
+          'is-hovered': !isBarMode,
+          'is-bar-hovered': isBarMode,
+        });
+      }
+      hoveredHighlightEls = nextHighlight;
+      hoveredCellEl = targetCell;
+    }
+
+    const slot = currentHmBuckets[idx];
     const row = Number(targetCell.getAttribute('data-hm-row') || 0);
     const col = Number(targetCell.getAttribute('data-hm-col') || 0);
 
@@ -14696,18 +15069,32 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     let fallbackX =
       currentHeatmapWeeks > 0 ? ((col + 0.5) / currentHeatmapWeeks) * wrapW : wrapW / 2;
     let fallbackY = 20 + row * 14;
-    if (
+    const hasValidCellRect = Boolean(
       wrapRect &&
-      wrapRect.width > 0 &&
-      cellRect &&
-      cellRect.width > 0 &&
-      cellRect.width < wrapRect.width
-    ) {
+        wrapRect.width > 0 &&
+        cellRect &&
+        cellRect.width > 0 &&
+        cellRect.width < wrapRect.width
+    );
+    if (hasValidCellRect) {
       fallbackX = cellRect.left + cellRect.width / 2 - wrapRect.left;
       fallbackY = cellRect.top + cellRect.height / 2 - wrapRect.top;
     }
 
-    positionTooltipNearAnchor(fallbackX, fallbackY, pointer || lastPointer);
+    const rawPtr = pointer || lastPointer;
+    const effectivePtr =
+      isBarMode &&
+      rawPtr &&
+      hasValidCellRect &&
+      Number.isFinite(Number(rawPtr.clientX)) &&
+      Number.isFinite(Number(rawPtr.clientY))
+        ? {
+            clientX: Number(rawPtr.clientX),
+            clientY: Math.min(Number(rawPtr.clientY), cellRect.top + 2),
+          }
+        : rawPtr;
+
+    positionTooltipNearAnchor(fallbackX, fallbackY, effectivePtr);
     armTooltipTracking(wasHidden);
   }
 
@@ -14729,8 +15116,17 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     if (!currentIsHeatmap) {
       patchAttr(peakPill, 'hidden', false);
     }
+    if (hoveredHighlightEls.length > 0) {
+      for (let i = 0; i < hoveredHighlightEls.length; i++) {
+        patchClasses(hoveredHighlightEls[i], {
+          'is-hovered': false,
+          'is-bar-hovered': false,
+        });
+      }
+      hoveredHighlightEls = [];
+    }
     if (hoveredCellEl) {
-      patchClasses(hoveredCellEl, { 'is-hovered': false });
+      patchClasses(hoveredCellEl, { 'is-hovered': false, 'is-bar-hovered': false });
       hoveredCellEl = null;
     }
     for (const el of tickElsByIdx.values()) {
@@ -14787,8 +15183,10 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       const idxAttr = cur.getAttribute?.('data-slot-idx');
       if (idxAttr !== null && idxAttr !== undefined && idxAttr !== '') {
         const idx = Number(idxAttr);
-        if (Number.isFinite(idx) && idx >= 0 && idx < currentSlots.length) {
-          return { idx, cellEl: cur };
+        if (Number.isFinite(idx) && idx >= 0 && idx < currentHmBuckets.length) {
+          const cellEl =
+            currentHmMode !== 'day' ? currentHmAnchorCells[idx] || cur : cur;
+          return { idx, cellEl };
         }
       }
       cur = cur.parentNode || null;
@@ -14803,8 +15201,12 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const clientX = Number(e?.clientX);
     const clientY = Number(e?.clientY);
     if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
-      if (hoveredIdx >= 0 && hoveredIdx < currentSlots.length && currentCellEls[hoveredIdx]) {
-        return { idx: hoveredIdx, cellEl: currentCellEls[hoveredIdx] };
+      if (
+        hoveredIdx >= 0 &&
+        hoveredIdx < currentHmBuckets.length &&
+        currentHmAnchorCells[hoveredIdx]
+      ) {
+        return { idx: hoveredIdx, cellEl: currentHmAnchorCells[hoveredIdx] };
       }
       return null;
     }
@@ -14815,8 +15217,12 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const rect = cachedHmGridRect;
     if (!rect || !(rect.width > 0) || !(rect.height > 0) || currentHeatmapWeeks <= 0) {
       cachedHmGridRect = null;
-      if (hoveredIdx >= 0 && hoveredIdx < currentSlots.length && currentCellEls[hoveredIdx]) {
-        return { idx: hoveredIdx, cellEl: currentCellEls[hoveredIdx] };
+      if (
+        hoveredIdx >= 0 &&
+        hoveredIdx < currentHmBuckets.length &&
+        currentHmAnchorCells[hoveredIdx]
+      ) {
+        return { idx: hoveredIdx, cellEl: currentHmAnchorCells[hoveredIdx] };
       }
       return null;
     }
@@ -14839,6 +15245,36 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const cellW = Math.max(1, pitchX - G);
     const cellH = Math.max(1, pitchY - G);
 
+    // 柱阵模式下按列定位分桶，并在列间隙保持原高亮防闪烁
+    if (currentHmMode !== 'day') {
+      const approxCol = Math.max(0, Math.min(W - 1, Math.floor((relX + G * 0.5) / pitchX)));
+      if (
+        hoveredIdx >= 0 &&
+        hoveredIdx < currentHmBuckets.length &&
+        currentColBucketIdx[approxCol] !== hoveredIdx
+      ) {
+        for (const dc of [-1, 1]) {
+          const nc = approxCol + dc;
+          if (nc < 0 || nc >= W || currentColBucketIdx[nc] !== hoveredIdx) continue;
+          const x0 = nc * pitchX;
+          const dx = relX < x0 ? x0 - relX : relX > x0 + cellW ? relX - (x0 + cellW) : 0;
+          if (dx <= G + 0.75 && currentHmAnchorCells[hoveredIdx]) {
+            return { idx: hoveredIdx, cellEl: currentHmAnchorCells[hoveredIdx] };
+          }
+        }
+      }
+      const bIdx = currentColBucketIdx[approxCol];
+      if (
+        Number.isFinite(bIdx) &&
+        bIdx >= 0 &&
+        bIdx < currentHmBuckets.length &&
+        currentHmAnchorCells[bIdx]
+      ) {
+        return { idx: bIdx, cellEl: currentHmAnchorCells[bIdx] };
+      }
+      return null;
+    }
+
     function distanceToCell(c, r) {
       const x0 = c * pitchX;
       const y0 = r * pitchY;
@@ -14847,7 +15283,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       return { chebyshev: Math.max(dx, dy), distSq: dx * dx + dy * dy };
     }
 
-    // 指针滑入当前悬停格四周的空隙（gap）时保持原高亮，彻底消除跨格空隙闪烁与边缘微抖
+    // 指针滑入当前悬停格四周的空隙（gap）时保持原高亮，彻底消除跨格空隙闪烁和边缘微抖
     if (hoveredIdx >= 0 && hoveredIdx < currentSlots.length && currentCellEls[hoveredIdx]) {
       const curGridPos = currentHeatmapFirstDow + hoveredIdx;
       const curCol = Math.floor(curGridPos / 7);
@@ -14894,7 +15330,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   }
 
   function handleHeatmapPointer(e) {
-    if (!currentIsHeatmap || !currentSlots.length) return;
+    if (!currentIsHeatmap || !currentHmBuckets.length) return;
     const hit = resolveHeatmapCellFromPointer(e);
     if (!hit || !Number.isFinite(hit.idx)) {
       clearHover();
@@ -14946,10 +15382,10 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
 
   function handleHeatmapClick(e) {
     handleHeatmapPointer(e);
-    if (!currentIsHeatmap || !currentSlots.length || typeof onSelectSlot !== 'function') return;
+    if (!currentIsHeatmap || !currentHmBuckets.length || typeof onSelectSlot !== 'function') return;
     const hit = resolveHeatmapCellFromPointer(e);
     if (!hit || !Number.isFinite(hit.idx)) return;
-    const slot = currentSlots[hit.idx];
+    const slot = currentHmBuckets[hit.idx];
     if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
       onSelectSlot(slot);
     }
@@ -15007,9 +15443,20 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   }
 
   /**
-   * 根据最新时间分桶序列重绘平滑曲线（<=90天/小时级）或类 GitHub 每日小格子热力图（>90天）。
+   * 根据最新时间分桶序列重绘平滑曲线（<=90天/小时级）或 7×W 矩阵热力图（>90天，支持日/周/月/全部四档）。
    */
-  function update(series = []) {
+  function update(series = [], opts = {}) {
+    if (opts && opts.heatmapMode !== undefined) {
+      const nextHmMode = normalizeHeatmapMode(opts.heatmapMode);
+      if (nextHmMode !== currentHmMode) {
+        clearHover();
+        currentHmMode = nextHmMode;
+      }
+    }
+    if (opts && typeof opts.buildModelSegments === 'function') {
+      lastBuildSegmentsFn = opts.buildModelSegments;
+    }
+
     const slots =
       Array.isArray(series) && series.length >= 1
         ? series
@@ -15070,7 +15517,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     patchText(hmMoreEl, t('chart.trend.hmMore'));
 
     const sig =
-      `${locale}|${useHeatmap ? 'hm' : `line:${viewW}`}|` +
+      `${locale}|${useHeatmap ? `hm:${currentHmMode}` : `line:${viewW}`}|` +
       slots
         .map((s) => {
           const mSig = Array.isArray(s?.modelSegments)
@@ -15081,21 +15528,19 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
                 )
                 .join(',')
             : '';
-          return `${s?.startMs || ''}:${s?.label || ''}:${s?.fullLabel || ''}:${safeSlotTokens(s?.tokens)}:${safeSlotTokens(s?.inputTokens)}:${safeSlotTokens(s?.cacheReadTokens)}:${safeSlotTokens(s?.thinkingTokens)}:${safeSlotTokens(s?.responseTokens)}:${Number(s?.costUsd || 0)}:${Number(s?.calls || 0)}:${mSig}`;
+          const mergedCnt = Array.isArray(s?.mergedModels) ? s.mergedModels.length : 0;
+          return `${s?.startMs || ''}:${s?.label || ''}:${s?.fullLabel || ''}:${safeSlotTokens(s?.tokens)}:${safeSlotTokens(s?.inputTokens)}:${safeSlotTokens(s?.cacheReadTokens)}:${safeSlotTokens(s?.thinkingTokens)}:${safeSlotTokens(s?.responseTokens)}:${Number(s?.costUsd || 0)}:${Number(s?.calls || 0)}:${mergedCnt}:${mSig}`;
         })
         .join('|');
 
-    if (hoveredIdx >= 0 && hoveredIdx < slots.length && !tooltipEl.hasAttribute('hidden')) {
-      populateTooltipContent(slots[hoveredIdx]);
-    }
-
     if (useHeatmap) {
       currentPts = [];
+      const isBarMode = currentHmMode !== 'day';
+      hmWeekdaysEl.style.visibility = isBarMode ? 'hidden' : '';
+      patchClasses(heatmapStage, { 'is-bar-mode': isBarMode });
+
       if (sig !== lastRenderSig) {
         lastRenderSig = sig;
-        nonZeroVals.sort((a, b) => a - b);
-        const thresholds = computeHeatmapThresholds(nonZeroVals, maxTokens);
-
         const firstStartMs = Number(slots[0]?.startMs);
         const firstDow =
           Number.isFinite(firstStartMs) && firstStartMs > 0
@@ -15104,6 +15549,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         const totalCells = firstDow + slots.length;
         const totalWeeks = Math.max(1, Math.ceil(totalCells / 7));
         const gapPx = totalWeeks > 42 ? 1.5 : 2;
+        const shouldAutoScrollRight = modeChanged || currentHeatmapWeeks !== totalWeeks;
         currentHeatmapWeeks = totalWeeks;
         currentHeatmapFirstDow = firstDow;
         currentHeatmapGapPx = gapPx;
@@ -15130,47 +15576,156 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
           hmMonthsEl.removeChild(hmMonthsEl.lastChild);
         }
 
-        // 就地增量复用 7 行 × N 周列的每日小格子，首次批量新增节点使用 DocumentFragment 挂载
-        currentCellEls = new Array(slots.length);
         const prevMountedCount = hmGridEl.children.length;
-        const newCellsFrag =
-          totalCells > prevMountedCount &&
-          typeof document !== 'undefined' &&
-          typeof document.createDocumentFragment === 'function'
-            ? document.createDocumentFragment()
-            : null;
 
-        for (let nodeIdx = 0; nodeIdx < totalCells; nodeIdx++) {
-          let cellEl = hmCellPool[nodeIdx];
-          if (!cellEl) {
-            cellEl = h('span', { className: 'trend-hm-cell' });
-            hmCellPool.push(cellEl);
+        if (!isBarMode) {
+          nonZeroVals.sort((a, b) => a - b);
+          const thresholds = computeHeatmapThresholds(nonZeroVals, maxTokens);
+
+          // 就地增量复用 7 行 × N 周列的每日小格子，首次批量新增节点使用 DocumentFragment 挂载
+          currentCellEls = new Array(slots.length);
+          const newCellsFrag =
+            totalCells > prevMountedCount &&
+            typeof document !== 'undefined' &&
+            typeof document.createDocumentFragment === 'function'
+              ? document.createDocumentFragment()
+              : null;
+
+          for (let nodeIdx = 0; nodeIdx < totalCells; nodeIdx++) {
+            let cellEl = hmCellPool[nodeIdx];
+            if (!cellEl) {
+              cellEl = h('span', { className: 'trend-hm-cell' });
+              hmCellPool.push(cellEl);
+            }
+            if (nodeIdx < firstDow) {
+              patchClasses(cellEl, {
+                'is-pad': true,
+                'is-hovered': false,
+                'is-bar-hovered': false,
+                'is-month-edge': false,
+                'lv-0': false,
+                'lv-1': false,
+                'lv-2': false,
+                'lv-3': false,
+                'lv-4': false,
+              });
+              patchAttr(cellEl, 'aria-hidden', 'true');
+              patchAttr(cellEl, 'role', null);
+              patchAttr(cellEl, 'data-slot-idx', null);
+              patchAttr(cellEl, 'data-hm-col', null);
+              patchAttr(cellEl, 'data-hm-row', null);
+            } else {
+              const i = nodeIdx - firstDow;
+              const slot = slots[i];
+              const tok = safeSlotTokens(slot?.tokens);
+              const lv = resolveHeatmapLevel(tok, thresholds);
+              const col = Math.floor(nodeIdx / 7);
+              const row = nodeIdx % 7;
+              patchClasses(cellEl, {
+                'is-pad': false,
+                'is-hovered': hoveredIdx === i,
+                'is-bar-hovered': false,
+                'is-month-edge': false,
+                'lv-0': lv === 0,
+                'lv-1': lv === 1,
+                'lv-2': lv === 2,
+                'lv-3': lv === 3,
+                'lv-4': lv === 4,
+              });
+              patchAttr(cellEl, 'aria-hidden', null);
+              patchAttr(cellEl, 'role', 'gridcell');
+              patchAttr(cellEl, 'data-slot-idx', String(i));
+              patchAttr(cellEl, 'data-hm-col', String(col));
+              patchAttr(cellEl, 'data-hm-row', String(row));
+              currentCellEls[i] = cellEl;
+            }
+            if (nodeIdx < prevMountedCount) {
+              if (hmGridEl.children[nodeIdx] !== cellEl) {
+                hmGridEl.insertBefore(cellEl, hmGridEl.children[nodeIdx] || null);
+              }
+            } else if (newCellsFrag) {
+              newCellsFrag.appendChild(cellEl);
+            } else {
+              hmGridEl.appendChild(cellEl);
+            }
           }
-          if (nodeIdx < firstDow) {
-            patchClasses(cellEl, {
-              'is-pad': true,
-              'is-hovered': false,
-              'lv-0': false,
-              'lv-1': false,
-              'lv-2': false,
-              'lv-3': false,
-              'lv-4': false,
-            });
-            patchAttr(cellEl, 'aria-hidden', 'true');
-            patchAttr(cellEl, 'role', null);
-            patchAttr(cellEl, 'data-slot-idx', null);
-            patchAttr(cellEl, 'data-hm-col', null);
-            patchAttr(cellEl, 'data-hm-row', null);
-          } else {
-            const i = nodeIdx - firstDow;
-            const slot = slots[i];
-            const tok = safeSlotTokens(slot?.tokens);
-            const lv = resolveHeatmapLevel(tok, thresholds);
+          if (newCellsFrag) {
+            hmGridEl.appendChild(newCellsFrag);
+          }
+          while (hmGridEl.children.length > totalCells) {
+            hmGridEl.removeChild(hmGridEl.lastChild);
+          }
+
+          currentHmBuckets = slots;
+          currentHmBucketCells = currentCellEls.map((el) => (el ? [el] : []));
+          currentHmAnchorCells = currentCellEls.slice();
+          currentColBucketIdx = [];
+          hoveredCellEl =
+            hoveredIdx >= 0 && hoveredIdx < slots.length ? currentCellEls[hoveredIdx] || null : null;
+          hoveredHighlightEls = hoveredCellEl ? [hoveredCellEl] : [];
+
+          const peakSlot = slots[peakIdx];
+          lastHeatmapSummaryText =
+            maxTokens > 0 && peakSlot?.label
+              ? t('chart.trend.hmActivePeak', {
+                  active: activeDays,
+                  total: slots.length,
+                  label: peakSlot.label,
+                  tokens: formatTokensPrecise(maxTokens),
+                })
+              : t('chart.trend.hmActiveZero', { total: slots.length });
+        } else {
+          // 周 / 月 / 全部柱阵模式：保持 7 行 × N 周列点阵几何不变，自底向上点亮对应格数
+          const barView = buildHeatmapBarView(
+            slots,
+            firstDow,
+            totalWeeks,
+            currentHmMode,
+            lastBuildSegmentsFn
+          );
+          const totalGridCells = totalWeeks * 7;
+          currentCellEls = [];
+          currentHmBuckets = barView.buckets;
+          currentColBucketIdx = barView.colSpecs.map((s) => s.bucketIdx);
+
+          const bucketCount = barView.buckets.length;
+          const bucketLitCells = Array.from({ length: bucketCount }, () => []);
+          const bucketBottomCells = Array.from({ length: bucketCount }, () => []);
+          const bucketTopRowCells = Array.from({ length: bucketCount }, () => []);
+
+          const newCellsFrag =
+            totalGridCells > prevMountedCount &&
+            typeof document !== 'undefined' &&
+            typeof document.createDocumentFragment === 'function'
+              ? document.createDocumentFragment()
+              : null;
+
+          for (let nodeIdx = 0; nodeIdx < totalGridCells; nodeIdx++) {
+            let cellEl = hmCellPool[nodeIdx];
+            if (!cellEl) {
+              cellEl = h('span', { className: 'trend-hm-cell' });
+              hmCellPool.push(cellEl);
+            }
             const col = Math.floor(nodeIdx / 7);
             const row = nodeIdx % 7;
+            const spec = barView.colSpecs[col] || {
+              bucketIdx: 0,
+              litRows: 0,
+              lv: 0,
+              isMonthEdge: false,
+            };
+            const bIdx = spec.bucketIdx;
+            const topLitRow = spec.litRows > 0 ? 7 - spec.litRows : 6;
+            const isLit = spec.litRows > 0 && row >= topLitRow;
+            const lv = isLit ? spec.lv : 0;
+            const isBarHovered =
+              hoveredIdx === bIdx && (isLit || (spec.litRows === 0 && row === 6));
+
             patchClasses(cellEl, {
               'is-pad': false,
-              'is-hovered': hoveredIdx === i,
+              'is-hovered': false,
+              'is-bar-hovered': isBarHovered,
+              'is-month-edge': Boolean(spec.isMonthEdge),
               'lv-0': lv === 0,
               'lv-1': lv === 1,
               'lv-2': lv === 2,
@@ -15179,57 +15734,86 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
             });
             patchAttr(cellEl, 'aria-hidden', null);
             patchAttr(cellEl, 'role', 'gridcell');
-            patchAttr(cellEl, 'data-slot-idx', String(i));
+            patchAttr(cellEl, 'data-slot-idx', String(bIdx));
             patchAttr(cellEl, 'data-hm-col', String(col));
             patchAttr(cellEl, 'data-hm-row', String(row));
-            currentCellEls[i] = cellEl;
-          }
-          if (nodeIdx < prevMountedCount) {
-            if (hmGridEl.children[nodeIdx] !== cellEl) {
-              hmGridEl.insertBefore(cellEl, hmGridEl.children[nodeIdx] || null);
-            }
-          } else if (newCellsFrag) {
-            newCellsFrag.appendChild(cellEl);
-          } else {
-            hmGridEl.appendChild(cellEl);
-          }
-        }
-        if (newCellsFrag) {
-          hmGridEl.appendChild(newCellsFrag);
-        }
-        while (hmGridEl.children.length > totalCells) {
-          hmGridEl.removeChild(hmGridEl.lastChild);
-        }
-        hoveredCellEl =
-          hoveredIdx >= 0 && hoveredIdx < slots.length ? currentCellEls[hoveredIdx] || null : null;
 
-        if (typeof requestAnimationFrame === 'function') {
+            if (bIdx >= 0 && bIdx < bucketCount) {
+              if (isLit) bucketLitCells[bIdx].push(cellEl);
+              if (row === 6) bucketBottomCells[bIdx].push(cellEl);
+              if (row === topLitRow) bucketTopRowCells[bIdx].push(cellEl);
+            }
+
+            if (nodeIdx < prevMountedCount) {
+              if (hmGridEl.children[nodeIdx] !== cellEl) {
+                hmGridEl.insertBefore(cellEl, hmGridEl.children[nodeIdx] || null);
+              }
+            } else if (newCellsFrag) {
+              newCellsFrag.appendChild(cellEl);
+            } else {
+              hmGridEl.appendChild(cellEl);
+            }
+          }
+          if (newCellsFrag) {
+            hmGridEl.appendChild(newCellsFrag);
+          }
+          while (hmGridEl.children.length > totalGridCells) {
+            hmGridEl.removeChild(hmGridEl.lastChild);
+          }
+
+          currentHmBucketCells = barView.buckets.map((_, bIdx) =>
+            bucketLitCells[bIdx].length > 0 ? bucketLitCells[bIdx] : bucketBottomCells[bIdx]
+          );
+          currentHmAnchorCells = barView.buckets.map((_, bIdx) => {
+            const tops = bucketTopRowCells[bIdx];
+            return tops.length > 0 ? tops[Math.floor(tops.length / 2)] : null;
+          });
+          hoveredCellEl =
+            hoveredIdx >= 0 && hoveredIdx < bucketCount
+              ? currentHmAnchorCells[hoveredIdx] || null
+              : null;
+          hoveredHighlightEls =
+            hoveredIdx >= 0 && hoveredIdx < bucketCount
+              ? currentHmBucketCells[hoveredIdx] || []
+              : [];
+          lastHeatmapSummaryText = barView.summaryText;
+        }
+
+        if (shouldAutoScrollRight && typeof requestAnimationFrame === 'function') {
           requestAnimationFrame(() => {
             if (hmScrollEl.scrollWidth > hmScrollEl.clientWidth) {
               hmScrollEl.scrollLeft = hmScrollEl.scrollWidth;
             }
           });
         }
+      } else if (currentHmMode === 'day') {
+        const peakSlot = slots[peakIdx];
+        lastHeatmapSummaryText =
+          maxTokens > 0 && peakSlot?.label
+            ? t('chart.trend.hmActivePeak', {
+                active: activeDays,
+                total: slots.length,
+                label: peakSlot.label,
+                tokens: formatTokensPrecise(maxTokens),
+              })
+            : t('chart.trend.hmActiveZero', { total: slots.length });
       }
 
-      const peakSlot = slots[peakIdx];
-      const summaryText =
-        maxTokens > 0 && peakSlot?.label
-          ? t('chart.trend.hmActivePeak', {
-              active: activeDays,
-              total: slots.length,
-              label: peakSlot.label,
-              tokens: formatTokensPrecise(maxTokens),
-            })
-          : t('chart.trend.hmActiveZero', { total: slots.length });
-      patchText(hmSummaryEl, summaryText);
+      patchText(hmSummaryEl, lastHeatmapSummaryText);
 
-      if (hoveredIdx >= slots.length) {
+      if (hoveredIdx >= currentHmBuckets.length) {
         clearHover();
       } else if (hoveredIdx >= 0) {
-        showHeatmapHoverAtIndex(hoveredIdx, currentCellEls[hoveredIdx], lastPointer);
+        if (!tooltipEl.hasAttribute('hidden') && currentHmBuckets[hoveredIdx]) {
+          populateTooltipContent(currentHmBuckets[hoveredIdx]);
+        }
+        showHeatmapHoverAtIndex(hoveredIdx, currentHmAnchorCells[hoveredIdx], lastPointer);
       }
       return;
+    }
+
+    if (hoveredIdx >= 0 && hoveredIdx < slots.length && !tooltipEl.hasAttribute('hidden')) {
+      populateTooltipContent(slots[hoveredIdx]);
     }
 
     // --- <= 90 天（或整点/分钟级）：渲染平滑面积曲线图（1:1 贴边对齐 + 连续插值形变过渡） ---
@@ -15388,7 +15972,23 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     }
   }
 
-  return { el: chartWrap, update, destroy };
+  function setHeatmapMode(nextMode) {
+    const norm = normalizeHeatmapMode(nextMode);
+    if (norm === currentHmMode) return;
+    clearHover();
+    currentHmMode = norm;
+    if (currentSlots.length > 0) {
+      update(currentSlots);
+    }
+  }
+
+  return {
+    el: chartWrap,
+    update,
+    setHeatmapMode,
+    getHeatmapMode: () => currentHmMode,
+    destroy,
+  };
 }
 return { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart };
 })();
@@ -30128,6 +30728,16 @@ function getConsumptionTimeRangeOptions() {
   ];
 }
 
+/** 热力图顶栏支持的四档聚合视图选项 */
+function getHeatmapModeOptions() {
+  return [
+    { value: 'day', label: t('cons.hmModeDay') },
+    { value: 'week', label: t('cons.hmModeWeek') },
+    { value: 'month', label: t('cons.hmModeMonth') },
+    { value: 'all', label: t('cons.hmModeAll') },
+  ];
+}
+
 function floorToStartOfMinuteMs(ms) {
   const n = Number(ms);
   if (!(n > 0)) return 0;
@@ -30507,14 +31117,29 @@ const ConsumptionView = defineComponent({
       });
     }
 
-    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 + 悬停精确日期/小时浮层 + 点击时段下钻) ---
+    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 / 7×W 四态热力格子图 + 悬停明细浮层 + 点击时段下钻) ---
+    let heatmapViewMode = 'day';
     const trendTitleSpan = h('span', { text: t('cons.trendTitle') });
     const trendRangeBadge = h('span', { className: 'cons-badge', text: t('cons.allTime') });
     const trendGranularityHint = h('span', {
-      className: 'text-muted text-mono',
+      className: 'cons-trend-hint text-muted text-mono',
       style: 'font-size: var(--fs-sm);',
       text: t('cons.trendPointsHintHourly', { points: 0 }),
     });
+    const heatmapModeSwitch = SegmentedControl({
+      ariaLabel: t('cons.hmModeAria'),
+      modelValue: heatmapViewMode,
+      options: getHeatmapModeOptions(),
+      onUpdateModelValue: (nextMode) => {
+        if (!['day', 'week', 'month', 'all'].includes(nextMode)) return;
+        heatmapViewMode = nextMode;
+        heatmapModeSwitch.setValue(nextMode);
+        trendChart.setHeatmapMode(nextMode);
+      },
+    });
+    heatmapModeSwitch.el.classList.add('cons-hm-mode-switch');
+    patchAttr(heatmapModeSwitch.el, 'hidden', true);
+
     const trendChart = createTrendAreaChart({
       onSelectSlot: (slot) => {
         if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
@@ -30524,12 +31149,15 @@ const ConsumptionView = defineComponent({
     });
 
     const trendPanel = h('section', { className: 'panel' }, [
-      h('div', { className: 'panel-header' }, [
+      h('div', { className: 'panel-header cons-trend-head' }, [
         h('span', { className: 'panel-title' }, [
           trendTitleSpan,
           trendRangeBadge,
         ]),
-        trendGranularityHint,
+        h('div', { className: 'cons-trend-head-right' }, [
+          trendGranularityHint,
+          heatmapModeSwitch.el,
+        ]),
       ]),
       trendChart.el,
     ]);
@@ -32251,11 +32879,12 @@ const ConsumptionView = defineComponent({
           (firstTrendSlot?.label || '').includes(':'));
       const isHeatmapTrend =
         !isMinuteTrend && !isHourlyTrend && rawTrendSeries.length > HEATMAP_DAYS_THRESHOLD;
-      patchText(
-        trendGranularityHint,
-        isHeatmapTrend
-          ? t('cons.trendHeatmapHint', { days: rawTrendSeries.length })
-          : isMinuteTrend
+      patchAttr(trendGranularityHint, 'hidden', isHeatmapTrend);
+      patchAttr(heatmapModeSwitch.el, 'hidden', !isHeatmapTrend);
+      if (!isHeatmapTrend) {
+        patchText(
+          trendGranularityHint,
+          isMinuteTrend
             ? t('cons.trendPointsHintMinute', {
                 minutes: Math.max(1, Number(firstTrendSlot?.stepMinutes) || 5),
                 points: rawTrendSeries.length || 0,
@@ -32263,19 +32892,28 @@ const ConsumptionView = defineComponent({
             : isHourlyTrend
               ? t('cons.trendPointsHintHourly', { points: rawTrendSeries.length || 0 })
               : t('cons.trendPointsHintDaily', { points: rawTrendSeries.length || 0 })
-      );
+        );
+      } else {
+        heatmapModeSwitch.setValue(heatmapViewMode);
+      }
+      const buildTrendModelSegments = (mergedSlotModels) =>
+        partitionModelSegments(mergedSlotModels, modelColorMap, {
+          maxMain: 5,
+          minSharePct: 1.5,
+        });
       const enrichedTrendSeries = rawTrendSeries.map((slot, idx) => {
         const mergedSlotModels = trendMergedByIdx[idx];
         if (!mergedSlotModels || mergedSlotModels.length === 0) return slot;
         return {
           ...slot,
-          modelSegments: partitionModelSegments(mergedSlotModels, modelColorMap, {
-            maxMain: 5,
-            minSharePct: 1.5,
-          }),
+          mergedModels: mergedSlotModels,
+          modelSegments: buildTrendModelSegments(mergedSlotModels),
         };
       });
-      trendChart.update(enrichedTrendSeries);
+      trendChart.update(enrichedTrendSeries, {
+        heatmapMode: heatmapViewMode,
+        buildModelSegments: buildTrendModelSegments,
+      });
 
       // 3. 同步统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」及对应排序控制）
       const sortedTopConvs = [...topConvsWithModels].sort((a, b) =>
@@ -32610,6 +33248,11 @@ const ConsumptionView = defineComponent({
         md: { label: t('cons.exportMd'), title: t('cons.exportMdTip') },
       });
       patchText(trendTitleSpan, t('cons.trendTitle'));
+      heatmapModeSwitch.setProps({
+        ariaLabel: t('cons.hmModeAria'),
+        modelValue: heatmapViewMode,
+        options: getHeatmapModeOptions(),
+      });
       rankingTabSwitch.setProps({
         ariaLabel: t('cons.rankTabAria'),
         modelValue: activeRankingTab,
@@ -32654,6 +33297,7 @@ const ConsumptionView = defineComponent({
       unsubI18n();
       consExportMenu.destroy();
       cyclePoolSelect.destroy();
+      heatmapModeSwitch.destroy();
       trendChart.destroy?.();
       rankingTabSwitch.destroy();
       modelsSortSwitch.destroy();
@@ -32669,6 +33313,8 @@ const ConsumptionView = defineComponent({
       refs: {
         timeFilterSwitch,
         cyclePoolSelect,
+        heatmapModeSwitch,
+        trendChart,
         startPicker,
         endPicker,
         viewScrollbar,

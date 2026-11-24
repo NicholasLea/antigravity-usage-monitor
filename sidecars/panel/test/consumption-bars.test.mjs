@@ -736,3 +736,235 @@ test('selectConsumptionTimeRange serves prefetched presets with 0 network calls,
   );
   chart.destroy();
 });
+
+test('ConsumptionView >90d heatmap replaces static hint with Day/Week/Month/Total 7xW LED matrix switcher, rich tooltips, and drill-down', async (t) => {
+  const prevLocale = i18nStore.getState().locale;
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevTelState = { ...telemetryStore.getState() };
+  const prevUiState = { ...uiStore.getState() };
+
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    location: { pathname: '/' },
+    addEventListener() {},
+    removeEventListener() {},
+    requestAnimationFrame: (cb) => setTimeout(cb, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+  };
+
+  let view = null;
+  t.after(() => {
+    stopAsyncTelemetryLoop();
+    clearConsumptionRangeCache();
+    if (view) view.destroy();
+    setI18nLanguage(prevLocale);
+    telemetryStore.setState(prevTelState, { sync: true });
+    uiStore.setState(prevUiState, { sync: true });
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  });
+
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: true,
+    json: async () => ({ scope: 'noop' }),
+  }));
+
+  setI18nLanguage('zh-CN');
+  uiStore.setState(
+    { monitorVisible: true, activeView: 'consumption', settingsOpen: false },
+    { sync: true }
+  );
+
+  // Build 105 daily slots (15 exact weeks starting Monday 2026-08-03 local midnight)
+  const firstMondayMs = new Date(2026, 7, 3, 0, 0, 0, 0).getTime();
+  const dayMs = 86_400_000;
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const trendSlots = Array.from({ length: 105 }, (_, i) => {
+    const sMs = firstMondayMs + i * dayMs;
+    const d = new Date(sMs);
+    const lbl = `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
+    const weekIdx = Math.floor(i / 7);
+    // Week 0 = 0 tokens; Week 1 = 20k/day (140k total); Week 2 = peak 100k/day (700k total); others = 40k/day
+    const dailyTok =
+      weekIdx === 0 ? 0 : weekIdx === 1 ? 20_000 : weekIdx === 2 ? 100_000 : 40_000;
+    return {
+      index: i,
+      granularity: 'day',
+      startMs: sMs,
+      endMs: sMs + dayMs,
+      label: lbl,
+      fullLabel: lbl,
+      tokens: dailyTok,
+      inputTokens: Math.floor(dailyTok * 0.25),
+      cacheReadTokens: Math.floor(dailyTok * 0.5),
+      thinkingTokens: Math.floor(dailyTok * 0.1),
+      responseTokens: Math.floor(dailyTok * 0.15),
+      outputTokens: Math.floor(dailyTok * 0.25),
+      calls: dailyTok > 0 ? 4 : 0,
+      costUsd: dailyTok > 0 ? +(dailyTok / 100_000).toFixed(2) : 0,
+      models:
+        dailyTok > 0
+          ? [
+              {
+                label: 'Claude Opus 4.6',
+                shortName: 'Opus 4.6',
+                upstreamName: 'opus-4-6',
+                calls: 4,
+                inputTokens: Math.floor(dailyTok * 0.25),
+                cacheReadTokens: Math.floor(dailyTok * 0.5),
+                thinkingTokens: Math.floor(dailyTok * 0.1),
+                responseTokens: Math.floor(dailyTok * 0.15),
+                outputTokens: Math.floor(dailyTok * 0.25),
+                totalTokens: dailyTok,
+                costUsd: +(dailyTok / 100_000).toFixed(2),
+              },
+            ]
+          : undefined,
+    };
+  });
+
+  const makePayload = (rangeKey, slots) => ({
+    settings: { language: 'zh-CN', modelDisplayMode: 'short' },
+    modelBreakdown: [],
+    consumption: {
+      revision: 1,
+      selectedRange: {
+        key: rangeKey,
+        label: rangeKey === 'all' ? '全部时间' : '近 7 天',
+        startMs: slots[0].startMs,
+        endMs: slots[slots.length - 1].endMs - 1,
+      },
+      account: {
+        totalTokens: 4_480_000,
+        inputTokens: 1_120_000,
+        cacheReadTokens: 2_240_000,
+        outputTokens: 1_120_000,
+        responseTokens: 672_000,
+        thinkingTokens: 448_000,
+        calls: 392,
+        costUsd: 44.8,
+        savedCostUsd: 12.0,
+        cacheHitPct: 66.7,
+      },
+      trendSeries: slots,
+      monthlyYear: 2026,
+      monthlySeries: [],
+      sourcesBreakdown: [],
+    },
+  });
+
+  // 1. <=90d (7 days): static hint visible, heatmap switcher hidden
+  telemetryStore.setState(
+    { selectedTimeRange: '7d', telemetry: makePayload('7d', trendSlots.slice(0, 7)) },
+    { sync: true }
+  );
+  view = ConsumptionView({});
+  document.body.appendChild(view.el);
+  await Promise.resolve();
+
+  const trendHintEl = view.el.querySelector('.cons-trend-hint');
+  const hmSwitchEl = view.refs.heatmapModeSwitch.el;
+  assert.equal(trendHintEl.hasAttribute('hidden'), false);
+  assert.equal(hmSwitchEl.hasAttribute('hidden'), true);
+
+  // 2. >90d (105 days = 15 weeks): static hint hidden, 4-way switcher visible ('日' / '周' / '月' / '全部')
+  telemetryStore.setState(
+    { selectedTimeRange: 'all', telemetry: makePayload('all', trendSlots) },
+    { sync: true }
+  );
+  await Promise.resolve();
+
+  assert.equal(trendHintEl.hasAttribute('hidden'), true, 'Static heatmap hint must be hidden on >90d');
+  assert.equal(hmSwitchEl.hasAttribute('hidden'), false, '4-mode switcher must be shown on >90d');
+  const modeBtns = hmSwitchEl.querySelectorAll('.seg-btn');
+  assert.deepEqual(
+    modeBtns.map((b) => b.textContent),
+    ['日', '周', '月', '全部']
+  );
+
+  const hmWeekdaysEl = view.el.querySelector('.trend-hm-weekdays');
+  const hmGridEl = view.el.querySelector('.trend-hm-grid');
+  const hmSummaryEl = view.el.querySelector('.trend-hm-summary');
+  const trendTip = view.el.querySelector('.trend-tooltip');
+
+  // Default 'day' mode: weekday labels visible, 105 cells
+  assert.equal(view.refs.trendChart.getHeatmapMode(), 'day');
+  assert.equal(hmWeekdaysEl.style.visibility, '');
+  assert.equal(hmGridEl.children.length, 105);
+  assert.match(hmSummaryEl.textContent || '', /活跃 98\/105 天/);
+
+  // 3. Switch to 'week' mode: keeps exact 105-cell (7x15) grid, hides weekday labels in-place, lights bottom-up LED columns
+  modeBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+  assert.equal(view.refs.trendChart.getHeatmapMode(), 'week');
+  assert.equal(hmWeekdaysEl.style.visibility, 'hidden');
+  assert.equal(hmGridEl.children.length, 105);
+  assert.match(hmSummaryEl.textContent || '', /活跃 14\/15 周/);
+
+  const colCells = (col) =>
+    [...hmGridEl.children].filter((c) => Number(c.getAttribute('data-hm-col')) === col);
+  const litRowsInCol = (col) =>
+    colCells(col)
+      .filter((c) => !c.classList.contains('lv-0'))
+      .map((c) => Number(c.getAttribute('data-hm-row')));
+
+  // Week 0 has 0 tokens -> 0 lit rows; Week 1 has 140k/700k = 20% -> ceil(1.4) = 2 bottom rows [5, 6]; Week 2 is peak 700k -> all 7 rows [0..6]
+  assert.deepEqual(litRowsInCol(0), []);
+  assert.deepEqual(litRowsInCol(1), [5, 6]);
+  assert.deepEqual(litRowsInCol(2), [0, 1, 2, 3, 4, 5, 6]);
+
+  // Hovering top unlit cell (row 0) of Week 1 still highlights Week 1's lit bar [row 5, row 6] and shows aggregated weekly tooltip
+  hmGridEl.dispatchEvent({ type: 'mouseover', target: colCells(1)[0], clientX: 40, clientY: 20 });
+  assert.equal(trendTip.hasAttribute('hidden'), false);
+  assert.equal(trendTip.querySelector('.trend-tip-time')?.textContent, '8月10日 ~ 16日');
+  assert.match(trendTip.querySelector('.trend-tip-tokens')?.textContent || '', /140\.0k TOKEN/);
+  assert.equal(trendTip.querySelectorAll('.cons-pop-model-row').length, 1);
+  assert.equal(colCells(1)[5].classList.contains('is-bar-hovered'), true);
+  assert.equal(colCells(1)[6].classList.contains('is-bar-hovered'), true);
+  assert.equal(colCells(1)[0].classList.contains('is-bar-hovered'), false);
+
+  // 4. Switch to 'month' mode: columns group by dominant calendar month with month-edge markers and monthly tooltip
+  modeBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
+  assert.equal(view.refs.trendChart.getHeatmapMode(), 'month');
+  assert.equal(hmGridEl.children.length, 105);
+  assert.match(hmSummaryEl.textContent || '', /月 · 峰值/);
+  assert.ok(
+    [...hmGridEl.children].some((c) => c.classList.contains('is-month-edge')),
+    'Month mode should mark boundary columns between adjacent months'
+  );
+  hmGridEl.dispatchEvent({ type: 'mouseover', target: colCells(0)[6], clientX: 20, clientY: 60 });
+  assert.equal(trendTip.querySelector('.trend-tip-time')?.textContent, '2026年 8月');
+
+  // 5. Switch to 'all' (cumulative) mode: monotonic bottom-up growth ramp reaching 7 rows on last column
+  modeBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
+  assert.equal(view.refs.trendChart.getHeatmapMode(), 'all');
+  assert.equal(hmGridEl.children.length, 105);
+  let prevLitCount = 0;
+  for (let col = 0; col < 15; col++) {
+    const cnt = litRowsInCol(col).length;
+    assert.ok(cnt >= prevLitCount, `Cumulative column ${col} must be non-decreasing`);
+    prevLitCount = cnt;
+  }
+  assert.equal(prevLitCount, 7, 'Final cumulative column must reach full 7-row height');
+  hmGridEl.dispatchEvent({ type: 'mouseover', target: colCells(14)[0], clientX: 200, clientY: 20 });
+  assert.match(trendTip.querySelector('.trend-tip-time')?.textContent || '', /^截至 .+ 累计$/);
+  assert.match(hmSummaryEl.textContent || '', /^累计 105 天/);
+
+  // 6. Locale switch updates switcher labels ('Day' / 'Week' / 'Month' / 'Total') and summary text
+  setI18nLanguage('en-US');
+  await Promise.resolve();
+  assert.deepEqual(
+    hmSwitchEl.querySelectorAll('.seg-btn').map((b) => b.textContent),
+    ['Day', 'Week', 'Month', 'Total']
+  );
+  assert.match(hmSummaryEl.textContent || '', /^Cumulative 105d/);
+
+  // 7. Clicking a week bar in 'week' mode drills down into custom time range for that week
+  setI18nLanguage('zh-CN');
+  await Promise.resolve();
+  hmSwitchEl.querySelectorAll('.seg-btn')[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+  hmGridEl.dispatchEvent({ type: 'click', target: colCells(2)[3], clientX: 60, clientY: 40 });
+  assert.equal(telemetryStore.getState().selectedTimeRange, 'custom');
+  assert.equal(telemetryStore.getState().customStartMs, firstMondayMs + 14 * dayMs);
+});

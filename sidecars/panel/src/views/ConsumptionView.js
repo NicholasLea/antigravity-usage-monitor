@@ -81,6 +81,16 @@ function getConsumptionTimeRangeOptions() {
   ];
 }
 
+/** 热力图顶栏支持的四档聚合视图选项 */
+function getHeatmapModeOptions() {
+  return [
+    { value: 'day', label: t('cons.hmModeDay') },
+    { value: 'week', label: t('cons.hmModeWeek') },
+    { value: 'month', label: t('cons.hmModeMonth') },
+    { value: 'all', label: t('cons.hmModeAll') },
+  ];
+}
+
 function floorToStartOfMinuteMs(ms) {
   const n = Number(ms);
   if (!(n > 0)) return 0;
@@ -460,14 +470,29 @@ export const ConsumptionView = defineComponent({
       });
     }
 
-    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 + 悬停精确日期/小时浮层 + 点击时段下钻) ---
+    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 / 7×W 四态热力格子图 + 悬停明细浮层 + 点击时段下钻) ---
+    let heatmapViewMode = 'day';
     const trendTitleSpan = h('span', { text: t('cons.trendTitle') });
     const trendRangeBadge = h('span', { className: 'cons-badge', text: t('cons.allTime') });
     const trendGranularityHint = h('span', {
-      className: 'text-muted text-mono',
+      className: 'cons-trend-hint text-muted text-mono',
       style: 'font-size: var(--fs-sm);',
       text: t('cons.trendPointsHintHourly', { points: 0 }),
     });
+    const heatmapModeSwitch = SegmentedControl({
+      ariaLabel: t('cons.hmModeAria'),
+      modelValue: heatmapViewMode,
+      options: getHeatmapModeOptions(),
+      onUpdateModelValue: (nextMode) => {
+        if (!['day', 'week', 'month', 'all'].includes(nextMode)) return;
+        heatmapViewMode = nextMode;
+        heatmapModeSwitch.setValue(nextMode);
+        trendChart.setHeatmapMode(nextMode);
+      },
+    });
+    heatmapModeSwitch.el.classList.add('cons-hm-mode-switch');
+    patchAttr(heatmapModeSwitch.el, 'hidden', true);
+
     const trendChart = createTrendAreaChart({
       onSelectSlot: (slot) => {
         if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
@@ -477,12 +502,15 @@ export const ConsumptionView = defineComponent({
     });
 
     const trendPanel = h('section', { className: 'panel' }, [
-      h('div', { className: 'panel-header' }, [
+      h('div', { className: 'panel-header cons-trend-head' }, [
         h('span', { className: 'panel-title' }, [
           trendTitleSpan,
           trendRangeBadge,
         ]),
-        trendGranularityHint,
+        h('div', { className: 'cons-trend-head-right' }, [
+          trendGranularityHint,
+          heatmapModeSwitch.el,
+        ]),
       ]),
       trendChart.el,
     ]);
@@ -2204,11 +2232,12 @@ export const ConsumptionView = defineComponent({
           (firstTrendSlot?.label || '').includes(':'));
       const isHeatmapTrend =
         !isMinuteTrend && !isHourlyTrend && rawTrendSeries.length > HEATMAP_DAYS_THRESHOLD;
-      patchText(
-        trendGranularityHint,
-        isHeatmapTrend
-          ? t('cons.trendHeatmapHint', { days: rawTrendSeries.length })
-          : isMinuteTrend
+      patchAttr(trendGranularityHint, 'hidden', isHeatmapTrend);
+      patchAttr(heatmapModeSwitch.el, 'hidden', !isHeatmapTrend);
+      if (!isHeatmapTrend) {
+        patchText(
+          trendGranularityHint,
+          isMinuteTrend
             ? t('cons.trendPointsHintMinute', {
                 minutes: Math.max(1, Number(firstTrendSlot?.stepMinutes) || 5),
                 points: rawTrendSeries.length || 0,
@@ -2216,19 +2245,28 @@ export const ConsumptionView = defineComponent({
             : isHourlyTrend
               ? t('cons.trendPointsHintHourly', { points: rawTrendSeries.length || 0 })
               : t('cons.trendPointsHintDaily', { points: rawTrendSeries.length || 0 })
-      );
+        );
+      } else {
+        heatmapModeSwitch.setValue(heatmapViewMode);
+      }
+      const buildTrendModelSegments = (mergedSlotModels) =>
+        partitionModelSegments(mergedSlotModels, modelColorMap, {
+          maxMain: 5,
+          minSharePct: 1.5,
+        });
       const enrichedTrendSeries = rawTrendSeries.map((slot, idx) => {
         const mergedSlotModels = trendMergedByIdx[idx];
         if (!mergedSlotModels || mergedSlotModels.length === 0) return slot;
         return {
           ...slot,
-          modelSegments: partitionModelSegments(mergedSlotModels, modelColorMap, {
-            maxMain: 5,
-            minSharePct: 1.5,
-          }),
+          mergedModels: mergedSlotModels,
+          modelSegments: buildTrendModelSegments(mergedSlotModels),
         };
       });
-      trendChart.update(enrichedTrendSeries);
+      trendChart.update(enrichedTrendSeries, {
+        heatmapMode: heatmapViewMode,
+        buildModelSegments: buildTrendModelSegments,
+      });
 
       // 3. 同步统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」及对应排序控制）
       const sortedTopConvs = [...topConvsWithModels].sort((a, b) =>
@@ -2563,6 +2601,11 @@ export const ConsumptionView = defineComponent({
         md: { label: t('cons.exportMd'), title: t('cons.exportMdTip') },
       });
       patchText(trendTitleSpan, t('cons.trendTitle'));
+      heatmapModeSwitch.setProps({
+        ariaLabel: t('cons.hmModeAria'),
+        modelValue: heatmapViewMode,
+        options: getHeatmapModeOptions(),
+      });
       rankingTabSwitch.setProps({
         ariaLabel: t('cons.rankTabAria'),
         modelValue: activeRankingTab,
@@ -2607,6 +2650,7 @@ export const ConsumptionView = defineComponent({
       unsubI18n();
       consExportMenu.destroy();
       cyclePoolSelect.destroy();
+      heatmapModeSwitch.destroy();
       trendChart.destroy?.();
       rankingTabSwitch.destroy();
       modelsSortSwitch.destroy();
@@ -2622,6 +2666,8 @@ export const ConsumptionView = defineComponent({
       refs: {
         timeFilterSwitch,
         cyclePoolSelect,
+        heatmapModeSwitch,
+        trendChart,
         startPicker,
         endPicker,
         viewScrollbar,
