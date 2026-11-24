@@ -6323,3 +6323,242 @@ test('Issue #35: topbar capsule and hover HUD lock to main agent by default, tog
     ov?.dispose?.();
   }
 });
+
+test('Antigravity IDE dual mode (双栖挂载) probes live chat iframe DOM cascade ID and syncs workbench.html on conversation switch', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-ide-dual-route-'));
+  const roamingDir = path.join(tmpDir, 'Roaming');
+  fs.mkdirSync(path.join(roamingDir, 'Antigravity IDE'), { recursive: true });
+
+  const convA = '11111111-aaaa-4bbb-8ccc-111111111111';
+  const convB = '22222222-bbbb-4ccc-8ddd-222222222222';
+  const convC = '33333333-cccc-4ddd-8eee-333333333333';
+  const convHidden = '44444444-dddd-4eee-8fff-444444444444';
+
+  function makeChatFrameCtx({ cascadeId, width = 760, height = 1200, hidden = false, focused = false }) {
+    const state = { cascadeId, width, height, hidden, focused };
+    const makeConvEl = () => ({
+      getAttribute: (name) => (name === 'data-cascade-id' ? state.cascadeId : null),
+      hasAttribute: (name) => (name === 'hidden' ? state.hidden : false),
+      getBoundingClientRect: () => ({
+        width: state.hidden ? 0 : state.width,
+        height: state.hidden ? 0 : state.height,
+      }),
+      contains: () => false,
+    });
+    const winObj = {
+      get innerWidth() {
+        return state.hidden ? 0 : state.width;
+      },
+      get innerHeight() {
+        return state.hidden ? 0 : state.height;
+      },
+      location: { pathname: '/', href: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code' },
+    };
+    const docObj = {
+      get hidden() {
+        return state.hidden;
+      },
+      activeElement: null,
+      hasFocus: () => state.focused,
+      querySelector: (sel) => {
+        if (!state.cascadeId) return null;
+        if (sel.includes('conversation-view') || sel.includes('conversation-row-')) {
+          return makeConvEl();
+        }
+        return null;
+      },
+      querySelectorAll: (sel) => {
+        if (!state.cascadeId || !sel.includes('conversation-view')) return [];
+        return [makeConvEl()];
+      },
+    };
+    const ctx = vm.createContext({ window: winObj, document: docObj, console });
+    ctx.window.window = ctx.window;
+    ctx.window.document = docObj;
+    return { ctx, state };
+  }
+
+  const wbWin = {
+    innerWidth: 1440,
+    innerHeight: 900,
+    location: { pathname: '/out/vs/code/electron-browser/workbench/workbench.html' },
+  };
+  const wbCtx = vm.createContext({
+    window: wbWin,
+    document: { hidden: false, querySelector: () => null, querySelectorAll: () => [] },
+    console,
+  });
+  wbCtx.window.window = wbCtx.window;
+
+  const chat1 = makeChatFrameCtx({ cascadeId: convA, focused: true });
+  const chat2 = makeChatFrameCtx({ cascadeId: convHidden, hidden: true, focused: false });
+  let includeSecondChat = false;
+
+  const ctxByPath = {
+    '/devtools/page/WB-1': wbCtx,
+    '/devtools/page/CHAT-1': chat1.ctx,
+    '/devtools/page/CHAT-2': chat2.ctx,
+  };
+
+  class DualRouteMockWS {
+    constructor(url) {
+      this.url = url;
+      this.listeners = new Map();
+      queueMicrotask(() => this._emit('open', {}));
+    }
+    addEventListener(type, fn) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(fn);
+    }
+    send(raw) {
+      const msg = JSON.parse(raw);
+      if (msg.method === 'Runtime.evaluate') {
+        const pathname = new URL(this.url).pathname;
+        const targetCtx = ctxByPath[pathname];
+        try {
+          const val = vm.runInContext(msg.params.expression, targetCtx);
+          queueMicrotask(() =>
+            this._emit('message', {
+              data: JSON.stringify({ id: msg.id, result: { result: { value: val } } }),
+            })
+          );
+        } catch (err) {
+          queueMicrotask(() =>
+            this._emit('message', {
+              data: JSON.stringify({
+                id: msg.id,
+                result: { exceptionDetails: { text: err.message } },
+              }),
+            })
+          );
+        }
+      }
+    }
+    close() {}
+    _emit(type, ev) {
+      for (const fn of this.listeners.get(type) || []) fn(ev);
+    }
+  }
+
+  const cdpSrv = http.createServer((req, res) => {
+    if (req.url === '/json/list') {
+      const p = cdpSrv.address().port;
+      const targets = [
+        {
+          id: 'WB-1',
+          type: 'page',
+          url: 'vscode-file://vscode-app/c:/Antigravity%20IDE/resources/app/out/vs/code/electron-browser/workbench/workbench.html',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/WB-1`,
+        },
+        {
+          id: 'WV-1',
+          parentId: 'WB-1',
+          type: 'iframe',
+          url: 'vscode-webview://1234/index.html?purpose=webviewView',
+        },
+        {
+          id: 'CHAT-1',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code&hostVariant=antigravity-ide',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-1`,
+        },
+      ];
+      if (includeSecondChat) {
+        targets.splice(2, 0, {
+          id: 'CHAT-2',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code&hostVariant=antigravity-ide',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-2`,
+        });
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(targets));
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise((resolve) => cdpSrv.listen(0, '127.0.0.1', resolve));
+  fs.writeFileSync(
+    path.join(roamingDir, 'Antigravity IDE', 'DevToolsActivePort'),
+    `${cdpSrv.address().port}\n/devtools/browser/ide-dual-route`,
+    'utf8'
+  );
+
+  const requestedConvIds = [];
+  const mockDualAppJs = `
+    (() => {
+      const br = window.__AGUsageMonitorBridge;
+      let alive = true;
+      window.__syncHostRouteHistory = [];
+      window.__AGUsageMonitorOverlay = {
+        bundleVersion: br.bundleVersion,
+        ensureAlive: () => alive,
+        getDockKind: () => 'ide-titlebar',
+        getMountMode: () => 'dual',
+        applyMountMode: () => alive,
+        syncHostRoute: () => {
+          window.__syncHostRouteHistory.push(String(br.hostRouteCascadeId || ''));
+        },
+        dispose: () => { alive = false; },
+      };
+    })();
+  `;
+
+  const bridgeCtrl = createWindowBridgeController({
+    handleApiRequest: async (apiPath, _method, body) => {
+      if (apiPath === '/api/telemetry') {
+        requestedConvIds.push(String(body?.conversationId || ''));
+      }
+      return {
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          settings: { windowMountMode: 'dual', enableWindowOverlay: true },
+        }),
+      };
+    },
+    readAssetFn: async (rel) => (rel === 'styles.css' ? ':host{}' : mockDualAppJs),
+    getSettingsFn: () => ({ windowMountMode: 'dual', enableWindowOverlay: true }),
+    getBundleVersionFn: () => 'dual-route-v1',
+    env: { APPDATA: roamingDir, LOCALAPPDATA: tmpDir },
+    platform: 'win32',
+    homeDir: tmpDir,
+    WebSocketImpl: DualRouteMockWS,
+  });
+
+  try {
+    // 1. Initial sync in dual mode: chat iframe URL has no /c/<uuid>, route is probed from DOM
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(requestedConvIds[0], convA, 'Initial telemetry prefetch uses live DOM cascade ID from IDE chat iframe');
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convA);
+    assert.equal(Boolean(chat1.ctx.window.__AGUsageMonitorOverlay), false, 'Chat iframe is not injected in dual mode');
+
+    // 2. User switches conversation inside IDE chat iframe (URL stays /?extensionView=true, DOM updates to convB)
+    chat1.state.cascadeId = convB;
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convB);
+    assert.deepEqual(
+      Array.from(wbCtx.window.__syncHostRouteHistory),
+      [convB],
+      'syncHostRoute() is invoked on workbench.html after conversation switch'
+    );
+
+    // 3. When a hidden chat iframe appears ahead of the visible/focused chat iframe, prefer visible/focused
+    includeSecondChat = true;
+    chat1.state.cascadeId = convC;
+    chat1.state.focused = true;
+    chat2.state.cascadeId = convHidden;
+    chat2.state.hidden = true;
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convC);
+    assert.deepEqual(Array.from(wbCtx.window.__syncHostRouteHistory), [convB, convC]);
+  } finally {
+    await bridgeCtrl.stop();
+    await new Promise((resolve) => cdpSrv.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

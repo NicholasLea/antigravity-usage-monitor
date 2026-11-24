@@ -2248,6 +2248,98 @@ export function createWindowBridgeController(options) {
       }
     })()`;
 
+    const ideChatRouteProbeExpr = `(() => {
+      try {
+        const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const visible = Boolean(
+          (window.innerWidth === undefined || Number(window.innerWidth) > 80) &&
+          (window.innerHeight === undefined || Number(window.innerHeight) > 80) &&
+          !(typeof document !== 'undefined' && document?.hidden === true)
+        );
+        const focused = Boolean(
+          typeof document !== 'undefined' && typeof document.hasFocus === 'function' && document.hasFocus()
+        );
+        let routeCascadeId = '';
+        const m = String(window.location?.pathname || '').match(/^\\/c\\/([0-9a-f-]{36})(?:\\/|$)/i);
+        if (m && uuidRe.test(m[1])) {
+          routeCascadeId = m[1];
+        } else if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
+          const selectedRow = document.querySelector(
+            '[data-testid^="conversation-row-"][data-selected="true"][data-cascade-id]'
+          );
+          const selectedRowId = String(selectedRow?.getAttribute?.('data-cascade-id') || '').trim();
+          if (typeof document.querySelectorAll === 'function') {
+            const views = document.querySelectorAll('[data-testid="conversation-view"][data-cascade-id]');
+            const visibleIds = [];
+            let focusedId = '';
+            const activeEl = document.activeElement || null;
+            for (const viewEl of views) {
+              const cid = String(viewEl?.getAttribute?.('data-cascade-id') || '').trim();
+              if (!uuidRe.test(cid)) continue;
+              if (viewEl.hasAttribute?.('hidden')) continue;
+              if (viewEl.getBoundingClientRect) {
+                const r = viewEl.getBoundingClientRect();
+                if (r.width <= 0 && r.height <= 0) continue;
+              }
+              visibleIds.push(cid);
+              if (activeEl && viewEl.contains?.(activeEl)) {
+                focusedId = cid;
+              }
+            }
+            if (focusedId) {
+              routeCascadeId = focusedId;
+            } else if (
+              selectedRowId &&
+              uuidRe.test(selectedRowId) &&
+              visibleIds.some((id) => id.toLowerCase() === selectedRowId.toLowerCase())
+            ) {
+              routeCascadeId = selectedRowId;
+            } else if (visibleIds.length > 0) {
+              routeCascadeId = visibleIds[0];
+            }
+          }
+          if (!routeCascadeId) {
+            const singleView = document.querySelector('[data-testid="conversation-view"][data-cascade-id]');
+            const singleViewId = String(singleView?.getAttribute?.('data-cascade-id') || '').trim();
+            if (uuidRe.test(singleViewId)) {
+              routeCascadeId = singleViewId;
+            } else if (uuidRe.test(selectedRowId)) {
+              routeCascadeId = selectedRowId;
+            }
+          }
+        }
+        return { routeCascadeId, visible, focused };
+      } catch {
+        return { routeCascadeId: '', visible: false, focused: false };
+      }
+    })()`;
+
+    async function resolveIdeWorkbenchRouteId(targetObj) {
+      const staticRouteId = String(targetObj?.ideRouteCascadeId || '').trim();
+      const chatList = Array.isArray(targetObj?.ideChatTargets) ? targetObj.ideChatTargets : [];
+      let bestRouteId = '';
+      let bestRank = 0;
+      for (const chatTarget of chatList) {
+        const chatWsUrl = String(chatTarget?.webSocketDebuggerUrl || '').trim();
+        if (!chatWsUrl) continue;
+        try {
+          const res = await evaluateOnTarget(chatWsUrl, ideChatRouteProbeExpr);
+          const val = res?.result?.result?.value;
+          const cid = String(val?.routeCascadeId || '').trim();
+          if (!cid) continue;
+          const rank = val?.focused && val?.visible ? 3 : val?.visible ? 2 : 1;
+          if (rank > bestRank) {
+            bestRank = rank;
+            bestRouteId = cid;
+            if (bestRank === 3) break;
+          }
+        } catch {
+          // 单个聊天子视图探测异常不阻断其他视图与静态路由兜底
+        }
+      }
+      return bestRouteId || staticRouteId;
+    }
+
     let cachedAssets = null;
     let injected = 0;
     let aliveCount = 0;
@@ -2456,12 +2548,16 @@ export function createWindowBridgeController(options) {
           if (chatComposerActive) {
             await disposeSingleTarget(target.webSocketDebuggerUrl);
           } else {
-            await syncSingleTarget(target);
+            const ideRouteOverride = await resolveIdeWorkbenchRouteId(target);
+            await syncSingleTarget(target, { ideRouteOverride });
           }
           continue;
         }
 
-        await syncSingleTarget(target);
+        const ideRouteOverride = target.isIdeWorkbench
+          ? await resolveIdeWorkbenchRouteId(target)
+          : '';
+        await syncSingleTarget(target, { ideRouteOverride });
       } catch {
         // 单个窗口注入异常不阻断其他窗口
       }
