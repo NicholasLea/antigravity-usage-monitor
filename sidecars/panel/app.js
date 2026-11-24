@@ -6161,7 +6161,7 @@ return { triggerBlobDownload, triggerTextFileDownload, buildExportableSettingsJs
 })();
 
 // --- src/core/xlsxBuilder.js ---
-const { uint8ArrayToBase64, buildXlsxWorkbookBytes } = (() => {
+const { MAX_EXCEL_CELL_CHARS, uint8ArrayToBase64, buildXlsxWorkbookBytes } = (() => {
 /**
  * @fileoverview 零外部依赖原生 Excel (`.xlsx` / ECMA-376 OOXML) 多工作表构建器 (`xlsxBuilder.js`)。
  * 内置标准 IEEE 802.3 CRC-32 及 ZIP STORE 封装，支持：
@@ -6172,7 +6172,10 @@ const { uint8ArrayToBase64, buildXlsxWorkbookBytes } = (() => {
  * - 全部字符串采用 `inlineStr` 并剔除 XML 1.0 非法控制符，天然免疫公式注入及 Excel 损坏警告。
  */
 
+const MAX_EXCEL_CELL_CHARS = 32767;
 const INVALID_XML_CTRL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g;
+const LONE_SURROGATE_RE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 const INVALID_SHEET_NAME_RE = /[\\/?*[\]:]/g;
 
 // --- 样式索引常量（对应下方 STYLES_XML 中的 cellXfs 顺序） ---
@@ -6368,9 +6371,24 @@ function buildZipStoreArchive(entries) {
   return archive;
 }
 
-function escapeXmlText(val) {
-  return String(val ?? '')
+function sanitizeExcelCellText(val) {
+  const clean = String(val ?? '')
     .replace(INVALID_XML_CTRL_RE, '')
+    .replace(LONE_SURROGATE_RE, '\uFFFD');
+  if (clean.length <= MAX_EXCEL_CELL_CHARS) {
+    return clean;
+  }
+  // 桌面版 Excel 单格文本硬上限为 32,767 UTF-16 码元；预留 1 位给省略号并避免劈断代理对
+  let cut = MAX_EXCEL_CELL_CHARS - 1;
+  const prevCode = clean.charCodeAt(cut - 1);
+  if (prevCode >= 0xd800 && prevCode <= 0xdbff) {
+    cut -= 1;
+  }
+  return `${clean.slice(0, cut)}…`;
+}
+
+function escapeXmlText(val) {
+  return sanitizeExcelCellText(val)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -6390,10 +6408,12 @@ function columnIndexToLetter(index) {
 }
 
 /**
- * 估算文本在 Excel 单元格中的视觉字符宽度（中文/全角约占 2.05 宽，ASCII 约 1.05 宽）。
+ * 估算文本在 Excel 单元格中的视觉字符宽度（中文/全角约占 2.05 宽，ASCII 约 1.05 宽；
+ * 列宽上限为 64，因此仅采样前 128 个字符即可达到饱和，避免超长文本全量遍历）。
  */
 function measureExcelVisualWidth(str) {
-  const s = String(str ?? '').replace(/\r?\n/g, ' ');
+  const raw = String(str ?? '');
+  const s = (raw.length > 128 ? raw.slice(0, 128) : raw).replace(/\r?\n/g, ' ');
   let w = 0;
   for (let i = 0; i < s.length; i += 1) {
     const code = s.charCodeAt(i);
@@ -6805,7 +6825,7 @@ function buildXlsxWorkbookBytes(sheets) {
 
   return buildZipStoreArchive(archiveEntries);
 }
-return { uint8ArrayToBase64, buildXlsxWorkbookBytes };
+return { MAX_EXCEL_CELL_CHARS, uint8ArrayToBase64, buildXlsxWorkbookBytes };
 })();
 
 // --- src/core/reportExporter.js ---

@@ -345,7 +345,8 @@ test('Loopback HTTP bridge enforces Origin, Private Network CORS, token auth, an
     assert.equal(postBody.echoData.enableWindowOverlay, false);
     assert.equal(receivedCalls.length, 3);
 
-    // 6. Oversized POST body -> 413
+    // 6. Oversized POST body -> 413 for regular /api/settings (including spoofed nested strings),
+    //    while legitimate __exportFileAction fallback (>64 KiB) and 8 MiB Base64 /api/export-file (~10.7 MiB JSON) succeed
     const hugePayload = JSON.stringify({ pad: 'x'.repeat(70 * 1024) });
     const hugeRes = await fetch(`http://127.0.0.1:${port}/api/settings`, {
       method: 'POST',
@@ -357,6 +358,52 @@ test('Loopback HTTP bridge enforces Origin, Private Network CORS, token auth, an
       body: hugePayload,
     }).catch(() => ({ status: 413 }));
     assert.equal(hugeRes.status, 413);
+
+    const spoofedSettingsPayload = JSON.stringify({
+      note: '{"__exportFileAction":"save"}',
+      pad: 'y'.repeat(70 * 1024),
+    });
+    const spoofedRes = await fetch(`http://127.0.0.1:${port}/api/settings`, {
+      method: 'POST',
+      headers: {
+        Origin: validOrigin,
+        'Content-Type': 'application/json',
+        'X-Usage-Monitor-Token': token,
+      },
+      body: spoofedSettingsPayload,
+    }).catch(() => ({ status: 413 }));
+    assert.equal(spoofedRes.status, 413);
+
+    const fallbackExportRes = await fetch(`http://127.0.0.1:${port}/api/settings`, {
+      method: 'POST',
+      headers: {
+        Origin: validOrigin,
+        'Content-Type': 'application/json',
+        'X-Usage-Monitor-Token': token,
+      },
+      body: JSON.stringify({
+        __exportFileAction: 'save',
+        payload: { filename: 'fallback.xlsx', encoding: 'base64', content: 'A'.repeat(200 * 1024) },
+      }),
+    });
+    assert.equal(fallbackExportRes.status, 200);
+
+    // 8 MiB binary encoded as Base64 (~10.67 MiB) fits within 12 MiB BRIDGE_MAX_EXPORT_BODY_BYTES
+    const eightMibBase64 = Buffer.alloc(8 * 1024 * 1024, 0x50).toString('base64');
+    const maxExportRes = await fetch(`http://127.0.0.1:${port}/api/export-file`, {
+      method: 'POST',
+      headers: {
+        Origin: validOrigin,
+        'Content-Type': 'application/json',
+        'X-Usage-Monitor-Token': token,
+      },
+      body: JSON.stringify({
+        filename: 'max-8mib.xlsx',
+        encoding: 'base64',
+        content: eightMibBase64,
+      }),
+    });
+    assert.equal(maxExportRes.status, 200);
   } finally {
     await controller.stop();
   }

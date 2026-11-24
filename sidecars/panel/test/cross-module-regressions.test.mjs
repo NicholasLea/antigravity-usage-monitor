@@ -1641,3 +1641,35 @@ test('i18n static t(...) key completeness guard, scopeAll formatters, and locali
     globalThis.window = prevWin;
   }
 });
+
+test('xlsxBuilder enforces 32,767 UTF-16 cell limit without splitting surrogate pairs or emitting lone surrogates', async () => {
+  const { buildXlsxWorkbookBytes, MAX_EXCEL_CELL_CHARS } = await import('../src/core/xlsxBuilder.js');
+  assert.equal(MAX_EXCEL_CELL_CHARS, 32767);
+
+  // Place an emoji ('😀' = \uD83D\uDE00, 2 UTF-16 code units) straddling index 32765..32766
+  const boundaryEmojiText = `${'A'.repeat(32765)}😀${'B'.repeat(500)}`;
+  const loneSurrogateText = `ok\uD800mid\uDC00end`;
+  const bytes = buildXlsxWorkbookBytes([
+    {
+      name: 'OverflowGuard',
+      columns: [{ header: 'TextCol', type: 'text' }],
+      rows: [[boundaryEmojiText], [loneSurrogateText]],
+    },
+  ]);
+
+  const rawArchiveStr = Buffer.from(bytes).toString('utf8');
+  const cellMatches = [...rawArchiveStr.matchAll(/<c r="A[23]"[^>]*><is><t[^>]*>([\s\S]*?)<\/t><\/is><\/c>/g)];
+  assert.equal(cellMatches.length, 2);
+
+  const cellA2 = cellMatches[0][1];
+  assert.ok(
+    cellA2.length <= MAX_EXCEL_CELL_CHARS,
+    `Expected <= 32767 UTF-16 code units, got ${cellA2.length}`
+  );
+  assert.equal(cellA2.length, 32766, 'Backs off by 1 code unit before emoji high surrogate + ellipsis');
+  assert.ok(cellA2.endsWith('…'));
+  assert.equal(/[\uD800-\uDFFF]/.test(cellA2), false, 'No split surrogate code unit remains');
+
+  const cellA3 = cellMatches[1][1];
+  assert.equal(cellA3, 'ok\uFFFDmid\uFFFDend');
+});

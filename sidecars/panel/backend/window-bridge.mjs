@@ -71,7 +71,8 @@ const overlayMethods = Object.fromEntries(
 );
 
 const BRIDGE_MAX_BODY_BYTES = 64 * 1024;
-const BRIDGE_MAX_EXPORT_BODY_BYTES = 8 * 1024 * 1024;
+// 8 MiB 原始导出文件经 Base64 (4/3x) 编码和 JSON 封装后约 10.7 MiB，预留 12 MiB 请求体上限
+const BRIDGE_MAX_EXPORT_BODY_BYTES = 12 * 1024 * 1024;
 const ALLOWED_BRIDGE_PATHS = new Set(BRIDGE_API_PATHS);
 
 /**
@@ -1343,17 +1344,34 @@ export function createWindowBridgeController(options) {
           return;
         }
 
-        const maxBodyBytes =
+        let maxBodyBytes =
           parsedUrl.pathname === '/api/export-file'
             ? BRIDGE_MAX_EXPORT_BODY_BYTES
             : BRIDGE_MAX_BODY_BYTES;
         const chunks = [];
         let totalBytes = 0;
         let aborted = false;
+        let checkedSettingsExportPrefix = false;
         req.on('data', (chunk) => {
-          totalBytes += chunk.length;
+          const nextTotal = totalBytes + chunk.length;
+          if (
+            nextTotal > maxBodyBytes &&
+            !checkedSettingsExportPrefix &&
+            parsedUrl.pathname === '/api/settings' &&
+            nextTotal <= BRIDGE_MAX_EXPORT_BODY_BYTES
+          ) {
+            checkedSettingsExportPrefix = true;
+            const sampleParts = chunks.length > 0 ? [...chunks, chunk] : [chunk];
+            const headBuf = Buffer.concat(sampleParts, Math.min(nextTotal, 512));
+            const headStr = headBuf.toString('utf8').trimStart();
+            if (/^\{\s*"__exportFileAction"\s*:\s*"(?:save|reveal)"/.test(headStr)) {
+              maxBodyBytes = BRIDGE_MAX_EXPORT_BODY_BYTES;
+            }
+          }
+          totalBytes = nextTotal;
           if (totalBytes > maxBodyBytes) {
             aborted = true;
+            chunks.length = 0;
             res.writeHead(413, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Payload too large' }));
             req.destroy();
@@ -1370,6 +1388,18 @@ export function createWindowBridgeController(options) {
           } catch {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            return;
+          }
+          if (
+            totalBytes > BRIDGE_MAX_BODY_BYTES &&
+            parsedUrl.pathname === '/api/settings' &&
+            (!bodyObj ||
+              typeof bodyObj !== 'object' ||
+              Array.isArray(bodyObj) ||
+              typeof bodyObj.__exportFileAction !== 'string')
+          ) {
+            res.writeHead(413, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Payload too large' }));
             return;
           }
           Promise.resolve(invokeApiHandler(parsedUrl.pathname, 'POST', bodyObj, normalizedReqEndpoint))
