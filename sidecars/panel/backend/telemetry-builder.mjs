@@ -130,7 +130,7 @@ function readTrajectoryModelFacts(steps) {
         fallbackModelKeys.add(step.modelKey);
       }
     }
-    if (!step?.isCompactionStep && step?.reportedContextLimitTokens > 0) {
+    if (!step?.isCompactionStep && !step?.isImageGenStep && step?.reportedContextLimitTokens > 0) {
       sortableLimits &&= Number.isFinite(step.createdAtMs);
       rememberModelContextLimit(limits, step);
     }
@@ -209,7 +209,15 @@ function enrichActiveConversationSteps(
     const cacheCostUsd = mInfo.pricing
       ? (st.cacheReadTokens / 1_000_000) * mInfo.pricing.cache
       : null;
-    const outCostUsd = mInfo.pricing ? (st.outputTokens / 1_000_000) * mInfo.pricing.output : null;
+    const effectiveOutRate = mInfo.pricing
+      ? st.isImageGenStep &&
+        typeof mInfo.pricing.imageOutput === 'number' &&
+        mInfo.pricing.imageOutput > 0
+        ? mInfo.pricing.imageOutput
+        : mInfo.pricing.output
+      : null;
+    const outCostUsd =
+      effectiveOutRate !== null ? (st.outputTokens / 1_000_000) * effectiveOutRate : null;
     const resolvedResponseModel =
       st.responseModel ||
       (st.modelKey && st.modelKey !== 'unknown'
@@ -457,6 +465,7 @@ function extractActiveContextTelemetry(
         for (let m = breakdownIdx + 1; m < enrichedActiveSteps.length; m++) {
           const stepM = enrichedActiveSteps[m];
           if (!stepM || stepM.isCompactionStep) break;
+          if (stepM.isImageGenStep) continue;
           const mPrompt =
             Number(stepM.inputTokens || 0) + Number(stepM.cacheReadTokens || 0);
           const mOut = resolveStepOutputTokens(stepM);
@@ -512,7 +521,7 @@ function extractActiveContextTelemetry(
     let runningTotal = CONTEXT_CHANNEL_KEYS.reduce((sum, k) => sum + channels[k], 0);
     for (let m = lastCompactionIdx + 1; m < enrichedActiveSteps.length; m++) {
       const stepM = enrichedActiveSteps[m];
-      if (!stepM || stepM.isCompactionStep) continue;
+      if (!stepM || stepM.isCompactionStep || stepM.isImageGenStep) continue;
       const mPrompt =
         Number(stepM.inputTokens || 0) + Number(stepM.cacheReadTokens || 0);
       const mOut = resolveStepOutputTokens(stepM);
@@ -538,7 +547,7 @@ function extractActiveContextTelemetry(
     let seededInitial = false;
     for (let m = 0; m < enrichedActiveSteps.length; m++) {
       const stepM = enrichedActiveSteps[m];
-      if (!stepM || stepM.isCompactionStep) continue;
+      if (!stepM || stepM.isCompactionStep || stepM.isImageGenStep) continue;
       const mPrompt =
         Number(stepM.inputTokens || 0) + Number(stepM.cacheReadTokens || 0);
       const mOut = resolveStepOutputTokens(stepM);
@@ -601,25 +610,39 @@ function extractActiveContextTelemetry(
   const ctxBreakdownTotal =
     ctxMessages + ctxSystemTools + ctxMcpTools + ctxSkills + ctxSystemPrompt + ctxUserRules;
 
-  const isLatestCompaction = Boolean(latestEnriched?.isCompactionStep);
-  const ctxCached = latestEnriched?.cacheReadTokens || 0;
-  const ctxFreshInput = latestEnriched?.inputTokens || 0;
-  const ctxThinking = latestEnriched?.thinkingTokens || 0;
-  const ctxResponse = latestEnriched?.responseTokens || 0;
-  const ctxOut = resolveStepOutputTokens(latestEnriched);
+  let ctxRefStep = latestEnriched;
+  if (ctxRefStep?.isImageGenStep) {
+    for (let i = enrichedActiveSteps.length - 1; i >= 0; i--) {
+      if (!enrichedActiveSteps[i]?.isImageGenStep) {
+        ctxRefStep = enrichedActiveSteps[i];
+        break;
+      }
+    }
+  }
+  const isLatestCompaction = Boolean(ctxRefStep?.isCompactionStep);
+  const ctxCached = ctxRefStep?.cacheReadTokens || 0;
+  const ctxFreshInput = ctxRefStep?.inputTokens || 0;
+  const ctxThinking = ctxRefStep?.thinkingTokens || 0;
+  const ctxResponse = ctxRefStep?.responseTokens || 0;
+  const ctxOut = resolveStepOutputTokens(ctxRefStep);
   const ctxTotal = isLatestCompaction
     ? ctxBreakdownTotal
     : ctxBreakdownTotal > 0
       ? ctxBreakdownTotal
-      : ctxCached + ctxFreshInput + ctxOut || Number(latestEnriched?.estimatedContextTokens || 0);
+      : (ctxRefStep?.isImageGenStep ? 0 : ctxCached + ctxFreshInput + ctxOut) ||
+        Number(ctxRefStep?.estimatedContextTokens || 0);
   const compactionLimitTokens = Number(
-    (isLatestCompaction && !latestEnriched?.reportedContextLimitTokens && fallbackPreCompactionLimit > 0
+    (isLatestCompaction && !ctxRefStep?.reportedContextLimitTokens && fallbackPreCompactionLimit > 0
       ? fallbackPreCompactionLimit
-      : latestEnriched?.maxContextBudgetTokens) || 256000
+      : ctxRefStep?.maxContextBudgetTokens) || 256000
   );
   const compactionUsedTokens = isLatestCompaction
     ? Number(ctxTotal)
-    : Number(ctxTotal || latestEnriched?.estimatedContextTokens || ctxCached + ctxFreshInput);
+    : Number(
+        ctxTotal ||
+          ctxRefStep?.estimatedContextTokens ||
+          (ctxRefStep?.isImageGenStep ? 0 : ctxCached + ctxFreshInput)
+      );
   const compactionUsedPct =
     compactionLimitTokens > 0
       ? Math.min(100, +((compactionUsedTokens / compactionLimitTokens) * 100).toFixed(1))

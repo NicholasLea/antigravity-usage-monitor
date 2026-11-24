@@ -1,12 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isEquivalentTelemetry } from '../src/store/telemetryStore.js';
-import { extractModelSteps, normalizeCachedStep, MODEL_IDENTITY_VERSION } from '../trajectory-metrics.mjs';
 import {
+  estimateImageGenStepUsage,
+  extractModelSteps,
+  normalizeCachedStep,
+  MODEL_IDENTITY_VERSION,
+} from '../trajectory-metrics.mjs';
+import {
+  formatLiveActivityLabel,
   formatUsd,
   mergeModelsByDisplayName,
   resolveModelDisplayInfo,
 } from '../src/core/formatters.js';
+import { buildStepsMarkdownReport } from '../src/core/reportExporter.js';
+import { i18nStore, setI18nLanguage } from '../src/i18n/index.js';
 import { backendHarness } from './backend-harness.mjs';
 
 const FLASH = 'MODEL_PLACEHOLDER_M318', ARGON = 'MODEL_PLACEHOLDER_M418';
@@ -1101,4 +1109,413 @@ test('mergeModelsByDisplayName collapses distinct backend buckets that share the
     { preferLabelInShort: true }
   );
   assert.equal(mergedShort.length, 2);
+});
+
+test('Google AI Studio image resolution tiers and pricing map cleanly across Gemini 3.1 Flash Image, 3 Pro Image, and 2.5 Flash Image', () => {
+  const h = backendHarness({ clock: () => PROMO_CLOCK_MS });
+
+  // 1. Gemini 3.1 Flash Image: 0.5K (747), 1K (1120), 2K (1680), 4K (2520) @ $60/1M image output
+  const flash31_05k = estimateImageGenStepUsage({
+    generateImage: {
+      modelName: 'gemini-3.1-flash-image',
+      prompt: 'tiny icon',
+      imageDimensions: { width: 512, height: 512 },
+    },
+  });
+  assert.equal(flash31_05k.resolutionTier, '0.5K');
+  assert.equal(flash31_05k.outputTokens, 747);
+
+  const flash31_1k = estimateImageGenStepUsage({
+    generateImage: {
+      modelName: 'gemini-3.1-flash-image',
+      prompt: 'cozy cat by rainy window',
+      aspectRatio: '4:3',
+      imageDimensions: { width: 1200, height: 896 },
+    },
+  });
+  assert.equal(flash31_1k.resolutionTier, '1K');
+  assert.equal(flash31_1k.outputTokens, 1120);
+
+  const flash31_2k = estimateImageGenStepUsage({
+    generateImage: {
+      modelName: 'gemini-3.1-flash-image-preview',
+      prompt: 'detailed wallpaper',
+      imageDimensions: { width: 2048, height: 1536 },
+    },
+  });
+  assert.equal(flash31_2k.resolutionTier, '2K');
+  assert.equal(flash31_2k.outputTokens, 1680);
+
+  const flash31_4k = estimateImageGenStepUsage({
+    metadata: {
+      toolCall: {
+        argumentsJson: JSON.stringify({
+          Prompt: 'edit reference scene',
+          ImagePaths: ['a.png', 'b.png'],
+        }),
+      },
+    },
+    generateImage: {
+      modelName: 'gemini-3.1-flash-image',
+      imageDimensions: { width: 4096, height: 3072 },
+    },
+  });
+  assert.equal(flash31_4k.resolutionTier, '4K');
+  assert.equal(flash31_4k.outputTokens, 2520);
+  assert.ok(flash31_4k.inputTokens >= 1120, '2 reference images add 2 * 560 = 1120 input tokens');
+
+  // Canceled or failed step without generated result yields 0 image output tokens
+  const failedUsage = estimateImageGenStepUsage(
+    { generateImage: { modelName: 'gemini-3.1-flash-image', prompt: 'failed prompt' } },
+    false
+  );
+  assert.equal(failedUsage.outputTokens, 0);
+
+  const mFlash31 = h.resolveModelInfo('gemini-3.1-flash-image');
+  assert.equal(mFlash31.label, 'Gemini 3.1 Flash Image');
+  assert.equal(mFlash31.shortName, 'flash-3.1-img');
+  assert.equal(mFlash31.pricing.input, 0.5);
+  assert.equal(mFlash31.pricing.imageOutput, 60);
+  // 200 input * $0.50/M ($0.0001) + 1120 image output * $60/M ($0.0672) = $0.0673
+  const costFlash31 = h.computeStepCost(
+    { isImageGenStep: true, inputTokens: 200, cacheReadTokens: 0, outputTokens: 1120 },
+    mFlash31.pricing
+  );
+  assert.ok(Math.abs(costFlash31 - 0.0673) < 1e-9);
+
+  // 2. Gemini 3 Pro Image: 1K/2K -> 1120, 4K -> 2000 @ $120/1M image output ($0.1344 and $0.24)
+  const pro3_2k = estimateImageGenStepUsage({
+    generateImage: {
+      modelName: 'gemini-3-pro-image-preview',
+      prompt: 'studio product render',
+      imageDimensions: { width: 2048, height: 2048 },
+    },
+  });
+  const pro3_4k = estimateImageGenStepUsage({
+    generateImage: {
+      modelName: 'gemini-3-pro-image',
+      prompt: 'studio product render 4k',
+      imageDimensions: { width: 4096, height: 4096 },
+    },
+  });
+  assert.equal(pro3_2k.outputTokens, 1120);
+  assert.equal(pro3_4k.outputTokens, 2000);
+  const mPro3 = h.resolveModelInfo('MODEL_GOOGLE_GEMINI_3_PRO_IMAGE_PREVIEW');
+  assert.equal(mPro3.shortName, 'pro-3-img');
+  assert.equal(mPro3.pricing.imageOutput, 120);
+  assert.ok(
+    Math.abs(
+      h.computeStepCost(
+        { isImageGenStep: true, inputTokens: 0, cacheReadTokens: 0, outputTokens: 1120 },
+        mPro3.pricing
+      ) - 0.1344
+    ) < 1e-9
+  );
+  assert.ok(
+    Math.abs(
+      h.computeStepCost(
+        { isImageGenStep: true, inputTokens: 0, cacheReadTokens: 0, outputTokens: 2000 },
+        mPro3.pricing
+      ) - 0.24
+    ) < 1e-9
+  );
+
+  // 3. Gemini 2.5 Flash Image: 1290 output tokens @ $30/1M ($0.0387)
+  const flash25 = estimateImageGenStepUsage({
+    generateImage: {
+      modelName: 'gemini-2.5-flash-image',
+      prompt: 'sketch',
+      imageDimensions: { width: 1024, height: 1024 },
+    },
+  });
+  assert.equal(flash25.outputTokens, 1290);
+  const mFlash25 = h.resolveModelInfo('MODEL_GOOGLE_GEMINI_2_5_FLASH_IMAGE_PREVIEW');
+  assert.equal(mFlash25.label, 'Gemini 2.5 Flash Image');
+  assert.equal(mFlash25.shortName, 'flash-2.5-img');
+  assert.equal(mFlash25.pricing.imageOutput, 30);
+  assert.ok(
+    Math.abs(
+      h.computeStepCost(
+        { isImageGenStep: true, inputTokens: 0, cacheReadTokens: 0, outputTokens: 1290 },
+        mFlash25.pricing
+      ) - 0.0387
+    ) < 1e-9
+  );
+
+  // 4. Structured live activity i18n + reportExporter null-TTFT isolation
+  const prevLang = i18nStore.getState().language;
+  try {
+    setI18nLanguage('zh-CN');
+    assert.equal(formatLiveActivityLabel({ actionKey: 'generate_image' }), '生成图片');
+    setI18nLanguage('en-US');
+    assert.equal(formatLiveActivityLabel({ actionKey: 'generate_image' }), 'Generate Image');
+  } finally {
+    setI18nLanguage(prevLang);
+  }
+
+  const md = buildStepsMarkdownReport(
+    [
+      {
+        stepIndex: 1,
+        modelLabel: 'Gemini 4 Hydrogen (High)',
+        modelShort: 'hydrogen-4-high',
+        inputTokens: 1000,
+        cacheReadTokens: 0,
+        outputTokens: 200,
+        tokPerSec: 50,
+        ttftSec: 4.0,
+        totalDurationSec: 4.0,
+        costUsd: 0.008,
+      },
+      {
+        stepIndex: 2,
+        isImageGenStep: true,
+        modelLabel: 'Gemini 3.1 Flash Image',
+        modelShort: 'flash-3.1-img',
+        inputTokens: 200,
+        cacheReadTokens: 0,
+        outputTokens: 1120,
+        tokPerSec: 17.8,
+        selectedSpeedReason: 'image_gen',
+        ttftSec: null,
+        totalDurationSec: 62.785,
+        costUsd: 0.0673,
+      },
+    ],
+    { locale: 'en-US' }
+  );
+  // Avg TTFT must remain 4.0s (from step #1 only), NOT diluted to 2.0s by Number(null) === 0!
+  assert.match(md, /\*\*Avg Speed\*\*: 50\.0 tok\/s · \*\*Avg TTFT\*\*: 4\.0s/);
+});
+
+test('image-generator subagent surfaces generate_image step, isolates text TPS/TTFT/compaction/context, and auto-upgrades legacy cache', async () => {
+  const HYDROGEN_HIGH = 'MODEL_PLACEHOLDER_M424';
+  const mainId = '57963098-ddca-4441-a6f1-c931bbf600d8';
+  const subId = 'd369e740-1f52-4f06-90a3-2f88bc623e2e';
+  const t0 = PROMO_CLOCK_MS - 120_000;
+
+  const mainTraj = {
+    trajectory: {
+      steps: [
+        {
+          type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+          status: 'CORTEX_STEP_STATUS_DONE',
+          metadata: {
+            sourceTrajectoryStepInfo: { stepIndex: 1 },
+            createdAt: new Date(t0).toISOString(),
+            completedAt: new Date(t0 + 5_000).toISOString(),
+            modelUsage: {
+              model: ARGON,
+              apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+              inputTokens: '15000',
+              cacheReadTokens: '0',
+              outputTokens: '500',
+            },
+          },
+          plannerResponse: {
+            toolCalls: [{ name: 'invoke_subagent', argumentsJson: '{"TypeName":"image-generator"}' }],
+          },
+        },
+        {
+          type: 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT',
+          status: 'CORTEX_STEP_STATUS_DONE',
+          metadata: {
+            sourceTrajectoryStepInfo: { stepIndex: 2 },
+            createdAt: new Date(t0 + 5_100).toISOString(),
+            completedAt: new Date(t0 + 75_000).toISOString(),
+          },
+          invokeSubagent: { conversationId: subId },
+        },
+      ],
+    },
+  };
+
+  const subTraj = {
+    trajectory: {
+      steps: [
+        {
+          type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+          status: 'CORTEX_STEP_STATUS_DONE',
+          metadata: {
+            sourceTrajectoryStepInfo: { stepIndex: 1 },
+            createdAt: new Date(t0 + 6_000).toISOString(),
+            completedAt: new Date(t0 + 10_000).toISOString(),
+            modelUsage: {
+              model: HYDROGEN_HIGH,
+              apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+              inputTokens: '3000',
+              cacheReadTokens: '0',
+              outputTokens: '400',
+            },
+          },
+        },
+        {
+          type: 'CORTEX_STEP_TYPE_GENERATE_IMAGE',
+          status: 'CORTEX_STEP_STATUS_DONE',
+          metadata: {
+            sourceTrajectoryStepInfo: { stepIndex: 2 },
+            createdAt: new Date(t0 + 11_000).toISOString(),
+            // finishedGeneratingAt is tool-call emission (~0.12s), whereas startedAt -> completedAt is 62.785s
+            finishedGeneratingAt: new Date(t0 + 11_120).toISOString(),
+            startedAt: new Date(t0 + 11_125).toISOString(),
+            completedAt: new Date(t0 + 73_910).toISOString(),
+            toolCall: {
+              name: 'generate_image',
+              argumentsJson: JSON.stringify({
+                Prompt:
+                  'Warm cozy orange tabby cat sitting on wooden windowsill watching gentle rain outside, cinematic warm lamp lighting, detailed illustration',
+                AspectRatio: '4:3',
+                ImageName: 'cozy_cat_window',
+              }),
+            },
+          },
+          generateImage: {
+            prompt:
+              'Warm cozy orange tabby cat sitting on wooden windowsill watching gentle rain outside, cinematic warm lamp lighting, detailed illustration',
+            aspectRatio: '4:3',
+            modelName: 'gemini-3.1-flash-image',
+            imageName: 'cozy_cat_window',
+            fileSizeBytes: 983509,
+            imageDimensions: { width: 1200, height: 896 },
+          },
+        },
+        // Checkpoint right after generate_image must inherit HYDROGEN_HIGH, NOT gemini-3.1-flash-image!
+        {
+          type: 'CORTEX_STEP_TYPE_CHECKPOINT',
+          status: 'CORTEX_STEP_STATUS_DONE',
+          metadata: {
+            sourceTrajectoryStepInfo: { stepIndex: 3 },
+            createdAt: new Date(t0 + 74_000).toISOString(),
+            completedAt: new Date(t0 + 74_500).toISOString(),
+            modelUsage: {
+              apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+              inputTokens: '4000',
+              cacheReadTokens: '0',
+              outputTokens: '150',
+            },
+          },
+        },
+        {
+          type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+          status: 'CORTEX_STEP_STATUS_DONE',
+          metadata: {
+            sourceTrajectoryStepInfo: { stepIndex: 5 },
+            createdAt: new Date(t0 + 74_600).toISOString(),
+            completedAt: new Date(t0 + 76_600).toISOString(),
+            modelUsage: {
+              model: HYDROGEN_HIGH,
+              apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+              inputTokens: '2800',
+              cacheReadTokens: '2200',
+              outputTokens: '200',
+            },
+          },
+        },
+      ],
+      generatorMetadata: [
+        {
+          stepIndices: [1],
+          chatModel: {
+            model: HYDROGEN_HIGH,
+            responseModel: 'gemini-4-hydrogen-preview',
+            modelDisplayName: 'Gemini 4 Hydrogen (High)',
+            timeToFirstToken: '2.0s',
+            chatStartMetadata: {
+              contextWindowMetadata: { estimatedTokensUsed: 3400, maxContextTokens: 512000 },
+            },
+          },
+        },
+        {
+          stepIndices: [5],
+          chatModel: {
+            model: HYDROGEN_HIGH,
+            responseModel: 'gemini-4-hydrogen-preview',
+            modelDisplayName: 'Gemini 4 Hydrogen (High)',
+            timeToFirstToken: '1.0s',
+            chatStartMetadata: {
+              contextWindowMetadata: { estimatedTokensUsed: 5200, maxContextTokens: 512000 },
+            },
+          },
+        },
+      ],
+    },
+  };
+
+  // Seed legacy pre-image-gen cache entry lacking `imageGenTelemetry` to verify automatic cache upgrade
+  const h = backendHarness({
+    clock: () => PROMO_CLOCK_MS,
+    cache: {
+      [subId]: {
+        stepCount: 6,
+        lastModifiedTime: new Date(t0 + 76_600).toISOString(),
+        parentConversationId: mainId,
+        agentTypeName: 'image-generator',
+        steps: [
+          {
+            stepIndex: 1,
+            modelKey: HYDROGEN_HIGH,
+            inputTokens: 3000,
+            cacheReadTokens: 0,
+            outputTokens: 400,
+          },
+        ],
+      },
+    },
+    summaries: {
+      [mainId]: {
+        stepCount: 3,
+        lastModifiedTime: new Date(t0 + 76_600).toISOString(),
+      },
+      [subId]: {
+        stepCount: 6,
+        lastModifiedTime: new Date(t0 + 76_600).toISOString(),
+        parentConversationId: mainId,
+        trajectoryMetadata: {
+          parentConversationId: mainId,
+          subagentSpec: { typeName: 'image-generator', role: 'Image Generator' },
+        },
+      },
+    },
+    trajectories: {
+      [mainId]: mainTraj,
+      [subId]: subTraj,
+    },
+  });
+
+  const p = await h.buildTelemetryPayloadInternal(mainId);
+  const subAgent = p.activeConversation.agents.find((a) => !a.isMain);
+  assert.ok(subAgent, 'image-generator subagent should be attached to activeConversation.agents');
+
+  const imgStep = subAgent.recentSteps.find((s) => s.stepIndex === 2);
+  assert.ok(imgStep, 'step #2 (generate_image) should be surfaced after auto-upgrading legacy cache');
+  assert.equal(imgStep.isImageGenStep, true);
+  assert.equal(imgStep.modelShort, 'flash-3.1-img');
+  assert.equal(imgStep.modelLabel, 'Gemini 3.1 Flash Image');
+  assert.equal(imgStep.outputTokens, 1120);
+  assert.equal(imgStep.ttftSec, null);
+  assert.equal(imgStep.selectedSpeedReason, 'image_gen');
+  assert.ok(Math.abs(imgStep.totalDurationSec - 62.785) < 0.01);
+  assert.equal(imgStep.tokPerSec, 17.8);
+  assert.equal(imgStep.outCostUsd, 0.0672);
+  assert.ok(imgStep.costUsd >= 0.0672 && imgStep.costUsd <= 0.0674);
+
+  // Compaction step #3 must inherit Hydrogen High, NOT Gemini 3.1 Flash Image!
+  const cpStep = subAgent.recentSteps.find((s) => s.stepIndex === 3);
+  assert.ok(cpStep);
+  assert.equal(cpStep.modelKey, HYDROGEN_HIGH);
+  assert.equal(cpStep.modelSource, 'inferred_compaction');
+
+  // Subagent text LLM TPS & TTFT averages must exclude image-gen step #2 and compaction step #3
+  assert.equal(subAgent.speedSummary.sampleCount, 2);
+  assert.equal(subAgent.ttftSummary.sampleCount, 2);
+  assert.equal(subAgent.ttftSummary.avgSec, 1.5);
+  assert.equal(subAgent.context.compactionLimitTokens, 512000);
+
+  // Account & session model breakdowns include Gemini 3.1 Flash Image with 0 unpriced calls
+  const imgBreakdown = p.modelBreakdown.find((m) => m.shortName === 'flash-3.1-img');
+  assert.ok(imgBreakdown);
+  assert.equal(imgBreakdown.label, 'Gemini 3.1 Flash Image');
+  assert.equal(imgBreakdown.calls, 1);
+  assert.equal(imgBreakdown.outputTokens, 1120);
+  assert.equal(imgBreakdown.unpricedCalls, 0);
 });

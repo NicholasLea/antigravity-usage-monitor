@@ -6,7 +6,12 @@ import { promisify } from 'node:util';
 import { mkdtempSync, mkdirSync, rmSync, truncateSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { computeSqliteWalSig, readLocalSqliteTrajectory } from '../backend/cli-sqlite-reader.mjs';
+import {
+  computeSqliteWalSig,
+  readLocalImageDimensionsFromUri,
+  readLocalSqliteTrajectory,
+} from '../backend/cli-sqlite-reader.mjs';
+import { extractModelSteps } from '../trajectory-metrics.mjs';
 import { backendHarness } from './backend-harness.mjs';
 import { i18nStore } from '../src/i18n/index.js';
 import {
@@ -960,4 +965,123 @@ test('legacy pre-PR#38 empty-WAL sqlite cache signatures migrate in-place withou
   assert.equal(out.firstInput, 1234, 'cached usage preserved intact');
   assert.ok(out.memSig.endsWith('|0:0'), `in-memory signature normalized to |0:0: ${out.memSig}`);
   assert.ok(out.diskSig.endsWith('|0:0'), `persisted signature normalized to |0:0: ${out.diskSig}`);
+});
+
+test('readLocalImageDimensionsFromUri and readLocalSqliteTrajectory decode PNG/JPEG/WebP headers and step_type 132 GenerateImage protobuf (140.2.6)', (t) => {
+  const sqliteMod =
+    typeof process.getBuiltinModule === 'function' ? process.getBuiltinModule('node:sqlite') : null;
+  if (!sqliteMod?.DatabaseSync) {
+    t.skip('node:sqlite DatabaseSync unavailable');
+    return;
+  }
+  const { DatabaseSync } = sqliteMod;
+  const tempDir = mkdtempSync(join(tmpdir(), 'agy-imggen-sqlite-'));
+  t.after(() => {
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // ignore Windows WAL cleanup lock
+    }
+  });
+
+  // 1. Minimal valid PNG header (1200x896)
+  const pngPath = join(tempDir, 'cat_1k.png');
+  const pngBuf = Buffer.alloc(32);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(pngBuf, 0);
+  pngBuf.writeUInt32BE(13, 8);
+  pngBuf.write('IHDR', 12, 'ascii');
+  pngBuf.writeUInt32BE(1200, 16);
+  pngBuf.writeUInt32BE(896, 20);
+  writeFileSync(pngPath, pngBuf);
+
+  // 2. Minimal valid JPEG SOF2 header (2048x1536) after APP0 segment
+  const jpgPath = join(tempDir, 'scene_2k.jpg');
+  const jpgBuf = Buffer.from([
+    0xff, 0xd8, // SOI
+    0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, // APP0 (len 4)
+    0xff, 0xc2, 0x00, 0x0b, 0x08, 0x06, 0x00, 0x08, 0x00, 0x01, 0x01, 0x11, 0x00, // SOF2: height=1536 (0x0600), width=2048 (0x0800)
+    0xff, 0xd9,
+  ]);
+  writeFileSync(jpgPath, jpgBuf);
+
+  // 3. Minimal valid WebP VP8X header (4096x3072 -> minus-one LE24: 4095=0x000fff, 3071=0x000bff)
+  const webpPath = join(tempDir, 'poster_4k.webp');
+  const webpBuf = Buffer.alloc(30);
+  webpBuf.write('RIFF', 0, 'ascii');
+  webpBuf.writeUInt32LE(22, 4);
+  webpBuf.write('WEBP', 8, 'ascii');
+  webpBuf.write('VP8X', 12, 'ascii');
+  webpBuf.writeUInt32LE(10, 16);
+  webpBuf[24] = 0xff;
+  webpBuf[25] = 0x0f;
+  webpBuf[26] = 0x00;
+  webpBuf[27] = 0xff;
+  webpBuf[28] = 0x0b;
+  webpBuf[29] = 0x00;
+  writeFileSync(webpPath, webpBuf);
+
+  const toFileUri = (p) => `file:///${p.replace(/\\/g, '/').replace(/^\/+/, '')}`;
+  assert.deepEqual(readLocalImageDimensionsFromUri(toFileUri(pngPath)), { width: 1200, height: 896 });
+  assert.deepEqual(readLocalImageDimensionsFromUri(toFileUri(jpgPath)), { width: 2048, height: 1536 });
+  assert.deepEqual(readLocalImageDimensionsFromUri(toFileUri(webpPath)), { width: 4096, height: 3072 });
+
+  // 4. SQLite trajectory with step_type=132 (GENERIC tool step, toolCall.name='generate_image', payload 140.2.6)
+  const cid = 'd369e740-1f52-4f06-90a3-2f88bc623e2e';
+  const dbPath = join(tempDir, `${cid}.db`);
+  const db = new DatabaseSync(dbPath);
+  db.exec(`
+    CREATE TABLE trajectory_meta (trajectory_id TEXT, cascade_id TEXT, trajectory_type INTEGER, source INTEGER);
+    CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);
+    CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+  `);
+  db.prepare('INSERT INTO trajectory_meta VALUES (?, ?, 1, 1)').run(cid, cid);
+
+  const baseSec = Math.floor(Date.parse('2026-11-24T01:50:21Z') / 1000);
+  const toolCallBytes = Buffer.concat([
+    encodeFieldBytes(1, 'call_img_1'),
+    encodeFieldBytes(2, 'generate_image'),
+    encodeFieldBytes(3, JSON.stringify({ Prompt: '2K mountain sunrise', AspectRatio: '4:3' })),
+  ]);
+  const metaBytes = Buffer.concat([
+    encodeFieldBytes(1, encodeTimestamp(baseSec, 217_000_000)), // createdAt
+    encodeFieldBytes(4, toolCallBytes), // toolCall
+    encodeFieldBytes(7, encodeTimestamp(baseSec, 337_000_000)), // finishedGeneratingAt (0.12s!)
+    encodeFieldBytes(8, encodeTimestamp(baseSec + 63, 127_000_000)), // completedAt (~62.785s!)
+    encodeFieldBytes(20, Buffer.concat([encodeFieldVarint(2, 2), encodeFieldBytes(4, cid)])),
+    encodeFieldBytes(32, encodeTimestamp(baseSec, 342_000_000)), // startedAt
+  ]);
+
+  const genImgProto = Buffer.concat([
+    encodeFieldBytes(1, '2K mountain sunrise'),
+    encodeFieldBytes(3, '4:3'),
+    encodeFieldBytes(4, toFileUri(jpgPath)),
+    encodeFieldVarint(5, jpgBuf.length),
+    encodeFieldBytes(6, 'gemini-3.1-flash-image'),
+    encodeFieldBytes(8, 'scene_2k'),
+  ]);
+  const anyProto = Buffer.concat([
+    encodeFieldBytes(1, 'type.googleapis.com/exa.cortex.core.tools.GenerateImage'),
+    encodeFieldBytes(2, genImgProto),
+  ]);
+  const stepPayload140 = encodeFieldBytes(140, encodeFieldBytes(2, encodeFieldBytes(6, anyProto)));
+
+  db.prepare('INSERT INTO steps VALUES (2, 132, 3, ?, ?)').run(metaBytes, stepPayload140);
+  db.close();
+
+  const decoded = readLocalSqliteTrajectory(dbPath, { cascadeId: cid });
+  assert.ok(decoded);
+  assert.equal(decoded.steps.length, 1);
+  assert.equal(decoded.steps[0].type, 'CORTEX_STEP_TYPE_GENERATE_IMAGE');
+  assert.equal(decoded.steps[0].generateImage.modelName, 'gemini-3.1-flash-image');
+  assert.equal(decoded.steps[0].generateImage.width, 2048);
+  assert.equal(decoded.steps[0].generateImage.height, 1536);
+
+  // Extract model steps -> 2048x1536 hits 2K tier -> 1680 output tokens and 62.785s duration!
+  const modelSteps = extractModelSteps(decoded.steps, decoded.generatorMetadata);
+  assert.equal(modelSteps.length, 1);
+  assert.equal(modelSteps[0].isImageGenStep, true);
+  assert.equal(modelSteps[0].modelKey, 'gemini-3.1-flash-image');
+  assert.equal(modelSteps[0].outputTokens, 1680);
+  assert.equal(modelSteps[0].ttftSec, null);
+  assert.ok(Math.abs(modelSteps[0].totalDurationSec - 62.785) < 0.01);
 });

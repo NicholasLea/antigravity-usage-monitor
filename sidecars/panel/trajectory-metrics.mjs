@@ -881,6 +881,113 @@ function buildStepAnomalyRecord(step, meta, chat, pendingErrorSteps = []) {
  * @param {Array<object>} [generatorMetadata=[]] 轨迹级生成器元数据列表
  * @returns {Array<object>} 标准化并完成压缩步骤模型推断的步骤指标列表
  */
+const IMAGE_REF_INPUT_TOKENS = 560;
+
+function isGenerateImageStep(step) {
+  if (!step || typeof step !== 'object') return false;
+  if (step.generateImage && typeof step.generateImage === 'object') return true;
+  const t = String(step.type || '').trim().toUpperCase();
+  if (t === 'CORTEX_STEP_TYPE_GENERATE_IMAGE' || t === 'GENERATE_IMAGE') return true;
+  const toolName = String(step?.metadata?.toolCall?.name || '')
+    .trim()
+    .replace(/^default_api:/i, '')
+    .toLowerCase();
+  return toolName === 'generate_image';
+}
+
+function estimatePromptTextTokens(text) {
+  const s = String(text || '').trim();
+  if (!s) return 0;
+  let asciiChars = 0;
+  let nonAsciiChars = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) <= 0x7f) asciiChars += 1;
+    else nonAsciiChars += 1;
+  }
+  return Math.max(1, Math.round(asciiChars * 0.25 + nonAsciiChars * 0.6));
+}
+
+function resolveImageGenResolutionTier(gi = {}, args = {}) {
+  const w = Number(gi?.width || gi?.imageDimensions?.width) || 0;
+  const h = Number(gi?.height || gi?.imageDimensions?.height) || 0;
+  const maxDim = Math.max(w, h);
+  const pixels = w > 0 && h > 0 ? w * h : 0;
+  if (maxDim > 0) {
+    if (maxDim <= 640 && (pixels === 0 || pixels <= 360_000)) return '0.5K';
+    if (maxDim <= 1536 && (pixels === 0 || pixels <= 1_650_000)) return '1K';
+    if (maxDim <= 2816 && (pixels === 0 || pixels <= 6_000_000)) return '2K';
+    return '4K';
+  }
+  const rawSize = String(gi?.imageSize || args?.ImageSize || args?.imageSize || '')
+    .trim()
+    .toUpperCase();
+  if (rawSize === '0.5K' || rawSize === '512' || rawSize === '512PX') return '0.5K';
+  if (rawSize === '2K' || rawSize === '2048' || rawSize === '2048PX') return '2K';
+  if (rawSize === '4K' || rawSize === '4096' || rawSize === '4096PX') return '4K';
+  return '1K';
+}
+
+function resolveImageGenOutputTokens(modelId, resTier) {
+  const m = String(modelId || '').toLowerCase();
+  if (/2[._-]5[-_]flash[-_]image/.test(m)) {
+    return 1290;
+  }
+  if (/3(?:[._-]\d+)?[-_]pro[-_]image/.test(m)) {
+    return resTier === '4K' ? 2000 : 1120;
+  }
+  if (resTier === '0.5K') return 747;
+  if (resTier === '2K') return 1680;
+  if (resTier === '4K') return 2520;
+  return 1120;
+}
+
+/**
+ * 按 Google AI Studio 官方图片生成计费口径估算 `generate_image` 步骤的输入及输出等价 Token。
+ *
+ * @param {object} step
+ * @param {boolean} hasGeneratedResult
+ * @returns {{ modelName: string, inputTokens: number, outputTokens: number, aspectRatio: string, resolutionTier: string, imageName: string }}
+ */
+export function estimateImageGenStepUsage(step, hasGeneratedResult = true) {
+  const gi = step?.generateImage && typeof step.generateImage === 'object' ? step.generateImage : {};
+  let args = {};
+  const rawArgs = step?.metadata?.toolCall?.argumentsJson;
+  if (typeof rawArgs === 'string' && rawArgs.trim()) {
+    try {
+      const parsed = JSON.parse(rawArgs);
+      if (parsed && typeof parsed === 'object') args = parsed;
+    } catch {
+      // 忽略半流式未闭合参数 JSON
+    }
+  } else if (rawArgs && typeof rawArgs === 'object') {
+    args = rawArgs;
+  }
+  const modelName =
+    String(gi.modelName || gi.model || args?.Model || args?.model || '').trim() ||
+    'gemini-3.1-flash-image';
+  const prompt = String(gi.prompt || args?.Prompt || args?.prompt || '').trim();
+  const refImages = Array.isArray(args?.ImagePaths)
+    ? args.ImagePaths.length
+    : Array.isArray(args?.imagePaths)
+      ? args.imagePaths.length
+      : 0;
+  const inputTokens = estimatePromptTextTokens(prompt) + refImages * IMAGE_REF_INPUT_TOKENS;
+  const resolutionTier = resolveImageGenResolutionTier(gi, args);
+  const outputTokens = hasGeneratedResult
+    ? resolveImageGenOutputTokens(modelName, resolutionTier)
+    : 0;
+  const aspectRatio = String(gi.aspectRatio || args?.AspectRatio || args?.aspectRatio || '').trim();
+  const imageName = String(gi.imageName || args?.ImageName || args?.imageName || '').trim();
+  return {
+    modelName,
+    inputTokens,
+    outputTokens,
+    aspectRatio,
+    resolutionTier,
+    imageName,
+  };
+}
+
 export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
   const genByStep = new Map();
   const orchestratorExecModels = new Set();
@@ -1174,9 +1281,10 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
       return;
     }
 
-    const m = s?.metadata;
+    const m = s?.metadata || {};
     const u = m?.modelUsage || m?.retryInfos?.[0]?.usage;
-    if (!u) {
+    const isImageGen = !u && isGenerateImageStep(s);
+    if (!u && !isImageGen) {
       return;
     }
     const stepPendingErrors = pendingErrorSteps;
@@ -1207,6 +1315,92 @@ export function extractModelSteps(rawSteps = [], generatorMetadata = []) {
     }
 
     const stepIndex = m.sourceTrajectoryStepInfo?.stepIndex ?? index;
+    if (isImageGen) {
+      const isClearedImg = s.status === 'CORTEX_STEP_STATUS_CLEARED';
+      const explicitlyIncompleteImg = Boolean(
+        s.status && s.status !== 'CORTEX_STEP_STATUS_DONE' && !isClearedImg
+      );
+      const startIsoImg = m.startedAt || m.createdAt || null;
+      const startMsImg = parseIsoMs(m.createdAt || m.startedAt);
+      const measuredImgDuration = requestDuration(
+        startIsoImg,
+        isClearedImg ? null : m.completedAt
+      );
+      const completeImg = !explicitlyIncompleteImg && measuredImgDuration !== null;
+      const hasGeneratedMedia = Boolean(
+        s?.generateImage?.generatedMedia?.uri ||
+          (completeImg &&
+            s.status !== 'CORTEX_STEP_STATUS_ERROR' &&
+            s.status !== 'CORTEX_STEP_STATUS_CANCELED')
+      );
+      const imgUsage = estimateImageGenStepUsage(s, hasGeneratedMedia);
+      const totalDurationSecImg = completeImg ? measuredImgDuration : null;
+
+      let imgTimingReason = null;
+      if (s.status === 'CORTEX_STEP_STATUS_CANCELED') {
+        imgTimingReason = 'canceled';
+      } else if (s.status === 'CORTEX_STEP_STATUS_ERROR') {
+        imgTimingReason = 'error';
+      } else if (s.status === 'CORTEX_STEP_STATUS_INTERRUPTED') {
+        imgTimingReason = 'interrupted';
+      } else if (!completeImg || !(totalDurationSecImg > 0)) {
+        imgTimingReason = 'incomplete_or_invalid_timing';
+      } else if (!(imgUsage.outputTokens > 0)) {
+        imgTimingReason = 'invalid_output_tokens';
+      } else if (totalDurationSecImg < MIN_SPEED_DURATION_SECONDS) {
+        imgTimingReason = 'short_timing';
+      }
+
+      const imgTokPerSec =
+        imgTimingReason === null ? imgUsage.outputTokens / totalDurationSecImg : null;
+      const anomalyRecImg = buildStepAnomalyRecord(s, m, null, stepPendingErrors);
+
+      result.push({
+        stepIndex,
+        isCompactionStep: false,
+        isImageGenStep: true,
+        modelKey: imgUsage.modelName,
+        modelSource: 'generateImage.modelName',
+        responseModel: imgUsage.modelName,
+        modelIdentityVersion: MODEL_IDENTITY_VERSION,
+        modelDisplayName: '',
+        apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+        createdAt: m.createdAt || m.startedAt || null,
+        createdAtMs: Math.floor(startMsImg),
+        hasVisibleText: false,
+        hasToolCalls: false,
+        inputTokens: imgUsage.inputTokens,
+        cacheReadTokens: 0,
+        outputTokens: imgUsage.outputTokens,
+        thinkingTokens: 0,
+        responseTokens: imgUsage.outputTokens,
+        estimatedContextTokens: 0,
+        maxContextBudgetTokens: 0,
+        contextBreakdown: null,
+        measurementVersion: MEASUREMENT_VERSION,
+        isComplete: completeImg,
+        nativeTtftSec: null,
+        nativeStreamSec: null,
+        viewableDelaySec: elapsed(startMsImg, parseIsoMs(m.viewableAt)),
+        ttftSec: null,
+        ttftSource: 'unavailable',
+        thinkingDurationSec: null,
+        totalDurationSec: totalDurationSecImg,
+        totalTokPerSec: imgTokPerSec,
+        speedBasis: imgTokPerSec === null ? 'unavailable' : 'request_total',
+        speedSampleEligible: false,
+        speedReason: imgTimingReason || 'image_gen',
+        ...(anomalyRecImg
+          ? { anomaly: anomalyRecImg.anomaly, anomalySig: anomalyRecImg.anomalySig }
+          : {}),
+        turnIndex: activeTurnIndex,
+        isTurnStart: stepIsTurnStart,
+        ...(stepIsTurnStart && stepTurnPrompt ? { turnPrompt: stepTurnPrompt } : {}),
+        ...(stepIsTurnStart && stepTurnPromptClean ? { turnPromptClean: stepTurnPromptClean } : {}),
+        ...(stepIsTurnStart ? { turnHasMedia: stepTurnHasMedia, turnMediaOnly: stepTurnMediaOnly } : {}),
+      });
+      return;
+    }
     if (Array.isArray(m.generatorMetadata)) {
       for (const g of m.generatorMetadata) {
         collectOrchestratorExecModel(g?.plannerConfig);
@@ -1490,6 +1684,7 @@ export function inferCompactionStepModels(steps) {
   const isExplicitDonor = (step) =>
     Boolean(
       step &&
+        !step.isImageGenStep &&
         step.modelKey &&
         step.modelKey !== 'unknown' &&
         step.modelSource !== 'inferred_compaction' &&
@@ -1728,7 +1923,10 @@ export function speedMetric(step) {
     value: step.totalTokPerSec,
     tokens: step.outputTokens,
     seconds: step.totalDurationSec,
-    eligible: step.speedSampleEligible === true && !step.isCompactionStep,
+    eligible:
+      step.speedSampleEligible === true &&
+      !step.isCompactionStep &&
+      !step.isImageGenStep,
     reason: step.speedReason,
   };
 }
@@ -1755,7 +1953,7 @@ export function createSpeedAccumulator() {
  * @param {object} step 标准化步骤对象
  */
 export function accumulateSpeed(acc, step) {
-  if (step.isCompactionStep) {
+  if (step.isCompactionStep || step.isImageGenStep) {
     return;
   }
   const metric = speedMetric(step);
@@ -1809,6 +2007,7 @@ export function summarizeTtft(steps) {
     .filter(
       (s) =>
         !s.isCompactionStep &&
+        !s.isImageGenStep &&
         s.measurementVersion === MEASUREMENT_VERSION &&
         s.isComplete &&
         Number.isFinite(s.totalDurationSec) &&
@@ -2127,6 +2326,8 @@ export function summarizeToolCall(rawToolCall, fallbackStep = null) {
       rawName = 'find_by_name';
     } else if (stepType.includes('SEARCH_WEB') || fallbackStep?.searchWeb) {
       rawName = 'search_web';
+    } else if (stepType.includes('GENERATE_IMAGE') || fallbackStep?.generateImage) {
+      rawName = 'generate_image';
     }
   }
 
@@ -2302,6 +2503,23 @@ export function summarizeToolCall(rawToolCall, fallbackStep = null) {
       isAskUser: false,
       label: isUrl ? '读取网页' : '网页搜索',
       detail: cleanSingleLineSnippet(target, 52) || '',
+    };
+  }
+
+  if (nameLower === 'generate_image') {
+    const imgName =
+      pickField(['ImageName', 'imageName']) ||
+      String(fallbackStep?.generateImage?.imageName || '').trim();
+    const ratio =
+      pickField(['AspectRatio', 'aspectRatio']) ||
+      String(fallbackStep?.generateImage?.aspectRatio || '').trim();
+    const detail = imgName && ratio ? `${imgName} (${ratio})` : imgName || ratio || '';
+    return {
+      toolName: nameLower,
+      actionKey: 'generate_image',
+      isAskUser: false,
+      label: '生成图片',
+      detail,
     };
   }
 

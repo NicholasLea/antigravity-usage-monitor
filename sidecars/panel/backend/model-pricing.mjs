@@ -234,6 +234,16 @@ export function formatGenericModelSlug(slug = '') {
   if (/^gemini-3-flash-(?:[abd]|agent)$/i.test(s)) return 'Gemini 3.5 Flash';
   if (/^gemini-3-flash-c$/i.test(s)) return 'Gemini 3 Flash';
   if (/^gemini-pro-(?:default|agent|b)$/i.test(s)) return 'Gemini 3.1 Pro';
+  const imgMatch = s.match(
+    /^gemini-(\d+(?:\.\d+)?)-(pro|flash)(?:-(lite))?-image(?:-(preview))?$/i
+  );
+  if (imgMatch) {
+    const ver = imgMatch[1];
+    const tier = imgMatch[2].charAt(0).toUpperCase() + imgMatch[2].slice(1).toLowerCase();
+    const lite = imgMatch[3] ? ' Lite' : '';
+    const prev = imgMatch[4] ? ' (Preview)' : '';
+    return `Gemini ${ver} ${tier}${lite} Image${prev}`;
+  }
   const m = s.match(
     /^gemini-(\d+(?:\.\d+)?)-(pro|flash|argon|carbon|neon|hydrogen|helix)(?:-(lite))?(?:-(xhigh|high|medium|low|extra-low|tiered|preview))?$/i
   );
@@ -317,10 +327,12 @@ export function resolvePricingAt(pricingEntry, atMs) {
         ? parseIsoMs(ph.until.trim()) || Infinity
         : Infinity;
     if (tMs >= fromMs && tMs < untilMs) {
+      const nextImgOut = ph.imageOutput ?? baseEntry.imageOutput;
       if (
         ph.input === baseEntry.input &&
         ph.cache === baseEntry.cache &&
-        ph.output === baseEntry.output
+        ph.output === baseEntry.output &&
+        nextImgOut === baseEntry.imageOutput
       ) {
         return baseEntry;
       }
@@ -329,6 +341,7 @@ export function resolvePricingAt(pricingEntry, atMs) {
         input: ph.input,
         cache: ph.cache,
         output: ph.output,
+        ...(nextImgOut !== undefined ? { imageOutput: nextImgOut } : {}),
       };
       Object.defineProperty(resolved, '_basePricing', {
         value: baseEntry,
@@ -641,6 +654,19 @@ export function formatUpstreamModelId(rawUpstream = '', mInfo = null) {
  * @param {{ input: number, cache: number, output: number } | null} pricing
  * @returns {number|null}
  */
+export function resolveEffectiveOutputRate(pricing, step) {
+  if (!pricing || typeof pricing !== 'object') return null;
+  if (
+    step?.isImageGenStep &&
+    typeof pricing.imageOutput === 'number' &&
+    Number.isFinite(pricing.imageOutput) &&
+    pricing.imageOutput > 0
+  ) {
+    return pricing.imageOutput;
+  }
+  return pricing.output;
+}
+
 export function computeStepCost(step, pricing) {
   if (!pricing) return null;
   const stepMs = extractStepTimestampMs(step);
@@ -652,8 +678,9 @@ export function computeStepCost(step, pricing) {
     const n = Number(v);
     return Number.isFinite(n) && n > 0 ? n : 0;
   };
+  const outRate = resolveEffectiveOutputRate(effectivePricing, step);
   const inCost = (safeTok(step?.inputTokens) / 1_000_000) * effectivePricing.input;
   const cacheCost = (safeTok(step?.cacheReadTokens) / 1_000_000) * effectivePricing.cache;
-  const outCost = (safeTok(step?.outputTokens) / 1_000_000) * effectivePricing.output;
+  const outCost = (safeTok(step?.outputTokens) / 1_000_000) * outRate;
   return inCost + cacheCost + outCost;
 }

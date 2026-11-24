@@ -808,6 +808,7 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'live.act.schedule': '定时任务',
   'live.act.ask_question': '等待用户选择',
   'live.act.search_marketplace': '查询插件',
+  'live.act.generate_image': '生成图片',
   'live.act.mcp_tool': '调用 MCP',
   'live.act.tool_call': '调用工具',
   'live.act.thinking': '推理中',

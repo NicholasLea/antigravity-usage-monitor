@@ -808,6 +808,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'live.act.schedule': 'Schedule Task',
   'live.act.ask_question': 'Waiting for User Choice',
   'live.act.search_marketplace': 'Search Plugins',
+  'live.act.generate_image': 'Generate Image',
   'live.act.mcp_tool': 'Call MCP Tool',
   'live.act.tool_call': 'Call Tool',
   'live.act.thinking': 'Thinking',

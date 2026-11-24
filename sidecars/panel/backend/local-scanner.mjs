@@ -37,6 +37,7 @@ import {
   computeSqliteWalSig,
   hasBuiltinNodeSqlite,
   readAnnotationTitleForCascade,
+  readLocalImageDimensionsFromUri,
   readLocalSqliteTrajectory,
   readLocalSummaryIndex,
 } from './cli-sqlite-reader.mjs';
@@ -2207,6 +2208,19 @@ export async function enumerateAndSyncConversations({
             const { steps: rawSteps, generatorMeta } = loadedViaSqlite
               ? { steps: rawStepsUnfiltered, generatorMeta: rawGenMeta }
               : filterClonedTrajectorySteps(rawStepsUnfiltered, rawGenMeta, cidLower);
+            if (!isRemote && !loadedViaSqlite) {
+              for (const rawSt of rawSteps) {
+                const gi = rawSt?.generateImage;
+                const mediaUri = gi?.generatedMedia?.uri;
+                if (gi && mediaUri && !(Number(gi.width) > 0 && Number(gi.height) > 0)) {
+                  const dims = readLocalImageDimensionsFromUri(mediaUri);
+                  if (dims) {
+                    gi.width = dims.width;
+                    gi.height = dims.height;
+                  }
+                }
+              }
+            }
             const steps = extractModelSteps(rawSteps, generatorMeta);
             const nextLast = steps[steps.length - 1];
 
@@ -2361,6 +2375,7 @@ export async function enumerateAndSyncConversations({
               wakeupTurnTelemetry: true,
               contextGroupsTelemetry: 3,
               anomalyTelemetry: 1,
+              imageGenTelemetry: 1,
               steps: stepsWithOwners,
               ...(contextPreserved.lastKnownStaticContext
                 ? { lastKnownStaticContext: contextPreserved.lastKnownStaticContext }
@@ -2407,6 +2422,7 @@ export async function enumerateAndSyncConversations({
               !prev.turnRailTelemetry ||
               Number(prev.contextGroupsTelemetry || 0) < 3 ||
               !prev.anomalyTelemetry ||
+              !prev.imageGenTelemetry ||
               metaChanged ||
               !isDeepStrictEqual(prev.steps, stepsWithOwners);
 
@@ -2641,6 +2657,18 @@ export async function enumerateAndSyncConversations({
       lowerCid === selectedRootId ||
       Boolean(conv.rootConversationId && conv.rootConversationId.toLowerCase() === selectedRootId);
     if (!cached.contextLimitTelemetry && lowerCid === contextTelemetryCascadeId) return true;
+    const isImgGenAgent =
+      String(
+        conv.subagentSpec?.typeName ||
+          cached.subagentSpec?.typeName ||
+          cached.agentTypeName ||
+          ''
+      )
+        .trim()
+        .toLowerCase() === 'image-generator';
+    if (!cached.imageGenTelemetry && isImgGenAgent) {
+      return true;
+    }
     if (
       (!cached.turnRailTelemetry ||
         !cached.anomalyTelemetry ||
@@ -2860,6 +2888,15 @@ export async function enumerateAndSyncConversations({
           const targetCacheKey = subConv.cascadeId;
           const existingSubCache = getEntry(targetCacheKey);
           const isSelectedSubFamily = rootId === selectedRootId;
+          const isImgGenSub =
+            String(
+              subConv.subagentSpec?.typeName ||
+                existingSubCache?.subagentSpec?.typeName ||
+                existingSubCache?.agentTypeName ||
+                ''
+            )
+              .trim()
+              .toLowerCase() === 'image-generator';
           const hasValidSubCache =
             existingSubCache &&
             !(existingSubCache.offlineTranscriptFallback && subConv.inSummaries) &&
@@ -2869,6 +2906,7 @@ export async function enumerateAndSyncConversations({
                 : `${CACHE_SCHEMA_VERSION}:`
             ) &&
             !hasMissingStepFields(existingSubCache) &&
+            (!isImgGenSub || Boolean(existingSubCache.imageGenTelemetry)) &&
             (!isSelectedSubFamily ||
               (Boolean(existingSubCache.turnRailTelemetry) &&
                 Boolean(existingSubCache.anomalyTelemetry) &&

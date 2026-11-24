@@ -348,6 +348,7 @@ function accumulateStepIntoModelMap(perModelStats, st, mInfo, stepCost) {
   accumulateSpeed(agg.speedAccumulator, st);
   if (
     !st.isCompactionStep &&
+    !st.isImageGenStep &&
     st.measurementVersion === MEASUREMENT_VERSION &&
     st.isComplete &&
     Number.isFinite(st.totalDurationSec) &&

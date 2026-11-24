@@ -10,10 +10,13 @@
  *    及运行态末尾步骤，O(1) 跳过大体积工具输出页），完整保留耗时、TTFT、轮次导轨与 10 通道上下文构成。
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, readSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { extractShortPromptTitle } from '../shared/prompt-clean.mjs';
-import { parseWorkspaceUrisColumn } from '../shared/workspace-uri.mjs';
+import {
+  decodeWorkspaceFileUriToPath,
+  parseWorkspaceUrisColumn,
+} from '../shared/workspace-uri.mjs';
 import { parseIsoMs } from '../trajectory-metrics.mjs';
 import { ANNOTATION_DIRS, PRODUCT_DATA_ROOTS, localSummaryMemo } from './config.mjs';
 import {
@@ -1522,8 +1525,193 @@ function decodeProtoInvokeSubagentSlice(buf, state, end) {
   return { subagents, results };
 }
 
-function decodeProtoGenericStepInvokeSubagentSlice(buf, state, end) {
+const imageDimsMemo = new Map();
+
+function parseImageBufferDimensions(buf) {
+  if (!buf || buf.length < 11) return null;
+  // PNG: 89 50 4E 47 0D 0A 1A 0A + IHDR
+  if (
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf.length >= 24
+  ) {
+    const width = buf.readUInt32BE(16);
+    const height = buf.readUInt32BE(20);
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+  // JPEG: FF D8 ... SOF0..SOF3 (FF C0..C3)
+  if (buf[0] === 0xff && buf[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 <= buf.length) {
+      if (buf[i] !== 0xff) {
+        i += 1;
+        continue;
+      }
+      const marker = buf[i + 1];
+      if (marker === 0xff) {
+        i += 1;
+        continue;
+      }
+      if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
+        i += 2;
+        continue;
+      }
+      if (
+        (marker >= 0xc0 && marker <= 0xc3) ||
+        (marker >= 0xc5 && marker <= 0xc7) ||
+        (marker >= 0xc9 && marker <= 0xcb) ||
+        (marker >= 0xcd && marker <= 0xcf)
+      ) {
+        const height = buf.readUInt16BE(i + 5);
+        const width = buf.readUInt16BE(i + 7);
+        return width > 0 && height > 0 ? { width, height } : null;
+      }
+      if (i + 4 > buf.length) break;
+      const segLen = buf.readUInt16BE(i + 2);
+      if (segLen < 2) break;
+      i += 2 + segLen;
+    }
+    return null;
+  }
+  // WebP: RIFF....WEBP
+  if (
+    buf.length >= 30 &&
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) {
+    const chunk = buf.subarray(12, 16).toString('ascii');
+    if (chunk === 'VP8X' && buf.length >= 30) {
+      const width = 1 + (buf[24] | (buf[25] << 8) | (buf[26] << 16));
+      const height = 1 + (buf[27] | (buf[28] << 8) | (buf[29] << 16));
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    if (chunk === 'VP8 ' && buf.length >= 30) {
+      const width = buf.readUInt16LE(26) & 0x3fff;
+      const height = buf.readUInt16LE(28) & 0x3fff;
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    if (chunk === 'VP8L' && buf.length >= 25) {
+      const bits = buf.readUInt32LE(21);
+      const width = (bits & 0x3fff) + 1;
+      const height = ((bits >>> 14) & 0x3fff) + 1;
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+  }
+  return null;
+}
+
+/**
+ * 仅读取本地生成图片文件前 32KB 头部字节解析真实像素尺寸（PNG / JPEG / WebP），用于精确匹配图片分辨率计费档位。
+ *
+ * @param {string} rawUri
+ * @returns {{ width: number, height: number } | null}
+ */
+export function readLocalImageDimensionsFromUri(rawUri) {
+  const localPath = decodeWorkspaceFileUriToPath(rawUri);
+  if (!localPath) return null;
+  if (imageDimsMemo.has(localPath)) {
+    return imageDimsMemo.get(localPath);
+  }
+  let dims = null;
+  try {
+    if (existsSync(localPath)) {
+      if (typeof openSync === 'function' && typeof readSync === 'function' && typeof closeSync === 'function') {
+        const fd = openSync(localPath, 'r');
+        try {
+          const head = Buffer.allocUnsafe(32768);
+          const bytesRead = readSync(fd, head, 0, head.length, 0);
+          if (bytesRead >= 11) {
+            dims = parseImageBufferDimensions(head.subarray(0, bytesRead));
+          }
+        } finally {
+          closeSync(fd);
+        }
+      } else if (typeof readFileSync === 'function') {
+        const raw = readFileSync(localPath);
+        const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+        dims = parseImageBufferDimensions(buf);
+      }
+    }
+  } catch {
+    dims = null;
+  }
+  if (dims) {
+    if (imageDimsMemo.size >= 512) {
+      const firstKey = imageDimsMemo.keys().next().value;
+      if (firstKey !== undefined) imageDimsMemo.delete(firstKey);
+    }
+    imageDimsMemo.set(localPath, dims);
+  }
+  return dims;
+}
+
+function decodeProtoGenerateImageSlice(buf, state, end) {
+  let prompt = '';
+  let aspectRatio = '';
+  let uri = '';
+  let fileSizeBytes = 0;
+  let modelName = '';
+  let imageName = '';
+  while (state.off < end) {
+    const tag = Number(BigInt.asUintN(32, readProtoVarint(buf, state, end)));
+    const fn = tag >>> 3;
+    const wt = tag & 7;
+    if (fn === 1 && wt === 2) {
+      prompt = readProtoString(buf, state, end);
+    } else if (fn === 3 && wt === 2) {
+      aspectRatio = readProtoString(buf, state, end);
+    } else if (fn === 4 && wt === 2) {
+      uri = readProtoString(buf, state, end);
+    } else if (fn === 5 && wt === 0) {
+      fileSizeBytes = Number(readProtoVarint(buf, state, end));
+    } else if (fn === 6 && wt === 2) {
+      modelName = readProtoString(buf, state, end);
+    } else if (fn === 8 && wt === 2) {
+      imageName = readProtoString(buf, state, end);
+    } else {
+      skipProtoField(buf, state, wt, end);
+    }
+  }
+  state.off = end;
+  return { prompt, aspectRatio, uri, fileSizeBytes, modelName, imageName };
+}
+
+function decodeProtoGeneratedMediaSlice(buf, state, end) {
+  let mimeType = '';
+  let uri = '';
+  while (state.off < end) {
+    const tag = Number(BigInt.asUintN(32, readProtoVarint(buf, state, end)));
+    const fn = tag >>> 3;
+    const wt = tag & 7;
+    if (fn === 1 && wt === 2) {
+      mimeType = readProtoString(buf, state, end);
+    } else if (fn === 5 && wt === 2) {
+      uri = readProtoString(buf, state, end);
+    } else {
+      skipProtoField(buf, state, wt, end);
+    }
+  }
+  state.off = end;
+  return mimeType || uri ? { mimeType, uri } : null;
+}
+
+function decodeProtoGenericStepToolPayloadSlice(
+  buf,
+  state,
+  end,
+  { wantInvokeSubagent = false, wantGenerateImage = false } = {}
+) {
   let invokeSubagent = null;
+  let generateImage = null;
+  let mediaFallback = null;
   while (state.off < end) {
     const tag = Number(BigInt.asUintN(32, readProtoVarint(buf, state, end)));
     const fn = tag >>> 3;
@@ -1532,7 +1720,11 @@ function decodeProtoGenericStepInvokeSubagentSlice(buf, state, end) {
       const resEnd = readSubEnd(buf, state, end);
       while (state.off < resEnd) {
         const resTag = Number(BigInt.asUintN(32, readProtoVarint(buf, state, resEnd)));
-        if ((resTag >>> 3) === 6 && (resTag & 7) === 2) {
+        const rFn = resTag >>> 3;
+        const rWt = resTag & 7;
+        if (rFn === 4 && rWt === 2 && wantGenerateImage) {
+          mediaFallback = decodeProtoGeneratedMediaSlice(buf, state, readSubEnd(buf, state, resEnd));
+        } else if (rFn === 6 && rWt === 2) {
           const anyEnd = readSubEnd(buf, state, resEnd);
           let typeUrl = '';
           let valStart = 0;
@@ -1550,15 +1742,23 @@ function decodeProtoGenericStepInvokeSubagentSlice(buf, state, end) {
             }
           }
           state.off = anyEnd;
-          if (
-            valEnd > valStart &&
-            (typeUrl.endsWith('/exa.cortex.core.tools.InvokeSubagent') ||
-              typeUrl === 'exa.cortex.core.tools.InvokeSubagent')
-          ) {
-            invokeSubagent = decodeProtoInvokeSubagentSlice(buf, { off: valStart }, valEnd);
+          if (valEnd > valStart) {
+            if (
+              wantInvokeSubagent &&
+              (typeUrl.endsWith('/exa.cortex.core.tools.InvokeSubagent') ||
+                typeUrl === 'exa.cortex.core.tools.InvokeSubagent')
+            ) {
+              invokeSubagent = decodeProtoInvokeSubagentSlice(buf, { off: valStart }, valEnd);
+            } else if (
+              wantGenerateImage &&
+              (typeUrl.endsWith('/exa.cortex.core.tools.GenerateImage') ||
+                typeUrl === 'exa.cortex.core.tools.GenerateImage')
+            ) {
+              generateImage = decodeProtoGenerateImageSlice(buf, { off: valStart }, valEnd);
+            }
           }
         } else {
-          skipProtoField(buf, state, resTag & 7, resEnd);
+          skipProtoField(buf, state, rWt, resEnd);
         }
       }
       state.off = resEnd;
@@ -1567,7 +1767,27 @@ function decodeProtoGenericStepInvokeSubagentSlice(buf, state, end) {
     }
   }
   state.off = end;
-  return invokeSubagent;
+  if (generateImage || mediaFallback) {
+    const resolvedUri = generateImage?.uri || mediaFallback?.uri || '';
+    const dims = resolvedUri ? readLocalImageDimensionsFromUri(resolvedUri) : null;
+    generateImage = {
+      prompt: generateImage?.prompt || '',
+      imageName: generateImage?.imageName || '',
+      aspectRatio: generateImage?.aspectRatio || '',
+      modelName: generateImage?.modelName || '',
+      ...(generateImage?.fileSizeBytes > 0 ? { fileSizeBytes: generateImage.fileSizeBytes } : {}),
+      ...(resolvedUri || mediaFallback?.mimeType
+        ? {
+            generatedMedia: {
+              mimeType: mediaFallback?.mimeType || '',
+              uri: resolvedUri,
+            },
+          }
+        : {}),
+      ...(dims ? { width: dims.width, height: dims.height } : {}),
+    };
+  }
+  return { invokeSubagent, generateImage };
 }
 
 function decodeProtoSystemMessageSlice(buf, state, end) {
@@ -1588,7 +1808,13 @@ function decodeProtoSystemMessageSlice(buf, state, end) {
 
 function decodeProtoSelectiveStepPayload(
   rawBlob,
-  { stepTypeNum, isInvokeSubagent, includeSystemMessage = false, keepFullText }
+  {
+    stepTypeNum,
+    isInvokeSubagent,
+    isGenerateImage = false,
+    includeSystemMessage = false,
+    keepFullText,
+  }
 ) {
   const buf = toUint8Array(rawBlob);
   if (!buf || buf.length === 0) return {};
@@ -1616,9 +1842,15 @@ function decodeProtoSelectiveStepPayload(
     } else if (fn === 114 && wt === 2 && stepTypeNum === 101 && includeSystemMessage) {
       const sysMsg = decodeProtoSystemMessageSlice(buf, state, readSubEnd(buf, state, end));
       if (sysMsg) out.systemMessage = { message: sysMsg };
-    } else if (fn === 140 && wt === 2 && isInvokeSubagent) {
-      const inv = decodeProtoGenericStepInvokeSubagentSlice(buf, state, readSubEnd(buf, state, end));
-      if (inv) out.invokeSubagent = inv;
+    } else if (fn === 140 && wt === 2 && (isInvokeSubagent || isGenerateImage)) {
+      const toolParsed = decodeProtoGenericStepToolPayloadSlice(
+        buf,
+        state,
+        readSubEnd(buf, state, end),
+        { wantInvokeSubagent: isInvokeSubagent, wantGenerateImage: isGenerateImage }
+      );
+      if (toolParsed.invokeSubagent) out.invokeSubagent = toolParsed.invokeSubagent;
+      if (toolParsed.generateImage) out.generateImage = toolParsed.generateImage;
     } else if (fn === 143 && wt === 2 && isInvokeSubagent) {
       out.invokeSubagent = decodeProtoInvokeSubagentSlice(buf, state, readSubEnd(buf, state, end));
     } else {
@@ -1632,6 +1864,10 @@ function isInvokeSubagentToolName(rawName) {
   return /^(?:default_api:)?invoke_subagent$/i.test(String(rawName || '').trim());
 }
 
+function isGenerateImageToolName(rawName) {
+  return /^(?:default_api:)?generate_image$/i.test(String(rawName || '').trim());
+}
+
 function mapRunningGenericToolStepType(rawToolName) {
   const name = String(rawToolName || '')
     .trim()
@@ -1639,6 +1875,7 @@ function mapRunningGenericToolStepType(rawToolName) {
     .replace(/^default_api:/, '');
   if (!name) return 'CORTEX_STEP_TYPE_GENERIC';
   if (name === 'invoke_subagent') return 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT';
+  if (name === 'generate_image') return 'CORTEX_STEP_TYPE_GENERATE_IMAGE';
   if (name === 'run_command') return 'CORTEX_STEP_TYPE_RUN_COMMAND';
   if (name === 'command_status') return 'CORTEX_STEP_TYPE_COMMAND_STATUS';
   if (name === 'send_command_input') return 'CORTEX_STEP_TYPE_SEND_COMMAND_INPUT';
@@ -1895,12 +2132,16 @@ export function readLocalSqliteTrajectory(dbFilePath, options = {}) {
           const isInvSub =
             rec.stepTypeNum === 127 ||
             (rec.stepTypeNum === 132 && isInvokeSubagentToolName(rec.metadata?.toolCall?.name));
+          const isGenImg =
+            rec.stepTypeNum === 91 ||
+            (rec.stepTypeNum === 132 && isGenerateImageToolName(rec.metadata?.toolCall?.name));
           if (
             rec.stepTypeNum === 14 ||
             rec.stepTypeNum === 15 ||
             rec.stepTypeNum === 17 ||
             (isChildTrajectory && rec.stepTypeNum === 101) ||
             isInvSub ||
+            isGenImg ||
             (inRunningTail && (rec.stepTypeNum !== 132 || !rec.metadata?.toolCall?.argumentsJson))
           ) {
             payloadIndices.push(rec.idx);
@@ -1938,10 +2179,15 @@ export function readLocalSqliteTrajectory(dbFilePath, options = {}) {
         const isInvSub =
           rec.stepTypeNum === 127 ||
           (rec.stepTypeNum === 132 && isInvokeSubagentToolName(rec.metadata?.toolCall?.name));
+        const isGenImg =
+          rec.stepTypeNum === 91 ||
+          (rec.stepTypeNum === 132 && isGenerateImageToolName(rec.metadata?.toolCall?.name));
 
         let type = '';
         if (isInvSub) {
           type = 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT';
+        } else if (isGenImg) {
+          type = 'CORTEX_STEP_TYPE_GENERATE_IMAGE';
         } else if (rec.stepTypeNum === 132 && inRunningTail) {
           type = mapRunningGenericToolStepType(rec.metadata?.toolCall?.name);
         } else {
@@ -1962,6 +2208,7 @@ export function readLocalSqliteTrajectory(dbFilePath, options = {}) {
             const decodedPayload = decodeProtoSelectiveStepPayload(rawPayload, {
               stepTypeNum: rec.stepTypeNum,
               isInvokeSubagent: isInvSub,
+              isGenerateImage: isGenImg,
               includeSystemMessage: isChildTrajectory && rec.stepTypeNum === 101,
               keepFullText: inRunningTail,
             });
@@ -1986,6 +2233,9 @@ export function readLocalSqliteTrajectory(dbFilePath, options = {}) {
             }
             if (decodedPayload.invokeSubagent) {
               stepObj.invokeSubagent = decodedPayload.invokeSubagent;
+            }
+            if (decodedPayload.generateImage) {
+              stepObj.generateImage = decodedPayload.generateImage;
             }
           } catch {
             // 忽略单步载荷解析异常

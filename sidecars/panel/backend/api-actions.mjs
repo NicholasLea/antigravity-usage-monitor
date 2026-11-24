@@ -90,7 +90,7 @@ function sanitizePositiveFiniteMs(val) {
 
 function projectDisplayStep(st) {
   const {
-    stepIndex, createdAtMs, isCompactionStep, modelKey, modelShort, modelLabel,
+    stepIndex, createdAtMs, isCompactionStep, isImageGenStep, modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
     nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason, anomaly, anomalySig,
     contextTokens, inputTokens, cacheReadTokens,
@@ -103,7 +103,7 @@ function projectDisplayStep(st) {
     rootTurnMediaOnly,
   } = st;
   return {
-    stepIndex, createdAtMs, isCompactionStep, modelKey, modelShort, modelLabel,
+    stepIndex, createdAtMs, isCompactionStep, isImageGenStep, modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
     nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason,
     ...(anomaly ? { anomaly, anomalySig } : {}),

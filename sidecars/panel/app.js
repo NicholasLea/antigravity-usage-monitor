@@ -2067,6 +2067,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'live.act.schedule': '定时任务',
   'live.act.ask_question': '等待用户选择',
   'live.act.search_marketplace': '查询插件',
+  'live.act.generate_image': '生成图片',
   'live.act.mcp_tool': '调用 MCP',
   'live.act.tool_call': '调用工具',
   'live.act.thinking': '推理中',
@@ -2967,6 +2968,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'live.act.schedule': 'Schedule Task',
   'live.act.ask_question': 'Waiting for User Choice',
   'live.act.search_marketplace': 'Search Plugins',
+  'live.act.generate_image': 'Generate Image',
   'live.act.mcp_tool': 'Call MCP Tool',
   'live.act.tool_call': 'Call Tool',
   'live.act.thinking': 'Thinking',
@@ -6941,6 +6943,7 @@ function summarizeStepsForExport(list, displaySettings) {
 
     const validTps =
       !st.isCompactionStep &&
+      !st.isImageGenStep &&
       outTok >= 50 &&
       !st.selectedSpeedReason &&
       Number.isFinite(Number(st.tokPerSec)) &&
@@ -6951,7 +6954,11 @@ function summarizeStepsForExport(list, displaySettings) {
         : outTok / Number(st.tokPerSec)
       : 0;
     const validTtft =
-      !st.isCompactionStep && Number.isFinite(Number(st.ttftSec)) && Number(st.ttftSec) >= 0;
+      !st.isCompactionStep &&
+      !st.isImageGenStep &&
+      st.ttftSec != null &&
+      Number.isFinite(Number(st.ttftSec)) &&
+      Number(st.ttftSec) >= 0;
     if (validTps && stepSpeedSec > 0) {
       tpsTokSum += outTok;
       tpsSecSum += stepSpeedSec;
@@ -7282,9 +7289,13 @@ function buildStepsXlsx(
       ? en
         ? 'Compaction'
         : '自动压缩'
-      : en
-        ? 'Normal'
-        : '常规';
+      : st.isImageGenStep
+        ? en
+          ? 'Image Gen'
+          : '生成图片'
+        : en
+          ? 'Normal'
+          : '常规';
     const tone = anomCount > 0 ? 'danger' : st.isCompactionStep ? 'info' : '';
 
     stepRows.push({
