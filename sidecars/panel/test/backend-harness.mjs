@@ -2,7 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import vm from 'node:vm';
-import { createHash, randomUUID } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  randomUUID,
+  scrypt,
+  timingSafeEqual,
+} from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import * as metrics from '../trajectory-metrics.mjs';
 import { stripModuleSyntax } from '../scripts/build-bundle.mjs';
@@ -25,6 +34,8 @@ const BACKEND_MODULE_FILES = [
   '../backend/fs-atomic.mjs',
   '../backend/context-windows.mjs',
   '../backend/account-oauth.mjs',
+  '../backend/account-login.mjs',
+  '../backend/account-vault-crypto.mjs',
   '../backend/account-switch.mjs',
   '../backend/http-helpers.mjs',
   '../backend/settings-schema.mjs',
@@ -106,7 +117,7 @@ export function backendHarness({
     }
   };
   const ctx={
-    ...metricsImplementation, URL, AbortSignal, Buffer, TextDecoder, ...timerApi, isDeepStrictEqual, createHash, randomUUID,
+    ...metricsImplementation, URL, AbortSignal, Buffer, TextDecoder, ...timerApi, isDeepStrictEqual, createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, scrypt, timingSafeEqual,
     ...(clock ? { Date: class extends Date {
       constructor(...args) { super(...(args.length ? args : [clock()])); }
       static now() { return clock(); }

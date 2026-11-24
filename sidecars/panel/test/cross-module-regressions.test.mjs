@@ -1123,7 +1123,7 @@ test('P0 audit fixes: main/bridge-daemon import isolation, standalone lsAddr, du
   assert.doesNotMatch(renderBody, /\buiStore\.setState\b/);
 });
 
-test('P1 audit fixes: shared third-party pool & route single-source, pure frozen resolveScopedConversation, mock schema alignment, and dead SettingsAccountTab exclusion', async () => {
+test('P1 audit fixes: shared third-party pool & route single-source, pure frozen resolveScopedConversation, mock schema alignment, and account preferences inclusion', async () => {
   const { normalizeI18nLanguage } = await import('../src/i18n/index.js');
   const { resolveSpecificQuotaSlotSummary } = await import('../src/registries/metricRegistry.js');
   const { resolveScopedConversation, isEquivalentTelemetry } = await import(
@@ -1188,7 +1188,7 @@ test('P1 audit fixes: shared third-party pool & route single-source, pure frozen
   assert.equal(scoped.aggregated.recentSteps.length, 2);
   assert.equal(scoped.mainAgent.recentSteps.length, 1);
 
-  // 3. structurePreviewMock schema completeness & dead SettingsAccountTab exclusion from app.js
+  // 3. structurePreviewMock schema completeness & account preferences bundled for use
   const mock = buildStructurePreviewTelemetry();
   assert.equal(typeof mock.activeConversation.context.compactionUsedTokens, 'number');
   assert.equal(mock.activeConversation.aggregated.agentId, 'all');
@@ -1196,8 +1196,8 @@ test('P1 audit fixes: shared third-party pool & route single-source, pure frozen
   assert.equal(mock.quotas.meta.hasOfficialData, true);
 
   const appJs = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
-  assert.equal(appJs.includes('SettingsAccountTab.js'), false);
-  assert.equal(appJs.includes('function renderQuotaRows('), false);
+  assert.equal(appJs.includes('SettingsAccountTab.js'), true);
+  assert.equal(appJs.includes('function renderQuotaRows('), true);
 });
 
 test('P2 audit fixes: standalone sqlite/proto-wire primitives, structured liveActivity/agent/media i18n, full en-US SVG charts, controlled LiveActivityWidget reuse, and shared Mock DOM', async () => {

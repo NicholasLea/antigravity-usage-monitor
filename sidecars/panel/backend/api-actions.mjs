@@ -9,7 +9,8 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { BRIDGE_API_ROUTE_DEFS, LOCAL_ENDPOINT_ID } from '../shared/window-bridge-protocol.mjs';
-import { handleAccountCredentialAction } from './account-switch.mjs';
+import { handleAccountCredentialAction, warmAccountPublicListCache } from './account-switch.mjs';
+import { issueAccountActionNonce, verifyAccountActionNonce } from './account-vault-crypto.mjs';
 import {
   clearRemoteEndpointCaches,
   resolveEndpointContext,
@@ -614,6 +615,20 @@ export async function executePluginUpdateAction() {
   };
 }
 
+const NONCE_PROTECTED_ACCOUNT_ACTIONS = new Set([
+  'save',
+  'capture',
+  'switch',
+  'remove',
+  'loginStart',
+  'setPassword',
+  'unlockVault',
+  'lockVault',
+  'changePassword',
+  'disablePassword',
+  'resetVault',
+]);
+
 export async function executeAccountCredentialAction(data, opts = {}) {
   const epCtx = resolveActionEndpoint(data, opts);
   if (!epCtx.ok) {
@@ -628,15 +643,35 @@ export async function executeAccountCredentialAction(data, opts = {}) {
     };
   }
   const cleanData = stripEndpointField(data);
-  const result = await handleAccountCredentialAction(cleanData);
-  if (cleanData?.action === 'switch') {
+  const action = cleanData?.action || 'list';
+  if (NONCE_PROTECTED_ACCOUNT_ACTIONS.has(action) && !verifyAccountActionNonce(cleanData?.actionNonce)) {
+    return {
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        error: 'invalidActionNonce',
+        actionNonce: issueAccountActionNonce(),
+      }),
+    };
+  }
+  const result = await handleAccountCredentialAction({
+    ...(isPlainObject(cleanData) ? cleanData : {}),
+    action,
+    includeSecurity: true,
+  });
+  if (action === 'switch' && !result?.error) {
     clearTelemetryBuilderMemo(LOCAL_ENDPOINT_ID);
   }
+  const enriched =
+    result && typeof result === 'object'
+      ? { ...result, actionNonce: issueAccountActionNonce() }
+      : result;
   return {
     status: 200,
     contentType: 'application/json',
     headers: { 'Cache-Control': 'no-store' },
-    body: JSON.stringify(result),
+    body: JSON.stringify(enriched),
   };
 }
 
@@ -870,6 +905,11 @@ export function bootWindowBridgeRuntime({ allowDynamicLs = false, onRestart = nu
   if (!allowDynamicLs && !lsRuntimeEndpoint.addr) return null;
 
   ensureCliStatusLineConfigured({ enabled: loadSettings().enableCliStatusLine !== false });
+  if (allowDynamicLs) {
+    setTimeout(() => {
+      void warmAccountPublicListCache();
+    }, 80).unref?.();
+  }
 
   const triggerRestart =
     typeof onRestart === 'function' ? onRestart : () => scheduleSidecarRestart(150);

@@ -720,6 +720,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
   const mockSettings = { ...defaultMockSettings };
   let cacheRebuildCalls = 0;
   let selectedEmail = '';
+  let browserAccountAdded = false;
+  let browserLoginStarts = 0;
   const accountRequests = [];
 
   const mockWindow = {
@@ -752,12 +754,23 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
         if (opts.method === 'POST') {
           const update = JSON.parse(opts.body);
           accountRequests.push(update);
+          if (update.action === 'loginStart') {
+            browserLoginStarts += 1;
+            if (browserLoginStarts > 1) {
+              browserAccountAdded = true;
+              return { ok: true, status: 200, json: async () => ({ supported: true, login: { id: 'browser-login', status: 'success', email: 'browser@example.com' } }) };
+            }
+            return { ok: true, status: 200, json: async () => ({ supported: true, login: { id: 'browser-login', status: 'waiting', url: 'https://accounts.google.com/o/oauth2/v2/auth?state=synthetic', opened: true } }) };
+          }
+          if (update.action === 'loginCancel') {
+            return { ok: true, status: 200, json: async () => ({ supported: true, login: { id: update.id, status: 'cancelled' } }) };
+          }
           if (update.action === 'quota') {
             return { ok: true, status: 200, json: async () => ({ email: update.email, pools: [{ poolKey: 'Gemini', remainingPct: 70 }] }) };
           }
           if (update.action === 'switch') selectedEmail = update.email;
         }
-        return { ok: true, status: 200, json: async () => ({ supported: true, accounts: ['next@example.com'], selectedEmail }) };
+        return { ok: true, status: 200, json: async () => ({ supported: true, accounts: browserAccountAdded ? ['next@example.com', 'browser@example.com'] : ['next@example.com'], selectedEmail, restarting: opts.method === 'POST' && JSON.parse(opts.body).action === 'switch' }) };
       }
       if (urlStr.includes('/api/settings/reset') && String(opts.method || '').toUpperCase() === 'POST') {
         for (const k of Object.keys(mockSettings)) delete mockSettings[k];
@@ -1437,7 +1450,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(selectRoot.classList.contains('is-open'), true, 'CustomSelect stays open via composedPath');
     selectTrigger.dispatchEvent({ type: 'click', stopPropagation() {} });
 
-    // Verify modular 3-tab SettingsView (常规 / 结构 / 其他) with Account tab hidden
+    // Verify account preferences are reachable between Structure and Other.
     const pillTabs = popoverEl.querySelectorAll('.pill-tab');
     pillTabs[pillTabs.length - 1].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
@@ -1445,13 +1458,13 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const allPanes = popoverEl.querySelectorAll('.view-pane');
     const settingsRoot = popoverEl.querySelector('.settings-view-root');
     const subNavBtns = settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn');
-    assert.deepEqual(subNavBtns.map((button) => button.textContent), ['常规', '结构', '其他']);
+    assert.deepEqual(subNavBtns.map((button) => button.textContent), ['常规', '结构', '账号', '其他']);
     assert.match(
       stylesCss,
       /\.settings-subnav-bar\s+\.segmented\s*\{[^}]*grid-auto-flow:\s*column;[^}]*grid-auto-columns:\s*minmax\(0,\s*1fr\);/,
       'Settings subnav uses auto-sized equal columns regardless of visible tab count'
     );
-    const [generalPane, structurePane, otherPane] = settingsRoot.querySelectorAll('.settings-tab-stack');
+    const [generalPane, structurePane, accountPane, otherPane] = settingsRoot.querySelectorAll('.settings-tab-stack');
     const thirdNavBar = settingsRoot.querySelector('.settings-thirdnav-bar');
     assert.ok(thirdNavBar, '3rd-level structure menu bar mounted in SettingsView');
     assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden when General tab is active');
@@ -1538,7 +1551,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, 'Settings');
     assert.equal(subNavBtns[0].textContent, 'General');
     assert.equal(subNavBtns[1].textContent, 'Structure');
-    assert.equal(subNavBtns[2].textContent, 'Other');
+    assert.equal(subNavBtns[2].textContent, 'Account');
+    assert.equal(subNavBtns[3].textContent, 'Other');
     langBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.language, 'auto');
@@ -2044,8 +2058,43 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       'Section reset restores monochrome speed classes in preview step table'
     );
 
-    // --- 其他 (model format, context limits, cache rebuild, reset) ---
     subNavBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(accountPane.hasAttribute('hidden'), false);
+    assert.equal(accountPane.querySelector('.settings-account-identity').textContent, 'test@example.com');
+    assert.ok(accountPane.querySelectorAll('.settings-account-quota').some((el) => el.textContent === '5 小时 70%'));
+    assert.ok(accountRequests.some((item) => item.action === 'quota' && item.email === 'next@example.com'));
+    const googleLogin = accountPane.querySelector('.settings-account-login');
+    assert.equal(googleLogin.textContent, '使用 Google 登录');
+    googleLogin.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(accountRequests.some((item) => item.action === 'loginStart' && item.language === 'zh-CN'));
+    assert.ok(accountPane.querySelectorAll('.settings-action-desc').some((el) => el.textContent.includes('请在浏览器中选择 Google 账号')));
+    assert.equal(accountPane.querySelector('.settings-account-login-cancel').hasAttribute('hidden'), false);
+    assert.equal(accountPane.querySelector('a').getAttribute('href'), 'https://accounts.google.com/o/oauth2/v2/auth?state=synthetic');
+    accountPane.querySelector('.settings-account-login-cancel').dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(accountRequests.some((item) => item.action === 'loginCancel' && item.id === 'browser-login'));
+    assert.equal(accountPane.querySelector('.settings-account-login-cancel').hasAttribute('hidden'), true);
+    assert.equal(googleLogin.hasAttribute('disabled'), false);
+    googleLogin.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(accountPane.querySelectorAll('.settings-account-identity').some((el) => el.textContent === 'browser@example.com'));
+    assert.ok(accountRequests.some((item) => item.action === 'quota' && item.email === 'browser@example.com'));
+    assert.ok(accountPane.querySelectorAll('.settings-action-desc').some((el) => el.textContent === '登录成功，账号已添加。'));
+    const switchButton = accountPane.querySelector('.settings-account-switch');
+    assert.equal(switchButton.textContent, '切换并重启');
+    switchButton.dispatchEvent({ type: 'click', stopPropagation() {} });
+    assert.equal(switchButton.textContent, '确认切换');
+    assert.equal(accountRequests.some((item) => item.action === 'switch'), false);
+    switchButton.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(accountRequests.some((item) => item.action === 'switch' && item.email === 'next@example.com'));
+    assert.equal(accountPane.querySelector('.settings-account-identity').textContent, 'test@example.com');
+    assert.ok(accountPane.querySelectorAll('.settings-action-desc').some((el) => el.textContent.includes('正在重启 Antigravity')));
+
+    // --- 其他 (model format, context limits, cache rebuild, reset) ---
+    subNavBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(otherPane.hasAttribute('hidden'), false);
     assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden when switching to Other tab');
@@ -2752,8 +2801,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       'Hover legend updates strictly in-place without DOM node replacement or appendChild'
     );
 
-    assert.equal(createdForms.some((form) => form.className.includes('settings-account-form')), false);
-    assert.equal(fetchedUrls.some((url) => url.includes('/api/accounts')), false);
+    assert.equal(createdForms.some((form) => form.className.includes('settings-account-form')), true);
+    assert.equal(fetchedUrls.some((url) => url.includes('/api/accounts')), true);
 
     // Verify in-place bridge port rotation preserves exact DOM host nodes without remount
     fetchShouldFail = false;

@@ -64,8 +64,8 @@ test('pack-release-zip ships only runtime-essential files, excludes dev bloat, a
   assert.ok(existsSync(zipPath));
   assert.ok(summary.zipBytes > 100 * 1024, 'ZIP should contain compiled assets and backend');
   assert.ok(
-    summary.zipBytes < 750 * 1024,
-    `Runtime-only ZIP should stay compact (<750 KB), got ${(summary.zipBytes / 1024).toFixed(1)} KB`
+    summary.zipBytes < 900 * 1024,
+    `Runtime-only ZIP should stay compact (<900 KB), got ${(summary.zipBytes / 1024).toFixed(1)} KB`
   );
 
   // Extract via OS-native expander (same path used by plugin-updater.mjs, where extractDir already exists)

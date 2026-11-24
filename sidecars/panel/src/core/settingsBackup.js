@@ -4,6 +4,7 @@
  */
 
 import {
+  normalizeAccountQuotaRefreshMinutes,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
   normalizeExperimentalQuotaReservation,
@@ -212,6 +213,7 @@ const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
   normField('stepTokenComboFormat', normalizeStepTokenComboFormat),
   arrayField('stepTableColumns', normalizeStepTableColumns),
   normField('experimentalQuotaReservation', normalizeExperimentalQuotaReservation),
+  normField('accountQuotaRefreshMinutes', normalizeAccountQuotaRefreshMinutes),
 ]);
 
 /**

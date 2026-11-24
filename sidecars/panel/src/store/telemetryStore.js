@@ -42,6 +42,7 @@ import {
   OVERVIEW_MODULE_KEYS,
   STEP_TABLE_COLUMN_KEYS,
   TOPBAR_SLOT_KEYS,
+  normalizeAccountQuotaRefreshMinutes,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
   normalizeExperimentalQuotaReservation,
@@ -496,6 +497,7 @@ export const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 export const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
 export const normalizeClientContextAgentMode = normalizeContextAgentMode;
 export const normalizeClientExperimentalQuotaReservation = normalizeExperimentalQuotaReservation;
+export const normalizeClientAccountQuotaRefreshMinutes = normalizeAccountQuotaRefreshMinutes;
 export const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
 
 /**
@@ -651,6 +653,12 @@ export function isEquivalentTelemetry(prev, next) {
   if (
     normalizeClientExperimentalQuotaReservation(pSet?.experimentalQuotaReservation) !==
     normalizeClientExperimentalQuotaReservation(nSet?.experimentalQuotaReservation)
+  ) {
+    return false;
+  }
+  if (
+    normalizeClientAccountQuotaRefreshMinutes(pSet?.accountQuotaRefreshMinutes) !==
+    normalizeClientAccountQuotaRefreshMinutes(nSet?.accountQuotaRefreshMinutes)
   ) {
     return false;
   }
@@ -1911,6 +1919,11 @@ export async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalQuotaReservation')) {
     safePatch.experimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
       safePatch.experimentalQuotaReservation
+    );
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'accountQuotaRefreshMinutes')) {
+    safePatch.accountQuotaRefreshMinutes = normalizeClientAccountQuotaRefreshMinutes(
+      safePatch.accountQuotaRefreshMinutes
     );
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'topbarCapsuleSlots')) {
