@@ -775,6 +775,7 @@
   height: 106px;
   display: block;
   overflow: visible;
+  pointer-events: none;
 }
 
 .sstep-fit-svg {

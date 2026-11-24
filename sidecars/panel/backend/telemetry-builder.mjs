@@ -322,11 +322,13 @@ function enrichActiveConversationSteps(
 
   const latestEnriched =
     enrichedActiveSteps.length > 0 ? enrichedActiveSteps[enrichedActiveSteps.length - 1] : null;
+  const lastKnownTtftSec = findLastValidStepTtft(enrichedActiveSteps);
   const sessionAvgTokPerSec = roundMetric(sessionSpeed.avgTokPerSec);
 
   return {
     enrichedActiveSteps,
     latestEnriched,
+    lastKnownTtftSec,
     sessionSpeed,
     sessionTtft,
     sessionAvgTokPerSec,
@@ -336,6 +338,21 @@ function enrichActiveConversationSteps(
     sessionCacheReadTokens,
     sessionOutputTokens,
   };
+}
+
+function findLastValidStepTtft(steps) {
+  if (!Array.isArray(steps)) return null;
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const candidateTtft = steps[i]?.ttftSec;
+    if (
+      candidateTtft != null &&
+      Number.isFinite(Number(candidateTtft)) &&
+      Number(candidateTtft) >= 0
+    ) {
+      return Number(candidateTtft);
+    }
+  }
+  return null;
 }
 
 const CONTEXT_CHANNEL_KEYS = [
@@ -863,6 +880,7 @@ export function buildAgentUnitTelemetry({
       stepCount: taggedSteps.length,
       latestTokPerSec: enrichedRes.latestEnriched?.tokPerSec ?? null,
       latestTtftSec: enrichedRes.latestEnriched?.ttftSec ?? null,
+      lastKnownTtftSec: enrichedRes.lastKnownTtftSec ?? null,
       latestSpeedReason: enrichedRes.latestEnriched?.selectedSpeedReason ?? null,
       avgTokPerSec: enrichedRes.sessionAvgTokPerSec,
       speedSummary: enrichedRes.sessionSpeed,
@@ -1415,6 +1433,11 @@ function buildActiveConversationAssembly({
         }
       : null;
 
+    const combinedLastKnownTtftSec =
+      findLastValidStepTtft(allCombinedEnrichedSteps) ??
+      latestMetricAgent.lastKnownTtftSec ??
+      null;
+
     aggregatedTelemetry = {
       agentId: 'all',
       cascadeId: activeCascadeId,
@@ -1438,6 +1461,7 @@ function buildActiveConversationAssembly({
       stepCount: allCombinedEnrichedSteps.length,
       latestTokPerSec: latestMetricAgent.latestTokPerSec,
       latestTtftSec: latestMetricAgent.latestTtftSec,
+      lastKnownTtftSec: combinedLastKnownTtftSec,
       latestSpeedReason: latestMetricAgent.latestSpeedReason,
       avgTokPerSec: combinedAvgTokPerSec,
       speedSummary: combinedSpeed,
@@ -1487,6 +1511,8 @@ function buildActiveConversationAssembly({
       : enrichedActiveSteps.length,
     latestTokPerSec: latestEnriched?.tokPerSec ?? null,
     latestTtftSec: latestEnriched?.ttftSec ?? null,
+    lastKnownTtftSec:
+      mainAgentTelemetry.lastKnownTtftSec ?? findLastValidStepTtft(enrichedActiveSteps),
     latestSpeedReason: latestEnriched?.selectedSpeedReason ?? null,
     avgTokPerSec: sessionAvgTokPerSec,
     speedSummary: sessionSpeed,
@@ -2929,6 +2955,7 @@ export function buildCliStatusSnapshot(finalPayload, updatedAtMs = Date.now()) {
       latestTokPerSec: capSource.latestTokPerSec ?? ac.latestTokPerSec ?? null,
       avgTokPerSec: capSource.avgTokPerSec ?? ac.avgTokPerSec ?? null,
       latestTtftSec: capSource.latestTtftSec ?? ac.latestTtftSec ?? null,
+      lastKnownTtftSec: capSource.lastKnownTtftSec ?? ac.lastKnownTtftSec ?? null,
       latestStepCostUsd: capSource.latestStepCostUsd ?? ac.latestStepCostUsd ?? null,
       sessionCostUsd: capSource.sessionCostUsd ?? ac.sessionCostUsd ?? null,
       latestCacheHitPct: capSource.latestCacheHitPct ?? ac.latestCacheHitPct ?? null,

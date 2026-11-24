@@ -9910,6 +9910,7 @@ function isEquivalentTelemetry(prev, next) {
   if (pAct?.aggregated?.activeAgentBadge !== nAct?.aggregated?.activeAgentBadge) return false;
   if (pAct?.aggregated?.latestTokPerSec !== nAct?.aggregated?.latestTokPerSec) return false;
   if (pAct?.aggregated?.latestTtftSec !== nAct?.aggregated?.latestTtftSec) return false;
+  if (pAct?.aggregated?.lastKnownTtftSec !== nAct?.aggregated?.lastKnownTtftSec) return false;
   if (pAct?.aggregated?.avgTokPerSec !== nAct?.aggregated?.avgTokPerSec) return false;
   if (pAct?.aggregated?.latestStepCostUsd !== nAct?.aggregated?.latestStepCostUsd) return false;
   if (pAct?.aggregated?.sessionCostUsd !== nAct?.aggregated?.sessionCostUsd) return false;
@@ -9921,6 +9922,7 @@ function isEquivalentTelemetry(prev, next) {
   if (pAct?.aggregated?.latestSpeedReason !== nAct?.aggregated?.latestSpeedReason) return false;
   if (pAct?.latestTokPerSec !== nAct?.latestTokPerSec) return false;
   if (pAct?.latestTtftSec !== nAct?.latestTtftSec) return false;
+  if (pAct?.lastKnownTtftSec !== nAct?.lastKnownTtftSec) return false;
   if (pAct?.avgTokPerSec !== nAct?.avgTokPerSec) return false;
   if (pAct?.latestCacheHitPct !== nAct?.latestCacheHitPct) return false;
   if (pAct?.sessionCacheHitPct !== nAct?.sessionCacheHitPct) return false;
@@ -9959,6 +9961,7 @@ function isEquivalentTelemetry(prev, next) {
       pa?.liveActivity?.signature !== na?.liveActivity?.signature ||
       pa?.latestTokPerSec !== na?.latestTokPerSec ||
       pa?.latestTtftSec !== na?.latestTtftSec ||
+      pa?.lastKnownTtftSec !== na?.lastKnownTtftSec ||
       pa?.avgTokPerSec !== na?.avgTokPerSec ||
       pa?.latestCacheHitPct !== na?.latestCacheHitPct ||
       pa?.sessionCacheHitPct !== na?.sessionCacheHitPct ||
@@ -14015,91 +14018,218 @@ function createConsumptionBreakdownContent({
 return { createConsumptionBreakdownContent };
 })();
 
-// --- src/components/charts/TrendAreaChart.js ---
-const { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart } = (() => {
+// --- src/components/charts/chartMotion.js ---
+const { CHART_CURVE_MORPH_MS, canAnimateChartInBrowser, evalCubicBezier, createReadyClassArmer, pointsToNormalizedCubicSegs, buildPathFromNormalizedSegs, createCubicCurveMorphController, createMultiSeriesCurveMorphController, createFitGridMorphController, createFloatingChartTooltipController } = (() => {
 /**
- * @fileoverview 交互式历史用量趋势图组件 (TrendAreaChart).
- * 支持双模式自适应切换：
- * 1. <= 90 天（或整点小时分桶）：渲染三次贝塞尔平滑曲线面积图、峰值气泡与对齐多刻度时间轴；
- * 2. > 90 天（自然日分桶）：自动切换为类 GitHub 贡献日历的小格子热力排列（一格一天，7 行星期 × 周列、月份刻度、分位数 5 档热力色阶与底部图例）；
- * 3. 两种模式共享自适应防溢出的悬浮详情卡片（精确日期/小时区间、Token 拆分、费用与调用次数）。
- */
-
-
-/** 超过该自然日天数（> 90 天）时，趋势图切换为类 GitHub 每日小格子热力图 */
-const HEATMAP_DAYS_THRESHOLD = 90;
-
-let chartUidCounter = 0;
-
-function safeSlotTokens(v) {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-/**
- * 将二维采样点序列转换为水平张力平滑的三次贝塞尔曲线 SVG 路径 (`M ... C ...`)。
- * 控制点沿 X 轴取相邻点间距的 `0.42` 张力系数，Y 轴与各自端点齐平，
- * 保证曲线在极值点处平缓过渡且不会产生上下过冲 (Overshoot)。
+ * @fileoverview Shared interactive chart motion & 2D mouse-following tooltip primitives (`chartMotion.js`).
  *
- * @param {Array<{ x: number, y: number }>} points SVG 坐标系下的采样点数组（长度 >= 2）
- * @returns {string} SVG `<path>` 的 `d` 属性字符串
+ * Reused across:
+ * 1. `TrendAreaChart.js` (ConsumptionView usage trend & heatmap);
+ * 2. `SessionStepCharts.js` (StepsDetailView summary step line chart & LOESS model fit chart);
+ * 3. `AccountQuotaTrendCard.js` (SettingsAccountTab per-account quota trajectory chart).
+ *
+ * Provides:
+ * - GPU-composited 2D pointer-following floating tooltip (`translate3d`) with 4-way collision
+ *   avoidance, viewport clipping, cached layout rects, and `150ms` `.is-tracking` arming
+ *   synchronized with SVG focus dots (`.trend-hover-dot` / `.sstep-hover-raw-dot`);
+ * - Exact CSS `cubic-bezier` solver (`evalCubicBezier`) and `240ms` normalized cubic-Bezier
+ *   chain subdivision morphing for single-series and multi-series curves + area fills;
+ * - Smooth `240ms` LOESS curve, `95% CI` confidence band, and OLS line morphing;
+ * - Next-frame `.is-ready` transition arming for sliding peak badges (`.trend-peak-pill`).
  */
-function buildSmoothSplinePath(points) {
-  let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i];
-    const p1 = points[i + 1];
-    const cpx1 = p0.x + (p1.x - p0.x) * 0.42;
-    const cpx2 = p1.x - (p1.x - p0.x) * 0.42;
-    d += ` C ${cpx1.toFixed(1)} ${p0.y.toFixed(1)}, ${cpx2.toFixed(1)} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
+
+
+const CHART_CURVE_MORPH_MS = 240;
+
+/**
+ * Checks whether smooth `requestAnimationFrame` chart animations should run in the current
+ * environment (browser runtime with `prefers-reduced-motion` not enabled).
+ */
+function canAnimateChartInBrowser() {
+  if (
+    typeof window === 'undefined' ||
+    typeof window.requestAnimationFrame !== 'function' ||
+    typeof window.getComputedStyle !== 'function' ||
+    typeof performance === 'undefined' ||
+    typeof performance.now !== 'function'
+  ) {
+    return false;
   }
-  return d;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+    return false;
+  }
+  return true;
 }
 
 /**
- * 将采样点数组转为归一化横轴 `u` (`0..1`) 上的精确三次贝塞尔分段链，
- * 控制点严格保持跟 `buildSmoothSplinePath` 一致的 `0.42` 水平张力。
- *
- * @param {Array<{ y: number }>} pts
- * @param {number} bottomY
- * @returns {Array<{ u0: number, y0: number, cu1: number, cy1: number, cu2: number, cy2: number, u3: number, y3: number }>}
+ * Solves standard CSS `cubic-bezier(x1, y1, x2, y2)` at progress `t` (`0..1`)
+ * so JS path morphing, peak-pill gliding, and CSS bar transitions stay in lockstep.
  */
-function pointsToNormalizedCubicSegs(pts, bottomY) {
-  const n = pts.length;
+function evalCubicBezier(x1, y1, x2, y2, t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 16; i++) {
+    const s = (lo + hi) * 0.5;
+    const inv = 1 - s;
+    const bx = 3 * inv * inv * s * x1 + 3 * inv * s * s * x2 + s * s * s;
+    if (bx < t) lo = s;
+    else hi = s;
+  }
+  const s = (lo + hi) * 0.5;
+  const inv = 1 - s;
+  return 3 * inv * inv * s * y1 + 3 * inv * s * s * y2 + s * s * s;
+}
+
+/**
+ * Arms a CSS transition readiness class (e.g. `.is-ready` on `.trend-peak-pill`) on the next
+ * animation frame so initial placement snaps cleanly without sliding in from `50%`.
+ */
+function createReadyClassArmer(el, readyClass = 'is-ready') {
+  let armed = false;
+  let rafId = 0;
+
+  function cancel() {
+    if (rafId && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(rafId);
+    }
+    rafId = 0;
+  }
+
+  function arm() {
+    if (armed) return;
+    armed = true;
+    if (canAnimateChartInBrowser()) {
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        patchClasses(el, { [readyClass]: true });
+      });
+    } else {
+      patchClasses(el, { [readyClass]: true });
+    }
+  }
+
+  return { arm, cancel };
+}
+
+/**
+ * Converts 2D SVG points into a normalized horizontal (`u` in `0..1`) cubic-Bezier chain
+ * with horizontal endpoint tangents (`0.42` tension by default, zero vertical overshoot).
+ * Supports both uniform slot spacing and arbitrary timestamp/x coordinates via `leftX` + `spanX`.
+ *
+ * @param {Array<{ x?: number, y: number }>} pts
+ * @param {number} bottomY
+ * @param {{ leftX?: number, spanX?: number, tension?: number }} [opts]
+ */
+function pointsToNormalizedCubicSegs(
+  pts,
+  bottomY,
+  { leftX = 0, spanX = 0, tension = 0.42 } = {}
+) {
+  const n = Array.isArray(pts) ? pts.length : 0;
+  const invT = 1 - tension;
   if (n === 0) {
     return [
-      { u0: 0, y0: bottomY, cu1: 0.42, cy1: bottomY, cu2: 0.58, cy2: bottomY, u3: 1, y3: bottomY },
+      {
+        u0: 0,
+        y0: bottomY,
+        cu1: tension,
+        cy1: bottomY,
+        cu2: invT,
+        cy2: bottomY,
+        u3: 1,
+        y3: bottomY,
+      },
     ];
   }
   if (n === 1) {
     const py = pts[0].y;
+    const uMid =
+      spanX > 0 && Number.isFinite(pts[0].x)
+        ? Math.max(0, Math.min(1, (pts[0].x - leftX) / spanX))
+        : 0.5;
     if (Math.abs(py - bottomY) < 0.01) {
       return [
-        { u0: 0, y0: bottomY, cu1: 0.42, cy1: bottomY, cu2: 0.58, cy2: bottomY, u3: 1, y3: bottomY },
+        {
+          u0: 0,
+          y0: bottomY,
+          cu1: tension,
+          cy1: bottomY,
+          cu2: invT,
+          cy2: bottomY,
+          u3: 1,
+          y3: bottomY,
+        },
       ];
     }
     return [
-      { u0: 0, y0: bottomY, cu1: 0.21, cy1: bottomY, cu2: 0.29, cy2: py, u3: 0.5, y3: py },
-      { u0: 0.5, y0: py, cu1: 0.71, cy1: py, cu2: 0.79, cy2: bottomY, u3: 1, y3: bottomY },
+      {
+        u0: 0,
+        y0: bottomY,
+        cu1: uMid * tension,
+        cy1: bottomY,
+        cu2: uMid * invT,
+        cy2: py,
+        u3: uMid,
+        y3: py,
+      },
+      {
+        u0: uMid,
+        y0: py,
+        cu1: uMid + (1 - uMid) * tension,
+        cy1: py,
+        cu2: uMid + (1 - uMid) * invT,
+        cy2: bottomY,
+        u3: 1,
+        y3: bottomY,
+      },
     ];
   }
-  const segs = new Array(n - 1);
-  for (let i = 0; i < n - 1; i++) {
-    const u0 = i / (n - 1);
-    const u3 = (i + 1) / (n - 1);
-    const du = u3 - u0;
-    const y0 = pts[i].y;
-    const y3 = pts[i + 1].y;
-    segs[i] = {
-      u0,
-      y0,
-      cu1: u0 + du * 0.42,
-      cy1: y0,
-      cu2: u3 - du * 0.42,
+
+  const useCoordU = spanX > 0 && Number.isFinite(pts[0].x);
+  const segs = [];
+  let prevU = useCoordU ? Math.max(0, Math.min(1, (pts[0].x - leftX) / spanX)) : 0;
+  let prevY = pts[0].y;
+
+  for (let i = 1; i < n; i++) {
+    const rawU = useCoordU
+      ? Math.max(0, Math.min(1, (pts[i].x - leftX) / spanX))
+      : i / (n - 1);
+    const u3 = Math.max(prevU, rawU);
+    const y3 = pts[i].y;
+    if (u3 - prevU <= 1e-6 && i < n - 1 && Math.abs(y3 - prevY) < 0.05) {
+      continue;
+    }
+    const safeU3 = u3 - prevU <= 1e-6 ? Math.min(1, prevU + 1e-5) : u3;
+    const du = safeU3 - prevU;
+    segs.push({
+      u0: prevU,
+      y0: prevY,
+      cu1: prevU + du * tension,
+      cy1: prevY,
+      cu2: safeU3 - du * tension,
       cy2: y3,
-      u3,
+      u3: safeU3,
       y3,
-    };
+    });
+    prevU = safeU3;
+    prevY = y3;
+  }
+
+  if (segs.length === 0) {
+    return [
+      {
+        u0: prevU,
+        y0: prevY,
+        cu1: prevU,
+        cy1: prevY,
+        cu2: prevU,
+        cy2: prevY,
+        u3: prevU,
+        y3: prevY,
+      },
+    ];
   }
   return segs;
 }
@@ -14159,39 +14289,79 @@ function extractCubicSubsegment(seg, uStart, uEnd) {
 }
 
 /**
- * 合并两条贝塞尔链的断点（始终完整保留目标链 `toSegs` 全部断点，保证 `t=1` 零几何误差）。
+ * Aligns two cubic-Bezier chains (`fromSegs` and `toSegs`, even when their horizontal `[uStart, uEnd]`
+ * spans differ) onto a shared normalized `[0..1]` knot partition so every segment pair interpolates
+ * smoothly without endpoint snapping.
  */
-function mergeNormalizedKnots(fromSegs, toSegs) {
-  const raw = [0, 1];
-  for (let i = 0; i < toSegs.length; i++) raw.push(toSegs[i].u3);
-  if (fromSegs.length <= 64) {
-    for (let i = 0; i < fromSegs.length; i++) raw.push(fromSegs[i].u3);
-  } else {
-    const stride = Math.ceil(fromSegs.length / 48);
-    for (let i = 0; i < fromSegs.length; i += stride) raw.push(fromSegs[i].u3);
-  }
-  raw.sort((a, b) => a - b);
-  const uniq = [0];
-  for (let i = 1; i < raw.length; i++) {
-    if (raw[i] - uniq[uniq.length - 1] > 1e-6) {
-      uniq.push(raw[i]);
+function alignCubicChainsForMorph(fromSegs, toSegs) {
+  const fStart = fromSegs[0].u0;
+  const fEnd = fromSegs[fromSegs.length - 1].u3;
+  const fSpan = fEnd - fStart;
+
+  const tStart = toSegs[0].u0;
+  const tEnd = toSegs[toSegs.length - 1].u3;
+  const tSpan = tEnd - tStart;
+
+  const rawTau = [0, 1];
+  const pushChainKnots = (segs, start, span, cap) => {
+    if (!(span > 1e-6)) return;
+    if (segs.length <= cap) {
+      for (let i = 0; i < segs.length; i++) {
+        rawTau.push(Math.max(0, Math.min(1, (segs[i].u3 - start) / span)));
+      }
+    } else {
+      const stride = Math.ceil(segs.length / cap);
+      for (let i = 0; i < segs.length; i += stride) {
+        rawTau.push(Math.max(0, Math.min(1, (segs[i].u3 - start) / span)));
+      }
+    }
+  };
+  pushChainKnots(toSegs, tStart, tSpan, 96);
+  pushChainKnots(fromSegs, fStart, fSpan, 48);
+
+  rawTau.sort((a, b) => a - b);
+  const tauKnots = [0];
+  for (let i = 1; i < rawTau.length; i++) {
+    if (rawTau[i] - tauKnots[tauKnots.length - 1] > 1e-5) {
+      tauKnots.push(rawTau[i]);
     }
   }
-  uniq[uniq.length - 1] = 1;
-  return uniq;
-}
+  if (tauKnots.length === 1) tauKnots.push(1);
+  else tauKnots[tauKnots.length - 1] = 1;
 
-function subdivideChainToKnots(segs, knots) {
-  const out = new Array(knots.length - 1);
-  let j = 0;
-  for (let k = 0; k < knots.length - 1; k++) {
-    const a = knots[k];
-    const b = knots[k + 1];
-    const mid = (a + b) * 0.5;
-    while (j < segs.length - 1 && segs[j].u3 < mid) j++;
-    out[k] = extractCubicSubsegment(segs[j], a, b);
-  }
-  return out;
+  const subdivideOnTau = (segs, start, span) => {
+    const out = new Array(tauKnots.length - 1);
+    let j = 0;
+    for (let k = 0; k < tauKnots.length - 1; k++) {
+      const ta = tauKnots[k];
+      const tb = tauKnots[k + 1];
+      if (!(span > 1e-6)) {
+        const s0 = segs[0];
+        out[k] = {
+          u0: start,
+          y0: s0.y0,
+          cu1: start,
+          cy1: s0.y0,
+          cu2: start,
+          cy2: s0.y3,
+          u3: start,
+          y3: s0.y3,
+        };
+        continue;
+      }
+      const ua = start + ta * span;
+      const ub = start + tb * span;
+      const umid = (ua + ub) * 0.5;
+      while (j < segs.length - 1 && segs[j].u3 < umid) j++;
+      out[k] = extractCubicSubsegment(segs[j], ua, ub);
+    }
+    return out;
+  };
+
+  return {
+    alignedFrom: subdivideOnTau(fromSegs, fStart, fSpan),
+    alignedTo: subdivideOnTau(toSegs, tStart, tSpan),
+  };
 }
 
 function buildPathFromNormalizedSegs(segs, leftX, spanX) {
@@ -14205,24 +14375,772 @@ function buildPathFromNormalizedSegs(segs, leftX, spanX) {
 }
 
 /**
- * 求解标准 CSS `cubic-bezier(x1, y1, x2, y2)` 在进度 `t` (`0..1`) 处的精确输出值，
- * 确保 JS 曲线形变、峰值胶囊滑动及进度条宽度缩放严格同频。
+ * Single-series cubic-Bezier curve + area fill morph controller (used by `TrendAreaChart` and
+ * single-series `SessionStepCharts`).
  */
-function evalCubicBezier(x1, y1, x2, y2, t) {
-  if (t <= 0) return 0;
-  if (t >= 1) return 1;
-  let lo = 0;
-  let hi = 1;
-  for (let i = 0; i < 16; i++) {
-    const s = (lo + hi) * 0.5;
-    const inv = 1 - s;
-    const bx = 3 * inv * inv * s * x1 + 3 * inv * s * s * x2 + s * s * s;
-    if (bx < t) lo = s;
-    else hi = s;
+function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
+  let morphRafId = 0;
+  let committedSegs = [];
+  let liveMorphSegs = null;
+  let hasRenderedOnce = false;
+
+  function cancel() {
+    if (
+      morphRafId &&
+      typeof window !== 'undefined' &&
+      typeof window.cancelAnimationFrame === 'function'
+    ) {
+      window.cancelAnimationFrame(morphRafId);
+    }
+    morphRafId = 0;
   }
-  const s = (lo + hi) * 0.5;
-  const inv = 1 - s;
-  return 3 * inv * inv * s * y1 + 3 * inv * s * s * y2 + s * s * s;
+
+  function reset() {
+    cancel();
+    committedSegs = [];
+    liveMorphSegs = null;
+    hasRenderedOnce = false;
+  }
+
+  function morphTo({
+    nextSegs,
+    leftX,
+    spanX,
+    bottomY,
+    linePath,
+    areaPath = null,
+    finalLineD,
+    finalAreaD = '',
+    skipMorph = false,
+  }) {
+    const prevSegs = liveMorphSegs || committedSegs;
+    committedSegs = nextSegs;
+
+    if (
+      skipMorph ||
+      !hasRenderedOnce ||
+      !canAnimateChartInBrowser() ||
+      prevSegs.length === 0 ||
+      nextSegs.length === 0
+    ) {
+      hasRenderedOnce = true;
+      cancel();
+      liveMorphSegs = null;
+      patchAttr(linePath, 'd', finalLineD);
+      if (areaPath) patchAttr(areaPath, 'd', finalAreaD);
+      return;
+    }
+    hasRenderedOnce = true;
+    cancel();
+
+    const { alignedFrom, alignedTo } = alignCubicChainsForMorph(prevSegs, nextSegs);
+    const segCount = alignedTo.length;
+    let maxDelta = 0;
+    for (let i = 0; i < segCount; i++) {
+      const a = alignedFrom[i];
+      const b = alignedTo[i];
+      maxDelta = Math.max(
+        maxDelta,
+        Math.abs(b.y0 - a.y0),
+        Math.abs(b.cy1 - a.cy1),
+        Math.abs(b.cy2 - a.cy2),
+        Math.abs(b.y3 - a.y3),
+        Math.abs(b.u0 - a.u0) * spanX,
+        Math.abs(b.u3 - a.u3) * spanX
+      );
+    }
+
+    if (maxDelta < 0.25) {
+      liveMorphSegs = null;
+      patchAttr(linePath, 'd', finalLineD);
+      if (areaPath) patchAttr(areaPath, 'd', finalAreaD);
+      return;
+    }
+
+    const activeLive = alignedFrom.map((s) => ({ ...s }));
+    liveMorphSegs = activeLive;
+    const startTs = performance.now();
+
+    const step = (nowTs) => {
+      const elapsed = Math.max(0, nowTs - startTs);
+      const rawT = Math.min(1, elapsed / durationMs);
+      if (rawT >= 1) {
+        morphRafId = 0;
+        liveMorphSegs = null;
+        patchAttr(linePath, 'd', finalLineD);
+        if (areaPath) patchAttr(areaPath, 'd', finalAreaD);
+        return;
+      }
+      const ease = evalCubicBezier(0.22, 1, 0.36, 1, rawT);
+      for (let i = 0; i < segCount; i++) {
+        const a = alignedFrom[i];
+        const b = alignedTo[i];
+        const cur = activeLive[i];
+        cur.u0 = a.u0 + (b.u0 - a.u0) * ease;
+        cur.y0 = a.y0 + (b.y0 - a.y0) * ease;
+        cur.cu1 = a.cu1 + (b.cu1 - a.cu1) * ease;
+        cur.cy1 = a.cy1 + (b.cy1 - a.cy1) * ease;
+        cur.cu2 = a.cu2 + (b.cu2 - a.cu2) * ease;
+        cur.cy2 = a.cy2 + (b.cy2 - a.cy2) * ease;
+        cur.u3 = a.u3 + (b.u3 - a.u3) * ease;
+        cur.y3 = a.y3 + (b.y3 - a.y3) * ease;
+      }
+      const morphLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
+      patchAttr(linePath, 'd', morphLineD);
+      if (areaPath) {
+        const firstX = (leftX + activeLive[0].u0 * spanX).toFixed(1);
+        const lastX = (leftX + activeLive[segCount - 1].u3 * spanX).toFixed(1);
+        patchAttr(areaPath, 'd', `${morphLineD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`);
+      }
+      morphRafId = window.requestAnimationFrame(step);
+    };
+
+    morphRafId = window.requestAnimationFrame(step);
+  }
+
+  return { morphTo, cancel, reset };
+}
+
+/**
+ * Coalesced multi-series cubic-Bezier curve, area fill, and endpoint dot morph controller
+ * (used by `AccountQuotaTrendCard` and multi-model `SessionStepCharts`).
+ */
+function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
+  let morphRafId = 0;
+  const stateByKey = new Map();
+
+  function cancel() {
+    if (
+      morphRafId &&
+      typeof window !== 'undefined' &&
+      typeof window.cancelAnimationFrame === 'function'
+    ) {
+      window.cancelAnimationFrame(morphRafId);
+    }
+    morphRafId = 0;
+  }
+
+  function reset() {
+    cancel();
+    stateByKey.clear();
+  }
+
+  function morphSeries({
+    items,
+    leftX,
+    spanX,
+    bottomY,
+    skipMorph = false,
+  }) {
+    cancel();
+    const canAnim = !skipMorph && canAnimateChartInBrowser();
+    const activeSet = new Set();
+    const jobs = [];
+
+    for (let idx = 0; idx < items.length; idx++) {
+      const it = items[idx];
+      activeSet.add(it.key);
+      const prevEntry = stateByKey.get(it.key);
+      const prevSegs = prevEntry ? prevEntry.liveSegs || prevEntry.committedSegs : null;
+
+      if (!canAnim || !prevSegs || prevSegs.length === 0 || it.nextSegs.length === 0) {
+        stateByKey.set(it.key, {
+          committedSegs: it.nextSegs,
+          liveSegs: null,
+          endX: it.endX,
+          endY: it.endY,
+        });
+        patchAttr(it.lineEl, 'd', it.finalLineD);
+        if (it.areaEl) patchAttr(it.areaEl, 'd', it.finalAreaD || '');
+        if (it.endDotEl && Number.isFinite(it.endX) && Number.isFinite(it.endY)) {
+          patchAttr(it.endDotEl, 'cx', it.endX.toFixed(1));
+          patchAttr(it.endDotEl, 'cy', it.endY.toFixed(1));
+        }
+        continue;
+      }
+
+      const { alignedFrom, alignedTo } = alignCubicChainsForMorph(prevSegs, it.nextSegs);
+      const segCount = alignedTo.length;
+      let maxDelta = 0;
+      for (let i = 0; i < segCount; i++) {
+        const a = alignedFrom[i];
+        const b = alignedTo[i];
+        maxDelta = Math.max(
+          maxDelta,
+          Math.abs(b.y0 - a.y0),
+          Math.abs(b.cy1 - a.cy1),
+          Math.abs(b.cy2 - a.cy2),
+          Math.abs(b.y3 - a.y3),
+          Math.abs(b.u0 - a.u0) * spanX,
+          Math.abs(b.u3 - a.u3) * spanX
+        );
+      }
+
+      if (maxDelta < 0.25) {
+        stateByKey.set(it.key, {
+          committedSegs: it.nextSegs,
+          liveSegs: null,
+          endX: it.endX,
+          endY: it.endY,
+        });
+        patchAttr(it.lineEl, 'd', it.finalLineD);
+        if (it.areaEl) patchAttr(it.areaEl, 'd', it.finalAreaD || '');
+        if (it.endDotEl && Number.isFinite(it.endX) && Number.isFinite(it.endY)) {
+          patchAttr(it.endDotEl, 'cx', it.endX.toFixed(1));
+          patchAttr(it.endDotEl, 'cy', it.endY.toFixed(1));
+        }
+        continue;
+      }
+
+      const activeLive = alignedFrom.map((s) => ({ ...s }));
+      const fromEndX = Number.isFinite(prevEntry?.endX)
+        ? prevEntry.endX
+        : leftX + alignedFrom[segCount - 1].u3 * spanX;
+      const fromEndY = Number.isFinite(prevEntry?.endY)
+        ? prevEntry.endY
+        : alignedFrom[segCount - 1].y3;
+      const stateRec = {
+        committedSegs: it.nextSegs,
+        liveSegs: activeLive,
+        endX: fromEndX,
+        endY: fromEndY,
+      };
+      stateByKey.set(it.key, stateRec);
+      jobs.push({
+        it,
+        alignedFrom,
+        alignedTo,
+        activeLive,
+        segCount,
+        fromEndX,
+        fromEndY,
+        stateRec,
+      });
+    }
+
+    for (const k of Array.from(stateByKey.keys())) {
+      if (!activeSet.has(k)) stateByKey.delete(k);
+    }
+
+    if (jobs.length === 0) return;
+
+    const startTs = performance.now();
+    const step = (nowTs) => {
+      const elapsed = Math.max(0, nowTs - startTs);
+      const rawT = Math.min(1, elapsed / durationMs);
+      if (rawT >= 1) {
+        morphRafId = 0;
+        for (let j = 0; j < jobs.length; j++) {
+          const jb = jobs[j];
+          jb.stateRec.liveSegs = null;
+          jb.stateRec.endX = jb.it.endX;
+          jb.stateRec.endY = jb.it.endY;
+          patchAttr(jb.it.lineEl, 'd', jb.it.finalLineD);
+          if (jb.it.areaEl) patchAttr(jb.it.areaEl, 'd', jb.it.finalAreaD || '');
+          if (jb.it.endDotEl && Number.isFinite(jb.it.endX) && Number.isFinite(jb.it.endY)) {
+            patchAttr(jb.it.endDotEl, 'cx', jb.it.endX.toFixed(1));
+            patchAttr(jb.it.endDotEl, 'cy', jb.it.endY.toFixed(1));
+          }
+        }
+        return;
+      }
+
+      const ease = evalCubicBezier(0.22, 1, 0.36, 1, rawT);
+      for (let j = 0; j < jobs.length; j++) {
+        const jb = jobs[j];
+        const { alignedFrom, alignedTo, activeLive, segCount, it } = jb;
+        for (let i = 0; i < segCount; i++) {
+          const a = alignedFrom[i];
+          const b = alignedTo[i];
+          const cur = activeLive[i];
+          cur.u0 = a.u0 + (b.u0 - a.u0) * ease;
+          cur.y0 = a.y0 + (b.y0 - a.y0) * ease;
+          cur.cu1 = a.cu1 + (b.cu1 - a.cu1) * ease;
+          cur.cy1 = a.cy1 + (b.cy1 - a.cy1) * ease;
+          cur.cu2 = a.cu2 + (b.cu2 - a.cu2) * ease;
+          cur.cy2 = a.cy2 + (b.cy2 - a.cy2) * ease;
+          cur.u3 = a.u3 + (b.u3 - a.u3) * ease;
+          cur.y3 = a.y3 + (b.y3 - a.y3) * ease;
+        }
+        const morphLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
+        patchAttr(it.lineEl, 'd', morphLineD);
+        if (it.areaEl && it.finalAreaD) {
+          const firstX = (leftX + activeLive[0].u0 * spanX).toFixed(1);
+          const lastX = (leftX + activeLive[segCount - 1].u3 * spanX).toFixed(1);
+          patchAttr(it.areaEl, 'd', `${morphLineD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`);
+        }
+        if (it.endDotEl && Number.isFinite(it.endX) && Number.isFinite(it.endY)) {
+          const cx = jb.fromEndX + (it.endX - jb.fromEndX) * ease;
+          const cy = jb.fromEndY + (it.endY - jb.fromEndY) * ease;
+          jb.stateRec.endX = cx;
+          jb.stateRec.endY = cy;
+          patchAttr(it.endDotEl, 'cx', cx.toFixed(1));
+          patchAttr(it.endDotEl, 'cy', cy.toFixed(1));
+        }
+      }
+      morphRafId = window.requestAnimationFrame(step);
+    };
+
+    morphRafId = window.requestAnimationFrame(step);
+  }
+
+  return { morphSeries, cancel, reset };
+}
+
+function buildGridFitPolylineD(grid) {
+  if (!grid.length) return '';
+  let d = `M ${grid[0].x.toFixed(1)} ${grid[0].fitY.toFixed(1)}`;
+  for (let i = 1; i < grid.length; i++) {
+    d += ` L ${grid[i].x.toFixed(1)} ${grid[i].fitY.toFixed(1)}`;
+  }
+  return d;
+}
+
+function buildGridCiBandD(grid) {
+  if (grid.length < 2) return '';
+  let d = `M ${grid[0].x.toFixed(1)} ${grid[0].highY.toFixed(1)}`;
+  for (let i = 1; i < grid.length; i++) {
+    d += ` L ${grid[i].x.toFixed(1)} ${grid[i].highY.toFixed(1)}`;
+  }
+  for (let i = grid.length - 1; i >= 0; i--) {
+    d += ` L ${grid[i].x.toFixed(1)} ${grid[i].lowY.toFixed(1)}`;
+  }
+  return `${d} Z`;
+}
+
+/**
+ * Smoothly morphs LOESS fit polylines, `95% CI` confidence bands, and optional OLS lines
+ * across metric/model switches in `createModelFitChart`.
+ */
+function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
+  let morphRafId = 0;
+  const stateByKey = new Map();
+
+  function cancel() {
+    if (
+      morphRafId &&
+      typeof window !== 'undefined' &&
+      typeof window.cancelAnimationFrame === 'function'
+    ) {
+      window.cancelAnimationFrame(morphRafId);
+    }
+    morphRafId = 0;
+  }
+
+  function reset() {
+    cancel();
+    stateByKey.clear();
+  }
+
+  function morphFits({ items, skipMorph = false }) {
+    cancel();
+    const canAnim = !skipMorph && canAnimateChartInBrowser();
+    const activeSet = new Set();
+    const jobs = [];
+
+    for (let idx = 0; idx < items.length; idx++) {
+      const it = items[idx];
+      activeSet.add(it.key);
+      const prevEntry = stateByKey.get(it.key);
+      const prevGrid = prevEntry ? prevEntry.liveGrid || prevEntry.committedGrid : null;
+
+      if (
+        !canAnim ||
+        !prevGrid ||
+        prevGrid.length !== it.gridPts.length ||
+        it.gridPts.length < 2
+      ) {
+        stateByKey.set(it.key, {
+          committedGrid: it.gridPts,
+          liveGrid: null,
+          ols: it.olsCoords || null,
+        });
+        patchAttr(it.curveEl, 'd', it.finalCurveD);
+        if (it.bandEl) patchAttr(it.bandEl, 'd', it.finalBandD || '');
+        if (it.olsEl && it.olsCoords) {
+          patchAttr(it.olsEl, 'x1', it.olsCoords.x1.toFixed(1));
+          patchAttr(it.olsEl, 'y1', it.olsCoords.y1.toFixed(1));
+          patchAttr(it.olsEl, 'x2', it.olsCoords.x2.toFixed(1));
+          patchAttr(it.olsEl, 'y2', it.olsCoords.y2.toFixed(1));
+        }
+        continue;
+      }
+
+      let maxDelta = 0;
+      for (let i = 0; i < it.gridPts.length; i++) {
+        const a = prevGrid[i];
+        const b = it.gridPts[i];
+        maxDelta = Math.max(
+          maxDelta,
+          Math.abs(b.fitY - a.fitY),
+          Math.abs(b.highY - a.highY),
+          Math.abs(b.lowY - a.lowY),
+          Math.abs(b.x - a.x)
+        );
+      }
+      if (maxDelta < 0.25) {
+        stateByKey.set(it.key, {
+          committedGrid: it.gridPts,
+          liveGrid: null,
+          ols: it.olsCoords || null,
+        });
+        patchAttr(it.curveEl, 'd', it.finalCurveD);
+        if (it.bandEl) patchAttr(it.bandEl, 'd', it.finalBandD || '');
+        if (it.olsEl && it.olsCoords) {
+          patchAttr(it.olsEl, 'x1', it.olsCoords.x1.toFixed(1));
+          patchAttr(it.olsEl, 'y1', it.olsCoords.y1.toFixed(1));
+          patchAttr(it.olsEl, 'x2', it.olsCoords.x2.toFixed(1));
+          patchAttr(it.olsEl, 'y2', it.olsCoords.y2.toFixed(1));
+        }
+        continue;
+      }
+
+      const activeLive = prevGrid.map((g) => ({ ...g }));
+      const fromOls = prevEntry?.ols || it.olsCoords || null;
+      const stateRec = {
+        committedGrid: it.gridPts,
+        liveGrid: activeLive,
+        ols: fromOls ? { ...fromOls } : null,
+      };
+      stateByKey.set(it.key, stateRec);
+      jobs.push({ it, fromGrid: prevGrid, activeLive, fromOls, stateRec });
+    }
+
+    for (const k of Array.from(stateByKey.keys())) {
+      if (!activeSet.has(k)) stateByKey.delete(k);
+    }
+
+    if (jobs.length === 0) return;
+
+    const startTs = performance.now();
+    const step = (nowTs) => {
+      const elapsed = Math.max(0, nowTs - startTs);
+      const rawT = Math.min(1, elapsed / durationMs);
+      if (rawT >= 1) {
+        morphRafId = 0;
+        for (let j = 0; j < jobs.length; j++) {
+          const jb = jobs[j];
+          jb.stateRec.liveGrid = null;
+          jb.stateRec.ols = jb.it.olsCoords || null;
+          patchAttr(jb.it.curveEl, 'd', jb.it.finalCurveD);
+          if (jb.it.bandEl) patchAttr(jb.it.bandEl, 'd', jb.it.finalBandD || '');
+          if (jb.it.olsEl && jb.it.olsCoords) {
+            patchAttr(jb.it.olsEl, 'x1', jb.it.olsCoords.x1.toFixed(1));
+            patchAttr(jb.it.olsEl, 'y1', jb.it.olsCoords.y1.toFixed(1));
+            patchAttr(jb.it.olsEl, 'x2', jb.it.olsCoords.x2.toFixed(1));
+            patchAttr(jb.it.olsEl, 'y2', jb.it.olsCoords.y2.toFixed(1));
+          }
+        }
+        return;
+      }
+
+      const ease = evalCubicBezier(0.22, 1, 0.36, 1, rawT);
+      for (let j = 0; j < jobs.length; j++) {
+        const jb = jobs[j];
+        const { fromGrid, activeLive, it } = jb;
+        for (let i = 0; i < activeLive.length; i++) {
+          const a = fromGrid[i];
+          const b = it.gridPts[i];
+          const cur = activeLive[i];
+          cur.x = a.x + (b.x - a.x) * ease;
+          cur.fitY = a.fitY + (b.fitY - a.fitY) * ease;
+          cur.highY = a.highY + (b.highY - a.highY) * ease;
+          cur.lowY = a.lowY + (b.lowY - a.lowY) * ease;
+        }
+        patchAttr(it.curveEl, 'd', buildGridFitPolylineD(activeLive));
+        if (it.bandEl && it.finalBandD) {
+          patchAttr(it.bandEl, 'd', buildGridCiBandD(activeLive));
+        }
+        if (it.olsEl && it.olsCoords && jb.fromOls) {
+          const ox1 = jb.fromOls.x1 + (it.olsCoords.x1 - jb.fromOls.x1) * ease;
+          const oy1 = jb.fromOls.y1 + (it.olsCoords.y1 - jb.fromOls.y1) * ease;
+          const ox2 = jb.fromOls.x2 + (it.olsCoords.x2 - jb.fromOls.x2) * ease;
+          const oy2 = jb.fromOls.y2 + (it.olsCoords.y2 - jb.fromOls.y2) * ease;
+          jb.stateRec.ols = { x1: ox1, y1: oy1, x2: ox2, y2: oy2 };
+          patchAttr(it.olsEl, 'x1', ox1.toFixed(1));
+          patchAttr(it.olsEl, 'y1', oy1.toFixed(1));
+          patchAttr(it.olsEl, 'x2', ox2.toFixed(1));
+          patchAttr(it.olsEl, 'y2', oy2.toFixed(1));
+        }
+      }
+      morphRafId = window.requestAnimationFrame(step);
+    };
+
+    morphRafId = window.requestAnimationFrame(step);
+  }
+
+  return { morphFits, cancel, reset };
+}
+
+/**
+ * Shared 2D pointer-following floating tooltip & focus-dot tracking controller.
+ * Positions `.trend-tooltip` smoothly around the pointer (`above -> right -> left -> below`),
+ * clamps inside the nearest scrollable viewport container, and arms `.is-tracking` (`150ms`)
+ * on both the tooltip and active SVG focus dots after the initial reveal frame.
+ */
+function createFloatingChartTooltipController({
+  containerEl,
+  tooltipEl,
+  defaultTipWidth = 216,
+  defaultTipHeight = 96,
+  defaultViewWidth = 460,
+  defaultViewHeight = 184,
+  clipSelector = '.view-pane, .cons-view-stage, .models-analytics-pane, .table-viewport',
+  useFloatingClass = true,
+}) {
+  if (useFloatingClass) {
+    tooltipEl.classList.add('is-floating-tip');
+  }
+
+  let cachedWrapRect = null;
+  let cachedClipRect = undefined;
+  let cachedTipW = 0;
+  let cachedTipH = 0;
+  let lastSizeKey = null;
+  let tipTrackRaf = 0;
+  let activeTrackedDots = [];
+
+  function cancelTrackRaf() {
+    if (
+      tipTrackRaf &&
+      typeof window !== 'undefined' &&
+      typeof window.cancelAnimationFrame === 'function'
+    ) {
+      window.cancelAnimationFrame(tipTrackRaf);
+    }
+    tipTrackRaf = 0;
+  }
+
+  function invalidateRects() {
+    cachedWrapRect = null;
+    cachedClipRect = undefined;
+    cachedTipW = 0;
+    cachedTipH = 0;
+    lastSizeKey = null;
+  }
+
+  function getWrapRect() {
+    if (!cachedWrapRect) {
+      cachedWrapRect = containerEl.getBoundingClientRect?.() || null;
+    }
+    return cachedWrapRect;
+  }
+
+  function syncTrackedDots(nextDots, isTrackingActive) {
+    const nextList = Array.isArray(nextDots) ? nextDots.filter(Boolean) : [];
+    for (let i = 0; i < activeTrackedDots.length; i++) {
+      const prevDot = activeTrackedDots[i];
+      if (!nextList.includes(prevDot)) {
+        patchClasses(prevDot, { 'is-tracking': false });
+      }
+    }
+    if (isTrackingActive) {
+      for (let i = 0; i < nextList.length; i++) {
+        patchClasses(nextList[i], { 'is-tracking': true });
+      }
+    }
+    activeTrackedDots = nextList;
+  }
+
+  function armTracking(wasHidden, nextDots) {
+    if (!wasHidden) {
+      syncTrackedDots(nextDots, tooltipEl.classList.contains('is-tracking'));
+      return;
+    }
+    patchClasses(tooltipEl, { 'is-tracking': false });
+    const dotList = Array.isArray(nextDots) ? nextDots.filter(Boolean) : [];
+    for (let i = 0; i < dotList.length; i++) {
+      patchClasses(dotList[i], { 'is-tracking': false });
+    }
+    activeTrackedDots = dotList;
+    void tooltipEl.offsetWidth;
+    cancelTrackRaf();
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      tipTrackRaf = window.requestAnimationFrame(() => {
+        tipTrackRaf = 0;
+        if (!tooltipEl.hasAttribute('hidden')) {
+          patchClasses(tooltipEl, { 'is-tracking': true });
+          for (let i = 0; i < activeTrackedDots.length; i++) {
+            patchClasses(activeTrackedDots[i], { 'is-tracking': true });
+          }
+        }
+      });
+    } else {
+      patchClasses(tooltipEl, { 'is-tracking': true });
+      for (let i = 0; i < activeTrackedDots.length; i++) {
+        patchClasses(activeTrackedDots[i], { 'is-tracking': true });
+      }
+    }
+  }
+
+  function positionNearAnchor({
+    fallbackX,
+    fallbackY,
+    pointer = null,
+    viewWidth = defaultViewWidth,
+    viewHeight = defaultViewHeight,
+    remeasureTip = false,
+  }) {
+    const wrapRect = getWrapRect();
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(containerEl.clientWidth || viewWidth || defaultViewWidth);
+    const wrapH =
+      wrapRect && wrapRect.height > 0
+        ? wrapRect.height
+        : Number(containerEl.offsetHeight || viewHeight || defaultViewHeight);
+
+    if (remeasureTip || !(cachedTipW > 0) || !(cachedTipH > 0)) {
+      cachedTipW = Number(tooltipEl.offsetWidth || 0) || defaultTipWidth;
+      cachedTipH = Number(tooltipEl.offsetHeight || 0) || defaultTipHeight;
+    }
+    const tipW = cachedTipW;
+    const tipH = cachedTipH;
+
+    const hasPointer =
+      pointer &&
+      Number.isFinite(Number(pointer.clientX)) &&
+      Number.isFinite(Number(pointer.clientY)) &&
+      wrapRect &&
+      wrapRect.width > 0 &&
+      wrapRect.height > 0;
+
+    const anchorX = hasPointer ? Number(pointer.clientX) - wrapRect.left : fallbackX;
+    const anchorY = hasPointer ? Number(pointer.clientY) - wrapRect.top : fallbackY;
+
+    if (cachedClipRect === undefined) {
+      const clipEl = containerEl.closest?.(clipSelector) || null;
+      cachedClipRect = clipEl?.getBoundingClientRect?.() || null;
+    }
+    const clipRect = cachedClipRect;
+    const hasClip = Boolean(
+      clipRect && clipRect.height > 0 && wrapRect && wrapRect.height > 0
+    );
+    const minY = hasClip ? clipRect.top - wrapRect.top + 6 : -tipH - 16;
+    const maxY = hasClip ? clipRect.bottom - wrapRect.top - tipH - 6 : wrapH + 16;
+
+    const maxLeft = Math.max(4, wrapW - tipW - 4);
+    let leftPx = Math.max(4, Math.min(maxLeft, anchorX - tipW / 2));
+    const aboveY = anchorY - tipH - 14;
+    let topPx;
+
+    if (aboveY >= minY) {
+      topPx = Math.min(maxY, aboveY);
+    } else if (anchorX + 16 + tipW <= wrapW - 4) {
+      leftPx = anchorX + 16;
+      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
+    } else if (anchorX - 16 - tipW >= 4) {
+      leftPx = anchorX - 16 - tipW;
+      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
+    } else {
+      topPx = Math.max(minY, Math.min(maxY, anchorY + 18));
+    }
+
+    patchStyleVar(tooltipEl, '--tip-x', `${Math.round(leftPx)}px`);
+    patchStyleVar(tooltipEl, '--tip-shift', '0px');
+    patchStyleVar(tooltipEl, '--tip-y', `${Math.round(topPx)}px`);
+  }
+
+  function show({
+    fallbackX,
+    fallbackY,
+    pointer = null,
+    trackedDots = [],
+    viewWidth = defaultViewWidth,
+    viewHeight = defaultViewHeight,
+    sizeKey = '',
+  }) {
+    const wasHidden = tooltipEl.hasAttribute('hidden');
+    if (wasHidden) {
+      patchAttr(tooltipEl, 'hidden', false);
+    }
+    const normalizedKey = String(sizeKey || '');
+    const shouldRemeasure = wasHidden || normalizedKey !== lastSizeKey;
+    lastSizeKey = normalizedKey;
+    positionNearAnchor({
+      fallbackX,
+      fallbackY,
+      pointer,
+      viewWidth,
+      viewHeight,
+      remeasureTip: shouldRemeasure,
+    });
+    armTracking(wasHidden, trackedDots);
+  }
+
+  function hide() {
+    invalidateRects();
+    cancelTrackRaf();
+    patchAttr(tooltipEl, 'hidden', true);
+    patchClasses(tooltipEl, {
+      'is-hm-bottom': false,
+      'is-hm-top': false,
+      'is-line-low': false,
+      'is-tracking': false,
+    });
+    for (let i = 0; i < activeTrackedDots.length; i++) {
+      patchClasses(activeTrackedDots[i], { 'is-tracking': false });
+    }
+    activeTrackedDots = [];
+  }
+
+  function destroy() {
+    cancelTrackRaf();
+    invalidateRects();
+    activeTrackedDots = [];
+  }
+
+  return {
+    show,
+    hide,
+    getWrapRect,
+    invalidateRects,
+    destroy,
+  };
+}
+return { CHART_CURVE_MORPH_MS, canAnimateChartInBrowser, evalCubicBezier, createReadyClassArmer, pointsToNormalizedCubicSegs, buildPathFromNormalizedSegs, createCubicCurveMorphController, createMultiSeriesCurveMorphController, createFitGridMorphController, createFloatingChartTooltipController };
+})();
+
+// --- src/components/charts/TrendAreaChart.js ---
+const { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart } = (() => {
+/**
+ * @fileoverview 交互式历史用量趋势图组件 (TrendAreaChart).
+ * 支持双模式自适应切换：
+ * 1. <= 90 天（或整点小时分桶）：渲染三次贝塞尔平滑曲线面积图、峰值气泡与对齐多刻度时间轴；
+ * 2. > 90 天（自然日分桶）：自动切换为类 GitHub 贡献日历的小格子热力排列（一格一天，7 行星期 × 周列、月份刻度、分位数 5 档热力色阶与底部图例）；
+ * 3. 两种模式共享自适应防溢出的悬浮详情卡片（精确日期/小时区间、Token 拆分、费用与调用次数）。
+ */
+
+
+/** 超过该自然日天数（> 90 天）时，趋势图切换为类 GitHub 每日小格子热力图 */
+const HEATMAP_DAYS_THRESHOLD = 90;
+
+let chartUidCounter = 0;
+
+function safeSlotTokens(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * 将二维采样点序列转换为水平张力平滑的三次贝塞尔曲线 SVG 路径 (`M ... C ...`)。
+ * 控制点沿 X 轴取相邻点间距的 `0.42` 张力系数，Y 轴与各自端点齐平，
+ * 保证曲线在极值点处平缓过渡且不会产生上下过冲 (Overshoot)。
+ *
+ * @param {Array<{ x: number, y: number }>} points SVG 坐标系下的采样点数组（长度 >= 2）
+ * @returns {string} SVG `<path>` 的 `d` 属性字符串
+ */
+function buildSmoothSplinePath(points) {
+  let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i];
+    const p1 = points[i + 1];
+    const cpx1 = p0.x + (p1.x - p0.x) * 0.42;
+    const cpx2 = p1.x - (p1.x - p0.x) * 0.42;
+    d += ` C ${cpx1.toFixed(1)} ${p0.y.toFixed(1)}, ${cpx2.toFixed(1)} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
+  }
+  return d;
 }
 
 /**
@@ -14799,7 +15717,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   hoverDot.setAttribute('hidden', 'true');
   svg.appendChild(hoverDot);
 
-  const peakPill = h('span', { className: 'trend-peak-pill text-mono', text: '0' });
+  const peakPill = h('span', { className: 'trend-peak-pill text-mono', text: '0', hidden: true });
 
   // 共享悬停详情浮层卡片（曲线图和热力格子图共用，含分模型四段进度条及底部四通道明细）
   const tooltipContent = createConsumptionBreakdownContent({
@@ -14873,6 +15791,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
 
   let currentSlots = [];
   let currentPts = [];
+  let currentMaxTokens = 0;
   let currentIsHeatmap = false;
   let currentHmMode = 'day';
   let lastBuildSegmentsFn = null;
@@ -14891,161 +15810,22 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   let hoveredCellEl = null;
   let lastPointer = null;
   let lastRenderSig = '';
-  let hasRenderedLineOnce = false;
-  let peakReadyArmed = false;
-  let peakReadyRaf = 0;
-  let tipTrackRaf = 0;
-  let morphRafId = 0;
-  let committedSegs = [];
-  let liveMorphSegs = null;
   const vGridLinePool = [];
   const xAxisTickPool = [];
   const hmMonthPool = [];
   const hmCellPool = [];
 
-  const CURVE_MORPH_DURATION_MS = 240;
-
-  function cancelCurveMorph() {
-    if (
-      morphRafId &&
-      typeof window !== 'undefined' &&
-      typeof window.cancelAnimationFrame === 'function'
-    ) {
-      window.cancelAnimationFrame(morphRafId);
-    }
-    morphRafId = 0;
-  }
-
-  function cancelPeakReadyRaf() {
-    if (
-      peakReadyRaf &&
-      typeof window !== 'undefined' &&
-      typeof window.cancelAnimationFrame === 'function'
-    ) {
-      window.cancelAnimationFrame(peakReadyRaf);
-    }
-    peakReadyRaf = 0;
-  }
-
-  function canAnimateInBrowser() {
-    if (
-      typeof window === 'undefined' ||
-      typeof window.requestAnimationFrame !== 'function' ||
-      typeof window.getComputedStyle !== 'function' ||
-      typeof performance === 'undefined' ||
-      typeof performance.now !== 'function'
-    ) {
-      return false;
-    }
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
-      return false;
-    }
-    return true;
-  }
-
-  function startCurveMorph(
-    fromSegs,
-    toSegs,
-    { leftX, rightX, spanX, finalLineD, finalAreaD }
-  ) {
-    cancelCurveMorph();
-    if (!canAnimateInBrowser() || fromSegs.length === 0 || toSegs.length === 0) {
-      liveMorphSegs = null;
-      patchAttr(linePath, 'd', finalLineD);
-      patchAttr(areaPath, 'd', finalAreaD);
-      return;
-    }
-
-    const knots = mergeNormalizedKnots(fromSegs, toSegs);
-    const alignedFrom = subdivideChainToKnots(fromSegs, knots);
-    const alignedTo = subdivideChainToKnots(toSegs, knots);
-    const segCount = alignedTo.length;
-    let maxDeltaY = 0;
-    for (let i = 0; i < segCount; i++) {
-      const a = alignedFrom[i];
-      const b = alignedTo[i];
-      maxDeltaY = Math.max(
-        maxDeltaY,
-        Math.abs(b.y0 - a.y0),
-        Math.abs(b.cy1 - a.cy1),
-        Math.abs(b.cy2 - a.cy2),
-        Math.abs(b.y3 - a.y3)
-      );
-    }
-
-    if (maxDeltaY < 0.25) {
-      liveMorphSegs = null;
-      patchAttr(linePath, 'd', finalLineD);
-      patchAttr(areaPath, 'd', finalAreaD);
-      return;
-    }
-
-    const activeLive = alignedFrom.map((s) => ({ ...s }));
-    liveMorphSegs = activeLive;
-    const rightXFixed = rightX.toFixed(1);
-    const leftXFixed = leftX.toFixed(1);
-    const startTs = performance.now();
-
-    const step = (nowTs) => {
-      const elapsed = Math.max(0, nowTs - startTs);
-      const rawT = Math.min(1, elapsed / CURVE_MORPH_DURATION_MS);
-      if (rawT >= 1) {
-        morphRafId = 0;
-        liveMorphSegs = null;
-        patchAttr(linePath, 'd', finalLineD);
-        patchAttr(areaPath, 'd', finalAreaD);
-        return;
-      }
-      const ease = evalCubicBezier(0.22, 1, 0.36, 1, rawT);
-      for (let i = 0; i < segCount; i++) {
-        const a = alignedFrom[i];
-        const b = alignedTo[i];
-        const cur = activeLive[i];
-        cur.u0 = a.u0 + (b.u0 - a.u0) * ease;
-        cur.y0 = a.y0 + (b.y0 - a.y0) * ease;
-        cur.cu1 = a.cu1 + (b.cu1 - a.cu1) * ease;
-        cur.cy1 = a.cy1 + (b.cy1 - a.cy1) * ease;
-        cur.cu2 = a.cu2 + (b.cu2 - a.cu2) * ease;
-        cur.cy2 = a.cy2 + (b.cy2 - a.cy2) * ease;
-        cur.u3 = a.u3 + (b.u3 - a.u3) * ease;
-        cur.y3 = a.y3 + (b.y3 - a.y3) * ease;
-      }
-      const morphLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
-      const morphAreaD = `${morphLineD} L ${rightXFixed} ${BOTTOM_Y} L ${leftXFixed} ${BOTTOM_Y} Z`;
-      patchAttr(linePath, 'd', morphLineD);
-      patchAttr(areaPath, 'd', morphAreaD);
-      morphRafId = window.requestAnimationFrame(step);
-    };
-
-    morphRafId = window.requestAnimationFrame(step);
-  }
-
-  function cancelTipTrackRaf() {
-    if (tipTrackRaf && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
-      window.cancelAnimationFrame(tipTrackRaf);
-    }
-    tipTrackRaf = 0;
-  }
-
-  function armTooltipTracking(wasHidden) {
-    if (!wasHidden) return;
-    patchClasses(tooltipEl, { 'is-tracking': false });
-    patchClasses(hoverDot, { 'is-tracking': false });
-    void tooltipEl.offsetWidth;
-    cancelTipTrackRaf();
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      tipTrackRaf = window.requestAnimationFrame(() => {
-        tipTrackRaf = 0;
-        if (!tooltipEl.hasAttribute('hidden')) {
-          patchClasses(tooltipEl, { 'is-tracking': true });
-          patchClasses(hoverDot, { 'is-tracking': true });
-        }
-      });
-    } else {
-      patchClasses(tooltipEl, { 'is-tracking': true });
-      patchClasses(hoverDot, { 'is-tracking': true });
-    }
-  }
+  const curveMorphCtrl = createCubicCurveMorphController();
+  const peakReadyArmer = createReadyClassArmer(peakPill, 'is-ready');
+  const tooltipCtrl = createFloatingChartTooltipController({
+    containerEl: chartWrap,
+    tooltipEl,
+    defaultTipWidth: 216,
+    defaultTipHeight: 104,
+    defaultViewWidth: DEFAULT_VIEW_W,
+    defaultViewHeight: VIEW_H,
+    useFloatingClass: false,
+  });
 
   function populateTooltipContent(slot) {
     const slotTok = safeSlotTokens(slot.tokens);
@@ -15066,81 +15846,13 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     });
   }
 
-  let cachedWrapRect = null;
   let cachedSvgRect = null;
   let cachedHmGridRect = null;
-  let cachedClipRect = undefined;
 
   function invalidateHoverRects() {
-    cachedWrapRect = null;
+    tooltipCtrl.invalidateRects();
     cachedSvgRect = null;
     cachedHmGridRect = null;
-    cachedClipRect = undefined;
-  }
-
-  function getCachedWrapRect() {
-    if (!cachedWrapRect) {
-      cachedWrapRect = chartWrap.getBoundingClientRect?.() || null;
-    }
-    return cachedWrapRect;
-  }
-
-  function positionTooltipNearAnchor(fallbackX, fallbackY, pointer = null) {
-    const wrapRect = getCachedWrapRect();
-    const wrapW =
-      wrapRect && wrapRect.width > 0
-        ? wrapRect.width
-        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
-    const wrapH =
-      wrapRect && wrapRect.height > 0
-        ? wrapRect.height
-        : Number(chartWrap.offsetHeight || VIEW_H);
-
-    const tipW = Number(tooltipEl.offsetWidth || 0) || 216;
-    const tipH = Number(tooltipEl.offsetHeight || 0) || 104;
-
-    const hasPointer =
-      pointer &&
-      Number.isFinite(Number(pointer.clientX)) &&
-      Number.isFinite(Number(pointer.clientY)) &&
-      wrapRect &&
-      wrapRect.width > 0 &&
-      wrapRect.height > 0;
-
-    const anchorX = hasPointer ? Number(pointer.clientX) - wrapRect.left : fallbackX;
-    const anchorY = hasPointer ? Number(pointer.clientY) - wrapRect.top : fallbackY;
-
-    if (cachedClipRect === undefined) {
-      const clipEl = chartWrap.closest?.('.view-pane, .cons-view-stage') || null;
-      cachedClipRect = clipEl?.getBoundingClientRect?.() || null;
-    }
-    const clipRect = cachedClipRect;
-    const hasClip = Boolean(
-      clipRect && clipRect.height > 0 && wrapRect && wrapRect.height > 0
-    );
-    const minY = hasClip ? clipRect.top - wrapRect.top + 6 : -tipH - 16;
-    const maxY = hasClip ? clipRect.bottom - wrapRect.top - tipH - 6 : wrapH + 16;
-
-    const maxLeft = Math.max(4, wrapW - tipW - 4);
-    let leftPx = Math.max(4, Math.min(maxLeft, anchorX - tipW / 2));
-    const aboveY = anchorY - tipH - 14;
-    let topPx;
-
-    if (aboveY >= minY) {
-      topPx = Math.min(maxY, aboveY);
-    } else if (anchorX + 16 + tipW <= wrapW - 4) {
-      leftPx = anchorX + 16;
-      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
-    } else if (anchorX - 16 - tipW >= 4) {
-      leftPx = anchorX - 16 - tipW;
-      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
-    } else {
-      topPx = Math.max(minY, Math.min(maxY, anchorY + 18));
-    }
-
-    patchStyleVar(tooltipEl, '--tip-x', `${Math.round(leftPx)}px`);
-    patchStyleVar(tooltipEl, '--tip-shift', '0px');
-    patchStyleVar(tooltipEl, '--tip-y', `${Math.round(topPx)}px`);
   }
 
   function showLineHoverAtIndex(idx, pointer = null) {
@@ -15172,7 +15884,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         'is-hm-top': false,
         'is-line-low': false,
       });
-      patchAttr(tooltipEl, 'hidden', false);
       populateTooltipContent(slot);
 
       for (const [tIdx, el] of tickElsByIdx.entries()) {
@@ -15180,15 +15891,21 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       }
     }
 
-    const wrapRect = getCachedWrapRect();
+    const wrapRect = tooltipCtrl.getWrapRect();
     const wrapW =
       wrapRect && wrapRect.width > 0
         ? wrapRect.width
         : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
     const fallbackX = (pt.x / Math.max(1, viewW)) * wrapW;
     const fallbackY = pt.y + 6;
-    positionTooltipNearAnchor(fallbackX, fallbackY, pointer || lastPointer);
-    armTooltipTracking(wasHidden);
+    tooltipCtrl.show({
+      fallbackX,
+      fallbackY,
+      pointer: pointer || lastPointer,
+      trackedDots: [hoverDot],
+      viewWidth: viewW,
+      viewHeight: VIEW_H,
+    });
   }
 
   function showHeatmapHoverAtIndex(idx, cellEl, pointer = null) {
@@ -15242,11 +15959,10 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         'is-hm-top': false,
         'is-line-low': false,
       });
-      patchAttr(tooltipEl, 'hidden', false);
       populateTooltipContent(slot);
     }
 
-    const wrapRect = getCachedWrapRect();
+    const wrapRect = tooltipCtrl.getWrapRect();
     const cellRect = targetCell.getBoundingClientRect?.() || null;
     const wrapW =
       wrapRect && wrapRect.width > 0
@@ -15280,26 +15996,25 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
           }
         : rawPtr;
 
-    positionTooltipNearAnchor(fallbackX, fallbackY, effectivePtr);
-    armTooltipTracking(wasHidden);
+    tooltipCtrl.show({
+      fallbackX,
+      fallbackY,
+      pointer: effectivePtr,
+      trackedDots: [],
+      viewWidth: viewW,
+      viewHeight: VIEW_H,
+    });
   }
 
   function clearHover() {
     invalidateHoverRects();
-    cancelTipTrackRaf();
+    tooltipCtrl.hide();
     hoveredIdx = -1;
     lastPointer = null;
     patchAttr(hoverLine, 'hidden', true);
     patchAttr(hoverDot, 'hidden', true);
-    patchAttr(tooltipEl, 'hidden', true);
-    patchClasses(tooltipEl, {
-      'is-hm-bottom': false,
-      'is-hm-top': false,
-      'is-line-low': false,
-      'is-tracking': false,
-    });
     patchClasses(hoverDot, { 'is-tracking': false });
-    if (!currentIsHeatmap) {
+    if (!currentIsHeatmap && currentMaxTokens > 0) {
       patchAttr(peakPill, 'hidden', false);
     }
     if (hoveredHighlightEls.length > 0) {
@@ -15609,9 +16324,9 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   }
 
   function destroy() {
-    cancelTipTrackRaf();
-    cancelCurveMorph();
-    cancelPeakReadyRaf();
+    tooltipCtrl.destroy();
+    curveMorphCtrl.cancel();
+    peakReadyArmer.cancel();
     plotStage.removeEventListener('mousemove', handlePointerMove);
     plotStage.removeEventListener('click', handleLineClick);
     plotStage.removeEventListener('mouseleave', clearHover);
@@ -15664,8 +16379,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
 
     if (modeChanged) {
       clearHover();
-      cancelCurveMorph();
-      liveMorphSegs = null;
+      curveMorphCtrl.cancel();
     }
     patchClasses(chartWrap, { 'is-heatmap': useHeatmap });
     patchAttr(plotStage, 'hidden', useHeatmap);
@@ -15692,6 +16406,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         peakIdx = i;
       }
     }
+    currentMaxTokens = maxTokens;
 
     const locale = getEffectiveLocale();
     patchText(wdayMonEl, t('chart.trend.wdayMon'));
@@ -16041,23 +16756,17 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         areaD = `${lineD} L ${pts[pts.length - 1].x.toFixed(1)} ${BOTTOM_Y} L ${pts[0].x.toFixed(1)} ${BOTTOM_Y} Z`;
       }
 
-      const prevSegs = liveMorphSegs || committedSegs;
-      committedSegs = nextSegs;
-      if (hasRenderedLineOnce && !modeChanged && prevSegs.length > 0) {
-        startCurveMorph(prevSegs, nextSegs, {
-          leftX,
-          rightX,
-          spanX,
-          finalLineD: lineD,
-          finalAreaD: areaD,
-        });
-      } else {
-        cancelCurveMorph();
-        liveMorphSegs = null;
-        patchAttr(linePath, 'd', lineD);
-        patchAttr(areaPath, 'd', areaD);
-      }
-      hasRenderedLineOnce = true;
+      curveMorphCtrl.morphTo({
+        nextSegs,
+        leftX,
+        spanX,
+        bottomY: BOTTOM_Y,
+        linePath,
+        areaPath,
+        finalLineD: lineD,
+        finalAreaD: areaD,
+        skipMorph: modeChanged,
+      });
 
       // 就地增量补丁垂直参考网格线及底部 X 轴标签，保持文字常驻不重排不闪烁
       const tickIndices = computeTickIndices(slots);
@@ -16126,29 +16835,24 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       }
     }
 
-    const peakPt = pts[peakIdx] || { x: viewW / 2, y: BOTTOM_Y };
-
-    const peakSlot = slots[peakIdx];
-    const peakText =
-      maxTokens > 0 && peakSlot?.label
+    if (maxTokens > 0) {
+      const peakPt = pts[peakIdx] || { x: viewW / 2, y: BOTTOM_Y };
+      const peakSlot = slots[peakIdx];
+      const peakText = peakSlot?.label
         ? t('chart.trend.peakPill', {
             label: peakSlot.label,
             tokens: formatTokensPrecise(maxTokens),
           })
         : formatTokensPrecise(maxTokens);
-    patchText(peakPill, peakText);
-    const pctLeft = Math.max(12, Math.min(88, (peakPt.x / viewW) * 100));
-    patchStyleVar(peakPill, '--peak-x', `${pctLeft.toFixed(1)}%`);
-    if (!peakReadyArmed) {
-      peakReadyArmed = true;
-      if (canAnimateInBrowser()) {
-        peakReadyRaf = window.requestAnimationFrame(() => {
-          peakReadyRaf = 0;
-          patchClasses(peakPill, { 'is-ready': true });
-        });
-      } else {
-        patchClasses(peakPill, { 'is-ready': true });
+      patchText(peakPill, peakText);
+      const pctLeft = Math.max(12, Math.min(88, (peakPt.x / viewW) * 100));
+      patchStyleVar(peakPill, '--peak-x', `${pctLeft.toFixed(1)}%`);
+      peakReadyArmer.arm();
+      if (hoveredIdx < 0) {
+        patchAttr(peakPill, 'hidden', false);
       }
+    } else {
+      patchAttr(peakPill, 'hidden', true);
     }
 
     if (hoveredIdx >= slots.length) {
@@ -16179,22 +16883,15 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
 return { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart };
 })();
 
-// --- src/components/charts/SessionStepCharts.js ---
-const { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, computeLinearFit, computePublicationFit, createSessionLineChart, createModelFitChart } = (() => {
+// --- src/components/charts/stepChartMath.js ---
+const { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact } = (() => {
 /**
- * @fileoverview 当前会话步骤级线性走势图与模型趋势拟合图组件 (SessionStepCharts).
- *
- * 包含两部分能力：
- * 1. `createSessionLineChart`：查看当前会话（支持主代理 / 子代理 / 全部汇总）所有模型的步进变化，
- *    支持切换 `总Token`（累计调用总量）、`上下文`（单步上下文体积）、`TPS`、`首字`、`费用` 五大维度；
- * 2. `createModelFitChart`：查看指定模型或全部模型的 `TPS`、`首字`、`缓存`、`费用` 散点与鲁棒局部加权线性回归（LOWESS + OLS 基准）拟合曲线，
- *    内置视图级模型锁定状态机，进入视图时自动锚定当前调用模型，停留在视图期间绝不随轮询跳变。
+ * @fileoverview Pure regression math (OLS + IRLS-LOESS), nice axis tick generators,
+ * SVG spline/polyline path builders, and step metric formatters extracted from SessionStepCharts.js.
  */
 
 
-let sessionChartUid = 0;
-
-/** 多模型节点与多曲线对比语义调色板（全部取自 tokens.css 语义变量，兼顾设计一致性与交叉曲线区分度） */
+/** 多模型节点和多曲线对比语义调色板（全部取自 tokens.css 语义变量，兼顾设计一致性和交叉曲线区分度） */
 const MODEL_COLOR_VARS = Object.freeze([
   'var(--ctx-cached)',
   'var(--ctx-skills)',
@@ -16205,7 +16902,7 @@ const MODEL_COLOR_VARS = Object.freeze([
 ]);
 
 /**
- * 提取步骤所属的基础模型分组键（与后端 `usage-aggregator.mjs` 中 `modelBreakdown[].label` 严格一致），
+ * 提取步骤所属的基础模型分组键（和后端 `usage-aggregator.mjs` 中 `modelBreakdown[].label` 严格一致），
  * 且不受“精简代号 / 原始模型 ID”或“自动压缩”后缀切换影响。
  *
  * @param {object|null|undefined} step
@@ -16317,8 +17014,8 @@ function computeLinearFit(ys, { minVal = 0, maxVal = Infinity, xs = null } = {})
 }
 
 /**
- * 学术论文级回归与 95% 置信带计算引擎（Cleveland & Devlin 高斯局部加权线性回归 LOESS + 精确帽子矩阵标准误，
- * 小样本 n <= 5 时自动采用精确 OLS 线性回归与双曲 t 分布 95% 置信区间，等同于 R `ggplot2::geom_smooth(se = TRUE)`）。
+ * 学术论文级回归和 95% 置信带计算引擎（Cleveland & Devlin 高斯局部加权线性回归 LOESS + 精确帽子矩阵标准误，
+ * 小样本 n <= 5 时自动采用精确 OLS 线性回归和双曲 t 分布 95% 置信区间，等同于 R `ggplot2::geom_smooth(se = TRUE)`）。
  *
  * @param {number[]} xs 严格递增或单调的样本横坐标序列
  * @param {number[]} ys 样本纵坐标序列
@@ -16379,7 +17076,7 @@ function computePublicationFit(
   const M = Math.max(2, gridSize);
   const gridXs = Array.from({ length: M }, (_, k) => xMin + (k / (M - 1)) * xSpan);
 
-  // 小样本（n <= 5）：采用精确 OLS 线性回归与 Student-t 双曲 95% CI 置信带
+  // 小样本（n <= 5）：采用精确 OLS 线性回归和 Student-t 双曲 95% CI 置信带
   if (n <= 5) {
     const meanX = xs.reduce((a, b) => a + b, 0) / n;
     let sxx = 0;
@@ -16538,8 +17235,8 @@ function computePublicationFit(
   let traceL = 0;
   let precomputedGridEval = null;
 
-  // 大样本（n > 200 且 x 单调有序）采用与 R `stats::loess(surface = "interpolate")` 一致的网格插值加速：
-  // 仅在 M 个均匀网格顶点做精确 LOESS（O(M·N)），再线性插值样本拟合值与杠杆度，避免 O(N²) 阻塞主线程。
+  // 大样本（n > 200 且 x 单调有序）采用和 R `stats::loess(surface = "interpolate")` 一致的网格插值加速：
+  // 仅在 M 个均匀网格顶点做精确 LOESS（O(M·N)），再线性插值样本拟合值和杠杆度，避免 O(N²) 阻塞主线程。
   if (n > 200 && sortedXs && M >= 2) {
     const gridRawFit = new Float64Array(M);
     const gridLevSq = new Float64Array(M);
@@ -16843,6 +17540,25 @@ function formatChartMetricCompact(metric, val) {
       return String(val);
   }
 }
+return { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact };
+})();
+
+// --- src/components/charts/SessionStepCharts.js ---
+const { createSessionLineChart, createModelFitChart } = (() => {
+/**
+ * @fileoverview 当前会话步骤级线性走势图与模型趋势拟合图组件 (SessionStepCharts).
+ *
+ * 包含两部分能力：
+ * 1. `createSessionLineChart`：查看当前会话（支持主代理 / 子代理 / 全部汇总）所有模型的步进变化，
+ *    支持切换 `总Token`（累计调用总量）、`上下文`（单步上下文体积）、`TPS`、`首字`、`费用` 五大维度；
+ * 2. `createModelFitChart`：查看指定模型或全部模型的 `TPS`、`首字`、`缓存`、`费用` 散点与鲁棒局部加权线性回归（LOWESS + OLS 基准）拟合曲线，
+ *    内置视图级模型锁定状态机，进入视图时自动锚定当前调用模型，停留在视图期间绝不随轮询跳变。
+ */
+
+
+
+
+let sessionChartUid = 0;
 
 /**
  * 创建会话全模型线性走势图（支持 `totalTokens` | `context` | `tps` | `ttft` | `cost`，全宽 1:1 贴边对齐）。
@@ -16977,27 +17693,43 @@ function createSessionLineChart() {
   const plotStage = h('div', { className: 'sstep-plot-stage' }, [
     peakPill,
     emptyHintEl,
-    tooltipEl,
     svg,
   ]);
   const rootEl = h('div', { className: 'sstep-chart-wrap' }, [
     plotStage,
     xAxisEl,
     modelLegendEl,
+    tooltipEl,
   ]);
 
   let currentPoints = [];
+  let currentMaxVal = 0;
   let currentMetric = 'totalTokens';
   let hoveredIdx = -1;
+  let lastPointer = null;
   let tickElsByIdx = new Map();
   let lastSig = '';
   let lastPreSig = '';
   let lastSummaryBadge = '';
   let lastUpdateParams = null;
   let cachedPlotSvgRect = null;
+  const multiSeriesNodesByKey = new Map();
+
+  const singleCurveMorphCtrl = createCubicCurveMorphController();
+  const multiCurveMorphCtrl = createMultiSeriesCurveMorphController();
+  const peakReadyArmer = createReadyClassArmer(peakPill, 'is-ready');
+  const lineTooltipCtrl = createFloatingChartTooltipController({
+    containerEl: rootEl,
+    tooltipEl,
+    defaultTipWidth: 212,
+    defaultTipHeight: 86,
+    defaultViewWidth: DEFAULT_VIEW_W,
+    defaultViewHeight: VIEW_H,
+  });
 
   function invalidatePlotSvgRect() {
     cachedPlotSvgRect = null;
+    lineTooltipCtrl.invalidateRects();
   }
 
   function syncViewWidth() {
@@ -17019,89 +17751,94 @@ function createSessionLineChart() {
     return false;
   }
 
-  function showHoverAt(idx) {
+  function showHoverAt(idx, pointer = null, { forceRefresh = false } = {}) {
     if (idx < 0 || idx >= currentPoints.length) {
       clearHover();
       return;
     }
     const wasHidden = tooltipEl.hasAttribute('hidden');
+    const changedIdx = forceRefresh || wasHidden || idx !== hoveredIdx;
     hoveredIdx = idx;
+    if (pointer) {
+      lastPointer = pointer;
+    }
     const pt = currentPoints[idx];
-    patchAttr(hoverLine, 'hidden', false);
-    patchAttr(hoverLine, 'x1', pt.x.toFixed(1));
-    patchAttr(hoverLine, 'x2', pt.x.toFixed(1));
-
-    patchAttr(hoverDot, 'hidden', false);
-    patchAttr(hoverDot, 'cx', pt.x.toFixed(1));
-    patchAttr(hoverDot, 'cy', pt.y.toFixed(1));
-    const hoverAccent = pt.anomalySummary
-      ? pt.anomalySeverity === 'danger'
-        ? 'var(--metric-danger)'
-        : 'var(--metric-warn)'
-      : pt.hoverColor || 'var(--ctx-cached)';
-    patchStyleVar(hoverDot, '--hover-dot-color', hoverAccent);
-
-    patchAttr(peakPill, 'hidden', true);
-    patchAttr(tooltipEl, 'hidden', false);
-
-    patchText(tipHeadLeft, pt.stepTag);
-    patchText(tipHeadRight, pt.modelText);
-    patchText(
-      tipMainLeft,
-      pt.valid ? formatChartMetricValue(currentMetric, pt.value) : t('chart.step.excluded')
-    );
-    patchText(tipMainRight, pt.secondaryRight || '');
     const hasIoParts = Boolean(pt.ioParts);
-    patchAttr(tipIoGrid, 'hidden', !hasIoParts);
-    if (hasIoParts) {
-      patchText(tipInLabelEl, t('cons.legInput'));
-      patchText(tipCacheLabelEl, t('cons.legCache'));
-      patchText(tipOutLabelEl, t('cons.legOutput'));
-      patchText(tipInValEl, pt.ioParts.inTok);
-      patchText(tipCacheValEl, pt.ioParts.cacheTok);
-      patchText(tipOutValEl, pt.ioParts.outTok);
-    }
-    patchAttr(tipSub, 'hidden', hasIoParts || !pt.subDetail);
-    if (!hasIoParts && pt.subDetail) {
-      patchText(tipSub, pt.subDetail);
-    }
-    patchAttr(tipAnomaly, 'hidden', !pt.anomalySummary);
-    if (pt.anomalySummary) {
-      patchText(tipAnomaly, pt.anomalySummary);
-      patchClasses(tipAnomaly, { 'is-danger': pt.anomalySeverity === 'danger' });
-    }
 
-    const rawPct = (pt.x / viewW) * 100;
-    const clampedPct = Math.max(1, Math.min(99, rawPct));
-    patchStyleVar(tooltipEl, '--tip-x', `${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-shift', `-${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-y', '0px');
-    if (wasHidden) {
-      patchClasses(tooltipEl, { 'is-tracking': false });
-      void tooltipEl.offsetWidth;
-      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-        window.requestAnimationFrame(() => {
-          if (!tooltipEl.hasAttribute('hidden')) {
-            patchClasses(tooltipEl, { 'is-tracking': true });
-          }
-        });
-      } else {
-        patchClasses(tooltipEl, { 'is-tracking': true });
+    if (changedIdx) {
+      patchAttr(hoverLine, 'hidden', false);
+      patchAttr(hoverLine, 'x1', pt.x.toFixed(1));
+      patchAttr(hoverLine, 'x2', pt.x.toFixed(1));
+
+      patchAttr(hoverDot, 'hidden', false);
+      patchAttr(hoverDot, 'cx', pt.x.toFixed(1));
+      patchAttr(hoverDot, 'cy', pt.y.toFixed(1));
+      const hoverAccent = pt.anomalySummary
+        ? pt.anomalySeverity === 'danger'
+          ? 'var(--metric-danger)'
+          : 'var(--metric-warn)'
+        : pt.hoverColor || 'var(--ctx-cached)';
+      patchStyleVar(hoverDot, '--hover-dot-color', hoverAccent);
+
+      patchAttr(peakPill, 'hidden', true);
+
+      patchText(tipHeadLeft, pt.stepTag);
+      patchText(tipHeadRight, pt.modelText);
+      patchText(
+        tipMainLeft,
+        pt.valid ? formatChartMetricValue(currentMetric, pt.value) : t('chart.step.excluded')
+      );
+      patchText(tipMainRight, pt.secondaryRight || '');
+      patchAttr(tipIoGrid, 'hidden', !hasIoParts);
+      if (hasIoParts) {
+        patchText(tipInLabelEl, t('cons.legInput'));
+        patchText(tipCacheLabelEl, t('cons.legCache'));
+        patchText(tipOutLabelEl, t('cons.legOutput'));
+        patchText(tipInValEl, pt.ioParts.inTok);
+        patchText(tipCacheValEl, pt.ioParts.cacheTok);
+        patchText(tipOutValEl, pt.ioParts.outTok);
+      }
+      patchAttr(tipSub, 'hidden', hasIoParts || !pt.subDetail);
+      if (!hasIoParts && pt.subDetail) {
+        patchText(tipSub, pt.subDetail);
+      }
+      patchAttr(tipAnomaly, 'hidden', !pt.anomalySummary);
+      if (pt.anomalySummary) {
+        patchText(tipAnomaly, pt.anomalySummary);
+        patchClasses(tipAnomaly, { 'is-danger': pt.anomalySeverity === 'danger' });
+      }
+
+      for (const [tIdx, el] of tickElsByIdx.entries()) {
+        patchClasses(el, { 'is-hovered': tIdx === idx });
       }
     }
 
-    for (const [tIdx, el] of tickElsByIdx.entries()) {
-      patchClasses(el, { 'is-hovered': tIdx === idx });
-    }
+    const wrapRect = lineTooltipCtrl.getWrapRect();
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(rootEl.clientWidth || viewW || DEFAULT_VIEW_W);
+    const fallbackX = (pt.x / Math.max(1, viewW)) * wrapW;
+    const fallbackY = pt.y + 4;
+    lineTooltipCtrl.show({
+      fallbackX,
+      fallbackY,
+      pointer: pointer || lastPointer,
+      trackedDots: [hoverDot],
+      viewWidth: viewW,
+      viewHeight: VIEW_H,
+      sizeKey: `${hasIoParts ? 'io' : pt.subDetail ? 'sub' : 'min'}:${pt.anomalySummary ? 'a' : '0'}`,
+    });
   }
 
   function clearHover() {
     hoveredIdx = -1;
+    lastPointer = null;
+    lineTooltipCtrl.hide();
     patchAttr(hoverLine, 'hidden', true);
     patchAttr(hoverDot, 'hidden', true);
-    patchAttr(tooltipEl, 'hidden', true);
-    patchClasses(tooltipEl, { 'is-tracking': false });
-    if (currentPoints.some((p) => p.valid)) {
+    patchClasses(hoverDot, { 'is-tracking': false });
+    if (currentMaxVal > 0 && currentPoints.some((p) => p.valid)) {
       patchAttr(peakPill, 'hidden', false);
     }
     for (const el of tickElsByIdx.values()) {
@@ -17126,7 +17863,11 @@ function createSessionLineChart() {
       0,
       Math.min(currentPoints.length - 1, Math.round(ratio * (currentPoints.length - 1)))
     );
-    showHoverAt(idx);
+    const pointer =
+      Number.isFinite(Number(e?.clientX)) && Number.isFinite(Number(e?.clientY))
+        ? { clientX: Number(e.clientX), clientY: Number(e.clientY) }
+        : null;
+    showHoverAt(idx, pointer);
   });
   plotStage.addEventListener('mouseleave', () => {
     invalidatePlotSvgRect();
@@ -17141,7 +17882,7 @@ function createSessionLineChart() {
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
         lastPreSig = '';
-        update(lastUpdateParams);
+        update({ ...lastUpdateParams, _skipMorph: true });
       }
     });
     resizeObs.observe(plotStage);
@@ -17149,13 +17890,17 @@ function createSessionLineChart() {
     onWinResize = () => {
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
-        update(lastUpdateParams);
+        update({ ...lastUpdateParams, _skipMorph: true });
       }
     };
     window.addEventListener('resize', onWinResize);
   }
 
   function destroy() {
+    singleCurveMorphCtrl.cancel();
+    multiCurveMorphCtrl.cancel();
+    peakReadyArmer.cancel();
+    lineTooltipCtrl.destroy();
     resizeObs?.disconnect();
     resizeObs = null;
     if (onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
@@ -17184,6 +17929,7 @@ function createSessionLineChart() {
     metric = 'totalTokens',
     showAgentPrefix = false,
     displaySettings = {},
+    _skipMorph = false,
   } = {}) {
     lastUpdateParams = {
       steps,
@@ -17442,6 +18188,7 @@ function createSessionLineChart() {
         peakIdx = i;
       }
     }
+    currentMaxVal = maxVal;
 
     const { leftX, rightX, spanX } = resolvePlotBounds(viewW);
     const denom = maxVal > 0 ? maxVal : 1;
@@ -17473,14 +18220,22 @@ function createSessionLineChart() {
 
     if (sig !== lastSig) {
       lastSig = sig;
-      while (multiAreaGroup.firstChild) multiAreaGroup.removeChild(multiAreaGroup.firstChild);
-      while (multiLineGroup.firstChild) multiLineGroup.removeChild(multiLineGroup.firstChild);
       while (dotsGroup.firstChild) dotsGroup.removeChild(dotsGroup.firstChild);
       while (anomalyDotsGroup.firstChild) anomalyDotsGroup.removeChild(anomalyDotsGroup.firstChild);
 
       if (isMultiCompare) {
+        singleCurveMorphCtrl.reset();
         patchAttr(linePath, 'd', '');
         patchAttr(areaPath, 'd', '');
+        for (let ci = multiLineGroup.children.length - 1; ci >= 0; ci--) {
+          const ch = multiLineGroup.children[ci];
+          if (ch.getAttribute?.('class') === 'sstep-series-single-dot') {
+            ch.remove();
+          }
+        }
+
+        const activeGks = new Set();
+        const morphItems = [];
 
         for (const gk of targetKeys) {
           const seriesColor = modelColorMap.get(gk) || accentColor;
@@ -17496,57 +18251,105 @@ function createSessionLineChart() {
             patchStyleVar(singleDot, '--sstep-series-color', seriesColor);
             multiLineGroup.appendChild(singleDot);
           } else {
+            activeGks.add(gk);
+            let nodes = multiSeriesNodesByKey.get(gk);
+            if (!nodes) {
+              const mArea = document.createElementNS(SVG_NS, 'path');
+              mArea.setAttribute('class', 'sstep-multi-area');
+              const mLine = document.createElementNS(SVG_NS, 'path');
+              mLine.setAttribute('class', 'sstep-fit-line');
+              mLine.setAttribute('fill', 'none');
+              nodes = { mArea, mLine };
+              multiSeriesNodesByKey.set(gk, nodes);
+            }
+            patchStyleVar(nodes.mArea, '--sstep-series-color', seriesColor);
+            patchStyleVar(nodes.mLine, '--sstep-fit-accent', seriesColor);
+            multiAreaGroup.appendChild(nodes.mArea);
+            multiLineGroup.appendChild(nodes.mLine);
+
             const seriesLineD = buildSplinePath(seriesPts);
             const firstX = seriesPts[0].x.toFixed(1);
             const lastX = seriesPts[seriesPts.length - 1].x.toFixed(1);
+            const seriesAreaD = `${seriesLineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`;
 
-            const mArea = document.createElementNS(SVG_NS, 'path');
-            mArea.setAttribute('class', 'sstep-multi-area');
-            mArea.setAttribute(
-              'd',
-              `${seriesLineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`
-            );
-            patchStyleVar(mArea, '--sstep-series-color', seriesColor);
-            multiAreaGroup.appendChild(mArea);
-
-            const mLine = document.createElementNS(SVG_NS, 'path');
-            mLine.setAttribute('class', 'sstep-fit-line');
-            mLine.setAttribute('fill', 'none');
-            mLine.setAttribute('d', seriesLineD);
-            patchStyleVar(mLine, '--sstep-fit-accent', seriesColor);
-            multiLineGroup.appendChild(mLine);
-
-            if (seriesPts.length === 1) {
-              const pt = seriesPts[0];
-              const dot = document.createElementNS(SVG_NS, 'circle');
-              dot.setAttribute('cx', pt.x.toFixed(1));
-              dot.setAttribute('cy', pt.y.toFixed(1));
-              dot.setAttribute('r', '2.1');
-              dot.setAttribute('class', 'sstep-node-dot');
-              patchStyleVar(dot, '--dot-stroke', seriesColor);
-              dotsGroup.appendChild(dot);
-            }
+            morphItems.push({
+              key: gk,
+              nextSegs: pointsToNormalizedCubicSegs(seriesPts, BOTTOM_Y, {
+                leftX,
+                spanX,
+                tension: 0.42,
+              }),
+              lineEl: nodes.mLine,
+              areaEl: nodes.mArea,
+              endDotEl: null,
+              endX: NaN,
+              endY: NaN,
+              finalLineD: seriesLineD,
+              finalAreaD: seriesAreaD,
+            });
           }
         }
+
+        for (const [gk, nodes] of multiSeriesNodesByKey.entries()) {
+          if (!activeGks.has(gk)) {
+            nodes.mArea.remove();
+            nodes.mLine.remove();
+          }
+        }
+
+        multiCurveMorphCtrl.morphSeries({
+          items: morphItems,
+          leftX,
+          spanX,
+          bottomY: BOTTOM_Y,
+          skipMorph: _skipMorph,
+        });
       } else {
+        multiCurveMorphCtrl.reset();
+        for (const nodes of multiSeriesNodesByKey.values()) {
+          nodes.mArea.remove();
+          nodes.mLine.remove();
+        }
         if (validPoints.length === 0) {
+          singleCurveMorphCtrl.reset();
           patchAttr(linePath, 'd', '');
           patchAttr(areaPath, 'd', '');
         } else if (validPoints.length === 1) {
-          const yStr = validPoints[0].y.toFixed(1);
+          const yVal = validPoints[0].y;
+          const yStr = yVal.toFixed(1);
           const lineD = `M ${leftX.toFixed(1)} ${yStr} L ${rightX.toFixed(1)} ${yStr}`;
-          patchAttr(linePath, 'd', lineD);
-          patchAttr(
+          const areaD = `${lineD} L ${rightX.toFixed(1)} ${BOTTOM_Y} L ${leftX.toFixed(1)} ${BOTTOM_Y} Z`;
+          const flatPts = [
+            { x: leftX, y: yVal },
+            { x: rightX, y: yVal },
+          ];
+          singleCurveMorphCtrl.morphTo({
+            nextSegs: pointsToNormalizedCubicSegs(flatPts, BOTTOM_Y, { leftX, spanX }),
+            leftX,
+            spanX,
+            bottomY: BOTTOM_Y,
+            linePath,
             areaPath,
-            'd',
-            `${lineD} L ${rightX.toFixed(1)} ${BOTTOM_Y} L ${leftX.toFixed(1)} ${BOTTOM_Y} Z`
-          );
+            finalLineD: lineD,
+            finalAreaD: areaD,
+            skipMorph: _skipMorph,
+          });
         } else {
           const lineD = buildSplinePath(validPoints);
           const firstX = validPoints[0].x.toFixed(1);
           const lastX = validPoints[validPoints.length - 1].x.toFixed(1);
-          patchAttr(linePath, 'd', lineD);
-          patchAttr(areaPath, 'd', `${lineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`);
+          const areaD = `${lineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`;
+          singleCurveMorphCtrl.morphTo({
+            nextSegs: pointsToNormalizedCubicSegs(validPoints, BOTTOM_Y, { leftX, spanX }),
+            leftX,
+            spanX,
+            bottomY: BOTTOM_Y,
+            linePath,
+            areaPath,
+            finalLineD: lineD,
+            finalAreaD: areaD,
+            skipMorph: _skipMorph,
+          });
         }
       }
 
@@ -17590,7 +18393,10 @@ function createSessionLineChart() {
           title: `${pt.stepTag} · ${pt.modelText}`,
         });
         patchStyleVar(tickEl, '--tick-x', `${pct.toFixed(2)}%`);
-        tickEl.onclick = () => showHoverAt(tIdx);
+        tickEl.onclick = () => {
+          lastPointer = null;
+          showHoverAt(tIdx, null);
+        };
         xAxisEl.appendChild(tickEl);
         tickElsByIdx.set(tIdx, tickEl);
       }
@@ -17643,7 +18449,7 @@ function createSessionLineChart() {
       }
     }
 
-    if (peakIdx >= 0 && validPoints.length > 0) {
+    if (peakIdx >= 0 && validPoints.length > 0 && maxVal > 0) {
       const peakPt = points[peakIdx];
       patchText(
         peakPill,
@@ -17655,6 +18461,7 @@ function createSessionLineChart() {
       patchStyleVar(peakPill, '--sstep-accent', isMultiCompare ? peakPt.dotColor : accentColor);
       const pctLeft = Math.max(14, Math.min(86, (peakPt.x / viewW) * 100));
       patchStyleVar(peakPill, '--peak-x', `${pctLeft.toFixed(1)}%`);
+      peakReadyArmer.arm();
       if (hoveredIdx < 0) patchAttr(peakPill, 'hidden', false);
     } else {
       patchAttr(peakPill, 'hidden', true);
@@ -17663,7 +18470,7 @@ function createSessionLineChart() {
     if (hoveredIdx >= points.length) {
       clearHover();
     } else if (hoveredIdx >= 0) {
-      showHoverAt(hoveredIdx);
+      showHoverAt(hoveredIdx, lastPointer, { forceRefresh: true });
     }
 
     let summaryBadge = t('chart.step.stepsCount', { count: matchedSteps.length });
@@ -17836,16 +18643,28 @@ function createModelFitChart() {
     fitStatsEl,
   ]);
 
-  const plotStage = h('div', { className: 'sstep-plot-stage' }, [emptyHintEl, tooltipEl, svg]);
-  const rootEl = h('div', { className: 'sstep-chart-wrap' }, [plotStage, fitLegendFoot]);
+  const plotStage = h('div', { className: 'sstep-plot-stage' }, [emptyHintEl, svg]);
+  const rootEl = h('div', { className: 'sstep-chart-wrap' }, [plotStage, fitLegendFoot, tooltipEl]);
 
   let currentSamples = [];
   let currentMetric = 'tps';
   let hoveredIdx = -1;
+  let lastFitPointer = null;
   let lastSig = '';
   let lastUpdateParams = null;
   let fitCacheMetric = '';
   const fitCache = new Map();
+  const multiFitNodesByKey = new Map();
+
+  const fitMorphCtrl = createFitGridMorphController();
+  const fitTooltipCtrl = createFloatingChartTooltipController({
+    containerEl: rootEl,
+    tooltipEl,
+    defaultTipWidth: 216,
+    defaultTipHeight: 82,
+    defaultViewWidth: DEFAULT_VIEW_W,
+    defaultViewHeight: VIEW_H,
+  });
 
   function reusePublicationFit(key, xs, ys, maxVal, isMultiCompare) {
     const previous = fitCache.get(key);
@@ -17880,94 +18699,100 @@ function createModelFitChart() {
     return false;
   }
 
-  function showHoverAt(idx) {
+  function showHoverAt(idx, pointer = null, { forceRefresh = false } = {}) {
     if (idx < 0 || idx >= currentSamples.length) {
       clearHover();
       return;
     }
-    hoveredIdx = idx;
-    const sp = currentSamples[idx];
-    patchAttr(hoverLine, 'hidden', false);
-    patchAttr(hoverLine, 'x1', sp.x.toFixed(1));
-    patchAttr(hoverLine, 'x2', sp.x.toFixed(1));
-
-    patchAttr(hoverFitDot, 'hidden', false);
-    patchAttr(hoverFitDot, 'cx', sp.x.toFixed(1));
-    patchAttr(hoverFitDot, 'cy', sp.fitY.toFixed(1));
-    patchStyleVar(hoverFitDot, '--hover-dot-color', sp.seriesColor || 'var(--accent-primary)');
-
-    patchAttr(hoverRawDot, 'hidden', false);
-    patchAttr(hoverRawDot, 'cx', sp.x.toFixed(1));
-    patchAttr(hoverRawDot, 'cy', sp.rawY.toFixed(1));
-    patchClasses(hoverRawDot, {
-      'is-anomaly': Boolean(sp.anomalySummary),
-      'is-danger': Boolean(sp.anomalySummary && sp.anomalySeverity === 'danger'),
-    });
-
     const wasHidden = tooltipEl.hasAttribute('hidden');
-    patchAttr(tooltipEl, 'hidden', false);
-    patchText(tipHeadLeft, sp.stepTag);
-    patchText(tipHeadRight, sp.modelText);
-    patchText(
-      tipMainLeft,
-      t('chart.fit.tipFit', { val: formatChartMetricValue(currentMetric, sp.fitVal) })
-    );
-    patchText(
-      tipMainRight,
-      t('chart.fit.tipObs', { val: formatChartMetricValue(currentMetric, sp.rawVal) })
-    );
-
-    patchAttr(tipSub, 'hidden', false);
-    if (sp.compareHint) {
-      patchText(tipSub, sp.compareHint);
-    } else if (currentSamples.length >= 3 && sp.ciHalf > 0) {
-      patchText(
-        tipSub,
-        `95% CI [${formatChartMetricCompact(currentMetric, sp.ciLow)}, ${formatChartMetricCompact(currentMetric, sp.ciHigh)}]`
-      );
-    } else {
-      const ctxTok = Math.max(0, Number(sp.st?.contextTokens || 0));
-      patchText(
-        tipSub,
-        t('chart.step.ctxAndCache', {
-          ctxTok: formatTokens(ctxTok),
-          pct: Number(sp.st?.cacheHitPct ?? 0),
-        })
-      );
+    const changedIdx = forceRefresh || wasHidden || idx !== hoveredIdx;
+    hoveredIdx = idx;
+    if (pointer) {
+      lastFitPointer = pointer;
     }
-    patchAttr(tipAnomaly, 'hidden', !sp.anomalySummary);
-    if (sp.anomalySummary) {
-      patchText(tipAnomaly, sp.anomalySummary);
-      patchClasses(tipAnomaly, { 'is-danger': sp.anomalySeverity === 'danger' });
-    }
+    const sp = currentSamples[idx];
 
-    const rawPct = (sp.x / viewW) * 100;
-    const clampedPct = Math.max(1, Math.min(99, rawPct));
-    patchStyleVar(tooltipEl, '--tip-x', `${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-shift', `-${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-y', '0px');
-    if (wasHidden) {
-      patchClasses(tooltipEl, { 'is-tracking': false });
-      void tooltipEl.offsetWidth;
-      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-        window.requestAnimationFrame(() => {
-          if (!tooltipEl.hasAttribute('hidden')) {
-            patchClasses(tooltipEl, { 'is-tracking': true });
-          }
-        });
+    if (changedIdx) {
+      patchAttr(hoverLine, 'hidden', false);
+      patchAttr(hoverLine, 'x1', sp.x.toFixed(1));
+      patchAttr(hoverLine, 'x2', sp.x.toFixed(1));
+
+      patchAttr(hoverFitDot, 'hidden', false);
+      patchAttr(hoverFitDot, 'cx', sp.x.toFixed(1));
+      patchAttr(hoverFitDot, 'cy', sp.fitY.toFixed(1));
+      patchStyleVar(hoverFitDot, '--hover-dot-color', sp.seriesColor || 'var(--accent-primary)');
+
+      patchAttr(hoverRawDot, 'hidden', false);
+      patchAttr(hoverRawDot, 'cx', sp.x.toFixed(1));
+      patchAttr(hoverRawDot, 'cy', sp.rawY.toFixed(1));
+      patchClasses(hoverRawDot, {
+        'is-anomaly': Boolean(sp.anomalySummary),
+        'is-danger': Boolean(sp.anomalySummary && sp.anomalySeverity === 'danger'),
+      });
+
+      patchText(tipHeadLeft, sp.stepTag);
+      patchText(tipHeadRight, sp.modelText);
+      patchText(
+        tipMainLeft,
+        t('chart.fit.tipFit', { val: formatChartMetricValue(currentMetric, sp.fitVal) })
+      );
+      patchText(
+        tipMainRight,
+        t('chart.fit.tipObs', { val: formatChartMetricValue(currentMetric, sp.rawVal) })
+      );
+
+      patchAttr(tipSub, 'hidden', false);
+      if (sp.compareHint) {
+        patchText(tipSub, sp.compareHint);
+      } else if (currentSamples.length >= 3 && sp.ciHalf > 0) {
+        patchText(
+          tipSub,
+          `95% CI [${formatChartMetricCompact(currentMetric, sp.ciLow)}, ${formatChartMetricCompact(currentMetric, sp.ciHigh)}]`
+        );
       } else {
-        patchClasses(tooltipEl, { 'is-tracking': true });
+        const ctxTok = Math.max(0, Number(sp.st?.contextTokens || 0));
+        patchText(
+          tipSub,
+          t('chart.step.ctxAndCache', {
+            ctxTok: formatTokens(ctxTok),
+            pct: Number(sp.st?.cacheHitPct ?? 0),
+          })
+        );
+      }
+      patchAttr(tipAnomaly, 'hidden', !sp.anomalySummary);
+      if (sp.anomalySummary) {
+        patchText(tipAnomaly, sp.anomalySummary);
+        patchClasses(tipAnomaly, { 'is-danger': sp.anomalySeverity === 'danger' });
       }
     }
+
+    const wrapRect = fitTooltipCtrl.getWrapRect();
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(rootEl.clientWidth || viewW || DEFAULT_VIEW_W);
+    const fallbackX = (sp.x / Math.max(1, viewW)) * wrapW;
+    const fallbackY = sp.fitY + 4;
+    fitTooltipCtrl.show({
+      fallbackX,
+      fallbackY,
+      pointer: pointer || lastFitPointer,
+      trackedDots: [hoverFitDot, hoverRawDot],
+      viewWidth: viewW,
+      viewHeight: VIEW_H,
+      sizeKey: sp.anomalySummary ? 'fit:a' : 'fit:0',
+    });
   }
 
   function clearHover() {
     hoveredIdx = -1;
+    lastFitPointer = null;
+    fitTooltipCtrl.hide();
     patchAttr(hoverLine, 'hidden', true);
     patchAttr(hoverFitDot, 'hidden', true);
     patchAttr(hoverRawDot, 'hidden', true);
-    patchAttr(tooltipEl, 'hidden', true);
-    patchClasses(tooltipEl, { 'is-tracking': false });
+    patchClasses(hoverFitDot, { 'is-tracking': false });
+    patchClasses(hoverRawDot, { 'is-tracking': false });
   }
 
   let cachedFitSvgRect = null;
@@ -17996,10 +18821,15 @@ function createModelFitChart() {
     ) {
       bestIdx = lo - 1;
     }
-    showHoverAt(bestIdx);
+    const pointer =
+      Number.isFinite(Number(e?.clientX)) && Number.isFinite(Number(e?.clientY))
+        ? { clientX: Number(e.clientX), clientY: Number(e.clientY) }
+        : null;
+    showHoverAt(bestIdx, pointer);
   });
   plotStage.addEventListener('mouseleave', () => {
     cachedFitSvgRect = null;
+    fitTooltipCtrl.invalidateRects();
     clearHover();
   });
 
@@ -18008,9 +18838,10 @@ function createModelFitChart() {
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
       cachedFitSvgRect = null;
+      fitTooltipCtrl.invalidateRects();
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
-        update(lastUpdateParams);
+        update({ ...lastUpdateParams, _skipMorph: true });
       }
     });
     resizeObs.observe(plotStage);
@@ -18018,13 +18849,15 @@ function createModelFitChart() {
     onWinResize = () => {
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
-        update(lastUpdateParams);
+        update({ ...lastUpdateParams, _skipMorph: true });
       }
     };
     window.addEventListener('resize', onWinResize);
   }
 
   function destroy() {
+    fitMorphCtrl.cancel();
+    fitTooltipCtrl.destroy();
     resizeObs?.disconnect();
     resizeObs = null;
     if (onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
@@ -18170,6 +19003,7 @@ function createModelFitChart() {
     metric = 'tps',
     showAgentPrefix = false,
     displaySettings = {},
+    _skipMorph = false,
   } = {}) {
     lastUpdateParams = {
       steps,
@@ -18256,13 +19090,16 @@ function createModelFitChart() {
 
     if (matchedItems.length === 0) {
       fitCache.clear();
+      fitMorphCtrl.reset();
       currentSamples = [];
       lastSig = 'empty';
       patchAttr(ciBandPath, 'd', '');
       patchAttr(fitPath, 'd', '');
       patchAttr(olsLine, 'hidden', true);
-      while (multiBandGroup.firstChild) multiBandGroup.removeChild(multiBandGroup.firstChild);
-      while (multiCurveGroup.firstChild) multiCurveGroup.removeChild(multiCurveGroup.firstChild);
+      for (const nodes of multiFitNodesByKey.values()) {
+        nodes.bandEl.remove();
+        nodes.curveEl.remove();
+      }
       while (gridGroup.firstChild) gridGroup.removeChild(gridGroup.firstChild);
       while (axesGroup.firstChild) axesGroup.removeChild(axesGroup.firstChild);
       while (scatterGroup.firstChild) scatterGroup.removeChild(scatterGroup.firstChild);
@@ -18413,9 +19250,7 @@ function createModelFitChart() {
           showAgentPrefix,
         });
 
-        while (multiBandGroup.firstChild) multiBandGroup.removeChild(multiBandGroup.firstChild);
         while (scatterGroup.firstChild) scatterGroup.removeChild(scatterGroup.firstChild);
-        while (multiCurveGroup.firstChild) multiCurveGroup.removeChild(multiCurveGroup.firstChild);
 
         const dotRadius =
           combinedSamples.length > 80 ? '1.8' : combinedSamples.length > 36 ? '2.1' : '2.4';
@@ -18425,6 +19260,8 @@ function createModelFitChart() {
             ? document.createDocumentFragment()
             : scatterGroup;
         const anomalyOverlayDots = [];
+        const activeFitKeys = new Set();
+        const fitMorphItems = [];
 
         for (const s of seriesList) {
           const binCounts = dedupOverdraw ? new Map() : null;
@@ -18448,18 +19285,43 @@ function createModelFitChart() {
             scatterTarget.appendChild(dot);
           }
 
+          activeFitKeys.add(s.key);
+          let nodes = multiFitNodesByKey.get(s.key);
+          if (!nodes) {
+            const bandEl = document.createElementNS(SVG_NS, 'path');
+            bandEl.setAttribute('class', 'sstep-ci-band is-multi');
+            const curveEl = document.createElementNS(SVG_NS, 'path');
+            curveEl.setAttribute('class', 'sstep-fit-line');
+            curveEl.setAttribute('fill', 'none');
+            nodes = { bandEl, curveEl };
+            multiFitNodesByKey.set(s.key, nodes);
+          }
+          patchStyleVar(nodes.bandEl, '--sstep-fit-accent', s.colorVar);
+          patchStyleVar(nodes.curveEl, '--sstep-fit-accent', s.colorVar);
+
           if (s.samples.length === 1) {
             const sp = s.samples[0];
             const segHalf = Math.min(12, plotSpanX * 0.04);
-            const x1 = Math.max(plotLeft, sp.x - segHalf).toFixed(1);
-            const x2 = Math.min(plotRight, sp.x + segHalf).toFixed(1);
+            const x1 = Math.max(plotLeft, sp.x - segHalf);
+            const x2 = Math.min(plotRight, sp.x + segHalf);
             const yStr = sp.fitY.toFixed(1);
-            const lineEl = document.createElementNS(SVG_NS, 'path');
-            lineEl.setAttribute('class', 'sstep-fit-line');
-            lineEl.setAttribute('fill', 'none');
-            lineEl.setAttribute('d', `M ${x1} ${yStr} L ${x2} ${yStr}`);
-            patchStyleVar(lineEl, '--sstep-fit-accent', s.colorVar);
-            multiCurveGroup.appendChild(lineEl);
+            const flatCurveD = `M ${x1.toFixed(1)} ${yStr} L ${x2.toFixed(1)} ${yStr}`;
+            nodes.bandEl.setAttribute('d', '');
+            nodes.bandEl.remove();
+            multiCurveGroup.appendChild(nodes.curveEl);
+            fitMorphItems.push({
+              key: `multi:${s.key}`,
+              gridPts: [
+                { x: x1, fitY: sp.fitY, lowY: sp.fitY, highY: sp.fitY },
+                { x: x2, fitY: sp.fitY, lowY: sp.fitY, highY: sp.fitY },
+              ],
+              curveEl: nodes.curveEl,
+              bandEl: null,
+              olsEl: null,
+              olsCoords: null,
+              finalCurveD: flatCurveD,
+              finalBandD: '',
+            });
           } else {
             const gridPts = s.pubFit.grid.map((g) => ({
               x: mapX(g.x),
@@ -18468,8 +19330,9 @@ function createModelFitChart() {
               highY: mapY(g.ciHigh),
             }));
 
+            let bandD = '';
             if (s.samples.length >= 3) {
-              let bandD = `M ${gridPts[0].x.toFixed(1)} ${gridPts[0].highY.toFixed(1)}`;
+              bandD = `M ${gridPts[0].x.toFixed(1)} ${gridPts[0].highY.toFixed(1)}`;
               for (let i = 1; i < gridPts.length; i++) {
                 bandD += ` L ${gridPts[i].x.toFixed(1)} ${gridPts[i].highY.toFixed(1)}`;
               }
@@ -18477,24 +19340,34 @@ function createModelFitChart() {
                 bandD += ` L ${gridPts[i].x.toFixed(1)} ${gridPts[i].lowY.toFixed(1)}`;
               }
               bandD += ' Z';
-              const bandEl = document.createElementNS(SVG_NS, 'path');
-              bandEl.setAttribute('class', 'sstep-ci-band is-multi');
-              bandEl.setAttribute('d', bandD);
-              patchStyleVar(bandEl, '--sstep-fit-accent', s.colorVar);
-              multiBandGroup.appendChild(bandEl);
+              multiBandGroup.appendChild(nodes.bandEl);
+            } else {
+              nodes.bandEl.setAttribute('d', '');
+              nodes.bandEl.remove();
             }
 
-            const curveEl = document.createElementNS(SVG_NS, 'path');
-            curveEl.setAttribute('class', 'sstep-fit-line');
-            curveEl.setAttribute('fill', 'none');
-            curveEl.setAttribute(
-              'd',
-              buildPolylinePath(gridPts.map((p) => ({ x: p.x, y: p.fitY })))
-            );
-            patchStyleVar(curveEl, '--sstep-fit-accent', s.colorVar);
-            multiCurveGroup.appendChild(curveEl);
+            const curveD = buildPolylinePath(gridPts.map((p) => ({ x: p.x, y: p.fitY })));
+            multiCurveGroup.appendChild(nodes.curveEl);
+            fitMorphItems.push({
+              key: `multi:${s.key}`,
+              gridPts,
+              curveEl: nodes.curveEl,
+              bandEl: bandD ? nodes.bandEl : null,
+              olsEl: null,
+              olsCoords: null,
+              finalCurveD: curveD,
+              finalBandD: bandD,
+            });
           }
         }
+
+        for (const [k, nodes] of multiFitNodesByKey.entries()) {
+          if (!activeFitKeys.has(k)) {
+            nodes.bandEl.remove();
+            nodes.curveEl.remove();
+          }
+        }
+        fitMorphCtrl.morphFits({ items: fitMorphItems, skipMorph: _skipMorph });
         anomalyOverlayDots.sort((a, b) =>
           a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
         );
@@ -18545,7 +19418,7 @@ function createModelFitChart() {
       if (hoveredIdx >= currentSamples.length) {
         clearHover();
       } else if (hoveredIdx >= 0) {
-        showHoverAt(hoveredIdx);
+        showHoverAt(hoveredIdx, lastFitPointer, { forceRefresh: true });
       }
 
       return {
@@ -18558,8 +19431,10 @@ function createModelFitChart() {
     }
 
     // 分支 B：单模型或整体合并单曲线模式
-    while (multiBandGroup.firstChild) multiBandGroup.removeChild(multiBandGroup.firstChild);
-    while (multiCurveGroup.firstChild) multiCurveGroup.removeChild(multiCurveGroup.firstChild);
+    for (const nodes of multiFitNodesByKey.values()) {
+      nodes.bandEl.remove();
+      nodes.curveEl.remove();
+    }
     patchAttr(singleLegendEl, 'hidden', false);
     patchAttr(multiLegendEl, 'hidden', true);
 
@@ -18690,12 +19565,34 @@ function createModelFitChart() {
         scatterGroup.appendChild(scatterTarget);
       }
 
-      // 3. 绘制 95% CI 置信带闭合多边形与回归拟合曲线（绝不向底部 X 轴填充面积！）
+      // 3. 绘制 95% CI 置信带闭合多边形和回归拟合曲线（支持 240ms 平滑连续形变，绝不向底部 X 轴填充面积）
       if (isSingle) {
-        const yStr = samples[0].fitY.toFixed(1);
-        patchAttr(fitPath, 'd', `M ${plotLeft.toFixed(1)} ${yStr} L ${plotRight.toFixed(1)} ${yStr}`);
+        const yVal = samples[0].fitY;
+        const yStr = yVal.toFixed(1);
+        const flatCurveD = `M ${plotLeft.toFixed(1)} ${yStr} L ${plotRight.toFixed(1)} ${yStr}`;
         patchAttr(ciBandPath, 'd', '');
         patchAttr(olsLine, 'hidden', true);
+        const flatGrid = Array.from({ length: 64 }, (_, gi) => ({
+          x: plotLeft + (gi / 63) * plotSpanX,
+          fitY: yVal,
+          lowY: yVal,
+          highY: yVal,
+        }));
+        fitMorphCtrl.morphFits({
+          items: [
+            {
+              key: 'single',
+              gridPts: flatGrid,
+              curveEl: fitPath,
+              bandEl: null,
+              olsEl: null,
+              olsCoords: null,
+              finalCurveD: flatCurveD,
+              finalBandD: '',
+            },
+          ],
+          skipMorph: _skipMorph,
+        });
       } else {
         const gridPts = pubFit.grid.map((g) => ({
           x: mapX(g.x),
@@ -18704,14 +19601,10 @@ function createModelFitChart() {
           highY: mapY(g.ciHigh),
         }));
 
-        patchAttr(
-          fitPath,
-          'd',
-          buildPolylinePath(gridPts.map((p) => ({ x: p.x, y: p.fitY })))
-        );
-
+        const curveD = buildPolylinePath(gridPts.map((p) => ({ x: p.x, y: p.fitY })));
+        let bandD = '';
         if (samples.length >= 3) {
-          let bandD = `M ${gridPts[0].x.toFixed(1)} ${gridPts[0].highY.toFixed(1)}`;
+          bandD = `M ${gridPts[0].x.toFixed(1)} ${gridPts[0].highY.toFixed(1)}`;
           for (let i = 1; i < gridPts.length; i++) {
             bandD += ` L ${gridPts[i].x.toFixed(1)} ${gridPts[i].highY.toFixed(1)}`;
           }
@@ -18719,21 +19612,39 @@ function createModelFitChart() {
             bandD += ` L ${gridPts[i].x.toFixed(1)} ${gridPts[i].lowY.toFixed(1)}`;
           }
           bandD += ' Z';
-          patchAttr(ciBandPath, 'd', bandD);
         } else {
           patchAttr(ciBandPath, 'd', '');
         }
 
         const showOlsRef = samples.length >= 6;
         patchAttr(olsLine, 'hidden', !showOlsRef);
+        let olsCoords = null;
         if (showOlsRef) {
           const olsStartVal = clampValue(pubFit.intercept + pubFit.slope * xMin, minBound, maxBound);
           const olsEndVal = clampValue(pubFit.intercept + pubFit.slope * xMax, minBound, maxBound);
-          patchAttr(olsLine, 'x1', plotLeft.toFixed(1));
-          patchAttr(olsLine, 'y1', mapY(olsStartVal).toFixed(1));
-          patchAttr(olsLine, 'x2', plotRight.toFixed(1));
-          patchAttr(olsLine, 'y2', mapY(olsEndVal).toFixed(1));
+          olsCoords = {
+            x1: plotLeft,
+            y1: mapY(olsStartVal),
+            x2: plotRight,
+            y2: mapY(olsEndVal),
+          };
         }
+
+        fitMorphCtrl.morphFits({
+          items: [
+            {
+              key: 'single',
+              gridPts,
+              curveEl: fitPath,
+              bandEl: bandD ? ciBandPath : null,
+              olsEl: showOlsRef ? olsLine : null,
+              olsCoords,
+              finalCurveD: curveD,
+              finalBandD: bandD,
+            },
+          ],
+          skipMorph: _skipMorph,
+        });
       }
     }
 
@@ -18762,7 +19673,7 @@ function createModelFitChart() {
     if (hoveredIdx >= samples.length) {
       clearHover();
     } else if (hoveredIdx >= 0) {
-      showHoverAt(hoveredIdx);
+      showHoverAt(hoveredIdx, lastFitPointer, { forceRefresh: true });
     }
 
     return { sampleCount: samples.length, summaryBadge };
@@ -18770,7 +19681,7 @@ function createModelFitChart() {
 
   return { el: rootEl, update, destroy };
 }
-return { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, computeLinearFit, computePublicationFit, createSessionLineChart, createModelFitChart };
+return { createSessionLineChart, createModelFitChart };
 })();
 
 // --- src/registries/metricRegistry.js ---
@@ -21051,6 +21962,44 @@ function buildHorizontalTangentSpline(pts) {
   return d;
 }
 
+const HOVER_SLOT_COUNT = 96;
+const MAX_SVG_COLUMN_BUCKETS = 96;
+
+/**
+ * Downsamples dense sub-pixel SVG points (e.g. 12s poll bursts) into `<= maxCols`
+ * min/max-preserving visual knots so curve rasterization and morphing stay crisp and fast,
+ * while `rawPoints` remain intact for exact timestamp interpolation.
+ */
+function simplifySvgPointsForRender(svgPts, leftX, plotW, maxCols = MAX_SVG_COLUMN_BUCKETS) {
+  if (svgPts.length <= maxCols) return svgPts;
+  const colW = Math.max(1, plotW) / maxCols;
+  const out = [svgPts[0]];
+  let idx = 1;
+  const endIdx = svgPts.length - 1;
+  while (idx < endIdx) {
+    const col = Math.floor((svgPts[idx].x - leftX) / colW);
+    let minPt = svgPts[idx];
+    let maxPt = svgPts[idx];
+    let j = idx + 1;
+    while (j < endIdx && Math.floor((svgPts[j].x - leftX) / colW) === col) {
+      const cand = svgPts[j];
+      if (cand.y < minPt.y) minPt = cand;
+      if (cand.y > maxPt.y) maxPt = cand;
+      j += 1;
+    }
+    if (minPt === maxPt) {
+      out.push(minPt);
+    } else if (minPt.x <= maxPt.x) {
+      out.push(minPt, maxPt);
+    } else {
+      out.push(maxPt, minPt);
+    }
+    idx = j;
+  }
+  out.push(svgPts[endIdx]);
+  return out;
+}
+
 /**
  * Computes tight, integer-aligned `[yMin, yMid, yMax]` bounds (`0..100%`) around
  * observed `[dataMin, dataMax]` so small-to-moderate quota changes use the full
@@ -21420,6 +22369,7 @@ const AccountQuotaTrendCard = defineComponent({
       options: [],
       onUpdateModelValue: (val) => {
         selectedAccountEmail = String(val || '').trim().toLowerCase();
+        hideHover();
         renderChart();
       },
     });
@@ -21431,6 +22381,7 @@ const AccountQuotaTrendCard = defineComponent({
       options: [{ value: 'all', label: t('cons.cyclePoolAll') }],
       onUpdateModelValue: (val) => {
         selectedPool = val || 'all';
+        hideHover();
         renderChart();
       },
     });
@@ -21442,6 +22393,7 @@ const AccountQuotaTrendCard = defineComponent({
       onUpdateModelValue: (val) => {
         selectedWin = val === 'weekly' ? 'weekly' : '5h';
         winSwitch.setProps({ modelValue: selectedWin, options: getQuotaWindowOptions() });
+        hideHover();
         renderChart();
       },
     });
@@ -21457,6 +22409,7 @@ const AccountQuotaTrendCard = defineComponent({
           endPicker.setValue(draftEndMs);
         }
         rangeSwitch.setProps({ modelValue: selectedRange, options: getTimeRangeOptions() });
+        hideHover();
         renderChart();
       },
     });
@@ -21603,16 +22556,41 @@ const AccountQuotaTrendCard = defineComponent({
       'div',
       {
         className: 'trend-plot-stage',
-        onPointermove: handlePointerMove,
-        onPointerleave: hideHover,
+        onMousemove: handlePointerMove,
+        onMouseleave: hideHover,
       },
-      [svg, tooltipEl]
+      [svg]
     );
     const chartWrap = h('div', { className: 'trend-chart-wrap' }, [
       plotStage,
       xAxisEl,
       legendRowEl,
+      tooltipEl,
     ]);
+
+    const tooltipCtrl = createFloatingChartTooltipController({
+      containerEl: chartWrap,
+      tooltipEl,
+      defaultTipWidth: 204,
+      defaultTipHeight: 78,
+      defaultViewWidth: 460,
+      defaultViewHeight: VIEW_H,
+    });
+    const seriesMorphCtrl = createMultiSeriesCurveMorphController();
+    const seriesNodePoolByKey = new Map();
+    const hoverDotPoolByKey = new Map();
+    let xTickElements = [];
+    let hoveredSlotIdx = -1;
+    let lastActiveDots = [];
+    let lastFallbackX = 0;
+    let lastFallbackY = 0;
+    let lastSizeKey = '';
+    let lastTipTimeStr = '';
+    let lastTipWinStr = '';
+    let lastHoveredTickIdx = -1;
+    let lastPointer = null;
+    let cachedSvgRect = null;
+    let lastPlotSig = '';
 
     const rootEl = h('section', { className: 'panel account-quota-trend-panel' }, [
       h('div', { className: 'panel-header account-trend-toprow' }, [
@@ -21638,10 +22616,29 @@ const AccountQuotaTrendCard = defineComponent({
       return BOTTOM_Y - ((clamped - plottedYScale.yMin) / plottedYScale.span) * SPAN_Y;
     }
 
+    function syncHoveredTickClass(activeTickIdx) {
+      if (activeTickIdx === lastHoveredTickIdx) return;
+      lastHoveredTickIdx = activeTickIdx;
+      for (let i = 0; i < xTickElements.length; i++) {
+        patchClasses(xTickElements[i], { 'is-hovered': i === activeTickIdx });
+      }
+    }
+
     function hideHover() {
+      cachedSvgRect = null;
+      hoveredSlotIdx = -1;
+      lastActiveDots = [];
+      lastTipTimeStr = '';
+      lastTipWinStr = '';
+      lastPointer = null;
+      tooltipCtrl.hide();
       hoverLine.setAttribute('hidden', '');
       hoverDotsGroup.setAttribute('hidden', '');
-      patchAttr(tooltipEl, 'hidden', true);
+      for (const dot of hoverDotPoolByKey.values()) {
+        dot.setAttribute('hidden', '');
+        patchClasses(dot, { 'is-tracking': false });
+      }
+      syncHoveredTickClass(-1);
     }
 
     function sampleSeriesValueAt(points, targetMs) {
@@ -21665,75 +22662,159 @@ const AccountQuotaTrendCard = defineComponent({
       return a.val + (b.val - a.val) * ((targetMs - a.ts) / span);
     }
 
+    function showHoverAtSlot(slotIdx, pointer = null, { forceRefresh = false } = {}) {
+      if (!plottedSeries.length || !(plottedEndMs > plottedStartMs) || slotIdx < 0) {
+        hideHover();
+        return;
+      }
+      const clampedSlot = Math.max(0, Math.min(HOVER_SLOT_COUNT, slotIdx));
+      const wasHidden = tooltipEl.hasAttribute('hidden');
+      const changedSlot = forceRefresh || wasHidden || clampedSlot !== hoveredSlotIdx;
+      hoveredSlotIdx = clampedSlot;
+      if (pointer) lastPointer = pointer;
+
+      if (changedSlot) {
+        const u = clampedSlot / HOVER_SLOT_COUNT;
+        const plotW = Math.max(20, viewW - LEFT_X - RIGHT_PAD);
+        const clampedX = LEFT_X + u * plotW;
+        const targetMs = Math.round(plottedStartMs + u * (plottedEndMs - plottedStartMs));
+
+        hoverLine.setAttribute('x1', clampedX.toFixed(1));
+        hoverLine.setAttribute('x2', clampedX.toFixed(1));
+
+        const tipItems = [];
+        const activeDots = [];
+        let sumY = 0;
+        const usedKeys = new Set();
+
+        for (let i = 0; i < plottedSeries.length; i++) {
+          const s = plottedSeries[i];
+          const val = sampleSeriesValueAt(s.rawPoints, targetMs);
+          if (val === null) continue;
+          usedKeys.add(s.poolKey);
+          const y = valueToSvgY(val);
+          sumY += y;
+
+          let dot = hoverDotPoolByKey.get(s.poolKey);
+          if (!dot) {
+            dot = document.createElementNS(SVG_NS, 'circle');
+            dot.setAttribute('class', 'trend-hover-dot');
+            dot.setAttribute('r', '3.2');
+            dot.style.fill = 'var(--surface-panel)';
+            hoverDotPoolByKey.set(s.poolKey, dot);
+            hoverDotsGroup.appendChild(dot);
+          }
+          if (dot._lastColor !== s.color) {
+            dot._lastColor = s.color;
+            dot.style.stroke = s.color;
+          }
+          dot.setAttribute('cx', clampedX.toFixed(1));
+          dot.setAttribute('cy', y.toFixed(1));
+          if (dot.hasAttribute('hidden')) dot.removeAttribute('hidden');
+          activeDots.push(dot);
+          tipItems.push({ key: s.poolKey, label: s.label, color: s.color, val });
+        }
+
+        for (const [k, dot] of hoverDotPoolByKey.entries()) {
+          if (!usedKeys.has(k) && !dot.hasAttribute('hidden')) {
+            dot.setAttribute('hidden', '');
+            patchClasses(dot, { 'is-tracking': false });
+          }
+        }
+
+        if (tipItems.length === 0) {
+          hideHover();
+          return;
+        }
+        if (hoverLine.hasAttribute('hidden')) hoverLine.removeAttribute('hidden');
+        if (hoverDotsGroup.hasAttribute('hidden')) hoverDotsGroup.removeAttribute('hidden');
+
+        if (xTickElements.length > 1) {
+          syncHoveredTickClass(Math.round(u * (xTickElements.length - 1)));
+        }
+
+        const nextTimeStr = formatHoverTimestamp(targetMs);
+        if (nextTimeStr !== lastTipTimeStr) {
+          lastTipTimeStr = nextTimeStr;
+          patchText(tipTimeEl, nextTimeStr);
+        }
+        const nextWinStr = t(
+          selectedWin === 'weekly' ? 'settings.account.winWeekly' : 'settings.account.win5h'
+        );
+        if (nextWinStr !== lastTipWinStr) {
+          lastTipWinStr = nextWinStr;
+          patchText(tipWinEl, nextWinStr);
+        }
+
+        patchKeyedList(tipRowsHost, tipItems, {
+          keyFn: (it) => it.key,
+          sigFn: (it) => `${it.label}:${it.val.toFixed(1)}`,
+          createRow: () => {
+            const sw = h('span', { className: 'dot-swatch' });
+            const nm = h('span', { className: 'account-trend-tip-name' });
+            const vl = h('strong', { className: 'text-mono' });
+            const row = h('div', { className: 'account-trend-tip-row' }, [
+              h('span', { className: 'legend-left' }, [sw, nm]),
+              vl,
+            ]);
+            return { el: row, refs: { sw, nm, vl } };
+          },
+          updateRow: (r, it) => {
+            if (r.sw._lastBg !== it.color) {
+              r.sw._lastBg = it.color;
+              r.sw.style.background = it.color;
+            }
+            patchText(r.nm, it.label);
+            patchText(r.vl, `${+it.val.toFixed(1)}%`);
+          },
+        });
+
+        const wrapRect = tooltipCtrl.getWrapRect();
+        const wrapW =
+          wrapRect && wrapRect.width > 0
+            ? wrapRect.width
+            : Number(chartWrap.clientWidth || viewW || 460);
+        lastFallbackX = (clampedX / Math.max(1, viewW)) * wrapW;
+        lastFallbackY = sumY / activeDots.length + 6;
+        lastActiveDots = activeDots;
+        lastSizeKey = `rows:${tipItems.length}`;
+      }
+
+      tooltipCtrl.show({
+        fallbackX: lastFallbackX,
+        fallbackY: lastFallbackY,
+        pointer: pointer || lastPointer,
+        trackedDots: lastActiveDots,
+        viewWidth: viewW,
+        viewHeight: VIEW_H,
+        sizeKey: lastSizeKey,
+      });
+    }
+
     function handlePointerMove(ev) {
       if (!plottedSeries.length || !(plottedEndMs > plottedStartMs)) {
         hideHover();
         return;
       }
-      const rect = svg.getBoundingClientRect?.();
+      if (!cachedSvgRect) {
+        cachedSvgRect = svg.getBoundingClientRect?.() || null;
+      }
+      const rect = cachedSvgRect;
       const widthPx = Number(rect?.width || viewW);
-      if (!(widthPx > 0)) return;
+      if (!(widthPx > 0)) {
+        cachedSvgRect = null;
+        return;
+      }
       const offsetX = Number(ev.clientX || 0) - Number(rect?.left || 0);
       const svgX = (offsetX / widthPx) * viewW;
       const plotW = Math.max(20, viewW - LEFT_X - RIGHT_PAD);
       const u = Math.max(0, Math.min(1, (svgX - LEFT_X) / plotW));
-      const clampedX = LEFT_X + u * plotW;
-      const targetMs = Math.round(plottedStartMs + u * (plottedEndMs - plottedStartMs));
-
-      hoverLine.setAttribute('x1', clampedX.toFixed(1));
-      hoverLine.setAttribute('x2', clampedX.toFixed(1));
-
-      while (hoverDotsGroup.firstChild) hoverDotsGroup.removeChild(hoverDotsGroup.firstChild);
-      const tipItems = [];
-      for (let i = 0; i < plottedSeries.length; i++) {
-        const s = plottedSeries[i];
-        const val = sampleSeriesValueAt(s.rawPoints, targetMs);
-        if (val === null) continue;
-        const y = valueToSvgY(val);
-        const dot = document.createElementNS(SVG_NS, 'circle');
-        dot.setAttribute('cx', clampedX.toFixed(1));
-        dot.setAttribute('cy', y.toFixed(1));
-        dot.setAttribute('r', '3.2');
-        dot.setAttribute('fill', 'var(--surface-panel)');
-        dot.setAttribute('stroke', s.color);
-        dot.setAttribute('stroke-width', '1.8');
-        hoverDotsGroup.appendChild(dot);
-        tipItems.push({ key: s.poolKey, label: s.label, color: s.color, val });
-      }
-      if (tipItems.length === 0) {
-        hideHover();
-        return;
-      }
-      hoverLine.removeAttribute('hidden');
-      hoverDotsGroup.removeAttribute('hidden');
-
-      patchText(tipTimeEl, formatHoverTimestamp(targetMs));
-      patchText(tipWinEl, t(selectedWin === 'weekly' ? 'settings.account.winWeekly' : 'settings.account.win5h'));
-      patchKeyedList(tipRowsHost, tipItems, {
-        keyFn: (it) => it.key,
-        sigFn: (it) => `${it.label}:${it.val.toFixed(1)}`,
-        createRow: () => {
-          const sw = h('span', { className: 'dot-swatch' });
-          const nm = h('span', { className: 'account-trend-tip-name' });
-          const vl = h('strong', { className: 'text-mono' });
-          const row = h('div', { className: 'account-trend-tip-row' }, [
-            h('span', { className: 'legend-left' }, [sw, nm]),
-            vl,
-          ]);
-          return { el: row, refs: { sw, nm, vl } };
-        },
-        updateRow: (r, it) => {
-          r.sw.style.background = it.color;
-          patchText(r.nm, it.label);
-          patchText(r.vl, `${+it.val.toFixed(1)}%`);
-        },
-      });
-
-      const pctX = (clampedX / viewW) * 100;
-      const shift = pctX < 24 ? '0%' : pctX > 76 ? '-100%' : '-50%';
-      patchStyleVar(tooltipEl, '--tip-x', `${pctX.toFixed(1)}%`);
-      patchStyleVar(tooltipEl, '--tip-shift', shift);
-      patchAttr(tooltipEl, 'hidden', false);
+      const slotIdx = Math.round(u * HOVER_SLOT_COUNT);
+      const pointer =
+        Number.isFinite(Number(ev?.clientX)) && Number.isFinite(Number(ev?.clientY))
+          ? { clientX: Number(ev.clientX), clientY: Number(ev.clientY) }
+          : null;
+      showHoverAtSlot(slotIdx, pointer);
     }
 
     function resolveTargetAccountEmail() {
@@ -21817,10 +22898,9 @@ const AccountQuotaTrendCard = defineComponent({
       );
     }
 
-    function renderChart() {
-      hideHover();
+    function renderChart({ skipMorph = false } = {}) {
       const nowMs = Date.now();
-      void getEffectiveLocale();
+      const locale = getEffectiveLocale();
 
       patchText(cardTitleText, t('settings.account.trendTitle'));
       patchText(rangeToEl, t('cons.rangeTo'));
@@ -21900,6 +22980,9 @@ const AccountQuotaTrendCard = defineComponent({
       patchAttr(emptyStateEl, 'hidden', hasPlot);
       if (!hasPlot) {
         plottedSeries = [];
+        lastPlotSig = '';
+        seriesMorphCtrl.reset();
+        hideHover();
         patchText(emptyStateEl, t('settings.account.trendEmpty'));
         return;
       }
@@ -21915,9 +22998,8 @@ const AccountQuotaTrendCard = defineComponent({
         gl.setAttribute('x2', String(viewW));
       }
 
-      plottedSeries = rawBuilt.map((rb) => ({
-        ...rb,
-        svgPts: rb.rawPoints.map((sp) => {
+      plottedSeries = rawBuilt.map((rb) => {
+        const fullSvgPts = rb.rawPoints.map((sp) => {
           const u = Math.max(0, Math.min(1, (sp.ts - plottedStartMs) / spanMs));
           return {
             x: LEFT_X + u * plotW,
@@ -21925,50 +23007,112 @@ const AccountQuotaTrendCard = defineComponent({
             val: sp.val,
             ts: sp.ts,
           };
-        }),
-      }));
+        });
+        return {
+          ...rb,
+          svgPts: simplifySvgPointsForRender(fullSvgPts, LEFT_X, plotW),
+        };
+      });
 
-      while (seriesGroup.firstChild) seriesGroup.removeChild(seriesGroup.firstChild);
-      for (let i = 0; i < plottedSeries.length; i++) {
-        const s = plottedSeries[i];
-        const lineD = buildHorizontalTangentSpline(s.svgPts);
-        if (s.svgPts.length >= 2) {
-          const first = s.svgPts[0];
-          const last = s.svgPts[s.svgPts.length - 1];
-          const areaEl = document.createElementNS(SVG_NS, 'path');
-          areaEl.setAttribute(
-            'd',
-            `${lineD} L ${last.x.toFixed(1)} ${BOTTOM_Y} L ${first.x.toFixed(1)} ${BOTTOM_Y} Z`
-          );
-          if (plottedSeries.length === 1) {
-            stopTop.setAttribute('stop-color', s.color);
-            stopBot.setAttribute('stop-color', s.color);
-            areaEl.setAttribute('fill', `url(#${gradId})`);
-          } else {
-            areaEl.setAttribute('class', 'sstep-multi-area');
-            areaEl.style.setProperty('--sstep-series-color', s.color);
+      const plotSig =
+        `${locale}|${viewW}|${targetEmail}|${selectedWin}|${selectedRange}|${selectedPool}|${plottedYScale.yMin}-${plottedYScale.yMax}|` +
+        plottedSeries
+          .map(
+            (s) =>
+              `${s.poolKey}:${s.svgPts.length}:${s.svgPts[0]?.x.toFixed(1)}:${s.svgPts[0]?.y.toFixed(1)}:${s.svgPts[s.svgPts.length - 1]?.x.toFixed(1)}:${s.svgPts[s.svgPts.length - 1]?.y.toFixed(1)}`
+          )
+          .join('|');
+
+      if (plotSig !== lastPlotSig) {
+        lastPlotSig = plotSig;
+        const activePoolKeys = new Set();
+        const morphItems = [];
+
+        for (let i = 0; i < plottedSeries.length; i++) {
+          const s = plottedSeries[i];
+          activePoolKeys.add(s.poolKey);
+          let nodes = seriesNodePoolByKey.get(s.poolKey);
+          if (!nodes) {
+            const areaEl = document.createElementNS(SVG_NS, 'path');
+            const lineEl = document.createElementNS(SVG_NS, 'path');
+            lineEl.setAttribute('fill', 'none');
+            lineEl.setAttribute('stroke-width', '1.9');
+            lineEl.setAttribute('stroke-linecap', 'round');
+            const endDotEl = document.createElementNS(SVG_NS, 'circle');
+            endDotEl.setAttribute('r', '2.7');
+            nodes = { areaEl, lineEl, endDotEl };
+            seriesNodePoolByKey.set(s.poolKey, nodes);
           }
-          seriesGroup.appendChild(areaEl);
-        }
-        const pathEl = document.createElementNS(SVG_NS, 'path');
-        pathEl.setAttribute('d', lineD);
-        pathEl.setAttribute('fill', 'none');
-        pathEl.setAttribute('stroke', s.color);
-        pathEl.setAttribute('stroke-width', '1.9');
-        pathEl.setAttribute('stroke-linecap', 'round');
-        seriesGroup.appendChild(pathEl);
 
-        const endPt = s.svgPts[s.svgPts.length - 1];
-        const endDot = document.createElementNS(SVG_NS, 'circle');
-        endDot.setAttribute('cx', endPt.x.toFixed(1));
-        endDot.setAttribute('cy', endPt.y.toFixed(1));
-        endDot.setAttribute('r', '2.7');
-        endDot.setAttribute('fill', s.color);
-        seriesGroup.appendChild(endDot);
+          const lineD = buildHorizontalTangentSpline(s.svgPts);
+          let areaD = '';
+          if (s.svgPts.length >= 2) {
+            const first = s.svgPts[0];
+            const last = s.svgPts[s.svgPts.length - 1];
+            areaD = `${lineD} L ${last.x.toFixed(1)} ${BOTTOM_Y} L ${first.x.toFixed(1)} ${BOTTOM_Y} Z`;
+            if (plottedSeries.length === 1) {
+              stopTop.setAttribute('stop-color', s.color);
+              stopBot.setAttribute('stop-color', s.color);
+              nodes.areaEl.removeAttribute('class');
+              nodes.areaEl.style.removeProperty('--sstep-series-color');
+              nodes.areaEl.setAttribute('fill', `url(#${gradId})`);
+            } else {
+              nodes.areaEl.removeAttribute('fill');
+              nodes.areaEl.setAttribute('class', 'sstep-multi-area');
+              nodes.areaEl.style.setProperty('--sstep-series-color', s.color);
+            }
+            nodes.areaEl.removeAttribute('hidden');
+          } else {
+            nodes.areaEl.setAttribute('d', '');
+            nodes.areaEl.setAttribute('hidden', '');
+          }
+
+          nodes.lineEl.setAttribute('stroke', s.color);
+          nodes.endDotEl.setAttribute('fill', s.color);
+
+          seriesGroup.appendChild(nodes.areaEl);
+          seriesGroup.appendChild(nodes.lineEl);
+          seriesGroup.appendChild(nodes.endDotEl);
+
+          const endPt = s.svgPts[s.svgPts.length - 1];
+          morphItems.push({
+            key: s.poolKey,
+            nextSegs: pointsToNormalizedCubicSegs(s.svgPts, BOTTOM_Y, {
+              leftX: LEFT_X,
+              spanX: plotW,
+              tension: 0.38,
+            }),
+            lineEl: nodes.lineEl,
+            areaEl: areaD ? nodes.areaEl : null,
+            endDotEl: nodes.endDotEl,
+            endX: endPt.x,
+            endY: endPt.y,
+            finalLineD: lineD,
+            finalAreaD: areaD,
+          });
+        }
+
+        for (const [k, nodes] of seriesNodePoolByKey.entries()) {
+          if (!activePoolKeys.has(k)) {
+            nodes.areaEl.remove();
+            nodes.lineEl.remove();
+            nodes.endDotEl.remove();
+          }
+        }
+
+        seriesMorphCtrl.morphSeries({
+          items: morphItems,
+          leftX: LEFT_X,
+          spanX: plotW,
+          bottomY: BOTTOM_Y,
+          skipMorph,
+        });
       }
 
-      // Edge-to-edge X-axis ticks (`0% .. 100%`)
+      // Edge-to-edge X-axis ticks (`0% .. 100%`) with active hover highlight & click-to-inspect
       const tickCount = 5;
+      const activeTickIdx =
+        hoveredSlotIdx >= 0 ? Math.round((hoveredSlotIdx / HOVER_SLOT_COUNT) * (tickCount - 1)) : -1;
       const ticks = [];
       for (let k = 0; k < tickCount; k++) {
         const ratio = k / (tickCount - 1);
@@ -21976,25 +23120,37 @@ const AccountQuotaTrendCard = defineComponent({
         const leftPct = ratio * 100;
         ticks.push({
           idx: k,
+          slotIdx: Math.round(ratio * HOVER_SLOT_COUNT),
           leftPct,
           label: formatAxisTickTime(tickMs, spanMs),
+          fullTitle: formatHoverTimestamp(tickMs),
           edge: k === 0 ? 'start' : k === tickCount - 1 ? 'end' : '',
+          isHovered: k === activeTickIdx,
         });
       }
+      xTickElements = [];
+      lastHoveredTickIdx = activeTickIdx;
       patchKeyedList(xAxisEl, ticks, {
         keyFn: (tk) => tk.idx,
-        sigFn: (tk) => `${tk.leftPct.toFixed(1)}:${tk.label}:${tk.edge}`,
+        sigFn: (tk) => `${tk.leftPct.toFixed(1)}:${tk.label}:${tk.edge}:${tk.isHovered}`,
         createRow: () => {
           const el = h('span', { className: 'trend-x-tick text-mono' });
           return { el, refs: { el } };
         },
         updateRow: (r, tk) => {
           patchText(r.el, tk.label);
+          patchAttr(r.el, 'title', tk.fullTitle);
           patchStyleVar(r.el, '--tick-x', `${tk.leftPct.toFixed(2)}%`);
           patchClasses(r.el, {
             'is-start': tk.edge === 'start',
             'is-end': tk.edge === 'end',
+            'is-hovered': tk.isHovered,
           });
+          r.el.onclick = () => {
+            lastPointer = null;
+            showHoverAtSlot(tk.slotIdx, null, { forceRefresh: true });
+          };
+          xTickElements[tk.idx] = r.el;
         },
       });
 
@@ -22014,21 +23170,29 @@ const AccountQuotaTrendCard = defineComponent({
           patchText(r.vl, `${+s.latestVal.toFixed(1)}%`);
         },
       });
+
+      if (hoveredSlotIdx >= 0) {
+        showHoverAtSlot(hoveredSlotIdx, lastPointer, { forceRefresh: true });
+      }
     }
 
     let resizeObs = null;
     if (typeof ResizeObserver === 'function') {
       resizeObs = new ResizeObserver((entries) => {
+        cachedSvgRect = null;
+        tooltipCtrl.invalidateRects();
         const w = Math.floor(Number(entries?.[0]?.contentRect?.width || 0));
         if (w >= 180 && Math.abs(w - viewW) >= 2) {
           viewW = w;
-          renderChart();
+          renderChart({ skipMorph: true });
         }
       });
       resizeObs.observe(plotStage);
     }
 
     onCleanup(() => {
+      seriesMorphCtrl.cancel();
+      tooltipCtrl.destroy();
       resizeObs?.disconnect();
       accountSelect.destroy();
       poolSelect.destroy();
@@ -22046,7 +23210,7 @@ const AccountQuotaTrendCard = defineComponent({
     renderChart();
     return {
       el: rootEl,
-      refs: { update, refreshLabels: renderChart },
+      refs: { update, refreshLabels: () => renderChart() },
     };
   },
 });
@@ -23782,6 +24946,28 @@ function patchCapsuleOdometerText(
   return true;
 }
 
+function isValidTtftSec(val) {
+  return val != null && Number.isFinite(Number(val)) && Number(val) >= 0;
+}
+
+function findFallbackRecentStepTtft(steps) {
+  if (!Array.isArray(steps) || steps.length === 0) return null;
+  const firstIdx = Number(steps[0]?.stepIndex ?? 0);
+  const lastIdx = Number(steps[steps.length - 1]?.stepIndex ?? 0);
+  if (firstIdx >= lastIdx) {
+    for (let i = 0; i < steps.length; i += 1) {
+      const candidate = steps[i]?.ttftSec;
+      if (isValidTtftSec(candidate)) return Number(candidate);
+    }
+    return null;
+  }
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const candidate = steps[i]?.ttftSec;
+    if (isValidTtftSec(candidate)) return Number(candidate);
+  }
+  return null;
+}
+
 /**
  * Compute shared context ring + 1..5 capsule slot metric payload from telemetry & scoped conversation.
  */
@@ -23804,11 +24990,29 @@ function buildCapsuleSlotContext(
   ).toFixed(2);
 
   const isRunning = Boolean(aggregated?.isRunning || activeConv.isRunning);
+  const convId = String(capActive.cascadeId || activeConv.cascadeId || '')
+    .trim()
+    .toLowerCase();
+  const scopeId = String(scopedConv?.agentId || aggregated?.agentId || 'main');
+  const conversationKey = convId ? `${convId}::${scopeId}` : '';
+  const stepCount = Math.max(0, Number(capActive.stepCount ?? activeConv.stepCount ?? 0));
+
+  const rawTtft =
+    scopedConv?.latestTtftSec ?? aggregated?.latestTtftSec ?? activeConv.latestTtftSec ?? null;
+  const fallbackTtft = isValidTtftSec(rawTtft)
+    ? Number(rawTtft)
+    : scopedConv?.lastKnownTtftSec ??
+      findFallbackRecentStepTtft(scopedConv?.recentSteps) ??
+      aggregated?.lastKnownTtftSec ??
+      activeConv.lastKnownTtftSec ??
+      findFallbackRecentStepTtft(activeConv.recentSteps);
+  const resolvedTtft = isValidTtftSec(fallbackTtft) ? Number(fallbackTtft) : null;
+
   const capInTok = Math.max(0, Number(capActive.inputTokens || 0));
   const capCacheTok = Math.max(0, Number(capActive.cacheReadTokens || 0));
   const capOutTok = Math.max(0, Number(capActive.outputTokens || 0));
   const sessionTokens =
-    Number(capActive.stepCount || 0) > 0 ||
+    stepCount > 0 ||
     capActive.totalTokens != null ||
     capInTok + capCacheTok + capOutTok > 0
       ? Math.max(0, Number(capActive.totalTokens ?? capInTok + capCacheTok + capOutTok))
@@ -23816,12 +25020,14 @@ function buildCapsuleSlotContext(
 
   return {
     hasTelemetry: true,
+    conversationKey,
+    stepCount,
     usedPct,
     dashOffset,
     isRunning,
     tps: scopedConv?.latestTokPerSec ?? aggregated?.latestTokPerSec ?? activeConv.latestTokPerSec ?? null,
     avgTps: scopedConv?.avgTokPerSec ?? aggregated?.avgTokPerSec ?? activeConv.avgTokPerSec ?? null,
-    ttft: scopedConv?.latestTtftSec ?? aggregated?.latestTtftSec ?? activeConv.latestTtftSec ?? null,
+    ttft: resolvedTtft,
     stepCost:
       scopedConv?.latestStepCostUsd ??
       aggregated?.latestStepCostUsd ??
@@ -23951,6 +25157,7 @@ function createCapsuleSlotNode(slotIndex, initialMetric) {
     textSpan,
     ringMounted: isCtx,
     prefixMounted: false,
+    heldTtft: null,
   };
 }
 
@@ -23963,7 +25170,25 @@ function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCtx) {
   for (let i = 0; i < capsuleSlots.length; i += 1) {
     const slot = capsuleSlots[i];
     const metricKey = i < slotKeys.length ? slotKeys[i] : 'none';
-    const pres = resolveCapsuleMetricPresentation(metricKey, slotCtx, RING_CIRCUMFERENCE);
+    if (!slotCtx?.hasTelemetry || metricKey !== 'ttft') {
+      slot.heldTtft = null;
+    }
+    let pres = resolveCapsuleMetricPresentation(metricKey, slotCtx, RING_CIRCUMFERENCE);
+    if (metricKey === 'ttft' && slotCtx?.hasTelemetry) {
+      const convKey = String(slotCtx.conversationKey || '');
+      if (isValidTtftSec(slotCtx.ttft)) {
+        slot.heldTtft = convKey ? { conversationKey: convKey, pres } : null;
+      } else if (
+        convKey &&
+        slot.heldTtft &&
+        slot.heldTtft.conversationKey === convKey &&
+        (slotCtx.isRunning || Number(slotCtx.stepCount) > 0)
+      ) {
+        pres = { ...slot.heldTtft.pres, running: Boolean(slotCtx.isRunning) };
+      } else {
+        slot.heldTtft = null;
+      }
+    }
     if (pres.hidden) {
       patchAttr(slot.el, 'hidden', true);
       patchAttr(slot.el, 'data-metric', 'none');

@@ -22,6 +22,12 @@ import {
 import { SVG_NS } from '../../icons/SvgIcon.js';
 import { getEffectiveLocale, isEnglishLocale, t } from '../../i18n/index.js';
 import { createConsumptionBreakdownContent } from '../ui/ConsumptionTooltipContent.js';
+import {
+  createCubicCurveMorphController,
+  createFloatingChartTooltipController,
+  createReadyClassArmer,
+  pointsToNormalizedCubicSegs,
+} from './chartMotion.js';
 
 /** 超过该自然日天数（> 90 天）时，趋势图切换为类 GitHub 每日小格子热力图 */
 export const HEATMAP_DAYS_THRESHOLD = 90;
@@ -51,175 +57,6 @@ function buildSmoothSplinePath(points) {
     d += ` C ${cpx1.toFixed(1)} ${p0.y.toFixed(1)}, ${cpx2.toFixed(1)} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
   }
   return d;
-}
-
-/**
- * 将采样点数组转为归一化横轴 `u` (`0..1`) 上的精确三次贝塞尔分段链，
- * 控制点严格保持跟 `buildSmoothSplinePath` 一致的 `0.42` 水平张力。
- *
- * @param {Array<{ y: number }>} pts
- * @param {number} bottomY
- * @returns {Array<{ u0: number, y0: number, cu1: number, cy1: number, cu2: number, cy2: number, u3: number, y3: number }>}
- */
-function pointsToNormalizedCubicSegs(pts, bottomY) {
-  const n = pts.length;
-  if (n === 0) {
-    return [
-      { u0: 0, y0: bottomY, cu1: 0.42, cy1: bottomY, cu2: 0.58, cy2: bottomY, u3: 1, y3: bottomY },
-    ];
-  }
-  if (n === 1) {
-    const py = pts[0].y;
-    if (Math.abs(py - bottomY) < 0.01) {
-      return [
-        { u0: 0, y0: bottomY, cu1: 0.42, cy1: bottomY, cu2: 0.58, cy2: bottomY, u3: 1, y3: bottomY },
-      ];
-    }
-    return [
-      { u0: 0, y0: bottomY, cu1: 0.21, cy1: bottomY, cu2: 0.29, cy2: py, u3: 0.5, y3: py },
-      { u0: 0.5, y0: py, cu1: 0.71, cy1: py, cu2: 0.79, cy2: bottomY, u3: 1, y3: bottomY },
-    ];
-  }
-  const segs = new Array(n - 1);
-  for (let i = 0; i < n - 1; i++) {
-    const u0 = i / (n - 1);
-    const u3 = (i + 1) / (n - 1);
-    const du = u3 - u0;
-    const y0 = pts[i].y;
-    const y3 = pts[i + 1].y;
-    segs[i] = {
-      u0,
-      y0,
-      cu1: u0 + du * 0.42,
-      cy1: y0,
-      cu2: u3 - du * 0.42,
-      cy2: y3,
-      u3,
-      y3,
-    };
-  }
-  return segs;
-}
-
-function solveCubicParamForU(seg, targetU) {
-  if (targetU <= seg.u0) return 0;
-  if (targetU >= seg.u3) return 1;
-  let lo = 0;
-  let hi = 1;
-  for (let it = 0; it < 20; it++) {
-    const s = (lo + hi) * 0.5;
-    const inv = 1 - s;
-    const u =
-      inv * inv * inv * seg.u0 +
-      3 * inv * inv * s * seg.cu1 +
-      3 * inv * s * s * seg.cu2 +
-      s * s * s * seg.u3;
-    if (u < targetU) lo = s;
-    else hi = s;
-  }
-  return (lo + hi) * 0.5;
-}
-
-function splitCubicAt(seg, s) {
-  const u01 = seg.u0 + (seg.cu1 - seg.u0) * s;
-  const y01 = seg.y0 + (seg.cy1 - seg.y0) * s;
-  const u12 = seg.cu1 + (seg.cu2 - seg.cu1) * s;
-  const y12 = seg.cy1 + (seg.cy2 - seg.cy1) * s;
-  const u23 = seg.cu2 + (seg.u3 - seg.cu2) * s;
-  const y23 = seg.cy2 + (seg.y3 - seg.cy2) * s;
-
-  const u012 = u01 + (u12 - u01) * s;
-  const y012 = y01 + (y12 - y01) * s;
-  const u123 = u12 + (u23 - u12) * s;
-  const y123 = y12 + (y23 - y12) * s;
-
-  const u0123 = u012 + (u123 - u012) * s;
-  const y0123 = y012 + (y123 - y012) * s;
-
-  return [
-    { u0: seg.u0, y0: seg.y0, cu1: u01, cy1: y01, cu2: u012, cy2: y012, u3: u0123, y3: y0123 },
-    { u0: u0123, y0: y0123, cu1: u123, cy1: y123, cu2: u23, cy2: y23, u3: seg.u3, y3: seg.y3 },
-  ];
-}
-
-function extractCubicSubsegment(seg, uStart, uEnd) {
-  const s0 = solveCubicParamForU(seg, uStart);
-  const s1 = solveCubicParamForU(seg, uEnd);
-  if (s0 <= 1e-7 && s1 >= 1 - 1e-7) return { ...seg };
-  const [, right] = s0 <= 1e-7 ? [null, seg] : splitCubicAt(seg, s0);
-  const remSpan = 1 - s0;
-  const localS1 = remSpan > 1e-9 ? Math.min(1, Math.max(0, (s1 - s0) / remSpan)) : 1;
-  const [sub] = localS1 >= 1 - 1e-7 ? [right] : splitCubicAt(right, localS1);
-  sub.u0 = uStart;
-  sub.u3 = uEnd;
-  return sub;
-}
-
-/**
- * 合并两条贝塞尔链的断点（始终完整保留目标链 `toSegs` 全部断点，保证 `t=1` 零几何误差）。
- */
-function mergeNormalizedKnots(fromSegs, toSegs) {
-  const raw = [0, 1];
-  for (let i = 0; i < toSegs.length; i++) raw.push(toSegs[i].u3);
-  if (fromSegs.length <= 64) {
-    for (let i = 0; i < fromSegs.length; i++) raw.push(fromSegs[i].u3);
-  } else {
-    const stride = Math.ceil(fromSegs.length / 48);
-    for (let i = 0; i < fromSegs.length; i += stride) raw.push(fromSegs[i].u3);
-  }
-  raw.sort((a, b) => a - b);
-  const uniq = [0];
-  for (let i = 1; i < raw.length; i++) {
-    if (raw[i] - uniq[uniq.length - 1] > 1e-6) {
-      uniq.push(raw[i]);
-    }
-  }
-  uniq[uniq.length - 1] = 1;
-  return uniq;
-}
-
-function subdivideChainToKnots(segs, knots) {
-  const out = new Array(knots.length - 1);
-  let j = 0;
-  for (let k = 0; k < knots.length - 1; k++) {
-    const a = knots[k];
-    const b = knots[k + 1];
-    const mid = (a + b) * 0.5;
-    while (j < segs.length - 1 && segs[j].u3 < mid) j++;
-    out[k] = extractCubicSubsegment(segs[j], a, b);
-  }
-  return out;
-}
-
-function buildPathFromNormalizedSegs(segs, leftX, spanX) {
-  const xAt = (u) => (leftX + u * spanX).toFixed(1);
-  let d = `M ${xAt(segs[0].u0)} ${segs[0].y0.toFixed(1)}`;
-  for (let i = 0; i < segs.length; i++) {
-    const s = segs[i];
-    d += ` C ${xAt(s.cu1)} ${s.cy1.toFixed(1)}, ${xAt(s.cu2)} ${s.cy2.toFixed(1)}, ${xAt(s.u3)} ${s.y3.toFixed(1)}`;
-  }
-  return d;
-}
-
-/**
- * 求解标准 CSS `cubic-bezier(x1, y1, x2, y2)` 在进度 `t` (`0..1`) 处的精确输出值，
- * 确保 JS 曲线形变、峰值胶囊滑动及进度条宽度缩放严格同频。
- */
-function evalCubicBezier(x1, y1, x2, y2, t) {
-  if (t <= 0) return 0;
-  if (t >= 1) return 1;
-  let lo = 0;
-  let hi = 1;
-  for (let i = 0; i < 16; i++) {
-    const s = (lo + hi) * 0.5;
-    const inv = 1 - s;
-    const bx = 3 * inv * inv * s * x1 + 3 * inv * s * s * x2 + s * s * s;
-    if (bx < t) lo = s;
-    else hi = s;
-  }
-  const s = (lo + hi) * 0.5;
-  const inv = 1 - s;
-  return 3 * inv * inv * s * y1 + 3 * inv * s * s * y2 + s * s * s;
 }
 
 /**
@@ -796,7 +633,7 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
   hoverDot.setAttribute('hidden', 'true');
   svg.appendChild(hoverDot);
 
-  const peakPill = h('span', { className: 'trend-peak-pill text-mono', text: '0' });
+  const peakPill = h('span', { className: 'trend-peak-pill text-mono', text: '0', hidden: true });
 
   // 共享悬停详情浮层卡片（曲线图和热力格子图共用，含分模型四段进度条及底部四通道明细）
   const tooltipContent = createConsumptionBreakdownContent({
@@ -870,6 +707,7 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
 
   let currentSlots = [];
   let currentPts = [];
+  let currentMaxTokens = 0;
   let currentIsHeatmap = false;
   let currentHmMode = 'day';
   let lastBuildSegmentsFn = null;
@@ -888,161 +726,22 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
   let hoveredCellEl = null;
   let lastPointer = null;
   let lastRenderSig = '';
-  let hasRenderedLineOnce = false;
-  let peakReadyArmed = false;
-  let peakReadyRaf = 0;
-  let tipTrackRaf = 0;
-  let morphRafId = 0;
-  let committedSegs = [];
-  let liveMorphSegs = null;
   const vGridLinePool = [];
   const xAxisTickPool = [];
   const hmMonthPool = [];
   const hmCellPool = [];
 
-  const CURVE_MORPH_DURATION_MS = 240;
-
-  function cancelCurveMorph() {
-    if (
-      morphRafId &&
-      typeof window !== 'undefined' &&
-      typeof window.cancelAnimationFrame === 'function'
-    ) {
-      window.cancelAnimationFrame(morphRafId);
-    }
-    morphRafId = 0;
-  }
-
-  function cancelPeakReadyRaf() {
-    if (
-      peakReadyRaf &&
-      typeof window !== 'undefined' &&
-      typeof window.cancelAnimationFrame === 'function'
-    ) {
-      window.cancelAnimationFrame(peakReadyRaf);
-    }
-    peakReadyRaf = 0;
-  }
-
-  function canAnimateInBrowser() {
-    if (
-      typeof window === 'undefined' ||
-      typeof window.requestAnimationFrame !== 'function' ||
-      typeof window.getComputedStyle !== 'function' ||
-      typeof performance === 'undefined' ||
-      typeof performance.now !== 'function'
-    ) {
-      return false;
-    }
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
-      return false;
-    }
-    return true;
-  }
-
-  function startCurveMorph(
-    fromSegs,
-    toSegs,
-    { leftX, rightX, spanX, finalLineD, finalAreaD }
-  ) {
-    cancelCurveMorph();
-    if (!canAnimateInBrowser() || fromSegs.length === 0 || toSegs.length === 0) {
-      liveMorphSegs = null;
-      patchAttr(linePath, 'd', finalLineD);
-      patchAttr(areaPath, 'd', finalAreaD);
-      return;
-    }
-
-    const knots = mergeNormalizedKnots(fromSegs, toSegs);
-    const alignedFrom = subdivideChainToKnots(fromSegs, knots);
-    const alignedTo = subdivideChainToKnots(toSegs, knots);
-    const segCount = alignedTo.length;
-    let maxDeltaY = 0;
-    for (let i = 0; i < segCount; i++) {
-      const a = alignedFrom[i];
-      const b = alignedTo[i];
-      maxDeltaY = Math.max(
-        maxDeltaY,
-        Math.abs(b.y0 - a.y0),
-        Math.abs(b.cy1 - a.cy1),
-        Math.abs(b.cy2 - a.cy2),
-        Math.abs(b.y3 - a.y3)
-      );
-    }
-
-    if (maxDeltaY < 0.25) {
-      liveMorphSegs = null;
-      patchAttr(linePath, 'd', finalLineD);
-      patchAttr(areaPath, 'd', finalAreaD);
-      return;
-    }
-
-    const activeLive = alignedFrom.map((s) => ({ ...s }));
-    liveMorphSegs = activeLive;
-    const rightXFixed = rightX.toFixed(1);
-    const leftXFixed = leftX.toFixed(1);
-    const startTs = performance.now();
-
-    const step = (nowTs) => {
-      const elapsed = Math.max(0, nowTs - startTs);
-      const rawT = Math.min(1, elapsed / CURVE_MORPH_DURATION_MS);
-      if (rawT >= 1) {
-        morphRafId = 0;
-        liveMorphSegs = null;
-        patchAttr(linePath, 'd', finalLineD);
-        patchAttr(areaPath, 'd', finalAreaD);
-        return;
-      }
-      const ease = evalCubicBezier(0.22, 1, 0.36, 1, rawT);
-      for (let i = 0; i < segCount; i++) {
-        const a = alignedFrom[i];
-        const b = alignedTo[i];
-        const cur = activeLive[i];
-        cur.u0 = a.u0 + (b.u0 - a.u0) * ease;
-        cur.y0 = a.y0 + (b.y0 - a.y0) * ease;
-        cur.cu1 = a.cu1 + (b.cu1 - a.cu1) * ease;
-        cur.cy1 = a.cy1 + (b.cy1 - a.cy1) * ease;
-        cur.cu2 = a.cu2 + (b.cu2 - a.cu2) * ease;
-        cur.cy2 = a.cy2 + (b.cy2 - a.cy2) * ease;
-        cur.u3 = a.u3 + (b.u3 - a.u3) * ease;
-        cur.y3 = a.y3 + (b.y3 - a.y3) * ease;
-      }
-      const morphLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
-      const morphAreaD = `${morphLineD} L ${rightXFixed} ${BOTTOM_Y} L ${leftXFixed} ${BOTTOM_Y} Z`;
-      patchAttr(linePath, 'd', morphLineD);
-      patchAttr(areaPath, 'd', morphAreaD);
-      morphRafId = window.requestAnimationFrame(step);
-    };
-
-    morphRafId = window.requestAnimationFrame(step);
-  }
-
-  function cancelTipTrackRaf() {
-    if (tipTrackRaf && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
-      window.cancelAnimationFrame(tipTrackRaf);
-    }
-    tipTrackRaf = 0;
-  }
-
-  function armTooltipTracking(wasHidden) {
-    if (!wasHidden) return;
-    patchClasses(tooltipEl, { 'is-tracking': false });
-    patchClasses(hoverDot, { 'is-tracking': false });
-    void tooltipEl.offsetWidth;
-    cancelTipTrackRaf();
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      tipTrackRaf = window.requestAnimationFrame(() => {
-        tipTrackRaf = 0;
-        if (!tooltipEl.hasAttribute('hidden')) {
-          patchClasses(tooltipEl, { 'is-tracking': true });
-          patchClasses(hoverDot, { 'is-tracking': true });
-        }
-      });
-    } else {
-      patchClasses(tooltipEl, { 'is-tracking': true });
-      patchClasses(hoverDot, { 'is-tracking': true });
-    }
-  }
+  const curveMorphCtrl = createCubicCurveMorphController();
+  const peakReadyArmer = createReadyClassArmer(peakPill, 'is-ready');
+  const tooltipCtrl = createFloatingChartTooltipController({
+    containerEl: chartWrap,
+    tooltipEl,
+    defaultTipWidth: 216,
+    defaultTipHeight: 104,
+    defaultViewWidth: DEFAULT_VIEW_W,
+    defaultViewHeight: VIEW_H,
+    useFloatingClass: false,
+  });
 
   function populateTooltipContent(slot) {
     const slotTok = safeSlotTokens(slot.tokens);
@@ -1063,81 +762,13 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
     });
   }
 
-  let cachedWrapRect = null;
   let cachedSvgRect = null;
   let cachedHmGridRect = null;
-  let cachedClipRect = undefined;
 
   function invalidateHoverRects() {
-    cachedWrapRect = null;
+    tooltipCtrl.invalidateRects();
     cachedSvgRect = null;
     cachedHmGridRect = null;
-    cachedClipRect = undefined;
-  }
-
-  function getCachedWrapRect() {
-    if (!cachedWrapRect) {
-      cachedWrapRect = chartWrap.getBoundingClientRect?.() || null;
-    }
-    return cachedWrapRect;
-  }
-
-  function positionTooltipNearAnchor(fallbackX, fallbackY, pointer = null) {
-    const wrapRect = getCachedWrapRect();
-    const wrapW =
-      wrapRect && wrapRect.width > 0
-        ? wrapRect.width
-        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
-    const wrapH =
-      wrapRect && wrapRect.height > 0
-        ? wrapRect.height
-        : Number(chartWrap.offsetHeight || VIEW_H);
-
-    const tipW = Number(tooltipEl.offsetWidth || 0) || 216;
-    const tipH = Number(tooltipEl.offsetHeight || 0) || 104;
-
-    const hasPointer =
-      pointer &&
-      Number.isFinite(Number(pointer.clientX)) &&
-      Number.isFinite(Number(pointer.clientY)) &&
-      wrapRect &&
-      wrapRect.width > 0 &&
-      wrapRect.height > 0;
-
-    const anchorX = hasPointer ? Number(pointer.clientX) - wrapRect.left : fallbackX;
-    const anchorY = hasPointer ? Number(pointer.clientY) - wrapRect.top : fallbackY;
-
-    if (cachedClipRect === undefined) {
-      const clipEl = chartWrap.closest?.('.view-pane, .cons-view-stage') || null;
-      cachedClipRect = clipEl?.getBoundingClientRect?.() || null;
-    }
-    const clipRect = cachedClipRect;
-    const hasClip = Boolean(
-      clipRect && clipRect.height > 0 && wrapRect && wrapRect.height > 0
-    );
-    const minY = hasClip ? clipRect.top - wrapRect.top + 6 : -tipH - 16;
-    const maxY = hasClip ? clipRect.bottom - wrapRect.top - tipH - 6 : wrapH + 16;
-
-    const maxLeft = Math.max(4, wrapW - tipW - 4);
-    let leftPx = Math.max(4, Math.min(maxLeft, anchorX - tipW / 2));
-    const aboveY = anchorY - tipH - 14;
-    let topPx;
-
-    if (aboveY >= minY) {
-      topPx = Math.min(maxY, aboveY);
-    } else if (anchorX + 16 + tipW <= wrapW - 4) {
-      leftPx = anchorX + 16;
-      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
-    } else if (anchorX - 16 - tipW >= 4) {
-      leftPx = anchorX - 16 - tipW;
-      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
-    } else {
-      topPx = Math.max(minY, Math.min(maxY, anchorY + 18));
-    }
-
-    patchStyleVar(tooltipEl, '--tip-x', `${Math.round(leftPx)}px`);
-    patchStyleVar(tooltipEl, '--tip-shift', '0px');
-    patchStyleVar(tooltipEl, '--tip-y', `${Math.round(topPx)}px`);
   }
 
   function showLineHoverAtIndex(idx, pointer = null) {
@@ -1169,7 +800,6 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
         'is-hm-top': false,
         'is-line-low': false,
       });
-      patchAttr(tooltipEl, 'hidden', false);
       populateTooltipContent(slot);
 
       for (const [tIdx, el] of tickElsByIdx.entries()) {
@@ -1177,15 +807,21 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
       }
     }
 
-    const wrapRect = getCachedWrapRect();
+    const wrapRect = tooltipCtrl.getWrapRect();
     const wrapW =
       wrapRect && wrapRect.width > 0
         ? wrapRect.width
         : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
     const fallbackX = (pt.x / Math.max(1, viewW)) * wrapW;
     const fallbackY = pt.y + 6;
-    positionTooltipNearAnchor(fallbackX, fallbackY, pointer || lastPointer);
-    armTooltipTracking(wasHidden);
+    tooltipCtrl.show({
+      fallbackX,
+      fallbackY,
+      pointer: pointer || lastPointer,
+      trackedDots: [hoverDot],
+      viewWidth: viewW,
+      viewHeight: VIEW_H,
+    });
   }
 
   function showHeatmapHoverAtIndex(idx, cellEl, pointer = null) {
@@ -1239,11 +875,10 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
         'is-hm-top': false,
         'is-line-low': false,
       });
-      patchAttr(tooltipEl, 'hidden', false);
       populateTooltipContent(slot);
     }
 
-    const wrapRect = getCachedWrapRect();
+    const wrapRect = tooltipCtrl.getWrapRect();
     const cellRect = targetCell.getBoundingClientRect?.() || null;
     const wrapW =
       wrapRect && wrapRect.width > 0
@@ -1277,26 +912,25 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
           }
         : rawPtr;
 
-    positionTooltipNearAnchor(fallbackX, fallbackY, effectivePtr);
-    armTooltipTracking(wasHidden);
+    tooltipCtrl.show({
+      fallbackX,
+      fallbackY,
+      pointer: effectivePtr,
+      trackedDots: [],
+      viewWidth: viewW,
+      viewHeight: VIEW_H,
+    });
   }
 
   function clearHover() {
     invalidateHoverRects();
-    cancelTipTrackRaf();
+    tooltipCtrl.hide();
     hoveredIdx = -1;
     lastPointer = null;
     patchAttr(hoverLine, 'hidden', true);
     patchAttr(hoverDot, 'hidden', true);
-    patchAttr(tooltipEl, 'hidden', true);
-    patchClasses(tooltipEl, {
-      'is-hm-bottom': false,
-      'is-hm-top': false,
-      'is-line-low': false,
-      'is-tracking': false,
-    });
     patchClasses(hoverDot, { 'is-tracking': false });
-    if (!currentIsHeatmap) {
+    if (!currentIsHeatmap && currentMaxTokens > 0) {
       patchAttr(peakPill, 'hidden', false);
     }
     if (hoveredHighlightEls.length > 0) {
@@ -1606,9 +1240,9 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
   }
 
   function destroy() {
-    cancelTipTrackRaf();
-    cancelCurveMorph();
-    cancelPeakReadyRaf();
+    tooltipCtrl.destroy();
+    curveMorphCtrl.cancel();
+    peakReadyArmer.cancel();
     plotStage.removeEventListener('mousemove', handlePointerMove);
     plotStage.removeEventListener('click', handleLineClick);
     plotStage.removeEventListener('mouseleave', clearHover);
@@ -1661,8 +1295,7 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
 
     if (modeChanged) {
       clearHover();
-      cancelCurveMorph();
-      liveMorphSegs = null;
+      curveMorphCtrl.cancel();
     }
     patchClasses(chartWrap, { 'is-heatmap': useHeatmap });
     patchAttr(plotStage, 'hidden', useHeatmap);
@@ -1689,6 +1322,7 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
         peakIdx = i;
       }
     }
+    currentMaxTokens = maxTokens;
 
     const locale = getEffectiveLocale();
     patchText(wdayMonEl, t('chart.trend.wdayMon'));
@@ -2038,23 +1672,17 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
         areaD = `${lineD} L ${pts[pts.length - 1].x.toFixed(1)} ${BOTTOM_Y} L ${pts[0].x.toFixed(1)} ${BOTTOM_Y} Z`;
       }
 
-      const prevSegs = liveMorphSegs || committedSegs;
-      committedSegs = nextSegs;
-      if (hasRenderedLineOnce && !modeChanged && prevSegs.length > 0) {
-        startCurveMorph(prevSegs, nextSegs, {
-          leftX,
-          rightX,
-          spanX,
-          finalLineD: lineD,
-          finalAreaD: areaD,
-        });
-      } else {
-        cancelCurveMorph();
-        liveMorphSegs = null;
-        patchAttr(linePath, 'd', lineD);
-        patchAttr(areaPath, 'd', areaD);
-      }
-      hasRenderedLineOnce = true;
+      curveMorphCtrl.morphTo({
+        nextSegs,
+        leftX,
+        spanX,
+        bottomY: BOTTOM_Y,
+        linePath,
+        areaPath,
+        finalLineD: lineD,
+        finalAreaD: areaD,
+        skipMorph: modeChanged,
+      });
 
       // 就地增量补丁垂直参考网格线及底部 X 轴标签，保持文字常驻不重排不闪烁
       const tickIndices = computeTickIndices(slots);
@@ -2123,29 +1751,24 @@ export function createTrendAreaChart({ onSelectSlot = null } = {}) {
       }
     }
 
-    const peakPt = pts[peakIdx] || { x: viewW / 2, y: BOTTOM_Y };
-
-    const peakSlot = slots[peakIdx];
-    const peakText =
-      maxTokens > 0 && peakSlot?.label
+    if (maxTokens > 0) {
+      const peakPt = pts[peakIdx] || { x: viewW / 2, y: BOTTOM_Y };
+      const peakSlot = slots[peakIdx];
+      const peakText = peakSlot?.label
         ? t('chart.trend.peakPill', {
             label: peakSlot.label,
             tokens: formatTokensPrecise(maxTokens),
           })
         : formatTokensPrecise(maxTokens);
-    patchText(peakPill, peakText);
-    const pctLeft = Math.max(12, Math.min(88, (peakPt.x / viewW) * 100));
-    patchStyleVar(peakPill, '--peak-x', `${pctLeft.toFixed(1)}%`);
-    if (!peakReadyArmed) {
-      peakReadyArmed = true;
-      if (canAnimateInBrowser()) {
-        peakReadyRaf = window.requestAnimationFrame(() => {
-          peakReadyRaf = 0;
-          patchClasses(peakPill, { 'is-ready': true });
-        });
-      } else {
-        patchClasses(peakPill, { 'is-ready': true });
+      patchText(peakPill, peakText);
+      const pctLeft = Math.max(12, Math.min(88, (peakPt.x / viewW) * 100));
+      patchStyleVar(peakPill, '--peak-x', `${pctLeft.toFixed(1)}%`);
+      peakReadyArmer.arm();
+      if (hoveredIdx < 0) {
+        patchAttr(peakPill, 'hidden', false);
       }
+    } else {
+      patchAttr(peakPill, 'hidden', true);
     }
 
     if (hoveredIdx >= slots.length) {

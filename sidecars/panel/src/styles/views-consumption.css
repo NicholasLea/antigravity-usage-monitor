@@ -401,6 +401,7 @@
   height: 184px;
   display: block;
   overflow: visible;
+  pointer-events: none;
 }
 
 .trend-grid line {
@@ -459,20 +460,24 @@
   z-index: 2;
 }
 
-.cons-view-stage .progress-seg {
+.cons-view-stage .progress-seg,
+.models-analytics-pane .progress-seg {
   flex: 0 0 auto;
   transition:
     background-color 80ms ease,
     width 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.cons-view-stage .progress-fill {
+.cons-view-stage .progress-fill,
+.account-cards-stack .progress-fill {
   transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @starting-style {
   .cons-view-stage.is-ready .progress-seg,
-  .cons-view-stage.is-ready .progress-fill {
+  .cons-view-stage.is-ready .progress-fill,
+  .models-analytics-pane .progress-seg,
+  .account-cards-stack .progress-fill {
     width: 0%;
   }
 }
@@ -498,8 +503,13 @@
 @media (prefers-reduced-motion: reduce) {
   .cons-view-stage .progress-seg,
   .cons-view-stage .progress-fill,
+  .models-analytics-pane .progress-seg,
+  .account-cards-stack .progress-fill,
   .trend-peak-pill.is-ready,
-  .trend-hm-cell {
+  .trend-hm-cell,
+  .trend-tooltip.is-tracking,
+  .trend-hover-dot.is-tracking,
+  .sstep-hover-raw-dot.is-tracking {
     transition: none !important;
   }
   .cons-item-list.is-bars-revealing .progress-track {
@@ -1188,6 +1198,28 @@
     translateX(var(--tip-shift, 0px));
   will-change: transform;
   contain: layout style;
+}
+
+.trend-tooltip.is-floating-tip {
+  top: 0;
+  bottom: auto;
+  left: 0;
+  transform: translate3d(var(--tip-x, 0px), var(--tip-y, 0px), 0)
+    translateX(var(--tip-shift, 0px));
+  will-change: transform;
+  contain: layout style;
+}
+
+.trend-tooltip.is-floating-tip.is-tracking,
+.trend-tooltip.is-rich-breakdown.is-tracking {
+  transition: transform 150ms var(--ease-modern, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.trend-hover-dot.is-tracking,
+.sstep-hover-raw-dot.is-tracking {
+  transition:
+    cx 150ms var(--ease-modern, cubic-bezier(0.16, 1, 0.3, 1)),
+    cy 150ms var(--ease-modern, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .trend-tooltip.is-rich-breakdown,

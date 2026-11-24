@@ -854,13 +854,21 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   border: none;
 }
 
-[data-modern-ui="true"] .trend-tooltip:not(.is-hm-top):not(.is-hm-bottom):not(.is-rich-breakdown) {
+[data-modern-ui="true"] .trend-tooltip:not(.is-hm-top):not(.is-hm-bottom):not(.is-rich-breakdown):not(.is-floating-tip) {
   top: 2px;
   bottom: auto;
   transform: translate3d(var(--tip-shift, -50%), var(--tip-y, 0px), 0);
 }
 
 [data-modern-ui="true"] .trend-tooltip.is-rich-breakdown {
+  top: 0;
+  bottom: auto;
+  left: 0;
+  transform: translate3d(var(--tip-x, 0px), var(--tip-y, 0px), 0)
+    translateX(var(--tip-shift, 0px));
+}
+
+[data-modern-ui="true"] .trend-tooltip.is-floating-tip {
   top: 0;
   bottom: auto;
   left: 0;
@@ -880,7 +888,12 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   transition: transform 150ms var(--ease-modern);
 }
 
-[data-modern-ui="true"] .trend-hover-dot.is-tracking {
+[data-modern-ui="true"] .trend-tooltip.is-floating-tip.is-tracking {
+  transition: transform 150ms var(--ease-modern);
+}
+
+[data-modern-ui="true"] .trend-hover-dot.is-tracking,
+[data-modern-ui="true"] .sstep-hover-raw-dot.is-tracking {
   transition:
     cx 150ms var(--ease-modern),
     cy 150ms var(--ease-modern);
@@ -1006,6 +1019,13 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   transform: translate3d(0, calc(var(--od-val, 0) * -18px), 0);
   transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
+}
+
+@starting-style {
+  :host([data-modern-ui="true"]) .wm-od-track,
+  [data-modern-ui="true"] .wm-od-track {
+    transform: translate3d(0, 0, 0);
+  }
 }
 
 :host([data-modern-ui="true"]) .wm-od-cell,

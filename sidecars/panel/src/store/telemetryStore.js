@@ -756,6 +756,7 @@ export function isEquivalentTelemetry(prev, next) {
   if (pAct?.aggregated?.activeAgentBadge !== nAct?.aggregated?.activeAgentBadge) return false;
   if (pAct?.aggregated?.latestTokPerSec !== nAct?.aggregated?.latestTokPerSec) return false;
   if (pAct?.aggregated?.latestTtftSec !== nAct?.aggregated?.latestTtftSec) return false;
+  if (pAct?.aggregated?.lastKnownTtftSec !== nAct?.aggregated?.lastKnownTtftSec) return false;
   if (pAct?.aggregated?.avgTokPerSec !== nAct?.aggregated?.avgTokPerSec) return false;
   if (pAct?.aggregated?.latestStepCostUsd !== nAct?.aggregated?.latestStepCostUsd) return false;
   if (pAct?.aggregated?.sessionCostUsd !== nAct?.aggregated?.sessionCostUsd) return false;
@@ -767,6 +768,7 @@ export function isEquivalentTelemetry(prev, next) {
   if (pAct?.aggregated?.latestSpeedReason !== nAct?.aggregated?.latestSpeedReason) return false;
   if (pAct?.latestTokPerSec !== nAct?.latestTokPerSec) return false;
   if (pAct?.latestTtftSec !== nAct?.latestTtftSec) return false;
+  if (pAct?.lastKnownTtftSec !== nAct?.lastKnownTtftSec) return false;
   if (pAct?.avgTokPerSec !== nAct?.avgTokPerSec) return false;
   if (pAct?.latestCacheHitPct !== nAct?.latestCacheHitPct) return false;
   if (pAct?.sessionCacheHitPct !== nAct?.sessionCacheHitPct) return false;
@@ -805,6 +807,7 @@ export function isEquivalentTelemetry(prev, next) {
       pa?.liveActivity?.signature !== na?.liveActivity?.signature ||
       pa?.latestTokPerSec !== na?.latestTokPerSec ||
       pa?.latestTtftSec !== na?.latestTtftSec ||
+      pa?.lastKnownTtftSec !== na?.lastKnownTtftSec ||
       pa?.avgTokPerSec !== na?.avgTokPerSec ||
       pa?.latestCacheHitPct !== na?.latestCacheHitPct ||
       pa?.sessionCacheHitPct !== na?.sessionCacheHitPct ||

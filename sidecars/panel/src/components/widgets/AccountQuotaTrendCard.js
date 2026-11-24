@@ -20,6 +20,11 @@ import { getEffectiveLocale, t } from '../../i18n/index.js';
 import { CustomDateTimePicker } from '../ui/CustomDateTimePicker.js';
 import { CustomSelect } from '../ui/CustomSelect.js';
 import { SegmentedControl } from '../ui/SegmentedControl.js';
+import {
+  createFloatingChartTooltipController,
+  createMultiSeriesCurveMorphController,
+  pointsToNormalizedCubicSegs,
+} from '../charts/chartMotion.js';
 
 const POOL_COLORS = Object.freeze({
   Gemini: 'var(--accent-primary)',
@@ -81,6 +86,44 @@ function buildHorizontalTangentSpline(pts) {
     d += ` C ${(p0.x + dx).toFixed(1)} ${p0.y.toFixed(1)}, ${(p1.x - dx).toFixed(1)} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
   }
   return d;
+}
+
+const HOVER_SLOT_COUNT = 96;
+const MAX_SVG_COLUMN_BUCKETS = 96;
+
+/**
+ * Downsamples dense sub-pixel SVG points (e.g. 12s poll bursts) into `<= maxCols`
+ * min/max-preserving visual knots so curve rasterization and morphing stay crisp and fast,
+ * while `rawPoints` remain intact for exact timestamp interpolation.
+ */
+function simplifySvgPointsForRender(svgPts, leftX, plotW, maxCols = MAX_SVG_COLUMN_BUCKETS) {
+  if (svgPts.length <= maxCols) return svgPts;
+  const colW = Math.max(1, plotW) / maxCols;
+  const out = [svgPts[0]];
+  let idx = 1;
+  const endIdx = svgPts.length - 1;
+  while (idx < endIdx) {
+    const col = Math.floor((svgPts[idx].x - leftX) / colW);
+    let minPt = svgPts[idx];
+    let maxPt = svgPts[idx];
+    let j = idx + 1;
+    while (j < endIdx && Math.floor((svgPts[j].x - leftX) / colW) === col) {
+      const cand = svgPts[j];
+      if (cand.y < minPt.y) minPt = cand;
+      if (cand.y > maxPt.y) maxPt = cand;
+      j += 1;
+    }
+    if (minPt === maxPt) {
+      out.push(minPt);
+    } else if (minPt.x <= maxPt.x) {
+      out.push(minPt, maxPt);
+    } else {
+      out.push(maxPt, minPt);
+    }
+    idx = j;
+  }
+  out.push(svgPts[endIdx]);
+  return out;
 }
 
 /**
@@ -452,6 +495,7 @@ export const AccountQuotaTrendCard = defineComponent({
       options: [],
       onUpdateModelValue: (val) => {
         selectedAccountEmail = String(val || '').trim().toLowerCase();
+        hideHover();
         renderChart();
       },
     });
@@ -463,6 +507,7 @@ export const AccountQuotaTrendCard = defineComponent({
       options: [{ value: 'all', label: t('cons.cyclePoolAll') }],
       onUpdateModelValue: (val) => {
         selectedPool = val || 'all';
+        hideHover();
         renderChart();
       },
     });
@@ -474,6 +519,7 @@ export const AccountQuotaTrendCard = defineComponent({
       onUpdateModelValue: (val) => {
         selectedWin = val === 'weekly' ? 'weekly' : '5h';
         winSwitch.setProps({ modelValue: selectedWin, options: getQuotaWindowOptions() });
+        hideHover();
         renderChart();
       },
     });
@@ -489,6 +535,7 @@ export const AccountQuotaTrendCard = defineComponent({
           endPicker.setValue(draftEndMs);
         }
         rangeSwitch.setProps({ modelValue: selectedRange, options: getTimeRangeOptions() });
+        hideHover();
         renderChart();
       },
     });
@@ -635,16 +682,41 @@ export const AccountQuotaTrendCard = defineComponent({
       'div',
       {
         className: 'trend-plot-stage',
-        onPointermove: handlePointerMove,
-        onPointerleave: hideHover,
+        onMousemove: handlePointerMove,
+        onMouseleave: hideHover,
       },
-      [svg, tooltipEl]
+      [svg]
     );
     const chartWrap = h('div', { className: 'trend-chart-wrap' }, [
       plotStage,
       xAxisEl,
       legendRowEl,
+      tooltipEl,
     ]);
+
+    const tooltipCtrl = createFloatingChartTooltipController({
+      containerEl: chartWrap,
+      tooltipEl,
+      defaultTipWidth: 204,
+      defaultTipHeight: 78,
+      defaultViewWidth: 460,
+      defaultViewHeight: VIEW_H,
+    });
+    const seriesMorphCtrl = createMultiSeriesCurveMorphController();
+    const seriesNodePoolByKey = new Map();
+    const hoverDotPoolByKey = new Map();
+    let xTickElements = [];
+    let hoveredSlotIdx = -1;
+    let lastActiveDots = [];
+    let lastFallbackX = 0;
+    let lastFallbackY = 0;
+    let lastSizeKey = '';
+    let lastTipTimeStr = '';
+    let lastTipWinStr = '';
+    let lastHoveredTickIdx = -1;
+    let lastPointer = null;
+    let cachedSvgRect = null;
+    let lastPlotSig = '';
 
     const rootEl = h('section', { className: 'panel account-quota-trend-panel' }, [
       h('div', { className: 'panel-header account-trend-toprow' }, [
@@ -670,10 +742,29 @@ export const AccountQuotaTrendCard = defineComponent({
       return BOTTOM_Y - ((clamped - plottedYScale.yMin) / plottedYScale.span) * SPAN_Y;
     }
 
+    function syncHoveredTickClass(activeTickIdx) {
+      if (activeTickIdx === lastHoveredTickIdx) return;
+      lastHoveredTickIdx = activeTickIdx;
+      for (let i = 0; i < xTickElements.length; i++) {
+        patchClasses(xTickElements[i], { 'is-hovered': i === activeTickIdx });
+      }
+    }
+
     function hideHover() {
+      cachedSvgRect = null;
+      hoveredSlotIdx = -1;
+      lastActiveDots = [];
+      lastTipTimeStr = '';
+      lastTipWinStr = '';
+      lastPointer = null;
+      tooltipCtrl.hide();
       hoverLine.setAttribute('hidden', '');
       hoverDotsGroup.setAttribute('hidden', '');
-      patchAttr(tooltipEl, 'hidden', true);
+      for (const dot of hoverDotPoolByKey.values()) {
+        dot.setAttribute('hidden', '');
+        patchClasses(dot, { 'is-tracking': false });
+      }
+      syncHoveredTickClass(-1);
     }
 
     function sampleSeriesValueAt(points, targetMs) {
@@ -697,75 +788,159 @@ export const AccountQuotaTrendCard = defineComponent({
       return a.val + (b.val - a.val) * ((targetMs - a.ts) / span);
     }
 
+    function showHoverAtSlot(slotIdx, pointer = null, { forceRefresh = false } = {}) {
+      if (!plottedSeries.length || !(plottedEndMs > plottedStartMs) || slotIdx < 0) {
+        hideHover();
+        return;
+      }
+      const clampedSlot = Math.max(0, Math.min(HOVER_SLOT_COUNT, slotIdx));
+      const wasHidden = tooltipEl.hasAttribute('hidden');
+      const changedSlot = forceRefresh || wasHidden || clampedSlot !== hoveredSlotIdx;
+      hoveredSlotIdx = clampedSlot;
+      if (pointer) lastPointer = pointer;
+
+      if (changedSlot) {
+        const u = clampedSlot / HOVER_SLOT_COUNT;
+        const plotW = Math.max(20, viewW - LEFT_X - RIGHT_PAD);
+        const clampedX = LEFT_X + u * plotW;
+        const targetMs = Math.round(plottedStartMs + u * (plottedEndMs - plottedStartMs));
+
+        hoverLine.setAttribute('x1', clampedX.toFixed(1));
+        hoverLine.setAttribute('x2', clampedX.toFixed(1));
+
+        const tipItems = [];
+        const activeDots = [];
+        let sumY = 0;
+        const usedKeys = new Set();
+
+        for (let i = 0; i < plottedSeries.length; i++) {
+          const s = plottedSeries[i];
+          const val = sampleSeriesValueAt(s.rawPoints, targetMs);
+          if (val === null) continue;
+          usedKeys.add(s.poolKey);
+          const y = valueToSvgY(val);
+          sumY += y;
+
+          let dot = hoverDotPoolByKey.get(s.poolKey);
+          if (!dot) {
+            dot = document.createElementNS(SVG_NS, 'circle');
+            dot.setAttribute('class', 'trend-hover-dot');
+            dot.setAttribute('r', '3.2');
+            dot.style.fill = 'var(--surface-panel)';
+            hoverDotPoolByKey.set(s.poolKey, dot);
+            hoverDotsGroup.appendChild(dot);
+          }
+          if (dot._lastColor !== s.color) {
+            dot._lastColor = s.color;
+            dot.style.stroke = s.color;
+          }
+          dot.setAttribute('cx', clampedX.toFixed(1));
+          dot.setAttribute('cy', y.toFixed(1));
+          if (dot.hasAttribute('hidden')) dot.removeAttribute('hidden');
+          activeDots.push(dot);
+          tipItems.push({ key: s.poolKey, label: s.label, color: s.color, val });
+        }
+
+        for (const [k, dot] of hoverDotPoolByKey.entries()) {
+          if (!usedKeys.has(k) && !dot.hasAttribute('hidden')) {
+            dot.setAttribute('hidden', '');
+            patchClasses(dot, { 'is-tracking': false });
+          }
+        }
+
+        if (tipItems.length === 0) {
+          hideHover();
+          return;
+        }
+        if (hoverLine.hasAttribute('hidden')) hoverLine.removeAttribute('hidden');
+        if (hoverDotsGroup.hasAttribute('hidden')) hoverDotsGroup.removeAttribute('hidden');
+
+        if (xTickElements.length > 1) {
+          syncHoveredTickClass(Math.round(u * (xTickElements.length - 1)));
+        }
+
+        const nextTimeStr = formatHoverTimestamp(targetMs);
+        if (nextTimeStr !== lastTipTimeStr) {
+          lastTipTimeStr = nextTimeStr;
+          patchText(tipTimeEl, nextTimeStr);
+        }
+        const nextWinStr = t(
+          selectedWin === 'weekly' ? 'settings.account.winWeekly' : 'settings.account.win5h'
+        );
+        if (nextWinStr !== lastTipWinStr) {
+          lastTipWinStr = nextWinStr;
+          patchText(tipWinEl, nextWinStr);
+        }
+
+        patchKeyedList(tipRowsHost, tipItems, {
+          keyFn: (it) => it.key,
+          sigFn: (it) => `${it.label}:${it.val.toFixed(1)}`,
+          createRow: () => {
+            const sw = h('span', { className: 'dot-swatch' });
+            const nm = h('span', { className: 'account-trend-tip-name' });
+            const vl = h('strong', { className: 'text-mono' });
+            const row = h('div', { className: 'account-trend-tip-row' }, [
+              h('span', { className: 'legend-left' }, [sw, nm]),
+              vl,
+            ]);
+            return { el: row, refs: { sw, nm, vl } };
+          },
+          updateRow: (r, it) => {
+            if (r.sw._lastBg !== it.color) {
+              r.sw._lastBg = it.color;
+              r.sw.style.background = it.color;
+            }
+            patchText(r.nm, it.label);
+            patchText(r.vl, `${+it.val.toFixed(1)}%`);
+          },
+        });
+
+        const wrapRect = tooltipCtrl.getWrapRect();
+        const wrapW =
+          wrapRect && wrapRect.width > 0
+            ? wrapRect.width
+            : Number(chartWrap.clientWidth || viewW || 460);
+        lastFallbackX = (clampedX / Math.max(1, viewW)) * wrapW;
+        lastFallbackY = sumY / activeDots.length + 6;
+        lastActiveDots = activeDots;
+        lastSizeKey = `rows:${tipItems.length}`;
+      }
+
+      tooltipCtrl.show({
+        fallbackX: lastFallbackX,
+        fallbackY: lastFallbackY,
+        pointer: pointer || lastPointer,
+        trackedDots: lastActiveDots,
+        viewWidth: viewW,
+        viewHeight: VIEW_H,
+        sizeKey: lastSizeKey,
+      });
+    }
+
     function handlePointerMove(ev) {
       if (!plottedSeries.length || !(plottedEndMs > plottedStartMs)) {
         hideHover();
         return;
       }
-      const rect = svg.getBoundingClientRect?.();
+      if (!cachedSvgRect) {
+        cachedSvgRect = svg.getBoundingClientRect?.() || null;
+      }
+      const rect = cachedSvgRect;
       const widthPx = Number(rect?.width || viewW);
-      if (!(widthPx > 0)) return;
+      if (!(widthPx > 0)) {
+        cachedSvgRect = null;
+        return;
+      }
       const offsetX = Number(ev.clientX || 0) - Number(rect?.left || 0);
       const svgX = (offsetX / widthPx) * viewW;
       const plotW = Math.max(20, viewW - LEFT_X - RIGHT_PAD);
       const u = Math.max(0, Math.min(1, (svgX - LEFT_X) / plotW));
-      const clampedX = LEFT_X + u * plotW;
-      const targetMs = Math.round(plottedStartMs + u * (plottedEndMs - plottedStartMs));
-
-      hoverLine.setAttribute('x1', clampedX.toFixed(1));
-      hoverLine.setAttribute('x2', clampedX.toFixed(1));
-
-      while (hoverDotsGroup.firstChild) hoverDotsGroup.removeChild(hoverDotsGroup.firstChild);
-      const tipItems = [];
-      for (let i = 0; i < plottedSeries.length; i++) {
-        const s = plottedSeries[i];
-        const val = sampleSeriesValueAt(s.rawPoints, targetMs);
-        if (val === null) continue;
-        const y = valueToSvgY(val);
-        const dot = document.createElementNS(SVG_NS, 'circle');
-        dot.setAttribute('cx', clampedX.toFixed(1));
-        dot.setAttribute('cy', y.toFixed(1));
-        dot.setAttribute('r', '3.2');
-        dot.setAttribute('fill', 'var(--surface-panel)');
-        dot.setAttribute('stroke', s.color);
-        dot.setAttribute('stroke-width', '1.8');
-        hoverDotsGroup.appendChild(dot);
-        tipItems.push({ key: s.poolKey, label: s.label, color: s.color, val });
-      }
-      if (tipItems.length === 0) {
-        hideHover();
-        return;
-      }
-      hoverLine.removeAttribute('hidden');
-      hoverDotsGroup.removeAttribute('hidden');
-
-      patchText(tipTimeEl, formatHoverTimestamp(targetMs));
-      patchText(tipWinEl, t(selectedWin === 'weekly' ? 'settings.account.winWeekly' : 'settings.account.win5h'));
-      patchKeyedList(tipRowsHost, tipItems, {
-        keyFn: (it) => it.key,
-        sigFn: (it) => `${it.label}:${it.val.toFixed(1)}`,
-        createRow: () => {
-          const sw = h('span', { className: 'dot-swatch' });
-          const nm = h('span', { className: 'account-trend-tip-name' });
-          const vl = h('strong', { className: 'text-mono' });
-          const row = h('div', { className: 'account-trend-tip-row' }, [
-            h('span', { className: 'legend-left' }, [sw, nm]),
-            vl,
-          ]);
-          return { el: row, refs: { sw, nm, vl } };
-        },
-        updateRow: (r, it) => {
-          r.sw.style.background = it.color;
-          patchText(r.nm, it.label);
-          patchText(r.vl, `${+it.val.toFixed(1)}%`);
-        },
-      });
-
-      const pctX = (clampedX / viewW) * 100;
-      const shift = pctX < 24 ? '0%' : pctX > 76 ? '-100%' : '-50%';
-      patchStyleVar(tooltipEl, '--tip-x', `${pctX.toFixed(1)}%`);
-      patchStyleVar(tooltipEl, '--tip-shift', shift);
-      patchAttr(tooltipEl, 'hidden', false);
+      const slotIdx = Math.round(u * HOVER_SLOT_COUNT);
+      const pointer =
+        Number.isFinite(Number(ev?.clientX)) && Number.isFinite(Number(ev?.clientY))
+          ? { clientX: Number(ev.clientX), clientY: Number(ev.clientY) }
+          : null;
+      showHoverAtSlot(slotIdx, pointer);
     }
 
     function resolveTargetAccountEmail() {
@@ -849,10 +1024,9 @@ export const AccountQuotaTrendCard = defineComponent({
       );
     }
 
-    function renderChart() {
-      hideHover();
+    function renderChart({ skipMorph = false } = {}) {
       const nowMs = Date.now();
-      void getEffectiveLocale();
+      const locale = getEffectiveLocale();
 
       patchText(cardTitleText, t('settings.account.trendTitle'));
       patchText(rangeToEl, t('cons.rangeTo'));
@@ -932,6 +1106,9 @@ export const AccountQuotaTrendCard = defineComponent({
       patchAttr(emptyStateEl, 'hidden', hasPlot);
       if (!hasPlot) {
         plottedSeries = [];
+        lastPlotSig = '';
+        seriesMorphCtrl.reset();
+        hideHover();
         patchText(emptyStateEl, t('settings.account.trendEmpty'));
         return;
       }
@@ -947,9 +1124,8 @@ export const AccountQuotaTrendCard = defineComponent({
         gl.setAttribute('x2', String(viewW));
       }
 
-      plottedSeries = rawBuilt.map((rb) => ({
-        ...rb,
-        svgPts: rb.rawPoints.map((sp) => {
+      plottedSeries = rawBuilt.map((rb) => {
+        const fullSvgPts = rb.rawPoints.map((sp) => {
           const u = Math.max(0, Math.min(1, (sp.ts - plottedStartMs) / spanMs));
           return {
             x: LEFT_X + u * plotW,
@@ -957,50 +1133,112 @@ export const AccountQuotaTrendCard = defineComponent({
             val: sp.val,
             ts: sp.ts,
           };
-        }),
-      }));
+        });
+        return {
+          ...rb,
+          svgPts: simplifySvgPointsForRender(fullSvgPts, LEFT_X, plotW),
+        };
+      });
 
-      while (seriesGroup.firstChild) seriesGroup.removeChild(seriesGroup.firstChild);
-      for (let i = 0; i < plottedSeries.length; i++) {
-        const s = plottedSeries[i];
-        const lineD = buildHorizontalTangentSpline(s.svgPts);
-        if (s.svgPts.length >= 2) {
-          const first = s.svgPts[0];
-          const last = s.svgPts[s.svgPts.length - 1];
-          const areaEl = document.createElementNS(SVG_NS, 'path');
-          areaEl.setAttribute(
-            'd',
-            `${lineD} L ${last.x.toFixed(1)} ${BOTTOM_Y} L ${first.x.toFixed(1)} ${BOTTOM_Y} Z`
-          );
-          if (plottedSeries.length === 1) {
-            stopTop.setAttribute('stop-color', s.color);
-            stopBot.setAttribute('stop-color', s.color);
-            areaEl.setAttribute('fill', `url(#${gradId})`);
-          } else {
-            areaEl.setAttribute('class', 'sstep-multi-area');
-            areaEl.style.setProperty('--sstep-series-color', s.color);
+      const plotSig =
+        `${locale}|${viewW}|${targetEmail}|${selectedWin}|${selectedRange}|${selectedPool}|${plottedYScale.yMin}-${plottedYScale.yMax}|` +
+        plottedSeries
+          .map(
+            (s) =>
+              `${s.poolKey}:${s.svgPts.length}:${s.svgPts[0]?.x.toFixed(1)}:${s.svgPts[0]?.y.toFixed(1)}:${s.svgPts[s.svgPts.length - 1]?.x.toFixed(1)}:${s.svgPts[s.svgPts.length - 1]?.y.toFixed(1)}`
+          )
+          .join('|');
+
+      if (plotSig !== lastPlotSig) {
+        lastPlotSig = plotSig;
+        const activePoolKeys = new Set();
+        const morphItems = [];
+
+        for (let i = 0; i < plottedSeries.length; i++) {
+          const s = plottedSeries[i];
+          activePoolKeys.add(s.poolKey);
+          let nodes = seriesNodePoolByKey.get(s.poolKey);
+          if (!nodes) {
+            const areaEl = document.createElementNS(SVG_NS, 'path');
+            const lineEl = document.createElementNS(SVG_NS, 'path');
+            lineEl.setAttribute('fill', 'none');
+            lineEl.setAttribute('stroke-width', '1.9');
+            lineEl.setAttribute('stroke-linecap', 'round');
+            const endDotEl = document.createElementNS(SVG_NS, 'circle');
+            endDotEl.setAttribute('r', '2.7');
+            nodes = { areaEl, lineEl, endDotEl };
+            seriesNodePoolByKey.set(s.poolKey, nodes);
           }
-          seriesGroup.appendChild(areaEl);
-        }
-        const pathEl = document.createElementNS(SVG_NS, 'path');
-        pathEl.setAttribute('d', lineD);
-        pathEl.setAttribute('fill', 'none');
-        pathEl.setAttribute('stroke', s.color);
-        pathEl.setAttribute('stroke-width', '1.9');
-        pathEl.setAttribute('stroke-linecap', 'round');
-        seriesGroup.appendChild(pathEl);
 
-        const endPt = s.svgPts[s.svgPts.length - 1];
-        const endDot = document.createElementNS(SVG_NS, 'circle');
-        endDot.setAttribute('cx', endPt.x.toFixed(1));
-        endDot.setAttribute('cy', endPt.y.toFixed(1));
-        endDot.setAttribute('r', '2.7');
-        endDot.setAttribute('fill', s.color);
-        seriesGroup.appendChild(endDot);
+          const lineD = buildHorizontalTangentSpline(s.svgPts);
+          let areaD = '';
+          if (s.svgPts.length >= 2) {
+            const first = s.svgPts[0];
+            const last = s.svgPts[s.svgPts.length - 1];
+            areaD = `${lineD} L ${last.x.toFixed(1)} ${BOTTOM_Y} L ${first.x.toFixed(1)} ${BOTTOM_Y} Z`;
+            if (plottedSeries.length === 1) {
+              stopTop.setAttribute('stop-color', s.color);
+              stopBot.setAttribute('stop-color', s.color);
+              nodes.areaEl.removeAttribute('class');
+              nodes.areaEl.style.removeProperty('--sstep-series-color');
+              nodes.areaEl.setAttribute('fill', `url(#${gradId})`);
+            } else {
+              nodes.areaEl.removeAttribute('fill');
+              nodes.areaEl.setAttribute('class', 'sstep-multi-area');
+              nodes.areaEl.style.setProperty('--sstep-series-color', s.color);
+            }
+            nodes.areaEl.removeAttribute('hidden');
+          } else {
+            nodes.areaEl.setAttribute('d', '');
+            nodes.areaEl.setAttribute('hidden', '');
+          }
+
+          nodes.lineEl.setAttribute('stroke', s.color);
+          nodes.endDotEl.setAttribute('fill', s.color);
+
+          seriesGroup.appendChild(nodes.areaEl);
+          seriesGroup.appendChild(nodes.lineEl);
+          seriesGroup.appendChild(nodes.endDotEl);
+
+          const endPt = s.svgPts[s.svgPts.length - 1];
+          morphItems.push({
+            key: s.poolKey,
+            nextSegs: pointsToNormalizedCubicSegs(s.svgPts, BOTTOM_Y, {
+              leftX: LEFT_X,
+              spanX: plotW,
+              tension: 0.38,
+            }),
+            lineEl: nodes.lineEl,
+            areaEl: areaD ? nodes.areaEl : null,
+            endDotEl: nodes.endDotEl,
+            endX: endPt.x,
+            endY: endPt.y,
+            finalLineD: lineD,
+            finalAreaD: areaD,
+          });
+        }
+
+        for (const [k, nodes] of seriesNodePoolByKey.entries()) {
+          if (!activePoolKeys.has(k)) {
+            nodes.areaEl.remove();
+            nodes.lineEl.remove();
+            nodes.endDotEl.remove();
+          }
+        }
+
+        seriesMorphCtrl.morphSeries({
+          items: morphItems,
+          leftX: LEFT_X,
+          spanX: plotW,
+          bottomY: BOTTOM_Y,
+          skipMorph,
+        });
       }
 
-      // Edge-to-edge X-axis ticks (`0% .. 100%`)
+      // Edge-to-edge X-axis ticks (`0% .. 100%`) with active hover highlight & click-to-inspect
       const tickCount = 5;
+      const activeTickIdx =
+        hoveredSlotIdx >= 0 ? Math.round((hoveredSlotIdx / HOVER_SLOT_COUNT) * (tickCount - 1)) : -1;
       const ticks = [];
       for (let k = 0; k < tickCount; k++) {
         const ratio = k / (tickCount - 1);
@@ -1008,25 +1246,37 @@ export const AccountQuotaTrendCard = defineComponent({
         const leftPct = ratio * 100;
         ticks.push({
           idx: k,
+          slotIdx: Math.round(ratio * HOVER_SLOT_COUNT),
           leftPct,
           label: formatAxisTickTime(tickMs, spanMs),
+          fullTitle: formatHoverTimestamp(tickMs),
           edge: k === 0 ? 'start' : k === tickCount - 1 ? 'end' : '',
+          isHovered: k === activeTickIdx,
         });
       }
+      xTickElements = [];
+      lastHoveredTickIdx = activeTickIdx;
       patchKeyedList(xAxisEl, ticks, {
         keyFn: (tk) => tk.idx,
-        sigFn: (tk) => `${tk.leftPct.toFixed(1)}:${tk.label}:${tk.edge}`,
+        sigFn: (tk) => `${tk.leftPct.toFixed(1)}:${tk.label}:${tk.edge}:${tk.isHovered}`,
         createRow: () => {
           const el = h('span', { className: 'trend-x-tick text-mono' });
           return { el, refs: { el } };
         },
         updateRow: (r, tk) => {
           patchText(r.el, tk.label);
+          patchAttr(r.el, 'title', tk.fullTitle);
           patchStyleVar(r.el, '--tick-x', `${tk.leftPct.toFixed(2)}%`);
           patchClasses(r.el, {
             'is-start': tk.edge === 'start',
             'is-end': tk.edge === 'end',
+            'is-hovered': tk.isHovered,
           });
+          r.el.onclick = () => {
+            lastPointer = null;
+            showHoverAtSlot(tk.slotIdx, null, { forceRefresh: true });
+          };
+          xTickElements[tk.idx] = r.el;
         },
       });
 
@@ -1046,21 +1296,29 @@ export const AccountQuotaTrendCard = defineComponent({
           patchText(r.vl, `${+s.latestVal.toFixed(1)}%`);
         },
       });
+
+      if (hoveredSlotIdx >= 0) {
+        showHoverAtSlot(hoveredSlotIdx, lastPointer, { forceRefresh: true });
+      }
     }
 
     let resizeObs = null;
     if (typeof ResizeObserver === 'function') {
       resizeObs = new ResizeObserver((entries) => {
+        cachedSvgRect = null;
+        tooltipCtrl.invalidateRects();
         const w = Math.floor(Number(entries?.[0]?.contentRect?.width || 0));
         if (w >= 180 && Math.abs(w - viewW) >= 2) {
           viewW = w;
-          renderChart();
+          renderChart({ skipMorph: true });
         }
       });
       resizeObs.observe(plotStage);
     }
 
     onCleanup(() => {
+      seriesMorphCtrl.cancel();
+      tooltipCtrl.destroy();
       resizeObs?.disconnect();
       accountSelect.destroy();
       poolSelect.destroy();
@@ -1078,7 +1336,7 @@ export const AccountQuotaTrendCard = defineComponent({
     renderChart();
     return {
       el: rootEl,
-      refs: { update, refreshLabels: renderChart },
+      refs: { update, refreshLabels: () => renderChart() },
     };
   },
 });

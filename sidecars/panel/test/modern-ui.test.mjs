@@ -15,11 +15,19 @@ import {
   parseCssColorLuminance,
 } from '../src/core/appearance.js';
 import { createTrendAreaChart } from '../src/components/charts/TrendAreaChart.js';
-import { computePublicationFit } from '../src/components/charts/SessionStepCharts.js';
+import {
+  computePublicationFit,
+  createModelFitChart,
+  createSessionLineChart,
+} from '../src/components/charts/SessionStepCharts.js';
 import { CustomSelect } from '../src/components/ui/CustomSelect.js';
 import { SegmentedControl } from '../src/components/ui/SegmentedControl.js';
+import { AccountQuotaTrendCard } from '../src/components/widgets/AccountQuotaTrendCard.js';
 import {
+  buildCapsuleSlotContext,
+  createCapsuleSlotNode,
   patchCapsuleOdometerText,
+  syncCapsuleSlotNodes,
   tokenizeCapsuleOdometerText,
 } from '../src/components/widgets/CapsuleBarWidget.js';
 import { ContextWindowWidget } from '../src/components/widgets/ContextWindowWidget.js';
@@ -558,12 +566,21 @@ test('SegmentedControl variable-width glider snaps cleanly on reveal and glides 
   const tipEl = trendChart.el.querySelector('.trend-tooltip');
   Object.assign(tipEl, { offsetWidth: 216, offsetHeight: 82 });
   const plotStage = trendChart.el.querySelector('.trend-plot-stage');
+  const trendPeakPill = trendChart.el.querySelector('.trend-peak-pill');
   const svgEl = trendChart.el.querySelector('.trend-svg');
   svgEl.getBoundingClientRect = () => ({ left: 0, top: 246, width: 460, height: 184, right: 460, bottom: 430 });
+  // Zero-data slots must keep peak pill hidden even after hover + mouseleave
+  trendChart.update([{ index: 0, label: '00:53', fullLabel: '11月25日 00:53 - 00:54', tokens: 0, calls: 0, costUsd: 0 }]);
+  assert.equal(trendPeakPill.hasAttribute('hidden'), true, 'Zero-data chart must hide peak pill');
+  plotStage.dispatchEvent({ type: 'mousemove', clientX: 200, clientY: 340 });
+  plotStage.dispatchEvent({ type: 'mouseleave' });
+  assert.equal(trendPeakPill.hasAttribute('hidden'), true, 'Peak pill stays hidden after mouseleave on zero-data chart');
+
   trendChart.update([
     { index: 0, label: '00:00', fullLabel: '11月19日 00:00 - 01:00', tokens: 1000, calls: 2, costUsd: 0.1 },
     { index: 1, label: '10:00', fullLabel: '11月19日 10:00 - 11:00', tokens: 25_000_000, calls: 80, costUsd: 6.37 },
   ]);
+  assert.equal(trendPeakPill.hasAttribute('hidden'), false, 'Non-zero chart shows peak pill');
   queuedRaf = null;
   plotStage.dispatchEvent({ type: 'mousemove', clientX: 80, clientY: 360 });
   const firstY = tipEl.style.getPropertyValue('--tip-y');
@@ -580,6 +597,135 @@ test('SegmentedControl variable-width glider snaps cleanly on reveal and glides 
   plotStage.dispatchEvent({ type: 'mousemove', clientX: 400, clientY: 390 });
   assert.equal(tipEl.style.getPropertyValue('--tip-y'), '54px');
   trendChart.destroy();
+
+  // 10b. SessionStepCharts (Summary view) and AccountQuotaTrendCard share 2D pointer-following tooltip + .is-tracking focus dots
+  const stepLineChart = createSessionLineChart();
+  Object.assign(stepLineChart.el, {
+    clientWidth: 460,
+    offsetHeight: 130,
+    getBoundingClientRect: () => ({ left: 0, top: 200, width: 460, height: 130, right: 460, bottom: 330 }),
+  });
+  const stepTipEl = stepLineChart.el.querySelector('.trend-tooltip');
+  assert.equal(stepTipEl.classList.contains('is-floating-tip'), true);
+  Object.assign(stepTipEl, { offsetWidth: 208, offsetHeight: 76 });
+  const stepStage = stepLineChart.el.querySelector('.sstep-plot-stage');
+  const stepSvg = stepLineChart.el.querySelector('.sstep-svg');
+  stepSvg.getBoundingClientRect = () => ({ left: 0, top: 206, width: 460, height: 106, right: 460, bottom: 312 });
+  stepLineChart.update({
+    steps: [
+      { stepIndex: 1, createdAtMs: 1000, modelShort: 'Gemini', totalTokens: 12000, inputTokens: 8000, cacheReadTokens: 2000, outputTokens: 2000, tokPerSec: 60, ttftSec: 0.4 },
+      { stepIndex: 2, createdAtMs: 2000, modelShort: 'Gemini', totalTokens: 28000, inputTokens: 16000, cacheReadTokens: 8000, outputTokens: 4000, tokPerSec: 75, ttftSec: 0.3 },
+    ],
+    metric: 'totalTokens',
+  });
+  queuedRaf?.();
+  assert.equal(stepLineChart.el.querySelector('.trend-peak-pill').classList.contains('is-ready'), true);
+  queuedRaf = null;
+  stepStage.dispatchEvent({ type: 'mousemove', clientX: 120, clientY: 300 });
+  assert.equal(stepTipEl.style.getPropertyValue('--tip-shift'), '0px');
+  assert.equal(stepTipEl.style.getPropertyValue('--tip-y'), '10px');
+  const stepHoverDot = stepLineChart.el.querySelector('.trend-hover-dot');
+  assert.equal(stepTipEl.classList.contains('is-tracking'), false);
+  assert.equal(stepHoverDot.classList.contains('is-tracking'), false);
+  queuedRaf?.();
+  assert.equal(stepTipEl.classList.contains('is-tracking'), true);
+  assert.equal(stepHoverDot.classList.contains('is-tracking'), true);
+  stepLineChart.destroy();
+
+  const fitChart = createModelFitChart();
+  Object.assign(fitChart.el, {
+    clientWidth: 460,
+    offsetHeight: 160,
+    getBoundingClientRect: () => ({ left: 0, top: 200, width: 460, height: 160, right: 460, bottom: 360 }),
+  });
+  const fitTipEl = fitChart.el.querySelector('.trend-tooltip');
+  assert.equal(fitTipEl.classList.contains('is-floating-tip'), true);
+  Object.assign(fitTipEl, { offsetWidth: 212, offsetHeight: 74 });
+  fitChart.el.querySelector('.sstep-fit-svg').getBoundingClientRect = () => ({
+    left: 0,
+    top: 204,
+    width: 460,
+    height: 138,
+    right: 460,
+    bottom: 342,
+  });
+  fitChart.update({
+    steps: [
+      { stepIndex: 1, createdAtMs: 1000, modelShort: 'Gemini', tokPerSec: 55 },
+      { stepIndex: 2, createdAtMs: 2000, modelShort: 'Gemini', tokPerSec: 68 },
+      { stepIndex: 3, createdAtMs: 3000, modelShort: 'Gemini', tokPerSec: 72 },
+    ],
+    metric: 'tps',
+  });
+  queuedRaf = null;
+  fitChart.el.querySelector('.sstep-plot-stage').dispatchEvent({ type: 'mousemove', clientX: 220, clientY: 310 });
+  queuedRaf?.();
+  assert.equal(fitTipEl.classList.contains('is-tracking'), true);
+  assert.equal(fitChart.el.querySelector('.trend-hover-dot').classList.contains('is-tracking'), true);
+  assert.equal(fitChart.el.querySelector('.sstep-hover-raw-dot').classList.contains('is-tracking'), true);
+  fitChart.destroy();
+
+  const nowQ = Date.now();
+  const quotaCard = AccountQuotaTrendCard({});
+  const quotaWrap = quotaCard.el.querySelector('.trend-chart-wrap');
+  Object.assign(quotaWrap, {
+    clientWidth: 460,
+    offsetHeight: 210,
+    getBoundingClientRect: () => ({ left: 0, top: 200, width: 460, height: 210, right: 460, bottom: 410 }),
+  });
+  const quotaTipEl = quotaCard.el.querySelector('.trend-tooltip');
+  assert.equal(quotaTipEl.classList.contains('is-floating-tip'), true);
+  Object.assign(quotaTipEl, { offsetWidth: 200, offsetHeight: 74 });
+  quotaCard.el.querySelector('.trend-svg').getBoundingClientRect = () => ({
+    left: 0,
+    top: 206,
+    width: 460,
+    height: 184,
+    right: 460,
+    bottom: 390,
+  });
+  quotaCard.refs.update({
+    activeEmail: 'user@example.com',
+    activePools: [
+      {
+        poolKey: 'Gemini',
+        poolLabel: 'Gemini',
+        remainingPct: 91,
+        weeklyRemainingPct: 88,
+        resetTime: new Date(nowQ + 2 * 3600_000).toISOString(),
+      },
+    ],
+    quotaHistory: {
+      'user@example.com': {
+        pools: {
+          Gemini: {
+            label: 'Gemini',
+            reset5hMs: nowQ + 2 * 3600_000,
+            points: [
+              [nowQ - 3 * 3600_000 + 2000, 100, 90],
+              [nowQ - 3600_000, 95, 89],
+            ],
+          },
+        },
+      },
+    },
+  });
+  queuedRaf = null;
+  quotaCard.el.querySelector('.trend-plot-stage').dispatchEvent({
+    type: 'mousemove',
+    clientX: 230,
+    clientY: 320,
+  });
+  assert.equal(quotaTipEl.style.getPropertyValue('--tip-y'), '32px');
+  queuedRaf?.();
+  assert.equal(quotaTipEl.classList.contains('is-tracking'), true);
+  assert.equal(quotaCard.el.querySelector('.trend-hover-dot').classList.contains('is-tracking'), true);
+  assert.equal(
+    quotaCard.el.querySelectorAll('.trend-x-tick').some((tk) => tk.classList.contains('is-hovered')),
+    true,
+    'Hovering quota chart highlights nearest X-axis tick'
+  );
+  quotaCard.destroy();
 
   // 11. ContextWindowWidget + LiveActivityWidget use pure SVG chevrons and animate expand/collapse under [data-modern-ui="true"]
   document.documentElement.setAttribute('data-modern-ui', 'true');
@@ -1236,4 +1382,136 @@ test('Capsule odometer digit rolling (0.15s) and color transition (0.1s) stay st
     builtStyles,
     /\[data-modern-ui="true"\]\s+\.trend-tooltip\.is-rich-breakdown\.is-tracking\s*\{\s*transition:\s*transform\s+150ms\s+var\(--ease-modern\);\s*\}/
   );
+  assert.match(
+    builtStyles,
+    /@starting-style\s*\{[\s\S]*?\[data-modern-ui="true"\]\s+\.wm-od-track\s*\{\s*transform:\s*translate3d\(0,\s*0,\s*0\);/
+  );
+  assert.match(
+    builtStyles,
+    /\.trend-tooltip\.is-floating-tip\s*\{[^}]*left:\s*0;[^}]*transform:\s*translate3d\(var\(--tip-x,\s*0px\),\s*var\(--tip-y,\s*0px\),\s*0\)/
+  );
+
+  // 6. Pending TTFT during a new step must NOT flash --s or destroy odometer reels before TTFT is calculated
+  const capHost = document.createElement('div');
+  capHost.setAttribute('data-modern-ui', 'true');
+  const capSlots = [
+    createCapsuleSlotNode(0, 'tps'),
+    createCapsuleSlotNode(1, 'ttft'),
+    createCapsuleSlotNode(2, 'context'),
+    createCapsuleSlotNode(3, 'none'),
+    createCapsuleSlotNode(4, 'none'),
+  ];
+  const capSeps = Array.from({ length: 4 }, () => document.createElement('span'));
+  for (const s of capSlots) capHost.appendChild(s.el);
+  document.body.appendChild(capHost);
+
+  const slotKeys = ['tps', 'ttft', 'context'];
+
+  // Poll 1: Step #10075 finished with ttft = 13.3s
+  syncCapsuleSlotNodes(
+    capSlots,
+    capSeps,
+    slotKeys,
+    buildCapsuleSlotContext({
+      activeConversation: {
+        cascadeId: 'df95cefc-791c-4ece-b433-d6ac4ad10316',
+        isRunning: false,
+        stepCount: 2131,
+        latestTokPerSec: 7.4,
+        latestTtftSec: 13.3,
+        lastKnownTtftSec: 13.3,
+        context: { totalTokens: 130000, compactionLimitTokens: 256000 },
+      },
+    })
+  );
+  assert.equal(capSlots[1].textSpan.getAttribute('data-od-value'), '13.3s');
+  const ttftReelsStep1 = capSlots[1].textSpan.querySelectorAll('.wm-od-digit');
+  assert.equal(ttftReelsStep1.length, 3);
+  const savedOnesReel = ttftReelsStep1[1];
+  const savedTenthsReel = ttftReelsStep1[2];
+
+  // Poll 2: Step #10077 streaming (10.5 t/s, latestTtftSec = null while TTFT is not calculated yet, even without lastKnownTtftSec)
+  syncCapsuleSlotNodes(
+    capSlots,
+    capSeps,
+    slotKeys,
+    buildCapsuleSlotContext({
+      activeConversation: {
+        cascadeId: 'df95cefc-791c-4ece-b433-d6ac4ad10316',
+        isRunning: true,
+        stepCount: 2132,
+        latestTokPerSec: 10.5,
+        latestTtftSec: null,
+        context: { totalTokens: 131000, compactionLimitTokens: 256000 },
+      },
+    })
+  );
+  assert.equal(
+    capSlots[1].textSpan.getAttribute('data-od-value'),
+    '13.3s',
+    'TTFT slot keeps previous valid TTFT while new step TTFT is still pending'
+  );
+  const ttftReelsPending = capSlots[1].textSpan.querySelectorAll('.wm-od-digit');
+  assert.equal(ttftReelsPending.length, 3);
+  assert.equal(ttftReelsPending[1], savedOnesReel);
+  assert.equal(ttftReelsPending[2], savedTenthsReel);
+
+  // Poll 2b: Cold-mounted slot mid-generation resolves lastKnownTtftSec / recentSteps fallback instead of --s
+  const coldSlotCtx = buildCapsuleSlotContext({
+    activeConversation: {
+      cascadeId: 'df95cefc-791c-4ece-b433-d6ac4ad10316',
+      isRunning: true,
+      stepCount: 2132,
+      latestTokPerSec: 10.5,
+      latestTtftSec: null,
+      lastKnownTtftSec: 13.3,
+      context: { totalTokens: 131000, compactionLimitTokens: 256000 },
+    },
+  });
+  assert.equal(coldSlotCtx.ttft, 13.3);
+
+  // Poll 3: Step #10077 TTFT calculated (8.4s) -> rolls directly 13.3s -> 8.4s on the preserved DOM reels
+  syncCapsuleSlotNodes(
+    capSlots,
+    capSeps,
+    slotKeys,
+    buildCapsuleSlotContext({
+      activeConversation: {
+        cascadeId: 'df95cefc-791c-4ece-b433-d6ac4ad10316',
+        isRunning: true,
+        stepCount: 2132,
+        latestTokPerSec: 10.5,
+        latestTtftSec: 8.4,
+        lastKnownTtftSec: 8.4,
+        context: { totalTokens: 131000, compactionLimitTokens: 256000 },
+      },
+    })
+  );
+  assert.equal(capSlots[1].textSpan.getAttribute('data-od-value'), '8.4s');
+  const ttftReelsResolved = capSlots[1].textSpan.querySelectorAll('.wm-od-digit');
+  assert.equal(ttftReelsResolved.length, 2);
+  assert.equal(ttftReelsResolved[0], savedOnesReel, 'Ones reel stays mounted for 150ms roll');
+  assert.equal(ttftReelsResolved[1], savedTenthsReel, 'Tenths reel stays mounted for 150ms roll');
+  assert.equal(savedOnesReel.querySelector('.wm-od-track').style.getPropertyValue('--od-val'), '8');
+  assert.equal(savedTenthsReel.querySelector('.wm-od-track').style.getPropertyValue('--od-val'), '4');
+
+  // Poll 4: Switching to a different conversation with no TTFT resets cleanly to --s without leaking
+  syncCapsuleSlotNodes(
+    capSlots,
+    capSeps,
+    slotKeys,
+    buildCapsuleSlotContext({
+      activeConversation: {
+        cascadeId: 'dddddddd-7777-8888-9999-eeeeeeeeeeee',
+        isRunning: false,
+        stepCount: 8,
+        latestTokPerSec: 120.5,
+        latestTtftSec: null,
+        recentSteps: [],
+        context: { totalTokens: 64000, compactionLimitTokens: 256000 },
+      },
+    })
+  );
+  assert.equal(capSlots[1].textSpan.textContent, '--s');
+  assert.equal(capSlots[1].textSpan.hasAttribute('data-od-active'), false);
 });
