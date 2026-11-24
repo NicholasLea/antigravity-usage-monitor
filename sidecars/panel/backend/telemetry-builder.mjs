@@ -782,6 +782,7 @@ async function readTelemetrySources(
     summariesObj: localSummaries.available
       ? localSummaries.summariesObj
       : allTrajRes?.trajectorySummaries || {},
+    summariesFromLocalDb: localSummaries.available,
     sideQuestionParents: localSummaries.available ? localSummaries.sideQuestionParents : {},
     currentAccountName: accountScope,
     requestedConvId,

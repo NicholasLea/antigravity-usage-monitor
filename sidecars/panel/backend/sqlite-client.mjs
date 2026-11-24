@@ -7,9 +7,14 @@
  * 3. 采用短连接 + `PRAGMA busy_timeout = 1000` + `SQLITE_BUSY` 瞬时锁重试并在 `finally` 中立即释放句柄，绝不阻塞宿主 WAL checkpoint。
  */
 
-import { existsSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
 
 export const SQLITE_IN_CHUNK_SIZE = 400;
+const SQLITE_MIN_READY_BYTES = 4096;
+const SQLITE_HEADER_BYTES = 100;
+const SQLITE_MAGIC_PREFIX = 'SQLite format 3\0';
+const MAX_SQLITE_READY_MEMO = 512;
+const sqliteWalReadyMemo = new Map();
 
 let sqliteResolved = false;
 let sqliteDatabaseSyncCtor = null;
@@ -60,7 +65,116 @@ export function hasBuiltinNodeSqlite() {
 }
 
 /**
+ * 通过零 SQLite 锁的 100 字节文件头探测判断本地 `.db` 是否已完成表结构初始化（或已切入 WAL 且含有效帧）。
+ *
+ * Windows 下宿主（如 `agy` CLI）新建 `<cid>.db` 执行 `schema init` / `PRAGMA journal_mode = WAL` 的数毫秒内，
+ * 若外部进程对 0 字节或仍处于回滚日志模式（`writeVersion !== 2`）的库发起 `sqlite3_open_v2` 查询并持有 `SHARED` 锁，
+ * 会直接触发宿主 `trajectory db schema init: database is locked` 并迫使整场会话永久降级至加密 `.pb`。
+ * 纯 `fs.openSync` / `fs.readSync` 不申请任何 SQLite 字节区间锁（`LockFileEx`），可安全跳过初始化途中的半成品库。
+ *
+ * @param {string} dbPath
+ * @param {{ dbStat?: import('node:fs').Stats | null, walStat?: import('node:fs').Stats | null, skipWalStat?: boolean }} [opts={}]
+ * @returns {boolean}
+ */
+export function isSqliteDbReadyForRead(
+  dbPath,
+  { dbStat: preDbStat = null, walStat: preWalStat = null, skipWalStat = false } = {}
+) {
+  if (!dbPath || typeof dbPath !== 'string') return false;
+  if (
+    typeof openSync !== 'function' ||
+    typeof readSync !== 'function' ||
+    typeof closeSync !== 'function'
+  ) {
+    return typeof globalThis.DatabaseSync === 'function';
+  }
+
+  let dbStat = preDbStat;
+  if (!dbStat) {
+    try {
+      dbStat = statSync(dbPath, { throwIfNoEntry: false });
+    } catch {
+      return false;
+    }
+  }
+  const dbSize = Number(dbStat?.size || 0);
+  if (!dbStat || dbSize < SQLITE_MIN_READY_BYTES) {
+    sqliteWalReadyMemo.delete(dbPath);
+    return false;
+  }
+
+  const birthKey = `${Number(dbStat.birthtimeMs || 0)}:${Number(dbStat.ino || 0)}`;
+  const cachedReady = sqliteWalReadyMemo.get(dbPath);
+  if (cachedReady && cachedReady.birthKey === birthKey && dbSize >= cachedReady.minVerifiedSize) {
+    return true;
+  }
+
+  try {
+    const journalStat = statSync(`${dbPath}-journal`, { throwIfNoEntry: false });
+    if (journalStat && Number(journalStat.size || 0) > 0) {
+      return false;
+    }
+  } catch {
+    // 忽略瞬时回滚日志探测异常
+  }
+
+  let fd = -1;
+  try {
+    fd = openSync(dbPath, 'r');
+    const header = Buffer.allocUnsafe(SQLITE_HEADER_BYTES);
+    const bytesRead = readSync(fd, header, 0, SQLITE_HEADER_BYTES, 0);
+    if (bytesRead < SQLITE_HEADER_BYTES) return false;
+    if (header.toString('latin1', 0, 16) !== SQLITE_MAGIC_PREFIX) return false;
+
+    const writeVersion = header[18];
+    const readVersion = header[19];
+    const pageCount = header.readUInt32BE(28);
+    const schemaCookie = header.readUInt32BE(40);
+    const isWalMode = writeVersion === 2 && readVersion === 2;
+
+    if (isWalMode) {
+      let hasCommittedSchema = pageCount >= 2 && schemaCookie > 0;
+      if (!hasCommittedSchema) {
+        let walStat = preWalStat;
+        if (!walStat && !skipWalStat) {
+          try {
+            walStat = statSync(`${dbPath}-wal`, { throwIfNoEntry: false });
+          } catch {
+            walStat = null;
+          }
+        }
+        hasCommittedSchema = Number(walStat?.size || 0) > 0;
+      }
+      if (!hasCommittedSchema) return false;
+
+      if (sqliteWalReadyMemo.size >= MAX_SQLITE_READY_MEMO && !sqliteWalReadyMemo.has(dbPath)) {
+        const oldestKey = sqliteWalReadyMemo.keys().next().value;
+        if (oldestKey !== undefined) sqliteWalReadyMemo.delete(oldestKey);
+      }
+      sqliteWalReadyMemo.set(dbPath, {
+        birthKey,
+        minVerifiedSize: SQLITE_MIN_READY_BYTES,
+      });
+      return true;
+    }
+
+    return pageCount >= 2 && schemaCookie > 0;
+  } catch {
+    return false;
+  } finally {
+    if (fd >= 0) {
+      try {
+        closeSync(fd);
+      } catch {
+        // 忽略关闭异常
+      }
+    }
+  }
+}
+
+/**
  * 计算 SQLite 主库与 `.db-wal` 预写日志的复合签名（忽略易抖动的 `-shm` 共享内存头），精准感知未 checkpoint 的实时写入。
+ * 对尚未完成 `schema init` 的新建空文件返回 `exists: false`，避免触发过早只读打开抢锁。
  *
  * @param {string} dbPath
  * @returns {{ exists: boolean, mtimeMs: number, sig: string }}
@@ -104,7 +218,7 @@ export function isSqliteBusyError(err) {
 
 /**
  * 以只读模式打开 SQLite 数据库执行查询并在 `finally` 中立即关闭连接，避免长连接阻塞宿主 WAL checkpoint。
- * 遇到瞬时锁竞争（`SQLITE_BUSY`）时自动重试 1 次。
+ * 打开前先执行无锁头部就绪校验；遇到瞬时锁竞争（`SQLITE_BUSY`）时自动重试 1 次。
  *
  * @template T
  * @param {string} dbPath
@@ -114,6 +228,7 @@ export function isSqliteBusyError(err) {
 export function withReadOnlySqliteDb(dbPath, queryFn) {
   const DatabaseSync = getNodeSqliteDatabaseSync();
   if (!DatabaseSync) return null;
+  if (!isSqliteDbReadyForRead(dbPath)) return null;
   for (let attempt = 0; attempt < 2; attempt++) {
     let db = null;
     try {

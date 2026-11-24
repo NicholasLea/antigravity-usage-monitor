@@ -21,6 +21,7 @@ import {
   computeSqliteWalSig,
   getNodeSqliteDatabaseSync,
   hasBuiltinNodeSqlite,
+  isSqliteDbReadyForRead,
   normalizeSqliteIsoTime,
   withReadOnlySqliteDb,
 } from './sqlite-client.mjs';
@@ -40,6 +41,7 @@ export {
   computeSqliteWalSig,
   getNodeSqliteDatabaseSync,
   hasBuiltinNodeSqlite,
+  isSqliteDbReadyForRead,
   withReadOnlySqliteDb,
 };
 

@@ -19,7 +19,7 @@
  * - `node sidecars/panel/cli-statusline.mjs --uninstall`
  */
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -189,8 +189,102 @@ function findConversationIdByWorkspaceFts(cliRoot, cwd) {
   }
 }
 
+function resolveCliTranscriptPath(cliRoot, cid) {
+  if (!cliRoot || !cid) return '';
+  const logsDir = join(cliRoot, 'brain', cid, '.system_generated', 'logs');
+  const primary = join(logsDir, 'transcript.jsonl');
+  if (existsSync(primary)) return primary;
+  const full = join(logsDir, 'transcript_full.jsonl');
+  return existsSync(full) ? full : '';
+}
+
+function readCliTranscriptFallbackTrajectory(cliRoot, cid) {
+  const transcriptPath = resolveCliTranscriptPath(cliRoot, cid);
+  if (!transcriptPath) return null;
+  let raw = '';
+  try {
+    raw = readFileSync(transcriptPath, 'utf8');
+  } catch {
+    return null;
+  }
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const rawSteps = [];
+  let lineOrdinal = 0;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let parsed = null;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed !== 'object') continue;
+    const stepIdx = Number.isFinite(Number(parsed.step_index))
+      ? Number(parsed.step_index)
+      : lineOrdinal;
+    lineOrdinal += 1;
+    const upperType = String(parsed.type || '').trim().toUpperCase();
+    const hasTokens =
+      parsed.input_tokens !== undefined ||
+      parsed.cache_read_tokens !== undefined ||
+      parsed.output_tokens !== undefined;
+    if (!hasTokens) {
+      rawSteps.push(parsed);
+      continue;
+    }
+    const rawStatus = String(parsed.status || '').trim().toUpperCase();
+    const mappedStatus = /CANCEL/.test(rawStatus)
+      ? 'CORTEX_STEP_STATUS_CANCELED'
+      : /ERROR/.test(rawStatus)
+        ? 'CORTEX_STEP_STATUS_ERROR'
+        : /INTERRUPT/.test(rawStatus)
+          ? 'CORTEX_STEP_STATUS_INTERRUPTED'
+          : 'CORTEX_STEP_STATUS_DONE';
+    const finishedAt = String(
+      parsed.finished_generating_at ||
+        parsed.finishedGeneratingAt ||
+        parsed.completed_at ||
+        parsed.completedAt ||
+        ''
+    ).trim();
+    const thinkingTokens = Number(parsed.thinking_tokens ?? 0) || 0;
+    const responseTokens = parsed.response_tokens;
+    rawSteps.push({
+      type:
+        upperType === 'CHECKPOINT' || upperType === 'CORTEX_STEP_TYPE_CHECKPOINT'
+          ? 'CORTEX_STEP_TYPE_CHECKPOINT'
+          : String(parsed.type || 'PLANNER_RESPONSE'),
+      status: mappedStatus,
+      plannerResponse: {
+        response: typeof parsed.content === 'string' ? parsed.content : '',
+        thinking: typeof parsed.thinking === 'string' ? parsed.thinking : '',
+        toolCalls: Array.isArray(parsed.tool_calls) ? parsed.tool_calls : [],
+        ...(thinkingTokens > 0 ? { thinkingTokens } : {}),
+        ...(responseTokens !== undefined ? { responseTokens } : {}),
+      },
+      metadata: {
+        createdAt: String(parsed.created_at || parsed.createdAt || ''),
+        ...(finishedAt ? { finishedGeneratingAt: finishedAt } : {}),
+        sourceTrajectoryStepInfo: { stepIndex: stepIdx },
+        modelUsage: {
+          model: String(parsed.model || parsed.generator_model || 'unknown').trim() || 'unknown',
+          ...(parsed.response_model ? { responseModel: String(parsed.response_model).trim() } : {}),
+          ...(parsed.api_provider ? { apiProvider: String(parsed.api_provider).trim() } : {}),
+          inputTokens: parsed.input_tokens ?? 0,
+          cacheReadTokens: parsed.cache_read_tokens ?? 0,
+          outputTokens: parsed.output_tokens ?? 0,
+          ...(thinkingTokens > 0 ? { thinkingOutputTokens: thinkingTokens } : {}),
+          ...(responseTokens !== undefined ? { responseOutputTokens: responseTokens } : {}),
+        },
+      },
+    });
+  }
+  return rawSteps.length > 0 ? { cascadeId: cid, steps: rawSteps, generatorMetadata: [] } : null;
+}
+
 /**
- * 解析当前 CLI 窗口对应的本地 `.db` 会话轨迹并计算最新测速、延迟、缓存与成本指标。
+ * 解析当前 CLI 窗口对应的本地 `.db`（或降级 `.pb` + `transcript.jsonl`）会话轨迹并计算最新测速、延迟、缓存与成本指标。
  *
  * @param {{ cliRoot: string, stdinData?: object|null, nowMs?: number }} params
  */
@@ -234,35 +328,49 @@ export function resolveCliLocalSessionMetrics({
     '';
   if (!targetCid && effectiveCwd) {
     const ftsCid = findConversationIdByWorkspaceFts(cliRoot, effectiveCwd);
-    if (ftsCid && existsSync(join(convDir, `${ftsCid}.db`))) {
+    if (
+      ftsCid &&
+      (existsSync(join(convDir, `${ftsCid}.db`)) || existsSync(join(convDir, `${ftsCid}.pb`)))
+    ) {
       targetCid = ftsCid;
     }
   }
 
   let dbPath = targetCid ? join(convDir, `${targetCid}.db`) : '';
-  if (!dbPath || !existsSync(dbPath)) {
+  let pbPath = targetCid ? join(convDir, `${targetCid}.pb`) : '';
+  if (!targetCid || (!existsSync(dbPath) && !existsSync(pbPath))) {
     let candidates = [];
     try {
-      candidates = readdirSync(convDir)
-        .filter((name) => name.endsWith('.db'))
-        .map((name) => {
-          const cid = name.slice(0, -3).toLowerCase();
-          const full = join(convDir, name);
-          let mtimeMs = 0;
-          try {
-            mtimeMs = statSync(full).mtimeMs || 0;
-          } catch {
-            // 忽略单文件 stat 异常
-          }
+      const byCid = new Map();
+      for (const name of readdirSync(convDir)) {
+        const isDb = name.endsWith('.db');
+        const isPb = !isDb && name.endsWith('.pb');
+        if (!isDb && !isPb) continue;
+        const cid = name.slice(0, -3).toLowerCase();
+        const full = join(convDir, name);
+        let mtimeMs = 0;
+        try {
+          mtimeMs = statSync(full).mtimeMs || 0;
+        } catch {
+          // 忽略单文件 stat 异常
+        }
+        const existing = byCid.get(cid);
+        if (!existing) {
           const summary = summariesMap.get(cid);
-          return {
+          byCid.set(cid, {
             cid,
-            full,
+            dbFull: isDb ? full : '',
+            pbFull: isPb ? full : '',
             mtimeMs,
             isSubagent: Boolean(summary?.parentConversationId),
-          };
-        })
-        .sort((a, b) => b.mtimeMs - a.mtimeMs);
+          });
+        } else {
+          if (isDb) existing.dbFull = full;
+          if (isPb) existing.pbFull = full;
+          if (mtimeMs > existing.mtimeMs) existing.mtimeMs = mtimeMs;
+        }
+      }
+      candidates = Array.from(byCid.values()).sort((a, b) => b.mtimeMs - a.mtimeMs);
     } catch {
       candidates = [];
     }
@@ -270,11 +378,14 @@ export function resolveCliLocalSessionMetrics({
     const picked = candidates.find((c) => !c.isSubagent) || candidates[0];
     if (picked) {
       targetCid = picked.cid;
-      dbPath = picked.full;
+      dbPath = picked.dbFull || join(convDir, `${picked.cid}.db`);
+      pbPath = picked.pbFull || join(convDir, `${picked.cid}.pb`);
     }
   }
 
-  if (!dbPath || !existsSync(dbPath)) {
+  const hasDbFile = Boolean(dbPath && existsSync(dbPath));
+  const hasPbFile = Boolean(pbPath && existsSync(pbPath));
+  if (!hasDbFile && !hasPbFile) {
     return {
       found: false,
       runningRootCount,
@@ -282,23 +393,69 @@ export function resolveCliLocalSessionMetrics({
     };
   }
 
-  const parentLink = readLocalSqliteParentLink(dbPath);
-  if (parentLink?.parentConversationId || parentLink?.rootConversationId) {
-    const candidateRootId = parentLink.rootConversationId || parentLink.parentConversationId;
-    const rootDb = join(convDir, `${candidateRootId}.db`);
-    if (candidateRootId && existsSync(rootDb)) {
-      targetCid = candidateRootId;
-      dbPath = rootDb;
+  if (hasDbFile) {
+    const parentLink = readLocalSqliteParentLink(dbPath);
+    if (parentLink?.parentConversationId || parentLink?.rootConversationId) {
+      const candidateRootId = parentLink.rootConversationId || parentLink.parentConversationId;
+      const rootDb = join(convDir, `${candidateRootId}.db`);
+      const rootPb = join(convDir, `${candidateRootId}.pb`);
+      if (candidateRootId && (existsSync(rootDb) || existsSync(rootPb))) {
+        targetCid = candidateRootId;
+        dbPath = rootDb;
+        pbPath = rootPb;
+      }
+    }
+  } else {
+    const summaryParent = summariesMap.get(targetCid)?.parentConversationId || '';
+    if (summaryParent) {
+      const rootDb = join(convDir, `${summaryParent}.db`);
+      const rootPb = join(convDir, `${summaryParent}.pb`);
+      if (existsSync(rootDb) || existsSync(rootPb)) {
+        targetCid = summaryParent;
+        dbPath = rootDb;
+        pbPath = rootPb;
+      }
     }
   }
 
-  const walInfo = computeSqliteWalSig(dbPath);
-  const dbMtimeMs = walInfo.mtimeMs || 0;
+  const walInfo = dbPath ? computeSqliteWalSig(dbPath) : { exists: false, mtimeMs: 0, sig: '' };
+  let fallbackMtimeMs = 0;
+  let fallbackSigPart = '';
+  if (!walInfo.exists || (pbPath && existsSync(pbPath))) {
+    const fbParts = [];
+    if (pbPath) {
+      try {
+        const pbSt = statSync(pbPath, { throwIfNoEntry: false });
+        if (pbSt) {
+          fallbackMtimeMs = Math.max(fallbackMtimeMs, Number(pbSt.mtimeMs || 0));
+          fbParts.push(`p:${Math.floor(Number(pbSt.mtimeMs || 0))}:${Number(pbSt.size || 0)}`);
+        }
+      } catch {
+        // 忽略 stat 异常
+      }
+    }
+    const trPath = resolveCliTranscriptPath(cliRoot, targetCid);
+    if (trPath) {
+      try {
+        const trSt = statSync(trPath, { throwIfNoEntry: false });
+        if (trSt) {
+          fallbackMtimeMs = Math.max(fallbackMtimeMs, Number(trSt.mtimeMs || 0));
+          fbParts.push(`t:${Math.floor(Number(trSt.mtimeMs || 0))}:${Number(trSt.size || 0)}`);
+        }
+      } catch {
+        // 忽略 stat 异常
+      }
+    }
+    fallbackSigPart = fbParts.join(',');
+  }
+  const dbMtimeMs = Math.max(walInfo.mtimeMs || 0, fallbackMtimeMs);
   const targetLower = String(targetCid || '').toLowerCase();
   const targetIsRunning = freshRunningRootIds.includes(targetLower);
 
-  const cliTrajMemoFile = join(DATA_DIR, 'cli-statusline-traj-memo.json');
-  const prevMemo = walInfo.sig ? loadJson(cliTrajMemoFile, null) : null;
+  const effectiveDataDir = String(process.env.USAGE_MONITOR_DATA_DIR || '').trim() || DATA_DIR;
+  const cliTrajMemoFile = join(effectiveDataDir, 'cli-statusline-traj-memo.json');
+  const combinedSig = [walInfo.sig, fallbackSigPart].filter(Boolean).join('~');
+  const prevMemo = combinedSig ? loadJson(cliTrajMemoFile, null) : null;
   const prevOtherCache =
     prevMemo && typeof prevMemo.otherWaiting === 'object' && prevMemo.otherWaiting !== null
       ? prevMemo.otherWaiting
@@ -342,7 +499,7 @@ export function resolveCliLocalSessionMetrics({
     }
   }
 
-  const targetMemoKey = walInfo.sig ? `v1::${dbPath}::${walInfo.sig}` : '';
+  const targetMemoKey = combinedSig ? `v1::${targetCid}::${combinedSig}` : '';
   if (
     targetMemoKey &&
     prevMemo?.targetKey === targetMemoKey &&
@@ -401,20 +558,26 @@ export function resolveCliLocalSessionMetrics({
     };
   }
 
-  let traj = readLocalSqliteTrajectory(dbPath, {
-    cascadeId: targetCid,
-    isRunning: targetIsRunning,
-  });
+  let traj = walInfo.exists
+    ? readLocalSqliteTrajectory(dbPath, {
+        cascadeId: targetCid,
+        isRunning: targetIsRunning,
+      })
+    : null;
   if (traj?.parentConversationId) {
-    const rootDb = join(convDir, `${traj.rootConversationId || traj.parentConversationId}.db`);
+    const rootCid = traj.rootConversationId || traj.parentConversationId;
+    const rootDb = join(convDir, `${rootCid}.db`);
     if (rootDb !== dbPath && existsSync(rootDb)) {
       const rootTraj = readLocalSqliteTrajectory(rootDb, { isRunning: true });
       if (rootTraj) {
-        targetCid = traj.rootConversationId || traj.parentConversationId;
+        targetCid = rootCid;
         dbPath = rootDb;
         traj = rootTraj;
       }
     }
+  }
+  if (!traj || !Array.isArray(traj.steps) || traj.steps.length === 0) {
+    traj = readCliTranscriptFallbackTrajectory(cliRoot, targetCid);
   }
 
   if (!traj || !Array.isArray(traj.steps) || traj.steps.length === 0) {
