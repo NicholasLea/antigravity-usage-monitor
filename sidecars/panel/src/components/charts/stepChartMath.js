@@ -663,3 +663,50 @@ export function formatChartMetricCompact(metric, val) {
       return String(val);
   }
 }
+
+/**
+ * Downsamples dense chronological step series (`> maxPoints`, e.g. 1,500–5,000 steps) to an
+ * adaptive visual vertex budget (`~2.1px` per segment) so cubic splines never overplot into an
+ * opaque solid wall while strictly preserving the start step, end step, and exact global peak step.
+ *
+ * @template {{ value?: number }} T
+ * @param {T[]} points
+ * @param {number} [maxPoints=208]
+ * @returns {T[]}
+ */
+export function downsampleStepPointsForPlot(points, maxPoints = 208) {
+  if (!Array.isArray(points) || points.length <= maxPoints || maxPoints < 8) {
+    return points;
+  }
+  const n = points.length;
+  let globalPeakIdx = -1;
+  let globalPeakVal = -Infinity;
+  for (let i = 0; i < n; i += 1) {
+    const v = Number(points[i]?.value);
+    if (Number.isFinite(v) && v >= globalPeakVal) {
+      globalPeakVal = v;
+      globalPeakIdx = i;
+    }
+  }
+
+  const out = [points[0]];
+  const bucketCount = maxPoints - 2;
+  const interiorLen = n - 2;
+  for (let b = 0; b < bucketCount; b += 1) {
+    const bStart = 1 + Math.floor((b * interiorLen) / bucketCount);
+    const bEnd = Math.max(bStart + 1, 1 + Math.floor(((b + 1) * interiorLen) / bucketCount));
+    const pickIdx =
+      globalPeakIdx >= bStart && globalPeakIdx < bEnd
+        ? globalPeakIdx
+        : bStart + Math.floor((bEnd - bStart) / 2);
+    const picked = points[pickIdx];
+    if (picked && picked !== out[out.length - 1]) {
+      out.push(picked);
+    }
+  }
+  const lastPt = points[n - 1];
+  if (lastPt && lastPt !== out[out.length - 1]) {
+    out.push(lastPt);
+  }
+  return out;
+}

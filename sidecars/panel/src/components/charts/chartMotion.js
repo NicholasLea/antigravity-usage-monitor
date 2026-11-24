@@ -282,21 +282,15 @@ function alignCubicChainsForMorph(fromSegs, toSegs) {
   const tSpan = tEnd - tStart;
 
   const rawTau = [0, 1];
-  const pushChainKnots = (segs, start, span, cap) => {
+  const pushChainKnots = (segs, start, span) => {
     if (!(span > 1e-6)) return;
-    if (segs.length <= cap) {
-      for (let i = 0; i < segs.length; i++) {
-        rawTau.push(Math.max(0, Math.min(1, (segs[i].u3 - start) / span)));
-      }
-    } else {
-      const stride = Math.ceil(segs.length / cap);
-      for (let i = 0; i < segs.length; i += stride) {
-        rawTau.push(Math.max(0, Math.min(1, (segs[i].u3 - start) / span)));
-      }
+    for (let i = 0; i < segs.length; i++) {
+      rawTau.push(Math.max(0, Math.min(1, (segs[i].u0 - start) / span)));
+      rawTau.push(Math.max(0, Math.min(1, (segs[i].u3 - start) / span)));
     }
   };
-  pushChainKnots(toSegs, tStart, tSpan, 96);
-  pushChainKnots(fromSegs, fStart, fSpan, 48);
+  pushChainKnots(toSegs, tStart, tSpan);
+  pushChainKnots(fromSegs, fStart, fSpan);
 
   rawTau.sort((a, b) => a - b);
   const tauKnots = [0];
@@ -381,6 +375,20 @@ export function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH
     hasRenderedOnce = false;
   }
 
+  function getCurrentSegs() {
+    const src = liveMorphSegs || committedSegs;
+    return hasRenderedOnce && src.length > 0 ? src.map((s) => ({ ...s })) : [];
+  }
+
+  function seedSegs(segs) {
+    cancel();
+    if (Array.isArray(segs) && segs.length > 0) {
+      committedSegs = segs.map((s) => ({ ...s }));
+      liveMorphSegs = null;
+      hasRenderedOnce = true;
+    }
+  }
+
   function morphTo({
     nextSegs,
     leftX,
@@ -438,6 +446,17 @@ export function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH
 
     const activeLive = alignedFrom.map((s) => ({ ...s }));
     liveMorphSegs = activeLive;
+    const initialLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
+    patchAttr(linePath, 'd', initialLineD);
+    if (areaPath) {
+      if (finalAreaD) {
+        const firstX = (leftX + activeLive[0].u0 * spanX).toFixed(1);
+        const lastX = (leftX + activeLive[segCount - 1].u3 * spanX).toFixed(1);
+        patchAttr(areaPath, 'd', `${initialLineD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`);
+      } else {
+        patchAttr(areaPath, 'd', '');
+      }
+    }
     const startTs = performance.now();
 
     const step = (nowTs) => {
@@ -477,7 +496,7 @@ export function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH
     morphRafId = window.requestAnimationFrame(step);
   }
 
-  return { morphTo, cancel, reset };
+  return { morphTo, cancel, reset, getCurrentSegs, seedSegs };
 }
 
 /**
@@ -486,6 +505,7 @@ export function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH
  */
 export function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
   let morphRafId = 0;
+  let hasRenderedOnce = false;
   const stateByKey = new Map();
 
   function cancel() {
@@ -501,7 +521,33 @@ export function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE
 
   function reset() {
     cancel();
+    hasRenderedOnce = false;
     stateByKey.clear();
+  }
+
+  function getSeriesSegs(key) {
+    const rec = stateByKey.get(key);
+    const src = rec ? rec.liveSegs || rec.committedSegs : null;
+    return src && src.length > 0 ? src.map((s) => ({ ...s })) : null;
+  }
+
+  function getFirstSegs() {
+    for (const rec of stateByKey.values()) {
+      const src = rec.liveSegs || rec.committedSegs;
+      if (src && src.length > 0) return src.map((s) => ({ ...s }));
+    }
+    return null;
+  }
+
+  function seedSeries(key, segs) {
+    if (!key || !Array.isArray(segs) || segs.length === 0) return;
+    stateByKey.set(key, {
+      committedSegs: segs.map((s) => ({ ...s })),
+      liveSegs: null,
+      endX: NaN,
+      endY: NaN,
+    });
+    hasRenderedOnce = true;
   }
 
   function morphSeries({
@@ -510,9 +556,12 @@ export function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE
     spanX,
     bottomY,
     skipMorph = false,
+    allowBaselineEntry = false,
   }) {
     cancel();
     const canAnim = !skipMorph && canAnimateChartInBrowser();
+    const wasRenderedBefore = hasRenderedOnce;
+    hasRenderedOnce = items.length > 0;
     const activeSet = new Set();
     const jobs = [];
 
@@ -520,7 +569,26 @@ export function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE
       const it = items[idx];
       activeSet.add(it.key);
       const prevEntry = stateByKey.get(it.key);
-      const prevSegs = prevEntry ? prevEntry.liveSegs || prevEntry.committedSegs : null;
+      let prevSegs = prevEntry ? prevEntry.liveSegs || prevEntry.committedSegs : null;
+      if (
+        (!prevSegs || prevSegs.length === 0) &&
+        canAnim &&
+        allowBaselineEntry &&
+        wasRenderedBefore &&
+        it.nextSegs.length > 0 &&
+        Number.isFinite(bottomY)
+      ) {
+        prevSegs = it.nextSegs.map((s) => ({
+          u0: s.u0,
+          y0: bottomY,
+          cu1: s.cu1,
+          cy1: bottomY,
+          cu2: s.cu2,
+          cy2: bottomY,
+          u3: s.u3,
+          y3: bottomY,
+        }));
+      }
 
       if (!canAnim || !prevSegs || prevSegs.length === 0 || it.nextSegs.length === 0) {
         stateByKey.set(it.key, {
@@ -585,6 +653,17 @@ export function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE
         endY: fromEndY,
       };
       stateByKey.set(it.key, stateRec);
+      const initLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
+      patchAttr(it.lineEl, 'd', initLineD);
+      if (it.areaEl) {
+        if (it.finalAreaD) {
+          const firstX = (leftX + activeLive[0].u0 * spanX).toFixed(1);
+          const lastX = (leftX + activeLive[segCount - 1].u3 * spanX).toFixed(1);
+          patchAttr(it.areaEl, 'd', `${initLineD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`);
+        } else {
+          patchAttr(it.areaEl, 'd', '');
+        }
+      }
       jobs.push({
         it,
         alignedFrom,
@@ -663,7 +742,7 @@ export function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE
     morphRafId = window.requestAnimationFrame(step);
   }
 
-  return { morphSeries, cancel, reset };
+  return { morphSeries, cancel, reset, getSeriesSegs, getFirstSegs, seedSeries };
 }
 
 function buildGridFitPolylineD(grid) {
@@ -687,12 +766,41 @@ function buildGridCiBandD(grid) {
   return `${d} Z`;
 }
 
+function resampleFitGridToTargetXs(sourceGrid, targetGrid) {
+  if (!Array.isArray(sourceGrid) || sourceGrid.length === 0) return null;
+  const sLen = sourceGrid.length;
+  const sFirst = sourceGrid[0];
+  const sLast = sourceGrid[sLen - 1];
+  let j = 0;
+  return targetGrid.map((tg) => {
+    const x = tg.x;
+    if (sLen === 1 || x <= sFirst.x) {
+      return { x, fitY: sFirst.fitY, lowY: sFirst.lowY, highY: sFirst.highY };
+    }
+    if (x >= sLast.x) {
+      return { x, fitY: sLast.fitY, lowY: sLast.lowY, highY: sLast.highY };
+    }
+    while (j < sLen - 2 && sourceGrid[j + 1].x < x) j += 1;
+    const a = sourceGrid[j];
+    const b = sourceGrid[j + 1];
+    const span = b.x - a.x;
+    const r = span > 1e-6 ? Math.max(0, Math.min(1, (x - a.x) / span)) : 0;
+    return {
+      x,
+      fitY: a.fitY + (b.fitY - a.fitY) * r,
+      lowY: a.lowY + (b.lowY - a.lowY) * r,
+      highY: a.highY + (b.highY - a.highY) * r,
+    };
+  });
+}
+
 /**
  * Smoothly morphs LOESS fit polylines, `95% CI` confidence bands, and optional OLS lines
  * across metric/model switches in `createModelFitChart`.
  */
 export function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
   let morphRafId = 0;
+  let hasRenderedOnce = false;
   const stateByKey = new Map();
 
   function cancel() {
@@ -708,12 +816,39 @@ export function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS
 
   function reset() {
     cancel();
+    hasRenderedOnce = false;
     stateByKey.clear();
   }
 
-  function morphFits({ items, skipMorph = false }) {
+  function getGrid(key) {
+    const rec = stateByKey.get(key);
+    const src = rec ? rec.liveGrid || rec.committedGrid : null;
+    return src && src.length > 0 ? src.map((g) => ({ ...g })) : null;
+  }
+
+  function getFirstGrid() {
+    for (const rec of stateByKey.values()) {
+      const src = rec.liveGrid || rec.committedGrid;
+      if (src && src.length > 0) return src.map((g) => ({ ...g }));
+    }
+    return null;
+  }
+
+  function seedGrid(key, gridPts) {
+    if (!key || !Array.isArray(gridPts) || gridPts.length === 0) return;
+    stateByKey.set(key, {
+      committedGrid: gridPts.map((g) => ({ ...g })),
+      liveGrid: null,
+      ols: null,
+    });
+    hasRenderedOnce = true;
+  }
+
+  function morphFits({ items, skipMorph = false, allowBaselineEntry = false, bottomY = NaN }) {
     cancel();
     const canAnim = !skipMorph && canAnimateChartInBrowser();
+    const wasRenderedBefore = hasRenderedOnce;
+    hasRenderedOnce = items.length > 0;
     const activeSet = new Set();
     const jobs = [];
 
@@ -721,7 +856,32 @@ export function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS
       const it = items[idx];
       activeSet.add(it.key);
       const prevEntry = stateByKey.get(it.key);
-      const prevGrid = prevEntry ? prevEntry.liveGrid || prevEntry.committedGrid : null;
+      const rawPrevGrid = prevEntry ? prevEntry.liveGrid || prevEntry.committedGrid : null;
+      let prevGrid =
+        rawPrevGrid && rawPrevGrid.length > 0 && it.gridPts.length >= 2
+          ? rawPrevGrid.length === it.gridPts.length &&
+            Math.abs(rawPrevGrid[0].x - it.gridPts[0].x) < 0.5 &&
+            Math.abs(
+              rawPrevGrid[rawPrevGrid.length - 1].x - it.gridPts[it.gridPts.length - 1].x
+            ) < 0.5
+            ? rawPrevGrid
+            : resampleFitGridToTargetXs(rawPrevGrid, it.gridPts)
+          : null;
+      if (
+        !prevGrid &&
+        canAnim &&
+        allowBaselineEntry &&
+        wasRenderedBefore &&
+        it.gridPts.length >= 2 &&
+        Number.isFinite(bottomY)
+      ) {
+        prevGrid = it.gridPts.map((g) => ({
+          x: g.x,
+          fitY: bottomY,
+          lowY: bottomY,
+          highY: bottomY,
+        }));
+      }
 
       if (
         !canAnim ||
@@ -782,6 +942,16 @@ export function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS
         ols: fromOls ? { ...fromOls } : null,
       };
       stateByKey.set(it.key, stateRec);
+      patchAttr(it.curveEl, 'd', buildGridFitPolylineD(activeLive));
+      if (it.bandEl) {
+        patchAttr(it.bandEl, 'd', it.finalBandD ? buildGridCiBandD(activeLive) : '');
+      }
+      if (it.olsEl && fromOls) {
+        patchAttr(it.olsEl, 'x1', fromOls.x1.toFixed(1));
+        patchAttr(it.olsEl, 'y1', fromOls.y1.toFixed(1));
+        patchAttr(it.olsEl, 'x2', fromOls.x2.toFixed(1));
+        patchAttr(it.olsEl, 'y2', fromOls.y2.toFixed(1));
+      }
       jobs.push({ it, fromGrid: prevGrid, activeLive, fromOls, stateRec });
     }
 
@@ -848,7 +1018,7 @@ export function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS
     morphRafId = window.requestAnimationFrame(step);
   }
 
-  return { morphFits, cancel, reset };
+  return { morphFits, cancel, reset, getGrid, getFirstGrid, seedGrid };
 }
 
 /**

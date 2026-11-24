@@ -630,6 +630,109 @@ test('SegmentedControl variable-width glider snaps cleanly on reveal and glides 
   queuedRaf?.();
   assert.equal(stepTipEl.classList.contains('is-tracking'), true);
   assert.equal(stepHoverDot.classList.contains('is-tracking'), true);
+
+  // High-density 2606-step session downsamples spline cleanly without turning into a 2600-segment wall, while keeping exact peak
+  const denseSteps = Array.from({ length: 2606 }, (_, i) => ({
+    stepIndex: 5500 + i,
+    createdAtMs: 1000 + i * 100,
+    modelLabel: i % 2 === 0 ? 'neon-4-xhigh' : 'carbon-4-high',
+    modelShort: i % 2 === 0 ? 'neon-4-xhigh' : 'carbon-4-high',
+    tokPerSec: i === 1963 ? 151 : 25 + ((i * 17) % 90),
+    inputTokens: 1000,
+    cacheReadTokens: 2000,
+    outputTokens: 100,
+  }));
+  stepLineChart.update({
+    steps: denseSteps,
+    modelGroupKey: 'neon-4-xhigh',
+    modelGroupKeys: ['neon-4-xhigh'],
+    metric: 'tps',
+  });
+  // Flush any morph animation to final path
+  if (queuedRaf) queuedRaf(performance.now() + 400);
+  const denseLineD = stepLineChart.el.querySelector('.trend-line').getAttribute('d') || '';
+  const cubicSegCount = (denseLineD.match(/ C /g) || []).length;
+  assert.ok(
+    cubicSegCount >= 120 && cubicSegCount <= 256,
+    `Expected adaptive downsampled cubic segment count in [120..256], got ${cubicSegCount}`
+  );
+  stepLineChart.update({
+    steps: denseSteps,
+    modelGroupKey: '__all__',
+    modelGroupKeys: ['__all__'],
+    metric: 'tps',
+  });
+  if (queuedRaf) queuedRaf(performance.now() + 400);
+  assert.match(stepLineChart.el.querySelector('.trend-peak-pill').textContent, /#7463.*151/);
+
+  // Switching from 1 model -> 2 models animates newly added model smoothly from baseline instead of snapping
+  globalThis.window.getComputedStyle = () => ({});
+  stepLineChart.update({
+    steps: denseSteps,
+    modelGroupKey: 'neon-4-xhigh',
+    modelGroupKeys: ['neon-4-xhigh'],
+    metric: 'tps',
+  });
+  if (queuedRaf) queuedRaf(performance.now() + 400);
+  queuedRaf = null;
+  stepLineChart.update({
+    steps: denseSteps,
+    modelGroupKey: 'neon-4-xhigh',
+    modelGroupKeys: ['neon-4-xhigh', 'carbon-4-high'],
+    metric: 'tps',
+  });
+  assert.equal(
+    typeof queuedRaf,
+    'function',
+    'Checking a 2nd model in SessionLineChart schedules a 240ms morph animation'
+  );
+  const multiPaths = stepLineChart.el.querySelectorAll('.sstep-multi-line-group .sstep-fit-line');
+  assert.equal(multiPaths.length, 2);
+  const carbonStartD = multiPaths[1].getAttribute('d') || '';
+  queuedRaf(performance.now() + 400);
+  const carbonEndD = multiPaths[1].getAttribute('d') || '';
+  assert.notEqual(carbonStartD, carbonEndD, 'Newly checked 2nd model morphs from baseline to target curve');
+
+  // High-density (>96 segments at 460px width) morph must NOT skip knots during animation or pop peaks up at completion
+  stepStage.clientWidth = 460;
+  stepLineChart.update({
+    steps: denseSteps,
+    modelGroupKey: '__all__',
+    modelGroupKeys: ['__all__'],
+    metric: 'totalTokens',
+  });
+  if (queuedRaf) queuedRaf(performance.now() + 400);
+  queuedRaf = null;
+  const morphStartTs = performance.now();
+  stepLineChart.update({
+    steps: denseSteps,
+    modelGroupKey: '__all__',
+    modelGroupKeys: ['__all__'],
+    metric: 'tps',
+  });
+  assert.equal(typeof queuedRaf, 'function');
+  queuedRaf(morphStartTs + 239.95);
+  const nearEndD = stepLineChart.el.querySelector('.trend-line').getAttribute('d') || '';
+  queuedRaf(morphStartTs + 300);
+  const exactEndD = stepLineChart.el.querySelector('.trend-line').getAttribute('d') || '';
+  const nearSegCount = (nearEndD.match(/ C /g) || []).length;
+  const exactSegCount = (exactEndD.match(/ C /g) || []).length;
+  assert.ok(
+    exactSegCount > 96 && nearSegCount >= exactSegCount,
+    '460px plot preserves >=100% of target knots during >96-segment morph without stride-2 skipping'
+  );
+  const parseEndpoints = (d) =>
+    [...d.matchAll(/([\d.]+)\s+([\d.]+)(?=\s*C|$)/g)].map((m) => ({ x: +m[1], y: +m[2] }));
+  const nearPts = parseEndpoints(nearEndD);
+  const exactPts = parseEndpoints(exactEndD);
+  for (const ep of exactPts) {
+    const minDy = nearPts.reduce(
+      (best, np) => (Math.abs(np.x - ep.x) <= 0.2 ? Math.min(best, Math.abs(np.y - ep.y)) : best),
+      Infinity
+    );
+    assert.ok(minDy <= 0.2, `Target vertex (${ep.x}, ${ep.y}) must not pop at completion (dy=${minDy})`);
+  }
+  delete globalThis.window.getComputedStyle;
   stepLineChart.destroy();
 
   const fitChart = createModelFitChart();

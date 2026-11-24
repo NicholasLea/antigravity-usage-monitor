@@ -5135,6 +5135,11 @@ html[data-standalone="true"] .app-shell {
   stroke-width: 1.9;
 }
 
+.sstep-line-card .sstep-chart-wrap.is-dense .trend-line,
+.sstep-line-card .sstep-chart-wrap.is-dense .sstep-fit-line {
+  stroke-width: 1.45;
+}
+
 .sstep-multi-area {
   fill: var(--sstep-series-color, var(--ctx-cached));
   fill-opacity: 0.08;

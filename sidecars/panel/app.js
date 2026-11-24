@@ -14303,21 +14303,15 @@ function alignCubicChainsForMorph(fromSegs, toSegs) {
   const tSpan = tEnd - tStart;
 
   const rawTau = [0, 1];
-  const pushChainKnots = (segs, start, span, cap) => {
+  const pushChainKnots = (segs, start, span) => {
     if (!(span > 1e-6)) return;
-    if (segs.length <= cap) {
-      for (let i = 0; i < segs.length; i++) {
-        rawTau.push(Math.max(0, Math.min(1, (segs[i].u3 - start) / span)));
-      }
-    } else {
-      const stride = Math.ceil(segs.length / cap);
-      for (let i = 0; i < segs.length; i += stride) {
-        rawTau.push(Math.max(0, Math.min(1, (segs[i].u3 - start) / span)));
-      }
+    for (let i = 0; i < segs.length; i++) {
+      rawTau.push(Math.max(0, Math.min(1, (segs[i].u0 - start) / span)));
+      rawTau.push(Math.max(0, Math.min(1, (segs[i].u3 - start) / span)));
     }
   };
-  pushChainKnots(toSegs, tStart, tSpan, 96);
-  pushChainKnots(fromSegs, fStart, fSpan, 48);
+  pushChainKnots(toSegs, tStart, tSpan);
+  pushChainKnots(fromSegs, fStart, fSpan);
 
   rawTau.sort((a, b) => a - b);
   const tauKnots = [0];
@@ -14402,6 +14396,20 @@ function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } =
     hasRenderedOnce = false;
   }
 
+  function getCurrentSegs() {
+    const src = liveMorphSegs || committedSegs;
+    return hasRenderedOnce && src.length > 0 ? src.map((s) => ({ ...s })) : [];
+  }
+
+  function seedSegs(segs) {
+    cancel();
+    if (Array.isArray(segs) && segs.length > 0) {
+      committedSegs = segs.map((s) => ({ ...s }));
+      liveMorphSegs = null;
+      hasRenderedOnce = true;
+    }
+  }
+
   function morphTo({
     nextSegs,
     leftX,
@@ -14459,6 +14467,17 @@ function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } =
 
     const activeLive = alignedFrom.map((s) => ({ ...s }));
     liveMorphSegs = activeLive;
+    const initialLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
+    patchAttr(linePath, 'd', initialLineD);
+    if (areaPath) {
+      if (finalAreaD) {
+        const firstX = (leftX + activeLive[0].u0 * spanX).toFixed(1);
+        const lastX = (leftX + activeLive[segCount - 1].u3 * spanX).toFixed(1);
+        patchAttr(areaPath, 'd', `${initialLineD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`);
+      } else {
+        patchAttr(areaPath, 'd', '');
+      }
+    }
     const startTs = performance.now();
 
     const step = (nowTs) => {
@@ -14498,7 +14517,7 @@ function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } =
     morphRafId = window.requestAnimationFrame(step);
   }
 
-  return { morphTo, cancel, reset };
+  return { morphTo, cancel, reset, getCurrentSegs, seedSegs };
 }
 
 /**
@@ -14507,6 +14526,7 @@ function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } =
  */
 function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
   let morphRafId = 0;
+  let hasRenderedOnce = false;
   const stateByKey = new Map();
 
   function cancel() {
@@ -14522,7 +14542,33 @@ function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE_MORPH_
 
   function reset() {
     cancel();
+    hasRenderedOnce = false;
     stateByKey.clear();
+  }
+
+  function getSeriesSegs(key) {
+    const rec = stateByKey.get(key);
+    const src = rec ? rec.liveSegs || rec.committedSegs : null;
+    return src && src.length > 0 ? src.map((s) => ({ ...s })) : null;
+  }
+
+  function getFirstSegs() {
+    for (const rec of stateByKey.values()) {
+      const src = rec.liveSegs || rec.committedSegs;
+      if (src && src.length > 0) return src.map((s) => ({ ...s }));
+    }
+    return null;
+  }
+
+  function seedSeries(key, segs) {
+    if (!key || !Array.isArray(segs) || segs.length === 0) return;
+    stateByKey.set(key, {
+      committedSegs: segs.map((s) => ({ ...s })),
+      liveSegs: null,
+      endX: NaN,
+      endY: NaN,
+    });
+    hasRenderedOnce = true;
   }
 
   function morphSeries({
@@ -14531,9 +14577,12 @@ function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE_MORPH_
     spanX,
     bottomY,
     skipMorph = false,
+    allowBaselineEntry = false,
   }) {
     cancel();
     const canAnim = !skipMorph && canAnimateChartInBrowser();
+    const wasRenderedBefore = hasRenderedOnce;
+    hasRenderedOnce = items.length > 0;
     const activeSet = new Set();
     const jobs = [];
 
@@ -14541,7 +14590,26 @@ function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE_MORPH_
       const it = items[idx];
       activeSet.add(it.key);
       const prevEntry = stateByKey.get(it.key);
-      const prevSegs = prevEntry ? prevEntry.liveSegs || prevEntry.committedSegs : null;
+      let prevSegs = prevEntry ? prevEntry.liveSegs || prevEntry.committedSegs : null;
+      if (
+        (!prevSegs || prevSegs.length === 0) &&
+        canAnim &&
+        allowBaselineEntry &&
+        wasRenderedBefore &&
+        it.nextSegs.length > 0 &&
+        Number.isFinite(bottomY)
+      ) {
+        prevSegs = it.nextSegs.map((s) => ({
+          u0: s.u0,
+          y0: bottomY,
+          cu1: s.cu1,
+          cy1: bottomY,
+          cu2: s.cu2,
+          cy2: bottomY,
+          u3: s.u3,
+          y3: bottomY,
+        }));
+      }
 
       if (!canAnim || !prevSegs || prevSegs.length === 0 || it.nextSegs.length === 0) {
         stateByKey.set(it.key, {
@@ -14606,6 +14674,17 @@ function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE_MORPH_
         endY: fromEndY,
       };
       stateByKey.set(it.key, stateRec);
+      const initLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
+      patchAttr(it.lineEl, 'd', initLineD);
+      if (it.areaEl) {
+        if (it.finalAreaD) {
+          const firstX = (leftX + activeLive[0].u0 * spanX).toFixed(1);
+          const lastX = (leftX + activeLive[segCount - 1].u3 * spanX).toFixed(1);
+          patchAttr(it.areaEl, 'd', `${initLineD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`);
+        } else {
+          patchAttr(it.areaEl, 'd', '');
+        }
+      }
       jobs.push({
         it,
         alignedFrom,
@@ -14684,7 +14763,7 @@ function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE_MORPH_
     morphRafId = window.requestAnimationFrame(step);
   }
 
-  return { morphSeries, cancel, reset };
+  return { morphSeries, cancel, reset, getSeriesSegs, getFirstSegs, seedSeries };
 }
 
 function buildGridFitPolylineD(grid) {
@@ -14708,12 +14787,41 @@ function buildGridCiBandD(grid) {
   return `${d} Z`;
 }
 
+function resampleFitGridToTargetXs(sourceGrid, targetGrid) {
+  if (!Array.isArray(sourceGrid) || sourceGrid.length === 0) return null;
+  const sLen = sourceGrid.length;
+  const sFirst = sourceGrid[0];
+  const sLast = sourceGrid[sLen - 1];
+  let j = 0;
+  return targetGrid.map((tg) => {
+    const x = tg.x;
+    if (sLen === 1 || x <= sFirst.x) {
+      return { x, fitY: sFirst.fitY, lowY: sFirst.lowY, highY: sFirst.highY };
+    }
+    if (x >= sLast.x) {
+      return { x, fitY: sLast.fitY, lowY: sLast.lowY, highY: sLast.highY };
+    }
+    while (j < sLen - 2 && sourceGrid[j + 1].x < x) j += 1;
+    const a = sourceGrid[j];
+    const b = sourceGrid[j + 1];
+    const span = b.x - a.x;
+    const r = span > 1e-6 ? Math.max(0, Math.min(1, (x - a.x) / span)) : 0;
+    return {
+      x,
+      fitY: a.fitY + (b.fitY - a.fitY) * r,
+      lowY: a.lowY + (b.lowY - a.lowY) * r,
+      highY: a.highY + (b.highY - a.highY) * r,
+    };
+  });
+}
+
 /**
  * Smoothly morphs LOESS fit polylines, `95% CI` confidence bands, and optional OLS lines
  * across metric/model switches in `createModelFitChart`.
  */
 function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
   let morphRafId = 0;
+  let hasRenderedOnce = false;
   const stateByKey = new Map();
 
   function cancel() {
@@ -14729,12 +14837,39 @@ function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}
 
   function reset() {
     cancel();
+    hasRenderedOnce = false;
     stateByKey.clear();
   }
 
-  function morphFits({ items, skipMorph = false }) {
+  function getGrid(key) {
+    const rec = stateByKey.get(key);
+    const src = rec ? rec.liveGrid || rec.committedGrid : null;
+    return src && src.length > 0 ? src.map((g) => ({ ...g })) : null;
+  }
+
+  function getFirstGrid() {
+    for (const rec of stateByKey.values()) {
+      const src = rec.liveGrid || rec.committedGrid;
+      if (src && src.length > 0) return src.map((g) => ({ ...g }));
+    }
+    return null;
+  }
+
+  function seedGrid(key, gridPts) {
+    if (!key || !Array.isArray(gridPts) || gridPts.length === 0) return;
+    stateByKey.set(key, {
+      committedGrid: gridPts.map((g) => ({ ...g })),
+      liveGrid: null,
+      ols: null,
+    });
+    hasRenderedOnce = true;
+  }
+
+  function morphFits({ items, skipMorph = false, allowBaselineEntry = false, bottomY = NaN }) {
     cancel();
     const canAnim = !skipMorph && canAnimateChartInBrowser();
+    const wasRenderedBefore = hasRenderedOnce;
+    hasRenderedOnce = items.length > 0;
     const activeSet = new Set();
     const jobs = [];
 
@@ -14742,7 +14877,32 @@ function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}
       const it = items[idx];
       activeSet.add(it.key);
       const prevEntry = stateByKey.get(it.key);
-      const prevGrid = prevEntry ? prevEntry.liveGrid || prevEntry.committedGrid : null;
+      const rawPrevGrid = prevEntry ? prevEntry.liveGrid || prevEntry.committedGrid : null;
+      let prevGrid =
+        rawPrevGrid && rawPrevGrid.length > 0 && it.gridPts.length >= 2
+          ? rawPrevGrid.length === it.gridPts.length &&
+            Math.abs(rawPrevGrid[0].x - it.gridPts[0].x) < 0.5 &&
+            Math.abs(
+              rawPrevGrid[rawPrevGrid.length - 1].x - it.gridPts[it.gridPts.length - 1].x
+            ) < 0.5
+            ? rawPrevGrid
+            : resampleFitGridToTargetXs(rawPrevGrid, it.gridPts)
+          : null;
+      if (
+        !prevGrid &&
+        canAnim &&
+        allowBaselineEntry &&
+        wasRenderedBefore &&
+        it.gridPts.length >= 2 &&
+        Number.isFinite(bottomY)
+      ) {
+        prevGrid = it.gridPts.map((g) => ({
+          x: g.x,
+          fitY: bottomY,
+          lowY: bottomY,
+          highY: bottomY,
+        }));
+      }
 
       if (
         !canAnim ||
@@ -14803,6 +14963,16 @@ function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}
         ols: fromOls ? { ...fromOls } : null,
       };
       stateByKey.set(it.key, stateRec);
+      patchAttr(it.curveEl, 'd', buildGridFitPolylineD(activeLive));
+      if (it.bandEl) {
+        patchAttr(it.bandEl, 'd', it.finalBandD ? buildGridCiBandD(activeLive) : '');
+      }
+      if (it.olsEl && fromOls) {
+        patchAttr(it.olsEl, 'x1', fromOls.x1.toFixed(1));
+        patchAttr(it.olsEl, 'y1', fromOls.y1.toFixed(1));
+        patchAttr(it.olsEl, 'x2', fromOls.x2.toFixed(1));
+        patchAttr(it.olsEl, 'y2', fromOls.y2.toFixed(1));
+      }
       jobs.push({ it, fromGrid: prevGrid, activeLive, fromOls, stateRec });
     }
 
@@ -14869,7 +15039,7 @@ function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}
     morphRafId = window.requestAnimationFrame(step);
   }
 
-  return { morphFits, cancel, reset };
+  return { morphFits, cancel, reset, getGrid, getFirstGrid, seedGrid };
 }
 
 /**
@@ -16884,7 +17054,7 @@ return { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart };
 })();
 
 // --- src/components/charts/stepChartMath.js ---
-const { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact } = (() => {
+const { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact, downsampleStepPointsForPlot } = (() => {
 /**
  * @fileoverview Pure regression math (OLS + IRLS-LOESS), nice axis tick generators,
  * SVG spline/polyline path builders, and step metric formatters extracted from SessionStepCharts.js.
@@ -17540,7 +17710,54 @@ function formatChartMetricCompact(metric, val) {
       return String(val);
   }
 }
-return { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact };
+
+/**
+ * Downsamples dense chronological step series (`> maxPoints`, e.g. 1,500–5,000 steps) to an
+ * adaptive visual vertex budget (`~2.1px` per segment) so cubic splines never overplot into an
+ * opaque solid wall while strictly preserving the start step, end step, and exact global peak step.
+ *
+ * @template {{ value?: number }} T
+ * @param {T[]} points
+ * @param {number} [maxPoints=208]
+ * @returns {T[]}
+ */
+function downsampleStepPointsForPlot(points, maxPoints = 208) {
+  if (!Array.isArray(points) || points.length <= maxPoints || maxPoints < 8) {
+    return points;
+  }
+  const n = points.length;
+  let globalPeakIdx = -1;
+  let globalPeakVal = -Infinity;
+  for (let i = 0; i < n; i += 1) {
+    const v = Number(points[i]?.value);
+    if (Number.isFinite(v) && v >= globalPeakVal) {
+      globalPeakVal = v;
+      globalPeakIdx = i;
+    }
+  }
+
+  const out = [points[0]];
+  const bucketCount = maxPoints - 2;
+  const interiorLen = n - 2;
+  for (let b = 0; b < bucketCount; b += 1) {
+    const bStart = 1 + Math.floor((b * interiorLen) / bucketCount);
+    const bEnd = Math.max(bStart + 1, 1 + Math.floor(((b + 1) * interiorLen) / bucketCount));
+    const pickIdx =
+      globalPeakIdx >= bStart && globalPeakIdx < bEnd
+        ? globalPeakIdx
+        : bStart + Math.floor((bEnd - bStart) / 2);
+    const picked = points[pickIdx];
+    if (picked && picked !== out[out.length - 1]) {
+      out.push(picked);
+    }
+  }
+  const lastPt = points[n - 1];
+  if (lastPt && lastPt !== out[out.length - 1]) {
+    out.push(lastPt);
+  }
+  return out;
+}
+return { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact, downsampleStepPointsForPlot };
 })();
 
 // --- src/components/charts/SessionStepCharts.js ---
@@ -17713,6 +17930,8 @@ function createSessionLineChart() {
   let lastSummaryBadge = '';
   let lastUpdateParams = null;
   let cachedPlotSvgRect = null;
+  let lastLineMode = '';
+  let lastSingleLineKey = '';
   const multiSeriesNodesByKey = new Map();
 
   const singleCurveMorphCtrl = createCubicCurveMorphController();
@@ -17966,8 +18185,13 @@ function createSessionLineChart() {
     patchText(emptyHintEl, t('chart.step.empty'));
     if (!matchedSteps.length) {
       currentPoints = [];
+      patchClasses(rootEl, { 'is-dense': false });
       lastSig = 'empty';
       lastPreSig = '';
+      lastLineMode = '';
+      lastSingleLineKey = '';
+      singleCurveMorphCtrl.reset();
+      multiCurveMorphCtrl.reset();
       lastSummaryBadge = t('chart.step.zeroSteps');
       invalidatePlotSvgRect();
       patchAttr(areaPath, 'd', '');
@@ -18191,6 +18415,7 @@ function createSessionLineChart() {
     currentMaxVal = maxVal;
 
     const { leftX, rightX, spanX } = resolvePlotBounds(viewW);
+    const maxPlotPoints = Math.max(128, Math.min(256, Math.floor(spanX / 2.1)));
     const denom = maxVal > 0 ? maxVal : 1;
     const isSingle = rawItems.length === 1;
     const points = rawItems.map((item, i) => {
@@ -18201,9 +18426,28 @@ function createSessionLineChart() {
       const y = item.valid ? BOTTOM_Y - ratio * SPAN_Y : BOTTOM_Y;
       return { ...item, x, y };
     });
-    currentPoints = points;
 
     const validPoints = points.filter((p) => p.valid);
+    let hoverPoints = points;
+    if (isMultiCompare) {
+      if (points.length > maxPlotPoints * targetKeys.length) {
+        const merged = [];
+        for (const gk of targetKeys) {
+          const rawSeries = points.filter((p) => p.modelGroupKey === gk && p.valid);
+          merged.push(...downsampleStepPointsForPlot(rawSeries, maxPlotPoints));
+        }
+        merged.sort((a, b) => a.idx - b.idx);
+        if (merged.length > 0) hoverPoints = merged;
+      }
+    } else if (validPoints.length > maxPlotPoints) {
+      hoverPoints = downsampleStepPointsForPlot(validPoints, maxPlotPoints);
+    }
+    currentPoints = hoverPoints;
+    patchClasses(rootEl, {
+      'is-dense': isMultiCompare
+        ? hoverPoints.length > 120 * targetKeys.length
+        : hoverPoints.length > 120,
+    });
     patchAttr(emptyHintEl, 'hidden', validPoints.length > 0);
 
     const colorSig = Array.from(modelColorMap.entries())
@@ -18224,7 +18468,21 @@ function createSessionLineChart() {
       while (anomalyDotsGroup.firstChild) anomalyDotsGroup.removeChild(anomalyDotsGroup.firstChild);
 
       if (isMultiCompare) {
+        if (lastLineMode === 'single') {
+          const prevSingleSegs = singleCurveMorphCtrl.getCurrentSegs();
+          if (prevSingleSegs.length > 0) {
+            if (lastSingleLineKey && lastSingleLineKey !== '__all__') {
+              multiCurveMorphCtrl.seedSeries(lastSingleLineKey, prevSingleSegs);
+            } else {
+              for (const gk of targetKeys) {
+                multiCurveMorphCtrl.seedSeries(gk, prevSingleSegs);
+              }
+            }
+          }
+        }
         singleCurveMorphCtrl.reset();
+        lastLineMode = 'multi';
+        lastSingleLineKey = '';
         patchAttr(linePath, 'd', '');
         patchAttr(areaPath, 'd', '');
         for (let ci = multiLineGroup.children.length - 1; ci >= 0; ci--) {
@@ -18239,7 +18497,8 @@ function createSessionLineChart() {
 
         for (const gk of targetKeys) {
           const seriesColor = modelColorMap.get(gk) || accentColor;
-          const seriesPts = points.filter((p) => p.modelGroupKey === gk && p.valid);
+          const rawSeriesPts = points.filter((p) => p.modelGroupKey === gk && p.valid);
+          const seriesPts = downsampleStepPointsForPlot(rawSeriesPts, maxPlotPoints);
           if (seriesPts.length === 0) continue;
 
           if (seriesPts.length === 1) {
@@ -18277,7 +18536,6 @@ function createSessionLineChart() {
               nextSegs: pointsToNormalizedCubicSegs(seriesPts, BOTTOM_Y, {
                 leftX,
                 spanX,
-                tension: 0.42,
               }),
               lineEl: nodes.mLine,
               areaEl: nodes.mArea,
@@ -18303,19 +18561,32 @@ function createSessionLineChart() {
           spanX,
           bottomY: BOTTOM_Y,
           skipMorph: _skipMorph,
+          allowBaselineEntry: true,
         });
       } else {
+        const nextSingleKey = isPooledAll ? '__all__' : targetKeys[0] || '__all__';
+        if (lastLineMode === 'multi') {
+          const seedSegs =
+            multiCurveMorphCtrl.getSeriesSegs(nextSingleKey) ||
+            multiCurveMorphCtrl.getFirstSegs();
+          if (seedSegs && seedSegs.length > 0) {
+            singleCurveMorphCtrl.seedSegs(seedSegs);
+          }
+        }
         multiCurveMorphCtrl.reset();
+        lastLineMode = 'single';
+        lastSingleLineKey = nextSingleKey;
         for (const nodes of multiSeriesNodesByKey.values()) {
           nodes.mArea.remove();
           nodes.mLine.remove();
         }
-        if (validPoints.length === 0) {
+        const plotValidPoints = downsampleStepPointsForPlot(validPoints, maxPlotPoints);
+        if (plotValidPoints.length === 0) {
           singleCurveMorphCtrl.reset();
           patchAttr(linePath, 'd', '');
           patchAttr(areaPath, 'd', '');
-        } else if (validPoints.length === 1) {
-          const yVal = validPoints[0].y;
+        } else if (plotValidPoints.length === 1) {
+          const yVal = plotValidPoints[0].y;
           const yStr = yVal.toFixed(1);
           const lineD = `M ${leftX.toFixed(1)} ${yStr} L ${rightX.toFixed(1)} ${yStr}`;
           const areaD = `${lineD} L ${rightX.toFixed(1)} ${BOTTOM_Y} L ${leftX.toFixed(1)} ${BOTTOM_Y} Z`;
@@ -18335,12 +18606,12 @@ function createSessionLineChart() {
             skipMorph: _skipMorph,
           });
         } else {
-          const lineD = buildSplinePath(validPoints);
-          const firstX = validPoints[0].x.toFixed(1);
-          const lastX = validPoints[validPoints.length - 1].x.toFixed(1);
+          const lineD = buildSplinePath(plotValidPoints);
+          const firstX = plotValidPoints[0].x.toFixed(1);
+          const lastX = plotValidPoints[plotValidPoints.length - 1].x.toFixed(1);
           const areaD = `${lineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`;
           singleCurveMorphCtrl.morphTo({
-            nextSegs: pointsToNormalizedCubicSegs(validPoints, BOTTOM_Y, { leftX, spanX }),
+            nextSegs: pointsToNormalizedCubicSegs(plotValidPoints, BOTTOM_Y, { leftX, spanX }),
             leftX,
             spanX,
             bottomY: BOTTOM_Y,
@@ -18377,12 +18648,12 @@ function createSessionLineChart() {
         anomalyDotsGroup.appendChild(aTick);
       }
 
-      const tickIndices = computeStepTickIndices(points.length);
+      const tickIndices = computeStepTickIndices(currentPoints.length);
       while (xAxisEl.firstChild) xAxisEl.removeChild(xAxisEl.firstChild);
       tickElsByIdx = new Map();
       for (let i = 0; i < tickIndices.length; i++) {
         const tIdx = tickIndices[i];
-        const pt = points[tIdx];
+        const pt = currentPoints[tIdx];
         if (!pt) continue;
         const isFirst = !isSingle && i === 0;
         const isLast = !isSingle && i === tickIndices.length - 1;
@@ -18467,7 +18738,7 @@ function createSessionLineChart() {
       patchAttr(peakPill, 'hidden', true);
     }
 
-    if (hoveredIdx >= points.length) {
+    if (hoveredIdx >= currentPoints.length) {
       clearHover();
     } else if (hoveredIdx >= 0) {
       showHoverAt(hoveredIdx, lastPointer, { forceRefresh: true });
@@ -18657,6 +18928,8 @@ function createModelFitChart() {
   const multiFitNodesByKey = new Map();
 
   const fitMorphCtrl = createFitGridMorphController();
+  let lastFitMode = '';
+  let lastSingleFitKey = '';
   const fitTooltipCtrl = createFloatingChartTooltipController({
     containerEl: rootEl,
     tooltipEl,
@@ -19091,6 +19364,8 @@ function createModelFitChart() {
     if (matchedItems.length === 0) {
       fitCache.clear();
       fitMorphCtrl.reset();
+      lastFitMode = '';
+      lastSingleFitKey = '';
       currentSamples = [];
       lastSig = 'empty';
       patchAttr(ciBandPath, 'd', '');
@@ -19367,7 +19642,26 @@ function createModelFitChart() {
             nodes.curveEl.remove();
           }
         }
-        fitMorphCtrl.morphFits({ items: fitMorphItems, skipMorph: _skipMorph });
+        if (lastFitMode === 'single') {
+          const prevSingleGrid = fitMorphCtrl.getGrid('single');
+          if (prevSingleGrid && prevSingleGrid.length > 0) {
+            if (lastSingleFitKey && lastSingleFitKey !== '__all__') {
+              fitMorphCtrl.seedGrid(`multi:${lastSingleFitKey}`, prevSingleGrid);
+            } else {
+              for (const s of seriesList) {
+                fitMorphCtrl.seedGrid(`multi:${s.key}`, prevSingleGrid);
+              }
+            }
+          }
+        }
+        lastFitMode = 'multi';
+        lastSingleFitKey = '';
+        fitMorphCtrl.morphFits({
+          items: fitMorphItems,
+          skipMorph: _skipMorph,
+          allowBaselineEntry: true,
+          bottomY: BOTTOM_Y,
+        });
         anomalyOverlayDots.sort((a, b) =>
           a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
         );
@@ -19431,6 +19725,16 @@ function createModelFitChart() {
     }
 
     // 分支 B：单模型或整体合并单曲线模式
+    const nextSingleFitKey = isPooledAll ? '__all__' : targetKeys[0] || '__all__';
+    if (lastFitMode === 'multi') {
+      const seedGrid =
+        fitMorphCtrl.getGrid(`multi:${nextSingleFitKey}`) || fitMorphCtrl.getFirstGrid();
+      if (seedGrid && seedGrid.length > 0) {
+        fitMorphCtrl.seedGrid('single', seedGrid);
+      }
+    }
+    lastFitMode = 'single';
+    lastSingleFitKey = nextSingleFitKey;
     for (const nodes of multiFitNodesByKey.values()) {
       nodes.bandEl.remove();
       nodes.curveEl.remove();
