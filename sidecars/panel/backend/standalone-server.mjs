@@ -21,7 +21,6 @@ import { ensureCliStatusLineConfigured } from './cli-statusline-config.mjs';
 import { syncCloudCatalog } from './plugin-updater.mjs';
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
-const MAX_EXPORT_JSON_BODY_BYTES = 8 * 1024 * 1024;
 const AUTH_COOKIE_NAME = 'ag_um_token';
 const NO_STORE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -512,10 +511,7 @@ export function createStandaloneWebServer(options = {}) {
       }
 
       if (pathname.startsWith('/api/')) {
-        if (
-          (pathname === '/api/export-file' || pathname === '/api/reveal-file') &&
-          !isLoopbackRemoteAddress(req.socket?.remoteAddress)
-        ) {
+        if (pathname === '/api/export-file' || pathname === '/api/reveal-file') {
           sendResponse(
             res,
             403,
@@ -523,7 +519,7 @@ export function createStandaloneWebServer(options = {}) {
             JSON.stringify({
               ok: false,
               fallbackBrowser: true,
-              error: 'Local file export is restricted to loopback clients',
+              error: 'Standalone web mode uses browser file download instead of server disk export',
             })
           );
           return;
@@ -533,11 +529,7 @@ export function createStandaloneWebServer(options = {}) {
           data = Object.fromEntries(urlObj.searchParams.entries());
           delete data.token;
         } else if (method === 'POST') {
-          const maxBody =
-            pathname === '/api/export-file' || pathname === '/api/settings'
-              ? MAX_EXPORT_JSON_BODY_BYTES
-              : MAX_JSON_BODY_BYTES;
-          const rawBody = await readRawBody(req, maxBody);
+          const rawBody = await readRawBody(req, MAX_JSON_BODY_BYTES);
           if (rawBody.trim()) {
             try {
               data = JSON.parse(rawBody);
@@ -557,8 +549,7 @@ export function createStandaloneWebServer(options = {}) {
             pathname === '/api/settings' &&
             data &&
             typeof data === 'object' &&
-            typeof data.__exportFileAction === 'string' &&
-            !isLoopbackRemoteAddress(req.socket?.remoteAddress)
+            typeof data.__exportFileAction === 'string'
           ) {
             sendResponse(
               res,
@@ -567,7 +558,7 @@ export function createStandaloneWebServer(options = {}) {
               JSON.stringify({
                 ok: false,
                 fallbackBrowser: true,
-                error: 'Local file export is restricted to loopback clients',
+                error: 'Standalone web mode uses browser file download instead of server disk export',
               })
             );
             return;

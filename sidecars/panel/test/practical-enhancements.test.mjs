@@ -1919,6 +1919,9 @@ test('Feature 14: compact vertical ActionMenu replaces export bars, backend expo
   const { document } = createMockDom();
   globalThis.document = document;
   globalThis.window = {
+    sidecar: {
+      fetch: (url, init) => globalThis.fetch(url, init),
+    },
     addEventListener: () => {},
     removeEventListener: () => {},
     requestAnimationFrame: (cb) => {
@@ -2102,6 +2105,40 @@ test('Feature 14: compact vertical ActionMenu replaces export bars, backend expo
   assert.equal(failedRes.ok, false);
   assert.equal(failedRes.mode, 'failed');
   assert.equal(uiStore.getState().toast?.tone, 'warn');
+
+  // 7. Standalone browser mode (no window.sidecar and no window bridge) skips /api/export-file
+  //    completely (even over ssh -L / loopback reverse proxy) and invokes native Save Picker directly
+  delete globalThis.window.sidecar;
+  let browserExportBackendCalled = false;
+  globalThis.fetch = async () => {
+    browserExportBackendCalled = true;
+    return { ok: true, status: 200, json: async () => ({ ok: true, filePath: '/remote/Downloads/leak.json' }) };
+  };
+  let pickedSuggestedName = '';
+  let pickedWrittenPayload = null;
+  globalThis.window.showSaveFilePicker = async (opts) => {
+    pickedSuggestedName = opts?.suggestedName || '';
+    return {
+      name: pickedSuggestedName,
+      createWritable: async () => ({
+        write: async (data) => {
+          pickedWrittenPayload = data;
+        },
+        close: async () => {},
+      }),
+    };
+  };
+  const standalonePickerRes = await exportTextFileWithFeedback(
+    'standalone-report.md',
+    '# Hello Browser\n',
+    'text/markdown'
+  );
+  assert.equal(browserExportBackendCalled, false, 'Standalone browser must NOT call /api/export-file');
+  assert.equal(standalonePickerRes.ok, true);
+  assert.equal(standalonePickerRes.mode, 'picker');
+  assert.equal(pickedSuggestedName, 'standalone-report.md');
+  assert.equal(pickedWrittenPayload, '# Hello Browser\n');
+  assert.equal(await revealExportedFile('/remote/Downloads/leak.json'), false);
 });
 
 test('P0 regression: V4 display-projected steps open inspector, preserve waterfall/diagnostics/XLSX duration, match anomaly events, compute harmonic speed, and clean up UI observers/i18n', async (t) => {

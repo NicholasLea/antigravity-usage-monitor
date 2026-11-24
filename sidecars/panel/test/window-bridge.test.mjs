@@ -4417,6 +4417,31 @@ test('Standalone Web server enforces loopback/non-loopback security boundaries, 
       data: { range: 'today' },
     });
 
+    // Loopback ssh -L / reverse-proxy requests to /api/export-file, /api/reveal-file, and __exportFileAction return 403 fallbackBrowser
+    const blockedExport = await fetch(`${st.url}/api/export-file`, {
+      method: 'POST',
+      headers: { Origin: st.url, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: 'leak.json', content: '{}' }),
+    });
+    assert.equal(blockedExport.status, 403);
+    assert.equal((await blockedExport.json()).fallbackBrowser, true);
+
+    const blockedReveal = await fetch(`${st.url}/api/reveal-file`, {
+      method: 'POST',
+      headers: { Origin: st.url, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath: '/tmp/leak.json' }),
+    });
+    assert.equal(blockedReveal.status, 403);
+    assert.equal((await blockedReveal.json()).fallbackBrowser, true);
+
+    const blockedSettingsExport = await fetch(`${st.url}/api/settings`, {
+      method: 'POST',
+      headers: { Origin: st.url, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ __exportFileAction: 'save', payload: { filename: 'leak.json', content: '{}' } }),
+    });
+    assert.equal(blockedSettingsExport.status, 403);
+    assert.equal((await blockedSettingsExport.json()).fallbackBrowser, true);
+
     // Cross-site Origin blocked with 403
     const crossSiteRes = await fetch(`${st.url}/api/telemetry`, {
       headers: { Origin: 'https://evil.example' },

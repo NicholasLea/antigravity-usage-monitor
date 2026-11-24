@@ -8677,7 +8677,7 @@ function getPickerTypesForFilename(filename, mimeType) {
  * @returns {Promise<boolean>}
  */
 async function revealExportedFile(filePath) {
-  if (!filePath) return false;
+  if (!filePath || !isHostEmbeddedWebview()) return false;
   try {
     const res = await callSidecarApi('/api/reveal-file', {
       method: 'POST',
@@ -8749,25 +8749,25 @@ async function runExportPipelineWithFeedback({
   backendPayload,
   writablePayload,
 }) {
-  const { res: localRes } = await requestLocalBackendExport(backendPayload);
-  if (localRes && localRes.ok && localRes.filePath) {
-    const savedPath = String(localRes.filePath);
-    const savedName = String(localRes.fileName || safeName);
-    showUiToast({
-      message: t('export.savedLocal', { file: savedName }),
-      detail: savedPath,
-      actionLabel: t('export.openFolder'),
-      onAction: () => {
-        void revealExportedFile(savedPath);
-      },
-      tone: 'ok',
-      durationMs: 7000,
-    });
-    return { ok: true, mode: 'local', filePath: savedPath, fileName: savedName };
-  }
-
-  // 在 Antigravity Sidecar / 双栖 Electron 宿主内，<a download> 会被静默吞掉，绝不误报“已下载到浏览器”
   if (isHostEmbeddedWebview()) {
+    const { res: localRes } = await requestLocalBackendExport(backendPayload);
+    if (localRes && localRes.ok && localRes.filePath) {
+      const savedPath = String(localRes.filePath);
+      const savedName = String(localRes.fileName || safeName);
+      showUiToast({
+        message: t('export.savedLocal', { file: savedName }),
+        detail: savedPath,
+        actionLabel: t('export.openFolder'),
+        onAction: () => {
+          void revealExportedFile(savedPath);
+        },
+        tone: 'ok',
+        durationMs: 7000,
+      });
+      return { ok: true, mode: 'local', filePath: savedPath, fileName: savedName };
+    }
+
+    // 在 Antigravity Sidecar / 双栖 Electron 宿主内，<a download> 会被静默吞掉，绝不误报“已下载到浏览器”
     showUiToast({
       message: t('export.failed'),
       detail: t('export.hostUnavailable'),
