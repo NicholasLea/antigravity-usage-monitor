@@ -175,7 +175,7 @@
 .live-task-header-right {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -284,7 +284,7 @@
   font-weight: 500;
   color: var(--text-secondary);
   white-space: nowrap;
-  min-width: 28px;
+  min-width: 22px;
   text-align: right;
   flex-shrink: 0;
 }

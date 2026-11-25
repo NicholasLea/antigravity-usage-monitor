@@ -6977,3 +6977,84 @@ test('IDE chat iframe route probe disambiguates multi-view DOM, aborts hanging s
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('WindowOverlayShell mirrors host --font-sans and --font-mono onto portalHost even on native Antigravity 2.0 theme', async () => {
+  const { mountWindowOverlay } = await import('../src/components/layout/WindowOverlayShell.js');
+  const { createMockDom } = await import('./mock-dom.mjs');
+  const { WINDOW_BRIDGE_KEY } = await import('../shared/window-bridge-protocol.mjs');
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRo = globalThis.ResizeObserver;
+  const prevMo = globalThis.MutationObserver;
+  const prevFetch = globalThis.fetch;
+
+  const { document } = createMockDom();
+  const hostSans = '"Google Sans Flex", "PingFang SC", sans-serif';
+  const hostMono = '"Cascadia Mono", monospace';
+  globalThis.document = document;
+  globalThis.ResizeObserver = class {
+    observe() {}
+    disconnect() {}
+  };
+  globalThis.MutationObserver = class {
+    observe() {}
+    disconnect() {}
+  };
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ settings: { modernUi: true, fontScale: 'md' } }),
+    text: async () => JSON.stringify({ settings: { modernUi: true, fontScale: 'md' } }),
+  });
+  globalThis.window = {
+    innerWidth: 1440,
+    innerHeight: 900,
+    location: { pathname: '/', href: 'http://127.0.0.1:41234/' },
+    [WINDOW_BRIDGE_KEY]: {
+      port: 0,
+      token: 't',
+      bundleVersion: 'v-font-sync',
+      stylesCss: ':host{}',
+      initialTelemetry: { settings: { modernUi: true, fontScale: 'md' } },
+    },
+    getComputedStyle: (el) => {
+      if (el === document.documentElement) {
+        return {
+          getPropertyValue: (prop) => {
+            if (prop === '--background') return 'hsl(222 18% 10%)';
+            if (prop === '--font-sans') return hostSans;
+            if (prop === '--font-mono') return hostMono;
+            return '';
+          },
+        };
+      }
+      return { getPropertyValue: () => '' };
+    },
+    addEventListener() {},
+    removeEventListener() {},
+    requestAnimationFrame: (cb) => setTimeout(cb, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+  };
+
+  let ov = null;
+  try {
+    ov = mountWindowOverlay();
+    const portalHost = document.getElementById('ag-usage-monitor-portal');
+    const capsuleHost = document.getElementById('ag-usage-monitor-capsule');
+    assert.ok(portalHost, 'portalHost mounted');
+    assert.equal(portalHost.style.getPropertyValue('--font-sans'), hostSans);
+    assert.equal(portalHost.style.getPropertyValue('--font-mono'), hostMono);
+    assert.equal(
+      capsuleHost?.style?.getPropertyValue?.('--font-sans') || '',
+      '',
+      'capsuleHost retains its own titlebar typography isolation'
+    );
+  } finally {
+    ov?.dispose?.();
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.ResizeObserver = prevRo;
+    globalThis.MutationObserver = prevMo;
+    globalThis.fetch = prevFetch;
+  }
+});

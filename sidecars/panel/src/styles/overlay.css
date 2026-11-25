@@ -561,6 +561,11 @@
   z-index: 2147483000;
   font-family: var(--font-sans);
   font-size: var(--fs-body);
+  font-weight: 400;
+  font-stretch: 100%;
+  font-variation-settings: normal;
+  font-feature-settings: normal;
+  letter-spacing: normal;
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
@@ -642,14 +647,14 @@
   animation: wm-popover-in var(--dur-instant) var(--ease-fast);
 }
 
-/* 左侧在线多会话实时看板浮层（单层无套娃细线卡片，仅显示在线运行会话，留足呼吸感） */
+/* 左侧在线多会话实时看板浮层（单层无套娃细线卡片，宽度与排版密度与侧边栏保持一致） */
 .wm-multi-panel {
   position: fixed;
   top: 42px;
   left: 12px;
-  width: min(calc(464px * var(--ui-panel-scale, 1)), calc(100vw - 24px));
+  width: min(calc(522px * var(--ui-panel-scale, 1)), calc(100vw - 24px));
   max-height: calc(100vh - 54px);
-  padding: 14px 16px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -783,44 +788,41 @@
 }
 
 .wm-task-metrics {
-  font-size: var(--fs-md);
-  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-muted);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .wm-multi-header {
-  padding-bottom: 10px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--border-hairline);
 }
 
-/* 多会话单层面板内去除重复边框与底色，留足行距与段落呼吸感，仅靠左侧圆点闪烁表达状态 */
+/* 多会话单层面板内去除重复边框与底色，对齐侧边栏任务卡片间距与左侧基线 */
 .wm-multi-panel .live-activity-list {
   gap: 0;
 }
 
 .wm-multi-panel .live-task-card {
-  gap: 8px;
-  padding: 12px 2px;
+  gap: 7px;
+  padding: 10px 0;
   border: none;
   border-radius: 0;
   background: transparent;
 }
 
 .wm-multi-panel .live-task-card:first-child {
-  padding-top: 11px;
+  padding-top: 9px;
 }
 
 .wm-multi-panel .live-task-card:last-child {
-  padding-bottom: 2px;
+  padding-bottom: 0;
 }
 
 .wm-multi-panel .live-task-card + .live-task-card {
   border-top: 1px solid var(--border-hairline);
-}
-
-.wm-multi-panel .live-task-title {
-  font-size: var(--fs-body);
 }
 
 .wm-multi-empty {
@@ -829,7 +831,7 @@
   justify-content: space-between;
   gap: var(--space-3);
   min-height: 36px;
-  padding: 12px 2px 4px;
+  padding: 10px 0 2px;
   font-size: var(--fs-base);
   color: var(--text-secondary);
 }

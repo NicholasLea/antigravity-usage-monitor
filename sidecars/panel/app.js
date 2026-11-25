@@ -41654,6 +41654,55 @@ function mountWindowOverlay() {
   let observedWorkbench = null;
   let themeObserver = null;
   const mirroredThemeVars = new Map();
+  const mirroredTypographyVars = new Map();
+
+  function isUsableHostFontStack(raw) {
+    const val = String(raw || '').trim();
+    if (!val) return false;
+    const bare = val.replace(/["']/g, '').trim();
+    return !/^(?:initial|inherit|unset|revert|serif|sans-serif|monospace|times new roman|arial)$/i.test(
+      bare
+    );
+  }
+
+  function syncHostTypographyVars(rootCs, bodyCs, wbCs) {
+    const readProp = (cs, prop, fallbackKey = '') => {
+      if (!cs) return '';
+      const v = String(cs.getPropertyValue?.(prop) || (fallbackKey ? cs[fallbackKey] : '') || '').trim();
+      return isUsableHostFontStack(v) ? v : '';
+    };
+    const hostFontSans =
+      readProp(rootCs, '--font-sans') ||
+      readProp(bodyCs, '--font-sans') ||
+      readProp(wbCs, '--vscode-font-family') ||
+      readProp(bodyCs, 'font-family', 'fontFamily') ||
+      readProp(rootCs, 'font-family', 'fontFamily');
+    const hostFontMono =
+      readProp(rootCs, '--font-mono') ||
+      readProp(bodyCs, '--font-mono') ||
+      readProp(wbCs, '--vscode-editor-font-family') ||
+      readProp(rootCs, '--font-code');
+
+    for (const [cssVar, val] of [
+      ['--font-sans', hostFontSans],
+      ['--font-mono', hostFontMono],
+    ]) {
+      const prevVal = mirroredTypographyVars.get(cssVar) || '';
+      if (val) {
+        if (prevVal !== val) {
+          portalHost.style.setProperty?.(cssVar, val);
+          mirroredTypographyVars.set(cssVar, val);
+        }
+      } else if (prevVal) {
+        if (typeof portalHost.style.removeProperty === 'function') {
+          portalHost.style.removeProperty(cssVar);
+        } else {
+          portalHost.style.setProperty?.(cssVar, '');
+        }
+        mirroredTypographyVars.delete(cssVar);
+      }
+    }
+  }
 
   function restorePatchedActionToolbar() {
     if (!patchedActionToolbar) return;
@@ -41683,6 +41732,8 @@ function mountWindowOverlay() {
         ? window.getComputedStyle(document.documentElement)
         : null;
       const bodyCs = document.body ? window.getComputedStyle(document.body) : null;
+      const wbOnlyCs = workbenchEl ? window.getComputedStyle(workbenchEl) : null;
+      syncHostTypographyVars(rootCs, bodyCs, wbOnlyCs);
       const nativeRootBg = String(
         rootCs?.getPropertyValue?.('--background') ||
           bodyCs?.getPropertyValue?.('--background') ||

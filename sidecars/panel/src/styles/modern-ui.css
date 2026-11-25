@@ -934,7 +934,11 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"] .wm-multi-header,
-:host([data-modern-ui="true"]) .wm-multi-header,
+:host([data-modern-ui="true"]) .wm-multi-header {
+  border: none;
+  padding-bottom: 6px;
+}
+
 [data-modern-ui="true"].wm-multi-panel .live-task-card + .live-task-card,
 :host([data-modern-ui="true"]) .wm-multi-panel .live-task-card + .live-task-card {
   border: none;
@@ -952,10 +956,20 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 
 [data-modern-ui="true"].wm-multi-panel .live-task-card,
 :host([data-modern-ui="true"]) .wm-multi-panel .live-task-card {
-  padding: 10px 2px;
+  padding: 8px 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+}
+
+[data-modern-ui="true"].wm-multi-panel .live-task-card:first-child,
+:host([data-modern-ui="true"]) .wm-multi-panel .live-task-card:first-child {
+  padding-top: 8px;
+}
+
+[data-modern-ui="true"].wm-multi-panel .live-task-card:last-child,
+:host([data-modern-ui="true"]) .wm-multi-panel .live-task-card:last-child {
+  padding-bottom: 0;
 }
 
 /* --- 8. 顶栏胶囊老虎机滚动数字 (0.15s) 与语义色平滑渐变 (0.1s)，严格限定实验性新 UI --- */

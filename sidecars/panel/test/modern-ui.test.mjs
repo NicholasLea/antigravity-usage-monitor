@@ -305,6 +305,21 @@ test('applyAppearanceToRoot and SettingsGeneralTab toggle data-modern-ui + data-
   );
   assert.match(
     builtStyles,
+    /:host\(\.wm-portal-host\)\s*\{[^}]*font-stretch:\s*100%;[^}]*font-variation-settings:\s*normal;[^}]*letter-spacing:\s*normal;/s,
+    'Portal Shadow host must reset inherited host font-stretch/variation/letter-spacing to match sidebar typography'
+  );
+  assert.match(
+    builtStyles,
+    /\.wm-multi-panel\s+\.live-task-card\s*\{[^}]*gap:\s*7px;[^}]*padding:\s*10px\s+0;/s,
+    'Floating multi-session task cards must match sidebar 7px row gap and 0px horizontal inset alignment'
+  );
+  assert.match(
+    builtStyles,
+    /\[data-modern-ui="true"\]\.wm-multi-panel\s+\.live-task-card:last-child[\s\S]*?padding-bottom:\s*0;/,
+    'Modern UI multi-session panel must preserve symmetric bottom padding on last task card'
+  );
+  assert.match(
+    builtStyles,
     /\.ctx-inspector-bar\s*\{[^}]*align-items:\s*flex-start;/,
     'ctx-inspector-bar must top-align pills so height clip never hides row 1 during expand/collapse'
   );
