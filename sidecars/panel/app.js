@@ -1239,6 +1239,8 @@ function buildHostThemeFallbackCss(snapshot) {
     const val = norm.vars[key];
     if (val) {
       decls.push(`${key}:${val}`);
+      if (key === '--font-sans') decls.push(`--host-font-sans:${val}`);
+      else if (key === '--font-mono') decls.push(`--host-font-mono:${val}`);
       hasVarDecl = true;
     }
   }
@@ -4213,11 +4215,14 @@ function captureNativeHostThemeSnapshot(
   }
   const vars = {};
   for (const key of HOST_THEME_CSS_VARS) {
-    const val =
-      readInlineStyleVar(root, key) ||
-      readInlineStyleVar(body, key) ||
-      String(rootCs?.getPropertyValue?.(key) || '').trim() ||
-      String(bodyCs?.getPropertyValue?.(key) || '').trim();
+    const inlineVal = readInlineStyleVar(root, key) || readInlineStyleVar(body, key);
+    // Avoid mistaking our own tokens.css fallback --font-sans/--font-mono for host /preload.js typography
+    const isPanelOwnTypographyFallbackVar = key === '--font-sans' || key === '--font-mono';
+    const val = isPanelOwnTypographyFallbackVar
+      ? inlineVal
+      : inlineVal ||
+        String(rootCs?.getPropertyValue?.(key) || '').trim() ||
+        String(bodyCs?.getPropertyValue?.(key) || '').trim();
     if (val) vars[key] = val;
   }
   const colorScheme = detectHostColorScheme(root);
@@ -4456,19 +4461,65 @@ function syncHostThemeFallback(
     }
   };
 
+  const readSsrBridgedFontVar = (hostVar) => {
+    if (!existingStyle || !root || typeof win?.getComputedStyle !== 'function') return '';
+    try {
+      return String(win.getComputedStyle(root)?.getPropertyValue?.(hostVar) || '').trim();
+    } catch {
+      return '';
+    }
+  };
+  const ssrFallbackFonts =
+    !telemetryLoaded && existingStyle
+      ? {
+          '--font-sans': readSsrBridgedFontVar('--host-font-sans'),
+          '--font-mono': readSsrBridgedFontVar('--host-font-mono'),
+        }
+      : null;
+
+  const syncBridgedTypography = (normalizedSnap) => {
+    const body = doc?.body || null;
+    for (const [cssVar, hostVar] of [
+      ['--font-sans', '--host-font-sans'],
+      ['--font-mono', '--host-font-mono'],
+    ]) {
+      const hasNativeInlineFont = Boolean(
+        readInlineStyleVar(root, cssVar) || readInlineStyleVar(body, cssVar)
+      );
+      if (hasNativeInlineFont) {
+        setOrClearStyleVar(root, hostVar, '');
+        continue;
+      }
+      const bridgedVal =
+        String(normalizedSnap?.vars?.[cssVar] || '').trim() ||
+        String(ssrFallbackFonts?.[cssVar] || '').trim();
+      if (bridgedVal) {
+        setOrClearStyleVar(root, hostVar, bridgedVal);
+      } else if (telemetryLoaded) {
+        setOrClearStyleVar(root, hostVar, '');
+      }
+    }
+  };
+
   if (!doc || !root || isStandalone) {
     removeFallbackStyle();
     removeAttrIfPresent(root, 'data-host-theme-fallback');
+    if (root) {
+      setOrClearStyleVar(root, '--host-font-sans', '');
+      setOrClearStyleVar(root, '--host-font-mono', '');
+    }
     return { mode: 'standalone', snapshot: null };
   }
+
+  const normalized = normalizeHostThemeSnapshot(hostTheme);
 
   if (hasNativeHostTheme(doc)) {
     removeFallbackStyle();
     removeAttrIfPresent(root, 'data-host-theme-fallback');
+    syncBridgedTypography(normalized);
     return { mode: 'native', snapshot: captureNativeHostThemeSnapshot(doc, win) };
   }
 
-  const normalized = normalizeHostThemeSnapshot(hostTheme);
   const css = buildHostThemeFallbackCss(normalized);
   if (css && doc.head) {
     if (existingStyle) {
@@ -4486,6 +4537,7 @@ function syncHostThemeFallback(
       }
     }
     removeAttrIfPresent(root, 'data-host-theme-fallback');
+    syncBridgedTypography(normalized);
     return { mode: 'bridged', snapshot: normalized };
   }
 
@@ -4495,6 +4547,7 @@ function syncHostThemeFallback(
   }
 
   removeFallbackStyle();
+  syncBridgedTypography(null);
   const scheme = detectHostColorScheme(root, { fallbackHostTheme: normalized });
   if (scheme === 'dark') {
     setAttrIfChanged(root, 'data-host-theme-fallback', 'dark');
@@ -27766,7 +27819,7 @@ const StepTableWidget = defineComponent({
       lockedWhileScaled = Math.abs(scaleX - 1) > 0.001;
     }
 
-    function readUiFontScale() {
+    function readUiFontScale(fallbackScaleKey = '') {
       try {
         if (typeof getComputedStyle === 'function') {
           const target =
@@ -27780,7 +27833,10 @@ const StepTableWidget = defineComponent({
           }
         }
       } catch {
-        // Fallback to default scale in headless/mock environments.
+        // Fallback to explicit scale key or default in headless/mock environments.
+      }
+      if (fallbackScaleKey) {
+        return FONT_SCALE_FACTORS[normalizeClientFontScale(fallbackScaleKey)] ?? 1;
       }
       return 1;
     }
@@ -27822,8 +27878,8 @@ const StepTableWidget = defineComponent({
       return lo;
     }
 
-    function syncFontScaleIfChanged() {
-      const nextScale = readUiFontScale();
+    function syncFontScaleIfChanged(fallbackScaleKey = '') {
+      const nextScale = readUiFontScale(fallbackScaleKey);
       if (Math.abs(nextScale - lastFontScale) < 0.005) return false;
       lastFontScale = nextScale;
       calibratedSingleRowH = 0;
@@ -28712,6 +28768,7 @@ const StepTableWidget = defineComponent({
         displaySettings = {},
         allConversationSteps = null,
         allowNewRowFade = false,
+        fontScale = '',
         sortKey = '',
         sortDir = '',
       } = {}
@@ -28780,11 +28837,12 @@ const StepTableWidget = defineComponent({
       const normSortDir = sortDir === 'asc' || sortDir === 'desc' ? sortDir : '';
       const isCustomSorted = Boolean(normSortKey && normSortDir);
       const effectiveTurnRail = Boolean(showStepTurnRail && !isCustomSorted);
+      const normFontScale = fontScale ? normalizeClientFontScale(fontScale) : '';
       const renderOptions = JSON.stringify([
         cascadeId, locale, colOrderSig, effectiveScopes, hasSubagents, isMergedMultiAgents,
         effectiveTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
         displaySettings.modelDisplayMode, displaySettings.showUpstreamModel,
-        normSortKey, normSortDir,
+        normFontScale, normSortKey, normSortDir,
       ]);
       if (
         lastRenderOptions === renderOptions &&
@@ -28799,7 +28857,7 @@ const StepTableWidget = defineComponent({
         return;
       }
 
-      syncFontScaleIfChanged();
+      syncFontScaleIfChanged(normFontScale);
       const wantedSet = new Set(colKeys);
       syncTableHeaderColumns(colKeys, {
         stepTokenComboFormat: normTokenFmt,
@@ -41535,6 +41593,7 @@ const StepsDetailView = defineComponent({
           displaySettings,
           allConversationSteps,
           allowNewRowFade: shouldAnimateNewRows,
+          fontScale: slice.fontScale,
           sortKey,
           sortDir,
         });
@@ -42139,6 +42198,7 @@ const StepsDetailView = defineComponent({
           st.telemetry?.settings?.stepTokenComboFormat
         ),
         stepTableColumns: st.telemetry?.settings?.stepTableColumns,
+        fontScale: normalizeClientFontScale(st.telemetry?.settings?.fontScale),
         experimentalModernUi: resolveSettingsModernUi(st.telemetry?.settings),
       }),
       (slice) => {

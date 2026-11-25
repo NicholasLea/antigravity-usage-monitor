@@ -196,14 +196,14 @@ export function buildHostThemeProbeSnippet() {
         const val = readCssVar(name);
         if (val) vars[name] = val;
       }
+      const pick = (...names) => {
+        for (const n of names) {
+          const v = readCssVar(n);
+          if (v) return v;
+        }
+        return '';
+      };
       if (!vars['--background']) {
-        const pick = (...names) => {
-          for (const n of names) {
-            const v = readCssVar(n);
-            if (v) return v;
-          }
-          return '';
-        };
         const mapped = [
           ['--background', pick('--vscode-sideBar-background', '--vscode-editor-background', '--vscode-panel-background')],
           ['--card', pick('--vscode-editorWidget-background', '--vscode-sideBar-background', '--vscode-editor-background')],
@@ -212,12 +212,29 @@ export function buildHostThemeProbeSnippet() {
           ['--border', pick('--vscode-widget-border', '--vscode-panel-border', '--vscode-commandCenter-border', '--vscode-contrastBorder')],
           ['--primary', pick('--vscode-textLink-foreground', '--vscode-button-background', '--vscode-focusBorder')],
           ['--destructive', pick('--vscode-errorForeground', '--vscode-editorError-foreground')],
-          ['--font-sans', pick('--vscode-font-family')],
-          ['--font-mono', pick('--vscode-editor-font-family')],
         ];
         for (const [k, v] of mapped) {
           if (v && !vars[k]) vars[k] = v;
         }
+      }
+      const isUsableFont = (raw) => {
+        const v = String(raw || '').trim();
+        if (!v) return false;
+        const bare = v.replace(/["']/g, '').trim();
+        return !/^(?:initial|inherit|unset|revert|serif|sans-serif|monospace|times new roman|arial)$/i.test(bare);
+      };
+      if (!vars['--font-sans']) {
+        const bodyFont = String(bodyCs?.fontFamily || '').trim();
+        const rootFont = String(rootCs?.fontFamily || '').trim();
+        const mappedSans =
+          pick('--vscode-font-family') ||
+          (isUsableFont(bodyFont) ? bodyFont : '') ||
+          (isUsableFont(rootFont) ? rootFont : '');
+        if (mappedSans) vars['--font-sans'] = mappedSans;
+      }
+      if (!vars['--font-mono']) {
+        const mappedMono = pick('--vscode-editor-font-family', '--font-code');
+        if (mappedMono) vars['--font-mono'] = mappedMono;
       }
 
       let colorScheme = '';

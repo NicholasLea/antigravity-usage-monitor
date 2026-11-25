@@ -101,6 +101,18 @@ export function recordLiveCdpHostTheme(
   return normalized;
 }
 
+function mergeHostThemeVars(primary, secondary) {
+  if (!primary) return secondary || null;
+  if (!secondary) return primary;
+  return {
+    ...primary,
+    vars: {
+      ...(secondary.vars || {}),
+      ...(primary.vars || {}),
+    },
+  };
+}
+
 /**
  * Record a native host theme snapshot observed from Antigravity's `/preload.js` in the sidecar pane.
  *
@@ -121,7 +133,13 @@ export function recordPreloadHostTheme(
   if (!sig) return null;
   livePreloadState = { snapshot: normalized, sig, updatedAtMs: normalized.updatedAtMs || nowMs };
   if (persist) {
-    persistSnapshotIfChanged(normalized, sig, cacheFilePath);
+    const persistedSnapshot = liveCdpState.snapshot
+      ? mergeHostThemeVars(normalized, liveCdpState.snapshot)
+      : normalized;
+    const persistedSig = getHostThemeSignature(persistedSnapshot);
+    if (persistedSig) {
+      persistSnapshotIfChanged(persistedSnapshot, persistedSig, cacheFilePath);
+    }
   }
   return normalized;
 }
@@ -167,7 +185,9 @@ export function getEffectiveHostTheme({
   const preloadAt = livePreloadState.updatedAtMs;
 
   if (cdpCandidate && preloadCandidate) {
-    return preloadAt > cdpAt ? preloadCandidate : cdpCandidate;
+    const primary = preloadAt > cdpAt ? preloadCandidate : cdpCandidate;
+    const secondary = preloadAt > cdpAt ? cdpCandidate : preloadCandidate;
+    return mergeHostThemeVars(primary, secondary);
   }
   if (cdpCandidate) return cdpCandidate;
   if (preloadCandidate) return preloadCandidate;

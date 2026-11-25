@@ -798,8 +798,8 @@ test('panel typography scales all view/table/chart CSS rules via --fs-* tokens w
     );
   }
   const tokensCss = fs.readFileSync(join(stylesDir, 'tokens.css'), 'utf8');
-  assert.match(tokensCss, /--font-sans\s*:[^;]+"SF Pro Text"/);
-  assert.match(tokensCss, /--font-mono\s*:\s*ui-monospace,\s*SFMono-Regular,\s*"SF Mono"/);
+  assert.match(tokensCss, /--font-sans\s*:\s*var\(--host-font-sans,\s*[^;]+"SF Pro Text"/);
+  assert.match(tokensCss, /--font-mono\s*:\s*var\(--host-font-mono,\s*ui-monospace,\s*SFMono-Regular,\s*"SF Mono"/);
   assert.match(tokensCss, /:host\(\[data-font-scale="xl"\]\)/);
   assert.match(tokensCss, /\[data-font-scale\]\s*\{[\s\S]*?--fs-base-sm:/);
   assert.doesNotMatch(tokensCss, /:root,\s*:host\s*\{[^}]*--ui-font-scale\s*:\s*1\s*;/);

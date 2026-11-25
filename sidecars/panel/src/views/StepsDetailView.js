@@ -5,7 +5,7 @@
  * - 总汇总视图提供会话线性走势图、多模型同图趋势拟合曲线与极简高密度模型总览卡片。
  */
 
-import { resolveSettingsModernUi } from '../core/appearance.js';
+import { normalizeClientFontScale, resolveSettingsModernUi } from '../core/appearance.js';
 import { defineComponent } from '../core/component.js';
 import {
   h,
@@ -1145,6 +1145,7 @@ export const StepsDetailView = defineComponent({
           displaySettings,
           allConversationSteps,
           allowNewRowFade: shouldAnimateNewRows,
+          fontScale: slice.fontScale,
           sortKey,
           sortDir,
         });
@@ -1749,6 +1750,7 @@ export const StepsDetailView = defineComponent({
           st.telemetry?.settings?.stepTokenComboFormat
         ),
         stepTableColumns: st.telemetry?.settings?.stepTableColumns,
+        fontScale: normalizeClientFontScale(st.telemetry?.settings?.fontScale),
         experimentalModernUi: resolveSettingsModernUi(st.telemetry?.settings),
       }),
       (slice) => {

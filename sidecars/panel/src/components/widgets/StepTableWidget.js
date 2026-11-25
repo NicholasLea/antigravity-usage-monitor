@@ -5,6 +5,10 @@
  * preview tooltips, and independent Main/Sub agent badges.
  */
 
+import {
+  FONT_SCALE_FACTORS,
+  normalizeClientFontScale,
+} from '../../core/appearance.js';
 import { defineComponent } from '../../core/component.js';
 import {
   getElementContentWidth,
@@ -767,7 +771,7 @@ export const StepTableWidget = defineComponent({
       lockedWhileScaled = Math.abs(scaleX - 1) > 0.001;
     }
 
-    function readUiFontScale() {
+    function readUiFontScale(fallbackScaleKey = '') {
       try {
         if (typeof getComputedStyle === 'function') {
           const target =
@@ -781,7 +785,10 @@ export const StepTableWidget = defineComponent({
           }
         }
       } catch {
-        // Fallback to default scale in headless/mock environments.
+        // Fallback to explicit scale key or default in headless/mock environments.
+      }
+      if (fallbackScaleKey) {
+        return FONT_SCALE_FACTORS[normalizeClientFontScale(fallbackScaleKey)] ?? 1;
       }
       return 1;
     }
@@ -823,8 +830,8 @@ export const StepTableWidget = defineComponent({
       return lo;
     }
 
-    function syncFontScaleIfChanged() {
-      const nextScale = readUiFontScale();
+    function syncFontScaleIfChanged(fallbackScaleKey = '') {
+      const nextScale = readUiFontScale(fallbackScaleKey);
       if (Math.abs(nextScale - lastFontScale) < 0.005) return false;
       lastFontScale = nextScale;
       calibratedSingleRowH = 0;
@@ -1713,6 +1720,7 @@ export const StepTableWidget = defineComponent({
         displaySettings = {},
         allConversationSteps = null,
         allowNewRowFade = false,
+        fontScale = '',
         sortKey = '',
         sortDir = '',
       } = {}
@@ -1781,11 +1789,12 @@ export const StepTableWidget = defineComponent({
       const normSortDir = sortDir === 'asc' || sortDir === 'desc' ? sortDir : '';
       const isCustomSorted = Boolean(normSortKey && normSortDir);
       const effectiveTurnRail = Boolean(showStepTurnRail && !isCustomSorted);
+      const normFontScale = fontScale ? normalizeClientFontScale(fontScale) : '';
       const renderOptions = JSON.stringify([
         cascadeId, locale, colOrderSig, effectiveScopes, hasSubagents, isMergedMultiAgents,
         effectiveTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
         displaySettings.modelDisplayMode, displaySettings.showUpstreamModel,
-        normSortKey, normSortDir,
+        normFontScale, normSortKey, normSortDir,
       ]);
       if (
         lastRenderOptions === renderOptions &&
@@ -1800,7 +1809,7 @@ export const StepTableWidget = defineComponent({
         return;
       }
 
-      syncFontScaleIfChanged();
+      syncFontScaleIfChanged(normFontScale);
       const wantedSet = new Set(colKeys);
       syncTableHeaderColumns(colKeys, {
         stepTokenComboFormat: normTokenFmt,

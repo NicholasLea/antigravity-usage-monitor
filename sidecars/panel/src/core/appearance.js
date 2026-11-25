@@ -485,11 +485,14 @@ export function captureNativeHostThemeSnapshot(
   }
   const vars = {};
   for (const key of HOST_THEME_CSS_VARS) {
-    const val =
-      readInlineStyleVar(root, key) ||
-      readInlineStyleVar(body, key) ||
-      String(rootCs?.getPropertyValue?.(key) || '').trim() ||
-      String(bodyCs?.getPropertyValue?.(key) || '').trim();
+    const inlineVal = readInlineStyleVar(root, key) || readInlineStyleVar(body, key);
+    // Avoid mistaking our own tokens.css fallback --font-sans/--font-mono for host /preload.js typography
+    const isPanelOwnTypographyFallbackVar = key === '--font-sans' || key === '--font-mono';
+    const val = isPanelOwnTypographyFallbackVar
+      ? inlineVal
+      : inlineVal ||
+        String(rootCs?.getPropertyValue?.(key) || '').trim() ||
+        String(bodyCs?.getPropertyValue?.(key) || '').trim();
     if (val) vars[key] = val;
   }
   const colorScheme = detectHostColorScheme(root);
@@ -728,19 +731,65 @@ export function syncHostThemeFallback(
     }
   };
 
+  const readSsrBridgedFontVar = (hostVar) => {
+    if (!existingStyle || !root || typeof win?.getComputedStyle !== 'function') return '';
+    try {
+      return String(win.getComputedStyle(root)?.getPropertyValue?.(hostVar) || '').trim();
+    } catch {
+      return '';
+    }
+  };
+  const ssrFallbackFonts =
+    !telemetryLoaded && existingStyle
+      ? {
+          '--font-sans': readSsrBridgedFontVar('--host-font-sans'),
+          '--font-mono': readSsrBridgedFontVar('--host-font-mono'),
+        }
+      : null;
+
+  const syncBridgedTypography = (normalizedSnap) => {
+    const body = doc?.body || null;
+    for (const [cssVar, hostVar] of [
+      ['--font-sans', '--host-font-sans'],
+      ['--font-mono', '--host-font-mono'],
+    ]) {
+      const hasNativeInlineFont = Boolean(
+        readInlineStyleVar(root, cssVar) || readInlineStyleVar(body, cssVar)
+      );
+      if (hasNativeInlineFont) {
+        setOrClearStyleVar(root, hostVar, '');
+        continue;
+      }
+      const bridgedVal =
+        String(normalizedSnap?.vars?.[cssVar] || '').trim() ||
+        String(ssrFallbackFonts?.[cssVar] || '').trim();
+      if (bridgedVal) {
+        setOrClearStyleVar(root, hostVar, bridgedVal);
+      } else if (telemetryLoaded) {
+        setOrClearStyleVar(root, hostVar, '');
+      }
+    }
+  };
+
   if (!doc || !root || isStandalone) {
     removeFallbackStyle();
     removeAttrIfPresent(root, 'data-host-theme-fallback');
+    if (root) {
+      setOrClearStyleVar(root, '--host-font-sans', '');
+      setOrClearStyleVar(root, '--host-font-mono', '');
+    }
     return { mode: 'standalone', snapshot: null };
   }
+
+  const normalized = normalizeHostThemeSnapshot(hostTheme);
 
   if (hasNativeHostTheme(doc)) {
     removeFallbackStyle();
     removeAttrIfPresent(root, 'data-host-theme-fallback');
+    syncBridgedTypography(normalized);
     return { mode: 'native', snapshot: captureNativeHostThemeSnapshot(doc, win) };
   }
 
-  const normalized = normalizeHostThemeSnapshot(hostTheme);
   const css = buildHostThemeFallbackCss(normalized);
   if (css && doc.head) {
     if (existingStyle) {
@@ -758,6 +807,7 @@ export function syncHostThemeFallback(
       }
     }
     removeAttrIfPresent(root, 'data-host-theme-fallback');
+    syncBridgedTypography(normalized);
     return { mode: 'bridged', snapshot: normalized };
   }
 
@@ -767,6 +817,7 @@ export function syncHostThemeFallback(
   }
 
   removeFallbackStyle();
+  syncBridgedTypography(null);
   const scheme = detectHostColorScheme(root, { fallbackHostTheme: normalized });
   if (scheme === 'dark') {
     setAttrIfChanged(root, 'data-host-theme-fallback', 'dark');

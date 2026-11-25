@@ -131,6 +131,8 @@ export function buildHostThemeFallbackCss(snapshot) {
     const val = norm.vars[key];
     if (val) {
       decls.push(`${key}:${val}`);
+      if (key === '--font-sans') decls.push(`--host-font-sans:${val}`);
+      else if (key === '--font-mono') decls.push(`--host-font-mono:${val}`);
       hasVarDecl = true;
     }
   }

@@ -6,9 +6,9 @@
 
 :root,
 :host {
-  /* Cross-Platform Typography Stacks (macOS SF Pro / SF Mono + Windows / Linux Fallbacks) */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
+  /* Cross-Platform Typography Stacks (mirrored host font first, then macOS/Windows/Linux fallbacks) */
+  --font-sans: var(--host-font-sans, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif);
+  --font-mono: var(--host-font-mono, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, "Cascadia Mono", Consolas, monospace);
 
   /* Architectural Geometry: Only Top Nav uses --radius-pill */
   --radius-pill: 999px;

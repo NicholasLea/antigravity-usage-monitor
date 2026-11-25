@@ -2336,5 +2336,225 @@ test('StepTableWidget virtualized column locking unscales CSS transform animatio
   refreshViewport();
   assert.equal(stepsTableEl.style.minWidth, '', 'Wide enough pane clears horizontal minWidth');
 
+  // 4. Changing fontScale re-syncs virtualized row heights and unlocks stale column widths immediately
+  colWidths[1] = 82;
+  renderStepTable(steps, 'conv-138', cols, 'zh-CN', {
+    allConversationSteps: steps,
+    fontScale: 'xl',
+  });
+  assert.equal(
+    ths[1].style.width,
+    '82.00px',
+    'Changing fontScale must unlock and re-measure virtualized step column widths'
+  );
+
   stepTable.destroy();
+});
+
+test('Host typography parity: Sidebar mirrors bridged host fonts in native mode and preserves CDP fonts across preload updates', async (t) => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const vm = await import('node:vm');
+  const {
+    HOST_THEME_FALLBACK_STYLE_ID,
+    buildHostThemeFallbackCss,
+  } = await import('../shared/host-theme.mjs');
+  const { syncHostThemeFallback } = await import('../src/core/appearance.js');
+  const {
+    getEffectiveHostTheme,
+    recordLiveCdpHostTheme,
+    recordPreloadHostTheme,
+    resetHostThemeStoreForTests,
+  } = await import('../backend/host-theme-store.mjs');
+  const { readCachedHostThemeSnapshotSync } = await import('../backend/http-helpers.mjs');
+  const { buildHostThemeProbeSnippet } = await import('../backend/window-bridge.mjs');
+
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-host-font-parity-'));
+  t.after(() => {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    resetHostThemeStoreForTests();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const hostSans = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  const hostMono = "'Google Sans Code', ui-monospace, SFMono-Regular, monospace";
+  const panelFallbackSans = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif';
+  const panelFallbackMono = 'ui-monospace, SFMono-Regular, Consolas, monospace';
+
+  // 1) buildHostThemeFallbackCss emits both --font-* and --host-font-* so tokens.css var(--host-font-*, ...) wins on SSR
+  const css = buildHostThemeFallbackCss({
+    colorScheme: 'dark',
+    vars: {
+      '--background': '#1A1B26',
+      '--font-sans': hostSans,
+      '--font-mono': hostMono,
+    },
+  });
+  assert.match(css, /--host-font-sans:system-ui/);
+  assert.match(css, /--host-font-mono:'Google Sans Code'/);
+
+  // 2) Sidebar native mode (/preload.js sets inline colors only, no inline font vars):
+  //    - captureNativeHostThemeSnapshot must NOT capture our own tokens.css computed --font-sans/--font-mono
+  //    - syncHostThemeFallback must mirror CDP host --font-sans/--font-mono onto --host-font-sans/--host-font-mono
+  const { document } = createMockDom();
+  document.documentElement.style.setProperty('--background', '#1A1B26');
+  document.documentElement.style.setProperty('--foreground', '#A9B1D6');
+
+  const ssrStyle = document.createElement('style');
+  ssrStyle.id = HOST_THEME_FALLBACK_STYLE_ID;
+  ssrStyle.textContent = css;
+  document.head.appendChild(ssrStyle);
+
+  let ssrComputedSans = hostSans;
+  let ssrComputedMono = hostMono;
+  globalThis.document = document;
+  globalThis.window = {
+    matchMedia: () => ({ matches: true }),
+    getComputedStyle: (el) => {
+      if (el === document.documentElement) {
+        return {
+          getPropertyValue: (prop) => {
+            if (prop === '--font-sans') return panelFallbackSans;
+            if (prop === '--font-mono') return panelFallbackMono;
+            if (prop === '--host-font-sans') return ssrComputedSans;
+            if (prop === '--host-font-mono') return ssrComputedMono;
+            return '';
+          },
+        };
+      }
+      return { getPropertyValue: () => '' };
+    },
+  };
+
+  // Pre-telemetry first boot in native mode preserves SSR bridged fonts without flashing back to fallback
+  const preRes = syncHostThemeFallback(undefined, {
+    doc: document,
+    win: globalThis.window,
+    isStandalone: false,
+    telemetryLoaded: false,
+  });
+  assert.equal(preRes.mode, 'native');
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-sans'), hostSans);
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-mono'), hostMono);
+  assert.equal(
+    preRes.snapshot?.vars?.['--font-sans'],
+    undefined,
+    'captureNativeHostThemeSnapshot must ignore computed tokens.css --font-sans when not inline'
+  );
+  assert.equal(
+    preRes.snapshot?.vars?.['--font-mono'],
+    undefined,
+    'captureNativeHostThemeSnapshot must ignore computed tokens.css --font-mono when not inline'
+  );
+
+  // Telemetry loaded with CDP hostTheme keeps --host-font-sans & --host-font-mono synced in native mode
+  ssrComputedSans = '';
+  ssrComputedMono = '';
+  const nativeWithBridge = syncHostThemeFallback(
+    {
+      colorScheme: 'dark',
+      source: 'cdp',
+      vars: { '--background': '#1A1B26', '--font-sans': hostSans, '--font-mono': hostMono },
+    },
+    { doc: document, win: globalThis.window, isStandalone: false, telemetryLoaded: true }
+  );
+  assert.equal(nativeWithBridge.mode, 'native');
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-sans'), hostSans);
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-mono'), hostMono);
+
+  // If /preload.js ever injects inline --font-sans natively, --host-font-sans yields & clears cleanly
+  document.documentElement.style.setProperty('--font-sans', '"Custom Preload Sans", sans-serif');
+  const nativeWithInlineFont = syncHostThemeFallback(
+    {
+      colorScheme: 'dark',
+      source: 'cdp',
+      vars: { '--background': '#1A1B26', '--font-sans': hostSans, '--font-mono': hostMono },
+    },
+    { doc: document, win: globalThis.window, isStandalone: false, telemetryLoaded: true }
+  );
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-sans'), '');
+  assert.equal(nativeWithInlineFont.snapshot?.vars?.['--font-sans'], '"Custom Preload Sans", sans-serif');
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-mono'), hostMono);
+
+  // Standalone browser clears bridged host typography overrides
+  const standaloneRes = syncHostThemeFallback(
+    { colorScheme: 'dark', vars: { '--background': '#1A1B26', '--font-sans': hostSans } },
+    { doc: document, win: globalThis.window, isStandalone: true, telemetryLoaded: true }
+  );
+  assert.equal(standaloneRes.mode, 'standalone');
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-sans'), '');
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-mono'), '');
+
+  // 3) Host theme store merges CDP typography into newer preload color snapshots (memory + persisted cache)
+  resetHostThemeStoreForTests();
+  const cacheFile = path.join(tmpDir, 'host-theme-cache.json');
+  const leaseFile = path.join(tmpDir, 'window-bridge-lease.json');
+  recordLiveCdpHostTheme(
+    {
+      colorScheme: 'dark',
+      vars: { '--background': '#1A1B26', '--font-sans': hostSans, '--font-mono': hostMono },
+    },
+    { persist: true, cacheFilePath: cacheFile, nowMs: 1000 }
+  );
+  recordPreloadHostTheme(
+    {
+      colorScheme: 'dark',
+      vars: { '--background': '#161722', '--foreground': '#E0E6F8' },
+    },
+    { persist: true, cacheFilePath: cacheFile, nowMs: 2000 }
+  );
+  const merged = getEffectiveHostTheme({ cacheFilePath: cacheFile, leaseFilePath: leaseFile, nowMs: 2500 });
+  assert.equal(merged?.vars?.['--background'], '#161722', 'newer preload colors win');
+  assert.equal(merged?.vars?.['--font-sans'], hostSans, 'CDP --font-sans survives newer preload update');
+  assert.equal(merged?.vars?.['--font-mono'], hostMono, 'CDP --font-mono survives newer preload update');
+  const persisted = readCachedHostThemeSnapshotSync({ dataDir: tmpDir, nowMs: 2500 });
+  assert.equal(persisted?.vars?.['--font-sans'], hostSans, 'persisted cache retains CDP --font-sans');
+  assert.equal(persisted?.vars?.['--background'], '#161722', 'persisted cache updates preload colors');
+
+  // 4) CDP probe extracts --vscode-font-family & --vscode-editor-font-family even when --background exists,
+  //    and falls back to usable body fontFamily when no CSS font vars exist
+  const probeSnippet = buildHostThemeProbeSnippet();
+  const hybridDoc = createMockDom().document;
+  hybridDoc.body.className = 'dark';
+  const hybridRes = vm.runInNewContext(probeSnippet, {
+    document: hybridDoc,
+    window: {
+      getComputedStyle: (el) => {
+        if (el === hybridDoc.documentElement) {
+          return {
+            getPropertyValue: (k) =>
+              ({
+                '--background': '#1A1B26',
+                '--vscode-font-family': '"Segoe UI", sans-serif',
+                '--vscode-editor-font-family': '"Cascadia Code", monospace',
+              })[k] || '',
+          };
+        }
+        return null;
+      },
+    },
+  });
+  assert.equal(hybridRes?.vars?.['--font-sans'], '"Segoe UI", sans-serif');
+  assert.equal(hybridRes?.vars?.['--font-mono'], '"Cascadia Code", monospace');
+
+  const bodyFontDoc = createMockDom().document;
+  bodyFontDoc.body.className = 'dark';
+  const bodyFontRes = vm.runInNewContext(probeSnippet, {
+    document: bodyFontDoc,
+    window: {
+      getComputedStyle: (el) => {
+        if (el === bodyFontDoc.documentElement) {
+          return { getPropertyValue: (k) => (k === '--background' ? '#1A1B26' : ''), fontFamily: '' };
+        }
+        if (el === bodyFontDoc.body) {
+          return { getPropertyValue: () => '', fontFamily: 'Inter, system-ui, sans-serif' };
+        }
+        return null;
+      },
+    },
+  });
+  assert.equal(bodyFontRes?.vars?.['--font-sans'], 'Inter, system-ui, sans-serif');
 });
