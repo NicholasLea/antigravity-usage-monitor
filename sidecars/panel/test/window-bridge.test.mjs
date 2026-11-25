@@ -1836,6 +1836,57 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(capSlots[1].getAttribute('data-metric'), 'cost');
     assert.equal(capSlots[2].getAttribute('data-metric'), 'ttft');
 
+    // Direct drag-to-reorder on the preview capsule bar itself: drag slot 2 ('ttft') left to slot 0 -> ['ttft', 'gemini_5h', 'cost']
+    assert.equal(
+      previewCapsuleBar.classList.contains('is-slot-reorderable'),
+      true,
+      'Preview capsule bar exposes direct horizontal slot drag affordance'
+    );
+    const previewCapsuleBtn = previewCapsuleBar.querySelector('.wm-capsule-btn');
+    previewCapsuleBtn.getBoundingClientRect = () => ({ left: 10, top: 10, right: 240, bottom: 38, width: 230, height: 28 });
+    const prevSlotRects = [
+      { left: 20, right: 88, top: 15, bottom: 33, width: 68, height: 18 },
+      { left: 105, right: 157, top: 15, bottom: 33, width: 52, height: 18 },
+      { left: 174, right: 220, top: 15, bottom: 33, width: 46, height: 18 },
+    ];
+    for (let i = 0; i < 3; i += 1) {
+      previewCapsuleSlots[i].getBoundingClientRect = () => prevSlotRects[i];
+    }
+    previewCapsuleSlots[2].dispatchEvent({
+      type: 'pointerdown',
+      button: 0,
+      clientX: 197,
+      clientY: 24,
+      preventDefault() {},
+      stopPropagation() {},
+    });
+    mockDocument.dispatchEvent({ type: 'pointermove', clientX: 30, clientY: 24, preventDefault() {} });
+    assert.equal(previewCapsuleBar.classList.contains('is-dragging-capsule'), true);
+    assert.deepEqual(
+      mockSettings.topbarCapsuleSlots,
+      ['gemini_5h', 'cost', 'ttft'],
+      'Direct capsule drag does not spam settings API before pointerup'
+    );
+    const liveRowVals = Array.from(capSlotListEl.children)
+      .slice(0, 3)
+      .map((row) => row.querySelector('.select-trigger .select-label')?.textContent || '');
+    assert.equal(
+      liveRowVals[0] !== liveRowVals[2],
+      true,
+      'EditableSlotList below updates live while dragging preview capsule directly'
+    );
+    mockDocument.dispatchEvent({ type: 'pointerup', clientX: 30, clientY: 24 });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(previewCapsuleBar.classList.contains('is-dragging-capsule'), false);
+    assert.deepEqual(
+      mockSettings.topbarCapsuleSlots,
+      ['ttft', 'gemini_5h', 'cost'],
+      'Direct preview capsule drag persists new order once on pointerup'
+    );
+    assert.equal(capSlots[0].getAttribute('data-metric'), 'ttft');
+    assert.equal(capSlots[1].getAttribute('data-metric'), 'gemini_5h');
+    assert.equal(capSlots[2].getAttribute('data-metric'), 'cost');
+
     // Click `+ 添加指标` twice to expand from 3 -> 5 slots
     const capAddBtn = capSlotWrap.querySelector('.slot-add-btn');
     capAddBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -1907,6 +1958,24 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.deepEqual(mockSettings.hoverModules, ['metrics', 'context', 'quotas']);
     assert.equal(hoverPreviewTip.hasAttribute('hidden'), false, 'Hover preview tip restored');
     assert.equal(hoverPreviewWidgets.children.length, 3, '3 real hover widgets restored in preview');
+
+    // Direct vertical drag on Hover preview modules: drag 'quotas' (idx 2) above 'metrics' (idx 0)
+    assert.equal(hoverPreviewWidgets.classList.contains('is-modules-reorderable'), true);
+    hoverPreviewWidgets.getBoundingClientRect = () => ({ left: 0, top: 0, right: 320, bottom: 320, width: 320, height: 320 });
+    hoverPreviewWidgets.children[0].getBoundingClientRect = () => ({ left: 0, top: 0, right: 320, bottom: 80, width: 320, height: 80 });
+    hoverPreviewWidgets.children[1].getBoundingClientRect = () => ({ left: 0, top: 88, right: 320, bottom: 208, width: 320, height: 120 });
+    hoverPreviewWidgets.children[2].getBoundingClientRect = () => ({ left: 0, top: 216, right: 320, bottom: 316, width: 320, height: 100 });
+    hoverPreviewWidgets.children[2].dispatchEvent({ type: 'pointerdown', button: 0, clientX: 80, clientY: 260, preventDefault() {} });
+    mockDocument.dispatchEvent({ type: 'pointermove', clientX: 80, clientY: 20, preventDefault() {} });
+    assert.equal(hoverPreviewWidgets.classList.contains('is-dragging-modules'), true);
+    assert.deepEqual(mockSettings.hoverModules, ['metrics', 'context', 'quotas'], 'Hover module drag does not spam settings before drop');
+    mockDocument.dispatchEvent({ type: 'pointerup', clientX: 80, clientY: 20 });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(mockSettings.hoverModules, ['quotas', 'metrics', 'context'], 'Direct Hover preview module drag persists order');
+    // Reset Hover pane back to default order for subsequent assertions
+    sec1.querySelector('.btn-ghost-sm').dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 40));
+    assert.deepEqual(mockSettings.hoverModules, ['metrics', 'context', 'quotas']);
 
     // Switch real-time metrics style to Large while synced with Live Overview -> updates overviewMetricStyle & dims 4th metric row
     const [hoverStyleGroup, hoverSyncGroup] = sec1.querySelectorAll('.segmented');
@@ -2009,6 +2078,18 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     );
     pillTabs[3].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
+    // Direct horizontal drag on Overview preview metric cells (currently ['tps', 'ttft'] -> ['ttft', 'tps'])
+    const ovMatrixEl = overviewPreviewHostEl.children[0];
+    assert.equal(ovMatrixEl.classList.contains('is-metrics-reorderable'), true);
+    ovMatrixEl.getBoundingClientRect = () => ({ left: 0, top: 0, right: 320, bottom: 72, width: 320, height: 72 });
+    ovMatrixEl.children[0].getBoundingClientRect = () => ({ left: 0, right: 156, top: 0, bottom: 72, width: 156, height: 72 });
+    ovMatrixEl.children[1].getBoundingClientRect = () => ({ left: 162, right: 318, top: 0, bottom: 72, width: 156, height: 72 });
+    ovMatrixEl.children[1].dispatchEvent({ type: 'pointerdown', button: 0, clientX: 240, clientY: 36, preventDefault() {}, stopPropagation() {} });
+    mockDocument.dispatchEvent({ type: 'pointermove', clientX: 40, clientY: 36, preventDefault() {} });
+    assert.equal(ovMatrixEl.classList.contains('is-dragging-matrix'), true);
+    mockDocument.dispatchEvent({ type: 'pointerup', clientX: 40, clientY: 36 });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(mockSettings.overviewMetrics, ['ttft', 'tps'], 'Direct Overview preview metric drag persists order');
     sec2.querySelector('.btn-ghost-sm').dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 40));
     assert.deepEqual(mockSettings.overviewModules, ['metrics', 'context', 'quotas', 'live_tasks']);
@@ -2026,6 +2107,39 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(previewStepTable.classList.contains('has-turn-rail'), false, 'Preview step table hides turn rail by default');
     assert.equal(previewStepTable.children[0].children[0].children.length, 7, 'Preview step table renders 7 default columns');
     assert.equal(previewStepTable.children[1].children.length, 4, 'Preview step table renders 4 simulated steps');
+
+    // Direct horizontal column drag on Steps preview table header: drag col 1 ('model') left of col 0 ('step'), then drag back
+    assert.equal(previewStepTable.classList.contains('is-col-reorderable'), true);
+    const prevTheadRow = previewStepTable.children[0].children[0];
+    previewStepTable.getBoundingClientRect = () => ({ left: 0, top: 0, right: 420, bottom: 140, width: 420, height: 140 });
+    const assignThRects = () => {
+      for (let c = 0; c < prevTheadRow.children.length; c += 1) {
+        prevTheadRow.children[c].getBoundingClientRect = () => ({
+          left: c * 60,
+          right: (c + 1) * 60,
+          top: 0,
+          bottom: 26,
+          width: 60,
+          height: 26,
+        });
+      }
+    };
+    assignThRects();
+    prevTheadRow.children[1].dispatchEvent({ type: 'pointerdown', button: 0, clientX: 90, clientY: 13, preventDefault() {}, stopPropagation() {} });
+    mockDocument.dispatchEvent({ type: 'pointermove', clientX: 15, clientY: 13, preventDefault() {} });
+    assert.equal(previewStepTable.classList.contains('is-dragging-cols'), true);
+    mockDocument.dispatchEvent({ type: 'pointerup', clientX: 15, clientY: 13 });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.stepTableColumns[0], 'model', 'Direct Steps preview column header drag persists new order');
+    assert.equal(mockSettings.stepTableColumns[1], 'step');
+    // Drag 'step' back to col 0 so subsequent assertions see the original mockSettings.stepTableColumns
+    assignThRects();
+    prevTheadRow.children[1].dispatchEvent({ type: 'pointerdown', button: 0, clientX: 90, clientY: 13, preventDefault() {}, stopPropagation() {} });
+    mockDocument.dispatchEvent({ type: 'pointermove', clientX: 15, clientY: 13, preventDefault() {} });
+    mockDocument.dispatchEvent({ type: 'pointerup', clientX: 15, clientY: 13 });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.stepTableColumns[0], 'step');
+    assert.equal(mockSettings.stepTableColumns[1], 'model');
 
     const sec3SettingLabels = sec3.querySelectorAll('.form-label').map((el) => el.textContent);
     assert.ok(sec3SettingLabels.includes('对话轮次导轨'), 'Turn rail switch rendered in 调用明细字段');

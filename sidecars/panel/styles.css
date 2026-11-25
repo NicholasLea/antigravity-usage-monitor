@@ -6072,6 +6072,37 @@ html[data-standalone="true"] .app-shell {
   filter: grayscale(0.35);
 }
 
+.preview-capsule-bar.is-slot-reorderable .wm-capsule-btn {
+  cursor: default;
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-cap-slot {
+  border-radius: 3px;
+}
+
+.preview-capsule-bar.is-slot-reorderable:not(.is-dragging-capsule) .wm-cap-slot:hover {
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 12%, transparent);
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-sep.is-drag-sep {
+  opacity: 0.32;
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1), opacity 140ms ease-out;
+  will-change: transform;
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-dragging {
+  z-index: 45;
+  background: color-mix(in srgb, var(--accent-primary) 18%, var(--surface-panel));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, var(--surface-panel)),
+    0 0 0 4px var(--accent-primary-border),
+    var(--shadow-popover);
+  pointer-events: none;
+  will-change: transform;
+  transition: box-shadow 140ms ease-out, background-color 140ms ease-out;
+}
+
 .preview-capsule-cluster {
   display: inline-flex;
   align-items: center;
@@ -6136,6 +6167,107 @@ html[data-standalone="true"] .app-shell {
 
 .step-table-preview-host .data-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+.preview-capsule-bar.is-dragging-capsule,
+.preview-capsule-bar.is-dragging-capsule *,
+.is-dragging-modules,
+.is-dragging-modules *,
+.telemetry-matrix.is-dragging-matrix,
+.telemetry-matrix.is-dragging-matrix *,
+.step-table-preview-host.is-dragging-cols,
+.step-table-preview-host.is-dragging-cols * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-cap-slot,
+.is-modules-reorderable > .is-reorderable-module,
+.telemetry-matrix.is-metrics-reorderable .matrix-cell,
+.step-table-preview-host.is-col-reorderable .steps-data-table th.is-col-reorderable {
+  position: relative;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition:
+    background-color var(--dur-instant) var(--ease-fast),
+    border-color var(--dur-instant) var(--ease-fast),
+    box-shadow var(--dur-instant) var(--ease-fast),
+    color var(--dur-instant) var(--ease-fast);
+}
+
+.is-modules-reorderable:not(.is-dragging-modules) > .is-reorderable-module:not(.telemetry-matrix):hover {
+  border-color: var(--accent-primary-border);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-primary) 22%, transparent);
+}
+
+.telemetry-matrix.is-metrics-reorderable.is-dragging-matrix {
+  overflow: visible;
+}
+
+.telemetry-matrix.is-metrics-reorderable:not(.is-dragging-matrix) .matrix-cell:hover {
+  box-shadow: inset 0 0 0 1px var(--accent-primary-border);
+  background: color-mix(in srgb, var(--accent-primary) 7%, var(--surface-panel));
+}
+
+.step-table-preview-host.is-col-reorderable:not(.is-dragging-cols) .steps-data-table th.is-col-reorderable:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--surface-panel));
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-drag-sibling,
+.is-modules-reorderable > .is-module-drag-sibling,
+.telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-drag-sibling,
+.step-table-preview-host.is-col-reorderable .steps-data-table .is-col-drag-sibling {
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  will-change: transform;
+}
+
+.is-modules-reorderable > .is-module-dragging,
+.telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-dragging {
+  z-index: 45;
+  border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--surface-panel));
+  box-shadow: var(--shadow-popover), 0 0 0 1.5px var(--accent-primary-border);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.step-table-preview-host.is-col-reorderable .steps-data-table .is-col-dragging {
+  position: relative;
+  z-index: 45;
+  background: color-mix(in srgb, var(--accent-primary) 13%, var(--surface-panel));
+  pointer-events: none;
+  will-change: transform;
+}
+
+.step-table-preview-host.is-col-reorderable .steps-data-table th.is-col-dragging {
+  color: var(--accent-primary);
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-settling,
+.is-modules-reorderable > .is-module-settling,
+.telemetry-matrix.is-metrics-reorderable .matrix-cell.is-settling,
+.step-table-preview-host.is-col-reorderable .steps-data-table .is-col-settling {
+  position: relative;
+  z-index: 42;
+  will-change: transform;
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 180ms ease-out, background-color 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-drag-sibling,
+  .preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-settling,
+  .preview-capsule-bar.is-slot-reorderable .wm-sep.is-drag-sep,
+  .is-modules-reorderable > .is-module-drag-sibling,
+  .is-modules-reorderable > .is-module-settling,
+  .telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-drag-sibling,
+  .telemetry-matrix.is-metrics-reorderable .matrix-cell.is-settling,
+  .step-table-preview-host.is-col-reorderable .steps-data-table .is-col-drag-sibling,
+  .step-table-preview-host.is-col-reorderable .steps-data-table .is-col-settling {
+    transition: none !important;
+  }
 }
 
 .collapsible-chevron {
@@ -9070,7 +9202,38 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .editable-slot-row.is-dragging {
   border: none;
   background: color-mix(in srgb, var(--accent-primary) 13%, var(--modern-surface-card));
+}
+
+[data-modern-ui="true"] .editable-slot-row.is-dragging,
+[data-modern-ui="true"] .structure-preview-canvas .is-modules-reorderable > .is-module-dragging,
+[data-modern-ui="true"] .structure-preview-canvas .telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-dragging {
   box-shadow: var(--shadow-popover), 0 0 0 1.5px var(--accent-primary-border);
+}
+
+[data-modern-ui="true"] .preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-dragging {
+  background: color-mix(in srgb, var(--accent-primary) 18%, var(--modern-surface-card));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, var(--modern-surface-card)),
+    0 0 0 4px var(--accent-primary-border),
+    var(--shadow-popover);
+}
+
+[data-modern-ui="true"] .structure-preview-canvas .is-modules-reorderable:not(.is-dragging-modules) > .is-reorderable-module:not(.telemetry-matrix):hover {
+  box-shadow: 0 0 0 1px var(--accent-primary-border);
+}
+
+[data-modern-ui="true"] .structure-preview-canvas .telemetry-matrix.is-metrics-reorderable:not(.is-dragging-matrix) .matrix-cell:hover {
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--modern-surface-subtle));
+  box-shadow: inset 0 0 0 1px var(--accent-primary-border);
+}
+
+[data-modern-ui="true"] .step-table-preview-host.is-col-reorderable:not(.is-dragging-cols) .steps-data-table th.is-col-reorderable:hover {
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--modern-surface-subtle));
+}
+
+[data-modern-ui="true"] .structure-preview-canvas .telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-dragging,
+[data-modern-ui="true"] .step-table-preview-host.is-col-reorderable .steps-data-table .is-col-dragging {
+  background: color-mix(in srgb, var(--accent-primary) 15%, var(--modern-surface-card));
 }
 
 [data-modern-ui="true"][data-color-scheme="light"] .quota-pool-row.has-divider {

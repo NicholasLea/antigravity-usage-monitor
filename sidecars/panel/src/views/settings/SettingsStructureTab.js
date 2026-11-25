@@ -402,7 +402,25 @@ export const SettingsStructureTab = defineComponent({
     );
 
     // --- Pane 1: 挂载与胶囊栏 (`mount`) ---
-    const capsulePreviewWidget = CapsuleBarWidget({});
+    const syncTopbarList = () =>
+      topbarSlotsList.refs.setProps({
+        items: draftTopbarSlots,
+        options: getCapsuleMetricOptions({ quotas: latestQuotas, selectedSlots: draftTopbarSlots }),
+        addBtnTextFn: (count, max) => t('settings.str.addCapsuleSlot', { count, max }),
+      });
+    const capsulePreviewWidget = CapsuleBarWidget({
+      onPreviewSlots: (previewKeys) => {
+        draftTopbarSlots = normalizeClientTopbarSlots(previewKeys);
+        syncTopbarList();
+        refreshCliPreview();
+      },
+      onReorderSlots: (nextKeys) => {
+        draftTopbarSlots = normalizeClientTopbarSlots(nextKeys);
+        syncMountSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(mountSection, { topbarCapsuleSlots: draftTopbarSlots });
+      },
+    });
     const mountPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       capsulePreviewWidget.el,
     ]);
@@ -849,14 +867,7 @@ export const SettingsStructureTab = defineComponent({
         );
       }
       refreshCliPreview();
-      topbarSlotsList.refs.setProps({
-        items: draftTopbarSlots,
-        options: getCapsuleMetricOptions({
-          quotas: latestQuotas,
-          selectedSlots: draftTopbarSlots,
-        }),
-        addBtnTextFn: (count, max) => t('settings.str.addCapsuleSlot', { count, max }),
-      });
+      syncTopbarList();
       mountSection.refs.setBadge(
         t('settings.str.mountBadge', { count: draftTopbarSlots.length })
       );
@@ -883,6 +894,45 @@ export const SettingsStructureTab = defineComponent({
       hidden: true,
       text: t('settings.str.hoverEmptyHint'),
     });
+    const syncHoverMetricListProps = () =>
+      hoverMetricsList.refs.setProps({
+        items: getEffectiveHoverMetrics(),
+        options: getOverviewMetricOptions(),
+        dimmedFromIndex: getEffectiveHoverMetricStyle() === 'large' ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+        dimmedTagText: t('settings.str.metricOverflowTag'),
+        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
+      });
+    const syncOverviewMetricListProps = () =>
+      overviewMetricsList.refs.setProps({
+        items: draftOverviewMetrics,
+        options: getOverviewMetricOptions(),
+        dimmedFromIndex: draftOverviewMetricStyle === 'large' ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+        dimmedTagText: t('settings.str.metricOverflowTag'),
+        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
+      });
+    const commitHoverMetricsOrder = (nextMetrics) => {
+      const normalized = normalizeClientHoverMetrics(nextMetrics);
+      if (draftHoverSyncOverview) {
+        draftOverviewMetrics = normalized;
+        syncOverviewSectionMeta();
+        syncHoverSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(hoverSection, { overviewMetrics: draftOverviewMetrics });
+      } else {
+        draftHoverMetrics = normalized;
+        syncHoverSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(hoverSection, { hoverMetrics: draftHoverMetrics });
+      }
+    };
+    const commitOverviewMetricsOrder = (nextMetrics) => {
+      draftOverviewMetrics = normalizeClientOverviewMetrics(nextMetrics);
+      syncOverviewSectionMeta();
+      if (draftHoverSyncOverview) syncHoverSectionMeta();
+      props.onLayoutChange?.();
+      void persistStructurePatch(overviewSection, { overviewMetrics: draftOverviewMetrics });
+    };
+
     const hoverPreviewHost = createDynamicWidgetHost({
       containerEl: hoverWidgetsContainerEl,
       mode: 'hover',
@@ -894,6 +944,29 @@ export const SettingsStructureTab = defineComponent({
           { settings: { contextAgentMode: draftContextAgentMode } },
           'auto'
         ),
+      onPreviewModules: (previewModules) => {
+        draftHoverModules = normalizeClientHoverModules(previewModules);
+        patchAttr(hoverMetricsInactiveHintEl, 'hidden', draftHoverModules.includes('metrics'));
+        hoverModulesList.refs.setProps({ items: draftHoverModules });
+      },
+      onReorderModules: (nextModules) => {
+        draftHoverModules = normalizeClientHoverModules(nextModules);
+        syncHoverSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(hoverSection, { hoverModules: draftHoverModules });
+      },
+      onPreviewMetrics: (previewMetrics) => {
+        const normalized = normalizeClientHoverMetrics(previewMetrics);
+        if (draftHoverSyncOverview) {
+          draftOverviewMetrics = normalized;
+          syncOverviewMetricListProps();
+          refreshOverviewPreview();
+        } else {
+          draftHoverMetrics = normalized;
+        }
+        syncHoverMetricListProps();
+      },
+      onReorderMetrics: commitHoverMetricsOrder,
     });
     const hoverPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       hoverPreviewTipEl,
@@ -1010,25 +1083,7 @@ export const SettingsStructureTab = defineComponent({
         }
         refreshHoverPreview();
       },
-      onChange: (nextItems) => {
-        const normalized = normalizeClientHoverMetrics(nextItems);
-        if (draftHoverSyncOverview) {
-          draftOverviewMetrics = normalized;
-          syncOverviewSectionMeta();
-          syncHoverSectionMeta();
-          props.onLayoutChange?.();
-          void persistStructurePatch(hoverSection, {
-            overviewMetrics: draftOverviewMetrics,
-          });
-        } else {
-          draftHoverMetrics = normalized;
-          syncHoverSectionMeta();
-          props.onLayoutChange?.();
-          void persistStructurePatch(hoverSection, {
-            hoverMetrics: draftHoverMetrics,
-          });
-        }
-      },
+      onChange: commitHoverMetricsOrder,
     });
 
     const hoverModulesList = EditableSlotList({
@@ -1112,8 +1167,6 @@ export const SettingsStructureTab = defineComponent({
 
     function syncHoverSectionMeta() {
       const effectiveStyle = getEffectiveHoverMetricStyle();
-      const effectiveMetrics = getEffectiveHoverMetrics();
-      const isLarge = effectiveStyle === 'large';
       const metricsEnabled = draftHoverModules.includes('metrics');
 
       hoverMetricStyleSwitch.setProps({
@@ -1128,13 +1181,7 @@ export const SettingsStructureTab = defineComponent({
       patchText(hoverSyncOverviewHintEl, t('settings.str.hoverSyncOverviewHint'));
       patchAttr(hoverMetricsInactiveHintEl, 'hidden', metricsEnabled);
       patchText(hoverMetricsInactiveHintEl, t('settings.str.hoverMetricsInactiveHint'));
-      hoverMetricsList.refs.setProps({
-        items: effectiveMetrics,
-        options: getOverviewMetricOptions(),
-        dimmedFromIndex: isLarge ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
-        dimmedTagText: t('settings.str.metricOverflowTag'),
-        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
-      });
+      syncHoverMetricListProps();
       hoverModulesList.refs.setProps({
         items: draftHoverModules,
         options: getOverviewModuleOptions(),
@@ -1163,6 +1210,26 @@ export const SettingsStructureTab = defineComponent({
       preview: true,
       isVisibleFn: () => isStructureVisible() && activeThirdTab === 'overview',
       initialModuleKeys: [],
+      onPreviewModules: (previewModules) => {
+        draftOverviewModules = normalizeClientOverviewModules(previewModules);
+        patchAttr(overviewMetricsHintEl, 'hidden', draftOverviewModules.includes('metrics'));
+        overviewModulesList.refs.setProps({ items: draftOverviewModules });
+      },
+      onReorderModules: (nextModules) => {
+        draftOverviewModules = normalizeClientOverviewModules(nextModules);
+        syncOverviewSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(overviewSection, { overviewModules: draftOverviewModules });
+      },
+      onPreviewMetrics: (previewMetrics) => {
+        draftOverviewMetrics = normalizeClientOverviewMetrics(previewMetrics);
+        syncOverviewMetricListProps();
+        if (draftHoverSyncOverview) {
+          syncHoverMetricListProps();
+          refreshHoverPreview();
+        }
+      },
+      onReorderMetrics: commitOverviewMetricsOrder,
     });
     const overviewPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       overviewPreviewContainerEl,
@@ -1242,17 +1309,7 @@ export const SettingsStructureTab = defineComponent({
           refreshHoverPreview();
         }
       },
-      onChange: (nextItems) => {
-        draftOverviewMetrics = normalizeClientOverviewMetrics(nextItems);
-        syncOverviewSectionMeta();
-        if (draftHoverSyncOverview) {
-          syncHoverSectionMeta();
-        }
-        props.onLayoutChange?.();
-        void persistStructurePatch(overviewSection, {
-          overviewMetrics: draftOverviewMetrics,
-        });
-      },
+      onChange: commitOverviewMetricsOrder,
     });
 
     const overviewSection = CollapsibleSection({
@@ -1319,13 +1376,7 @@ export const SettingsStructureTab = defineComponent({
         options: getOverviewModuleOptions(),
         addBtnTextFn: (count, max) => t('settings.str.addOverviewModule', { count, max }),
       });
-      overviewMetricsList.refs.setProps({
-        items: draftOverviewMetrics,
-        options: getOverviewMetricOptions(),
-        dimmedFromIndex: isLarge ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
-        dimmedTagText: t('settings.str.metricOverflowTag'),
-        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
-      });
+      syncOverviewMetricListProps();
       const metricsModuleActive = draftOverviewModules.includes('metrics');
       patchAttr(overviewMetricsHintEl, 'hidden', metricsModuleActive);
       const visibleMetricCount = isLarge
@@ -1349,6 +1400,16 @@ export const SettingsStructureTab = defineComponent({
     const stepTablePreview = StepTableWidget({
       standalone: true,
       interactiveBadges: false,
+      onPreviewColumns: (previewCols) => {
+        draftStepColumns = normalizeClientStepColumns(previewCols);
+        stepColumnsList.refs.setProps({ items: draftStepColumns });
+      },
+      onReorderColumns: (nextCols) => {
+        draftStepColumns = normalizeClientStepColumns(nextCols);
+        syncStepsSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(stepsSection, { stepTableColumns: draftStepColumns });
+      },
     });
     const stepsPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       stepTablePreview.el,

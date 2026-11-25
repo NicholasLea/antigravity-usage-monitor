@@ -670,7 +670,38 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .editable-slot-row.is-dragging {
   border: none;
   background: color-mix(in srgb, var(--accent-primary) 13%, var(--modern-surface-card));
+}
+
+[data-modern-ui="true"] .editable-slot-row.is-dragging,
+[data-modern-ui="true"] .structure-preview-canvas .is-modules-reorderable > .is-module-dragging,
+[data-modern-ui="true"] .structure-preview-canvas .telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-dragging {
   box-shadow: var(--shadow-popover), 0 0 0 1.5px var(--accent-primary-border);
+}
+
+[data-modern-ui="true"] .preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-dragging {
+  background: color-mix(in srgb, var(--accent-primary) 18%, var(--modern-surface-card));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, var(--modern-surface-card)),
+    0 0 0 4px var(--accent-primary-border),
+    var(--shadow-popover);
+}
+
+[data-modern-ui="true"] .structure-preview-canvas .is-modules-reorderable:not(.is-dragging-modules) > .is-reorderable-module:not(.telemetry-matrix):hover {
+  box-shadow: 0 0 0 1px var(--accent-primary-border);
+}
+
+[data-modern-ui="true"] .structure-preview-canvas .telemetry-matrix.is-metrics-reorderable:not(.is-dragging-matrix) .matrix-cell:hover {
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--modern-surface-subtle));
+  box-shadow: inset 0 0 0 1px var(--accent-primary-border);
+}
+
+[data-modern-ui="true"] .step-table-preview-host.is-col-reorderable:not(.is-dragging-cols) .steps-data-table th.is-col-reorderable:hover {
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--modern-surface-subtle));
+}
+
+[data-modern-ui="true"] .structure-preview-canvas .telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-dragging,
+[data-modern-ui="true"] .step-table-preview-host.is-col-reorderable .steps-data-table .is-col-dragging {
+  background: color-mix(in srgb, var(--accent-primary) 15%, var(--modern-surface-card));
 }
 
 [data-modern-ui="true"][data-color-scheme="light"] .quota-pool-row.has-divider {

@@ -24,6 +24,7 @@ import { CustomSelect } from '../src/components/ui/CustomSelect.js';
 import { SegmentedControl } from '../src/components/ui/SegmentedControl.js';
 import { AccountQuotaTrendCard } from '../src/components/widgets/AccountQuotaTrendCard.js';
 import {
+  CapsuleBarWidget,
   buildCapsuleSlotContext,
   createCapsuleSlotNode,
   patchCapsuleOdometerText,
@@ -2557,4 +2558,387 @@ test('Host typography parity: Sidebar mirrors bridged host fonts in native mode 
     },
   });
   assert.equal(bodyFontRes?.vars?.['--font-sans'], 'Inter, system-ui, sans-serif');
+});
+
+test('CapsuleBarWidget supports direct horizontal slot drag-to-reorder with variable widths, live preview, deferred update, and Escape cancel', (t) => {
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRaf = globalThis.requestAnimationFrame;
+  const prevCancelRaf = globalThis.cancelAnimationFrame;
+
+  const { document } = createMockDom();
+  const winListeners = new Map();
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    addEventListener(type, fn) {
+      if (!winListeners.has(type)) winListeners.set(type, new Set());
+      winListeners.get(type).add(fn);
+    },
+    removeEventListener(type, fn) {
+      winListeners.get(type)?.delete(fn);
+    },
+  };
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+
+  let widget = null;
+  let readonlyWidget = null;
+  t.after(() => {
+    widget?.destroy?.();
+    readonlyWidget?.destroy?.();
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.requestAnimationFrame = prevRaf;
+    globalThis.cancelAnimationFrame = prevCancelRaf;
+  });
+
+  // Read-only widget without callbacks never activates drag affordances
+  readonlyWidget = CapsuleBarWidget({});
+  readonlyWidget.refs.update({
+    data: { settings: { topbarCapsuleSlots: ['tps', 'ttft', 'context'] } },
+  });
+  assert.equal(readonlyWidget.refs.hostBarEl.classList.contains('is-slot-reorderable'), false);
+
+  const previews = [];
+  const commits = [];
+  widget = CapsuleBarWidget({
+    onPreviewSlots: (keys) => previews.push(keys),
+    onReorderSlots: (keys) => commits.push(keys),
+  });
+  document.body.appendChild(widget.el);
+
+  const makeData = (slots) => ({
+    settings: { windowMountMode: 'dual', topbarCapsuleSlots: slots },
+    activeConversation: {
+      cascadeId: 'c-drag',
+      latestTokPerSec: 68.4,
+      latestTtftSec: 1.1,
+      context: { totalTokens: 143360, limitTokens: 256000 },
+    },
+  });
+
+  widget.refs.update({ data: makeData(['tps', 'ttft', 'context']) });
+  const { hostBarEl, capsuleBtn, capsuleSlots, capsuleSeps } = widget.refs;
+  assert.equal(hostBarEl.classList.contains('is-slot-reorderable'), true);
+  assert.ok(capsuleSlots[0].el.getAttribute('title'), 'Reorderable capsule slot exposes drag hint title');
+
+  // Variable widths: slot 0 = 58px [100..158], sep 0 = 1px [166..167], slot 1 = 46px [175..221], sep 1 = 1px [229..230], slot 2 = 58px [238..296]
+  capsuleBtn.getBoundingClientRect = () => ({ left: 91, top: 20, right: 305, bottom: 48, width: 214, height: 28 });
+  const slotRects = [
+    { left: 100, right: 158, top: 25, bottom: 43, width: 58, height: 18 },
+    { left: 175, right: 221, top: 25, bottom: 43, width: 46, height: 18 },
+    { left: 238, right: 296, top: 25, bottom: 43, width: 58, height: 18 },
+  ];
+  const sepRects = [
+    { left: 166, right: 167, top: 28, bottom: 40, width: 1, height: 12 },
+    { left: 229, right: 230, top: 28, bottom: 40, width: 1, height: 12 },
+  ];
+  for (let i = 0; i < 3; i += 1) {
+    capsuleSlots[i].el.getBoundingClientRect = () => slotRects[i];
+  }
+  for (let s = 0; s < 2; s += 1) {
+    capsuleSeps[s].getBoundingClientRect = () => sepRects[s];
+  }
+
+  // 1) Drag slot 1 ('ttft', width 46) left past slot 0 ('tps', width 58, centerX 129) -> ['ttft', 'tps', 'context']
+  capsuleSlots[1].el.dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 198,
+    clientY: 34,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 115, clientY: 34, preventDefault() {} });
+  assert.equal(hostBarEl.classList.contains('is-dragging-capsule'), true);
+  assert.equal(capsuleSlots[1].el.classList.contains('is-dragging'), true);
+  assert.equal(capsuleSlots[0].el.classList.contains('is-drag-sibling'), true);
+  assert.deepEqual(previews[previews.length - 1], ['ttft', 'tps', 'context']);
+  assert.equal(commits.length, 0, 'Must not commit before pointerup');
+  // Sibling slot 0 (58px) must displace right by 46 + 17 = +63px; sep 0 must shift left by -12px
+  assert.equal(capsuleSlots[0].el.style.transform, 'translate3d(63.00px, 0px, 0)');
+  assert.equal(capsuleSeps[0].style.transform, 'translate3d(-12.00px, 0px, 0)');
+  assert.equal(capsuleSlots[2].el.style.transform, 'translate3d(0px, 0px, 0)');
+
+  // Mid-drag update() is deferred so DOM slots never jump under the pointer
+  widget.refs.update({ data: makeData(['tps', 'ttft', 'context']) });
+  assert.equal(capsuleSlots[1].el.getAttribute('data-metric'), 'ttft');
+
+  // Pressing Escape cancels cleanly and reverts preview without committing
+  document.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.equal(hostBarEl.classList.contains('is-dragging-capsule'), false);
+  assert.equal(commits.length, 0);
+  assert.deepEqual(previews[previews.length - 1], ['tps', 'ttft', 'context']);
+
+  // 2) Drag slot 2 ('context', centerX 267) all the way left to index 0 (clientX 110) and release -> commits once
+  capsuleSlots[2].el.dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 267,
+    clientY: 34,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 110, clientY: 34, preventDefault() {} });
+  assert.deepEqual(previews[previews.length - 1], ['context', 'tps', 'ttft']);
+  document.dispatchEvent({ type: 'pointerup', clientX: 110, clientY: 34 });
+  assert.equal(hostBarEl.classList.contains('is-dragging-capsule'), false);
+  assert.equal(commits.length, 1);
+  assert.deepEqual(commits[0], ['context', 'tps', 'ttft']);
+  assert.equal(capsuleSlots[0].el.getAttribute('data-metric'), 'context');
+  assert.equal(capsuleSlots[1].el.getAttribute('data-metric'), 'tps');
+  assert.equal(capsuleSlots[2].el.getAttribute('data-metric'), 'ttft');
+
+  // 3) Single-slot capsule disables drag affordance
+  widget.refs.update({ data: makeData(['tps']) });
+  assert.equal(hostBarEl.classList.contains('is-slot-reorderable'), false);
+  assert.equal(capsuleSlots[0].el.getAttribute('title'), null);
+});
+
+test('Direct preview drag-to-reorder works for module stacks, 1D/2D metric grids (with vertical handoff & large-mode tail preservation), and step table columns', async (t) => {
+  const { createDynamicWidgetHost } = await import('../src/registries/widgetRegistry.js');
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRaf = globalThis.requestAnimationFrame;
+  const prevCancelRaf = globalThis.cancelAnimationFrame;
+
+  const { document } = createMockDom();
+  const winListeners = new Map();
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    addEventListener(type, fn) {
+      if (!winListeners.has(type)) winListeners.set(type, new Set());
+      winListeners.get(type).add(fn);
+    },
+    removeEventListener(type, fn) {
+      winListeners.get(type)?.delete(fn);
+    },
+  };
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+
+  let host = null;
+  let stepPreview = null;
+  let sortableStepTable = null;
+  t.after(() => {
+    host?.destroy?.();
+    stepPreview?.destroy?.();
+    sortableStepTable?.destroy?.();
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.requestAnimationFrame = prevRaf;
+    globalThis.cancelAnimationFrame = prevCancelRaf;
+  });
+
+  // --- A) Dynamic Widget Host (Hover / Overview preview): vertical module drag + metric cell drag + vertical handoff ---
+  const modPreviews = [];
+  const modCommits = [];
+  const metPreviews = [];
+  const metCommits = [];
+  const containerEl = document.createElement('div');
+  document.body.appendChild(containerEl);
+
+  host = createDynamicWidgetHost({
+    containerEl,
+    mode: 'overview',
+    preview: true,
+    onPreviewModules: (keys) => modPreviews.push(keys),
+    onReorderModules: (keys) => modCommits.push(keys),
+    onPreviewMetrics: (keys) => metPreviews.push(keys),
+    onReorderMetrics: (keys) => metCommits.push(keys),
+  });
+
+  const makeOverviewData = (style = 'large', metrics = ['tps', 'ttft', 'avg_tps', 'step_cost']) => ({
+    settings: {
+      overviewMetricStyle: style,
+      overviewMetrics: metrics,
+      overviewModules: ['metrics', 'context', 'quotas'],
+    },
+    activeConversation: {
+      cascadeId: 'conv-prev',
+      latestTokPerSec: 68.4,
+      latestTtftSec: 1.1,
+      avgTokPerSec: 52.3,
+      latestStepCostUsd: 0.04,
+      context: { totalTokens: 128000, limitTokens: 256000 },
+      recentSteps: [],
+    },
+    quotas: {},
+  });
+
+  host.update({ moduleKeys: ['metrics', 'context', 'quotas'], data: makeOverviewData('large') });
+  assert.equal(containerEl.classList.contains('is-modules-reorderable'), true);
+  const metricsEl = host.getInstance('metrics').el;
+  const contextEl = host.getInstance('context').el;
+  const quotasEl = host.getInstance('quotas').el;
+  assert.equal(metricsEl.classList.contains('is-metrics-reorderable'), true);
+  assert.equal(metricsEl.children.length, 3, 'Large mode renders first 3 metric cards');
+
+  // Assign realistic variable-height module rects: metrics [0..80], context [88..248], quotas [256..366] (gap = 8)
+  containerEl.getBoundingClientRect = () => ({ left: 0, top: 0, right: 360, bottom: 366, width: 360, height: 366 });
+  metricsEl.getBoundingClientRect = () => ({ left: 0, top: 0, right: 360, bottom: 80, width: 360, height: 80 });
+  contextEl.getBoundingClientRect = () => ({ left: 0, top: 88, right: 360, bottom: 248, width: 360, height: 160 });
+  quotasEl.getBoundingClientRect = () => ({ left: 0, top: 256, right: 360, bottom: 366, width: 360, height: 110 });
+
+  // Interactive button inside module never triggers module drag
+  const fakeBtn = document.createElement('button');
+  contextEl.appendChild(fakeBtn);
+  contextEl.dispatchEvent({ type: 'pointerdown', target: fakeBtn, button: 0, clientX: 50, clientY: 120, preventDefault() {} });
+  document.dispatchEvent({ type: 'pointermove', clientX: 50, clientY: 320, preventDefault() {} });
+  assert.equal(containerEl.classList.contains('is-dragging-modules'), false, 'Interactive sub-control ignores module drag');
+  document.dispatchEvent({ type: 'pointerup', clientX: 50, clientY: 320 });
+  fakeBtn.remove();
+
+  // 1) Drag 'quotas' (height 110) up above 'metrics' (height 80) -> ['quotas', 'metrics', 'context']
+  quotasEl.dispatchEvent({ type: 'pointerdown', button: 0, clientX: 120, clientY: 310, preventDefault() {} });
+  document.dispatchEvent({ type: 'pointermove', clientX: 120, clientY: 20, preventDefault() {} });
+  assert.equal(containerEl.classList.contains('is-dragging-modules'), true);
+  assert.equal(quotasEl.classList.contains('is-module-dragging'), true);
+  assert.deepEqual(modPreviews[modPreviews.length - 1], ['quotas', 'metrics', 'context']);
+  // Sibling 'metrics' must shift down by quotas(110) + gap(8) = +118px
+  assert.equal(metricsEl.style.transform, 'translate3d(0px, 118.00px, 0)');
+  assert.equal(modCommits.length, 0);
+
+  // Escape cancels and reverts module preview
+  document.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.equal(containerEl.classList.contains('is-dragging-modules'), false);
+  assert.equal(modCommits.length, 0);
+  assert.deepEqual(modPreviews[modPreviews.length - 1], ['metrics', 'context', 'quotas']);
+
+  // 2) Horizontal metric cell drag in Large mode preserves hidden 4th metric ('step_cost')
+  const cellRects1Row = [
+    { left: 0, right: 114, top: 0, bottom: 80, width: 114, height: 80 },
+    { left: 120, right: 234, top: 0, bottom: 80, width: 114, height: 80 },
+    { left: 240, right: 354, top: 0, bottom: 80, width: 114, height: 80 },
+  ];
+  for (let i = 0; i < 3; i += 1) {
+    metricsEl.children[i].getBoundingClientRect = () => cellRects1Row[i];
+  }
+  metricsEl.children[2].dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 297,
+    clientY: 40,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 30, clientY: 42, preventDefault() {} });
+  assert.equal(metricsEl.classList.contains('is-dragging-matrix'), true);
+  assert.equal(containerEl.classList.contains('is-dragging-modules'), false);
+  assert.deepEqual(metPreviews[metPreviews.length - 1], ['avg_tps', 'tps', 'ttft', 'step_cost']);
+  document.dispatchEvent({ type: 'pointerup', clientX: 30, clientY: 42 });
+  assert.equal(metCommits.length, 1);
+  assert.deepEqual(metCommits[0], ['avg_tps', 'tps', 'ttft', 'step_cost']);
+  assert.equal(metricsEl.children[0].getAttribute('data-metric-key'), 'avg_tps');
+
+  // 3) Vertical drag intent on a single-row metric card seamlessly hands off to vertical module drag!
+  for (let i = 0; i < 3; i += 1) {
+    metricsEl.children[i].getBoundingClientRect = () => cellRects1Row[i];
+  }
+  metricsEl.children[0].dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 57,
+    clientY: 40,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 58, clientY: 220, preventDefault() {} });
+  assert.equal(metricsEl.classList.contains('is-dragging-matrix'), false, 'Horizontal cell drag yielded to vertical module drag');
+  assert.equal(containerEl.classList.contains('is-dragging-modules'), true, 'Vertical intent on metric card activates module drag');
+  assert.equal(metricsEl.classList.contains('is-module-dragging'), true);
+  document.dispatchEvent({ type: 'pointerup', clientX: 58, clientY: 220 });
+  assert.equal(modCommits.length, 1);
+  assert.deepEqual(modCommits[0], ['context', 'metrics', 'quotas']);
+
+  // 4) 2x2 wrapped grid drag in Medium mode moves cell diagonally across rows and columns
+  host.update({
+    moduleKeys: ['metrics', 'context', 'quotas'],
+    data: makeOverviewData('medium', ['tps', 'ttft', 'avg_tps', 'step_cost']),
+  });
+  const gridRects = [
+    { left: 0, right: 170, top: 0, bottom: 60, width: 170, height: 60 },
+    { left: 176, right: 346, top: 0, bottom: 60, width: 170, height: 60 },
+    { left: 0, right: 170, top: 66, bottom: 126, width: 170, height: 60 },
+    { left: 176, right: 346, top: 66, bottom: 126, width: 170, height: 60 },
+  ];
+  for (let i = 0; i < 4; i += 1) {
+    metricsEl.children[i].getBoundingClientRect = () => gridRects[i];
+  }
+  metricsEl.children[3].dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 261,
+    clientY: 96,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 85, clientY: 30, preventDefault() {} });
+  assert.equal(metricsEl.classList.contains('is-dragging-matrix'), true);
+  assert.deepEqual(metPreviews[metPreviews.length - 1], ['step_cost', 'tps', 'ttft', 'avg_tps']);
+  document.dispatchEvent({ type: 'pointerup', clientX: 85, clientY: 30 });
+  assert.deepEqual(metCommits[1], ['step_cost', 'tps', 'ttft', 'avg_tps']);
+
+  // --- B) StepTableWidget preview direct column drag ---
+  const colPreviews = [];
+  const colCommits = [];
+  stepPreview = StepTableWidget({
+    standalone: true,
+    interactiveBadges: false,
+    onPreviewColumns: (cols) => colPreviews.push(cols),
+    onReorderColumns: (cols) => colCommits.push(cols),
+  });
+  document.body.appendChild(stepPreview.el);
+  const sampleSteps = [
+    { stepIndex: 2, createdAtMs: 1795600020000, modelShort: '4-neon', tokPerSec: 68.4, ttftSec: 1.1, costUsd: 0.04 },
+    { stepIndex: 1, createdAtMs: 1795600010000, modelShort: '4-neon', tokPerSec: 42.1, ttftSec: 1.9, costUsd: 0.02 },
+  ];
+  stepPreview.refs.renderStepTable(sampleSteps, 'prev-steps', ['time', 'model', 'tps', 'cost'], 'zh-CN');
+  const { stepsTableEl, stepsTheadRow, stepsTbody } = stepPreview.refs;
+  assert.equal(stepsTableEl.classList.contains('is-col-reorderable'), true);
+  stepsTableEl.getBoundingClientRect = () => ({ left: 0, top: 0, right: 320, bottom: 120, width: 320, height: 120 });
+  const thRects = [
+    { left: 0, right: 80, top: 0, bottom: 26, width: 80, height: 26 },
+    { left: 80, right: 160, top: 0, bottom: 26, width: 80, height: 26 },
+    { left: 160, right: 250, top: 0, bottom: 26, width: 90, height: 26 },
+    { left: 250, right: 320, top: 0, bottom: 26, width: 70, height: 26 },
+  ];
+  for (let i = 0; i < 4; i += 1) {
+    stepsTheadRow.children[i].getBoundingClientRect = () => thRects[i];
+  }
+
+  // Drag column 2 ('tps', width 90) left to index 0 ('time') -> ['tps', 'time', 'model', 'cost']
+  stepsTheadRow.children[2].dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 205,
+    clientY: 13,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 20, clientY: 13, preventDefault() {} });
+  assert.equal(stepsTableEl.classList.contains('is-dragging-cols'), true);
+  assert.equal(stepsTheadRow.children[2].classList.contains('is-col-dragging'), true);
+  assert.equal(stepsTbody.children[0].children[2].classList.contains('is-col-dragging'), true, 'Column body cells glide together with header');
+  assert.equal(stepsTheadRow.children[0].style.transform, 'translate3d(90.00px, 0px, 0)');
+  assert.equal(stepsTbody.children[0].children[0].style.transform, 'translate3d(90.00px, 0px, 0)');
+  assert.deepEqual(colPreviews[colPreviews.length - 1], ['tps', 'time', 'model', 'cost']);
+  assert.equal(colCommits.length, 0);
+
+  // Drop commits once and reorders headers + cells
+  document.dispatchEvent({ type: 'pointerup', clientX: 20, clientY: 13 });
+  assert.equal(stepsTableEl.classList.contains('is-dragging-cols'), false);
+  assert.equal(colCommits.length, 1);
+  assert.deepEqual(colCommits[0], ['tps', 'time', 'model', 'cost']);
+  assert.equal(stepsTheadRow.children[0].getAttribute('data-col-key'), 'tps');
+  assert.equal(stepsTheadRow.children[1].getAttribute('data-col-key'), 'time');
+
+  // Sortable StepTableWidget (real StepsDetailView) never activates column drag
+  sortableStepTable = StepTableWidget({ onSortChange: () => {} });
+  sortableStepTable.refs.renderStepTable(sampleSteps, 'live-steps', ['time', 'model', 'tps'], 'zh-CN');
+  assert.equal(sortableStepTable.refs.stepsTableEl.classList.contains('is-col-reorderable'), false);
 });

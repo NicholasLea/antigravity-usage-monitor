@@ -11,6 +11,8 @@ import {
 } from '../../core/appearance.js';
 import { defineComponent } from '../../core/component.js';
 import {
+  areSlotListsEqual,
+  createDropSettleAnimator,
   getElementContentWidth,
   getVisualTransformScale,
   h,
@@ -18,6 +20,7 @@ import {
   patchClasses,
   patchKeyedList,
   patchText,
+  startLinearDragReorder,
 } from '../../core/domPatch.js';
 import {
   buildStepAnomalyDiagnostic,
@@ -439,12 +442,24 @@ export const StepTableWidget = defineComponent({
       typeof props.onVirtualHeightChange === 'function' ? props.onVirtualHeightChange : null;
     const onSortChange =
       typeof props.onSortChange === 'function' ? props.onSortChange : null;
+    const onPreviewColumns =
+      typeof props.onPreviewColumns === 'function' ? props.onPreviewColumns : null;
+    const onReorderColumns =
+      typeof props.onReorderColumns === 'function' ? props.onReorderColumns : null;
+    const hasColReorder = Boolean((onPreviewColumns || onReorderColumns) && !onSortChange);
+
+    let currentHeaderColKeys = [...DEFAULT_STEP_COLUMN_KEYS];
+    let lastRenderCallArgs = null;
+    let pendingRenderCallArgs = null;
+    let activeColDrag = null;
+    const colSettleAnimator = createDropSettleAnimator('is-col-settling');
 
     const stepsTheadRow = h('tr');
     const stepsThead = h('thead', {}, [stepsTheadRow]);
     const stepsTbody = h('tbody');
 
     function syncTableHeaderColumns(colKeys, headerCtx = {}) {
+      currentHeaderColKeys = Array.isArray(colKeys) ? [...colKeys] : [...DEFAULT_STEP_COLUMN_KEYS];
       const locale = getEffectiveLocale();
       const fmtKey = normalizeClientStepTokenComboFormat(headerCtx?.stepTokenComboFormat);
       const activeSortKey = String(headerCtx?.sortKey || '');
@@ -452,11 +467,13 @@ export const StepTableWidget = defineComponent({
         ? headerCtx.sortDir
         : '';
       const ctx = { stepTokenComboFormat: fmtKey };
-      patchKeyedList(stepsTheadRow, colKeys, {
+      const canReorderCols = hasColReorder && currentHeaderColKeys.length > 1;
+      const colDragHint = canReorderCols ? t('settings.str.stepColDragHint') : null;
+      patchKeyedList(stepsTheadRow, currentHeaderColKeys, {
         keyFn: (colKey) => colKey,
         sigFn: (colKey) => {
           const isSorted = activeSortKey === colKey && Boolean(activeSortDir);
-          return `${locale}:${colKey}:${fmtKey}:${STEP_COLUMN_REGISTRY[colKey].thLabel(ctx)}:${onSortChange ? 1 : 0}:${isSorted ? activeSortDir : ''}`;
+          return `${locale}:${colKey}:${fmtKey}:${STEP_COLUMN_REGISTRY[colKey].thLabel(ctx)}:${onSortChange ? 1 : 0}:${isSorted ? activeSortDir : ''}:${canReorderCols ? 1 : 0}`;
         },
         createRow: (colKey) => {
           const labelSpan = h('span', {
@@ -469,7 +486,18 @@ export const StepTableWidget = defineComponent({
           });
           patchAttr(sortIcon, 'hidden', true);
           const innerWrap = h('span', { className: 'step-th-inner' }, [labelSpan, sortIcon]);
-          const th = h('th', {}, [innerWrap]);
+          const th = h(
+            'th',
+            hasColReorder
+              ? {
+                  onPointerdown: (e) => {
+                    const idx = Array.from(stepsTheadRow.children || []).indexOf(th);
+                    if (idx >= 0) startColumnDrag(e, idx);
+                  },
+                }
+              : {},
+            [innerWrap]
+          );
           return { el: th, refs: { th, labelSpan, sortIcon } };
         },
         updateRow: (refs, colKey) => {
@@ -479,9 +507,11 @@ export const StepTableWidget = defineComponent({
             onSortChange && typeof STEP_COLUMN_REGISTRY[colKey]?.sortValue === 'function'
           );
           const isSorted = sortable && activeSortKey === colKey && Boolean(activeSortDir);
+          patchAttr(refs.th, 'data-col-key', colKey);
           patchClasses(refs.th, {
             'is-sortable': sortable,
             'is-sorted': isSorted,
+            'is-col-reorderable': canReorderCols,
           });
           patchAttr(
             refs.th,
@@ -491,7 +521,7 @@ export const StepTableWidget = defineComponent({
           patchAttr(
             refs.th,
             'title',
-            sortable ? t('steps.sortClickTip', { col: labelText }) : null
+            sortable ? t('steps.sortClickTip', { col: labelText }) : colDragHint
           );
           patchAttr(refs.sortIcon, 'hidden', !isSorted);
           if (isSorted) {
@@ -515,9 +545,11 @@ export const StepTableWidget = defineComponent({
             : null;
         },
       });
+      patchClasses(stepsTableEl, { 'is-col-reorderable': canReorderCols });
+      if (standaloneHostEl) {
+        patchClasses(standaloneHostEl, { 'is-col-reorderable': canReorderCols });
+      }
     }
-
-    syncTableHeaderColumns(DEFAULT_STEP_COLUMN_KEYS);
 
     const stepsTableEl = h('table', { className: 'data-table steps-data-table' }, [
       stepsThead,
@@ -558,6 +590,116 @@ export const StepTableWidget = defineComponent({
           anomalyTipEl,
         ])
       : null;
+
+    syncTableHeaderColumns(DEFAULT_STEP_COLUMN_KEYS);
+
+    function collectColumnCells(colCount) {
+      const ths = Array.from(stepsTheadRow.children || []);
+      const rows = Array.from(stepsTbody.children || []).filter(
+        (tr) => !tr.classList?.contains?.('step-vspacer') && !tr.classList?.contains?.('step-vsizer')
+      );
+      const groups = [];
+      for (let c = 0; c < colCount; c += 1) {
+        const list = [];
+        if (ths[c]) list.push(ths[c]);
+        for (const tr of rows) {
+          if (tr.children?.[c]) list.push(tr.children[c]);
+        }
+        groups.push(list);
+      }
+      return groups;
+    }
+
+    function resetColDragVisuals(colCells) {
+      patchClasses(stepsTableEl, { 'is-dragging-cols': false });
+      if (standaloneHostEl) patchClasses(standaloneHostEl, { 'is-dragging-cols': false });
+      for (const cells of colCells || collectColumnCells(stepsTheadRow.children?.length || 0)) {
+        for (const cell of cells) {
+          patchClasses(cell, { 'is-col-dragging': false, 'is-col-drag-sibling': false });
+          if (cell?.style) {
+            cell.style.transition = '';
+            cell.style.transform = '';
+          }
+        }
+      }
+    }
+
+    function teardownActiveColDrag({ revert = false, flushPending = true } = {}) {
+      if (!activeColDrag) return;
+      const { startKeys, getWorkingKeys, colCells, session } = activeColDrag;
+      const moved = session.isMoved();
+      activeColDrag = null;
+      session.cancel(true);
+      resetColDragVisuals(colCells);
+      if (revert && moved && !areSlotListsEqual(startKeys, getWorkingKeys())) {
+        onPreviewColumns?.([...startKeys]);
+      }
+      if (flushPending && pendingRenderCallArgs) {
+        const queued = pendingRenderCallArgs;
+        pendingRenderCallArgs = null;
+        renderStepTable(...queued);
+      }
+    }
+
+    function startColumnDrag(e, startIdx) {
+      if (!hasColReorder || (e && e.button != null && e.button !== 0)) return;
+      if (currentHeaderColKeys.length <= 1 || startIdx < 0 || startIdx >= currentHeaderColKeys.length) {
+        return;
+      }
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      hideTurnTip();
+      hideAnomalyTip();
+      if (activeColDrag) teardownActiveColDrag({ revert: false, flushPending: true });
+      colSettleAnimator.clear();
+
+      const startKeys = [...currentHeaderColKeys];
+      const count = startKeys.length;
+      const colCells = collectColumnCells(count);
+      if (colCells.length !== count || !colCells[startIdx]?.[0]) return;
+
+      const session = startLinearDragReorder(e, {
+        axis: 'x',
+        items: startKeys,
+        startIdx,
+        itemEls: colCells.map((g) => g[0]),
+        getTargetEls: (orig) => colCells[orig],
+        containerEl: stepsTableEl,
+        fallbackSize: 64,
+        fallbackGap: 0,
+        fixedGap: 0,
+        threshold: 4,
+        rubberBandMax: 14,
+        onStart: () => {
+          patchClasses(stepsTableEl, { 'is-dragging-cols': true });
+          if (standaloneHostEl) patchClasses(standaloneHostEl, { 'is-dragging-cols': true });
+          for (let c = 0; c < count; c += 1) {
+            for (const cell of colCells[c]) {
+              patchClasses(cell, { 'is-col-dragging': c === startIdx, 'is-col-drag-sibling': c !== startIdx });
+            }
+          }
+        },
+        onPreview: (working) => onPreviewColumns?.(working),
+        onCancel: () => teardownActiveColDrag({ revert: true, flushPending: true }),
+        onFinish: ({ moved, changed, targetIdx, finalItems, residualX }) => {
+          teardownActiveColDrag({ revert: false, flushPending: !changed });
+          if (changed) {
+            pendingRenderCallArgs = null;
+            if (lastRenderCallArgs) {
+              const [stepsArg, cidArg, , locArg, optsArg] = lastRenderCallArgs;
+              renderStepTable(stepsArg, cidArg, finalItems, locArg, optsArg);
+            }
+            onReorderColumns?.([...finalItems]);
+          }
+          if (moved) {
+            const nextGroups = collectColumnCells(currentHeaderColKeys.length);
+            if (nextGroups[targetIdx]) colSettleAnimator.trigger(nextGroups[targetIdx], residualX, 0);
+          }
+        },
+      });
+
+      activeColDrag = { startKeys, getWorkingKeys: session.getWorkingItems, colCells, session };
+    }
 
     let boundsContainerGetter =
       typeof props.getBoundsEl === 'function'
@@ -1725,6 +1867,32 @@ export const StepTableWidget = defineComponent({
         sortDir = '',
       } = {}
     ) {
+      const callArgs = [
+        tableSteps,
+        cascadeId,
+        colKeys,
+        locale,
+        {
+          effectiveScopes,
+          hasSubagents,
+          isMergedMultiAgents,
+          showStepTurnRail,
+          showStepAgentBadge,
+          showStepSpeedColor,
+          stepTokenComboFormat,
+          displaySettings,
+          allConversationSteps,
+          allowNewRowFade,
+          fontScale,
+          sortKey,
+          sortDir,
+        },
+      ];
+      if (activeColDrag) {
+        pendingRenderCallArgs = callArgs;
+        return;
+      }
+      lastRenderCallArgs = callArgs;
       const normCascadeId = String(cascadeId || '');
       let enteringRowKeys = null;
       if (!normCascadeId || trackedCascadeId === null || normCascadeId !== trackedCascadeId) {
@@ -1911,6 +2079,8 @@ export const StepTableWidget = defineComponent({
     }
 
     onCleanup(() => {
+      teardownActiveColDrag({ revert: false, flushPending: false });
+      colSettleAnimator.clear();
       stepsTablePane.removeEventListener('scroll', onPaneScroll);
       stepsTbody.removeEventListener('mouseleave', onTbodyLeave);
       if (scrollRafId && typeof cancelAnimationFrame === 'function') {

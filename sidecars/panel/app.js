@@ -2360,6 +2360,11 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.on': '开启',
   'settings.str.off': '关闭',
   'settings.str.capsuleSlotsLabel': '胶囊数值与顺序 (左 → 右，1~5 项，可拖拽)',
+  'settings.str.capsuleDragHint': '按住左右拖动调整顺序',
+  'settings.str.moduleDragHint': '按住上下拖动调整模块顺序',
+  'settings.str.metricDragHint': '按住拖动调整指标顺序',
+  'settings.str.metricOrModuleDragHint': '按住左右拖动指标，上下拖动模块',
+  'settings.str.stepColDragHint': '按住左右拖动列头调整顺序',
   'settings.str.addCapsuleSlot': '添加槽位 ({count}/{max})',
   'settings.str.hoverSection': '鼠标悬浮窗',
   'settings.str.hoverBadgeOff': '已关闭',
@@ -3406,6 +3411,11 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.on': 'On',
   'settings.str.off': 'Off',
   'settings.str.capsuleSlotsLabel': 'Capsule Metrics & Order (Left → Right, 1–5, draggable)',
+  'settings.str.capsuleDragHint': 'Drag left or right to reorder',
+  'settings.str.moduleDragHint': 'Drag up or down to reorder modules',
+  'settings.str.metricDragHint': 'Drag to reorder metrics',
+  'settings.str.metricOrModuleDragHint': 'Drag left/right to reorder metric, up/down to reorder module',
+  'settings.str.stepColDragHint': 'Drag column header left or right to reorder',
   'settings.str.addCapsuleSlot': 'Add Slot ({count}/{max})',
   'settings.str.hoverSection': 'Hover Quick-View',
   'settings.str.hoverBadgeOff': 'Off',
@@ -4610,7 +4620,7 @@ return { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normaliz
 })();
 
 // --- src/core/domPatch.js ---
-const { h, patchText, patchAttr, patchClasses, patchStyleVar, isEventInside, getElementContentWidth, getVisualTransformScale, patchKeyedList, positionAnchoredPopup } = (() => {
+const { h, patchText, patchAttr, patchClasses, patchStyleVar, isEventInside, getElementContentWidth, getVisualTransformScale, patchKeyedList, positionAnchoredPopup, applyRubberBand, buildReorderedItems, areSlotListsEqual, measureLinearMetrics, setTranslate3d, computeLinearPermutationLayout, hitTestLinearCenter, findScrollableAncestor, isInteractiveDragTarget, createDropSettleAnimator, startPointerDragSession, startLinearDragReorder } = (() => {
 function h(tag, props = {}, children = []) {
   const el = document.createElement(tag);
   if (props) {
@@ -5146,7 +5156,497 @@ function positionAnchoredPopup(
     }
   }
 }
-return { h, patchText, patchAttr, patchClasses, patchStyleVar, isEventInside, getElementContentWidth, getVisualTransformScale, patchKeyedList, positionAnchoredPopup };
+
+/**
+ * Clamp `value` to `[minVal, maxVal]` with damped rubber-band overshoot at the ends.
+ */
+function applyRubberBand(value, minVal, maxVal, maxOvershoot = 24, factor = 0.25) {
+  if (value < minVal) {
+    const excess = minVal - value;
+    return minVal - Math.min(maxOvershoot, excess * factor);
+  }
+  if (value > maxVal) {
+    const excess = value - maxVal;
+    return maxVal + Math.min(maxOvershoot, excess * factor);
+  }
+  return value;
+}
+
+/**
+ * Return a shallow copy of `sourceItems` with the element at `fromIdx` moved to `toIdx`.
+ */
+function buildReorderedItems(sourceItems, fromIdx, toIdx) {
+  const next = [...sourceItems];
+  if (fromIdx === toIdx) return next;
+  const [moved] = next.splice(fromIdx, 1);
+  next.splice(toIdx, 0, moved);
+  return next;
+}
+
+/**
+ * Compare two flat slot-key arrays for exact element-by-element equality.
+ */
+function areSlotListsEqual(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+// Measure 1D bounding geometry & average gap along 'x' or 'y'.
+function measureLinearMetrics(els, axis = 'x', fallbackSize = 60, fallbackGap = 8) {
+  const isX = axis === 'x';
+  const metrics = [];
+  for (let i = 0; i < els.length; i += 1) {
+    const r = els[i]?.getBoundingClientRect?.();
+    const sizeVal = isX ? r?.width : r?.height;
+    const ok = Boolean(r && Number.isFinite(sizeVal) && sizeVal > 0);
+    const size = ok ? sizeVal : fallbackSize;
+    const start = ok ? (isX ? r.left : r.top) : i * (fallbackSize + fallbackGap);
+    metrics.push({ start, size, end: start + size, center: start + size * 0.5 });
+  }
+  let gapSum = 0;
+  let gapN = 0;
+  for (let i = 0; i < metrics.length - 1; i += 1) {
+    const g = metrics[i + 1].start - metrics[i].end;
+    if (Number.isFinite(g) && g >= 0) {
+      gapSum += g;
+      gapN += 1;
+    }
+  }
+  return { metrics, gap: gapN > 0 ? gapSum / gapN : fallbackGap };
+}
+
+function setTranslate3d(el, x = 0, y = 0, extra = '') {
+  if (!el?.style) return;
+  const tx = Math.abs(x) > 0.05 ? x.toFixed(2) : '0';
+  const ty = Math.abs(y) > 0.05 ? y.toFixed(2) : '0';
+  el.style.transform = `translate3d(${tx}px, ${ty}px, 0)${extra}`;
+}
+
+function computeLinearPermutationLayout(metrics, gap, startIdx, targetIdx) {
+  const count = metrics.length;
+  const origIndices = Array.from({ length: count }, (_, idx) => idx);
+  const perm = buildReorderedItems(origIndices, startIdx, targetIdx);
+  let cursor = count > 0 ? metrics[0].start : 0;
+  const targetStartByOrig = new Array(count);
+  for (let pos = 0; pos < count; pos += 1) {
+    const orig = perm[pos];
+    targetStartByOrig[orig] = cursor;
+    cursor += metrics[orig].size + gap;
+  }
+  return { perm, targetStartByOrig };
+}
+
+function hitTestLinearCenter(metrics, startIdx, rawDelta) {
+  const count = metrics.length;
+  if (count <= 1 || !metrics[startIdx]) return startIdx;
+  const draggedCenter = metrics[startIdx].center + rawDelta;
+  if (rawDelta < 0) {
+    for (let i = 0; i < startIdx; i += 1) {
+      if (draggedCenter < metrics[i].center) return i;
+    }
+  } else if (rawDelta > 0) {
+    for (let i = count - 1; i > startIdx; i -= 1) {
+      if (draggedCenter > metrics[i].center) return i;
+    }
+  }
+  return startIdx;
+}
+
+function findScrollableAncestor(el) {
+  let cur = el?.parentNode || null;
+  while (cur) {
+    if (
+      typeof cur.scrollHeight === 'number' &&
+      typeof cur.clientHeight === 'number' &&
+      cur.scrollHeight > cur.clientHeight + 4
+    ) {
+      return cur;
+    }
+    cur = cur.parentNode || null;
+  }
+  return null;
+}
+
+const INTERACTIVE_DRAG_TAGS = new Set(['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']);
+const INTERACTIVE_DRAG_ROLES = new Set(['button', 'combobox', 'listbox', 'option', 'switch', 'tab']);
+
+function isInteractiveDragTarget(target, boundaryEl = null) {
+  let cur = target;
+  while (cur && cur !== boundaryEl) {
+    const tag = String(cur.tagName || '').toUpperCase();
+    if (INTERACTIVE_DRAG_TAGS.has(tag)) return true;
+    const role = String(cur.getAttribute?.('role') || '').trim().toLowerCase();
+    if (INTERACTIVE_DRAG_ROLES.has(role)) return true;
+    if (
+      cur.classList?.contains?.('custom-select') ||
+      cur.classList?.contains?.('select-menu') ||
+      cur.classList?.contains?.('select-trigger')
+    ) {
+      return true;
+    }
+    cur = cur.parentNode || null;
+  }
+  return false;
+}
+
+function createDropSettleAnimator(settleClass = 'is-settling', scaleExpr = '') {
+  let timer = null;
+  let activeEls = [];
+
+  function clear() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (activeEls.length > 0) {
+      for (const el of activeEls) {
+        patchClasses(el, { [settleClass]: false });
+        if (el?.style) {
+          el.style.transition = '';
+          el.style.transform = '';
+        }
+      }
+      activeEls = [];
+    }
+  }
+
+  function trigger(targetOrList, residualX = 0, residualY = 0) {
+    const els = Array.isArray(targetOrList)
+      ? targetOrList.filter((el) => el?.style)
+      : targetOrList?.style
+        ? [targetOrList]
+        : [];
+    if (els.length === 0) return;
+    if (Math.abs(residualX) < 0.5 && Math.abs(residualY) < 0.5) return;
+    if (typeof requestAnimationFrame !== 'function') return;
+    clear();
+    activeEls = els;
+    const initialTf = `translate3d(${residualX.toFixed(2)}px, ${residualY.toFixed(2)}px, 0)${scaleExpr}`;
+    for (const el of activeEls) {
+      el.style.transition = 'none';
+      el.style.transform = initialTf;
+      patchClasses(el, { [settleClass]: true });
+    }
+    void activeEls[0].offsetWidth;
+    requestAnimationFrame(() => {
+      if (activeEls !== els) return;
+      for (const el of activeEls) {
+        el.style.transition = '';
+        el.style.transform = 'translate3d(0px, 0px, 0)';
+      }
+    });
+    timer = setTimeout(() => {
+      if (activeEls === els) clear();
+    }, 220);
+  }
+
+  return { clear, trigger };
+}
+
+function startPointerDragSession(
+  e,
+  {
+    threshold = 3,
+    immediate = false,
+    initialClientX = null,
+    initialClientY = null,
+    getAutoScrollContainer = null,
+    edgeZone = 34,
+    onStart = null,
+    onMove = null,
+    onEnd = null,
+  } = {}
+) {
+  const startX = Number(e?.clientX ?? initialClientX ?? 0);
+  const startY = Number(e?.clientY ?? initialClientY ?? 0);
+  let lastClientX = Number(initialClientX ?? startX);
+  let lastClientY = Number(initialClientY ?? startY);
+  let hasMoved = false;
+  let finished = false;
+  let autoScrollRaf = null;
+
+  function stopAutoScroll() {
+    if (autoScrollRaf != null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(autoScrollRaf);
+    }
+    autoScrollRaf = null;
+  }
+
+  const docTarget =
+    typeof document !== 'undefined' && typeof document.addEventListener === 'function'
+      ? document
+      : null;
+  const winTarget =
+    typeof window !== 'undefined' && typeof window.addEventListener === 'function'
+      ? window
+      : null;
+
+  function cleanupListeners() {
+    stopAutoScroll();
+    if (docTarget && typeof docTarget.removeEventListener === 'function') {
+      docTarget.removeEventListener('pointermove', onPointerMove);
+      docTarget.removeEventListener('pointerup', onPointerUp);
+      docTarget.removeEventListener('pointercancel', onPointerCancel);
+      docTarget.removeEventListener('keydown', onKeyDown);
+    }
+    if (winTarget && typeof winTarget.removeEventListener === 'function') {
+      winTarget.removeEventListener('blur', onPointerCancel);
+    }
+  }
+
+  function finish(cancelled, silent = false) {
+    if (finished) return;
+    finished = true;
+    cleanupListeners();
+    if (!silent) {
+      onEnd?.({ moved: hasMoved, cancelled, clientX: lastClientX, clientY: lastClientY });
+    }
+  }
+
+  function tickAutoScroll() {
+    autoScrollRaf = null;
+    if (finished || !hasMoved || typeof getAutoScrollContainer !== 'function') return;
+    const sc = getAutoScrollContainer();
+    const r = sc?.getBoundingClientRect?.();
+    if (!r || r.height <= 0) return;
+    let step = 0;
+    if (lastClientY < r.top + edgeZone) {
+      step = -Math.ceil(3 + Math.min(1, (r.top + edgeZone - lastClientY) / edgeZone) * 7);
+    } else if (lastClientY > r.bottom - edgeZone) {
+      step = Math.ceil(3 + Math.min(1, (lastClientY - (r.bottom - edgeZone)) / edgeZone) * 7);
+    }
+    if (step !== 0) {
+      const prev = sc.scrollTop;
+      sc.scrollTop = prev + step;
+      if (sc.scrollTop !== prev) {
+        onMove?.({ clientX: lastClientX, clientY: lastClientY, startX, startY });
+        if (typeof requestAnimationFrame === 'function') {
+          autoScrollRaf = requestAnimationFrame(tickAutoScroll);
+        }
+      }
+    }
+  }
+
+  function scheduleAutoScrollCheck() {
+    if (
+      finished ||
+      autoScrollRaf != null ||
+      typeof getAutoScrollContainer !== 'function' ||
+      typeof requestAnimationFrame !== 'function'
+    ) {
+      return;
+    }
+    const r = getAutoScrollContainer()?.getBoundingClientRect?.();
+    if (!r || r.height <= 0) return;
+    if (lastClientY < r.top + edgeZone || lastClientY > r.bottom - edgeZone) {
+      autoScrollRaf = requestAnimationFrame(tickAutoScroll);
+    }
+  }
+
+  function activate(cx, cy) {
+    if (onStart?.({ startX, startY, clientX: cx, clientY: cy }) === false) {
+      finish(true, true);
+      return false;
+    }
+    hasMoved = true;
+    return true;
+  }
+
+  function onPointerMove(ev) {
+    if (finished) return;
+    const cx = Number(ev?.clientX ?? startX);
+    const cy = Number(ev?.clientY ?? startY);
+    lastClientX = cx;
+    lastClientY = cy;
+    if (!hasMoved) {
+      if (Math.hypot(cx - startX, cy - startY) < threshold) return;
+      if (!activate(cx, cy)) return;
+    }
+    ev?.preventDefault?.();
+    onMove?.({ clientX: cx, clientY: cy, startX, startY });
+    scheduleAutoScrollCheck();
+  }
+
+  function onPointerUp(ev) {
+    if (ev?.clientX != null) lastClientX = Number(ev.clientX);
+    if (ev?.clientY != null) lastClientY = Number(ev.clientY);
+    finish(false);
+  }
+
+  function onPointerCancel() {
+    finish(true);
+  }
+
+  function onKeyDown(ev) {
+    if (ev?.key === 'Escape') finish(true);
+  }
+
+  if (docTarget) {
+    docTarget.addEventListener('pointermove', onPointerMove);
+    docTarget.addEventListener('pointerup', onPointerUp);
+    docTarget.addEventListener('pointercancel', onPointerCancel);
+    docTarget.addEventListener('keydown', onKeyDown);
+  }
+  if (winTarget) {
+    winTarget.addEventListener('blur', onPointerCancel);
+  }
+
+  if (immediate) {
+    if (activate(lastClientX, lastClientY)) {
+      onMove?.({ clientX: lastClientX, clientY: lastClientY, startX, startY });
+      scheduleAutoScrollCheck();
+    }
+  }
+
+  return {
+    cancel: (silent = false) => finish(true, silent),
+    isMoved: () => hasMoved,
+  };
+}
+
+function startLinearDragReorder(
+  e,
+  {
+    axis = 'x',
+    items = [],
+    startIdx = 0,
+    itemEls = [],
+    getTargetEls = null,
+    containerEl = null,
+    fallbackSize = 60,
+    fallbackGap = 8,
+    fixedGap = null,
+    threshold = 3,
+    immediate = false,
+    initialClientX = null,
+    initialClientY = null,
+    autoScroll = false,
+    edgeZone = 34,
+    rubberBandMax = 24,
+    rubberBandRatio = 0.25,
+    crossMax = 0,
+    crossRatio = 0,
+    dragScale = '',
+    onStart = null,
+    onLayout = null,
+    onPreview = null,
+    onCancel = null,
+    onFinish = null,
+  } = {}
+) {
+  const isX = axis === 'x';
+  const startItems = [...items];
+  const count = startItems.length;
+  let targetIdx = startIdx;
+  let workingItems = [...startItems];
+  let metrics = [];
+  let gap = fixedGap ?? fallbackGap;
+  let startContainerPos = 0;
+  let hasContainerRect = false;
+  let lastMain = 0;
+  let lastCross = 0;
+  let scrollContainer = null;
+
+  function applyTransform(origIdx, main, cross, extra = '') {
+    const targets = getTargetEls ? getTargetEls(origIdx) : [itemEls[origIdx]];
+    for (const el of targets) {
+      setTranslate3d(el, isX ? main : cross, isX ? cross : main, extra);
+    }
+  }
+
+  function updateSiblings(nextTargetIdx) {
+    const layout = computeLinearPermutationLayout(metrics, gap, startIdx, nextTargetIdx);
+    for (let orig = 0; orig < count; orig += 1) {
+      if (orig !== startIdx) {
+        applyTransform(orig, layout.targetStartByOrig[orig] - metrics[orig].start, 0);
+      }
+    }
+    onLayout?.({ ...layout, targetIdx: nextTargetIdx, metrics, gap });
+  }
+
+  const session = startPointerDragSession(e, {
+    threshold,
+    immediate,
+    initialClientX,
+    initialClientY,
+    getAutoScrollContainer: autoScroll ? () => scrollContainer : null,
+    edgeZone,
+    onStart: () => {
+      const measured = measureLinearMetrics(itemEls, axis, fallbackSize, fallbackGap);
+      metrics = measured.metrics;
+      gap = fixedGap != null ? fixedGap : measured.gap;
+      const cr = containerEl?.getBoundingClientRect?.();
+      const cSize = isX ? cr?.width : cr?.height;
+      hasContainerRect = Boolean(cr && Number.isFinite(cSize) && cSize > 0);
+      startContainerPos = hasContainerRect ? (isX ? cr.left : cr.top) : 0;
+      if (autoScroll) scrollContainer = findScrollableAncestor(containerEl);
+      onStart?.({ metrics, gap });
+      updateSiblings(targetIdx);
+    },
+    onMove: ({ clientX, clientY, startX, startY }) => {
+      const cr = hasContainerRect ? containerEl?.getBoundingClientRect?.() : null;
+      const cSize = isX ? cr?.width : cr?.height;
+      const containerShift = cr && cSize > 0 ? (isX ? cr.left : cr.top) - startContainerPos : 0;
+      const rawMain = (isX ? clientX - startX : clientY - startY) - containerShift;
+      const rawCross = isX ? clientY - startY : clientX - startX;
+
+      lastMain = applyRubberBand(
+        rawMain,
+        metrics[0].start - metrics[startIdx].start,
+        metrics[count - 1].end - metrics[startIdx].end,
+        rubberBandMax,
+        rubberBandRatio
+      );
+      lastCross =
+        crossMax > 0 && rawCross !== 0
+          ? Math.sign(rawCross) * Math.min(crossMax, Math.abs(rawCross) * crossRatio)
+          : 0;
+      applyTransform(startIdx, lastMain, lastCross, dragScale);
+
+      const nextTarget = hitTestLinearCenter(metrics, startIdx, rawMain);
+      if (nextTarget !== targetIdx) {
+        targetIdx = nextTarget;
+        workingItems = buildReorderedItems(startItems, startIdx, targetIdx);
+        updateSiblings(targetIdx);
+        onPreview?.([...workingItems], targetIdx);
+      }
+    },
+    onEnd: ({ moved, cancelled }) => {
+      if (cancelled) {
+        onCancel?.({ moved, startItems });
+        return;
+      }
+      const targetOffsetMain =
+        moved && metrics.length === count
+          ? computeLinearPermutationLayout(metrics, gap, startIdx, targetIdx).targetStartByOrig[startIdx] -
+            metrics[startIdx].start
+          : 0;
+      const residualMain = moved ? lastMain - targetOffsetMain : 0;
+      const residualCross = moved ? lastCross : 0;
+      const finalItems = [...workingItems];
+      const changed = moved && !areSlotListsEqual(startItems, finalItems);
+      onFinish?.({
+        moved,
+        changed,
+        targetIdx,
+        finalItems,
+        residualX: isX ? residualMain : residualCross,
+        residualY: isX ? residualCross : residualMain,
+      });
+    },
+  });
+
+  return {
+    startItems,
+    getWorkingItems: () => workingItems,
+    isMoved: session.isMoved,
+    cancel: session.cancel,
+  };
+}
+return { h, patchText, patchAttr, patchClasses, patchStyleVar, isEventInside, getElementContentWidth, getVisualTransformScale, patchKeyedList, positionAnchoredPopup, applyRubberBand, buildReorderedItems, areSlotListsEqual, measureLinearMetrics, setTranslate3d, computeLinearPermutationLayout, hitTestLinearCenter, findScrollableAncestor, isInteractiveDragTarget, createDropSettleAnimator, startPointerDragSession, startLinearDragReorder };
 })();
 
 // --- src/core/component.js ---
@@ -21914,8 +22414,14 @@ function createSparklineSvg(gradId) {
 
 const MetricMatrixWidget = defineComponent({
   name: 'MetricMatrixWidget',
-  setup({ props }) {
+  setup({ props, onCleanup }) {
     const widgetMode = props?.mode === 'hover' ? 'hover' : 'overview';
+    const hasMetricReorder =
+      typeof props?.onReorderMetrics === 'function' || typeof props?.onPreviewMetrics === 'function';
+    const onRequestVerticalDrag =
+      typeof props?.onRequestVerticalDrag === 'function' ? props.onRequestVerticalDrag : null;
+    const canParentDragModule =
+      typeof props?.canDragParentModule === 'function' ? props.canDragParentModule : () => false;
     const getCtxAgentId =
       typeof props?.getCtxAgentId === 'function'
         ? props.getCtxAgentId
@@ -21926,6 +22432,222 @@ const MetricMatrixWidget = defineComponent({
       'data-cols': '4',
     });
     patchStyleVar(matrixEl, '--matrix-cols', '4');
+
+    let currentVisibleKeys = [];
+    let currentOverflowKeys = [];
+    let lastUpdatePayload = null;
+    let pendingUpdatePayload = null;
+    let activeDrag = null;
+    const settleAnimator = createDropSettleAnimator('is-settling', ' scale(1.02)');
+
+    function resetDragVisuals() {
+      patchClasses(matrixEl, { 'is-dragging-matrix': false });
+      for (const cellEl of matrixEl.children || []) {
+        patchClasses(cellEl, { 'is-cell-dragging': false, 'is-cell-drag-sibling': false });
+        if (cellEl?.style) {
+          cellEl.style.transition = '';
+          cellEl.style.transform = '';
+        }
+      }
+    }
+
+    function teardownActiveDrag({ revert = false, flushPending = true } = {}) {
+      if (!activeDrag) return;
+      const { startVisible, overflowTail, getWorkingVisible, session } = activeDrag;
+      const moved = session.isMoved();
+      activeDrag = null;
+      session.cancel(true);
+      resetDragVisuals();
+      if (revert && moved && !areSlotListsEqual(startVisible, getWorkingVisible())) {
+        props?.onPreviewMetrics?.([...startVisible, ...overflowTail]);
+      }
+      if (flushPending && pendingUpdatePayload) {
+        const queued = pendingUpdatePayload;
+        pendingUpdatePayload = null;
+        applyUpdatePayload(queued);
+      }
+    }
+
+    function startMetricCellDrag(e, startIdx) {
+      if (!hasMetricReorder || (e && e.button != null && e.button !== 0)) return;
+      if (currentVisibleKeys.length <= 1 || startIdx < 0 || startIdx >= currentVisibleKeys.length) {
+        return;
+      }
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      if (activeDrag) teardownActiveDrag({ revert: false, flushPending: true });
+      settleAnimator.clear();
+
+      const startVisible = [...currentVisibleKeys];
+      const overflowTail = [...currentOverflowKeys];
+      const count = startVisible.length;
+      const cellEls = Array.from(matrixEl.children || []).slice(0, count);
+      if (cellEls.length !== count) return;
+      const origIndices = Array.from({ length: count }, (_, idx) => idx);
+      let targetIdx = startIdx;
+      let workingVisible = [...startVisible];
+      let slotRects = [];
+      let isMultiRow = false;
+      let startMatrixLeft = 0;
+      let startMatrixTop = 0;
+      let hasMatrixRect = false;
+      let lastDragOffsetX = 0;
+      let lastDragOffsetY = 0;
+
+      function updateSiblingTransforms(nextTargetIdx) {
+        const perm = buildReorderedItems(origIndices, startIdx, nextTargetIdx);
+        for (let pos = 0; pos < count; pos += 1) {
+          const orig = perm[pos];
+          if (orig !== startIdx) {
+            setTranslate3d(cellEls[orig], slotRects[pos].left - slotRects[orig].left, slotRects[pos].top - slotRects[orig].top);
+          }
+        }
+      }
+
+      const session = startPointerDragSession(e, {
+        threshold: 4,
+        onStart: ({ startX, startY, clientX, clientY }) => {
+          slotRects = [];
+          for (let i = 0; i < count; i += 1) {
+            const r = cellEls[i]?.getBoundingClientRect?.();
+            const ok = Boolean(r && Number.isFinite(r.width) && r.width > 0);
+            const width = ok ? r.width : 110;
+            const height = ok ? r.height : 64;
+            const left = ok ? r.left : i * 116;
+            const top = ok ? r.top : 0;
+            slotRects.push({
+              left,
+              top,
+              width,
+              height,
+              right: left + width,
+              bottom: top + height,
+              centerX: left + width * 0.5,
+              centerY: top + height * 0.5,
+            });
+          }
+          isMultiRow = slotRects.some((r) => Math.abs(r.top - slotRects[0].top) > 10);
+          if (
+            !isMultiRow &&
+            onRequestVerticalDrag &&
+            canParentDragModule() &&
+            Math.abs(clientY - startY) > Math.abs(clientX - startX) * 1.15
+          ) {
+            activeDrag = null;
+            onRequestVerticalDrag(e, clientX, clientY);
+            return false;
+          }
+          const mr = matrixEl?.getBoundingClientRect?.();
+          hasMatrixRect = Boolean(mr && Number.isFinite(mr.width) && mr.width > 0);
+          startMatrixLeft = hasMatrixRect ? mr.left : 0;
+          startMatrixTop = hasMatrixRect ? mr.top : 0;
+          patchClasses(matrixEl, { 'is-dragging-matrix': true });
+          for (let k = 0; k < count; k += 1) {
+            patchClasses(cellEls[k], { 'is-cell-dragging': k === startIdx, 'is-cell-drag-sibling': k !== startIdx });
+          }
+          updateSiblingTransforms(targetIdx);
+        },
+        onMove: ({ clientX, clientY, startX, startY }) => {
+          const mr = hasMatrixRect ? matrixEl?.getBoundingClientRect?.() : null;
+          const rawDeltaX = clientX - startX - (mr && mr.width > 0 ? mr.left - startMatrixLeft : 0);
+          const rawDeltaY = clientY - startY - (mr && mr.width > 0 ? mr.top - startMatrixTop : 0);
+
+          const clampedX = applyRubberBand(
+            rawDeltaX,
+            Math.min(...slotRects.map((r) => r.left)) - slotRects[startIdx].left,
+            Math.max(...slotRects.map((r) => r.right)) - slotRects[startIdx].right,
+            14,
+            0.25
+          );
+          const clampedY = isMultiRow
+            ? applyRubberBand(
+                rawDeltaY,
+                Math.min(...slotRects.map((r) => r.top)) - slotRects[startIdx].top,
+                Math.max(...slotRects.map((r) => r.bottom)) - slotRects[startIdx].bottom,
+                14,
+                0.25
+              )
+            : rawDeltaY === 0
+              ? 0
+              : Math.sign(rawDeltaY) * Math.min(8, Math.abs(rawDeltaY) * 0.18);
+
+          lastDragOffsetX = clampedX;
+          lastDragOffsetY = clampedY;
+          setTranslate3d(cellEls[startIdx], clampedX, clampedY, ' scale(1.02)');
+
+          let nextTarget = startIdx;
+          if (!isMultiRow) {
+            nextTarget = hitTestLinearCenter(
+              slotRects.map((r) => ({ start: r.left, size: r.width, end: r.right, center: r.centerX })),
+              startIdx,
+              rawDeltaX
+            );
+          } else {
+            const cx = slotRects[startIdx].centerX + rawDeltaX;
+            const cy = slotRects[startIdx].centerY + rawDeltaY;
+            let bestDistSq = Infinity;
+            for (let i = 0; i < count; i += 1) {
+              const d2 = (cx - slotRects[i].centerX) ** 2 + (cy - slotRects[i].centerY) ** 2;
+              if (d2 < bestDistSq) {
+                bestDistSq = d2;
+                nextTarget = i;
+              }
+            }
+          }
+          if (nextTarget !== targetIdx) {
+            targetIdx = nextTarget;
+            workingVisible = buildReorderedItems(startVisible, startIdx, targetIdx);
+            updateSiblingTransforms(targetIdx);
+            props?.onPreviewMetrics?.([...workingVisible, ...overflowTail]);
+          }
+        },
+        onEnd: ({ moved, cancelled }) => {
+          if (cancelled) {
+            teardownActiveDrag({ revert: true, flushPending: true });
+            return;
+          }
+          const finalTargetIdx = targetIdx;
+          const finalVisible = [...workingVisible];
+          const finalFull = [...finalVisible, ...overflowTail];
+          const targetOffsetX =
+            moved && slotRects[finalTargetIdx] && slotRects[startIdx]
+              ? slotRects[finalTargetIdx].left - slotRects[startIdx].left
+              : 0;
+          const targetOffsetY =
+            moved && slotRects[finalTargetIdx] && slotRects[startIdx]
+              ? slotRects[finalTargetIdx].top - slotRects[startIdx].top
+              : 0;
+          const residualX = moved ? lastDragOffsetX - targetOffsetX : 0;
+          const residualY = moved ? lastDragOffsetY - targetOffsetY : 0;
+          const changed = moved && !areSlotListsEqual(startVisible, finalVisible);
+
+          teardownActiveDrag({ revert: false, flushPending: !changed });
+          if (changed) {
+            pendingUpdatePayload = null;
+            currentVisibleKeys = finalVisible;
+            if (lastUpdatePayload?.data) {
+              const prevSettings = lastUpdatePayload.data.settings || {};
+              const syncOverview = widgetMode !== 'hover' || prevSettings.hoverSyncOverviewMetrics !== false;
+              applyUpdatePayload({
+                data: {
+                  ...lastUpdatePayload.data,
+                  settings: {
+                    ...prevSettings,
+                    ...(syncOverview ? { overviewMetrics: finalFull } : { hoverMetrics: finalFull }),
+                  },
+                },
+              });
+            }
+            props?.onReorderMetrics?.(finalFull);
+          }
+          if (moved && matrixEl.children?.[finalTargetIdx]) {
+            settleAnimator.trigger(matrixEl.children[finalTargetIdx], residualX, residualY);
+          }
+        },
+      });
+
+      activeDrag = { startVisible, overflowTail, getWorkingVisible: () => workingVisible, session };
+    }
 
     function createMetricCellNode() {
       const gradId = `wm-spark-grad-${++sparklineGradSeq}`;
@@ -21947,12 +22669,26 @@ const MetricMatrixWidget = defineComponent({
         sparkWrapEl,
       ]);
 
-      const el = h('div', { className: 'matrix-cell' }, [
-        h('div', { className: 'cell-label' }, [labelSpan, iconSvg]),
-        valueEl,
-        subEl,
-        trendRowEl,
-      ]);
+      const el = h(
+        'div',
+        {
+          className: 'matrix-cell',
+          ...(hasMetricReorder
+            ? {
+                onPointerdown: (e) => {
+                  const idx = Array.from(matrixEl.children || []).indexOf(el);
+                  if (idx >= 0) startMetricCellDrag(e, idx);
+                },
+              }
+            : {}),
+        },
+        [
+          h('div', { className: 'cell-label' }, [labelSpan, iconSvg]),
+          valueEl,
+          subEl,
+          trendRowEl,
+        ]
+      );
       return {
         el,
         refs: {
@@ -21971,14 +22707,29 @@ const MetricMatrixWidget = defineComponent({
       };
     }
 
-    function update({ data } = {}) {
+    function applyUpdatePayload({ data } = {}) {
+      lastUpdatePayload = { data };
       patchAttr(matrixEl, 'aria-label', t('module.metrics'));
       const settings = data?.settings || {};
-      const { isLarge: isLargeTrend, metrics: metricKeys } =
-        resolveEffectiveClientMetricMatrixConfig(widgetMode, settings);
+      const {
+        isLarge: isLargeTrend,
+        metrics: metricKeys,
+        allMetrics,
+      } = resolveEffectiveClientMetricMatrixConfig(widgetMode, settings);
+      currentVisibleKeys = [...metricKeys];
+      currentOverflowKeys = Array.isArray(allMetrics) ? allMetrics.slice(metricKeys.length) : [];
+      const canDragCells = hasMetricReorder && metricKeys.length > 1;
+      const dragHint = canDragCells
+        ? canParentDragModule()
+          ? t('settings.str.metricOrModuleDragHint')
+          : t('settings.str.metricDragHint')
+        : null;
       const maxCols = isLargeTrend ? 3 : 4;
       const colCount = Math.max(1, Math.min(maxCols, metricKeys.length));
-      patchClasses(matrixEl, { 'is-large-trend': isLargeTrend });
+      patchClasses(matrixEl, {
+        'is-large-trend': isLargeTrend,
+        'is-metrics-reorderable': canDragCells,
+      });
       patchAttr(matrixEl, 'data-cols', String(colCount));
       patchStyleVar(matrixEl, '--matrix-cols', String(colCount));
 
@@ -22038,9 +22789,11 @@ const MetricMatrixWidget = defineComponent({
       patchKeyedList(matrixEl, cells, {
         keyFn: (cell) => cell.key,
         sigFn: (cell) =>
-          `${locale}:${cell.isLargeTrend ? 'L' : 'M'}:${cell.key}:${cell.label}:${cell.icon}:${cell.isPulsing}:${cell.valueClass}:${cell.valueText}:${cell.subClass}:${cell.subText}:${cell.sparkSig}`,
+          `${locale}:${cell.isLargeTrend ? 'L' : 'M'}:${cell.key}:${cell.label}:${cell.icon}:${cell.isPulsing}:${cell.valueClass}:${cell.valueText}:${cell.subClass}:${cell.subText}:${cell.sparkSig}:${dragHint || ''}`,
         createRow: createMetricCellNode,
         updateRow: (refs, cell) => {
+          patchAttr(refs.el, 'data-metric-key', cell.key);
+          patchAttr(refs.el, 'title', dragHint);
           patchClasses(refs.el, { 'is-trend-card': cell.isLargeTrend });
           patchText(refs.labelSpan, cell.label);
           patchSvgIcon(refs.iconSvg, cell.icon);
@@ -22104,6 +22857,19 @@ const MetricMatrixWidget = defineComponent({
         },
       });
     }
+
+    function update(payload = {}) {
+      if (activeDrag) {
+        pendingUpdatePayload = payload;
+        return;
+      }
+      applyUpdatePayload(payload);
+    }
+
+    onCleanup(() => {
+      teardownActiveDrag({ revert: false, flushPending: false });
+      settleAnimator.clear();
+    });
 
     // Initialize default 4-cell skeleton so hover/overview has zero initial height jump
     update({ data: null });
@@ -25753,8 +26519,26 @@ const OVERVIEW_WIDGET_REGISTRY = Object.freeze({
   metrics: {
     key: 'metrics',
     labelKey: 'module.metrics',
-    create: ({ mode, isVisibleFn, preview, getCtxAgentId }) =>
-      MetricMatrixWidget({ mode, isVisibleFn, preview, getCtxAgentId }),
+    create: ({
+      mode,
+      isVisibleFn,
+      preview,
+      getCtxAgentId,
+      onPreviewMetrics,
+      onReorderMetrics,
+      onRequestVerticalDrag,
+      canDragParentModule,
+    }) =>
+      MetricMatrixWidget({
+        mode,
+        isVisibleFn,
+        preview,
+        getCtxAgentId,
+        onPreviewMetrics,
+        onReorderMetrics,
+        onRequestVerticalDrag,
+        canDragParentModule,
+      }),
   },
   context: {
     key: 'context',
@@ -25815,11 +26599,23 @@ function createDynamicWidgetHost({
   initialModuleKeys = [],
   getCtxAgentId: customGetCtxAgentId = undefined,
   setCtxAgentId: customSetCtxAgentId = undefined,
+  onPreviewModules = undefined,
+  onReorderModules = undefined,
+  onPreviewMetrics = undefined,
+  onReorderMetrics = undefined,
 }) {
   const instances = new Map();
+  const modulePointerCleanups = new Map();
   let currentKeys = [];
   let previewCtxAgentId = 'main';
   let latestUpdatePayload = null;
+  let pendingUpdateArgs = null;
+  let activeModuleDrag = null;
+  const settleAnimator = createDropSettleAnimator('is-module-settling', ' scale(1.012)');
+
+  const hasModuleReorder =
+    typeof onReorderModules === 'function' || typeof onPreviewModules === 'function';
+  const canDragParentModule = () => hasModuleReorder && currentKeys.length > 1;
 
   const getCtxAgentId =
     typeof customGetCtxAgentId === 'function'
@@ -25841,6 +26637,127 @@ function createDynamicWidgetHost({
           }
         : undefined;
 
+  function resetModuleDragVisuals() {
+    patchClasses(containerEl, { 'is-dragging-modules': false });
+    for (const inst of instances.values()) {
+      const el = inst?.el;
+      if (!el) continue;
+      patchClasses(el, { 'is-module-dragging': false, 'is-module-drag-sibling': false });
+      if (el.style) {
+        el.style.transition = '';
+        el.style.transform = '';
+      }
+    }
+  }
+
+  function syncModuleDragAffordances(validKeys) {
+    if (!hasModuleReorder) return;
+    const canDrag = validKeys.length > 1;
+    patchClasses(containerEl, { 'is-modules-reorderable': canDrag });
+    const moduleHint = canDrag ? t('settings.str.moduleDragHint') : null;
+    for (const key of validKeys) {
+      const el = instances.get(key)?.el;
+      if (!el) continue;
+      patchAttr(el, 'data-module-key', key);
+      patchClasses(el, { 'is-reorderable-module': canDrag });
+      patchAttr(el, 'title', key !== 'metrics' ? moduleHint : null);
+    }
+  }
+
+  function teardownActiveModuleDrag({ revert = false, flushPending = true } = {}) {
+    if (!activeModuleDrag) return;
+    const { startKeys, getWorkingKeys, session } = activeModuleDrag;
+    const moved = session.isMoved();
+    activeModuleDrag = null;
+    session.cancel(true);
+    resetModuleDragVisuals();
+    if (revert && moved && !areSlotListsEqual(startKeys, getWorkingKeys())) {
+      onPreviewModules?.([...startKeys]);
+    }
+    if (flushPending && pendingUpdateArgs) {
+      const queued = pendingUpdateArgs;
+      pendingUpdateArgs = null;
+      applyUpdateArgs(queued);
+    }
+  }
+
+  function startModuleDrag(e, startKey, { immediate = false, clientX = null, clientY = null } = {}) {
+    if (!hasModuleReorder || (e && e.button != null && e.button !== 0)) return false;
+    const startIdx = currentKeys.indexOf(startKey);
+    if (startIdx < 0 || currentKeys.length <= 1) return false;
+    if (activeModuleDrag) teardownActiveModuleDrag({ revert: false, flushPending: true });
+    settleAnimator.clear();
+
+    const startKeys = [...currentKeys];
+    const count = startKeys.length;
+    const moduleEls = startKeys.map((k) => instances.get(k)?.el || null);
+    if (moduleEls.some((el) => !el)) return false;
+
+    const session = startLinearDragReorder(e, {
+      axis: 'y',
+      items: startKeys,
+      startIdx,
+      itemEls: moduleEls,
+      containerEl,
+      fallbackSize: 96,
+      fallbackGap: 8,
+      threshold: 4,
+      immediate,
+      initialClientX: clientX,
+      initialClientY: clientY,
+      autoScroll: true,
+      edgeZone: 38,
+      rubberBandMax: 24,
+      crossMax: 12,
+      crossRatio: 0.16,
+      dragScale: ' scale(1.012)',
+      onStart: () => {
+        patchClasses(containerEl, { 'is-dragging-modules': true });
+        for (let k = 0; k < count; k += 1) {
+          patchClasses(moduleEls[k], { 'is-module-dragging': k === startIdx, 'is-module-drag-sibling': k !== startIdx });
+        }
+      },
+      onPreview: (working) => onPreviewModules?.(working),
+      onCancel: () => teardownActiveModuleDrag({ revert: true, flushPending: true }),
+      onFinish: ({ moved, changed, finalItems, residualX, residualY }) => {
+        teardownActiveModuleDrag({ revert: false, flushPending: !changed });
+        if (changed) {
+          pendingUpdateArgs = null;
+          syncModules(finalItems);
+          onReorderModules?.([...finalItems]);
+        }
+        const landedEl = instances.get(startKey)?.el;
+        if (moved && landedEl) {
+          settleAnimator.trigger(landedEl, residualX, residualY);
+        }
+      },
+    });
+
+    activeModuleDrag = { startKeys, getWorkingKeys: session.getWorkingItems, session };
+    return true;
+  }
+
+  function detachModulePointer(key) {
+    const cleanup = modulePointerCleanups.get(key);
+    if (cleanup) {
+      cleanup();
+      modulePointerCleanups.delete(key);
+    }
+  }
+
+  function attachModulePointer(key, moduleEl) {
+    if (!hasModuleReorder || !moduleEl) return;
+    detachModulePointer(key);
+    const onPointerDown = (e) => {
+      if (currentKeys.length <= 1 || (e && e.button != null && e.button !== 0)) return;
+      if (isInteractiveDragTarget(e?.target, moduleEl)) return;
+      e?.preventDefault?.();
+      startModuleDrag(e, key);
+    };
+    moduleEl.addEventListener?.('pointerdown', onPointerDown);
+    modulePointerCleanups.set(key, () => moduleEl.removeEventListener?.('pointerdown', onPointerDown));
+  }
+
   function syncModules(nextKeys) {
     const validKeys = [];
     const seen = new Set();
@@ -25854,6 +26771,7 @@ function createDynamicWidgetHost({
     // Remove and destroy widgets no longer present
     for (const [existingKey, inst] of [...instances.entries()]) {
       if (!seen.has(existingKey)) {
+        detachModulePointer(existingKey);
         try {
           inst.el?.remove?.();
         } catch {}
@@ -25873,8 +26791,20 @@ function createDynamicWidgetHost({
           isVisibleFn,
           getCtxAgentId,
           setCtxAgentId,
+          onPreviewMetrics,
+          onReorderMetrics,
+          onRequestVerticalDrag: hasModuleReorder
+            ? (downEv, cx, cy) =>
+                startModuleDrag(downEv, 'metrics', {
+                  immediate: true,
+                  clientX: cx,
+                  clientY: cy,
+                })
+            : undefined,
+          canDragParentModule,
         });
         instances.set(key, inst);
+        attachModulePointer(key, inst.el);
       }
     }
 
@@ -25899,16 +26829,25 @@ function createDynamicWidgetHost({
       currentKeys = [...validKeys];
     }
 
+    syncModuleDragAffordances(validKeys);
     return validKeys;
   }
 
-  function update({ moduleKeys = [], data = null, minuteTick = undefined } = {}) {
+  function applyUpdateArgs({ moduleKeys = [], data = null, minuteTick = undefined } = {}) {
     latestUpdatePayload = { data, minuteTick };
     const validKeys = syncModules(moduleKeys);
     for (const key of validKeys) {
       const inst = instances.get(key);
       inst?.refs?.update?.({ data, minuteTick });
     }
+  }
+
+  function update(args = {}) {
+    if (activeModuleDrag) {
+      pendingUpdateArgs = args;
+      return;
+    }
+    applyUpdateArgs(args);
   }
 
   function pauseTickers() {
@@ -25928,6 +26867,11 @@ function createDynamicWidgetHost({
   }
 
   function destroy() {
+    teardownActiveModuleDrag({ revert: false, flushPending: false });
+    settleAnimator.clear();
+    for (const key of [...modulePointerCleanups.keys()]) {
+      detachModulePointer(key);
+    }
     for (const inst of instances.values()) {
       try {
         inst.el?.remove?.();
@@ -26926,10 +27870,20 @@ function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCtx) {
 /**
  * Standalone Capsule Bar Preview Widget mounting the real `.wm-multi-btn` and `.wm-capsule-btn`
  * inside a contextual host bar (`dual` titlebar, `composer` toolbar, or `sidebar` disabled state).
+ * When `onReorderSlots` / `onPreviewSlots` callbacks are supplied, metric chips inside the
+ * preview capsule support direct horizontal pointer drag-to-reorder.
  */
 const CapsuleBarWidget = defineComponent({
   name: 'CapsuleBarWidget',
-  setup() {
+  setup({ props, onCleanup }) {
+    const hasReorderCallbacks =
+      typeof props?.onReorderSlots === 'function' || typeof props?.onPreviewSlots === 'function';
+    let currentSlotKeys = ['tps', 'ttft', 'context'];
+    let lastUpdatePayload = null;
+    let pendingUpdatePayload = null;
+    let activeDrag = null;
+    const settleAnimator = createDropSettleAnimator('is-settling', ' scale(1.04)');
+
     const multiDot = h('span', { className: 'wm-multi-dot' });
     const multiLabel = h('span', {
       className: 'wm-multi-label',
@@ -26966,7 +27920,7 @@ const CapsuleBarWidget = defineComponent({
         type: 'button',
         className: 'wm-capsule-btn',
         tabindex: '-1',
-        'aria-hidden': 'true',
+        ...(hasReorderCallbacks ? {} : { 'aria-hidden': 'true' }),
       },
       [
         capsuleSlots[0].el,
@@ -27021,7 +27975,143 @@ const CapsuleBarWidget = defineComponent({
 
     const rootEl = h('div', { className: 'capsule-preview-widget' }, [hostBarEl, sidebarHintEl]);
 
-    function update({ data } = {}) {
+    function resetDragVisuals() {
+      patchClasses(hostBarEl, { 'is-dragging-capsule': false });
+      patchClasses(capsuleBtn, { 'is-dragging-capsule': false });
+      for (const slot of capsuleSlots) {
+        patchClasses(slot.el, { 'is-dragging': false, 'is-drag-sibling': false });
+        if (slot.el?.style) {
+          slot.el.style.transition = '';
+          slot.el.style.transform = '';
+        }
+      }
+      for (const sep of capsuleSeps) {
+        patchClasses(sep, { 'is-drag-sep': false });
+        if (sep?.style) {
+          sep.style.transition = '';
+          sep.style.transform = '';
+        }
+      }
+    }
+
+    function syncSlotDragAffordances(slotCount) {
+      const canDrag = hasReorderCallbacks && slotCount > 1;
+      patchClasses(hostBarEl, { 'is-slot-reorderable': canDrag });
+      patchClasses(capsuleBtn, { 'is-slot-reorderable': canDrag });
+      const hint = canDrag ? t('settings.str.capsuleDragHint') : null;
+      for (let i = 0; i < capsuleSlots.length; i += 1) {
+        patchAttr(capsuleSlots[i].el, 'title', canDrag && i < slotCount ? hint : null);
+      }
+    }
+
+    function teardownActiveDrag({ revert = false, flushPending = true } = {}) {
+      if (!activeDrag) return;
+      const { startKeys, getWorkingKeys, session } = activeDrag;
+      const moved = session.isMoved();
+      activeDrag = null;
+      session.cancel(true);
+      resetDragVisuals();
+      if (revert && moved && !areSlotListsEqual(startKeys, getWorkingKeys())) {
+        props?.onPreviewSlots?.([...startKeys]);
+      }
+      if (flushPending && pendingUpdatePayload) {
+        const queued = pendingUpdatePayload;
+        pendingUpdatePayload = null;
+        applyUpdatePayload(queued);
+      }
+    }
+
+    function startSlotDrag(e, initialSlotIdx) {
+      if (!hasReorderCallbacks || (e && e.button != null && e.button !== 0)) return;
+      if (currentSlotKeys.length <= 1 || initialSlotIdx < 0 || initialSlotIdx >= currentSlotKeys.length) {
+        return;
+      }
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      if (activeDrag) teardownActiveDrag({ revert: false, flushPending: true });
+      settleAnimator.clear();
+
+      const startKeys = [...currentSlotKeys];
+      const count = startKeys.length;
+      const startIdx = initialSlotIdx;
+      let sepMetrics = [];
+
+      const session = startLinearDragReorder(e, {
+        axis: 'x',
+        items: startKeys,
+        startIdx,
+        itemEls: capsuleSlots.slice(0, count).map((s) => s.el),
+        containerEl: capsuleBtn,
+        fallbackSize: 54,
+        fallbackGap: 17,
+        threshold: 3,
+        rubberBandMax: 12,
+        crossMax: 4,
+        crossRatio: 0.14,
+        dragScale: ' scale(1.04)',
+        onStart: ({ metrics }) => {
+          sepMetrics = [];
+          for (let s = 0; s < count - 1; s += 1) {
+            const sr = capsuleSeps[s]?.getBoundingClientRect?.();
+            const ok = Boolean(sr && Number.isFinite(sr.width) && sr.width > 0);
+            sepMetrics.push({ left: ok ? sr.left : metrics[s].end + 8, width: ok ? sr.width : 1 });
+          }
+          patchClasses(hostBarEl, { 'is-dragging-capsule': true });
+          patchClasses(capsuleBtn, { 'is-dragging-capsule': true });
+          for (let k = 0; k < count; k += 1) {
+            patchClasses(capsuleSlots[k].el, { 'is-dragging': k === startIdx, 'is-drag-sibling': k !== startIdx });
+          }
+          for (let s = 0; s < count - 1; s += 1) patchClasses(capsuleSeps[s], { 'is-drag-sep': true });
+        },
+        onLayout: ({ perm, targetStartByOrig, metrics, gap }) => {
+          for (let s = 0; s < count - 1; s += 1) {
+            if (!sepMetrics[s]) continue;
+            const leftOrig = perm[s];
+            const desiredSepLeft =
+              targetStartByOrig[leftOrig] + metrics[leftOrig].size + (gap - (sepMetrics[s].width || 1)) * 0.5;
+            setTranslate3d(capsuleSeps[s], desiredSepLeft - sepMetrics[s].left);
+          }
+        },
+        onPreview: (working) => props?.onPreviewSlots?.(working),
+        onCancel: () => teardownActiveDrag({ revert: true, flushPending: true }),
+        onFinish: ({ moved, changed, targetIdx, finalItems, residualX, residualY }) => {
+          teardownActiveDrag({ revert: false, flushPending: !changed });
+          if (changed) {
+            pendingUpdatePayload = null;
+            currentSlotKeys = finalItems;
+            if (lastUpdatePayload?.data) {
+              applyUpdatePayload({
+                data: {
+                  ...lastUpdatePayload.data,
+                  settings: { ...(lastUpdatePayload.data.settings || {}), topbarCapsuleSlots: finalItems },
+                },
+              });
+            }
+            props?.onReorderSlots?.([...finalItems]);
+          }
+          if (moved && capsuleSlots[targetIdx]?.el) {
+            settleAnimator.trigger(capsuleSlots[targetIdx].el, residualX, residualY);
+          }
+        },
+      });
+
+      activeDrag = { startKeys, getWorkingKeys: session.getWorkingItems, session };
+    }
+
+    const slotPointerCleanups = [];
+    if (hasReorderCallbacks) {
+      for (let i = 0; i < capsuleSlots.length; i += 1) {
+        const slotEl = capsuleSlots[i].el;
+        const onSlotPointerDown = (e) => startSlotDrag(e, i);
+        slotEl.addEventListener?.('pointerdown', onSlotPointerDown);
+        slotPointerCleanups.push(() => {
+          slotEl.removeEventListener?.('pointerdown', onSlotPointerDown);
+        });
+      }
+    }
+
+    function applyUpdatePayload({ data } = {}) {
+      lastUpdatePayload = { data };
       const settings = data?.settings || {};
       const mountMode = normalizeClientWindowMountMode(
         settings.windowMountMode,
@@ -27029,6 +28119,7 @@ const CapsuleBarWidget = defineComponent({
       );
       const showMulti = settings.showTopbarMultiSession !== false;
       const slotKeys = normalizeClientTopbarSlots(settings.topbarCapsuleSlots);
+      currentSlotKeys = [...slotKeys];
 
       const isComposer = mountMode === 'composer';
       const isSidebar = mountMode === 'sidebar';
@@ -27050,6 +28141,7 @@ const CapsuleBarWidget = defineComponent({
         patchClasses(multiBtn, { 'is-running': false, 'is-waiting': false });
         patchCapsuleOdometerText(multiLabel, t('capsule.multiZero'), { resetKey: 'multi' });
         syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, { hasTelemetry: false });
+        syncSlotDragAffordances(slotKeys.length);
         return;
       }
 
@@ -27073,7 +28165,25 @@ const CapsuleBarWidget = defineComponent({
 
       patchClasses(capsuleBtn, { 'is-running': slotCtx.isRunning });
       syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCtx);
+      syncSlotDragAffordances(slotKeys.length);
     }
+
+    function update(payload = {}) {
+      if (activeDrag) {
+        pendingUpdatePayload = payload;
+        return;
+      }
+      applyUpdatePayload(payload);
+    }
+
+    onCleanup(() => {
+      teardownActiveDrag({ revert: false, flushPending: false });
+      settleAnimator.clear();
+      for (const cleanup of slotPointerCleanups) {
+        cleanup();
+      }
+      slotPointerCleanups.length = 0;
+    });
 
     return {
       el: rootEl,
@@ -27487,12 +28597,24 @@ const StepTableWidget = defineComponent({
       typeof props.onVirtualHeightChange === 'function' ? props.onVirtualHeightChange : null;
     const onSortChange =
       typeof props.onSortChange === 'function' ? props.onSortChange : null;
+    const onPreviewColumns =
+      typeof props.onPreviewColumns === 'function' ? props.onPreviewColumns : null;
+    const onReorderColumns =
+      typeof props.onReorderColumns === 'function' ? props.onReorderColumns : null;
+    const hasColReorder = Boolean((onPreviewColumns || onReorderColumns) && !onSortChange);
+
+    let currentHeaderColKeys = [...DEFAULT_STEP_COLUMN_KEYS];
+    let lastRenderCallArgs = null;
+    let pendingRenderCallArgs = null;
+    let activeColDrag = null;
+    const colSettleAnimator = createDropSettleAnimator('is-col-settling');
 
     const stepsTheadRow = h('tr');
     const stepsThead = h('thead', {}, [stepsTheadRow]);
     const stepsTbody = h('tbody');
 
     function syncTableHeaderColumns(colKeys, headerCtx = {}) {
+      currentHeaderColKeys = Array.isArray(colKeys) ? [...colKeys] : [...DEFAULT_STEP_COLUMN_KEYS];
       const locale = getEffectiveLocale();
       const fmtKey = normalizeClientStepTokenComboFormat(headerCtx?.stepTokenComboFormat);
       const activeSortKey = String(headerCtx?.sortKey || '');
@@ -27500,11 +28622,13 @@ const StepTableWidget = defineComponent({
         ? headerCtx.sortDir
         : '';
       const ctx = { stepTokenComboFormat: fmtKey };
-      patchKeyedList(stepsTheadRow, colKeys, {
+      const canReorderCols = hasColReorder && currentHeaderColKeys.length > 1;
+      const colDragHint = canReorderCols ? t('settings.str.stepColDragHint') : null;
+      patchKeyedList(stepsTheadRow, currentHeaderColKeys, {
         keyFn: (colKey) => colKey,
         sigFn: (colKey) => {
           const isSorted = activeSortKey === colKey && Boolean(activeSortDir);
-          return `${locale}:${colKey}:${fmtKey}:${STEP_COLUMN_REGISTRY[colKey].thLabel(ctx)}:${onSortChange ? 1 : 0}:${isSorted ? activeSortDir : ''}`;
+          return `${locale}:${colKey}:${fmtKey}:${STEP_COLUMN_REGISTRY[colKey].thLabel(ctx)}:${onSortChange ? 1 : 0}:${isSorted ? activeSortDir : ''}:${canReorderCols ? 1 : 0}`;
         },
         createRow: (colKey) => {
           const labelSpan = h('span', {
@@ -27517,7 +28641,18 @@ const StepTableWidget = defineComponent({
           });
           patchAttr(sortIcon, 'hidden', true);
           const innerWrap = h('span', { className: 'step-th-inner' }, [labelSpan, sortIcon]);
-          const th = h('th', {}, [innerWrap]);
+          const th = h(
+            'th',
+            hasColReorder
+              ? {
+                  onPointerdown: (e) => {
+                    const idx = Array.from(stepsTheadRow.children || []).indexOf(th);
+                    if (idx >= 0) startColumnDrag(e, idx);
+                  },
+                }
+              : {},
+            [innerWrap]
+          );
           return { el: th, refs: { th, labelSpan, sortIcon } };
         },
         updateRow: (refs, colKey) => {
@@ -27527,9 +28662,11 @@ const StepTableWidget = defineComponent({
             onSortChange && typeof STEP_COLUMN_REGISTRY[colKey]?.sortValue === 'function'
           );
           const isSorted = sortable && activeSortKey === colKey && Boolean(activeSortDir);
+          patchAttr(refs.th, 'data-col-key', colKey);
           patchClasses(refs.th, {
             'is-sortable': sortable,
             'is-sorted': isSorted,
+            'is-col-reorderable': canReorderCols,
           });
           patchAttr(
             refs.th,
@@ -27539,7 +28676,7 @@ const StepTableWidget = defineComponent({
           patchAttr(
             refs.th,
             'title',
-            sortable ? t('steps.sortClickTip', { col: labelText }) : null
+            sortable ? t('steps.sortClickTip', { col: labelText }) : colDragHint
           );
           patchAttr(refs.sortIcon, 'hidden', !isSorted);
           if (isSorted) {
@@ -27563,9 +28700,11 @@ const StepTableWidget = defineComponent({
             : null;
         },
       });
+      patchClasses(stepsTableEl, { 'is-col-reorderable': canReorderCols });
+      if (standaloneHostEl) {
+        patchClasses(standaloneHostEl, { 'is-col-reorderable': canReorderCols });
+      }
     }
-
-    syncTableHeaderColumns(DEFAULT_STEP_COLUMN_KEYS);
 
     const stepsTableEl = h('table', { className: 'data-table steps-data-table' }, [
       stepsThead,
@@ -27606,6 +28745,116 @@ const StepTableWidget = defineComponent({
           anomalyTipEl,
         ])
       : null;
+
+    syncTableHeaderColumns(DEFAULT_STEP_COLUMN_KEYS);
+
+    function collectColumnCells(colCount) {
+      const ths = Array.from(stepsTheadRow.children || []);
+      const rows = Array.from(stepsTbody.children || []).filter(
+        (tr) => !tr.classList?.contains?.('step-vspacer') && !tr.classList?.contains?.('step-vsizer')
+      );
+      const groups = [];
+      for (let c = 0; c < colCount; c += 1) {
+        const list = [];
+        if (ths[c]) list.push(ths[c]);
+        for (const tr of rows) {
+          if (tr.children?.[c]) list.push(tr.children[c]);
+        }
+        groups.push(list);
+      }
+      return groups;
+    }
+
+    function resetColDragVisuals(colCells) {
+      patchClasses(stepsTableEl, { 'is-dragging-cols': false });
+      if (standaloneHostEl) patchClasses(standaloneHostEl, { 'is-dragging-cols': false });
+      for (const cells of colCells || collectColumnCells(stepsTheadRow.children?.length || 0)) {
+        for (const cell of cells) {
+          patchClasses(cell, { 'is-col-dragging': false, 'is-col-drag-sibling': false });
+          if (cell?.style) {
+            cell.style.transition = '';
+            cell.style.transform = '';
+          }
+        }
+      }
+    }
+
+    function teardownActiveColDrag({ revert = false, flushPending = true } = {}) {
+      if (!activeColDrag) return;
+      const { startKeys, getWorkingKeys, colCells, session } = activeColDrag;
+      const moved = session.isMoved();
+      activeColDrag = null;
+      session.cancel(true);
+      resetColDragVisuals(colCells);
+      if (revert && moved && !areSlotListsEqual(startKeys, getWorkingKeys())) {
+        onPreviewColumns?.([...startKeys]);
+      }
+      if (flushPending && pendingRenderCallArgs) {
+        const queued = pendingRenderCallArgs;
+        pendingRenderCallArgs = null;
+        renderStepTable(...queued);
+      }
+    }
+
+    function startColumnDrag(e, startIdx) {
+      if (!hasColReorder || (e && e.button != null && e.button !== 0)) return;
+      if (currentHeaderColKeys.length <= 1 || startIdx < 0 || startIdx >= currentHeaderColKeys.length) {
+        return;
+      }
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      hideTurnTip();
+      hideAnomalyTip();
+      if (activeColDrag) teardownActiveColDrag({ revert: false, flushPending: true });
+      colSettleAnimator.clear();
+
+      const startKeys = [...currentHeaderColKeys];
+      const count = startKeys.length;
+      const colCells = collectColumnCells(count);
+      if (colCells.length !== count || !colCells[startIdx]?.[0]) return;
+
+      const session = startLinearDragReorder(e, {
+        axis: 'x',
+        items: startKeys,
+        startIdx,
+        itemEls: colCells.map((g) => g[0]),
+        getTargetEls: (orig) => colCells[orig],
+        containerEl: stepsTableEl,
+        fallbackSize: 64,
+        fallbackGap: 0,
+        fixedGap: 0,
+        threshold: 4,
+        rubberBandMax: 14,
+        onStart: () => {
+          patchClasses(stepsTableEl, { 'is-dragging-cols': true });
+          if (standaloneHostEl) patchClasses(standaloneHostEl, { 'is-dragging-cols': true });
+          for (let c = 0; c < count; c += 1) {
+            for (const cell of colCells[c]) {
+              patchClasses(cell, { 'is-col-dragging': c === startIdx, 'is-col-drag-sibling': c !== startIdx });
+            }
+          }
+        },
+        onPreview: (working) => onPreviewColumns?.(working),
+        onCancel: () => teardownActiveColDrag({ revert: true, flushPending: true }),
+        onFinish: ({ moved, changed, targetIdx, finalItems, residualX }) => {
+          teardownActiveColDrag({ revert: false, flushPending: !changed });
+          if (changed) {
+            pendingRenderCallArgs = null;
+            if (lastRenderCallArgs) {
+              const [stepsArg, cidArg, , locArg, optsArg] = lastRenderCallArgs;
+              renderStepTable(stepsArg, cidArg, finalItems, locArg, optsArg);
+            }
+            onReorderColumns?.([...finalItems]);
+          }
+          if (moved) {
+            const nextGroups = collectColumnCells(currentHeaderColKeys.length);
+            if (nextGroups[targetIdx]) colSettleAnimator.trigger(nextGroups[targetIdx], residualX, 0);
+          }
+        },
+      });
+
+      activeColDrag = { startKeys, getWorkingKeys: session.getWorkingItems, colCells, session };
+    }
 
     let boundsContainerGetter =
       typeof props.getBoundsEl === 'function'
@@ -28773,6 +30022,32 @@ const StepTableWidget = defineComponent({
         sortDir = '',
       } = {}
     ) {
+      const callArgs = [
+        tableSteps,
+        cascadeId,
+        colKeys,
+        locale,
+        {
+          effectiveScopes,
+          hasSubagents,
+          isMergedMultiAgents,
+          showStepTurnRail,
+          showStepAgentBadge,
+          showStepSpeedColor,
+          stepTokenComboFormat,
+          displaySettings,
+          allConversationSteps,
+          allowNewRowFade,
+          fontScale,
+          sortKey,
+          sortDir,
+        },
+      ];
+      if (activeColDrag) {
+        pendingRenderCallArgs = callArgs;
+        return;
+      }
+      lastRenderCallArgs = callArgs;
       const normCascadeId = String(cascadeId || '');
       let enteringRowKeys = null;
       if (!normCascadeId || trackedCascadeId === null || normCascadeId !== trackedCascadeId) {
@@ -28959,6 +30234,8 @@ const StepTableWidget = defineComponent({
     }
 
     onCleanup(() => {
+      teardownActiveColDrag({ revert: false, flushPending: false });
+      colSettleAnimator.clear();
       stepsTablePane.removeEventListener('scroll', onPaneScroll);
       stepsTbody.removeEventListener('mouseleave', onTbodyLeave);
       if (scrollRafId && typeof cancelAnimationFrame === 'function') {
@@ -30559,49 +31836,6 @@ function isNodeWithin(target, container) {
   return false;
 }
 
-function findScrollableAncestor(el) {
-  let cur = el?.parentNode || null;
-  while (cur) {
-    if (
-      typeof cur.scrollHeight === 'number' &&
-      typeof cur.clientHeight === 'number' &&
-      cur.scrollHeight > cur.clientHeight + 4
-    ) {
-      return cur;
-    }
-    cur = cur.parentNode || null;
-  }
-  return null;
-}
-
-function applyRubberBand(value, minVal, maxVal, maxOvershoot = 24, factor = 0.25) {
-  if (value < minVal) {
-    const excess = minVal - value;
-    return minVal - Math.min(maxOvershoot, excess * factor);
-  }
-  if (value > maxVal) {
-    const excess = value - maxVal;
-    return maxVal + Math.min(maxOvershoot, excess * factor);
-  }
-  return value;
-}
-
-function buildReorderedItems(sourceItems, fromIdx, toIdx) {
-  const next = [...sourceItems];
-  if (fromIdx === toIdx) return next;
-  const [moved] = next.splice(fromIdx, 1);
-  next.splice(toIdx, 0, moved);
-  return next;
-}
-
-function areSlotListsEqual(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
-}
-
 const EditableSlotList = defineComponent({
   name: 'EditableSlotList',
   setup({ props, onCleanup }) {
@@ -30617,8 +31851,7 @@ const EditableSlotList = defineComponent({
         : null;
     let dimmedTagText = String(props.dimmedTagText || '');
     let activeDrag = null;
-    let settleCleanupTimer = null;
-    let settlingRowEl = null;
+    const settleAnimator = createDropSettleAnimator('is-settling', ' scale(1.015)');
     let suppressClickTimer = null;
     let suppressNextClick = false;
     let pendingSyncAfterDrag = false;
@@ -30653,18 +31886,7 @@ const EditableSlotList = defineComponent({
     const rowPool = [];
 
     function clearSettleAnimation() {
-      if (settleCleanupTimer) {
-        clearTimeout(settleCleanupTimer);
-        settleCleanupTimer = null;
-      }
-      if (settlingRowEl) {
-        patchClasses(settlingRowEl, { 'is-settling': false });
-        if (settlingRowEl.style) {
-          settlingRowEl.style.transition = '';
-          settlingRowEl.style.transform = '';
-        }
-        settlingRowEl = null;
-      }
+      settleAnimator.clear();
     }
 
     function clearClickSuppression() {
@@ -30687,20 +31909,13 @@ const EditableSlotList = defineComponent({
     function emitChange(nextItems) {
       currentItems = [...nextItems];
       syncRows();
-      if (typeof props.onPreview === 'function') {
-        props.onPreview([...currentItems]);
-      }
-      if (typeof props.onChange === 'function') {
-        props.onChange([...currentItems]);
-      }
+      props.onPreview?.([...currentItems]);
+      props.onChange?.([...currentItems]);
     }
 
     function resetRowDragStyles() {
       for (const r of rowPool) {
-        patchClasses(r.rowEl, {
-          'is-dragging': false,
-          'is-drag-sibling': false,
-        });
+        patchClasses(r.rowEl, { 'is-dragging': false, 'is-drag-sibling': false });
         if (r.rowEl?.style) {
           r.rowEl.style.transition = '';
           r.rowEl.style.transform = '';
@@ -30708,44 +31923,19 @@ const EditableSlotList = defineComponent({
       }
     }
 
-    function triggerDropSettleAnimation(targetRowEl, residualX, residualY) {
-      if (!targetRowEl || !targetRowEl.style) return;
-      if (Math.abs(residualX) < 0.5 && Math.abs(residualY) < 0.5) return;
-      if (typeof requestAnimationFrame !== 'function') return;
-      clearSettleAnimation();
-      settlingRowEl = targetRowEl;
-      targetRowEl.style.transition = 'none';
-      targetRowEl.style.transform = `translate3d(${residualX.toFixed(2)}px, ${residualY.toFixed(2)}px, 0) scale(1.015)`;
-      patchClasses(targetRowEl, { 'is-settling': true });
-      // Commit initial pre-settle frame before animating into slot
-      void targetRowEl.offsetHeight;
-      requestAnimationFrame(() => {
-        if (settlingRowEl !== targetRowEl) return;
-        targetRowEl.style.transition = '';
-        targetRowEl.style.transform = 'translate3d(0px, 0px, 0)';
-      });
-      settleCleanupTimer = setTimeout(() => {
-        if (settlingRowEl === targetRowEl) {
-          clearSettleAnimation();
-        }
-      }, 220);
-    }
-
     function teardownActiveDrag({ revert = false } = {}) {
       if (!activeDrag) return;
-      const { startItems, hasMoved, cleanupListeners, stopAutoScroll } = activeDrag;
+      const { startItems, session } = activeDrag;
+      const moved = session.isMoved();
       activeDrag = null;
-      stopAutoScroll?.();
-      cleanupListeners();
+      session.cancel(true);
       patchClasses(listEl, { 'is-dragging-list': false });
       resetRowDragStyles();
-      if (revert && hasMoved && !areSlotListsEqual(startItems, currentItems)) {
+      if (revert && moved && !areSlotListsEqual(startItems, currentItems)) {
         currentItems = [...startItems];
         pendingSyncAfterDrag = false;
         syncRows();
-        if (typeof props.onPreview === 'function') {
-          props.onPreview([...currentItems]);
-        }
+        props.onPreview?.([...currentItems]);
       } else if (pendingSyncAfterDrag) {
         pendingSyncAfterDrag = false;
         syncRows();
@@ -30755,302 +31945,70 @@ const EditableSlotList = defineComponent({
     function startPointerDrag(e, initialRowIdx, { threshold = 3 } = {}) {
       if (e && e.button != null && e.button !== 0) return;
       if (currentItems.length <= 1) return;
-      if (activeDrag) {
-        teardownActiveDrag({ revert: false });
-      }
+      if (activeDrag) teardownActiveDrag({ revert: false });
       clearSettleAnimation();
 
-      const startX = Number(e?.clientX ?? 0);
-      const startY = Number(e?.clientY ?? 0);
       const startItems = [...currentItems];
       const count = startItems.length;
       const startIdx = initialRowIdx;
-      let targetIdx = startIdx;
-      let hasMoved = false;
-      let slotMetrics = [];
-      let rowGap = 5;
-      let shiftDistance = 33;
-      let startListTop = 0;
-      let hasListRect = false;
-      let lastClientX = startX;
-      let lastClientY = startY;
-      let lastDragOffsetX = 0;
-      let lastDragOffsetY = 0;
-      let scrollContainer = null;
-      let autoScrollRaf = null;
-
-      function stopAutoScroll() {
-        if (autoScrollRaf != null && typeof cancelAnimationFrame === 'function') {
-          cancelAnimationFrame(autoScrollRaf);
-        }
-        autoScrollRaf = null;
-      }
-
-      function captureInitialGeometry() {
-        slotMetrics = [];
-        for (let i = 0; i < count; i += 1) {
-          const rect = rowPool[i]?.rowEl?.getBoundingClientRect?.();
-          const hasRect = Boolean(rect && Number.isFinite(rect.height) && rect.height > 0);
-          const height = hasRect ? rect.height : 28;
-          const top = hasRect ? rect.top : i * 33;
-          slotMetrics.push({ top, height, centerY: top + height * 0.5 });
-        }
-        if (count >= 2) {
-          const measuredGap = slotMetrics[1].top - (slotMetrics[0].top + slotMetrics[0].height);
-          rowGap = Number.isFinite(measuredGap) && measuredGap >= 0 ? measuredGap : 5;
-        } else {
-          rowGap = 5;
-        }
-        shiftDistance = (slotMetrics[startIdx]?.height || 28) + rowGap;
-        const listRect = listEl?.getBoundingClientRect?.();
-        if (listRect && Number.isFinite(listRect.height) && listRect.height > 0) {
-          startListTop = listRect.top;
-          hasListRect = true;
-        } else {
-          startListTop = 0;
-          hasListRect = false;
-        }
-        scrollContainer = findScrollableAncestor(listEl);
-      }
-
-      function computeListShiftY() {
-        if (!hasListRect) return 0;
-        const listRect = listEl?.getBoundingClientRect?.();
-        if (listRect && Number.isFinite(listRect.top) && listRect.height > 0) {
-          return listRect.top - startListTop;
-        }
-        return 0;
-      }
 
       function applySlotDimState(entry, visualSlot) {
         const isDimmed = dimmedFromIndex !== null && visualSlot >= dimmedFromIndex;
         patchClasses(entry.rowEl, { 'is-dimmed': isDimmed });
         patchAttr(entry.dimmedTagEl, 'hidden', !isDimmed || !dimmedTagText);
-        if (dimmedTagText) {
-          patchText(entry.dimmedTagEl, dimmedTagText);
-        }
+        if (dimmedTagText) patchText(entry.dimmedTagEl, dimmedTagText);
       }
 
-      function updateSiblingPositionsAndBadges() {
-        for (let i = 0; i < count; i += 1) {
-          const entry = rowPool[i];
-          if (!entry) continue;
-          if (i === startIdx) {
-            patchText(entry.indexBadge, String(targetIdx + 1));
-            applySlotDimState(entry, targetIdx);
-            continue;
-          }
-          let visualSlot = i;
-          let shiftY = 0;
-          if (targetIdx > startIdx && i > startIdx && i <= targetIdx) {
-            visualSlot = i - 1;
-            shiftY = -shiftDistance;
-          } else if (targetIdx < startIdx && i >= targetIdx && i < startIdx) {
-            visualSlot = i + 1;
-            shiftY = shiftDistance;
-          }
-          patchText(entry.indexBadge, String(visualSlot + 1));
-          applySlotDimState(entry, visualSlot);
-          if (entry.rowEl?.style) {
-            entry.rowEl.style.transform =
-              shiftY !== 0 ? `translate3d(0px, ${shiftY.toFixed(2)}px, 0)` : 'translate3d(0px, 0px, 0)';
-          }
-        }
-      }
-
-      function updateDragFrame(clientX, clientY) {
-        if (!activeDrag || !hasMoved) return;
-        const listShiftY = computeListShiftY();
-        const rawDeltaY = clientY - startY - listShiftY;
-        const rawDeltaX = clientX - startX;
-
-        const minDeltaY = slotMetrics[0].top - slotMetrics[startIdx].top;
-        const maxDeltaY = slotMetrics[count - 1].top - slotMetrics[startIdx].top;
-        const clampedY = applyRubberBand(rawDeltaY, minDeltaY, maxDeltaY, 26, 0.25);
-        const clampedX =
-          rawDeltaX === 0
-            ? 0
-            : Math.sign(rawDeltaX) * Math.min(18, Math.abs(rawDeltaX) * 0.22);
-
-        lastDragOffsetX = clampedX;
-        lastDragOffsetY = clampedY;
-
-        const draggedEntry = rowPool[startIdx];
-        if (draggedEntry?.rowEl?.style) {
-          draggedEntry.rowEl.style.transform = `translate3d(${clampedX.toFixed(2)}px, ${clampedY.toFixed(2)}px, 0) scale(1.015)`;
-        }
-
-        // Static-slot center hit testing prevents any oscillation while siblings animate
-        const draggedCenterY = slotMetrics[startIdx].centerY + rawDeltaY;
-        let nextTarget = startIdx;
-        if (rawDeltaY < 0) {
-          for (let i = 0; i < startIdx; i += 1) {
-            if (draggedCenterY < slotMetrics[i].centerY) {
-              nextTarget = i;
-              break;
-            }
-          }
-        } else if (rawDeltaY > 0) {
-          for (let i = count - 1; i > startIdx; i -= 1) {
-            if (draggedCenterY > slotMetrics[i].centerY) {
-              nextTarget = i;
-              break;
-            }
-          }
-        }
-
-        if (nextTarget !== targetIdx) {
-          targetIdx = nextTarget;
-          activeDrag.dragIdx = targetIdx;
-          currentItems = buildReorderedItems(startItems, startIdx, targetIdx);
-          updateSiblingPositionsAndBadges();
-          if (typeof props.onPreview === 'function') {
-            props.onPreview([...currentItems]);
-          }
-        }
-      }
-
-      function tickAutoScroll() {
-        autoScrollRaf = null;
-        if (!activeDrag || !hasMoved || !scrollContainer) return;
-        const containerRect = scrollContainer.getBoundingClientRect?.();
-        if (!containerRect || containerRect.height <= 0) return;
-        const edgeZone = 34;
-        let step = 0;
-        if (lastClientY < containerRect.top + edgeZone) {
-          const ratio = Math.min(1, (containerRect.top + edgeZone - lastClientY) / edgeZone);
-          step = -Math.ceil(3 + ratio * 7);
-        } else if (lastClientY > containerRect.bottom - edgeZone) {
-          const ratio = Math.min(1, (lastClientY - (containerRect.bottom - edgeZone)) / edgeZone);
-          step = Math.ceil(3 + ratio * 7);
-        }
-        if (step !== 0) {
-          const prevScroll = scrollContainer.scrollTop;
-          scrollContainer.scrollTop = prevScroll + step;
-          if (scrollContainer.scrollTop !== prevScroll) {
-            updateDragFrame(lastClientX, lastClientY);
-            if (typeof requestAnimationFrame === 'function') {
-              autoScrollRaf = requestAnimationFrame(tickAutoScroll);
-            }
-          }
-        }
-      }
-
-      function scheduleAutoScrollCheck() {
-        if (!scrollContainer || autoScrollRaf != null || typeof requestAnimationFrame !== 'function') {
-          return;
-        }
-        const containerRect = scrollContainer.getBoundingClientRect?.();
-        if (!containerRect || containerRect.height <= 0) return;
-        if (lastClientY < containerRect.top + 34 || lastClientY > containerRect.bottom - 34) {
-          autoScrollRaf = requestAnimationFrame(tickAutoScroll);
-        }
-      }
-
-      const onPointerMove = (ev) => {
-        if (!activeDrag) return;
-        const clientX = Number(ev?.clientX ?? startX);
-        const clientY = Number(ev?.clientY ?? startY);
-        lastClientX = clientX;
-        lastClientY = clientY;
-
-        if (!hasMoved) {
-          const dist = Math.hypot(clientX - startX, clientY - startY);
-          if (dist < threshold) return;
-          hasMoved = true;
-          activeDrag.hasMoved = true;
-          captureInitialGeometry();
-          for (let k = 0; k < count; k += 1) {
-            rowPool[k]?.selectComp?.close?.();
-          }
+      const session = startLinearDragReorder(e, {
+        axis: 'y',
+        items: startItems,
+        startIdx,
+        itemEls: rowPool.slice(0, count).map((r) => r?.rowEl),
+        containerEl: listEl,
+        fallbackSize: 28,
+        fallbackGap: 5,
+        threshold,
+        autoScroll: true,
+        rubberBandMax: 26,
+        crossMax: 18,
+        crossRatio: 0.22,
+        dragScale: ' scale(1.015)',
+        onStart: () => {
+          for (let k = 0; k < count; k += 1) rowPool[k]?.selectComp?.close?.();
           patchClasses(listEl, { 'is-dragging-list': true });
           for (let k = 0; k < count; k += 1) {
             if (!rowPool[k]) continue;
-            if (k === startIdx) {
-              patchClasses(rowPool[k].rowEl, { 'is-dragging': true, 'is-drag-sibling': false });
-            } else {
-              patchClasses(rowPool[k].rowEl, { 'is-dragging': false, 'is-drag-sibling': true });
-            }
-          }
-          updateSiblingPositionsAndBadges();
-        }
-        ev?.preventDefault?.();
-        updateDragFrame(clientX, clientY);
-        scheduleAutoScrollCheck();
-      };
-
-      const onPointerUp = () => {
-        if (!activeDrag) return;
-        const moved = activeDrag.hasMoved;
-        const finalTargetIdx = targetIdx;
-        const targetSlotOffsetY =
-          moved && slotMetrics[finalTargetIdx] && slotMetrics[startIdx]
-            ? slotMetrics[finalTargetIdx].top - slotMetrics[startIdx].top
-            : 0;
-        const residualX = moved ? lastDragOffsetX : 0;
-        const residualY = moved ? lastDragOffsetY - targetSlotOffsetY : 0;
-        const changed = !areSlotListsEqual(startItems, currentItems);
-
-        teardownActiveDrag({ revert: false });
-        if (moved) {
-          armClickSuppression();
-        }
-        if (moved && changed) {
-          emitChange([...currentItems]);
-        } else if (moved) {
-          syncRows();
-        }
-        if (moved && rowPool[finalTargetIdx]?.rowEl) {
-          triggerDropSettleAnimation(rowPool[finalTargetIdx].rowEl, residualX, residualY);
-        }
-      };
-
-      const onPointerCancel = () => {
-        teardownActiveDrag({ revert: true });
-      };
-
-      const onKeyDown = (ev) => {
-        if (ev?.key === 'Escape') {
-          teardownActiveDrag({ revert: true });
-        }
-      };
-
-      const docTarget =
-        typeof document !== 'undefined' && typeof document.addEventListener === 'function'
-          ? document
-          : null;
-      const winTarget =
-        typeof window !== 'undefined' && typeof window.addEventListener === 'function'
-          ? window
-          : null;
-
-      if (docTarget) {
-        docTarget.addEventListener('pointermove', onPointerMove);
-        docTarget.addEventListener('pointerup', onPointerUp);
-        docTarget.addEventListener('pointercancel', onPointerCancel);
-        docTarget.addEventListener('keydown', onKeyDown);
-      }
-      if (winTarget) {
-        winTarget.addEventListener('blur', onPointerCancel);
-      }
-
-      activeDrag = {
-        startItems,
-        dragIdx: startIdx,
-        hasMoved: false,
-        stopAutoScroll,
-        cleanupListeners: () => {
-          if (docTarget && typeof docTarget.removeEventListener === 'function') {
-            docTarget.removeEventListener('pointermove', onPointerMove);
-            docTarget.removeEventListener('pointerup', onPointerUp);
-            docTarget.removeEventListener('pointercancel', onPointerCancel);
-            docTarget.removeEventListener('keydown', onKeyDown);
-          }
-          if (winTarget && typeof winTarget.removeEventListener === 'function') {
-            winTarget.removeEventListener('blur', onPointerCancel);
+            patchClasses(rowPool[k].rowEl, {
+              'is-dragging': k === startIdx,
+              'is-drag-sibling': k !== startIdx,
+            });
           }
         },
-      };
+        onLayout: ({ perm }) => {
+          for (let visualSlot = 0; visualSlot < perm.length; visualSlot += 1) {
+            const entry = rowPool[perm[visualSlot]];
+            if (!entry) continue;
+            patchText(entry.indexBadge, String(visualSlot + 1));
+            applySlotDimState(entry, visualSlot);
+          }
+        },
+        onPreview: (working) => {
+          currentItems = working;
+          props.onPreview?.([...currentItems]);
+        },
+        onCancel: () => teardownActiveDrag({ revert: true }),
+        onFinish: ({ moved, changed, targetIdx, finalItems, residualX, residualY }) => {
+          teardownActiveDrag({ revert: false });
+          if (moved) armClickSuppression();
+          if (changed) emitChange(finalItems);
+          else if (moved) syncRows();
+          if (moved && rowPool[targetIdx]?.rowEl) {
+            settleAnimator.trigger(rowPool[targetIdx].rowEl, residualX, residualY);
+          }
+        },
+      });
+
+      activeDrag = { startItems, session };
     }
 
     function createSlotRow() {
@@ -34032,7 +34990,25 @@ const SettingsStructureTab = defineComponent({
     );
 
     // --- Pane 1: 挂载与胶囊栏 (`mount`) ---
-    const capsulePreviewWidget = CapsuleBarWidget({});
+    const syncTopbarList = () =>
+      topbarSlotsList.refs.setProps({
+        items: draftTopbarSlots,
+        options: getCapsuleMetricOptions({ quotas: latestQuotas, selectedSlots: draftTopbarSlots }),
+        addBtnTextFn: (count, max) => t('settings.str.addCapsuleSlot', { count, max }),
+      });
+    const capsulePreviewWidget = CapsuleBarWidget({
+      onPreviewSlots: (previewKeys) => {
+        draftTopbarSlots = normalizeClientTopbarSlots(previewKeys);
+        syncTopbarList();
+        refreshCliPreview();
+      },
+      onReorderSlots: (nextKeys) => {
+        draftTopbarSlots = normalizeClientTopbarSlots(nextKeys);
+        syncMountSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(mountSection, { topbarCapsuleSlots: draftTopbarSlots });
+      },
+    });
     const mountPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       capsulePreviewWidget.el,
     ]);
@@ -34479,14 +35455,7 @@ const SettingsStructureTab = defineComponent({
         );
       }
       refreshCliPreview();
-      topbarSlotsList.refs.setProps({
-        items: draftTopbarSlots,
-        options: getCapsuleMetricOptions({
-          quotas: latestQuotas,
-          selectedSlots: draftTopbarSlots,
-        }),
-        addBtnTextFn: (count, max) => t('settings.str.addCapsuleSlot', { count, max }),
-      });
+      syncTopbarList();
       mountSection.refs.setBadge(
         t('settings.str.mountBadge', { count: draftTopbarSlots.length })
       );
@@ -34513,6 +35482,45 @@ const SettingsStructureTab = defineComponent({
       hidden: true,
       text: t('settings.str.hoverEmptyHint'),
     });
+    const syncHoverMetricListProps = () =>
+      hoverMetricsList.refs.setProps({
+        items: getEffectiveHoverMetrics(),
+        options: getOverviewMetricOptions(),
+        dimmedFromIndex: getEffectiveHoverMetricStyle() === 'large' ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+        dimmedTagText: t('settings.str.metricOverflowTag'),
+        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
+      });
+    const syncOverviewMetricListProps = () =>
+      overviewMetricsList.refs.setProps({
+        items: draftOverviewMetrics,
+        options: getOverviewMetricOptions(),
+        dimmedFromIndex: draftOverviewMetricStyle === 'large' ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+        dimmedTagText: t('settings.str.metricOverflowTag'),
+        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
+      });
+    const commitHoverMetricsOrder = (nextMetrics) => {
+      const normalized = normalizeClientHoverMetrics(nextMetrics);
+      if (draftHoverSyncOverview) {
+        draftOverviewMetrics = normalized;
+        syncOverviewSectionMeta();
+        syncHoverSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(hoverSection, { overviewMetrics: draftOverviewMetrics });
+      } else {
+        draftHoverMetrics = normalized;
+        syncHoverSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(hoverSection, { hoverMetrics: draftHoverMetrics });
+      }
+    };
+    const commitOverviewMetricsOrder = (nextMetrics) => {
+      draftOverviewMetrics = normalizeClientOverviewMetrics(nextMetrics);
+      syncOverviewSectionMeta();
+      if (draftHoverSyncOverview) syncHoverSectionMeta();
+      props.onLayoutChange?.();
+      void persistStructurePatch(overviewSection, { overviewMetrics: draftOverviewMetrics });
+    };
+
     const hoverPreviewHost = createDynamicWidgetHost({
       containerEl: hoverWidgetsContainerEl,
       mode: 'hover',
@@ -34524,6 +35532,29 @@ const SettingsStructureTab = defineComponent({
           { settings: { contextAgentMode: draftContextAgentMode } },
           'auto'
         ),
+      onPreviewModules: (previewModules) => {
+        draftHoverModules = normalizeClientHoverModules(previewModules);
+        patchAttr(hoverMetricsInactiveHintEl, 'hidden', draftHoverModules.includes('metrics'));
+        hoverModulesList.refs.setProps({ items: draftHoverModules });
+      },
+      onReorderModules: (nextModules) => {
+        draftHoverModules = normalizeClientHoverModules(nextModules);
+        syncHoverSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(hoverSection, { hoverModules: draftHoverModules });
+      },
+      onPreviewMetrics: (previewMetrics) => {
+        const normalized = normalizeClientHoverMetrics(previewMetrics);
+        if (draftHoverSyncOverview) {
+          draftOverviewMetrics = normalized;
+          syncOverviewMetricListProps();
+          refreshOverviewPreview();
+        } else {
+          draftHoverMetrics = normalized;
+        }
+        syncHoverMetricListProps();
+      },
+      onReorderMetrics: commitHoverMetricsOrder,
     });
     const hoverPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       hoverPreviewTipEl,
@@ -34640,25 +35671,7 @@ const SettingsStructureTab = defineComponent({
         }
         refreshHoverPreview();
       },
-      onChange: (nextItems) => {
-        const normalized = normalizeClientHoverMetrics(nextItems);
-        if (draftHoverSyncOverview) {
-          draftOverviewMetrics = normalized;
-          syncOverviewSectionMeta();
-          syncHoverSectionMeta();
-          props.onLayoutChange?.();
-          void persistStructurePatch(hoverSection, {
-            overviewMetrics: draftOverviewMetrics,
-          });
-        } else {
-          draftHoverMetrics = normalized;
-          syncHoverSectionMeta();
-          props.onLayoutChange?.();
-          void persistStructurePatch(hoverSection, {
-            hoverMetrics: draftHoverMetrics,
-          });
-        }
-      },
+      onChange: commitHoverMetricsOrder,
     });
 
     const hoverModulesList = EditableSlotList({
@@ -34742,8 +35755,6 @@ const SettingsStructureTab = defineComponent({
 
     function syncHoverSectionMeta() {
       const effectiveStyle = getEffectiveHoverMetricStyle();
-      const effectiveMetrics = getEffectiveHoverMetrics();
-      const isLarge = effectiveStyle === 'large';
       const metricsEnabled = draftHoverModules.includes('metrics');
 
       hoverMetricStyleSwitch.setProps({
@@ -34758,13 +35769,7 @@ const SettingsStructureTab = defineComponent({
       patchText(hoverSyncOverviewHintEl, t('settings.str.hoverSyncOverviewHint'));
       patchAttr(hoverMetricsInactiveHintEl, 'hidden', metricsEnabled);
       patchText(hoverMetricsInactiveHintEl, t('settings.str.hoverMetricsInactiveHint'));
-      hoverMetricsList.refs.setProps({
-        items: effectiveMetrics,
-        options: getOverviewMetricOptions(),
-        dimmedFromIndex: isLarge ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
-        dimmedTagText: t('settings.str.metricOverflowTag'),
-        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
-      });
+      syncHoverMetricListProps();
       hoverModulesList.refs.setProps({
         items: draftHoverModules,
         options: getOverviewModuleOptions(),
@@ -34793,6 +35798,26 @@ const SettingsStructureTab = defineComponent({
       preview: true,
       isVisibleFn: () => isStructureVisible() && activeThirdTab === 'overview',
       initialModuleKeys: [],
+      onPreviewModules: (previewModules) => {
+        draftOverviewModules = normalizeClientOverviewModules(previewModules);
+        patchAttr(overviewMetricsHintEl, 'hidden', draftOverviewModules.includes('metrics'));
+        overviewModulesList.refs.setProps({ items: draftOverviewModules });
+      },
+      onReorderModules: (nextModules) => {
+        draftOverviewModules = normalizeClientOverviewModules(nextModules);
+        syncOverviewSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(overviewSection, { overviewModules: draftOverviewModules });
+      },
+      onPreviewMetrics: (previewMetrics) => {
+        draftOverviewMetrics = normalizeClientOverviewMetrics(previewMetrics);
+        syncOverviewMetricListProps();
+        if (draftHoverSyncOverview) {
+          syncHoverMetricListProps();
+          refreshHoverPreview();
+        }
+      },
+      onReorderMetrics: commitOverviewMetricsOrder,
     });
     const overviewPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       overviewPreviewContainerEl,
@@ -34872,17 +35897,7 @@ const SettingsStructureTab = defineComponent({
           refreshHoverPreview();
         }
       },
-      onChange: (nextItems) => {
-        draftOverviewMetrics = normalizeClientOverviewMetrics(nextItems);
-        syncOverviewSectionMeta();
-        if (draftHoverSyncOverview) {
-          syncHoverSectionMeta();
-        }
-        props.onLayoutChange?.();
-        void persistStructurePatch(overviewSection, {
-          overviewMetrics: draftOverviewMetrics,
-        });
-      },
+      onChange: commitOverviewMetricsOrder,
     });
 
     const overviewSection = CollapsibleSection({
@@ -34949,13 +35964,7 @@ const SettingsStructureTab = defineComponent({
         options: getOverviewModuleOptions(),
         addBtnTextFn: (count, max) => t('settings.str.addOverviewModule', { count, max }),
       });
-      overviewMetricsList.refs.setProps({
-        items: draftOverviewMetrics,
-        options: getOverviewMetricOptions(),
-        dimmedFromIndex: isLarge ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
-        dimmedTagText: t('settings.str.metricOverflowTag'),
-        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
-      });
+      syncOverviewMetricListProps();
       const metricsModuleActive = draftOverviewModules.includes('metrics');
       patchAttr(overviewMetricsHintEl, 'hidden', metricsModuleActive);
       const visibleMetricCount = isLarge
@@ -34979,6 +35988,16 @@ const SettingsStructureTab = defineComponent({
     const stepTablePreview = StepTableWidget({
       standalone: true,
       interactiveBadges: false,
+      onPreviewColumns: (previewCols) => {
+        draftStepColumns = normalizeClientStepColumns(previewCols);
+        stepColumnsList.refs.setProps({ items: draftStepColumns });
+      },
+      onReorderColumns: (nextCols) => {
+        draftStepColumns = normalizeClientStepColumns(nextCols);
+        syncStepsSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(stepsSection, { stepTableColumns: draftStepColumns });
+      },
     });
     const stepsPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       stepTablePreview.el,

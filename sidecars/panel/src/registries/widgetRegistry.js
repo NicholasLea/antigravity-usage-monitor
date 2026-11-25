@@ -6,6 +6,14 @@
  */
 
 import { OVERVIEW_MODULE_KEYS } from '../../shared/settings-normalization.mjs';
+import {
+  areSlotListsEqual,
+  createDropSettleAnimator,
+  isInteractiveDragTarget,
+  patchAttr,
+  patchClasses,
+  startLinearDragReorder,
+} from '../core/domPatch.js';
 import { ContextWindowWidget } from '../components/widgets/ContextWindowWidget.js';
 import { LiveActivityWidget } from '../components/widgets/LiveActivityWidget.js';
 import { MetricMatrixWidget } from '../components/widgets/MetricMatrixWidget.js';
@@ -18,8 +26,26 @@ export const OVERVIEW_WIDGET_REGISTRY = Object.freeze({
   metrics: {
     key: 'metrics',
     labelKey: 'module.metrics',
-    create: ({ mode, isVisibleFn, preview, getCtxAgentId }) =>
-      MetricMatrixWidget({ mode, isVisibleFn, preview, getCtxAgentId }),
+    create: ({
+      mode,
+      isVisibleFn,
+      preview,
+      getCtxAgentId,
+      onPreviewMetrics,
+      onReorderMetrics,
+      onRequestVerticalDrag,
+      canDragParentModule,
+    }) =>
+      MetricMatrixWidget({
+        mode,
+        isVisibleFn,
+        preview,
+        getCtxAgentId,
+        onPreviewMetrics,
+        onReorderMetrics,
+        onRequestVerticalDrag,
+        canDragParentModule,
+      }),
   },
   context: {
     key: 'context',
@@ -80,11 +106,23 @@ export function createDynamicWidgetHost({
   initialModuleKeys = [],
   getCtxAgentId: customGetCtxAgentId = undefined,
   setCtxAgentId: customSetCtxAgentId = undefined,
+  onPreviewModules = undefined,
+  onReorderModules = undefined,
+  onPreviewMetrics = undefined,
+  onReorderMetrics = undefined,
 }) {
   const instances = new Map();
+  const modulePointerCleanups = new Map();
   let currentKeys = [];
   let previewCtxAgentId = 'main';
   let latestUpdatePayload = null;
+  let pendingUpdateArgs = null;
+  let activeModuleDrag = null;
+  const settleAnimator = createDropSettleAnimator('is-module-settling', ' scale(1.012)');
+
+  const hasModuleReorder =
+    typeof onReorderModules === 'function' || typeof onPreviewModules === 'function';
+  const canDragParentModule = () => hasModuleReorder && currentKeys.length > 1;
 
   const getCtxAgentId =
     typeof customGetCtxAgentId === 'function'
@@ -106,6 +144,127 @@ export function createDynamicWidgetHost({
           }
         : undefined;
 
+  function resetModuleDragVisuals() {
+    patchClasses(containerEl, { 'is-dragging-modules': false });
+    for (const inst of instances.values()) {
+      const el = inst?.el;
+      if (!el) continue;
+      patchClasses(el, { 'is-module-dragging': false, 'is-module-drag-sibling': false });
+      if (el.style) {
+        el.style.transition = '';
+        el.style.transform = '';
+      }
+    }
+  }
+
+  function syncModuleDragAffordances(validKeys) {
+    if (!hasModuleReorder) return;
+    const canDrag = validKeys.length > 1;
+    patchClasses(containerEl, { 'is-modules-reorderable': canDrag });
+    const moduleHint = canDrag ? t('settings.str.moduleDragHint') : null;
+    for (const key of validKeys) {
+      const el = instances.get(key)?.el;
+      if (!el) continue;
+      patchAttr(el, 'data-module-key', key);
+      patchClasses(el, { 'is-reorderable-module': canDrag });
+      patchAttr(el, 'title', key !== 'metrics' ? moduleHint : null);
+    }
+  }
+
+  function teardownActiveModuleDrag({ revert = false, flushPending = true } = {}) {
+    if (!activeModuleDrag) return;
+    const { startKeys, getWorkingKeys, session } = activeModuleDrag;
+    const moved = session.isMoved();
+    activeModuleDrag = null;
+    session.cancel(true);
+    resetModuleDragVisuals();
+    if (revert && moved && !areSlotListsEqual(startKeys, getWorkingKeys())) {
+      onPreviewModules?.([...startKeys]);
+    }
+    if (flushPending && pendingUpdateArgs) {
+      const queued = pendingUpdateArgs;
+      pendingUpdateArgs = null;
+      applyUpdateArgs(queued);
+    }
+  }
+
+  function startModuleDrag(e, startKey, { immediate = false, clientX = null, clientY = null } = {}) {
+    if (!hasModuleReorder || (e && e.button != null && e.button !== 0)) return false;
+    const startIdx = currentKeys.indexOf(startKey);
+    if (startIdx < 0 || currentKeys.length <= 1) return false;
+    if (activeModuleDrag) teardownActiveModuleDrag({ revert: false, flushPending: true });
+    settleAnimator.clear();
+
+    const startKeys = [...currentKeys];
+    const count = startKeys.length;
+    const moduleEls = startKeys.map((k) => instances.get(k)?.el || null);
+    if (moduleEls.some((el) => !el)) return false;
+
+    const session = startLinearDragReorder(e, {
+      axis: 'y',
+      items: startKeys,
+      startIdx,
+      itemEls: moduleEls,
+      containerEl,
+      fallbackSize: 96,
+      fallbackGap: 8,
+      threshold: 4,
+      immediate,
+      initialClientX: clientX,
+      initialClientY: clientY,
+      autoScroll: true,
+      edgeZone: 38,
+      rubberBandMax: 24,
+      crossMax: 12,
+      crossRatio: 0.16,
+      dragScale: ' scale(1.012)',
+      onStart: () => {
+        patchClasses(containerEl, { 'is-dragging-modules': true });
+        for (let k = 0; k < count; k += 1) {
+          patchClasses(moduleEls[k], { 'is-module-dragging': k === startIdx, 'is-module-drag-sibling': k !== startIdx });
+        }
+      },
+      onPreview: (working) => onPreviewModules?.(working),
+      onCancel: () => teardownActiveModuleDrag({ revert: true, flushPending: true }),
+      onFinish: ({ moved, changed, finalItems, residualX, residualY }) => {
+        teardownActiveModuleDrag({ revert: false, flushPending: !changed });
+        if (changed) {
+          pendingUpdateArgs = null;
+          syncModules(finalItems);
+          onReorderModules?.([...finalItems]);
+        }
+        const landedEl = instances.get(startKey)?.el;
+        if (moved && landedEl) {
+          settleAnimator.trigger(landedEl, residualX, residualY);
+        }
+      },
+    });
+
+    activeModuleDrag = { startKeys, getWorkingKeys: session.getWorkingItems, session };
+    return true;
+  }
+
+  function detachModulePointer(key) {
+    const cleanup = modulePointerCleanups.get(key);
+    if (cleanup) {
+      cleanup();
+      modulePointerCleanups.delete(key);
+    }
+  }
+
+  function attachModulePointer(key, moduleEl) {
+    if (!hasModuleReorder || !moduleEl) return;
+    detachModulePointer(key);
+    const onPointerDown = (e) => {
+      if (currentKeys.length <= 1 || (e && e.button != null && e.button !== 0)) return;
+      if (isInteractiveDragTarget(e?.target, moduleEl)) return;
+      e?.preventDefault?.();
+      startModuleDrag(e, key);
+    };
+    moduleEl.addEventListener?.('pointerdown', onPointerDown);
+    modulePointerCleanups.set(key, () => moduleEl.removeEventListener?.('pointerdown', onPointerDown));
+  }
+
   function syncModules(nextKeys) {
     const validKeys = [];
     const seen = new Set();
@@ -119,6 +278,7 @@ export function createDynamicWidgetHost({
     // Remove and destroy widgets no longer present
     for (const [existingKey, inst] of [...instances.entries()]) {
       if (!seen.has(existingKey)) {
+        detachModulePointer(existingKey);
         try {
           inst.el?.remove?.();
         } catch {}
@@ -138,8 +298,20 @@ export function createDynamicWidgetHost({
           isVisibleFn,
           getCtxAgentId,
           setCtxAgentId,
+          onPreviewMetrics,
+          onReorderMetrics,
+          onRequestVerticalDrag: hasModuleReorder
+            ? (downEv, cx, cy) =>
+                startModuleDrag(downEv, 'metrics', {
+                  immediate: true,
+                  clientX: cx,
+                  clientY: cy,
+                })
+            : undefined,
+          canDragParentModule,
         });
         instances.set(key, inst);
+        attachModulePointer(key, inst.el);
       }
     }
 
@@ -164,16 +336,25 @@ export function createDynamicWidgetHost({
       currentKeys = [...validKeys];
     }
 
+    syncModuleDragAffordances(validKeys);
     return validKeys;
   }
 
-  function update({ moduleKeys = [], data = null, minuteTick = undefined } = {}) {
+  function applyUpdateArgs({ moduleKeys = [], data = null, minuteTick = undefined } = {}) {
     latestUpdatePayload = { data, minuteTick };
     const validKeys = syncModules(moduleKeys);
     for (const key of validKeys) {
       const inst = instances.get(key);
       inst?.refs?.update?.({ data, minuteTick });
     }
+  }
+
+  function update(args = {}) {
+    if (activeModuleDrag) {
+      pendingUpdateArgs = args;
+      return;
+    }
+    applyUpdateArgs(args);
   }
 
   function pauseTickers() {
@@ -193,6 +374,11 @@ export function createDynamicWidgetHost({
   }
 
   function destroy() {
+    teardownActiveModuleDrag({ revert: false, flushPending: false });
+    settleAnimator.clear();
+    for (const key of [...modulePointerCleanups.keys()]) {
+      detachModulePointer(key);
+    }
     for (const inst of instances.values()) {
       try {
         inst.el?.remove?.();
