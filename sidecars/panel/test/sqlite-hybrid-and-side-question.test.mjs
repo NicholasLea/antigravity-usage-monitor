@@ -8,9 +8,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   computeSqliteWalSig,
+  isSqliteDbReadyForRead,
   readLocalImageDimensionsFromUri,
   readLocalSqliteTrajectory,
+  withReadOnlySqliteDb,
 } from '../backend/cli-sqlite-reader.mjs';
+import {
+  readTranscriptJsonlLines,
+  resolveTranscriptPathInLogsDir,
+} from '../backend/transcript-fallback.mjs';
+import { resolveCliLocalSessionMetrics } from '../cli-statusline.mjs';
 import { extractModelSteps } from '../trajectory-metrics.mjs';
 import { backendHarness } from './backend-harness.mjs';
 import { i18nStore } from '../src/i18n/index.js';
@@ -1090,4 +1097,438 @@ test('readLocalImageDimensionsFromUri and readLocalSqliteTrajectory decode PNG/J
   assert.equal(modelSteps[0].outputTokens, 1680);
   assert.equal(modelSteps[0].ttftSec, null);
   assert.ok(Math.abs(modelSteps[0].totalDurationSec - 62.785) < 0.01);
+});
+
+test('SQLite header readiness guard skips 0-byte, pre-DDL, 32-byte WAL-header-only, and active rollback-journal DBs without acquiring locks', (t) => {
+  const sqliteMod =
+    typeof process.getBuiltinModule === 'function' ? process.getBuiltinModule('node:sqlite') : null;
+  if (!sqliteMod?.DatabaseSync) {
+    t.skip('node:sqlite DatabaseSync unavailable');
+    return;
+  }
+  const { DatabaseSync } = sqliteMod;
+  const tempRoot = mkdtempSync(join(tmpdir(), 'agy-sqlite-init-guard-'));
+  t.after(() => rmSync(tempRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+
+  // 1. Fresh 0-byte DB (just opened by host, before WAL switch or DDL)
+  const zeroDbPath = join(tempRoot, 'zero.db');
+  const writerZero = new DatabaseSync(zeroDbPath);
+  try {
+    let readerCalled = false;
+    assert.equal(isSqliteDbReadyForRead(zeroDbPath), false);
+    assert.equal(computeSqliteWalSig(zeroDbPath).exists, true);
+    const res = withReadOnlySqliteDb(zeroDbPath, () => {
+      readerCalled = true;
+      return 'unexpected';
+    });
+    assert.equal(res, null);
+    assert.equal(readerCalled, false);
+
+    // Host immediately runs page_size + WAL + schema init without hitting SQLITE_BUSY
+    writerZero.exec(`
+      PRAGMA page_size = 32768;
+      PRAGMA journal_mode = WAL;
+      CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER);
+      INSERT INTO steps VALUES (0, 14);
+    `);
+
+    // Open uncheckpointed WAL DB (pages=1 in main file, committed frames in .db-wal) IS ready
+    assert.equal(isSqliteDbReadyForRead(zeroDbPath), true);
+    const rowCnt = withReadOnlySqliteDb(zeroDbPath, (db) =>
+      db.prepare('SELECT count(*) AS c FROM steps').get()
+    );
+    assert.equal(rowCnt?.c, 1);
+  } finally {
+    writerZero.close();
+  }
+
+  // After close (WAL checkpointed & removed, pages >= 2 & schemaCookie > 0 in main file), still ready
+  assert.equal(isSqliteDbReadyForRead(zeroDbPath), true);
+
+  // 2. 1-page WAL header before any DDL is committed (walSize=0 or 32B WAL header only)
+  const preDdlWalPath = join(tempRoot, 'pre-ddl-wal.db');
+  const writerPreDdl = new DatabaseSync(preDdlWalPath);
+  try {
+    writerPreDdl.exec('PRAGMA page_size = 32768; PRAGMA journal_mode = WAL;');
+    assert.equal(isSqliteDbReadyForRead(preDdlWalPath), false);
+    assert.equal(isSqliteDbReadyForRead(preDdlWalPath, { walStat: { size: 32 } }), false);
+    assert.equal(withReadOnlySqliteDb(preDdlWalPath, () => 1), null);
+  } finally {
+    writerPreDdl.close();
+  }
+
+  // 3. Active rollback-journal DDL transaction (non-empty <db>-journal before WAL switch)
+  const rollbackDbPath = join(tempRoot, 'rollback-init.db');
+  const writerRollback = new DatabaseSync(rollbackDbPath);
+  try {
+    writerRollback.exec('CREATE TABLE t_seed (x INT);');
+    writerRollback.exec('BEGIN IMMEDIATE; CREATE TABLE steps (idx INT); INSERT INTO steps VALUES (1);');
+    assert.equal(isSqliteDbReadyForRead(rollbackDbPath), false);
+    assert.equal(withReadOnlySqliteDb(rollbackDbPath, () => 1), null);
+
+    // Writer commits and switches to WAL cleanly without lock contention
+    writerRollback.exec('COMMIT; PRAGMA journal_mode = WAL;');
+    assert.equal(isSqliteDbReadyForRead(rollbackDbPath), true);
+    const rbCnt = withReadOnlySqliteDb(rollbackDbPath, (db) =>
+      db.prepare('SELECT count(*) AS c FROM steps').get()
+    );
+    assert.equal(rbCnt?.c, 1);
+  } finally {
+    writerRollback.close();
+  }
+
+  // 4. Oversized transcript_full.jsonl is safely rejected by size guard
+  const logsDir = join(tempRoot, 'oversize-logs');
+  mkdirSync(logsDir, { recursive: true });
+  const fullPath = join(logsDir, 'transcript_full.jsonl');
+  writeFileSync(fullPath, '{"step_index":0,"input_tokens":10,"output_tokens":5}\n', 'utf8');
+  assert.equal(resolveTranscriptPathInLogsDir(logsDir, { maxFullBytes: 1024 }), fullPath);
+  assert.equal(resolveTranscriptPathInLogsDir(logsDir, { maxFullBytes: 16 }), '');
+  assert.deepEqual(readTranscriptJsonlLines(fullPath, { maxBytes: 16 }), []);
+});
+
+test('Empty-shell .db + encrypted .pb fallback recovers CLI conversation steps, subagents, and live updates from transcript.jsonl even when present in conversation_summaries.db', async (t) => {
+  const sqliteMod =
+    typeof process.getBuiltinModule === 'function' ? process.getBuiltinModule('node:sqlite') : null;
+  if (!sqliteMod?.DatabaseSync) {
+    t.skip('node:sqlite DatabaseSync unavailable');
+    return;
+  }
+  const { DatabaseSync } = sqliteMod;
+  const tempRoot = mkdtempSync(join(tmpdir(), 'agy-pb-fallback-'));
+  t.after(() => rmSync(tempRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+
+  const p3Cid = '73384c09-50e3-4434-9b39-f8336aee5909';
+  const childCid = '1d0dfb7b-2a04-47b6-bcaf-1eb76aa34e34';
+  const orphanPbCid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const normalOlderCid = 'bbbbbbbb-1111-4222-8333-cccccccccccc';
+
+  const rpcCalls = [];
+  const mockLsServer = http.createServer((req, res) => {
+    let rawBody = '';
+    req.on('data', (chunk) => {
+      rawBody += chunk;
+    });
+    req.on('end', () => {
+      const method = req.url.split('/').pop();
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      rpcCalls.push({ method, cascadeId: body.cascadeId || '' });
+
+      res.setHeader('Content-Type', 'application/json');
+      if (method === 'GetUserStatus') {
+        res.end(JSON.stringify({ userStatus: { email: 'dev@example.com' } }));
+        return;
+      }
+      if (method === 'RetrieveUserQuotaSummary') {
+        res.end(JSON.stringify({ response: { groups: [] } }));
+        return;
+      }
+      if (method === 'GetAvailableModels') {
+        res.end(JSON.stringify({ response: { models: {} } }));
+        return;
+      }
+      if (method === 'GetCascadeTrajectory') {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ code: 'not_found', message: 'conversation not found in desktop LS' }));
+        return;
+      }
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: `unexpected RPC ${method}` }));
+    });
+  });
+
+  await new Promise((resolve) => mockLsServer.listen(0, '127.0.0.1', resolve));
+  const lsPort = mockLsServer.address().port;
+  t.after(() => mockLsServer.close());
+
+  const geminiDir = join(tempRoot, '.gemini');
+  const cliDir = join(geminiDir, 'antigravity-cli');
+  const cliConvDir = join(cliDir, 'conversations');
+  const dataDir = join(geminiDir, 'antigravity', 'sidecar_data', 'usage-monitor', 'panel', 'data');
+  mkdirSync(cliConvDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true });
+
+  // 1. Create CLI conversation_summaries.db with P3 (step_count=35, empty title), child subagent, and an unreadable .pb-only session
+  const sumDb = new DatabaseSync(join(cliDir, 'conversation_summaries.db'));
+  sumDb.exec(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE conversation_summaries (
+      conversation_id TEXT PRIMARY KEY,
+      title TEXT,
+      preview TEXT,
+      status TEXT,
+      source TEXT,
+      parent_conversation_id TEXT,
+      nesting_depth INTEGER,
+      agent_name TEXT,
+      not_fully_idle INTEGER,
+      killed INTEGER,
+      step_count INTEGER,
+      last_modified_time TEXT,
+      app_data_dir TEXT,
+      raw_summary BLOB
+    );
+  `);
+  const insSum = sumDb.prepare(`
+    INSERT INTO conversation_summaries (
+      conversation_id, title, preview, status, source, parent_conversation_id,
+      nesting_depth, agent_name, not_fully_idle, killed, step_count, last_modified_time, app_data_dir
+    ) VALUES (?, ?, '', 'CASCADE_RUN_STATUS_IDLE', 'CORTEX_TRAJECTORY_SOURCE_CLI', ?, ?, '', 0, 0, ?, ?, 'antigravity-cli')
+  `);
+  insSum.run(p3Cid, '', '', 0, 35, '2026-11-24 15:09:34.2531675+00:00');
+  insSum.run(childCid, '', p3Cid, 1, 4, '2026-11-24 15:05:00.0000000+00:00');
+  insSum.run(orphanPbCid, 'Legacy Encrypted Only', '', 0, 20, '2026-11-24 14:00:00.0000000+00:00');
+  sumDb.close();
+
+  // 2. Create empty-shell .db (steps=0, gen_metadata=0) + encrypted .pb for P3 and orphanPbCid
+  for (const emptyCid of [p3Cid, orphanPbCid]) {
+    const emptyDbPath = join(cliConvDir, `${emptyCid}.db`);
+    const emptyDb = new DatabaseSync(emptyDbPath);
+    emptyDb.exec(`
+      PRAGMA page_size = 32768;
+      PRAGMA journal_mode = WAL;
+      CREATE TABLE trajectory_meta (trajectory_id TEXT PRIMARY KEY, cascade_id TEXT, trajectory_type INTEGER, source INTEGER);
+      CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);
+      CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+      CREATE TABLE trajectory_metadata_blob (id TEXT PRIMARY KEY, data BLOB);
+      PRAGMA user_version = 1;
+    `);
+    emptyDb.prepare('INSERT INTO trajectory_meta VALUES (?, ?, 0, 0)').run(emptyCid, emptyCid);
+    emptyDb.prepare("INSERT INTO trajectory_metadata_blob VALUES ('main', X'')").run();
+    emptyDb.close();
+  }
+
+  const p3PbPath = join(cliConvDir, `${p3Cid}.pb`);
+  const orphanPbPath = join(cliConvDir, `${orphanPbCid}.pb`);
+  writeFileSync(p3PbPath, Buffer.alloc(4096, 0xa5));
+  writeFileSync(orphanPbPath, Buffer.alloc(2048, 0x5a));
+
+  // Older normal SQLite session to ensure cli-statusline prefers newer .pb session mtime
+  const olderDbPath = join(cliConvDir, `${normalOlderCid}.db`);
+  const olderDb = new DatabaseSync(olderDbPath);
+  olderDb.exec(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);
+    CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+  `);
+  olderDb
+    .prepare('INSERT INTO steps (idx, step_type, status, metadata) VALUES (0, 15, 3, ?)')
+    .run(
+      encodeStepMeta({
+        createdSec: 1795520000,
+        finishedSec: 1795520002,
+        stepIndex: 0,
+        originCascadeId: normalOlderCid,
+        modelEnumInt: 1429,
+        inputTokens: 500,
+        outputTokens: 50,
+      })
+    );
+  olderDb.close();
+  utimesSync(olderDbPath, 1795520002, 1795520002);
+  utimesSync(join(cliConvDir, `${orphanPbCid}.db`), 1795528800, 1795528800);
+  utimesSync(orphanPbPath, 1795528800, 1795528800);
+  utimesSync(join(cliConvDir, `${p3Cid}.db`), 1795532499, 1795532499);
+  utimesSync(p3PbPath, 1795532974, 1795532974);
+
+  // 3. Write P3 and child subagent transcript.jsonl files
+  const p3LogDir = join(cliDir, 'brain', p3Cid, '.system_generated', 'logs');
+  const childLogDir = join(cliDir, 'brain', childCid, '.system_generated', 'logs');
+  mkdirSync(p3LogDir, { recursive: true });
+  mkdirSync(childLogDir, { recursive: true });
+
+  const p3TranscriptPath = join(p3LogDir, 'transcript.jsonl');
+  const p3Lines = [
+    JSON.stringify({
+      step_index: 0,
+      source: 'USER_EXPLICIT',
+      type: 'USER_INPUT',
+      status: 'DONE',
+      created_at: '2026-11-24T15:01:39Z',
+      content: '<USER_REQUEST>\nPolyglot P3 八道题离线求解\n</USER_REQUEST>',
+    }),
+    JSON.stringify({
+      step_index: 1,
+      source: 'MODEL',
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: '2026-11-24T15:01:39Z',
+      model: 'gemini-4-neon-xhigh',
+      input_tokens: 16431,
+      cache_read_tokens: 0,
+      output_tokens: 2476,
+      tool_calls: [
+        {
+          id: 'call_sub_1',
+          name: 'invoke_subagent',
+          args: { Role: '"Polyglot Verifier"', TypeName: '"research"' },
+        },
+      ],
+    }),
+    JSON.stringify({
+      step_index: 2,
+      source: 'MODEL',
+      type: 'GENERIC',
+      status: 'DONE',
+      tool_call_id: 'call_sub_1',
+      created_at: '2026-11-24T15:02:00Z',
+      content: `Created the following subagent:\n{\n  "conversationId": "${childCid}"\n}`,
+    }),
+    JSON.stringify({
+      step_index: 34,
+      source: 'MODEL',
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: '2026-11-24T15:02:05Z',
+      model: 'gemini-4-neon-xhigh',
+      input_tokens: 10611,
+      cache_read_tokens: 16432,
+      output_tokens: 54193,
+      content: '已完成全部 8 道题。',
+    }),
+  ];
+  writeFileSync(p3TranscriptPath, p3Lines.join('\n'), 'utf8');
+
+  writeFileSync(
+    join(childLogDir, 'transcript.jsonl'),
+    [
+      JSON.stringify({
+        step_index: 0,
+        source: 'SYSTEM',
+        type: 'SYSTEM_MESSAGE',
+        status: 'DONE',
+        created_at: '2026-11-24T15:02:01Z',
+        content: 'Verify edge cases for poker and sgf-parsing.',
+      }),
+      JSON.stringify({
+        step_index: 1,
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: '2026-11-24T15:02:03Z',
+        model: 'gemini-4-neon-xhigh',
+        input_tokens: 4000,
+        cache_read_tokens: 0,
+        output_tokens: 500,
+        content: 'Verified.',
+      }),
+    ].join('\n'),
+    'utf8'
+  );
+
+  // Verify cli-statusline picks P3 (via .pb mtime) and recovers metrics from transcript.jsonl
+  const prevDataDirEnv = process.env.USAGE_MONITOR_DATA_DIR;
+  process.env.USAGE_MONITOR_DATA_DIR = dataDir;
+  try {
+    const cliMetrics = resolveCliLocalSessionMetrics({
+      cliRoot: cliDir,
+      stdinData: null,
+      nowMs: Date.parse('2026-11-24T15:10:00Z'),
+    });
+    assert.equal(cliMetrics.found, true);
+    assert.equal(cliMetrics.cascadeId, p3Cid);
+    assert.equal(cliMetrics.stepCount, 2);
+    assert.equal(cliMetrics.sessionTokens, 16431 + 2476 + 10611 + 16432 + 54193);
+    assert.ok(cliMetrics.sessionCost > 0.9, `expected priced Neon cost, got ${cliMetrics.sessionCost}`);
+    assert.match(cliMetrics.latestModelHint, /Neon/i);
+  } finally {
+    if (prevDataDirEnv === undefined) delete process.env.USAGE_MONITOR_DATA_DIR;
+    else process.env.USAGE_MONITOR_DATA_DIR = prevDataDirEnv;
+  }
+
+  // Verify panel telemetry-builder recovers P3 + subagent, preserves contextGroupsTelemetry=3, avoids steady-state RPC spam, and picks up live transcript growth
+  const execFileAsync = promisify(execFile);
+  const builderUrl = new URL('../backend/telemetry-builder.mjs', import.meta.url).href;
+  const configUrl = new URL('../backend/config.mjs', import.meta.url).href;
+  const script = `
+    import { appendFileSync, utimesSync } from 'node:fs';
+    import { buildTelemetryPayload } from ${JSON.stringify(builderUrl)};
+    import { getCachedTrajectory } from ${JSON.stringify(configUrl)};
+
+    const p1 = await buildTelemetryPayload(${JSON.stringify(p3Cid)}, false, { range: 'all' });
+    const cachedP3 = getCachedTrajectory(${JSON.stringify(p3Cid)});
+    const p2 = await buildTelemetryPayload(${JSON.stringify(p3Cid)}, false, { range: 'all' });
+
+    // Append a new step to P3 transcript.jsonl + touch .pb while empty .db remains untouched
+    appendFileSync(
+      ${JSON.stringify(p3TranscriptPath)},
+      '\\n' + JSON.stringify({
+        step_index: 35,
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: '2026-11-24T15:09:40Z',
+        model: 'gemini-4-neon-xhigh',
+        input_tokens: 2000,
+        cache_read_tokens: 20000,
+        output_tokens: 1000,
+        content: '补充自检通过。',
+      }),
+      'utf8'
+    );
+    utimesSync(${JSON.stringify(p3PbPath)}, 1795532985, 1795532985);
+    const p3 = await buildTelemetryPayload(${JSON.stringify(p3Cid)}, false, { range: 'all' });
+
+    const convEntry1 = p1.conversations.find((c) => c.cascadeId === ${JSON.stringify(p3Cid)});
+    const orphanEntry = p1.conversations.find((c) => c.cascadeId === ${JSON.stringify(orphanPbCid)});
+    console.log(JSON.stringify({
+      title: p1.activeConversation?.title,
+      cachedCtxGrpVer: cachedP3?.contextGroupsTelemetry || 0,
+      mainSteps1: p1.activeConversation?.agents?.[0]?.stepCount,
+      subCount1: p1.activeConversation?.subagentCount,
+      subRole1: p1.activeConversation?.agents?.[1]?.role,
+      subSteps1: p1.activeConversation?.agents?.[1]?.stepCount,
+      listStepCount1: convEntry1?.stepCount,
+      listTotalStepCount1: convEntry1?.totalStepCount,
+      mainIn1: p1.activeConversation?.agents?.[0]?.inputTokens,
+      mainCache1: p1.activeConversation?.agents?.[0]?.cacheReadTokens,
+      mainOut1: p1.activeConversation?.agents?.[0]?.outputTokens,
+      orphanStepCount: orphanEntry?.stepCount,
+      mainSteps2: p2.activeConversation?.agents?.[0]?.stepCount,
+      mainSteps3: p3.activeConversation?.agents?.[0]?.stepCount,
+    }));
+  `;
+
+  const { stdout, stderr } = await execFileAsync(
+    process.execPath,
+    ['--input-type=module', '-e', script],
+    {
+      env: {
+        ...process.env,
+        ANTIGRAVITY_GEMINI_DIR: geminiDir,
+        ANTIGRAVITY_APP_DATA_DIR: '',
+        USAGE_MONITOR_APP_DATA_DIR: '',
+        ANTIGRAVITY_EXECUTABLE_DATA_DIR: dataDir,
+        ANTIGRAVITY_LS_ADDRESS: `127.0.0.1:${lsPort}`,
+        ANTIGRAVITY_LS_PLAIN_HTTP: '1',
+        ANTIGRAVITY_CSRF_TOKEN: 'test-csrf',
+      },
+    }
+  );
+
+  assert.equal(stderr.trim(), '', `expected no noisy stderr on expected CLI 404 fallback, got: ${stderr}`);
+  const res = JSON.parse(stdout.trim().split('\n').pop());
+  assert.equal(res.title, 'Polyglot P3 八道题离线求解');
+  assert.equal(res.cachedCtxGrpVer, 3, 'offline recovered entry keeps contextGroupsTelemetry=3');
+  assert.equal(res.mainSteps1, 2);
+  assert.equal(res.subCount1, 1);
+  assert.equal(res.subRole1, 'Polyglot Verifier');
+  assert.equal(res.subSteps1, 1);
+  assert.equal(res.listStepCount1, 2, 'root stepCount matches 2 recovered main model steps (not raw 35)');
+  assert.equal(res.listTotalStepCount1, 3, 'root totalStepCount matches 2 main + 1 subagent recovered model steps');
+  assert.equal(res.mainIn1, 16431 + 10611);
+  assert.equal(res.mainCache1, 16432);
+  assert.equal(res.mainOut1, 2476 + 54193);
+  assert.equal(res.orphanStepCount, 0, 'unreadable .pb without transcript normalizes stepCount to 0 instead of raw 20');
+  assert.equal(res.mainSteps2, 2);
+  assert.equal(res.mainSteps3, 3, 'growing transcript.jsonl + .pb advances signature even when empty .db is frozen');
+
+  const p3RpcCallsAfter2Polls = rpcCalls.filter(
+    (c) => c.method === 'GetCascadeTrajectory' && c.cascadeId === p3Cid
+  );
+  assert.equal(
+    p3RpcCallsAfter2Polls.length,
+    2,
+    'poll 1 and post-growth poll 3 attempted RPC once each; steady poll 2 hit cooldown without hammering LS'
+  );
 });

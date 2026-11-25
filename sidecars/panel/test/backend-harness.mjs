@@ -62,6 +62,7 @@ const BACKEND_MODULE_FILES = [
   '../backend/model-pricing.mjs',
   '../backend/quota-pools.mjs',
   '../backend/quota-reservation.mjs',
+  '../backend/transcript-fallback.mjs',
   '../backend/local-scanner.mjs',
   '../backend/usage-aggregator.mjs',
   '../backend/telemetry-builder.mjs',

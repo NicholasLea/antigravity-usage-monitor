@@ -38,6 +38,10 @@ import {
 } from './backend/cli-sqlite-reader.mjs';
 import { computeSqliteWalSig, withReadOnlySqliteDb } from './backend/sqlite-client.mjs';
 import {
+  buildTranscriptFallbackTrajectory,
+  resolveTranscriptPathInLogsDir,
+} from './backend/transcript-fallback.mjs';
+import {
   buildCliJsonStatusOutput,
   ensureCliStatusLineConfigured,
   formatCliStatusLineCapsule,
@@ -189,8 +193,13 @@ function findConversationIdByWorkspaceFts(cliRoot, cwd) {
   }
 }
 
+function resolveCliTranscriptPath(cliRoot, cid) {
+  if (!cliRoot || !cid) return '';
+  return resolveTranscriptPathInLogsDir(join(cliRoot, 'brain', cid, '.system_generated', 'logs'));
+}
+
 /**
- * 解析当前 CLI 窗口对应的本地 `.db` 会话轨迹并计算最新测速、延迟、缓存与成本指标。
+ * 解析当前 CLI 窗口对应的本地 `.db`（或降级 `.pb` + `transcript.jsonl`）会话轨迹并计算最新测速、延迟、缓存与成本指标。
  *
  * @param {{ cliRoot: string, stdinData?: object|null, nowMs?: number }} params
  */
@@ -234,35 +243,49 @@ export function resolveCliLocalSessionMetrics({
     '';
   if (!targetCid && effectiveCwd) {
     const ftsCid = findConversationIdByWorkspaceFts(cliRoot, effectiveCwd);
-    if (ftsCid && existsSync(join(convDir, `${ftsCid}.db`))) {
+    if (
+      ftsCid &&
+      (existsSync(join(convDir, `${ftsCid}.db`)) || existsSync(join(convDir, `${ftsCid}.pb`)))
+    ) {
       targetCid = ftsCid;
     }
   }
 
   let dbPath = targetCid ? join(convDir, `${targetCid}.db`) : '';
-  if (!dbPath || !existsSync(dbPath)) {
+  let pbPath = targetCid ? join(convDir, `${targetCid}.pb`) : '';
+  if (!targetCid || (!existsSync(dbPath) && !existsSync(pbPath))) {
     let candidates = [];
     try {
-      candidates = readdirSync(convDir)
-        .filter((name) => name.endsWith('.db'))
-        .map((name) => {
-          const cid = name.slice(0, -3).toLowerCase();
-          const full = join(convDir, name);
-          let mtimeMs = 0;
-          try {
-            mtimeMs = statSync(full).mtimeMs || 0;
-          } catch {
-            // 忽略单文件 stat 异常
-          }
+      const byCid = new Map();
+      for (const name of readdirSync(convDir)) {
+        const isDb = name.endsWith('.db');
+        const isPb = !isDb && name.endsWith('.pb');
+        if (!isDb && !isPb) continue;
+        const cid = name.slice(0, -3).toLowerCase();
+        const full = join(convDir, name);
+        let mtimeMs = 0;
+        try {
+          mtimeMs = statSync(full).mtimeMs || 0;
+        } catch {
+          // 忽略单文件 stat 异常
+        }
+        const existing = byCid.get(cid);
+        if (!existing) {
           const summary = summariesMap.get(cid);
-          return {
+          byCid.set(cid, {
             cid,
-            full,
+            dbFull: isDb ? full : '',
+            pbFull: isPb ? full : '',
             mtimeMs,
             isSubagent: Boolean(summary?.parentConversationId),
-          };
-        })
-        .sort((a, b) => b.mtimeMs - a.mtimeMs);
+          });
+        } else {
+          if (isDb) existing.dbFull = full;
+          if (isPb) existing.pbFull = full;
+          if (mtimeMs > existing.mtimeMs) existing.mtimeMs = mtimeMs;
+        }
+      }
+      candidates = Array.from(byCid.values()).sort((a, b) => b.mtimeMs - a.mtimeMs);
     } catch {
       candidates = [];
     }
@@ -270,11 +293,14 @@ export function resolveCliLocalSessionMetrics({
     const picked = candidates.find((c) => !c.isSubagent) || candidates[0];
     if (picked) {
       targetCid = picked.cid;
-      dbPath = picked.full;
+      dbPath = picked.dbFull || join(convDir, `${picked.cid}.db`);
+      pbPath = picked.pbFull || join(convDir, `${picked.cid}.pb`);
     }
   }
 
-  if (!dbPath || !existsSync(dbPath)) {
+  const hasDbFile = Boolean(dbPath && existsSync(dbPath));
+  const hasPbFile = Boolean(pbPath && existsSync(pbPath));
+  if (!hasDbFile && !hasPbFile) {
     return {
       found: false,
       runningRootCount,
@@ -282,23 +308,69 @@ export function resolveCliLocalSessionMetrics({
     };
   }
 
-  const parentLink = readLocalSqliteParentLink(dbPath);
-  if (parentLink?.parentConversationId || parentLink?.rootConversationId) {
-    const candidateRootId = parentLink.rootConversationId || parentLink.parentConversationId;
-    const rootDb = join(convDir, `${candidateRootId}.db`);
-    if (candidateRootId && existsSync(rootDb)) {
-      targetCid = candidateRootId;
-      dbPath = rootDb;
+  if (hasDbFile) {
+    const parentLink = readLocalSqliteParentLink(dbPath);
+    if (parentLink?.parentConversationId || parentLink?.rootConversationId) {
+      const candidateRootId = parentLink.rootConversationId || parentLink.parentConversationId;
+      const rootDb = join(convDir, `${candidateRootId}.db`);
+      const rootPb = join(convDir, `${candidateRootId}.pb`);
+      if (candidateRootId && (existsSync(rootDb) || existsSync(rootPb))) {
+        targetCid = candidateRootId;
+        dbPath = rootDb;
+        pbPath = rootPb;
+      }
+    }
+  } else {
+    const summaryParent = summariesMap.get(targetCid)?.parentConversationId || '';
+    if (summaryParent) {
+      const rootDb = join(convDir, `${summaryParent}.db`);
+      const rootPb = join(convDir, `${summaryParent}.pb`);
+      if (existsSync(rootDb) || existsSync(rootPb)) {
+        targetCid = summaryParent;
+        dbPath = rootDb;
+        pbPath = rootPb;
+      }
     }
   }
 
-  const walInfo = computeSqliteWalSig(dbPath);
-  const dbMtimeMs = walInfo.mtimeMs || 0;
+  const walInfo = dbPath ? computeSqliteWalSig(dbPath) : { exists: false, mtimeMs: 0, sig: '' };
+  let fallbackMtimeMs = 0;
+  let fallbackSigPart = '';
+  if (!walInfo.exists || (pbPath && existsSync(pbPath))) {
+    const fbParts = [];
+    if (pbPath) {
+      try {
+        const pbSt = statSync(pbPath, { throwIfNoEntry: false });
+        if (pbSt) {
+          fallbackMtimeMs = Math.max(fallbackMtimeMs, Number(pbSt.mtimeMs || 0));
+          fbParts.push(`p:${Math.floor(Number(pbSt.mtimeMs || 0))}:${Number(pbSt.size || 0)}`);
+        }
+      } catch {
+        // 忽略 stat 异常
+      }
+    }
+    const trPath = resolveCliTranscriptPath(cliRoot, targetCid);
+    if (trPath) {
+      try {
+        const trSt = statSync(trPath, { throwIfNoEntry: false });
+        if (trSt) {
+          fallbackMtimeMs = Math.max(fallbackMtimeMs, Number(trSt.mtimeMs || 0));
+          fbParts.push(`t:${Math.floor(Number(trSt.mtimeMs || 0))}:${Number(trSt.size || 0)}`);
+        }
+      } catch {
+        // 忽略 stat 异常
+      }
+    }
+    fallbackSigPart = fbParts.join(',');
+  }
+  const dbMtimeMs = Math.max(walInfo.mtimeMs || 0, fallbackMtimeMs);
   const targetLower = String(targetCid || '').toLowerCase();
   const targetIsRunning = freshRunningRootIds.includes(targetLower);
 
-  const cliTrajMemoFile = join(DATA_DIR, 'cli-statusline-traj-memo.json');
-  const prevMemo = walInfo.sig ? loadJson(cliTrajMemoFile, null) : null;
+  const effectiveDataDir = String(process.env.USAGE_MONITOR_DATA_DIR || '').trim() || DATA_DIR;
+  const cliTrajMemoFile = join(effectiveDataDir, 'cli-statusline-traj-memo.json');
+  const combinedSig = [walInfo.sig, fallbackSigPart].filter(Boolean).join('~');
+  const prevMemo = combinedSig ? loadJson(cliTrajMemoFile, null) : null;
   const prevOtherCache =
     prevMemo && typeof prevMemo.otherWaiting === 'object' && prevMemo.otherWaiting !== null
       ? prevMemo.otherWaiting
@@ -342,7 +414,7 @@ export function resolveCliLocalSessionMetrics({
     }
   }
 
-  const targetMemoKey = walInfo.sig ? `v1::${dbPath}::${walInfo.sig}` : '';
+  const targetMemoKey = combinedSig ? `v1::${targetCid}::${combinedSig}` : '';
   if (
     targetMemoKey &&
     prevMemo?.targetKey === targetMemoKey &&
@@ -401,20 +473,43 @@ export function resolveCliLocalSessionMetrics({
     };
   }
 
-  let traj = readLocalSqliteTrajectory(dbPath, {
-    cascadeId: targetCid,
-    isRunning: targetIsRunning,
-  });
+  let traj = walInfo.exists
+    ? readLocalSqliteTrajectory(dbPath, {
+        cascadeId: targetCid,
+        isRunning: targetIsRunning,
+      })
+    : null;
   if (traj?.parentConversationId) {
-    const rootDb = join(convDir, `${traj.rootConversationId || traj.parentConversationId}.db`);
-    if (rootDb !== dbPath && existsSync(rootDb)) {
-      const rootTraj = readLocalSqliteTrajectory(rootDb, { isRunning: true });
-      if (rootTraj) {
-        targetCid = traj.rootConversationId || traj.parentConversationId;
+    const rootCid = traj.rootConversationId || traj.parentConversationId;
+    const rootDb = join(convDir, `${rootCid}.db`);
+    const rootPb = join(convDir, `${rootCid}.pb`);
+    if (rootCid && rootCid !== targetCid) {
+      if (existsSync(rootDb)) {
+        const rootTraj = readLocalSqliteTrajectory(rootDb, { isRunning: true });
+        if (rootTraj) {
+          targetCid = rootCid;
+          dbPath = rootDb;
+          pbPath = rootPb;
+          traj = rootTraj;
+        } else if (existsSync(rootPb) || resolveCliTranscriptPath(cliRoot, rootCid)) {
+          targetCid = rootCid;
+          dbPath = rootDb;
+          pbPath = rootPb;
+          traj = null;
+        }
+      } else if (existsSync(rootPb) || resolveCliTranscriptPath(cliRoot, rootCid)) {
+        targetCid = rootCid;
         dbPath = rootDb;
-        traj = rootTraj;
+        pbPath = rootPb;
+        traj = null;
       }
     }
+  }
+  if (!traj || !Array.isArray(traj.steps) || traj.steps.length === 0) {
+    const fallbackTranscriptPath = resolveCliTranscriptPath(cliRoot, targetCid);
+    traj = fallbackTranscriptPath
+      ? buildTranscriptFallbackTrajectory(fallbackTranscriptPath, targetCid)
+      : null;
   }
 
   if (!traj || !Array.isArray(traj.steps) || traj.steps.length === 0) {
