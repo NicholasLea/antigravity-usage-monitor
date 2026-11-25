@@ -803,7 +803,6 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
 
   // Preferences -> Other Tab
   'settings.oth.modelTitle': '模型标识显示',
-  'settings.oth.modelFormat': '模型名称格式',
   'settings.oth.modelShort': '精简代号 (如 argon-4-high)',
   'settings.oth.modelUpstream': '原始模型 ID (如 gemini-3.8-flash-n)',
   'settings.oth.modelUpstreamCompact': '去前缀原始 ID (如 3.8-flash-n / sonnet-4-6 / 5.4-mini)',

@@ -141,12 +141,9 @@ export const SettingsOtherTab = defineComponent({
 
     // --- Card 1: 模型标识显示 ---
     const modelCardTitleEl = h('span', { text: t('settings.oth.modelTitle') });
-    const modelFormatLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.oth.modelFormat'),
-    });
 
     const stepModelSelect = CustomSelect({
+      ariaLabel: t('settings.oth.modelTitle'),
       modelValue: 'short',
       icon: 'table',
       options: getStepModelDisplayOptions(),
@@ -176,7 +173,7 @@ export const SettingsOtherTab = defineComponent({
         ]),
         modelStatusText,
       ]),
-      h('div', { className: 'form-row' }, [modelFormatLabelEl, stepModelSelect.el]),
+      stepModelSelect.el,
     ]);
 
     // --- Card 2: 试验性功能 ---
@@ -862,6 +859,7 @@ export const SettingsOtherTab = defineComponent({
         draftContextSwarmEnabled = settings.contextWindowSwarmEnabled === true;
       }
       stepModelSelect.setProps({
+        ariaLabel: t('settings.oth.modelTitle'),
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
@@ -874,7 +872,6 @@ export const SettingsOtherTab = defineComponent({
 
     function refreshLabels() {
       patchText(modelCardTitleEl, t('settings.oth.modelTitle'));
-      patchText(modelFormatLabelEl, t('settings.oth.modelFormat'));
       patchText(expTitleEl, t('settings.oth.expTitle'));
       patchText(quotaReserveLabelEl, t('settings.oth.quotaReserveLabel'));
       patchText(quotaReserveBadgeEl, t('settings.oth.expBadge'));
@@ -908,6 +905,7 @@ export const SettingsOtherTab = defineComponent({
       }
 
       stepModelSelect.setProps({
+        ariaLabel: t('settings.oth.modelTitle'),
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });

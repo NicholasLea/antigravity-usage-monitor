@@ -803,7 +803,6 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
 
   // Preferences -> Other Tab
   'settings.oth.modelTitle': 'Model Identity Display',
-  'settings.oth.modelFormat': 'Model Name Format',
   'settings.oth.modelShort': 'Short Alias (e.g. argon-4-high)',
   'settings.oth.modelUpstream': 'Raw Upstream ID (e.g. gemini-3.8-flash-n)',
   'settings.oth.modelUpstreamCompact': 'Trimmed Raw ID (hide gemini- / claude- / gpt-)',

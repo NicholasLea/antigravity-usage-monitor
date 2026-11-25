@@ -2147,7 +2147,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
 
   // Preferences -> Other Tab
   'settings.oth.modelTitle': '模型标识显示',
-  'settings.oth.modelFormat': '模型名称格式',
   'settings.oth.modelShort': '精简代号 (如 argon-4-high)',
   'settings.oth.modelUpstream': '原始模型 ID (如 gemini-3.8-flash-n)',
   'settings.oth.modelUpstreamCompact': '去前缀原始 ID (如 3.8-flash-n / sonnet-4-6 / 5.4-mini)',
@@ -3168,7 +3167,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
 
   // Preferences -> Other Tab
   'settings.oth.modelTitle': 'Model Identity Display',
-  'settings.oth.modelFormat': 'Model Name Format',
   'settings.oth.modelShort': 'Short Alias (e.g. argon-4-high)',
   'settings.oth.modelUpstream': 'Raw Upstream ID (e.g. gemini-3.8-flash-n)',
   'settings.oth.modelUpstreamCompact': 'Trimmed Raw ID (hide gemini- / claude- / gpt-)',
@@ -35625,12 +35623,9 @@ const SettingsOtherTab = defineComponent({
 
     // --- Card 1: 模型标识显示 ---
     const modelCardTitleEl = h('span', { text: t('settings.oth.modelTitle') });
-    const modelFormatLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.oth.modelFormat'),
-    });
 
     const stepModelSelect = CustomSelect({
+      ariaLabel: t('settings.oth.modelTitle'),
       modelValue: 'short',
       icon: 'table',
       options: getStepModelDisplayOptions(),
@@ -35660,7 +35655,7 @@ const SettingsOtherTab = defineComponent({
         ]),
         modelStatusText,
       ]),
-      h('div', { className: 'form-row' }, [modelFormatLabelEl, stepModelSelect.el]),
+      stepModelSelect.el,
     ]);
 
     // --- Card 2: 试验性功能 ---
@@ -36346,6 +36341,7 @@ const SettingsOtherTab = defineComponent({
         draftContextSwarmEnabled = settings.contextWindowSwarmEnabled === true;
       }
       stepModelSelect.setProps({
+        ariaLabel: t('settings.oth.modelTitle'),
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
@@ -36358,7 +36354,6 @@ const SettingsOtherTab = defineComponent({
 
     function refreshLabels() {
       patchText(modelCardTitleEl, t('settings.oth.modelTitle'));
-      patchText(modelFormatLabelEl, t('settings.oth.modelFormat'));
       patchText(expTitleEl, t('settings.oth.expTitle'));
       patchText(quotaReserveLabelEl, t('settings.oth.quotaReserveLabel'));
       patchText(quotaReserveBadgeEl, t('settings.oth.expBadge'));
@@ -36392,6 +36387,7 @@ const SettingsOtherTab = defineComponent({
       }
 
       stepModelSelect.setProps({
+        ariaLabel: t('settings.oth.modelTitle'),
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
