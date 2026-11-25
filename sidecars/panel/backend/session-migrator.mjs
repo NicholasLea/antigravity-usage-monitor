@@ -57,7 +57,8 @@ import {
 import { parseAnnotationPbtxtTitle } from './cli-sqlite-reader.mjs';
 
 const MIGRATOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const MIGRATOR_MAX_SESSIONS_PER_CLIENT = 200;
+const MIGRATOR_MAX_SESSIONS_PER_CLIENT = 5000;
+const MIGRATOR_MAX_COLD_DB_INSPECTS = 120;
 const MIGRATOR_MAX_BATCH_SIZE = 50;
 const MIGRATOR_MAX_BACKUPS = 5;
 const MIGRATOR_OUTSIDE_PROJECT_ID = 'outside-of-project';
@@ -502,15 +503,15 @@ function migratorReadAnnotationTitle(clientRoot, cid) {
   }
 }
 
-function migratorComputeDbFileInfo(convDir, cid) {
+function migratorComputeDbFileInfo(convDir, cid, walSet = null) {
   const dbPath = join(convDir, `${cid}.db`);
-  if (!existsSync(dbPath)) return null;
   try {
     const dbStat = statSync(dbPath);
     let sizeBytes = Number(dbStat.size || 0);
     let mtimeMs = Number(dbStat.mtimeMs || 0);
-    const walPath = `${dbPath}-wal`;
-    if (existsSync(walPath)) {
+    const hasWal = walSet ? walSet.has(`${cid}.db-wal`) : existsSync(`${dbPath}-wal`);
+    if (hasWal) {
+      const walPath = `${dbPath}-wal`;
       try {
         const walStat = statSync(walPath);
         sizeBytes += Number(walStat.size || 0);
@@ -525,6 +526,18 @@ function migratorComputeDbFileInfo(convDir, cid) {
   }
 }
 
+function migratorReadDirNameSet(dirPath) {
+  const set = new Set();
+  try {
+    for (const name of readdirSync(dirPath)) {
+      set.add(String(name).toLowerCase());
+    }
+  } catch {
+    // 目录不存在或不可读时返回空集合
+  }
+  return set;
+}
+
 function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSet) {
   const convDir = join(clientRoot, 'conversations');
   if (!existsSync(convDir)) return [];
@@ -535,12 +548,21 @@ function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSe
     return [];
   }
 
+  const walSet = new Set();
+  for (const name of entries) {
+    if (name.endsWith('.db-wal')) {
+      walSet.add(name.toLowerCase());
+    }
+  }
+  const brainIdSet = migratorReadDirNameSet(join(clientRoot, 'brain'));
+  const annFileSet = migratorReadDirNameSet(join(clientRoot, 'annotations'));
+
   const dbCandidates = [];
   for (const name of entries) {
     if (!name.endsWith('.db')) continue;
     const cid = name.slice(0, -3).toLowerCase();
     if (!MIGRATOR_UUID_RE.test(cid)) continue;
-    const info = migratorComputeDbFileInfo(convDir, cid);
+    const info = migratorComputeDbFileInfo(convDir, cid, walSet);
     if (!info) continue;
     const summary = summaryMap.get(cid) || null;
     const summaryLastModMs = summary
@@ -557,13 +579,16 @@ function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSe
   dbCandidates.sort((a, b) => b.sortMs - a.sortMs);
 
   const sessions = [];
+  let coldDbInspectCount = 0;
   for (const cand of dbCandidates) {
     if (sessions.length >= MIGRATOR_MAX_SESSIONS_PER_CLIENT) break;
     const { cid, summary, info } = cand;
 
     if (migratorIsSummaryNonRoot(summary)) continue;
 
-    const annTitle = migratorReadAnnotationTitle(clientRoot, cid);
+    const annTitle = annFileSet.has(`${cid}.pbtxt`)
+      ? migratorReadAnnotationTitle(clientRoot, cid)
+      : '';
     const sumTitle = String(summary?.title || '').trim();
     const sumPreview = String(summary?.preview || '').trim();
     const summaryStepCount = summary ? Math.max(0, Number(summary.step_count || 0)) : -1;
@@ -573,7 +598,8 @@ function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSe
 
     const needDbInspect = !summary || (!annTitle && !sumTitle && !sumPreview);
     let dbLight = null;
-    if (needDbInspect) {
+    if (needDbInspect && coldDbInspectCount < MIGRATOR_MAX_COLD_DB_INSPECTS) {
+      coldDbInspectCount += 1;
       dbLight = migratorInspectConversationDbLight(info.dbPath, {
         needPromptTitle: !annTitle && !sumTitle && !sumPreview,
       });
@@ -617,7 +643,7 @@ function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSe
       workspacePath,
       projectId: String(summary?.project_id || dbLight?.projectId || '').trim(),
       sizeBytes: info.sizeBytes,
-      hasBrain: existsSync(join(clientRoot, 'brain', cid)),
+      hasBrain: brainIdSet.has(cid),
       isRunning,
     });
   }

@@ -19,6 +19,8 @@ import { createSearchInput } from '../ui/SearchInput.js';
 import { SegmentedControl } from '../ui/SegmentedControl.js';
 
 const SMIG_OUTSIDE_PROJECT_ID = 'outside-of-project';
+const SMIG_PAGE_SIZE = 100;
+const SMIG_BATCH_CHUNK_SIZE = 50;
 
 function smigGetClientLabel(clientId) {
   if (clientId === 'cli') return t('settings.oth.migClientCli');
@@ -66,6 +68,7 @@ export const SessionMigrationCard = defineComponent({
     let migrationMode = 'move';
     let targetProjectId = '';
     let searchQuery = '';
+    let visibleLimit = SMIG_PAGE_SIZE;
     const selectedIds = new Set();
     let lastResult = null;
     let copiedCmdId = '';
@@ -145,6 +148,7 @@ export const SessionMigrationCard = defineComponent({
         onUpdateModelValue: (val) => {
           if (!val || val === sourceClient) return;
           sourceClient = val;
+          visibleLimit = SMIG_PAGE_SIZE;
           selectedIds.clear();
           lastResult = null;
           ensureValidTarget();
@@ -189,10 +193,12 @@ export const SessionMigrationCard = defineComponent({
         closeIconSize: 10,
         onInput: (val) => {
           searchQuery = String(val || '').trim();
+          visibleLimit = SMIG_PAGE_SIZE;
           renderSessionList();
         },
         onClear: () => {
           searchQuery = '';
+          visibleLimit = SMIG_PAGE_SIZE;
           renderSessionList();
           searchInput.focus?.();
         },
@@ -463,7 +469,8 @@ export const SessionMigrationCard = defineComponent({
           h('div', { className: 'smig-empty', text: t('settings.oth.migNoMatch') })
         );
       } else {
-        for (const item of filtered) {
+        const visibleItems = filtered.slice(0, visibleLimit);
+        for (const item of visibleItems) {
           const checked = selectedIds.has(item.cascadeId);
           const disabled = Boolean(item.isRunning || isMigrating);
           const checkIcon = createSvgIcon('check', { size: 10 });
@@ -538,6 +545,21 @@ export const SessionMigrationCard = defineComponent({
             ]
           );
           listEl.appendChild(rowEl);
+        }
+        if (filtered.length > visibleLimit) {
+          const loadMoreBtn = h('button', {
+            type: 'button',
+            className: 'btn-ghost-sm smig-load-more-btn',
+            text: t('settings.oth.migLoadMore', {
+              shown: visibleItems.length,
+              total: filtered.length,
+            }),
+            onClick: () => {
+              visibleLimit += SMIG_PAGE_SIZE;
+              renderSessionList();
+            },
+          });
+          listEl.appendChild(loadMoreBtn);
         }
       }
 
@@ -691,17 +713,50 @@ export const SessionMigrationCard = defineComponent({
       renderSessionList();
       renderResultBox();
       try {
-        const payload = {
-          sourceClient,
-          targetClient,
-          mode: migrationMode,
-          cascadeIds: [...selectedIds],
-          ...(targetClient === 'desktop' ? { targetProjectId } : {}),
-        };
-        const res = await runMigrateFn(payload);
-        if (destroyed) return;
-        lastResult = res || { ok: false, error: 'empty_response' };
-        if (res?.ok) {
+        const allIds = [...selectedIds];
+        let aggMigrated = 0;
+        let aggFailed = 0;
+        const aggResults = [];
+        let lastRes = null;
+        let needsWindowReload = false;
+        let firstError = '';
+        for (let offset = 0; offset < allIds.length; offset += SMIG_BATCH_CHUNK_SIZE) {
+          const chunk = allIds.slice(offset, offset + SMIG_BATCH_CHUNK_SIZE);
+          const payload = {
+            sourceClient,
+            targetClient,
+            mode: migrationMode,
+            cascadeIds: chunk,
+            ...(targetClient === 'desktop' ? { targetProjectId } : {}),
+          };
+          const res = await runMigrateFn(payload);
+          if (destroyed) return;
+          lastRes = res || { ok: false, error: 'empty_response' };
+          aggMigrated += Number(lastRes.migratedCount || 0);
+          aggFailed += Number(lastRes.failedCount || 0);
+          if (Array.isArray(lastRes.results)) aggResults.push(...lastRes.results);
+          if (lastRes.needsWindowReload) needsWindowReload = true;
+          if (!lastRes.ok && !firstError) {
+            firstError = lastRes.error || 'migrate_failed';
+            if (aggMigrated === 0) break;
+          }
+        }
+        lastResult =
+          allIds.length <= SMIG_BATCH_CHUNK_SIZE
+            ? lastRes || { ok: false, error: 'empty_response' }
+            : {
+                ...(lastRes || {}),
+                ok: aggMigrated > 0,
+                ...(aggMigrated === 0 && firstError ? { error: firstError } : {}),
+                sourceClient,
+                targetClient,
+                targetProjectId: lastRes?.targetProjectId || targetProjectId,
+                migratedCount: aggMigrated,
+                failedCount: aggFailed,
+                needsWindowReload,
+                results: aggResults,
+              };
+        if (lastResult.ok) {
           selectedIds.clear();
           void loadCatalog(true);
         }

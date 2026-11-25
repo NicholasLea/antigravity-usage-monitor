@@ -895,6 +895,7 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.migStepsUnit': '{count} 步',
   'settings.oth.migEmpty': '当前来源端暂无可迁移会话',
   'settings.oth.migNoMatch': '没有匹配的会话',
+  'settings.oth.migLoadMore': '加载更多 (已显示 {shown} / {total})',
   'settings.oth.migActionBtn': '迁移选定会话 ({count})',
   'settings.oth.migRunningBtn': '迁移中…',
   'settings.oth.migDoneDesktop': '已成功迁移 {count} 条会话到「{project}」，在桌面端按 Ctrl+R 即可在左侧看到',

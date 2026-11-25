@@ -895,6 +895,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.migStepsUnit': '{count} steps',
   'settings.oth.migEmpty': 'No migratable sessions in this source client',
   'settings.oth.migNoMatch': 'No matching sessions',
+  'settings.oth.migLoadMore': 'Load more ({shown} / {total})',
   'settings.oth.migActionBtn': 'Migrate Selected ({count})',
   'settings.oth.migRunningBtn': 'Migrating…',
   'settings.oth.migDoneDesktop': 'Migrated {count} session(s) to "{project}". Press Ctrl+R in Desktop App to refresh the sidebar',

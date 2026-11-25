@@ -914,6 +914,72 @@ test('SessionMigrationCard stays hidden for single-client hosts and renders mult
     assert.equal(builtCss.includes('--metric-good'), false, 'Zero undefined --metric-good tokens');
     assert.match(builtCss, /\[data-modern-ui="true"\]\s+\.smig-scroll-host/);
     assert.match(builtCss, /\[data-modern-ui="true"\]\s+\.smig-item:hover:not\(:disabled\)/);
+
+    // Verify large catalog (>200 sessions) paginates at 100 items, searches full catalog, and chunks >50 batch migrations
+    const largeSessions = Array.from({ length: 245 }, (_, idx) => {
+      const hex = String(idx + 1).padStart(12, '0');
+      return {
+        cascadeId: `33333333-3333-4333-8333-${hex}`,
+        clientId: 'desktop',
+        title: idx === 244 ? 'Ancient Legacy Task 245' : `Session #${idx + 1}`,
+        stepCount: 4,
+        lastModifiedMs: Date.now() - idx * 60000,
+        workspaceName: 'repo',
+        workspacePath: 'F:/repo',
+        projectId: '99a28d35-a873-4c32-b8d1-81a62e23c33d',
+        sizeBytes: 4096,
+        hasBrain: false,
+        isRunning: false,
+      };
+    });
+    const chunkSizes = [];
+    const bigCard = SessionMigrationCard({
+      loadCatalog: async () => ({
+        available: true,
+        clients: [
+          { id: 'desktop', exists: true, canBeSource: true, canBeTarget: true, sessionCount: 245 },
+          { id: 'cli', exists: true, canBeSource: false, canBeTarget: true, sessionCount: 0 },
+        ],
+        desktopProjects: [{ projectId: 'outside-of-project', isOutsideProject: true }],
+        sessionsByClient: { desktop: largeSessions, cli: [] },
+      }),
+      runMigrate: async (payload) => {
+        chunkSizes.push(payload.cascadeIds.length);
+        return {
+          ok: true,
+          mode: payload.mode,
+          sourceClient: payload.sourceClient,
+          targetClient: payload.targetClient,
+          migratedCount: payload.cascadeIds.length,
+          failedCount: 0,
+          results: payload.cascadeIds.map((id) => ({ ok: true, sourceCascadeId: id, newCascadeId: id })),
+        };
+      },
+    });
+    await bigCard.refs.ensureLoaded();
+    assert.equal(bigCard.el.querySelectorAll('.smig-item').length, 100, 'Initial DOM renders first 100 sessions');
+    const loadMoreBtn = bigCard.el.querySelector('.smig-load-more-btn');
+    assert.ok(loadMoreBtn, 'Load More button rendered when total > 100');
+    loadMoreBtn.dispatchEvent({ type: 'click', target: loadMoreBtn });
+    assert.equal(bigCard.el.querySelectorAll('.smig-item').length, 200, 'Clicking Load More appends next 100');
+
+    // Full-catalog search immediately locates item #245 beyond initial page
+    const searchEl = bigCard.el.querySelector('.smig-search-input');
+    searchEl.value = 'Ancient Legacy Task 245';
+    searchEl.dispatchEvent({ type: 'input', target: searchEl });
+    assert.equal(bigCard.el.querySelectorAll('.smig-item').length, 1);
+    assert.equal(bigCard.el.querySelector('.smig-item-title').textContent, 'Ancient Legacy Task 245');
+    searchEl.value = '';
+    searchEl.dispatchEvent({ type: 'input', target: searchEl });
+
+    // Select all 245 sessions and verify handleMigrate chunks into 50-item batches (50+50+50+50+45)
+    const toggleAll = bigCard.el.querySelector('.smig-toggle-all-btn');
+    toggleAll.dispatchEvent({ type: 'click', target: toggleAll });
+    const bigMigrateBtn = bigCard.el.querySelector('.smig-migrate-btn');
+    await bigMigrateBtn.dispatchEvent({ type: 'click', target: bigMigrateBtn });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(chunkSizes, [50, 50, 50, 50, 45]);
+    bigCard.destroy();
   } finally {
     globalThis.document = prevDoc;
     globalThis.window = prevWin;
