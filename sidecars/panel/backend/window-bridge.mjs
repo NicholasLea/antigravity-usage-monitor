@@ -33,6 +33,11 @@ import {
 } from '../shared/window-bridge-protocol.mjs';
 import { HOST_I18N_GLOBAL_KEY } from '../shared/host-i18n-protocol.mjs';
 import {
+  HOST_THEME_CSS_VARS,
+  getHostThemeSignature,
+  normalizeHostThemeSnapshot,
+} from '../shared/host-theme.mjs';
+import {
   DATA_DIR,
   computeRuntimeCodeVersion,
   loadJson,
@@ -41,6 +46,7 @@ import {
   normalizeWindowMountMode,
   saveJson,
 } from './config.mjs';
+import { recordLiveCdpHostTheme } from './host-theme-store.mjs';
 import {
   createContextWindowSyncExpression,
   getContextWindowModels,
@@ -146,6 +152,120 @@ function buildDomRouteCascadeIdSnippet() {
     if (uuidRe.test(singleViewId)) return singleViewId;
     if (uuidRe.test(selectedRowId)) return selectedRowId;
     return '';
+  })()`;
+}
+
+/**
+ * 构建运行在宿主主窗口（Antigravity 2.0 或 Antigravity IDE）内的只读主题令牌采集 IIFE 片段。
+ * 优先提取原生 `--background` / `--card` / `--foreground` 等 CSS 变量，IDE 环境下自动映射 `--vscode-*`，
+ * 并通过显式类名属性或实际渲染色探针判定 `'dark' | 'light'` 极性。
+ *
+ * @returns {string}
+ */
+export function buildHostThemeProbeSnippet() {
+  const varNamesJson = JSON.stringify(HOST_THEME_CSS_VARS);
+  return `(() => {
+    try {
+      if (typeof document === 'undefined' || typeof window === 'undefined') return null;
+      const root = document.documentElement;
+      const body = document.body;
+      const wb = typeof document.querySelector === 'function' ? document.querySelector('.monaco-workbench') : null;
+      const getCs = (el) => {
+        if (!el || typeof window.getComputedStyle !== 'function') return null;
+        try { return window.getComputedStyle(el); } catch { return null; }
+      };
+      const rootCs = getCs(root);
+      const bodyCs = getCs(body);
+      const wbCs = getCs(wb);
+      const readCssVar = (name) => {
+        for (const cs of [rootCs, bodyCs, wbCs]) {
+          const v = String(cs?.getPropertyValue?.(name) || '').trim();
+          if (v) return v;
+        }
+        return '';
+      };
+      const vars = {};
+      for (const name of ${varNamesJson}) {
+        const val = readCssVar(name);
+        if (val) vars[name] = val;
+      }
+      if (!vars['--background']) {
+        const pick = (...names) => {
+          for (const n of names) {
+            const v = readCssVar(n);
+            if (v) return v;
+          }
+          return '';
+        };
+        const mapped = [
+          ['--background', pick('--vscode-sideBar-background', '--vscode-editor-background', '--vscode-panel-background')],
+          ['--card', pick('--vscode-editorWidget-background', '--vscode-sideBar-background', '--vscode-editor-background')],
+          ['--foreground', pick('--vscode-foreground', '--vscode-editor-foreground')],
+          ['--muted-foreground', pick('--vscode-descriptionForeground', '--vscode-sideBarTitle-foreground')],
+          ['--border', pick('--vscode-widget-border', '--vscode-panel-border', '--vscode-commandCenter-border', '--vscode-contrastBorder')],
+          ['--primary', pick('--vscode-textLink-foreground', '--vscode-button-background', '--vscode-focusBorder')],
+          ['--destructive', pick('--vscode-errorForeground', '--vscode-editorError-foreground')],
+          ['--font-sans', pick('--vscode-font-family')],
+          ['--font-mono', pick('--vscode-editor-font-family')],
+        ];
+        for (const [k, v] of mapped) {
+          if (v && !vars[k]) vars[k] = v;
+        }
+      }
+
+      let colorScheme = '';
+      const lightClasses = { light: 1, 'vs-light': 1, 'vscode-light': 1, 'hc-light': 1, 'vscode-high-contrast-light': 1 };
+      const darkClasses = { dark: 1, 'vs-dark': 1, 'vscode-dark': 1, 'hc-black': 1, 'vscode-high-contrast': 1 };
+      for (const el of [body, root, wb]) {
+        if (!el || colorScheme) continue;
+        const vk = String(el.getAttribute?.('data-vscode-theme-kind') || '').trim().toLowerCase();
+        if (vk) {
+          if (vk.includes('light')) { colorScheme = 'light'; break; }
+          if (vk.includes('dark') || vk.includes('high-contrast')) { colorScheme = 'dark'; break; }
+        }
+        const dt = String(el.getAttribute?.('data-theme') || el.getAttribute?.('data-color-mode') || '').trim().toLowerCase();
+        if (dt === 'light' || dt.endsWith('-light')) { colorScheme = 'light'; break; }
+        if (dt === 'dark' || dt.endsWith('-dark')) { colorScheme = 'dark'; break; }
+        const cls = typeof el.className === 'string' ? el.className.trim().toLowerCase().split(/\\s+/) : [];
+        for (const tok of cls) {
+          if (lightClasses[tok]) { colorScheme = 'light'; break; }
+          if (darkClasses[tok]) { colorScheme = 'dark'; break; }
+        }
+      }
+
+      if (!colorScheme && typeof document.createElement === 'function' && typeof window.getComputedStyle === 'function') {
+        const probeColor = vars['--background'] || vars['--card'] || String(bodyCs?.backgroundColor || rootCs?.backgroundColor || '').trim();
+        if (probeColor && root && typeof root.appendChild === 'function') {
+          let probe = null;
+          try {
+            probe = document.createElement('span');
+            probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;color:' + probeColor;
+            root.appendChild(probe);
+            const resolved = String(window.getComputedStyle(probe)?.color || '').trim().toLowerCase();
+            probe.remove();
+            probe = null;
+            const nums = (resolved.match(/[\\d.]+/g) || []).map(Number);
+            if (nums.length >= 3) {
+              const scale = resolved.startsWith('color(') ? 1 : 255;
+              const r = nums[0] / scale;
+              const g = nums[1] / scale;
+              const b = nums[2] / scale;
+              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+              if (Number.isFinite(lum)) colorScheme = lum > 0.52 ? 'light' : 'dark';
+            }
+          } catch {
+            try { probe?.remove?.(); } catch {}
+          }
+        }
+      }
+
+      if (!colorScheme && !vars['--background'] && !vars['--foreground'] && !vars['--card']) {
+        return null;
+      }
+      return { colorScheme, vars, source: 'cdp' };
+    } catch {
+      return null;
+    }
   })()`;
 }
 
@@ -1229,6 +1349,8 @@ export function createWindowBridgeController(options) {
   let cachedHostI18nApply = { revision: '', bootId: '', expr: '' };
   const cachedBackendCtxModelsByEndpoint = new Map();
   const targetClassifyCache = new Map();
+  let lastDetectedHostTheme = null;
+  let lastPassiveThemeProbeMs = 0;
   let nodeDepsPromise = null;
   const allowedDynamicOrigins = new Set();
 
@@ -1752,7 +1874,8 @@ export function createWindowBridgeController(options) {
       updatedAtMs: Date.now(),
     };
     if (leasedBySelf && leaseFilePath) {
-      const sig = `${nextState}:${lastBridgeStatus.aliveCount}:${lastBridgeStatus.targets}:${lastBridgeStatus.argvUpdatedThisBoot ? 1 : 0}:${lastBridgeStatus.launcherConfigured ? 1 : 0}:${lastBridgeStatus.hasReadOnlyShortcuts ? 1 : 0}:${lastBridgeStatus.canRelaunch ? 1 : 0}`;
+      const hostThemeSig = getHostThemeSignature(lastDetectedHostTheme);
+      const sig = `${nextState}:${lastBridgeStatus.aliveCount}:${lastBridgeStatus.targets}:${lastBridgeStatus.argvUpdatedThisBoot ? 1 : 0}:${lastBridgeStatus.launcherConfigured ? 1 : 0}:${lastBridgeStatus.hasReadOnlyShortcuts ? 1 : 0}:${lastBridgeStatus.canRelaunch ? 1 : 0}:${hostThemeSig}`;
       if (sig !== lastPersistedLeaseSig) {
         lastPersistedLeaseSig = sig;
         saveJson(leaseFilePath, {
@@ -1768,6 +1891,7 @@ export function createWindowBridgeController(options) {
           launcherConfigured: lastBridgeStatus.launcherConfigured,
           hasReadOnlyShortcuts: lastBridgeStatus.hasReadOnlyShortcuts,
           canRelaunch: lastBridgeStatus.canRelaunch,
+          ...(lastDetectedHostTheme ? { hostTheme: lastDetectedHostTheme } : {}),
           updatedAtMs: Date.now(),
         });
       }
@@ -1938,12 +2062,17 @@ export function createWindowBridgeController(options) {
             canRelaunch: Boolean(lease?.canRelaunch ?? canRelaunch),
             updatedAtMs: Date.now(),
           };
+          if (lease?.hostTheme) {
+            const hydratedTheme = recordLiveCdpHostTheme(lease.hostTheme, { persist: false });
+            if (hydratedTheme) lastDetectedHostTheme = hydratedTheme;
+          }
           return { ok: true, enabled: true, reason: 'follower_yield', leaderPid: leasePid, injected: 0 };
         }
       }
       leasedBySelf = true;
       const mergedLauncherConfigured = Boolean(argvConfigured || launcherConfigured);
-      lastPersistedLeaseSig = `${lastBridgeStatus.state}:${lastBridgeStatus.aliveCount}:${lastBridgeStatus.targets}:${Boolean(argvUpdatedThisBoot) ? 1 : 0}:${mergedLauncherConfigured ? 1 : 0}:${Boolean(hasReadOnlyShortcuts) ? 1 : 0}:${Boolean(canRelaunch) ? 1 : 0}`;
+      const initialThemeSig = getHostThemeSignature(lastDetectedHostTheme);
+      lastPersistedLeaseSig = `${lastBridgeStatus.state}:${lastBridgeStatus.aliveCount}:${lastBridgeStatus.targets}:${Boolean(argvUpdatedThisBoot) ? 1 : 0}:${mergedLauncherConfigured ? 1 : 0}:${Boolean(hasReadOnlyShortcuts) ? 1 : 0}:${Boolean(canRelaunch) ? 1 : 0}:${initialThemeSig}`;
       saveJson(leaseFilePath, {
         pid: process.pid,
         bundleVersion,
@@ -1957,6 +2086,7 @@ export function createWindowBridgeController(options) {
         launcherConfigured: mergedLauncherConfigured,
         hasReadOnlyShortcuts: Boolean(hasReadOnlyShortcuts),
         canRelaunch: Boolean(canRelaunch),
+        ...(lastDetectedHostTheme ? { hostTheme: lastDetectedHostTheme } : {}),
         updatedAtMs: Date.now(),
       });
     }
@@ -2042,6 +2172,8 @@ export function createWindowBridgeController(options) {
       return { ok: true, enabled, reason: 'no_targets', injected: 0 };
     }
 
+    const hostThemeProbeExpr = buildHostThemeProbeSnippet();
+
     if (
       !enabled &&
       !needsAnyCdpContext &&
@@ -2052,6 +2184,18 @@ export function createWindowBridgeController(options) {
       !hadInjectedChatFrames &&
       !forceReinject
     ) {
+      const nowPassiveMs = Date.now();
+      const themeTarget = targets.find((t) => !t.isIdeWorkbench && t.webSocketDebuggerUrl) || targets.find((t) => t.webSocketDebuggerUrl);
+      if (themeTarget?.webSocketDebuggerUrl && nowPassiveMs - lastPassiveThemeProbeMs >= 5000) {
+        lastPassiveThemeProbeMs = nowPassiveMs;
+        try {
+          const themeRes = await evaluateOnTarget(themeTarget.webSocketDebuggerUrl, hostThemeProbeExpr, 1200);
+          const recorded = recordLiveCdpHostTheme(themeRes?.result?.result?.value);
+          if (recorded) lastDetectedHostTheme = recorded;
+        } catch {
+          // 忽略被动只读主题探测超时或断开异常
+        }
+      }
       pruneStaleRemoteEndpoints(new Set());
       updateBridgeStatus('disabled', {
         enabled: false,
@@ -2076,6 +2220,7 @@ export function createWindowBridgeController(options) {
           title: String((typeof document !== 'undefined' && document?.title) || '').trim(),
           csrfToken: String(cfg?.csrfToken || '').trim(),
           observedCsrfToken: observedCsrf,
+          hostTheme: ${hostThemeProbeExpr},
           appConfig: cfg ? {
             isRemoteControl: cfg.isRemoteControl === true,
             isRemote: cfg.isRemote === true,
@@ -2092,7 +2237,7 @@ export function createWindowBridgeController(options) {
           } : null,
         };
       } catch {
-        return { origin: '', title: '', csrfToken: '', observedCsrfToken: '', appConfig: null };
+        return { origin: '', title: '', csrfToken: '', observedCsrfToken: '', hostTheme: null, appConfig: null };
       }
     })()`;
 
@@ -2184,6 +2329,52 @@ export function createWindowBridgeController(options) {
         target.isRemoteEndpoint = false;
         target.endpointLabel = '';
       }
+    }
+
+    let pickedHostTheme = null;
+    for (const target of targets) {
+      if (target.isIdeWorkbench || target.isRemoteEndpoint) continue;
+      const candidate = normalizeHostThemeSnapshot(
+        probedByWsUrl.get(String(target.webSocketDebuggerUrl || ''))?.hostTheme
+      );
+      if (candidate) {
+        pickedHostTheme = candidate;
+        break;
+      }
+    }
+    if (!pickedHostTheme) {
+      for (const target of desktopTargets) {
+        const candidate = normalizeHostThemeSnapshot(
+          probedByWsUrl.get(String(target.webSocketDebuggerUrl || ''))?.hostTheme
+        );
+        if (candidate) {
+          pickedHostTheme = candidate;
+          break;
+        }
+      }
+    }
+    if (!pickedHostTheme) {
+      const ideTarget = targets.find((t) => t.isIdeWorkbench && t.webSocketDebuggerUrl);
+      if (ideTarget?.webSocketDebuggerUrl) {
+        const ideWsUrl = String(ideTarget.webSocketDebuggerUrl);
+        const ideThemeKey = `ide-theme::${ideWsUrl}`;
+        const cachedIdeTheme = targetClassifyCache.get(ideThemeKey);
+        if (cachedIdeTheme && nowClassifyMs - cachedIdeTheme.ts < 4000) {
+          pickedHostTheme = cachedIdeTheme.hostTheme || null;
+        } else {
+          try {
+            const ideThemeRes = await evaluateOnTarget(ideWsUrl, hostThemeProbeExpr, 1200);
+            pickedHostTheme = normalizeHostThemeSnapshot(ideThemeRes?.result?.result?.value);
+            targetClassifyCache.set(ideThemeKey, { ts: nowClassifyMs, hostTheme: pickedHostTheme });
+          } catch {
+            pickedHostTheme = cachedIdeTheme?.hostTheme || null;
+          }
+        }
+      }
+    }
+    if (pickedHostTheme) {
+      const recordedTheme = recordLiveCdpHostTheme(pickedHostTheme);
+      if (recordedTheme) lastDetectedHostTheme = recordedTheme;
     }
 
     if (needsAnyCdpContext || hadContextWindows) {

@@ -79,6 +79,7 @@ import {
   handleHostI18nGetRequest,
   handleHostI18nPostAction,
 } from './host-i18n/index.mjs';
+import { getEffectiveHostTheme, recordPreloadHostTheme } from './host-theme-store.mjs';
 import { getQuotaReservationLogSnapshot } from './quota-reservation.mjs';
 import { getSessionMigrationCatalog, migrateSessions } from './session-migrator.mjs';
 import {
@@ -957,6 +958,18 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
           { ...(isPlainObject(data.payload) ? data.payload : {}), action: data.__hostI18nAction },
           opts
         );
+      }
+      if (isPlainObject(data) && data.__hostThemeAction === 'cache') {
+        const saved = recordPreloadHostTheme(data.payload);
+        return {
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'Cache-Control': 'no-store' },
+          body: JSON.stringify({
+            ok: Boolean(saved),
+            hostTheme: saved || getEffectiveHostTheme(),
+          }),
+        };
       }
       return executeSettingsAction(data);
     case 'accounts_get':

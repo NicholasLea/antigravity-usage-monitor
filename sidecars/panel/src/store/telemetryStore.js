@@ -77,6 +77,7 @@ import {
   WINDOW_BRIDGE_ROUTE_KEY,
   readInjectedWindowBridge,
 } from '../../shared/window-bridge-protocol.mjs';
+import { getHostThemeSignature } from '../../shared/host-theme.mjs';
 
 const CASCADE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -576,6 +577,7 @@ export function isEquivalentTelemetry(prev, next) {
   if ((pSet?.fontScale ?? 'md') !== (nSet?.fontScale ?? 'md')) return false;
   if (resolveSettingsModernUi(pSet) !== resolveSettingsModernUi(nSet)) return false;
   if ((prev.hostPlatform || '') !== (next.hostPlatform || '')) return false;
+  if (getHostThemeSignature(prev.hostTheme) !== getHostThemeSignature(next.hostTheme)) return false;
   if (
     (prev.endpoint?.id || LOCAL_ENDPOINT_ID) !== (next.endpoint?.id || LOCAL_ENDPOINT_ID) ||
     Boolean(prev.endpoint?.isRemote) !== Boolean(next.endpoint?.isRemote) ||

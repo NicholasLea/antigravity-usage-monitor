@@ -11,8 +11,13 @@
 
 import { Worker } from 'node:worker_threads';
 import { Response, SidecarApp } from 'sidecar_sdk';
+import { injectHostThemeFallbackIntoHtml } from './shared/host-theme.mjs';
 import { BRIDGE_API_ROUTE_DEFS } from './shared/window-bridge-protocol.mjs';
-import { isLocalHostRequest, readLocalAsync } from './backend/http-helpers.mjs';
+import {
+  isLocalHostRequest,
+  readCachedHostThemeSnapshotSync,
+  readLocalAsync,
+} from './backend/http-helpers.mjs';
 
 const app = new SidecarApp();
 
@@ -201,11 +206,16 @@ async function handleProtectedApi(pathname, method, data, req) {
 
 app.page(
   '/',
-  async () =>
-    new Response(await readLocalAsync('index.html'), {
+  async () => {
+    const rawHtml = await readLocalAsync('index.html');
+    const html = isTestHarnessEnv
+      ? rawHtml
+      : injectHostThemeFallbackIntoHtml(rawHtml, readCachedHostThemeSnapshotSync());
+    return new Response(html, {
       contentType: 'text/html; charset=utf-8',
       headers: NO_STORE_HEADERS,
-    })
+    });
+  }
 );
 
 app.page(

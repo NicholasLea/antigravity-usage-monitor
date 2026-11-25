@@ -593,6 +593,7 @@ export function buildBundle(panelDir = PANEL_DIR) {
     'shared/telemetry-display-rules.mjs',
     'shared/window-bridge-protocol.mjs',
     'shared/host-i18n-protocol.mjs',
+    'shared/host-theme.mjs',
     'src/icons/svgRegistry.js',
     'src/icons/SvgIcon.js',
     'src/core/reactive.js',

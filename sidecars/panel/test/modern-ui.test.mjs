@@ -1950,3 +1950,260 @@ test('Large Trend metric cards support unified 1-4 metrics across Hover & Live O
   assert.equal(dimRows[3].classList.contains('is-dimmed'), false);
   assert.equal(dimRows[3].querySelector('.slot-dimmed-tag').hasAttribute('hidden'), true);
 });
+
+test('host theme recovery parses modern CSS colors, avoids self-fallback trap, syncs fallback styles, and caches across restarts', async (t) => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const vm = await import('node:vm');
+  const {
+    HOST_THEME_FALLBACK_STYLE_ID,
+    buildHostThemeFallbackCss,
+    getHostThemeSignature,
+    injectHostThemeFallbackIntoHtml,
+    normalizeHostThemeSnapshot,
+  } = await import('../shared/host-theme.mjs');
+  const {
+    captureNativeHostThemeSnapshot,
+    hasNativeHostTheme,
+    syncHostThemeFallback,
+  } = await import('../src/core/appearance.js');
+  const {
+    getEffectiveHostTheme,
+    recordLiveCdpHostTheme,
+    recordPreloadHostTheme,
+    resetHostThemeStoreForTests,
+  } = await import('../backend/host-theme-store.mjs');
+  const { readCachedHostThemeSnapshotSync } = await import('../backend/http-helpers.mjs');
+  const { buildHostThemeProbeSnippet } = await import('../backend/window-bridge.mjs');
+
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-host-theme-test-'));
+
+  t.after(() => {
+    resetHostThemeStoreForTests();
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // ignore temp cleanup error
+    }
+  });
+
+  // 1) Modern CSS color parsing: color(srgb), oklch, oklab, and bare Tailwind HSL triplets
+  assert.ok(parseCssColorLuminance('color(srgb 0.11 0.12 0.16)') < 0.2);
+  assert.ok(parseCssColorLuminance('color(srgb 0.96 0.97 0.99)') > 0.9);
+  assert.ok(parseCssColorLuminance('oklch(0.21 0.02 260)') < 0.2);
+  assert.ok(parseCssColorLuminance('oklch(0.97 0.005 260)') > 0.9);
+  assert.ok(parseCssColorLuminance('oklab(0.22 -0.01 -0.02)') < 0.2);
+  assert.ok(parseCssColorLuminance('222 18% 10%') < 0.2);
+  assert.ok(parseCssColorLuminance('0 0% 98%') > 0.9);
+
+  // 2) Sanitization & first-paint HTML injection ordering
+  const sanitized = normalizeHostThemeSnapshot({
+    colorScheme: 'dark',
+    source: 'cdp',
+    vars: {
+      '--background': '#1e1f29',
+      '--card': '#252634',
+      '--foreground': '#e6eaf2',
+      '--primary': 'url(javascript:alert(1))',
+      '--border': '#33364a; background: red',
+      '--not-allowed': '#ff0000',
+    },
+  });
+  assert.equal(sanitized.vars['--background'], '#1e1f29');
+  assert.equal(sanitized.vars['--card'], '#252634');
+  assert.equal(sanitized.vars['--primary'], undefined);
+  assert.equal(sanitized.vars['--border'], undefined);
+  assert.equal(sanitized.vars['--not-allowed'], undefined);
+
+  const rawIndexHtml = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.ok(
+    rawIndexHtml.indexOf('<script src="/preload.js"></script>') <
+      rawIndexHtml.indexOf('rel="stylesheet"'),
+    'index.html must load /preload.js before /styles.css'
+  );
+  const injectedHtml = injectHostThemeFallbackIntoHtml(rawIndexHtml, sanitized);
+  assert.ok(injectedHtml.includes(`<style id="${HOST_THEME_FALLBACK_STYLE_ID}">`));
+  assert.ok(
+    injectedHtml.indexOf(`id="${HOST_THEME_FALLBACK_STYLE_ID}"`) <
+      injectedHtml.indexOf('rel="stylesheet"'),
+    'fallback host theme style must precede styles.css so native host styles override it'
+  );
+  assert.match(buildHostThemeFallbackCss(sanitized), /--background:#1e1f29/);
+
+  // 3) Sidecar iframe without /preload.js vars does NOT get trapped by its own white tokens.css fallback
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    matchMedia: () => ({ matches: true }),
+    getComputedStyle: (el) => {
+      if (el === document.documentElement) {
+        return {
+          backgroundColor: 'rgb(255, 255, 255)',
+          color: 'rgb(30, 37, 48)',
+          getPropertyValue: (p) => (p === '--surface-bg' ? 'rgb(255, 255, 255)' : ''),
+        };
+      }
+      if (el === document.body) {
+        return {
+          backgroundColor: 'rgb(255, 255, 255)',
+          color: 'rgb(30, 37, 48)',
+          getPropertyValue: () => '',
+        };
+      }
+      return null;
+    },
+  };
+  assert.equal(
+    detectHostColorScheme(document.documentElement),
+    'dark',
+    'must skip own white fallback when --surface-bg exists without host vars and follow dark OS'
+  );
+  assert.equal(hasNativeHostTheme(document), false);
+
+  // 4) syncHostThemeFallback preserves SSR fallback before first telemetry arrives, updates on bridged theme,
+  //    and yields cleanly once /preload.js injects native inline :root.style tokens
+  const ssrStyle = document.createElement('style');
+  ssrStyle.id = HOST_THEME_FALLBACK_STYLE_ID;
+  ssrStyle.textContent = ':root{color-scheme:dark;--background:#1a1b26}';
+  document.head.appendChild(ssrStyle);
+
+  const preTelemetryRes = syncHostThemeFallback(undefined, {
+    doc: document,
+    win: globalThis.window,
+    isStandalone: false,
+    telemetryLoaded: false,
+  });
+  assert.equal(preTelemetryRes.mode, 'bridged');
+  assert.equal(
+    document.getElementById(HOST_THEME_FALLBACK_STYLE_ID)?.textContent,
+    ':root{color-scheme:dark;--background:#1a1b26}',
+    'SSR fallback style stays intact until telemetry resolves'
+  );
+
+  const bridgedRes = syncHostThemeFallback(sanitized, {
+    doc: document,
+    win: globalThis.window,
+    isStandalone: false,
+    telemetryLoaded: true,
+  });
+  assert.equal(bridgedRes.mode, 'bridged');
+  assert.match(
+    document.getElementById(HOST_THEME_FALLBACK_STYLE_ID)?.textContent || '',
+    /--background:#1e1f29/
+  );
+
+  // When neither native nor bridged theme exists on a dark OS, stamps data-host-theme-fallback="dark"
+  const mediaRes = syncHostThemeFallback(null, {
+    doc: document,
+    win: globalThis.window,
+    isStandalone: false,
+    telemetryLoaded: true,
+  });
+  assert.equal(mediaRes.mode, 'media-fallback');
+  assert.equal(document.getElementById(HOST_THEME_FALLBACK_STYLE_ID), null);
+  assert.equal(document.documentElement.getAttribute('data-host-theme-fallback'), 'dark');
+
+  // Native /preload.js writes inline --background onto :root.style -> wins & captures snapshot
+  document.documentElement.style.setProperty('--background', '#21252b');
+  document.documentElement.style.setProperty('--foreground', '#d7dae0');
+  const nativeRes = syncHostThemeFallback(sanitized, {
+    doc: document,
+    win: globalThis.window,
+    isStandalone: false,
+    telemetryLoaded: true,
+  });
+  assert.equal(nativeRes.mode, 'native');
+  assert.equal(document.documentElement.hasAttribute('data-host-theme-fallback'), false);
+  assert.equal(document.getElementById(HOST_THEME_FALLBACK_STYLE_ID), null);
+  assert.equal(nativeRes.snapshot?.vars['--background'], '#21252b');
+  assert.equal(captureNativeHostThemeSnapshot(document, globalThis.window)?.colorScheme, 'dark');
+
+  // 5) Store priority across CDP, leader lease, preload cache, and http-helpers sync read
+  resetHostThemeStoreForTests();
+  const cacheFile = path.join(tmpDir, 'host-theme-cache.json');
+  const leaseFile = path.join(tmpDir, 'window-bridge-lease.json');
+  recordPreloadHostTheme(
+    { colorScheme: 'dark', vars: { '--background': '#21252b', '--foreground': '#e6eaf2' } },
+    { persist: true, cacheFilePath: cacheFile, nowMs: 1000 }
+  );
+  assert.equal(
+    readCachedHostThemeSnapshotSync({ dataDir: tmpDir, nowMs: 2000 })?.vars['--background'],
+    '#21252b'
+  );
+  fs.writeFileSync(
+    leaseFile,
+    JSON.stringify({
+      pid: process.pid,
+      updatedAtMs: 5000,
+      hostTheme: {
+        colorScheme: 'dark',
+        source: 'cdp',
+        updatedAtMs: 5000,
+        vars: { '--background': '#1b1d2b', '--card': '#222436', '--foreground': '#c8d3f5' },
+      },
+    }),
+    'utf8'
+  );
+  assert.equal(
+    readCachedHostThemeSnapshotSync({ dataDir: tmpDir, nowMs: 6000 })?.vars['--background'],
+    '#1b1d2b',
+    'fresh bridge lease theme takes priority over older disk cache for zero-flash HTML injection'
+  );
+  assert.equal(
+    getEffectiveHostTheme({ cacheFilePath: cacheFile, leaseFilePath: leaseFile, nowMs: 6000 })?.vars['--background'],
+    '#1b1d2b'
+  );
+
+  recordLiveCdpHostTheme(
+    { colorScheme: 'light', vars: { '--background': '#ffffff', '--foreground': '#18181b' } },
+    { persist: true, cacheFilePath: cacheFile, nowMs: 9000 }
+  );
+  assert.equal(
+    getEffectiveHostTheme({ cacheFilePath: cacheFile, leaseFilePath: leaseFile, nowMs: 9500 })?.colorScheme,
+    'light'
+  );
+
+  // 6) isEquivalentTelemetry reacts to hostTheme changes
+  assert.equal(
+    isEquivalentTelemetry(
+      { hostTheme: { colorScheme: 'dark', vars: { '--background': '#1e1f29' } } },
+      { hostTheme: { colorScheme: 'light', vars: { '--background': '#ffffff' } } }
+    ),
+    false
+  );
+  assert.equal(
+    getHostThemeSignature({ colorScheme: 'dark', vars: { '--background': '#1e1f29' }, updatedAtMs: 1 }),
+    getHostThemeSignature({ colorScheme: 'dark', vars: { '--background': '#1e1f29' }, updatedAtMs: 999 })
+  );
+
+  // 7) CDP host theme probe snippet executes cleanly in IDE workbench DOM and extracts --vscode-* tokens
+  const ideDoc = createMockDom().document;
+  ideDoc.body.className = 'vscode-dark';
+  const probeSnippet = buildHostThemeProbeSnippet();
+  const ideResult = vm.runInNewContext(probeSnippet, {
+    document: ideDoc,
+    window: {
+      getComputedStyle: (el) => {
+        if (el === ideDoc.documentElement) {
+          return {
+            getPropertyValue: (k) =>
+              ({
+                '--vscode-sideBar-background': '#181818',
+                '--vscode-editorWidget-background': '#202020',
+                '--vscode-foreground': '#cccccc',
+              })[k] || '',
+          };
+        }
+        return null;
+      },
+    },
+  });
+  assert.equal(ideResult?.colorScheme, 'dark');
+  assert.equal(ideResult?.vars['--background'], '#181818');
+  assert.equal(ideResult?.vars['--card'], '#202020');
+  assert.equal(ideResult?.vars['--foreground'], '#cccccc');
+});

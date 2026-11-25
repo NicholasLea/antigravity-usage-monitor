@@ -48,6 +48,7 @@ import { buildOfficialQuotaPools } from './quota-pools.mjs';
 import { recordAccountQuotaSnapshot } from './account-quota-history.mjs';
 import { updatePoolQuotaReservationEstimates } from './quota-reservation.mjs';
 import { getDefaultCloudCodeProxyStatus } from './cloudcode-proxy.mjs';
+import { getEffectiveHostTheme } from './host-theme-store.mjs';
 import { getDefaultWindowBridgeStatus } from './window-bridge.mjs';
 import {
   aggregateConsumptionPresetBundle,
@@ -2351,6 +2352,7 @@ export async function buildTelemetryPayloadInternal(
     },
     uiBundleVersion,
     windowBridge: getDefaultWindowBridgeStatus(),
+    hostTheme: getEffectiveHostTheme(),
     cloudCodeProxy: getDefaultCloudCodeProxyStatus(),
     cliStatusLine: getCliStatusLineRuntimeStatus(),
     settings,
