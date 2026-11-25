@@ -30,7 +30,6 @@ import {
   getCanonicalModelColorSeed,
   mergeModelsByDisplayName,
   normalizeModelDisplayMode,
-  normalizeOrchestratorIdDisplayMode,
   resolveDeterministicModelColor,
 } from '../core/formatters.js';
 import { scaleBucketsExact } from '../../shared/telemetry-display-rules.mjs';
@@ -341,7 +340,6 @@ export const ConsumptionView = defineComponent({
             const displaySettings = {
               modelDisplayMode: latestSlice?.modelDisplayMode,
               showUpstreamModel: latestSlice?.showUpstreamModel,
-              orchestratorIdMode: latestSlice?.orchestratorIdMode,
             };
             const bytes = buildConsumptionXlsx(cons, latestSlice?.modelBreakdown || [], {
               displaySettings,
@@ -367,7 +365,6 @@ export const ConsumptionView = defineComponent({
             const displaySettings = {
               modelDisplayMode: latestSlice?.modelDisplayMode,
               showUpstreamModel: latestSlice?.showUpstreamModel,
-              orchestratorIdMode: latestSlice?.orchestratorIdMode,
             };
             const md = buildConsumptionMarkdownReport(cons, latestSlice?.modelBreakdown || [], {
               displaySettings,
@@ -1083,7 +1080,6 @@ export const ConsumptionView = defineComponent({
         slice.customEndMs,
         slice.modelDisplayMode,
         slice.showUpstreamModel,
-        slice.orchestratorIdMode,
         dateSpan,
         preset?.label || rangeInfo.label,
         acct,
@@ -1184,7 +1180,6 @@ export const ConsumptionView = defineComponent({
           slice.showUpstreamModel
         ),
         showUpstreamModel: Boolean(slice.showUpstreamModel),
-        orchestratorIdMode: slice.orchestratorIdMode,
       };
       const mergeAndSortBucketModels = (rawList) =>
         mergeModelsByDisplayName(rawList || [], displaySettings, {
@@ -1258,7 +1253,7 @@ export const ConsumptionView = defineComponent({
       });
 
       const monthlySeries = cons.monthlySeries || [];
-      const monthlyDisplayKey = `${displaySettings.modelDisplayMode}|${displaySettings.showUpstreamModel ? 1 : 0}|${displaySettings.orchestratorIdMode}`;
+      const monthlyDisplayKey = `${displaySettings.modelDisplayMode}|${displaySettings.showUpstreamModel ? 1 : 0}`;
       let monthsMergedModels;
       let allMonthMergedModels;
       if (
@@ -1633,9 +1628,6 @@ export const ConsumptionView = defineComponent({
           st.telemetry?.settings?.showUpstreamModel
         ),
         showUpstreamModel: Boolean(st.telemetry?.settings?.showUpstreamModel),
-        orchestratorIdMode: normalizeOrchestratorIdDisplayMode(
-          st.telemetry?.settings?.orchestratorIdMode
-        ),
       }),
       (slice) => {
         latestSlice = slice;

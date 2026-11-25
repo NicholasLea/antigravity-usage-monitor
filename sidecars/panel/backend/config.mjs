@@ -59,7 +59,6 @@ export {
   normalizeLanguageSetting,
   normalizeModelDisplayMode,
   normalizeModernUi,
-  normalizeOrchestratorIdMode,
   normalizeOverviewMetrics,
   normalizeOverviewModules,
   normalizePluginUpdateMode,

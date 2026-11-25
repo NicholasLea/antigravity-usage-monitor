@@ -709,8 +709,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     showStepAgentBadge: true,
     showStepSpeedColor: false,
     showStepFilterToolbar: false,
+    modelDisplayMode: 'short',
     showUpstreamModel: false,
-    orchestratorIdMode: 'compact',
     weeklyLimitMode: 'official',
     weeklyTokenBudget: 150000000,
     weeklyCostBudget: 100,
@@ -2129,11 +2129,10 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(otherPane.hasAttribute('hidden'), false);
     assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden when switching to Other tab');
     const otherSelects = otherPane.querySelectorAll('.custom-select');
-    assert.equal(otherSelects.length, 4);
+    assert.equal(otherSelects.length, 3);
     const modelFormatSelectEl = otherSelects[0];
-    const orchestratorIdSelectEl = otherSelects[1];
 
-    // Toggle stepModelSelect: short -> upstream -> upstream_compact -> short
+    // Toggle stepModelSelect: short -> upstream -> upstream_compact
     assert.ok(modelFormatSelectEl.querySelector('.select-label').textContent.includes('精简代号'));
     modelFormatSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
     modelFormatSelectEl.querySelectorAll('.select-option')[1].dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -2147,21 +2146,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(mockSettings.modelDisplayMode, 'upstream_compact');
     assert.equal(mockSettings.showUpstreamModel, true);
     assert.ok(modelFormatSelectEl.querySelector('.select-label').textContent.includes('去前缀原始 ID'));
-    modelFormatSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
-    modelFormatSelectEl.querySelectorAll('.select-option')[0].dispatchEvent({ type: 'click', stopPropagation() {} });
-    await new Promise((r) => setTimeout(r, 30));
-    assert.equal(mockSettings.modelDisplayMode, 'short');
-    assert.equal(mockSettings.showUpstreamModel, false);
 
-    // Toggle orchestratorIdSelect: compact -> full
-    assert.ok(orchestratorIdSelectEl.querySelector('.select-label').textContent.includes('精简代号'));
-    orchestratorIdSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
-    orchestratorIdSelectEl.querySelectorAll('.select-option')[1].dispatchEvent({ type: 'click', stopPropagation() {} });
-    await new Promise((r) => setTimeout(r, 30));
-    assert.equal(mockSettings.orchestratorIdMode, 'full');
-    assert.ok(orchestratorIdSelectEl.querySelector('.select-label').textContent.includes('原始完整 ID'));
-
-    const [contextModel, contextWindow] = otherSelects.slice(2);
+    const [contextModel, contextWindow] = otherSelects.slice(1);
     const selectOption = (select, index) => {
       select.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
       select.querySelectorAll('.select-option')[index].dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -2219,10 +2205,10 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     // Two-step confirm for Reset All Settings: 1st click arms confirm, 2nd click resets all settings
     resetAllBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
     assert.equal(resetAllBtn.classList.contains('btn-danger-confirm'), true, '1st click arms confirmation state');
-    assert.equal(mockSettings.orchestratorIdMode, 'full', 'Not yet reset on 1st click');
+    assert.equal(mockSettings.modelDisplayMode, 'upstream_compact', 'Not yet reset on 1st click');
     resetAllBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 260));
-    assert.equal(mockSettings.orchestratorIdMode, 'compact', '2nd click resets orchestratorIdMode to default');
+    assert.equal(mockSettings.modelDisplayMode, 'short', '2nd click resets modelDisplayMode to default');
     assert.equal(mockSettings.contextWindowRiskAccepted, false, 'Reset restores contextWindowRiskAccepted to false');
     assert.equal(ctxRiskMask.hasAttribute('hidden'), false, 'Risk mask re-locks after factory reset');
 
@@ -3657,7 +3643,6 @@ test('Composer mount mode (输入框挂载) docks capsule immediately left of Au
     weeklyTokenBudget: 150000000,
     weeklyCostBudget: 100,
     showUpstreamModel: false,
-    orchestratorIdMode: 'compact',
     pluginUpdateMode: 'manual',
     autoUpdatePlugin: false,
     windowMountMode: 'composer',
@@ -4739,7 +4724,6 @@ test('v1.5 feedback E2E: sticky bridge port/token across hot-reloads, CDP->HTTP 
     popoverWidth: 580,
     modelDisplayMode: 'upstream_compact',
     showUpstreamModel: true,
-    orchestratorIdMode: 'compact',
     stepTokenComboFormat: 'context:in:cache',
     stepTableColumns: ['step', 'model', 'tps', 'tokens_io_cache', 'tokens_custom', 'cost'],
   };

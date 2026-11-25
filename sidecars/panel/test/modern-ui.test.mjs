@@ -1633,3 +1633,22 @@ test('Capsule odometer digit rolling (0.15s) and color transition (0.1s) stay st
   assert.equal(capSlots[1].textSpan.textContent, '--s');
   assert.equal(capSlots[1].textSpan.hasAttribute('data-od-active'), false);
 });
+
+test('modern-ui floating hover tooltip rules exclude inline .wm-hover-tip.is-preview inside Shadow DOM popover', () => {
+  const stylesCss = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  assert.match(
+    stylesCss,
+    /:host\(\[data-modern-ui="true"\]\)\s+\.wm-hover-tip:not\(\.is-preview\)/,
+    'Shadow DOM modern-ui floating .wm-hover-tip chrome must not bleed into inline Settings preview'
+  );
+  assert.doesNotMatch(
+    stylesCss,
+    /:host\(\[data-modern-ui="true"\]\)\s+\.wm-hover-tip(?:\.is-above)?\s*[,{]/,
+    'No unguarded :host([data-modern-ui="true"]) .wm-hover-tip rule may override .wm-hover-tip.is-preview'
+  );
+  assert.match(
+    stylesCss,
+    /\.wm-hover-tip\.is-preview\s*\{[^}]*overflow:\s*visible;[^}]*contain:\s*none;/,
+    'Inline hover preview resets overflow and contain from floating .wm-hover-tip'
+  );
+});

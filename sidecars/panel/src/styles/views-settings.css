@@ -273,8 +273,10 @@
   border: none;
   border-radius: 0;
   background: transparent;
-  z-index: 1;
+  z-index: auto;
   pointer-events: auto;
+  overflow: visible;
+  contain: none;
   box-shadow: none;
   animation: none;
 }

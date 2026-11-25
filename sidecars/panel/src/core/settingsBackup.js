@@ -13,7 +13,6 @@ import {
   normalizeLanguageSetting,
   normalizeModelDisplayMode,
   normalizeModernUi,
-  normalizeOrchestratorIdMode,
   normalizeOverviewMetrics,
   normalizeOverviewModules,
   normalizePluginUpdateMode,
@@ -170,7 +169,6 @@ const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
       }
     },
   },
-  normField('orchestratorIdMode', normalizeOrchestratorIdMode),
   {
     exportTo: (src, out) => {
       out.pluginUpdateMode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);

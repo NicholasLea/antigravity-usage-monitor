@@ -4,10 +4,7 @@
  */
 
 import { isEnglishLocale, t } from '../i18n/index.js';
-import {
-  normalizeModelDisplayMode,
-  normalizeOrchestratorIdMode,
-} from '../../shared/settings-normalization.mjs';
+import { normalizeModelDisplayMode } from '../../shared/settings-normalization.mjs';
 import {
   classifyCacheTier,
   classifySpeedTier,
@@ -562,8 +559,6 @@ function stripCompactionMarker(rawText) {
     .trim();
 }
 
-export const normalizeOrchestratorIdDisplayMode = normalizeOrchestratorIdMode;
-
 function normalizeOrchVariantToken(raw = '') {
   let s = String(raw || '')
     .trim()
@@ -658,14 +653,15 @@ function extractDynamicOrchVariant(fields = []) {
  * 统一解析步骤、会话摘要或模型汇总行面向用户的模型显示文本及悬停提示。
  *
  * 规则：
- * - Orchestrator 系列（如 `Orchestrator (Carbon / Argon / Neon / Opus 5.5)`、`Orchestrator Worker (Hydrogen / Neon / ...)`）
- *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-<variant>` / `worker-agy-<variant>`；
- *   `'full'` 显示带括号标注的完整上游 ID），不受普通模型显示模式影响；
- * - 其余普通模型遵循 `modelDisplayMode`（`'short'` | `'upstream_compact'` | `'upstream'`，兼容旧版布尔 `showUpstreamModel`）；
+ * - 统一遵循 `modelDisplayMode`（`'short'` | `'upstream_compact'` | `'upstream'`，兼容旧版布尔 `showUpstreamModel`）：
+ *   - Orchestrator 系列（如 `Orchestrator (Carbon / Argon / Neon / Opus 5.5)`、`Orchestrator Worker (Hydrogen / Neon / ...)`）
+ *     在 `'short'` / `'upstream_compact'` 下显示紧凑代号 `orchestrator-<variant>` / `worker-agy-<variant>`，
+ *     在 `'upstream'` 下显示带底层模型标注的完整上游 ID；
+ *   - 其余普通模型按所选模式显示精简代号、去前缀上游 ID 或原始上游 ID；
  * - 独立拆分 `baseText` 及 `compactionSuffix`（`·压缩`），供步骤表单独保护压缩尾标永不截断。
  *
  * @param {object|null|undefined} target
- * @param {{ modelDisplayMode?: string, showUpstreamModel?: boolean, orchestratorIdMode?: string }|boolean} [settings]
+ * @param {{ modelDisplayMode?: string, showUpstreamModel?: boolean }|boolean} [settings]
  * @param {{ preferLabelInShort?: boolean, fallback?: string }} [options]
  * @returns {{ text: string, baseText: string, compactionSuffix: string, isCompaction: boolean, title: string, isOrchestratorSeries: boolean }}
  */
@@ -677,9 +673,6 @@ export function resolveModelDisplayInfo(target, settings = {}, options = {}) {
         : 'short'
       : normalizeModelDisplayMode(settings?.modelDisplayMode, settings?.showUpstreamModel);
   const showUpstream = modelDisplayMode !== 'short';
-  const orchestratorMode = normalizeOrchestratorIdDisplayMode(
-    typeof settings === 'object' && settings ? settings.orchestratorIdMode : 'compact'
-  );
   const preferLabelInShort = Boolean(options?.preferLabelInShort);
   const fallback = options?.fallback ?? t('fmt.unknownModel');
 
@@ -821,7 +814,7 @@ export function resolveModelDisplayInfo(target, settings = {}, options = {}) {
       }
     }
     if (compactId) {
-      const baseText = orchestratorMode === 'full' ? fullId : compactId;
+      const baseText = modelDisplayMode === 'upstream' ? fullId : compactId;
       const text = `${baseText}${compactionSuffix}`;
       const multiUpstream =
         Array.isArray(target.upstreamModels) && target.upstreamModels.length > 1

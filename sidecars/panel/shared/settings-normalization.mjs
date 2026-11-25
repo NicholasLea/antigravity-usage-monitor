@@ -214,16 +214,6 @@ export function normalizeModelDisplayMode(mode, legacyShowUpstream) {
 }
 
 /**
- * 归一化 Orchestrator 系列模型 ID 显示风格（`'compact'` vs `'full'`，默认 `'compact'`）。
- *
- * @param {unknown} mode
- * @returns {'compact'|'full'}
- */
-export function normalizeOrchestratorIdMode(mode) {
-  return String(mode ?? '').trim().toLowerCase() === 'full' ? 'full' : 'compact';
-}
-
-/**
  * 归一化悬浮主面板宽度模式（`'auto'` | `'custom'`，默认 `'auto'`）。
  *
  * @param {unknown} mode

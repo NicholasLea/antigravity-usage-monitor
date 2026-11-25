@@ -212,7 +212,6 @@ export const SettingsView = defineComponent({
         multiSessionToggle: structureTab.refs.multiSessionToggle,
         topbarSlotsList: structureTab.refs.topbarSlotsList,
         stepModelSelect: otherTab.refs.stepModelSelect,
-        orchestratorIdSelect: otherTab.refs.orchestratorIdSelect,
         autoUpdateSelect: generalTab.refs.autoUpdateSelect,
       },
     };

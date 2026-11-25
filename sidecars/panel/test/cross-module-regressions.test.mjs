@@ -1727,7 +1727,7 @@ test('ConsumptionView and TrendAreaChart patch text DOM nodes in-place without o
     document.body.appendChild(view.el);
 
     const makeRangePayload = (rangeKey, tokBase, labels) => ({
-      settings: { modelDisplayMode: 'short', showUpstreamModel: false, orchestratorIdMode: 'label' },
+      settings: { modelDisplayMode: 'short', showUpstreamModel: false },
       consumption: {
         revision: 0,
         selectedRange: {

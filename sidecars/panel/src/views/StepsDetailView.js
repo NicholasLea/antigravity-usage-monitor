@@ -27,7 +27,6 @@ import {
   formatUsd,
   mergeModelsByDisplayName,
   normalizeModelDisplayMode,
-  normalizeOrchestratorIdDisplayMode,
   resolveModelAnomalySummary,
   resolveModelDisplayInfo,
   speedReasonText,
@@ -935,7 +934,6 @@ export const StepsDetailView = defineComponent({
           slice.showUpstreamModel
         ),
         showUpstreamModel: Boolean(slice.showUpstreamModel),
-        orchestratorIdMode: slice.orchestratorIdMode,
       };
 
       const showAgentPrefix = isMergedMultiAgents;
@@ -1080,7 +1078,7 @@ export const StepsDetailView = defineComponent({
       });
 
       const normTokenFmt = normalizeClientStepTokenComboFormat(slice.stepTokenComboFormat);
-      const sortSig = `${sortKey}:${sortDir}:${normTokenFmt}:${displaySettings.modelDisplayMode}:${displaySettings.showUpstreamModel ? 1 : 0}:${displaySettings.orchestratorIdMode}`;
+      const sortSig = `${sortKey}:${sortDir}:${normTokenFmt}:${displaySettings.modelDisplayMode}:${displaySettings.showUpstreamModel ? 1 : 0}`;
       let tableSteps = filteredTableSteps;
       if (sortKey && sortDir) {
         if (cachedSortSrc === filteredTableSteps && cachedSortSig === sortSig) {
@@ -1741,9 +1739,6 @@ export const StepsDetailView = defineComponent({
           st.telemetry?.settings?.showUpstreamModel
         ),
         showUpstreamModel: Boolean(st.telemetry?.settings?.showUpstreamModel),
-        orchestratorIdMode: normalizeOrchestratorIdDisplayMode(
-          st.telemetry?.settings?.orchestratorIdMode
-        ),
         showStepTurnRail: st.telemetry?.settings?.showStepTurnRail === true,
         showStepAgentBadge: st.telemetry?.settings?.showStepAgentBadge !== false,
         showStepSpeedColor: st.telemetry?.settings?.showStepSpeedColor === true,

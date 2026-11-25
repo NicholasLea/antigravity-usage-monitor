@@ -1749,7 +1749,7 @@ export const StepTableWidget = defineComponent({
         cascadeId, locale, colOrderSig, effectiveScopes, hasSubagents, isMergedMultiAgents,
         effectiveTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
         displaySettings.modelDisplayMode, displaySettings.showUpstreamModel,
-        displaySettings.orchestratorIdMode, normSortKey, normSortDir,
+        normSortKey, normSortDir,
       ]);
       if (
         lastRenderOptions === renderOptions &&

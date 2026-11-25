@@ -20,7 +20,6 @@ import {
   fetchQuotaReservationLog,
   normalizeClientExperimentalQuotaReservation,
   normalizeClientModelDisplayMode,
-  normalizeClientOrchestratorIdMode,
   rebuildTrajectoryCache,
   resetAllSettings,
   saveModelContextWindow,
@@ -55,18 +54,10 @@ function getStepModelDisplayOptions() {
   ];
 }
 
-function getOrchestratorIdDisplayOptions() {
-  return [
-    { value: 'compact', label: t('settings.oth.orchCompact') },
-    { value: 'full', label: t('settings.oth.orchFull') },
-  ];
-}
-
 export const SettingsOtherTab = defineComponent({
   name: 'SettingsOtherTab',
   setup({ onCleanup, getProps }) {
     let draftModelDisplayMode = 'short';
-    let draftOrchestratorIdMode = 'compact';
     let draftExperimentalQuotaReservation = true;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
@@ -154,10 +145,6 @@ export const SettingsOtherTab = defineComponent({
       className: 'form-label',
       text: t('settings.oth.modelFormat'),
     });
-    const orchFormatLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.oth.orchFormat'),
-    });
 
     const stepModelSelect = CustomSelect({
       modelValue: 'short',
@@ -181,25 +168,6 @@ export const SettingsOtherTab = defineComponent({
       },
     });
 
-    const orchestratorIdSelect = CustomSelect({
-      modelValue: 'compact',
-      icon: 'layers',
-      options: getOrchestratorIdDisplayOptions(),
-      onUpdateModelValue: async (val) => {
-        const nextMode = normalizeClientOrchestratorIdMode(val);
-        draftOrchestratorIdMode = nextMode;
-        orchestratorIdSelect.setValue(nextMode);
-        showModelFeedback(t('settings.saving'), 0);
-        try {
-          await saveSettingsPatch({ orchestratorIdMode: nextMode });
-          showModelFeedback(t('settings.saved'), 1500);
-        } catch {
-          if (latestSettings) renderSettings(latestSettings);
-          showModelFeedback(t('settings.saveFailed'), 2500);
-        }
-      },
-    });
-
     const modelPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
@@ -209,7 +177,6 @@ export const SettingsOtherTab = defineComponent({
         modelStatusText,
       ]),
       h('div', { className: 'form-row' }, [modelFormatLabelEl, stepModelSelect.el]),
-      h('div', { className: 'form-row' }, [orchFormatLabelEl, orchestratorIdSelect.el]),
     ]);
 
     // --- Card 2: 试验性功能 ---
@@ -884,7 +851,6 @@ export const SettingsOtherTab = defineComponent({
         settings.modelDisplayMode,
         settings.showUpstreamModel
       );
-      draftOrchestratorIdMode = normalizeClientOrchestratorIdMode(settings.orchestratorIdMode);
       draftExperimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
         settings.experimentalQuotaReservation
       );
@@ -899,10 +865,6 @@ export const SettingsOtherTab = defineComponent({
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
-      orchestratorIdSelect.setProps({
-        modelValue: draftOrchestratorIdMode,
-        options: getOrchestratorIdDisplayOptions(),
-      });
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
@@ -913,7 +875,6 @@ export const SettingsOtherTab = defineComponent({
     function refreshLabels() {
       patchText(modelCardTitleEl, t('settings.oth.modelTitle'));
       patchText(modelFormatLabelEl, t('settings.oth.modelFormat'));
-      patchText(orchFormatLabelEl, t('settings.oth.orchFormat'));
       patchText(expTitleEl, t('settings.oth.expTitle'));
       patchText(quotaReserveLabelEl, t('settings.oth.quotaReserveLabel'));
       patchText(quotaReserveBadgeEl, t('settings.oth.expBadge'));
@@ -950,10 +911,6 @@ export const SettingsOtherTab = defineComponent({
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
-      orchestratorIdSelect.setProps({
-        modelValue: draftOrchestratorIdMode,
-        options: getOrchestratorIdDisplayOptions(),
-      });
       sessionMigrationCard.refs.refreshLabels();
     }
 
@@ -963,7 +920,6 @@ export const SettingsOtherTab = defineComponent({
       if (maintTimer) clearTimeout(maintTimer);
       if (resetConfirmTimer) clearTimeout(resetConfirmTimer);
       stepModelSelect.destroy();
-      orchestratorIdSelect.destroy();
       quotaReserveToggle.destroy();
       ctxBridgeNotice.destroy();
       ctxMainToggle.destroy();
@@ -977,7 +933,6 @@ export const SettingsOtherTab = defineComponent({
       el: rootEl,
       refs: {
         stepModelSelect,
-        orchestratorIdSelect,
         quotaReserveToggle,
         exportReserveLogBtn,
         ctxBridgeNotice,

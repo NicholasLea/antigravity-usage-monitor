@@ -912,10 +912,10 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"].wm-popover-panel,
-[data-modern-ui="true"].wm-hover-tip,
+[data-modern-ui="true"].wm-hover-tip:not(.is-preview),
 [data-modern-ui="true"].wm-multi-panel,
 :host([data-modern-ui="true"]) .wm-popover-panel,
-:host([data-modern-ui="true"]) .wm-hover-tip,
+:host([data-modern-ui="true"]) .wm-hover-tip:not(.is-preview),
 :host([data-modern-ui="true"]) .wm-multi-panel {
   border: none;
   border-radius: 12px;
@@ -925,10 +925,10 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"].wm-popover-panel.is-above,
-[data-modern-ui="true"].wm-hover-tip.is-above,
+[data-modern-ui="true"].wm-hover-tip.is-above:not(.is-preview),
 [data-modern-ui="true"].wm-multi-panel.is-above,
 :host([data-modern-ui="true"]) .wm-popover-panel.is-above,
-:host([data-modern-ui="true"]) .wm-hover-tip.is-above,
+:host([data-modern-ui="true"]) .wm-hover-tip.is-above:not(.is-preview),
 :host([data-modern-ui="true"]) .wm-multi-panel.is-above {
   animation-name: anim-modern-pop-in-up;
 }

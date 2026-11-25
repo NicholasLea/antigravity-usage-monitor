@@ -48,7 +48,6 @@ import {
   normalizeExperimentalQuotaReservation,
   normalizeHoverModules,
   normalizeModelDisplayMode,
-  normalizeOrchestratorIdMode,
   normalizeOverviewMetrics,
   normalizeOverviewModules,
   normalizePluginUpdateMode,
@@ -531,7 +530,6 @@ export const normalizeClientOverviewModules = normalizeOverviewModules;
 export const normalizeClientOverviewMetrics = normalizeOverviewMetrics;
 export const normalizeClientStepColumns = normalizeStepTableColumns;
 export const normalizeClientUpdateMode = normalizePluginUpdateMode;
-export const normalizeClientOrchestratorIdMode = normalizeOrchestratorIdMode;
 export const normalizeClientWindowMountMode = normalizeWindowMountMode;
 
 export function isEquivalentTelemetry(prev, next) {
@@ -604,12 +602,6 @@ export function isEquivalentTelemetry(prev, next) {
   if (
     String(pSet?.stepTokenComboFormat ?? DEFAULT_STEP_TOKEN_COMBO_FORMAT).trim() !==
     String(nSet?.stepTokenComboFormat ?? DEFAULT_STEP_TOKEN_COMBO_FORMAT).trim()
-  ) {
-    return false;
-  }
-  if (
-    normalizeOrchestratorIdMode(pSet?.orchestratorIdMode) !==
-    normalizeOrchestratorIdMode(nSet?.orchestratorIdMode)
   ) {
     return false;
   }
@@ -1983,9 +1975,6 @@ export async function saveSettingsPatch(patch) {
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowSwarmEnabled')) {
     safePatch.contextWindowSwarmEnabled = Boolean(safePatch.contextWindowSwarmEnabled);
-  }
-  if (Object.prototype.hasOwnProperty.call(safePatch, 'orchestratorIdMode')) {
-    safePatch.orchestratorIdMode = normalizeClientOrchestratorIdMode(safePatch.orchestratorIdMode);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'standalonePort')) {
     const numPort = Number(safePatch.standalonePort);

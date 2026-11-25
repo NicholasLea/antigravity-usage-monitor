@@ -2,7 +2,7 @@
 'use strict';
 
 // --- shared/settings-normalization.mjs ---
-const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi } = (() => {
+const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi } = (() => {
 /**
  * @fileoverview 前后端与 CLI 共用的偏好设置枚举常量、默认值与无状态纯函数归一化规则。
  */
@@ -216,16 +216,6 @@ function normalizeModelDisplayMode(mode, legacyShowUpstream) {
   if (m === 'short') return 'short';
   if (legacyShowUpstream === true) return 'upstream';
   return 'short';
-}
-
-/**
- * 归一化 Orchestrator 系列模型 ID 显示风格（`'compact'` vs `'full'`，默认 `'compact'`）。
- *
- * @param {unknown} mode
- * @returns {'compact'|'full'}
- */
-function normalizeOrchestratorIdMode(mode) {
-  return String(mode ?? '').trim().toLowerCase() === 'full' ? 'full' : 'compact';
 }
 
 /**
@@ -608,7 +598,7 @@ function normalizeExperimentalModernUi(val) {
   }
   return Boolean(val);
 }
-return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi };
+return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi };
 })();
 
 // --- shared/telemetry-display-rules.mjs ---
@@ -2161,9 +2151,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.modelShort': '精简代号 (如 argon-4-high)',
   'settings.oth.modelUpstream': '原始模型 ID (如 gemini-3.8-flash-n)',
   'settings.oth.modelUpstreamCompact': '去前缀原始 ID (如 3.8-flash-n / sonnet-4-6 / 5.4-mini)',
-  'settings.oth.orchFormat': 'Orchestrator 系列 ID',
-  'settings.oth.orchCompact': '精简代号 (如 orchestrator-argon)',
-  'settings.oth.orchFull': '原始完整 ID (如 gemini-pro-orchestrator)',
   'settings.oth.expTitle': '试验性功能',
   'settings.oth.expBadge': '试验性',
   'settings.oth.quotaReserveLabel': '配额预占估算',
@@ -3185,9 +3172,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.modelShort': 'Short Alias (e.g. argon-4-high)',
   'settings.oth.modelUpstream': 'Raw Upstream ID (e.g. gemini-3.8-flash-n)',
   'settings.oth.modelUpstreamCompact': 'Trimmed Raw ID (hide gemini- / claude- / gpt-)',
-  'settings.oth.orchFormat': 'Orchestrator Series ID',
-  'settings.oth.orchCompact': 'Compact Alias (e.g. orchestrator-argon)',
-  'settings.oth.orchFull': 'Full Upstream ID (e.g. gemini-pro-orchestrator)',
   'settings.oth.expTitle': 'Experimental',
   'settings.oth.expBadge': 'Experimental',
   'settings.oth.quotaReserveLabel': 'Quota Reservation Estimate',
@@ -4403,7 +4387,7 @@ return { defineComponent };
 })();
 
 // --- src/core/formatters.js ---
-const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
+const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
 /**
  * @fileoverview Pure formatting utilities for speed metrics, token counts,
  * USD estimates, countdown timers, and custom datetime displays.
@@ -4955,8 +4939,6 @@ function stripCompactionMarker(rawText) {
     .trim();
 }
 
-const normalizeOrchestratorIdDisplayMode = normalizeOrchestratorIdMode;
-
 function normalizeOrchVariantToken(raw = '') {
   let s = String(raw || '')
     .trim()
@@ -5051,14 +5033,15 @@ function extractDynamicOrchVariant(fields = []) {
  * 统一解析步骤、会话摘要或模型汇总行面向用户的模型显示文本及悬停提示。
  *
  * 规则：
- * - Orchestrator 系列（如 `Orchestrator (Carbon / Argon / Neon / Opus 5.5)`、`Orchestrator Worker (Hydrogen / Neon / ...)`）
- *   独立遵循 `orchestratorIdMode`（`'compact'` 显示 `orchestrator-<variant>` / `worker-agy-<variant>`；
- *   `'full'` 显示带括号标注的完整上游 ID），不受普通模型显示模式影响；
- * - 其余普通模型遵循 `modelDisplayMode`（`'short'` | `'upstream_compact'` | `'upstream'`，兼容旧版布尔 `showUpstreamModel`）；
+ * - 统一遵循 `modelDisplayMode`（`'short'` | `'upstream_compact'` | `'upstream'`，兼容旧版布尔 `showUpstreamModel`）：
+ *   - Orchestrator 系列（如 `Orchestrator (Carbon / Argon / Neon / Opus 5.5)`、`Orchestrator Worker (Hydrogen / Neon / ...)`）
+ *     在 `'short'` / `'upstream_compact'` 下显示紧凑代号 `orchestrator-<variant>` / `worker-agy-<variant>`，
+ *     在 `'upstream'` 下显示带底层模型标注的完整上游 ID；
+ *   - 其余普通模型按所选模式显示精简代号、去前缀上游 ID 或原始上游 ID；
  * - 独立拆分 `baseText` 及 `compactionSuffix`（`·压缩`），供步骤表单独保护压缩尾标永不截断。
  *
  * @param {object|null|undefined} target
- * @param {{ modelDisplayMode?: string, showUpstreamModel?: boolean, orchestratorIdMode?: string }|boolean} [settings]
+ * @param {{ modelDisplayMode?: string, showUpstreamModel?: boolean }|boolean} [settings]
  * @param {{ preferLabelInShort?: boolean, fallback?: string }} [options]
  * @returns {{ text: string, baseText: string, compactionSuffix: string, isCompaction: boolean, title: string, isOrchestratorSeries: boolean }}
  */
@@ -5070,9 +5053,6 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
         : 'short'
       : normalizeModelDisplayMode(settings?.modelDisplayMode, settings?.showUpstreamModel);
   const showUpstream = modelDisplayMode !== 'short';
-  const orchestratorMode = normalizeOrchestratorIdDisplayMode(
-    typeof settings === 'object' && settings ? settings.orchestratorIdMode : 'compact'
-  );
   const preferLabelInShort = Boolean(options?.preferLabelInShort);
   const fallback = options?.fallback ?? t('fmt.unknownModel');
 
@@ -5214,7 +5194,7 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
       }
     }
     if (compactId) {
-      const baseText = orchestratorMode === 'full' ? fullId : compactId;
+      const baseText = modelDisplayMode === 'upstream' ? fullId : compactId;
       const text = `${baseText}${compactionSuffix}`;
       const multiUpstream =
         Array.isArray(target.upstreamModels) && target.upstreamModels.length > 1
@@ -5847,7 +5827,7 @@ function buildDeterministicModelColorMap(models = []) {
 
   return colorMap;
 }
-return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
 })();
 
 // --- src/core/stepInspector.js ---
@@ -6406,7 +6386,6 @@ const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
       }
     },
   },
-  normField('orchestratorIdMode', normalizeOrchestratorIdMode),
   {
     exportTo: (src, out) => {
       out.pluginUpdateMode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);
@@ -9439,7 +9418,7 @@ return { fetchHostI18nStatus, refreshHostI18nManifest, selectHostI18nLanguage, u
 })();
 
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 /**
  * @fileoverview Reactive telemetry store with async non-overlapping poll scheduler
  * and granular slice updates.
@@ -9908,7 +9887,6 @@ const normalizeClientOverviewModules = normalizeOverviewModules;
 const normalizeClientOverviewMetrics = normalizeOverviewMetrics;
 const normalizeClientStepColumns = normalizeStepTableColumns;
 const normalizeClientUpdateMode = normalizePluginUpdateMode;
-const normalizeClientOrchestratorIdMode = normalizeOrchestratorIdMode;
 const normalizeClientWindowMountMode = normalizeWindowMountMode;
 
 function isEquivalentTelemetry(prev, next) {
@@ -9981,12 +9959,6 @@ function isEquivalentTelemetry(prev, next) {
   if (
     String(pSet?.stepTokenComboFormat ?? DEFAULT_STEP_TOKEN_COMBO_FORMAT).trim() !==
     String(nSet?.stepTokenComboFormat ?? DEFAULT_STEP_TOKEN_COMBO_FORMAT).trim()
-  ) {
-    return false;
-  }
-  if (
-    normalizeOrchestratorIdMode(pSet?.orchestratorIdMode) !==
-    normalizeOrchestratorIdMode(nSet?.orchestratorIdMode)
   ) {
     return false;
   }
@@ -11361,9 +11333,6 @@ async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowSwarmEnabled')) {
     safePatch.contextWindowSwarmEnabled = Boolean(safePatch.contextWindowSwarmEnabled);
   }
-  if (Object.prototype.hasOwnProperty.call(safePatch, 'orchestratorIdMode')) {
-    safePatch.orchestratorIdMode = normalizeClientOrchestratorIdMode(safePatch.orchestratorIdMode);
-  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'standalonePort')) {
     const numPort = Number(safePatch.standalonePort);
     safePatch.standalonePort =
@@ -11885,7 +11854,7 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
@@ -18507,7 +18476,7 @@ function createSessionLineChart() {
       const s = matchedSteps[i];
       preStepParts += `${s.stepIndex ?? i},${s.agentIndex ?? 0},${s.modelKey || s.modelShort || ''},${s.inputTokens || 0},${s.cacheReadTokens || 0},${s.outputTokens || 0},${s.contextTokens || 0},${s.tokPerSec ?? ''},${s.ttftSec ?? ''},${s.costUsd ?? ''},${s.anomalySig || ''};`;
     }
-    const preSig = `${locale}|${viewW}|${metric}|${showAgentPrefix}|${displaySettings?.modelDisplayMode || ''}|${Boolean(displaySettings?.showUpstreamModel)}|${displaySettings?.orchestratorIdMode || ''}|${targetKeys.join(',')}|${extColorSig}|${preStepParts}`;
+    const preSig = `${locale}|${viewW}|${metric}|${showAgentPrefix}|${displaySettings?.modelDisplayMode || ''}|${Boolean(displaySettings?.showUpstreamModel)}|${targetKeys.join(',')}|${extColorSig}|${preStepParts}`;
     if (preSig === lastPreSig && lastSummaryBadge) {
       return { summaryBadge: lastSummaryBadge };
     }
@@ -27768,7 +27737,7 @@ const StepTableWidget = defineComponent({
         cascadeId, locale, colOrderSig, effectiveScopes, hasSubagents, isMergedMultiAgents,
         effectiveTurnRail, showStepAgentBadge, showStepSpeedColor, normTokenFmt,
         displaySettings.modelDisplayMode, displaySettings.showUpstreamModel,
-        displaySettings.orchestratorIdMode, normSortKey, normSortDir,
+        normSortKey, normSortDir,
       ]);
       if (
         lastRenderOptions === renderOptions &&
@@ -35264,18 +35233,10 @@ function getStepModelDisplayOptions() {
   ];
 }
 
-function getOrchestratorIdDisplayOptions() {
-  return [
-    { value: 'compact', label: t('settings.oth.orchCompact') },
-    { value: 'full', label: t('settings.oth.orchFull') },
-  ];
-}
-
 const SettingsOtherTab = defineComponent({
   name: 'SettingsOtherTab',
   setup({ onCleanup, getProps }) {
     let draftModelDisplayMode = 'short';
-    let draftOrchestratorIdMode = 'compact';
     let draftExperimentalQuotaReservation = true;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
@@ -35363,10 +35324,6 @@ const SettingsOtherTab = defineComponent({
       className: 'form-label',
       text: t('settings.oth.modelFormat'),
     });
-    const orchFormatLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.oth.orchFormat'),
-    });
 
     const stepModelSelect = CustomSelect({
       modelValue: 'short',
@@ -35390,25 +35347,6 @@ const SettingsOtherTab = defineComponent({
       },
     });
 
-    const orchestratorIdSelect = CustomSelect({
-      modelValue: 'compact',
-      icon: 'layers',
-      options: getOrchestratorIdDisplayOptions(),
-      onUpdateModelValue: async (val) => {
-        const nextMode = normalizeClientOrchestratorIdMode(val);
-        draftOrchestratorIdMode = nextMode;
-        orchestratorIdSelect.setValue(nextMode);
-        showModelFeedback(t('settings.saving'), 0);
-        try {
-          await saveSettingsPatch({ orchestratorIdMode: nextMode });
-          showModelFeedback(t('settings.saved'), 1500);
-        } catch {
-          if (latestSettings) renderSettings(latestSettings);
-          showModelFeedback(t('settings.saveFailed'), 2500);
-        }
-      },
-    });
-
     const modelPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
@@ -35418,7 +35356,6 @@ const SettingsOtherTab = defineComponent({
         modelStatusText,
       ]),
       h('div', { className: 'form-row' }, [modelFormatLabelEl, stepModelSelect.el]),
-      h('div', { className: 'form-row' }, [orchFormatLabelEl, orchestratorIdSelect.el]),
     ]);
 
     // --- Card 2: 试验性功能 ---
@@ -36093,7 +36030,6 @@ const SettingsOtherTab = defineComponent({
         settings.modelDisplayMode,
         settings.showUpstreamModel
       );
-      draftOrchestratorIdMode = normalizeClientOrchestratorIdMode(settings.orchestratorIdMode);
       draftExperimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
         settings.experimentalQuotaReservation
       );
@@ -36108,10 +36044,6 @@ const SettingsOtherTab = defineComponent({
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
-      orchestratorIdSelect.setProps({
-        modelValue: draftOrchestratorIdMode,
-        options: getOrchestratorIdDisplayOptions(),
-      });
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
@@ -36122,7 +36054,6 @@ const SettingsOtherTab = defineComponent({
     function refreshLabels() {
       patchText(modelCardTitleEl, t('settings.oth.modelTitle'));
       patchText(modelFormatLabelEl, t('settings.oth.modelFormat'));
-      patchText(orchFormatLabelEl, t('settings.oth.orchFormat'));
       patchText(expTitleEl, t('settings.oth.expTitle'));
       patchText(quotaReserveLabelEl, t('settings.oth.quotaReserveLabel'));
       patchText(quotaReserveBadgeEl, t('settings.oth.expBadge'));
@@ -36159,10 +36090,6 @@ const SettingsOtherTab = defineComponent({
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
-      orchestratorIdSelect.setProps({
-        modelValue: draftOrchestratorIdMode,
-        options: getOrchestratorIdDisplayOptions(),
-      });
       sessionMigrationCard.refs.refreshLabels();
     }
 
@@ -36172,7 +36099,6 @@ const SettingsOtherTab = defineComponent({
       if (maintTimer) clearTimeout(maintTimer);
       if (resetConfirmTimer) clearTimeout(resetConfirmTimer);
       stepModelSelect.destroy();
-      orchestratorIdSelect.destroy();
       quotaReserveToggle.destroy();
       ctxBridgeNotice.destroy();
       ctxMainToggle.destroy();
@@ -36186,7 +36112,6 @@ const SettingsOtherTab = defineComponent({
       el: rootEl,
       refs: {
         stepModelSelect,
-        orchestratorIdSelect,
         quotaReserveToggle,
         exportReserveLogBtn,
         ctxBridgeNotice,
@@ -37084,7 +37009,6 @@ const ConsumptionView = defineComponent({
             const displaySettings = {
               modelDisplayMode: latestSlice?.modelDisplayMode,
               showUpstreamModel: latestSlice?.showUpstreamModel,
-              orchestratorIdMode: latestSlice?.orchestratorIdMode,
             };
             const bytes = buildConsumptionXlsx(cons, latestSlice?.modelBreakdown || [], {
               displaySettings,
@@ -37110,7 +37034,6 @@ const ConsumptionView = defineComponent({
             const displaySettings = {
               modelDisplayMode: latestSlice?.modelDisplayMode,
               showUpstreamModel: latestSlice?.showUpstreamModel,
-              orchestratorIdMode: latestSlice?.orchestratorIdMode,
             };
             const md = buildConsumptionMarkdownReport(cons, latestSlice?.modelBreakdown || [], {
               displaySettings,
@@ -37826,7 +37749,6 @@ const ConsumptionView = defineComponent({
         slice.customEndMs,
         slice.modelDisplayMode,
         slice.showUpstreamModel,
-        slice.orchestratorIdMode,
         dateSpan,
         preset?.label || rangeInfo.label,
         acct,
@@ -37927,7 +37849,6 @@ const ConsumptionView = defineComponent({
           slice.showUpstreamModel
         ),
         showUpstreamModel: Boolean(slice.showUpstreamModel),
-        orchestratorIdMode: slice.orchestratorIdMode,
       };
       const mergeAndSortBucketModels = (rawList) =>
         mergeModelsByDisplayName(rawList || [], displaySettings, {
@@ -38001,7 +37922,7 @@ const ConsumptionView = defineComponent({
       });
 
       const monthlySeries = cons.monthlySeries || [];
-      const monthlyDisplayKey = `${displaySettings.modelDisplayMode}|${displaySettings.showUpstreamModel ? 1 : 0}|${displaySettings.orchestratorIdMode}`;
+      const monthlyDisplayKey = `${displaySettings.modelDisplayMode}|${displaySettings.showUpstreamModel ? 1 : 0}`;
       let monthsMergedModels;
       let allMonthMergedModels;
       if (
@@ -38376,9 +38297,6 @@ const ConsumptionView = defineComponent({
           st.telemetry?.settings?.showUpstreamModel
         ),
         showUpstreamModel: Boolean(st.telemetry?.settings?.showUpstreamModel),
-        orchestratorIdMode: normalizeOrchestratorIdDisplayMode(
-          st.telemetry?.settings?.orchestratorIdMode
-        ),
       }),
       (slice) => {
         latestSlice = slice;
@@ -39388,7 +39306,6 @@ const StepsDetailView = defineComponent({
           slice.showUpstreamModel
         ),
         showUpstreamModel: Boolean(slice.showUpstreamModel),
-        orchestratorIdMode: slice.orchestratorIdMode,
       };
 
       const showAgentPrefix = isMergedMultiAgents;
@@ -39533,7 +39450,7 @@ const StepsDetailView = defineComponent({
       });
 
       const normTokenFmt = normalizeClientStepTokenComboFormat(slice.stepTokenComboFormat);
-      const sortSig = `${sortKey}:${sortDir}:${normTokenFmt}:${displaySettings.modelDisplayMode}:${displaySettings.showUpstreamModel ? 1 : 0}:${displaySettings.orchestratorIdMode}`;
+      const sortSig = `${sortKey}:${sortDir}:${normTokenFmt}:${displaySettings.modelDisplayMode}:${displaySettings.showUpstreamModel ? 1 : 0}`;
       let tableSteps = filteredTableSteps;
       if (sortKey && sortDir) {
         if (cachedSortSrc === filteredTableSteps && cachedSortSig === sortSig) {
@@ -40194,9 +40111,6 @@ const StepsDetailView = defineComponent({
           st.telemetry?.settings?.showUpstreamModel
         ),
         showUpstreamModel: Boolean(st.telemetry?.settings?.showUpstreamModel),
-        orchestratorIdMode: normalizeOrchestratorIdDisplayMode(
-          st.telemetry?.settings?.orchestratorIdMode
-        ),
         showStepTurnRail: st.telemetry?.settings?.showStepTurnRail === true,
         showStepAgentBadge: st.telemetry?.settings?.showStepAgentBadge !== false,
         showStepSpeedColor: st.telemetry?.settings?.showStepSpeedColor === true,
@@ -40524,7 +40438,6 @@ const SettingsView = defineComponent({
         multiSessionToggle: structureTab.refs.multiSessionToggle,
         topbarSlotsList: structureTab.refs.topbarSlotsList,
         stepModelSelect: otherTab.refs.stepModelSelect,
-        orchestratorIdSelect: otherTab.refs.orchestratorIdSelect,
         autoUpdateSelect: generalTab.refs.autoUpdateSelect,
       },
     };
