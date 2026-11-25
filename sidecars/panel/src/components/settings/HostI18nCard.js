@@ -4,9 +4,9 @@
  * Mounted inside `SettingsGeneralTab` with minimal glue; manages:
  * - Language selection (`off` or any pack listed in repository `manifest.json`),
  * - Conditional Light / Deep translation depth switching (0-network hot switch),
- * - On-demand repository pack download, update, and local cache removal,
- * - CDP bridge notice when DevTools port is unavailable,
- * - Optional collapsed developer drawer to collect untranslated UI strings.
+ * - On-demand repository pack download and SemVer-checked updates,
+ * - Direct untranslated UI string collection alongside pack actions,
+ * - CDP bridge notice when DevTools port is unavailable.
  */
 
 import {
@@ -62,7 +62,6 @@ export const HostI18nCard = defineComponent({
     let isCollecting = false;
     let destroyed = false;
     let feedbackTimer = null;
-    let devExpanded = false;
     let lastCollected = null;
 
     const titleEl = h('span', { text: t('settings.hostI18n.title') });
@@ -232,13 +231,14 @@ export const HostI18nCard = defineComponent({
       depthHintEl,
     ]);
 
-    // --- Pack Update Action Bar (visible only when locale !== 'off') ---
+    // --- Pack Update & Missing-String Collection Action Bar ---
     const updatePackBtnText = h('span', { text: t('settings.hostI18n.redownloadBtn') });
     const updatePackBtn = h(
       'button',
       {
         type: 'button',
         className: 'btn-secondary',
+        hidden: true,
         onClick: async () => {
           if (isBusy || destroyed || draftLocale === HOST_I18N_OFF_LOCALE) return;
           const activeBefore = findPackByLocale(draftLocale);
@@ -290,40 +290,6 @@ export const HostI18nCard = defineComponent({
       [createSvgIcon('download', { size: 12 }), updatePackBtnText]
     );
 
-    const packBarEl = h('div', { className: 'host-i18n-pack-bar', hidden: true }, [
-      updatePackBtn,
-    ]);
-
-    // --- CDP Bridge Diagnostic Notice (shown only when active locale cannot reach CDP) ---
-    const bridgeNotice = BridgeStatusNotice({ contextMode: true });
-
-    // --- Collapsed Developer Drawer: Untranslated UI String Collector ---
-    const devChevron = createSvgIcon('chevron-right', {
-      size: 11,
-      className: 'host-i18n-dev-chevron',
-    });
-    const devToggleText = h('span', { text: t('settings.hostI18n.devToolsTitle') });
-    const devToggleBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'host-i18n-dev-toggle',
-        'aria-expanded': 'false',
-        onClick: () => {
-          devExpanded = !devExpanded;
-          patchAttr(devToggleBtn, 'aria-expanded', devExpanded ? 'true' : 'false');
-          patchClasses(devDrawerEl, { 'is-expanded': devExpanded });
-          patchAttr(devBodyEl, 'hidden', !devExpanded);
-          props.onLayoutChange?.();
-        },
-      },
-      [devChevron, devToggleText]
-    );
-
-    const devHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.hostI18n.devToolsHint'),
-    });
     const collectBtnText = h('span', { text: t('settings.hostI18n.collectBtn') });
     const collectResultEl = h('span', { className: 'settings-hint-text', text: '' });
 
@@ -365,6 +331,15 @@ export const HostI18nCard = defineComponent({
       [createSvgIcon('download', { size: 11 }), exportCollectedBtnText]
     );
 
+    const collectResultActionsEl = h('div', { className: 'host-i18n-collect-actions', hidden: true }, [
+      copyCollectedBtn,
+      exportCollectedBtn,
+    ]);
+    const collectResultBoxEl = h('div', { className: 'host-i18n-collect-result', hidden: true }, [
+      collectResultEl,
+      collectResultActionsEl,
+    ]);
+
     const collectBtn = h(
       'button',
       {
@@ -380,23 +355,39 @@ export const HostI18nCard = defineComponent({
             if (destroyed) return;
             if (res?.ok) {
               lastCollected = res;
+              const hasItems = res.count > 0;
               patchText(
                 collectResultEl,
-                res.count > 0
+                hasItems
                   ? t('settings.hostI18n.collectedResult', {
                       count: res.count,
                       targets: res.targets || 1,
                     })
                   : t('settings.hostI18n.collectedEmpty')
               );
-              patchAttr(copyCollectedBtn, 'hidden', !(res.count > 0));
-              patchAttr(exportCollectedBtn, 'hidden', !(res.count > 0));
+              patchClasses(collectResultEl, { 'is-error': false });
+              patchAttr(collectResultBoxEl, 'hidden', false);
+              patchAttr(collectResultActionsEl, 'hidden', !hasItems);
+              patchAttr(copyCollectedBtn, 'hidden', !hasItems);
+              patchAttr(exportCollectedBtn, 'hidden', !hasItems);
             } else {
+              lastCollected = null;
               patchText(collectResultEl, res?.error || t('settings.hostI18n.collectFailed'));
+              patchClasses(collectResultEl, { 'is-error': true });
+              patchAttr(collectResultBoxEl, 'hidden', false);
+              patchAttr(collectResultActionsEl, 'hidden', true);
+              patchAttr(copyCollectedBtn, 'hidden', true);
+              patchAttr(exportCollectedBtn, 'hidden', true);
             }
           } catch (err) {
             if (!destroyed) {
+              lastCollected = null;
               patchText(collectResultEl, err?.message || t('settings.hostI18n.collectFailed'));
+              patchClasses(collectResultEl, { 'is-error': true });
+              patchAttr(collectResultBoxEl, 'hidden', false);
+              patchAttr(collectResultActionsEl, 'hidden', true);
+              patchAttr(copyCollectedBtn, 'hidden', true);
+              patchAttr(exportCollectedBtn, 'hidden', true);
             }
           } finally {
             isCollecting = false;
@@ -411,19 +402,13 @@ export const HostI18nCard = defineComponent({
       [createSvgIcon('search', { size: 12 }), collectBtnText]
     );
 
-    const devBodyEl = h('div', { className: 'host-i18n-dev-body', hidden: true }, [
-      devHintEl,
-      h('div', { className: 'host-i18n-dev-actions' }, [
-        collectBtn,
-        copyCollectedBtn,
-        exportCollectedBtn,
-      ]),
-      collectResultEl,
+    const packBarEl = h('div', { className: 'host-i18n-pack-bar' }, [
+      updatePackBtn,
+      collectBtn,
     ]);
-    const devDrawerEl = h('div', { className: 'host-i18n-dev-drawer' }, [
-      devToggleBtn,
-      devBodyEl,
-    ]);
+
+    // --- CDP Bridge Diagnostic Notice (shown only when active locale cannot reach CDP) ---
+    const bridgeNotice = BridgeStatusNotice({ contextMode: true });
 
     const rootEl = h('section', { className: 'panel host-i18n-panel' }, [
       h('div', { className: 'panel-header' }, [
@@ -440,8 +425,8 @@ export const HostI18nCard = defineComponent({
       ]),
       depthRowEl,
       packBarEl,
+      collectResultBoxEl,
       bridgeNotice.el,
-      devDrawerEl,
     ]);
 
     function applyStatusPayload(payload) {
@@ -477,7 +462,7 @@ export const HostI18nCard = defineComponent({
           : t('settings.hostI18n.depthLightHint')
       );
 
-      patchAttr(packBarEl, 'hidden', !enabled);
+      patchAttr(updatePackBtn, 'hidden', !enabled);
       if (enabled) {
         const hasUpdate = Boolean(activePack?.updateAvailable);
         patchText(
@@ -535,8 +520,6 @@ export const HostI18nCard = defineComponent({
       patchText(langLabelEl, t('settings.hostI18n.langLabel'));
       patchText(langHintEl, t('settings.hostI18n.langHint'));
       patchText(depthLabelEl, t('settings.hostI18n.depthLabel'));
-      patchText(devToggleText, t('settings.hostI18n.devToolsTitle'));
-      patchText(devHintEl, t('settings.hostI18n.devToolsHint'));
       if (!isCollecting) patchText(collectBtnText, t('settings.hostI18n.collectBtn'));
       patchText(copyCollectedBtnText, t('settings.hostI18n.copyJsonBtn'));
       patchText(exportCollectedBtnText, t('settings.hostI18n.exportJsonBtn'));

@@ -699,8 +699,6 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.hostI18n.actionFailed': '语言包操作失败，请重试',
   'settings.hostI18n.updatePackBtn': '更新至 v{ver}',
   'settings.hostI18n.redownloadBtn': '检查更新',
-  'settings.hostI18n.devToolsTitle': '词条采集与多语言扩展',
-  'settings.hostI18n.devToolsHint': '仅扫描当前打开的 Antigravity 界面控件中未命中的英文短语（自动排除聊天正文与代码），便于补全漏翻词条或制作新语言包',
   'settings.hostI18n.collectBtn': '采集未翻译 UI 文案',
   'settings.hostI18n.collectingBtn': '采集中…',
   'settings.hostI18n.collectedResult': '共采集到 {count} 条待翻译 UI 文案（扫描 {targets} 个窗口）',

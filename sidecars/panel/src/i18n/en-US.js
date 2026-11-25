@@ -699,8 +699,6 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.hostI18n.actionFailed': 'Language pack operation failed',
   'settings.hostI18n.updatePackBtn': 'Update to v{ver}',
   'settings.hostI18n.redownloadBtn': 'Check Update',
-  'settings.hostI18n.devToolsTitle': 'Missing UI String Collector',
-  'settings.hostI18n.devToolsHint': 'Scans visible Antigravity UI controls for untranslated English phrases (excluding chat content and code) to help complete packs or author new languages',
   'settings.hostI18n.collectBtn': 'Collect Missing Strings',
   'settings.hostI18n.collectingBtn': 'Collecting…',
   'settings.hostI18n.collectedResult': 'Collected {count} untranslated UI strings across {targets} window(s)',
