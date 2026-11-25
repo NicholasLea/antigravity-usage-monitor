@@ -670,3 +670,37 @@ export function normalizeExperimentalModernUi(val) {
   }
   return Boolean(val);
 }
+
+/**
+ * 归一化宿主启动参数自动维护开关（默认 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+export function normalizeAutoConfigureLaunch(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on' || lower === 'auto') return true;
+    return true;
+  }
+  return Boolean(val);
+}
+
+/**
+ * 归一化 IDE Remote-SSH 远端守护发现与独立端点遥测开关（默认 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+export function normalizeEnableRemoteSshTelemetry(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
+  }
+  return Boolean(val);
+}

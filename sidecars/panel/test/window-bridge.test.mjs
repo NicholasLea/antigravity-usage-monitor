@@ -5756,9 +5756,15 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
     assert.equal(relaunchMacRes.ok, true);
     assert.equal(macSpawnArgs.env.AGY_RELAUNCH_APP, '/Applications/Antigravity.app');
     assert.equal(macSpawnArgs.env.AGY_APP_NAME, 'Antigravity');
-    assert.match(macSpawnArgs.args[1], /if osascript .* then .* pgrep -ax "\$AGY_APP_NAME".* fi/);
+    assert.equal(macSpawnArgs.env.AGY_BUNDLE_MACOS, '/Applications/Antigravity.app/Contents/MacOS/');
+    assert.match(macSpawnArgs.args[1], /ENVIRON\["AGY_BUNDLE_MACOS"\]/);
+    assert.doesNotMatch(macSpawnArgs.args[1], /grep -F -- "\$AGY_BUNDLE_MACOS"/);
+    assert.match(macSpawnArgs.args[1], /pgrep -ax "\$AGY_APP_NAME"/);
     assert.match(macSpawnArgs.args[1], /pkill -TERM -ax "\$AGY_APP_NAME"/);
     assert.match(macSpawnArgs.args[1], /pkill -KILL -ax "\$AGY_APP_NAME"/);
+    assert.match(macSpawnArgs.args[1], /if osascript .* then .* is_alive.* fi/);
+    assert.match(macSpawnArgs.args[1], /kill -TERM \$pids/);
+    assert.match(macSpawnArgs.args[1], /kill -KILL \$pids/);
     assert.match(macSpawnArgs.args[1], /open -a "\$AGY_RELAUNCH_APP" --args --remote-debugging-port=0/);
 
     // macOS TCC-blocked osascript falls back to ps -axo comm= and derives custom .app name
@@ -5806,11 +5812,12 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
     });
     assert.equal(relaunchLinuxRes.ok, true);
     assert.equal(linuxSpawnArgs.env.AGY_RELAUNCH_EXE, '/home/alice/Apps/Antigravity-2.33.0.AppImage');
-    assert.equal(linuxSpawnArgs.env.AGY_PROC_COMM, 'Antigravity-2.3');
     assert.equal(linuxSpawnArgs.env.APPIMAGE, undefined, 'Strips APPIMAGE from relaunch env');
     assert.equal(linuxSpawnArgs.env.LD_LIBRARY_PATH, undefined, 'Strips mount LD_LIBRARY_PATH');
-    assert.match(linuxSpawnArgs.args[1], /for pn in "\$AGY_PROC_NAME" antigravity Antigravity "\$AGY_PROC_COMM"/);
-    assert.match(linuxSpawnArgs.args[1], /pkill -KILL -u "\$uid" -x "\$pn"/);
+    assert.match(linuxSpawnArgs.args[1], /readlink -f "\$AGY_RELAUNCH_EXE"/);
+    assert.match(linuxSpawnArgs.args[1], /readlink "\$d\/exe"/);
+    assert.match(linuxSpawnArgs.args[1], /APPIMAGE=\$AGY_RELAUNCH_EXE/);
+    assert.match(linuxSpawnArgs.args[1], /kill -KILL \$pids/);
 
     // Explicit ANTIGRAVITY_DEVTOOLS_PORT fallback, HKLM UAC patching, single-quoted UAC script safety & de-elevation
     const innerScriptCheck = buildWindowsRelaunchInnerScript(fakeExe, [stalePortFile], 'desktop', {

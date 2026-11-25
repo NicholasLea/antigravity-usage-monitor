@@ -2883,7 +2883,7 @@ test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic 
   assert.equal(latestQuery, '');
   assert.equal(sBox.clearBtnEl.hasAttribute('hidden'), true);
 
-  // 4. Declarative settingsBackup round-trips all 34 portable keys + coupled legacy flags
+  // 4. Declarative settingsBackup round-trips all 36 portable keys + coupled legacy flags
   const exported = buildExportableSettingsJson({
     language: 'en-US',
     modernUi: false,
@@ -2899,7 +2899,7 @@ test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic 
     accountQuotaRefreshMinutes: 180,
   });
   const parsedExport = JSON.parse(exported);
-  assert.equal(Object.keys(parsedExport.settings).length, 34);
+  assert.equal(Object.keys(parsedExport.settings).length, 36);
   assert.equal('orchestratorIdMode' in parsedExport.settings, false);
   const reimported = parseImportedSettingsJson(
     JSON.stringify({

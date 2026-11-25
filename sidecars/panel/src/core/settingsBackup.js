@@ -5,8 +5,10 @@
 
 import {
   normalizeAccountQuotaRefreshMinutes,
+  normalizeAutoConfigureLaunch,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeEnableRemoteSshTelemetry,
   normalizeExperimentalQuotaReservation,
   normalizeFontScale,
   normalizeHoverMetricStyle,
@@ -202,6 +204,8 @@ const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
   boolField('enableCliStatusLine', true),
   normField('cliStatusLineSlots', normalizeCliStatusLineSlots),
   normField('standalonePort', normalizeStandalonePort),
+  normField('autoConfigureLaunch', normalizeAutoConfigureLaunch),
+  normField('enableRemoteSshTelemetry', normalizeEnableRemoteSshTelemetry),
   boolField('showTopbarMultiSession', true),
   normField('contextAgentMode', normalizeContextAgentMode),
   arrayField('topbarCapsuleSlots', normalizeTopbarCapsuleSlots),

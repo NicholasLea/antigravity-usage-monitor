@@ -62,7 +62,10 @@ import {
 import { getCloudStatus } from './pricing-catalog.mjs';
 import { buildTelemetryPayload, clearTelemetryBuilderMemo } from './telemetry-builder.mjs';
 import {
+  createMacOsLaunchWrapper,
   ensureDesktopLaunchEntriesConfigured,
+  inspectMacOsLaunchWrapperStatus,
+  removeMacOsLaunchWrapper,
   triggerDesktopHostRelaunch,
 } from './desktop-launcher-config.mjs';
 import {
@@ -398,12 +401,16 @@ export function executeSettingsAction(data) {
   const contextWindowScopeChanged =
     (updated.contextWindowMainEnabled !== false) !== (current.contextWindowMainEnabled !== false) ||
     (updated.contextWindowSwarmEnabled === true) !== (current.contextWindowSwarmEnabled === true);
+  const bridgeAuxChanged =
+    (updated.autoConfigureLaunch !== false) !== (current.autoConfigureLaunch !== false) ||
+    (updated.enableRemoteSshTelemetry !== false) !== (current.enableRemoteSshTelemetry !== false);
   const affectsBackendTelemetry =
     updated.weeklyLimitMode !== current.weeklyLimitMode ||
     updated.weeklyTokenBudget !== current.weeklyTokenBudget ||
     updated.weeklyCostBudget !== current.weeklyCostBudget ||
     updated.enableWindowOverlay !== (current.enableWindowOverlay !== false) ||
     updated.windowMountMode !== prevMountMode ||
+    bridgeAuxChanged ||
     contextWindowScopeChanged;
   inFlightRequests.clear();
   if (affectsBackendTelemetry) {
@@ -411,7 +418,8 @@ export function executeSettingsAction(data) {
   }
   if (
     updated.enableWindowOverlay !== (current.enableWindowOverlay !== false) ||
-    updated.windowMountMode !== prevMountMode
+    updated.windowMountMode !== prevMountMode ||
+    bridgeAuxChanged
   ) {
     void notifyWindowOverlaySetting(updated.enableWindowOverlay);
   } else if (contextWindowScopeChanged) {
@@ -534,9 +542,13 @@ export function executeResetSettingsAction() {
     current.windowMountMode,
     current.enableWindowOverlay
   );
+  const bridgeAuxChanged =
+    (updated.autoConfigureLaunch !== false) !== (current.autoConfigureLaunch !== false) ||
+    (updated.enableRemoteSshTelemetry !== false) !== (current.enableRemoteSshTelemetry !== false);
   if (
     updated.enableWindowOverlay !== (current.enableWindowOverlay !== false) ||
-    updated.windowMountMode !== prevMountMode
+    updated.windowMountMode !== prevMountMode ||
+    bridgeAuxChanged
   ) {
     void notifyWindowOverlaySetting(updated.enableWindowOverlay);
   } else if (
@@ -735,12 +747,66 @@ export async function executeAccountCredentialAction(data, opts = {}) {
   };
 }
 
-export async function executeBridgeRelaunchAction() {
-  ensureIdeRemoteDebuggingArgv({ enabled: true });
-  const launchConfig = await ensureDesktopLaunchEntriesConfigured({ enabled: true }).catch(
-    () => null
-  );
+export async function executeBridgeRelaunchAction(data = {}) {
+  const payload = isPlainObject(data) ? data : {};
+  const action = String(payload.action || 'relaunch').trim().toLowerCase();
+  const rawProduct = String(payload.product || 'auto').trim().toLowerCase();
+  const bridgeSnap = getDefaultWindowBridgeStatus();
+  const preferredProduct =
+    rawProduct === 'ide' || rawProduct === 'desktop'
+      ? rawProduct
+      : String(bridgeSnap?.targetProduct || 'auto').trim().toLowerCase() || 'auto';
+
+  if (action === 'create_macos_wrapper') {
+    const targetProd = preferredProduct === 'ide' ? 'ide' : 'desktop';
+    const created = await createMacOsLaunchWrapper({ product: targetProd });
+    const wrapperStatus = inspectMacOsLaunchWrapperStatus();
+    clearTelemetryBuilderMemo();
+    return {
+      status: created.ok ? 200 : Number(created.status || 500),
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        ...created,
+        macWrapperExists: Boolean(wrapperStatus.exists),
+        macDesktopWrapperExists: Boolean(wrapperStatus.desktopExists),
+        macIdeWrapperExists: Boolean(wrapperStatus.ideExists),
+        macWrapperPaths: wrapperStatus.paths || [],
+      }),
+    };
+  }
+
+  if (action === 'remove_macos_wrapper') {
+    const removeProd =
+      rawProduct === 'ide' || rawProduct === 'desktop' ? rawProduct : 'both';
+    const removed = removeMacOsLaunchWrapper({ product: removeProd });
+    const wrapperStatus = inspectMacOsLaunchWrapperStatus();
+    clearTelemetryBuilderMemo();
+    return {
+      status: removed.ok ? 200 : Number(removed.status || 500),
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        ...removed,
+        macWrapperExists: Boolean(wrapperStatus.exists),
+        macDesktopWrapperExists: Boolean(wrapperStatus.desktopExists),
+        macIdeWrapperExists: Boolean(wrapperStatus.ideExists),
+        macWrapperPaths: wrapperStatus.paths || [],
+      }),
+    };
+  }
+
+  if (preferredProduct !== 'desktop') {
+    ensureIdeRemoteDebuggingArgv({ enabled: true });
+  }
+  const launchProduct =
+    preferredProduct === 'ide' ? 'ide' : preferredProduct === 'desktop' ? 'desktop' : 'both';
+  const launchConfig = await ensureDesktopLaunchEntriesConfigured({
+    enabled: true,
+    product: launchProduct,
+  }).catch(() => null);
   const result = await triggerDesktopHostRelaunch({
+    preferredProduct,
     stalePortFiles: resolveDevToolsPortCandidates(),
     readOnlyShortcutPaths: launchConfig?.readOnlyPaths || [],
   });
@@ -930,7 +996,7 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executeTelemetryAction(data, opts);
     case 'settings':
       if (isPlainObject(data) && data.__bridgeAction === 'relaunch') {
-        return executeBridgeRelaunchAction();
+        return executeBridgeRelaunchAction(data);
       }
       if (isPlainObject(data) && typeof data.__cliStatusLineAction === 'string') {
         return executeCliStatusLineAction(data.__cliStatusLineAction);
@@ -987,7 +1053,7 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
     case 'plugin_update':
       return executePluginUpdateAction();
     case 'bridge_relaunch':
-      return executeBridgeRelaunchAction();
+      return executeBridgeRelaunchAction(data);
     case 'session_migration_catalog':
       return executeSessionMigrationCatalogAction(data, opts);
     case 'session_migration_migrate':

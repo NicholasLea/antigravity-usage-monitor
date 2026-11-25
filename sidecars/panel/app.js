@@ -2,11 +2,7 @@
 'use strict';
 
 // --- shared/settings-normalization.mjs ---
-const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi } = (() => {
-/**
- * @fileoverview 前后端与 CLI 共用的偏好设置枚举常量、默认值与无状态纯函数归一化规则。
- */
-
+const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi, normalizeAutoConfigureLaunch, normalizeEnableRemoteSshTelemetry } = (() => {
 const SUPPORTED_LANGUAGES = Object.freeze(['auto', 'zh-CN', 'en-US']);
 
 const THEME_ACCENT_KEYS = Object.freeze([
@@ -675,15 +671,45 @@ function normalizeExperimentalModernUi(val) {
   }
   return Boolean(val);
 }
-return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi };
+
+/**
+ * 归一化宿主启动参数自动维护开关（默认 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+function normalizeAutoConfigureLaunch(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on' || lower === 'auto') return true;
+    return true;
+  }
+  return Boolean(val);
+}
+
+/**
+ * 归一化 IDE Remote-SSH 远端守护发现与独立端点遥测开关（默认 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+function normalizeEnableRemoteSshTelemetry(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
+  }
+  return Boolean(val);
+}
+return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi, normalizeAutoConfigureLaunch, normalizeEnableRemoteSshTelemetry };
 })();
 
 // --- shared/telemetry-display-rules.mjs ---
 const { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyCacheTier, classifyStepCostTier, classifyTtftTier, formatCompactTokens, formatCompactCapsuleCost, formatCompactCapsuleTtft, hasArgonWeeklyQuotaPool, resolveCapsuleQuotaSlotPct, scaleBucketsExact } = (() => {
-/**
- * @fileoverview 跨 Backend / Frontend / CLI 共用的纯展示阈值、紧凑格式化、第三方配额分池与精确整数缩放规则。
- */
-
 const THIRD_PARTY_POOL_RE =
   /3p|claude|anthropic|fable|gpt|openai|oss|sonnet|opus|haiku|third[-_\s]?party/i;
 
@@ -1031,11 +1057,6 @@ return { WINDOW_BRIDGE_KEY, WINDOW_BRIDGE_ROUTE_KEY, WINDOW_BRIDGE_ENDPOINT_KEY,
 
 // --- shared/host-i18n-protocol.mjs ---
 const { HOST_I18N_GLOBAL_KEY, HOST_I18N_API_PATH, HOST_I18N_SCHEMA_VERSION, HOST_I18N_OFF_LOCALE, HOST_I18N_DEFAULT_DEPTH, HOST_I18N_DEPTHS, HOST_I18N_LOCALE_RE, normalizeHostI18nLocale, normalizeHostI18nDepth } = (() => {
-/**
- * @fileoverview Zero-dependency shared protocol constants and normalizers
- * for the decoupled Antigravity Host I18n subsystem.
- */
-
 const HOST_I18N_GLOBAL_KEY = '__AGUsageMonitorHostI18n';
 const HOST_I18N_API_PATH = '/api/host-i18n';
 const HOST_I18N_SCHEMA_VERSION = 1;
@@ -1094,15 +1115,6 @@ return { HOST_I18N_GLOBAL_KEY, HOST_I18N_API_PATH, HOST_I18N_SCHEMA_VERSION, HOS
 
 // --- shared/host-theme.mjs ---
 const { HOST_THEME_FALLBACK_STYLE_ID, HOST_THEME_CSS_VARS, sanitizeHostThemeCssValue, normalizeHostThemeSnapshot, getHostThemeSignature, buildHostThemeFallbackCss, injectHostThemeFallbackIntoHtml } = (() => {
-/**
- * @fileoverview Pure host theme snapshot normalization, signature, CSS generation,
- * and first-paint HTML injection utilities (`shared/host-theme.mjs`).
- *
- * Strictly L0 pure module: zero Node.js or DOM dependencies so backend workers,
- * `main.mjs`, `window-bridge.mjs`, and frontend `appearance.js` share a single
- * source of truth for allowed host CSS variables and sanitization rules.
- */
-
 const HOST_THEME_FALLBACK_STYLE_ID = 'ag-host-theme-fallback';
 
 const HOST_THEME_CSS_VARS = Object.freeze([
@@ -1261,11 +1273,6 @@ return { HOST_THEME_FALLBACK_STYLE_ID, HOST_THEME_CSS_VARS, sanitizeHostThemeCss
 
 // --- src/icons/svgRegistry.js ---
 const { SVG_ICON_DEFS } = (() => {
-/**
- * @fileoverview Pure vector SVG icon registry (16x16 grid).
- * Strictly zero emoji characters anywhere in the codebase.
- */
-
 const SVG_ICON_DEFS = Object.freeze({
   pulse: [
     { tag: 'path', attrs: { d: 'M1.5 8h2.5l2.2-5.5 3.6 11 2.2-5.5h2.5' } },
@@ -1414,11 +1421,6 @@ return { SVG_ICON_DEFS };
 
 // --- src/icons/SvgIcon.js ---
 const { SVG_NS, createSvgIcon, patchSvgIcon } = (() => {
-/**
- * @fileoverview Dynamic SVG icon component and incremental icon patcher.
- */
-
-
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function createSvgIcon(name, { size = 14, className = '' } = {}) {
@@ -1464,11 +1466,6 @@ return { SVG_NS, createSvgIcon, patchSvgIcon };
 
 // --- src/core/reactive.js ---
 const { createReactiveStore } = (() => {
-/**
- * @fileoverview Fine-grained reactive store with async microtask batching
- * and structural slice comparison to prevent full-page re-renders.
- */
-
 const pendingJobs = new Set();
 let isFlushPending = false;
 
@@ -1586,11 +1583,6 @@ return { createReactiveStore };
 
 // --- src/i18n/zh-CN.js ---
 const { I18N_MESSAGES_ZH_CN } = (() => {
-/**
- * @fileoverview Simplified Chinese (zh-CN) dictionary for Antigravity Usage & Speed Monitor.
- * Matches 100% of the existing out-of-the-box UI copy. Zero emoji characters.
- */
-
 const I18N_MESSAGES_ZH_CN = Object.freeze({
   // Top Navigation
   'nav.overview': '实时监控',
@@ -2323,15 +2315,22 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.bridge.macTitle': '当前会话未开启调试端口，一键重开即可启用挂载',
   'settings.bridge.ctxMacTitle': '当前会话未开启调试端口，一键重开即可激活上下文覆写',
   'settings.bridge.noPortTitle': '未检测到本地调试端口，主窗口挂载暂未生效',
+  'settings.bridge.stalePortTitle': '检测到残留旧调试端口，一键重启即可恢复挂载',
   'settings.bridge.unreachableTitle': '本地调试端口未就绪，主窗口挂载暂未生效',
   'settings.bridge.ctxTitle': '未连通本地调试通道，上下文窗口覆写暂未注入',
   'settings.bridge.guideWin': 'Antigravity 2.33.0+ 默认不再开启调试端口。点击「立即重启并启用挂载」即可自动补齐快捷方式参数、退出托盘后台并带参重启生效。',
-  'settings.bridge.guideMac': '受 macOS 应用签名限制，从 Dock 直接冷启动默认不带调试端口参数。点击下方按钮即可一键带参重开恢复（日常仅关窗不完全退出 Cmd+Q 则持续有效）。',
+  'settings.bridge.guideMac': '受 macOS 应用签名限制，从 Dock 直接冷启动默认不带调试端口参数。可点击下方一键带参重启，或按需在 ~/Applications 生成带参启动器。',
   'settings.bridge.guideLinux': 'Antigravity 2.33.0+ 默认不再开启调试端口。点击「立即重启并启用挂载」即可自动写入 .desktop 启动器并重启生效。',
   'settings.bridge.relaunchBtn': '立即重启并启用挂载',
+  'settings.bridge.relaunchIdeBtn': '重启 IDE 并启用挂载',
   'settings.bridge.relaunchAuthBtn': '授权修补并立即重启',
   'settings.bridge.relaunchingBtn': '正在重启客户端...',
   'settings.bridge.relaunchFailed': '自动重启失败，请从托盘退出后重试',
+  'settings.bridge.macCreateWrapperBtn': '生成启动器到 ~/Applications',
+  'settings.bridge.macRemoveWrapperBtn': '移除 macOS 启动器',
+  'settings.bridge.macWrapperCreatedBtn': '已生成启动器 (.app)',
+  'settings.bridge.macWrapperRemovedBtn': '已移除启动器',
+  'settings.bridge.macWrapperFailedBtn': '启动器操作失败',
   'settings.bridge.dismissAria': '暂时关闭提示',
   'settings.bridge.copyFlagBtn': '复制 {cmd}',
   'settings.bridge.copiedBtn': '已复制启动参数',
@@ -2408,6 +2407,15 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.modelShort': '精简代号 (如 argon-4-high)',
   'settings.oth.modelUpstream': '原始模型 ID (如 gemini-3.8-flash-n)',
   'settings.oth.modelUpstreamCompact': '去前缀原始 ID (如 3.8-flash-n / sonnet-4-6 / 5.4-mini)',
+  'settings.oth.hostTitle': '宿主启动与远端连接',
+  'settings.oth.autoLaunchLabel': '自动维护宿主启动参数',
+  'settings.oth.autoLaunchDesc': '自动为 Antigravity Desktop 与 IDE 维护调试端口参数（argv.json 及桌面/菜单快捷方式），彼此严格隔离',
+  'settings.oth.remoteSshLabel': 'IDE Remote-SSH 远端遥测',
+  'settings.oth.remoteSshDesc': '自动识别 IDE Remote-SSH 窗口，以非交互方式配对远端守护进程并按主机隔离统计账本',
+  'settings.oth.macWrapperLabel': 'macOS 受管启动器 (.app)',
+  'settings.oth.macWrapperDesc': '当前已在 ~/Applications 下创建带参启动器，可在此随时一键清理',
+  'settings.oth.macRemoveWrapperBtn': '移除 macOS 启动器',
+  'settings.oth.macWrapperRemovedDone': '已移除 ~/Applications 下的受管启动器',
   'settings.oth.expTitle': '试验性功能',
   'settings.oth.expBadge': '试验性',
   'settings.oth.quotaReserveLabel': '配额预占估算',
@@ -2621,11 +2629,6 @@ return { I18N_MESSAGES_ZH_CN };
 
 // --- src/i18n/en-US.js ---
 const { I18N_MESSAGES_EN_US } = (() => {
-/**
- * @fileoverview English (en-US) dictionary for Antigravity Usage & Speed Monitor.
- * Zero emoji characters.
- */
-
 const I18N_MESSAGES_EN_US = Object.freeze({
   // Top Navigation
   'nav.overview': 'Live',
@@ -3358,15 +3361,22 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.bridge.macTitle': 'Debug Port Inactive — One-Click Relaunch to Enable Mount',
   'settings.bridge.ctxMacTitle': 'Debug Port Inactive — One-Click Relaunch for Context Override',
   'settings.bridge.noPortTitle': 'Local Debug Port Missing — Window Mount Inactive',
+  'settings.bridge.stalePortTitle': 'Stale Debug Port Detected — Relaunch to Recover Mount',
   'settings.bridge.unreachableTitle': 'Local Debug Port Not Ready — Window Mount Inactive',
   'settings.bridge.ctxTitle': 'Local Debug Port Inactive — Context Override Pending',
   'settings.bridge.guideWin': 'Antigravity 2.33.0+ no longer opens a debug port by default. Click "Relaunch & Enable Mount" to auto-configure shortcuts, close tray background processes, and relaunch.',
-  'settings.bridge.guideMac': 'Due to macOS app code signing, cold launches from Dock omit the debug port flag. Click below to relaunch with the flag in one click (stays active until you fully Quit via Cmd+Q).',
+  'settings.bridge.guideMac': 'Due to macOS app code signing, cold launches from Dock omit the debug port flag. Click below to relaunch now, or create an optional launcher in ~/Applications.',
   'settings.bridge.guideLinux': 'Antigravity 2.33.0+ no longer opens a debug port by default. Click "Relaunch & Enable Mount" to update your .desktop launcher and relaunch.',
   'settings.bridge.relaunchBtn': 'Relaunch & Enable Mount',
+  'settings.bridge.relaunchIdeBtn': 'Relaunch IDE & Enable Mount',
   'settings.bridge.relaunchAuthBtn': 'Authorize & Relaunch',
   'settings.bridge.relaunchingBtn': 'Relaunching Host...',
   'settings.bridge.relaunchFailed': 'Auto-relaunch failed — quit from tray and retry',
+  'settings.bridge.macCreateWrapperBtn': 'Create Launcher in ~/Applications',
+  'settings.bridge.macRemoveWrapperBtn': 'Remove macOS Launcher',
+  'settings.bridge.macWrapperCreatedBtn': 'Launcher (.app) Created',
+  'settings.bridge.macWrapperRemovedBtn': 'Launcher Removed',
+  'settings.bridge.macWrapperFailedBtn': 'Launcher Action Failed',
   'settings.bridge.dismissAria': 'Dismiss notice for now',
   'settings.bridge.copyFlagBtn': 'Copy {cmd}',
   'settings.bridge.copiedBtn': 'Copied to Clipboard',
@@ -3443,6 +3453,15 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.modelShort': 'Short Alias (e.g. argon-4-high)',
   'settings.oth.modelUpstream': 'Raw Upstream ID (e.g. gemini-3.8-flash-n)',
   'settings.oth.modelUpstreamCompact': 'Trimmed Raw ID (hide gemini- / claude- / gpt-)',
+  'settings.oth.hostTitle': 'Host Launch & Remote SSH',
+  'settings.oth.autoLaunchLabel': 'Auto-Maintain Host Launch Flags',
+  'settings.oth.autoLaunchDesc': 'Automatically maintain debug-port flags for Antigravity Desktop and IDE (argv.json and shortcuts) in strict isolation',
+  'settings.oth.remoteSshLabel': 'IDE Remote-SSH Telemetry',
+  'settings.oth.remoteSshDesc': 'Detect IDE Remote-SSH windows and pair remote daemons non-interactively with per-host isolated ledgers',
+  'settings.oth.macWrapperLabel': 'Managed macOS Launcher (.app)',
+  'settings.oth.macWrapperDesc': 'A managed debug-port launcher is currently installed in ~/Applications and can be removed anytime',
+  'settings.oth.macRemoveWrapperBtn': 'Remove macOS Launcher',
+  'settings.oth.macWrapperRemovedDone': 'Removed managed launcher from ~/Applications',
   'settings.oth.expTitle': 'Experimental',
   'settings.oth.expBadge': 'Experimental',
   'settings.oth.quotaReserveLabel': 'Quota Reservation Estimate',
@@ -3656,12 +3675,6 @@ return { I18N_MESSAGES_EN_US };
 
 // --- src/i18n/index.js ---
 const { I18N_DICTIONARIES, normalizeI18nLanguage, detectHostSystemLocale, i18nStore, setI18nLanguage, getEffectiveLocale, isEnglishLocale, t } = (() => {
-/**
- * @fileoverview Reactive lightweight i18n engine (`zh-CN` / `en-US` / `auto`).
- * Default language is `'zh-CN'` so out-of-the-box UI matches existing behavior 100%.
- */
-
-
 const I18N_DICTIONARIES = Object.freeze({
   'zh-CN': I18N_MESSAGES_ZH_CN,
   'en-US': I18N_MESSAGES_EN_US,
@@ -3726,13 +3739,6 @@ return { I18N_DICTIONARIES, normalizeI18nLanguage, detectHostSystemLocale, i18nS
 
 // --- src/core/appearance.js ---
 const { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normalizeClientThemeAccent, normalizeClientFontScale, normalizeClientModernUi, resolveSettingsModernUi, isModernUiActiveForElement, parseCssColorLuminance, hasNativeHostTheme, captureNativeHostThemeSnapshot, detectHostColorScheme, syncHostThemeFallback, applyAppearanceToRoot } = (() => {
-/**
- * @fileoverview Theme accent palette, host theme fallback sync, & panel font-scale appearance engine.
- * Applies CSS custom properties cleanly to Sidebar `:root` and Shadow DOM hosts,
- * while strictly isolating `#ag-usage-monitor-capsule` from font scaling.
- */
-
-
 const THEME_ACCENT_PRESETS = Object.freeze([
   { key: 'host', labelKey: 'settings.gen.accentHost', cssColor: '' },
   { key: 'blue', labelKey: 'settings.gen.accentBlue', cssColor: 'hsl(217 84% 53%)' },
@@ -4552,11 +4558,6 @@ return { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normaliz
 
 // --- src/core/domPatch.js ---
 const { h, patchText, patchAttr, patchClasses, patchStyleVar, isEventInside, patchKeyedList, positionAnchoredPopup } = (() => {
-/**
- * @fileoverview Incremental DOM patching utilities and keyed list reconciler.
- * Prevents full innerHTML replacements and preserves active DOM element state.
- */
-
 function h(tag, props = {}, children = []) {
   const el = document.createElement(tag);
   if (props) {
@@ -4970,12 +4971,6 @@ return { h, patchText, patchAttr, patchClasses, patchStyleVar, isEventInside, pa
 
 // --- src/core/component.js ---
 const { defineComponent } = (() => {
-/**
- * @fileoverview Vue-inspired lightweight component kernel supporting
- * props, custom v-model value transmission (emit('update:modelValue', val)),
- * reactive subscriptions, and lifecycle cleanup.
- */
-
 function defineComponent({ name, setup }) {
   return function createInstance(initialProps = {}) {
     const props = { ...initialProps };
@@ -5049,12 +5044,6 @@ return { defineComponent };
 
 // --- src/core/formatters.js ---
 const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
-/**
- * @fileoverview Pure formatting utilities for speed metrics, token counts,
- * USD estimates, countdown timers, and custom datetime displays.
- */
-
-
 const EN_MONTH_SHORT = Object.freeze([
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -6493,12 +6482,6 @@ return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSp
 
 // --- src/core/stepInspector.js ---
 const { STEP_LOW_CACHE_MIN_PROMPT_TOKENS, STEP_LOW_CACHE_MAX_PCT, STEP_SLOW_TTFT_MIN_SEC, getStepSelectionKey, isLowCacheStep, isSlowTtftStep, computeStepQuickChipCounts, filterStepsBySearchAndChip, findPrevAgentContextTokens, computeStepTimingWaterfall, buildStepDiagnosticMarkdown, copyPlainTextToClipboard, createCopiedFeedbackController } = (() => {
-/**
- * @fileoverview 步骤搜索筛选、快捷诊断统计、耗时瀑布计算及单步诊断 Markdown 导出纯函数模块 (`stepInspector.js`)。
- * 保持零 DOM 耦合和单遍 O(N) 高性能，供 `StepsDetailView` 及单元测试直接复用。
- */
-
-
 const STEP_LOW_CACHE_MIN_PROMPT_TOKENS = 2000;
 const STEP_LOW_CACHE_MAX_PCT = 50;
 const STEP_SLOW_TTFT_MIN_SEC = 30;
@@ -6899,12 +6882,6 @@ return { STEP_LOW_CACHE_MIN_PROMPT_TOKENS, STEP_LOW_CACHE_MAX_PCT, STEP_SLOW_TTF
 
 // --- src/core/settingsBackup.js ---
 const { triggerBlobDownload, triggerTextFileDownload, buildExportableSettingsJson, parseImportedSettingsJson } = (() => {
-/**
- * @fileoverview 偏好设置便携 JSON 备份及恢复工具 (`settingsBackup.js`).
- * 通过单一声明式字段描述符表同时驱动导出与导入归一化，消除双遍手写 30 个键的漏同步风险。
- */
-
-
 const SETTINGS_BACKUP_SCHEMA = 'antigravity-usage-monitor.settings';
 const MAX_SETTINGS_IMPORT_BYTES = 128 * 1024;
 
@@ -7076,6 +7053,8 @@ const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
   boolField('enableCliStatusLine', true),
   normField('cliStatusLineSlots', normalizeCliStatusLineSlots),
   normField('standalonePort', normalizeStandalonePort),
+  normField('autoConfigureLaunch', normalizeAutoConfigureLaunch),
+  normField('enableRemoteSshTelemetry', normalizeEnableRemoteSshTelemetry),
   boolField('showTopbarMultiSession', true),
   normField('contextAgentMode', normalizeContextAgentMode),
   arrayField('topbarCapsuleSlots', normalizeTopbarCapsuleSlots),
@@ -7161,16 +7140,6 @@ return { triggerBlobDownload, triggerTextFileDownload, buildExportableSettingsJs
 
 // --- src/core/xlsxBuilder.js ---
 const { MAX_EXCEL_CELL_CHARS, uint8ArrayToBase64, buildXlsxWorkbookBytes } = (() => {
-/**
- * @fileoverview 零外部依赖原生 Excel (`.xlsx` / ECMA-376 OOXML) 多工作表构建器 (`xlsxBuilder.js`)。
- * 内置标准 IEEE 802.3 CRC-32 及 ZIP STORE 封装，支持：
- * - 多 Sheet 分页、冻结首行表头、自动筛选下拉箭头；
- * - 按中英文混合视觉宽度精确自动计算最佳列宽（彻底消除截断及 `###` / `1E+08` 科学计数法）；
- * - 原生数字格式（整数千分位 `#,##0`、货币 `$#,##0.00` / `$#,##0.0000`、原生百分比 `0.0%`、小数 `#,##0.0`）；
- * - 专业视觉样式（深石板蓝表头、斑马纹、汇总高亮、异常红底警示、压缩蓝底提示）；
- * - 全部字符串采用 `inlineStr` 并剔除 XML 1.0 非法控制符，天然免疫公式注入及 Excel 损坏警告。
- */
-
 const MAX_EXCEL_CELL_CHARS = 32767;
 const INVALID_XML_CTRL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g;
 const LONE_SURROGATE_RE =
@@ -7829,12 +7798,6 @@ return { MAX_EXCEL_CELL_CHARS, uint8ArrayToBase64, buildXlsxWorkbookBytes };
 
 // --- src/core/reportExporter.js ---
 const { escapeCsvCell, sanitizeExportFilename, buildConsumptionExportBaseName, buildStepsExportBaseName, buildStepsCsv, buildStepsXlsx, buildStepsMarkdownReport, buildConsumptionCsv, buildConsumptionXlsx, buildConsumptionMarkdownReport } = (() => {
-/**
- * @fileoverview 原生多工作表 Excel (`.xlsx`)、RFC-4180 防公式注入 CSV 及双语 Markdown 诊断报告生成纯函数模块 (`reportExporter.js`)。
- * 零外部依赖、单遍 O(N) 聚合，供「按步查看」和「用量统计」视图复用。
- */
-
-
 const PLAIN_SIGNED_NUMBER_RE = /^[+-]?\d+(\.\d+)?$/;
 
 const RANGE_LABELS_ZH = Object.freeze({
@@ -9382,13 +9345,6 @@ return { escapeCsvCell, sanitizeExportFilename, buildConsumptionExportBaseName, 
 
 // --- src/core/httpClient.js ---
 const { abortSidecarApiKey, getWindowBridgeConfig, isWindowOverlayMode, deliverCdpBridgeResponses, callSidecarApi } = (() => {
-/**
- * @fileoverview Async HTTP client with AbortController cancellation for stale
- * polling requests, concurrent GET deduplication, and dual-mode transport
- * (Sidecar Webview `window.sidecar.fetch` + Main Window Loopback Bridge).
- */
-
-
 const inFlightGets = new Map();
 const activeControllers = new Map();
 
@@ -9668,11 +9624,6 @@ return { abortSidecarApiKey, getWindowBridgeConfig, isWindowOverlayMode, deliver
 
 // --- src/store/uiStore.js ---
 const { getViewTabs, uiStore, showUiToast, dismissUiToast, getVisibleMonitorView } = (() => {
-/**
- * @fileoverview UI navigation and view state store.
- */
-
-
 function getViewTabs() {
   return [
     { value: 'overview', label: t('nav.overview'), icon: 'pulse' },
@@ -9733,14 +9684,6 @@ return { getViewTabs, uiStore, showUiToast, dismissUiToast, getVisibleMonitorVie
 
 // --- src/core/fileExportClient.js ---
 const { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFeedback, copyTextWithFeedback } = (() => {
-/**
- * @fileoverview 统一文本/二进制文件导出及剪贴板复制客户端 (`fileExportClient.js`)。
- * 优先调用本机后端 `/api/export-file` 落盘到用户 Downloads（或插件 `.data/exports`）并返回真实绝对路径，
- * 同时通过全局 Toast 清晰展示保存位置并提供「打开位置」快捷按钮；
- * 当后端不可达或处于远程浏览器访问时，自动平滑降级到 `showSaveFilePicker` 或浏览器 Blob 下载并给出明确提示。
- */
-
-
 function isHostEmbeddedWebview() {
   if (typeof window === 'undefined') return false;
   return Boolean(window.sidecar?.fetch) || isWindowOverlayMode();
@@ -10005,12 +9948,6 @@ return { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFee
 
 // --- src/core/hostI18nClient.js ---
 const { fetchHostI18nStatus, refreshHostI18nManifest, selectHostI18nLanguage, updateHostI18nDepth, installOrUpdateHostI18nPack, removeHostI18nPack, collectHostI18nUntranslated } = (() => {
-/**
- * @fileoverview Decoupled HTTP/CDP client for `/api/host-i18n`.
- * Completely independent from `telemetryStore.js`.
- */
-
-
 async function fetchHostI18nStatus() {
   return callSidecarApi(HOST_I18N_API_PATH, {
     method: 'GET',
@@ -10083,13 +10020,7 @@ return { fetchHostI18nStatus, refreshHostI18nManifest, selectHostI18nLanguage, u
 })();
 
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
-/**
- * @fileoverview Reactive telemetry store with async non-overlapping poll scheduler
- * and granular slice updates.
- */
-
-
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, normalizeClientAutoConfigureLaunch, normalizeClientEnableRemoteSshTelemetry, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 const CASCADE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -10212,6 +10143,8 @@ const TELEMETRY_RECOMPUTE_SETTING_KEYS = new Set([
   'weeklyCostBudget',
   'windowMountMode',
   'enableWindowOverlay',
+  'autoConfigureLaunch',
+  'enableRemoteSshTelemetry',
 ]);
 
 function makeConsumptionRangeCacheKey(
@@ -10690,6 +10623,21 @@ function isEquivalentTelemetry(prev, next) {
   if (Boolean(pSet?.accountSwitchRiskAccepted) !== Boolean(nSet?.accountSwitchRiskAccepted)) {
     return false;
   }
+  if (Number(pSet?.standalonePort || 0) !== Number(nSet?.standalonePort || 0)) {
+    return false;
+  }
+  if (
+    normalizeAutoConfigureLaunch(pSet?.autoConfigureLaunch) !==
+    normalizeAutoConfigureLaunch(nSet?.autoConfigureLaunch)
+  ) {
+    return false;
+  }
+  if (
+    normalizeEnableRemoteSshTelemetry(pSet?.enableRemoteSshTelemetry) !==
+    normalizeEnableRemoteSshTelemetry(nSet?.enableRemoteSshTelemetry)
+  ) {
+    return false;
+  }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
   if (!sameArr(pSet?.hoverModules, nSet?.hoverModules)) return false;
   if (
@@ -10723,6 +10671,12 @@ function isEquivalentTelemetry(prev, next) {
     Boolean(pWb?.argvUpdatedThisBoot) !== Boolean(nWb?.argvUpdatedThisBoot) ||
     Boolean(pWb?.argvConfigured) !== Boolean(nWb?.argvConfigured) ||
     Boolean(pWb?.launcherConfigured) !== Boolean(nWb?.launcherConfigured) ||
+    Boolean(pWb?.hasReadOnlyShortcuts) !== Boolean(nWb?.hasReadOnlyShortcuts) ||
+    Boolean(pWb?.stalePortDetected) !== Boolean(nWb?.stalePortDetected) ||
+    String(pWb?.targetProduct || 'auto') !== String(nWb?.targetProduct || 'auto') ||
+    Boolean(pWb?.macWrapperExists) !== Boolean(nWb?.macWrapperExists) ||
+    Boolean(pWb?.macDesktopWrapperExists) !== Boolean(nWb?.macDesktopWrapperExists) ||
+    Boolean(pWb?.macIdeWrapperExists) !== Boolean(nWb?.macIdeWrapperExists) ||
     Boolean(pWb?.canRelaunch) !== Boolean(nWb?.canRelaunch) ||
     Number(pWb?.aliveCount || 0) !== Number(nWb?.aliveCount || 0)
   ) {
@@ -12049,6 +12003,14 @@ async function saveSettingsPatch(patch) {
     safePatch.standalonePort =
       Number.isInteger(numPort) && numPort >= 1024 && numPort <= 65535 ? numPort : 0;
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'autoConfigureLaunch')) {
+    safePatch.autoConfigureLaunch = normalizeAutoConfigureLaunch(safePatch.autoConfigureLaunch);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'enableRemoteSshTelemetry')) {
+    safePatch.enableRemoteSshTelemetry = normalizeEnableRemoteSshTelemetry(
+      safePatch.enableRemoteSshTelemetry
+    );
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'windowMountMode')) {
     const normMount = normalizeClientWindowMountMode(
       safePatch.windowMountMode,
@@ -12237,16 +12199,48 @@ async function triggerCloudSync() {
   return res;
 }
 
-async function triggerBridgeHostRelaunch() {
+const normalizeClientAutoConfigureLaunch = normalizeAutoConfigureLaunch;
+const normalizeClientEnableRemoteSshTelemetry = normalizeEnableRemoteSshTelemetry;
+
+async function triggerBridgeHostRelaunch(options = {}) {
+  const payload =
+    options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+  let res;
   try {
-    return await callSidecarApi('/api/bridge/relaunch', { method: 'POST', body: {} });
+    res = await callSidecarApi('/api/bridge/relaunch', { method: 'POST', body: payload });
   } catch {
     // 兼容热更新后常驻父进程 main.mjs 尚未重注册新路由的场景，平滑回退至既有 POST /api/settings 通道转发至最新 Worker
-    return callSidecarApi('/api/settings', {
+    res = await callSidecarApi('/api/settings', {
       method: 'POST',
-      body: { __bridgeAction: 'relaunch' },
+      body: { ...payload, __bridgeAction: 'relaunch' },
     });
   }
+  if (
+    payload.action === 'create_macos_wrapper' ||
+    payload.action === 'remove_macos_wrapper'
+  ) {
+    const cur = telemetryStore.getState().telemetry;
+    if (cur && res && typeof res === 'object' && typeof res.macWrapperExists === 'boolean') {
+      telemetryStore.setState({
+        telemetry: {
+          ...cur,
+          windowBridge: {
+            ...(cur.windowBridge || {}),
+            macWrapperExists: res.macWrapperExists,
+            ...(typeof res.macDesktopWrapperExists === 'boolean'
+              ? { macDesktopWrapperExists: res.macDesktopWrapperExists }
+              : {}),
+            ...(typeof res.macIdeWrapperExists === 'boolean'
+              ? { macIdeWrapperExists: res.macIdeWrapperExists }
+              : {}),
+            macWrapperPaths: Array.isArray(res.macWrapperPaths) ? res.macWrapperPaths : [],
+          },
+        },
+      });
+    }
+    void fetchTelemetry({ force: true }).catch(() => {});
+  }
+  return res;
 }
 
 async function triggerCliStatusLineAction(action) {
@@ -12565,18 +12559,11 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, normalizeClientAutoConfigureLaunch, normalizeClientEnableRemoteSshTelemetry, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
 const { TopLongPillNav } = (() => {
-/**
- * @fileoverview Top Long-Pill Navigation Bar (顶部唯一长药丸功能分割栏).
- * Splits the application into focused single-viewport views and animates
- * the active glider using GPU-accelerated translate3d.
- */
-
-
 const TopLongPillNav = defineComponent({
   name: 'TopLongPillNav',
   setup({ getProps, emit }) {
@@ -12693,12 +12680,6 @@ return { TopLongPillNav };
 // --- src/components/ui/SearchInput.js ---
 const { createSearchInput } = (() => {
 /**
- * @fileoverview Shared compact search input bar (`SearchInput.js`) with leading search icon
- * and conditional clear button, reused across `CustomSelect`, `StepsDetailView`, and `SessionMigrationCard`.
- */
-
-
-/**
  * Creates a unified search input box while preserving caller-specific modifier classes.
  *
  * @param {{
@@ -12813,13 +12794,6 @@ return { createSearchInput };
 
 // --- src/components/ui/CustomSelect.js ---
 const { filterSelectOptionsByQuery, CustomSelect } = (() => {
-/**
- * @fileoverview Bespoke CustomSelect dropdown component replacing native <select> / <option>.
- * Supports both single-select and multi-select (`multiple: true`) modes, with incremental
- * option patching while open without losing focus or closing the menu.
- */
-
-
 function normalizeMultiSelection(rawValue, options = [], allValue = '') {
   const arr = Array.isArray(rawValue)
     ? rawValue
@@ -13333,12 +13307,6 @@ return { filterSelectOptionsByQuery, CustomSelect };
 
 // --- src/components/ui/ActionMenu.js ---
 const { ActionMenu } = (() => {
-/**
- * @fileoverview 紧凑竖向三点 (`⋮`) 下拉单选操作菜单组件 (`ActionMenu.js`)。
- * 兼容 Shadow DOM (`composedPath`) 外部点击收起及 Escape 键盘关闭，供用量统计、调用明细等工具栏复用。
- */
-
-
 const ActionMenu = defineComponent({
   name: 'ActionMenu',
   setup({ props, onCleanup }) {
@@ -13497,13 +13465,6 @@ return { ActionMenu };
 
 // --- src/components/ui/CustomNumberInput.js ---
 const { CustomNumberInput } = (() => {
-/**
- * @fileoverview Bespoke CustomNumberInput spinbutton & precision stepper.
- * Replaces native <input type="number"> with custom SVG step controls,
- * keyboard ArrowUp/ArrowDown (+Shift 10x), and min/max clamping.
- */
-
-
 const CustomNumberInput = defineComponent({
   name: 'CustomNumberInput',
   setup({ getProps, setProps, emit, onCleanup }) {
@@ -13637,12 +13598,6 @@ return { CustomNumberInput };
 
 // --- src/components/ui/CustomDateTimePicker.js ---
 const { CustomDateTimePicker } = (() => {
-/**
- * @fileoverview Bespoke CustomDateTimePicker calendar matrix and hour/minute stepper.
- * Replaces native <input type="datetime-local"> and emits Unix epoch ms.
- */
-
-
 const WEEKDAY_KEYS = [
   'ui.dt.wdayMon',
   'ui.dt.wdayTue',
@@ -13974,13 +13929,6 @@ return { CustomDateTimePicker };
 
 // --- src/components/ui/CustomScrollbar.js ---
 const { CustomScrollbar } = (() => {
-/**
- * @fileoverview Bespoke custom scrollbar component (零原生滚动条).
- * Hides native OS scrollbars completely and renders a precision 4px floating
- * rail + GPU-translated thumb with drag and track-jump support.
- */
-
-
 const CustomScrollbar = defineComponent({
   name: 'CustomScrollbar',
   setup({ getProps, onCleanup }) {
@@ -14154,14 +14102,6 @@ return { CustomScrollbar };
 
 // --- src/components/ui/SegmentedControl.js ---
 const { SegmentedControl } = (() => {
-/**
- * @fileoverview Sliding SegmentedControl switcher with variable-width GPU glider.
- * Measures active button geometry via ResizeObserver so both inline variable-width
- * segments (e.g. "今天 / 1天 / ... / 自定义", "按步查看 (1520) / 总汇总") and equal-width
- * grid bars ("常规 / 结构 / 其他") glide smoothly without stretching from 0px on tab reveal.
- */
-
-
 const SegmentedControl = defineComponent({
   name: 'SegmentedControl',
   setup({ getProps, setProps, emit, onCleanup }) {
@@ -14390,14 +14330,6 @@ return { SegmentedControl };
 
 // --- src/components/ui/ToggleSwitch.js ---
 const { ToggleSwitch } = (() => {
-/**
- * @fileoverview Zero-ResizeObserver binary toggle switch (`ToggleSwitch.js`).
- * Uses a pure-CSS 2-column grid glider (`--seg-active-idx`) so Settings tabs do not
- * instantiate 10+ ResizeObservers or force synchronous layout measurements for simple
- * on/off or show/hide switches, while preserving `.segmented` / `.seg-btn` semantics.
- */
-
-
 const TOGGLE_PRESET_DEFS = Object.freeze({
   enable: Object.freeze([
     { value: 'on', labelKey: 'settings.str.on' },
@@ -14521,13 +14453,6 @@ return { ToggleSwitch };
 
 // --- src/components/ui/ContextSegmentMeter.js ---
 const { ContextSegmentMeter } = (() => {
-/**
- * @fileoverview 10-channel segmented context window progress bar updated via
- * CSS custom variables against the current model's automatic compaction baseline,
- * dynamically ordered from largest to smallest segment.
- */
-
-
 const SEGMENT_DEFS = [
   { key: 'assistant', labelKey: 'ctx.ch.assistant', cls: 'seg-assistant', getVal: (c) => Number(c.assistantTokens || 0) },
   { key: 'toolResults', labelKey: 'ctx.ch.toolResults', cls: 'seg-tool-results', getVal: (c) => Number(c.toolResultsTokens || 0) },
@@ -14626,13 +14551,6 @@ return { ContextSegmentMeter };
 // --- src/components/ui/FourSegmentBar.js ---
 const { createFourSegmentBar } = (() => {
 /**
- * @fileoverview 通用 4 段式 Token 构成比例条组件 (FourSegmentBar).
- * 用于在消费概览、热门模型明细及模型总览卡片中直观展示：
- * 直接输入 (Input)、缓存读取 (Cached)、思考推理 (Thinking)、内容生成 (Output) 的 Token 占比。
- */
-
-
-/**
  * 创建 4 段式水平比例进度条实例。
  * 通过动态更新各分段节点的 `--seg-w` CSS 变量实现零重排平滑过渡。
  *
@@ -14692,16 +14610,6 @@ return { createFourSegmentBar };
 
 // --- src/components/ui/ConsumptionTooltipContent.js ---
 const { createConsumptionBreakdownContent } = (() => {
-/**
- * @fileoverview 消耗统计统一悬浮详情内容组件 (ConsumptionTooltipContent).
- * 供历史趋势（折线/热力图）、客户端来源、会话排行及月度统计悬浮卡片复用：
- * 1. 顶部标题/日期行 + 右侧调用次数；
- * 2. 核心大字总量 (`TOKEN`) + 右侧预估费用；
- * 3. 分模型明细行（模型名/Token/占比 + 同「模型排行」Token 模式一致的四段构成进度条，不显示多余分组标题）；
- * 4. 底部四通道汇总（输入 / 缓存 / 思考 / 输出）。
- */
-
-
 function safeNonNeg(val) {
   const n = Number(val);
   return Number.isFinite(n) && n > 0 ? n : 0;
@@ -14942,25 +14850,6 @@ return { createConsumptionBreakdownContent };
 
 // --- src/components/charts/chartMotion.js ---
 const { CHART_CURVE_MORPH_MS, canAnimateChartInBrowser, evalCubicBezier, createReadyClassArmer, pointsToNormalizedCubicSegs, buildPathFromNormalizedSegs, createCubicCurveMorphController, createMultiSeriesCurveMorphController, createFitGridMorphController, createFloatingChartTooltipController } = (() => {
-/**
- * @fileoverview Shared interactive chart motion & 2D mouse-following tooltip primitives (`chartMotion.js`).
- *
- * Reused across:
- * 1. `TrendAreaChart.js` (ConsumptionView usage trend & heatmap);
- * 2. `SessionStepCharts.js` (StepsDetailView summary step line chart & LOESS model fit chart);
- * 3. `AccountQuotaTrendCard.js` (SettingsAccountTab per-account quota trajectory chart).
- *
- * Provides:
- * - GPU-composited 2D pointer-following floating tooltip (`translate3d`) with 4-way collision
- *   avoidance, viewport clipping, cached layout rects, and `150ms` `.is-tracking` arming
- *   synchronized with SVG focus dots (`.trend-hover-dot` / `.sstep-hover-raw-dot`);
- * - Exact CSS `cubic-bezier` solver (`evalCubicBezier`) and `240ms` normalized cubic-Bezier
- *   chain subdivision morphing for single-series and multi-series curves + area fills;
- * - Smooth `240ms` LOESS curve, `95% CI` confidence band, and OLS line morphing;
- * - Next-frame `.is-ready` transition arming for sliding peak badges (`.trend-peak-pill`).
- */
-
-
 const CHART_CURVE_MORPH_MS = 240;
 
 /**
@@ -16196,15 +16085,6 @@ return { CHART_CURVE_MORPH_MS, canAnimateChartInBrowser, evalCubicBezier, create
 
 // --- src/components/charts/TrendAreaChart.js ---
 const { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart } = (() => {
-/**
- * @fileoverview 交互式历史用量趋势图组件 (TrendAreaChart).
- * 支持双模式自适应切换：
- * 1. <= 90 天（或整点小时分桶）：渲染三次贝塞尔平滑曲线面积图、峰值气泡与对齐多刻度时间轴；
- * 2. > 90 天（自然日分桶）：自动切换为类 GitHub 贡献日历的小格子热力排列（一格一天，7 行星期 × 周列、月份刻度、分位数 5 档热力色阶与底部图例）；
- * 3. 两种模式共享自适应防溢出的悬浮详情卡片（精确日期/小时区间、Token 拆分、费用与调用次数）。
- */
-
-
 /** 超过该自然日天数（> 90 天）时，趋势图切换为类 GitHub 每日小格子热力图 */
 const HEATMAP_DAYS_THRESHOLD = 90;
 
@@ -17977,12 +17857,6 @@ return { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart };
 
 // --- src/components/charts/stepChartMath.js ---
 const { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact, downsampleStepPointsForPlot, evalStepSplineYAtX } = (() => {
-/**
- * @fileoverview Pure regression math (OLS + IRLS-LOESS), nice axis tick generators,
- * SVG spline/polyline path builders, and step metric formatters extracted from SessionStepCharts.js.
- */
-
-
 /** 多模型节点和多曲线对比语义调色板（全部取自 tokens.css 语义变量，兼顾设计一致性和交叉曲线区分度） */
 const MODEL_COLOR_VARS = Object.freeze([
   'var(--ctx-cached)',
@@ -18736,19 +18610,6 @@ return { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValu
 
 // --- src/components/charts/SessionStepCharts.js ---
 const { createSessionLineChart, createModelFitChart } = (() => {
-/**
- * @fileoverview 当前会话步骤级线性走势图与模型趋势拟合图组件 (SessionStepCharts).
- *
- * 包含两部分能力：
- * 1. `createSessionLineChart`：查看当前会话（支持主代理 / 子代理 / 全部汇总）所有模型的步进变化，
- *    支持切换 `总Token`（累计调用总量）、`上下文`（单步上下文体积）、`TPS`、`首字`、`费用` 五大维度；
- * 2. `createModelFitChart`：查看指定模型或全部模型的 `TPS`、`首字`、`缓存`、`费用` 散点与鲁棒局部加权线性回归（LOWESS + OLS 基准）拟合曲线，
- *    内置视图级模型锁定状态机，进入视图时自动锚定当前调用模型，停留在视图期间绝不随轮询跳变。
- */
-
-
-
-
 let sessionChartUid = 0;
 
 /**
@@ -21005,14 +20866,6 @@ return { createSessionLineChart, createModelFitChart };
 
 // --- src/registries/metricRegistry.js ---
 const { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions, splitMetricValueAndUnit, extractOverviewMetricSeries, buildSparklineGeometry, resolveQuotaCapsuleSummary, resolveSpecificQuotaSlotSummary, resolveCapsuleMetricPresentation, resolveOverviewMetricCell } = (() => {
-/**
- * @fileoverview Decoupled Metric Registry (`metricRegistry.js`).
- * Centralizes presentation & option metadata for:
- * 1. Topbar / Composer Capsule Slots (1..5 items out of 13 metrics)
- * 2. Live Overview / Hover First-Row Metric Matrix (1..4 items out of 9 metrics)
- */
-
-
 const CAPSULE_METRIC_KEYS = TOPBAR_SLOT_KEYS;
 
 function getCapsuleMetricOptions({ quotas = null, selectedSlots = [] } = {}) {
@@ -21813,13 +21666,6 @@ return { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions,
 
 // --- src/components/widgets/MetricMatrixWidget.js ---
 const { MetricMatrixWidget } = (() => {
-/**
- * @fileoverview Standalone decoupled Metric Matrix Widget (`MetricMatrixWidget.js`).
- * Renders 1..4 user-selected telemetry cells dynamically via `metricRegistry.js`,
- * plus optional Large Sparkline Trend cards (1..2 items) for Hover Popover mode.
- */
-
-
 let sparklineGradSeq = 0;
 
 function extractToneClass(valueClass = '') {
@@ -22093,13 +21939,6 @@ return { MetricMatrixWidget };
 
 // --- src/components/widgets/ContextWindowWidget.js ---
 const { CTX_CHANNEL_DEFS, ContextWindowWidget } = (() => {
-/**
- * @fileoverview Standalone decoupled Context Window Widget (`ContextWindowWidget.js`).
- * Supports both interactive multi-agent inspector mode (`LiveOverviewView`)
- * and pointer-events-none in-place pre-allocated mode (`WindowOverlayShell` hover popup).
- */
-
-
 const CTX_PILL_BASE_PAD_PX = 14;
 const CTX_CJK_CHAR_PX = 11;
 const CTX_ASCII_CHAR_PX = 6.1;
@@ -22713,13 +22552,6 @@ return { CTX_CHANNEL_DEFS, ContextWindowWidget };
 
 // --- src/components/widgets/QuotaPoolsWidget.js ---
 const { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, formatAccountTierBadge, maskAccountLabel, QuotaPoolsWidget } = (() => {
-/**
- * @fileoverview Standalone decoupled Quota Pools Widget (`QuotaPoolsWidget.js`).
- * Renders dynamic multi-pool quota bars (Gemini, Argon/Carbon, Claude & GPT)
- * and weekly summary footer for both `LiveOverviewView` and `WindowOverlayShell`.
- */
-
-
 /**
  * 归一化动态配额池列表；在官方配额尚未返回时回退预占 Gemini 与 Claude & GPT 两个标准池槽位。
  *
@@ -23593,14 +23425,6 @@ return { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, sync
 
 // --- src/components/widgets/AccountQuotaTrendCard.js ---
 const { resolveQuotaWindowBounds, buildQuotaWindowSeries, AccountQuotaTrendCard } = (() => {
-/**
- * @fileoverview Per-account quota remaining-% trajectory chart (`AccountQuotaTrendCard.js`).
- * Full-bleed edge-to-edge plot (`x = 1 .. viewW - 1`), X-axis clamped to earliest recorded
- * sample when history is shorter than the selected preset, and adaptive integer Y-scale so
- * real quota movements never compress into a tiny corner with wasted whitespace.
- */
-
-
 const POOL_COLORS = Object.freeze({
   Gemini: 'var(--accent-primary)',
   'Claude & GPT': 'var(--metric-ok)',
@@ -24920,14 +24744,6 @@ return { resolveQuotaWindowBounds, buildQuotaWindowSeries, AccountQuotaTrendCard
 
 // --- src/components/widgets/LiveActivityWidget.js ---
 const { buildFallbackRunningConversations, LiveActivityWidget } = (() => {
-/**
- * @fileoverview Standalone decoupled Live Running Tasks Widget (`LiveActivityWidget.js`).
- * Displays active multi-session running conversations & collapsible subagent activity
- * with an isolated 1s elapsed timer lifecycle. Supports both Overview/Hover widget mode
- * and controlled Multi-Session Floating Panel mode (`WindowOverlayShell.js`).
- */
-
-
 function buildFallbackRunningConversations(
   data,
   { agents = [], aggregated = null, latestTokPerSec = undefined, contextUsedPct = undefined } = {}
@@ -25751,14 +25567,6 @@ return { buildFallbackRunningConversations, LiveActivityWidget };
 
 // --- src/registries/widgetRegistry.js ---
 const { OVERVIEW_WIDGET_KEYS, OVERVIEW_WIDGET_REGISTRY, getOverviewModuleOptions, createDynamicWidgetHost } = (() => {
-/**
- * @fileoverview Decoupled Overview & Hover Widget Registry (`widgetRegistry.js`).
- * Maps module keys (`metrics`, `context`, `quotas`, `live_tasks`) to standalone
- * widget components and provides `createDynamicWidgetHost` for zero-hardcode mounting,
- * live reordering, and clean instance disposal.
- */
-
-
 const OVERVIEW_WIDGET_KEYS = OVERVIEW_MODULE_KEYS;
 
 const OVERVIEW_WIDGET_REGISTRY = Object.freeze({
@@ -25970,14 +25778,6 @@ return { OVERVIEW_WIDGET_KEYS, OVERVIEW_WIDGET_REGISTRY, getOverviewModuleOption
 
 // --- src/registries/stepColumnRegistry.js ---
 const { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, resolveStepTokenParts, formatCustomTokenComboHeader, isCompactionStepItem, STEP_COLUMN_REGISTRY, getStepColumnOptions, sortStepsByColumn } = (() => {
-/**
- * @fileoverview Decoupled Step Table Column Registry (`stepColumnRegistry.js`).
- * Defines all 12 customizable columns for `StepsDetailView` ("按步查看"),
- * preserving 100% of the 7 out-of-the-box default columns, clickable agent filter badges,
- * speed reason sub-lines, token combo tooltips, and high-cost highlights.
- */
-
-
 const STEP_COLUMN_KEYS = STEP_TABLE_COLUMN_KEYS;
 const DEFAULT_STEP_COLUMN_KEYS = DEFAULT_STEP_TABLE_COLUMNS;
 const DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT = DEFAULT_STEP_TOKEN_COMBO_FORMAT;
@@ -26476,13 +26276,6 @@ return { STEP_COLUMN_KEYS, DEFAULT_STEP_COLUMN_KEYS, resolveStepTokenParts, form
 
 // --- src/components/widgets/CapsuleBarWidget.js ---
 const { RING_RADIUS, RING_CIRCUMFERENCE, tokenizeCapsuleOdometerText, patchCapsuleOdometerText, buildCapsuleSlotContext, resolveMultiSessionCapsuleState, createCapsuleSlotNode, syncCapsuleSlotNodes, CapsuleBarWidget } = (() => {
-/**
- * @fileoverview Shared Decoupled Capsule Bar Primitives & Widget (`CapsuleBarWidget.js`).
- * Powers both the live host window capsule (`WindowOverlayShell.js`) and the
- * real-UI structure preview (`SettingsStructureTab.js`), ensuring 100% DOM/CSS parity.
- */
-
-
 const RING_RADIUS = 5.2;
 const RING_CIRCUMFERENCE = +(2 * Math.PI * RING_RADIUS).toFixed(2);
 
@@ -27120,14 +26913,6 @@ return { RING_RADIUS, RING_CIRCUMFERENCE, tokenizeCapsuleOdometerText, patchCaps
 
 // --- src/components/widgets/StepTableWidget.js ---
 const { formatTurnPromptText, StepTableWidget } = (() => {
-/**
- * @fileoverview Reusable Decoupled Step Table Widget (`StepTableWidget.js`).
- * Powers both `StepsDetailView` ("按步查看") and `SettingsStructureTab` live preview,
- * dynamically rendering 2..12 columns via `stepColumnRegistry.js`, turn rail + prompt
- * preview tooltips, and independent Main/Sub agent badges.
- */
-
-
 function formatTurnPromptText(rawPrompt, { hasMedia = false, mediaOnly = false } = {}) {
   const text = String(rawPrompt || '').trim();
   if (mediaOnly || (!text && hasMedia)) return t('steps.turnMediaOnly');
@@ -28998,13 +28783,6 @@ return { formatTurnPromptText, StepTableWidget };
 
 // --- src/components/widgets/ConsumptionBreakdownRows.js ---
 const { partitionModelSegments, createBreakdownItemRow, updateBreakdownItemRow, createConsumptionBreakdownRowBuilders } = (() => {
-/**
- * @fileoverview Reusable model, client-source, workspace, and top-conversation breakdown
- * row builders (`ConsumptionBreakdownRows.js`) extracted from `ConsumptionView.js`.
- * Consolidates shared long-tail model partitioning, hover-popover event binding, and top-model pill rendering.
- */
-
-
 function createSourceModelSegment() {
   const segEl = h('div', { className: 'progress-seg cons-model-seg' });
   return { el: segEl, refs: { segEl } };
@@ -29870,14 +29648,6 @@ return { partitionModelSegments, createBreakdownItemRow, updateBreakdownItemRow,
 
 // --- src/components/settings/structurePreviewMock.js ---
 const { buildStructurePreviewTelemetry } = (() => {
-/**
- * @fileoverview Realistic Simulated Telemetry Builder (`structurePreviewMock.js`)
- * for `SettingsStructureTab` real-UI live previews.
- * Exercises all 13 capsule metrics, 8 overview metrics, 10 context channels + subagents,
- * multi-pool quotas, live running task + subagent, and 12 step table columns.
- */
-
-
 function buildStructurePreviewTelemetry(
   baseSettings = {},
   draftOverrides = {},
@@ -30395,13 +30165,6 @@ return { buildStructurePreviewTelemetry };
 
 // --- src/components/settings/CollapsibleSection.js ---
 const { CollapsibleSection } = (() => {
-/**
- * @fileoverview Reusable Section Card (`CollapsibleSection.js`)
- * for `SettingsStructureTab` — supports both accordion mode (`collapsible: true`)
- * and static 3rd-level pane card mode (`collapsible: false`).
- */
-
-
 const CollapsibleSection = defineComponent({
   name: 'CollapsibleSection',
   setup({ props, onCleanup }) {
@@ -30568,15 +30331,6 @@ return { CollapsibleSection };
 
 // --- src/components/settings/EditableSlotList.js ---
 const { EditableSlotList } = (() => {
-/**
- * @fileoverview Reusable Drag-Sortable & `+` / `-` / `↑` / `↓` Dynamic Slot List (`EditableSlotList.js`).
- * Powers Topbar Capsule Slots (1..5), Hover Popup Modules (0..4),
- * Live Overview Modules (1..4), First-Row Metrics (1..4), and Step Table Columns (2..12).
- * Supports smooth pointer-based drag reordering with live preview callbacks (`onPreview`)
- * and single-commit persistence on drop (`onChange`).
- */
-
-
 function isNodeWithin(target, container) {
   let cur = target;
   while (cur) {
@@ -31352,12 +31106,6 @@ return { EditableSlotList };
 
 // --- src/components/settings/ThemeColorPicker.js ---
 const { ThemeColorPicker } = (() => {
-/**
- * @fileoverview Host-aware Theme Accent Swatch Picker (`ThemeColorPicker.js`).
- * Provides the default "跟随宿主" (`host`) pill plus 6 curated color swatches.
- */
-
-
 const ThemeColorPicker = defineComponent({
   name: 'ThemeColorPicker',
   setup({ props }) {
@@ -31457,13 +31205,6 @@ return { ThemeColorPicker };
 
 // --- src/components/settings/BridgeStatusNotice.js ---
 const { BridgeStatusNotice } = (() => {
-/**
- * @fileoverview Shared CDP / Window Bridge diagnostic & one-click relaunch card (`BridgeStatusNotice.js`).
- * Surfaces automatic shortcut provisioning status and a one-click host relaunch button when
- * Antigravity 2.33.0+ runs without an active `DevToolsActivePort` (`no_devtools_port` / `cdp_unreachable`).
- */
-
-
 const LAUNCH_FLAG_TEXT = '--remote-debugging-port=0';
 
 const BridgeStatusNotice = defineComponent({
@@ -31479,7 +31220,22 @@ const BridgeStatusNotice = defineComponent({
     let dismissed = false;
     let relaunchState = 'idle'; // 'idle' | 'relaunching' | 'failed'
     let relaunchResetTimer = null;
+    let macWrapperBusy = false;
+    let macWrapperFeedback = ''; // '' | 'created' | 'removed' | 'failed'
+    let macWrapperFeedbackTimer = null;
     let destroyed = false;
+
+    function isTargetMacWrapperPresent(wb) {
+      if (!wb || typeof wb !== 'object') return false;
+      const isIde = String(wb.targetProduct || '') === 'ide';
+      if (isIde && typeof wb.macIdeWrapperExists === 'boolean') {
+        return wb.macIdeWrapperExists;
+      }
+      if (!isIde && typeof wb.macDesktopWrapperExists === 'boolean') {
+        return wb.macDesktopWrapperExists;
+      }
+      return Boolean(wb.macWrapperExists);
+    }
     const copyFeedback = createCopiedFeedbackController({
       durationMs: 1800,
       onCleanup,
@@ -31529,7 +31285,8 @@ const BridgeStatusNotice = defineComponent({
           }
           syncActionButtons();
           try {
-            const res = await triggerBridgeHostRelaunch();
+            const targetProd = String(lastPayload.windowBridge?.targetProduct || 'auto');
+            const res = await triggerBridgeHostRelaunch({ product: targetProd });
             if (destroyed) return;
             if (!res || res.ok === false) {
               relaunchState = 'failed';
@@ -31543,7 +31300,6 @@ const BridgeStatusNotice = defineComponent({
               relaunchResetTimer?.unref?.();
               return;
             }
-            // Reset button if host is still open after 9s (e.g. cancelled close prompt)
             relaunchResetTimer = setTimeout(() => {
               relaunchResetTimer = null;
               if (destroyed) return;
@@ -31566,6 +31322,74 @@ const BridgeStatusNotice = defineComponent({
         },
       },
       [relaunchBtnIconEl, relaunchBtnTextEl]
+    );
+
+    const macWrapperBtnIconEl = createSvgIcon('download', { size: 11 });
+    const macWrapperBtnTextEl = h('span', {
+      className: 'settings-bridge-wrapper-text',
+      text: t('settings.bridge.macCreateWrapperBtn'),
+    });
+    const macWrapperBtnEl = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-ghost-sm settings-bridge-wrapper-btn',
+        hidden: true,
+        onClick: async () => {
+          if (macWrapperBusy || destroyed) return;
+          const existsNow = isTargetMacWrapperPresent(lastPayload.windowBridge);
+          const actionProd =
+            String(lastPayload.windowBridge?.targetProduct || '') === 'ide' ? 'ide' : 'desktop';
+          macWrapperBusy = true;
+          if (macWrapperFeedbackTimer) {
+            clearTimeout(macWrapperFeedbackTimer);
+            macWrapperFeedbackTimer = null;
+          }
+          syncActionButtons();
+          try {
+            const res = await triggerBridgeHostRelaunch({
+              action: existsNow ? 'remove_macos_wrapper' : 'create_macos_wrapper',
+              product: actionProd,
+            });
+            if (destroyed) return;
+            if (res && res.ok !== false) {
+              lastPayload = {
+                ...lastPayload,
+                windowBridge: {
+                  ...(lastPayload.windowBridge || {}),
+                  macWrapperExists: Boolean(res.macWrapperExists),
+                  ...(typeof res.macDesktopWrapperExists === 'boolean'
+                    ? { macDesktopWrapperExists: res.macDesktopWrapperExists }
+                    : {}),
+                  ...(typeof res.macIdeWrapperExists === 'boolean'
+                    ? { macIdeWrapperExists: res.macIdeWrapperExists }
+                    : {}),
+                  macWrapperPaths: Array.isArray(res.macWrapperPaths) ? res.macWrapperPaths : [],
+                },
+              };
+              macWrapperFeedback = existsNow ? 'removed' : 'created';
+            } else {
+              macWrapperFeedback = 'failed';
+            }
+          } catch {
+            if (destroyed) return;
+            macWrapperFeedback = 'failed';
+          } finally {
+            if (!destroyed) {
+              macWrapperBusy = false;
+              syncActionButtons();
+              macWrapperFeedbackTimer = setTimeout(() => {
+                macWrapperFeedbackTimer = null;
+                if (destroyed) return;
+                macWrapperFeedback = '';
+                syncActionButtons();
+              }, 2600);
+              macWrapperFeedbackTimer?.unref?.();
+            }
+          }
+        },
+      },
+      [macWrapperBtnIconEl, macWrapperBtnTextEl]
     );
 
     const copyBtnIconEl = createSvgIcon('copy', { size: 11 });
@@ -31595,6 +31419,7 @@ const BridgeStatusNotice = defineComponent({
     );
     const actionsRowEl = h('div', { className: 'settings-bridge-actions' }, [
       relaunchBtnEl,
+      macWrapperBtnEl,
       copyBtnEl,
     ]);
 
@@ -31609,8 +31434,11 @@ const BridgeStatusNotice = defineComponent({
     );
 
     function syncActionButtons() {
-      const canRelaunch = lastPayload.windowBridge?.canRelaunch !== false;
-      const needsAuth = Boolean(lastPayload.windowBridge?.hasReadOnlyShortcuts);
+      const wb = lastPayload.windowBridge;
+      const plat = String(lastPayload.hostPlatform || '').trim().toLowerCase();
+      const canRelaunch = wb?.canRelaunch !== false;
+      const needsAuth = Boolean(wb?.hasReadOnlyShortcuts);
+      const isIdeTarget = String(wb?.targetProduct || '') === 'ide';
       patchAttr(relaunchBtnEl, 'hidden', !canRelaunch);
       patchAttr(relaunchBtnEl, 'disabled', relaunchState === 'relaunching');
       patchText(
@@ -31621,7 +31449,34 @@ const BridgeStatusNotice = defineComponent({
             ? t('settings.bridge.relaunchFailed')
             : needsAuth
               ? t('settings.bridge.relaunchAuthBtn')
-              : t('settings.bridge.relaunchBtn')
+              : isIdeTarget
+                ? t('settings.bridge.relaunchIdeBtn')
+                : t('settings.bridge.relaunchBtn')
+      );
+
+      const showMacWrapperBtn = plat === 'darwin';
+      const wrapperExists = isTargetMacWrapperPresent(wb);
+      patchAttr(macWrapperBtnEl, 'hidden', !showMacWrapperBtn);
+      patchAttr(macWrapperBtnEl, 'disabled', macWrapperBusy);
+      patchSvgIcon(
+        macWrapperBtnIconEl,
+        macWrapperFeedback === 'created' || macWrapperFeedback === 'removed'
+          ? 'check'
+          : wrapperExists
+            ? 'close'
+            : 'download'
+      );
+      patchText(
+        macWrapperBtnTextEl,
+        macWrapperFeedback === 'created'
+          ? t('settings.bridge.macWrapperCreatedBtn')
+          : macWrapperFeedback === 'removed'
+            ? t('settings.bridge.macWrapperRemovedBtn')
+            : macWrapperFeedback === 'failed'
+              ? t('settings.bridge.macWrapperFailedBtn')
+              : wrapperExists
+                ? t('settings.bridge.macRemoveWrapperBtn')
+                : t('settings.bridge.macCreateWrapperBtn')
       );
 
       const isCopied = copyFeedback.isCopied(true);
@@ -31657,6 +31512,7 @@ const BridgeStatusNotice = defineComponent({
 
       const plat = String(lastPayload.hostPlatform || '').trim().toLowerCase();
       const hasReadOnlyShortcuts = Boolean(wb?.hasReadOnlyShortcuts);
+      const isStalePort = Boolean(wb?.stalePortDetected);
       const isMacDesktop = plat === 'darwin' && !wb?.argvConfigured;
       const isAutoConfigured = Boolean(
         wb?.launcherConfigured || wb?.argvUpdatedThisBoot || wb?.argvConfigured
@@ -31685,14 +31541,22 @@ const BridgeStatusNotice = defineComponent({
         titleText = contextMode
           ? t('settings.bridge.ctxRestartTitle')
           : t('settings.bridge.restartTitle');
-        bodyText = t('settings.bridge.restartBody');
+        bodyText =
+          plat === 'darwin' ? t('settings.bridge.guideMac') : t('settings.bridge.restartBody');
       } else {
         titleText = contextMode
           ? t('settings.bridge.ctxTitle')
-          : state === 'cdp_unreachable'
-            ? t('settings.bridge.unreachableTitle')
-            : t('settings.bridge.noPortTitle');
-        bodyText = plat === 'linux' ? t('settings.bridge.guideLinux') : t('settings.bridge.guideWin');
+          : isStalePort
+            ? t('settings.bridge.stalePortTitle')
+            : state === 'cdp_unreachable'
+              ? t('settings.bridge.unreachableTitle')
+              : t('settings.bridge.noPortTitle');
+        bodyText =
+          plat === 'darwin'
+            ? t('settings.bridge.guideMac')
+            : plat === 'linux'
+              ? t('settings.bridge.guideLinux')
+              : t('settings.bridge.guideWin');
       }
 
       patchText(titleEl, titleText);
@@ -31717,6 +31581,10 @@ const BridgeStatusNotice = defineComponent({
         clearTimeout(relaunchResetTimer);
         relaunchResetTimer = null;
       }
+      if (macWrapperFeedbackTimer) {
+        clearTimeout(macWrapperFeedbackTimer);
+        macWrapperFeedbackTimer = null;
+      }
     });
 
     return {
@@ -31725,6 +31593,7 @@ const BridgeStatusNotice = defineComponent({
         update,
         refreshLabels: render,
         relaunchBtnEl,
+        macWrapperBtnEl,
         copyBtnEl,
         dismissBtnEl,
       },
@@ -31736,12 +31605,6 @@ return { BridgeStatusNotice };
 
 // --- src/components/settings/SessionMigrationCard.js ---
 const { SessionMigrationCard } = (() => {
-/**
- * @fileoverview 跨端会话按需迁移设置卡片 (`SessionMigrationCard.js`)。
- * 仅当本机检测到 ≥2 个 Antigravity 客户端目录时展示，支持自由勾选根会话以完整迁移或克隆副本到目标端。
- */
-
-
 const SMIG_OUTSIDE_PROJECT_ID = 'outside-of-project';
 const SMIG_PAGE_SIZE = 100;
 const SMIG_BATCH_CHUNK_SIZE = 50;
@@ -32543,18 +32406,6 @@ return { SessionMigrationCard };
 
 // --- src/components/settings/HostI18nCard.js ---
 const { HostI18nCard } = (() => {
-/**
- * @fileoverview Self-contained Antigravity Host UI Language card (`HostI18nCard.js`).
- *
- * Mounted inside `SettingsGeneralTab` with minimal glue; manages:
- * - Language selection (`off` or any pack listed in repository `manifest.json`),
- * - Conditional Light / Deep translation depth switching (0-network hot switch),
- * - On-demand repository pack download and SemVer-checked updates,
- * - Direct untranslated UI string collection alongside pack actions,
- * - CDP bridge notice when DevTools port is unavailable.
- */
-
-
 function formatHostI18nBytes(bytes) {
   const num = Number(bytes || 0);
   if (!Number.isFinite(num) || num <= 0) return '';
@@ -33025,10 +32876,17 @@ const HostI18nCard = defineComponent({
       if (windowBridge) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
       const sig = [
-        Boolean(latestWindowBridge?.connected),
-        Boolean(latestWindowBridge?.available),
-        String(latestWindowBridge?.reason || ''),
-        String(latestWindowBridge?.ideStatus?.reason || ''),
+        String(latestWindowBridge?.state || ''),
+        Boolean(latestWindowBridge?.launcherConfigured),
+        Boolean(latestWindowBridge?.argvConfigured),
+        Boolean(latestWindowBridge?.argvUpdatedThisBoot),
+        Boolean(latestWindowBridge?.hasReadOnlyShortcuts),
+        Boolean(latestWindowBridge?.stalePortDetected),
+        String(latestWindowBridge?.targetProduct || ''),
+        Boolean(latestWindowBridge?.macWrapperExists),
+        Boolean(latestWindowBridge?.macDesktopWrapperExists),
+        Boolean(latestWindowBridge?.macIdeWrapperExists),
+        Boolean(latestWindowBridge?.canRelaunch),
         String(latestHostPlatform || ''),
       ].join('|');
       if (sig === lastBridgeRenderSig) return;
@@ -33077,13 +32935,6 @@ return { HostI18nCard };
 
 // --- src/views/settings/SettingsGeneralTab.js ---
 const { SettingsGeneralTab } = (() => {
-/**
- * @fileoverview Preferences Tab 1: `SettingsGeneralTab.js` ("常规").
- * Manages UI Language (`zh-CN` / `en-US` / `auto`), Theme Accent (`host` + 6 swatches),
- * Panel Font Scale (`sm` / `md` / `lg` / `xl`), Pricing Sync, and Plugin Updates.
- */
-
-
 function getLanguageOptions() {
   return [
     { value: 'auto', label: t('settings.gen.langAuto') },
@@ -33634,15 +33485,6 @@ return { SettingsGeneralTab };
 
 // --- src/views/settings/SettingsStructureTab.js ---
 const { SettingsStructureTab } = (() => {
-/**
- * @fileoverview Preferences Tab 2: `SettingsStructureTab.js` ("结构").
- * Organizes the 4 structure settings panes under a dedicated 3rd-level menu bar,
- * renders live previews powered by the decoupled real UI components (`CapsuleBarWidget`,
- * `createDynamicWidgetHost` in `hover` / `overview` modes, and `StepTableWidget`)
- * with simulated telemetry, and supports smooth mouse drag-and-drop reordering.
- */
-
-
 const STRUCTURE_THIRD_TABS = Object.freeze([
   { key: 'mount', icon: 'dock', labelKey: 'settings.str.tabMount' },
   { key: 'hover', icon: 'layers', labelKey: 'settings.str.tabHover' },
@@ -35466,13 +35308,6 @@ return { SettingsStructureTab };
 
 // --- src/views/settings/SettingsSessionsTab.js ---
 const { SettingsSessionsTab } = (() => {
-/**
- * @fileoverview Control Center Tab 3: `SettingsSessionsTab.js` ("会话").
- * Hosts cross-client session migration (`SessionMigrationCard`) and displays a
- * clean status fallback when the host only has a single Antigravity client installed.
- */
-
-
 const SettingsSessionsTab = defineComponent({
   name: 'SettingsSessionsTab',
   setup({ getProps, onCleanup }) {
@@ -35569,13 +35404,6 @@ return { SettingsSessionsTab };
 
 // --- src/views/settings/SettingsAccountTab.js ---
 const { SettingsAccountTab } = (() => {
-/**
- * @fileoverview Multi-account switcher, quota trajectory chart, risk gate, and passphrase vault UI.
- * Reuses `SegmentedControl`, `CustomSelect`, `AccountQuotaTrendCard`, `.ctx-risk-mask`,
- * `.settings-bridge-notice`, `.status-tag`, `.btn-ghost-sm`, `.btn-danger-confirm`, and `.quota-pool-row`.
- */
-
-
 const key = (name) => `settings.account.${name}`;
 const fmtPct = (v) => String(+Number(v).toFixed(1));
 
@@ -37092,13 +36920,6 @@ return { SettingsAccountTab };
 
 // --- src/views/settings/SettingsOtherTab.js ---
 const { SettingsOtherTab } = (() => {
-/**
- * @fileoverview Preferences Tab 3: `SettingsOtherTab.js` ("其他").
- * Houses Model Identifier Formatting, Per-Model Context Windows,
- * Local Trajectory Cache Rebuild, and Two-Step Factory Preference Reset.
- */
-
-
 function formatQuotaReservationLogForClipboard(snapshot) {
   const safe = snapshot && typeof snapshot === 'object' ? snapshot : {};
   const buckets = Array.isArray(safe.buckets) ? safe.buckets : [];
@@ -37127,6 +36948,8 @@ const SettingsOtherTab = defineComponent({
   name: 'SettingsOtherTab',
   setup({ onCleanup, getProps }) {
     let draftModelDisplayMode = 'short';
+    let draftAutoConfigureLaunch = true;
+    let draftEnableRemoteSshTelemetry = true;
     let draftExperimentalQuotaReservation = true;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
@@ -37142,16 +36965,22 @@ const SettingsOtherTab = defineComponent({
     let savingContextWindow = false;
     let contextFeedback = '';
     let modelTimer = null;
+    let hostTimer = null;
     let expTimer = null;
     let maintTimer = null;
     let resetConfirmTimer = null;
     let resetConfirmArmed = false;
     let isRebuilding = false;
     let isResetting = false;
+    let isRemovingMacWrapper = false;
 
     const modelStatusText = h('span', {
       className: 'text-muted',
       style: 'font-size: var(--fs-md);',
+      text: '',
+    });
+    const hostStatusText = h('span', {
+      className: 'text-muted settings-panel-status',
       text: '',
     });
     const expStatusText = h('span', {
@@ -37208,6 +37037,22 @@ const SettingsOtherTab = defineComponent({
       }
     }
 
+    function showHostFeedback(text, autoClearMs = 1800) {
+      if (hostTimer) {
+        clearTimeout(hostTimer);
+        hostTimer = null;
+      }
+      patchText(hostStatusText, text);
+      patchAttr(hostStatusText, 'title', text || null);
+      if (text && autoClearMs > 0) {
+        hostTimer = setTimeout(() => {
+          hostTimer = null;
+          patchText(hostStatusText, '');
+          patchAttr(hostStatusText, 'title', null);
+        }, autoClearMs);
+      }
+    }
+
     // --- Card 1: 模型标识显示 ---
     const modelCardTitleEl = h('span', { text: t('settings.oth.modelTitle') });
 
@@ -37243,6 +37088,144 @@ const SettingsOtherTab = defineComponent({
         modelStatusText,
       ]),
       stepModelSelect.el,
+    ]);
+
+    // --- Card 1.5: 宿主启动自愈与 IDE Remote-SSH ---
+    const hostPanelTitleEl = h('span', { text: t('settings.oth.hostTitle') });
+    const autoLaunchLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.autoLaunchLabel'),
+    });
+    const autoLaunchDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.autoLaunchDesc'),
+    });
+    const autoLaunchToggle = ToggleSwitch({
+      modelValue: 'on',
+      ariaLabelKey: 'settings.oth.autoLaunchLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        const nextEnabled = val === 'on';
+        draftAutoConfigureLaunch = nextEnabled;
+        autoLaunchToggle.setProps({ modelValue: nextEnabled ? 'on' : 'off' });
+        showHostFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ autoConfigureLaunch: nextEnabled });
+          showHostFeedback(t('settings.saved'), 1500);
+        } catch {
+          if (latestSettings) renderSettings(latestSettings);
+          showHostFeedback(t('settings.saveFailed'), 2500);
+        }
+      },
+    });
+
+    const remoteSshLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.remoteSshLabel'),
+    });
+    const remoteSshDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.remoteSshDesc'),
+    });
+    const remoteSshToggle = ToggleSwitch({
+      modelValue: 'on',
+      ariaLabelKey: 'settings.oth.remoteSshLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        const nextEnabled = val === 'on';
+        draftEnableRemoteSshTelemetry = nextEnabled;
+        remoteSshToggle.setProps({ modelValue: nextEnabled ? 'on' : 'off' });
+        showHostFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ enableRemoteSshTelemetry: nextEnabled });
+          showHostFeedback(t('settings.saved'), 1500);
+        } catch {
+          if (latestSettings) renderSettings(latestSettings);
+          showHostFeedback(t('settings.saveFailed'), 2500);
+        }
+      },
+    });
+
+    const macWrapperLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.macWrapperLabel'),
+    });
+    const macWrapperDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.macWrapperDesc'),
+    });
+    const macWrapperRemoveBtnText = h('span', {
+      text: t('settings.oth.macRemoveWrapperBtn'),
+    });
+    const macWrapperRemoveBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          if (isRemovingMacWrapper) return;
+          isRemovingMacWrapper = true;
+          patchAttr(macWrapperRemoveBtn, 'disabled', true);
+          showHostFeedback(t('settings.saving'), 0);
+          try {
+            const res = await triggerBridgeHostRelaunch({
+              action: 'remove_macos_wrapper',
+              product: 'both',
+            });
+            if (res && res.ok !== false) {
+              latestWindowBridge = {
+                ...(latestWindowBridge || {}),
+                macWrapperExists: Boolean(res.macWrapperExists),
+                macWrapperPaths: Array.isArray(res.macWrapperPaths) ? res.macWrapperPaths : [],
+              };
+              syncHostIntegrationRows();
+              showHostFeedback(t('settings.oth.macWrapperRemovedDone'), 2500);
+            } else {
+              showHostFeedback(t('settings.saveFailed'), 2500);
+            }
+          } catch {
+            showHostFeedback(t('settings.saveFailed'), 2500);
+          } finally {
+            isRemovingMacWrapper = false;
+            patchAttr(macWrapperRemoveBtn, 'disabled', false);
+          }
+        },
+      },
+      [createSvgIcon('close', { size: 12 }), macWrapperRemoveBtnText]
+    );
+    const macWrapperCleanRow = h(
+      'div',
+      { className: 'settings-action-block', hidden: true },
+      [
+        h('div', { className: 'settings-action-info' }, [macWrapperLabelEl, macWrapperDescEl]),
+        macWrapperRemoveBtn,
+      ]
+    );
+
+    function syncHostIntegrationRows() {
+      const showMacClean =
+        String(latestHostPlatform || '').toLowerCase() === 'darwin' &&
+        Boolean(latestWindowBridge?.macWrapperExists);
+      patchAttr(macWrapperCleanRow, 'hidden', !showMacClean);
+    }
+
+    const hostIntegrationPanel = h('section', { className: 'panel' }, [
+      h('div', { className: 'panel-header settings-panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('terminal', { size: 13 }),
+          hostPanelTitleEl,
+        ]),
+        hostStatusText,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [autoLaunchLabelEl, autoLaunchDescEl]),
+        autoLaunchToggle.el,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [remoteSshLabelEl, remoteSshDescEl]),
+        remoteSshToggle.el,
+      ]),
+      macWrapperCleanRow,
     ]);
 
     // --- Card 2: 试验性功能 ---
@@ -37888,6 +37871,7 @@ const SettingsOtherTab = defineComponent({
 
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       modelPanel,
+      hostIntegrationPanel,
       experimentalPanel,
       baselinePanel,
       maintPanel,
@@ -37910,6 +37894,10 @@ const SettingsOtherTab = defineComponent({
         settings.modelDisplayMode,
         settings.showUpstreamModel
       );
+      draftAutoConfigureLaunch = normalizeClientAutoConfigureLaunch(settings.autoConfigureLaunch);
+      draftEnableRemoteSshTelemetry = normalizeClientEnableRemoteSshTelemetry(
+        settings.enableRemoteSshTelemetry
+      );
       draftExperimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
         settings.experimentalQuotaReservation
       );
@@ -37925,6 +37913,13 @@ const SettingsOtherTab = defineComponent({
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
+      autoLaunchToggle.setProps({
+        modelValue: draftAutoConfigureLaunch ? 'on' : 'off',
+      });
+      remoteSshToggle.setProps({
+        modelValue: draftEnableRemoteSshTelemetry ? 'on' : 'off',
+      });
+      syncHostIntegrationRows();
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
@@ -37933,6 +37928,21 @@ const SettingsOtherTab = defineComponent({
 
     function refreshLabels() {
       patchText(modelCardTitleEl, t('settings.oth.modelTitle'));
+      patchText(hostPanelTitleEl, t('settings.oth.hostTitle'));
+      patchText(autoLaunchLabelEl, t('settings.oth.autoLaunchLabel'));
+      patchText(autoLaunchDescEl, t('settings.oth.autoLaunchDesc'));
+      patchText(remoteSshLabelEl, t('settings.oth.remoteSshLabel'));
+      patchText(remoteSshDescEl, t('settings.oth.remoteSshDesc'));
+      patchText(macWrapperLabelEl, t('settings.oth.macWrapperLabel'));
+      patchText(macWrapperDescEl, t('settings.oth.macWrapperDesc'));
+      patchText(macWrapperRemoveBtnText, t('settings.oth.macRemoveWrapperBtn'));
+      autoLaunchToggle.setProps({
+        modelValue: draftAutoConfigureLaunch ? 'on' : 'off',
+      });
+      remoteSshToggle.setProps({
+        modelValue: draftEnableRemoteSshTelemetry ? 'on' : 'off',
+      });
+      syncHostIntegrationRows();
       patchText(expTitleEl, t('settings.oth.expTitle'));
       patchText(quotaReserveLabelEl, t('settings.oth.quotaReserveLabel'));
       patchText(quotaReserveBadgeEl, t('settings.oth.expBadge'));
@@ -37974,10 +37984,13 @@ const SettingsOtherTab = defineComponent({
 
     onCleanup(() => {
       if (modelTimer) clearTimeout(modelTimer);
+      if (hostTimer) clearTimeout(hostTimer);
       if (expTimer) clearTimeout(expTimer);
       if (maintTimer) clearTimeout(maintTimer);
       if (resetConfirmTimer) clearTimeout(resetConfirmTimer);
       stepModelSelect.destroy();
+      autoLaunchToggle.destroy();
+      remoteSshToggle.destroy();
       quotaReserveToggle.destroy();
       ctxBridgeNotice.destroy();
       ctxMainToggle.destroy();
@@ -37990,6 +38003,9 @@ const SettingsOtherTab = defineComponent({
       el: rootEl,
       refs: {
         stepModelSelect,
+        autoLaunchToggle,
+        remoteSshToggle,
+        macWrapperRemoveBtn,
         quotaReserveToggle,
         exportReserveLogBtn,
         ctxBridgeNotice,
@@ -38014,13 +38030,6 @@ return { SettingsOtherTab };
 
 // --- src/components/layout/TopSessionHeader.js ---
 const { TopSessionHeader } = (() => {
-/**
- * @fileoverview Row 1 of the compact top bar:
- * Bespoke CustomSelect for session switching, SVG live status indicator,
- * and async force-refresh button.
- */
-
-
 const INLINE_UUID_RE =
   /(?<![0-9a-f-])([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])/gi;
 
@@ -38446,15 +38455,6 @@ return { TopSessionHeader };
 
 // --- src/views/LiveOverviewView.js ---
 const { LiveOverviewView } = (() => {
-/**
- * @fileoverview View 1: Decoupled `LiveOverviewView.js` (实时监控视图).
- * Acts as a lightweight host container delegating all telemetry cards
- * (`metrics`, `context`, `quotas`, `live_tasks`) to `widgetRegistry.js` (`a` calls `b`),
- * allowing users to freely reorder or remove any module down to 1 item.
- */
-
-
-
 const LiveOverviewView = defineComponent({
   name: 'LiveOverviewView',
   setup({ onCleanup }) {
@@ -38606,18 +38606,6 @@ return { LiveOverviewView };
 
 // --- src/views/ConsumptionView.js ---
 const { ConsumptionView } = (() => {
-/**
- * @fileoverview View 2: ConsumptionView (全景消耗统计视图).
- * 采用 5 段式分析布局展示指定时间窗口内的全量 Token 与费用消耗：
- * 1. 用量概览：支持预设时间段与自定义区间筛选，通过 3+3 组合矩阵展示总 Token/调用次数、
- *    USD/CNY 预估费用、缓存命中率与命中量、新输入/缓存读取（含节省费用）/输出细分占比，以及底部 4 段比例条 (`FourSegmentBar`)。
- * 2. 历史趋势：基于 `TrendAreaChart` 渲染纯 SVG 三次贝塞尔平滑曲线面积图、峰值气泡、对齐多刻度时间轴与悬停详情浮层。
- * 3. 热门模型：按 Token 总量降序展示各模型的消耗占比徽章、4 段构成条及输入/缓存/输出/思考/调用明细。
- * 4. 数据来源：按调用来源聚合展示 Token 构成、占比与费用明细。
- * 5. 按月细分：12 个月垂直 4 段堆叠柱状图，直观对比全年各月费用、Token 总量与缓存/思考结构。
- */
-
-
 /** 消耗统计顶栏支持的时间范围预设项 */
 function getConsumptionTimeRangeOptions() {
   return [
@@ -40313,14 +40301,6 @@ return { ConsumptionView };
 
 // --- src/views/StepsDetailView.js ---
 const { mergeSelectedAgentUnits, StepsDetailView } = (() => {
-/**
- * @fileoverview View 3: StepsDetailView (步骤明细与总汇总分析视图).
- * 提供“按步查看”与“总汇总”双子视图切换：
- * - 单步测速表通过 `stepColumnRegistry.js` 动态渲染用户自选的 2..12 个字段列，并支持行级增量对账；
- * - 总汇总视图提供会话线性走势图、多模型同图趋势拟合曲线与极简高密度模型总览卡片。
- */
-
-
 function mergeSelectedAgentUnits(units) {
   const combinedSteps = [];
   const modelMap = new Map();
@@ -42111,13 +42091,6 @@ return { mergeSelectedAgentUnits, StepsDetailView };
 
 // --- src/views/SettingsView.js ---
 const { SHOW_ACCOUNT_TAB, SettingsView } = (() => {
-/**
- * @fileoverview View 4: Control Center ("常规" / "结构" / "会话" / "账号" / "其他").
- * Orchestrates the five modular Control Center tabs
- * with top sub-navigation and a shared `CustomScrollbar` viewport.
- */
-
-
 const SHOW_ACCOUNT_TAB = true;
 
 function getSettingsSubTabOptions() {
@@ -42338,13 +42311,6 @@ return { SHOW_ACCOUNT_TAB, SettingsView };
 
 // --- src/App.js ---
 const { App } = (() => {
-/**
- * @fileoverview Root Application Shell (App.js).
- * Combines the compact dual-layer header (TopSessionHeader + TopLongPillNav)
- * and single-viewport functional views.
- */
-
-
 const APP_VIEW_SHORTCUT_MAP = Object.freeze({
   1: 'overview',
   2: 'consumption',
@@ -42710,13 +42676,6 @@ return { App };
 
 // --- src/components/layout/overlayHostAnchors.js ---
 const { CAPSULE_HOST_ID, PORTAL_HOST_ID, computeCapsuleLayoutMode, isImmediatelyBeforeNode, isIdeExtensionChatFrame, resolveActiveDockTarget, findNativeTopRightAnchor, getLeftSidebarRightEdge, attachShadowStyles } = (() => {
-/**
- * @fileoverview Host IDE/Desktop titlebar & composer button anchor discovery,
- * 4-stage responsive capsule hysteresis, and shared ShadowRoot CSSStyleSheet mounting
- * extracted from WindowOverlayShell.js.
- */
-
-
 const CAPSULE_HOST_ID = 'ag-usage-monitor-capsule';
 const PORTAL_HOST_ID = 'ag-usage-monitor-portal';
 
@@ -43628,19 +43587,6 @@ return { CAPSULE_HOST_ID, PORTAL_HOST_ID, computeCapsuleLayoutMode, isImmediatel
 
 // --- src/components/layout/WindowOverlayShell.js ---
 const { mountWindowOverlay } = (() => {
-/**
- * @fileoverview 主窗口双栖挂载外壳 (WindowOverlayShell.js).
- *
- * 采用「分离式双 Shadow Host」架构，彻底规避宿主顶栏层叠上下文 (`z-0` / `overflow: hidden`) 裁切与路由重绘卸载问题：
- * 1. `#ag-usage-monitor-capsule`：轻量顶栏胶囊，优先内嵌停靠至 `[class*="@container/titlebar"]` 右侧按钮组，
- *    支持四级迟滞宽度自适应折叠（`wide` -> `compact` -> `minimal` -> `ring-only`），找不到顶栏时自动回退至右上角固定定位；
- * 2. `#ag-usage-monitor-portal`：常驻 `document.body` 顶层的无遮挡浮层宿主，承载悬停速览卡与完整四标签 `App()` 监控面板，
- *    在宿主切换会话重建顶栏 DOM 时始终保持组件实例、滚动位置与动画状态不丢失。
- */
-
-
-
-
 const FLOATING_CARD_WIDTH = 522;
 const POPOVER_BASE_WIDTH = 540;
 const POPOVER_MAX_AUTO_WIDTH = 960;
@@ -45757,13 +45703,6 @@ return { mountWindowOverlay };
 
 // --- src/main.js ---
 (() => {
-/**
- * @fileoverview Async entry point for Antigravity Usage & Speed Monitor.
- * Automatically branches between Auxiliary Sidebar Webview mode (`#app-root`)
- * and Main Window Dual-Mount Overlay mode (`window.__AGUsageMonitorBridge`).
- */
-
-
 function isFallbackStyleMutation(record) {
   if (!record) return false;
   if (record.target?.id === HOST_THEME_FALLBACK_STYLE_ID) return true;

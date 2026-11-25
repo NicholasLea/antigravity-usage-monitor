@@ -146,8 +146,10 @@ function createRemoteEndpointStore(cacheFilePath, sqliteFilePath = '') {
   });
 }
 
+const LOOPBACK_HTTP_ORIGIN_RE = /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d+$/i;
+
 /**
- * 注册或更新一个 SSH / 远端窗口端点（幂等；同一远端主机多窗口共享端点并保留独立 `wsUrl` 列表）。
+ * 注册或更新一个 SSH / 远端窗口端点（幂等；同一远端主机多窗口共享端点并分离保活 UI 目标与可发起同源 RPC 的回环目标）。
  *
  * @param {{
  *   id?: string,
@@ -155,6 +157,12 @@ function createRemoteEndpointStore(cacheFilePath, sqliteFilePath = '') {
  *   baseUrl?: string,
  *   csrfToken?: string,
  *   wsUrl?: string,
+ *   canInvokeRpc?: boolean,
+ *   rpcWsUrls?: string[],
+ *   clearRpcTargets?: boolean,
+ *   tier1Verified?: boolean,
+ *   onDisposeKey?: string,
+ *   onDispose?: (() => void)|null,
  *   label?: string,
  *   stableHostKey?: string,
  * }} info
@@ -178,6 +186,10 @@ export function registerRemoteEndpoint(info = {}) {
   const cleanBaseUrl = String(info.baseUrl || cleanOrigin).trim().replace(/\/+$/, '');
   const cleanCsrf = String(info.csrfToken || '').trim();
   const cleanWsUrl = String(info.wsUrl || '').trim();
+  const inferredCanRpc =
+    typeof info.canInvokeRpc === 'boolean'
+      ? info.canInvokeRpc
+      : LOOPBACK_HTTP_ORIGIN_RE.test(cleanOrigin || cleanBaseUrl);
 
   let entry = remoteEndpointRegistry.get(identity.id);
   if (!entry) {
@@ -194,7 +206,9 @@ export function registerRemoteEndpoint(info = {}) {
       origin: cleanOrigin,
       baseUrl: cleanBaseUrl,
       csrfToken: cleanCsrf,
+      tier1Verified: Boolean(info.tier1Verified),
       targets: new Map(),
+      disposeCallbacks: new Map(),
       lastSeenMs: nowMs,
       preferTier2UntilMs: 0,
       inFlightCount: 0,
@@ -226,8 +240,14 @@ export function registerRemoteEndpoint(info = {}) {
           // 远端隧道换端口重连且 2.33.0+ 未暴露 csrfToken 时清除旧端口残留令牌
           entry.csrfToken = '';
         }
+        if (typeof info.tier1Verified !== 'boolean') {
+          entry.tier1Verified = false;
+        }
       }
       entry.baseUrl = cleanBaseUrl;
+    }
+    if (typeof info.tier1Verified === 'boolean') {
+      entry.tier1Verified = info.tier1Verified;
     }
     if (cleanCsrf) {
       if (entry.csrfToken !== cleanCsrf && !isAlreadyKnownPair) {
@@ -239,14 +259,43 @@ export function registerRemoteEndpoint(info = {}) {
     }
   }
 
+  if (typeof info.onDispose === 'function') {
+    const disposeKey = String(info.onDisposeKey || 'default');
+    entry.disposeCallbacks.set(disposeKey, info.onDispose);
+  }
+
+  if (info.clearRpcTargets === true) {
+    for (const [k, rec] of entry.targets.entries()) {
+      if (rec?.canInvokeRpc === true && k !== cleanWsUrl) {
+        entry.targets.delete(k);
+      }
+    }
+  }
+
   if (cleanWsUrl) {
     entry.targets.set(cleanWsUrl, {
       wsUrl: cleanWsUrl,
       origin: cleanOrigin || entry.origin,
       baseUrl: cleanBaseUrl || entry.baseUrl,
       csrfToken: cleanCsrf,
+      canInvokeRpc: inferredCanRpc,
       lastSeenMs: nowMs,
     });
+  }
+
+  if (Array.isArray(info.rpcWsUrls)) {
+    for (const rawRpcWs of info.rpcWsUrls) {
+      const rpcWs = String(rawRpcWs || '').trim();
+      if (!rpcWs) continue;
+      entry.targets.set(rpcWs, {
+        wsUrl: rpcWs,
+        origin: cleanOrigin || entry.origin,
+        baseUrl: cleanBaseUrl || entry.baseUrl,
+        csrfToken: cleanCsrf || entry.csrfToken,
+        canInvokeRpc: true,
+        lastSeenMs: nowMs,
+      });
+    }
   }
 
   return entry;
@@ -387,9 +436,9 @@ export function clearRemoteEndpointCaches(endpointId, options = {}) {
 export function getRemoteEndpointTargetWsUrls(endpoint) {
   if (!endpoint?.targets || !(endpoint.targets instanceof Map)) return [];
   return Array.from(endpoint.targets.values())
+    .filter((t) => Boolean(t?.wsUrl) && t.canInvokeRpc !== false)
     .sort((a, b) => (b.lastSeenMs || 0) - (a.lastSeenMs || 0))
-    .map((t) => t.wsUrl)
-    .filter(Boolean);
+    .map((t) => t.wsUrl);
 }
 
 /**
@@ -426,6 +475,24 @@ export function trackEndpointRequestEnd(endpoint) {
  * @param {Set<string>} activeRemoteWsUrls
  * @param {number} [ttlMs=60000]
  */
+function runEndpointDisposeHooks(ep) {
+  if (!ep?.disposeCallbacks) return;
+  const fns =
+    ep.disposeCallbacks instanceof Map
+      ? Array.from(ep.disposeCallbacks.values())
+      : ep.disposeCallbacks instanceof Set
+        ? Array.from(ep.disposeCallbacks)
+        : [];
+  ep.disposeCallbacks.clear?.();
+  for (const fn of fns) {
+    try {
+      fn();
+    } catch {
+      // 忽略单个清理回调异常
+    }
+  }
+}
+
 export function pruneStaleRemoteEndpoints(activeRemoteWsUrls, ttlMs = ENDPOINT_STALE_TTL_MS) {
   const nowMs = Date.now();
   const activeSet = activeRemoteWsUrls instanceof Set ? activeRemoteWsUrls : new Set();
@@ -447,6 +514,7 @@ export function pruneStaleRemoteEndpoints(activeRemoteWsUrls, ttlMs = ENDPOINT_S
         ep.store.flushTrajectoryCacheNow();
       }
       ep.store.cancelFlushTimer();
+      runEndpointDisposeHooks(ep);
       remoteEndpointRegistry.delete(id);
     }
   }
@@ -459,6 +527,7 @@ export function listRegisteredRemoteEndpoints() {
 export function clearRemoteEndpointRegistry() {
   for (const ep of remoteEndpointRegistry.values()) {
     ep.store.cancelFlushTimer();
+    runEndpointDisposeHooks(ep);
   }
   remoteEndpointRegistry.clear();
 }

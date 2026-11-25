@@ -1,22 +1,16 @@
 /* --- src/styles/tokens.css --- */
-/*
- * Semantic Design Tokens for Antigravity Usage & Speed Monitor.
- * All visual tokens derive from host CSS variables and perceptual color-mix(),
- * eliminating hardcoded hex colors across components and views.
- */
-
 :root,
 :host {
-  /* Cross-Platform Typography Stacks (macOS SF Pro / SF Mono + Windows / Linux Fallbacks) */
+  
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
 
-  /* Architectural Geometry: Only Top Nav uses --radius-pill */
+  
   --radius-pill: 999px;
   --radius-sm: 4px;
   --radius-xs: 2px;
 
-  /* Host-Bridged Surfaces (Antigravity 2.0 + Antigravity IDE --vscode-* + safe fallback) */
+  
   --surface-bg: var(--background, var(--vscode-sideBar-background, var(--vscode-editor-background, hsl(0 0% 100%))));
   --surface-panel: var(
     --card,
@@ -30,7 +24,7 @@
   --surface-hover: color-mix(in srgb, var(--accent-primary) 6%, var(--surface-panel));
   --surface-active: color-mix(in srgb, var(--accent-primary) 12%, var(--surface-panel));
 
-  /* Crisp 1px Hairline Borders */
+  
   --border-hairline: color-mix(
     in srgb,
     var(
@@ -47,7 +41,7 @@
   );
   --border-strong: color-mix(in srgb, var(--border-hairline) 72%, var(--text-primary) 28%);
 
-  /* Typography Hierarchy & Scalable Font Tokens */
+  
   --fs-2xs: calc(10.5px * var(--ui-font-scale, 1));
   --fs-xs: calc(11px * var(--ui-font-scale, 1));
   --fs-sm: calc(11.5px * var(--ui-font-scale, 1));
@@ -63,7 +57,7 @@
   --text-muted: color-mix(in srgb, var(--text-secondary) 74%, var(--surface-panel) 26%);
   --text-inverse: var(--user-accent-contrast, var(--surface-panel));
 
-  /* Semantic Telemetry Accents */
+  
   --accent-primary: var(
     --user-accent-primary,
     var(
@@ -93,7 +87,7 @@
   --quota-reserved-soft: color-mix(in srgb, var(--quota-reserved) 13%, transparent);
   --quota-reserved-border: color-mix(in srgb, var(--quota-reserved) 34%, transparent);
 
-  /* Context Window 10-Channel Palette */
+  
   --ctx-assistant: hsl(215 62% 52%);
   --ctx-tool-results: hsl(172 68% 40%);
   --ctx-user-input: hsl(256 76% 62%);
@@ -105,23 +99,23 @@
   --ctx-system-prompt: hsl(214 26% 54%);
   --ctx-user-rules: hsl(352 78% 56%);
 
-  /* Legacy 4-Channel Palette (retained for compatibility) */
+  
   --ctx-cached: hsl(217 82% 51%);
   --ctx-input: hsl(22 86% 50%);
   --ctx-thinking: hsl(145 64% 38%);
   --ctx-output: hsl(190 80% 38%);
 
-  /* Elevation & Shadows */
+  
   --shadow-popover: 0 4px 12px rgb(0 0 0 / 0.22);
   --shadow-overlay: 0 16px 38px rgb(0 0 0 / 0.38), 0 3px 10px rgb(0 0 0 / 0.22);
 
-  /* Fast Hardware-Accelerated Motion Tokens */
+  
   --ease-fast: cubic-bezier(0.22, 1, 0.36, 1);
   --dur-instant: 90ms;
   --dur-fast: 140ms;
   --dur-normal: 180ms;
 
-  /* Spacing & Density */
+  
   --space-2: 6px;
   --space-3: 8px;
   --space-4: 10px;
@@ -208,11 +202,6 @@ html[data-host-theme-fallback="dark"] {
 }
 
 /* --- src/styles/base.css --- */
-/*
- * Base reset, viewport-locked shell (preventing ultra-long px scroll pages),
- * and precision tabular typography.
- */
-
 * {
   box-sizing: border-box;
   scrollbar-width: none;
@@ -357,10 +346,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/animations.css --- */
-/*
- * Fast, hardware-accelerated transitions (120ms-160ms) with zero sluggish bounce.
- */
-
 @keyframes anim-spin {
   from {
     transform: rotate(0deg);
@@ -413,20 +398,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/controls.css --- */
-/*
- * 通用交互控件与顶栏导航样式表 (controls.css).
- * 包含：
- * 1. 顶部会话控制栏 (.session-header, .status-tag, .icon-btn, .update-badge-btn)
- * 2. 顶部唯一长药丸导航栏 (.long-pill-nav, .pill-glider, .pill-tab)
- * 3. 定制下拉选择器 (.custom-select)
- * 4. 定制步进数字输入框 (.number-input)
- * 5. 定制日期时间选择器 (.datetime-picker)
- * 6. 微边框分段控制器 (.segmented)
- * 7. 独立轨道槽自定义滚动条 (.custom-scroll-host)
- * 8. 设置表单行与主次操作按钮 (.form-row, .btn-primary, .btn-secondary, .cloud-actions-row)
- */
-
-/* --- 1. 顶部会话控制栏与二级代理切换条 (Top Session Control Header & Agent Scope Bar) --- */
 .top-session-stack {
   display: flex;
   flex-direction: column;
@@ -582,7 +553,6 @@ html[data-standalone="true"] .app-shell {
   transform: scale(0.95);
 }
 
-/* --- 2. 顶部药丸导航栏 (Top Long-Pill Navigation Bar) --- */
 .long-pill-nav {
   position: relative;
   container-type: inline-size;
@@ -717,7 +687,6 @@ html[data-standalone="true"] .app-shell {
   opacity: 0.92;
 }
 
-/* --- 3. 定制下拉选择器 (Bespoke Custom Select，零原生 <select>) --- */
 .custom-select {
   position: relative;
   display: inline-flex;
@@ -1039,7 +1008,6 @@ html[data-standalone="true"] .app-shell {
   stroke-width: 2.4;
 }
 
-/* --- 4. 定制步进数字框 (Bespoke Custom Number Input，零原生 <input type="number">) --- */
 .number-input {
   display: inline-flex;
   align-items: stretch;
@@ -1089,7 +1057,6 @@ html[data-standalone="true"] .app-shell {
   outline: none;
 }
 
-/* --- 5. 定制日期时间选择器 (Bespoke Custom DateTime Picker) --- */
 .datetime-picker {
   position: relative;
   display: inline-flex;
@@ -1218,7 +1185,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-primary);
 }
 
-/* --- 6. 微边框分段控制器 (Micro-Bezel Sliding Segmented Control) --- */
 .segmented {
   position: relative;
   display: inline-flex;
@@ -1321,7 +1287,6 @@ html[data-standalone="true"] .app-shell {
   transform: translate3d(calc(var(--seg-active-idx, 0) * (100% + 2px)), 0, 0);
 }
 
-/* --- 7. 独立槽位自定义滚动条 (Bespoke Custom Scrollbar) --- */
 .custom-scroll-host {
   position: relative;
   display: flex;
@@ -1393,7 +1358,6 @@ html[data-standalone="true"] .app-shell {
   background: color-mix(in srgb, var(--accent-primary) 72%, transparent);
 }
 
-/* --- 8. 设置表单与按钮控件 (Settings Form & Buttons) --- */
 .form-row {
   display: flex;
   flex-direction: column;
@@ -1496,7 +1460,6 @@ html[data-standalone="true"] .app-shell {
   transform: scale(0.96);
 }
 
-/* --- 9. 顶部栏定制面板专属表单与排序槽位控件 (Topbar Customization Controls) --- */
 .settings-inline-row {
   display: flex;
   align-items: center;
@@ -1590,7 +1553,6 @@ html[data-standalone="true"] .app-shell {
   cursor: default;
 }
 
-/* --- 紧凑竖向三点操作菜单 (ActionMenu) --- */
 .action-menu {
   position: relative;
   display: inline-flex;
@@ -1690,7 +1652,6 @@ html[data-standalone="true"] .app-shell {
   text-overflow: ellipsis;
 }
 
-/* --- 全局底部轻量导出 / 复制提示条 (App Toast) --- */
 .app-toast {
   position: absolute;
   left: 12px;
@@ -1800,17 +1761,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/views-overview.css --- */
-/*
- * 实时概览视图与通用面板卡片样式表 (views-overview.css).
- * 包含：
- * 1. 通用面板容器与标题头 (.panel, .panel-header, .panel-title, .panel-meta)
- * 2. 4 格实时测速指标矩阵 (.telemetry-matrix, .matrix-cell, .cell-*)
- * 3. 10 段上下文窗口进度条与配额填充条 (.progress-track, .progress-seg, .progress-fill)
- * 4. 上下文双列图例网格与色块 (.ctx-legend-grid, .legend-*, .swatch)
- * 5. 双栏布局网格与窄屏响应式断点 (.dual-grid)
- */
-
-/* --- 1. 通用微边框面板卡片 (Architectural Precision Panels) --- */
 .panel {
   display: flex;
   flex-direction: column;
@@ -1855,7 +1805,6 @@ html[data-standalone="true"] .app-shell {
   white-space: nowrap;
 }
 
-/* 配额池分组行及池间分隔线（暗黑模式保留原分割色，浅色模式使用柔和细线） */
 .quota-pool-row {
   display: flex;
   flex-direction: column;
@@ -1874,7 +1823,6 @@ html[data-standalone="true"] .app-shell {
   border-top-color: color-mix(in srgb, var(--text-primary) 7%, transparent);
 }
 
-/* 配额池窗口行头：标题 + 周期用量内联（窄栏自适应截断，零额外纵向行高） */
 .quota-win-head {
   gap: 8px;
   min-width: 0;
@@ -1913,7 +1861,6 @@ html[data-standalone="true"] .app-shell {
   flex-shrink: 0;
 }
 
-/* --- 2. 多任务实时运行卡片列表与 4 格测速指标矩阵 (Live Running Tasks List & 4-Cell Telemetry Matrix) --- */
 .overview-modules-host {
   display: flex;
   flex-direction: column;
@@ -2254,7 +2201,6 @@ html[data-standalone="true"] .app-shell {
   text-overflow: ellipsis;
 }
 
-/* 悬浮窗大尺寸趋势指标卡（左：大号实时主值+单位与副标，右：迷你折线面积走势图，1~3 列自适应） */
 .matrix-cell.is-trend-card {
   gap: 5px;
   padding: 8px 11px 9px;
@@ -2368,7 +2314,6 @@ html[data-standalone="true"] .app-shell {
   stroke-width: 1;
 }
 
-/* --- 3. 10 段上下文进度条与配额池填充条 (Context Segment Meter & Quota Progress Bars) --- */
 .progress-track {
   width: 100%;
   height: 6px;
@@ -2392,7 +2337,6 @@ html[data-standalone="true"] .app-shell {
     width var(--dur-normal) var(--ease-fast) 0.05s;
 }
 
-/* 块状微圆角风格上下文进度条（保持 6px 紧凑高度 + 色块间 2px 轻间隙 + 每段 2px 边缘圆润处理） */
 .progress-track.ctx-segment-meter {
   height: 6px;
   border-radius: 3px;
@@ -2555,7 +2499,6 @@ html[data-standalone="true"] .app-shell {
   );
 }
 
-/* 可用额度标题旁圈问号触发器及实测倍率预估悬浮卡片 */
 .quota-panel {
   position: relative;
 }
@@ -2806,7 +2749,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-secondary);
 }
 
-/* --- 4. 上下文双列图例网格 (Context 10-Channel Legend Grid) --- */
 .ctx-legend-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2851,14 +2793,12 @@ html[data-standalone="true"] .app-shell {
 .swatch.seg-system-prompt { background: var(--ctx-system-prompt); }
 .swatch.seg-user-rules { background: var(--ctx-user-rules); }
 
-/* --- 5. 双栏网格与窄视口响应式折叠 (Dual Grid & Responsive Breakpoints) --- */
 .dual-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-3);
 }
 
-/* --- 6. 上下文窗口内联代理切换器与代理徽章 (Scheme B Context Inspector & Agent Badges) --- */
 .ctx-inspector-bar {
   display: flex;
   align-items: flex-start;
@@ -2992,17 +2932,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/views-consumption.css --- */
-/*
- * 全景消耗统计视图样式表 (views-consumption.css).
- * 包含：
- * 1. 消费概览顶栏与 3+3 统一指标矩阵 (.cons-overview-head, .cons-unified-matrix, .cons-split-3, .cons-col)
- * 2. 4 段比例条与圆点色块 (.dot-swatch, .cons-seg-bar)
- * 3. 热门模型与数据来源列表项样式 (.cons-row-*, .cons-share-pill, .cons-item-*)
- * 4. 历史趋势纯 SVG 平滑曲线图与峰值胶囊 (.trend-*)
- * 5. 12 个月垂直堆叠柱状图与月度图例 (.monthly-*, .month-*)
- */
-
-/* --- 1. 消费概览顶栏与 3+3 组合指标矩阵 (Consumption Overview Matrix) --- */
 .cons-overview-head {
   flex-wrap: wrap;
   gap: 6px;
@@ -3216,7 +3145,6 @@ html[data-standalone="true"] .app-shell {
   white-space: nowrap;
 }
 
-/* --- 2. 4 段比例条与圆点色块 (Four-Segment Bar & Dot Swatches) --- */
 .dot-swatch {
   width: 6px;
   height: 6px;
@@ -3241,7 +3169,6 @@ html[data-standalone="true"] .app-shell {
   background-color: var(--seg-color, var(--accent-primary));
 }
 
-/* --- 3. 热门模型与数据来源行头部对齐 (Popular Models & Sources Row Header) --- */
 .cons-row-title {
   display: inline-flex;
   align-items: center;
@@ -3345,7 +3272,6 @@ html[data-standalone="true"] .app-shell {
   margin-left: auto;
 }
 
-/* --- 4. 历史趋势交互式 SVG 平滑曲线图 (Interactive Historical Trend SVG Chart) --- */
 .cons-trend-head {
   flex-wrap: wrap;
   gap: 6px;
@@ -3691,7 +3617,6 @@ html[data-standalone="true"] .app-shell {
   font-weight: 600;
 }
 
-/* --- 4b. 类 GitHub 每日小格子热力图 (> 90 天自动启用，一格一天) --- */
 .trend-heatmap-stage {
   display: flex;
   flex-direction: column;
@@ -3879,7 +3804,6 @@ html[data-standalone="true"] .app-shell {
   box-sizing: border-box;
 }
 
-/* --- 5. 模型与数据来源明细行容器 (Popular Models & Sources Item Rows) --- */
 .cons-ranking-head {
   flex-wrap: wrap;
   row-gap: 6px;
@@ -4162,7 +4086,6 @@ html[data-standalone="true"] .app-shell {
   font-weight: 600;
 }
 
-/* --- 共享模型构成悬浮详情卡 (Trend Heatmap / Client Sources / Sessions / Monthly Popover) --- */
 .cons-breakdown-popover {
   position: absolute;
   left: 0;
@@ -4413,7 +4336,6 @@ html[data-standalone="true"] .app-shell {
   white-space: nowrap;
 }
 
-/* --- 6. 12 个月垂直堆叠柱状图 (12-Month Stacked Bar Chart) --- */
 .monthly-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -4509,15 +4431,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/views-tables.css --- */
-/*
- * 步骤明细与模型汇总数据表样式表 (views-tables.css).
- * 包含：
- * 1. 表格专属自定义滚动容器修饰 (.table-scroll-host)
- * 2. 表格滚动视口 (.table-viewport)
- * 3. 粘性表头与紧凑高密度数据表 (.data-table)
- */
-
-/* --- 1. 表格专属滚动容器与视口 (Table Scroll Host & Viewport) --- */
 .table-scroll-host {
   flex: 1;
   min-height: 0;
@@ -4551,7 +4464,6 @@ html[data-standalone="true"] .app-shell {
   overflow-anchor: none;
 }
 
-/* --- 2. 粘性表头数据表 (Sticky-Header Data Table) --- */
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -4772,7 +4684,6 @@ html[data-standalone="true"] .app-shell {
   background: color-mix(in srgb, var(--text-primary) 14%, var(--surface-panel));
 }
 
-/* --- 2.5 极简对话轮次导轨与起点圆点 (Minimalist Turn Rail & Prompt Preview) --- */
 .steps-data-table.has-turn-rail th:first-child,
 .steps-data-table.has-turn-rail td:first-child {
   padding-left: 17px;
@@ -4864,7 +4775,6 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
-/* 极简紧凑提问文本悬停预览气泡 */
 .turn-prompt-tip {
   position: absolute;
   z-index: 45;
@@ -4887,7 +4797,6 @@ html[data-standalone="true"] .app-shell {
   animation: anim-popover-in var(--dur-instant) var(--ease-fast);
 }
 
-/* --- 2.6 单步压缩 / 异常整行语义着色、模型汇总微标、筛选条与悬停诊断卡 --- */
 .data-table tbody tr.is-compaction {
   background: color-mix(in srgb, var(--accent-primary) 11%, transparent);
 }
@@ -5233,7 +5142,6 @@ html[data-standalone="true"] .app-shell {
   background: color-mix(in srgb, var(--metric-danger) 15%, transparent);
 }
 
-/* --- 3. 按模型汇总分析视图：双趋势图与极简模型总览 (Models Analytics Pane) --- */
 .models-analytics-pane {
   display: flex;
   flex-direction: column;
@@ -5647,7 +5555,6 @@ html[data-standalone="true"] .app-shell {
   font-size: var(--fs-xs);
 }
 
-/* --- 4. 极简高密度模型总览列表 (Minimalist Session Model Summary Cards) --- */
 .smodel-section {
   display: flex;
   flex-direction: column;
@@ -5791,7 +5698,6 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
-/* --- 步骤搜索栏、快捷诊断筛选芯片及单步透视抽屉 --- */
 .steps-filter-toolbar {
   display: flex;
   align-items: center;
@@ -5829,16 +5735,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/views-settings.css --- */
-/*
- * 模块化偏好设置样式表 (views-settings.css).
- * 包含：
- * 1. 顶部偏好设置切换导航条 (.settings-view-root, .settings-subnav-bar)
- * 2. 主题强调色色卡选择器 (.theme-color-picker, .theme-host-chip, .theme-swatch-btn)
- * 3. 结构页手风琴折叠面板 (.collapsible-section, .collapsible-trigger, .collapsible-body)
- * 4. 通用 + / - / ↑ / ↓ 自添加排序列表 (.editable-slot-list, .editable-slot-row, .slot-add-btn)
- * 5. 其他页维护操作行与二次确认危险态按钮 (.settings-action-row, .btn-danger-confirm)
- */
-
 .settings-view-root {
   flex: 1;
   min-height: 0;
@@ -5874,7 +5770,6 @@ html[data-standalone="true"] .app-shell {
   font-weight: 500;
 }
 
-/* --- 结构页三级子导航菜单 (.settings-thirdnav-bar) --- */
 .settings-thirdnav-bar {
   position: relative;
   display: grid;
@@ -5959,7 +5854,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-muted);
 }
 
-/* --- 主题色色卡选择器 (ThemeColorPicker) --- */
 .theme-color-picker {
   display: flex;
   align-items: center;
@@ -6038,7 +5932,6 @@ html[data-standalone="true"] .app-shell {
   stroke-width: 2.5;
 }
 
-/* --- 手风琴折叠面板 (CollapsibleSection) --- */
 .collapsible-section {
   gap: 0;
   padding: 0;
@@ -6085,7 +5978,6 @@ html[data-standalone="true"] .app-shell {
   font-weight: 600;
 }
 
-/* --- 结构页真实 UI 实时预览画布（1:1 零缩放、零套娃外框，直接呈现真实组件） --- */
 .structure-preview-canvas {
   position: relative;
   display: flex;
@@ -6303,7 +6195,6 @@ html[data-standalone="true"] .app-shell {
   margin: 2px 0;
 }
 
-/* --- 通用可增删排序槽位列表 (EditableSlotList) --- */
 .editable-slot-wrap {
   display: flex;
   flex-direction: column;
@@ -6490,7 +6381,6 @@ html[data-standalone="true"] .app-shell {
   cursor: default;
 }
 
-/* --- 其他页：维护操作行 --- */
 .settings-action-block {
   display: flex;
   align-items: center;
@@ -6637,7 +6527,6 @@ html[data-standalone="true"] .app-shell {
   gap: var(--space-3);
 }
 
-/* Optically symmetrical vertical padding: 11px + 3px header leading == 14px bottom bar-to-edge */
 .account-card {
   gap: 10px;
   padding: 11px var(--space-5) 14px;
@@ -6725,7 +6614,6 @@ html[data-standalone="true"] .app-shell {
   min-width: 0;
 }
 
-/* Quota Trend Card minor layout helpers */
 .account-trend-toprow {
   gap: var(--space-2);
   flex-wrap: wrap;
@@ -6878,7 +6766,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-secondary);
 }
 
-/* --- 其他页：模型上下文设置风险警告遮罩 --- */
 .ctx-risk-stage {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -6964,7 +6851,6 @@ html[data-standalone="true"] .app-shell {
   font-size: var(--fs-md);
 }
 
-/* 设置页卡片头部右侧状态提示（长路径自动单行省略，防止把左侧标题挤成 0px 造成文字重叠） */
 .settings-panel-header > .panel-title {
   flex: 0 0 auto;
 }
@@ -6979,7 +6865,6 @@ html[data-standalone="true"] .app-shell {
   font-size: var(--fs-md);
 }
 
-/* --- CDP / 双栖桥接端口诊断与一键重拉卡片 (.settings-bridge-notice) --- */
 .app-bridge-banner-slot {
   padding: 0 var(--space-4) var(--space-2);
   flex-shrink: 0;
@@ -7131,7 +7016,6 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
-/* --- 其他页：跨端会话按需迁移卡片 (.smig-panel) --- */
 .smig-panel[hidden] {
   display: none !important;
 }
@@ -7445,7 +7329,6 @@ html[data-standalone="true"] .app-shell {
   font-size: var(--fs-xs);
 }
 
-/* --- Antigravity CLI 底部状态胶囊专属配置块（仅检测到 CLI 时展示） --- */
 .cli-statusline-group {
   display: flex;
   flex-direction: column;
@@ -7662,7 +7545,6 @@ html[data-standalone="true"] .app-shell {
   flex-shrink: 0;
 }
 
-/* --- Decoupled Antigravity Host UI Language Card (HostI18nCard) --- */
 .host-i18n-status-msg {
   font-size: var(--fs-sm);
   margin-left: auto;
@@ -7703,12 +7585,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/overlay.css --- */
-/*
- * 双栖模式顶栏胶囊与悬浮面板样式表 (overlay.css).
- * 严格遵循单层微边框与语义变量规范（零硬编码色值、零 Emoji、硬件加速合成层动画）。
- */
-
-/* --- 1. 顶栏胶囊宿主容器 (Titlebar Capsule Host) --- */
 :host(.wm-capsule-host) {
   --ui-font-scale: 1 !important;
   display: inline-flex;
@@ -7796,7 +7672,6 @@ html[data-standalone="true"] .app-shell {
   }
 }
 
-/* 左侧多会话实时状态触发器（无边框、与宿主顶栏按钮同高 28px、整数行高防压扁） */
 .wm-multi-btn {
   position: relative;
   display: inline-flex;
@@ -7915,7 +7790,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-primary);
 }
 
-/* 右侧胶囊通用槽位容器与按指标预占定宽（严格防止动态数值跳动，保留舒展字间距） */
 .wm-cap-slot {
   display: inline-flex;
   align-items: center;
@@ -7937,7 +7811,6 @@ html[data-standalone="true"] .app-shell {
   flex-shrink: 0;
 }
 
-/* 环形上下文指示器（固定预占宽度 58px：14px 环 + 5px 间距 + 完整容纳四字符 100%） */
 .wm-ctx-seg {
   justify-content: center;
   gap: 5px;
@@ -8000,7 +7873,6 @@ html[data-standalone="true"] .app-shell {
   flex-shrink: 0;
 }
 
-/* 速度槽位（固定预占宽度 58px 居中对齐） */
 .wm-seg-speed {
   width: 58px;
 }
@@ -8015,7 +7887,6 @@ html[data-standalone="true"] .app-shell {
   font-weight: 500;
 }
 
-/* 首字延迟槽位（固定预占宽度 46px 居中对齐，覆盖 0.85s ~ 105s） */
 .wm-seg-ttft {
   width: 46px;
 }
@@ -8025,7 +7896,6 @@ html[data-standalone="true"] .app-shell {
   text-align: center;
 }
 
-/* 本次费用槽位（固定预占宽度 52px 居中对齐，覆盖 <$0.001 ~ $99.99） */
 .wm-seg-cost {
   width: 52px;
 }
@@ -8037,7 +7907,6 @@ html[data-standalone="true"] .app-shell {
   font-weight: 500;
 }
 
-/* 配额槽位（环形剩余进度圈 + 池/窗口短标 + 清晰百分比，零嵌套边框） */
 .wm-seg-quota {
   justify-content: center;
   gap: 4px;
@@ -8068,7 +7937,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-primary);
 }
 
-/* 缓存命中率槽位（固定预占宽度 44px 居中对齐） */
 .wm-seg-cache {
   width: 44px;
 }
@@ -8078,7 +7946,6 @@ html[data-standalone="true"] .app-shell {
   text-align: center;
 }
 
-/* 会话总 Token 槽位（固定预占宽度 52px 居中对齐） */
 .wm-seg-tokens {
   width: 52px;
 }
@@ -8117,7 +7984,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-muted);
 }
 
-/* 仅在超窄 ring-only 折叠态下使用右上角 5px 提示圆点；常规态由柔和微胶囊 .wm-update-btn 承载 */
 .wm-update-dot {
   position: absolute;
   top: 3px;
@@ -8133,7 +7999,6 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
-/* 顶栏右侧柔和半透明新版本胶囊按钮（20px 矮胶囊嵌套于 28px 顶栏，克制不突兀，左键一键升级） */
 .wm-update-btn {
   display: inline-flex;
   align-items: center;
@@ -8202,7 +8067,6 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
-/* 四级响应式迟滞折叠（基于可见槽位次序 data-vis-rank 1..5 与分隔线次序 data-sep-for-rank 动态折叠） */
 :host(.wm-capsule-host[data-layout="compact"]) .wm-cap-slot[data-vis-rank="3"],
 :host(.wm-capsule-host[data-layout="compact"]) .wm-cap-slot[data-vis-rank="4"],
 :host(.wm-capsule-host[data-layout="compact"]) .wm-cap-slot[data-vis-rank="5"],
@@ -8255,7 +8119,6 @@ html[data-standalone="true"] .app-shell {
   padding: 0;
 }
 
-/* --- 2. 顶层浮层传送门宿主 (Body Portal Host: Multi-Session HUD, Tooltip & Full 4-Tab Popover) --- */
 :host(.wm-portal-host) {
   position: fixed;
   inset: 0;
@@ -8328,7 +8191,6 @@ html[data-standalone="true"] .app-shell {
   max-width: none;
 }
 
-/* 顶栏胶囊悬停全景概览浮层（复用实时概览三卡片架构，全槽位预占，仅就地更新节点不跳动） */
 .wm-hover-tip {
   position: fixed;
   top: 42px;
@@ -8352,7 +8214,6 @@ html[data-standalone="true"] .app-shell {
   animation: wm-popover-in var(--dur-instant) var(--ease-fast);
 }
 
-/* 左侧在线多会话实时看板浮层（单层无套娃细线卡片，宽度与排版密度与侧边栏保持一致） */
 .wm-multi-panel {
   position: fixed;
   top: 42px;
@@ -8505,7 +8366,6 @@ html[data-standalone="true"] .app-shell {
   border-bottom: 1px solid var(--border-hairline);
 }
 
-/* 多会话单层面板内去除重复边框与底色，对齐侧边栏任务卡片间距与左侧基线 */
 .wm-multi-panel .live-activity-list {
   gap: 0;
 }
@@ -8557,17 +8417,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/modern-ui.css --- */
-/*
- * 实验性现代化无边框主题与流畅动画样式层 (modern-ui.css).
- * 仅在根容器或 Shadow Host 携带 [data-modern-ui="true"] 时激活：
- * 1. 移除绝大部分面板、矩阵、表格、徽章、按钮、输入框与悬浮窗的 1px 线框及分隔线；
- * 2. 面板内部子数据块（如版本更新价格表/当前版本、消费矩阵指标格、汇总折线区）保持透明扁平，绝不套叠二层背景卡片；
- * 3. 区分深色与浅色极性 ([data-color-scheme="light" | "dark"])：
- *    - 深色模式采用柔和提亮顶层卡片与轻薄半透雾面滑槽（绝不混入重黑色块）；
- *    - 浅色模式采用微凉白瓷画布 (#f7f9fb) + 纯白悬浮顶层卡片 (#ffffff) + 纯白立体滑块；
- * 4. 全局分段切换器 (.segmented / .long-pill-nav / .settings-thirdnav-bar) 按内容宽度贴合滑动。
- */
-
 :root[data-modern-ui="true"],
 :host([data-modern-ui="true"]),
 [data-modern-ui="true"] {
@@ -8708,7 +8557,6 @@ html[data-standalone="true"] .app-shell {
   }
 }
 
-/* --- 1. 外壳画布、顶层卡片与按量贴合滑动轨道 (Canvas, Top-Level Cards & Fit-Content Sliding Tracks) --- */
 html[data-standalone="true"][data-modern-ui="true"] #app-root {
   min-height: 100dvh;
   background: var(--modern-canvas-bg);
@@ -8810,7 +8658,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   transform: scale(0.97);
 }
 
-/* --- 2. 按钮、状态标签、代理徽章与胶囊全面去边框 --- */
 [data-modern-ui="true"] .status-tag,
 [data-modern-ui="true"] .status-tag.state-running,
 [data-modern-ui="true"] .status-tag.state-synced,
@@ -8919,7 +8766,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: var(--modern-surface-subtle);
 }
 
-/* --- 3. 实时概览矩阵与任务卡片：顶层独立卡片，面板内子块绝不叠套背景 --- */
 [data-modern-ui="true"] .telemetry-matrix {
   border: none;
   background: transparent;
@@ -8943,7 +8789,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   padding: 9px 9px 10px;
 }
 
-/* 面板内的双栏信息项（如版本更新中的「价格表 / 当前版本」）不套二层背景 */
 [data-modern-ui="true"] .dual-grid > .matrix-cell {
   background: transparent;
   box-shadow: none;
@@ -8951,7 +8796,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   padding: 2px 0;
 }
 
-/* 结构页预览画布内的测速卡与任务卡保持轻微层次以呈现真实预览布局 */
 [data-modern-ui="true"] .structure-preview-canvas .matrix-cell {
   background: var(--modern-surface-subtle);
   box-shadow: none;
@@ -8992,7 +8836,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: var(--modern-progress-track);
 }
 
-/* --- 4. 用量统计矩阵、热力格与详情卡去边框且不叠内层背景 --- */
 [data-modern-ui="true"] .cons-box,
 [data-modern-ui="true"] .cons-custom-range-bar {
   border: none;
@@ -9065,7 +8908,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
     filter 150ms var(--ease-modern);
 }
 
-/* --- 5. 调用记录表格与模型分析区去横线边框且不套内层背景 --- */
 [data-modern-ui="true"] .table-scroll-host {
   border-top: none;
   background: transparent;
@@ -9202,7 +9044,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: transparent;
 }
 
-/* --- 6. 设置表单、折叠面板、槽位排序与输入控件去边框 --- */
 [data-modern-ui="true"] .collapsible-body,
 [data-modern-ui="true"] .settings-action-block + .settings-action-block,
 [data-modern-ui="true"] .dt-time-row {
@@ -9368,7 +9209,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: var(--modern-surface-subtle);
 }
 
-/* --- 7. 全景悬浮窗与工具提示浮层：零边框 + 空气阴影 + 0.15s 平滑跟随过渡 --- */
 [data-modern-ui="true"] .select-menu,
 [data-modern-ui="true"] .action-menu-popover,
 [data-modern-ui="true"] .app-toast,
@@ -9545,7 +9385,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   padding-bottom: 0;
 }
 
-/* --- 8. 顶栏胶囊老虎机滚动数字 (0.15s) 与语义色平滑渐变 (0.1s)，严格限定实验性新 UI --- */
 :host([data-modern-ui="true"]) .wm-cap-slot,
 :host([data-modern-ui="true"]) .wm-cap-slot .wm-slot-text,
 :host([data-modern-ui="true"]) .wm-multi-label,

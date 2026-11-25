@@ -48,8 +48,10 @@ import {
   STEP_TABLE_COLUMN_KEYS,
   TOPBAR_SLOT_KEYS,
   normalizeAccountQuotaRefreshMinutes,
+  normalizeAutoConfigureLaunch,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeEnableRemoteSshTelemetry,
   normalizeExperimentalQuotaReservation,
   normalizeHoverMetricStyle,
   normalizeHoverMetrics,
@@ -201,6 +203,8 @@ const TELEMETRY_RECOMPUTE_SETTING_KEYS = new Set([
   'weeklyCostBudget',
   'windowMountMode',
   'enableWindowOverlay',
+  'autoConfigureLaunch',
+  'enableRemoteSshTelemetry',
 ]);
 
 function makeConsumptionRangeCacheKey(
@@ -679,6 +683,21 @@ export function isEquivalentTelemetry(prev, next) {
   if (Boolean(pSet?.accountSwitchRiskAccepted) !== Boolean(nSet?.accountSwitchRiskAccepted)) {
     return false;
   }
+  if (Number(pSet?.standalonePort || 0) !== Number(nSet?.standalonePort || 0)) {
+    return false;
+  }
+  if (
+    normalizeAutoConfigureLaunch(pSet?.autoConfigureLaunch) !==
+    normalizeAutoConfigureLaunch(nSet?.autoConfigureLaunch)
+  ) {
+    return false;
+  }
+  if (
+    normalizeEnableRemoteSshTelemetry(pSet?.enableRemoteSshTelemetry) !==
+    normalizeEnableRemoteSshTelemetry(nSet?.enableRemoteSshTelemetry)
+  ) {
+    return false;
+  }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
   if (!sameArr(pSet?.hoverModules, nSet?.hoverModules)) return false;
   if (
@@ -712,6 +731,12 @@ export function isEquivalentTelemetry(prev, next) {
     Boolean(pWb?.argvUpdatedThisBoot) !== Boolean(nWb?.argvUpdatedThisBoot) ||
     Boolean(pWb?.argvConfigured) !== Boolean(nWb?.argvConfigured) ||
     Boolean(pWb?.launcherConfigured) !== Boolean(nWb?.launcherConfigured) ||
+    Boolean(pWb?.hasReadOnlyShortcuts) !== Boolean(nWb?.hasReadOnlyShortcuts) ||
+    Boolean(pWb?.stalePortDetected) !== Boolean(nWb?.stalePortDetected) ||
+    String(pWb?.targetProduct || 'auto') !== String(nWb?.targetProduct || 'auto') ||
+    Boolean(pWb?.macWrapperExists) !== Boolean(nWb?.macWrapperExists) ||
+    Boolean(pWb?.macDesktopWrapperExists) !== Boolean(nWb?.macDesktopWrapperExists) ||
+    Boolean(pWb?.macIdeWrapperExists) !== Boolean(nWb?.macIdeWrapperExists) ||
     Boolean(pWb?.canRelaunch) !== Boolean(nWb?.canRelaunch) ||
     Number(pWb?.aliveCount || 0) !== Number(nWb?.aliveCount || 0)
   ) {
@@ -2038,6 +2063,14 @@ export async function saveSettingsPatch(patch) {
     safePatch.standalonePort =
       Number.isInteger(numPort) && numPort >= 1024 && numPort <= 65535 ? numPort : 0;
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'autoConfigureLaunch')) {
+    safePatch.autoConfigureLaunch = normalizeAutoConfigureLaunch(safePatch.autoConfigureLaunch);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'enableRemoteSshTelemetry')) {
+    safePatch.enableRemoteSshTelemetry = normalizeEnableRemoteSshTelemetry(
+      safePatch.enableRemoteSshTelemetry
+    );
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'windowMountMode')) {
     const normMount = normalizeClientWindowMountMode(
       safePatch.windowMountMode,
@@ -2226,16 +2259,48 @@ export async function triggerCloudSync() {
   return res;
 }
 
-export async function triggerBridgeHostRelaunch() {
+export const normalizeClientAutoConfigureLaunch = normalizeAutoConfigureLaunch;
+export const normalizeClientEnableRemoteSshTelemetry = normalizeEnableRemoteSshTelemetry;
+
+export async function triggerBridgeHostRelaunch(options = {}) {
+  const payload =
+    options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+  let res;
   try {
-    return await callSidecarApi('/api/bridge/relaunch', { method: 'POST', body: {} });
+    res = await callSidecarApi('/api/bridge/relaunch', { method: 'POST', body: payload });
   } catch {
     // 兼容热更新后常驻父进程 main.mjs 尚未重注册新路由的场景，平滑回退至既有 POST /api/settings 通道转发至最新 Worker
-    return callSidecarApi('/api/settings', {
+    res = await callSidecarApi('/api/settings', {
       method: 'POST',
-      body: { __bridgeAction: 'relaunch' },
+      body: { ...payload, __bridgeAction: 'relaunch' },
     });
   }
+  if (
+    payload.action === 'create_macos_wrapper' ||
+    payload.action === 'remove_macos_wrapper'
+  ) {
+    const cur = telemetryStore.getState().telemetry;
+    if (cur && res && typeof res === 'object' && typeof res.macWrapperExists === 'boolean') {
+      telemetryStore.setState({
+        telemetry: {
+          ...cur,
+          windowBridge: {
+            ...(cur.windowBridge || {}),
+            macWrapperExists: res.macWrapperExists,
+            ...(typeof res.macDesktopWrapperExists === 'boolean'
+              ? { macDesktopWrapperExists: res.macDesktopWrapperExists }
+              : {}),
+            ...(typeof res.macIdeWrapperExists === 'boolean'
+              ? { macIdeWrapperExists: res.macIdeWrapperExists }
+              : {}),
+            macWrapperPaths: Array.isArray(res.macWrapperPaths) ? res.macWrapperPaths : [],
+          },
+        },
+      });
+    }
+    void fetchTelemetry({ force: true }).catch(() => {});
+  }
+  return res;
 }
 
 export async function triggerCliStatusLineAction(action) {

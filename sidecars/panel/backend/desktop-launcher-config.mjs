@@ -23,11 +23,13 @@
 
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
   readlinkSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -35,12 +37,28 @@ import {
 import { homedir } from 'node:os';
 import { basename, dirname, join, win32 as pathWin32 } from 'node:path';
 import { DATA_DIR, HERE, lsRuntimeEndpoint } from './config.mjs';
+import { classifyDevToolsPortProduct } from './devtools-port-probe.mjs';
 import { writeTextFileAtomicSync } from './fs-atomic.mjs';
 
 export const REMOTE_DEBUG_LAUNCH_FLAG = '--remote-debugging-port=0';
+export const MACOS_MANAGED_WRAPPER_KEY = 'com.yuhuan.usageMonitor.managedWrapper';
 
 const REMOTE_DEBUG_ANY_RE = /(?:^|\s)--remote-debugging-port(?:=|\s|$)/i;
 const REMOTE_DEBUG_MANAGED_ZERO_RE = /(?:^|\s+)--remote-debugging-port=(?:"0"|'0'|0)(?=\s|$)/gi;
+
+function normalizeLauncherProduct(rawProduct, fallback = 'desktop') {
+  const clean = String(rawProduct || '').trim().toLowerCase();
+  if (clean === 'ide' || clean === 'desktop' || clean === 'both') return clean;
+  return fallback;
+}
+
+function matchesWindowsExeLeafForProduct(exeLeaf, product = 'desktop') {
+  const lower = String(exeLeaf || '').trim().toLowerCase();
+  const normProd = normalizeLauncherProduct(product, 'desktop');
+  if (normProd === 'ide') return lower === 'antigravity ide.exe';
+  if (normProd === 'both') return lower === 'antigravity.exe' || lower === 'antigravity ide.exe';
+  return lower === 'antigravity.exe';
+}
 
 /**
  * 解析 Windows PowerShell 5.1 可执行文件绝对路径（防止用户精简系统或异常 `PATH` 丢失裸 `powershell.exe`）。
@@ -122,7 +140,7 @@ export function ensureRemoteDebugFlagInArgs(rawArgs, { enabled = true } = {}) {
  * @param {{ enabled?: boolean }} [options]
  * @returns {{ matched: boolean, changed: boolean, configured: boolean, value: string }}
  */
-export function patchWindowsRunRegistryCommand(rawValue, { enabled = true } = {}) {
+export function patchWindowsRunRegistryCommand(rawValue, { enabled = true, product = 'desktop' } = {}) {
   const raw = String(rawValue ?? '').trim();
   if (!raw) {
     return { matched: false, changed: false, configured: false, value: raw };
@@ -133,7 +151,7 @@ export function patchWindowsRunRegistryCommand(rawValue, { enabled = true } = {}
   }
   const exePath = String(m[1] || m[2] || '').trim();
   const exeLeaf = exePath.split(/[\\/]/).pop() || '';
-  if (exeLeaf.toLowerCase() !== 'antigravity.exe') {
+  if (!matchesWindowsExeLeafForProduct(exeLeaf, product)) {
     return { matched: false, changed: false, configured: false, value: raw };
   }
   const quotedExe = m[1] ? `"${exePath}"` : /\s/.test(exePath) ? `"${exePath}"` : exePath;
@@ -152,10 +170,10 @@ export function patchWindowsRunRegistryCommand(rawValue, { enabled = true } = {}
  * 将 `--remote-debugging-port=0` 置于主程序路径之后、原有 `--` 或 `"%1"` 占位符之前，确保 Chromium 将其识别为开关而非文件路径。
  *
  * @param {unknown} rawValue
- * @param {{ enabled?: boolean }} [options]
+ * @param {{ enabled?: boolean, product?: 'desktop'|'ide'|'both' }} [options]
  * @returns {{ matched: boolean, changed: boolean, configured: boolean, value: string }}
  */
-export function patchWindowsShellOpenCommand(rawValue, { enabled = true } = {}) {
+export function patchWindowsShellOpenCommand(rawValue, { enabled = true, product = 'desktop' } = {}) {
   const raw = String(rawValue ?? '').trim();
   if (!raw) {
     return { matched: false, changed: false, configured: false, value: raw };
@@ -166,7 +184,7 @@ export function patchWindowsShellOpenCommand(rawValue, { enabled = true } = {}) 
   }
   const exePath = String(m[1] || m[2] || '').trim();
   const exeLeaf = exePath.split(/[\\/]/).pop() || '';
-  if (exeLeaf.toLowerCase() !== 'antigravity.exe') {
+  if (!matchesWindowsExeLeafForProduct(exeLeaf, product)) {
     return { matched: false, changed: false, configured: false, value: raw };
   }
   const quotedExe = m[1] ? `"${exePath}"` : /\s/.test(exePath) ? `"${exePath}"` : exePath;
@@ -203,6 +221,21 @@ function isLinuxAntigravityDesktopLeaf(leaf) {
   return /^(?:google[-_])?antigravity(?:$|[-_.\d]|(?:\.appimage$))/i.test(lower);
 }
 
+function isLinuxAntigravityIdeLeaf(leaf) {
+  const lower = String(leaf || '').trim().toLowerCase();
+  if (!lower) return false;
+  return /^(?:google[-_])?antigravity[-_.\s]*ide(?:$|[-_.\d]|(?:\.appimage$))/i.test(lower);
+}
+
+function matchesLinuxExeLeafForProduct(leaf, product = 'desktop') {
+  const normProd = normalizeLauncherProduct(product, 'desktop');
+  if (normProd === 'ide') return isLinuxAntigravityIdeLeaf(leaf);
+  if (normProd === 'both') {
+    return isLinuxAntigravityDesktopLeaf(leaf) || isLinuxAntigravityIdeLeaf(leaf);
+  }
+  return isLinuxAntigravityDesktopLeaf(leaf);
+}
+
 function isWindowsVendorSubdirName(dirName) {
   const lower = String(dirName || '').trim().toLowerCase();
   if (!lower) return false;
@@ -237,7 +270,7 @@ function stripOuterQuotes(tok) {
  * @param {{ enabled?: boolean }} [options]
  * @returns {{ matched: boolean, changed: boolean, configured: boolean, text: string }}
  */
-export function patchLinuxDesktopEntryText(rawText, { enabled = true } = {}) {
+export function patchLinuxDesktopEntryText(rawText, { enabled = true, product = 'desktop' } = {}) {
   if (typeof rawText !== 'string' || !rawText.trim()) {
     return { matched: false, changed: false, configured: false, text: String(rawText || '') };
   }
@@ -282,7 +315,7 @@ export function patchLinuxDesktopEntryText(rawText, { enabled = true } = {}) {
 
     const exeTok = tokens[binIdx];
     const exeLeaf = stripOuterQuotes(exeTok.raw).split('/').pop() || '';
-    if (!isLinuxAntigravityDesktopLeaf(exeLeaf)) {
+    if (!matchesLinuxExeLeafForProduct(exeLeaf, product)) {
       return line;
     }
 
@@ -403,7 +436,11 @@ export function resolveDesktopHostExecutable({
   platform = process.platform,
   homeDir = homedir(),
   existsFn = existsSync,
+  preferredProduct = 'auto',
+  envHintsOnly = false,
 } = {}) {
+  const pref = String(preferredProduct || 'auto').trim().toLowerCase();
+  const allowsKind = (kind) => pref === 'auto' || pref === kind;
   const safeExists = (p) => {
     try {
       return Boolean(p && existsFn(p));
@@ -416,8 +453,11 @@ export function resolveDesktopHostExecutable({
     const appImagePath = String(env?.APPIMAGE || '').trim();
     if (appImagePath && safeExists(appImagePath)) {
       const leaf = basename(appImagePath);
-      if (isLinuxAntigravityDesktopLeaf(leaf)) {
+      if (allowsKind('desktop') && isLinuxAntigravityDesktopLeaf(leaf)) {
         return { found: true, kind: 'desktop', executablePath: appImagePath, appBundlePath: '' };
+      }
+      if (allowsKind('ide') && isLinuxAntigravityIdeLeaf(leaf)) {
+        return { found: true, kind: 'ide', executablePath: appImagePath, appBundlePath: '' };
       }
     }
   }
@@ -438,31 +478,42 @@ export function resolveDesktopHostExecutable({
             ? rawHint
             : '';
       if (bundleCand && safeExists(bundleCand)) {
-        const isIde = /antigravity\s*ide\.app$/i.test(bundleCand);
-        const macBin = join(
-          bundleCand,
-          'Contents',
-          'MacOS',
-          isIde ? 'Antigravity IDE' : 'Antigravity'
-        );
-        return {
-          found: true,
-          kind: isIde ? 'ide' : 'desktop',
-          executablePath: safeExists(macBin) ? macBin : bundleCand,
-          appBundlePath: bundleCand,
-        };
+        const isIde = /antigravity[\s_-]*ide\.app$/i.test(bundleCand);
+        const kind = isIde ? 'ide' : 'desktop';
+        if (allowsKind(kind)) {
+          const macBin = join(
+            bundleCand,
+            'Contents',
+            'MacOS',
+            isIde ? 'Antigravity IDE' : 'Antigravity'
+          );
+          const electronBin = join(bundleCand, 'Contents', 'MacOS', 'Electron');
+          return {
+            found: true,
+            kind,
+            executablePath: safeExists(macBin)
+              ? macBin
+              : safeExists(electronBin)
+                ? electronBin
+                : bundleCand,
+            appBundlePath: bundleCand,
+          };
+        }
       }
     }
 
     if (platform === 'win32' && /\.exe$/i.test(rawHint) && !/language_server/i.test(rawHint)) {
       if (safeExists(rawHint)) {
         const isIde = /antigravity\s*ide\.exe$/i.test(rawHint);
-        return {
-          found: true,
-          kind: isIde ? 'ide' : 'desktop',
-          executablePath: rawHint,
-          appBundlePath: '',
-        };
+        const kind = isIde ? 'ide' : 'desktop';
+        if (allowsKind(kind)) {
+          return {
+            found: true,
+            kind,
+            executablePath: rawHint,
+            appBundlePath: '',
+          };
+        }
       }
     }
 
@@ -472,19 +523,33 @@ export function resolveDesktopHostExecutable({
       if (base === 'resources') {
         const installRoot = dirname(cur);
         if (platform === 'win32') {
-          const desktopExe = join(installRoot, 'Antigravity.exe');
-          if (safeExists(desktopExe)) {
-            return { found: true, kind: 'desktop', executablePath: desktopExe, appBundlePath: '' };
+          if (allowsKind('desktop')) {
+            const desktopExe = join(installRoot, 'Antigravity.exe');
+            if (safeExists(desktopExe)) {
+              return { found: true, kind: 'desktop', executablePath: desktopExe, appBundlePath: '' };
+            }
           }
-          const ideExe = join(installRoot, 'Antigravity IDE.exe');
-          if (safeExists(ideExe)) {
-            return { found: true, kind: 'ide', executablePath: ideExe, appBundlePath: '' };
+          if (allowsKind('ide')) {
+            const ideExe = join(installRoot, 'Antigravity IDE.exe');
+            if (safeExists(ideExe)) {
+              return { found: true, kind: 'ide', executablePath: ideExe, appBundlePath: '' };
+            }
           }
         } else if (platform === 'linux') {
-          for (const binName of ['antigravity', 'Antigravity']) {
-            const linuxExe = join(installRoot, binName);
-            if (safeExists(linuxExe) && !installRoot.startsWith('/tmp/.mount_')) {
-              return { found: true, kind: 'desktop', executablePath: linuxExe, appBundlePath: '' };
+          if (allowsKind('desktop')) {
+            for (const binName of ['antigravity', 'Antigravity']) {
+              const linuxExe = join(installRoot, binName);
+              if (safeExists(linuxExe) && !installRoot.startsWith('/tmp/.mount_')) {
+                return { found: true, kind: 'desktop', executablePath: linuxExe, appBundlePath: '' };
+              }
+            }
+          }
+          if (allowsKind('ide')) {
+            for (const binName of ['antigravity-ide', 'Antigravity IDE']) {
+              const linuxIdeExe = join(installRoot, binName);
+              if (safeExists(linuxIdeExe) && !installRoot.startsWith('/tmp/.mount_')) {
+                return { found: true, kind: 'ide', executablePath: linuxIdeExe, appBundlePath: '' };
+              }
             }
           }
         }
@@ -493,39 +558,82 @@ export function resolveDesktopHostExecutable({
     }
   }
 
+  if (envHintsOnly) {
+    return { found: false, kind: '', executablePath: '', appBundlePath: '' };
+  }
+
   if (platform === 'win32') {
     const localAppData = env?.LOCALAPPDATA || join(homeDir, 'AppData', 'Local');
     const programFiles = env?.ProgramFiles || 'C:\\Program Files';
     const programFilesX86 = String(env?.['ProgramFiles(x86)'] || '').trim();
-    const winCandidates = [
+    const winDesktopCandidates = [
       join(localAppData, 'Programs', 'Antigravity', 'Antigravity.exe'),
       join(programFiles, 'Antigravity', 'Antigravity.exe'),
       ...(programFilesX86 ? [join(programFilesX86, 'Antigravity', 'Antigravity.exe')] : []),
       join(localAppData, 'Antigravity', 'Antigravity.exe'),
     ];
-    for (const cand of winCandidates) {
-      if (safeExists(cand)) {
-        return { found: true, kind: 'desktop', executablePath: cand, appBundlePath: '' };
+    const winIdeCandidates = [
+      join(localAppData, 'Programs', 'Antigravity IDE', 'Antigravity IDE.exe'),
+      join(programFiles, 'Antigravity IDE', 'Antigravity IDE.exe'),
+      ...(programFilesX86
+        ? [join(programFilesX86, 'Antigravity IDE', 'Antigravity IDE.exe')]
+        : []),
+      join(localAppData, 'Antigravity IDE', 'Antigravity IDE.exe'),
+    ];
+    const orderedGroups =
+      pref === 'ide'
+        ? [{ kind: 'ide', list: winIdeCandidates }]
+        : pref === 'desktop'
+          ? [{ kind: 'desktop', list: winDesktopCandidates }]
+          : [
+              { kind: 'desktop', list: winDesktopCandidates },
+              { kind: 'ide', list: winIdeCandidates },
+            ];
+    for (const group of orderedGroups) {
+      for (const cand of group.list) {
+        if (safeExists(cand)) {
+          return { found: true, kind: group.kind, executablePath: cand, appBundlePath: '' };
+        }
       }
     }
   } else if (platform === 'darwin') {
-    const macBundles = [
+    const macDesktopBundles = [
       join(homeDir, 'Applications', 'Antigravity.app'),
       '/Applications/Antigravity.app',
     ];
-    for (const bundlePath of macBundles) {
-      if (safeExists(bundlePath)) {
-        const macBin = join(bundlePath, 'Contents', 'MacOS', 'Antigravity');
-        return {
-          found: true,
-          kind: 'desktop',
-          executablePath: safeExists(macBin) ? macBin : bundlePath,
-          appBundlePath: bundlePath,
-        };
+    const macIdeBundles = [
+      join(homeDir, 'Applications', 'Antigravity IDE.app'),
+      '/Applications/Antigravity IDE.app',
+    ];
+    const orderedMacGroups =
+      pref === 'ide'
+        ? [{ kind: 'ide', bin: 'Antigravity IDE', list: macIdeBundles }]
+        : pref === 'desktop'
+          ? [{ kind: 'desktop', bin: 'Antigravity', list: macDesktopBundles }]
+          : [
+              { kind: 'desktop', bin: 'Antigravity', list: macDesktopBundles },
+              { kind: 'ide', bin: 'Antigravity IDE', list: macIdeBundles },
+            ];
+    for (const group of orderedMacGroups) {
+      for (const bundlePath of group.list) {
+        if (safeExists(bundlePath)) {
+          const macBin = join(bundlePath, 'Contents', 'MacOS', group.bin);
+          const electronBin = join(bundlePath, 'Contents', 'MacOS', 'Electron');
+          return {
+            found: true,
+            kind: group.kind,
+            executablePath: safeExists(macBin)
+              ? macBin
+              : safeExists(electronBin)
+                ? electronBin
+                : bundlePath,
+            appBundlePath: bundlePath,
+          };
+        }
       }
     }
   } else {
-    const linuxCandidates = [
+    const linuxDesktopCandidates = [
       '/opt/Antigravity/antigravity',
       '/opt/Antigravity/Antigravity',
       '/opt/antigravity/antigravity',
@@ -535,9 +643,28 @@ export function resolveDesktopHostExecutable({
       '/usr/local/bin/antigravity',
       join(homeDir, '.local', 'bin', 'antigravity'),
     ];
-    for (const cand of linuxCandidates) {
-      if (safeExists(cand)) {
-        return { found: true, kind: 'desktop', executablePath: cand, appBundlePath: '' };
+    const linuxIdeCandidates = [
+      '/opt/Antigravity IDE/antigravity-ide',
+      '/opt/antigravity-ide/antigravity-ide',
+      '/usr/share/antigravity-ide/antigravity-ide',
+      '/usr/bin/antigravity-ide',
+      '/usr/local/bin/antigravity-ide',
+      join(homeDir, '.local', 'bin', 'antigravity-ide'),
+    ];
+    const orderedLinuxGroups =
+      pref === 'ide'
+        ? [{ kind: 'ide', list: linuxIdeCandidates }]
+        : pref === 'desktop'
+          ? [{ kind: 'desktop', list: linuxDesktopCandidates }]
+          : [
+              { kind: 'desktop', list: linuxDesktopCandidates },
+              { kind: 'ide', list: linuxIdeCandidates },
+            ];
+    for (const group of orderedLinuxGroups) {
+      for (const cand of group.list) {
+        if (safeExists(cand)) {
+          return { found: true, kind: group.kind, executablePath: cand, appBundlePath: '' };
+        }
       }
     }
   }
@@ -600,23 +727,31 @@ function writeTextFileAtomically(filePath, content, fsOps) {
  * @param {Buffer} buf
  * @returns {{ matched: boolean, hasDebugPort: boolean }}
  */
-export function inspectWindowsLnkBuffer(buf) {
+export function inspectWindowsLnkBuffer(buf, { product = 'desktop' } = {}) {
   if (!Buffer.isBuffer(buf) || buf.length < 32 || buf.length > 65536) {
     return { matched: false, hasDebugPort: false };
   }
+  const normProd = normalizeLauncherProduct(product, 'desktop');
   const ascii = buf.toString('latin1').toLowerCase();
   const utf16 = buf.toString('utf16le').toLowerCase();
-  const hasIde = ascii.includes('antigravity ide.exe') || utf16.includes('antigravity ide.exe');
-  if (hasIde) {
-    return { matched: false, hasDebugPort: false };
-  }
+  const hasIde =
+    ascii.includes('\\antigravity ide.exe') ||
+    utf16.includes('\\antigravity ide.exe') ||
+    ascii.includes('/antigravity ide.exe') ||
+    utf16.includes('/antigravity ide.exe') ||
+    ascii.includes('antigravity ide.exe') ||
+    utf16.includes('antigravity ide.exe');
   const hasDesktopExe =
     ascii.includes('\\antigravity.exe') ||
     utf16.includes('\\antigravity.exe') ||
     ascii.includes('/antigravity.exe') ||
     utf16.includes('/antigravity.exe');
-  if (!hasDesktopExe) {
-    return { matched: false, hasDebugPort: false };
+  if (normProd === 'ide') {
+    if (!hasIde) return { matched: false, hasDebugPort: false };
+  } else if (normProd === 'both') {
+    if (!hasIde && !hasDesktopExe) return { matched: false, hasDebugPort: false };
+  } else {
+    if (hasIde || !hasDesktopExe) return { matched: false, hasDebugPort: false };
   }
   const hasDebugPort =
     ascii.includes('--remote-debugging-port') || utf16.includes('--remote-debugging-port');
@@ -624,13 +759,14 @@ export function inspectWindowsLnkBuffer(buf) {
 }
 
 /**
- * 纯 Node.js 零子进程快速扫描当前机器上的 `Antigravity.exe` 快捷方式配置状态（耗时通常 `< 2ms`）。
+ * 纯 Node.js 零子进程快速扫描当前机器上的 `Antigravity.exe` / `Antigravity IDE.exe` 快捷方式配置状态（耗时通常 `< 2ms`）。
  * 桌面与任务栏严格仅扫描顶层 `.lnk`（绝不进入用户项目文件夹或 `node_modules`），开始菜单仅检查顶层及 Antigravity/Google 一级厂商子目录。
  *
  * @param {{
  *   env?: Record<string, string|undefined>,
  *   homeDir?: string,
  *   extraDirs?: string[],
+ *   product?: 'desktop'|'ide'|'both',
  *   fsOps?: {
  *     readdirFn?: typeof readdirSync,
  *     statFn?: typeof statSync,
@@ -642,6 +778,7 @@ export function probeWindowsShortcutsFast({
   env = process.env,
   homeDir = homedir(),
   extraDirs = [],
+  product = 'desktop',
   fsOps = null,
 } = {}) {
   const readdirFn = fsOps?.readdirFn || readdirSync;
@@ -736,7 +873,7 @@ export function probeWindowsShortcutsFast({
       const st = statFn(lnkPath);
       if (!st || st.size < 32 || st.size > 65536) continue;
       const buf = readFn(lnkPath);
-      const res = inspectWindowsLnkBuffer(buf);
+      const res = inspectWindowsLnkBuffer(buf, { product });
       if (!res.matched) continue;
       matchedPaths.push(lnkPath);
       if (res.hasDebugPort) {
@@ -865,6 +1002,7 @@ function collectLinuxDesktopCandidates(dirPath, ops, { filterByName = false, fal
 export async function ensureDesktopLaunchEntriesConfigured({
   enabled = true,
   fastCheckIfActive = false,
+  product = 'desktop',
   env = process.env,
   platform = process.platform,
   homeDir = homedir(),
@@ -872,6 +1010,7 @@ export async function ensureDesktopLaunchEntriesConfigured({
   fsOps = null,
   allowInTest = false,
 } = {}) {
+  const normProd = normalizeLauncherProduct(product, 'desktop');
   if (lsRuntimeEndpoint.addr === 'test.invalid' && !allowInTest) {
     return {
       checked: false,
@@ -904,6 +1043,7 @@ export async function ensureDesktopLaunchEntriesConfigured({
         env,
         homeDir,
         extraDirs: getCachedWinDiscoveredDirs(homeDir),
+        product: normProd,
         fsOps: ops,
       });
       if (enabled && fast.allConfigured) {
@@ -945,6 +1085,7 @@ export async function ensureDesktopLaunchEntriesConfigured({
           env: {
             ...env,
             AGY_LAUNCH_ENABLED: enabled ? '1' : '0',
+            AGY_LAUNCH_PRODUCT: normProd,
           },
         }
       );
@@ -960,6 +1101,15 @@ export async function ensureDesktopLaunchEntriesConfigured({
       const readOnlyPaths = Array.isArray(parsed?.readOnlyPaths)
         ? parsed.readOnlyPaths.map(String).filter(Boolean)
         : [];
+      const hasSplitReadOnly = Boolean(
+        Array.isArray(parsed?.readOnlyDesktopPaths) || Array.isArray(parsed?.readOnlyIdePaths)
+      );
+      const readOnlyDesktopPaths = Array.isArray(parsed?.readOnlyDesktopPaths)
+        ? parsed.readOnlyDesktopPaths.map(String).filter(Boolean)
+        : [];
+      const readOnlyIdePaths = Array.isArray(parsed?.readOnlyIdePaths)
+        ? parsed.readOnlyIdePaths.map(String).filter(Boolean)
+        : [];
       if (Array.isArray(parsed?.discoveredDirs) && parsed.discoveredDirs.length > 0) {
         rememberWinDiscoveredDirs(homeDir, parsed.discoveredDirs);
       }
@@ -973,6 +1123,9 @@ export async function ensureDesktopLaunchEntriesConfigured({
         updatedPaths,
         configuredPaths,
         readOnlyPaths,
+        readOnlyDesktopPaths,
+        readOnlyIdePaths,
+        readOnlySplitByProduct: hasSplitReadOnly,
       };
     } catch (err) {
       return {
@@ -1040,15 +1193,22 @@ export async function ensureDesktopLaunchEntriesConfigured({
       }
     };
 
+    const fallbackDesktopNames =
+      normProd === 'ide'
+        ? ['antigravity-ide.desktop']
+        : normProd === 'both'
+          ? ['antigravity.desktop', 'antigravity-ide.desktop']
+          : ['antigravity.desktop'];
+
     try {
       const userCandidates = collectLinuxDesktopCandidates(userAppsDir, ops, {
         filterByName: false,
-        fallbackNames: ['antigravity.desktop'],
+        fallbackNames: fallbackDesktopNames,
       });
       for (const cand of userCandidates) {
         const rawText = readDesktopTextSafe(cand.full);
         if (!rawText) continue;
-        const patched = patchLinuxDesktopEntryText(rawText, { enabled });
+        const patched = patchLinuxDesktopEntryText(rawText, { enabled, product: normProd });
         if (!patched.matched) continue;
         handledUserFileNames.add(cand.name.toLowerCase());
         if (patched.changed) {
@@ -1064,14 +1224,17 @@ export async function ensureDesktopLaunchEntriesConfigured({
         for (const sysDir of systemAppsDirs) {
           const sysCandidates = collectLinuxDesktopCandidates(sysDir, ops, {
             filterByName: true,
-            fallbackNames: ['antigravity.desktop'],
+            fallbackNames: fallbackDesktopNames,
           });
           for (const cand of sysCandidates) {
             const nameKey = cand.name.toLowerCase();
             if (handledUserFileNames.has(nameKey)) continue;
             const rawText = readDesktopTextSafe(cand.full);
             if (!rawText) continue;
-            const patched = patchLinuxDesktopEntryText(rawText, { enabled: true });
+            const patched = patchLinuxDesktopEntryText(rawText, {
+              enabled: true,
+              product: normProd,
+            });
             if (!patched.matched) continue;
             handledUserFileNames.add(nameKey);
             if (patched.changed) {
@@ -1090,12 +1253,12 @@ export async function ensureDesktopLaunchEntriesConfigured({
 
       const autostartCandidates = collectLinuxDesktopCandidates(userAutostartDir, ops, {
         filterByName: false,
-        fallbackNames: ['antigravity.desktop'],
+        fallbackNames: fallbackDesktopNames,
       });
       for (const cand of autostartCandidates) {
         const autoRaw = readDesktopTextSafe(cand.full);
         if (!autoRaw) continue;
-        const patchedAuto = patchLinuxDesktopEntryText(autoRaw, { enabled });
+        const patchedAuto = patchLinuxDesktopEntryText(autoRaw, { enabled, product: normProd });
         if (!patchedAuto.matched) continue;
         if (patchedAuto.changed) {
           writeTextFileAtomically(cand.full, patchedAuto.text, ops);
@@ -1154,13 +1317,21 @@ async function discoverRunningHostExecutable({
   platform = process.platform,
   env = process.env,
   execFileFn = null,
+  preferredProduct = 'auto',
 } = {}) {
+  const pref = String(preferredProduct || 'auto').trim().toLowerCase();
+  const allowsKind = (kind) => pref === 'auto' || pref === kind;
   const runner = execFileFn || runLauncherExecFile;
   if (platform === 'win32') {
     try {
       const psExe = execFileFn ? 'powershell.exe' : resolveWindowsPowerShellExecutable(env);
-      const ps =
-        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; @(Get-Process -Name 'Antigravity','Antigravity IDE' -ErrorAction SilentlyContinue | Where-Object { $_.Path } | Select-Object -First 1) | ForEach-Object { [pscustomobject]@{ path = [string]$_.Path; name = [string]$_.ProcessName } } | ConvertTo-Json -Compress";
+      const winProcNames =
+        pref === 'ide'
+          ? "'Antigravity IDE'"
+          : pref === 'desktop'
+            ? "'Antigravity'"
+            : "'Antigravity','Antigravity IDE'";
+      const ps = `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; @(Get-Process -Name ${winProcNames} -ErrorAction SilentlyContinue | Where-Object { $_.Path } | Select-Object -First 1) | ForEach-Object { [pscustomobject]@{ path = [string]$_.Path; name = [string]$_.ProcessName } } | ConvertTo-Json -Compress`;
       const out = await runner(
         psExe,
         ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ps],
@@ -1172,36 +1343,21 @@ async function discoverRunningHostExecutable({
         const exePath = String(parsed?.path || '').trim();
         if (exePath) {
           const isIde = /ide/i.test(String(parsed?.name || '')) || /antigravity\s*ide\.exe$/i.test(exePath);
-          return {
-            found: true,
-            kind: isIde ? 'ide' : 'desktop',
-            executablePath: exePath,
-            appBundlePath: '',
-          };
+          const kind = isIde ? 'ide' : 'desktop';
+          if (allowsKind(kind)) {
+            return {
+              found: true,
+              kind,
+              executablePath: exePath,
+              appBundlePath: '',
+            };
+          }
         }
       }
     } catch {
       // 忽略动态进程探测异常
     }
   } else if (platform === 'darwin') {
-    try {
-      const out = await runner(
-        'osascript',
-        ['-e', 'POSIX path of (path to application "Antigravity")'],
-        { timeoutMs: 3000 }
-      );
-      const bundlePath = String(out || '').trim().replace(/\/+$/, '');
-      if (bundlePath && /\.app$/i.test(bundlePath)) {
-        return {
-          found: true,
-          kind: /antigravity\s*ide\.app$/i.test(bundlePath) ? 'ide' : 'desktop',
-          executablePath: bundlePath,
-          appBundlePath: bundlePath,
-        };
-      }
-    } catch {
-      // 忽略 AppleScript 探测异常（例如 TCC 限制），回退无权限依赖的 ps 扫描
-    }
     try {
       const psOut = await runner('ps', ['-axo', 'comm='], { timeoutMs: 3000 });
       for (const rawLine of String(psOut || '').split(/\r?\n/)) {
@@ -1211,18 +1367,50 @@ async function discoverRunningHostExecutable({
         const bundlePath = m[1];
         const binLeaf = m[2];
         if (!/antigravity/i.test(bundlePath) && !/antigravity/i.test(binLeaf)) continue;
-        if (/helper/i.test(binLeaf)) continue;
+        if (/helper/i.test(binLeaf) || /\(monitor\)\.app$/i.test(bundlePath)) continue;
+        const kind = /antigravity[\s_-]*ide\.app$/i.test(bundlePath) ? 'ide' : 'desktop';
+        if (!allowsKind(kind)) continue;
         return {
           found: true,
-          kind: /antigravity\s*ide\.app$/i.test(bundlePath) ? 'ide' : 'desktop',
+          kind,
           executablePath: line,
           appBundlePath: bundlePath,
         };
       }
     } catch {
-      // 忽略 ps 探测异常
+      // 忽略 ps 探测异常，继续回退 AppleScript 路径解析
+    }
+    const osaNames =
+      pref === 'ide'
+        ? ['Antigravity IDE']
+        : pref === 'desktop'
+          ? ['Antigravity']
+          : ['Antigravity', 'Antigravity IDE'];
+    for (const appQueryName of osaNames) {
+      try {
+        const out = await runner(
+          'osascript',
+          ['-e', `POSIX path of (path to application "${appQueryName}")`],
+          { timeoutMs: 3000 }
+        );
+        const bundlePath = String(out || '').trim().replace(/\/+$/, '');
+        if (bundlePath && /\.app$/i.test(bundlePath)) {
+          const kind = /antigravity[\s_-]*ide\.app$/i.test(bundlePath) ? 'ide' : 'desktop';
+          if (allowsKind(kind)) {
+            return {
+              found: true,
+              kind,
+              executablePath: bundlePath,
+              appBundlePath: bundlePath,
+            };
+          }
+        }
+      } catch {
+        // 忽略 AppleScript 探测异常
+      }
     }
   } else if (platform === 'linux') {
+    const linuxProd = pref === 'ide' ? 'ide' : pref === 'desktop' ? 'desktop' : 'both';
     if (!execFileFn && typeof process.getuid === 'function') {
       try {
         const myUid = process.getuid();
@@ -1237,14 +1425,15 @@ async function discoverRunningHostExecutable({
               .replace(/\s+\(deleted\)$/, '');
             if (!exeTarget) continue;
             const leaf = basename(exeTarget);
-            if (!isLinuxAntigravityDesktopLeaf(leaf)) continue;
+            if (!matchesLinuxExeLeafForProduct(leaf, linuxProd)) continue;
+            const kind = isLinuxAntigravityIdeLeaf(leaf) ? 'ide' : 'desktop';
             try {
               const envRaw = readFileSync(`${procDir}/environ`, 'utf8');
               for (const entry of envRaw.split('\0')) {
                 if (entry.startsWith('APPIMAGE=')) {
                   const appImg = entry.slice('APPIMAGE='.length).trim();
                   if (appImg && existsSync(appImg)) {
-                    return { found: true, kind: 'desktop', executablePath: appImg, appBundlePath: '' };
+                    return { found: true, kind, executablePath: appImg, appBundlePath: '' };
                   }
                 }
               }
@@ -1252,7 +1441,7 @@ async function discoverRunningHostExecutable({
               // 忽略 environ 读取异常
             }
             if (exeTarget.startsWith('/tmp/.mount_')) continue;
-            return { found: true, kind: 'desktop', executablePath: exeTarget, appBundlePath: '' };
+            return { found: true, kind, executablePath: exeTarget, appBundlePath: '' };
           } catch {
             // 忽略单个瞬态退出的进程目录
           }
@@ -1266,12 +1455,15 @@ async function discoverRunningHostExecutable({
         const out = await runner('/bin/sh', ['-c', 'true'], { timeoutMs: 2000 });
         const foundLinuxExe = String(out || '').trim().split(/\r?\n/)[0]?.trim() || '';
         if (foundLinuxExe) {
-          return {
-            found: true,
-            kind: 'desktop',
-            executablePath: foundLinuxExe,
-            appBundlePath: '',
-          };
+          const kind = isLinuxAntigravityIdeLeaf(basename(foundLinuxExe)) ? 'ide' : 'desktop';
+          if (allowsKind(kind)) {
+            return {
+              found: true,
+              kind,
+              executablePath: foundLinuxExe,
+              appBundlePath: '',
+            };
+          }
         }
       } catch {
         // 忽略模拟探测异常
@@ -1303,7 +1495,16 @@ function psSingleQuote(val) {
  * @param {{ readOnlyShortcutPaths?: string[], psExePath?: string }} [extra]
  * @returns {string}
  */
-function buildReadonlyShortcutPatchPsBlock() {
+function buildReadonlyShortcutPatchPsBlock(kind = 'desktop') {
+  const normKind = normalizeLauncherProduct(kind, 'desktop');
+  const buildExeLeafExpr = (varExpr) =>
+    normKind === 'ide'
+      ? `([System.IO.Path]::GetFileName(${varExpr}) -ieq 'Antigravity IDE.exe')`
+      : normKind === 'both'
+        ? `([System.IO.Path]::GetFileName(${varExpr}) -ieq 'Antigravity.exe' -or [System.IO.Path]::GetFileName(${varExpr}) -ieq 'Antigravity IDE.exe')`
+        : `([System.IO.Path]::GetFileName(${varExpr}) -ieq 'Antigravity.exe')`;
+  const regExeCond = buildExeLeafExpr('$exeCand');
+  const lnkExeCond = buildExeLeafExpr('$lnkTarget');
   const coreLines = [
     '$ws = $null',
     'foreach ($item in $targets) {',
@@ -1322,7 +1523,7 @@ function buildReadonlyShortcutPatchPsBlock() {
     '          if ($rawCmd -match \'^\\s*(?:"([^"]+)"|([^\\s"]+))(.*)$\') {',
     '            $exeCand = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }',
     '            $restPart = [string]$Matches[3]',
-    "            if ([System.IO.Path]::GetFileName($exeCand) -ieq 'Antigravity.exe' -and $restPart -notmatch '(?:^|\\s)--remote-debugging-port(?:=|\\s|$)') {",
+    `            if (${regExeCond} -and $restPart -notmatch '(?:^|\\s)--remote-debugging-port(?:=|\\s|$)') {`,
     '              $qExe = if ($Matches[1] -or $exeCand -match \'\\s\') { \'"\' + $exeCand + \'"\' } else { $exeCand }',
     "              $nextVal = ($qExe + ' ' + ($restPart.Trim() + ' --remote-debugging-port=0').Trim()).Trim()",
     '              $wk = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($subPath, $true)',
@@ -1344,7 +1545,7 @@ function buildReadonlyShortcutPatchPsBlock() {
     '        if ($rawOpen -match \'^\\s*(?:"([^"]+)"|([^\\s"]+))(.*)$\') {',
     '          $exeCand = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }',
     '          $restOpen = ([string]$Matches[3]).Trim()',
-    "          if ([System.IO.Path]::GetFileName($exeCand) -ieq 'Antigravity.exe' -and $restOpen -notmatch '(?:^|\\s)--remote-debugging-port(?:=|\\s|$)') {",
+    `          if (${regExeCond} -and $restOpen -notmatch '(?:^|\\s)--remote-debugging-port(?:=|\\s|$)') {`,
     '            $qExe = if ($Matches[1] -or $exeCand -match \'\\s\') { \'"\' + $exeCand + \'"\' } else { $exeCand }',
     "            $nextOpen = if ($restOpen) { $qExe + ' --remote-debugging-port=0 ' + $restOpen } else { $qExe + ' --remote-debugging-port=0' }",
     '            $wk = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($relKey, $true)',
@@ -1359,8 +1560,9 @@ function buildReadonlyShortcutPatchPsBlock() {
     '    try {',
     '      if (-not $ws) { $ws = New-Object -ComObject WScript.Shell }',
     '      $sc = $ws.CreateShortcut($item)',
+    '      $lnkTarget = [string]$sc.TargetPath',
     '      $cur = [string]$sc.Arguments',
-    "      if ($cur -notmatch '(?:^|\\s)--remote-debugging-port(?:=|\\s|$)') {",
+    `      if (${lnkExeCond} -and $cur -notmatch '(?:^|\\s)--remote-debugging-port(?:=|\\s|$)') {`,
     "        $sc.Arguments = ($cur.Trim() + ' --remote-debugging-port=0').Trim()",
     '        $sc.Save()',
     '      }',
@@ -1388,7 +1590,7 @@ export function buildWindowsRelaunchInnerScript(
 ) {
   const procName = kind === 'ide' ? 'Antigravity IDE' : 'Antigravity';
   const psExe = String(extra?.psExePath || 'powershell.exe').trim() || 'powershell.exe';
-  const { fnLines, quotedLines } = buildReadonlyShortcutPatchPsBlock();
+  const { fnLines, quotedLines } = buildReadonlyShortcutPatchPsBlock(kind);
   const portLiterals = (Array.isArray(stalePortFiles) ? stalePortFiles : [])
     .map((p) => String(p || '').trim())
     .filter(Boolean)
@@ -1578,10 +1780,399 @@ Write-Output '{"ok":true,"method":"start_process"}'
  *   allowInTest?: boolean,
  * }} [options]
  */
+function escapeXmlPlistText(raw) {
+  return String(raw ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function shellSingleQuote(raw) {
+  return `'${String(raw ?? '').replace(/'/g, "'\\''")}'`;
+}
+
+function getMacOsWrapperBundleSpec(product, homeDir = homedir()) {
+  const kind = product === 'ide' ? 'ide' : 'desktop';
+  const wrapperName = kind === 'ide' ? 'Antigravity IDE (Monitor).app' : 'Antigravity (Monitor).app';
+  const displayName = kind === 'ide' ? 'Antigravity IDE (Monitor)' : 'Antigravity (Monitor)';
+  const bundleId =
+    kind === 'ide'
+      ? 'com.yuhuan.usage-monitor.launcher.ide'
+      : 'com.yuhuan.usage-monitor.launcher.desktop';
+  return {
+    kind,
+    wrapperName,
+    displayName,
+    bundleId,
+    wrapperPath: join(homeDir, 'Applications', wrapperName),
+  };
+}
+
+function hasSymlinkInWrapperBundle(wrapperPath, lstatFn = lstatSync) {
+  if (typeof lstatFn !== 'function') return false;
+  const contentsDir = join(wrapperPath, 'Contents');
+  const macOsDir = join(contentsDir, 'MacOS');
+  const resourcesDir = join(contentsDir, 'Resources');
+  const candidates = [
+    wrapperPath,
+    contentsDir,
+    macOsDir,
+    join(macOsDir, 'launcher'),
+    resourcesDir,
+    join(resourcesDir, 'launcher.icns'),
+    join(contentsDir, 'Info.plist'),
+  ];
+  for (const p of candidates) {
+    try {
+      const st = lstatFn(p);
+      if (st && typeof st.isSymbolicLink === 'function' && st.isSymbolicLink()) {
+        return true;
+      }
+    } catch {
+      // 路径尚不存在 (ENOENT) 时视为安全
+    }
+  }
+  return false;
+}
+
+/**
+ * 检查 macOS `~/Applications` 下是否已存在本插件受管生成的带参启动器 `.app`（严格校验 `Info.plist` 自管标记与符号链接防护）。
+ *
+ * @param {{
+ *   platform?: string,
+ *   homeDir?: string,
+ *   existsFn?: typeof existsSync,
+ *   readFn?: typeof readFileSync,
+ *   lstatFn?: typeof lstatSync,
+ * }} [options]
+ */
+export function inspectMacOsLaunchWrapperStatus({
+  platform = process.platform,
+  homeDir = homedir(),
+  existsFn = existsSync,
+  readFn = readFileSync,
+  lstatFn = lstatSync,
+} = {}) {
+  if (platform !== 'darwin') {
+    return {
+      supported: false,
+      exists: false,
+      desktopExists: false,
+      ideExists: false,
+      paths: [],
+    };
+  }
+  const paths = [];
+  let desktopExists = false;
+  let ideExists = false;
+  for (const kind of ['desktop', 'ide']) {
+    const spec = getMacOsWrapperBundleSpec(kind, homeDir);
+    const plistPath = join(spec.wrapperPath, 'Contents', 'Info.plist');
+    try {
+      if (hasSymlinkInWrapperBundle(spec.wrapperPath, lstatFn)) continue;
+      if (!existsFn(plistPath)) continue;
+      const plistText = String(readFn(plistPath, 'utf8') || '');
+      if (!plistText.includes(`<key>${MACOS_MANAGED_WRAPPER_KEY}</key>`)) continue;
+      paths.push(spec.wrapperPath);
+      if (kind === 'ide') ideExists = true;
+      else desktopExists = true;
+    } catch {
+      // 忽略损坏或无权限的单个候选
+    }
+  }
+  return {
+    supported: true,
+    exists: paths.length > 0,
+    desktopExists,
+    ideExists,
+    paths,
+  };
+}
+
+/**
+ * 在 macOS 用户目录 `~/Applications/` 下按需创建轻量后台代理启动器 `.app`：
+ * - 声明 `LSUIElement = true`，从 Spotlight / Raycast / Finder 启动时不额外占用 Dock 与 `Cmd+Tab` 图标槽；
+ * - 自动拷贝原版应用 `.icns` 图标并写入自管标记 `com.yuhuan.usageMonitor.managedWrapper`；
+ * - 绝不触碰原版 `/Applications/Antigravity*.app` 内部任何文件。
+ *
+ * @param {{
+ *   product?: 'desktop'|'ide',
+ *   env?: Record<string, string|undefined>,
+ *   platform?: string,
+ *   homeDir?: string,
+ *   execFileFn?: ((file: string, args: string[], opts?: object) => Promise<string>)|null,
+ *   fsOps?: {
+ *     existsFn?: typeof existsSync,
+ *     readFn?: typeof readFileSync,
+ *     writeFn?: typeof writeFileSync,
+ *     mkdirFn?: typeof mkdirSync,
+ *     readdirFn?: typeof readdirSync,
+ *     chmodFn?: ((p: string, mode: number) => void)|null,
+ *   }|null,
+ *   allowInTest?: boolean,
+ * }} [options]
+ */
+export async function createMacOsLaunchWrapper({
+  product = 'desktop',
+  env = process.env,
+  platform = process.platform,
+  homeDir = homedir(),
+  execFileFn = null,
+  fsOps = null,
+  allowInTest = false,
+} = {}) {
+  if (lsRuntimeEndpoint.addr === 'test.invalid' && !allowInTest) {
+    return { ok: false, status: 403, error: 'Disabled in test sandbox' };
+  }
+  if (platform !== 'darwin') {
+    return { ok: false, status: 400, error: 'macOS wrapper is only supported on darwin' };
+  }
+
+  const targetKind = product === 'ide' ? 'ide' : 'desktop';
+  const existsFn = fsOps?.existsFn || existsSync;
+  const readFn = fsOps?.readFn || readFileSync;
+  const writeFn = fsOps?.writeFn || writeFileSync;
+  const mkdirFn = fsOps?.mkdirFn || mkdirSync;
+  const readdirFn = fsOps?.readdirFn || readdirSync;
+  const lstatFn = fsOps?.lstatFn || (fsOps?.existsFn ? null : lstatSync);
+
+  let hostInfo = resolveDesktopHostExecutable({
+    env,
+    platform,
+    homeDir,
+    existsFn,
+    preferredProduct: targetKind,
+  });
+  if (!hostInfo.found) {
+    hostInfo = await discoverRunningHostExecutable({
+      platform,
+      env,
+      execFileFn,
+      preferredProduct: targetKind,
+    });
+  }
+  const targetBundle = hostInfo.appBundlePath || hostInfo.executablePath;
+  if (!hostInfo.found || !targetBundle) {
+    return {
+      ok: false,
+      status: 404,
+      error: `Unable to locate ${targetKind === 'ide' ? 'Antigravity IDE.app' : 'Antigravity.app'} on this Mac`,
+    };
+  }
+
+  const spec = getMacOsWrapperBundleSpec(targetKind, homeDir);
+  if (hasSymlinkInWrapperBundle(spec.wrapperPath, lstatFn)) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'Refusing to operate on symbolic link at wrapper path',
+    };
+  }
+  const contentsDir = join(spec.wrapperPath, 'Contents');
+  const existingPlistPath = join(contentsDir, 'Info.plist');
+  if (existsFn(spec.wrapperPath)) {
+    let isManaged = false;
+    try {
+      if (existsFn(existingPlistPath)) {
+        const prevPlist = String(readFn(existingPlistPath, 'utf8') || '');
+        isManaged = prevPlist.includes(`<key>${MACOS_MANAGED_WRAPPER_KEY}</key>`);
+      }
+    } catch {
+      isManaged = false;
+    }
+    if (!isManaged) {
+      return {
+        ok: false,
+        status: 409,
+        error: 'Refusing to overwrite existing unmanaged application bundle',
+      };
+    }
+  }
+  const macOsDir = join(contentsDir, 'MacOS');
+  const resourcesDir = join(contentsDir, 'Resources');
+  mkdirFn(macOsDir, { recursive: true });
+  mkdirFn(resourcesDir, { recursive: true });
+
+  let hasCopiedIcon = false;
+  try {
+    const srcResources = join(targetBundle, 'Contents', 'Resources');
+    const srcPlistPath = join(targetBundle, 'Contents', 'Info.plist');
+    let preferredIconName = '';
+    if (existsFn(srcPlistPath)) {
+      const srcPlist = String(readFn(srcPlistPath, 'utf8') || '');
+      const iconMatch = srcPlist.match(
+        /<key>\s*CFBundleIconFile\s*<\/key>\s*<string>\s*([^<\r\n]+?)\s*<\/string>/i
+      );
+      if (iconMatch && iconMatch[1]) {
+        const rawIcon = iconMatch[1].trim();
+        preferredIconName = /\.icns$/i.test(rawIcon) ? rawIcon : `${rawIcon}.icns`;
+      }
+    }
+    let srcIconPath =
+      preferredIconName && existsFn(join(srcResources, preferredIconName))
+        ? join(srcResources, preferredIconName)
+        : '';
+    if (!srcIconPath && existsFn(srcResources)) {
+      const entries = readdirFn(srcResources);
+      const icnsEntry = (Array.isArray(entries) ? entries : [])
+        .map((e) => (typeof e === 'string' ? e : String(e?.name || '')))
+        .find((n) => /\.icns$/i.test(n));
+      if (icnsEntry) {
+        srcIconPath = join(srcResources, icnsEntry);
+      }
+    }
+    if (srcIconPath && existsFn(srcIconPath)) {
+      const iconBuf = readFn(srcIconPath);
+      writeFn(join(resourcesDir, 'launcher.icns'), iconBuf);
+      hasCopiedIcon = true;
+    }
+  } catch {
+    // 图标复制失败不阻塞启动器生成
+  }
+
+  const launcherBinPath = join(macOsDir, 'launcher');
+  const launcherScript = [
+    '#!/bin/sh',
+    `exec /usr/bin/open -a ${shellSingleQuote(targetBundle)} --args ${REMOTE_DEBUG_LAUNCH_FLAG} "$@"`,
+    '',
+  ].join('\n');
+  writeFn(launcherBinPath, launcherScript, 'utf8');
+  if (typeof fsOps?.chmodFn === 'function') {
+    fsOps.chmodFn(launcherBinPath, 0o755);
+  } else {
+    try {
+      const fsMod = await import('node:fs');
+      (fsMod.chmodSync || fsMod.default?.chmodSync)?.(launcherBinPath, 0o755);
+    } catch {
+      // 忽略沙箱 chmod 异常
+    }
+  }
+
+  const iconPlistLines = hasCopiedIcon
+    ? ['  <key>CFBundleIconFile</key>', '  <string>launcher.icns</string>']
+    : [];
+  const infoPlist = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    '<dict>',
+    '  <key>CFBundleExecutable</key>',
+    '  <string>launcher</string>',
+    '  <key>CFBundleIdentifier</key>',
+    `  <string>${escapeXmlPlistText(spec.bundleId)}</string>`,
+    '  <key>CFBundleName</key>',
+    `  <string>${escapeXmlPlistText(spec.displayName)}</string>`,
+    '  <key>CFBundleDisplayName</key>',
+    `  <string>${escapeXmlPlistText(spec.displayName)}</string>`,
+    '  <key>CFBundlePackageType</key>',
+    '  <string>APPL</string>',
+    '  <key>CFBundleShortVersionString</key>',
+    '  <string>1.0.0</string>',
+    '  <key>LSUIElement</key>',
+    '  <true/>',
+    ...iconPlistLines,
+    `  <key>${MACOS_MANAGED_WRAPPER_KEY}</key>`,
+    '  <true/>',
+    '  <key>com.yuhuan.usageMonitor.targetBundle</key>',
+    `  <string>${escapeXmlPlistText(targetBundle)}</string>`,
+    '</dict>',
+    '</plist>',
+    '',
+  ].join('\n');
+  writeFn(join(contentsDir, 'Info.plist'), infoPlist, 'utf8');
+
+  const lsregisterBin =
+    '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
+  const runner = execFileFn || runLauncherExecFile;
+  try {
+    if (execFileFn || existsFn(lsregisterBin)) {
+      await runner(lsregisterBin, ['-f', spec.wrapperPath], { timeoutMs: 3000 });
+    }
+  } catch {
+    // LaunchServices 索引刷新失败不阻断生成结果
+  }
+
+  return {
+    ok: true,
+    action: 'create_macos_wrapper',
+    product: targetKind,
+    wrapperPath: spec.wrapperPath,
+    wrapperName: spec.wrapperName,
+    targetBundle,
+  };
+}
+
+/**
+ * 安全移除 macOS `~/Applications` 下带本插件自管标记的启动器 `.app`（绝不删除无标记目录）。
+ *
+ * @param {{
+ *   product?: 'desktop'|'ide'|'both',
+ *   platform?: string,
+ *   homeDir?: string,
+ *   fsOps?: {
+ *     existsFn?: typeof existsSync,
+ *     readFn?: typeof readFileSync,
+ *     rmFn?: typeof rmSync,
+ *   }|null,
+ *   allowInTest?: boolean,
+ * }} [options]
+ */
+export function removeMacOsLaunchWrapper({
+  product = 'both',
+  platform = process.platform,
+  homeDir = homedir(),
+  fsOps = null,
+  allowInTest = false,
+} = {}) {
+  if (lsRuntimeEndpoint.addr === 'test.invalid' && !allowInTest) {
+    return { ok: false, status: 403, error: 'Disabled in test sandbox' };
+  }
+  if (platform !== 'darwin') {
+    return { ok: false, status: 400, error: 'macOS wrapper is only supported on darwin' };
+  }
+  const existsFn = fsOps?.existsFn || existsSync;
+  const readFn = fsOps?.readFn || readFileSync;
+  const rmFn = fsOps?.rmFn || rmSync;
+  const lstatFn = fsOps?.lstatFn || (fsOps?.existsFn ? null : lstatSync);
+  const normProd = normalizeLauncherProduct(product, 'both');
+  const kinds = normProd === 'ide' ? ['ide'] : normProd === 'desktop' ? ['desktop'] : ['desktop', 'ide'];
+  const removedPaths = [];
+
+  for (const kind of kinds) {
+    const spec = getMacOsWrapperBundleSpec(kind, homeDir);
+    if (hasSymlinkInWrapperBundle(spec.wrapperPath, lstatFn)) {
+      return {
+        ok: false,
+        status: 409,
+        error: 'Refusing to remove symbolic link at wrapper path',
+      };
+    }
+    const plistPath = join(spec.wrapperPath, 'Contents', 'Info.plist');
+    try {
+      if (!existsFn(plistPath)) continue;
+      const plistText = String(readFn(plistPath, 'utf8') || '');
+      if (!plistText.includes(`<key>${MACOS_MANAGED_WRAPPER_KEY}</key>`)) continue;
+      rmFn(spec.wrapperPath, { recursive: true, force: true });
+      removedPaths.push(spec.wrapperPath);
+    } catch {
+      // 忽略单个删除异常
+    }
+  }
+
+  return {
+    ok: true,
+    action: 'remove_macos_wrapper',
+    removedPaths,
+  };
+}
+
 export async function triggerDesktopHostRelaunch({
   env = process.env,
   platform = process.platform,
   homeDir = homedir(),
+  preferredProduct = 'auto',
   stalePortFiles = [],
   readOnlyShortcutPaths = [],
   execFileFn = null,
@@ -1595,9 +2186,69 @@ export async function triggerDesktopHostRelaunch({
     return { ok: false, status: 403, error: 'Disabled in test sandbox' };
   }
 
-  let hostInfo = resolveDesktopHostExecutable({ env, platform, homeDir, existsFn });
-  if (!hostInfo.found) {
-    hostInfo = await discoverRunningHostExecutable({ platform, env, execFileFn });
+  const normPref = String(preferredProduct || 'auto').trim().toLowerCase();
+  let hostInfo = { found: false, kind: '', executablePath: '', appBundlePath: '' };
+  if (normPref === 'auto') {
+    hostInfo = resolveDesktopHostExecutable({
+      env,
+      platform,
+      homeDir,
+      existsFn,
+      preferredProduct: 'auto',
+      envHintsOnly: true,
+    });
+    if (!hostInfo.found) {
+      const desktopStatic = resolveDesktopHostExecutable({
+        env,
+        platform,
+        homeDir,
+        existsFn,
+        preferredProduct: 'desktop',
+      });
+      const ideStatic = resolveDesktopHostExecutable({
+        env,
+        platform,
+        homeDir,
+        existsFn,
+        preferredProduct: 'ide',
+      });
+      if (desktopStatic.found && ideStatic.found) {
+        const runningInfo = await discoverRunningHostExecutable({
+          platform,
+          env,
+          execFileFn,
+          preferredProduct: 'auto',
+        });
+        hostInfo = runningInfo.found ? runningInfo : desktopStatic;
+      } else if (desktopStatic.found) {
+        hostInfo = desktopStatic;
+      } else if (ideStatic.found) {
+        hostInfo = ideStatic;
+      } else {
+        hostInfo = await discoverRunningHostExecutable({
+          platform,
+          env,
+          execFileFn,
+          preferredProduct: 'auto',
+        });
+      }
+    }
+  } else {
+    hostInfo = resolveDesktopHostExecutable({
+      env,
+      platform,
+      homeDir,
+      existsFn,
+      preferredProduct: normPref,
+    });
+    if (!hostInfo.found) {
+      hostInfo = await discoverRunningHostExecutable({
+        platform,
+        env,
+        execFileFn,
+        preferredProduct: normPref,
+      });
+    }
   }
   if (!hostInfo.found) {
     return {
@@ -1608,9 +2259,10 @@ export async function triggerDesktopHostRelaunch({
   }
 
   const cleanEnv = buildSanitizedDesktopRelaunchEnv(env);
+  const targetKind = hostInfo.kind === 'ide' ? 'ide' : 'desktop';
   const cleanStaleFiles = (Array.isArray(stalePortFiles) ? stalePortFiles : [])
     .map((p) => String(p || '').trim())
-    .filter(Boolean);
+    .filter((p) => Boolean(p) && classifyDevToolsPortProduct(p) === targetKind);
   const cleanReadOnlyPaths = (Array.isArray(readOnlyShortcutPaths) ? readOnlyShortcutPaths : [])
     .map((p) => String(p || '').trim())
     .filter(Boolean);
@@ -1620,7 +2272,7 @@ export async function triggerDesktopHostRelaunch({
     const innerScript = buildWindowsRelaunchInnerScript(
       hostInfo.executablePath,
       cleanStaleFiles,
-      hostInfo.kind,
+      targetKind,
       {
         readOnlyShortcutPaths: cleanReadOnlyPaths,
         psExePath: psExe,
@@ -1656,6 +2308,7 @@ export async function triggerDesktopHostRelaunch({
     return {
       ok: true,
       relaunching: true,
+      product: targetKind,
       platform,
       executablePath: hostInfo.executablePath,
     };
@@ -1669,12 +2322,18 @@ export async function triggerDesktopHostRelaunch({
       ? basename(hostInfo.appBundlePath).replace(/\.app$/i, '').trim()
       : '';
     const appName =
-      bundleDerivedName || (hostInfo.kind === 'ide' ? 'Antigravity IDE' : 'Antigravity');
+      bundleDerivedName || (targetKind === 'ide' ? 'Antigravity IDE' : 'Antigravity');
+    const bundleMacOsPrefix = hostInfo.appBundlePath
+      ? `${hostInfo.appBundlePath.replace(/\/+$/, '')}/Contents/MacOS/`
+      : '';
     const shScript = [
       'sleep 0.45',
-      'if osascript -e \'on run argv\' -e \'tell application (item 1 of argv) to quit\' -e \'end run\' -- "$AGY_APP_NAME" >/dev/null 2>&1; then i=0; while [ $i -lt 25 ] && pgrep -ax "$AGY_APP_NAME" >/dev/null 2>&1; do sleep 0.2; i=$((i+1)); done; fi',
-      'if pgrep -ax "$AGY_APP_NAME" >/dev/null 2>&1; then pkill -TERM -ax "$AGY_APP_NAME" >/dev/null 2>&1 || killall -TERM "$AGY_APP_NAME" >/dev/null 2>&1 || true; j=0; while [ $j -lt 20 ] && pgrep -ax "$AGY_APP_NAME" >/dev/null 2>&1; do sleep 0.2; j=$((j+1)); done; fi',
-      'if pgrep -ax "$AGY_APP_NAME" >/dev/null 2>&1; then pkill -KILL -ax "$AGY_APP_NAME" >/dev/null 2>&1 || killall -KILL "$AGY_APP_NAME" >/dev/null 2>&1 || true; k=0; while [ $k -lt 15 ] && pgrep -ax "$AGY_APP_NAME" >/dev/null 2>&1; do sleep 0.2; k=$((k+1)); done; fi',
+      'find_main_pids() { if [ -n "$AGY_BUNDLE_MACOS" ]; then ps -axo pid=,command= 2>/dev/null | awk -v self="$$" \'BEGIN { pat = ENVIRON["AGY_BUNDLE_MACOS"] } $1 != self && index($0, pat) > 0 && tolower($0) !~ /helper/ { print $1 }\'; else pgrep -ax "$AGY_APP_NAME" 2>/dev/null || true; fi; }',
+      'find_bundle_pids() { if [ -n "$AGY_BUNDLE_MACOS" ]; then ps -axo pid=,command= 2>/dev/null | awk -v self="$$" \'BEGIN { pat = ENVIRON["AGY_BUNDLE_MACOS"] } $1 != self && index($0, pat) > 0 { print $1 }\'; else pgrep -ax "$AGY_APP_NAME" 2>/dev/null || true; fi; }',
+      'is_alive() { [ -n "$(find_main_pids)" ]; }',
+      'if osascript -e \'on run argv\' -e \'tell application (item 1 of argv) to quit\' -e \'end run\' -- "$AGY_RELAUNCH_APP" >/dev/null 2>&1 || osascript -e \'on run argv\' -e \'tell application (item 1 of argv) to quit\' -e \'end run\' -- "$AGY_APP_NAME" >/dev/null 2>&1; then i=0; while [ $i -lt 25 ] && is_alive; do sleep 0.2; i=$((i+1)); done; fi',
+      'if is_alive; then pids="$(find_bundle_pids)"; if [ -n "$pids" ]; then kill -TERM $pids >/dev/null 2>&1 || true; elif [ -z "$AGY_BUNDLE_MACOS" ]; then pkill -TERM -ax "$AGY_APP_NAME" >/dev/null 2>&1 || killall -TERM "$AGY_APP_NAME" >/dev/null 2>&1 || true; fi; j=0; while [ $j -lt 20 ] && is_alive; do sleep 0.2; j=$((j+1)); done; fi',
+      'if is_alive; then pids="$(find_bundle_pids)"; if [ -n "$pids" ]; then kill -KILL $pids >/dev/null 2>&1 || true; elif [ -z "$AGY_BUNDLE_MACOS" ]; then pkill -KILL -ax "$AGY_APP_NAME" >/dev/null 2>&1 || killall -KILL "$AGY_APP_NAME" >/dev/null 2>&1 || true; fi; k=0; while [ $k -lt 15 ] && is_alive; do sleep 0.2; k=$((k+1)); done; fi',
       'old_ifs="$IFS"; set -f; IFS=":"; for f in $AGY_STALE_PORT_FILES; do [ -n "$f" ] && rm -f "$f"; done; set +f; IFS="$old_ifs"',
       'sleep 0.4',
       'open -a "$AGY_RELAUNCH_APP" --args --remote-debugging-port=0 >/dev/null 2>&1',
@@ -1684,26 +2343,31 @@ export async function triggerDesktopHostRelaunch({
         ...cleanEnv,
         AGY_APP_NAME: appName,
         AGY_RELAUNCH_APP: appTarget,
+        AGY_BUNDLE_MACOS: bundleMacOsPrefix,
         AGY_STALE_PORT_FILES: cleanStaleFiles.join(':'),
       },
     });
     return {
       ok: true,
       relaunching: true,
+      product: targetKind,
       platform,
       executablePath: appTarget,
     };
   }
 
-  const procLeaf = basename(hostInfo.executablePath) || 'antigravity';
-  const procComm = procLeaf.slice(0, 15);
+  const procLeaf =
+    basename(hostInfo.executablePath) || (targetKind === 'ide' ? 'antigravity-ide' : 'antigravity');
   const linuxScript = [
     'sleep 0.45',
     'uid="$(id -u)"',
-    'is_alive() { for pn in "$AGY_PROC_NAME" antigravity Antigravity "$AGY_PROC_COMM" google-antigravity; do [ -n "$pn" ] && pgrep -u "$uid" -x "$pn" >/dev/null 2>&1 && return 0; done; return 1; }',
-    'for pn in "$AGY_PROC_NAME" antigravity Antigravity "$AGY_PROC_COMM" google-antigravity; do [ -n "$pn" ] && pkill -TERM -u "$uid" -x "$pn" >/dev/null 2>&1 || true; done',
-    'i=0; while [ $i -lt 25 ] && is_alive; do sleep 0.2; i=$((i+1)); done',
-    'if is_alive; then for pn in "$AGY_PROC_NAME" antigravity Antigravity "$AGY_PROC_COMM" google-antigravity; do [ -n "$pn" ] && pkill -KILL -u "$uid" -x "$pn" >/dev/null 2>&1 || true; done; j=0; while [ $j -lt 15 ] && is_alive; do sleep 0.2; j=$((j+1)); done; fi',
+    'real_exe="$(readlink -f "$AGY_RELAUNCH_EXE" 2>/dev/null || echo "$AGY_RELAUNCH_EXE")"',
+    'collect_pids() { found=""; if [ -d /proc ]; then for d in /proc/[0-9]*; do p="${d#/proc/}"; [ "$p" = "$$" ] && continue; owner="$(stat -c %u "$d" 2>/dev/null || echo "")"; [ -n "$owner" ] && [ "$owner" != "$uid" ] && continue; exe="$(readlink "$d/exe" 2>/dev/null | sed \'s/ (deleted)$//\')"; if [ -n "$exe" ] && { [ "$exe" = "$AGY_RELAUNCH_EXE" ] || [ "$exe" = "$real_exe" ]; }; then found="$found $p"; continue; fi; if [ -r "$d/environ" ] && tr \'\\0\' \'\\n\' < "$d/environ" 2>/dev/null | grep -Fx -- "APPIMAGE=$AGY_RELAUNCH_EXE" >/dev/null 2>&1; then found="$found $p"; fi; done; fi; if [ -z "$found" ]; then found="$(pgrep -u "$uid" -f -- "$AGY_RELAUNCH_EXE" 2>/dev/null | grep -vw "$$" || true)"; fi; echo "$found"; }',
+    'pids="$(collect_pids)"',
+    'if [ -n "$pids" ]; then kill -TERM $pids >/dev/null 2>&1 || true; fi',
+    'i=0; while [ $i -lt 25 ]; do pids="$(collect_pids)"; [ -z "$pids" ] && break; sleep 0.2; i=$((i+1)); done',
+    'pids="$(collect_pids)"',
+    'if [ -n "$pids" ]; then kill -KILL $pids >/dev/null 2>&1 || true; j=0; while [ $j -lt 15 ]; do pids="$(collect_pids)"; [ -z "$pids" ] && break; sleep 0.2; j=$((j+1)); done; fi',
     'old_ifs="$IFS"; set -f; IFS=":"; for f in $AGY_STALE_PORT_FILES; do [ -n "$f" ] && rm -f "$f"; done; set +f; IFS="$old_ifs"',
     'nohup "$AGY_RELAUNCH_EXE" --remote-debugging-port=0 >/dev/null 2>&1 &',
   ].join('; ');
@@ -1712,13 +2376,13 @@ export async function triggerDesktopHostRelaunch({
       ...cleanEnv,
       AGY_RELAUNCH_EXE: hostInfo.executablePath,
       AGY_PROC_NAME: procLeaf,
-      AGY_PROC_COMM: procComm,
       AGY_STALE_PORT_FILES: cleanStaleFiles.join(':'),
     },
   });
   return {
     ok: true,
     relaunching: true,
+    product: targetKind,
     platform,
     executablePath: hostInfo.executablePath,
   };

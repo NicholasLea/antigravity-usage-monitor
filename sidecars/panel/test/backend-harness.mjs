@@ -41,6 +41,7 @@ const BACKEND_MODULE_FILES = [
   '../backend/trajectory-sqlite-ledger.mjs',
   '../backend/trajectory-cache-store.mjs',
   '../backend/config.mjs',
+  '../backend/devtools-port-probe.mjs',
   '../backend/host-theme-store.mjs',
   '../backend/account-quota-history.mjs',
   '../backend/account-oauth.mjs',
@@ -53,6 +54,7 @@ const BACKEND_MODULE_FILES = [
   '../backend/cli-statusline-config.mjs',
   '../backend/session-migrator.mjs',
   '../backend/ls-discovery.mjs',
+  '../backend/ide-remote-ssh.mjs',
   '../backend/pricing-catalog.mjs',
   '../backend/plugin-updater.mjs',
   '../backend/ls-rpc.mjs',
@@ -200,6 +202,11 @@ export function backendHarness({
       }
       return {mtimeMs:0,size:0};
     },
+    lstatSync:(p, opts)=>{
+      const st = ctx.statSync(p, opts);
+      return st ? {...st, isSymbolicLink:()=>false} : st;
+    },
+    readlinkSync:()=>'',
     readFileSync:p=>{
       const norm = String(p).replace(/\\/g, '/');
       if (norm.endsWith('/.system_generated/logs/transcript.jsonl')) {
@@ -234,7 +241,7 @@ export function backendHarness({
       if (state.cacheWriteError) throw state.cacheWriteError;
       state.saves.push({path:p,data:JSON.parse(JSON.stringify(data))});
     },
-    homedir:()=>'/test-home',dirname:path.dirname,join:path.join,basename:path.basename,delimiter:path.delimiter,pathToFileURL,fileURLToPath:()=>mainPath,
+    homedir:()=>'/test-home',dirname:path.dirname,join:path.join,basename:path.basename,pathWin32:path.win32,delimiter:path.delimiter,pathToFileURL,fileURLToPath:()=>mainPath,
     Response:class {constructor(body,options){this.body=body;this.options=options;}},
     SidecarApp:class {page(){} api(){} run(){}},
     fetch:async(url,options={})=>{
@@ -256,6 +263,6 @@ export function backendHarness({
       return {ok:true,json:async()=>data};
     },
   };
-  vm.runInNewContext(source+'\n globalThis.api={buildTelemetryPayloadInternal,executeTelemetryAction,dispatchBridgeApiRequest,executeAccountCredentialAction,callLsRpc,getDefaultCloudCodeProxyStatus,computeStepCost,resolveModelInfo,resolvePricingAt,inferFamilyFromProviderOrKey,isNeonModelIdentifier,isArgonModelIdentifier,isCarbonModelIdentifier,getBaseModelLabel,formatUpstreamModelId,PLACEHOLDER_MAP,normalizeQuotaFraction,classifyOfficialBucketWindow,classifyQuotaPoolIdentity,buildOfficialQuotaPools,resolveTimeWindow,sanitizeCatalogPayload,rebuildActiveCatalog,getPricingPhaseEpoch,detectCustomGitForkRepo,persistTrajectoryCacheIfNeeded,flushTrajectoryCacheNow,getCachedTrajectory,listCachedTrajectoryEntries,hasPendingTrajectoryCacheSave,syncCloudCatalog,getCloudStatus,isValidSemver,compareSemver,performPluginUpdate,resolveMigratedGitRemoteUrl,loadSettings,executeSettingsAction,executeModelContextWindowAction,executeResetSettingsAction,executeRebuildCacheAction,clearRuntimeCaches,normalizeTopbarCapsuleSlots,normalizeContextAgentMode,normalizeCliStatusLineSlots,resolveEffectiveCliStatusLineSlots,normalizeHoverModules,normalizeOverviewModules,normalizeOverviewMetrics,normalizeStepTableColumns,normalizeStepTokenComboFormat,parseStepTokenComboSegments,normalizeModelDisplayMode,normalizePopoverWidthMode,normalizePopoverWidth,normalizeStandalonePort,setStandalonePortListener,parseAnnotationPbtxtTitle,readLocalSummarySnapshot,readLocalSqliteTrajectory,computeSqliteWalSig,buildCliStatusSnapshot,buildCliStatusLineCommand,isManagedCliStatusLineCommand,extractManagedCliStatusLineFlags,getCliStatusLineRuntimeStatus,applyCliStatusLineToSettingsObject,cliDisplayWidth,parseCliModelAndEffort,formatCliStatusLineCapsule,registerRemoteEndpoint,getRegisteredRemoteEndpoint,resolveEndpointContext,clearRemoteEndpointCaches,clearRemoteEndpointRegistry,setRemoteWindowRpcInvoker,setLoopbackHttpsRequester,getEndpointCacheStore,pruneStaleRemoteEndpoints,trackEndpointRequestStart,trackEndpointRequestEnd,shouldRemoteEndpointPreferTier2,markRemoteEndpointPreferTier2};',ctx);
+  vm.runInNewContext(source+'\n globalThis.api={buildTelemetryPayloadInternal,executeTelemetryAction,dispatchBridgeApiRequest,executeAccountCredentialAction,callLsRpc,getDefaultCloudCodeProxyStatus,computeStepCost,resolveModelInfo,resolvePricingAt,inferFamilyFromProviderOrKey,isNeonModelIdentifier,isArgonModelIdentifier,isCarbonModelIdentifier,getBaseModelLabel,formatUpstreamModelId,PLACEHOLDER_MAP,normalizeQuotaFraction,classifyOfficialBucketWindow,classifyQuotaPoolIdentity,buildOfficialQuotaPools,resolveTimeWindow,sanitizeCatalogPayload,rebuildActiveCatalog,getPricingPhaseEpoch,detectCustomGitForkRepo,persistTrajectoryCacheIfNeeded,flushTrajectoryCacheNow,getCachedTrajectory,listCachedTrajectoryEntries,hasPendingTrajectoryCacheSave,syncCloudCatalog,getCloudStatus,isValidSemver,compareSemver,performPluginUpdate,resolveMigratedGitRemoteUrl,loadSettings,executeSettingsAction,executeModelContextWindowAction,executeResetSettingsAction,executeRebuildCacheAction,clearRuntimeCaches,normalizeTopbarCapsuleSlots,normalizeContextAgentMode,normalizeCliStatusLineSlots,resolveEffectiveCliStatusLineSlots,normalizeHoverModules,normalizeOverviewModules,normalizeOverviewMetrics,normalizeStepTableColumns,normalizeStepTokenComboFormat,parseStepTokenComboSegments,normalizeModelDisplayMode,normalizePopoverWidthMode,normalizePopoverWidth,normalizeStandalonePort,normalizeAutoConfigureLaunch,normalizeEnableRemoteSshTelemetry,parseIdeRemoteAuthority,setStandalonePortListener,parseAnnotationPbtxtTitle,readLocalSummarySnapshot,readLocalSqliteTrajectory,computeSqliteWalSig,buildCliStatusSnapshot,buildCliStatusLineCommand,isManagedCliStatusLineCommand,extractManagedCliStatusLineFlags,getCliStatusLineRuntimeStatus,applyCliStatusLineToSettingsObject,cliDisplayWidth,parseCliModelAndEffort,formatCliStatusLineCapsule,registerRemoteEndpoint,getRegisteredRemoteEndpoint,resolveEndpointContext,clearRemoteEndpointCaches,clearRemoteEndpointRegistry,setRemoteWindowRpcInvoker,setLoopbackHttpsRequester,getEndpointCacheStore,pruneStaleRemoteEndpoints,trackEndpointRequestStart,trackEndpointRequestEnd,shouldRemoteEndpointPreferTier2,markRemoteEndpointPreferTier2};',ctx);
   return {...ctx.api,state};
 }

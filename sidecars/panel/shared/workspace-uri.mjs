@@ -148,3 +148,209 @@ export function parseWorkspaceDisplayLabel(rawUri) {
   const name = parts.length > 0 ? parts[parts.length - 1] : decoded;
   return { name, displayPath: decoded };
 }
+
+const SSH_SAFE_USER_RE = /^[A-Za-z0-9._][A-Za-z0-9._-]{0,63}$/;
+const SSH_SAFE_HOST_RE = /^[A-Za-z0-9._][A-Za-z0-9._-]{0,252}$/;
+const SSH_SAFE_IPV6_RE = /^\[[0-9A-Fa-f:.]{2,64}\]$/;
+
+function decodeHexUtf8String(hexStr) {
+  if (!hexStr || hexStr.length < 4 || hexStr.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(hexStr)) {
+    return '';
+  }
+  const bytes = new Uint8Array(hexStr.length / 2);
+  for (let i = 0; i < hexStr.length; i += 2) {
+    bytes[i / 2] = Number.parseInt(hexStr.slice(i, i + 2), 16);
+  }
+  if (typeof TextDecoder === 'function') {
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      return '';
+    }
+  }
+  let pct = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    pct += `%${bytes[i].toString(16).padStart(2, '0')}`;
+  }
+  try {
+    return decodeURIComponent(pct);
+  } catch {
+    return '';
+  }
+}
+
+function parseRawSshUserHostPort(spec) {
+  const clean = String(spec || '').trim();
+  if (!clean || /[\s\0-\x1f\x7f]/.test(clean)) return null;
+
+  let user = '';
+  let hostPort = clean;
+  const atIdx = clean.lastIndexOf('@');
+  if (atIdx >= 0) {
+    user = clean.slice(0, atIdx).trim();
+    hostPort = clean.slice(atIdx + 1).trim();
+    if (!user || !SSH_SAFE_USER_RE.test(user)) return null;
+  }
+
+  let host = hostPort;
+  let port = 0;
+  if (hostPort.startsWith('[')) {
+    const closeIdx = hostPort.indexOf(']');
+    if (closeIdx < 0) return null;
+    host = hostPort.slice(0, closeIdx + 1);
+    const tail = hostPort.slice(closeIdx + 1);
+    if (tail) {
+      if (!/^:\d{1,5}$/.test(tail)) return null;
+      port = Number(tail.slice(1));
+    }
+  } else {
+    const colonIdx = hostPort.indexOf(':');
+    if (colonIdx >= 0) {
+      if (hostPort.indexOf(':', colonIdx + 1) >= 0) return null;
+      host = hostPort.slice(0, colonIdx);
+      const portStr = hostPort.slice(colonIdx + 1);
+      if (!/^\d{1,5}$/.test(portStr)) return null;
+      port = Number(portStr);
+    }
+  }
+
+  if (port !== 0 && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+    return null;
+  }
+  const validHost = host.startsWith('[')
+    ? SSH_SAFE_IPV6_RE.test(host)
+    : SSH_SAFE_HOST_RE.test(host);
+  if (!validHost) return null;
+
+  return { user, host, port };
+}
+
+/**
+ * Parses an Antigravity IDE / VS Code `ssh-remote+<authority>` identifier or `vscode-remote://` URI
+ * across Plain (`ssh-remote+prod-box`), Percent-encoded (`ssh-remote+ubuntu%4010.0.0.8%3A2222`),
+ * and Hex-encoded JSON (`ssh-remote+7b22686f73744e616d6522...`) representations.
+ *
+ * Strictly rejects non-SSH remote schemes (`wsl+`, `dev-container+`, `codespaces+`, `tunnel+`)
+ * and leading-dash / metacharacter strings to prevent SSH option injection.
+ *
+ * @param {unknown} rawInput
+ * @returns {{
+ *   isSshRemote: boolean,
+ *   rawAuthority: string,
+ *   host: string,
+ *   user: string,
+ *   port: number,
+ *   sshDestination: string,
+ *   stableHostKey: string,
+ *   displayLabel: string,
+ * }}
+ */
+export function parseIdeRemoteAuthority(rawInput) {
+  const empty = {
+    isSshRemote: false,
+    rawAuthority: '',
+    host: '',
+    user: '',
+    port: 0,
+    sshDestination: '',
+    stableHostKey: '',
+    displayLabel: '',
+  };
+  const text = String(rawInput || '').trim();
+  if (!text) return empty;
+
+  let authority = text;
+  if (/^vscode-remote:\/\//i.test(authority)) {
+    const withoutScheme = authority.replace(/^vscode-remote:\/\//i, '');
+    const slashIdx = withoutScheme.indexOf('/');
+    authority = slashIdx >= 0 ? withoutScheme.slice(0, slashIdx) : withoutScheme;
+  } else {
+    const cdnMatch = authority.match(
+      /(?:^|\/\/)vscode-remote\+ssh-002dremote\+([A-Za-z0-9._%-]+?)\.vscode-resource\./i
+    );
+    if (cdnMatch && cdnMatch[1]) {
+      const decodedCdnPayload = cdnMatch[1].replace(/-([0-9a-fA-F]{4})/g, (_, hex) =>
+        String.fromCharCode(Number.parseInt(hex, 16))
+      );
+      authority = `ssh-remote+${decodedCdnPayload}`;
+    }
+  }
+
+  let decodedAuthority = authority;
+  try {
+    decodedAuthority = decodeURIComponent(authority);
+  } catch {
+    // Keep undecoded string if malformed percent sequence
+  }
+
+  let payload = '';
+  if (/^ssh-remote\+/i.test(authority)) {
+    payload = authority.slice('ssh-remote+'.length).trim();
+  } else if (/^ssh-remote\+/i.test(decodedAuthority)) {
+    payload = decodedAuthority.slice('ssh-remote+'.length).trim();
+  } else {
+    return empty;
+  }
+  if (!payload) return empty;
+
+  let parsedSpec = null;
+  const hexDecoded = decodeHexUtf8String(payload);
+  if (hexDecoded && hexDecoded.trim().startsWith('{')) {
+    try {
+      const obj = JSON.parse(hexDecoded);
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        const rawHost = String(obj.hostName || obj.host || obj.sshHost || '').trim();
+        const rawUser = String(obj.user || obj.userName || '').trim();
+        const rawPort = obj.port !== undefined && obj.port !== null && obj.port !== '' ? Number(obj.port) : 0;
+        if (rawHost) {
+          const normalizedHost =
+            rawHost.includes(':') && !rawHost.startsWith('[') ? `[${rawHost}]` : rawHost;
+          const combined = rawUser ? `${rawUser}@${normalizedHost}` : normalizedHost;
+          const base = parseRawSshUserHostPort(combined);
+          if (base) {
+            if (rawPort !== 0) {
+              if (!Number.isInteger(rawPort) || rawPort < 1 || rawPort > 65535) return empty;
+              base.port = rawPort;
+            }
+            parsedSpec = base;
+          }
+        }
+      }
+    } catch {
+      parsedSpec = null;
+    }
+    if (!parsedSpec) return empty;
+  } else {
+    let unescapedPayload = payload;
+    try {
+      unescapedPayload = decodeURIComponent(payload);
+    } catch {
+      // Ignore malformed percent escape
+    }
+    parsedSpec = parseRawSshUserHostPort(unescapedPayload);
+  }
+
+  if (!parsedSpec || !parsedSpec.host) {
+    return empty;
+  }
+
+  const { user, host, port } = parsedSpec;
+  const bareHost =
+    host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  const sshDestination = user ? `${user}@${bareHost}` : bareHost;
+  const portSuffix = port > 0 && port !== 22 ? `:${port}` : '';
+  const displayPrefix = user ? `${user}@${host}` : host;
+  const displayLabel = `${displayPrefix}${portSuffix}`;
+  const stableHostKey = `${user ? `${user.toLowerCase()}@` : ''}${host.toLowerCase()}${portSuffix}`;
+
+  return {
+    isSshRemote: true,
+    rawAuthority: `ssh-remote+${payload}`,
+    host,
+    user,
+    port,
+    sshDestination,
+    stableHostKey,
+    displayLabel,
+  };
+}

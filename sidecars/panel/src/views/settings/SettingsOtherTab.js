@@ -18,12 +18,15 @@ import {
 } from '../../core/fileExportClient.js';
 import {
   fetchQuotaReservationLog,
+  normalizeClientAutoConfigureLaunch,
+  normalizeClientEnableRemoteSshTelemetry,
   normalizeClientExperimentalQuotaReservation,
   normalizeClientModelDisplayMode,
   rebuildTrajectoryCache,
   resetAllSettings,
   saveModelContextWindow,
   saveSettingsPatch,
+  triggerBridgeHostRelaunch,
 } from '../../store/telemetryStore.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch.js';
@@ -57,6 +60,8 @@ export const SettingsOtherTab = defineComponent({
   name: 'SettingsOtherTab',
   setup({ onCleanup, getProps }) {
     let draftModelDisplayMode = 'short';
+    let draftAutoConfigureLaunch = true;
+    let draftEnableRemoteSshTelemetry = true;
     let draftExperimentalQuotaReservation = true;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
@@ -72,16 +77,22 @@ export const SettingsOtherTab = defineComponent({
     let savingContextWindow = false;
     let contextFeedback = '';
     let modelTimer = null;
+    let hostTimer = null;
     let expTimer = null;
     let maintTimer = null;
     let resetConfirmTimer = null;
     let resetConfirmArmed = false;
     let isRebuilding = false;
     let isResetting = false;
+    let isRemovingMacWrapper = false;
 
     const modelStatusText = h('span', {
       className: 'text-muted',
       style: 'font-size: var(--fs-md);',
+      text: '',
+    });
+    const hostStatusText = h('span', {
+      className: 'text-muted settings-panel-status',
       text: '',
     });
     const expStatusText = h('span', {
@@ -138,6 +149,22 @@ export const SettingsOtherTab = defineComponent({
       }
     }
 
+    function showHostFeedback(text, autoClearMs = 1800) {
+      if (hostTimer) {
+        clearTimeout(hostTimer);
+        hostTimer = null;
+      }
+      patchText(hostStatusText, text);
+      patchAttr(hostStatusText, 'title', text || null);
+      if (text && autoClearMs > 0) {
+        hostTimer = setTimeout(() => {
+          hostTimer = null;
+          patchText(hostStatusText, '');
+          patchAttr(hostStatusText, 'title', null);
+        }, autoClearMs);
+      }
+    }
+
     // --- Card 1: 模型标识显示 ---
     const modelCardTitleEl = h('span', { text: t('settings.oth.modelTitle') });
 
@@ -173,6 +200,144 @@ export const SettingsOtherTab = defineComponent({
         modelStatusText,
       ]),
       stepModelSelect.el,
+    ]);
+
+    // --- Card 1.5: 宿主启动自愈与 IDE Remote-SSH ---
+    const hostPanelTitleEl = h('span', { text: t('settings.oth.hostTitle') });
+    const autoLaunchLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.autoLaunchLabel'),
+    });
+    const autoLaunchDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.autoLaunchDesc'),
+    });
+    const autoLaunchToggle = ToggleSwitch({
+      modelValue: 'on',
+      ariaLabelKey: 'settings.oth.autoLaunchLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        const nextEnabled = val === 'on';
+        draftAutoConfigureLaunch = nextEnabled;
+        autoLaunchToggle.setProps({ modelValue: nextEnabled ? 'on' : 'off' });
+        showHostFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ autoConfigureLaunch: nextEnabled });
+          showHostFeedback(t('settings.saved'), 1500);
+        } catch {
+          if (latestSettings) renderSettings(latestSettings);
+          showHostFeedback(t('settings.saveFailed'), 2500);
+        }
+      },
+    });
+
+    const remoteSshLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.remoteSshLabel'),
+    });
+    const remoteSshDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.remoteSshDesc'),
+    });
+    const remoteSshToggle = ToggleSwitch({
+      modelValue: 'on',
+      ariaLabelKey: 'settings.oth.remoteSshLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        const nextEnabled = val === 'on';
+        draftEnableRemoteSshTelemetry = nextEnabled;
+        remoteSshToggle.setProps({ modelValue: nextEnabled ? 'on' : 'off' });
+        showHostFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ enableRemoteSshTelemetry: nextEnabled });
+          showHostFeedback(t('settings.saved'), 1500);
+        } catch {
+          if (latestSettings) renderSettings(latestSettings);
+          showHostFeedback(t('settings.saveFailed'), 2500);
+        }
+      },
+    });
+
+    const macWrapperLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.macWrapperLabel'),
+    });
+    const macWrapperDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.macWrapperDesc'),
+    });
+    const macWrapperRemoveBtnText = h('span', {
+      text: t('settings.oth.macRemoveWrapperBtn'),
+    });
+    const macWrapperRemoveBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          if (isRemovingMacWrapper) return;
+          isRemovingMacWrapper = true;
+          patchAttr(macWrapperRemoveBtn, 'disabled', true);
+          showHostFeedback(t('settings.saving'), 0);
+          try {
+            const res = await triggerBridgeHostRelaunch({
+              action: 'remove_macos_wrapper',
+              product: 'both',
+            });
+            if (res && res.ok !== false) {
+              latestWindowBridge = {
+                ...(latestWindowBridge || {}),
+                macWrapperExists: Boolean(res.macWrapperExists),
+                macWrapperPaths: Array.isArray(res.macWrapperPaths) ? res.macWrapperPaths : [],
+              };
+              syncHostIntegrationRows();
+              showHostFeedback(t('settings.oth.macWrapperRemovedDone'), 2500);
+            } else {
+              showHostFeedback(t('settings.saveFailed'), 2500);
+            }
+          } catch {
+            showHostFeedback(t('settings.saveFailed'), 2500);
+          } finally {
+            isRemovingMacWrapper = false;
+            patchAttr(macWrapperRemoveBtn, 'disabled', false);
+          }
+        },
+      },
+      [createSvgIcon('close', { size: 12 }), macWrapperRemoveBtnText]
+    );
+    const macWrapperCleanRow = h(
+      'div',
+      { className: 'settings-action-block', hidden: true },
+      [
+        h('div', { className: 'settings-action-info' }, [macWrapperLabelEl, macWrapperDescEl]),
+        macWrapperRemoveBtn,
+      ]
+    );
+
+    function syncHostIntegrationRows() {
+      const showMacClean =
+        String(latestHostPlatform || '').toLowerCase() === 'darwin' &&
+        Boolean(latestWindowBridge?.macWrapperExists);
+      patchAttr(macWrapperCleanRow, 'hidden', !showMacClean);
+    }
+
+    const hostIntegrationPanel = h('section', { className: 'panel' }, [
+      h('div', { className: 'panel-header settings-panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('terminal', { size: 13 }),
+          hostPanelTitleEl,
+        ]),
+        hostStatusText,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [autoLaunchLabelEl, autoLaunchDescEl]),
+        autoLaunchToggle.el,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [remoteSshLabelEl, remoteSshDescEl]),
+        remoteSshToggle.el,
+      ]),
+      macWrapperCleanRow,
     ]);
 
     // --- Card 2: 试验性功能 ---
@@ -818,6 +983,7 @@ export const SettingsOtherTab = defineComponent({
 
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       modelPanel,
+      hostIntegrationPanel,
       experimentalPanel,
       baselinePanel,
       maintPanel,
@@ -840,6 +1006,10 @@ export const SettingsOtherTab = defineComponent({
         settings.modelDisplayMode,
         settings.showUpstreamModel
       );
+      draftAutoConfigureLaunch = normalizeClientAutoConfigureLaunch(settings.autoConfigureLaunch);
+      draftEnableRemoteSshTelemetry = normalizeClientEnableRemoteSshTelemetry(
+        settings.enableRemoteSshTelemetry
+      );
       draftExperimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
         settings.experimentalQuotaReservation
       );
@@ -855,6 +1025,13 @@ export const SettingsOtherTab = defineComponent({
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
+      autoLaunchToggle.setProps({
+        modelValue: draftAutoConfigureLaunch ? 'on' : 'off',
+      });
+      remoteSshToggle.setProps({
+        modelValue: draftEnableRemoteSshTelemetry ? 'on' : 'off',
+      });
+      syncHostIntegrationRows();
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
@@ -863,6 +1040,21 @@ export const SettingsOtherTab = defineComponent({
 
     function refreshLabels() {
       patchText(modelCardTitleEl, t('settings.oth.modelTitle'));
+      patchText(hostPanelTitleEl, t('settings.oth.hostTitle'));
+      patchText(autoLaunchLabelEl, t('settings.oth.autoLaunchLabel'));
+      patchText(autoLaunchDescEl, t('settings.oth.autoLaunchDesc'));
+      patchText(remoteSshLabelEl, t('settings.oth.remoteSshLabel'));
+      patchText(remoteSshDescEl, t('settings.oth.remoteSshDesc'));
+      patchText(macWrapperLabelEl, t('settings.oth.macWrapperLabel'));
+      patchText(macWrapperDescEl, t('settings.oth.macWrapperDesc'));
+      patchText(macWrapperRemoveBtnText, t('settings.oth.macRemoveWrapperBtn'));
+      autoLaunchToggle.setProps({
+        modelValue: draftAutoConfigureLaunch ? 'on' : 'off',
+      });
+      remoteSshToggle.setProps({
+        modelValue: draftEnableRemoteSshTelemetry ? 'on' : 'off',
+      });
+      syncHostIntegrationRows();
       patchText(expTitleEl, t('settings.oth.expTitle'));
       patchText(quotaReserveLabelEl, t('settings.oth.quotaReserveLabel'));
       patchText(quotaReserveBadgeEl, t('settings.oth.expBadge'));
@@ -904,10 +1096,13 @@ export const SettingsOtherTab = defineComponent({
 
     onCleanup(() => {
       if (modelTimer) clearTimeout(modelTimer);
+      if (hostTimer) clearTimeout(hostTimer);
       if (expTimer) clearTimeout(expTimer);
       if (maintTimer) clearTimeout(maintTimer);
       if (resetConfirmTimer) clearTimeout(resetConfirmTimer);
       stepModelSelect.destroy();
+      autoLaunchToggle.destroy();
+      remoteSshToggle.destroy();
       quotaReserveToggle.destroy();
       ctxBridgeNotice.destroy();
       ctxMainToggle.destroy();
@@ -920,6 +1115,9 @@ export const SettingsOtherTab = defineComponent({
       el: rootEl,
       refs: {
         stepModelSelect,
+        autoLaunchToggle,
+        remoteSshToggle,
+        macWrapperRemoveBtn,
         quotaReserveToggle,
         exportReserveLogBtn,
         ctxBridgeNotice,

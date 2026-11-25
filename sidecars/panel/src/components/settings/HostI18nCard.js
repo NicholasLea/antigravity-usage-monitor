@@ -504,10 +504,17 @@ export const HostI18nCard = defineComponent({
       if (windowBridge) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
       const sig = [
-        Boolean(latestWindowBridge?.connected),
-        Boolean(latestWindowBridge?.available),
-        String(latestWindowBridge?.reason || ''),
-        String(latestWindowBridge?.ideStatus?.reason || ''),
+        String(latestWindowBridge?.state || ''),
+        Boolean(latestWindowBridge?.launcherConfigured),
+        Boolean(latestWindowBridge?.argvConfigured),
+        Boolean(latestWindowBridge?.argvUpdatedThisBoot),
+        Boolean(latestWindowBridge?.hasReadOnlyShortcuts),
+        Boolean(latestWindowBridge?.stalePortDetected),
+        String(latestWindowBridge?.targetProduct || ''),
+        Boolean(latestWindowBridge?.macWrapperExists),
+        Boolean(latestWindowBridge?.macDesktopWrapperExists),
+        Boolean(latestWindowBridge?.macIdeWrapperExists),
+        Boolean(latestWindowBridge?.canRelaunch),
         String(latestHostPlatform || ''),
       ].join('|');
       if (sig === lastBridgeRenderSig) return;

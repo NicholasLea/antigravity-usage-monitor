@@ -57,8 +57,10 @@ export {
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
   createDefaultSettingsObject,
+  normalizeAutoConfigureLaunch,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeEnableRemoteSshTelemetry,
   normalizeExperimentalQuotaReservation,
   normalizeFontScale,
   normalizeFullSettings,
@@ -155,20 +157,24 @@ function resolveDefaultDataDir() {
   }
   const geminiBase = resolveGeminiBaseDir();
   const antigravityRoot = join(geminiBase, 'antigravity');
+  const ideRoot = join(geminiBase, 'antigravity-ide');
   const cliRoot = join(geminiBase, 'antigravity-cli');
   const panelDataDir = join(antigravityRoot, 'sidecar_data', 'usage-monitor', 'panel', 'data');
   const legacyDataDir = join(antigravityRoot, 'sidecar_data', 'usage-monitor', 'data');
+  const idePanelDataDir = join(ideRoot, 'sidecar_data', 'usage-monitor', 'panel', 'data');
   const cliPanelDataDir = join(cliRoot, 'sidecar_data', 'usage-monitor', 'panel', 'data');
+  const pluginEnvDataDir =
+    process.env.USAGE_MONITOR_PLUGIN_DATA && !process.env.USAGE_MONITOR_PLUGIN_DATA.includes('${')
+      ? process.env.USAGE_MONITOR_PLUGIN_DATA
+      : '';
   if (existsSync(panelDataDir)) return panelDataDir;
   if (existsSync(legacyDataDir)) return legacyDataDir;
+  if (pluginEnvDataDir && existsSync(pluginEnvDataDir)) return pluginEnvDataDir;
+  if (existsSync(idePanelDataDir)) return idePanelDataDir;
   if (existsSync(cliPanelDataDir)) return cliPanelDataDir;
   if (existsSync(antigravityRoot)) return panelDataDir;
-  if (
-    process.env.USAGE_MONITOR_PLUGIN_DATA &&
-    !process.env.USAGE_MONITOR_PLUGIN_DATA.includes('${')
-  ) {
-    return process.env.USAGE_MONITOR_PLUGIN_DATA;
-  }
+  if (pluginEnvDataDir) return pluginEnvDataDir;
+  if (existsSync(ideRoot)) return idePanelDataDir;
   if (existsSync(cliRoot)) return cliPanelDataDir;
   return join(HERE, '.data');
 }

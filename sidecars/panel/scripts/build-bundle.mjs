@@ -582,10 +582,14 @@ export function buildBundle(panelDir = PANEL_DIR) {
 
   const cssBundle =
     cssOrder
-      .map(
-        (rel) =>
-          `/* --- ${rel} --- */\n${readFileSync(join(panelDir, rel), 'utf8').replace(/\r\n/g, '\n').trim()}`
-      )
+      .map((rel) => {
+        const strippedCss = readFileSync(join(panelDir, rel), 'utf8')
+          .replace(/\r\n/g, '\n')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+        return `/* --- ${rel} --- */\n${strippedCss}`;
+      })
       .join('\n\n') + '\n';
 
   const jsOrder = [
@@ -669,7 +673,9 @@ export function buildBundle(panelDir = PANEL_DIR) {
     .map((rel) => {
       const path = resolve(panelDir, rel);
       if (bundledPaths.has(path)) throw new Error(`${rel}: duplicate entry in jsOrder`);
-      const raw = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+      const raw = readFileSync(path, 'utf8')
+        .replace(/\r\n/g, '\n')
+        .replace(/^\s*\/\*\*[\s\S]*?\*\/\s*/, '');
       const moduleImportedNames = new Set();
       const moduleImportAliases = new Map();
       const moduleLocalExports = new Map();

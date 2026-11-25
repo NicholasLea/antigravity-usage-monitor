@@ -1,7 +1,7 @@
 /**
  * @fileoverview Shared CDP / Window Bridge diagnostic & one-click relaunch card (`BridgeStatusNotice.js`).
- * Surfaces automatic shortcut provisioning status and a one-click host relaunch button when
- * Antigravity 2.33.0+ runs without an active `DevToolsActivePort` (`no_devtools_port` / `cdp_unreachable`).
+ * Surfaces automatic shortcut provisioning status, IDE/Desktop targeted host relaunch, and on-demand
+ * macOS user-space `.app` launcher creation when running without an active `DevToolsActivePort`.
  */
 
 import { defineComponent } from '../../core/component.js';
@@ -30,7 +30,22 @@ export const BridgeStatusNotice = defineComponent({
     let dismissed = false;
     let relaunchState = 'idle'; // 'idle' | 'relaunching' | 'failed'
     let relaunchResetTimer = null;
+    let macWrapperBusy = false;
+    let macWrapperFeedback = ''; // '' | 'created' | 'removed' | 'failed'
+    let macWrapperFeedbackTimer = null;
     let destroyed = false;
+
+    function isTargetMacWrapperPresent(wb) {
+      if (!wb || typeof wb !== 'object') return false;
+      const isIde = String(wb.targetProduct || '') === 'ide';
+      if (isIde && typeof wb.macIdeWrapperExists === 'boolean') {
+        return wb.macIdeWrapperExists;
+      }
+      if (!isIde && typeof wb.macDesktopWrapperExists === 'boolean') {
+        return wb.macDesktopWrapperExists;
+      }
+      return Boolean(wb.macWrapperExists);
+    }
     const copyFeedback = createCopiedFeedbackController({
       durationMs: 1800,
       onCleanup,
@@ -80,7 +95,8 @@ export const BridgeStatusNotice = defineComponent({
           }
           syncActionButtons();
           try {
-            const res = await triggerBridgeHostRelaunch();
+            const targetProd = String(lastPayload.windowBridge?.targetProduct || 'auto');
+            const res = await triggerBridgeHostRelaunch({ product: targetProd });
             if (destroyed) return;
             if (!res || res.ok === false) {
               relaunchState = 'failed';
@@ -94,7 +110,6 @@ export const BridgeStatusNotice = defineComponent({
               relaunchResetTimer?.unref?.();
               return;
             }
-            // Reset button if host is still open after 9s (e.g. cancelled close prompt)
             relaunchResetTimer = setTimeout(() => {
               relaunchResetTimer = null;
               if (destroyed) return;
@@ -117,6 +132,74 @@ export const BridgeStatusNotice = defineComponent({
         },
       },
       [relaunchBtnIconEl, relaunchBtnTextEl]
+    );
+
+    const macWrapperBtnIconEl = createSvgIcon('download', { size: 11 });
+    const macWrapperBtnTextEl = h('span', {
+      className: 'settings-bridge-wrapper-text',
+      text: t('settings.bridge.macCreateWrapperBtn'),
+    });
+    const macWrapperBtnEl = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-ghost-sm settings-bridge-wrapper-btn',
+        hidden: true,
+        onClick: async () => {
+          if (macWrapperBusy || destroyed) return;
+          const existsNow = isTargetMacWrapperPresent(lastPayload.windowBridge);
+          const actionProd =
+            String(lastPayload.windowBridge?.targetProduct || '') === 'ide' ? 'ide' : 'desktop';
+          macWrapperBusy = true;
+          if (macWrapperFeedbackTimer) {
+            clearTimeout(macWrapperFeedbackTimer);
+            macWrapperFeedbackTimer = null;
+          }
+          syncActionButtons();
+          try {
+            const res = await triggerBridgeHostRelaunch({
+              action: existsNow ? 'remove_macos_wrapper' : 'create_macos_wrapper',
+              product: actionProd,
+            });
+            if (destroyed) return;
+            if (res && res.ok !== false) {
+              lastPayload = {
+                ...lastPayload,
+                windowBridge: {
+                  ...(lastPayload.windowBridge || {}),
+                  macWrapperExists: Boolean(res.macWrapperExists),
+                  ...(typeof res.macDesktopWrapperExists === 'boolean'
+                    ? { macDesktopWrapperExists: res.macDesktopWrapperExists }
+                    : {}),
+                  ...(typeof res.macIdeWrapperExists === 'boolean'
+                    ? { macIdeWrapperExists: res.macIdeWrapperExists }
+                    : {}),
+                  macWrapperPaths: Array.isArray(res.macWrapperPaths) ? res.macWrapperPaths : [],
+                },
+              };
+              macWrapperFeedback = existsNow ? 'removed' : 'created';
+            } else {
+              macWrapperFeedback = 'failed';
+            }
+          } catch {
+            if (destroyed) return;
+            macWrapperFeedback = 'failed';
+          } finally {
+            if (!destroyed) {
+              macWrapperBusy = false;
+              syncActionButtons();
+              macWrapperFeedbackTimer = setTimeout(() => {
+                macWrapperFeedbackTimer = null;
+                if (destroyed) return;
+                macWrapperFeedback = '';
+                syncActionButtons();
+              }, 2600);
+              macWrapperFeedbackTimer?.unref?.();
+            }
+          }
+        },
+      },
+      [macWrapperBtnIconEl, macWrapperBtnTextEl]
     );
 
     const copyBtnIconEl = createSvgIcon('copy', { size: 11 });
@@ -146,6 +229,7 @@ export const BridgeStatusNotice = defineComponent({
     );
     const actionsRowEl = h('div', { className: 'settings-bridge-actions' }, [
       relaunchBtnEl,
+      macWrapperBtnEl,
       copyBtnEl,
     ]);
 
@@ -160,8 +244,11 @@ export const BridgeStatusNotice = defineComponent({
     );
 
     function syncActionButtons() {
-      const canRelaunch = lastPayload.windowBridge?.canRelaunch !== false;
-      const needsAuth = Boolean(lastPayload.windowBridge?.hasReadOnlyShortcuts);
+      const wb = lastPayload.windowBridge;
+      const plat = String(lastPayload.hostPlatform || '').trim().toLowerCase();
+      const canRelaunch = wb?.canRelaunch !== false;
+      const needsAuth = Boolean(wb?.hasReadOnlyShortcuts);
+      const isIdeTarget = String(wb?.targetProduct || '') === 'ide';
       patchAttr(relaunchBtnEl, 'hidden', !canRelaunch);
       patchAttr(relaunchBtnEl, 'disabled', relaunchState === 'relaunching');
       patchText(
@@ -172,7 +259,34 @@ export const BridgeStatusNotice = defineComponent({
             ? t('settings.bridge.relaunchFailed')
             : needsAuth
               ? t('settings.bridge.relaunchAuthBtn')
-              : t('settings.bridge.relaunchBtn')
+              : isIdeTarget
+                ? t('settings.bridge.relaunchIdeBtn')
+                : t('settings.bridge.relaunchBtn')
+      );
+
+      const showMacWrapperBtn = plat === 'darwin';
+      const wrapperExists = isTargetMacWrapperPresent(wb);
+      patchAttr(macWrapperBtnEl, 'hidden', !showMacWrapperBtn);
+      patchAttr(macWrapperBtnEl, 'disabled', macWrapperBusy);
+      patchSvgIcon(
+        macWrapperBtnIconEl,
+        macWrapperFeedback === 'created' || macWrapperFeedback === 'removed'
+          ? 'check'
+          : wrapperExists
+            ? 'close'
+            : 'download'
+      );
+      patchText(
+        macWrapperBtnTextEl,
+        macWrapperFeedback === 'created'
+          ? t('settings.bridge.macWrapperCreatedBtn')
+          : macWrapperFeedback === 'removed'
+            ? t('settings.bridge.macWrapperRemovedBtn')
+            : macWrapperFeedback === 'failed'
+              ? t('settings.bridge.macWrapperFailedBtn')
+              : wrapperExists
+                ? t('settings.bridge.macRemoveWrapperBtn')
+                : t('settings.bridge.macCreateWrapperBtn')
       );
 
       const isCopied = copyFeedback.isCopied(true);
@@ -208,6 +322,7 @@ export const BridgeStatusNotice = defineComponent({
 
       const plat = String(lastPayload.hostPlatform || '').trim().toLowerCase();
       const hasReadOnlyShortcuts = Boolean(wb?.hasReadOnlyShortcuts);
+      const isStalePort = Boolean(wb?.stalePortDetected);
       const isMacDesktop = plat === 'darwin' && !wb?.argvConfigured;
       const isAutoConfigured = Boolean(
         wb?.launcherConfigured || wb?.argvUpdatedThisBoot || wb?.argvConfigured
@@ -236,14 +351,22 @@ export const BridgeStatusNotice = defineComponent({
         titleText = contextMode
           ? t('settings.bridge.ctxRestartTitle')
           : t('settings.bridge.restartTitle');
-        bodyText = t('settings.bridge.restartBody');
+        bodyText =
+          plat === 'darwin' ? t('settings.bridge.guideMac') : t('settings.bridge.restartBody');
       } else {
         titleText = contextMode
           ? t('settings.bridge.ctxTitle')
-          : state === 'cdp_unreachable'
-            ? t('settings.bridge.unreachableTitle')
-            : t('settings.bridge.noPortTitle');
-        bodyText = plat === 'linux' ? t('settings.bridge.guideLinux') : t('settings.bridge.guideWin');
+          : isStalePort
+            ? t('settings.bridge.stalePortTitle')
+            : state === 'cdp_unreachable'
+              ? t('settings.bridge.unreachableTitle')
+              : t('settings.bridge.noPortTitle');
+        bodyText =
+          plat === 'darwin'
+            ? t('settings.bridge.guideMac')
+            : plat === 'linux'
+              ? t('settings.bridge.guideLinux')
+              : t('settings.bridge.guideWin');
       }
 
       patchText(titleEl, titleText);
@@ -268,6 +391,10 @@ export const BridgeStatusNotice = defineComponent({
         clearTimeout(relaunchResetTimer);
         relaunchResetTimer = null;
       }
+      if (macWrapperFeedbackTimer) {
+        clearTimeout(macWrapperFeedbackTimer);
+        macWrapperFeedbackTimer = null;
+      }
     });
 
     return {
@@ -276,6 +403,7 @@ export const BridgeStatusNotice = defineComponent({
         update,
         refreshLabels: render,
         relaunchBtnEl,
+        macWrapperBtnEl,
         copyBtnEl,
         dismissBtnEl,
       },
