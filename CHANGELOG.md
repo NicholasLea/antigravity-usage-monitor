@@ -2,7 +2,22 @@
 
 All notable changes to **Antigravity Usage & Speed Monitor** are documented in this file.
 
-## [1.5.4] - Unreleased
+## [1.5.5] - 2026-11
+
+### Added
+- **Antigravity Host UI Localization & Layered Language Packs**: Added `backend/host-i18n/` (`pack-manager.mjs`, `runtime-translator.mjs`, `http-fetch.mjs`, `index.mjs`), `shared/host-i18n-protocol.mjs`, `HostI18nCard.js`, and repository-hosted `host-i18n/` (`zh-CN@1.0.0`, excluded from Release ZIP) with SHA-256 verification, offline light/deep tier switching, missing UI string collector, loopback-only `/api/host-i18n` endpoints, and lossless CDP DOM translation.
+- **Windows Multi-Account Switching, Passphrase Vault & Quota Trend Chart**: Added loopback PKCE browser OAuth login (`account-login.mjs`), runtime native binary OAuth extraction (`account-oauth.mjs`), optional `scrypt + AES-256-GCM` secondary passphrase vault (`account-vault-crypto.mjs`) over DPAPI, background backup-account quota refresh with Ultra `5x / 20x` detection, and collinear-compressed multi-account quota history & trend chart (`account-quota-history.mjs`, `AccountQuotaTrendCard.js`).
+- **Incremental SQLite Trajectory Ledger**: Added `trajectory-sqlite-ledger.mjs` (short-lived WAL `trajectory_store.sqlite` + remote `ssh-*.sqlite`) with automatic `.json` → `.bak` migration, `O(delta)` step UPSERT, undo truncation, 64-session hot LRU, corrupt-DB self-healing, and permanent archived-session preservation.
+- **Built-In AI Image Generation Detection & Independent Pricing**: Decoded `GenerateImage` (`step_payload 140.2.6`) and PNG/JPEG/WebP headers for `0.5K / 1K / 2K / 4K` tier pricing and timing isolated from text LLM speed/context metrics.
+- **3-Tier Weekly Capacity Estimates, 4-Mode LED Heatmap & Sub-Hour Buckets**: Filtered external/family-group usage from quota reservations, added 3-tier weekly pool capacity estimates, added `1m / 5m / 15m` sub-hour trend buckets, 4-mode (`day / week / month / total`) LED heatmap switcher, per-pool cycle filter, and unified chart motion engine (`chartMotion.js`).
+
+### Fixed
+- **SQLite Schema-Init Lock Guard & `.pb` Fallback Recovery (#41)**: Added lock-free 100-byte SQLite header readiness gate (`isSqliteDbReadyForRead`) and shared `transcript-fallback.mjs` to recover empty-shell `.db` + encrypted `.pb` sessions, subagent refs, and CLI statusLine metrics.
+- **Antigravity IDE Dual-Mount Route Probing (#42)**: Added parallel short-timeout read-only DOM route probing across IDE chat iframes with UUID validation and early abort.
+- **Floating Task Panel Typography & Spacing Parity**: Mirrored host `--font-sans` / `--font-mono` onto `portalHost`, unified Shadow host variable-font resets, and aligned `.wm-multi-panel` width, card row gap, and Modern UI bottom padding with the sidebar.
+- **Proxy Hardening, Native Web Downloads & UI Polish**: Added SOCKS5/SOCKS5h & authenticated CONNECT tunnels with Keep-Alive pooling and crash recovery, native browser downloads for standalone Web exports, Excel 32,767-char truncation, subagent migration filtering, undo context-breakdown preservation, virtual-scroll column width locking, and hover-flicker fixes.
+
+## [1.5.4] - 2026-11
 
 ### Added
 - **Local CloudCode Proxy & Dual Context-Window Controls**: Added `cloudcode-proxy.mjs` loopback reverse proxy (`SetCloudCodeURL`) to synchronize custom per-model context window limits to non-`self` subagents and Swarm workers alongside independent `contextWindowMainEnabled` / `contextWindowSwarmEnabled` toggles.

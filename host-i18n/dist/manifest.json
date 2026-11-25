@@ -5,9 +5,9 @@
       "locale": "zh-CN",
       "name": "Chinese (Simplified)",
       "nativeName": "简体中文",
-      "version": "2.1.1",
+      "version": "1.0.0",
       "file": "packs/zh-CN.json",
-      "sha256": "75ce150cc8952b65fe04493f2d9e16ae1370140474072e2458277f065e83d384",
+      "sha256": "8103e8e5a2e901eb6a9526812e7e5337505b9cc232d512f1e5c4214d554240e7",
       "bytes": 568779,
       "depths": [
         "light",
