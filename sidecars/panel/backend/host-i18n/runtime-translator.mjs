@@ -63,6 +63,18 @@ export function applyHostI18nInPage(payload, bootId, globalKey = '__AGUsageMonit
   ]);
   const SKIP_TESTIDS = new Set([
     'user-message-content',
+    'user-message-bubble',
+    'user-message-document-chip',
+    'attached-context-pill',
+    'entity-pill',
+    'resource-link',
+    'file-title-name',
+    'webview-download-filename',
+    'breadcrumb-segment',
+    'step-plan-item',
+    'vcs-commit-message',
+    'setup-script-output',
+    'pill-comment-anchor-text',
     'markdown-code-block-preview',
     'markdown-frontmatter',
     'automation-instructions-markdown',
@@ -78,9 +90,12 @@ export function applyHostI18nInPage(payload, bootId, globalKey = '__AGUsageMonit
     'ProseMirror',
     'markdown-body',
     'prose',
+    'bleed-contain',
+    'agy-sidebar-row',
     'diff-line',
     'view-lines',
   ]);
+  const CONVERSATION_HREF_RE = /^\/c\/[0-9a-f-]{8,}(?:[/?#]|$)/i;
 
   function isSkippedSelf(el) {
     if (!el || el.nodeType !== 1) return false;
@@ -88,11 +103,23 @@ export function applyHostI18nInPage(payload, bootId, globalKey = '__AGUsageMonit
     if (el.isContentEditable === true) return true;
     const id = el.id;
     if (id === 'ag-usage-monitor-capsule' || id === 'ag-usage-monitor-portal') return true;
-    if (typeof el.hasAttribute === 'function' && el.hasAttribute('data-ag-i18n-ignore')) return true;
+    if (typeof el.hasAttribute === 'function') {
+      if (
+        el.hasAttribute('data-ag-i18n-ignore') ||
+        el.hasAttribute('data-markdown-block-index') ||
+        el.hasAttribute('data-quotable-inline') ||
+        el.hasAttribute('data-uri')
+      ) {
+        return true;
+      }
+    }
     if (typeof el.getAttribute === 'function') {
       if (el.getAttribute('contenteditable') === 'true') return true;
       const tid = el.getAttribute('data-testid');
       if (tid && SKIP_TESTIDS.has(tid)) return true;
+      if (el.tagName === 'A' && CONVERSATION_HREF_RE.test(el.getAttribute('href') || '')) {
+        return true;
+      }
     }
     const cls = el.className;
     if (typeof cls === 'string' && cls) {
@@ -757,8 +784,8 @@ export function createHostI18nDisposeExpression() {
 }
 
 /**
- * 在宿主页面按需执行：只读采集当前可见 UI 控件与说明中尚未翻译的英文短语
- * （严格排除聊天用户正文、代码块、Diff、编辑器与隐私路径）。
+ * 在宿主页面按需执行：只读采集当前已挂载 UI 中尚未翻译的英文短语
+ * （与主翻译引擎对齐 `TreeWalker` + `shadowRoot` 遍历范围，严格排除聊天用户正文、代码块、Diff、编辑器、图标连字与隐私路径）。
  */
 export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHostI18n') {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -768,6 +795,13 @@ export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHos
   if (!root) return { count: 0, items: [] };
 
   const activeState = window[globalKey] || null;
+  const TRANSLATABLE_ATTRS = [
+    'placeholder',
+    'title',
+    'aria-label',
+    'aria-description',
+    'aria-placeholder',
+  ];
   const SKIP_TAGS = new Set([
     'SCRIPT',
     'STYLE',
@@ -785,75 +819,101 @@ export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHos
     'AUDIO',
     'IFRAME',
   ]);
-  const SKIP_SELECTOR = [
-    '#ag-usage-monitor-capsule',
-    '#ag-usage-monitor-portal',
-    '[data-ag-i18n-ignore]',
-    '[contenteditable="true"]',
-    '.monaco-editor',
-    '.xterm',
-    '.cm-editor',
-    '.ProseMirror',
-    '.markdown-body',
-    '.prose',
-    '[data-testid="user-message-content"]',
-    '[data-testid="markdown-code-block-preview"]',
-    '[data-testid="markdown-frontmatter"]',
-    '[data-testid="automation-instructions-markdown"]',
-    '[data-testid="code-gutter"]',
-    '[data-testid="code-gutter-diff"]',
-    '[data-testid="diff-gutter-strip"]',
-    '[data-testid="artifact-pdf-view"]',
-    '.diff-line',
-    '.view-lines',
-  ].join(',');
-  const UI_CONTROL_SELECTOR = [
-    'button',
-    '[role="button"]',
-    '[role="menuitem"]',
-    '[role="tab"]',
-    '[role="option"]',
-    '[role="switch"]',
-    '[role="checkbox"]',
-    '[role="radio"]',
-    '[role="heading"]',
-    '[role="tooltip"]',
-    '[role="status"]',
-    'label',
-    'legend',
-    'caption',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'th',
-    'dt',
-    'dd',
-    'p',
-    'span',
-    'nav a',
-    '[placeholder]',
-    '[title]',
-    '[aria-label]',
-    '[aria-description]',
-  ].join(',');
-  const NON_LATIN_RE = /[\u3000-\u9fff\uac00-\ud7af\u0400-\u04ff]/;
+  const SKIP_TESTIDS = new Set([
+    'user-message-content',
+    'user-message-bubble',
+    'user-message-document-chip',
+    'attached-context-pill',
+    'entity-pill',
+    'resource-link',
+    'file-title-name',
+    'webview-download-filename',
+    'breadcrumb-segment',
+    'step-plan-item',
+    'vcs-commit-message',
+    'setup-script-output',
+    'pill-comment-anchor-text',
+    'markdown-code-block-preview',
+    'markdown-frontmatter',
+    'automation-instructions-markdown',
+    'code-gutter',
+    'code-gutter-diff',
+    'diff-gutter-strip',
+    'artifact-pdf-view',
+  ]);
+  const SKIP_CLASSES = new Set([
+    'monaco-editor',
+    'xterm',
+    'cm-editor',
+    'ProseMirror',
+    'markdown-body',
+    'prose',
+    'bleed-contain',
+    'agy-sidebar-row',
+    'diff-line',
+    'view-lines',
+    'material-symbols-outlined',
+    'material-symbols-rounded',
+    'material-symbols-sharp',
+    'google-symbols',
+    'codicon',
+  ]);
+  const CONVERSATION_HREF_RE = /^\/c\/[0-9a-f-]{8,}(?:[/?#]|$)/i;
+  const NON_LATIN_RE = /[\u3000-\u9fff\uac00-\ud7af\u0400-\u04ff\uff00-\uffef]/;
   const NOISE_RE =
     /^(?:https?:\/\/|file:\/\/|\/|~\.|[A-Za-z]:\\|[\w.+-]+@[\w.-]+\.[a-z]{2,}$|[0-9a-f]{8}-[0-9a-f]{4}-|v?\d+(?:\.\d+)+$|\/[a-z0-9_-]+$|(?:gemini|claude|gpt|o[134])\b)/i;
+  const FILENAME_RE =
+    /^[\w.@+-]+\.(?:js|mjs|cjs|ts|tsx|jsx|json|jsonc|md|mdx|css|scss|less|html|htm|xml|svg|png|jpe?g|gif|webp|ico|pdf|txt|log|csv|ya?ml|toml|ini|env|lock|sh|ps1|bat|cmd|py|go|rs|java|kt|c|cpp|h|hpp|cs|rb|php|sql|db|sqlite|zip|tar|gz|exe|dll|wasm|pb)$/i;
+  const CODE_IDENT_RE =
+    /^(?:[a-z0-9]+(?:_[a-z0-9]+)+|[a-z0-9]+(?:-[a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*|v(?:[A-Z]|\d+(?:\.\d+)*))$/;
+  const BRAND_OR_UNIT_RE =
+    /^(?:Antigravity|Google|GitHub|GitLab|Bitbucket|Chrome|Chromium|Electron|React|Tailwind|Node\.js|TypeScript|JavaScript|Python|HTML|CSS|JSON|YAML|TOML|XML|SQL|SVG|PDF|PNG|JPEG|WebP|GIF|UTF-8|HTTP|HTTPS|SSH|TLS|SSL|API|SDK|DOM|CDP|RPC|gRPC|REST|MCP|CLI|IDE|CDN|SemVer|URL|URI|UUID|SHA-?256|OAuth|JWT|WSL|macOS|Windows|Linux|KB|MB|GB|TB|ms|px|fps)$/i;
 
-  function isSkipped(el) {
+  function isSkippedSelf(el) {
     if (!el || el.nodeType !== 1) return false;
     if (SKIP_TAGS.has(el.tagName)) return true;
     if (el.isContentEditable === true) return true;
-    if (el.id === 'ag-usage-monitor-capsule' || el.id === 'ag-usage-monitor-portal') return true;
-    if (typeof el.closest === 'function') {
-      try {
-        if (el.closest(SKIP_SELECTOR)) return true;
-      } catch {
-        // 忽略选择器异常
+    const id = el.id;
+    if (id === 'ag-usage-monitor-capsule' || id === 'ag-usage-monitor-portal') return true;
+    if (typeof el.hasAttribute === 'function') {
+      if (
+        el.hasAttribute('data-ag-i18n-ignore') ||
+        el.hasAttribute('data-markdown-block-index') ||
+        el.hasAttribute('data-quotable-inline') ||
+        el.hasAttribute('data-uri')
+      ) {
+        return true;
       }
+    }
+    if (typeof el.getAttribute === 'function') {
+      if (el.getAttribute('contenteditable') === 'true') return true;
+      const tid = el.getAttribute('data-testid');
+      if (tid && SKIP_TESTIDS.has(tid)) return true;
+      if (el.tagName === 'A' && CONVERSATION_HREF_RE.test(el.getAttribute('href') || '')) {
+        return true;
+      }
+    }
+    const cls = el.className;
+    if (typeof cls === 'string' && cls) {
+      if (cls.indexOf(' ') === -1) {
+        if (SKIP_CLASSES.has(cls)) return true;
+      } else {
+        const parts = cls.split(/\s+/);
+        for (let i = 0; i < parts.length; i += 1) {
+          if (SKIP_CLASSES.has(parts[i])) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function isSkipped(el) {
+    let cur = el;
+    while (cur && cur.nodeType === 1) {
+      if (isSkippedSelf(cur)) return true;
+      cur =
+        cur.parentElement ||
+        (cur.parentNode && cur.parentNode.nodeType === 1 ? cur.parentNode : null);
     }
     return false;
   }
@@ -861,42 +921,112 @@ export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHos
   const counts = new Map();
   const kinds = new Map();
 
-  function recordCandidate(raw, kind) {
+  function recordCandidate(raw, kind, parentEl = null) {
     if (typeof raw !== 'string') return;
-    if (raw.includes('\n') || raw.includes('\r')) return;
-    const text = raw.trim();
+    const normalized = raw.includes('\r') ? raw.replace(/\r\n/g, '\n') : raw;
+    const text = normalized.trim();
     if (text.length < 2 || text.length > 260) return;
+    if (text.includes('\n') && text.split('\n').length > 3) return;
     if (!/[A-Za-z]{2,}/.test(text)) return;
     if (NON_LATIN_RE.test(text)) return;
     if (NOISE_RE.test(text)) return;
+    if (FILENAME_RE.test(text)) return;
+    if (CODE_IDENT_RE.test(text)) return;
+    if (BRAND_OR_UNIT_RE.test(text)) return;
     if (/^[0-9.,:%$+\-*/\s()[\]]+$/.test(text)) return;
+    if (
+      kind === 'text' &&
+      parentEl?.getAttribute?.('aria-hidden') === 'true' &&
+      /^[a-z][a-z0-9_-]*$/.test(text)
+    ) {
+      return;
+    }
     if (activeState?.matchers?.exactMap?.has(text)) return;
     if (text.length <= 80 && activeState?.matchers?.exactLowerMap?.has(text.toLowerCase())) return;
     counts.set(text, (counts.get(text) || 0) + 1);
     if (!kinds.has(text)) kinds.set(text, kind);
   }
 
-  const elements =
-    typeof root.querySelectorAll === 'function' ? root.querySelectorAll(UI_CONTROL_SELECTOR) : [];
-  for (let i = 0; i < elements.length; i += 1) {
-    const el = elements[i];
-    if (isSkipped(el)) continue;
-    for (const attrName of ['placeholder', 'title', 'aria-label', 'aria-description']) {
+  function scanElementAttrs(el) {
+    const attrMap = activeState?.attrRecords?.get(el);
+    for (let k = 0; k < TRANSLATABLE_ATTRS.length; k += 1) {
+      const attrName = TRANSLATABLE_ATTRS[k];
       const val = el.getAttribute?.(attrName);
-      const attrMap = activeState?.attrRecords?.get(el);
       if (val && !(attrMap && attrMap.has(attrName))) {
-        recordCandidate(val, attrName);
-      }
-    }
-    const children = el.childNodes || [];
-    for (let j = 0; j < children.length; j += 1) {
-      const ch = children[j];
-      if (ch && ch.nodeType === 3) {
-        if (activeState?.textRecords?.has(ch)) continue;
-        recordCandidate(ch.nodeValue, 'text');
+        recordCandidate(val, attrName, el);
       }
     }
   }
+
+  function scanSubtree(scanRoot) {
+    if (!scanRoot) return;
+    if (typeof document.createTreeWalker === 'function') {
+      const textWalker = document.createTreeWalker(scanRoot, 4);
+      let node = textWalker.nextNode();
+      while (node) {
+        if (!activeState?.textRecords?.has(node)) {
+          const parentEl =
+            node.parentElement ||
+            (node.parentNode && node.parentNode.nodeType === 1 ? node.parentNode : null);
+          if (!parentEl || !isSkipped(parentEl)) {
+            recordCandidate(node.nodeValue, 'text', parentEl);
+          }
+        }
+        node = textWalker.nextNode();
+      }
+
+      const elWalker = document.createTreeWalker(scanRoot, 1);
+      let el = elWalker.nextNode();
+      while (el) {
+        if (!isSkipped(el)) {
+          scanElementAttrs(el);
+          if (
+            el.shadowRoot &&
+            el.id !== 'ag-usage-monitor-capsule' &&
+            el.id !== 'ag-usage-monitor-portal'
+          ) {
+            scanSubtree(el.shadowRoot);
+          }
+        }
+        el = elWalker.nextNode();
+      }
+      return;
+    }
+
+    const walkFallback = (cur, ancestorSkipped) => {
+      if (!cur) return;
+      if (cur.nodeType === 3) {
+        if (!ancestorSkipped && !activeState?.textRecords?.has(cur)) {
+          const parentEl =
+            cur.parentElement ||
+            (cur.parentNode && cur.parentNode.nodeType === 1 ? cur.parentNode : null);
+          recordCandidate(cur.nodeValue, 'text', parentEl);
+        }
+        return;
+      }
+      if (cur.nodeType === 1 || cur.nodeType === 11) {
+        const skippedHere = ancestorSkipped || (cur.nodeType === 1 && isSkippedSelf(cur));
+        if (skippedHere) return;
+        if (cur.nodeType === 1) {
+          scanElementAttrs(cur);
+          if (
+            cur.shadowRoot &&
+            cur.id !== 'ag-usage-monitor-capsule' &&
+            cur.id !== 'ag-usage-monitor-portal'
+          ) {
+            walkFallback(cur.shadowRoot, false);
+          }
+        }
+        const children = cur.childNodes || [];
+        for (let i = 0; i < children.length; i += 1) {
+          walkFallback(children[i], false);
+        }
+      }
+    };
+    walkFallback(scanRoot, false);
+  }
+
+  scanSubtree(root);
 
   const items = Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))

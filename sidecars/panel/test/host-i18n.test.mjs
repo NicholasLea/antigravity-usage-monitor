@@ -28,6 +28,7 @@ import {
 import {
   compileHostI18nRuntimePayload,
   createHostI18nPackManager,
+  isRemoteHostI18nPackNewer,
 } from '../backend/host-i18n/pack-manager.mjs';
 import {
   applyHostI18nInPage,
@@ -855,4 +856,326 @@ test('dispatchBridgeApiRequest routes GET/POST /api/host-i18n and __hostI18nActi
   const badRes = await handleHostI18nPostAction({ action: 'invalid_op' }, { manager: mgr });
   assert.equal(badRes.status, 400);
   assert.equal(badRes.payload.ok, false);
+});
+
+test('zh-CN@1.0.1 light/deep rules cover Customizations/Workspace/effort tiers/plan copy and collector catches div/shadowRoot/multiline strings while skipping icons', () => {
+  const { win, doc, body, MockElement, MockText } = createMockDom();
+  const prevWindow = globalThis.window;
+  const prevDocument = globalThis.document;
+  globalThis.window = win;
+  globalThis.document = doc;
+
+  try {
+    const packObj = JSON.parse(
+      readFileSync(join(REAL_HOST_I18N_ROOT, 'dist', 'packs', 'zh-CN.json'), 'utf8')
+    );
+    const packHash = sha256(JSON.stringify(packObj));
+    const lightPayload = compileHostI18nRuntimePayload(packObj, 'light', packHash);
+    const deepPayload = compileHostI18nRuntimePayload(packObj, 'deep', packHash);
+
+    // Build DOM nodes matching Antigravity's real layout (including <div>, <span>, shadowRoot, icon ligatures)
+    const navCustomizations = body.appendChild(new MockElement('span'));
+    const txtCustomizations = navCustomizations.appendChild(new MockText('Customizations'));
+
+    const titleWorkspace = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'title-menu-bar-item' } })
+    );
+    const txtWorkspace = titleWorkspace.appendChild(new MockText('Workspace'));
+
+    const effortLow = body.appendChild(new MockElement('span'));
+    const txtLow = effortLow.appendChild(new MockText('Low'));
+    const effortMed = body.appendChild(new MockElement('span'));
+    const txtMed = effortMed.appendChild(new MockText('Medium'));
+    const effortHigh = body.appendChild(new MockElement('span'));
+    const txtHigh = effortHigh.appendChild(new MockText('High'));
+    const effortExtra = body.appendChild(new MockElement('span'));
+    const txtExtra = effortExtra.appendChild(new MockText('Extra'));
+    const effortMax = body.appendChild(new MockElement('span'));
+    const txtMax = effortMax.appendChild(new MockText('Max'));
+
+    const planDesc = body.appendChild(new MockElement('span'));
+    const txtPlanDesc = planDesc.appendChild(
+      new MockText('You are subscribed to the best Google AI plan.')
+    );
+
+    // Untranslated nodes in <div>, <li>, multiline, and shadowRoot (previously missed by UI_CONTROL_SELECTOR)
+    const missingDiv = body.appendChild(new MockElement('div'));
+    missingDiv.appendChild(new MockText('Unmapped Div Banner'));
+
+    const missingLi = body.appendChild(new MockElement('li'));
+    missingLi.appendChild(new MockText('Unmapped List Item'));
+
+    const missingMultiline = body.appendChild(new MockElement('div'));
+    missingMultiline.appendChild(new MockText('First unmapped line\nSecond unmapped line'));
+
+    const shadowHost = body.appendChild(new MockElement('div'));
+    const shadowRoot = new MockElement('div');
+    shadowRoot.nodeType = 11;
+    const shadowInner = shadowRoot.appendChild(new MockElement('div'));
+    shadowInner.appendChild(new MockText('Shadow Panel Heading'));
+    shadowHost.shadowRoot = shadowRoot;
+
+    // Icon ligatures and skipped zones that must NOT be collected
+    const iconSpan = body.appendChild(
+      new MockElement('span', { className: 'material-symbols-outlined' })
+    );
+    iconSpan.appendChild(new MockText('chevron_right'));
+    const ariaHiddenIcon = body.appendChild(
+      new MockElement('span', { attrs: { 'aria-hidden': 'true' } })
+    );
+    ariaHiddenIcon.appendChild(new MockText('refresh'));
+    const proseDiv = body.appendChild(new MockElement('div', { className: 'prose' }));
+    proseDiv.appendChild(new MockText('Assistant prose paragraph should never leak'));
+
+    // Real Antigravity AI reply bubble (.bleed-contain + data-markdown-block-index), sidebar conversation row,
+    // file pills, breadcrumbs, step items, and noise tokens (filenames, kebab-case, fullwidth punct, acronyms)
+    const aiBubble = body.appendChild(new MockElement('div', { className: 'bleed-contain bg-muted' }));
+    const aiBubbleText = aiBubble.appendChild(new MockText('Settings'));
+    aiBubble.appendChild(new MockText('Unmapped AI Reply Prose'));
+
+    const mdBlock = body.appendChild(
+      new MockElement('div', { attrs: { 'data-markdown-block-index': '0' } })
+    );
+    const mdBlockText = mdBlock.appendChild(new MockText('Cancel'));
+
+    const sidebarRow = body.appendChild(new MockElement('div', { className: 'agy-sidebar-row' }));
+    const convTitleText = sidebarRow.appendChild(new MockText('Settings'));
+    sidebarRow.appendChild(new MockText('Chinese Greeting'));
+
+    const convHistoryLink = body.appendChild(
+      new MockElement('a', {
+        attrs: { href: '/c/12345678-1234-1234-1234-1234567890ab', 'aria-label': 'Greeting and Hello' },
+      })
+    );
+    convHistoryLink.appendChild(new MockText('Opening Two Bees'));
+
+    const entityPill = body.appendChild(
+      new MockElement('a', { attrs: { 'data-testid': 'entity-pill', 'data-quotable-inline': 'true' } })
+    );
+    entityPill.appendChild(new MockText('HostI18nCard.js'));
+
+    const breadcrumbSeg = body.appendChild(
+      new MockElement('span', {
+        attrs: { 'data-testid': 'breadcrumb-segment', 'aria-label': 'Project: antigravity-usage-monitor' },
+      })
+    );
+    breadcrumbSeg.appendChild(new MockText('antigravity-usage-monitor'));
+
+    const stepItem = body.appendChild(
+      new MockElement('li', { attrs: { 'data-testid': 'step-plan-item' } })
+    );
+    stepItem.appendChild(new MockText('Dynamic Agent Step Title'));
+
+    const noiseWrap = body.appendChild(new MockElement('div'));
+    for (const noise of [
+      'host-i18n.test.mjs',
+      'image.png',
+      'host-i18n',
+      'antigravity-usage-monitor',
+      'Antigravity',
+      'DOM',
+      'KB',
+      'React',
+      'SemVer',
+      'vX',
+      '：Antigravity',
+      '（sha256',
+    ]) {
+      noiseWrap.appendChild(new MockText(noise));
+    }
+
+    const stepChip = body.appendChild(
+      new MockElement('button', {
+        attrs: { 'data-testid': 'step-plan-chip', 'aria-label': '5/5 steps. Show plan' },
+      })
+    );
+    const txtStepChip = stepChip.appendChild(new MockText('5/5 steps'));
+    const navBreadcrumb = body.appendChild(
+      new MockElement('nav', { attrs: { 'aria-label': 'Breadcrumb' } })
+    );
+
+    // 1. Apply Light mode
+    applyHostI18nInPage(lightPayload, 'boot-v101', HOST_I18N_GLOBAL_KEY);
+    assert.equal(txtCustomizations.nodeValue, '自定义扩展');
+    assert.equal(txtWorkspace.nodeValue, '工作区');
+    assert.equal(txtLow.nodeValue, 'Low');
+    assert.equal(txtMed.nodeValue, 'Medium');
+    assert.equal(txtHigh.nodeValue, 'High');
+    assert.equal(txtExtra.nodeValue, 'Extra');
+    assert.equal(txtMax.nodeValue, 'Max');
+    assert.equal(txtPlanDesc.nodeValue, '您已订阅最高级别的 Google AI 方案。');
+    assert.equal(txtStepChip.nodeValue, '5/5 步');
+    assert.equal(stepChip.getAttribute('aria-label'), '5/5 步。展开计划');
+    assert.equal(navBreadcrumb.getAttribute('aria-label'), '面包屑导航');
+    assert.equal(aiBubbleText.nodeValue, 'Settings');
+    assert.equal(mdBlockText.nodeValue, 'Cancel');
+    assert.equal(convTitleText.nodeValue, 'Settings');
+    assert.equal(
+      lightPayload.exact['Ask anything, @ to mention, / for actions'],
+      '输入任何问题，@ 提及内容，/ 调用操作'
+    );
+    assert.equal(
+      lightPayload.exact['Message subagent, @ to mention, / for actions'],
+      '向 Subagent 发送消息，@ 提及内容，/ 调用操作'
+    );
+    assert.equal(
+      deepPayload.exact['Message subagent, @ to mention, / for actions'],
+      '向子代理发送消息，@ 提及内容，/ 调用操作'
+    );
+
+    // 2. Collector must catch <div>, <li>, multiline, and shadowRoot, while excluding AI replies, sidebar titles, pills, filenames, and acronyms
+    const collected = collectUntranslatedHostUiInPage(HOST_I18N_GLOBAL_KEY);
+    const texts = new Set(collected.items.map((item) => item.text));
+    assert.ok(texts.has('Unmapped Div Banner'));
+    assert.ok(texts.has('Unmapped List Item'));
+    assert.ok(texts.has('First unmapped line\nSecond unmapped line'));
+    assert.ok(texts.has('Shadow Panel Heading'));
+    for (const forbidden of [
+      'Low',
+      'High',
+      'chevron_right',
+      'refresh',
+      'Assistant prose paragraph should never leak',
+      'Unmapped AI Reply Prose',
+      'Chinese Greeting',
+      'Greeting and Hello',
+      'Opening Two Bees',
+      'HostI18nCard.js',
+      'Project: antigravity-usage-monitor',
+      'antigravity-usage-monitor',
+      'Dynamic Agent Step Title',
+      'host-i18n.test.mjs',
+      'image.png',
+      'host-i18n',
+      'Antigravity',
+      'DOM',
+      'KB',
+      'React',
+      'SemVer',
+      'vX',
+      '：Antigravity',
+      '（sha256',
+      '5/5 steps',
+      'Breadcrumb',
+    ]) {
+      assert.equal(texts.has(forbidden), false, `Collector must not report "${forbidden}"`);
+    }
+
+    // 3. Hot-switch Light -> Deep translates effort tiers cleanly
+    applyHostI18nInPage(deepPayload, 'boot-v101', HOST_I18N_GLOBAL_KEY);
+    assert.equal(txtCustomizations.nodeValue, '自定义扩展');
+    assert.equal(txtWorkspace.nodeValue, '工作区');
+    assert.equal(txtLow.nodeValue, '低');
+    assert.equal(txtMed.nodeValue, '中');
+    assert.equal(txtHigh.nodeValue, '高');
+    assert.equal(txtExtra.nodeValue, '极高');
+    assert.equal(txtMax.nodeValue, '最高');
+    assert.equal(txtPlanDesc.nodeValue, '您已订阅最高级别的 Google AI 方案。');
+
+    win[HOST_I18N_GLOBAL_KEY].dispose();
+  } finally {
+    globalThis.window = prevWindow;
+    globalThis.document = prevDocument;
+  }
+});
+
+test('PackManager enforces SemVer 2.0 anti-downgrade on status snapshot and install/update (1.0.1 never downgrades to 1.0.0)', async (t) => {
+  assert.equal(isRemoteHostI18nPackNewer('1.0.0', '1.0.1'), false);
+  assert.equal(isRemoteHostI18nPackNewer('1.0.1', '1.0.1'), false);
+  assert.equal(isRemoteHostI18nPackNewer('1.0.1-beta.1', '1.0.1'), false);
+  assert.equal(isRemoteHostI18nPackNewer('1.0.1', '1.0.0'), true);
+  assert.equal(isRemoteHostI18nPackNewer('1.0.1', '1.0.1-beta.1'), true);
+  assert.equal(isRemoteHostI18nPackNewer('invalid', '1.0.0'), false);
+
+  const dataDir = createTempDir(t);
+  const makePack = (version, extraKey) =>
+    JSON.stringify({
+      schemaVersion: 1,
+      locale: 'zh-CN',
+      name: 'Chinese (Simplified)',
+      nativeName: '简体中文',
+      version,
+      depths: ['light', 'deep'],
+      base: { exact: { Settings: '设置', [extraKey]: '测试' }, patterns: [] },
+      modes: { light: { exact: {}, patterns: [] }, deep: { exact: {}, patterns: [] } },
+    }) + '\n';
+
+  const pack100 = makePack('1.0.0', 'OldKey');
+  const pack101 = makePack('1.0.1', 'NewKey');
+  const pack102 = makePack('1.0.2', 'NewerKey');
+
+  let activeRemotePack = pack101;
+  let activeRemoteVersion = '1.0.1';
+  let packFetchCount = 0;
+
+  const mockFetch = async (url) => {
+    if (url.endsWith('/manifest.json')) {
+      const manifest = {
+        schemaVersion: 1,
+        generatedAt: '2026-11-25T00:00:00.000Z',
+        packs: [
+          {
+            locale: 'zh-CN',
+            name: 'Chinese (Simplified)',
+            nativeName: '简体中文',
+            version: activeRemoteVersion,
+            file: 'packs/zh-CN.json',
+            sha256: sha256(activeRemotePack),
+            bytes: Buffer.byteLength(activeRemotePack, 'utf8'),
+            depths: ['light', 'deep'],
+          },
+        ],
+      };
+      return { ok: true, status: 200, text: async () => JSON.stringify(manifest) };
+    }
+    if (url.endsWith('/packs/zh-CN.json')) {
+      packFetchCount += 1;
+      return { ok: true, status: 200, text: async () => activeRemotePack };
+    }
+    return { ok: false, status: 404, text: async () => 'not found' };
+  };
+
+  const mgr = createHostI18nPackManager({ dataDir, fetchImpl: mockFetch, ref: 'main' });
+
+  // 1. Install 1.0.1 initially
+  await mgr.selectLanguage({ locale: 'zh-CN', depth: 'light' });
+  assert.equal(mgr.loadInstalledPack('zh-CN').pack.version, '1.0.1');
+  assert.equal(packFetchCount, 1);
+
+  // 2. Remote serves older 1.0.0 (different hash & lower SemVer) -> updateAvailable MUST be false & update MUST NOT downgrade
+  activeRemotePack = pack100;
+  activeRemoteVersion = '1.0.0';
+  const manifestRes100 = await mgr.refreshManifest({ force: true });
+  const snap100 = mgr.getStatusSnapshot({ manifestResult: manifestRes100 });
+  const zh100 = snap100.packs.find((p) => p.locale === 'zh-CN');
+  assert.equal(zh100.installedVersion, '1.0.1');
+  assert.equal(zh100.remoteVersion, '1.0.0');
+  assert.equal(zh100.updateAvailable, false);
+
+  const downgradeRes = await handleHostI18nPostAction(
+    { action: 'update', locale: 'zh-CN' },
+    { manager: mgr }
+  );
+  assert.equal(downgradeRes.status, 200);
+  assert.equal(downgradeRes.payload.updated, false);
+  assert.equal(downgradeRes.payload.alreadyUpToDate, true);
+  assert.equal(mgr.loadInstalledPack('zh-CN').pack.version, '1.0.1');
+  assert.equal(packFetchCount, 1, 'Must NOT even download older remote pack');
+
+  // 3. Remote serves newer 1.0.2 -> updateAvailable MUST be true & update upgrades cleanly
+  activeRemotePack = pack102;
+  activeRemoteVersion = '1.0.2';
+  const manifestRes102 = await mgr.refreshManifest({ force: true });
+  const snap102 = mgr.getStatusSnapshot({ manifestResult: manifestRes102 });
+  assert.equal(snap102.packs.find((p) => p.locale === 'zh-CN').updateAvailable, true);
+
+  const upgradeRes = await handleHostI18nPostAction(
+    { action: 'update', locale: 'zh-CN' },
+    { manager: mgr }
+  );
+  assert.equal(upgradeRes.status, 200);
+  assert.equal(upgradeRes.payload.updated, true);
+  assert.equal(upgradeRes.payload.alreadyUpToDate, false);
+  assert.equal(mgr.loadInstalledPack('zh-CN').pack.version, '1.0.2');
+  assert.equal(packFetchCount, 2);
 });

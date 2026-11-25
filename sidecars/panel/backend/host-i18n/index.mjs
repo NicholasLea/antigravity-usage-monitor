@@ -141,13 +141,15 @@ export async function handleHostI18nPostAction(
     if (action === 'install' || action === 'update') {
       const res = await mgr.installPack(body?.locale, { forceManifestRefresh: true });
       const cur = mgr.loadState();
-      if (cur.locale === res.locale) {
+      if (res.updated !== false && cur.locale === res.locale) {
         await Promise.resolve(onChanged?.()).catch(() => {});
       }
       return {
         status: 200,
         payload: {
           ok: true,
+          updated: res.updated !== false,
+          alreadyUpToDate: Boolean(res.alreadyUpToDate),
           installed: res,
           ...mgr.getStatusSnapshot({ bridgeStatus }),
         },

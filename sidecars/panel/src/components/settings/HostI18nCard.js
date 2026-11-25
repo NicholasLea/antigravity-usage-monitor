@@ -25,8 +25,6 @@ import {
   collectHostI18nUntranslated,
   fetchHostI18nStatus,
   installOrUpdateHostI18nPack,
-  refreshHostI18nManifest,
-  removeHostI18nPack,
   selectHostI18nLanguage,
   updateHostI18nDepth,
 } from '../../core/hostI18nClient.js';
@@ -183,52 +181,6 @@ export const HostI18nCard = defineComponent({
       },
     });
 
-    const refreshManifestBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'btn-ghost-sm host-i18n-icon-btn',
-        title: t('settings.hostI18n.refreshManifestTip'),
-        'aria-label': t('settings.hostI18n.refreshManifestTip'),
-        onClick: async () => {
-          if (isBusy || destroyed) return;
-          isBusy = true;
-          syncControls();
-          showFeedback(t('settings.hostI18n.refreshingManifestMsg'), { autoClearMs: 0 });
-          try {
-            const res = await refreshHostI18nManifest();
-            if (destroyed) return;
-            applyStatusPayload(res);
-            if (res?.ok === false) {
-              showFeedback(res.error || t('settings.hostI18n.manifestFailedMsg'), {
-                isError: true,
-                autoClearMs: 4500,
-              });
-            } else {
-              showFeedback(
-                t('settings.hostI18n.manifestSyncedMsg', { count: getPackList().length }),
-                { autoClearMs: 2600 }
-              );
-            }
-          } catch (err) {
-            if (!destroyed) {
-              showFeedback(err?.message || t('settings.hostI18n.manifestFailedMsg'), {
-                isError: true,
-                autoClearMs: 4500,
-              });
-            }
-          } finally {
-            isBusy = false;
-            if (!destroyed) {
-              syncControls();
-              props.onLayoutChange?.();
-            }
-          }
-        },
-      },
-      [createSvgIcon('refresh', { size: 12 })]
-    );
-
     const langHintEl = h('span', {
       className: 'settings-hint-text',
       text: t('settings.hostI18n.langHint'),
@@ -280,8 +232,7 @@ export const HostI18nCard = defineComponent({
       depthHintEl,
     ]);
 
-    // --- Pack Meta & Actions Bar (visible only when locale !== 'off') ---
-    const packMetaTextEl = h('span', { className: 'host-i18n-pack-meta text-muted', text: '' });
+    // --- Pack Update Action Bar (visible only when locale !== 'off') ---
     const updatePackBtnText = h('span', { text: t('settings.hostI18n.redownloadBtn') });
     const updatePackBtn = h(
       'button',
@@ -290,11 +241,16 @@ export const HostI18nCard = defineComponent({
         className: 'btn-secondary',
         onClick: async () => {
           if (isBusy || destroyed || draftLocale === HOST_I18N_OFF_LOCALE) return;
+          const activeBefore = findPackByLocale(draftLocale);
+          const hasPendingUpdate = Boolean(activeBefore?.updateAvailable);
           isBusy = true;
           syncControls();
-          showFeedback(t('settings.hostI18n.downloadingMsg', { locale: draftLocale }), {
-            autoClearMs: 0,
-          });
+          showFeedback(
+            hasPendingUpdate
+              ? t('settings.hostI18n.downloadingMsg', { locale: draftLocale })
+              : t('settings.hostI18n.checkingUpdateMsg'),
+            { autoClearMs: 0 }
+          );
           try {
             const res = await installOrUpdateHostI18nPack(draftLocale);
             if (destroyed) return;
@@ -304,6 +260,17 @@ export const HostI18nCard = defineComponent({
                 isError: true,
                 autoClearMs: 5000,
               });
+            } else if (res?.alreadyUpToDate) {
+              const ver =
+                res.installed?.version ||
+                findPackByLocale(draftLocale)?.installedVersion ||
+                '';
+              showFeedback(
+                ver
+                  ? t('settings.hostI18n.alreadyLatestVerMsg', { ver })
+                  : t('settings.hostI18n.alreadyLatestMsg'),
+                { autoClearMs: 2600 }
+              );
             } else {
               showFeedback(t('settings.hostI18n.packUpdatedMsg'), { autoClearMs: 3000 });
             }
@@ -323,44 +290,8 @@ export const HostI18nCard = defineComponent({
       [createSvgIcon('download', { size: 12 }), updatePackBtnText]
     );
 
-    const removePackBtnText = h('span', { text: t('settings.hostI18n.removeCacheBtn') });
-    const removePackBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'btn-ghost-sm',
-        onClick: async () => {
-          if (isBusy || destroyed || draftLocale === HOST_I18N_OFF_LOCALE) return;
-          isBusy = true;
-          syncControls();
-          showFeedback(t('settings.saving'), { autoClearMs: 0 });
-          try {
-            const res = await removeHostI18nPack(draftLocale);
-            if (destroyed) return;
-            applyStatusPayload(res);
-            showFeedback(t('settings.hostI18n.cacheRemovedMsg'), { autoClearMs: 2800 });
-          } catch (err) {
-            if (!destroyed) {
-              showFeedback(err?.message || t('settings.hostI18n.actionFailed'), {
-                isError: true,
-                autoClearMs: 4500,
-              });
-            }
-          } finally {
-            isBusy = false;
-            if (!destroyed) {
-              syncControls();
-              props.onLayoutChange?.();
-            }
-          }
-        },
-      },
-      [removePackBtnText]
-    );
-
     const packBarEl = h('div', { className: 'host-i18n-pack-bar', hidden: true }, [
-      packMetaTextEl,
-      h('div', { className: 'host-i18n-pack-actions' }, [updatePackBtn, removePackBtn]),
+      updatePackBtn,
     ]);
 
     // --- CDP Bridge Diagnostic Notice (shown only when active locale cannot reach CDP) ---
@@ -504,7 +435,7 @@ export const HostI18nCard = defineComponent({
       ]),
       h('div', { className: 'form-row' }, [
         langLabelEl,
-        h('div', { className: 'host-i18n-select-row' }, [langSelect.el, refreshManifestBtn]),
+        langSelect.el,
         langHintEl,
       ]),
       depthRowEl,
@@ -533,7 +464,6 @@ export const HostI18nCard = defineComponent({
         options: buildLocaleOptions(),
         disabled: isBusy,
       });
-      patchAttr(refreshManifestBtn, 'disabled', isBusy);
 
       patchAttr(depthRowEl, 'hidden', !enabled);
       depthSwitch.setProps({
@@ -549,28 +479,6 @@ export const HostI18nCard = defineComponent({
 
       patchAttr(packBarEl, 'hidden', !enabled);
       if (enabled) {
-        const ver = activePack?.installedVersion || activePack?.remoteVersion || '1.0.0';
-        const stats = activePack?.stats;
-        const entryCount = stats
-          ? Number(stats.baseExact || 0) +
-            Number(draftDepth === 'deep' ? stats.deepExact || 0 : stats.lightExact || 0) +
-            Number(stats.basePatterns || 0) +
-            Number(draftDepth === 'deep' ? stats.deepPatterns || 0 : stats.lightPatterns || 0)
-          : 0;
-        const sizeStr = formatHostI18nBytes(
-          activePack?.installedBytes || activePack?.remoteBytes || 0
-        );
-        const appliedCount = Number(latestWindowBridge?.hostI18nAppliedCount || 0);
-        const metaParts = [`v${ver}`];
-        if (entryCount > 0) {
-          metaParts.push(t('settings.hostI18n.entriesCount', { count: entryCount }));
-        }
-        if (sizeStr) metaParts.push(sizeStr);
-        if (appliedCount > 0) {
-          metaParts.push(t('settings.hostI18n.appliedWindows', { count: appliedCount }));
-        }
-        patchText(packMetaTextEl, metaParts.join(' · '));
-
         const hasUpdate = Boolean(activePack?.updateAvailable);
         patchText(
           updatePackBtnText,
@@ -583,7 +491,6 @@ export const HostI18nCard = defineComponent({
           'btn-secondary': !hasUpdate,
         });
         patchAttr(updatePackBtn, 'disabled', isBusy);
-        patchAttr(removePackBtn, 'disabled', isBusy || !activePack?.installed);
       }
 
       bridgeNotice.refs.update({
@@ -604,7 +511,7 @@ export const HostI18nCard = defineComponent({
         applyStatusPayload(res);
         props.onLayoutChange?.();
       } catch {
-        // 静默兜底，保留手动刷新入口
+        // 静默兜底
       }
     }
 
@@ -612,7 +519,6 @@ export const HostI18nCard = defineComponent({
       if (windowBridge) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
       const sig = [
-        Number(latestWindowBridge?.hostI18nAppliedCount || 0),
         Boolean(latestWindowBridge?.connected),
         Boolean(latestWindowBridge?.available),
         String(latestWindowBridge?.reason || ''),
@@ -629,14 +535,11 @@ export const HostI18nCard = defineComponent({
       patchText(langLabelEl, t('settings.hostI18n.langLabel'));
       patchText(langHintEl, t('settings.hostI18n.langHint'));
       patchText(depthLabelEl, t('settings.hostI18n.depthLabel'));
-      patchText(removePackBtnText, t('settings.hostI18n.removeCacheBtn'));
       patchText(devToggleText, t('settings.hostI18n.devToolsTitle'));
       patchText(devHintEl, t('settings.hostI18n.devToolsHint'));
       if (!isCollecting) patchText(collectBtnText, t('settings.hostI18n.collectBtn'));
       patchText(copyCollectedBtnText, t('settings.hostI18n.copyJsonBtn'));
       patchText(exportCollectedBtnText, t('settings.hostI18n.exportJsonBtn'));
-      patchAttr(refreshManifestBtn, 'title', t('settings.hostI18n.refreshManifestTip'));
-      patchAttr(refreshManifestBtn, 'aria-label', t('settings.hostI18n.refreshManifestTip'));
       bridgeNotice.refs.refreshLabels();
       syncControls();
     }

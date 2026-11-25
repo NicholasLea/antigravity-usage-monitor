@@ -2036,28 +2036,23 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.hostI18n.langHint': '从仓库按需独立下载语言包并在渲染层无损应用，不修改宿主安装包，不影响聊天内容与代码',
   'settings.hostI18n.optInstalled': '已下载 v{ver}',
   'settings.hostI18n.optRemote': '仓库拉取 · {size}',
-  'settings.hostI18n.refreshManifestTip': '刷新仓库语言包清单',
-  'settings.hostI18n.refreshingManifestMsg': '正在拉取语言清单…',
-  'settings.hostI18n.manifestSyncedMsg': '已更新清单（{count} 个语言包）',
-  'settings.hostI18n.manifestFailedMsg': '拉取语言清单失败，请检查网络或代理',
   'settings.hostI18n.depthLabel': '翻译深度',
   'settings.hostI18n.depthLight': '浅度',
   'settings.hostI18n.depthDeep': '深度',
-  'settings.hostI18n.depthLightHint': '浅度模式：保留 MCP、Skill、Workspace、Subagent、Swarm、Diff、Terminal 等高频英文术语及模型名称，仅翻译常规界面',
-  'settings.hostI18n.depthDeepHint': '深度模式：将常见工程术语一并译为目标语言（如工作区、子代理、蜂群、终端、沙箱），仅保留模型名与命令',
+  'settings.hostI18n.depthLightHint': '浅度模式：保留 MCP、Skill、Subagent、Swarm、Diff、Terminal、Low/High 等高频英文术语及模型名称，仅翻译常规界面',
+  'settings.hostI18n.depthDeepHint': '深度模式：将常见工程术语与档位标签一并译为目标语言（如子代理、蜂群、终端、沙箱、低/中/高），仅保留模型名与命令',
   'settings.hostI18n.downloadingMsg': '正在下载 {locale} 语言包…',
+  'settings.hostI18n.checkingUpdateMsg': '正在检查语言包更新…',
   'settings.hostI18n.downloadedAndAppliedMsg': '语言包已下载校验并生效',
   'settings.hostI18n.appliedMsg': '已切换并即时生效',
   'settings.hostI18n.disabledMsg': '已关闭翻译并还原原始界面',
   'settings.hostI18n.depthSwitchedMsg': '已热切换翻译深度',
   'settings.hostI18n.packUpdatedMsg': '语言包已更新并重新应用',
-  'settings.hostI18n.cacheRemovedMsg': '已删除本地语言包缓存',
+  'settings.hostI18n.alreadyLatestMsg': '当前已是最新语言包',
+  'settings.hostI18n.alreadyLatestVerMsg': '当前已是最新语言包（v{ver}）',
   'settings.hostI18n.actionFailed': '语言包操作失败，请重试',
-  'settings.hostI18n.entriesCount': '{count} 条词条',
-  'settings.hostI18n.appliedWindows': '已应用 {count} 窗口',
   'settings.hostI18n.updatePackBtn': '更新至 v{ver}',
   'settings.hostI18n.redownloadBtn': '检查更新',
-  'settings.hostI18n.removeCacheBtn': '删除缓存',
   'settings.hostI18n.devToolsTitle': '词条采集与多语言扩展',
   'settings.hostI18n.devToolsHint': '仅扫描当前打开的 Antigravity 界面控件中未命中的英文短语（自动排除聊天正文与代码），便于补全漏翻词条或制作新语言包',
   'settings.hostI18n.collectBtn': '采集未翻译 UI 文案',
@@ -3067,28 +3062,23 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.hostI18n.langHint': 'Downloads built language packs on demand from the repository and applies lossless runtime UI translation without patching app files or chat content',
   'settings.hostI18n.optInstalled': 'Installed v{ver}',
   'settings.hostI18n.optRemote': 'Download · {size}',
-  'settings.hostI18n.refreshManifestTip': 'Refresh repository language pack manifest',
-  'settings.hostI18n.refreshingManifestMsg': 'Refreshing language manifest…',
-  'settings.hostI18n.manifestSyncedMsg': 'Manifest updated ({count} packs)',
-  'settings.hostI18n.manifestFailedMsg': 'Failed to fetch language manifest',
   'settings.hostI18n.depthLabel': 'Translation Depth',
   'settings.hostI18n.depthLight': 'Light',
   'settings.hostI18n.depthDeep': 'Deep',
-  'settings.hostI18n.depthLightHint': 'Light mode keeps common English engineering terms (MCP, Skill, Workspace, Subagent, Swarm, Diff, Terminal) and model names untranslated',
-  'settings.hostI18n.depthDeepHint': 'Deep mode localizes engineering terms alongside general UI copy while preserving model names and slash commands',
+  'settings.hostI18n.depthLightHint': 'Light mode keeps common English engineering terms (MCP, Skill, Subagent, Swarm, Diff, Terminal, Low/High) and model names untranslated',
+  'settings.hostI18n.depthDeepHint': 'Deep mode localizes engineering terms and effort labels alongside general UI copy while preserving model names and slash commands',
   'settings.hostI18n.downloadingMsg': 'Downloading {locale} pack…',
+  'settings.hostI18n.checkingUpdateMsg': 'Checking language pack updates…',
   'settings.hostI18n.downloadedAndAppliedMsg': 'Pack verified and applied',
   'settings.hostI18n.appliedMsg': 'Language applied live',
   'settings.hostI18n.disabledMsg': 'Translation disabled and UI restored',
   'settings.hostI18n.depthSwitchedMsg': 'Translation depth switched',
   'settings.hostI18n.packUpdatedMsg': 'Language pack updated and reapplied',
-  'settings.hostI18n.cacheRemovedMsg': 'Local pack cache removed',
+  'settings.hostI18n.alreadyLatestMsg': 'Language pack is already up to date',
+  'settings.hostI18n.alreadyLatestVerMsg': 'Language pack is already up to date (v{ver})',
   'settings.hostI18n.actionFailed': 'Language pack operation failed',
-  'settings.hostI18n.entriesCount': '{count} entries',
-  'settings.hostI18n.appliedWindows': '{count} window(s) active',
   'settings.hostI18n.updatePackBtn': 'Update to v{ver}',
   'settings.hostI18n.redownloadBtn': 'Check Update',
-  'settings.hostI18n.removeCacheBtn': 'Remove Cache',
   'settings.hostI18n.devToolsTitle': 'Missing UI String Collector',
   'settings.hostI18n.devToolsHint': 'Scans visible Antigravity UI controls for untranslated English phrases (excluding chat content and code) to help complete packs or author new languages',
   'settings.hostI18n.collectBtn': 'Collect Missing Strings',
@@ -31223,52 +31213,6 @@ const HostI18nCard = defineComponent({
       },
     });
 
-    const refreshManifestBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'btn-ghost-sm host-i18n-icon-btn',
-        title: t('settings.hostI18n.refreshManifestTip'),
-        'aria-label': t('settings.hostI18n.refreshManifestTip'),
-        onClick: async () => {
-          if (isBusy || destroyed) return;
-          isBusy = true;
-          syncControls();
-          showFeedback(t('settings.hostI18n.refreshingManifestMsg'), { autoClearMs: 0 });
-          try {
-            const res = await refreshHostI18nManifest();
-            if (destroyed) return;
-            applyStatusPayload(res);
-            if (res?.ok === false) {
-              showFeedback(res.error || t('settings.hostI18n.manifestFailedMsg'), {
-                isError: true,
-                autoClearMs: 4500,
-              });
-            } else {
-              showFeedback(
-                t('settings.hostI18n.manifestSyncedMsg', { count: getPackList().length }),
-                { autoClearMs: 2600 }
-              );
-            }
-          } catch (err) {
-            if (!destroyed) {
-              showFeedback(err?.message || t('settings.hostI18n.manifestFailedMsg'), {
-                isError: true,
-                autoClearMs: 4500,
-              });
-            }
-          } finally {
-            isBusy = false;
-            if (!destroyed) {
-              syncControls();
-              props.onLayoutChange?.();
-            }
-          }
-        },
-      },
-      [createSvgIcon('refresh', { size: 12 })]
-    );
-
     const langHintEl = h('span', {
       className: 'settings-hint-text',
       text: t('settings.hostI18n.langHint'),
@@ -31320,8 +31264,7 @@ const HostI18nCard = defineComponent({
       depthHintEl,
     ]);
 
-    // --- Pack Meta & Actions Bar (visible only when locale !== 'off') ---
-    const packMetaTextEl = h('span', { className: 'host-i18n-pack-meta text-muted', text: '' });
+    // --- Pack Update Action Bar (visible only when locale !== 'off') ---
     const updatePackBtnText = h('span', { text: t('settings.hostI18n.redownloadBtn') });
     const updatePackBtn = h(
       'button',
@@ -31330,11 +31273,16 @@ const HostI18nCard = defineComponent({
         className: 'btn-secondary',
         onClick: async () => {
           if (isBusy || destroyed || draftLocale === HOST_I18N_OFF_LOCALE) return;
+          const activeBefore = findPackByLocale(draftLocale);
+          const hasPendingUpdate = Boolean(activeBefore?.updateAvailable);
           isBusy = true;
           syncControls();
-          showFeedback(t('settings.hostI18n.downloadingMsg', { locale: draftLocale }), {
-            autoClearMs: 0,
-          });
+          showFeedback(
+            hasPendingUpdate
+              ? t('settings.hostI18n.downloadingMsg', { locale: draftLocale })
+              : t('settings.hostI18n.checkingUpdateMsg'),
+            { autoClearMs: 0 }
+          );
           try {
             const res = await installOrUpdateHostI18nPack(draftLocale);
             if (destroyed) return;
@@ -31344,6 +31292,17 @@ const HostI18nCard = defineComponent({
                 isError: true,
                 autoClearMs: 5000,
               });
+            } else if (res?.alreadyUpToDate) {
+              const ver =
+                res.installed?.version ||
+                findPackByLocale(draftLocale)?.installedVersion ||
+                '';
+              showFeedback(
+                ver
+                  ? t('settings.hostI18n.alreadyLatestVerMsg', { ver })
+                  : t('settings.hostI18n.alreadyLatestMsg'),
+                { autoClearMs: 2600 }
+              );
             } else {
               showFeedback(t('settings.hostI18n.packUpdatedMsg'), { autoClearMs: 3000 });
             }
@@ -31363,44 +31322,8 @@ const HostI18nCard = defineComponent({
       [createSvgIcon('download', { size: 12 }), updatePackBtnText]
     );
 
-    const removePackBtnText = h('span', { text: t('settings.hostI18n.removeCacheBtn') });
-    const removePackBtn = h(
-      'button',
-      {
-        type: 'button',
-        className: 'btn-ghost-sm',
-        onClick: async () => {
-          if (isBusy || destroyed || draftLocale === HOST_I18N_OFF_LOCALE) return;
-          isBusy = true;
-          syncControls();
-          showFeedback(t('settings.saving'), { autoClearMs: 0 });
-          try {
-            const res = await removeHostI18nPack(draftLocale);
-            if (destroyed) return;
-            applyStatusPayload(res);
-            showFeedback(t('settings.hostI18n.cacheRemovedMsg'), { autoClearMs: 2800 });
-          } catch (err) {
-            if (!destroyed) {
-              showFeedback(err?.message || t('settings.hostI18n.actionFailed'), {
-                isError: true,
-                autoClearMs: 4500,
-              });
-            }
-          } finally {
-            isBusy = false;
-            if (!destroyed) {
-              syncControls();
-              props.onLayoutChange?.();
-            }
-          }
-        },
-      },
-      [removePackBtnText]
-    );
-
     const packBarEl = h('div', { className: 'host-i18n-pack-bar', hidden: true }, [
-      packMetaTextEl,
-      h('div', { className: 'host-i18n-pack-actions' }, [updatePackBtn, removePackBtn]),
+      updatePackBtn,
     ]);
 
     // --- CDP Bridge Diagnostic Notice (shown only when active locale cannot reach CDP) ---
@@ -31544,7 +31467,7 @@ const HostI18nCard = defineComponent({
       ]),
       h('div', { className: 'form-row' }, [
         langLabelEl,
-        h('div', { className: 'host-i18n-select-row' }, [langSelect.el, refreshManifestBtn]),
+        langSelect.el,
         langHintEl,
       ]),
       depthRowEl,
@@ -31573,7 +31496,6 @@ const HostI18nCard = defineComponent({
         options: buildLocaleOptions(),
         disabled: isBusy,
       });
-      patchAttr(refreshManifestBtn, 'disabled', isBusy);
 
       patchAttr(depthRowEl, 'hidden', !enabled);
       depthSwitch.setProps({
@@ -31589,28 +31511,6 @@ const HostI18nCard = defineComponent({
 
       patchAttr(packBarEl, 'hidden', !enabled);
       if (enabled) {
-        const ver = activePack?.installedVersion || activePack?.remoteVersion || '1.0.0';
-        const stats = activePack?.stats;
-        const entryCount = stats
-          ? Number(stats.baseExact || 0) +
-            Number(draftDepth === 'deep' ? stats.deepExact || 0 : stats.lightExact || 0) +
-            Number(stats.basePatterns || 0) +
-            Number(draftDepth === 'deep' ? stats.deepPatterns || 0 : stats.lightPatterns || 0)
-          : 0;
-        const sizeStr = formatHostI18nBytes(
-          activePack?.installedBytes || activePack?.remoteBytes || 0
-        );
-        const appliedCount = Number(latestWindowBridge?.hostI18nAppliedCount || 0);
-        const metaParts = [`v${ver}`];
-        if (entryCount > 0) {
-          metaParts.push(t('settings.hostI18n.entriesCount', { count: entryCount }));
-        }
-        if (sizeStr) metaParts.push(sizeStr);
-        if (appliedCount > 0) {
-          metaParts.push(t('settings.hostI18n.appliedWindows', { count: appliedCount }));
-        }
-        patchText(packMetaTextEl, metaParts.join(' · '));
-
         const hasUpdate = Boolean(activePack?.updateAvailable);
         patchText(
           updatePackBtnText,
@@ -31623,7 +31523,6 @@ const HostI18nCard = defineComponent({
           'btn-secondary': !hasUpdate,
         });
         patchAttr(updatePackBtn, 'disabled', isBusy);
-        patchAttr(removePackBtn, 'disabled', isBusy || !activePack?.installed);
       }
 
       bridgeNotice.refs.update({
@@ -31644,7 +31543,7 @@ const HostI18nCard = defineComponent({
         applyStatusPayload(res);
         props.onLayoutChange?.();
       } catch {
-        // 静默兜底，保留手动刷新入口
+        // 静默兜底
       }
     }
 
@@ -31652,7 +31551,6 @@ const HostI18nCard = defineComponent({
       if (windowBridge) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
       const sig = [
-        Number(latestWindowBridge?.hostI18nAppliedCount || 0),
         Boolean(latestWindowBridge?.connected),
         Boolean(latestWindowBridge?.available),
         String(latestWindowBridge?.reason || ''),
@@ -31669,14 +31567,11 @@ const HostI18nCard = defineComponent({
       patchText(langLabelEl, t('settings.hostI18n.langLabel'));
       patchText(langHintEl, t('settings.hostI18n.langHint'));
       patchText(depthLabelEl, t('settings.hostI18n.depthLabel'));
-      patchText(removePackBtnText, t('settings.hostI18n.removeCacheBtn'));
       patchText(devToggleText, t('settings.hostI18n.devToolsTitle'));
       patchText(devHintEl, t('settings.hostI18n.devToolsHint'));
       if (!isCollecting) patchText(collectBtnText, t('settings.hostI18n.collectBtn'));
       patchText(copyCollectedBtnText, t('settings.hostI18n.copyJsonBtn'));
       patchText(exportCollectedBtnText, t('settings.hostI18n.exportJsonBtn'));
-      patchAttr(refreshManifestBtn, 'title', t('settings.hostI18n.refreshManifestTip'));
-      patchAttr(refreshManifestBtn, 'aria-label', t('settings.hostI18n.refreshManifestTip'));
       bridgeNotice.refs.refreshLabels();
       syncControls();
     }
