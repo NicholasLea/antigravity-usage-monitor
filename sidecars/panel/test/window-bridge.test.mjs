@@ -5026,6 +5026,232 @@ test('v1.5 feedback E2E: sticky bridge port/token across hot-reloads, CDP->HTTP 
   }
 });
 
+test('WindowOverlayShell adaptive popover width handles virtualized .is-cols-locked step table, pop-in scale(0.975), and pane padding', async () => {
+  const appJs = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const stylesCss = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+  const savedSettings = {
+    language: 'zh-CN',
+    windowMountMode: 'dual',
+    enableWindowOverlay: true,
+    modernUi: true,
+    popoverWidthMode: 'auto',
+    popoverWidth: 580,
+    modelDisplayMode: 'upstream_compact',
+    stepTableColumns: ['time', 'model', 'tps', 'ttft', 'tokens_combo', 'cache', 'cost'],
+  };
+
+  const makeSteps = (count) =>
+    Array.from({ length: count }, (_, i) => ({
+      stepIndex: count - i,
+      createdAtMs: 1795600000000 - i * 10000,
+      modelShort: '4-carbon',
+      modelLabel: 'Gemini 4 Carbon',
+      modelUpstream: 'gemini-4-carbon',
+      tokPerSec: 32.6,
+      ttftSec: 44.3,
+      contextTokens: 312200,
+      inputTokens: 1000,
+      cacheReadTokens: 309000,
+      outputTokens: 2225,
+      thinkingTokens: 25,
+      responseTokens: 2200,
+      cacheHitPct: 98.9,
+      costUsd: 0.62,
+    }));
+
+  const buildPayload = () => ({
+    uiBundleVersion: 'ver-v156-auto',
+    settings: { ...savedSettings },
+    cloudStatus: { currentPluginVersion: '1.5.6', latestPluginVersion: '1.5.6', updateAvailable: false },
+    account: { planName: 'Google AI Ultra' },
+    quotas: { activePool: { remainingPct: 62 }, pools: [], weekly: {} },
+    runningConversations: [],
+    conversations: [{ cascadeId: 'aaaa1111-2222-3333-4444-555555555555', title: 'Virtualized 138', stepCount: 138 }],
+    activeConversation: {
+      cascadeId: 'aaaa1111-2222-3333-4444-555555555555',
+      title: 'Virtualized 138',
+      isRunning: false,
+      stepCount: 138,
+      latestTokPerSec: 32.6,
+      latestTtftSec: 44.3,
+      context: { totalTokens: 312200, compactionLimitTokens: 512000, limitTokens: 512000 },
+      recentSteps: makeSteps(138),
+      agents: [],
+    },
+    consumption: {
+      selectedRange: { key: 'today', label: '今天', startMs: 1, endMs: 2 },
+      session: {},
+      account: {},
+      trendSeries: [],
+      monthlySeries: [],
+    },
+    modelBreakdown: [],
+  });
+
+  let popAnimScale = 0.975;
+  let trueNaturalTableW = 556;
+  let lockedFixedTableW = 480;
+  let popElRef = null;
+  let tableElRef = null;
+
+  const { document: mockDoc } = createMockDom({
+    resolveRect: (el) => {
+      const scale = el === popElRef || (tableElRef && (el === tableElRef || el.tagName === 'TH' || el.tagName === 'TR'))
+        ? popAnimScale
+        : 1;
+      if (el === tableElRef) {
+        const isLocked = el.classList?.contains?.('is-cols-locked');
+        const ths = el.querySelector?.('thead')?.querySelectorAll?.('th') || [];
+        const hasInlineThW = ths.some((th) => Boolean(th?.style?.width));
+        const hasMinW = Number.parseFloat(el.style?.minWidth) || 0;
+        let layoutW;
+        if (isLocked || hasInlineThW) {
+          layoutW = lockedFixedTableW;
+        } else if (el.style?.width === 'max-content') {
+          layoutW = Math.max(trueNaturalTableW, hasMinW);
+        } else {
+          layoutW = Math.max(488, hasMinW);
+        }
+        return { left: 0, right: layoutW * scale, top: 0, bottom: 400 * scale, width: layoutW * scale, height: 400 * scale };
+      }
+      if (el.tagName === 'TH') {
+        const w = 72;
+        return { left: 0, right: w * scale, top: 0, bottom: 28 * scale, width: w * scale, height: 28 * scale };
+      }
+      if (el.tagName === 'TR') {
+        return { left: 0, right: 556 * scale, top: 0, bottom: 28 * scale, width: 556 * scale, height: 28 * scale };
+      }
+      const w = Number.parseFloat(el.style.width) || el.offsetWidth || 120;
+      return { left: 900, right: 900 + w * scale, top: 8, bottom: 36, width: w * scale, height: 28 };
+    },
+  });
+
+  const mockWin = {
+    innerWidth: 1280,
+    innerHeight: 820,
+    location: { pathname: '/c/aaaa1111-2222-3333-4444-555555555555', search: '' },
+    __AGUsageMonitorBridge: {
+      port: 43112,
+      token: 'b'.repeat(64),
+      bundleVersion: 'ver-v156-auto',
+      stylesCss,
+      initialTelemetry: buildPayload(),
+    },
+    addEventListener() {},
+    removeEventListener() {},
+    getComputedStyle: (el) => {
+      if (el === popElRef) {
+        return {
+          transform: popAnimScale === 1 ? 'none' : `matrix(${popAnimScale}, 0, 0, ${popAnimScale}, 0, -4)`,
+          getPropertyValue: () => '',
+        };
+      }
+      if (el?.classList?.contains?.('is-step-table')) {
+        return {
+          paddingLeft: '0px',
+          paddingRight: '10px',
+          transform: 'none',
+          getPropertyValue: () => '',
+        };
+      }
+      return { transform: 'none', getPropertyValue: () => '', display: 'flex', flexDirection: 'row' };
+    },
+    fetch: async () => ({ ok: true, status: 200, json: async () => buildPayload() }),
+  };
+
+  const sandbox = {
+    window: mockWin,
+    document: mockDoc,
+    navigator: { language: 'zh-CN' },
+    URLSearchParams,
+    AbortController,
+    queueMicrotask,
+    requestAnimationFrame: (fn) => setTimeout(fn, 0),
+    cancelAnimationFrame: clearTimeout,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    Promise,
+    Math,
+    Date,
+    JSON,
+    Number,
+    String,
+    Boolean,
+    Array,
+    Object,
+    Map,
+    Set,
+    WeakMap,
+    RegExp,
+    Error,
+    TypeError,
+    parseFloat,
+    parseInt,
+    isNaN,
+  };
+  sandbox.globalThis = sandbox;
+  vm.runInNewContext(appJs, sandbox);
+
+  const ov = mockWin.__AGUsageMonitorOverlay;
+  assert.ok(ov, 'Overlay mounted');
+  try {
+    ov.open();
+    const portalHost = mockDoc.getElementById('ag-usage-monitor-portal');
+    const popEl = portalHost.shadowRoot.querySelector('.wm-popover-panel');
+    popElRef = popEl;
+    const navPills = popEl.querySelectorAll('.pill-tab');
+    const tableViewport = popEl.querySelector('.table-viewport.is-step-table');
+    const stepTable = tableViewport.querySelector('.steps-data-table');
+    tableElRef = stepTable;
+
+    // Simulate real Modern UI geometry: popover 540px, pane clientWidth 498px with 10px right padding -> 488px content box (chrome = 52px)
+    popEl.offsetWidth = 540;
+    tableViewport.clientWidth = 498;
+    tableViewport.clientHeight = 400;
+    stepTable.scrollWidth = 0;
+    stepTable.offsetWidth = 0;
+
+    // Pre-poison table as .is-cols-locked with stale narrow th.style.width + minWidth to mimic reopen/re-entry
+    stepTable.classList.add('is-cols-locked');
+    stepTable.style.minWidth = '480px';
+    for (const th of stepTable.querySelector('thead').querySelectorAll('th')) {
+      th.style.width = '68.57px';
+    }
+
+    // Switch to Steps tab while pop-in animation is at scale(0.975)
+    navPills[2].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+
+    // Must release stale .is-cols-locked, unscale 0.975, count pane paddingRight=10px (chrome=52px) -> 556 + 52 + 4 = 612px
+    assert.equal(
+      popEl.style.width,
+      '612px',
+      'Auto width must pierce .is-cols-locked, unscale pop-in scale(0.975), and include pane padding-right'
+    );
+    assert.equal(stepTable.classList.contains('is-cols-locked'), true, 'Virtualized 138-row table stays column-locked after measuring');
+
+    // Animation finishes -> animationend re-verifies cleanly at scale=1
+    popAnimScale = 1;
+    popEl.offsetWidth = 612;
+    tableViewport.clientWidth = 570; // 612 - 52 + 10 = 570
+    popEl.dispatchEvent({ type: 'animationend', target: popEl });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(popEl.style.width, '612px', 'Popover preserves exact 612px width after animationend');
+
+    // Narrowing table content (e.g. fewer columns) shrinks popover back to 540px even when previously locked with minWidth
+    trueNaturalTableW = 360;
+    stepTable.style.minWidth = '600px';
+    popEl.dispatchEvent({ type: 'animationend', target: popEl });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(popEl.style.width, '540px', 'Auto width ignores stale locked minWidth and shrinks back to 540px');
+  } finally {
+    ov.dispose();
+  }
+});
+
 test('WindowOverlayShell macOS (darwin) adaptation: sets data-os="mac", uses 12px fixed right fallback, and reserves 80px for traffic lights', async () => {
   const panelDir = path.resolve(import.meta.dirname, '..');
   const appJs = fs.readFileSync(path.join(panelDir, 'app.js'), 'utf8');

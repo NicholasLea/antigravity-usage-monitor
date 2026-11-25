@@ -7,6 +7,8 @@
 
 import { defineComponent } from '../../core/component.js';
 import {
+  getElementContentWidth,
+  getVisualTransformScale,
   h,
   patchAttr,
   patchClasses,
@@ -688,7 +690,12 @@ export const StepTableWidget = defineComponent({
     let calibratedReasonRowH = 0;
     let lockedColKey = '';
     let lockedPaneWidth = 0;
+    let lockedWhileScaled = false;
     const rowPool = [];
+
+    function getPaneContentWidth() {
+      return getElementContentWidth(stepsTablePane);
+    }
 
     function computeColLockKey(ds) {
       if (!ds?.isVirtualized) return '';
@@ -698,6 +705,7 @@ export const StepTableWidget = defineComponent({
     function unlockColumnWidths() {
       lockedColKey = '';
       lockedPaneWidth = 0;
+      lockedWhileScaled = false;
       patchClasses(stepsTableEl, { 'is-cols-locked': false });
       if (stepsTableEl.style) {
         stepsTableEl.style.minWidth = '';
@@ -710,10 +718,12 @@ export const StepTableWidget = defineComponent({
 
     function lockColumnWidthsIfNeeded() {
       if (!activeDataset?.isVirtualized) return;
-      const paneW = Number(stepsTablePane.clientWidth || 0);
+      const paneW = getPaneContentWidth();
       if (paneW <= 0) return;
       const nextKey = computeColLockKey(activeDataset);
-      if (lockedColKey === nextKey && Math.abs(paneW - lockedPaneWidth) < 1) return;
+      const { scaleX: preScaleX } = getVisualTransformScale(stepsTableEl);
+      const scaleSettled = lockedWhileScaled && Math.abs(preScaleX - 1) <= 0.001;
+      if (lockedColKey === nextKey && Math.abs(paneW - lockedPaneWidth) < 1 && !scaleSettled) return;
 
       const ths = stepsTheadRow.children || [];
       const colCount = activeDataset.colKeys.length;
@@ -724,13 +734,23 @@ export const StepTableWidget = defineComponent({
         unlockColumnWidths();
       }
 
+      const { scaleX } = getVisualTransformScale(stepsTableEl);
       const widths = [];
+      let sumWidths = 0;
       for (let i = 0; i < colCount; i++) {
-        const w = Number(ths[i]?.getBoundingClientRect?.()?.width || 0);
+        const rawW = Number(ths[i]?.getBoundingClientRect?.()?.width || 0);
+        const w = rawW > 0 ? rawW / scaleX : Number(ths[i]?.offsetWidth || 0);
         if (!Number.isFinite(w) || w <= 0) return;
         widths.push(w);
+        sumWidths += w;
       }
-      const tableW = Number(stepsTableEl.getBoundingClientRect?.()?.width || 0);
+      const rawTableRectW = Number(stepsTableEl.getBoundingClientRect?.()?.width || 0);
+      const unscaledTableRectW = rawTableRectW > 0 ? rawTableRectW / scaleX : 0;
+      const layoutTableW = Math.max(
+        Number(stepsTableEl.scrollWidth || 0),
+        Number(stepsTableEl.offsetWidth || 0)
+      );
+      const tableW = Math.max(unscaledTableRectW, layoutTableW, sumWidths);
       if (!Number.isFinite(tableW) || tableW <= 0) return;
 
       for (let i = 0; i < colCount; i++) {
@@ -739,11 +759,12 @@ export const StepTableWidget = defineComponent({
         }
       }
       if (stepsTableEl.style) {
-        stepsTableEl.style.minWidth = tableW > paneW + 0.5 ? `${tableW.toFixed(2)}px` : '';
+        stepsTableEl.style.minWidth = tableW > paneW + 0.5 ? `${Math.ceil(tableW)}px` : '';
       }
       patchClasses(stepsTableEl, { 'is-cols-locked': true });
       lockedColKey = nextKey;
       lockedPaneWidth = paneW;
+      lockedWhileScaled = Math.abs(scaleX - 1) > 0.001;
     }
 
     function readUiFontScale() {
@@ -962,6 +983,7 @@ export const StepTableWidget = defineComponent({
       const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
       if (!needSingle && !needReason) return;
 
+      const { scaleY } = getVisualTransformScale(stepsTableEl);
       let measuredSingle = 0;
       let measuredReason = 0;
       // Measure contiguous run of normal rows to eliminate single-row subpixel/border-collapse drift.
@@ -981,7 +1003,8 @@ export const StepTableWidget = defineComponent({
         const isReason = tr.dataset?.hasReason === '1';
         if (!isReason && needSingle) {
           const rect = tr.getBoundingClientRect?.();
-          const hVal = Number(rect?.height || tr.offsetHeight || 0);
+          const rawRectH = Number(rect?.height || 0);
+          const hVal = rawRectH > 0 ? rawRectH / scaleY : Number(tr.offsetHeight || 0);
           if (hVal >= 14 && hVal <= 120) {
             if (!measuredSingle) measuredSingle = hVal;
             if (rect && Number.isFinite(rect.top) && Number.isFinite(rect.bottom) && rect.bottom > rect.top) {
@@ -991,7 +1014,7 @@ export const StepTableWidget = defineComponent({
               runEndBottom = rect.bottom;
               runCount += 1;
               if (runCount > bestRunCount && runCount >= 2) {
-                const stride = (runEndBottom - runStartTop) / runCount;
+                const stride = (runEndBottom - runStartTop) / (runCount * scaleY);
                 if (stride >= 14 && stride <= 120) {
                   bestRunCount = runCount;
                   bestRunStride = stride;
@@ -1002,7 +1025,8 @@ export const StepTableWidget = defineComponent({
         } else {
           runCount = 0;
           if (isReason && needReason && !measuredReason) {
-            const hVal = Number(tr.getBoundingClientRect?.()?.height || tr.offsetHeight || 0);
+            const rawRectH = Number(tr.getBoundingClientRect?.()?.height || 0);
+            const hVal = rawRectH > 0 ? rawRectH / scaleY : Number(tr.offsetHeight || 0);
             if (hVal >= 18 && hVal <= 160) measuredReason = hVal;
           }
         }
@@ -1050,15 +1074,25 @@ export const StepTableWidget = defineComponent({
       if (!activeDataset?.isVirtualized) return;
       const needSingle = calibratedSingleRowH <= 0;
       const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
-      const paneW = Number(stepsTablePane.clientWidth || 0);
+      const paneW = getPaneContentWidth();
+      const scaleSettled =
+        lockedWhileScaled && Math.abs(getVisualTransformScale(stepsTableEl).scaleX - 1) <= 0.001;
       const needColLock =
         !lockedColKey ||
         lockedColKey !== computeColLockKey(activeDataset) ||
+        scaleSettled ||
         (paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1);
       if (!needSingle && !needReason && !needColLock) return;
       if (calibrateRafId) return;
       if (typeof requestAnimationFrame === 'function') {
-        calibrateRafId = requestAnimationFrame(calibrateRowHeights);
+        let ranSync = false;
+        const id = requestAnimationFrame(() => {
+          ranSync = true;
+          calibrateRowHeights();
+        });
+        if (!ranSync) {
+          calibrateRafId = id;
+        }
       } else {
         calibrateRowHeights();
       }
@@ -1621,8 +1655,10 @@ export const StepTableWidget = defineComponent({
     function refreshViewport() {
       if (!activeDataset?.isVirtualized) return;
       const scaleChanged = syncFontScaleIfChanged();
-      const paneW = Number(stepsTablePane.clientWidth || 0);
-      if (lockedColKey && paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1) {
+      const paneW = getPaneContentWidth();
+      const scaleSettled =
+        lockedWhileScaled && Math.abs(getVisualTransformScale(stepsTableEl).scaleX - 1) <= 0.001;
+      if (lockedColKey && ((paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1) || scaleSettled)) {
         unlockColumnWidths();
       }
       renderCurrentWindow({ force: scaleChanged, enteringRowKeys: null });

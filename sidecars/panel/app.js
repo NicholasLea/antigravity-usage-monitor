@@ -4557,7 +4557,7 @@ return { THEME_ACCENT_PRESETS, FONT_SCALE_FACTORS, PANEL_SCALE_FACTORS, normaliz
 })();
 
 // --- src/core/domPatch.js ---
-const { h, patchText, patchAttr, patchClasses, patchStyleVar, isEventInside, patchKeyedList, positionAnchoredPopup } = (() => {
+const { h, patchText, patchAttr, patchClasses, patchStyleVar, isEventInside, getElementContentWidth, getVisualTransformScale, patchKeyedList, positionAnchoredPopup } = (() => {
 function h(tag, props = {}, children = []) {
   const el = document.createElement(tag);
   if (props) {
@@ -4678,6 +4678,133 @@ function isEventInside(event, element) {
   }
   const target = event.target;
   return Boolean(target && typeof element.contains === 'function' && element.contains(target));
+}
+
+function parseCssTransformScale(transformStr) {
+  const raw = String(transformStr || '').trim();
+  if (!raw || raw === 'none') return null;
+  if (raw.startsWith('matrix3d(')) {
+    const nums = raw
+      .slice(9, -1)
+      .split(',')
+      .map((s) => Number.parseFloat(s.trim()));
+    if (nums.length === 16 && nums.every(Number.isFinite)) {
+      const scaleX = Math.hypot(nums[0], nums[1], nums[2]);
+      const scaleY = Math.hypot(nums[4], nums[5], nums[6]);
+      if (scaleX > 0.1 && scaleX < 10 && scaleY > 0.1 && scaleY < 10) {
+        return { scaleX, scaleY };
+      }
+    }
+    return null;
+  }
+  if (raw.startsWith('matrix(')) {
+    const nums = raw
+      .slice(7, -1)
+      .split(',')
+      .map((s) => Number.parseFloat(s.trim()));
+    if (nums.length === 6 && nums.every(Number.isFinite)) {
+      const scaleX = Math.hypot(nums[0], nums[1]);
+      const scaleY = Math.hypot(nums[2], nums[3]);
+      if (scaleX > 0.1 && scaleX < 10 && scaleY > 0.1 && scaleY < 10) {
+        return { scaleX, scaleY };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * 读取元素内容区可用宽度（`clientWidth` 扣除左右 `padding`，用于和子元素 `100%` 布局宽度精确对齐）。
+ *
+ * @param {Element|null|undefined} el
+ * @returns {number}
+ */
+function getElementContentWidth(el) {
+  const clientW = Number(el?.clientWidth || 0);
+  if (!(clientW > 0)) return 0;
+  let padL = 0;
+  let padR = 0;
+  const getStyle =
+    typeof window !== 'undefined' && typeof window.getComputedStyle === 'function'
+      ? window.getComputedStyle
+      : typeof getComputedStyle === 'function'
+        ? getComputedStyle
+        : null;
+  if (getStyle) {
+    try {
+      const cs = getStyle(el);
+      const pl = Number.parseFloat(cs?.paddingLeft);
+      const pr = Number.parseFloat(cs?.paddingRight);
+      if (Number.isFinite(pl) && pl > 0) padL = pl;
+      if (Number.isFinite(pr) && pr > 0) padR = pr;
+    } catch {
+      // 忽略 Mock DOM 样式查询异常
+    }
+  }
+  return Math.max(0, clientW - padL - padR);
+}
+
+/**
+ * 计算元素当前生效的视觉缩放比（例如入场动画 `scale(0.975)`），
+ * 用于将受 `transform` 影响的 `getBoundingClientRect()` 还原为真实 CSS 布局像素。
+ *
+ * @param {Element|null|undefined} el
+ * @param {Element|null|undefined} [stopEl]
+ * @returns {{ scaleX: number, scaleY: number }}
+ */
+function getVisualTransformScale(el, stopEl = null) {
+  let scaleX = 1;
+  let scaleY = 1;
+  if (!el) return { scaleX, scaleY };
+  const getStyle =
+    typeof window !== 'undefined' && typeof window.getComputedStyle === 'function'
+      ? window.getComputedStyle
+      : typeof getComputedStyle === 'function'
+        ? getComputedStyle
+        : null;
+  if (getStyle) {
+    let cur = el;
+    for (let depth = 0; cur && depth < 16; depth++) {
+      try {
+        const parsed = parseCssTransformScale(getStyle(cur)?.transform);
+        if (parsed) {
+          scaleX *= parsed.scaleX;
+          scaleY *= parsed.scaleY;
+        }
+      } catch {
+        // 忽略 Mock DOM 样式查询异常
+      }
+      if (stopEl && cur === stopEl) break;
+      cur = cur.parentElement || (cur.parentNode && cur.parentNode.nodeType === 1 ? cur.parentNode : null);
+    }
+  }
+
+  const rect = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+  if (Math.abs(scaleX - 1) <= 0.001) {
+    const offsetW = Number(el.offsetWidth || 0);
+    const rectW = Number(rect?.width || 0);
+    if (offsetW >= 16 && rectW > 0) {
+      const ratioX = rectW / offsetW;
+      if (Number.isFinite(ratioX) && ratioX > 0.25 && ratioX < 4 && Math.abs(ratioX - 1) > 0.004) {
+        scaleX = ratioX;
+      }
+    }
+  }
+  if (Math.abs(scaleY - 1) <= 0.001) {
+    const offsetH = Number(el.offsetHeight || 0);
+    const rectH = Number(rect?.height || 0);
+    if (offsetH >= 16 && rectH > 0) {
+      const ratioY = rectH / offsetH;
+      if (Number.isFinite(ratioY) && ratioY > 0.25 && ratioY < 4 && Math.abs(ratioY - 1) > 0.004) {
+        scaleY = ratioY;
+      }
+    }
+  }
+
+  return {
+    scaleX: Number.isFinite(scaleX) && scaleX > 0.1 && scaleX < 10 ? scaleX : 1,
+    scaleY: Number.isFinite(scaleY) && scaleY > 0.1 && scaleY < 10 ? scaleY : 1,
+  };
 }
 
 const keyedListState = new WeakMap();
@@ -4966,7 +5093,7 @@ function positionAnchoredPopup(
     }
   }
 }
-return { h, patchText, patchAttr, patchClasses, patchStyleVar, isEventInside, patchKeyedList, positionAnchoredPopup };
+return { h, patchText, patchAttr, patchClasses, patchStyleVar, isEventInside, getElementContentWidth, getVisualTransformScale, patchKeyedList, positionAnchoredPopup };
 })();
 
 // --- src/core/component.js ---
@@ -27562,7 +27689,12 @@ const StepTableWidget = defineComponent({
     let calibratedReasonRowH = 0;
     let lockedColKey = '';
     let lockedPaneWidth = 0;
+    let lockedWhileScaled = false;
     const rowPool = [];
+
+    function getPaneContentWidth() {
+      return getElementContentWidth(stepsTablePane);
+    }
 
     function computeColLockKey(ds) {
       if (!ds?.isVirtualized) return '';
@@ -27572,6 +27704,7 @@ const StepTableWidget = defineComponent({
     function unlockColumnWidths() {
       lockedColKey = '';
       lockedPaneWidth = 0;
+      lockedWhileScaled = false;
       patchClasses(stepsTableEl, { 'is-cols-locked': false });
       if (stepsTableEl.style) {
         stepsTableEl.style.minWidth = '';
@@ -27584,10 +27717,12 @@ const StepTableWidget = defineComponent({
 
     function lockColumnWidthsIfNeeded() {
       if (!activeDataset?.isVirtualized) return;
-      const paneW = Number(stepsTablePane.clientWidth || 0);
+      const paneW = getPaneContentWidth();
       if (paneW <= 0) return;
       const nextKey = computeColLockKey(activeDataset);
-      if (lockedColKey === nextKey && Math.abs(paneW - lockedPaneWidth) < 1) return;
+      const { scaleX: preScaleX } = getVisualTransformScale(stepsTableEl);
+      const scaleSettled = lockedWhileScaled && Math.abs(preScaleX - 1) <= 0.001;
+      if (lockedColKey === nextKey && Math.abs(paneW - lockedPaneWidth) < 1 && !scaleSettled) return;
 
       const ths = stepsTheadRow.children || [];
       const colCount = activeDataset.colKeys.length;
@@ -27598,13 +27733,23 @@ const StepTableWidget = defineComponent({
         unlockColumnWidths();
       }
 
+      const { scaleX } = getVisualTransformScale(stepsTableEl);
       const widths = [];
+      let sumWidths = 0;
       for (let i = 0; i < colCount; i++) {
-        const w = Number(ths[i]?.getBoundingClientRect?.()?.width || 0);
+        const rawW = Number(ths[i]?.getBoundingClientRect?.()?.width || 0);
+        const w = rawW > 0 ? rawW / scaleX : Number(ths[i]?.offsetWidth || 0);
         if (!Number.isFinite(w) || w <= 0) return;
         widths.push(w);
+        sumWidths += w;
       }
-      const tableW = Number(stepsTableEl.getBoundingClientRect?.()?.width || 0);
+      const rawTableRectW = Number(stepsTableEl.getBoundingClientRect?.()?.width || 0);
+      const unscaledTableRectW = rawTableRectW > 0 ? rawTableRectW / scaleX : 0;
+      const layoutTableW = Math.max(
+        Number(stepsTableEl.scrollWidth || 0),
+        Number(stepsTableEl.offsetWidth || 0)
+      );
+      const tableW = Math.max(unscaledTableRectW, layoutTableW, sumWidths);
       if (!Number.isFinite(tableW) || tableW <= 0) return;
 
       for (let i = 0; i < colCount; i++) {
@@ -27613,11 +27758,12 @@ const StepTableWidget = defineComponent({
         }
       }
       if (stepsTableEl.style) {
-        stepsTableEl.style.minWidth = tableW > paneW + 0.5 ? `${tableW.toFixed(2)}px` : '';
+        stepsTableEl.style.minWidth = tableW > paneW + 0.5 ? `${Math.ceil(tableW)}px` : '';
       }
       patchClasses(stepsTableEl, { 'is-cols-locked': true });
       lockedColKey = nextKey;
       lockedPaneWidth = paneW;
+      lockedWhileScaled = Math.abs(scaleX - 1) > 0.001;
     }
 
     function readUiFontScale() {
@@ -27836,6 +27982,7 @@ const StepTableWidget = defineComponent({
       const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
       if (!needSingle && !needReason) return;
 
+      const { scaleY } = getVisualTransformScale(stepsTableEl);
       let measuredSingle = 0;
       let measuredReason = 0;
       // Measure contiguous run of normal rows to eliminate single-row subpixel/border-collapse drift.
@@ -27855,7 +28002,8 @@ const StepTableWidget = defineComponent({
         const isReason = tr.dataset?.hasReason === '1';
         if (!isReason && needSingle) {
           const rect = tr.getBoundingClientRect?.();
-          const hVal = Number(rect?.height || tr.offsetHeight || 0);
+          const rawRectH = Number(rect?.height || 0);
+          const hVal = rawRectH > 0 ? rawRectH / scaleY : Number(tr.offsetHeight || 0);
           if (hVal >= 14 && hVal <= 120) {
             if (!measuredSingle) measuredSingle = hVal;
             if (rect && Number.isFinite(rect.top) && Number.isFinite(rect.bottom) && rect.bottom > rect.top) {
@@ -27865,7 +28013,7 @@ const StepTableWidget = defineComponent({
               runEndBottom = rect.bottom;
               runCount += 1;
               if (runCount > bestRunCount && runCount >= 2) {
-                const stride = (runEndBottom - runStartTop) / runCount;
+                const stride = (runEndBottom - runStartTop) / (runCount * scaleY);
                 if (stride >= 14 && stride <= 120) {
                   bestRunCount = runCount;
                   bestRunStride = stride;
@@ -27876,7 +28024,8 @@ const StepTableWidget = defineComponent({
         } else {
           runCount = 0;
           if (isReason && needReason && !measuredReason) {
-            const hVal = Number(tr.getBoundingClientRect?.()?.height || tr.offsetHeight || 0);
+            const rawRectH = Number(tr.getBoundingClientRect?.()?.height || 0);
+            const hVal = rawRectH > 0 ? rawRectH / scaleY : Number(tr.offsetHeight || 0);
             if (hVal >= 18 && hVal <= 160) measuredReason = hVal;
           }
         }
@@ -27924,15 +28073,25 @@ const StepTableWidget = defineComponent({
       if (!activeDataset?.isVirtualized) return;
       const needSingle = calibratedSingleRowH <= 0;
       const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
-      const paneW = Number(stepsTablePane.clientWidth || 0);
+      const paneW = getPaneContentWidth();
+      const scaleSettled =
+        lockedWhileScaled && Math.abs(getVisualTransformScale(stepsTableEl).scaleX - 1) <= 0.001;
       const needColLock =
         !lockedColKey ||
         lockedColKey !== computeColLockKey(activeDataset) ||
+        scaleSettled ||
         (paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1);
       if (!needSingle && !needReason && !needColLock) return;
       if (calibrateRafId) return;
       if (typeof requestAnimationFrame === 'function') {
-        calibrateRafId = requestAnimationFrame(calibrateRowHeights);
+        let ranSync = false;
+        const id = requestAnimationFrame(() => {
+          ranSync = true;
+          calibrateRowHeights();
+        });
+        if (!ranSync) {
+          calibrateRafId = id;
+        }
       } else {
         calibrateRowHeights();
       }
@@ -28495,8 +28654,10 @@ const StepTableWidget = defineComponent({
     function refreshViewport() {
       if (!activeDataset?.isVirtualized) return;
       const scaleChanged = syncFontScaleIfChanged();
-      const paneW = Number(stepsTablePane.clientWidth || 0);
-      if (lockedColKey && paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1) {
+      const paneW = getPaneContentWidth();
+      const scaleSettled =
+        lockedWhileScaled && Math.abs(getVisualTransformScale(stepsTableEl).scaleX - 1) <= 0.001;
+      if (lockedColKey && ((paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1) || scaleSettled)) {
         unlockColumnWidths();
       }
       renderCurrentWindow({ force: scaleChanged, enteringRowKeys: null });
@@ -40514,7 +40675,9 @@ function getFitMetricSwitchOptions() {
 
 const StepsDetailView = defineComponent({
   name: 'StepsDetailView',
-  setup({ onCleanup }) {
+  setup({ getProps, onCleanup }) {
+    const onLayoutChange =
+      typeof getProps?.()?.onLayoutChange === 'function' ? getProps().onLayoutChange : null;
     let selectedAgentScopes = [uiStore.getState().selectedAgentScope || 'all'];
     let lastSyncedUiScope = uiStore.getState().selectedAgentScope || 'all';
     let selectedTableModels = ['__all__'];
@@ -41377,6 +41540,7 @@ const StepsDetailView = defineComponent({
         });
         stepsScroll.refresh();
         fitPinnedWhileVisible = false;
+        onLayoutChange?.();
         return;
       }
 
@@ -41926,6 +42090,7 @@ const StepsDetailView = defineComponent({
       });
 
       modelsScroll.refresh();
+      onLayoutChange?.();
     }
 
     const unsubUi = uiStore.subscribe(
@@ -42334,7 +42499,9 @@ function isEditableKeyTarget(e) {
 
 const App = defineComponent({
   name: 'App',
-  setup({ onCleanup }) {
+  setup({ getProps, onCleanup }) {
+    const onLayoutChange =
+      typeof getProps?.()?.onLayoutChange === 'function' ? getProps().onLayoutChange : null;
     const sessionHeader = TopSessionHeader();
     const topPillNav = TopLongPillNav({
       modelValue: uiStore.getState().activeView,
@@ -42346,7 +42513,7 @@ const App = defineComponent({
 
     const overviewView = LiveOverviewView();
     const consumptionView = ConsumptionView();
-    const stepsView = StepsDetailView();
+    const stepsView = StepsDetailView({ onLayoutChange });
     const settingsView = SettingsView();
 
     const globalBridgeNotice = BridgeStatusNotice({
@@ -44129,13 +44296,43 @@ function mountWindowOverlay() {
     []
   );
 
+  let popoverLayoutMicrotaskPending = false;
+  function schedulePopoverLayoutSync() {
+    if (disposed || !popoverOpen || popoverLayoutMicrotaskPending) return;
+    popoverLayoutMicrotaskPending = true;
+    const run = () => {
+      popoverLayoutMicrotaskPending = false;
+      if (disposed || !popoverOpen) return;
+      positionFloatingElements();
+    };
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(run);
+    } else {
+      Promise.resolve().then(run);
+    }
+  }
+
   function ensureAppMounted() {
     if (!appInstance) {
-      appInstance = App();
+      appInstance = App({
+        onLayoutChange: () => {
+          if (!disposed && popoverOpen) {
+            schedulePopoverLayoutSync();
+          }
+        },
+      });
       popoverEl.appendChild(appInstance.el);
     }
     return appInstance;
   }
+
+  const onPopoverAnimationEnd = (e) => {
+    if (disposed || !popoverOpen) return;
+    if (e?.target && e.target !== popoverEl) return;
+    positionFloatingElements();
+    refreshActiveViewScrollbars();
+  };
+  popoverEl.addEventListener?.('animationend', onPopoverAnimationEnd);
 
   function syncPortalAppearance(settings) {
     applyAppearanceToRoot(capsuleHost, settings, { includeFontScale: false });
@@ -44644,6 +44841,13 @@ function mountWindowOverlay() {
           );
         } else if (typeof popoverEl.querySelectorAll === 'function') {
           const panes = popoverEl.querySelectorAll('.table-viewport.is-step-table');
+          const { scaleX: popScaleX } = getVisualTransformScale(popoverEl);
+          const rawPopRectW = Number(popoverEl.getBoundingClientRect?.()?.width || 0);
+          const curPopW = Number(
+            popoverEl.offsetWidth ||
+              (rawPopRectW > 0 ? rawPopRectW / popScaleX : 0) ||
+              POPOVER_BASE_WIDTH
+          );
           for (const pane of panes) {
             let anc = pane;
             let inHiddenTree = false;
@@ -44657,33 +44861,49 @@ function mountWindowOverlay() {
             if (inHiddenTree) continue;
             const tableEl = pane.querySelector?.('.steps-data-table') || pane.firstElementChild;
             if (!tableEl) continue;
-            const paneClientW = Number(pane.clientWidth || 0);
-            const curPopW = Number(
-              popoverEl.offsetWidth ||
-                popoverEl.getBoundingClientRect?.().width ||
-                POPOVER_BASE_WIDTH
-            );
+            const paneContentW = getElementContentWidth(pane);
             let naturalTableW = 0;
             if (tableEl.style) {
+              const wasLocked = Boolean(tableEl.classList?.contains?.('is-cols-locked'));
               const prevW = tableEl.style.width || '';
+              const prevMinW = tableEl.style.minWidth || '';
+              const theadEl = wasLocked ? tableEl.querySelector?.('thead') : null;
+              const lockedThs = theadEl?.querySelectorAll
+                ? Array.from(theadEl.querySelectorAll('th'))
+                : [];
+              const prevThWidths = lockedThs.map((th) => th?.style?.width || '');
+              if (wasLocked) {
+                tableEl.classList.remove('is-cols-locked');
+                for (let i = 0; i < lockedThs.length; i++) {
+                  if (lockedThs[i]?.style) lockedThs[i].style.width = '';
+                }
+              }
+              tableEl.style.minWidth = '';
               tableEl.style.width = 'max-content';
-              naturalTableW = Math.ceil(
-                Number(
-                  tableEl.getBoundingClientRect?.().width ||
-                    tableEl.scrollWidth ||
-                    tableEl.offsetWidth ||
-                    0
-                )
+              const { scaleX: tableScaleX } = getVisualTransformScale(tableEl, popoverEl);
+              const rawTableRectW = Number(tableEl.getBoundingClientRect?.()?.width || 0);
+              const unscaledRectW = rawTableRectW > 0 ? rawTableRectW / tableScaleX : 0;
+              const layoutTableW = Math.max(
+                Number(tableEl.scrollWidth || 0),
+                Number(tableEl.offsetWidth || 0)
               );
+              naturalTableW = Math.ceil(Math.max(unscaledRectW, layoutTableW));
               tableEl.style.width = prevW;
+              tableEl.style.minWidth = prevMinW;
+              if (wasLocked) {
+                for (let i = 0; i < lockedThs.length; i++) {
+                  if (lockedThs[i]?.style) lockedThs[i].style.width = prevThWidths[i];
+                }
+                tableEl.classList.add('is-cols-locked');
+              }
             } else {
               naturalTableW = Math.ceil(Number(tableEl.scrollWidth || tableEl.offsetWidth || 0));
             }
             if (naturalTableW > 0) {
               const chromeW =
-                paneClientW > 0 && curPopW >= paneClientW
-                  ? Math.max(24, curPopW - paneClientW)
-                  : 34;
+                paneContentW > 0 && curPopW >= paneContentW
+                  ? Math.max(24, curPopW - paneContentW)
+                  : 52;
               desiredPopW = Math.max(
                 desiredPopW,
                 Math.min(POPOVER_MAX_AUTO_WIDTH, maxPopCardW, naturalTableW + chromeW + 4)
@@ -44691,12 +44911,13 @@ function mountWindowOverlay() {
             }
           }
         }
-        popoverEl.style.setProperty?.('--wm-popover-w', `${desiredPopW}px`);
-        popoverEl.style.width = `${desiredPopW}px`;
+        const prevPopWidthStyle = popoverEl.style.width || '';
+        const nextPopWidthStyle = `${desiredPopW}px`;
+        popoverEl.style.setProperty?.('--wm-popover-w', nextPopWidthStyle);
+        popoverEl.style.width = nextPopWidthStyle;
 
         const rawW =
           Number(popoverEl.offsetWidth) ||
-          Number(popoverEl.getBoundingClientRect?.().width) ||
           desiredPopW;
         const panelW = Math.min(rawW, maxPopCardW);
         const spaceBelowPop = vh - bRect.bottom - 12;
@@ -44724,6 +44945,9 @@ function mountWindowOverlay() {
         left = Math.max(minLeft, left);
         popoverEl.style.top = `${top}px`;
         popoverEl.style.left = `${left}px`;
+        if (prevPopWidthStyle && prevPopWidthStyle !== nextPopWidthStyle) {
+          refreshActiveViewScrollbars();
+        }
       }
 
       if (tooltipOpen && !popoverOpen && !multiOpen) {
@@ -45258,6 +45482,7 @@ function mountWindowOverlay() {
       renderCapsuleTelemetry();
       if (popoverOpen) {
         positionFloatingElements();
+        schedulePopoverLayoutSync();
       }
     }
   );
@@ -45275,6 +45500,7 @@ function mountWindowOverlay() {
       renderCapsuleTelemetry();
       if (popoverOpen) {
         positionFloatingElements();
+        schedulePopoverLayoutSync();
         if (typeof requestAnimationFrame === 'function') {
           requestAnimationFrame(() => {
             if (!disposed && popoverOpen) {
@@ -45668,6 +45894,7 @@ function mountWindowOverlay() {
       document.removeEventListener?.('keydown', onDocKeyDown);
       document.removeEventListener?.('focusin', onDocFocusIn);
       document.removeEventListener?.('visibilitychange', onVisibilityChange);
+      popoverEl.removeEventListener?.('animationend', onPopoverAnimationEnd);
       window.removeEventListener?.('pointermove', onWindowPointerMove);
       window.removeEventListener?.('blur', onWindowBlur);
       window.removeEventListener?.('resize', onWindowResize);

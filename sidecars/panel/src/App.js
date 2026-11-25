@@ -48,7 +48,9 @@ function isEditableKeyTarget(e) {
 
 export const App = defineComponent({
   name: 'App',
-  setup({ onCleanup }) {
+  setup({ getProps, onCleanup }) {
+    const onLayoutChange =
+      typeof getProps?.()?.onLayoutChange === 'function' ? getProps().onLayoutChange : null;
     const sessionHeader = TopSessionHeader();
     const topPillNav = TopLongPillNav({
       modelValue: uiStore.getState().activeView,
@@ -60,7 +62,7 @@ export const App = defineComponent({
 
     const overviewView = LiveOverviewView();
     const consumptionView = ConsumptionView();
-    const stepsView = StepsDetailView();
+    const stepsView = StepsDetailView({ onLayoutChange });
     const settingsView = SettingsView();
 
     const globalBridgeNotice = BridgeStatusNotice({

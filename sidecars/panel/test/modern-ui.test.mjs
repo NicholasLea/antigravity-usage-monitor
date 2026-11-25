@@ -2207,3 +2207,134 @@ test('host theme recovery parses modern CSS colors, avoids self-fallback trap, s
   assert.equal(ideResult?.vars['--card'], '#202020');
   assert.equal(ideResult?.vars['--foreground'], '#cccccc');
 });
+
+test('StepTableWidget virtualized column locking unscales CSS transform animations and respects pane padding', (t) => {
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRaf = globalThis.requestAnimationFrame;
+  const prevCancelRaf = globalThis.cancelAnimationFrame;
+  const prevGetComputedStyle = globalThis.getComputedStyle;
+
+  let currentScale = 0.975;
+  let panePadRight = 10;
+  const colWidths = [86, 62, 76, 44, 134, 48, 46]; // sum = 496px (> 488 contentW, < 498 clientW)
+  const trueTableW = colWidths.reduce((a, b) => a + b, 0);
+
+  const { document } = createMockDom({
+    resolveRect: (el) => {
+      if (el.tagName === 'TH') {
+        const siblings = el.parentNode?.children || [];
+        const idx = siblings.indexOf(el);
+        const baseW = colWidths[idx] || 60;
+        return { left: 0, top: 0, right: baseW * currentScale, bottom: 28 * currentScale, width: baseW * currentScale, height: 28 * currentScale };
+      }
+      if (el.classList?.contains('steps-data-table')) {
+        return { left: 0, top: 0, right: trueTableW * currentScale, bottom: 400 * currentScale, width: trueTableW * currentScale, height: 400 * currentScale };
+      }
+      if (el.tagName === 'TR') {
+        return { left: 0, top: 0, right: trueTableW * currentScale, bottom: 28 * currentScale, width: trueTableW * currentScale, height: 28 * currentScale };
+      }
+      return { left: 0, top: 0, right: 498 * currentScale, bottom: 400 * currentScale, width: 498 * currentScale, height: 400 * currentScale };
+    },
+  });
+
+  const popAncestor = document.createElement('div');
+  popAncestor.className = 'wm-popover-panel';
+  document.body.appendChild(popAncestor);
+
+  const mockGetComputedStyle = (el) => {
+    if (el === popAncestor) {
+      return {
+        transform: currentScale === 1 ? 'none' : `matrix(${currentScale}, 0, 0, ${currentScale}, 0, -4)`,
+        getPropertyValue: () => '',
+      };
+    }
+    if (el?.classList?.contains('is-step-table')) {
+      return {
+        paddingLeft: '0px',
+        paddingRight: `${panePadRight}px`,
+        transform: 'none',
+        getPropertyValue: () => '',
+      };
+    }
+    return { transform: 'none', getPropertyValue: () => '' };
+  };
+
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 820,
+    getComputedStyle: mockGetComputedStyle,
+  };
+  globalThis.getComputedStyle = mockGetComputedStyle;
+  globalThis.requestAnimationFrame = (fn) => {
+    fn();
+    return 1;
+  };
+  globalThis.cancelAnimationFrame = () => {};
+  t.after(() => {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.requestAnimationFrame = prevRaf;
+    globalThis.cancelAnimationFrame = prevCancelRaf;
+    globalThis.getComputedStyle = prevGetComputedStyle;
+  });
+
+  const stepTable = StepTableWidget({});
+  const { stepsTablePane, stepsTableEl, stepsTheadRow, renderStepTable, refreshViewport } = stepTable.refs;
+  popAncestor.appendChild(stepTable.el);
+  stepsTablePane.clientWidth = 498;
+  stepsTablePane.clientHeight = 400;
+
+  const cols = ['time', 'model', 'tps', 'ttft', 'tokens_combo', 'cache', 'cost'];
+  const steps = Array.from({ length: 138 }, (_, i) => ({
+    stepIndex: 138 - i,
+    createdAtMs: 1795600000000 - i * 10000,
+    modelShort: '4-carbon',
+    modelLabel: 'Gemini 4 Carbon',
+    tokPerSec: 32.6,
+    ttftSec: 44.3,
+    contextTokens: 312200,
+    inputTokens: 1000,
+    cacheReadTokens: 309000,
+    outputTokens: 2225,
+    thinkingTokens: 25,
+    responseTokens: 2200,
+    cacheHitPct: 98.9,
+    costUsd: 0.62,
+  }));
+
+  // 1. Render during pop-in animation (scale=0.975) with pane clientWidth=498 & paddingRight=10 (contentW=488 < 496)
+  renderStepTable(steps, 'conv-138', cols, 'zh-CN', { allConversationSteps: steps });
+  assert.equal(stepsTableEl.classList.contains('is-cols-locked'), true, 'Virtualized table locks columns');
+  const ths = stepsTheadRow.children;
+  for (let i = 0; i < cols.length; i++) {
+    assert.equal(
+      ths[i].style.width,
+      `${colWidths[i].toFixed(2)}px`,
+      `Column ${cols[i]} must unscale transform(0.975) back to true layout width ${colWidths[i]}px`
+    );
+  }
+  assert.equal(
+    stepsTableEl.style.minWidth,
+    `${trueTableW}px`,
+    'Table exceeding pane content width (496 > 488) must keep minWidth even when < clientWidth (498)'
+  );
+
+  // 2. Animation settles to scale=1.0 without clientWidth changing -> refreshViewport re-locks cleanly at native scale
+  currentScale = 1;
+  colWidths[1] = 64; // simulate slight native width change once settled
+  refreshViewport();
+  assert.equal(
+    ths[1].style.width,
+    '64.00px',
+    'Settling from animated scale to 1.0 must re-measure & re-lock columns even when clientWidth is unchanged'
+  );
+
+  // 3. When popover widens so pane content width (560 - 10 = 550) fits table (498), minWidth clears cleanly
+  stepsTablePane.clientWidth = 560;
+  refreshViewport();
+  assert.equal(stepsTableEl.style.minWidth, '', 'Wide enough pane clears horizontal minWidth');
+
+  stepTable.destroy();
+});

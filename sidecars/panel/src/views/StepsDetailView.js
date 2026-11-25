@@ -285,7 +285,9 @@ function getFitMetricSwitchOptions() {
 
 export const StepsDetailView = defineComponent({
   name: 'StepsDetailView',
-  setup({ onCleanup }) {
+  setup({ getProps, onCleanup }) {
+    const onLayoutChange =
+      typeof getProps?.()?.onLayoutChange === 'function' ? getProps().onLayoutChange : null;
     let selectedAgentScopes = [uiStore.getState().selectedAgentScope || 'all'];
     let lastSyncedUiScope = uiStore.getState().selectedAgentScope || 'all';
     let selectedTableModels = ['__all__'];
@@ -1148,6 +1150,7 @@ export const StepsDetailView = defineComponent({
         });
         stepsScroll.refresh();
         fitPinnedWhileVisible = false;
+        onLayoutChange?.();
         return;
       }
 
@@ -1697,6 +1700,7 @@ export const StepsDetailView = defineComponent({
       });
 
       modelsScroll.refresh();
+      onLayoutChange?.();
     }
 
     const unsubUi = uiStore.subscribe(

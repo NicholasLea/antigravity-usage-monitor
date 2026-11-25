@@ -125,6 +125,133 @@ export function isEventInside(event, element) {
   return Boolean(target && typeof element.contains === 'function' && element.contains(target));
 }
 
+function parseCssTransformScale(transformStr) {
+  const raw = String(transformStr || '').trim();
+  if (!raw || raw === 'none') return null;
+  if (raw.startsWith('matrix3d(')) {
+    const nums = raw
+      .slice(9, -1)
+      .split(',')
+      .map((s) => Number.parseFloat(s.trim()));
+    if (nums.length === 16 && nums.every(Number.isFinite)) {
+      const scaleX = Math.hypot(nums[0], nums[1], nums[2]);
+      const scaleY = Math.hypot(nums[4], nums[5], nums[6]);
+      if (scaleX > 0.1 && scaleX < 10 && scaleY > 0.1 && scaleY < 10) {
+        return { scaleX, scaleY };
+      }
+    }
+    return null;
+  }
+  if (raw.startsWith('matrix(')) {
+    const nums = raw
+      .slice(7, -1)
+      .split(',')
+      .map((s) => Number.parseFloat(s.trim()));
+    if (nums.length === 6 && nums.every(Number.isFinite)) {
+      const scaleX = Math.hypot(nums[0], nums[1]);
+      const scaleY = Math.hypot(nums[2], nums[3]);
+      if (scaleX > 0.1 && scaleX < 10 && scaleY > 0.1 && scaleY < 10) {
+        return { scaleX, scaleY };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * 读取元素内容区可用宽度（`clientWidth` 扣除左右 `padding`，用于和子元素 `100%` 布局宽度精确对齐）。
+ *
+ * @param {Element|null|undefined} el
+ * @returns {number}
+ */
+export function getElementContentWidth(el) {
+  const clientW = Number(el?.clientWidth || 0);
+  if (!(clientW > 0)) return 0;
+  let padL = 0;
+  let padR = 0;
+  const getStyle =
+    typeof window !== 'undefined' && typeof window.getComputedStyle === 'function'
+      ? window.getComputedStyle
+      : typeof getComputedStyle === 'function'
+        ? getComputedStyle
+        : null;
+  if (getStyle) {
+    try {
+      const cs = getStyle(el);
+      const pl = Number.parseFloat(cs?.paddingLeft);
+      const pr = Number.parseFloat(cs?.paddingRight);
+      if (Number.isFinite(pl) && pl > 0) padL = pl;
+      if (Number.isFinite(pr) && pr > 0) padR = pr;
+    } catch {
+      // 忽略 Mock DOM 样式查询异常
+    }
+  }
+  return Math.max(0, clientW - padL - padR);
+}
+
+/**
+ * 计算元素当前生效的视觉缩放比（例如入场动画 `scale(0.975)`），
+ * 用于将受 `transform` 影响的 `getBoundingClientRect()` 还原为真实 CSS 布局像素。
+ *
+ * @param {Element|null|undefined} el
+ * @param {Element|null|undefined} [stopEl]
+ * @returns {{ scaleX: number, scaleY: number }}
+ */
+export function getVisualTransformScale(el, stopEl = null) {
+  let scaleX = 1;
+  let scaleY = 1;
+  if (!el) return { scaleX, scaleY };
+  const getStyle =
+    typeof window !== 'undefined' && typeof window.getComputedStyle === 'function'
+      ? window.getComputedStyle
+      : typeof getComputedStyle === 'function'
+        ? getComputedStyle
+        : null;
+  if (getStyle) {
+    let cur = el;
+    for (let depth = 0; cur && depth < 16; depth++) {
+      try {
+        const parsed = parseCssTransformScale(getStyle(cur)?.transform);
+        if (parsed) {
+          scaleX *= parsed.scaleX;
+          scaleY *= parsed.scaleY;
+        }
+      } catch {
+        // 忽略 Mock DOM 样式查询异常
+      }
+      if (stopEl && cur === stopEl) break;
+      cur = cur.parentElement || (cur.parentNode && cur.parentNode.nodeType === 1 ? cur.parentNode : null);
+    }
+  }
+
+  const rect = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+  if (Math.abs(scaleX - 1) <= 0.001) {
+    const offsetW = Number(el.offsetWidth || 0);
+    const rectW = Number(rect?.width || 0);
+    if (offsetW >= 16 && rectW > 0) {
+      const ratioX = rectW / offsetW;
+      if (Number.isFinite(ratioX) && ratioX > 0.25 && ratioX < 4 && Math.abs(ratioX - 1) > 0.004) {
+        scaleX = ratioX;
+      }
+    }
+  }
+  if (Math.abs(scaleY - 1) <= 0.001) {
+    const offsetH = Number(el.offsetHeight || 0);
+    const rectH = Number(rect?.height || 0);
+    if (offsetH >= 16 && rectH > 0) {
+      const ratioY = rectH / offsetH;
+      if (Number.isFinite(ratioY) && ratioY > 0.25 && ratioY < 4 && Math.abs(ratioY - 1) > 0.004) {
+        scaleY = ratioY;
+      }
+    }
+  }
+
+  return {
+    scaleX: Number.isFinite(scaleX) && scaleX > 0.1 && scaleX < 10 ? scaleX : 1,
+    scaleY: Number.isFinite(scaleY) && scaleY > 0.1 && scaleY < 10 ? scaleY : 1,
+  };
+}
+
 const keyedListState = new WeakMap();
 
 /**
