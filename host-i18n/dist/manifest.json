@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "locale": "zh-CN",
+      "name": "Chinese (Simplified)",
+      "nativeName": "简体中文",
+      "version": "2.1.1",
+      "file": "packs/zh-CN.json",
+      "sha256": "75ce150cc8952b65fe04493f2d9e16ae1370140474072e2458277f065e83d384",
+      "bytes": 568779,
+      "depths": [
+        "light",
+        "deep"
+      ],
+      "stats": {
+        "baseExact": 4174,
+        "lightExact": 1113,
+        "deepExact": 1113,
+        "basePatterns": 767,
+        "lightPatterns": 147,
+        "deepPatterns": 147
+      }
+    }
+  ]
+}

@@ -32,14 +32,17 @@ test('pack-release-zip ships only runtime-essential files, excludes dev bloat, a
     'sidecars/panel/cli-statusline.mjs',
     'sidecars/panel/trajectory-metrics.mjs',
     'sidecars/panel/backend/api-actions.mjs',
+    'sidecars/panel/backend/host-i18n/index.mjs',
     'sidecars/panel/backend/account-credentials.ps1',
     'sidecars/panel/shared/settings-normalization.mjs',
+    'sidecars/panel/shared/host-i18n-protocol.mjs',
   ]) {
     assert.ok(relFiles.includes(mustHave), `Release whitelist must include ${mustHave}`);
   }
 
-  // Non-runtime dev/doc/test/preview files must NEVER enter the release ZIP
+  // Non-runtime dev/doc/test/preview files and standalone repository language packs must NEVER enter the release ZIP
   for (const rel of relFiles) {
+    assert.doesNotMatch(rel, /^host-i18n\//);
     assert.doesNotMatch(rel, /^sidecars\/panel\/(?:src|test|scripts)\//);
     assert.doesNotMatch(rel, /\.png$/i);
     assert.doesNotMatch(rel, /^README/i);

@@ -7546,6 +7546,109 @@ html[data-standalone="true"] .app-shell {
   flex-shrink: 0;
 }
 
+/* --- Decoupled Antigravity Host UI Language Card (HostI18nCard) --- */
+.host-i18n-status-msg {
+  font-size: var(--fs-sm);
+  margin-left: auto;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-i18n-status-msg.is-error {
+  color: var(--metric-danger);
+}
+
+.host-i18n-select-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.host-i18n-select-row > .custom-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.host-i18n-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(28px * var(--ui-font-scale, 1));
+  height: calc(28px * var(--ui-font-scale, 1));
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.host-i18n-pack-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.host-i18n-pack-meta {
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+
+.host-i18n-pack-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.host-i18n-dev-drawer {
+  border-top: 1px solid var(--border-hairline);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+
+.host-i18n-dev-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.host-i18n-dev-toggle:hover {
+  color: var(--text-primary);
+}
+
+.host-i18n-dev-chevron {
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+.host-i18n-dev-drawer.is-expanded .host-i18n-dev-chevron {
+  transform: rotate(90deg);
+}
+
+.host-i18n-dev-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+}
+
+.host-i18n-dev-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 /* --- src/styles/overlay.css --- */
 /*
  * 双栖模式顶栏胶囊与悬浮面板样式表 (overlay.css).

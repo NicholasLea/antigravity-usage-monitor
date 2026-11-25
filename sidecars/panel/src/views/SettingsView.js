@@ -132,7 +132,14 @@ export const SettingsView = defineComponent({
           );
         }
       } else if (settingsSubTab !== 'account') {
-        if (settings) generalTab.refs.renderSettings(settings);
+        if (settings) {
+          generalTab.refs.renderSettings(
+            settings,
+            telemetry?.windowBridge,
+            telemetry?.hostPlatform
+          );
+        }
+        void generalTab.refs.loadHostI18n?.(false);
         if (telemetry?.cloudStatus) generalTab.refs.renderCloudStatus(telemetry.cloudStatus);
       }
       refreshScroll();

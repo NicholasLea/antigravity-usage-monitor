@@ -1472,16 +1472,22 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(structurePane.hasAttribute('hidden'), true);
     assert.equal(otherPane.hasAttribute('hidden'), true);
 
-    // --- Tab 0: 常规 (languageSwitch, themeAccent, fontScaleSwitch, modernUiSwitch, pluginUpdateMode) ---
+    // --- Tab 0: 常规 (languageSwitch, themeAccent, fontScaleSwitch, modernUiSwitch, hostI18nDepth, pluginUpdateMode) ---
     const generalSegControls = generalPane.querySelectorAll('.segmented');
     assert.equal(
       generalSegControls.length,
-      3,
-      'General tab has Language, FontScale, and Experimental Modern UI segmented controls'
+      4,
+      'General tab has Language, FontScale, Experimental Modern UI, and Host I18n depth segmented controls'
     );
     const langBtns = generalSegControls[0].querySelectorAll('.seg-btn');
     const fontScaleBtns = generalSegControls[1].querySelectorAll('.seg-btn');
     const modernUiBtns = generalSegControls[2].querySelectorAll('.seg-btn');
+    const hostI18nDepthBtns = generalSegControls[3].querySelectorAll('.seg-btn');
+    assert.deepEqual(
+      hostI18nDepthBtns.map((button) => button.textContent),
+      ['浅度', '深度'],
+      'Host I18n depth switch has 浅度 / 深度'
+    );
     assert.equal(modernUiBtns.length, 2, 'Modern UI switch has 开启 / 关闭');
     assert.equal(modernUiBtns[0].textContent, '开启');
     assert.equal(modernUiBtns[1].textContent, '关闭');
@@ -1505,8 +1511,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(langBtns[2].textContent, 'English');
     assert.equal(langBtns[1].classList.contains('is-active'), true, 'mockSettings language zh-CN selects index 1');
     const generalSelects = generalPane.querySelectorAll('.custom-select');
-    assert.equal(generalSelects.length, 1, 'General tab has Update Mode select');
-    const updateModeSelectEl = generalSelects[0];
+    assert.equal(generalSelects.length, 2, 'General tab has Host I18n Language and Update Mode selects');
+    const updateModeSelectEl = generalSelects[1];
 
     // Theme accent picker: switch to emerald, verify CSS vars injected on both hosts, then restore host
     const swatchBtns = generalPane.querySelectorAll('.theme-swatch-btn');

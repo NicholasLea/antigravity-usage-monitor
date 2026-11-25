@@ -66,12 +66,19 @@ import {
   triggerDesktopHostRelaunch,
 } from './desktop-launcher-config.mjs';
 import {
+  collectHostI18nUntranslatedFromActiveTargets,
   ensureIdeRemoteDebuggingArgv,
+  getDefaultWindowBridgeStatus,
+  notifyHostI18nChanged,
   notifyModelContextWindowsChanged,
   notifyWindowOverlaySetting,
   resolveDevToolsPortCandidates,
   startDefaultWindowBridge,
 } from './window-bridge.mjs';
+import {
+  handleHostI18nGetRequest,
+  handleHostI18nPostAction,
+} from './host-i18n/index.mjs';
 import { getQuotaReservationLogSnapshot } from './quota-reservation.mjs';
 import { getSessionMigrationCatalog, migrateSessions } from './session-migrator.mjs';
 import {
@@ -867,6 +874,37 @@ export function executeQuotaReservationLogAction() {
   };
 }
 
+export async function executeHostI18nGetAction(opts = {}) {
+  const result = await handleHostI18nGetRequest({
+    bridgeStatus: getDefaultWindowBridgeStatus(),
+    ...(opts?.hostI18nManager ? { manager: opts.hostI18nManager } : {}),
+  });
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+export async function executeHostI18nPostAction(data = {}, opts = {}) {
+  const out = await handleHostI18nPostAction(isPlainObject(data) ? data : {}, {
+    bridgeStatus: getDefaultWindowBridgeStatus(),
+    onChanged: typeof opts?.onHostI18nChanged === 'function' ? opts.onHostI18nChanged : notifyHostI18nChanged,
+    collectFromTargets:
+      typeof opts?.collectHostI18nUntranslated === 'function'
+        ? opts.collectHostI18nUntranslated
+        : collectHostI18nUntranslatedFromActiveTargets,
+    ...(opts?.hostI18nManager ? { manager: opts.hostI18nManager } : {}),
+  });
+  return {
+    status: Number(out?.status || 200),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(out?.payload || { ok: false, error: 'Invalid host-i18n response' }),
+  };
+}
+
 export function executeRevealFileAction(data, opts = {}) {
   const result = revealLocalExportFile(data?.filePath, {
     ...(opts?.platform ? { platform: opts.platform } : {}),
@@ -911,6 +949,15 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       if (isPlainObject(data) && data.__quotaReservationAction === 'log') {
         return executeQuotaReservationLogAction();
       }
+      if (isPlainObject(data) && typeof data.__hostI18nAction === 'string') {
+        if (data.__hostI18nAction === 'get') {
+          return executeHostI18nGetAction(opts);
+        }
+        return executeHostI18nPostAction(
+          { ...(isPlainObject(data.payload) ? data.payload : {}), action: data.__hostI18nAction },
+          opts
+        );
+      }
       return executeSettingsAction(data);
     case 'accounts_get':
       return executeAccountCredentialAction(undefined, opts);
@@ -938,6 +985,10 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executeRevealFileAction(data, opts);
     case 'quota_reservation_log':
       return executeQuotaReservationLogAction();
+    case 'host_i18n_get':
+      return executeHostI18nGetAction(opts);
+    case 'host_i18n_action':
+      return executeHostI18nPostAction(data, opts);
     default:
       return {
         status: 404,

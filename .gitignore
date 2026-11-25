@@ -1,7 +1,7 @@
 .data/
 node_modules/
 plan/
-dist/
+/dist/
 usage-monitor.zip
 *.log
 *.dpapi
@@ -9,3 +9,6 @@ usage-monitor.zip
 .DS_Store
 Thumbs.db
 docs/
+.agents/
+host-i18n/README.md
+host-i18n/.tmp-*.json

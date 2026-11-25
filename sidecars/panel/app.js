@@ -950,6 +950,8 @@ const BRIDGE_API_ROUTE_DEFS = Object.freeze([
     method: 'GET',
     action: 'quota_reservation_log',
   }),
+  Object.freeze({ path: '/api/host-i18n', method: 'GET', action: 'host_i18n_get' }),
+  Object.freeze({ path: '/api/host-i18n', method: 'POST', action: 'host_i18n_action' }),
 ]);
 
 const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path));
@@ -958,6 +960,69 @@ function readInjectedWindowBridge() {
   return typeof window === 'undefined' ? undefined : window[WINDOW_BRIDGE_KEY];
 }
 return { WINDOW_BRIDGE_KEY, WINDOW_BRIDGE_ROUTE_KEY, WINDOW_BRIDGE_ENDPOINT_KEY, WINDOW_BRIDGE_ENDPOINT_HEADER, LOCAL_ENDPOINT_ID, WINDOW_OVERLAY_KEY, CONTEXT_WINDOWS_GLOBAL_KEY, WINDOW_OVERLAY_METHODS, BRIDGE_API_ROUTE_DEFS, BRIDGE_API_PATHS, readInjectedWindowBridge };
+})();
+
+// --- shared/host-i18n-protocol.mjs ---
+const { HOST_I18N_GLOBAL_KEY, HOST_I18N_API_PATH, HOST_I18N_SCHEMA_VERSION, HOST_I18N_OFF_LOCALE, HOST_I18N_DEFAULT_DEPTH, HOST_I18N_DEPTHS, HOST_I18N_LOCALE_RE, normalizeHostI18nLocale, normalizeHostI18nDepth } = (() => {
+/**
+ * @fileoverview Zero-dependency shared protocol constants and normalizers
+ * for the decoupled Antigravity Host I18n subsystem.
+ */
+
+const HOST_I18N_GLOBAL_KEY = '__AGUsageMonitorHostI18n';
+const HOST_I18N_API_PATH = '/api/host-i18n';
+const HOST_I18N_SCHEMA_VERSION = 1;
+const HOST_I18N_OFF_LOCALE = 'off';
+const HOST_I18N_DEFAULT_DEPTH = 'light';
+const HOST_I18N_DEPTHS = Object.freeze(['light', 'deep']);
+const HOST_I18N_LOCALE_RE = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$/;
+
+/**
+ * Normalizes a host translation locale identifier (`'off'` or canonical BCP-47 tag).
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function normalizeHostI18nLocale(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return HOST_I18N_OFF_LOCALE;
+  const lower = raw.toLowerCase();
+  if (
+    lower === 'off' ||
+    lower === 'none' ||
+    lower === 'disabled' ||
+    lower === 'original' ||
+    lower === 'default'
+  ) {
+    return HOST_I18N_OFF_LOCALE;
+  }
+  const normalized = raw.replace(/_/g, '-');
+  if (!HOST_I18N_LOCALE_RE.test(normalized)) {
+    return HOST_I18N_OFF_LOCALE;
+  }
+  const parts = normalized.split('-');
+  return parts
+    .map((part, idx) => {
+      if (idx === 0) return part.toLowerCase();
+      if (part.length === 2) return part.toUpperCase();
+      if (part.length === 4) return part[0].toUpperCase() + part.slice(1).toLowerCase();
+      return part;
+    })
+    .join('-');
+}
+
+/**
+ * Normalizes translation depth (`'light'` or `'deep'`).
+ *
+ * @param {unknown} value
+ * @returns {'light'|'deep'}
+ */
+function normalizeHostI18nDepth(value) {
+  const lower = String(value || '').trim().toLowerCase();
+  if (lower === 'deep' || lower === 'full') return 'deep';
+  return HOST_I18N_DEFAULT_DEPTH;
+}
+return { HOST_I18N_GLOBAL_KEY, HOST_I18N_API_PATH, HOST_I18N_SCHEMA_VERSION, HOST_I18N_OFF_LOCALE, HOST_I18N_DEFAULT_DEPTH, HOST_I18N_DEPTHS, HOST_I18N_LOCALE_RE, normalizeHostI18nLocale, normalizeHostI18nDepth };
 })();
 
 // --- src/icons/svgRegistry.js ---
@@ -1103,6 +1168,11 @@ const SVG_ICON_DEFS = Object.freeze({
   unlock: [
     { tag: 'rect', attrs: { x: '3', y: '7', width: '10', height: '7', rx: '1.5' } },
     { tag: 'path', attrs: { d: 'M5.2 7V5.1a2.8 2.8 0 0 1 5.3-1.2' } },
+  ],
+  globe: [
+    { tag: 'circle', attrs: { cx: '8', cy: '8', r: '6' } },
+    { tag: 'ellipse', attrs: { cx: '8', cy: '8', rx: '2.7', ry: '6' } },
+    { tag: 'path', attrs: { d: 'M2.3 6h11.4M2.3 10h11.4' } },
   ],
 });
 return { SVG_ICON_DEFS };
@@ -1958,6 +2028,45 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.gen.manualUpgradeBtn': '手动升级 v{ver}',
   'settings.gen.updateOffSub': '已关闭更新提醒 ({mode})',
   'settings.gen.latestSub': '已是最新 ({mode})',
+
+  // Preferences -> General Tab -> Antigravity Host UI Language (decoupled Host I18n)
+  'settings.hostI18n.title': 'Antigravity 界面语言',
+  'settings.hostI18n.langLabel': '目标语言',
+  'settings.hostI18n.langOff': '原始语言（不翻译）',
+  'settings.hostI18n.langHint': '从仓库按需独立下载语言包并在渲染层无损应用，不修改宿主安装包，不影响聊天内容与代码',
+  'settings.hostI18n.optInstalled': '已下载 v{ver}',
+  'settings.hostI18n.optRemote': '仓库拉取 · {size}',
+  'settings.hostI18n.refreshManifestTip': '刷新仓库语言包清单',
+  'settings.hostI18n.refreshingManifestMsg': '正在拉取语言清单…',
+  'settings.hostI18n.manifestSyncedMsg': '已更新清单（{count} 个语言包）',
+  'settings.hostI18n.manifestFailedMsg': '拉取语言清单失败，请检查网络或代理',
+  'settings.hostI18n.depthLabel': '翻译深度',
+  'settings.hostI18n.depthLight': '浅度',
+  'settings.hostI18n.depthDeep': '深度',
+  'settings.hostI18n.depthLightHint': '浅度模式：保留 MCP、Skill、Workspace、Subagent、Swarm、Diff、Terminal 等高频英文术语及模型名称，仅翻译常规界面',
+  'settings.hostI18n.depthDeepHint': '深度模式：将常见工程术语一并译为目标语言（如工作区、子代理、蜂群、终端、沙箱），仅保留模型名与命令',
+  'settings.hostI18n.downloadingMsg': '正在下载 {locale} 语言包…',
+  'settings.hostI18n.downloadedAndAppliedMsg': '语言包已下载校验并生效',
+  'settings.hostI18n.appliedMsg': '已切换并即时生效',
+  'settings.hostI18n.disabledMsg': '已关闭翻译并还原原始界面',
+  'settings.hostI18n.depthSwitchedMsg': '已热切换翻译深度',
+  'settings.hostI18n.packUpdatedMsg': '语言包已更新并重新应用',
+  'settings.hostI18n.cacheRemovedMsg': '已删除本地语言包缓存',
+  'settings.hostI18n.actionFailed': '语言包操作失败，请重试',
+  'settings.hostI18n.entriesCount': '{count} 条词条',
+  'settings.hostI18n.appliedWindows': '已应用 {count} 窗口',
+  'settings.hostI18n.updatePackBtn': '更新至 v{ver}',
+  'settings.hostI18n.redownloadBtn': '检查更新',
+  'settings.hostI18n.removeCacheBtn': '删除缓存',
+  'settings.hostI18n.devToolsTitle': '词条采集与多语言扩展',
+  'settings.hostI18n.devToolsHint': '仅扫描当前打开的 Antigravity 界面控件中未命中的英文短语（自动排除聊天正文与代码），便于补全漏翻词条或制作新语言包',
+  'settings.hostI18n.collectBtn': '采集未翻译 UI 文案',
+  'settings.hostI18n.collectingBtn': '采集中…',
+  'settings.hostI18n.collectedResult': '共采集到 {count} 条待翻译 UI 文案（扫描 {targets} 个窗口）',
+  'settings.hostI18n.collectedEmpty': '当前页面未检测到待翻译的英文 UI 短语',
+  'settings.hostI18n.collectFailed': '采集失败，请确认已开启调试端口并打开主窗口',
+  'settings.hostI18n.copyJsonBtn': '复制 JSON',
+  'settings.hostI18n.exportJsonBtn': '导出 JSON',
 
   // Preferences -> Structure Tab
   'settings.str.thirdTabAria': '结构子菜单切换',
@@ -2950,6 +3059,45 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.gen.manualUpgradeBtn': 'Upgrade v{ver}',
   'settings.gen.updateOffSub': 'Notifications off ({mode})',
   'settings.gen.latestSub': 'Up to date ({mode})',
+
+  // Preferences -> General Tab -> Antigravity Host UI Language (decoupled Host I18n)
+  'settings.hostI18n.title': 'Antigravity UI Language',
+  'settings.hostI18n.langLabel': 'Host Language',
+  'settings.hostI18n.langOff': 'Original (Off)',
+  'settings.hostI18n.langHint': 'Downloads built language packs on demand from the repository and applies lossless runtime UI translation without patching app files or chat content',
+  'settings.hostI18n.optInstalled': 'Installed v{ver}',
+  'settings.hostI18n.optRemote': 'Download · {size}',
+  'settings.hostI18n.refreshManifestTip': 'Refresh repository language pack manifest',
+  'settings.hostI18n.refreshingManifestMsg': 'Refreshing language manifest…',
+  'settings.hostI18n.manifestSyncedMsg': 'Manifest updated ({count} packs)',
+  'settings.hostI18n.manifestFailedMsg': 'Failed to fetch language manifest',
+  'settings.hostI18n.depthLabel': 'Translation Depth',
+  'settings.hostI18n.depthLight': 'Light',
+  'settings.hostI18n.depthDeep': 'Deep',
+  'settings.hostI18n.depthLightHint': 'Light mode keeps common English engineering terms (MCP, Skill, Workspace, Subagent, Swarm, Diff, Terminal) and model names untranslated',
+  'settings.hostI18n.depthDeepHint': 'Deep mode localizes engineering terms alongside general UI copy while preserving model names and slash commands',
+  'settings.hostI18n.downloadingMsg': 'Downloading {locale} pack…',
+  'settings.hostI18n.downloadedAndAppliedMsg': 'Pack verified and applied',
+  'settings.hostI18n.appliedMsg': 'Language applied live',
+  'settings.hostI18n.disabledMsg': 'Translation disabled and UI restored',
+  'settings.hostI18n.depthSwitchedMsg': 'Translation depth switched',
+  'settings.hostI18n.packUpdatedMsg': 'Language pack updated and reapplied',
+  'settings.hostI18n.cacheRemovedMsg': 'Local pack cache removed',
+  'settings.hostI18n.actionFailed': 'Language pack operation failed',
+  'settings.hostI18n.entriesCount': '{count} entries',
+  'settings.hostI18n.appliedWindows': '{count} window(s) active',
+  'settings.hostI18n.updatePackBtn': 'Update to v{ver}',
+  'settings.hostI18n.redownloadBtn': 'Check Update',
+  'settings.hostI18n.removeCacheBtn': 'Remove Cache',
+  'settings.hostI18n.devToolsTitle': 'Missing UI String Collector',
+  'settings.hostI18n.devToolsHint': 'Scans visible Antigravity UI controls for untranslated English phrases (excluding chat content and code) to help complete packs or author new languages',
+  'settings.hostI18n.collectBtn': 'Collect Missing Strings',
+  'settings.hostI18n.collectingBtn': 'Collecting…',
+  'settings.hostI18n.collectedResult': 'Collected {count} untranslated UI strings across {targets} window(s)',
+  'settings.hostI18n.collectedEmpty': 'No untranslated English UI strings detected on active pages',
+  'settings.hostI18n.collectFailed': 'Collection failed — verify remote debugging bridge is active',
+  'settings.hostI18n.copyJsonBtn': 'Copy JSON',
+  'settings.hostI18n.exportJsonBtn': 'Export JSON',
 
   // Preferences -> Structure Tab
   'settings.str.thirdTabAria': 'Structure section tabs',
@@ -9223,6 +9371,85 @@ async function copyTextWithFeedback(text, successMessage) {
   return ok;
 }
 return { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFeedback, copyTextWithFeedback };
+})();
+
+// --- src/core/hostI18nClient.js ---
+const { fetchHostI18nStatus, refreshHostI18nManifest, selectHostI18nLanguage, updateHostI18nDepth, installOrUpdateHostI18nPack, removeHostI18nPack, collectHostI18nUntranslated } = (() => {
+/**
+ * @fileoverview Decoupled HTTP/CDP client for `/api/host-i18n`.
+ * Completely independent from `telemetryStore.js`.
+ */
+
+
+async function fetchHostI18nStatus() {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'GET',
+    abortKey: 'host-i18n-get',
+    cdpTimeoutMs: 12000,
+  });
+}
+
+async function refreshHostI18nManifest() {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: { action: 'refresh_manifest' },
+    cdpTimeoutMs: 18000,
+  });
+}
+
+async function selectHostI18nLanguage(locale, depth) {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: {
+      action: 'select',
+      locale: normalizeHostI18nLocale(locale),
+      ...(depth !== undefined ? { depth: normalizeHostI18nDepth(depth) } : {}),
+    },
+    cdpTimeoutMs: 22000,
+  });
+}
+
+async function updateHostI18nDepth(depth) {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: {
+      action: 'set_depth',
+      depth: normalizeHostI18nDepth(depth),
+    },
+    cdpTimeoutMs: 10000,
+  });
+}
+
+async function installOrUpdateHostI18nPack(locale) {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: {
+      action: 'update',
+      locale: normalizeHostI18nLocale(locale),
+    },
+    cdpTimeoutMs: 22000,
+  });
+}
+
+async function removeHostI18nPack(locale) {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: {
+      action: 'remove',
+      locale: normalizeHostI18nLocale(locale),
+    },
+    cdpTimeoutMs: 10000,
+  });
+}
+
+async function collectHostI18nUntranslated() {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: { action: 'collect_untranslated' },
+    cdpTimeoutMs: 15000,
+  });
+}
+return { fetchHostI18nStatus, refreshHostI18nManifest, selectHostI18nLanguage, updateHostI18nDepth, installOrUpdateHostI18nPack, removeHostI18nPack, collectHostI18nUntranslated };
 })();
 
 // --- src/store/telemetryStore.js ---
@@ -30835,6 +31062,652 @@ const SessionMigrationCard = defineComponent({
 return { SessionMigrationCard };
 })();
 
+// --- src/components/settings/HostI18nCard.js ---
+const { HostI18nCard } = (() => {
+/**
+ * @fileoverview Self-contained Antigravity Host UI Language card (`HostI18nCard.js`).
+ *
+ * Mounted inside `SettingsGeneralTab` with minimal glue; manages:
+ * - Language selection (`off` or any pack listed in repository `manifest.json`),
+ * - Conditional Light / Deep translation depth switching (0-network hot switch),
+ * - On-demand repository pack download, update, and local cache removal,
+ * - CDP bridge notice when DevTools port is unavailable,
+ * - Optional collapsed developer drawer to collect untranslated UI strings.
+ */
+
+
+function formatHostI18nBytes(bytes) {
+  const num = Number(bytes || 0);
+  if (!Number.isFinite(num) || num <= 0) return '';
+  if (num < 1024) return `${num} B`;
+  return `${(num / 1024).toFixed(1)} KB`;
+}
+
+function getHostI18nDepthOptions() {
+  return [
+    { value: 'light', label: t('settings.hostI18n.depthLight') },
+    { value: 'deep', label: t('settings.hostI18n.depthDeep') },
+  ];
+}
+
+const HostI18nCard = defineComponent({
+  name: 'HostI18nCard',
+  setup({ props, onCleanup }) {
+    let status = null;
+    let draftLocale = HOST_I18N_OFF_LOCALE;
+    let draftDepth = 'light';
+    let latestWindowBridge = null;
+    let latestHostPlatform = 'win32';
+    let lastBridgeRenderSig = '';
+    let hasLoadedOnce = false;
+    let isBusy = false;
+    let isCollecting = false;
+    let destroyed = false;
+    let feedbackTimer = null;
+    let devExpanded = false;
+    let lastCollected = null;
+
+    const titleEl = h('span', { text: t('settings.hostI18n.title') });
+    const statusMsgEl = h('span', {
+      className: 'text-muted host-i18n-status-msg',
+      text: '',
+    });
+
+    function showFeedback(text, { isError = false, autoClearMs = 2800 } = {}) {
+      if (feedbackTimer) {
+        clearTimeout(feedbackTimer);
+        feedbackTimer = null;
+      }
+      patchText(statusMsgEl, text || '');
+      patchClasses(statusMsgEl, { 'is-error': Boolean(isError && text) });
+      if (text && autoClearMs > 0) {
+        feedbackTimer = setTimeout(() => {
+          feedbackTimer = null;
+          if (!destroyed) {
+            patchText(statusMsgEl, '');
+            patchClasses(statusMsgEl, { 'is-error': false });
+          }
+        }, autoClearMs);
+      }
+    }
+
+    function getPackList() {
+      return Array.isArray(status?.packs) ? status.packs : [];
+    }
+
+    function findPackByLocale(locale) {
+      return getPackList().find((p) => p.locale === locale) || null;
+    }
+
+    function buildLocaleOptions() {
+      const opts = [{ value: HOST_I18N_OFF_LOCALE, label: t('settings.hostI18n.langOff') }];
+      for (const pack of getPackList()) {
+        const displayName =
+          pack.nativeName && pack.nativeName !== pack.name
+            ? `${pack.nativeName} (${pack.locale})`
+            : `${pack.name || pack.locale} (${pack.locale})`;
+        const tag = pack.installed
+          ? t('settings.hostI18n.optInstalled', { ver: pack.installedVersion || pack.remoteVersion || '1.0.0' })
+          : t('settings.hostI18n.optRemote', {
+              size: formatHostI18nBytes(pack.remoteBytes) || 'pack',
+            });
+        opts.push({
+          value: pack.locale,
+          label: `${displayName} · ${tag}`,
+        });
+      }
+      if (
+        draftLocale !== HOST_I18N_OFF_LOCALE &&
+        !opts.some((o) => o.value === draftLocale)
+      ) {
+        opts.push({ value: draftLocale, label: draftLocale });
+      }
+      return opts;
+    }
+
+    const langLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.hostI18n.langLabel'),
+    });
+    const langSelect = CustomSelect({
+      ariaLabel: t('settings.hostI18n.langLabel'),
+      icon: 'globe',
+      modelValue: draftLocale,
+      options: buildLocaleOptions(),
+      onUpdateModelValue: async (val) => {
+        if (isBusy || destroyed) return;
+        const nextLocale = normalizeHostI18nLocale(val);
+        const targetPack = findPackByLocale(nextLocale);
+        const needsDownload =
+          nextLocale !== HOST_I18N_OFF_LOCALE && !targetPack?.installed;
+        isBusy = true;
+        draftLocale = nextLocale;
+        syncControls();
+        showFeedback(
+          needsDownload
+            ? t('settings.hostI18n.downloadingMsg', { locale: nextLocale })
+            : t('settings.saving'),
+          { autoClearMs: 0 }
+        );
+        try {
+          const res = await selectHostI18nLanguage(nextLocale, draftDepth);
+          if (destroyed) return;
+          applyStatusPayload(res);
+          if (res?.ok === false) {
+            showFeedback(res.error || t('settings.hostI18n.actionFailed'), {
+              isError: true,
+              autoClearMs: 5000,
+            });
+          } else if (nextLocale === HOST_I18N_OFF_LOCALE) {
+            showFeedback(t('settings.hostI18n.disabledMsg'), { autoClearMs: 2500 });
+          } else if (res?.downloaded) {
+            showFeedback(t('settings.hostI18n.downloadedAndAppliedMsg'), { autoClearMs: 3200 });
+          } else {
+            showFeedback(t('settings.hostI18n.appliedMsg'), { autoClearMs: 2200 });
+          }
+        } catch (err) {
+          if (!destroyed) {
+            if (status) applyStatusPayload(status);
+            showFeedback(err?.message || t('settings.hostI18n.actionFailed'), {
+              isError: true,
+              autoClearMs: 5000,
+            });
+          }
+        } finally {
+          isBusy = false;
+          if (!destroyed) {
+            syncControls();
+            props.onLayoutChange?.();
+          }
+        }
+      },
+    });
+
+    const refreshManifestBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-ghost-sm host-i18n-icon-btn',
+        title: t('settings.hostI18n.refreshManifestTip'),
+        'aria-label': t('settings.hostI18n.refreshManifestTip'),
+        onClick: async () => {
+          if (isBusy || destroyed) return;
+          isBusy = true;
+          syncControls();
+          showFeedback(t('settings.hostI18n.refreshingManifestMsg'), { autoClearMs: 0 });
+          try {
+            const res = await refreshHostI18nManifest();
+            if (destroyed) return;
+            applyStatusPayload(res);
+            if (res?.ok === false) {
+              showFeedback(res.error || t('settings.hostI18n.manifestFailedMsg'), {
+                isError: true,
+                autoClearMs: 4500,
+              });
+            } else {
+              showFeedback(
+                t('settings.hostI18n.manifestSyncedMsg', { count: getPackList().length }),
+                { autoClearMs: 2600 }
+              );
+            }
+          } catch (err) {
+            if (!destroyed) {
+              showFeedback(err?.message || t('settings.hostI18n.manifestFailedMsg'), {
+                isError: true,
+                autoClearMs: 4500,
+              });
+            }
+          } finally {
+            isBusy = false;
+            if (!destroyed) {
+              syncControls();
+              props.onLayoutChange?.();
+            }
+          }
+        },
+      },
+      [createSvgIcon('refresh', { size: 12 })]
+    );
+
+    const langHintEl = h('span', {
+      className: 'settings-hint-text',
+      text: t('settings.hostI18n.langHint'),
+    });
+
+    // --- Conditional Depth Row (visible only when locale !== 'off') ---
+    const depthLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.hostI18n.depthLabel'),
+    });
+    const depthSwitch = SegmentedControl({
+      ariaLabel: t('settings.hostI18n.depthLabel'),
+      modelValue: draftDepth,
+      options: getHostI18nDepthOptions(),
+      onUpdateModelValue: async (val) => {
+        if (isBusy || destroyed) return;
+        const nextDepth = normalizeHostI18nDepth(val);
+        if (nextDepth === draftDepth) return;
+        isBusy = true;
+        draftDepth = nextDepth;
+        syncControls();
+        showFeedback(t('settings.saving'), { autoClearMs: 0 });
+        try {
+          const res = await updateHostI18nDepth(nextDepth);
+          if (destroyed) return;
+          applyStatusPayload(res);
+          showFeedback(t('settings.hostI18n.depthSwitchedMsg'), { autoClearMs: 2000 });
+        } catch (err) {
+          if (!destroyed) {
+            if (status) applyStatusPayload(status);
+            showFeedback(err?.message || t('settings.saveFailed'), {
+              isError: true,
+              autoClearMs: 3500,
+            });
+          }
+        } finally {
+          isBusy = false;
+          if (!destroyed) syncControls();
+        }
+      },
+    });
+    const depthHintEl = h('span', {
+      className: 'settings-hint-text',
+      text: t('settings.hostI18n.depthLightHint'),
+    });
+    const depthRowEl = h('div', { className: 'form-row', hidden: true }, [
+      depthLabelEl,
+      depthSwitch.el,
+      depthHintEl,
+    ]);
+
+    // --- Pack Meta & Actions Bar (visible only when locale !== 'off') ---
+    const packMetaTextEl = h('span', { className: 'host-i18n-pack-meta text-muted', text: '' });
+    const updatePackBtnText = h('span', { text: t('settings.hostI18n.redownloadBtn') });
+    const updatePackBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          if (isBusy || destroyed || draftLocale === HOST_I18N_OFF_LOCALE) return;
+          isBusy = true;
+          syncControls();
+          showFeedback(t('settings.hostI18n.downloadingMsg', { locale: draftLocale }), {
+            autoClearMs: 0,
+          });
+          try {
+            const res = await installOrUpdateHostI18nPack(draftLocale);
+            if (destroyed) return;
+            applyStatusPayload(res);
+            if (res?.ok === false) {
+              showFeedback(res.error || t('settings.hostI18n.actionFailed'), {
+                isError: true,
+                autoClearMs: 5000,
+              });
+            } else {
+              showFeedback(t('settings.hostI18n.packUpdatedMsg'), { autoClearMs: 3000 });
+            }
+          } catch (err) {
+            if (!destroyed) {
+              showFeedback(err?.message || t('settings.hostI18n.actionFailed'), {
+                isError: true,
+                autoClearMs: 5000,
+              });
+            }
+          } finally {
+            isBusy = false;
+            if (!destroyed) syncControls();
+          }
+        },
+      },
+      [createSvgIcon('download', { size: 12 }), updatePackBtnText]
+    );
+
+    const removePackBtnText = h('span', { text: t('settings.hostI18n.removeCacheBtn') });
+    const removePackBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        onClick: async () => {
+          if (isBusy || destroyed || draftLocale === HOST_I18N_OFF_LOCALE) return;
+          isBusy = true;
+          syncControls();
+          showFeedback(t('settings.saving'), { autoClearMs: 0 });
+          try {
+            const res = await removeHostI18nPack(draftLocale);
+            if (destroyed) return;
+            applyStatusPayload(res);
+            showFeedback(t('settings.hostI18n.cacheRemovedMsg'), { autoClearMs: 2800 });
+          } catch (err) {
+            if (!destroyed) {
+              showFeedback(err?.message || t('settings.hostI18n.actionFailed'), {
+                isError: true,
+                autoClearMs: 4500,
+              });
+            }
+          } finally {
+            isBusy = false;
+            if (!destroyed) {
+              syncControls();
+              props.onLayoutChange?.();
+            }
+          }
+        },
+      },
+      [removePackBtnText]
+    );
+
+    const packBarEl = h('div', { className: 'host-i18n-pack-bar', hidden: true }, [
+      packMetaTextEl,
+      h('div', { className: 'host-i18n-pack-actions' }, [updatePackBtn, removePackBtn]),
+    ]);
+
+    // --- CDP Bridge Diagnostic Notice (shown only when active locale cannot reach CDP) ---
+    const bridgeNotice = BridgeStatusNotice({ contextMode: true });
+
+    // --- Collapsed Developer Drawer: Untranslated UI String Collector ---
+    const devChevron = createSvgIcon('chevron-right', {
+      size: 11,
+      className: 'host-i18n-dev-chevron',
+    });
+    const devToggleText = h('span', { text: t('settings.hostI18n.devToolsTitle') });
+    const devToggleBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'host-i18n-dev-toggle',
+        'aria-expanded': 'false',
+        onClick: () => {
+          devExpanded = !devExpanded;
+          patchAttr(devToggleBtn, 'aria-expanded', devExpanded ? 'true' : 'false');
+          patchClasses(devDrawerEl, { 'is-expanded': devExpanded });
+          patchAttr(devBodyEl, 'hidden', !devExpanded);
+          props.onLayoutChange?.();
+        },
+      },
+      [devChevron, devToggleText]
+    );
+
+    const devHintEl = h('span', {
+      className: 'settings-hint-text',
+      text: t('settings.hostI18n.devToolsHint'),
+    });
+    const collectBtnText = h('span', { text: t('settings.hostI18n.collectBtn') });
+    const collectResultEl = h('span', { className: 'settings-hint-text', text: '' });
+
+    const copyCollectedBtnText = h('span', { text: t('settings.hostI18n.copyJsonBtn') });
+    const copyCollectedBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        hidden: true,
+        onClick: async () => {
+          if (!lastCollected?.template) return;
+          await copyTextWithFeedback(JSON.stringify(lastCollected.template, null, 2), {
+            onFeedback: (msg) => showFeedback(msg, { autoClearMs: 2400 }),
+          });
+        },
+      },
+      [createSvgIcon('copy', { size: 11 }), copyCollectedBtnText]
+    );
+
+    const exportCollectedBtnText = h('span', { text: t('settings.hostI18n.exportJsonBtn') });
+    const exportCollectedBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        hidden: true,
+        onClick: async () => {
+          if (!lastCollected?.template) return;
+          const fileLocale = draftLocale === HOST_I18N_OFF_LOCALE ? 'en-source' : draftLocale;
+          await exportTextFileWithFeedback({
+            filename: `host-i18n-missing-${fileLocale}.json`,
+            content: JSON.stringify(lastCollected.template, null, 2) + '\n',
+            mimeType: 'application/json',
+            onFeedback: (msg) => showFeedback(msg, { autoClearMs: 3200 }),
+          });
+        },
+      },
+      [createSvgIcon('download', { size: 11 }), exportCollectedBtnText]
+    );
+
+    const collectBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          if (isCollecting || destroyed) return;
+          isCollecting = true;
+          patchAttr(collectBtn, 'disabled', true);
+          patchText(collectBtnText, t('settings.hostI18n.collectingBtn'));
+          try {
+            const res = await collectHostI18nUntranslated();
+            if (destroyed) return;
+            if (res?.ok) {
+              lastCollected = res;
+              patchText(
+                collectResultEl,
+                res.count > 0
+                  ? t('settings.hostI18n.collectedResult', {
+                      count: res.count,
+                      targets: res.targets || 1,
+                    })
+                  : t('settings.hostI18n.collectedEmpty')
+              );
+              patchAttr(copyCollectedBtn, 'hidden', !(res.count > 0));
+              patchAttr(exportCollectedBtn, 'hidden', !(res.count > 0));
+            } else {
+              patchText(collectResultEl, res?.error || t('settings.hostI18n.collectFailed'));
+            }
+          } catch (err) {
+            if (!destroyed) {
+              patchText(collectResultEl, err?.message || t('settings.hostI18n.collectFailed'));
+            }
+          } finally {
+            isCollecting = false;
+            if (!destroyed) {
+              patchAttr(collectBtn, 'disabled', false);
+              patchText(collectBtnText, t('settings.hostI18n.collectBtn'));
+              props.onLayoutChange?.();
+            }
+          }
+        },
+      },
+      [createSvgIcon('search', { size: 12 }), collectBtnText]
+    );
+
+    const devBodyEl = h('div', { className: 'host-i18n-dev-body', hidden: true }, [
+      devHintEl,
+      h('div', { className: 'host-i18n-dev-actions' }, [
+        collectBtn,
+        copyCollectedBtn,
+        exportCollectedBtn,
+      ]),
+      collectResultEl,
+    ]);
+    const devDrawerEl = h('div', { className: 'host-i18n-dev-drawer' }, [
+      devToggleBtn,
+      devBodyEl,
+    ]);
+
+    const rootEl = h('section', { className: 'panel host-i18n-panel' }, [
+      h('div', { className: 'panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('globe', { size: 13 }),
+          titleEl,
+        ]),
+        statusMsgEl,
+      ]),
+      h('div', { className: 'form-row' }, [
+        langLabelEl,
+        h('div', { className: 'host-i18n-select-row' }, [langSelect.el, refreshManifestBtn]),
+        langHintEl,
+      ]),
+      depthRowEl,
+      packBarEl,
+      bridgeNotice.el,
+      devDrawerEl,
+    ]);
+
+    function applyStatusPayload(payload) {
+      if (!payload || typeof payload !== 'object') return;
+      status = payload;
+      draftLocale = normalizeHostI18nLocale(payload.locale);
+      draftDepth = normalizeHostI18nDepth(payload.depth);
+      if (payload.bridgeStatus) {
+        latestWindowBridge = payload.bridgeStatus;
+      }
+      syncControls();
+    }
+
+    function syncControls() {
+      const enabled = draftLocale !== HOST_I18N_OFF_LOCALE;
+      const activePack = enabled ? findPackByLocale(draftLocale) : null;
+
+      langSelect.setProps({
+        modelValue: draftLocale,
+        options: buildLocaleOptions(),
+        disabled: isBusy,
+      });
+      patchAttr(refreshManifestBtn, 'disabled', isBusy);
+
+      patchAttr(depthRowEl, 'hidden', !enabled);
+      depthSwitch.setProps({
+        modelValue: draftDepth,
+        options: getHostI18nDepthOptions(),
+      });
+      patchText(
+        depthHintEl,
+        draftDepth === 'deep'
+          ? t('settings.hostI18n.depthDeepHint')
+          : t('settings.hostI18n.depthLightHint')
+      );
+
+      patchAttr(packBarEl, 'hidden', !enabled);
+      if (enabled) {
+        const ver = activePack?.installedVersion || activePack?.remoteVersion || '1.0.0';
+        const stats = activePack?.stats;
+        const entryCount = stats
+          ? Number(stats.baseExact || 0) +
+            Number(draftDepth === 'deep' ? stats.deepExact || 0 : stats.lightExact || 0) +
+            Number(stats.basePatterns || 0) +
+            Number(draftDepth === 'deep' ? stats.deepPatterns || 0 : stats.lightPatterns || 0)
+          : 0;
+        const sizeStr = formatHostI18nBytes(
+          activePack?.installedBytes || activePack?.remoteBytes || 0
+        );
+        const appliedCount = Number(latestWindowBridge?.hostI18nAppliedCount || 0);
+        const metaParts = [`v${ver}`];
+        if (entryCount > 0) {
+          metaParts.push(t('settings.hostI18n.entriesCount', { count: entryCount }));
+        }
+        if (sizeStr) metaParts.push(sizeStr);
+        if (appliedCount > 0) {
+          metaParts.push(t('settings.hostI18n.appliedWindows', { count: appliedCount }));
+        }
+        patchText(packMetaTextEl, metaParts.join(' · '));
+
+        const hasUpdate = Boolean(activePack?.updateAvailable);
+        patchText(
+          updatePackBtnText,
+          hasUpdate
+            ? t('settings.hostI18n.updatePackBtn', { ver: activePack.remoteVersion })
+            : t('settings.hostI18n.redownloadBtn')
+        );
+        patchClasses(updatePackBtn, {
+          'btn-primary': hasUpdate,
+          'btn-secondary': !hasUpdate,
+        });
+        patchAttr(updatePackBtn, 'disabled', isBusy);
+        patchAttr(removePackBtn, 'disabled', isBusy || !activePack?.installed);
+      }
+
+      bridgeNotice.refs.update({
+        visible: enabled,
+        windowBridge: latestWindowBridge,
+        hostPlatform: latestHostPlatform,
+        contextMode: true,
+      });
+    }
+
+    async function load(force = false) {
+      if (destroyed) return;
+      if (hasLoadedOnce && !force) return;
+      hasLoadedOnce = true;
+      try {
+        const res = await fetchHostI18nStatus();
+        if (destroyed) return;
+        applyStatusPayload(res);
+        props.onLayoutChange?.();
+      } catch {
+        // 静默兜底，保留手动刷新入口
+      }
+    }
+
+    function renderBridgeStatus(windowBridge, hostPlatform) {
+      if (windowBridge) latestWindowBridge = windowBridge;
+      if (hostPlatform) latestHostPlatform = hostPlatform;
+      const sig = [
+        Number(latestWindowBridge?.hostI18nAppliedCount || 0),
+        Boolean(latestWindowBridge?.connected),
+        Boolean(latestWindowBridge?.available),
+        String(latestWindowBridge?.reason || ''),
+        String(latestWindowBridge?.ideStatus?.reason || ''),
+        String(latestHostPlatform || ''),
+      ].join('|');
+      if (sig === lastBridgeRenderSig) return;
+      lastBridgeRenderSig = sig;
+      syncControls();
+    }
+
+    function refreshLabels() {
+      patchText(titleEl, t('settings.hostI18n.title'));
+      patchText(langLabelEl, t('settings.hostI18n.langLabel'));
+      patchText(langHintEl, t('settings.hostI18n.langHint'));
+      patchText(depthLabelEl, t('settings.hostI18n.depthLabel'));
+      patchText(removePackBtnText, t('settings.hostI18n.removeCacheBtn'));
+      patchText(devToggleText, t('settings.hostI18n.devToolsTitle'));
+      patchText(devHintEl, t('settings.hostI18n.devToolsHint'));
+      if (!isCollecting) patchText(collectBtnText, t('settings.hostI18n.collectBtn'));
+      patchText(copyCollectedBtnText, t('settings.hostI18n.copyJsonBtn'));
+      patchText(exportCollectedBtnText, t('settings.hostI18n.exportJsonBtn'));
+      patchAttr(refreshManifestBtn, 'title', t('settings.hostI18n.refreshManifestTip'));
+      patchAttr(refreshManifestBtn, 'aria-label', t('settings.hostI18n.refreshManifestTip'));
+      bridgeNotice.refs.refreshLabels();
+      syncControls();
+    }
+
+    onCleanup(() => {
+      destroyed = true;
+      abortSidecarApiKey('host-i18n-get');
+      if (feedbackTimer) {
+        clearTimeout(feedbackTimer);
+        feedbackTimer = null;
+      }
+      langSelect.destroy();
+      depthSwitch.destroy();
+      bridgeNotice.destroy();
+    });
+
+    return {
+      el: rootEl,
+      refs: {
+        langSelect,
+        depthSwitch,
+        load,
+        renderBridgeStatus,
+        refreshLabels,
+      },
+    };
+  },
+});
+return { HostI18nCard };
+})();
+
 // --- src/views/settings/SettingsGeneralTab.js ---
 const { SettingsGeneralTab } = (() => {
 /**
@@ -31228,9 +32101,20 @@ const SettingsGeneralTab = defineComponent({
       h('div', { className: 'cloud-actions-row' }, [syncPricingBtn, updatePluginBtn]),
     ]);
 
-    const rootEl = h('div', { className: 'settings-tab-stack' }, [appearancePanel, cloudPanel]);
+    const hostI18nCard = HostI18nCard({
+      onLayoutChange: () => props.onLayoutChange?.(),
+    });
 
-    function renderSettings(settings) {
+    const rootEl = h('div', { className: 'settings-tab-stack' }, [
+      appearancePanel,
+      hostI18nCard.el,
+      cloudPanel,
+    ]);
+
+    function renderSettings(settings, windowBridge = null, hostPlatform = 'win32') {
+      if (windowBridge || hostPlatform) {
+        hostI18nCard.refs.renderBridgeStatus(windowBridge, hostPlatform);
+      }
       if (!settings) return;
       latestSettings = settings;
       draftLanguage = normalizeI18nLanguage(settings.language);
@@ -31345,6 +32229,7 @@ const SettingsGeneralTab = defineComponent({
       } else {
         patchText(pricingSyncSub, t('quota.loading'));
       }
+      hostI18nCard.refs.refreshLabels();
     }
 
     onCleanup(() => {
@@ -31355,6 +32240,7 @@ const SettingsGeneralTab = defineComponent({
       fontScaleSwitch.destroy();
       modernUiSwitch.destroy();
       autoUpdateSelect.destroy();
+      hostI18nCard.destroy();
     });
 
     return {
@@ -31367,6 +32253,8 @@ const SettingsGeneralTab = defineComponent({
         autoUpdateSelect,
         syncPricingBtn,
         updatePluginBtn,
+        hostI18nCard,
+        loadHostI18n: (force = false) => hostI18nCard.refs.load(force),
         renderSettings,
         renderCloudStatus,
         refreshLabels,
@@ -39682,7 +40570,14 @@ const SettingsView = defineComponent({
           );
         }
       } else if (settingsSubTab !== 'account') {
-        if (settings) generalTab.refs.renderSettings(settings);
+        if (settings) {
+          generalTab.refs.renderSettings(
+            settings,
+            telemetry?.windowBridge,
+            telemetry?.hostPlatform
+          );
+        }
+        void generalTab.refs.loadHostI18n?.(false);
         if (telemetry?.cloudStatus) generalTab.refs.renderCloudStatus(telemetry.cloudStatus);
       }
       refreshScroll();
@@ -40252,7 +41147,7 @@ const COMPOSER_MODEL_ATTR_RE =
   /\bmodel[-_\s]?(?:select|picker|switch|selector|menu|name)\b|选择模型|切换模型/i;
 const COMPOSER_MODE_EXACT_RE = /^(?:auto|自动)$/i;
 const COMPOSER_MODE_TEXT_RE =
-  /^(?:auto|ask|manual|supervised|autonomous|always\s*allow|turbo|safe|yolo|plan|act|review|confirm|normal|fast|自动|询问|手动|始终允许|受控|规划)(?:\s*(?:mode|模式))?$/i;
+  /^(?:auto|ask|manual|supervised|autonomous|always\s*allow|turbo|safe|yolo|plan|planning|act|review|confirm|normal|fast|自动|询问|始终询问|手动|始终允许|受控|规划|快速)(?:\s*(?:mode|模式))?$/i;
 const COMPOSER_MODE_ATTR_RE =
   /\b(?:auto(?:nomy|matic)?|execution[-_]?mode|agent[-_]?mode|permission|approval|hitl|policy|mode[-_]?selector|mode[-_]?picker)\b|自动|执行模式|权限模式|审批/i;
 const COMPOSER_ICON_FONT_CLASS_RE =

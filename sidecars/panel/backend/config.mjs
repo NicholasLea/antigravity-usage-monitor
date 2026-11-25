@@ -382,7 +382,7 @@ export function computeRuntimeCodeVersion(options = {}) {
     join(HERE, 'trajectory-metrics.mjs'),
     LOCAL_CATALOG_FILE,
   ];
-  for (const subDir of ['shared', 'backend']) {
+  for (const subDir of ['shared', 'backend', join('backend', 'host-i18n')]) {
     const absDir = join(HERE, subDir);
     try {
       if (existsSync(absDir)) {

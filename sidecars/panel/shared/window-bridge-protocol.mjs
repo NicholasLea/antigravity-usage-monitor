@@ -45,6 +45,8 @@ export const BRIDGE_API_ROUTE_DEFS = Object.freeze([
     method: 'GET',
     action: 'quota_reservation_log',
   }),
+  Object.freeze({ path: '/api/host-i18n', method: 'GET', action: 'host_i18n_get' }),
+  Object.freeze({ path: '/api/host-i18n', method: 'POST', action: 'host_i18n_action' }),
 ]);
 
 export const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path));
