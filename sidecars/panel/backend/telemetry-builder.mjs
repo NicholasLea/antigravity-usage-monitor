@@ -45,6 +45,7 @@ import {
 } from './model-pricing.mjs';
 import { getCloudStatus, getPricingPhaseEpoch, pricingCatalogRevision } from './pricing-catalog.mjs';
 import { buildOfficialQuotaPools } from './quota-pools.mjs';
+import { recordAccountQuotaSnapshot } from './account-quota-history.mjs';
 import { updatePoolQuotaReservationEstimates } from './quota-reservation.mjs';
 import { getDefaultCloudCodeProxyStatus } from './cloudcode-proxy.mjs';
 import { getDefaultWindowBridgeStatus } from './window-bridge.mjs';
@@ -93,9 +94,16 @@ function roundSessionCost(val) {
   return val < 0.01 ? +val.toFixed(4) : +val.toFixed(2);
 }
 
-function findTrajectoryCacheEntry(cascadeId, cacheStore = null) {
+function findTrajectoryCacheEntry(cascadeId, cacheStore = null, { hydrate = false } = {}) {
   if (!cascadeId) return null;
   const store = cacheStore || getEndpointCacheStore(null);
+  if (hydrate && typeof store.getHydratedTrajectoryEntryByLower === 'function') {
+    return store.getHydratedTrajectoryEntryByLower(cascadeId)?.entry || null;
+  }
+  if (hydrate && typeof store.getHydratedTrajectory === 'function') {
+    const hit = store.getHydratedTrajectory(cascadeId);
+    if (hit) return hit;
+  }
   if (typeof store.getCachedTrajectoryEntryByLower === 'function') {
     return store.getCachedTrajectoryEntryByLower(cascadeId)?.entry || null;
   }
@@ -130,7 +138,7 @@ function readTrajectoryModelFacts(steps) {
         fallbackModelKeys.add(step.modelKey);
       }
     }
-    if (!step?.isCompactionStep && step?.reportedContextLimitTokens > 0) {
+    if (!step?.isCompactionStep && !step?.isImageGenStep && step?.reportedContextLimitTokens > 0) {
       sortableLimits &&= Number.isFinite(step.createdAtMs);
       rememberModelContextLimit(limits, step);
     }
@@ -149,6 +157,16 @@ function buildKnownUpstreamModelMap(contextLimits, cacheStore = null) {
     const facts = readTrajectoryModelFacts(entry.steps);
     for (const [key, model] of facts.upstream) knownUpstreamByModelKey.set(key, model);
     if (entry.subagentSpec) continue;
+    if (Array.isArray(entry._stepFlags?.modelLimits) && entry._stepFlags.modelLimits.length > 0) {
+      for (const [key, tokens, at] of entry._stepFlags.modelLimits) {
+        if (!key || !(tokens > 0)) continue;
+        const previous = contextLimits.get(key);
+        if (!previous || at > previous.at) {
+          contextLimits.set(key, { tokens, at });
+        }
+      }
+      continue;
+    }
     if (facts.limits) {
       for (const [key, limit] of facts.limits) {
         const previous = contextLimits.get(key);
@@ -209,7 +227,15 @@ function enrichActiveConversationSteps(
     const cacheCostUsd = mInfo.pricing
       ? (st.cacheReadTokens / 1_000_000) * mInfo.pricing.cache
       : null;
-    const outCostUsd = mInfo.pricing ? (st.outputTokens / 1_000_000) * mInfo.pricing.output : null;
+    const effectiveOutRate = mInfo.pricing
+      ? st.isImageGenStep &&
+        typeof mInfo.pricing.imageOutput === 'number' &&
+        mInfo.pricing.imageOutput > 0
+        ? mInfo.pricing.imageOutput
+        : mInfo.pricing.output
+      : null;
+    const outCostUsd =
+      effectiveOutRate !== null ? (st.outputTokens / 1_000_000) * effectiveOutRate : null;
     const resolvedResponseModel =
       st.responseModel ||
       (st.modelKey && st.modelKey !== 'unknown'
@@ -296,11 +322,13 @@ function enrichActiveConversationSteps(
 
   const latestEnriched =
     enrichedActiveSteps.length > 0 ? enrichedActiveSteps[enrichedActiveSteps.length - 1] : null;
+  const lastKnownTtftSec = findLastValidStepTtft(enrichedActiveSteps);
   const sessionAvgTokPerSec = roundMetric(sessionSpeed.avgTokPerSec);
 
   return {
     enrichedActiveSteps,
     latestEnriched,
+    lastKnownTtftSec,
     sessionSpeed,
     sessionTtft,
     sessionAvgTokPerSec,
@@ -310,6 +338,21 @@ function enrichActiveConversationSteps(
     sessionCacheReadTokens,
     sessionOutputTokens,
   };
+}
+
+function findLastValidStepTtft(steps) {
+  if (!Array.isArray(steps)) return null;
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const candidateTtft = steps[i]?.ttftSec;
+    if (
+      candidateTtft != null &&
+      Number.isFinite(Number(candidateTtft)) &&
+      Number(candidateTtft) >= 0
+    ) {
+      return Number(candidateTtft);
+    }
+  }
+  return null;
 }
 
 const CONTEXT_CHANNEL_KEYS = [
@@ -324,6 +367,35 @@ const CONTEXT_CHANNEL_KEYS = [
   'systemPrompt',
   'userRules',
 ];
+
+const STATIC_CONTEXT_CHANNEL_KEYS = [
+  'systemTools',
+  'mcpTools',
+  'skills',
+  'systemPrompt',
+  'userRules',
+];
+
+function applyFallbackStaticChannels(channels, fallbackStaticContext, capTotal = 0) {
+  if (!fallbackStaticContext || typeof fallbackStaticContext !== 'object') return 0;
+  let staticMap = {
+    systemTools: Math.max(0, Math.round(Number(fallbackStaticContext.systemToolsTokens || 0))),
+    mcpTools: Math.max(0, Math.round(Number(fallbackStaticContext.mcpToolsTokens || 0))),
+    skills: Math.max(0, Math.round(Number(fallbackStaticContext.skillsTokens || 0))),
+    systemPrompt: Math.max(0, Math.round(Number(fallbackStaticContext.systemPromptTokens || 0))),
+    userRules: Math.max(0, Math.round(Number(fallbackStaticContext.userRulesTokens || 0))),
+  };
+  let staticSum = STATIC_CONTEXT_CHANNEL_KEYS.reduce((sum, k) => sum + staticMap[k], 0);
+  if (staticSum <= 0) return 0;
+  if (capTotal > 0 && staticSum > capTotal) {
+    staticMap = scaleBucketsExact(staticMap, STATIC_CONTEXT_CHANNEL_KEYS, Math.round(capTotal));
+    staticSum = STATIC_CONTEXT_CHANNEL_KEYS.reduce((sum, k) => sum + staticMap[k], 0);
+  }
+  for (const k of STATIC_CONTEXT_CHANNEL_KEYS) {
+    channels[k] = staticMap[k];
+  }
+  return staticSum;
+}
 
 function resolveStepOutputTokens(st) {
   const explicitOut = Number(st?.outputTokens || 0);
@@ -388,7 +460,8 @@ function extractActiveContextTelemetry(
   enrichedActiveSteps,
   latestEnriched,
   sessionInputTokens,
-  sessionCacheReadTokens
+  sessionCacheReadTokens,
+  fallbackStaticContext = null
 ) {
   let lastCompactionIdx = -1;
   for (let i = enrichedActiveSteps.length - 1; i >= 0; i--) {
@@ -427,6 +500,7 @@ function extractActiveContextTelemetry(
         for (let m = breakdownIdx + 1; m < enrichedActiveSteps.length; m++) {
           const stepM = enrichedActiveSteps[m];
           if (!stepM || stepM.isCompactionStep) break;
+          if (stepM.isImageGenStep) continue;
           const mPrompt =
             Number(stepM.inputTokens || 0) + Number(stepM.cacheReadTokens || 0);
           const mOut = resolveStepOutputTokens(stepM);
@@ -470,6 +544,8 @@ function extractActiveContextTelemetry(
       channels.skills = preChannels.skills;
       channels.systemPrompt = preChannels.systemPrompt;
       channels.userRules = preChannels.userRules;
+    } else if (fallbackStaticContext) {
+      applyFallbackStaticChannels(channels, fallbackStaticContext, 0);
     }
     channels.userInput = 0;
     channels.assistant = 0;
@@ -480,7 +556,7 @@ function extractActiveContextTelemetry(
     let runningTotal = CONTEXT_CHANNEL_KEYS.reduce((sum, k) => sum + channels[k], 0);
     for (let m = lastCompactionIdx + 1; m < enrichedActiveSteps.length; m++) {
       const stepM = enrichedActiveSteps[m];
-      if (!stepM || stepM.isCompactionStep) continue;
+      if (!stepM || stepM.isCompactionStep || stepM.isImageGenStep) continue;
       const mPrompt =
         Number(stepM.inputTokens || 0) + Number(stepM.cacheReadTokens || 0);
       const mOut = resolveStepOutputTokens(stepM);
@@ -497,6 +573,59 @@ function extractActiveContextTelemetry(
         }
         channels.assistant += mOut;
         runningTotal = mPrompt + mOut;
+      }
+    }
+  } else if (enrichedActiveSteps.length > 0) {
+    // 当宿主回退或历史裁剪导致全部步骤均无 `contextBreakdown` 且未发生过压缩时，
+    // 基于缓存的 5 通道静态基线（如有）和各步真实计费增量重建上下文通道，避免进度条和 10 项图例全归零。
+    let runningTotal = 0;
+    let seededInitial = false;
+    for (let m = 0; m < enrichedActiveSteps.length; m++) {
+      const stepM = enrichedActiveSteps[m];
+      if (!stepM || stepM.isCompactionStep || stepM.isImageGenStep) continue;
+      const mPrompt =
+        Number(stepM.inputTokens || 0) + Number(stepM.cacheReadTokens || 0);
+      const mOut = resolveStepOutputTokens(stepM);
+      if (!seededInitial) {
+        if (mPrompt <= 0 && mOut <= 0) continue;
+        seededInitial = true;
+        if (mPrompt > 0) {
+          const staticUsed = applyFallbackStaticChannels(
+            channels,
+            fallbackStaticContext,
+            mPrompt
+          );
+          channels.userInput += Math.max(0, mPrompt - staticUsed);
+        }
+        channels.assistant += mOut;
+        runningTotal = mPrompt + mOut;
+      } else if (mPrompt > 0) {
+        if (mPrompt > runningTotal) {
+          const delta = mPrompt - runningTotal;
+          if (enrichedActiveSteps[m - 1]?.hasToolCalls) {
+            channels.toolResults += delta;
+          } else {
+            channels.userInput += delta;
+          }
+        } else if (mPrompt < runningTotal) {
+          channels = scaleBucketsExact(channels, CONTEXT_CHANNEL_KEYS, mPrompt);
+        }
+        channels.assistant += mOut;
+        runningTotal = mPrompt + mOut;
+      }
+    }
+    if (runningTotal === 0) {
+      const estFallback = Math.max(
+        0,
+        Math.round(Number(latestEnriched?.estimatedContextTokens || 0))
+      );
+      if (estFallback > 0) {
+        const staticUsed = applyFallbackStaticChannels(
+          channels,
+          fallbackStaticContext,
+          estFallback
+        );
+        channels.userInput += Math.max(0, estFallback - staticUsed);
       }
     }
   }
@@ -516,25 +645,39 @@ function extractActiveContextTelemetry(
   const ctxBreakdownTotal =
     ctxMessages + ctxSystemTools + ctxMcpTools + ctxSkills + ctxSystemPrompt + ctxUserRules;
 
-  const isLatestCompaction = Boolean(latestEnriched?.isCompactionStep);
-  const ctxCached = latestEnriched?.cacheReadTokens || 0;
-  const ctxFreshInput = latestEnriched?.inputTokens || 0;
-  const ctxThinking = latestEnriched?.thinkingTokens || 0;
-  const ctxResponse = latestEnriched?.responseTokens || 0;
-  const ctxOut = resolveStepOutputTokens(latestEnriched);
+  let ctxRefStep = latestEnriched;
+  if (ctxRefStep?.isImageGenStep) {
+    for (let i = enrichedActiveSteps.length - 1; i >= 0; i--) {
+      if (!enrichedActiveSteps[i]?.isImageGenStep) {
+        ctxRefStep = enrichedActiveSteps[i];
+        break;
+      }
+    }
+  }
+  const isLatestCompaction = Boolean(ctxRefStep?.isCompactionStep);
+  const ctxCached = ctxRefStep?.cacheReadTokens || 0;
+  const ctxFreshInput = ctxRefStep?.inputTokens || 0;
+  const ctxThinking = ctxRefStep?.thinkingTokens || 0;
+  const ctxResponse = ctxRefStep?.responseTokens || 0;
+  const ctxOut = resolveStepOutputTokens(ctxRefStep);
   const ctxTotal = isLatestCompaction
     ? ctxBreakdownTotal
     : ctxBreakdownTotal > 0
       ? ctxBreakdownTotal
-      : ctxCached + ctxFreshInput + ctxOut;
+      : (ctxRefStep?.isImageGenStep ? 0 : ctxCached + ctxFreshInput + ctxOut) ||
+        Number(ctxRefStep?.estimatedContextTokens || 0);
   const compactionLimitTokens = Number(
-    (isLatestCompaction && !latestEnriched?.reportedContextLimitTokens && fallbackPreCompactionLimit > 0
+    (isLatestCompaction && !ctxRefStep?.reportedContextLimitTokens && fallbackPreCompactionLimit > 0
       ? fallbackPreCompactionLimit
-      : latestEnriched?.maxContextBudgetTokens) || 256000
+      : ctxRefStep?.maxContextBudgetTokens) || 256000
   );
   const compactionUsedTokens = isLatestCompaction
     ? Number(ctxTotal)
-    : Number(ctxTotal || latestEnriched?.estimatedContextTokens || ctxCached + ctxFreshInput);
+    : Number(
+        ctxTotal ||
+          ctxRefStep?.estimatedContextTokens ||
+          (ctxRefStep?.isImageGenStep ? 0 : ctxCached + ctxFreshInput)
+      );
   const compactionUsedPct =
     compactionLimitTokens > 0
       ? Math.min(100, +((compactionUsedTokens / compactionLimitTokens) * 100).toFixed(1))
@@ -598,7 +741,14 @@ function sameFallbackUpstreams(prevMap, fallbackModelKeys, upstream) {
   return true;
 }
 
-function prepareAgentSteps(rawSteps, resolveStepModel, upstream, agentFields, reuseInputs) {
+function prepareAgentSteps(
+  rawSteps,
+  resolveStepModel,
+  upstream,
+  agentFields,
+  reuseInputs,
+  fallbackStaticContext = null
+) {
   const facts = readTrajectoryModelFacts(rawSteps);
   for (const [key, model] of facts.upstream) upstream.set(key, model);
   const canCache = Boolean(reuseInputs && Array.isArray(rawSteps));
@@ -610,6 +760,7 @@ function prepareAgentSteps(rawSteps, resolveStepModel, upstream, agentFields, re
       previous.catalogRevision === reuseInputs.catalogRevision &&
       previous.phaseEpoch === reuseInputs.phaseEpoch &&
       isDeepStrictEqual(previous.dynamicModelMap, reuseInputs.dynamicModelMap) &&
+      isDeepStrictEqual(previous.fallbackStaticContext || null, fallbackStaticContext || null) &&
       sameFallbackUpstreams(previous.fallbackUpstreams, facts.fallbackModelKeys, upstream)
     ) {
       return previous.prepared;
@@ -620,8 +771,13 @@ function prepareAgentSteps(rawSteps, resolveStepModel, upstream, agentFields, re
   const prepared = {
     enrichedRes,
     recentSteps: taggedSteps.slice().reverse(),
-    ctxRes: extractActiveContextTelemetry(taggedSteps, enrichedRes.latestEnriched,
-      enrichedRes.sessionInputTokens, enrichedRes.sessionCacheReadTokens),
+    ctxRes: extractActiveContextTelemetry(
+      taggedSteps,
+      enrichedRes.latestEnriched,
+      enrichedRes.sessionInputTokens,
+      enrichedRes.sessionCacheReadTokens,
+      fallbackStaticContext
+    ),
     modelBreakdown: buildScopedModelBreakdown(taggedSteps, resolveStepModel),
   };
   // 按 rawSteps 数组引用缓存各代理（含多代理子代理）步骤富化结果，步骤变更后由 WeakMap 自动淘汰。
@@ -631,6 +787,7 @@ function prepareAgentSteps(rawSteps, resolveStepModel, upstream, agentFields, re
       catalogRevision: reuseInputs.catalogRevision,
       phaseEpoch: reuseInputs.phaseEpoch,
       dynamicModelMap: reuseInputs.dynamicModelMap,
+      fallbackStaticContext: fallbackStaticContext || null,
       fallbackUpstreams: snapshotFallbackUpstreams(facts.fallbackModelKeys, upstream),
       prepared,
     });
@@ -660,6 +817,7 @@ export function buildAgentUnitTelemetry({
   agentLabel,
   status,
   rawSteps,
+  fallbackStaticContext = null,
   liveActivity = null,
   fallbackLastModMs,
   resolveStepModel,
@@ -684,7 +842,8 @@ export function buildAgentUnitTelemetry({
       isSubagent: !isMain,
       ...(isSideQuestion ? { isSideQuestion: true, sideIndex } : {}),
     },
-    reuseInputs
+    reuseInputs,
+    fallbackStaticContext
   );
   const taggedSteps = enrichedRes.enrichedActiveSteps;
   const lastModifiedMs =
@@ -721,6 +880,7 @@ export function buildAgentUnitTelemetry({
       stepCount: taggedSteps.length,
       latestTokPerSec: enrichedRes.latestEnriched?.tokPerSec ?? null,
       latestTtftSec: enrichedRes.latestEnriched?.ttftSec ?? null,
+      lastKnownTtftSec: enrichedRes.lastKnownTtftSec ?? null,
       latestSpeedReason: enrichedRes.latestEnriched?.selectedSpeedReason ?? null,
       avgTokPerSec: enrichedRes.sessionAvgTokPerSec,
       speedSummary: enrichedRes.sessionSpeed,
@@ -782,6 +942,7 @@ async function readTelemetrySources(
     summariesObj: localSummaries.available
       ? localSummaries.summariesObj
       : allTrajRes?.trajectorySummaries || {},
+    summariesFromLocalDb: localSummaries.available,
     sideQuestionParents: localSummaries.available ? localSummaries.sideQuestionParents : {},
     currentAccountName: accountScope,
     requestedConvId,
@@ -930,7 +1091,7 @@ function buildActiveConversationAssembly({
   const cacheKey = `${epKey}::${String(activeCascadeId || '__empty__').toLowerCase()}`;
 
   const subEntries = subagentSummaries.map((subSum) =>
-    findTrajectoryCacheEntry(subSum.cascadeId, cacheStore)
+    findTrajectoryCacheEntry(subSum.cascadeId, cacheStore, { hydrate: true })
   );
   const subRawStepsList = subEntries.map((entry) => entry?.steps || []);
   const combinedFallbackKeys = new Set();
@@ -951,6 +1112,7 @@ function buildActiveConversationAssembly({
     activeConvSummary?.lastModifiedMs || activeEntry?.lastModifiedMs || 0,
     activeConvSummary?.liveActivity?.signature || '',
     activeConvSummary?.liveActivity?.startedAtMs || 0,
+    activeEntry?.lastKnownStaticContext || null,
     subagentSummaries.map((subSum, idx) => {
       const subEntry = subEntries[idx];
       const subSpec = subSum.subagentSpec || subEntry?.subagentSpec || null;
@@ -967,6 +1129,7 @@ function buildActiveConversationAssembly({
         subSum.lastModifiedMs || subEntry?.lastModifiedMs || 0,
         subSum.liveActivity?.signature || '',
         subSum.liveActivity?.startedAtMs || 0,
+        subEntry?.lastKnownStaticContext || null,
         subSpec?.role || '',
         subSpec?.typeName || '',
       ];
@@ -1007,6 +1170,7 @@ function buildActiveConversationAssembly({
     agentLabel: '主代理',
     status: activeConvSummary?.status || 'IDLE',
     rawSteps: activeSteps,
+    fallbackStaticContext: activeEntry?.lastKnownStaticContext || null,
     liveActivity: activeConvSummary?.liveActivity || null,
     fallbackLastModMs: activeConvSummary?.lastModifiedMs || activeEntry?.lastModifiedMs || 0,
     resolveStepModel,
@@ -1088,6 +1252,7 @@ function buildActiveConversationAssembly({
       agentLabel,
       status: subSum.status || 'IDLE',
       rawSteps: subRawSteps,
+      fallbackStaticContext: subEntry?.lastKnownStaticContext || null,
       liveActivity: subSum.liveActivity || null,
       fallbackLastModMs: subSum.lastModifiedMs || subEntry?.lastModifiedMs || 0,
       resolveStepModel,
@@ -1269,6 +1434,11 @@ function buildActiveConversationAssembly({
         }
       : null;
 
+    const combinedLastKnownTtftSec =
+      findLastValidStepTtft(allCombinedEnrichedSteps) ??
+      latestMetricAgent.lastKnownTtftSec ??
+      null;
+
     aggregatedTelemetry = {
       agentId: 'all',
       cascadeId: activeCascadeId,
@@ -1292,6 +1462,7 @@ function buildActiveConversationAssembly({
       stepCount: allCombinedEnrichedSteps.length,
       latestTokPerSec: latestMetricAgent.latestTokPerSec,
       latestTtftSec: latestMetricAgent.latestTtftSec,
+      lastKnownTtftSec: combinedLastKnownTtftSec,
       latestSpeedReason: latestMetricAgent.latestSpeedReason,
       avgTokPerSec: combinedAvgTokPerSec,
       speedSummary: combinedSpeed,
@@ -1341,6 +1512,8 @@ function buildActiveConversationAssembly({
       : enrichedActiveSteps.length,
     latestTokPerSec: latestEnriched?.tokPerSec ?? null,
     latestTtftSec: latestEnriched?.ttftSec ?? null,
+    lastKnownTtftSec:
+      mainAgentTelemetry.lastKnownTtftSec ?? findLastValidStepTtft(enrichedActiveSteps),
     latestSpeedReason: latestEnriched?.selectedSpeedReason ?? null,
     avgTokPerSec: sessionAvgTokPerSec,
     speedSummary: sessionSpeed,
@@ -1640,7 +1813,7 @@ export async function buildTelemetryPayloadInternal(
   // 3. 计算当前活跃根会话及其子代理的步骤指标、10 通道上下文拆解与按模型汇总
   const reportedContextLimits = new Map();
   const knownUpstreamByModelKey = buildKnownUpstreamModelMap(reportedContextLimits, cacheStore);
-  const activeEntry = findTrajectoryCacheEntry(activeCascadeId, cacheStore);
+  const activeEntry = findTrajectoryCacheEntry(activeCascadeId, cacheStore, { hydrate: true });
   const modelInputs = {
     catalogRevision: pricingCatalogRevision,
     phaseEpoch: getPricingPhaseEpoch(),
@@ -1729,11 +1902,57 @@ export async function buildTelemetryPayloadInternal(
     poolObj.cycleWeekly = pStats?.cycleWeekly || createEmptyCycleSummary();
   }
 
+  const runningPoolKeys = new Set();
+  let hasUnknownRunningPool = false;
+  for (const rootConv of conversations) {
+    const isMainRunning = rootConv?.status === 'CASCADE_RUN_STATUS_RUNNING';
+    const rawSubs = Array.isArray(rootConv?.subagents) ? rootConv.subagents : [];
+    const runningSubs = rawSubs.filter((s) => s?.status === 'CASCADE_RUN_STATUS_RUNNING');
+    if (!isMainRunning && runningSubs.length === 0) continue;
+
+    const recordRunningPool = (cid) => {
+      const entry = findTrajectoryCacheEntry(cid, cacheStore);
+      const steps = Array.isArray(entry?.steps) ? entry.steps : [];
+      const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
+      if (!lastStep) {
+        if (activePoolKey && activePoolKey !== 'Unknown') {
+          runningPoolKeys.add(activePoolKey);
+        } else {
+          hasUnknownRunningPool = true;
+        }
+        return;
+      }
+      const mInfo = resolveStepModel(lastStep);
+      const { activePoolKey: pKey } = resolveActivePoolKeyFromStep(
+        {
+          modelKey: lastStep.modelKey || mInfo.modelId || 'unknown',
+          family: mInfo.family,
+          modelLabel: mInfo.label,
+          modelShort: mInfo.shortName,
+          modelUpstream: mInfo.modelId,
+        },
+        quotaPoolsMap
+      );
+      if (pKey && pKey !== 'Unknown') {
+        runningPoolKeys.add(pKey);
+      } else {
+        hasUnknownRunningPool = true;
+      }
+    };
+
+    if (isMainRunning) recordRunningPool(rootConv.cascadeId);
+    for (const sub of runningSubs) {
+      recordRunningPool(sub.cascadeId);
+    }
+  }
+
   updatePoolQuotaReservationEstimates({
     endpointId,
     accountScope: accountScope || '',
     quotaPoolsMap,
     poolCycleStats,
+    runningPoolKeys,
+    hasUnknownRunningPool,
     quotaFetchedAtMs: officialQuotaInfo?.fetchedAtMs || 0,
     nowMs: Date.now(),
   });
@@ -1798,7 +2017,7 @@ export async function buildTelemetryPayloadInternal(
     if (cidKey && quickStatsMemo.has(cidKey)) {
       return quickStatsMemo.get(cidKey);
     }
-    const rootEntry = findTrajectoryCacheEntry(rootConv?.cascadeId, cacheStore);
+    const rootEntry = findTrajectoryCacheEntry(rootConv?.cascadeId, cacheStore, { hydrate: true });
     const rootSteps = rootEntry?.steps || [];
     const rawSubs = Array.isArray(rootConv?.subagents) ? rootConv.subagents : [];
 
@@ -1838,8 +2057,13 @@ export async function buildTelemetryPayloadInternal(
 
     let contextUsedPct = null;
     if (lastRootStep) {
-      contextUsedPct = extractActiveContextTelemetry(rootSteps, lastRootStep, 0, 0).context
-        .compactionUsedPct;
+      contextUsedPct = extractActiveContextTelemetry(
+        rootSteps,
+        lastRootStep,
+        0,
+        0,
+        rootEntry?.lastKnownStaticContext || null
+      ).context.compactionUsedPct;
     }
 
     let modelShort = '';
@@ -2093,6 +2317,30 @@ export async function buildTelemetryPayloadInternal(
     });
   }
 
+  const sortedQuotaPools = Array.from(quotaPoolsMap.values()).sort((a, b) => {
+    const order = { Gemini: 0, Argon: 1, Carbon: 2, 'Claude & GPT': 3 };
+    return (order[a.family] ?? 99) - (order[b.family] ?? 99);
+  });
+  if (
+    !isRemote &&
+    accountStatus === 'signedIn' &&
+    userStatus?.email &&
+    officialQuotaInfo?.data &&
+    !officialQuotaInfo.isStale
+  ) {
+    recordAccountQuotaSnapshot(
+      userStatus.email,
+      sortedQuotaPools,
+      officialQuotaInfo.fetchedAtMs || Date.now(),
+      { isActiveHost: true }
+    );
+  }
+  const weeklyCapacityEstimate = buildWeeklyCapacityEstimate({
+    sortedPools: sortedQuotaPools,
+    isCustomWeeklyMode,
+    hasOfficialData: Boolean(officialQuotaInfo?.data),
+  });
+
   const finalPayload = {
     timestamp: new Date().toISOString(),
     hostPlatform: process.platform || 'unknown',
@@ -2176,6 +2424,9 @@ export async function buildTelemetryPayloadInternal(
       revision: usageRevision,
       selectedRange: {
         key: selectedWindow.key,
+        ...(selectedWindow.pool ? { pool: selectedWindow.pool } : {}),
+        ...(selectedWindow.poolLabel ? { poolLabel: selectedWindow.poolLabel } : {}),
+        ...(selectedWindow.isFallbackWeek ? { isFallbackWeek: true } : {}),
         label: selectedWindow.label,
         startMs: trendStartMs,
         endMs: trendEndMs,
@@ -2200,11 +2451,9 @@ export async function buildTelemetryPayloadInternal(
         errorMessage: officialQuotaInfo?.error || null,
       },
       activePool: activePoolQuota,
-      pools: Array.from(quotaPoolsMap.values()).sort((a, b) => {
-        const order = { Gemini: 0, Argon: 1, Carbon: 2, 'Claude & GPT': 3 };
-        return (order[a.family] ?? 99) - (order[b.family] ?? 99);
-      }),
+      pools: sortedQuotaPools,
       weekly: weeklyQuota,
+      weeklyCapacityEstimate,
     },
     modelBreakdown,
   };
@@ -2291,11 +2540,16 @@ function resolveValidFastSnapshot(endpoint = null) {
 }
 
 function entryNeedsLazyTelemetryUpgrade(entry) {
-  if (!entry || !Array.isArray(entry.steps) || entry.steps.length === 0) return false;
+  if (!entry || entry.archived || !Array.isArray(entry.steps) || entry.steps.length === 0) {
+    return false;
+  }
+  const grpVer = Number(entry.contextGroupsTelemetry || 0);
+  const needsUndoCtxUpgrade =
+    grpVer < 2 || (grpVer === 2 && !entry.steps.some((st) => Boolean(st?.contextBreakdown)));
   return (
     !entry.turnRailTelemetry ||
     !entry.anomalyTelemetry ||
-    entry.contextGroupsTelemetry !== 2
+    needsUndoCtxUpgrade
   );
 }
 
@@ -2318,7 +2572,7 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
   if (!activeConvSummary?.cascadeId) return null;
 
   const activeCascadeId = activeConvSummary.cascadeId;
-  const activeEntry = findTrajectoryCacheEntry(activeCascadeId, cacheStore);
+  const activeEntry = findTrajectoryCacheEntry(activeCascadeId, cacheStore, { hydrate: true });
   if (!activeEntry) return null;
 
   const subagentSummaries = Array.isArray(activeConvSummary.subagents)
@@ -2333,7 +2587,7 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
         needsBackgroundSync = true;
         break;
       }
-      const subEntry = findTrajectoryCacheEntry(subSum?.cascadeId, cacheStore);
+      const subEntry = findTrajectoryCacheEntry(subSum?.cascadeId, cacheStore, { hydrate: true });
       if (!subEntry || entryNeedsLazyTelemetryUpgrade(subEntry)) {
         needsBackgroundSync = true;
         break;
@@ -2397,12 +2651,127 @@ function tryBuildFastConversationPayload(requestedConvId, filterOpts = {}) {
     quotas: {
       activePool: activePoolQuota,
       weekly: weeklyQuota,
+      weeklyCapacityEstimate: snap.basePayload.quotas?.weeklyCapacityEstimate || null,
     },
     consumption: {
       session: sessionUsage.finalizedSelectedSession,
       sessionPresets: sessionUsage.sessionPresets,
     },
     needsBackgroundSync,
+  };
+}
+
+function buildWeeklyCapacityEstimate({
+  sortedPools = [],
+  isCustomWeeklyMode = false,
+  hasOfficialData = false,
+} = {}) {
+  if (isCustomWeeklyMode) {
+    return {
+      status: 'custom_mode',
+      totalEqWeeklyUsd: null,
+      totalEqWeeklyTokens: null,
+      readyPoolCount: 0,
+      totalPoolCount: 0,
+      hasPreliminary: false,
+      pools: [],
+    };
+  }
+  const rawPools = Array.isArray(sortedPools) ? sortedPools : [];
+  const candidatePools = rawPools.filter(
+    (p) =>
+      p &&
+      (p.hasWeekly ||
+        p.weeklyUsedPct != null ||
+        Number.isFinite(p.rateEstimate?.eqFullWeeklyUsd))
+  );
+  const targetPools = candidatePools.length > 0 ? candidatePools : rawPools;
+  if (!hasOfficialData && targetPools.length === 0) {
+    return {
+      status: 'unavailable',
+      totalEqWeeklyUsd: null,
+      totalEqWeeklyTokens: null,
+      readyPoolCount: 0,
+      totalPoolCount: 0,
+      hasPreliminary: false,
+      pools: [],
+    };
+  }
+
+  let sumUsd = 0;
+  let sumTokens = 0;
+  let readyPoolCount = 0;
+  let tokenReadyPoolCount = 0;
+  let hasPreliminary = false;
+  const pools = [];
+
+  for (const p of targetPools) {
+    const est = p?.rateEstimate && typeof p.rateEstimate === 'object' ? p.rateEstimate : null;
+    let eqUsd =
+      Number.isFinite(est?.eqFullWeeklyUsd) && est.eqFullWeeklyUsd > 0
+        ? Number(est.eqFullWeeklyUsd)
+        : null;
+    let eqTok =
+      Number.isFinite(est?.eqFullWeeklyTokens) && est.eqFullWeeklyTokens > 0
+        ? Math.round(Number(est.eqFullWeeklyTokens))
+        : null;
+    if (eqUsd === null && Array.isArray(est?.models) && est.models.length > 0) {
+      const wkModels = est.models.filter(
+        (m) => Number.isFinite(m?.eqFullWeeklyUsd) && m.eqFullWeeklyUsd > 0
+      );
+      if (wkModels.length > 0) {
+        eqUsd =
+          wkModels.reduce((acc, m) => acc + Number(m.eqFullWeeklyUsd), 0) / wkModels.length;
+        const tokModels = wkModels.filter(
+          (m) => Number.isFinite(m?.eqFullWeeklyTokens) && m.eqFullWeeklyTokens > 0
+        );
+        if (tokModels.length === wkModels.length) {
+          eqTok = Math.round(
+            tokModels.reduce((acc, m) => acc + Number(m.eqFullWeeklyTokens), 0) / tokModels.length
+          );
+        }
+      }
+    }
+
+    const isPrelim = Boolean(est?.isPreliminaryWeekly);
+    if (eqUsd !== null) {
+      readyPoolCount += 1;
+      sumUsd += eqUsd;
+      if (isPrelim) hasPreliminary = true;
+      if (eqTok !== null) {
+        tokenReadyPoolCount += 1;
+        sumTokens += eqTok;
+      }
+    }
+
+    pools.push({
+      poolKey: p.poolKey || p.family || '',
+      poolLabel: p.poolLabel || p.family || p.poolKey || 'Pool',
+      usedWeeklyPct: Number.isFinite(Number(p.weeklyUsedPct)) ? +Number(p.weeklyUsedPct).toFixed(1) : null,
+      eqFullWeeklyUsd: eqUsd !== null ? +eqUsd.toFixed(1) : null,
+      eqFullWeeklyTokens: eqTok,
+      source: est?.sourceWeekly || null,
+      isPreliminary: isPrelim,
+    });
+  }
+
+  const totalPoolCount = pools.length;
+  const status =
+    readyPoolCount === 0
+      ? 'collecting'
+      : readyPoolCount < totalPoolCount
+        ? 'partial'
+        : 'ready';
+
+  return {
+    status,
+    totalEqWeeklyUsd: readyPoolCount > 0 ? +sumUsd.toFixed(1) : null,
+    totalEqWeeklyTokens:
+      readyPoolCount > 0 && tokenReadyPoolCount === readyPoolCount ? Math.round(sumTokens) : null,
+    readyPoolCount,
+    totalPoolCount,
+    hasPreliminary,
+    pools,
   };
 }
 
@@ -2478,6 +2847,9 @@ function tryBuildFastConsumptionPayload(filterOpts = {}) {
       revision: agg.usageRevision,
       selectedRange: {
         key: agg.selectedWindow.key,
+        ...(agg.selectedWindow.pool ? { pool: agg.selectedWindow.pool } : {}),
+        ...(agg.selectedWindow.poolLabel ? { poolLabel: agg.selectedWindow.poolLabel } : {}),
+        ...(agg.selectedWindow.isFallbackWeek ? { isFallbackWeek: true } : {}),
         label: agg.selectedWindow.label,
         startMs: agg.trendStartMs,
         endMs: agg.trendEndMs,
@@ -2584,6 +2956,7 @@ export function buildCliStatusSnapshot(finalPayload, updatedAtMs = Date.now()) {
       latestTokPerSec: capSource.latestTokPerSec ?? ac.latestTokPerSec ?? null,
       avgTokPerSec: capSource.avgTokPerSec ?? ac.avgTokPerSec ?? null,
       latestTtftSec: capSource.latestTtftSec ?? ac.latestTtftSec ?? null,
+      lastKnownTtftSec: capSource.lastKnownTtftSec ?? ac.lastKnownTtftSec ?? null,
       latestStepCostUsd: capSource.latestStepCostUsd ?? ac.latestStepCostUsd ?? null,
       sessionCostUsd: capSource.sessionCostUsd ?? ac.sessionCostUsd ?? null,
       latestCacheHitPct: capSource.latestCacheHitPct ?? ac.latestCacheHitPct ?? null,
@@ -2645,7 +3018,7 @@ export function buildTelemetryPayload(
       }
     }
   }
-  const rangeSig = `${filterOpts.range || 'all'}:${filterOpts.startMs || 0}:${filterOpts.endMs || 0}`;
+  const rangeSig = `${filterOpts.range || 'all'}:${filterOpts.pool || 'all'}:${filterOpts.startMs || 0}:${filterOpts.endMs || 0}`;
   const key = `${endpointKey}::${requestedConvId || '__auto__'}::${forceQuotaRefresh ? 'force' : 'normal'}::${rangeSig}`;
   if (inFlightRequests.has(key)) {
     return inFlightRequests.get(key);

@@ -229,6 +229,10 @@ function isValidPricingRateTriplet(entry) {
  * 校验并归一化单个时间阶段单价配置（左闭右开 `[fromMs, untilMs)`）。
  * 至少需声明合法的 `from` 或 `until` ISO 时间戳，且若同时声明须满足 `fromMs < untilMs`。
  */
+function sanitizeOptionalImageOutputRate(val) {
+  return typeof val === 'number' && Number.isFinite(val) && val > 0 && val <= 10000 ? val : null;
+}
+
 function sanitizePricingPhase(rawPhase) {
   if (!isValidPricingRateTriplet(rawPhase)) return null;
   let from = null;
@@ -251,12 +255,14 @@ function sanitizePricingPhase(rawPhase) {
   }
   if (from === null && until === null) return null;
   if (fromMs >= untilMs) return null;
+  const imageOutput = sanitizeOptionalImageOutputRate(rawPhase.imageOutput);
   return {
     ...(from !== null ? { from, fromMs } : {}),
     ...(until !== null ? { until, untilMs } : {}),
     input: rawPhase.input,
     cache: rawPhase.cache,
     output: rawPhase.output,
+    ...(imageOutput !== null ? { imageOutput } : {}),
   };
 }
 
@@ -305,10 +311,12 @@ export function sanitizeCatalogPayload(raw) {
           phases = cleanedPhases;
         }
       }
+      const imageOutput = sanitizeOptionalImageOutputRate(v.imageOutput);
       pricing[key] = {
         input: v.input,
         cache: v.cache,
         output: v.output,
+        ...(imageOutput !== null ? { imageOutput } : {}),
         short: String(v.short).trim(),
         family: normalizeModelFamily(v.family),
         ...(phases ? { phases } : {}),
@@ -413,7 +421,13 @@ export function rebuildActiveCatalog() {
     : DEFAULT_ARCHIVE_FALLBACK_URL;
 
   for (const { kind, cat } of layers) {
-    Object.assign(nextPricing, cat.pricing);
+    for (const [pk, pv] of Object.entries(cat.pricing)) {
+      const prevImgOut = nextPricing[pk]?.imageOutput;
+      nextPricing[pk] =
+        prevImgOut !== undefined && pv.imageOutput === undefined
+          ? { ...pv, imageOutput: prevImgOut }
+          : pv;
+    }
     Object.assign(nextPlaceholders, cat.placeholders);
     if (kind === 'remote' || cat.catalogVersion || cat.updatedAt) {
       activeSource = kind;

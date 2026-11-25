@@ -345,7 +345,8 @@ test('Loopback HTTP bridge enforces Origin, Private Network CORS, token auth, an
     assert.equal(postBody.echoData.enableWindowOverlay, false);
     assert.equal(receivedCalls.length, 3);
 
-    // 6. Oversized POST body -> 413
+    // 6. Oversized POST body -> 413 for regular /api/settings (including spoofed nested strings),
+    //    while legitimate __exportFileAction fallback (>64 KiB) and 8 MiB Base64 /api/export-file (~10.7 MiB JSON) succeed
     const hugePayload = JSON.stringify({ pad: 'x'.repeat(70 * 1024) });
     const hugeRes = await fetch(`http://127.0.0.1:${port}/api/settings`, {
       method: 'POST',
@@ -357,6 +358,52 @@ test('Loopback HTTP bridge enforces Origin, Private Network CORS, token auth, an
       body: hugePayload,
     }).catch(() => ({ status: 413 }));
     assert.equal(hugeRes.status, 413);
+
+    const spoofedSettingsPayload = JSON.stringify({
+      note: '{"__exportFileAction":"save"}',
+      pad: 'y'.repeat(70 * 1024),
+    });
+    const spoofedRes = await fetch(`http://127.0.0.1:${port}/api/settings`, {
+      method: 'POST',
+      headers: {
+        Origin: validOrigin,
+        'Content-Type': 'application/json',
+        'X-Usage-Monitor-Token': token,
+      },
+      body: spoofedSettingsPayload,
+    }).catch(() => ({ status: 413 }));
+    assert.equal(spoofedRes.status, 413);
+
+    const fallbackExportRes = await fetch(`http://127.0.0.1:${port}/api/settings`, {
+      method: 'POST',
+      headers: {
+        Origin: validOrigin,
+        'Content-Type': 'application/json',
+        'X-Usage-Monitor-Token': token,
+      },
+      body: JSON.stringify({
+        __exportFileAction: 'save',
+        payload: { filename: 'fallback.xlsx', encoding: 'base64', content: 'A'.repeat(200 * 1024) },
+      }),
+    });
+    assert.equal(fallbackExportRes.status, 200);
+
+    // 8 MiB binary encoded as Base64 (~10.67 MiB) fits within 12 MiB BRIDGE_MAX_EXPORT_BODY_BYTES
+    const eightMibBase64 = Buffer.alloc(8 * 1024 * 1024, 0x50).toString('base64');
+    const maxExportRes = await fetch(`http://127.0.0.1:${port}/api/export-file`, {
+      method: 'POST',
+      headers: {
+        Origin: validOrigin,
+        'Content-Type': 'application/json',
+        'X-Usage-Monitor-Token': token,
+      },
+      body: JSON.stringify({
+        filename: 'max-8mib.xlsx',
+        encoding: 'base64',
+        content: eightMibBase64,
+      }),
+    });
+    assert.equal(maxExportRes.status, 200);
   } finally {
     await controller.stop();
   }
@@ -673,6 +720,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
   const mockSettings = { ...defaultMockSettings };
   let cacheRebuildCalls = 0;
   let selectedEmail = '';
+  let browserAccountAdded = false;
+  let browserLoginStarts = 0;
   const accountRequests = [];
 
   const mockWindow = {
@@ -705,12 +754,23 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
         if (opts.method === 'POST') {
           const update = JSON.parse(opts.body);
           accountRequests.push(update);
+          if (update.action === 'loginStart') {
+            browserLoginStarts += 1;
+            if (browserLoginStarts > 1) {
+              browserAccountAdded = true;
+              return { ok: true, status: 200, json: async () => ({ supported: true, login: { id: 'browser-login', status: 'success', email: 'browser@example.com' } }) };
+            }
+            return { ok: true, status: 200, json: async () => ({ supported: true, login: { id: 'browser-login', status: 'waiting', url: 'https://accounts.google.com/o/oauth2/v2/auth?state=synthetic', opened: true } }) };
+          }
+          if (update.action === 'loginCancel') {
+            return { ok: true, status: 200, json: async () => ({ supported: true, login: { id: update.id, status: 'cancelled' } }) };
+          }
           if (update.action === 'quota') {
             return { ok: true, status: 200, json: async () => ({ email: update.email, pools: [{ poolKey: 'Gemini', remainingPct: 70 }] }) };
           }
           if (update.action === 'switch') selectedEmail = update.email;
         }
-        return { ok: true, status: 200, json: async () => ({ supported: true, accounts: ['next@example.com'], selectedEmail }) };
+        return { ok: true, status: 200, json: async () => ({ supported: true, accounts: browserAccountAdded ? ['next@example.com', 'browser@example.com'] : ['next@example.com'], selectedEmail, restarting: opts.method === 'POST' && JSON.parse(opts.body).action === 'switch' }) };
       }
       if (urlStr.includes('/api/settings/reset') && String(opts.method || '').toUpperCase() === 'POST') {
         for (const k of Object.keys(mockSettings)) delete mockSettings[k];
@@ -1390,7 +1450,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(selectRoot.classList.contains('is-open'), true, 'CustomSelect stays open via composedPath');
     selectTrigger.dispatchEvent({ type: 'click', stopPropagation() {} });
 
-    // Verify modular 3-tab SettingsView (常规 / 结构 / 其他) with Account tab hidden
+    // Verify account preferences are reachable between Structure and Other.
     const pillTabs = popoverEl.querySelectorAll('.pill-tab');
     pillTabs[pillTabs.length - 1].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
@@ -1398,13 +1458,13 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const allPanes = popoverEl.querySelectorAll('.view-pane');
     const settingsRoot = popoverEl.querySelector('.settings-view-root');
     const subNavBtns = settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn');
-    assert.deepEqual(subNavBtns.map((button) => button.textContent), ['常规', '结构', '其他']);
+    assert.deepEqual(subNavBtns.map((button) => button.textContent), ['常规', '结构', '账号', '其他']);
     assert.match(
       stylesCss,
       /\.settings-subnav-bar\s+\.segmented\s*\{[^}]*grid-auto-flow:\s*column;[^}]*grid-auto-columns:\s*minmax\(0,\s*1fr\);/,
       'Settings subnav uses auto-sized equal columns regardless of visible tab count'
     );
-    const [generalPane, structurePane, otherPane] = settingsRoot.querySelectorAll('.settings-tab-stack');
+    const [generalPane, structurePane, accountPane, otherPane] = settingsRoot.querySelectorAll('.settings-tab-stack');
     const thirdNavBar = settingsRoot.querySelector('.settings-thirdnav-bar');
     assert.ok(thirdNavBar, '3rd-level structure menu bar mounted in SettingsView');
     assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden when General tab is active');
@@ -1412,16 +1472,22 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(structurePane.hasAttribute('hidden'), true);
     assert.equal(otherPane.hasAttribute('hidden'), true);
 
-    // --- Tab 0: 常规 (languageSwitch, themeAccent, fontScaleSwitch, modernUiSwitch, pluginUpdateMode) ---
+    // --- Tab 0: 常规 (languageSwitch, themeAccent, fontScaleSwitch, modernUiSwitch, hostI18nDepth, pluginUpdateMode) ---
     const generalSegControls = generalPane.querySelectorAll('.segmented');
     assert.equal(
       generalSegControls.length,
-      3,
-      'General tab has Language, FontScale, and Experimental Modern UI segmented controls'
+      4,
+      'General tab has Language, FontScale, Experimental Modern UI, and Host I18n depth segmented controls'
     );
     const langBtns = generalSegControls[0].querySelectorAll('.seg-btn');
     const fontScaleBtns = generalSegControls[1].querySelectorAll('.seg-btn');
     const modernUiBtns = generalSegControls[2].querySelectorAll('.seg-btn');
+    const hostI18nDepthBtns = generalSegControls[3].querySelectorAll('.seg-btn');
+    assert.deepEqual(
+      hostI18nDepthBtns.map((button) => button.textContent),
+      ['浅度', '深度'],
+      'Host I18n depth switch has 浅度 / 深度'
+    );
     assert.equal(modernUiBtns.length, 2, 'Modern UI switch has 开启 / 关闭');
     assert.equal(modernUiBtns[0].textContent, '开启');
     assert.equal(modernUiBtns[1].textContent, '关闭');
@@ -1445,8 +1511,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(langBtns[2].textContent, 'English');
     assert.equal(langBtns[1].classList.contains('is-active'), true, 'mockSettings language zh-CN selects index 1');
     const generalSelects = generalPane.querySelectorAll('.custom-select');
-    assert.equal(generalSelects.length, 1, 'General tab has Update Mode select');
-    const updateModeSelectEl = generalSelects[0];
+    assert.equal(generalSelects.length, 2, 'General tab has Host I18n Language and Update Mode selects');
+    const updateModeSelectEl = generalSelects[1];
 
     // Theme accent picker: switch to emerald, verify CSS vars injected on both hosts, then restore host
     const swatchBtns = generalPane.querySelectorAll('.theme-swatch-btn');
@@ -1491,7 +1557,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, 'Settings');
     assert.equal(subNavBtns[0].textContent, 'General');
     assert.equal(subNavBtns[1].textContent, 'Structure');
-    assert.equal(subNavBtns[2].textContent, 'Other');
+    assert.equal(subNavBtns[2].textContent, 'Account');
+    assert.equal(subNavBtns[3].textContent, 'Other');
     langBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.language, 'auto');
@@ -1997,8 +2064,67 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       'Section reset restores monochrome speed classes in preview step table'
     );
 
-    // --- 其他 (model format, context limits, cache rebuild, reset) ---
     subNavBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(accountPane.hasAttribute('hidden'), false);
+    assert.equal(accountPane.querySelector('.settings-account-identity').textContent, 'test@example.com');
+    assert.equal(accountPane.querySelector('.account-active-dot'), null, 'Active account must not render a green dot');
+
+    // Quota trend chart is visible even before risk acceptance, using full 184px .trend-svg height and all 8 presets
+    const quotaTrendPanel = accountPane.querySelector('.account-quota-trend-panel');
+    assert.ok(quotaTrendPanel && !quotaTrendPanel.hasAttribute('hidden'), 'Quota trend chart card must be visible');
+    const quotaTrendSvg = quotaTrendPanel.querySelector('svg.trend-svg');
+    assert.ok(quotaTrendSvg, 'Quota trend chart must reuse 184px .trend-svg');
+    assert.equal(quotaTrendSvg.getAttribute('viewBox'), '0 0 460 184');
+    const trendSegLabels = quotaTrendPanel.querySelectorAll('.seg-btn').map((b) => b.textContent);
+    for (const expectedRange of ['周期', '今天', '1天', '7天', '14天', '30天', '全部', '自定义']) {
+      assert.ok(trendSegLabels.includes(expectedRange), `Quota trend chart must include ${expectedRange}`);
+    }
+
+    // Default risk gate locks multi-account management until explicitly accepted
+    const accountRiskMask = accountPane.querySelector('.settings-account-risk-mask');
+    assert.ok(accountRiskMask && !accountRiskMask.hasAttribute('hidden'), 'Multi-account risk mask must be visible by default');
+    assert.equal(accountRequests.some((item) => item.action === 'quota'), false, 'Must not poll backup quotas before risk acceptance');
+
+    const accountRiskAcceptBtn = accountPane.querySelector('.settings-account-risk-accept');
+    accountRiskAcceptBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(mockSettings.accountSwitchRiskAccepted, true);
+    assert.equal(accountRiskMask.hasAttribute('hidden'), true);
+
+    assert.ok(accountPane.querySelectorAll('.settings-account-quota').some((el) => el.textContent === '5 小时 70%'));
+    assert.ok(accountRequests.some((item) => item.action === 'quota' && item.email === 'next@example.com'));
+    const googleLogin = accountPane.querySelector('.settings-account-login');
+    assert.equal(googleLogin.textContent, '使用 Google 登录');
+    googleLogin.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(accountRequests.some((item) => item.action === 'loginStart' && item.language === 'zh-CN'));
+    assert.ok(accountPane.querySelectorAll('.settings-action-desc').some((el) => el.textContent.includes('请在浏览器中选择 Google 账号')));
+    assert.equal(accountPane.querySelector('.settings-account-login-cancel').hasAttribute('hidden'), false);
+    assert.equal(accountPane.querySelector('a').getAttribute('href'), 'https://accounts.google.com/o/oauth2/v2/auth?state=synthetic');
+    accountPane.querySelector('.settings-account-login-cancel').dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(accountRequests.some((item) => item.action === 'loginCancel' && item.id === 'browser-login'));
+    assert.equal(accountPane.querySelector('.settings-account-login-cancel').hasAttribute('hidden'), true);
+    assert.equal(googleLogin.hasAttribute('disabled'), false);
+    googleLogin.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(accountPane.querySelectorAll('.settings-account-identity').some((el) => el.textContent === 'browser@example.com'));
+    assert.ok(accountRequests.some((item) => item.action === 'quota' && item.email === 'browser@example.com'));
+    assert.ok(accountPane.querySelectorAll('.settings-action-desc').some((el) => el.textContent === '登录成功，账号已添加。'));
+    const switchButton = accountPane.querySelector('.settings-account-switch');
+    assert.equal(switchButton.textContent, '切换并重启');
+    switchButton.dispatchEvent({ type: 'click', stopPropagation() {} });
+    assert.equal(switchButton.textContent, '确认切换');
+    assert.equal(accountRequests.some((item) => item.action === 'switch'), false);
+    switchButton.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(accountRequests.some((item) => item.action === 'switch' && item.email === 'next@example.com'));
+    assert.equal(accountPane.querySelector('.settings-account-identity').textContent, 'test@example.com');
+    assert.ok(accountPane.querySelectorAll('.settings-action-desc').some((el) => el.textContent.includes('正在重启 Antigravity')));
+
+    // --- 其他 (model format, context limits, cache rebuild, reset) ---
+    subNavBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(otherPane.hasAttribute('hidden'), false);
     assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden when switching to Other tab');
@@ -2371,9 +2497,12 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(smodelCards.length, 2, 'Two minimalist model summary cards rendered');
     assert.equal(smodelCards[0].classList.contains('is-fit-active'), true);
     assert.equal(smodelCards[0].querySelector('.smodel-name').textContent, 'gemini-4-hydrogen');
-    assert.equal(smodelCards[0].querySelector('.smodel-calls-pill').textContent, '1次 · 50%');
+    assert.match(smodelCards[0].querySelector('.cons-share-pill').textContent, /%/);
     assert.match(smodelCards[0].querySelector('.smodel-perf').textContent, /均速 92\.3 tok\/s · 首字 5\.6s · 缓存 93\.3%/);
-    assert.match(smodelCards[0].querySelector('.smodel-split').textContent, /输入 2\.5k.*缓存 34\.6k.*思考 420.*输出 265/);
+    assert.match(
+      smodelCards[0].querySelector('.smodel-foot').textContent,
+      /输入 2\.5k.*缓存 34\.6k.*思考 420.*输出 265.*调用 1/
+    );
 
     // Simulate live telemetry poll where a subagent spawns on 'Gemini 3 Flash' (changing activeModelLabel)
     // while the user remains inside 总汇总 -> fit model MUST NOT jump!
@@ -2705,8 +2834,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       'Hover legend updates strictly in-place without DOM node replacement or appendChild'
     );
 
-    assert.equal(createdForms.some((form) => form.className.includes('settings-account-form')), false);
-    assert.equal(fetchedUrls.some((url) => url.includes('/api/accounts')), false);
+    assert.equal(createdForms.some((form) => form.className.includes('settings-account-form')), true);
+    assert.equal(fetchedUrls.some((url) => url.includes('/api/accounts')), true);
 
     // Verify in-place bridge port rotation preserves exact DOM host nodes without remount
     fetchShouldFail = false;
@@ -4416,6 +4545,31 @@ test('Standalone Web server enforces loopback/non-loopback security boundaries, 
       method: 'GET',
       data: { range: 'today' },
     });
+
+    // Loopback ssh -L / reverse-proxy requests to /api/export-file, /api/reveal-file, and __exportFileAction return 403 fallbackBrowser
+    const blockedExport = await fetch(`${st.url}/api/export-file`, {
+      method: 'POST',
+      headers: { Origin: st.url, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: 'leak.json', content: '{}' }),
+    });
+    assert.equal(blockedExport.status, 403);
+    assert.equal((await blockedExport.json()).fallbackBrowser, true);
+
+    const blockedReveal = await fetch(`${st.url}/api/reveal-file`, {
+      method: 'POST',
+      headers: { Origin: st.url, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath: '/tmp/leak.json' }),
+    });
+    assert.equal(blockedReveal.status, 403);
+    assert.equal((await blockedReveal.json()).fallbackBrowser, true);
+
+    const blockedSettingsExport = await fetch(`${st.url}/api/settings`, {
+      method: 'POST',
+      headers: { Origin: st.url, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ __exportFileAction: 'save', payload: { filename: 'leak.json', content: '{}' } }),
+    });
+    assert.equal(blockedSettingsExport.status, 403);
+    assert.equal((await blockedSettingsExport.json()).fallbackBrowser, true);
 
     // Cross-site Origin blocked with 403
     const crossSiteRes = await fetch(`${st.url}/api/telemetry`, {
@@ -6321,5 +6475,592 @@ test('Issue #35: topbar capsule and hover HUD lock to main agent by default, tog
     assert.equal(readVal(ctxPctEl), '44%', 'Same-session route refresh preserves manual main lock instead of resetting to auto');
   } finally {
     ov?.dispose?.();
+  }
+});
+
+test('Antigravity IDE dual mode (双栖挂载) probes live chat iframe DOM cascade ID and syncs workbench.html on conversation switch', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-ide-dual-route-'));
+  const roamingDir = path.join(tmpDir, 'Roaming');
+  fs.mkdirSync(path.join(roamingDir, 'Antigravity IDE'), { recursive: true });
+
+  const convA = '11111111-aaaa-4bbb-8ccc-111111111111';
+  const convB = '22222222-bbbb-4ccc-8ddd-222222222222';
+  const convC = '33333333-cccc-4ddd-8eee-333333333333';
+  const convHidden = '44444444-dddd-4eee-8fff-444444444444';
+
+  function makeChatFrameCtx({ cascadeId, width = 760, height = 1200, hidden = false, focused = false }) {
+    const state = { cascadeId, width, height, hidden, focused };
+    const makeConvEl = () => ({
+      getAttribute: (name) => (name === 'data-cascade-id' ? state.cascadeId : null),
+      hasAttribute: (name) => (name === 'hidden' ? state.hidden : false),
+      getBoundingClientRect: () => ({
+        width: state.hidden ? 0 : state.width,
+        height: state.hidden ? 0 : state.height,
+      }),
+      contains: () => false,
+    });
+    const winObj = {
+      get innerWidth() {
+        return state.hidden ? 0 : state.width;
+      },
+      get innerHeight() {
+        return state.hidden ? 0 : state.height;
+      },
+      location: { pathname: '/', href: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code' },
+    };
+    const docObj = {
+      get hidden() {
+        return state.hidden;
+      },
+      activeElement: null,
+      hasFocus: () => state.focused,
+      querySelector: (sel) => {
+        if (!state.cascadeId) return null;
+        if (sel.includes('conversation-view') || sel.includes('conversation-row-')) {
+          return makeConvEl();
+        }
+        return null;
+      },
+      querySelectorAll: (sel) => {
+        if (!state.cascadeId || !sel.includes('conversation-view')) return [];
+        return [makeConvEl()];
+      },
+    };
+    const ctx = vm.createContext({ window: winObj, document: docObj, console });
+    ctx.window.window = ctx.window;
+    ctx.window.document = docObj;
+    return { ctx, state };
+  }
+
+  const wbWin = {
+    innerWidth: 1440,
+    innerHeight: 900,
+    location: { pathname: '/out/vs/code/electron-browser/workbench/workbench.html' },
+  };
+  const wbCtx = vm.createContext({
+    window: wbWin,
+    document: { hidden: false, querySelector: () => null, querySelectorAll: () => [] },
+    console,
+  });
+  wbCtx.window.window = wbCtx.window;
+
+  const chat1 = makeChatFrameCtx({ cascadeId: convA, focused: true });
+  const chat2 = makeChatFrameCtx({ cascadeId: convHidden, hidden: true, focused: false });
+  let includeSecondChat = false;
+
+  const ctxByPath = {
+    '/devtools/page/WB-1': wbCtx,
+    '/devtools/page/CHAT-1': chat1.ctx,
+    '/devtools/page/CHAT-2': chat2.ctx,
+  };
+
+  class DualRouteMockWS {
+    constructor(url) {
+      this.url = url;
+      this.listeners = new Map();
+      queueMicrotask(() => this._emit('open', {}));
+    }
+    addEventListener(type, fn) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(fn);
+    }
+    send(raw) {
+      const msg = JSON.parse(raw);
+      if (msg.method === 'Runtime.evaluate') {
+        const pathname = new URL(this.url).pathname;
+        const targetCtx = ctxByPath[pathname];
+        try {
+          const val = vm.runInContext(msg.params.expression, targetCtx);
+          queueMicrotask(() =>
+            this._emit('message', {
+              data: JSON.stringify({ id: msg.id, result: { result: { value: val } } }),
+            })
+          );
+        } catch (err) {
+          queueMicrotask(() =>
+            this._emit('message', {
+              data: JSON.stringify({
+                id: msg.id,
+                result: { exceptionDetails: { text: err.message } },
+              }),
+            })
+          );
+        }
+      }
+    }
+    close() {}
+    _emit(type, ev) {
+      for (const fn of this.listeners.get(type) || []) fn(ev);
+    }
+  }
+
+  const cdpSrv = http.createServer((req, res) => {
+    if (req.url === '/json/list') {
+      const p = cdpSrv.address().port;
+      const targets = [
+        {
+          id: 'WB-1',
+          type: 'page',
+          url: 'vscode-file://vscode-app/c:/Antigravity%20IDE/resources/app/out/vs/code/electron-browser/workbench/workbench.html',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/WB-1`,
+        },
+        {
+          id: 'WV-1',
+          parentId: 'WB-1',
+          type: 'iframe',
+          url: 'vscode-webview://1234/index.html?purpose=webviewView',
+        },
+        {
+          id: 'CHAT-1',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code&hostVariant=antigravity-ide',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-1`,
+        },
+      ];
+      if (includeSecondChat) {
+        targets.splice(2, 0, {
+          id: 'CHAT-2',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code&hostVariant=antigravity-ide',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-2`,
+        });
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(targets));
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise((resolve) => cdpSrv.listen(0, '127.0.0.1', resolve));
+  fs.writeFileSync(
+    path.join(roamingDir, 'Antigravity IDE', 'DevToolsActivePort'),
+    `${cdpSrv.address().port}\n/devtools/browser/ide-dual-route`,
+    'utf8'
+  );
+
+  const requestedConvIds = [];
+  const mockDualAppJs = `
+    (() => {
+      const br = window.__AGUsageMonitorBridge;
+      let alive = true;
+      window.__syncHostRouteHistory = [];
+      window.__AGUsageMonitorOverlay = {
+        bundleVersion: br.bundleVersion,
+        ensureAlive: () => alive,
+        getDockKind: () => 'ide-titlebar',
+        getMountMode: () => 'dual',
+        applyMountMode: () => alive,
+        syncHostRoute: () => {
+          window.__syncHostRouteHistory.push(String(br.hostRouteCascadeId || ''));
+        },
+        dispose: () => { alive = false; },
+      };
+    })();
+  `;
+
+  const bridgeCtrl = createWindowBridgeController({
+    handleApiRequest: async (apiPath, _method, body) => {
+      if (apiPath === '/api/telemetry') {
+        requestedConvIds.push(String(body?.conversationId || ''));
+      }
+      return {
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          settings: { windowMountMode: 'dual', enableWindowOverlay: true },
+        }),
+      };
+    },
+    readAssetFn: async (rel) => (rel === 'styles.css' ? ':host{}' : mockDualAppJs),
+    getSettingsFn: () => ({ windowMountMode: 'dual', enableWindowOverlay: true }),
+    getBundleVersionFn: () => 'dual-route-v1',
+    env: { APPDATA: roamingDir, LOCALAPPDATA: tmpDir },
+    platform: 'win32',
+    homeDir: tmpDir,
+    WebSocketImpl: DualRouteMockWS,
+  });
+
+  try {
+    // 1. Initial sync in dual mode: chat iframe URL has no /c/<uuid>, route is probed from DOM
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(requestedConvIds[0], convA, 'Initial telemetry prefetch uses live DOM cascade ID from IDE chat iframe');
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convA);
+    assert.equal(Boolean(chat1.ctx.window.__AGUsageMonitorOverlay), false, 'Chat iframe is not injected in dual mode');
+
+    // 2. User switches conversation inside IDE chat iframe (URL stays /?extensionView=true, DOM updates to convB)
+    chat1.state.cascadeId = convB;
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convB);
+    assert.deepEqual(
+      Array.from(wbCtx.window.__syncHostRouteHistory),
+      [convB],
+      'syncHostRoute() is invoked on workbench.html after conversation switch'
+    );
+
+    // 3. When a hidden chat iframe appears ahead of the visible/focused chat iframe, prefer visible/focused
+    includeSecondChat = true;
+    chat1.state.cascadeId = convC;
+    chat1.state.focused = true;
+    chat2.state.cascadeId = convHidden;
+    chat2.state.hidden = true;
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convC);
+    assert.deepEqual(Array.from(wbCtx.window.__syncHostRouteHistory), [convB, convC]);
+  } finally {
+    await bridgeCtrl.stop();
+    await new Promise((resolve) => cdpSrv.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('IDE chat iframe route probe disambiguates multi-view DOM, aborts hanging siblings early in parallel, and rejects non-UUID payloads with static fallback', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-ide-route-edge-'));
+  const roamingDir = path.join(tmpDir, 'Roaming');
+  fs.mkdirSync(path.join(roamingDir, 'Antigravity IDE'), { recursive: true });
+
+  const convHidden = 'aaaaaaaa-1111-4222-8333-aaaaaaaaaaaa';
+  const convZero = 'bbbbbbbb-1111-4222-8333-bbbbbbbbbbbb';
+  const convVis1 = 'cccccccc-1111-4222-8333-cccccccccccc';
+  const convVis2 = 'dddddddd-1111-4222-8333-dddddddddddd';
+  const convStatic = 'eeeeeeee-1111-4222-8333-eeeeeeeeeeee';
+
+  const multiState = {
+    focusedViewId: convVis2,
+    selectedRowId: '',
+  };
+  const focusToken = { tag: 'textarea' };
+  const makeViewNode = (id, { hidden = false, width = 760, height = 900 } = {}) => ({
+    getAttribute: (name) => (name === 'data-cascade-id' ? id : null),
+    hasAttribute: (name) => (name === 'hidden' ? hidden : false),
+    getBoundingClientRect: () => ({ width, height }),
+    contains: (el) => el === focusToken && multiState.focusedViewId === id,
+  });
+
+  const multiDoc = {
+    hidden: false,
+    get activeElement() {
+      return multiState.focusedViewId ? focusToken : null;
+    },
+    hasFocus: () => true,
+    querySelector: (sel) => {
+      if (sel.includes('conversation-row-')) {
+        return multiState.selectedRowId
+          ? { getAttribute: (n) => (n === 'data-cascade-id' ? multiState.selectedRowId : null) }
+          : null;
+      }
+      if (sel.includes('conversation-view')) {
+        return makeViewNode(convHidden, { hidden: true });
+      }
+      return null;
+    },
+    querySelectorAll: (sel) => {
+      if (!sel.includes('conversation-view')) return [];
+      return [
+        makeViewNode(convHidden, { hidden: true }),
+        makeViewNode(convZero, { width: 0, height: 0 }),
+        makeViewNode(convVis1),
+        makeViewNode(convVis2),
+      ];
+    },
+  };
+  const multiChatCtx = vm.createContext({
+    window: {
+      innerWidth: 760,
+      innerHeight: 900,
+      location: { pathname: '/', href: 'http://127.0.0.1:56598/?extensionView=true' },
+    },
+    document: multiDoc,
+    console,
+  });
+  multiChatCtx.window.window = multiChatCtx.window;
+  multiChatCtx.window.document = multiDoc;
+
+  const wbCtx = vm.createContext({
+    window: {
+      innerWidth: 1440,
+      innerHeight: 900,
+      location: { pathname: '/out/vs/code/electron-browser/workbench/workbench.html' },
+    },
+    document: { hidden: false, querySelector: () => null, querySelectorAll: () => [] },
+    console,
+  });
+  wbCtx.window.window = wbCtx.window;
+
+  let scenario = 'multi_with_hanging';
+  let hangSocketClosed = false;
+
+  class EdgeProbeMockWS {
+    constructor(url) {
+      this.url = url;
+      this.listeners = new Map();
+      this.closed = false;
+      queueMicrotask(() => {
+        if (this.closed) return;
+        const pathname = new URL(this.url).pathname;
+        if (pathname === '/devtools/page/CHAT-ERR') {
+          this._emit('error', new Error('simulated CDP disconnect'));
+          return;
+        }
+        this._emit('open', {});
+      });
+    }
+    addEventListener(type, fn) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(fn);
+    }
+    send(raw) {
+      const msg = JSON.parse(raw);
+      if (msg.method !== 'Runtime.evaluate') return;
+      const pathname = new URL(this.url).pathname;
+      if (pathname === '/devtools/page/CHAT-HANG') {
+        // Intentionally never reply to verify parallel probing + early abort
+        return;
+      }
+      if (pathname === '/devtools/page/CHAT-MALFORMED') {
+        queueMicrotask(() =>
+          this._emit('message', {
+            data: JSON.stringify({
+              id: msg.id,
+              result: { result: { value: { routeCascadeId: 'not-a-valid-uuid', visible: true, focused: true } } },
+            }),
+          })
+        );
+        return;
+      }
+      const targetCtx = pathname === '/devtools/page/WB-1' ? wbCtx : multiChatCtx;
+      const val = vm.runInContext(msg.params.expression, targetCtx);
+      queueMicrotask(() =>
+        this._emit('message', {
+          data: JSON.stringify({ id: msg.id, result: { result: { value: val } } }),
+        })
+      );
+    }
+    close() {
+      this.closed = true;
+      if (new URL(this.url).pathname === '/devtools/page/CHAT-HANG') {
+        hangSocketClosed = true;
+      }
+    }
+    _emit(type, ev) {
+      for (const fn of this.listeners.get(type) || []) fn(ev);
+    }
+  }
+
+  const cdpSrv = http.createServer((req, res) => {
+    if (req.url !== '/json/list') {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    const p = cdpSrv.address().port;
+    const targets = [
+      {
+        id: 'WB-1',
+        type: 'page',
+        url: 'vscode-file://vscode-app/c:/Antigravity%20IDE/resources/app/out/vs/code/electron-browser/workbench/workbench.html',
+        webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/WB-1`,
+      },
+      {
+        id: 'WV-1',
+        parentId: 'WB-1',
+        type: 'iframe',
+        url: 'vscode-webview://edge/index.html?purpose=webviewView',
+      },
+    ];
+    if (scenario === 'multi_with_hanging') {
+      targets.push(
+        {
+          id: 'CHAT-HANG',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-HANG`,
+        },
+        {
+          id: 'CHAT-LIVE',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-LIVE`,
+        }
+      );
+    } else {
+      targets.push(
+        {
+          id: 'CHAT-ERR',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: `http://127.0.0.1:56598/c/${convStatic}?extensionView=true&extensionVariant=vs-code`,
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-ERR`,
+        },
+        {
+          id: 'CHAT-MALFORMED',
+          parentId: 'WV-1',
+          type: 'iframe',
+          url: 'http://127.0.0.1:56598/?extensionView=true&extensionVariant=vs-code',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${p}/devtools/page/CHAT-MALFORMED`,
+        }
+      );
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(targets));
+  });
+
+  await new Promise((resolve) => cdpSrv.listen(0, '127.0.0.1', resolve));
+  fs.writeFileSync(
+    path.join(roamingDir, 'Antigravity IDE', 'DevToolsActivePort'),
+    `${cdpSrv.address().port}\n/devtools/browser/ide-edge-route`,
+    'utf8'
+  );
+
+  const mockDualAppJs = `
+    (() => {
+      const br = window.__AGUsageMonitorBridge;
+      let alive = true;
+      window.__syncHostRouteHistory = [];
+      window.__AGUsageMonitorOverlay = {
+        bundleVersion: br.bundleVersion,
+        ensureAlive: () => alive,
+        getDockKind: () => 'ide-titlebar',
+        getMountMode: () => 'dual',
+        applyMountMode: () => alive,
+        syncHostRoute: () => {
+          window.__syncHostRouteHistory.push(String(br.hostRouteCascadeId || ''));
+        },
+        dispose: () => { alive = false; },
+      };
+    })();
+  `;
+
+  const bridgeCtrl = createWindowBridgeController({
+    handleApiRequest: async () => ({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ settings: { windowMountMode: 'dual', enableWindowOverlay: true } }),
+    }),
+    readAssetFn: async (rel) => (rel === 'styles.css' ? ':host{}' : mockDualAppJs),
+    getSettingsFn: () => ({ windowMountMode: 'dual', enableWindowOverlay: true }),
+    getBundleVersionFn: () => 'edge-route-v1',
+    cdpTimeoutMs: 3500,
+    env: { APPDATA: roamingDir, LOCALAPPDATA: tmpDir },
+    platform: 'win32',
+    homeDir: tmpDir,
+    WebSocketImpl: EdgeProbeMockWS,
+  });
+
+  try {
+    // 1. Preceding hanging chat iframe must NOT stall focused sibling, and activeElement picks convVis2 over hidden/zero/vis1
+    const t0 = Date.now();
+    await bridgeCtrl.syncAllWindows();
+    const elapsedMs = Date.now() - t0;
+    assert.ok(elapsedMs < 600, `Expected parallel early-abort under 600ms, got ${elapsedMs}ms`);
+    assert.equal(hangSocketClosed, true, 'Hanging sibling CDP socket must be closed on early abort');
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convVis2);
+
+    // 2. Without activeElement focus, selectedRow intersection with visible views picks convVis2
+    multiState.focusedViewId = '';
+    multiState.selectedRowId = convVis2;
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convVis2);
+
+    // 3. Without focus or matching selectedRow, ignores hidden & zero-rect views and picks first visible convVis1
+    multiState.selectedRowId = convHidden;
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convVis1);
+
+    // 4. When all chat probes error or return malformed non-UUIDs, Node guard filters them and falls back to static URL route
+    scenario = 'error_and_malformed';
+    await bridgeCtrl.syncAllWindows();
+    assert.equal(wbCtx.window.__AGUsageMonitorBridge.hostRouteCascadeId, convStatic);
+    assert.deepEqual(Array.from(wbCtx.window.__syncHostRouteHistory), [convVis1, convStatic]);
+  } finally {
+    await bridgeCtrl.stop();
+    await new Promise((resolve) => cdpSrv.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('WindowOverlayShell mirrors host --font-sans and --font-mono onto portalHost even on native Antigravity 2.0 theme', async () => {
+  const { mountWindowOverlay } = await import('../src/components/layout/WindowOverlayShell.js');
+  const { createMockDom } = await import('./mock-dom.mjs');
+  const { WINDOW_BRIDGE_KEY } = await import('../shared/window-bridge-protocol.mjs');
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRo = globalThis.ResizeObserver;
+  const prevMo = globalThis.MutationObserver;
+  const prevFetch = globalThis.fetch;
+
+  const { document } = createMockDom();
+  const hostSans = '"Google Sans Flex", "PingFang SC", sans-serif';
+  const hostMono = '"Cascadia Mono", monospace';
+  globalThis.document = document;
+  globalThis.ResizeObserver = class {
+    observe() {}
+    disconnect() {}
+  };
+  globalThis.MutationObserver = class {
+    observe() {}
+    disconnect() {}
+  };
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ settings: { modernUi: true, fontScale: 'md' } }),
+    text: async () => JSON.stringify({ settings: { modernUi: true, fontScale: 'md' } }),
+  });
+  globalThis.window = {
+    innerWidth: 1440,
+    innerHeight: 900,
+    location: { pathname: '/', href: 'http://127.0.0.1:41234/' },
+    [WINDOW_BRIDGE_KEY]: {
+      port: 0,
+      token: 't',
+      bundleVersion: 'v-font-sync',
+      stylesCss: ':host{}',
+      initialTelemetry: { settings: { modernUi: true, fontScale: 'md' } },
+    },
+    getComputedStyle: (el) => {
+      if (el === document.documentElement) {
+        return {
+          getPropertyValue: (prop) => {
+            if (prop === '--background') return 'hsl(222 18% 10%)';
+            if (prop === '--font-sans') return hostSans;
+            if (prop === '--font-mono') return hostMono;
+            return '';
+          },
+        };
+      }
+      return { getPropertyValue: () => '' };
+    },
+    addEventListener() {},
+    removeEventListener() {},
+    requestAnimationFrame: (cb) => setTimeout(cb, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+  };
+
+  let ov = null;
+  try {
+    ov = mountWindowOverlay();
+    const portalHost = document.getElementById('ag-usage-monitor-portal');
+    const capsuleHost = document.getElementById('ag-usage-monitor-capsule');
+    assert.ok(portalHost, 'portalHost mounted');
+    assert.equal(portalHost.style.getPropertyValue('--font-sans'), hostSans);
+    assert.equal(portalHost.style.getPropertyValue('--font-mono'), hostMono);
+    assert.equal(
+      capsuleHost?.style?.getPropertyValue?.('--font-sans') || '',
+      '',
+      'capsuleHost retains its own titlebar typography isolation'
+    );
+  } finally {
+    ov?.dispose?.();
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.ResizeObserver = prevRo;
+    globalThis.MutationObserver = prevMo;
+    globalThis.fetch = prevFetch;
   }
 });

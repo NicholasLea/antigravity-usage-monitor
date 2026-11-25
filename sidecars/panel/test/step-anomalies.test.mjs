@@ -857,10 +857,11 @@ test('StepsDetailView total summary cards, session anomaly strip, click-to-filte
       metric: 'tps',
     });
     const lineAnomalyDots = lineChart.el.querySelectorAll('.sstep-anomaly-dot');
-    assert.equal(lineAnomalyDots.length, 1, 'Line chart renders bottom rug tick marker even when steps > 64');
-    assert.equal(lineAnomalyDots[0].tagName.toLowerCase(), 'line');
-    assert.equal(lineAnomalyDots[0].classList.contains('sstep-anomaly-tick'), true);
+    assert.equal(lineAnomalyDots.length, 1, 'Line chart renders on-curve anomaly dot even when steps > 64');
+    assert.equal(lineAnomalyDots[0].tagName.toLowerCase(), 'circle');
     assert.equal(lineAnomalyDots[0].classList.contains('is-danger'), true);
+    const dotCy = Number(lineAnomalyDots[0].getAttribute('cy'));
+    assert.ok(dotCy > 10 && dotCy < 96, `Expected anomaly dot directly on curve (cy=${dotCy}), not at baseline`);
 
     fitChart = createModelFitChart();
     fitChart.update({

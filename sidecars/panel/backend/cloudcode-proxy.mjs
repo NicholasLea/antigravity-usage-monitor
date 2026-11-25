@@ -10,7 +10,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { lsRuntimeEndpoint } from './config.mjs';
+import { DATA_DIR, loadJson, lsRuntimeEndpoint, saveJson } from './config.mjs';
 import { callLsRpc } from './ls-rpc.mjs';
 
 export const DEFAULT_UPSTREAM_CLOUDCODE_URL = 'https://daily-cloudcode-pa.googleapis.com';
@@ -21,6 +21,18 @@ const CC_PROXY_CHECKPOINTER_PREFIX = `${CC_PROXY_CHECKPOINTER_KEY}/`;
 const CC_PROXY_MAX_LOG_READ_BYTES = 512 * 1024;
 const CC_PROXY_RETRY_COOLDOWN_MS = 15_000;
 const CC_PROXY_SYS_PROXY_CACHE_MS = 15_000;
+const CC_PROXY_DEFAULT_TUNNEL_TIMEOUT_MS = 15_000;
+const CC_PROXY_AGENT_FREE_SOCKET_TIMEOUT_MS = 25_000;
+const CC_PROXY_HOP_BY_HOP_HEADERS = [
+  'connection',
+  'keep-alive',
+  'proxy-connection',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'upgrade',
+];
+const ccProxyNoopSocketError = () => {};
 
 let ccProxyNodeModulesPromise = null;
 
@@ -29,13 +41,15 @@ async function loadCcProxyNodeModules() {
     ccProxyNodeModulesPromise = Promise.all([
       import('node:http'),
       import('node:https'),
+      import('node:net'),
       import('node:tls'),
       import('node:zlib'),
       import('node:child_process'),
       import('node:fs'),
-    ]).then(([httpMod, httpsMod, tlsMod, zlibMod, cpMod, fsMod]) => ({
+    ]).then(([httpMod, httpsMod, netMod, tlsMod, zlibMod, cpMod, fsMod]) => ({
       http: httpMod.default || httpMod,
       https: httpsMod.default || httpsMod,
+      net: netMod.default || netMod,
       tls: tlsMod.default || tlsMod,
       zlib: zlibMod.default || zlibMod,
       execFile: cpMod.execFile,
@@ -154,15 +168,32 @@ export function detectUpstreamCloudCodeUrl({
   return DEFAULT_UPSTREAM_CLOUDCODE_URL;
 }
 
-function shouldCcProxyBypassHost(hostname, noProxyRaw) {
-  const target = String(hostname || '').trim().toLowerCase();
+export function shouldCcProxyBypassHost(hostname, noProxyRaw) {
+  const target = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
   const list = String(noProxyRaw || '').trim();
   if (!target || !list) return false;
-  for (const part of list.split(/[;,]/)) {
+  for (const part of list.split(/[;,\s]+/)) {
     const raw = part.trim().toLowerCase();
     if (!raw) continue;
     if (raw === '*') return true;
-    const rule = raw.replace(/^\*\./, '.').replace(/:\d+$/, '');
+    if (raw === '<local>') {
+      if (isCcProxyLoopbackHost(target) || (!target.includes('.') && !target.includes(':'))) {
+        return true;
+      }
+      continue;
+    }
+    const strippedPort = raw.startsWith('[')
+      ? raw.replace(/^\[([^\]]+)\](?::\d+)?$/, '$1')
+      : raw.includes(':') && raw.indexOf(':') === raw.lastIndexOf(':')
+        ? raw.replace(/:\d+$/, '')
+        : raw;
+    if (!strippedPort) continue;
+    if (strippedPort.includes('*') && !(strippedPort.startsWith('*.') && !strippedPort.slice(2).includes('*'))) {
+      const pattern = `^${strippedPort.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`;
+      if (new RegExp(pattern, 'i').test(target)) return true;
+      continue;
+    }
+    const rule = strippedPort.replace(/^\*\./, '.');
     if (!rule) continue;
     if (rule.startsWith('.')) {
       if (target.endsWith(rule) || target === rule.slice(1)) return true;
@@ -173,18 +204,48 @@ function shouldCcProxyBypassHost(hostname, noProxyRaw) {
   return false;
 }
 
+export function normalizeCcProxyCandidateUrl(rawVal) {
+  let s = String(rawVal || '').trim();
+  if (!s) return '';
+  if (/^socks:\/\//i.test(s)) {
+    s = `socks5://${s.slice('socks://'.length)}`;
+  }
+  const hasExplicitScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(s);
+  if (hasExplicitScheme && !/^(?:https?|socks5h?):\/\//i.test(s)) {
+    return '';
+  }
+  const candidate = hasExplicitScheme ? s : `http://${s}`;
+  try {
+    const parsed = new URL(candidate);
+    if (!parsed.hostname) return '';
+    if (parsed.port) {
+      const p = Number(parsed.port);
+      if (!Number.isInteger(p) || p <= 0 || p > 65535) return '';
+    }
+    return candidate;
+  } catch {
+    return '';
+  }
+}
+
 function parseWindowsProxyServerValue(rawVal) {
-  let srv = String(rawVal || '').trim();
+  const srv = String(rawVal || '').trim();
   if (!srv) return '';
   if (srv.includes('=')) {
     const parts = srv.split(';').map((p) => p.trim()).filter(Boolean);
     const httpsPart = parts.find((p) => p.toLowerCase().startsWith('https='));
     const httpPart = parts.find((p) => p.toLowerCase().startsWith('http='));
-    const chosen = httpsPart || httpPart || '';
-    srv = chosen.slice(chosen.indexOf('=') + 1).trim();
+    const socksPart = parts.find((p) => p.toLowerCase().startsWith('socks='));
+    const chosen = httpsPart || httpPart || socksPart || '';
+    if (!chosen) return '';
+    const rawHostPort = chosen.slice(chosen.indexOf('=') + 1).trim();
+    if (!rawHostPort) return '';
+    if (chosen === socksPart && !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rawHostPort)) {
+      return normalizeCcProxyCandidateUrl(`socks5://${rawHostPort}`);
+    }
+    return normalizeCcProxyCandidateUrl(rawHostPort);
   }
-  if (!srv) return '';
-  return /^https?:\/\//i.test(srv) ? srv : `http://${srv}`;
+  return normalizeCcProxyCandidateUrl(srv);
 }
 
 let winRegProxyMemo = {
@@ -231,10 +292,16 @@ async function readWindowsInternetSettingsAsync() {
 export async function detectSystemHttpsProxy(targetHostname = '', { env = process.env, platform = process.platform } = {}) {
   const noProxy = env?.NO_PROXY || env?.no_proxy || '';
   if (shouldCcProxyBypassHost(targetHostname, noProxy)) return '';
-  const envProxy = String(
-    env?.HTTPS_PROXY || env?.https_proxy || env?.ALL_PROXY || env?.all_proxy || ''
-  ).trim();
-  if (envProxy) return /^https?:\/\//i.test(envProxy) ? envProxy : `http://${envProxy}`;
+  const envCandidates = [
+    env?.HTTPS_PROXY,
+    env?.https_proxy,
+    env?.ALL_PROXY,
+    env?.all_proxy,
+  ];
+  for (const rawCandidate of envCandidates) {
+    const normalized = normalizeCcProxyCandidateUrl(rawCandidate);
+    if (normalized) return normalized;
+  }
   if (platform !== 'win32') return '';
   try {
     const out = await readWindowsInternetSettingsAsync();
@@ -410,28 +477,311 @@ function decompressCcProxyBody(zlib, buf, encoding) {
   return buf;
 }
 
-function openCcProxyTunnelSocket(http, tls, targetHost, targetPort, proxyUrl) {
-  if (!proxyUrl) return Promise.resolve(null);
-  const parsedProxy = new URL(proxyUrl);
+function ccProxySafeDecodeUriPart(raw) {
+  if (!raw) return '';
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return String(raw);
+  }
+}
+
+function ccProxyReadExactBytes(socket, count) {
   return new Promise((resolve, reject) => {
-    const connectReq = http.request({
-      host: parsedProxy.hostname,
-      port: Number(parsedProxy.port || (parsedProxy.protocol === 'https:' ? 443 : 80)),
-      method: 'CONNECT',
-      path: `${targetHost}:${targetPort}`,
-      headers: { Host: `${targetHost}:${targetPort}` },
+    let acc = Buffer.alloc(0);
+    const cleanup = () => {
+      socket.off('data', onData);
+      socket.off('error', onErr);
+      socket.off('close', onClose);
+      socket.off('end', onClose);
+    };
+    const onErr = (err) => {
+      cleanup();
+      reject(err);
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new Error('SOCKS5 proxy closed connection prematurely'));
+    };
+    const onData = (chunk) => {
+      acc = acc.length === 0 ? chunk : Buffer.concat([acc, chunk]);
+      if (acc.length >= count) {
+        cleanup();
+        socket.pause();
+        const needed = acc.subarray(0, count);
+        const rest = acc.subarray(count);
+        if (rest.length > 0) {
+          socket.unshift(rest);
+        }
+        resolve(needed);
+      }
+    };
+    socket.on('data', onData);
+    socket.once('error', onErr);
+    socket.once('close', onClose);
+    socket.once('end', onClose);
+    socket.resume();
+  });
+}
+
+function ccProxyEncodeIpv6Bytes(ipv6Str) {
+  let host = String(ipv6Str || '').trim().replace(/^\[|\]$/g, '');
+  const zoneIdx = host.indexOf('%');
+  if (zoneIdx !== -1) host = host.slice(0, zoneIdx);
+  const lastColon = host.lastIndexOf(':');
+  if (lastColon !== -1 && host.slice(lastColon + 1).includes('.')) {
+    const v4Parts = host
+      .slice(lastColon + 1)
+      .split('.')
+      .map((n) => Number(n));
+    if (v4Parts.length !== 4 || v4Parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+      return null;
+    }
+    const hi = ((v4Parts[0] << 8) | v4Parts[1]).toString(16);
+    const lo = ((v4Parts[2] << 8) | v4Parts[3]).toString(16);
+    host = `${host.slice(0, lastColon)}:${hi}:${lo}`;
+  }
+  const dblParts = host.split('::');
+  if (dblParts.length > 2) return null;
+  const left = dblParts[0] ? dblParts[0].split(':') : [];
+  const right = dblParts.length === 2 && dblParts[1] ? dblParts[1].split(':') : [];
+  const missing = 8 - (left.length + right.length);
+  if (dblParts.length === 1 ? left.length !== 8 : missing < 1) return null;
+  const groups = dblParts.length === 2 ? [...left, ...new Array(missing).fill('0'), ...right] : left;
+  if (groups.length !== 8) return null;
+  const buf = Buffer.allocUnsafe(16);
+  for (let i = 0; i < 8; i += 1) {
+    const val = Number.parseInt(groups[i], 16);
+    if (!Number.isInteger(val) || val < 0 || val > 0xffff) return null;
+    buf.writeUInt16BE(val, i * 2);
+  }
+  return buf;
+}
+
+async function ccProxyConnectSocks5Socket(net, parsedProxy, targetHost, targetPort) {
+  const proxyHost = parsedProxy.hostname.replace(/^\[|\]$/g, '');
+  const proxyPort = Number(parsedProxy.port || 1080);
+  const rawUser = ccProxySafeDecodeUriPart(parsedProxy.username);
+  const rawPass = ccProxySafeDecodeUriPart(parsedProxy.password);
+  const hasAuth = Boolean(rawUser || rawPass);
+
+  const socket = await new Promise((resolve, reject) => {
+    const s = net.connect({ host: proxyHost, port: proxyPort });
+    const onErr = (err) => {
+      s.destroy();
+      reject(err);
+    };
+    s.once('error', onErr);
+    s.once('connect', () => {
+      s.off('error', onErr);
+      s.on('error', ccProxyNoopSocketError);
+      resolve(s);
     });
-    connectReq.on('connect', (res, socket) => {
-      if (res.statusCode !== 200) {
+  });
+
+  try {
+    // 1. Method negotiation (RFC 1928)
+    const greeting = hasAuth
+      ? Buffer.from([0x05, 0x02, 0x00, 0x02])
+      : Buffer.from([0x05, 0x01, 0x00]);
+    socket.write(greeting);
+    const methodReply = await ccProxyReadExactBytes(socket, 2);
+    if (methodReply[0] !== 0x05 || methodReply[1] === 0xff) {
+      throw new Error('SOCKS5 proxy rejected authentication methods');
+    }
+    if (methodReply[1] === 0x02) {
+      if (!hasAuth) {
+        throw new Error('SOCKS5 proxy requires username/password authentication');
+      }
+      const userBuf = Buffer.from(rawUser, 'utf8');
+      const passBuf = Buffer.from(rawPass, 'utf8');
+      if (userBuf.length > 255 || passBuf.length > 255) {
+        throw new Error('SOCKS5 credentials exceed 255 bytes');
+      }
+      const authReq = Buffer.concat([
+        Buffer.from([0x01, userBuf.length]),
+        userBuf,
+        Buffer.from([passBuf.length]),
+        passBuf,
+      ]);
+      socket.write(authReq);
+      const authReply = await ccProxyReadExactBytes(socket, 2);
+      if (authReply[1] !== 0x00) {
+        throw new Error('SOCKS5 username/password authentication failed');
+      }
+    } else if (methodReply[1] !== 0x00) {
+      throw new Error(`Unsupported SOCKS5 auth method (${methodReply[1]})`);
+    }
+
+    // 2. CONNECT targetHost:targetPort
+    const cleanHost = String(targetHost || '').replace(/^\[|\]$/g, '');
+    const ipVer = net.isIP(cleanHost);
+    let addrPart;
+    if (ipVer === 4) {
+      const octets = cleanHost.split('.').map((n) => Number(n));
+      addrPart = Buffer.from([0x01, octets[0], octets[1], octets[2], octets[3]]);
+    } else if (ipVer === 6) {
+      const ipv6Bytes = ccProxyEncodeIpv6Bytes(cleanHost);
+      if (!ipv6Bytes) {
+        throw new Error('Invalid SOCKS5 target IPv6 address');
+      }
+      addrPart = Buffer.concat([Buffer.from([0x04]), ipv6Bytes]);
+    } else {
+      const hostBuf = Buffer.from(cleanHost, 'utf8');
+      if (hostBuf.length === 0 || hostBuf.length > 255) {
+        throw new Error('Invalid SOCKS5 target hostname');
+      }
+      addrPart = Buffer.concat([Buffer.from([0x03, hostBuf.length]), hostBuf]);
+    }
+    const portBuf = Buffer.allocUnsafe(2);
+    portBuf.writeUInt16BE(Number(targetPort), 0);
+    socket.write(Buffer.concat([Buffer.from([0x05, 0x01, 0x00]), addrPart, portBuf]));
+
+    const repHead = await ccProxyReadExactBytes(socket, 4);
+    if (repHead[0] !== 0x05 || repHead[1] !== 0x00) {
+      throw new Error(`SOCKS5 CONNECT failed (code ${repHead[1]})`);
+    }
+    const atyp = repHead[3];
+    if (atyp === 0x01) {
+      await ccProxyReadExactBytes(socket, 4 + 2);
+    } else if (atyp === 0x03) {
+      const lenBuf = await ccProxyReadExactBytes(socket, 1);
+      await ccProxyReadExactBytes(socket, lenBuf[0] + 2);
+    } else if (atyp === 0x04) {
+      await ccProxyReadExactBytes(socket, 16 + 2);
+    } else {
+      throw new Error(`Unsupported SOCKS5 reply address type (${atyp})`);
+    }
+    socket.resume();
+    return socket;
+  } catch (err) {
+    socket.destroy();
+    throw err;
+  }
+}
+
+export function openCcProxyTunnelSocket(
+  mods,
+  targetHost,
+  targetPort,
+  proxyUrl,
+  { timeoutMs = CC_PROXY_DEFAULT_TUNNEL_TIMEOUT_MS, tlsOptions = null } = {}
+) {
+  const normalizedUrl = normalizeCcProxyCandidateUrl(proxyUrl);
+  if (!normalizedUrl) return Promise.resolve(null);
+  const parsedProxy = new URL(normalizedUrl);
+  const { http, https, net, tls } = mods;
+  const cleanTargetHost = String(targetHost || '').replace(/^\[|\]$/g, '');
+  const sniOpts = net && net.isIP(cleanTargetHost) !== 0 ? {} : { servername: cleanTargetHost };
+  const connectAuthority = cleanTargetHost.includes(':')
+    ? `[${cleanTargetHost}]:${targetPort}`
+    : `${cleanTargetHost}:${targetPort}`;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let connectReq = null;
+    let rawSocket = null;
+    let tlsSocket = null;
+
+    const timer =
+      Number.isFinite(timeoutMs) && timeoutMs > 0
+        ? setTimeout(() => {
+            fail(new Error(`Proxy tunnel timed out after ${timeoutMs}ms`));
+          }, timeoutMs)
+        : null;
+    timer?.unref?.();
+
+    function cleanupTimer() {
+      if (timer) clearTimeout(timer);
+    }
+
+    function fail(err) {
+      if (settled) return;
+      settled = true;
+      cleanupTimer();
+      try {
+        connectReq?.destroy();
+      } catch {}
+      try {
+        tlsSocket?.destroy();
+      } catch {}
+      try {
+        rawSocket?.destroy();
+      } catch {}
+      reject(err);
+    }
+
+    function upgradeToTls(sock, headBuf = null) {
+      rawSocket = sock;
+      sock.on('error', ccProxyNoopSocketError);
+      if (headBuf && headBuf.length > 0) {
+        sock.unshift(headBuf);
+      }
+      tlsSocket = tls.connect({
+        socket: sock,
+        ALPNProtocols: ['http/1.1'],
+        ...sniOpts,
+        ...(tlsOptions && typeof tlsOptions === 'object' ? tlsOptions : {}),
+      });
+      tlsSocket.on('error', ccProxyNoopSocketError);
+      tlsSocket.once('secureConnect', () => {
+        if (settled) {
+          tlsSocket.destroy();
+          return;
+        }
+        settled = true;
+        cleanupTimer();
+        tlsSocket.off('error', fail);
+        resolve(tlsSocket);
+      });
+      tlsSocket.once('error', fail);
+    }
+
+    const proto = parsedProxy.protocol.toLowerCase();
+    if (proto === 'socks5:' || proto === 'socks5h:') {
+      ccProxyConnectSocks5Socket(net, parsedProxy, cleanTargetHost, targetPort)
+        .then((sock) => {
+          if (settled) {
+            sock.destroy();
+            return;
+          }
+          upgradeToTls(sock);
+        })
+        .catch(fail);
+      return;
+    }
+
+    const isHttpsProxy = proto === 'https:';
+    const proxyTransport = isHttpsProxy ? https : http;
+    const headers = { Host: connectAuthority };
+    if (parsedProxy.username || parsedProxy.password) {
+      const user = ccProxySafeDecodeUriPart(parsedProxy.username);
+      const pass = ccProxySafeDecodeUriPart(parsedProxy.password);
+      const token = Buffer.from(`${user}:${pass}`, 'utf8').toString('base64');
+      headers['Proxy-Authorization'] = `Basic ${token}`;
+    }
+
+    connectReq = proxyTransport.request({
+      hostname: parsedProxy.hostname.replace(/^\[|\]$/g, ''),
+      port: Number(parsedProxy.port || (isHttpsProxy ? 443 : 80)),
+      method: 'CONNECT',
+      path: connectAuthority,
+      headers,
+    });
+    connectReq.on('connect', (res, socket, head) => {
+      socket.on('error', ccProxyNoopSocketError);
+      if (settled) {
         socket.destroy();
-        reject(new Error(`Proxy CONNECT failed (${res.statusCode})`));
         return;
       }
-      const tlsSocket = tls.connect({ socket, servername: targetHost });
-      tlsSocket.once('secureConnect', () => resolve(tlsSocket));
-      tlsSocket.once('error', reject);
+      if (res.statusCode !== 200) {
+        socket.destroy();
+        fail(new Error(`Proxy CONNECT failed (${res.statusCode})`));
+        return;
+      }
+      upgradeToTls(socket, head);
     });
-    connectReq.on('error', reject);
+    connectReq.on('error', fail);
     connectReq.end();
   });
 }
@@ -449,17 +799,25 @@ export function createCloudCodeProxyController({
   allowHttpUpstream = false,
   allowTestEndpoint = false,
   retryCooldownMs = CC_PROXY_RETRY_COOLDOWN_MS,
+  tunnelTimeoutMs = CC_PROXY_DEFAULT_TUNNEL_TIMEOUT_MS,
+  upstreamTlsOptions = null,
+  stateFilePath = '',
+  loadJsonFn = loadJson,
+  saveJsonFn = saveJson,
 } = {}) {
   let server = null;
   let localUrl = '';
+  let preferredPort = 0;
   let upstreamUrl = '';
   let lsSwitched = false;
+  let stateHydratedOnce = false;
   let activeRules = {};
   let upstreamDefaults = {};
   let appliedSig = '';
   let lastFailedSig = '';
   let lastErrorAtMs = 0;
   let cachedSysProxy = { url: '', checkedAtMs: 0, host: '' };
+  let activeAgentEntry = null;
   let syncChain = Promise.resolve();
 
   let status = {
@@ -472,6 +830,99 @@ export function createCloudCodeProxyController({
     syncedAtMs: 0,
     error: '',
   };
+
+  function hydratePersistedStateOnce() {
+    if (stateHydratedOnce) return;
+    stateHydratedOnce = true;
+    if (!stateFilePath || typeof loadJsonFn !== 'function') return;
+    try {
+      const saved = loadJsonFn(stateFilePath, null);
+      if (!saved || typeof saved !== 'object') return;
+      const savedPort = Number(saved.localPort || 0);
+      if (Number.isInteger(savedPort) && savedPort > 0 && savedPort <= 65535) {
+        preferredPort = savedPort;
+      }
+      const savedUpstream = String(saved.upstreamUrl || '').trim();
+      if (
+        savedUpstream &&
+        !upstreamUrl &&
+        isValidUpstreamCloudCodeUrl(savedUpstream, { allowHttp: allowHttpUpstream })
+      ) {
+        upstreamUrl = savedUpstream.replace(/\/+$/, '');
+      }
+      if (saved.switched === true) {
+        lsSwitched = true;
+      }
+    } catch {
+      // 忽略损坏的状态快照
+    }
+  }
+
+  function persistProxyStateSnapshot(switchedFlag) {
+    if (!stateFilePath || typeof saveJsonFn !== 'function') return;
+    try {
+      saveJsonFn(stateFilePath, {
+        switched: Boolean(switchedFlag),
+        localPort: preferredPort > 0 ? preferredPort : undefined,
+        localUrl: switchedFlag && localUrl ? localUrl : undefined,
+        upstreamUrl: upstreamUrl || DEFAULT_UPSTREAM_CLOUDCODE_URL,
+        updatedAtMs: Date.now(),
+      });
+    } catch {
+      // 忽略持久化状态异常
+    }
+  }
+
+  function destroyActiveUpstreamAgent() {
+    if (!activeAgentEntry) return;
+    const prevAgent = activeAgentEntry.agent;
+    activeAgentEntry = null;
+    try {
+      prevAgent?.destroy?.();
+    } catch {
+      // 忽略连接池销毁异常
+    }
+  }
+
+  function getPooledUpstreamAgent(mods, isUpstreamHttps, upstreamHost, upstreamPort, proxyUrl) {
+    const cleanProxy = isUpstreamHttps ? String(proxyUrl || '') : '';
+    const key = `${isUpstreamHttps ? 'https' : 'http'}|${upstreamHost}:${upstreamPort}|${cleanProxy || 'direct'}`;
+    if (activeAgentEntry && activeAgentEntry.key === key) {
+      return activeAgentEntry.agent;
+    }
+    destroyActiveUpstreamAgent();
+
+    const baseAgentOpts = {
+      keepAlive: true,
+      keepAliveMsecs: 10_000,
+      maxSockets: 32,
+      maxFreeSockets: 4,
+      timeout: CC_PROXY_AGENT_FREE_SOCKET_TIMEOUT_MS,
+      ...(isUpstreamHttps && upstreamTlsOptions ? upstreamTlsOptions : {}),
+    };
+
+    let agent;
+    if (isUpstreamHttps && cleanProxy) {
+      class CcProxyTunnelHttpsAgent extends mods.https.Agent {
+        createConnection(_opts, callback) {
+          openCcProxyTunnelSocket(mods, upstreamHost, upstreamPort, cleanProxy, {
+            timeoutMs: tunnelTimeoutMs,
+            tlsOptions: upstreamTlsOptions,
+          }).then(
+            (tlsSock) => callback(null, tlsSock),
+            (err) => callback(err)
+          );
+          return null;
+        }
+      }
+      agent = new CcProxyTunnelHttpsAgent(baseAgentOpts);
+    } else {
+      const AgentCtor = isUpstreamHttps ? mods.https.Agent : mods.http.Agent;
+      agent = new AgentCtor(baseAgentOpts);
+    }
+    activeAgentEntry = { key, agent };
+    return agent;
+  }
 
   function getStatus() {
     return {
@@ -523,7 +974,8 @@ export function createCloudCodeProxyController({
     }
     let proxyUrl = '';
     if (typeof detectProxyFn === 'function') {
-      proxyUrl = String((await detectProxyFn(targetHostname)) || '').trim();
+      const rawDetected = String((await detectProxyFn(targetHostname)) || '').trim();
+      proxyUrl = normalizeCcProxyCandidateUrl(rawDetected);
     } else {
       proxyUrl = await detectSystemHttpsProxy(targetHostname);
     }
@@ -532,6 +984,7 @@ export function createCloudCodeProxyController({
   }
 
   async function closeProxyServer() {
+    destroyActiveUpstreamAgent();
     const srv = server;
     server = null;
     localUrl = '';
@@ -552,7 +1005,8 @@ export function createCloudCodeProxyController({
 
   async function ensureProxyServerStarted() {
     if (server && localUrl) return localUrl;
-    const { http, https, tls, zlib } = await loadCcProxyNodeModules();
+    const mods = await loadCcProxyNodeModules();
+    const { http, https, zlib } = mods;
     const targetBase = await resolveUpstreamUrl();
     const upstreamParsed = new URL(targetBase);
     const isUpstreamHttps = upstreamParsed.protocol === 'https:';
@@ -561,38 +1015,79 @@ export function createCloudCodeProxyController({
     const srv = http.createServer(async (req, res) => {
       const reqUrl = req.url || '/';
       const isFetchModels = reqUrl.includes('fetchAvailableModels');
+      let clientAborted = false;
+      let activeUpReq = null;
+      let activeUpRes = null;
+
+      const abortUpstreamOnClientDisconnect = () => {
+        if (res.writableEnded) return;
+        clientAborted = true;
+        try {
+          activeUpRes?.destroy();
+        } catch {}
+        try {
+          activeUpReq?.destroy();
+        } catch {}
+      };
+      req.once('aborted', abortUpstreamOnClientDisconnect);
+      res.once('close', abortUpstreamOnClientDisconnect);
+      req.on('error', abortUpstreamOnClientDisconnect);
+      res.on('error', abortUpstreamOnClientDisconnect);
+
       try {
         const fwdHeaders = { ...req.headers, host: upstreamParsed.host };
+        for (const hopKey of CC_PROXY_HOP_BY_HOP_HEADERS) {
+          delete fwdHeaders[hopKey];
+        }
         if (isFetchModels) {
           delete fwdHeaders['accept-encoding'];
         }
-        let customSocket = null;
-        if (isUpstreamHttps) {
-          const proxyUrl = await resolveSystemProxyForHost(upstreamParsed.hostname);
-          if (proxyUrl) {
-            customSocket = await openCcProxyTunnelSocket(
-              http,
-              tls,
-              upstreamParsed.hostname,
-              upstreamPort,
-              proxyUrl
-            );
-          }
+        const proxyUrl = isUpstreamHttps
+          ? await resolveSystemProxyForHost(upstreamParsed.hostname)
+          : '';
+        if (clientAborted || req.destroyed || res.destroyed || res.writableEnded) {
+          return;
         }
+        const agent = getPooledUpstreamAgent(
+          mods,
+          isUpstreamHttps,
+          upstreamParsed.hostname,
+          upstreamPort,
+          proxyUrl
+        );
         const upOpts = {
           hostname: upstreamParsed.hostname,
           port: upstreamPort,
           path: reqUrl,
           method: req.method,
           headers: fwdHeaders,
-          ...(customSocket ? { agent: false, createConnection: () => customSocket } : {}),
+          agent,
+          ...(isUpstreamHttps && upstreamTlsOptions ? upstreamTlsOptions : {}),
         };
 
         req.setTimeout?.(0);
         const transport = isUpstreamHttps ? https : http;
         const upReq = transport.request(upOpts, (upRes) => {
+          activeUpRes = upRes;
+          upRes.on('error', (err) => {
+            if (clientAborted || res.destroyed || res.writableEnded) return;
+            if (!res.headersSent) {
+              res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+              res.end(`Upstream stream error: ${err.message}`);
+            } else {
+              res.destroy();
+            }
+          });
+          if (clientAborted || res.destroyed || res.writableEnded) {
+            upRes.destroy();
+            return;
+          }
           if (!isFetchModels || Number(upRes.statusCode || 0) !== 200) {
-            res.writeHead(upRes.statusCode || 502, upRes.headers);
+            const passthroughHeaders = { ...upRes.headers };
+            for (const hopKey of CC_PROXY_HOP_BY_HOP_HEADERS) {
+              delete passthroughHeaders[hopKey];
+            }
+            res.writeHead(upRes.statusCode || 502, passthroughHeaders);
             res.flushHeaders?.();
             upRes.pipe(res);
             return;
@@ -600,9 +1095,13 @@ export function createCloudCodeProxyController({
           const chunks = [];
           upRes.on('data', (chunk) => chunks.push(chunk));
           upRes.on('end', () => {
+            if (clientAborted || res.destroyed || res.writableEnded) return;
             const rawBuf = Buffer.concat(chunks);
             let outBuf = rawBuf;
             const outHeaders = { ...upRes.headers };
+            for (const hopKey of CC_PROXY_HOP_BY_HOP_HEADERS) {
+              delete outHeaders[hopKey];
+            }
             try {
               const plain = decompressCcProxyBody(zlib, rawBuf, upRes.headers['content-encoding']);
               const parsed = JSON.parse(plain.toString('utf8'));
@@ -627,52 +1126,86 @@ export function createCloudCodeProxyController({
             res.writeHead(upRes.statusCode || 200, outHeaders);
             res.end(outBuf);
           });
-          upRes.on('error', (err) => {
-            if (!res.headersSent) res.writeHead(502);
-            res.end(`Upstream stream error: ${err.message}`);
-          });
         });
+        activeUpReq = upReq;
 
         upReq.setTimeout?.(0);
         upReq.on('error', (err) => {
-          if (!res.headersSent) res.writeHead(502);
-          res.end(`Proxy upstream error: ${err.message}`);
+          if (clientAborted || res.destroyed || res.writableEnded) return;
+          if (!res.headersSent) {
+            res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end(`Proxy upstream error: ${err.message}`);
+          } else {
+            res.destroy();
+          }
         });
         req.pipe(upReq);
       } catch (err) {
-        if (!res.headersSent) res.writeHead(502);
-        res.end(`Proxy setup error: ${err.message}`);
+        if (clientAborted || res.destroyed || res.writableEnded) return;
+        if (!res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end(`Proxy setup error: ${err.message}`);
+        } else {
+          res.destroy();
+        }
       }
     });
 
-    await new Promise((resolve, reject) => {
-      srv.once('error', reject);
-      srv.listen(0, '127.0.0.1', () => {
-        srv.off('error', reject);
-        resolve();
+    const tryListenOnPort = (candidatePort) =>
+      new Promise((resolve, reject) => {
+        const onErr = (err) => {
+          srv.off('listening', onListening);
+          reject(err);
+        };
+        const onListening = () => {
+          srv.off('error', onErr);
+          resolve();
+        };
+        srv.once('error', onErr);
+        srv.once('listening', onListening);
+        srv.listen(candidatePort, '127.0.0.1');
       });
-    });
+
+    if (preferredPort > 0) {
+      try {
+        await tryListenOnPort(preferredPort);
+      } catch {
+        await tryListenOnPort(0);
+      }
+    } else {
+      await tryListenOnPort(0);
+    }
+
     srv.unref?.();
     const addrInfo = srv.address();
     const port = typeof addrInfo === 'object' && addrInfo ? Number(addrInfo.port || 0) : 0;
+    if (port > 0) {
+      preferredPort = port;
+    }
     server = srv;
     localUrl = `http://127.0.0.1:${port}`;
     return localUrl;
   }
 
-  async function restoreLsCloudCodeUrl() {
-    if (!lsSwitched) return;
-    lsSwitched = false;
+  async function restoreLsCloudCodeUrl({ timeoutMs = 4000, clearEvenOnFailure = false } = {}) {
+    if (!lsSwitched) return true;
     appliedSig = '';
-    const targetRestore = upstreamUrl || DEFAULT_UPSTREAM_CLOUDCODE_URL;
+    const targetRestore = (await resolveUpstreamUrl().catch(() => '')) || DEFAULT_UPSTREAM_CLOUDCODE_URL;
     try {
-      await callRpcFn('SetCloudCodeURL', { url: targetRestore }, 4000);
+      await callRpcFn('SetCloudCodeURL', { url: targetRestore }, timeoutMs);
+      lsSwitched = false;
+      persistProxyStateSnapshot(false);
+      return true;
     } catch {
-      // 忽略 LS 已退出或暂不可达时的还原异常
+      if (clearEvenOnFailure) {
+        lsSwitched = false;
+      }
+      return false;
     }
   }
 
   async function reconcileInternal({ enabled = false, rulesByModelId = {}, initialCatalogModels = null } = {}) {
+    hydratePersistedStateOnce();
     if (initialCatalogModels) {
       seedUpstreamDefaultsFromCatalog(initialCatalogModels);
     }
@@ -687,11 +1220,9 @@ export function createCloudCodeProxyController({
       activeRules = {};
       lastFailedSig = '';
       lastErrorAtMs = 0;
+      appliedSig = '';
       if (lsSwitched && hasUsableLs) {
-        await restoreLsCloudCodeUrl();
-      } else {
-        lsSwitched = false;
-        appliedSig = '';
+        await restoreLsCloudCodeUrl({ timeoutMs: 3000 });
       }
       await closeProxyServer();
       status = {
@@ -742,11 +1273,13 @@ export function createCloudCodeProxyController({
     try {
       const targetUpstream = await resolveUpstreamUrl();
       const listenUrl = await ensureProxyServerStarted();
+      persistProxyStateSnapshot(true);
       await callRpcFn('SetCloudCodeURL', { url: listenUrl }, 5000);
       lsSwitched = true;
       appliedSig = desiredSig;
       lastFailedSig = '';
       lastErrorAtMs = 0;
+      persistProxyStateSnapshot(true);
       status = {
         state: 'active',
         active: true,
@@ -761,6 +1294,7 @@ export function createCloudCodeProxyController({
       lastFailedSig = desiredSig;
       lastErrorAtMs = Date.now();
       if (!lsSwitched) {
+        persistProxyStateSnapshot(false);
         await closeProxyServer();
       }
       status = {
@@ -785,17 +1319,18 @@ export function createCloudCodeProxyController({
   function stop() {
     syncChain = syncChain
       .then(async () => {
+        hydratePersistedStateOnce();
         activeRules = {};
         lastFailedSig = '';
         lastErrorAtMs = 0;
+        appliedSig = '';
         const ep = getEndpointFn() || {};
         const hasUsableLs =
           Boolean(ep.baseUrl) && (allowTestEndpoint || String(ep.addr || '') !== 'test.invalid');
         if (lsSwitched && hasUsableLs) {
-          await restoreLsCloudCodeUrl();
+          await restoreLsCloudCodeUrl({ timeoutMs: 900, clearEvenOnFailure: true });
         } else {
           lsSwitched = false;
-          appliedSig = '';
         }
         await closeProxyServer();
         status = {
@@ -823,11 +1358,21 @@ export function createCloudCodeProxyController({
   };
 }
 
+function resolveDefaultCloudCodeProxyStatePath() {
+  const normDir = String(DATA_DIR || '').replace(/\\/g, '/');
+  if (!normDir || normDir.startsWith('/test/') || normDir.startsWith('/test-home/')) {
+    return '';
+  }
+  return join(DATA_DIR, 'cloudcode-proxy-state.json');
+}
+
 let defaultCloudCodeProxyController = null;
 
 export function getDefaultCloudCodeProxy() {
   if (!defaultCloudCodeProxyController) {
-    defaultCloudCodeProxyController = createCloudCodeProxyController();
+    defaultCloudCodeProxyController = createCloudCodeProxyController({
+      stateFilePath: resolveDefaultCloudCodeProxyStatePath(),
+    });
   }
   return defaultCloudCodeProxyController;
 }

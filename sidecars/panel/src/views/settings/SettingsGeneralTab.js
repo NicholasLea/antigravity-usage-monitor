@@ -22,6 +22,7 @@ import {
   triggerPluginUpdate,
 } from '../../store/telemetryStore.js';
 import { ThemeColorPicker } from '../../components/settings/ThemeColorPicker.js';
+import { HostI18nCard } from '../../components/settings/HostI18nCard.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
 import { SegmentedControl } from '../../components/ui/SegmentedControl.js';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch.js';
@@ -410,9 +411,20 @@ export const SettingsGeneralTab = defineComponent({
       h('div', { className: 'cloud-actions-row' }, [syncPricingBtn, updatePluginBtn]),
     ]);
 
-    const rootEl = h('div', { className: 'settings-tab-stack' }, [appearancePanel, cloudPanel]);
+    const hostI18nCard = HostI18nCard({
+      onLayoutChange: () => props.onLayoutChange?.(),
+    });
 
-    function renderSettings(settings) {
+    const rootEl = h('div', { className: 'settings-tab-stack' }, [
+      appearancePanel,
+      hostI18nCard.el,
+      cloudPanel,
+    ]);
+
+    function renderSettings(settings, windowBridge = null, hostPlatform = 'win32') {
+      if (windowBridge || hostPlatform) {
+        hostI18nCard.refs.renderBridgeStatus(windowBridge, hostPlatform);
+      }
       if (!settings) return;
       latestSettings = settings;
       draftLanguage = normalizeI18nLanguage(settings.language);
@@ -527,6 +539,7 @@ export const SettingsGeneralTab = defineComponent({
       } else {
         patchText(pricingSyncSub, t('quota.loading'));
       }
+      hostI18nCard.refs.refreshLabels();
     }
 
     onCleanup(() => {
@@ -537,6 +550,7 @@ export const SettingsGeneralTab = defineComponent({
       fontScaleSwitch.destroy();
       modernUiSwitch.destroy();
       autoUpdateSelect.destroy();
+      hostI18nCard.destroy();
     });
 
     return {
@@ -549,6 +563,8 @@ export const SettingsGeneralTab = defineComponent({
         autoUpdateSelect,
         syncPricingBtn,
         updatePluginBtn,
+        hostI18nCard,
+        loadHostI18n: (force = false) => hostI18nCard.refs.load(force),
         renderSettings,
         renderCloudStatus,
         refreshLabels,

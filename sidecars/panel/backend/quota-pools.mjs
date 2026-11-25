@@ -370,9 +370,14 @@ export function buildOfficialQuotaPools(officialQuota, clientConfigs = []) {
     }
 
     const cfgQuota = normalizeQuotaFraction(cfg?.quotaInfo, nowForQuotaMs);
+    const cfgResetMs = parseIsoMs(cfgQuota?.resetTime);
+    const isCfgWeekly =
+      targetIdent.poolKey === 'Argon' ||
+      targetIdent.poolKey === 'Carbon' ||
+      cfgResetMs > nowForQuotaMs + 6 * 3600 * 1000;
     if (!builder.bucket5h && !builder.bucketWeekly && !builder.fallback5h && cfgQuota) {
-      if (targetIdent.poolKey === 'Argon' || targetIdent.poolKey === 'Carbon') {
-        builder.bucketWeekly = cfgQuota;
+      if (isCfgWeekly) {
+        builder.bucketWeekly = { ...cfgQuota, window: 'weekly' };
       } else {
         builder.fallback5h = cfgQuota;
       }

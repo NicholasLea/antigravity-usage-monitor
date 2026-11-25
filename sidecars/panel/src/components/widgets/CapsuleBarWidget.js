@@ -182,6 +182,28 @@ export function patchCapsuleOdometerText(
   return true;
 }
 
+function isValidTtftSec(val) {
+  return val != null && Number.isFinite(Number(val)) && Number(val) >= 0;
+}
+
+function findFallbackRecentStepTtft(steps) {
+  if (!Array.isArray(steps) || steps.length === 0) return null;
+  const firstIdx = Number(steps[0]?.stepIndex ?? 0);
+  const lastIdx = Number(steps[steps.length - 1]?.stepIndex ?? 0);
+  if (firstIdx >= lastIdx) {
+    for (let i = 0; i < steps.length; i += 1) {
+      const candidate = steps[i]?.ttftSec;
+      if (isValidTtftSec(candidate)) return Number(candidate);
+    }
+    return null;
+  }
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const candidate = steps[i]?.ttftSec;
+    if (isValidTtftSec(candidate)) return Number(candidate);
+  }
+  return null;
+}
+
 /**
  * Compute shared context ring + 1..5 capsule slot metric payload from telemetry & scoped conversation.
  */
@@ -204,11 +226,29 @@ export function buildCapsuleSlotContext(
   ).toFixed(2);
 
   const isRunning = Boolean(aggregated?.isRunning || activeConv.isRunning);
+  const convId = String(capActive.cascadeId || activeConv.cascadeId || '')
+    .trim()
+    .toLowerCase();
+  const scopeId = String(scopedConv?.agentId || aggregated?.agentId || 'main');
+  const conversationKey = convId ? `${convId}::${scopeId}` : '';
+  const stepCount = Math.max(0, Number(capActive.stepCount ?? activeConv.stepCount ?? 0));
+
+  const rawTtft =
+    scopedConv?.latestTtftSec ?? aggregated?.latestTtftSec ?? activeConv.latestTtftSec ?? null;
+  const fallbackTtft = isValidTtftSec(rawTtft)
+    ? Number(rawTtft)
+    : scopedConv?.lastKnownTtftSec ??
+      findFallbackRecentStepTtft(scopedConv?.recentSteps) ??
+      aggregated?.lastKnownTtftSec ??
+      activeConv.lastKnownTtftSec ??
+      findFallbackRecentStepTtft(activeConv.recentSteps);
+  const resolvedTtft = isValidTtftSec(fallbackTtft) ? Number(fallbackTtft) : null;
+
   const capInTok = Math.max(0, Number(capActive.inputTokens || 0));
   const capCacheTok = Math.max(0, Number(capActive.cacheReadTokens || 0));
   const capOutTok = Math.max(0, Number(capActive.outputTokens || 0));
   const sessionTokens =
-    Number(capActive.stepCount || 0) > 0 ||
+    stepCount > 0 ||
     capActive.totalTokens != null ||
     capInTok + capCacheTok + capOutTok > 0
       ? Math.max(0, Number(capActive.totalTokens ?? capInTok + capCacheTok + capOutTok))
@@ -216,12 +256,14 @@ export function buildCapsuleSlotContext(
 
   return {
     hasTelemetry: true,
+    conversationKey,
+    stepCount,
     usedPct,
     dashOffset,
     isRunning,
     tps: scopedConv?.latestTokPerSec ?? aggregated?.latestTokPerSec ?? activeConv.latestTokPerSec ?? null,
     avgTps: scopedConv?.avgTokPerSec ?? aggregated?.avgTokPerSec ?? activeConv.avgTokPerSec ?? null,
-    ttft: scopedConv?.latestTtftSec ?? aggregated?.latestTtftSec ?? activeConv.latestTtftSec ?? null,
+    ttft: resolvedTtft,
     stepCost:
       scopedConv?.latestStepCostUsd ??
       aggregated?.latestStepCostUsd ??
@@ -351,6 +393,7 @@ export function createCapsuleSlotNode(slotIndex, initialMetric) {
     textSpan,
     ringMounted: isCtx,
     prefixMounted: false,
+    heldTtft: null,
   };
 }
 
@@ -363,7 +406,25 @@ export function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCt
   for (let i = 0; i < capsuleSlots.length; i += 1) {
     const slot = capsuleSlots[i];
     const metricKey = i < slotKeys.length ? slotKeys[i] : 'none';
-    const pres = resolveCapsuleMetricPresentation(metricKey, slotCtx, RING_CIRCUMFERENCE);
+    if (!slotCtx?.hasTelemetry || metricKey !== 'ttft') {
+      slot.heldTtft = null;
+    }
+    let pres = resolveCapsuleMetricPresentation(metricKey, slotCtx, RING_CIRCUMFERENCE);
+    if (metricKey === 'ttft' && slotCtx?.hasTelemetry) {
+      const convKey = String(slotCtx.conversationKey || '');
+      if (isValidTtftSec(slotCtx.ttft)) {
+        slot.heldTtft = convKey ? { conversationKey: convKey, pres } : null;
+      } else if (
+        convKey &&
+        slot.heldTtft &&
+        slot.heldTtft.conversationKey === convKey &&
+        (slotCtx.isRunning || Number(slotCtx.stepCount) > 0)
+      ) {
+        pres = { ...slot.heldTtft.pres, running: Boolean(slotCtx.isRunning) };
+      } else {
+        slot.heldTtft = null;
+      }
+    }
     if (pres.hidden) {
       patchAttr(slot.el, 'hidden', true);
       patchAttr(slot.el, 'data-metric', 'none');

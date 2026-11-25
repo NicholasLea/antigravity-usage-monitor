@@ -202,6 +202,8 @@ function migratorDecodeMetaBlobLight(rawBlob) {
   let workspaceUri = '';
   let projectId = '';
   let parentConversationId = '';
+  let nestingDepth = 0;
+  let hasSubagentSpec = false;
   let createdMs = 0;
   for (const field of fields) {
     if (field.fn === 7 && field.wt === 2 && !workspaceUri) {
@@ -212,8 +214,24 @@ function migratorDecodeMetaBlobLight(rawBlob) {
       if (fn1) workspaceUri = fn1.payload.toString('utf8').trim();
     } else if (field.fn === 18 && field.wt === 2) {
       projectId = field.payload.toString('utf8').trim();
-    } else if (field.fn === 9 && field.wt === 2) {
+    } else if (field.fn === 5 && field.wt === 2) {
       parentConversationId = field.payload.toString('utf8').trim().toLowerCase();
+    } else if (field.fn === 8 && field.wt === 2 && field.payload.length > 0) {
+      const specFields = splitProtoRawFields(field.payload);
+      if (
+        specFields.some(
+          (sf) =>
+            (sf.fn === 1 || sf.fn === 2) &&
+            sf.wt === 2 &&
+            sf.payload.toString('utf8').trim().length > 0
+        )
+      ) {
+        hasSubagentSpec = true;
+      }
+    } else if (field.fn === 17 && field.wt === 0) {
+      const st = { off: 0 };
+      const depth = Number(BigInt.asIntN(32, readProtoVarint(field.payload, st, field.payload.length)));
+      if (Number.isFinite(depth) && depth > 0) nestingDepth = depth;
     } else if (field.fn === 2 && field.wt === 2 && !createdMs) {
       const tsFields = splitProtoRawFields(field.payload);
       const secField = tsFields.find((item) => item.fn === 1 && item.wt === 0);
@@ -224,7 +242,55 @@ function migratorDecodeMetaBlobLight(rawBlob) {
       }
     }
   }
-  return { workspaceUri, projectId, parentConversationId, createdMs };
+  return {
+    workspaceUri,
+    projectId,
+    parentConversationId,
+    nestingDepth,
+    hasSubagentSpec,
+    createdMs,
+  };
+}
+
+function migratorIsDbLightNonRoot(dbLight) {
+  if (!dbLight) return false;
+  return Boolean(
+    dbLight.trajectoryType === 22 ||
+      dbLight.sourceNum === 16 ||
+      dbLight.parentConversationId ||
+      Number(dbLight.nestingDepth || 0) > 0 ||
+      dbLight.hasSubagentSpec
+  );
+}
+
+function migratorIsSummaryNonRoot(summary) {
+  if (!summary) return false;
+  const parentId = String(summary.parent_conversation_id || '').trim();
+  const depth = Number(summary.nesting_depth || 0);
+  const sourceStr = String(summary.source || '').trim();
+  if (parentId || depth > 0 || sourceStr === 'CORTEX_TRAJECTORY_SOURCE_SUBAGENT') {
+    return true;
+  }
+  if (summary.raw_summary) {
+    const rawFields = splitProtoRawFields(summary.raw_summary);
+    for (const f of rawFields) {
+      if (f.fn === 22 && f.wt === 0) {
+        const st = { off: 0 };
+        const ttVal = Number(BigInt.asUintN(32, readProtoVarint(f.payload, st, f.payload.length)));
+        if (ttVal === 22) return true; // 旁路提问
+      } else if (f.fn === 20 && f.wt === 0) {
+        const st = { off: 0 };
+        const srcVal = Number(BigInt.asUintN(32, readProtoVarint(f.payload, st, f.payload.length)));
+        if (srcVal === 16) return true; // CORTEX_TRAJECTORY_SOURCE_SUBAGENT
+      } else if (f.fn === 17 && f.wt === 2) {
+        const sumMeta = migratorDecodeMetaBlobLight(f.payload);
+        if (sumMeta.parentConversationId || sumMeta.nestingDepth > 0 || sumMeta.hasSubagentSpec) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 function migratorInspectConversationDbLight(dbPath, { needPromptTitle = false } = {}) {
@@ -271,7 +337,14 @@ function migratorInspectConversationDbLight(dbPath, { needPromptTitle = false } 
         // 忽略步骤读取异常
       }
 
-      let metaBlobInfo = { workspaceUri: '', projectId: '', parentConversationId: '', createdMs: 0 };
+      let metaBlobInfo = {
+        workspaceUri: '',
+        projectId: '',
+        parentConversationId: '',
+        nestingDepth: 0,
+        hasSubagentSpec: false,
+        createdMs: 0,
+      };
       try {
         const blobRow = db
           .prepare("SELECT data FROM trajectory_metadata_blob WHERE id = 'main' LIMIT 1")
@@ -488,20 +561,7 @@ function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSe
     if (sessions.length >= MIGRATOR_MAX_SESSIONS_PER_CLIENT) break;
     const { cid, summary, info } = cand;
 
-    if (summary) {
-      const parentId = String(summary.parent_conversation_id || '').trim();
-      const depth = Number(summary.nesting_depth || 0);
-      if (parentId || depth > 0) continue;
-      if (summary.raw_summary) {
-        const rawFields = splitProtoRawFields(summary.raw_summary);
-        const ttField = rawFields.find((f) => f.fn === 22 && f.wt === 0);
-        if (ttField) {
-          const st = { off: 0 };
-          const ttVal = Number(BigInt.asUintN(32, readProtoVarint(ttField.payload, st, ttField.payload.length)));
-          if (ttVal === 22) continue; // 跳过旁路提问
-        }
-      }
-    }
+    if (migratorIsSummaryNonRoot(summary)) continue;
 
     const annTitle = migratorReadAnnotationTitle(clientRoot, cid);
     const sumTitle = String(summary?.title || '').trim();
@@ -519,9 +579,7 @@ function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSe
       });
     }
 
-    if (dbLight) {
-      if (dbLight.trajectoryType === 22 || dbLight.parentConversationId) continue;
-    }
+    if (migratorIsDbLightNonRoot(dbLight)) continue;
 
     const stepCount =
       summaryStepCount >= 0 ? summaryStepCount : Math.max(0, Number(dbLight?.stepCount || 0));
@@ -691,7 +749,7 @@ function migratorBuildWorkspaceSubmessage(rawUri, targetClientId) {
 
 function migratorBuildSummaryMetaBlob(
   sourceMetaBlob,
-  { srcCid = '', newCid, targetClientId, targetProjectId, rawUri, encodedUri }
+  { newCid, targetClientId, targetProjectId, rawUri, encodedUri }
 ) {
   const wsBytes = migratorBuildWorkspaceSubmessage(rawUri, targetClientId);
   const primaryUri = targetClientId === 'cli' ? rawUri : encodedUri;
@@ -703,12 +761,6 @@ function migratorBuildSummaryMetaBlob(
     [18, encodeProtoStringField(18, targetProjectId)],
   ]);
   if (sourceMetaBlob && sourceMetaBlob.byteLength > 0) {
-    if (srcCid) {
-      const fn8 = splitProtoRawFields(sourceMetaBlob).find((f) => f.fn === 8 && f.wt === 2);
-      if (fn8 && fn8.payload.toString('utf8').trim().toLowerCase() === srcCid) {
-        replacements.set(8, encodeProtoStringField(8, newCid));
-      }
-    }
     return patchProtoMessageFields(sourceMetaBlob, replacements);
   }
   const parts = [];
@@ -819,7 +871,6 @@ function migratorPatchGenMetadataOwnership(rawBlob, srcCid, newCid) {
 function migratorBuildPatchedRawSummary({
   sourceRawSummary,
   sourceMetaBlob,
-  srcCid = '',
   newCid,
   newTid,
   title,
@@ -845,7 +896,6 @@ function migratorBuildPatchedRawSummary({
     const rawFields = splitProtoRawFields(sourceRawSummary);
     const fn17 = rawFields.find((f) => f.fn === 17 && f.wt === 2);
     const patchedFn17 = migratorBuildSummaryMetaBlob(fn17?.payload || sourceMetaBlob, {
-      srcCid,
       newCid,
       targetClientId,
       targetProjectId,
@@ -875,7 +925,6 @@ function migratorBuildPatchedRawSummary({
   const createdTsBytes = encodeProtoTimestamp(createdMs || nowMs);
   const lastUiTsBytes = encodeProtoTimestamp(lastUserInputMs || nowMs);
   const synthMeta = migratorBuildSummaryMetaBlob(sourceMetaBlob, {
-    srcCid,
     newCid,
     targetClientId,
     targetProjectId,
@@ -1100,6 +1149,10 @@ export function migrateSessions(params = {}, options = {}) {
     const dbLight = migratorInspectConversationDbLight(srcDbPath, {
       needPromptTitle: !annTitle && !srcSummary?.title && !srcSummary?.preview,
     });
+    if (migratorIsSummaryNonRoot(srcSummary) || migratorIsDbLightNonRoot(dbLight)) {
+      results.push({ ok: false, sourceCascadeId: srcCid, error: 'non_root_session' });
+      continue;
+    }
     const stepCount = Math.max(
       0,
       Number(srcSummary?.step_count ?? dbLight?.stepCount ?? 0)
@@ -1186,10 +1239,6 @@ export function migrateSessions(params = {}, options = {}) {
               [7, primaryMetaUri ? encodeProtoStringField(7, primaryMetaUri) : null],
               [18, encodeProtoStringField(18, resolvedProjectId)],
             ]);
-            const fn8 = splitProtoRawFields(sourceMetaBlob).find((f) => f.fn === 8 && f.wt === 2);
-            if (fn8 && fn8.payload.toString('utf8').trim().toLowerCase() === srcCid) {
-              metaReplacements.set(8, encodeProtoStringField(8, newCid));
-            }
             const patchedMeta = patchProtoMessageFields(sourceMetaBlob, metaReplacements);
             dstDb
               .prepare("UPDATE trajectory_metadata_blob SET data = ? WHERE id = 'main'")
@@ -1304,7 +1353,6 @@ export function migrateSessions(params = {}, options = {}) {
       const patchedRawSummary = migratorBuildPatchedRawSummary({
         sourceRawSummary: srcSummary?.raw_summary || null,
         sourceMetaBlob,
-        srcCid,
         newCid,
         newTid,
         title: finalTitle,

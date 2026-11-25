@@ -546,6 +546,22 @@ export function normalizeModernUi(val) {
 export const CONTEXT_AGENT_MODES = Object.freeze(['main', 'auto']);
 export const DEFAULT_CONTEXT_AGENT_MODE = 'main';
 
+export const ACCOUNT_QUOTA_REFRESH_MINUTES = Object.freeze([10, 30, 60, 180, 360, 720, 1440]);
+export const DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES = 60;
+
+/**
+ * 归一化非当前账号的后台配额刷新间隔（分钟，默认 `60` 即 1 小时）。
+ *
+ * @param {unknown} raw
+ * @returns {10|30|60|180|360|720|1440}
+ */
+export function normalizeAccountQuotaRefreshMinutes(raw) {
+  const num = Number(raw);
+  return ACCOUNT_QUOTA_REFRESH_MINUTES.includes(num)
+    ? /** @type {any} */ (num)
+    : DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES;
+}
+
 /**
  * 归一化顶栏胶囊及悬停速览浮窗的上下文代理来源（默认 `'main'` 锁定主代理，可选 `'auto'` 跟随活跃）。
  *

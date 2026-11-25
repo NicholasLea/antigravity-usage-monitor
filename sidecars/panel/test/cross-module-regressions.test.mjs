@@ -1123,7 +1123,7 @@ test('P0 audit fixes: main/bridge-daemon import isolation, standalone lsAddr, du
   assert.doesNotMatch(renderBody, /\buiStore\.setState\b/);
 });
 
-test('P1 audit fixes: shared third-party pool & route single-source, pure frozen resolveScopedConversation, mock schema alignment, and dead SettingsAccountTab exclusion', async () => {
+test('P1 audit fixes: shared third-party pool & route single-source, pure frozen resolveScopedConversation, mock schema alignment, and account preferences inclusion', async () => {
   const { normalizeI18nLanguage } = await import('../src/i18n/index.js');
   const { resolveSpecificQuotaSlotSummary } = await import('../src/registries/metricRegistry.js');
   const { resolveScopedConversation, isEquivalentTelemetry } = await import(
@@ -1136,13 +1136,15 @@ test('P1 audit fixes: shared third-party pool & route single-source, pure frozen
 
   assert.equal(normalizeI18nLanguage('system'), 'auto');
   assert.equal(typeof isEquivalentTelemetry, 'function');
-  assert.equal(BRIDGE_API_ROUTE_DEFS.length, 15);
+  assert.equal(BRIDGE_API_ROUTE_DEFS.length, 17);
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/bridge/relaunch'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/session-migration/catalog'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/session-migration/migrate'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/export-file'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/reveal-file'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/quota-reservation/log'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/host-i18n' && r.method === 'GET'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/host-i18n' && r.method === 'POST'));
 
   // 1. Third-party pool parity across backend, CLI statusline, and frontend metricRegistry
   const h = backendHarness();
@@ -1188,7 +1190,7 @@ test('P1 audit fixes: shared third-party pool & route single-source, pure frozen
   assert.equal(scoped.aggregated.recentSteps.length, 2);
   assert.equal(scoped.mainAgent.recentSteps.length, 1);
 
-  // 3. structurePreviewMock schema completeness & dead SettingsAccountTab exclusion from app.js
+  // 3. structurePreviewMock schema completeness & account preferences bundled for use
   const mock = buildStructurePreviewTelemetry();
   assert.equal(typeof mock.activeConversation.context.compactionUsedTokens, 'number');
   assert.equal(mock.activeConversation.aggregated.agentId, 'all');
@@ -1196,8 +1198,8 @@ test('P1 audit fixes: shared third-party pool & route single-source, pure frozen
   assert.equal(mock.quotas.meta.hasOfficialData, true);
 
   const appJs = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
-  assert.equal(appJs.includes('SettingsAccountTab.js'), false);
-  assert.equal(appJs.includes('function renderQuotaRows('), false);
+  assert.equal(appJs.includes('SettingsAccountTab.js'), true);
+  assert.equal(appJs.includes('function renderQuotaRows('), true);
 });
 
 test('P2 audit fixes: standalone sqlite/proto-wire primitives, structured liveActivity/agent/media i18n, full en-US SVG charts, controlled LiveActivityWidget reuse, and shared Mock DOM', async () => {
@@ -1506,4 +1508,429 @@ test('5h quota cycle includes cycle-opening compaction CHECKPOINT and cross-boun
   // Preset 5h account bucket includes Alice's 3 calls (403k) + Bob's 1 call (88k), excluding oldCycleStep (105k)
   assert.equal(payload.consumption.account.calls, 4);
   assert.equal(payload.consumption.account.totalTokens, 491_000);
+});
+
+test('i18n static t(...) key completeness guard, scopeAll formatters, and localized en-US trend/CSV date labels', async () => {
+  const { I18N_MESSAGES_ZH_CN } = await import('../src/i18n/zh-CN.js');
+  const { I18N_MESSAGES_EN_US } = await import('../src/i18n/en-US.js');
+  const { setI18nLanguage } = await import('../src/i18n/index.js');
+  const {
+    formatAgentBadgeText,
+    formatAgentLabel,
+    formatTrendSlotFullLabel,
+  } = await import('../src/core/formatters.js');
+  const { buildStructurePreviewTelemetry } = await import('../src/components/settings/structurePreviewMock.js');
+  const { buildConsumptionCsv } = await import('../src/core/reportExporter.js');
+  const { createTrendAreaChart } = await import('../src/components/charts/TrendAreaChart.js');
+  const { createMockDom } = await import('./mock-dom.mjs');
+
+  // 1. Every static t('...') call across sidecars/panel/src/** resolves in both zh-CN and en-US
+  const srcRoot = fileURLToPath(new URL('../src', import.meta.url));
+  const walkJs = (dir) => {
+    const out = [];
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, ent.name);
+      if (ent.isDirectory()) out.push(...walkJs(p));
+      else if (ent.name.endsWith('.js') || ent.name.endsWith('.mjs')) out.push(p);
+    }
+    return out;
+  };
+  const zhKeys = new Set(Object.keys(I18N_MESSAGES_ZH_CN));
+  const enKeys = new Set(Object.keys(I18N_MESSAGES_EN_US));
+  assert.deepEqual([...zhKeys].filter((k) => !enKeys.has(k)), []);
+  assert.deepEqual([...enKeys].filter((k) => !zhKeys.has(k)), []);
+
+  const missingKeys = [];
+  for (const filePath of walkJs(srcRoot)) {
+    const srcText = fs.readFileSync(filePath, 'utf8');
+    const re = /(?<![.\w])t\(\s*(['"])([^'"]+)\1/g;
+    let m;
+    while ((m = re.exec(srcText)) !== null) {
+      const k = m[2];
+      if (!zhKeys.has(k) || !enKeys.has(k)) {
+        missingKeys.push(`${filePath}:${k}`);
+      }
+    }
+  }
+  assert.deepEqual(missingKeys, []);
+
+  // 2. agentKind === 'all' & structurePreviewMock never leak raw key strings
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    location: { origin: 'http://127.0.0.1:41234', href: 'http://127.0.0.1:41234/' },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+
+  try {
+    setI18nLanguage('zh-CN');
+    assert.equal(formatAgentBadgeText({ agentKind: 'all' }), '全');
+    assert.equal(formatAgentLabel({ agentKind: 'all' }), '全部代理');
+    assert.equal(buildStructurePreviewTelemetry().activeConversation.aggregated.badgeText, '全');
+
+    setI18nLanguage('en-US');
+    assert.equal(formatAgentBadgeText({ agentKind: 'all' }), 'All');
+    assert.equal(formatAgentLabel({ agentKind: 'all' }), 'All Agents');
+    assert.equal(buildStructurePreviewTelemetry().activeConversation.aggregated.badgeText, 'All');
+
+    // 3. TrendAreaChart tooltip + X-axis tick title & CSV export localize dates in en-US without hardcoded Chinese
+    const localStart = new Date(new Date().getFullYear(), 10, 24, 10, 0, 0, 0).getTime();
+    const localEnd = localStart + 3600_000;
+    const hourlySlot = {
+      index: 0,
+      startMs: localStart,
+      endMs: localEnd,
+      granularity: 'hour',
+      label: '10:00',
+      fullLabel: '11月24日 10:00 - 11:00',
+      tokens: 12_000,
+      inputTokens: 8_000,
+      cacheReadTokens: 3_000,
+      outputTokens: 1_000,
+      costUsd: 0.05,
+      calls: 2,
+    };
+    const dailySlot = {
+      index: 0,
+      startMs: new Date(2025, 10, 24, 0, 0, 0, 0).getTime(),
+      endMs: new Date(2025, 10, 25, 0, 0, 0, 0).getTime(),
+      granularity: 'day',
+      label: '11/24',
+      fullLabel: '2025年11月24日 (周一)',
+      tokens: 25_000,
+      calls: 4,
+      costUsd: 0.12,
+    };
+
+    assert.equal(formatTrendSlotFullLabel(hourlySlot, { locale: 'en-US' }), 'Nov 24, 10:00 - 11:00');
+    assert.equal(formatTrendSlotFullLabel(hourlySlot, { locale: 'zh-CN' }), '11月24日 10:00 - 11:00');
+    assert.equal(formatTrendSlotFullLabel(dailySlot, { locale: 'en-US' }), 'Nov 24, 2025 (Mon)');
+    assert.equal(formatTrendSlotFullLabel(dailySlot, { locale: 'zh-CN' }), '2025年11月24日 (周一)');
+
+    const chart = createTrendAreaChart();
+    setI18nLanguage('en-US');
+    chart.update([hourlySlot, { ...hourlySlot, index: 1, startMs: localEnd, endMs: localEnd + 3600_000, label: '11:00', fullLabel: '11月24日 11:00 - 12:00' }]);
+    const enTicks = chart.el.querySelectorAll('.trend-x-tick');
+    assert.equal(enTicks[0].getAttribute('title'), 'Nov 24, 10:00 - 11:00');
+    enTicks[0].onclick?.();
+    assert.match(chart.el.textContent, /Nov 24, 10:00 - 11:00/);
+    assert.doesNotMatch(chart.el.textContent, /11月24日/);
+
+    setI18nLanguage('zh-CN');
+    chart.update([hourlySlot, { ...hourlySlot, index: 1, startMs: localEnd, endMs: localEnd + 3600_000, label: '11:00', fullLabel: '11月24日 11:00 - 12:00' }]);
+    const zhTicks = chart.el.querySelectorAll('.trend-x-tick');
+    assert.equal(zhTicks[0].getAttribute('title'), '11月24日 10:00 - 11:00');
+    chart.destroy();
+
+    const csvEn = buildConsumptionCsv(
+      {
+        selectedRange: { key: 'cycle', label: '当前周期' },
+        account: { calls: 2, inputTokens: 8000, cacheReadTokens: 3000, outputTokens: 1000, totalTokens: 12000, cacheHitPct: 27.3, costUsd: 0.05, savedCostUsd: 0.01 },
+        trendSeries: [hourlySlot],
+      },
+      [],
+      { locale: 'en-US', includeBom: false }
+    );
+    assert.match(csvEn, /summary,Current Cycle,/);
+    assert.match(csvEn, /trend,"Nov 24, 10:00 - 11:00",/);
+    assert.doesNotMatch(csvEn, /[\u4e00-\u9fff]/);
+  } finally {
+    setI18nLanguage('zh-CN');
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  }
+});
+
+test('xlsxBuilder enforces 32,767 UTF-16 cell limit without splitting surrogate pairs or emitting lone surrogates', async () => {
+  const { buildXlsxWorkbookBytes, MAX_EXCEL_CELL_CHARS } = await import('../src/core/xlsxBuilder.js');
+  assert.equal(MAX_EXCEL_CELL_CHARS, 32767);
+
+  // Place an emoji ('😀' = \uD83D\uDE00, 2 UTF-16 code units) straddling index 32765..32766
+  const boundaryEmojiText = `${'A'.repeat(32765)}😀${'B'.repeat(500)}`;
+  const loneSurrogateText = `ok\uD800mid\uDC00end`;
+  const bytes = buildXlsxWorkbookBytes([
+    {
+      name: 'OverflowGuard',
+      columns: [{ header: 'TextCol', type: 'text' }],
+      rows: [[boundaryEmojiText], [loneSurrogateText]],
+    },
+  ]);
+
+  const rawArchiveStr = Buffer.from(bytes).toString('utf8');
+  const cellMatches = [...rawArchiveStr.matchAll(/<c r="A[23]"[^>]*><is><t[^>]*>([\s\S]*?)<\/t><\/is><\/c>/g)];
+  assert.equal(cellMatches.length, 2);
+
+  const cellA2 = cellMatches[0][1];
+  assert.ok(
+    cellA2.length <= MAX_EXCEL_CELL_CHARS,
+    `Expected <= 32767 UTF-16 code units, got ${cellA2.length}`
+  );
+  assert.equal(cellA2.length, 32766, 'Backs off by 1 code unit before emoji high surrogate + ellipsis');
+  assert.ok(cellA2.endsWith('…'));
+  assert.equal(/[\uD800-\uDFFF]/.test(cellA2), false, 'No split surrogate code unit remains');
+
+  const cellA3 = cellMatches[1][1];
+  assert.equal(cellA3, 'ok\uFFFDmid\uFFFDend');
+});
+
+test('ConsumptionView and TrendAreaChart patch text DOM nodes in-place without opacity flicker classes on date range switches', async () => {
+  const consCss = fs.readFileSync(
+    fileURLToPath(new URL('../src/styles/views-consumption.css', import.meta.url)),
+    'utf8'
+  );
+  for (const bannedToken of [
+    'is-range-switching',
+    'is-tab-entering',
+    'is-switching',
+    'is-stage-entering',
+    'anim-cons-content-switch',
+    'anim-cons-axis-fade',
+    'anim-cons-stage-in',
+  ]) {
+    assert.equal(
+      consCss.includes(bannedToken),
+      false,
+      `Expected views-consumption.css not to contain text-opacity flicker rule "${bannedToken}"`
+    );
+  }
+
+  const { createMockDom } = await import('./mock-dom.mjs');
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    location: { origin: 'http://127.0.0.1:41234', href: 'http://127.0.0.1:41234/' },
+    getComputedStyle: () => ({ overflow: 'visible', overflowX: 'visible', overflowY: 'visible' }),
+    matchMedia: () => ({ matches: false }),
+    requestAnimationFrame: (cb) => setTimeout(() => cb(performance.now()), 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+    addEventListener() {},
+    removeEventListener() {},
+  };
+
+  try {
+    const { ConsumptionView } = await import('../src/views/ConsumptionView.js');
+    const { telemetryStore } = await import('../src/store/telemetryStore.js');
+    const { uiStore } = await import('../src/store/uiStore.js');
+    const prevTelState = { ...telemetryStore.getState() };
+    const prevUiState = { ...uiStore.getState() };
+
+    uiStore.setState(
+      { activeView: 'consumption', monitorVisible: true, settingsOpen: false },
+      { sync: true }
+    );
+    const view = ConsumptionView();
+    document.body.appendChild(view.el);
+
+    const makeRangePayload = (rangeKey, tokBase, labels) => ({
+      settings: { modelDisplayMode: 'short', showUpstreamModel: false, orchestratorIdMode: 'label' },
+      consumption: {
+        revision: 0,
+        selectedRange: {
+          key: rangeKey,
+          label: rangeKey,
+          startMs: 1_760_000_000_000,
+          endMs: 1_760_086_400_000,
+        },
+        account: {
+          totalTokens: tokBase,
+          inputTokens: Math.round(tokBase * 0.2),
+          cacheReadTokens: Math.round(tokBase * 0.7),
+          outputTokens: Math.round(tokBase * 0.1),
+          responseTokens: Math.round(tokBase * 0.07),
+          thinkingTokens: Math.round(tokBase * 0.03),
+          calls: 12,
+          costUsd: 1.25,
+          savedCostUsd: 0.85,
+          cacheHitPct: 77.8,
+        },
+        trendSeries: labels.map((lbl, idx) => ({
+          index: idx,
+          startMs: 1_760_000_000_000 + idx * 3_600_000,
+          endMs: 1_760_000_000_000 + (idx + 1) * 3_600_000,
+          granularity: labels.length > 90 ? 'day' : 'hour',
+          label: lbl,
+          fullLabel: lbl,
+          tokens: 1_000 * (idx + 1),
+          calls: 1,
+          costUsd: 0.05,
+        })),
+        sourcesBreakdown: [
+          {
+            name: 'antigravity',
+            label: 'Antigravity IDE',
+            totalTokens: tokBase,
+            calls: 12,
+            costUsd: 1.25,
+            models: [{ label: 'Claude Opus 4.6', shortName: 'Claude Opus 4.6', totalTokens: tokBase, calls: 12 }],
+          },
+        ],
+        topConversations: [],
+        topWorkspaces: [],
+        monthlyYear: 2026,
+        monthlySeries: Array.from({ length: 12 }, (_, m) => ({
+          month: m + 1,
+          totalTokens: m === 10 ? tokBase : 0,
+          costUsd: m === 10 ? 1.25 : 0,
+          calls: m === 10 ? 12 : 0,
+        })),
+      },
+      modelBreakdown: [
+        {
+          label: 'Claude Opus 4.6',
+          shortName: 'Claude Opus 4.6',
+          totalTokens: tokBase,
+          inputTokens: Math.round(tokBase * 0.2),
+          cacheReadTokens: Math.round(tokBase * 0.7),
+          responseTokens: Math.round(tokBase * 0.07),
+          thinkingTokens: Math.round(tokBase * 0.03),
+          outputTokens: Math.round(tokBase * 0.1),
+          calls: 12,
+          costUsd: 1.25,
+        },
+      ],
+    });
+
+    telemetryStore.setState(
+      {
+        selectedTimeRange: 'today',
+        telemetry: makeRangePayload('today', 100_000, ['00:00', '06:00', '12:00', '18:00']),
+      },
+      { sync: true }
+    );
+
+    const matrixEl = view.el.querySelector('.cons-unified-matrix');
+    const heroNumEl = view.el.querySelector('.cons-hero-num');
+    const modelRowEl = view.el.querySelector('.cons-item-row');
+    const modelTitleTextEl = modelRowEl.querySelector('.cons-row-title-text');
+    const sourceRowEl = view.el.querySelector('.cons-source-row');
+    const xAxisEl = view.el.querySelector('.trend-x-axis');
+    const initialTicks = xAxisEl.querySelectorAll('.trend-x-tick');
+    assert.equal(initialTicks.length, 4);
+
+    // Switch to 7d: same model, same source, updated numbers & tick labels -> all DOM nodes reused in-place, zero opacity flicker classes
+    telemetryStore.setState(
+      {
+        selectedTimeRange: '7d',
+        telemetry: makeRangePayload('7d', 450_000, ['11/18', '11/20', '11/22', '11/24']),
+      },
+      { sync: true }
+    );
+
+    assert.equal(view.el.querySelector('.cons-hero-num'), heroNumEl, 'Hero token element persists');
+    assert.equal(view.el.querySelector('.cons-item-row'), modelRowEl, 'Model row element persists');
+    assert.equal(
+      view.el.querySelector('.cons-item-row .cons-row-title-text'),
+      modelTitleTextEl,
+      'Model title text node persists'
+    );
+    assert.equal(view.el.querySelector('.cons-source-row'), sourceRowEl, 'Source row element persists');
+
+    const nextTicks = xAxisEl.querySelectorAll('.trend-x-tick');
+    assert.equal(nextTicks.length, 4);
+    for (let i = 0; i < 4; i++) {
+      assert.equal(nextTicks[i], initialTicks[i], `Trend X-axis tick #${i} reused in-place`);
+    }
+    assert.equal(nextTicks[0].textContent, '11/18');
+
+    for (const cls of ['is-range-switching', 'is-tab-entering', 'is-switching', 'is-stage-entering']) {
+      assert.equal(matrixEl.classList.contains(cls), false);
+      assert.equal(modelRowEl.parentNode.classList.contains(cls), false);
+      assert.equal(sourceRowEl.parentNode.classList.contains(cls), false);
+      assert.equal(xAxisEl.classList.contains(cls), false);
+    }
+
+    // Switch to >90d heatmap and update counts -> month labels and grid cells reuse pooled nodes in-place
+    const hmLabelsA = Array.from({ length: 95 }, (_, idx) => `08/${String((idx % 28) + 1).padStart(2, '0')}`);
+    telemetryStore.setState(
+      {
+        selectedTimeRange: 'all',
+        telemetry: makeRangePayload('all', 900_000, hmLabelsA),
+      },
+      { sync: true }
+    );
+    const hmGridEl = view.el.querySelector('.trend-hm-grid');
+    const firstGridCells = [...hmGridEl.children];
+    assert.ok(firstGridCells.length >= 95);
+
+    telemetryStore.setState(
+      {
+        selectedTimeRange: 'all',
+        telemetry: makeRangePayload('all', 950_000, hmLabelsA),
+      },
+      { sync: true }
+    );
+    const secondGridCells = [...hmGridEl.children];
+    assert.equal(secondGridCells.length, firstGridCells.length);
+    assert.equal(secondGridCells[10], firstGridCells[10], 'Heatmap cell DOM node reused in-place');
+
+    // Switch to 'cycle' with multiple quota pools -> compact inline pool selector becomes visible (and stays hidden on 'today'/'all')
+    assert.equal(view.refs.cyclePoolSelect.el.hasAttribute('hidden'), true, 'Hidden outside cycle range');
+    const cyclePoolsFixture = [
+      {
+        poolKey: 'Gemini',
+        poolLabel: 'Gemini',
+        weeklyRemainingPct: 99.7,
+        cycleWeekly: { calls: 12, tokens: 2_480_000, costUsd: 0.86 },
+      },
+      {
+        poolKey: 'Claude & GPT',
+        poolLabel: 'Claude & GPT',
+        weeklyRemainingPct: 38.0,
+        cycleWeekly: { calls: 690, tokens: 172_580_000, costUsd: 61.38 },
+      },
+    ];
+    const baseCyclePayload = makeRangePayload('cycle', 2_480_000, ['12:00', '14:00', '16:00', '18:00']);
+    baseCyclePayload.quotas = { pools: cyclePoolsFixture };
+    baseCyclePayload.consumption.selectedRange = {
+      key: 'cycle',
+      pool: 'Gemini',
+      poolLabel: 'Gemini',
+      label: '当前周期 · Gemini',
+      startMs: 1_760_040_000_000,
+      endMs: 1_760_061_600_000,
+    };
+    telemetryStore.setState(
+      {
+        selectedTimeRange: 'cycle',
+        selectedCyclePool: 'Gemini',
+        telemetry: baseCyclePayload,
+      },
+      { sync: true }
+    );
+    assert.equal(view.refs.cyclePoolSelect.el.hasAttribute('hidden'), false, 'Shown on cycle with >=2 pools');
+    assert.equal(view.refs.cyclePoolSelect.refs.triggerLabel.textContent, 'Gemini');
+    const badges = view.el.querySelectorAll('.cons-badge');
+    assert.match(badges[1]?.textContent || '', /当前周期 · Gemini/);
+
+    // Open dropdown and verify localized pool metadata + switch back to 'today' hides dropdown
+    view.refs.cyclePoolSelect.open();
+    const optTexts = [...view.refs.cyclePoolSelect.refs.optionsListEl.children].map(
+      (btn) => btn.textContent
+    );
+    assert.equal(optTexts.length, 3);
+    assert.match(optTexts[0], /全部池.*\$62\.24/);
+    assert.match(optTexts[1], /Gemini.*剩 99\.7% · \$0\.86/);
+    assert.match(optTexts[2], /Claude & GPT.*剩 38\.0% · \$61\.38/);
+
+    telemetryStore.setState(
+      {
+        selectedTimeRange: 'today',
+        telemetry: makeRangePayload('today', 100_000, ['00:00', '06:00', '12:00', '18:00']),
+      },
+      { sync: true }
+    );
+    assert.equal(view.refs.cyclePoolSelect.el.hasAttribute('hidden'), true, 'Re-hidden on today');
+
+    view.destroy();
+    telemetryStore.setState(prevTelState, { sync: true });
+    uiStore.setState(prevUiState, { sync: true });
+  } finally {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  }
 });

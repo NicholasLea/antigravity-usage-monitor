@@ -824,7 +824,8 @@ test('argon_weekly capsule & CLI slot enables only when user has an Argon weekly
 });
 
 test('formatPctNumber collapses boundary 0.0 -> 0 and 100.0 -> 100 while preserving intermediate decimals', async () => {
-  const { formatPctNumber } = await import('../src/core/formatters.js');
+  const { formatDateSpanBadge, formatPctNumber } = await import('../src/core/formatters.js');
+  const { setI18nLanguage } = await import('../src/i18n/index.js');
   assert.equal(formatPctNumber(0), '0');
   assert.equal(formatPctNumber(0, { withSymbol: true }), '0%');
   assert.equal(formatPctNumber(0.04, { withSymbol: true }), '0%');
@@ -836,4 +837,272 @@ test('formatPctNumber collapses boundary 0.0 -> 0 and 100.0 -> 100 while preserv
   assert.equal(formatPctNumber(1.0, { withSymbol: true }), '1.0%');
   assert.equal(formatPctNumber(50.0, { withSymbol: true }), '50.0%');
   assert.equal(formatPctNumber(99.9, { withSymbol: true }), '99.9%');
+
+  const d24Morning = new Date(2026, 10, 24, 9, 0).getTime();
+  const d24Evening = new Date(2026, 10, 24, 19, 30).getTime();
+  const d25Evening = new Date(2026, 10, 25, 18, 0).getTime();
+  const dOct28 = new Date(2026, 9, 28, 10, 0).getTime();
+  const dPrevYear = new Date(2025, 11, 28, 10, 0).getTime();
+
+  setI18nLanguage('zh-CN');
+  assert.equal(formatDateSpanBadge(d24Morning, d24Evening), '11月24日');
+  assert.equal(formatDateSpanBadge(d24Morning, d25Evening), '11月24日 ~ 25日');
+  assert.equal(formatDateSpanBadge(dOct28, d24Evening), '10月28日 ~ 11月24日');
+  assert.equal(formatDateSpanBadge(dPrevYear, d24Evening), '2025年12月28日 ~ 2026年11月24日');
+
+  setI18nLanguage('en-US');
+  assert.equal(formatDateSpanBadge(d24Morning, d24Evening), 'Nov 24');
+  assert.equal(formatDateSpanBadge(d24Morning, d25Evening), 'Nov 24 ~ 25');
+  assert.equal(formatDateSpanBadge(dOct28, d24Evening), 'Oct 28 ~ Nov 24');
+  assert.equal(formatDateSpanBadge(dPrevYear, d24Evening), 'Dec 28, 2025 ~ Nov 24, 2026');
+  setI18nLanguage('zh-CN');
+});
+
+test('Consumption cycle pool filter isolates Gemini vs Claude & GPT vs Argon across full, consumption, and presets scopes', async () => {
+  const now = Date.now();
+  const CLAUDE_SONNET = 'MODEL_CLAUDE_4_5_SONNET';
+  // Gemini weekly cycle refreshed 6h ago (resets in +162h)
+  const geminiWkReset = new Date(now + 162 * 3600_000).toISOString();
+  const gemini5hReset = new Date(now + 2 * 3600_000).toISOString();
+  // Argon weekly cycle started 4d ago (resets in +72h)
+  const argonWkReset = new Date(now + 72 * 3600_000).toISOString();
+  // Claude & GPT weekly cycle started 30h ago (resets in +138h)
+  const claudeWkReset = new Date(now + 138 * 3600_000).toISOString();
+
+  const makeTimedStep = (idx, model, ageMs, provider, tok) => {
+    const t = now - ageMs;
+    return {
+      type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: {
+        sourceTrajectoryStepInfo: { stepIndex: idx },
+        createdAt: new Date(t).toISOString(),
+        completedAt: new Date(t + 2_000).toISOString(),
+        modelUsage: {
+          model,
+          apiProvider: provider,
+          inputTokens: String(tok),
+          cacheReadTokens: '0',
+          outputTokens: '1000',
+        },
+      },
+    };
+  };
+
+  const h = backendHarness({
+    summaries: { convPoolSplit: { stepCount: 4 } },
+    trajectories: {
+      convPoolSplit: {
+        trajectory: {
+          steps: [
+            // 1. Gemini 2h ago -> inside Gemini 6h weekly window (11,000 tok)
+            makeTimedStep(1, FLASH, 2 * 3600_000, 'API_PROVIDER_GOOGLE_GEMINI', 10_000),
+            // 2. Gemini 24h ago -> OUTSIDE Gemini 6h weekly window!
+            makeTimedStep(2, FLASH, 24 * 3600_000, 'API_PROVIDER_GOOGLE_GEMINI', 90_000),
+            // 3. Claude 24h ago -> INSIDE Claude 30h weekly window (51,000 tok)
+            makeTimedStep(3, CLAUDE_SONNET, 24 * 3600_000, 'API_PROVIDER_ANTHROPIC', 50_000),
+            // 4. Argon 48h ago -> INSIDE Argon 4d weekly window (31,000 tok)
+            makeTimedStep(4, ARGON, 48 * 3600_000, 'API_PROVIDER_GOOGLE_GEMINI', 30_000),
+          ],
+        },
+      },
+    },
+    userStatus: {
+      userTier: { id: 'g1-pro-tier', name: 'Google AI Pro' },
+      cascadeModelConfigData: {
+        clientModelConfigs: [
+          {
+            label: 'Gemini 3.8 Flash (High)',
+            modelId: 'gemini-3.8-flash-high',
+            modelOrAlias: { model: FLASH },
+            quotaInfo: { remainingFraction: 0.9968, resetTime: gemini5hReset },
+          },
+          {
+            label: 'Gemini 4 Argon (High)',
+            modelId: 'gemini-4-argon-high',
+            modelOrAlias: { model: ARGON },
+            quotaInfo: { remainingFraction: 0.62, resetTime: argonWkReset },
+          },
+          {
+            label: 'Claude 4.5 Sonnet',
+            modelId: 'claude-sonnet-4-5',
+            modelOrAlias: { model: CLAUDE_SONNET },
+            quotaInfo: { remainingFraction: 0.38, resetTime: claudeWkReset },
+          },
+        ],
+      },
+    },
+    quotaSummary: {
+      groups: [
+        {
+          displayName: 'Gemini Models',
+          buckets: [
+            { bucketId: 'gemini-5h', window: '5h', remainingFraction: 0.99, resetTime: gemini5hReset },
+            { bucketId: 'gemini-weekly', window: 'weekly', remainingFraction: 0.9968, resetTime: geminiWkReset },
+          ],
+        },
+        {
+          displayName: 'Gemini 4 Argon',
+          buckets: [
+            { bucketId: 'argon-weekly', window: 'weekly', remainingFraction: 0.62, resetTime: argonWkReset },
+          ],
+        },
+        {
+          displayName: 'Claude and GPT models',
+          buckets: [
+            { bucketId: '3p-weekly', window: 'weekly', remainingFraction: 0.38, resetTime: claudeWkReset },
+          ],
+        },
+      ],
+    },
+  });
+
+  // 1. All-pools cycle: includes step 1 (11k) + step 3 (51k) + step 4 (31k) = 93k
+  const allCycle = await h.buildTelemetryPayloadInternal('convPoolSplit', false, { range: 'cycle' });
+  assert.equal(allCycle.consumption.selectedRange.key, 'cycle');
+  assert.equal(allCycle.consumption.selectedRange.pool, 'all');
+  assert.equal(allCycle.consumption.account.calls, 3);
+  assert.equal(allCycle.consumption.account.totalTokens, 93_000);
+
+  // 2. Gemini-only cycle: strictly isolates Gemini post-reset window (11k, start anchored ~6h ago, NOT 30h/48h ago!)
+  const gemCycle = JSON.parse(
+    (await h.executeTelemetryAction({ conversationId: 'convPoolSplit', range: 'cycle', pool: 'Gemini', scope: 'consumption' })).body
+  );
+  assert.equal(gemCycle.scope, 'consumption');
+  assert.equal(gemCycle.consumption.selectedRange.pool, 'Gemini');
+  assert.equal(gemCycle.consumption.selectedRange.poolLabel, 'Gemini');
+  assert.equal(gemCycle.consumption.account.calls, 1);
+  assert.equal(gemCycle.consumption.account.totalTokens, 11_000);
+  assert.equal(gemCycle.modelBreakdown.length, 1);
+  assert.match(gemCycle.modelBreakdown[0].label, /Gemini/);
+  assert.ok(
+    gemCycle.consumption.selectedRange.startMs >= now - 7 * 3600_000,
+    'Gemini cycle startMs must anchor to Gemini 6h-ago reset rather than Claude/Argon earlier cycles'
+  );
+
+  // 3. Claude & GPT cycle: strictly isolates Claude 30h window (51k) while global presets.cycle stays 93k on full payload
+  const claudeFull = await h.buildTelemetryPayloadInternal('convPoolSplit', false, {
+    range: 'cycle',
+    pool: 'Claude & GPT',
+  });
+  assert.equal(claudeFull.consumption.selectedRange.pool, 'Claude & GPT');
+  assert.equal(claudeFull.consumption.account.calls, 1);
+  assert.equal(claudeFull.consumption.account.totalTokens, 51_000);
+  assert.equal(claudeFull.consumption.presets.cycle.account.totalTokens, 93_000);
+  assert.equal(claudeFull.quotas.weekly.tokens, 93_000);
+
+  // 4. Presets bundle pre-computes cycle:<poolKey> slices for 0ms frontend switching
+  const presetsBundle = JSON.parse(
+    (await h.executeTelemetryAction({ conversationId: 'convPoolSplit', scope: 'consumption-presets' })).body
+  );
+  assert.equal(presetsBundle.scope, 'consumption-presets');
+  assert.equal(presetsBundle.ranges.cycle.account.totalTokens, 93_000);
+  assert.equal(presetsBundle.ranges['cycle:Gemini'].account.totalTokens, 11_000);
+  assert.equal(presetsBundle.ranges['cycle:Argon'].account.totalTokens, 31_000);
+  assert.equal(presetsBundle.ranges['cycle:Claude & GPT'].account.totalTokens, 51_000);
+});
+
+test('GetUserStatus >6h weekly resetTime fallback and usageRevision bump when official weekly anchor arrives', async () => {
+  const now = Date.now();
+  const wkResetIso = new Date(now + 161 * 3600_000).toISOString(); // refreshed 7h ago
+  const recentStepTs = now - 2 * 3600_000;
+  const preResetStepTs = now - 20 * 3600_000;
+
+  const makeStepAt = (idx, ts, tok) => ({
+    type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      sourceTrajectoryStepInfo: { stepIndex: idx },
+      createdAt: new Date(ts).toISOString(),
+      completedAt: new Date(ts + 2_000).toISOString(),
+      modelUsage: {
+        model: FLASH,
+        apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+        inputTokens: String(tok),
+        cacheReadTokens: '0',
+        outputTokens: '500',
+      },
+    },
+  });
+
+  // Case A: RetrieveUserQuotaSummary failed (null), only GetUserStatus returned >6h weekly resetTime
+  const hFallback = backendHarness({
+    summaries: { convFb: { stepCount: 2 } },
+    trajectories: {
+      convFb: {
+        trajectory: {
+          steps: [
+            makeStepAt(1, preResetStepTs, 80_000),
+            makeStepAt(2, recentStepTs, 10_000),
+          ],
+        },
+      },
+    },
+    userStatus: {
+      email: 'cli-user@example.com',
+      userTier: { id: 'g1-ultra-tier', name: 'Google AI Ultra' },
+      cascadeModelConfigData: {
+        clientModelConfigs: [
+          {
+            label: 'Gemini 3.8 Flash (High)',
+            modelId: 'gemini-3.8-flash-high',
+            modelOrAlias: { model: FLASH },
+            quotaInfo: { remainingFraction: 0.9968, resetTime: wkResetIso },
+          },
+        ],
+      },
+    },
+    quotaSummary: null,
+  });
+
+  const pFb = await hFallback.buildTelemetryPayloadInternal('convFb', false, { range: 'cycle' });
+  const gemPoolFb = pFb.quotas.pools.find((p) => p.poolKey === 'Gemini');
+  assert.equal(gemPoolFb.weeklyResetTime, wkResetIso, '>6h quotaInfo resetTime must classify as weeklyResetTime');
+  assert.equal(gemPoolFb.has5h, false);
+  assert.equal(pFb.consumption.selectedRange.isFallbackWeek, undefined);
+  assert.equal(pFb.consumption.account.calls, 1, 'Excludes 20h-ago pre-reset step');
+  assert.equal(pFb.consumption.account.totalTokens, 10_500);
+
+  // Case B: Cold start without official weekly anchor -> later official quotaSummary arrives -> usageRevision advances
+  const hRev = backendHarness({
+    summaries: { convRev: { stepCount: 2 } },
+    trajectories: {
+      convRev: {
+        trajectory: {
+          steps: [
+            makeStepAt(1, preResetStepTs, 80_000),
+            makeStepAt(2, recentStepTs, 10_000),
+          ],
+        },
+      },
+    },
+    userStatus: {
+      email: 'rev-user@example.com',
+      userTier: { id: 'g1-ultra-tier', name: 'Google AI Ultra' },
+      cascadeModelConfigData: { clientModelConfigs: [] },
+    },
+    quotaSummary: null,
+  });
+
+  const coldPayload = await hRev.buildTelemetryPayloadInternal('convRev', false, { range: 'cycle' });
+  assert.equal(coldPayload.consumption.selectedRange.isFallbackWeek, true);
+  const revBefore = coldPayload.consumption.revision;
+
+  hRev.state.quotaSummary = {
+    groups: [
+      {
+        displayName: 'Gemini Models',
+        buckets: [
+          { bucketId: 'gemini-weekly', window: 'weekly', remainingFraction: 0.9968, resetTime: wkResetIso },
+        ],
+      },
+    ],
+  };
+  const warmPayload = await hRev.buildTelemetryPayloadInternal('convRev', true, { range: 'cycle' });
+  assert.equal(warmPayload.consumption.selectedRange.isFallbackWeek, undefined);
+  assert.equal(warmPayload.consumption.account.calls, 1);
+  assert.ok(
+    warmPayload.consumption.revision > revBefore,
+    'usageRevision must increment when official weekly reset anchor arrives and alters cycle window'
+  );
 });

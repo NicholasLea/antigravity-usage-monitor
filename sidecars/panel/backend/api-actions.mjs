@@ -9,7 +9,12 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { BRIDGE_API_ROUTE_DEFS, LOCAL_ENDPOINT_ID } from '../shared/window-bridge-protocol.mjs';
-import { handleAccountCredentialAction } from './account-switch.mjs';
+import {
+  getAccountQuotaHistoryPayload,
+  getLatestRecordedHostEmail,
+} from './account-quota-history.mjs';
+import { handleAccountCredentialAction, warmAccountPublicListCache } from './account-switch.mjs';
+import { issueAccountActionNonce, verifyAccountActionNonce } from './account-vault-crypto.mjs';
 import {
   clearRemoteEndpointCaches,
   resolveEndpointContext,
@@ -18,7 +23,10 @@ import {
 } from './endpoint-registry.mjs';
 import { isLocalHostRequest, readLocalAsync } from './http-helpers.mjs';
 import { revealLocalExportFile, writeLocalExportFile } from './file-exporter.mjs';
-import { clearScannerRuntimeMemos } from './local-scanner.mjs';
+import {
+  clearScannerRuntimeMemos,
+  collectAuthoritativeLiveCascadeIds,
+} from './local-scanner.mjs';
 import {
   SETTINGS_FILE,
   clearRuntimeCaches,
@@ -58,12 +66,19 @@ import {
   triggerDesktopHostRelaunch,
 } from './desktop-launcher-config.mjs';
 import {
+  collectHostI18nUntranslatedFromActiveTargets,
   ensureIdeRemoteDebuggingArgv,
+  getDefaultWindowBridgeStatus,
+  notifyHostI18nChanged,
   notifyModelContextWindowsChanged,
   notifyWindowOverlaySetting,
   resolveDevToolsPortCandidates,
   startDefaultWindowBridge,
 } from './window-bridge.mjs';
+import {
+  handleHostI18nGetRequest,
+  handleHostI18nPostAction,
+} from './host-i18n/index.mjs';
 import { getQuotaReservationLogSnapshot } from './quota-reservation.mjs';
 import { getSessionMigrationCatalog, migrateSessions } from './session-migrator.mjs';
 import {
@@ -90,7 +105,7 @@ function sanitizePositiveFiniteMs(val) {
 
 function projectDisplayStep(st) {
   const {
-    stepIndex, createdAtMs, isCompactionStep, modelKey, modelShort, modelLabel,
+    stepIndex, createdAtMs, isCompactionStep, isImageGenStep, modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
     nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason, anomaly, anomalySig,
     contextTokens, inputTokens, cacheReadTokens,
@@ -103,7 +118,7 @@ function projectDisplayStep(st) {
     rootTurnMediaOnly,
   } = st;
   return {
-    stepIndex, createdAtMs, isCompactionStep, modelKey, modelShort, modelLabel,
+    stepIndex, createdAtMs, isCompactionStep, isImageGenStep, modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
     nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason,
     ...(anomaly ? { anomaly, anomalySig } : {}),
@@ -255,8 +270,10 @@ export async function executeTelemetryAction(data, opts = {}) {
     rawScope === 'conversation'
       ? rawScope
       : '';
+  const rawPool = typeof data?.pool === 'string' ? data.pool.trim().slice(0, 48) : '';
   const filterOpts = {
     range: data?.range || 'all',
+    ...(rawPool ? { pool: rawPool } : {}),
     startMs: sanitizePositiveFiniteMs(data?.startMs),
     endMs: sanitizePositiveFiniteMs(data?.endMs),
     ...(scope ? { scope } : {}),
@@ -556,9 +573,12 @@ export function executeRebuildCacheAction(data = undefined, opts = {}) {
   if (!epCtx.ok) {
     return buildEndpointErrorResponse(epCtx);
   }
+  const liveCascadeIds = collectAuthoritativeLiveCascadeIds(
+    epCtx.isRemote ? epCtx.endpoint : null
+  );
   const ok = epCtx.isRemote
-    ? clearRemoteEndpointCaches(epCtx.id)
-    : clearRuntimeCaches();
+    ? clearRemoteEndpointCaches(epCtx.id, { liveCascadeIds })
+    : clearRuntimeCaches({ liveCascadeIds });
   if (!ok) {
     return {
       ok: false,
@@ -606,6 +626,20 @@ export async function executePluginUpdateAction() {
   };
 }
 
+const NONCE_PROTECTED_ACCOUNT_ACTIONS = new Set([
+  'save',
+  'capture',
+  'switch',
+  'remove',
+  'loginStart',
+  'setPassword',
+  'unlockVault',
+  'lockVault',
+  'changePassword',
+  'disablePassword',
+  'resetVault',
+]);
+
 export async function executeAccountCredentialAction(data, opts = {}) {
   const epCtx = resolveActionEndpoint(data, opts);
   if (!epCtx.ok) {
@@ -620,15 +654,83 @@ export async function executeAccountCredentialAction(data, opts = {}) {
     };
   }
   const cleanData = stripEndpointField(data);
-  const result = await handleAccountCredentialAction(cleanData);
-  if (cleanData?.action === 'switch') {
+  const action = cleanData?.action || 'list';
+  const riskAccepted =
+    opts?.bypassRiskCheck === true || loadSettings().accountSwitchRiskAccepted === true;
+  if (!riskAccepted) {
+    if (action !== 'list') {
+      return {
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'Cache-Control': 'no-store' },
+        body: JSON.stringify({
+          error: 'riskNotAccepted',
+          actionNonce: issueAccountActionNonce(),
+        }),
+      };
+    }
+    const hostEmail = getLatestRecordedHostEmail();
+    return {
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        supported: process.platform === 'win32',
+        riskLocked: true,
+        accounts: [],
+        selectedEmail: '',
+        quotas: {},
+        quotaHistory: getAccountQuotaHistoryPayload({
+          allowedEmails: hostEmail ? [hostEmail] : [],
+        }),
+        actionNonce: issueAccountActionNonce(),
+      }),
+    };
+  }
+  if (NONCE_PROTECTED_ACCOUNT_ACTIONS.has(action) && !verifyAccountActionNonce(cleanData?.actionNonce)) {
+    return {
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        error: 'invalidActionNonce',
+        actionNonce: issueAccountActionNonce(),
+      }),
+    };
+  }
+  const result = await handleAccountCredentialAction({
+    ...(isPlainObject(cleanData) ? cleanData : {}),
+    action,
+    includeSecurity: true,
+  });
+  if (action === 'switch' && !result?.error) {
     clearTelemetryBuilderMemo(LOCAL_ENDPOINT_ID);
   }
+  const hostEmail = getLatestRecordedHostEmail();
+  const allowedHistoryEmails = Array.isArray(result?.accounts)
+    ? [...new Set([...result.accounts, ...(hostEmail ? [hostEmail] : [])])]
+    : hostEmail
+      ? [hostEmail]
+      : null;
+  const enriched =
+    result && typeof result === 'object'
+      ? {
+          ...result,
+          ...(action === 'list' || Array.isArray(result.accounts)
+            ? {
+                quotaHistory: getAccountQuotaHistoryPayload({
+                  allowedEmails: allowedHistoryEmails,
+                }),
+              }
+            : {}),
+          actionNonce: issueAccountActionNonce(),
+        }
+      : result;
   return {
     status: 200,
     contentType: 'application/json',
     headers: { 'Cache-Control': 'no-store' },
-    body: JSON.stringify(result),
+    body: JSON.stringify(enriched),
   };
 }
 
@@ -772,6 +874,37 @@ export function executeQuotaReservationLogAction() {
   };
 }
 
+export async function executeHostI18nGetAction(opts = {}) {
+  const result = await handleHostI18nGetRequest({
+    bridgeStatus: getDefaultWindowBridgeStatus(),
+    ...(opts?.hostI18nManager ? { manager: opts.hostI18nManager } : {}),
+  });
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+export async function executeHostI18nPostAction(data = {}, opts = {}) {
+  const out = await handleHostI18nPostAction(isPlainObject(data) ? data : {}, {
+    bridgeStatus: getDefaultWindowBridgeStatus(),
+    onChanged: typeof opts?.onHostI18nChanged === 'function' ? opts.onHostI18nChanged : notifyHostI18nChanged,
+    collectFromTargets:
+      typeof opts?.collectHostI18nUntranslated === 'function'
+        ? opts.collectHostI18nUntranslated
+        : collectHostI18nUntranslatedFromActiveTargets,
+    ...(opts?.hostI18nManager ? { manager: opts.hostI18nManager } : {}),
+  });
+  return {
+    status: Number(out?.status || 200),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(out?.payload || { ok: false, error: 'Invalid host-i18n response' }),
+  };
+}
+
 export function executeRevealFileAction(data, opts = {}) {
   const result = revealLocalExportFile(data?.filePath, {
     ...(opts?.platform ? { platform: opts.platform } : {}),
@@ -816,6 +949,15 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       if (isPlainObject(data) && data.__quotaReservationAction === 'log') {
         return executeQuotaReservationLogAction();
       }
+      if (isPlainObject(data) && typeof data.__hostI18nAction === 'string') {
+        if (data.__hostI18nAction === 'get') {
+          return executeHostI18nGetAction(opts);
+        }
+        return executeHostI18nPostAction(
+          { ...(isPlainObject(data.payload) ? data.payload : {}), action: data.__hostI18nAction },
+          opts
+        );
+      }
       return executeSettingsAction(data);
     case 'accounts_get':
       return executeAccountCredentialAction(undefined, opts);
@@ -843,6 +985,10 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executeRevealFileAction(data, opts);
     case 'quota_reservation_log':
       return executeQuotaReservationLogAction();
+    case 'host_i18n_get':
+      return executeHostI18nGetAction(opts);
+    case 'host_i18n_action':
+      return executeHostI18nPostAction(data, opts);
     default:
       return {
         status: 404,
@@ -861,7 +1007,13 @@ export function bootWindowBridgeRuntime({ allowDynamicLs = false, onRestart = nu
   if (lsRuntimeEndpoint.addr === 'test.invalid') return null;
   if (!allowDynamicLs && !lsRuntimeEndpoint.addr) return null;
 
-  ensureCliStatusLineConfigured({ enabled: loadSettings().enableCliStatusLine !== false });
+  const bootSettings = loadSettings();
+  ensureCliStatusLineConfigured({ enabled: bootSettings.enableCliStatusLine !== false });
+  if (allowDynamicLs && bootSettings.accountSwitchRiskAccepted === true) {
+    setTimeout(() => {
+      void warmAccountPublicListCache();
+    }, 80).unref?.();
+  }
 
   const triggerRestart =
     typeof onRestart === 'function' ? onRestart : () => scheduleSidecarRestart(150);

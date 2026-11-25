@@ -430,6 +430,9 @@ test('Feature 5: TrendAreaChart drill-down click and unified Models/Sessions seg
   const { document } = createMockDom();
   globalThis.document = document;
   globalThis.window = {
+    sidecar: {
+      fetch: (url, init) => globalThis.fetch(url, init),
+    },
     addEventListener: () => {},
     removeEventListener: () => {},
     requestAnimationFrame: (cb) => {
@@ -621,6 +624,9 @@ test('Feature 6: model ranking multi-metric sort with efficiency footer & valida
   const { document } = createMockDom();
   globalThis.document = document;
   globalThis.window = {
+    sidecar: {
+      fetch: (url, init) => globalThis.fetch(url, init),
+    },
     addEventListener: () => {},
     removeEventListener: () => {},
     requestAnimationFrame: (cb) => {
@@ -1099,6 +1105,9 @@ test('Feature 9: workspace/project cost aggregation (full + fast paths) and Proj
   const { document } = createMockDom();
   globalThis.document = document;
   globalThis.window = {
+    sidecar: {
+      fetch: (url, init) => globalThis.fetch(url, init),
+    },
     addEventListener: () => {},
     removeEventListener: () => {},
     requestAnimationFrame: (cb) => {
@@ -1215,10 +1224,13 @@ test('Feature 9: workspace/project cost aggregation (full + fast paths) and Proj
   const wsRowsAfterSort = view.el.querySelectorAll('.cons-workspace-row');
   assert.equal(wsRowsAfterSort[0].querySelector('.cons-row-title-text').textContent, 'docs-site');
 
-  // Click workspace row jumps to its latest conversation in steps view
+  // Project rows are read-only breakdown cards and must not jump on click
+  assert.equal(wsRowsAfterSort[0].classList.contains('is-jumpable'), false);
+  const prevView = uiStore.getState().activeView;
+  const prevSelectedCid = telemetryStore.getState().selectedConversationId;
   wsRowsAfterSort[0].dispatchEvent({ type: 'click' });
-  assert.equal(uiStore.getState().activeView, 'steps');
-  assert.equal(telemetryStore.getState().selectedConversationId, 'ws-conv-b1');
+  assert.equal(uiStore.getState().activeView, prevView);
+  assert.equal(telemetryStore.getState().selectedConversationId, prevSelectedCid);
 });
 
 test('Feature 10: StepsDetailView live search, dynamic diagnostic chips, and click-to-inspect step drawer', async (t) => {
@@ -1767,8 +1779,18 @@ test('Feature 13: TopSessionHeader exposes project/workspace tags on sessions an
   header.refs.convSelect.open();
 
   const optionEls = header.refs.convSelect.el.querySelectorAll('.select-option');
-  const billingOpt = optionEls.find((el) => (el.textContent || '').includes('billing-service'));
-  assert.ok(billingOpt, 'Session dropdown option displays workspaceName tag');
+  const billingOpt = optionEls.find((el) => el.getAttribute('data-value') === 'proj-conv-1');
+  assert.ok(billingOpt, 'Session dropdown renders proj-conv-1 option');
+  assert.equal(
+    (billingOpt.textContent || '').includes('billing-service'),
+    false,
+    'Session dropdown hides noisy workspaceName from visible row text'
+  );
+  assert.match(
+    billingOpt.getAttribute('title') || '',
+    /billing-service/,
+    'Session dropdown preserves workspace path in hover tooltip'
+  );
 
   const searchInput = header.refs.convSelect.el.querySelector('.select-search-input');
   assert.ok(searchInput, 'Search input present for >6 sessions');
@@ -1778,7 +1800,8 @@ test('Feature 13: TopSessionHeader exposes project/workspace tags on sessions an
     .querySelectorAll('.select-option')
     .filter((el) => !el.hasAttribute('hidden'));
   assert.equal(visibleOpts.length, 1);
-  assert.match(visibleOpts[0].textContent, /web-dashboard/);
+  assert.equal(visibleOpts[0].getAttribute('data-value'), 'proj-conv-2');
+  assert.match(visibleOpts[0].getAttribute('title') || '', /web-dashboard/);
 });
 
 test('Feature 14: compact vertical ActionMenu replaces export bars, backend exports files safely with reveal whitelist and toast feedback', async (t) => {
@@ -1916,6 +1939,9 @@ test('Feature 14: compact vertical ActionMenu replaces export bars, backend expo
   const { document } = createMockDom();
   globalThis.document = document;
   globalThis.window = {
+    sidecar: {
+      fetch: (url, init) => globalThis.fetch(url, init),
+    },
     addEventListener: () => {},
     removeEventListener: () => {},
     requestAnimationFrame: (cb) => {
@@ -2099,6 +2125,40 @@ test('Feature 14: compact vertical ActionMenu replaces export bars, backend expo
   assert.equal(failedRes.ok, false);
   assert.equal(failedRes.mode, 'failed');
   assert.equal(uiStore.getState().toast?.tone, 'warn');
+
+  // 7. Standalone browser mode (no window.sidecar and no window bridge) skips /api/export-file
+  //    completely (even over ssh -L / loopback reverse proxy) and invokes native Save Picker directly
+  delete globalThis.window.sidecar;
+  let browserExportBackendCalled = false;
+  globalThis.fetch = async () => {
+    browserExportBackendCalled = true;
+    return { ok: true, status: 200, json: async () => ({ ok: true, filePath: '/remote/Downloads/leak.json' }) };
+  };
+  let pickedSuggestedName = '';
+  let pickedWrittenPayload = null;
+  globalThis.window.showSaveFilePicker = async (opts) => {
+    pickedSuggestedName = opts?.suggestedName || '';
+    return {
+      name: pickedSuggestedName,
+      createWritable: async () => ({
+        write: async (data) => {
+          pickedWrittenPayload = data;
+        },
+        close: async () => {},
+      }),
+    };
+  };
+  const standalonePickerRes = await exportTextFileWithFeedback(
+    'standalone-report.md',
+    '# Hello Browser\n',
+    'text/markdown'
+  );
+  assert.equal(browserExportBackendCalled, false, 'Standalone browser must NOT call /api/export-file');
+  assert.equal(standalonePickerRes.ok, true);
+  assert.equal(standalonePickerRes.mode, 'picker');
+  assert.equal(pickedSuggestedName, 'standalone-report.md');
+  assert.equal(pickedWrittenPayload, '# Hello Browser\n');
+  assert.equal(await revealExportedFile('/remote/Downloads/leak.json'), false);
 });
 
 test('P0 regression: V4 display-projected steps open inspector, preserve waterfall/diagnostics/XLSX duration, match anomaly events, compute harmonic speed, and clean up UI observers/i18n', async (t) => {
@@ -2819,7 +2879,7 @@ test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic 
   assert.equal(latestQuery, '');
   assert.equal(sBox.clearBtnEl.hasAttribute('hidden'), true);
 
-  // 4. Declarative settingsBackup round-trips all 30 portable keys + coupled legacy flags
+  // 4. Declarative settingsBackup round-trips all 31 portable keys + coupled legacy flags
   const exported = buildExportableSettingsJson({
     language: 'en-US',
     modernUi: false,
@@ -2828,9 +2888,10 @@ test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic 
     windowMountMode: 'composer',
     showStepFilterToolbar: true,
     experimentalQuotaReservation: true,
+    accountQuotaRefreshMinutes: 180,
   });
   const parsedExport = JSON.parse(exported);
-  assert.equal(Object.keys(parsedExport.settings).length, 30);
+  assert.equal(Object.keys(parsedExport.settings).length, 31);
   const reimported = parseImportedSettingsJson(exported);
   assert.equal(reimported.ok, true);
   assert.equal(reimported.patch.modernUi, false);
@@ -2843,4 +2904,108 @@ test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic 
   assert.equal(reimported.patch.enableWindowOverlay, true);
   assert.equal(reimported.patch.showStepFilterToolbar, true);
   assert.equal(reimported.patch.experimentalQuotaReservation, true);
+  assert.equal(reimported.patch.accountQuotaRefreshMinutes, 180);
+});
+
+test('Feature 16: P3 extracted sub-modules (stepChartMath, overlayHostAnchors, ConsumptionBreakdownRows) and doc-to-code parity guard', async (t) => {
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    location: { pathname: '/' },
+    addEventListener() {},
+    removeEventListener() {},
+    requestAnimationFrame: (cb) => setTimeout(cb, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+  };
+  t.after(() => {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  });
+
+  const [
+    { computeLinearFit, computeNiceYScale, buildSplinePath },
+    { computeCapsuleLayoutMode },
+    { partitionModelSegments },
+    { DEFAULT_SETTINGS_SCHEMA },
+    { BRIDGE_API_ROUTE_DEFS },
+    fsMod,
+    pathMod,
+    urlMod,
+  ] = await Promise.all([
+    import('../src/components/charts/stepChartMath.js'),
+    import('../src/components/layout/overlayHostAnchors.js'),
+    import('../src/components/widgets/ConsumptionBreakdownRows.js'),
+    import('../backend/settings-schema.mjs'),
+    import('../shared/window-bridge-protocol.mjs'),
+    import('node:fs'),
+    import('node:path'),
+    import('node:url'),
+  ]);
+
+  // 1. Extracted chart math + layout hysteresis + model segment partition
+  const fit = computeLinearFit([20, 30, 40], { xs: [1000, 2000, 3000] });
+  assert.ok(fit && Math.abs(fit.slope - 0.01) < 1e-6);
+  const scale = computeNiceYScale(0, 93, 4);
+  assert.ok(scale.max >= 93 && scale.ticks.length >= 2);
+  assert.match(buildSplinePath([{ x: 0, y: 10 }, { x: 20, y: 30 }, { x: 40, y: 15 }]), /^M/);
+
+  assert.equal(computeCapsuleLayoutMode(380, 'wide', { slotCount: 3 }), 'wide');
+  assert.equal(computeCapsuleLayoutMode(260, 'wide', { slotCount: 3 }), 'wide');
+  assert.equal(computeCapsuleLayoutMode(260, 'compact', { slotCount: 3 }), 'compact');
+  assert.equal(computeCapsuleLayoutMode(70, 'minimal', { slotCount: 3 }), 'ring-only');
+
+  const segs = partitionModelSegments(
+    [
+      { label: '4-neon', totalTokens: 700 },
+      { label: '4-argon', totalTokens: 300 },
+    ],
+    new Map()
+  );
+  assert.equal(segs.length, 2);
+  assert.equal(Math.round(segs[0].pct + segs[1].pct), 100);
+
+  // 2. Repo documentation parity against live schema & route definitions
+  // Note: `docs/` and `plan/` are local engineering directories (.gitignore); guard with existsSync so fresh CI clones pass cleanly while local dev enforces 100% parity.
+  const repoRoot = pathMod.resolve(pathMod.dirname(urlMod.fileURLToPath(import.meta.url)), '..', '..', '..');
+  assert.ok(fsMod.existsSync(pathMod.join(repoRoot, 'CHANGELOG.md')), 'Root CHANGELOG.md must exist');
+  const readmeEn = fsMod.readFileSync(pathMod.join(repoRoot, 'README.md'), 'utf8');
+  const readmeZh = fsMod.readFileSync(pathMod.join(repoRoot, 'README.zh-CN.md'), 'utf8');
+  assert.ok(readmeEn.includes('defineComponent') && !readmeEn.includes('native Web Components'));
+  assert.ok(readmeZh.includes('defineComponent') && !readmeZh.includes('原生 Web Components'));
+
+  const docsDir = pathMod.join(repoRoot, 'docs');
+  if (fsMod.existsSync(docsDir)) {
+    const settingsDoc = fsMod.readFileSync(pathMod.join(docsDir, 'settings-and-cli.md'), 'utf8');
+    for (const key of Object.keys(DEFAULT_SETTINGS_SCHEMA)) {
+      assert.ok(settingsDoc.includes(`\`${key}\``), `docs/settings-and-cli.md must document setting key: ${key}`);
+    }
+
+    const apiDoc = fsMod.readFileSync(pathMod.join(docsDir, 'backend-and-api.md'), 'utf8');
+    for (const route of BRIDGE_API_ROUTE_DEFS) {
+      assert.ok(
+        apiDoc.includes(`${route.method} ${route.path}`),
+        `docs/backend-and-api.md must document route: ${route.method} ${route.path}`
+      );
+    }
+    for (const requiredModule of [
+      'cloudcode-proxy.mjs',
+      'quota-reservation.mjs',
+      'fs-atomic.mjs',
+      'trajectory-cache-store.mjs',
+      '.xlsx',
+    ]) {
+      assert.ok(apiDoc.includes(requiredModule), `docs/backend-and-api.md must cover ${requiredModule}`);
+    }
+
+    const feDoc = fsMod.readFileSync(pathMod.join(docsDir, 'frontend-core-and-store.md'), 'utf8');
+    assert.ok(feDoc.includes('xlsxBuilder.js') && feDoc.includes('exportBinaryFileWithFeedback'));
+  }
+
+  const legacyPlanPath = pathMod.join(repoRoot, 'plan', 'code-audit-and-cleanup-plan.md');
+  if (fsMod.existsSync(legacyPlanPath)) {
+    const legacyPlan = fsMod.readFileSync(legacyPlanPath, 'utf8');
+    assert.match(legacyPlan, /ARCHIVED/);
+  }
 });

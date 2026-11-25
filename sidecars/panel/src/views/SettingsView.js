@@ -11,11 +11,12 @@ import { telemetryStore } from '../store/telemetryStore.js';
 import { getVisibleMonitorView, uiStore } from '../store/uiStore.js';
 import { CustomScrollbar } from '../components/ui/CustomScrollbar.js';
 import { SegmentedControl } from '../components/ui/SegmentedControl.js';
+import { SettingsAccountTab } from './settings/SettingsAccountTab.js';
 import { SettingsGeneralTab } from './settings/SettingsGeneralTab.js';
 import { SettingsOtherTab } from './settings/SettingsOtherTab.js';
 import { SettingsStructureTab } from './settings/SettingsStructureTab.js';
 
-export const SHOW_ACCOUNT_TAB = false;
+export const SHOW_ACCOUNT_TAB = true;
 
 function getSettingsSubTabOptions() {
   return [
@@ -51,10 +52,11 @@ export const SettingsView = defineComponent({
 
     const generalTab = SettingsGeneralTab({ onLayoutChange: refreshScroll });
     const structureTab = SettingsStructureTab({ onLayoutChange: refreshScroll });
-    const accountTab = null; // SettingsAccountTab kept in src/views/settings/ for future opt-in
+    const accountTab = SettingsAccountTab({ onLayoutChange: refreshScroll });
     const otherTab = SettingsOtherTab({ onLayoutChange: refreshScroll });
 
     let showingAccount = false;
+    let preloadedAccountOnce = false;
     function applyActiveSubTab(subTab, activeView) {
       const target =
         subTab === 'structure' ||
@@ -69,6 +71,10 @@ export const SettingsView = defineComponent({
       patchAttr(otherTab.el, 'hidden', target !== 'other');
       if (accountTab) {
         patchAttr(accountTab.el, 'hidden', target !== 'account');
+        if (activeView === 'settings' && !preloadedAccountOnce) {
+          preloadedAccountOnce = true;
+          void accountTab.refs.preload?.();
+        }
         const nextShowingAccount = target === 'account' && activeView === 'settings';
         if (nextShowingAccount && !showingAccount) void accountTab.refs.load();
         showingAccount = nextShowingAccount;
@@ -102,6 +108,9 @@ export const SettingsView = defineComponent({
       if (getVisibleMonitorView(ui) !== 'settings') return;
       const telemetry = telemetryStore.getState().telemetry;
       const settings = telemetry?.settings;
+      if (accountTab) {
+        accountTab.refs.renderAccount(telemetry?.account, telemetry?.quotas, settings);
+      }
       if (settingsSubTab === 'structure') {
         if (settings) {
           structureTab.refs.renderSettings(
@@ -122,10 +131,15 @@ export const SettingsView = defineComponent({
             telemetry?.cloudCodeProxy
           );
         }
-      } else if (accountTab && settingsSubTab === 'account') {
-        accountTab.refs.renderAccount(telemetry?.account, telemetry?.quotas);
-      } else {
-        if (settings) generalTab.refs.renderSettings(settings);
+      } else if (settingsSubTab !== 'account') {
+        if (settings) {
+          generalTab.refs.renderSettings(
+            settings,
+            telemetry?.windowBridge,
+            telemetry?.hostPlatform
+          );
+        }
+        void generalTab.refs.loadHostI18n?.(false);
         if (telemetry?.cloudStatus) generalTab.refs.renderCloudStatus(telemetry.cloudStatus);
       }
       refreshScroll();

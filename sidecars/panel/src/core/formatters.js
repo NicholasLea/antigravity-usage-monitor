@@ -21,6 +21,14 @@ const EN_MONTH_SHORT = Object.freeze([
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ]);
 
+const ZH_WEEKDAY_SHORT = Object.freeze([
+  '周日', '周一', '周二', '周三', '周四', '周五', '周六',
+]);
+
+const EN_WEEKDAY_SHORT = Object.freeze([
+  'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
+]);
+
 export function formatMetric(value, unit = '') {
   if (!Number.isFinite(value)) return '—';
   const numStr = Math.abs(value) >= 100 ? String(Math.round(value)) : value.toFixed(1);
@@ -96,18 +104,88 @@ export function formatCnyApprox(usdAmount, rate = 7.2) {
 export function formatDateSpanBadge(startMs, endMs) {
   const s = startMs && Number.isFinite(startMs) ? new Date(startMs) : new Date();
   const e = endMs && Number.isFinite(endMs) ? new Date(endMs) : new Date();
+  const sameYear = s.getFullYear() === e.getFullYear();
+  const sameMonth = sameYear && s.getMonth() === e.getMonth();
+  const sameDay = sameMonth && s.getDate() === e.getDate();
+
   if (isEnglishLocale()) {
     const sMon = EN_MONTH_SHORT[s.getMonth()] || '';
     const eMon = EN_MONTH_SHORT[e.getMonth()] || '';
-    if (s.getFullYear() !== e.getFullYear()) {
+    if (!sameYear) {
       return `${sMon} ${s.getDate()}, ${s.getFullYear()} ~ ${eMon} ${e.getDate()}, ${e.getFullYear()}`;
+    }
+    if (sameDay) {
+      return `${sMon} ${s.getDate()}`;
+    }
+    if (sameMonth) {
+      return `${sMon} ${s.getDate()} ~ ${e.getDate()}`;
     }
     return `${sMon} ${s.getDate()} ~ ${eMon} ${e.getDate()}`;
   }
-  if (s.getFullYear() !== e.getFullYear()) {
+
+  if (!sameYear) {
     return `${s.getFullYear()}年${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getFullYear()}年${e.getMonth() + 1}月${e.getDate()}日`;
   }
+  if (sameDay) {
+    return `${s.getMonth() + 1}月${s.getDate()}日`;
+  }
+  if (sameMonth) {
+    return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getDate()}日`;
+  }
   return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getMonth() + 1}月${e.getDate()}日`;
+}
+
+export function formatTrendSlotFullLabel(slot, { locale, showFullYear = false } = {}) {
+  const en =
+    typeof locale === 'string' && locale.trim()
+      ? locale.trim().toLowerCase().startsWith('en')
+      : isEnglishLocale();
+  const sMs = Number(slot?.startMs);
+  if (Number.isFinite(sMs) && sMs > 0) {
+    const sd = new Date(sMs);
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const rawFull = String(slot?.fullLabel || '');
+    const includeYear = Boolean(
+      showFullYear || /^\d{4}年/.test(rawFull) || sd.getFullYear() !== new Date().getFullYear()
+    );
+    const gran = String(slot?.granularity || '').toLowerCase();
+    const isSubDay =
+      gran === 'minute' ||
+      gran === 'hour' ||
+      (!gran && Number(slot?.endMs) > sMs && Number(slot.endMs) - sMs <= 3600_000 * 2);
+
+    if (isSubDay) {
+      const eMs = Number(slot?.endMs);
+      const ed = Number.isFinite(eMs) && eMs > 0 ? new Date(eMs) : new Date(sMs + 3600_000);
+      const hh = `${pad2(sd.getHours())}:${pad2(sd.getMinutes())}`;
+      const endHh = `${pad2(ed.getHours())}:${pad2(ed.getMinutes())}`;
+      if (en) {
+        const mon = EN_MONTH_SHORT[sd.getMonth()] || '';
+        return includeYear
+          ? `${mon} ${sd.getDate()}, ${sd.getFullYear()}, ${hh} - ${endHh}`
+          : `${mon} ${sd.getDate()}, ${hh} - ${endHh}`;
+      }
+      const yearPrefix = includeYear ? `${sd.getFullYear()}年` : '';
+      return `${yearPrefix}${sd.getMonth() + 1}月${sd.getDate()}日 ${hh} - ${endHh}`;
+    }
+
+    if (en) {
+      const mon = EN_MONTH_SHORT[sd.getMonth()] || '';
+      const wday = EN_WEEKDAY_SHORT[sd.getDay()] || '';
+      return includeYear
+        ? `${mon} ${sd.getDate()}, ${sd.getFullYear()} (${wday})`
+        : `${mon} ${sd.getDate()} (${wday})`;
+    }
+    const yearPrefix = includeYear ? `${sd.getFullYear()}年` : '';
+    return `${yearPrefix}${sd.getMonth() + 1}月${sd.getDate()}日 (${ZH_WEEKDAY_SHORT[sd.getDay()] || ''})`;
+  }
+
+  const rawFull = String(slot?.fullLabel || '').trim();
+  const rawShort = String(slot?.label || '').trim();
+  if (en && rawFull && /[\u4e00-\u9fff]/.test(rawFull)) {
+    return rawShort || rawFull;
+  }
+  return rawFull || rawShort;
 }
 
 export function formatUsd(amount, { precise = false } = {}) {

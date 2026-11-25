@@ -50,6 +50,7 @@ import { ActionMenu } from '../components/ui/ActionMenu.js';
 import {
   getDefaultCtxInspectorAgentId,
   prefetchConsumptionPresets,
+  selectConsumptionCyclePool,
   selectConsumptionTimeRange,
   selectConversation,
   telemetryStore,
@@ -61,9 +62,16 @@ import {
 } from '../components/charts/TrendAreaChart.js';
 import { CustomDateTimePicker } from '../components/ui/CustomDateTimePicker.js';
 import { CustomScrollbar } from '../components/ui/CustomScrollbar.js';
+import { CustomSelect } from '../components/ui/CustomSelect.js';
 import { createFourSegmentBar } from '../components/ui/FourSegmentBar.js';
 import { createConsumptionBreakdownContent } from '../components/ui/ConsumptionTooltipContent.js';
 import { SegmentedControl } from '../components/ui/SegmentedControl.js';
+import {
+  createBreakdownItemRow,
+  createConsumptionBreakdownRowBuilders,
+  partitionModelSegments,
+  updateBreakdownItemRow,
+} from '../components/widgets/ConsumptionBreakdownRows.js';
 
 /** 消耗统计顶栏支持的时间范围预设项 */
 function getConsumptionTimeRangeOptions() {
@@ -76,6 +84,16 @@ function getConsumptionTimeRangeOptions() {
     { value: '30d', label: t('cons.range30d') },
     { value: 'all', label: t('cons.rangeAll') },
     { value: 'custom', label: t('cons.rangeCustom') },
+  ];
+}
+
+/** 热力图顶栏支持的四档聚合视图选项 */
+function getHeatmapModeOptions() {
+  return [
+    { value: 'day', label: t('cons.hmModeDay') },
+    { value: 'week', label: t('cons.hmModeWeek') },
+    { value: 'month', label: t('cons.hmModeMonth') },
+    { value: 'all', label: t('cons.hmModeAll') },
   ];
 }
 
@@ -93,6 +111,86 @@ function ceilToEndOfMinuteMs(ms) {
   const d = new Date(n);
   d.setSeconds(59, 999);
   return d.getTime();
+}
+
+function formatCyclePoolShortLabel(poolKey, poolLabel) {
+  if (poolKey === 'Argon') return 'Argon';
+  if (poolKey === 'Carbon') return 'Carbon';
+  if (poolKey === 'Claude & GPT') return 'Claude/GPT';
+  return poolLabel || poolKey;
+}
+
+function buildCyclePoolSelectOptions(pools, isCustomWeeklyMode = false) {
+  const list = Array.isArray(pools) ? pools : [];
+  let sumCycleCost = 0;
+  let hasAnyCycleCost = false;
+  for (let i = 0; i < list.length; i++) {
+    const c = Number(list[i]?.cycleWeekly?.costUsd);
+    if (Number.isFinite(c) && c >= 0 && list[i]?.cycleWeekly) {
+      sumCycleCost += c;
+      hasAnyCycleCost = true;
+    }
+  }
+  const allLabel = t('cons.cyclePoolAll');
+  const opts = [
+    {
+      value: 'all',
+      label: allLabel,
+      shortLabel: t('cons.cyclePoolAllShort'),
+      meta: !isCustomWeeklyMode && hasAnyCycleCost ? formatUsd(sumCycleCost) : '',
+      title: allLabel,
+    },
+  ];
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    const key = String(p?.poolKey || p?.family || '').trim();
+    if (!key || key === 'Unknown') continue;
+    const label = String(p?.poolLabel || key).trim();
+    const shortLabel = formatCyclePoolShortLabel(key, label);
+    const metaParts = [];
+    if (
+      !isCustomWeeklyMode &&
+      p?.weeklyRemainingPct != null &&
+      Number.isFinite(Number(p.weeklyRemainingPct))
+    ) {
+      metaParts.push(
+        t('cons.cyclePoolRemMeta', {
+          pct: formatPctNumber(p.weeklyRemainingPct, { withSymbol: true }),
+        })
+      );
+    }
+    if (!isCustomWeeklyMode && p?.cycleWeekly && Number.isFinite(Number(p.cycleWeekly.costUsd))) {
+      metaParts.push(formatUsd(p.cycleWeekly.costUsd));
+    }
+    const meta = metaParts.join(' · ');
+    opts.push({
+      value: key,
+      label,
+      shortLabel,
+      meta,
+      title: meta ? `${label} (${meta})` : label,
+    });
+  }
+  return opts;
+}
+
+function formatCycleMinuteSpanTip(startMs, endMs, isFallbackWeek = false) {
+  const s = Number(startMs);
+  const e = Number(endMs);
+  if (!(s > 0 && e > 0 && Number.isFinite(s) && Number.isFinite(e))) return null;
+  const sd = new Date(s);
+  const ed = new Date(e);
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const sTime = `${pad2(sd.getHours())}:${pad2(sd.getMinutes())}`;
+  const eTime = `${pad2(ed.getHours())}:${pad2(ed.getMinutes())}`;
+  const sameDay =
+    sd.getFullYear() === ed.getFullYear() &&
+    sd.getMonth() === ed.getMonth() &&
+    sd.getDate() === ed.getDate();
+  const sDate = `${sd.getMonth() + 1}/${pad2(sd.getDate())}`;
+  const eDate = `${ed.getMonth() + 1}/${pad2(ed.getDate())}`;
+  const base = sameDay ? `${sDate} ${sTime} ~ ${eTime}` : `${sDate} ${sTime} ~ ${eDate} ${eTime}`;
+  return isFallbackWeek ? `${base} · ${t('cons.cycleFallbackWeekTip')}` : base;
 }
 
 export const ConsumptionView = defineComponent({
@@ -200,6 +298,16 @@ export const ConsumptionView = defineComponent({
 
     // --- Section 1: 用量概览矩阵 (上层 3 列核心总量 + 下层 3 列新输入/缓存读取/输出拆分 + 底部 4 段比例条) ---
     const dateSpanBadge = h('span', { className: 'cons-badge text-mono', text: '-- ~ --' });
+    const cyclePoolSelect = CustomSelect({
+      className: 'cons-cycle-pool-select',
+      modelValue: telemetryStore.getState().selectedCyclePool || 'all',
+      options: buildCyclePoolSelectOptions([]),
+      onUpdateModelValue: (nextPool) => {
+        selectConsumptionCyclePool(nextPool || 'all');
+      },
+    });
+    patchAttr(cyclePoolSelect.el, 'hidden', true);
+    patchAttr(cyclePoolSelect.refs.triggerBtn, 'aria-label', t('cons.cyclePoolAria'));
     const heroTotalTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
     const heroTotalCalls = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.callsCount', { calls: 0 }) });
     const heroCostUsd = h('strong', { className: 'cons-hero-cost text-mono', text: '$0.00' });
@@ -208,17 +316,14 @@ export const ConsumptionView = defineComponent({
     const cacheHitPctEl = h('strong', { className: 'cons-hero-cache text-mono', text: '0%' });
     const cacheTokensEl = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.cacheHitTokens', { tokens: 0 }) });
 
-    const inputSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-input); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const inputMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const inputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.uncachedInput') });
+    const inputSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const inputMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
-    const cacheSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-cached); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const cacheMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const cacheSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.savedCost', { cost: '$0.00' }) });
+    const cacheSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const cacheMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
-    const outputSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-output); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const outputMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const outputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.replyAndThink', { resp: 0, think: 0 }) });
+    const outputSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const outputMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
     const overviewSegBar = createFourSegmentBar();
     const consExportMenu = ActionMenu({
@@ -280,10 +385,54 @@ export const ConsumptionView = defineComponent({
     const cacheReadLabel = h('span', { text: t('cons.cacheRead') });
     const outputUsageLabel = h('span', { text: t('cons.outputUsage') });
 
+    const unifiedMatrixEl = h('div', { className: 'cons-box cons-unified-matrix' }, [
+      h('div', { className: 'cons-split-3' }, [
+        h('div', { className: 'cons-col' }, [
+          totalTokensLabel,
+          h('div', { className: 'cons-baseline' }, [heroTotalTokens, heroTotalCalls]),
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          estCostLabel,
+          h('div', { className: 'cons-baseline' }, [heroCostUsd, heroCostCny]),
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          h('span', { className: 'legend-left', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-cached' }),
+            cacheHitRateLabel,
+          ]),
+          h('div', { className: 'cons-baseline' }, [cacheHitPctEl, cacheTokensEl]),
+        ]),
+      ]),
+      h('div', { className: 'cons-split-3 cons-matrix-bottom' }, [
+        h('div', { className: 'cons-col' }, [
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-input' }),
+            newInputLabel,
+          ]),
+          h('div', { className: 'cons-baseline' }, [inputMainTokens, inputSharePct]),
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-cached' }),
+            cacheReadLabel,
+          ]),
+          h('div', { className: 'cons-baseline' }, [cacheMainTokens, cacheSharePct]),
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-output' }),
+            outputUsageLabel,
+          ]),
+          h('div', { className: 'cons-baseline' }, [outputMainTokens, outputSharePct]),
+        ]),
+      ]),
+    ]);
+
     const overviewPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header cons-overview-head' }, [
-        h('span', { className: 'panel-title' }, [
+        h('span', { className: 'panel-title cons-overview-title' }, [
           dateSpanBadge,
+          cyclePoolSelect.el,
         ]),
         h('div', { className: 'cons-overview-controls' }, [
           timeFilterSwitch.el,
@@ -291,60 +440,7 @@ export const ConsumptionView = defineComponent({
         ]),
       ]),
       customRangeBar,
-      h('div', { className: 'cons-box cons-unified-matrix' }, [
-        h('div', { className: 'cons-split-3' }, [
-          h('div', { className: 'cons-col' }, [
-            totalTokensLabel,
-            h('div', { className: 'cons-baseline' }, [heroTotalTokens, heroTotalCalls]),
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            estCostLabel,
-            h('div', { className: 'cons-baseline' }, [heroCostUsd, heroCostCny]),
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            h('span', { className: 'legend-left', style: 'font-size: var(--fs-md);' }, [
-              h('span', { className: 'dot-swatch seg-cached' }),
-              cacheHitRateLabel,
-            ]),
-            h('div', { className: 'cons-baseline' }, [cacheHitPctEl, cacheTokensEl]),
-          ]),
-        ]),
-        h('div', { className: 'cons-split-3 cons-matrix-bottom' }, [
-          h('div', { className: 'cons-col' }, [
-            h('div', { className: 'cons-sub-head' }, [
-              h('span', { className: 'legend-left cons-sub-label' }, [
-                h('span', { className: 'dot-swatch seg-input' }),
-                newInputLabel,
-              ]),
-              inputSharePct,
-            ]),
-            inputMainTokens,
-            inputSubText,
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            h('div', { className: 'cons-sub-head' }, [
-              h('span', { className: 'legend-left cons-sub-label' }, [
-                h('span', { className: 'dot-swatch seg-cached' }),
-                cacheReadLabel,
-              ]),
-              cacheSharePct,
-            ]),
-            cacheMainTokens,
-            cacheSubText,
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            h('div', { className: 'cons-sub-head' }, [
-              h('span', { className: 'legend-left cons-sub-label' }, [
-                h('span', { className: 'dot-swatch seg-output' }),
-                outputUsageLabel,
-              ]),
-              outputSharePct,
-            ]),
-            outputMainTokens,
-            outputSubText,
-          ]),
-        ]),
-      ]),
+      unifiedMatrixEl,
       overviewSegBar.el,
     ]);
 
@@ -365,14 +461,29 @@ export const ConsumptionView = defineComponent({
       });
     }
 
-    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 + 悬停精确日期/小时浮层 + 点击时段下钻) ---
+    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 / 7×W 四态热力格子图 + 悬停明细浮层 + 点击时段下钻) ---
+    let heatmapViewMode = 'day';
     const trendTitleSpan = h('span', { text: t('cons.trendTitle') });
     const trendRangeBadge = h('span', { className: 'cons-badge', text: t('cons.allTime') });
     const trendGranularityHint = h('span', {
-      className: 'text-muted text-mono',
+      className: 'cons-trend-hint text-muted text-mono',
       style: 'font-size: var(--fs-sm);',
       text: t('cons.trendPointsHintHourly', { points: 0 }),
     });
+    const heatmapModeSwitch = SegmentedControl({
+      ariaLabel: t('cons.hmModeAria'),
+      modelValue: heatmapViewMode,
+      options: getHeatmapModeOptions(),
+      onUpdateModelValue: (nextMode) => {
+        if (!['day', 'week', 'month', 'all'].includes(nextMode)) return;
+        heatmapViewMode = nextMode;
+        heatmapModeSwitch.setValue(nextMode);
+        trendChart.setHeatmapMode(nextMode);
+      },
+    });
+    heatmapModeSwitch.el.classList.add('cons-hm-mode-switch');
+    patchAttr(heatmapModeSwitch.el, 'hidden', true);
+
     const trendChart = createTrendAreaChart({
       onSelectSlot: (slot) => {
         if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
@@ -382,12 +493,15 @@ export const ConsumptionView = defineComponent({
     });
 
     const trendPanel = h('section', { className: 'panel' }, [
-      h('div', { className: 'panel-header' }, [
+      h('div', { className: 'panel-header cons-trend-head' }, [
         h('span', { className: 'panel-title' }, [
           trendTitleSpan,
           trendRangeBadge,
         ]),
-        trendGranularityHint,
+        h('div', { className: 'cons-trend-head-right' }, [
+          trendGranularityHint,
+          heatmapModeSwitch.el,
+        ]),
       ]),
       trendChart.el,
     ]);
@@ -399,6 +513,50 @@ export const ConsumptionView = defineComponent({
     let lastModelsCount = 0;
     let lastWorkspacesCount = 0;
     let lastConvsCount = 0;
+    let hasCompletedInitialDraw = false;
+    let lastAnimatedRangeSig = '';
+    let lastAnimatedRankingKey = '';
+    let lastAnimatedSortSig = '';
+    const consAnimTimers = new Map();
+    const TRANSIENT_CONS_CLASSES = ['is-bars-revealing'];
+
+    function cleanupConsAnim(el) {
+      const rec = consAnimTimers.get(el);
+      if (!rec) return;
+      clearTimeout(rec.tid);
+      el?.removeEventListener?.('animationend', rec.onEnd);
+      el?.classList?.remove(...TRANSIENT_CONS_CLASSES);
+      consAnimTimers.delete(el);
+    }
+
+    function triggerConsAnim(el, cls, fallbackMs = 650) {
+      if (
+        !el ||
+        !el.classList ||
+        typeof window === 'undefined' ||
+        typeof window.getComputedStyle !== 'function' ||
+        window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+      ) {
+        return;
+      }
+      cleanupConsAnim(el);
+      el.classList.remove(...TRANSIENT_CONS_CLASSES);
+      void el.offsetWidth;
+      const onEnd = (ev) => {
+        if (ev && ev.target && ev.target !== el) return;
+        cleanupConsAnim(el);
+      };
+      const tid = setTimeout(() => cleanupConsAnim(el), fallbackMs);
+      consAnimTimers.set(el, { cls, tid, onEnd });
+      el.addEventListener?.('animationend', onEnd);
+      el.classList.add(cls);
+    }
+
+    function clearConsAnimTimers() {
+      for (const el of Array.from(consAnimTimers.keys())) {
+        cleanupConsAnim(el);
+      }
+    }
 
     function getRankingTabOptions(
       modelsCount = lastModelsCount,
@@ -538,6 +696,7 @@ export const ConsumptionView = defineComponent({
     });
 
     let activeHoverTargetEl = null;
+    let activeHoverPayload = null;
     let cachedBreakdownRootRect = null;
     let cachedBreakdownAnchorRect = null;
 
@@ -554,6 +713,7 @@ export const ConsumptionView = defineComponent({
     function hideBreakdownPopover() {
       cachedBreakdownRootRect = null;
       cachedBreakdownAnchorRect = null;
+      activeHoverPayload = null;
       if (activeHoverTargetEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
         activeHoverTargetEl = null;
@@ -629,6 +789,9 @@ export const ConsumptionView = defineComponent({
         hideBreakdownPopover();
         return;
       }
+      const wasHidden = breakdownPopoverEl.hasAttribute('hidden');
+      const sameTargetAndPayload =
+        !wasHidden && activeHoverTargetEl === anchorEl && activeHoverPayload === payload;
       if (activeHoverTargetEl && activeHoverTargetEl !== anchorEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
         cachedBreakdownAnchorRect = null;
@@ -637,22 +800,24 @@ export const ConsumptionView = defineComponent({
         cachedBreakdownAnchorRect = null;
       }
       activeHoverTargetEl = anchorEl;
+      activeHoverPayload = payload;
       patchClasses(anchorEl, { 'is-hovered': true });
 
-      popoverContent.update({
-        title: payload.title || '—',
-        calls: payload.calls || 0,
-        totalTokens: payload.totalTokens || 0,
-        costText: payload.costText || '$0.00',
-        inputTokens: payload.inputTokens,
-        cacheReadTokens: payload.cacheReadTokens,
-        thinkingTokens: payload.thinkingTokens,
-        responseTokens: payload.responseTokens,
-        outputTokens: payload.outputTokens,
-        segments: Array.isArray(payload.segments) ? payload.segments : [],
-      });
+      if (!sameTargetAndPayload) {
+        popoverContent.update({
+          title: payload.title || '—',
+          calls: payload.calls || 0,
+          totalTokens: payload.totalTokens || 0,
+          costText: payload.costText || '$0.00',
+          inputTokens: payload.inputTokens,
+          cacheReadTokens: payload.cacheReadTokens,
+          thinkingTokens: payload.thinkingTokens,
+          responseTokens: payload.responseTokens,
+          outputTokens: payload.outputTokens,
+          segments: Array.isArray(payload.segments) ? payload.segments : [],
+        });
+      }
 
-      const wasHidden = breakdownPopoverEl.hasAttribute('hidden');
       patchAttr(breakdownPopoverEl, 'hidden', false);
       positionBreakdownPopover(anchorEl, pointerClientX, pointerClientY);
       if (wasHidden) {
@@ -673,6 +838,19 @@ export const ConsumptionView = defineComponent({
     function createMonthModelSegment() {
       const segEl = h('div', { className: 'month-seg cons-model-seg' });
       return { el: segEl, refs: { segEl } };
+    }
+
+    let monthlyGridEl = null;
+    const monthlyColByEl = new Map();
+
+    function findMonthlyColForNode(node) {
+      let cur = node;
+      while (cur && cur !== monthlyGridEl) {
+        const hit = monthlyColByEl.get(cur);
+        if (hit) return hit;
+        cur = cur.parentNode || null;
+      }
+      return null;
     }
 
     const monthlyCols = Array.from({ length: 12 }, (_, idx) => {
@@ -701,6 +879,9 @@ export const ConsumptionView = defineComponent({
                 e?.clientY ?? null
               );
             } else {
+              if (activeHoverTargetEl && monthlyColByEl.has(activeHoverTargetEl)) {
+                hideBreakdownPopover();
+              }
               e?.stopPropagation?.();
             }
           },
@@ -709,8 +890,16 @@ export const ConsumptionView = defineComponent({
               positionBreakdownPopover(colEl, e?.clientX ?? null, e?.clientY ?? null);
             }
           },
-          onMouseLeave: () => {
-            if (activeHoverTargetEl === colEl) hideBreakdownPopover();
+          onMouseLeave: (e) => {
+            if (activeHoverTargetEl !== colEl) return;
+            const nextEl = e?.relatedTarget || null;
+            if (nextEl) {
+              const nextCol = findMonthlyColForNode(nextEl);
+              if ((nextCol && nextCol.colState.hoverPayload) || nextEl === monthlyGridEl) {
+                return;
+              }
+            }
+            hideBreakdownPopover();
           },
         },
         [
@@ -720,7 +909,7 @@ export const ConsumptionView = defineComponent({
           tokText,
         ]
       );
-      return {
+      const colRec = {
         el: colEl,
         costText,
         stackWrap,
@@ -729,7 +918,22 @@ export const ConsumptionView = defineComponent({
         tokText,
         colState,
       };
+      monthlyColByEl.set(colEl, colRec);
+      return colRec;
     });
+
+    monthlyGridEl = h(
+      'div',
+      {
+        className: 'monthly-grid',
+        onMouseLeave: () => {
+          if (activeHoverTargetEl && monthlyColByEl.has(activeHoverTargetEl)) {
+            hideBreakdownPopover();
+          }
+        },
+      },
+      monthlyCols.map((c) => c.el)
+    );
 
     const monthlyPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
@@ -739,11 +943,7 @@ export const ConsumptionView = defineComponent({
         ]),
         monthlyHoverHint,
       ]),
-      h(
-        'div',
-        { className: 'monthly-grid' },
-        monthlyCols.map((c) => c.el)
-      ),
+      monthlyGridEl,
     ]);
 
     const scrollInner = h(
@@ -771,905 +971,28 @@ export const ConsumptionView = defineComponent({
       breakdownPopoverEl,
     ]);
 
-    /**
-     * 将分模型列表收敛为主力模型 + 长尾「其他 (N)」，避免进度条尾部与浮层出现 0.0% 碎屑噪音。
-     */
-    function partitionModelSegments(
-      mergedModels,
-      modelColorMap,
-      { maxMain = 5, minSharePct = 1.5 } = {}
-    ) {
-      if (!Array.isArray(mergedModels) || mergedModels.length === 0) return [];
-      const sumTok = mergedModels.reduce((sum, m) => sum + Number(m.totalTokens || 0), 0);
-      const mainModels = [];
-      const tailModels = [];
-
-      for (let i = 0; i < mergedModels.length; i++) {
-        const m = mergedModels[i];
-        const mTok = Number(m.totalTokens || 0);
-        const sharePct = sumTok > 0 ? (mTok / sumTok) * 100 : 0;
-        if (i === 0 || (mainModels.length < maxMain && sharePct >= minSharePct)) {
-          mainModels.push(m);
-        } else {
-          tailModels.push(m);
-        }
-      }
-
-      if (tailModels.length === 1) {
-        mainModels.push(tailModels.pop());
-      }
-
-      const out = mainModels.map((m) => {
-        const seed = getCanonicalModelColorSeed(m);
-        const color =
-          modelColorMap?.get(seed) || resolveDeterministicModelColor(seed || m.displayText);
-        const tok = Number(m.totalTokens || 0);
-        const pct = sumTok > 0 ? (tok / sumTok) * 100 : 0;
-        const label = m.displayText || m.label || m.shortName || '—';
-        const inputTokens = Math.max(0, Number(m.inputTokens || 0));
-        const cacheReadTokens = Math.max(0, Number(m.cacheReadTokens || 0));
-        const thinkingTokens = Math.max(0, Number(m.thinkingTokens || 0));
-        const responseTokens =
-          m.responseTokens != null
-            ? Math.max(0, Number(m.responseTokens))
-            : Math.max(0, Number(m.outputTokens || 0) - thinkingTokens);
-        return {
-          key: label,
-          label,
-          tok,
-          pct,
-          inputTokens,
-          cacheReadTokens,
-          thinkingTokens,
-          responseTokens,
-          outputTokens: responseTokens + thinkingTokens,
-          tokText: formatTokensPrecise(tok),
-          pctText: formatPctNumber(pct, { withSymbol: true }),
-          color,
-          isOther: false,
-        };
-      });
-
-      if (tailModels.length >= 2) {
-        let otherTok = 0;
-        let otherIn = 0;
-        let otherCache = 0;
-        let otherThink = 0;
-        let otherResp = 0;
-        for (const m of tailModels) {
-          const mt = Math.max(0, Number(m.thinkingTokens || 0));
-          const mr =
-            m.responseTokens != null
-              ? Math.max(0, Number(m.responseTokens))
-              : Math.max(0, Number(m.outputTokens || 0) - mt);
-          otherTok += Number(m.totalTokens || 0);
-          otherIn += Math.max(0, Number(m.inputTokens || 0));
-          otherCache += Math.max(0, Number(m.cacheReadTokens || 0));
-          otherThink += mt;
-          otherResp += mr;
-        }
-        const otherPct = sumTok > 0 ? (otherTok / sumTok) * 100 : 0;
-        const otherLabel = t('cons.otherModelsCount', { count: tailModels.length });
-        out.push({
-          key: '__other__',
-          label: otherLabel,
-          tok: otherTok,
-          pct: otherPct,
-          inputTokens: otherIn,
-          cacheReadTokens: otherCache,
-          thinkingTokens: otherThink,
-          responseTokens: otherResp,
-          outputTokens: otherResp + otherThink,
-          tokText: formatTokensPrecise(otherTok),
-          pctText: formatPctNumber(otherPct, { withSymbol: true }),
-          color: 'var(--cons-other-seg)',
-          isOther: true,
+    const {
+      createSourceBreakdownRow,
+      updateSourceBreakdownRow,
+      createTopConversationRow,
+      updateTopConversationRow,
+    } = createConsumptionBreakdownRowBuilders({
+      showPopover: showBreakdownPopover,
+      movePopover: positionBreakdownPopover,
+      hidePopover: hideBreakdownPopover,
+      isHoveredTarget: (targetEl) => activeHoverTargetEl === targetEl,
+      onSelectConversation: (cascadeId) => {
+        selectConversation(cascadeId);
+        uiStore.setState({
+          activeView: 'steps',
+          stepsSubTab: 'steps',
+          selectedAgentScope: 'all',
+          ctxInspectorAgentId: getDefaultCtxInspectorAgentId(
+            telemetryStore.getState().telemetry?.settings
+          ),
         });
-      }
-
-      return out;
-    }
-
-    /**
-     * 创建热门模型单行 DOM 结构（模型名称 + 按总占比缩放的 4 段比例条 + 底部分项脚标）。
-     */
-    function createBreakdownItemRow() {
-      const nameTextEl = h('span', { className: 'cons-row-title-text' });
-      const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl]);
-      const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
-      const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
-      const costEl = h('strong', { className: 'cons-row-cost text-mono' });
-      const segBar = createFourSegmentBar();
-
-      const inLbl = h('span', { text: t('cons.footInput') });
-      const cacheLbl = h('span', { text: t('cons.footCache') });
-      const outLbl = h('span', { text: t('cons.footOutput') });
-      const thinkLbl = h('span', { text: t('cons.footThinking') });
-      const callsLbl = h('span', { text: t('cons.footCalls') });
-
-      const inVal = h('strong', { className: 'text-mono' });
-      const cacheVal = h('strong', { className: 'text-mono' });
-      const outVal = h('strong', { className: 'text-mono' });
-      const thinkVal = h('strong', { className: 'text-mono' });
-      const callsVal = h('strong', { className: 'text-mono' });
-      const metricBarFillEl = h('div', { className: 'progress-seg cons-metric-fill' });
-      const metricBarEl = h(
-        'div',
-        { className: 'progress-track cons-seg-bar cons-metric-bar', hidden: true },
-        [metricBarFillEl]
-      );
-      const tokenFootEl = h('div', { className: 'cons-item-foot' }, [
-        h('span', { className: 'legend-left' }, [
-          h('span', { className: 'dot-swatch seg-input' }),
-          inLbl,
-          inVal,
-        ]),
-        h('span', { className: 'legend-left' }, [
-          h('span', { className: 'dot-swatch seg-cached' }),
-          cacheLbl,
-          cacheVal,
-        ]),
-        h('span', { className: 'legend-left' }, [
-          h('span', { className: 'dot-swatch seg-thinking' }),
-          thinkLbl,
-          thinkVal,
-        ]),
-        h('span', { className: 'legend-left' }, [
-          h('span', { className: 'dot-swatch seg-output' }),
-          outLbl,
-          outVal,
-        ]),
-        h('span', { className: 'legend-left' }, [
-          callsLbl,
-          callsVal,
-        ]),
-      ]);
-      const perfMainEl = h('span', { className: 'cons-model-perf-main text-mono' });
-      const perfUnitCostEl = h('span', { className: 'cons-model-unit-cost text-mono', hidden: true });
-      const perfFootEl = h('div', { className: 'cons-model-perf-foot', hidden: true }, [
-        perfMainEl,
-        perfUnitCostEl,
-      ]);
-      const focusLeftEl = h('span', { className: 'cons-model-focus-left text-mono' });
-      const focusRightEl = h('span', { className: 'cons-model-focus-right text-mono' });
-      const focusFootEl = h(
-        'div',
-        { className: 'cons-item-foot cons-model-focus-foot', hidden: true },
-        [focusLeftEl, focusRightEl]
-      );
-
-      const rowEl = h('div', { className: 'cons-item-row' }, [
-        h('div', { className: 'panel-header' }, [
-          nameEl,
-          h('span', { className: 'cons-row-metrics' }, [
-            pctBadge,
-            totalTokEl,
-            costEl,
-          ]),
-        ]),
-        segBar.el,
-        metricBarEl,
-        tokenFootEl,
-        perfFootEl,
-        focusFootEl,
-      ]);
-
-      return {
-        el: rowEl,
-        refs: {
-          nameEl,
-          nameTextEl,
-          pctBadge,
-          totalTokEl,
-          costEl,
-          segBar,
-          metricBarEl,
-          metricBarFillEl,
-          tokenFootEl,
-          inLbl,
-          cacheLbl,
-          outLbl,
-          thinkLbl,
-          callsLbl,
-          inVal,
-          cacheVal,
-          outVal,
-          thinkVal,
-          callsVal,
-          perfFootEl,
-          perfMainEl,
-          perfUnitCostEl,
-          focusFootEl,
-          focusLeftEl,
-          focusRightEl,
-        },
-      };
-    }
-
-    /**
-     * 增量更新模型排行单行：
-     * - `tokens` 模式展示完整四段 Token 构成及效率副行；
-     * - `cost` / `speed` / `calls` 模式切换对应占比百分比、进度条尺度及聚焦单行脚标。
-     */
-    function updateBreakdownItemRow(refs, item, totalsCtx, sortMode = 'tokens') {
-      const displayLabel = item.label || item.name || item.shortName || '—';
-      patchText(refs.nameTextEl, displayLabel);
-      patchAttr(refs.nameEl, 'title', item.title || displayLabel);
-
-      const total = Number(item.totalTokens || 0);
-      const costVal = Number(item.costUsd || 0);
-      const callsCount = Number(item.calls || 0);
-      const isAllUnpriced =
-        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
-      const costText = formatUsd(isAllUnpriced ? null : costVal, {
-        precise: costVal > 0 && costVal < 0.1,
-      });
-
-      const avgTps =
-        item.avgTokPerSec != null &&
-        Number.isFinite(Number(item.avgTokPerSec)) &&
-        Number(item.avgTokPerSec) > 0
-          ? Number(item.avgTokPerSec)
-          : null;
-      const avgTtft =
-        item.avgTtftSec != null &&
-        Number.isFinite(Number(item.avgTtftSec)) &&
-        Number(item.avgTtftSec) >= 0
-          ? Number(item.avgTtftSec)
-          : null;
-      const hasExplicitCachePct =
-        item.cacheHitPct != null && Number.isFinite(Number(item.cacheHitPct));
-      const promptTok = Number(item.inputTokens || 0) + Number(item.cacheReadTokens || 0);
-      const cachePctVal = hasExplicitCachePct
-        ? Number(item.cacheHitPct)
-        : promptTok > 0 && Number(item.cacheReadTokens || 0) > 0
-          ? +((Number(item.cacheReadTokens || 0) / promptTok) * 100).toFixed(1)
-          : 0;
-      const cachePctStr = formatPctNumber(cachePctVal);
-      const effCostPer1M =
-        !isAllUnpriced && costVal > 0 && total >= 1000 ? costVal / (total / 1_000_000) : null;
-      const outTok = Number(
-        item.outputTokens ??
-          Number(item.responseTokens || 0) + Number(item.thinkingTokens || 0)
-      );
-
-      if (sortMode === 'cost') {
-        const costBase = Number(totalsCtx?.totalCost || 0);
-        const costShare = costBase > 0 ? +((costVal / costBase) * 100).toFixed(1) : 0;
-        const barPct = costBase > 0 && costVal > 0 ? Math.min(100, Math.max(1, (costVal / costBase) * 100)) : 0;
-        patchAttr(refs.pctBadge, 'hidden', false);
-        patchAttr(refs.pctBadge, 'title', null);
-        patchText(refs.pctBadge, formatPctNumber(costShare, { withSymbol: true }));
-        patchText(refs.totalTokEl, isAllUnpriced ? '' : formatCnyApprox(costVal));
-        patchText(refs.costEl, costText);
-
-        patchAttr(refs.segBar.el, 'hidden', true);
-        patchAttr(refs.metricBarEl, 'hidden', false);
-        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${barPct.toFixed(2)}%`);
-        patchClasses(refs.metricBarFillEl, {
-          'tone-cost': true,
-          'tone-speed': false,
-          'tone-calls': false,
-        });
-
-        patchAttr(refs.tokenFootEl, 'hidden', true);
-        patchAttr(refs.perfFootEl, 'hidden', true);
-        patchAttr(refs.focusFootEl, 'hidden', false);
-        const unitPart =
-          effCostPer1M !== null
-            ? t('cons.modelUnitCost', {
-                cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
-              })
-            : '';
-        const cachePart = t('cons.topConvCacheMeta', { pct: cachePctStr });
-        patchText(refs.focusLeftEl, unitPart ? `${unitPart} · ${cachePart}` : cachePart);
-        patchText(
-          refs.focusRightEl,
-          `${formatTokensPrecise(total)} · ${t('cons.callsCount', { calls: callsCount })}`
-        );
-        return;
-      }
-
-      if (sortMode === 'speed') {
-        const maxTps = Number(totalsCtx?.maxAvgTps || 0);
-        const speedPct =
-          maxTps > 0 && avgTps !== null ? Math.min(100, Math.max(2, (avgTps / maxTps) * 100)) : 0;
-        patchAttr(refs.pctBadge, 'hidden', avgTps === null);
-        patchAttr(refs.pctBadge, 'title', avgTps !== null ? t('cons.speedRelTip') : null);
-        patchText(refs.pctBadge, avgTps !== null ? `${Math.round(speedPct)}%` : '');
-        patchText(
-          refs.totalTokEl,
-          avgTtft !== null ? t('cons.focusTtft', { ttft: formatMetric(avgTtft, 's') }) : ''
-        );
-        patchText(refs.costEl, formatSpeedMetric(avgTps, ' tok/s'));
-
-        patchAttr(refs.segBar.el, 'hidden', true);
-        patchAttr(refs.metricBarEl, 'hidden', false);
-        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${speedPct.toFixed(2)}%`);
-        patchClasses(refs.metricBarFillEl, {
-          'tone-cost': false,
-          'tone-speed': true,
-          'tone-calls': false,
-        });
-
-        patchAttr(refs.tokenFootEl, 'hidden', true);
-        patchAttr(refs.perfFootEl, 'hidden', true);
-        patchAttr(refs.focusFootEl, 'hidden', false);
-        patchText(
-          refs.focusLeftEl,
-          t('cons.focusSpeedMeta', {
-            ttft: formatMetric(avgTtft, 's'),
-            cache: cachePctStr,
-            out: formatTokensPrecise(outTok),
-          })
-        );
-        patchText(refs.focusRightEl, t('cons.callsCount', { calls: callsCount }));
-        return;
-      }
-
-      if (sortMode === 'calls') {
-        const callsBase = Number(totalsCtx?.totalCalls || 0);
-        const callsShare = callsBase > 0 ? +((callsCount / callsBase) * 100).toFixed(1) : 0;
-        const barPct =
-          callsBase > 0 && callsCount > 0 ? Math.min(100, Math.max(1, (callsCount / callsBase) * 100)) : 0;
-        patchAttr(refs.pctBadge, 'hidden', false);
-        patchAttr(refs.pctBadge, 'title', null);
-        patchText(refs.pctBadge, formatPctNumber(callsShare, { withSymbol: true }));
-        patchText(refs.totalTokEl, formatTokensPrecise(total));
-        patchText(refs.costEl, t('cons.callsCount', { calls: callsCount }));
-
-        patchAttr(refs.segBar.el, 'hidden', true);
-        patchAttr(refs.metricBarEl, 'hidden', false);
-        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${barPct.toFixed(2)}%`);
-        patchClasses(refs.metricBarFillEl, {
-          'tone-cost': false,
-          'tone-speed': false,
-          'tone-calls': true,
-        });
-
-        patchAttr(refs.tokenFootEl, 'hidden', true);
-        patchAttr(refs.perfFootEl, 'hidden', true);
-        patchAttr(refs.focusFootEl, 'hidden', false);
-        const avgPerCall = callsCount > 0 ? total / callsCount : 0;
-        patchText(
-          refs.focusLeftEl,
-          t('cons.focusCallsMeta', {
-            avgTok: formatTokensPrecise(avgPerCall),
-            cost: costText,
-          })
-        );
-        patchText(refs.focusRightEl, t('cons.topConvCacheMeta', { pct: cachePctStr }));
-        return;
-      }
-
-      // 默认 Token 模式：展示全部四段 Token 构成及效率副行
-      patchText(refs.inLbl, t('cons.footInput'));
-      patchText(refs.cacheLbl, t('cons.footCache'));
-      patchText(refs.outLbl, t('cons.footOutput'));
-      patchText(refs.thinkLbl, t('cons.footThinking'));
-      patchText(refs.callsLbl, t('cons.footCalls'));
-      const grandTotalTokens = Number(totalsCtx?.totalTokens || 0);
-      const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
-      const scaleRatio =
-        grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.008, total / grandTotalTokens)) : 0;
-      patchAttr(refs.pctBadge, 'hidden', false);
-      patchAttr(refs.pctBadge, 'title', null);
-      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
-      patchText(refs.totalTokEl, formatTokensPrecise(total));
-      patchText(refs.costEl, costText);
-
-      const responseTok =
-        item.responseTokens != null
-          ? Number(item.responseTokens)
-          : Math.max(0, Number(item.outputTokens || 0) - Number(item.thinkingTokens || 0));
-      const thinkingTok = Number(item.thinkingTokens || 0);
-
-      patchAttr(refs.segBar.el, 'hidden', false);
-      patchAttr(refs.metricBarEl, 'hidden', true);
-      refs.segBar.update({
-        inputTokens: Number(item.inputTokens || 0),
-        cacheReadTokens: Number(item.cacheReadTokens || 0),
-        responseTokens: responseTok,
-        thinkingTokens: thinkingTok,
-        scaleRatio,
-      });
-
-      patchAttr(refs.tokenFootEl, 'hidden', false);
-      patchAttr(refs.focusFootEl, 'hidden', true);
-      patchText(refs.inVal, formatTokensPrecise(item.inputTokens || 0));
-      patchText(refs.cacheVal, formatTokensPrecise(item.cacheReadTokens || 0));
-      patchText(refs.outVal, formatTokensPrecise(responseTok));
-      patchText(refs.thinkVal, formatTokensPrecise(thinkingTok));
-      patchText(refs.callsVal, String(callsCount));
-
-      const hasPerfMeta = avgTps !== null || avgTtft !== null || effCostPer1M !== null;
-      patchAttr(refs.perfFootEl, 'hidden', !hasPerfMeta);
-      if (hasPerfMeta) {
-        if (avgTps !== null || avgTtft !== null) {
-          patchText(
-            refs.perfMainEl,
-            t('steps.modelPerfFoot', {
-              tps: formatSpeedMetric(avgTps, ' tok/s'),
-              ttft: formatMetric(avgTtft, 's'),
-              cache: cachePctStr,
-            })
-          );
-        } else {
-          patchText(refs.perfMainEl, t('cons.topConvCacheMeta', { pct: cachePctStr }));
-        }
-        patchAttr(refs.perfUnitCostEl, 'hidden', effCostPer1M === null);
-        patchText(
-          refs.perfUnitCostEl,
-          effCostPer1M !== null
-            ? t('cons.modelUnitCost', {
-                cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
-              })
-            : ''
-        );
-      }
-    }
-
-    function createSourceModelSegment() {
-      const segEl = h('div', { className: 'progress-seg cons-model-seg' });
-      return { el: segEl, refs: { segEl } };
-    }
-
-    function createSourceTopModelItem() {
-      const dotEl = h('span', { className: 'dot-swatch cons-model-dot cons-source-top-dot' });
-      const nameEl = h('span', { className: 'cons-source-top-name' });
-      const pctEl = h('strong', { className: 'cons-source-top-pct text-mono' });
-      const itemEl = h('span', { className: 'cons-source-top-item' }, [dotEl, nameEl, pctEl]);
-      return { el: itemEl, refs: { itemEl, dotEl, nameEl, pctEl } };
-    }
-
-    function formatCompactSourceSharePct(pct) {
-      const num = Number(pct || 0);
-      if (!Number.isFinite(num) || num <= 0) return '0%';
-      if (num >= 10) return `${Math.round(num)}%`;
-      return `${num.toFixed(1)}%`;
-    }
-
-    /**
-     * 创建客户端来源单行 DOM 结构（保留长尾合并分段配色进度条、单行不换行的 Top 2-3 模型速览和右侧总调用数，悬停进度条或速览区弹出完整明细浮层）。
-     */
-    function createSourceBreakdownRow() {
-      const nameTextEl = h('span', { className: 'cons-row-title-text' });
-      const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl]);
-      const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
-      const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
-      const costEl = h('strong', { className: 'cons-row-cost text-mono' });
-      const trackEl = h('div', { className: 'progress-track cons-seg-bar cons-source-model-bar' });
-      const rowState = { hoverPayload: null };
-      const bindPopoverHover = (targetEl) => ({
-        onMouseEnter: (e) => {
-          if (rowState.hoverPayload) {
-            showBreakdownPopover(
-              targetEl,
-              rowState.hoverPayload,
-              e?.clientX ?? null,
-              e?.clientY ?? null
-            );
-          }
-        },
-        onMouseMove: (e) => {
-          if (rowState.hoverPayload && activeHoverTargetEl === targetEl) {
-            positionBreakdownPopover(targetEl, e?.clientX ?? null, e?.clientY ?? null);
-          }
-        },
-        onMouseLeave: () => {
-          if (activeHoverTargetEl === targetEl) hideBreakdownPopover();
-        },
-      });
-      const barHitEl = h(
-        'div',
-        {
-          className: 'cons-source-bar-hit',
-        },
-        [trackEl]
-      );
-      const barHandlers = bindPopoverHover(barHitEl);
-      barHitEl.addEventListener('mouseenter', barHandlers.onMouseEnter);
-      barHitEl.addEventListener('mousemove', barHandlers.onMouseMove);
-      barHitEl.addEventListener('mouseleave', barHandlers.onMouseLeave);
-
-      const topModelsEl = h('div', { className: 'cons-source-top-models', hidden: true });
-      const topHandlers = bindPopoverHover(topModelsEl);
-      topModelsEl.addEventListener('mouseenter', topHandlers.onMouseEnter);
-      topModelsEl.addEventListener('mousemove', topHandlers.onMouseMove);
-      topModelsEl.addEventListener('mouseleave', topHandlers.onMouseLeave);
-
-      const callsLbl = h('span', { text: t('cons.footCalls') });
-      const callsVal = h('strong', { className: 'text-mono' });
-
-      const rowEl = h('div', { className: 'cons-item-row cons-source-row' }, [
-        h('div', { className: 'panel-header' }, [
-          nameEl,
-          h('span', { className: 'cons-row-metrics' }, [
-            pctBadge,
-            totalTokEl,
-            costEl,
-          ]),
-        ]),
-        barHitEl,
-        h('div', { className: 'cons-item-foot cons-source-foot' }, [
-          topModelsEl,
-          h('span', { className: 'legend-left cons-calls-stat' }, [
-            callsLbl,
-            callsVal,
-          ]),
-        ]),
-      ]);
-
-      return {
-        el: rowEl,
-        refs: {
-          nameEl,
-          nameTextEl,
-          pctBadge,
-          totalTokEl,
-          costEl,
-          barHitEl,
-          trackEl,
-          topModelsEl,
-          callsLbl,
-          callsVal,
-          rowState,
-        },
-      };
-    }
-
-    function updateSourceBreakdownRow(refs, item, grandTotalTokens, modelColorMap) {
-      patchText(refs.callsLbl, t('cons.footCalls'));
-      const displayLabel = item.label || item.name || '—';
-      patchText(refs.nameTextEl, displayLabel);
-      patchAttr(refs.nameEl, 'title', item.title || displayLabel);
-
-      const total = Number(item.totalTokens || 0);
-      const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
-      const scaleRatio =
-        grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.01, total / grandTotalTokens)) : 0;
-      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
-      patchText(refs.totalTokEl, formatTokensPrecise(total));
-
-      const costVal = Number(item.costUsd || 0);
-      const callsCount = Number(item.calls || 0);
-      const isAllUnpriced =
-        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
-      const costText = formatUsd(isAllUnpriced ? null : costVal, {
-        precise: costVal > 0 && costVal < 0.1,
-      });
-      patchText(refs.costEl, costText);
-      patchText(refs.callsVal, String(callsCount));
-
-      const sourceModels = Array.isArray(item.mergedModels) ? item.mergedModels : [];
-      const partitioned = partitionModelSegments(sourceModels, modelColorMap, {
-        maxMain: 5,
-        minSharePct: 1.5,
-      });
-
-      const barItems =
-        partitioned.length > 0
-          ? partitioned.map((seg) => ({
-              key: seg.key,
-              segPct: scaleRatio > 0 ? seg.pct * scaleRatio : 0,
-              color: seg.color,
-            }))
-          : total > 0
-            ? [
-                {
-                  key: '__source_fallback__',
-                  segPct: scaleRatio * 100,
-                  color: 'var(--accent-primary)',
-                },
-              ]
-            : [];
-
-      patchKeyedList(refs.trackEl, barItems, {
-        keyFn: (seg) => seg.key,
-        sigFn: (seg) => `${seg.key}:${seg.segPct.toFixed(2)}:${seg.color}`,
-        createRow: createSourceModelSegment,
-        updateRow: (segRefs, seg) => {
-          patchStyleVar(segRefs.segEl, '--seg-w', `${seg.segPct.toFixed(2)}%`);
-          patchStyleVar(segRefs.segEl, '--seg-color', seg.color);
-        },
-      });
-
-      const topModels = partitioned
-        .filter((seg) => !seg.isOther)
-        .slice(0, 3)
-        .map((seg) => ({
-          key: seg.key,
-          label: seg.label,
-          pctText: formatCompactSourceSharePct(seg.pct),
-          color: seg.color,
-        }));
-      patchAttr(refs.topModelsEl, 'hidden', topModels.length === 0);
-      patchKeyedList(refs.topModelsEl, topModels, {
-        keyFn: (m) => m.key,
-        sigFn: (m) => `${m.key}:${m.label}:${m.pctText}:${m.color}`,
-        createRow: createSourceTopModelItem,
-        updateRow: (mRefs, m) => {
-          patchStyleVar(mRefs.dotEl, '--dot-color', m.color);
-          patchText(mRefs.nameEl, m.label);
-          patchText(mRefs.pctEl, m.pctText);
-          patchAttr(mRefs.itemEl, 'title', `${m.label} (${m.pctText})`);
-        },
-      });
-
-      refs.rowState.hoverPayload =
-        total > 0 || callsCount > 0
-          ? {
-              title: displayLabel,
-              calls: callsCount,
-              totalTokens: total,
-              costText,
-              inputTokens: item.inputTokens,
-              cacheReadTokens: item.cacheReadTokens,
-              thinkingTokens: item.thinkingTokens,
-              responseTokens: item.responseTokens,
-              outputTokens: item.outputTokens,
-              segments: partitioned,
-            }
-          : null;
-    }
-
-    function createTopConversationRow() {
-      const titleTextEl = h('span', { className: 'cons-row-title-text' });
-      const wsBadgeEl = h('span', { className: 'cons-ws-sessions-tag text-mono', hidden: true });
-      const titleEl = h('strong', { className: 'cons-row-title cons-top-conv-title' }, [
-        titleTextEl,
-        wsBadgeEl,
-      ]);
-      const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
-      const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
-      const costEl = h('strong', { className: 'cons-row-cost text-mono' });
-      const trackEl = h('div', { className: 'progress-track cons-seg-bar cons-source-model-bar' });
-      const rowState = { cascadeId: '', canJump: false, hoverPayload: null };
-
-      const bindPopoverHover = (targetEl) => ({
-        onMouseEnter: (e) => {
-          if (rowState.hoverPayload) {
-            showBreakdownPopover(
-              targetEl,
-              rowState.hoverPayload,
-              e?.clientX ?? null,
-              e?.clientY ?? null
-            );
-          }
-        },
-        onMouseMove: (e) => {
-          if (rowState.hoverPayload && activeHoverTargetEl === targetEl) {
-            positionBreakdownPopover(targetEl, e?.clientX ?? null, e?.clientY ?? null);
-          }
-        },
-        onMouseLeave: () => {
-          if (activeHoverTargetEl === targetEl) hideBreakdownPopover();
-        },
-      });
-
-      const barHitEl = h('div', { className: 'cons-source-bar-hit' }, [trackEl]);
-      const barHandlers = bindPopoverHover(barHitEl);
-      barHitEl.addEventListener('mouseenter', barHandlers.onMouseEnter);
-      barHitEl.addEventListener('mousemove', barHandlers.onMouseMove);
-      barHitEl.addEventListener('mouseleave', barHandlers.onMouseLeave);
-
-      const topModelsEl = h('div', { className: 'cons-source-top-models', hidden: true });
-      const topHandlers = bindPopoverHover(topModelsEl);
-      topModelsEl.addEventListener('mouseenter', topHandlers.onMouseEnter);
-      topModelsEl.addEventListener('mousemove', topHandlers.onMouseMove);
-      topModelsEl.addEventListener('mouseleave', topHandlers.onMouseLeave);
-
-      const fallbackMetaEl = h('span', { className: 'cons-top-conv-meta', hidden: true });
-      const callsLbl = h('span', { text: t('cons.footCalls') });
-      const callsVal = h('strong', { className: 'text-mono' });
-
-      const rowEl = h(
-        'div',
-        {
-          className: 'cons-top-conv-row',
-          onClick: () => {
-            if (!rowState.cascadeId) return;
-            hideBreakdownPopover();
-            selectConversation(rowState.cascadeId);
-            uiStore.setState({
-              activeView: 'steps',
-              stepsSubTab: 'steps',
-              selectedAgentScope: 'all',
-              ctxInspectorAgentId: getDefaultCtxInspectorAgentId(
-                telemetryStore.getState().telemetry?.settings
-              ),
-            });
-          },
-        },
-        [
-          h('div', { className: 'panel-header' }, [
-            titleEl,
-            h('span', { className: 'cons-row-metrics' }, [
-              pctBadge,
-              totalTokEl,
-              costEl,
-            ]),
-          ]),
-          barHitEl,
-          h('div', { className: 'cons-item-foot cons-source-foot' }, [
-            topModelsEl,
-            fallbackMetaEl,
-            h('span', { className: 'legend-left cons-calls-stat' }, [
-              callsLbl,
-              callsVal,
-            ]),
-          ]),
-        ]
-      );
-
-      return {
-        el: rowEl,
-        refs: {
-          rowEl,
-          titleEl,
-          titleTextEl,
-          wsBadgeEl,
-          pctBadge,
-          totalTokEl,
-          costEl,
-          barHitEl,
-          trackEl,
-          topModelsEl,
-          fallbackMetaEl,
-          callsLbl,
-          callsVal,
-          rowState,
-        },
-      };
-    }
-
-    function updateTopConversationRow(refs, item, bases, modelColorMap, sortMode = 'cost') {
-      patchText(refs.callsLbl, t('cons.footCalls'));
-      const isWorkspaceRow = Boolean(item.isWorkspaceRow);
-      const title = isWorkspaceRow
-        ? item.isUnbound
-          ? t('cons.workspaceUnbound')
-          : String(item.label || item.workspacePath || '—').trim()
-        : String(item.title || item.cascadeId || '—').trim();
-      refs.rowState.cascadeId = String(
-        isWorkspaceRow ? item.latestCascadeId || '' : item.cascadeId || ''
-      );
-      refs.rowState.canJump = item.canJump !== false && Boolean(refs.rowState.cascadeId);
-      patchClasses(refs.rowEl, {
-        'is-jumpable': refs.rowState.canJump,
-        'cons-workspace-row': isWorkspaceRow,
-      });
-      const baseTip =
-        isWorkspaceRow && item.workspacePath && item.workspacePath !== title
-          ? `${title} (${item.workspacePath})`
-          : title;
-      const jumpTip = isWorkspaceRow ? t('cons.workspaceJumpTip') : t('cons.topConvJumpTip');
-      patchAttr(refs.rowEl, 'title', refs.rowState.canJump ? `${baseTip} — ${jumpTip}` : baseTip);
-      patchText(refs.titleTextEl, title);
-      if (refs.wsBadgeEl) {
-        const showWsBadge = isWorkspaceRow && Number(item.sessionCount || 0) > 0;
-        patchAttr(refs.wsBadgeEl, 'hidden', !showWsBadge);
-        if (showWsBadge) {
-          patchText(refs.wsBadgeEl, t('cons.workspaceSessions', { count: item.sessionCount }));
-        }
-      }
-
-      const total = Number(item.totalTokens || 0);
-      const costVal = Number(item.costUsd || 0);
-      const callsCount = Number(item.calls || 0);
-      const isAllUnpriced =
-        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
-      const costText = formatUsd(isAllUnpriced ? null : costVal, {
-        precise: costVal > 0 && costVal < 0.1,
-      });
-
-      const tokBase = Number(bases?.tokens || 0);
-      const costBase = Number(bases?.cost || 0);
-      const useCostBasis = sortMode === 'cost' && costBase > 0;
-      const share = useCostBasis
-        ? +((costVal / costBase) * 100).toFixed(1)
-        : tokBase > 0
-          ? +((total / tokBase) * 100).toFixed(1)
-          : 0;
-      const scaleRatio = useCostBasis
-        ? costVal > 0
-          ? Math.min(1, Math.max(0.01, costVal / costBase))
-          : 0
-        : tokBase > 0 && total > 0
-          ? Math.min(1, Math.max(0.01, total / tokBase))
-          : 0;
-
-      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
-      if (sortMode === 'tokens') {
-        patchText(refs.totalTokEl, costText);
-        patchText(refs.costEl, formatTokensPrecise(total));
-      } else {
-        patchText(refs.totalTokEl, formatTokensPrecise(total));
-        patchText(refs.costEl, costText);
-      }
-      patchText(refs.callsVal, String(callsCount));
-
-      // 复用客户端来源同款按模型配色分段进度条、Top 2-3 模型速览及共享悬浮详情浮层
-      const convModels = Array.isArray(item.mergedModels) ? item.mergedModels : [];
-      const partitioned = partitionModelSegments(convModels, modelColorMap, {
-        maxMain: 5,
-        minSharePct: 1.5,
-      });
-      const barItems =
-        partitioned.length > 0
-          ? partitioned.map((seg) => ({
-              key: seg.key,
-              segPct: scaleRatio > 0 ? seg.pct * scaleRatio : 0,
-              color: seg.color,
-            }))
-          : scaleRatio > 0
-            ? [
-                {
-                  key: '__conv_fallback__',
-                  segPct: scaleRatio * 100,
-                  color: 'var(--accent-primary)',
-                },
-              ]
-            : [];
-
-      patchKeyedList(refs.trackEl, barItems, {
-        keyFn: (seg) => seg.key,
-        sigFn: (seg) => `${seg.key}:${seg.segPct.toFixed(2)}:${seg.color}`,
-        createRow: createSourceModelSegment,
-        updateRow: (segRefs, seg) => {
-          patchStyleVar(segRefs.segEl, '--seg-w', `${seg.segPct.toFixed(2)}%`);
-          patchStyleVar(segRefs.segEl, '--seg-color', seg.color);
-        },
-      });
-
-      const topModels = partitioned
-        .filter((seg) => !seg.isOther)
-        .slice(0, 3)
-        .map((seg) => ({
-          key: seg.key,
-          label: seg.label,
-          pctText: formatCompactSourceSharePct(seg.pct),
-          color: seg.color,
-        }));
-      patchAttr(refs.topModelsEl, 'hidden', topModels.length === 0);
-      patchKeyedList(refs.topModelsEl, topModels, {
-        keyFn: (m) => m.key,
-        sigFn: (m) => `${m.key}:${m.label}:${m.pctText}:${m.color}`,
-        createRow: createSourceTopModelItem,
-        updateRow: (mRefs, m) => {
-          patchStyleVar(mRefs.dotEl, '--dot-color', m.color);
-          patchText(mRefs.nameEl, m.label);
-          patchText(mRefs.pctEl, m.pctText);
-          patchAttr(mRefs.itemEl, 'title', `${m.label} (${m.pctText})`);
-        },
-      });
-
-      const showFallbackMeta = topModels.length === 0;
-      patchAttr(refs.fallbackMetaEl, 'hidden', !showFallbackMeta);
-      if (showFallbackMeta) {
-        const srcLabel = item.sourceName || item.appSource || '';
-        const cacheLabel = t('cons.topConvCacheMeta', {
-          pct: formatPctNumber(item.cacheHitPct ?? 0),
-        });
-        patchText(refs.fallbackMetaEl, srcLabel ? `${srcLabel} · ${cacheLabel}` : cacheLabel);
-      }
-
-      refs.rowState.hoverPayload =
-        partitioned.length > 0 && (total > 0 || callsCount > 0)
-          ? {
-              title,
-              calls: callsCount,
-              totalTokens: total,
-              costText,
-              inputTokens: item.inputTokens,
-              cacheReadTokens: item.cacheReadTokens,
-              thinkingTokens: item.thinkingTokens,
-              responseTokens: item.responseTokens,
-              outputTokens: item.outputTokens,
-              segments: partitioned,
-            }
-          : null;
-    }
+      },
+    });
 
     let latestSlice = null;
     let isDirty = false;
@@ -1697,7 +1020,7 @@ export const ConsumptionView = defineComponent({
       const cons = slice.consumption || {};
       const rangeInfo = cons.selectedRange || {};
 
-      // 始终在 0ms 同步顶部时间段滑块与自定义日期条显隐，给予即刻交互反馈
+      // 始终在 0ms 同步顶部时间段滑块、周期池选择器及自定义日期条显隐，给予即刻交互反馈
       timeFilterSwitch.setValue(slice.range);
       patchAttr(customRangeBar, 'hidden', slice.range !== 'custom');
       if (!hasUncommittedCustomDraft) {
@@ -1707,17 +1030,45 @@ export const ConsumptionView = defineComponent({
         endPicker.setValue(draftEndMs);
       }
 
+      const isCustomWeeklyMode =
+        slice.weeklyLimitMode === 'custom_tokens' || slice.weeklyLimitMode === 'custom_cost';
+      const cyclePoolOptions =
+        slice.range === 'cycle'
+          ? buildCyclePoolSelectOptions(slice.quotaPools, isCustomWeeklyMode)
+          : [];
+      const activePoolFilter = slice.range === 'cycle' ? slice.cyclePool || 'all' : 'all';
+      const showCyclePoolSelect = slice.range === 'cycle' && cyclePoolOptions.length > 2;
+      if (!showCyclePoolSelect) {
+        cyclePoolSelect.close?.();
+        patchAttr(cyclePoolSelect.el, 'hidden', true);
+      } else {
+        cyclePoolSelect.setProps({
+          modelValue: activePoolFilter,
+          options: cyclePoolOptions,
+        });
+        patchAttr(cyclePoolSelect.el, 'hidden', false);
+      }
+
       // 极少数缓存未命中时（如自定义新区间或进页瞬间抢点），跳过用旧趋势/模型跑无效半更新重绘，待几毫秒后单帧原子绘制
-      if (rangeInfo.key && slice.range && rangeInfo.key !== slice.range) {
+      const payloadPool = rangeInfo.key === 'cycle' ? rangeInfo.pool || 'all' : 'all';
+      if (
+        (rangeInfo.key && slice.range && rangeInfo.key !== slice.range) ||
+        (slice.range === 'cycle' && rangeInfo.pool && payloadPool !== activePoolFilter)
+      ) {
         return;
       }
 
       const preset =
-        slice.range !== 'custom' && cons.presets?.[slice.range]
+        slice.range !== 'custom' &&
+        !(slice.range === 'cycle' && activePoolFilter !== 'all') &&
+        cons.presets?.[slice.range]
           ? cons.presets[slice.range]
           : null;
       const acct = cons.account || preset?.account || {};
       const dateSpan = formatDateSpanBadge(rangeInfo.startMs, rangeInfo.endMs);
+      const cycleOptionsSig = showCyclePoolSelect
+        ? cyclePoolOptions.map((o) => `${o.value}:${o.label}:${o.meta || ''}`).join('|')
+        : '';
       const now = new Date();
       const currentMonthIdx = now.getMonth();
       const monthlyYear = cons.monthlyYear || now.getFullYear();
@@ -1725,6 +1076,9 @@ export const ConsumptionView = defineComponent({
       const renderTuple = [
         locale,
         slice.range,
+        activePoolFilter,
+        cycleOptionsSig,
+        Boolean(rangeInfo.isFallbackWeek),
         slice.customStartMs,
         slice.customEndMs,
         slice.modelDisplayMode,
@@ -1745,13 +1099,36 @@ export const ConsumptionView = defineComponent({
         cons.monthlySeries,
       ];
       if (isSameRenderTuple(lastRenderedTuple, renderTuple)) return;
-      drawConsumptionData(slice, { cons, preset, acct, rangeInfo, dateSpan, currentMonthIdx, monthlyYear });
+      drawConsumptionData(slice, {
+        cons,
+        preset,
+        acct,
+        rangeInfo,
+        activePoolFilter,
+        dateSpan,
+        currentMonthIdx,
+        monthlyYear,
+      });
       lastRenderedTuple = renderTuple;
     }
 
-    function drawConsumptionData(slice, { cons, preset, acct, rangeInfo, dateSpan, currentMonthIdx, monthlyYear }) {
-      // 1. 同步用量概览矩阵与顶部 4 段比例条
+    function drawConsumptionData(
+      slice,
+      { cons, preset, acct, rangeInfo, activePoolFilter, dateSpan, currentMonthIdx, monthlyYear }
+    ) {
+      // 1. 同步用量概览矩阵及顶部 4 段比例条
       patchText(dateSpanBadge, dateSpan);
+      patchAttr(
+        dateSpanBadge,
+        'title',
+        slice.range === 'cycle'
+          ? formatCycleMinuteSpanTip(
+              rangeInfo.startMs,
+              rangeInfo.endMs,
+              Boolean(rangeInfo.isFallbackWeek)
+            )
+          : null
+      );
       const totalTokens = Number(acct.totalTokens || 0);
       const inputTokens = Number(acct.inputTokens || 0);
       const cacheTokens = Number(acct.cacheReadTokens || 0);
@@ -1759,7 +1136,6 @@ export const ConsumptionView = defineComponent({
       const responseTokens = Number(acct.responseTokens || 0);
       const thinkingTokens = Number(acct.thinkingTokens || 0);
       const costUsd = Number(acct.costUsd || 0);
-      const savedCostUsd = Number(acct.savedCostUsd || 0);
 
       patchText(heroTotalTokens, formatTokensPrecise(totalTokens));
       patchText(heroTotalCalls, t('cons.callsCount', { calls: acct.calls || 0 }));
@@ -1785,26 +1161,12 @@ export const ConsumptionView = defineComponent({
 
       patchText(inputSharePct, `${inPct}%`);
       patchText(inputMainTokens, formatTokensPrecise(inputTokens));
-      patchText(inputSubText, t('cons.uncachedInput'));
 
       patchText(cacheSharePct, `${cachePct}%`);
       patchText(cacheMainTokens, formatTokensPrecise(cacheTokens));
-      patchText(
-        cacheSubText,
-        t('cons.savedCost', {
-          cost: formatUsd(savedCostUsd, { precise: savedCostUsd > 0 && savedCostUsd < 0.01 }),
-        })
-      );
 
       patchText(outputSharePct, `${outPct}%`);
       patchText(outputMainTokens, formatTokensPrecise(outputTokens));
-      patchText(
-        outputSubText,
-        t('cons.replyAndThink', {
-          resp: formatTokensPrecise(responseTokens),
-          think: formatTokensPrecise(thinkingTokens),
-        })
-      );
       consExportMenu.refs.setHidden(!(totalTokens > 0 || Number(acct.calls || 0) > 0));
 
       overviewSegBar.update({
@@ -1942,36 +1304,62 @@ export const ConsumptionView = defineComponent({
         ...allTrendMergedModels,
       ]);
 
-      // 2. 同步历史趋势交互式 SVG 面积图 / 类 GitHub 每日热力图（>90天）与悬停分模型浮层
-      const rangeBadgeText = isEnglishLocale()
-        ? getConsumptionTimeRangeOptions().find((o) => o.value === slice.range)?.label ||
-          t('cons.allTime')
-        : preset?.label || rangeInfo.label || t('cons.allTime');
+      // 2. 同步历史趋势交互式 SVG 面积图 / 类 GitHub 每日热力图（>90天）及悬停分模型浮层
+      const rangeBadgeText =
+        slice.range === 'cycle'
+          ? `${rangeInfo.isFallbackWeek || slice.weeklyLimitMode === 'custom_tokens' || slice.weeklyLimitMode === 'custom_cost' ? t('cons.cycleFallbackWeek') : t('cons.currentCycle')}${
+              activePoolFilter && activePoolFilter !== 'all'
+                ? ` · ${rangeInfo.poolLabel || activePoolFilter}`
+                : ''
+            }`
+          : isEnglishLocale()
+            ? getConsumptionTimeRangeOptions().find((o) => o.value === slice.range)?.label ||
+              t('cons.allTime')
+            : preset?.label || rangeInfo.label || t('cons.allTime');
       patchText(trendRangeBadge, rangeBadgeText);
+      const firstTrendSlot = rawTrendSeries[0] || null;
+      const isMinuteTrend = firstTrendSlot?.granularity === 'minute';
       const isHourlyTrend =
-        rawTrendSeries[0]?.granularity === 'hour' ||
-        (rawTrendSeries[0]?.label || '').includes(':');
-      const isHeatmapTrend = !isHourlyTrend && rawTrendSeries.length > HEATMAP_DAYS_THRESHOLD;
-      patchText(
-        trendGranularityHint,
-        isHeatmapTrend
-          ? t('cons.trendHeatmapHint', { days: rawTrendSeries.length })
-          : isHourlyTrend
-            ? t('cons.trendPointsHintHourly', { points: rawTrendSeries.length || 0 })
-            : t('cons.trendPointsHintDaily', { points: rawTrendSeries.length || 0 })
-      );
+        !isMinuteTrend &&
+        (firstTrendSlot?.granularity === 'hour' ||
+          (firstTrendSlot?.label || '').includes(':'));
+      const isHeatmapTrend =
+        !isMinuteTrend && !isHourlyTrend && rawTrendSeries.length > HEATMAP_DAYS_THRESHOLD;
+      patchAttr(trendGranularityHint, 'hidden', isHeatmapTrend);
+      patchAttr(heatmapModeSwitch.el, 'hidden', !isHeatmapTrend);
+      if (!isHeatmapTrend) {
+        patchText(
+          trendGranularityHint,
+          isMinuteTrend
+            ? t('cons.trendPointsHintMinute', {
+                minutes: Math.max(1, Number(firstTrendSlot?.stepMinutes) || 5),
+                points: rawTrendSeries.length || 0,
+              })
+            : isHourlyTrend
+              ? t('cons.trendPointsHintHourly', { points: rawTrendSeries.length || 0 })
+              : t('cons.trendPointsHintDaily', { points: rawTrendSeries.length || 0 })
+        );
+      } else {
+        heatmapModeSwitch.setValue(heatmapViewMode);
+      }
+      const buildTrendModelSegments = (mergedSlotModels) =>
+        partitionModelSegments(mergedSlotModels, modelColorMap, {
+          maxMain: 5,
+          minSharePct: 1.5,
+        });
       const enrichedTrendSeries = rawTrendSeries.map((slot, idx) => {
         const mergedSlotModels = trendMergedByIdx[idx];
         if (!mergedSlotModels || mergedSlotModels.length === 0) return slot;
         return {
           ...slot,
-          modelSegments: partitionModelSegments(mergedSlotModels, modelColorMap, {
-            maxMain: 5,
-            minSharePct: 1.5,
-          }),
+          mergedModels: mergedSlotModels,
+          modelSegments: buildTrendModelSegments(mergedSlotModels),
         };
       });
-      trendChart.update(enrichedTrendSeries);
+      trendChart.update(enrichedTrendSeries, {
+        heatmapMode: heatmapViewMode,
+        buildModelSegments: buildTrendModelSegments,
+      });
 
       // 3. 同步统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」及对应排序控制）
       const sortedTopConvs = [...topConvsWithModels].sort((a, b) =>
@@ -2015,6 +1403,30 @@ export const ConsumptionView = defineComponent({
       patchAttr(workspacesListEl, 'hidden', !showWorkspacesTab);
       patchAttr(topConvsEmptyEl, 'hidden', !showSessionsTab || sortedTopConvs.length > 0);
       patchText(topConvsEmptyEl, t('cons.topConvsEmpty'));
+
+      const nextRangeSig = `${slice.range || ''}:${activePoolFilter || 'all'}:${slice.customStartMs || 0}:${slice.customEndMs || 0}`;
+      const nextRankingKey = showWorkspacesTab
+        ? 'workspaces'
+        : showSessionsTab
+          ? 'sessions'
+          : 'models';
+      const nextSortSig = showModelsTab ? `m:${modelsSortBy}` : `c:${topConvsSortBy}`;
+      const activeRankingEl = showWorkspacesTab
+        ? workspacesListEl
+        : showSessionsTab
+          ? sortedTopConvs.length > 0
+            ? topConvsListEl
+            : topConvsEmptyEl
+          : modelsListEl;
+
+      const rangeSwitched = hasCompletedInitialDraw && nextRangeSig !== lastAnimatedRangeSig;
+      const tabSwitched =
+        hasCompletedInitialDraw && !rangeSwitched && nextRankingKey !== lastAnimatedRankingKey;
+      const sortSwitched =
+        hasCompletedInitialDraw &&
+        !rangeSwitched &&
+        !tabSwitched &&
+        nextSortSig !== lastAnimatedSortSig;
 
       patchKeyedList(modelsListEl, models, {
         keyFn: (m) => m.displayText || m.label || m.shortName,
@@ -2096,6 +1508,23 @@ export const ConsumptionView = defineComponent({
         createRow: createSourceBreakdownRow,
         updateRow: (refs, s) => updateSourceBreakdownRow(refs, s, sourcesTotalTok, modelColorMap),
       });
+
+      if (tabSwitched || sortSwitched) {
+        triggerConsAnim(activeRankingEl, 'is-bars-revealing');
+      }
+      if (!hasCompletedInitialDraw) {
+        hasCompletedInitialDraw = true;
+        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+          window.requestAnimationFrame(() => {
+            rootEl.classList?.add('is-ready');
+          });
+        } else {
+          rootEl.classList?.add('is-ready');
+        }
+      }
+      lastAnimatedRangeSig = nextRangeSig;
+      lastAnimatedRankingKey = nextRankingKey;
+      lastAnimatedSortSig = nextSortSig;
 
       // 5. 同步 12 个月垂直堆叠柱状图（按模型配色堆叠 + 长尾合并 + 悬停弹出明细浮层）
       patchText(monthlyYearBadge, String(monthlyYear));
@@ -2192,8 +1621,11 @@ export const ConsumptionView = defineComponent({
     const unsub = telemetryStore.subscribe(
       (st) => ({
         range: st.selectedTimeRange,
+        cyclePool: st.selectedCyclePool || 'all',
         customStartMs: st.customStartMs,
         customEndMs: st.customEndMs,
+        quotaPools: st.telemetry?.quotas?.pools,
+        weeklyLimitMode: st.telemetry?.settings?.weeklyLimitMode,
         consumption: st.telemetry?.consumption,
         modelBreakdown: st.telemetry?.modelBreakdown,
         modelDisplayMode: normalizeModelDisplayMode(
@@ -2247,6 +1679,7 @@ export const ConsumptionView = defineComponent({
         ariaLabel: t('cons.rangeAria'),
         options: getConsumptionTimeRangeOptions(),
       });
+      patchAttr(cyclePoolSelect.refs.triggerBtn, 'aria-label', t('cons.cyclePoolAria'));
       patchText(applyCustomBtnLabel, t('cons.applyFilter'));
       patchText(rangeToSpan, t('cons.rangeTo'));
       patchText(totalTokensLabel, t('cons.totalTokens'));
@@ -2261,6 +1694,11 @@ export const ConsumptionView = defineComponent({
         md: { label: t('cons.exportMd'), title: t('cons.exportMdTip') },
       });
       patchText(trendTitleSpan, t('cons.trendTitle'));
+      heatmapModeSwitch.setProps({
+        ariaLabel: t('cons.hmModeAria'),
+        modelValue: heatmapViewMode,
+        options: getHeatmapModeOptions(),
+      });
       rankingTabSwitch.setProps({
         ariaLabel: t('cons.rankTabAria'),
         modelValue: activeRankingTab,
@@ -2298,11 +1736,14 @@ export const ConsumptionView = defineComponent({
     );
 
     onCleanup(() => {
+      clearConsAnimTimers();
       hideBreakdownPopover();
       unsub();
       unsubView();
       unsubI18n();
       consExportMenu.destroy();
+      cyclePoolSelect.destroy();
+      heatmapModeSwitch.destroy();
       trendChart.destroy?.();
       rankingTabSwitch.destroy();
       modelsSortSwitch.destroy();
@@ -2317,6 +1758,9 @@ export const ConsumptionView = defineComponent({
       el: rootEl,
       refs: {
         timeFilterSwitch,
+        cyclePoolSelect,
+        heatmapModeSwitch,
+        trendChart,
         startPicker,
         endPicker,
         viewScrollbar,

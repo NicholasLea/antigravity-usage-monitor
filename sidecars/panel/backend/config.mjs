@@ -165,9 +165,11 @@ function resolveDefaultDataDir() {
 export const DATA_DIR = resolveDefaultDataDir();
 export const SETTINGS_FILE = join(DATA_DIR, 'settings.json');
 export const CACHE_FILE = join(DATA_DIR, 'trajectory_usage_cache.json');
+export const TRAJECTORY_DB_FILE = join(DATA_DIR, 'trajectory_store.sqlite');
 export const REMOTE_CATALOG_CACHE_FILE = join(DATA_DIR, 'remote_pricing_cache.json');
 export const CLI_STATUS_SNAPSHOT_FILE = join(DATA_DIR, 'cli-status-snapshot.json');
 export const QUOTA_RESERVATION_STATE_FILE = join(DATA_DIR, 'quota_reservation_state.json');
+export const ACCOUNT_QUOTA_HISTORY_FILE = join(DATA_DIR, 'account_quota_history.json');
 
 /**
  * 本地对话记录目录、脑图日志目录、守护发现目录与跨端深层统计缓存路径候选列表（联合覆盖 Desktop / CLI / IDE）。
@@ -380,7 +382,7 @@ export function computeRuntimeCodeVersion(options = {}) {
     join(HERE, 'trajectory-metrics.mjs'),
     LOCAL_CATALOG_FILE,
   ];
-  for (const subDir of ['shared', 'backend']) {
+  for (const subDir of ['shared', 'backend', join('backend', 'host-i18n')]) {
     const absDir = join(HERE, subDir);
     try {
       if (existsSync(absDir)) {
@@ -417,14 +419,27 @@ export function computeRuntimeCodeVersion(options = {}) {
 /**
  * 本机内存态轨迹步骤缓存容器（委托 `createTrajectoryCacheStore`，首次读取时惰性加载历史缓存）。
  */
+const isUnscopedHostTestRunner = Boolean(
+  typeof process !== 'undefined' &&
+    process?.env?.NODE_TEST_CONTEXT &&
+    !process?.env?.USAGE_MONITOR_APP_DATA_DIR &&
+    !process?.env?.ANTIGRAVITY_APP_DATA_DIR &&
+    !process?.env?.ANTIGRAVITY_GEMINI_DIR
+);
+
 const localTrajectoryCacheStore = createTrajectoryCacheStore({
-  cacheFilePath: CACHE_FILE,
+  cacheFilePath: isUnscopedHostTestRunner ? '' : CACHE_FILE,
+  sqliteFilePath: isUnscopedHostTestRunner ? '' : TRAJECTORY_DB_FILE,
   loadJsonFn: loadJson,
   writeCacheFn: (targetPath, dataObj) => saveJson(targetPath, dataObj),
   shouldBypassThrottleFn: (allowThrottleInTest) =>
     lsRuntimeEndpoint.addr === 'test.invalid' && !allowThrottleInTest,
-  registerExitHook: true,
+  registerExitHook: !isUnscopedHostTestRunner,
 });
+
+export function getLocalTrajectoryCacheStore() {
+  return localTrajectoryCacheStore;
+}
 
 export function getCachedTrajectory(cascadeId) {
   return localTrajectoryCacheStore.getCachedTrajectory(cascadeId);
@@ -432,6 +447,14 @@ export function getCachedTrajectory(cascadeId) {
 
 export function getCachedTrajectoryEntryByLower(cascadeId) {
   return localTrajectoryCacheStore.getCachedTrajectoryEntryByLower(cascadeId);
+}
+
+export function getHydratedTrajectory(cascadeId) {
+  return localTrajectoryCacheStore.getHydratedTrajectory(cascadeId);
+}
+
+export function getHydratedTrajectoryEntryByLower(cascadeId) {
+  return localTrajectoryCacheStore.getHydratedTrajectoryEntryByLower(cascadeId);
 }
 
 export function listCachedTrajectoryEntries() {
@@ -518,8 +541,8 @@ export const pluginUpdateState = {
  *
  * @returns {boolean} 是否成功写回空白缓存文件
  */
-export function clearRuntimeCaches() {
-  if (!localTrajectoryCacheStore.clearCache()) return false;
+export function clearRuntimeCaches(options = {}) {
+  if (!localTrajectoryCacheStore.clearCache(options)) return false;
   externalDeepStatsMemo.sig = '';
   externalDeepStatsMemo.convos.clear();
   localSummaryMemo.sig = '';

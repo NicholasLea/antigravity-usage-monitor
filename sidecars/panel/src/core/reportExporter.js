@@ -11,6 +11,7 @@ import {
   formatPctNumber,
   formatSpeedMetric,
   formatTokensPrecise,
+  formatTrendSlotFullLabel,
   formatUsd,
   mergeModelsByDisplayName,
   resolveModelDisplayInfo,
@@ -20,8 +21,10 @@ import { buildXlsxWorkbookBytes } from './xlsxBuilder.js';
 const PLAIN_SIGNED_NUMBER_RE = /^[+-]?\d+(\.\d+)?$/;
 
 const RANGE_LABELS_ZH = Object.freeze({
+  '5h': '近5小时',
   today: '今日',
   '24h': '近24小时',
+  week: '本周',
   '7d': '近7天',
   '14d': '近14天',
   '30d': '近30天',
@@ -31,8 +34,10 @@ const RANGE_LABELS_ZH = Object.freeze({
 });
 
 const RANGE_LABELS_EN = Object.freeze({
+  '5h': 'Last 5 Hours',
   today: 'Today',
   '24h': 'Last 24 Hours',
+  week: 'This Week',
   '7d': 'Last 7 Days',
   '14d': 'Last 14 Days',
   '30d': 'Last 30 Days',
@@ -94,10 +99,18 @@ function formatExportDate(ms) {
 function resolveLocalizedRangeLabel(range, en) {
   const r = range || {};
   const key = String(r.key || '').trim().toLowerCase();
+  const poolSuffix =
+    key === 'cycle' && r.pool && r.pool !== 'all' ? ` · ${r.poolLabel || r.pool}` : '';
   if (en) {
-    return RANGE_LABELS_EN[key] || r.label || key || 'All Time';
+    const baseEn =
+      key === 'cycle' && r.isFallbackWeek
+        ? 'This Week'
+        : RANGE_LABELS_EN[key] || r.label || key || 'All Time';
+    return `${baseEn}${poolSuffix}`;
   }
-  return r.label || RANGE_LABELS_ZH[key] || key || '全部时间';
+  if (r.label) return r.label;
+  const baseZh = RANGE_LABELS_ZH[key] || key || '全部时间';
+  return `${baseZh}${poolSuffix}`;
 }
 
 function resolveRangeSpanNote(range) {
@@ -209,6 +222,7 @@ function summarizeStepsForExport(list, displaySettings) {
 
     const validTps =
       !st.isCompactionStep &&
+      !st.isImageGenStep &&
       outTok >= 50 &&
       !st.selectedSpeedReason &&
       Number.isFinite(Number(st.tokPerSec)) &&
@@ -219,7 +233,11 @@ function summarizeStepsForExport(list, displaySettings) {
         : outTok / Number(st.tokPerSec)
       : 0;
     const validTtft =
-      !st.isCompactionStep && Number.isFinite(Number(st.ttftSec)) && Number(st.ttftSec) >= 0;
+      !st.isCompactionStep &&
+      !st.isImageGenStep &&
+      st.ttftSec != null &&
+      Number.isFinite(Number(st.ttftSec)) &&
+      Number(st.ttftSec) >= 0;
     if (validTps && stepSpeedSec > 0) {
       tpsTokSum += outTok;
       tpsSecSum += stepSpeedSec;
@@ -550,9 +568,13 @@ export function buildStepsXlsx(
       ? en
         ? 'Compaction'
         : '自动压缩'
-      : en
-        ? 'Normal'
-        : '常规';
+      : st.isImageGenStep
+        ? en
+          ? 'Image Gen'
+          : '生成图片'
+        : en
+          ? 'Normal'
+          : '常规';
     const tone = anomCount > 0 ? 'danger' : st.isCompactionStep ? 'info' : '';
 
     stepRows.push({
@@ -824,8 +846,10 @@ export function buildStepsMarkdownReport(
 export function buildConsumptionCsv(
   consumption,
   modelBreakdown = [],
-  { displaySettings = {}, includeBom = true } = {}
+  { displaySettings = {}, includeBom = true, locale } = {}
 ) {
+  const en = resolveExportEnglish(locale);
+  const effectiveLocale = en ? 'en-US' : 'zh-CN';
   const cons = consumption || {};
   const acc = cons.account || {};
   const range = cons.selectedRange || {};
@@ -851,7 +875,7 @@ export function buildConsumptionCsv(
     ]),
     csvRow([
       'summary',
-      range.label || range.key || 'all',
+      resolveLocalizedRangeLabel(range, en),
       Number(acc.calls || 0),
       Number(acc.inputTokens || 0),
       Number(acc.cacheReadTokens || 0),
@@ -919,7 +943,7 @@ export function buildConsumptionCsv(
     rows.push(
       csvRow([
         'trend',
-        slot.fullLabel || slot.label || '',
+        formatTrendSlotFullLabel(slot, { locale: effectiveLocale }) || slot.label || '',
         Number(slot.calls || 0),
         Number(slot.inputTokens || 0),
         Number(slot.cacheReadTokens || 0),
@@ -1307,8 +1331,11 @@ export function buildConsumptionXlsx(
     let tTot = 0;
     let tCost = 0;
     const trendRows = trend.map((slot) => {
+      const isMinute = slot.granularity === 'minute';
       const isHourly =
-        slot.granularity === 'hour' || String(slot.label || '').includes(':');
+        isMinute ||
+        slot.granularity === 'hour' ||
+        String(slot.label || '').includes(':');
       const calls = Math.max(0, Number(slot.calls || 0));
       const inTok = Math.max(0, Number(slot.inputTokens || 0));
       const cacheTok = Math.max(0, Number(slot.cacheReadTokens || 0));
@@ -1321,13 +1348,18 @@ export function buildConsumptionXlsx(
       tOut += outTok;
       tTot += totTok;
       tCost += cost;
-      const granLabel = isHourly
+      const stepMins = Math.max(1, Number(slot.stepMinutes) || 5);
+      const granLabel = isMinute
         ? en
-          ? 'Hourly'
-          : '按小时'
-        : en
-          ? 'Daily'
-          : '按天';
+          ? `${stepMins}m`
+          : `按 ${stepMins} 分钟`
+        : isHourly
+          ? en
+            ? 'Hourly'
+            : '按小时'
+          : en
+            ? 'Daily'
+            : '按天';
       return [
         formatTrendWindowLabel(slot, isHourly),
         granLabel,

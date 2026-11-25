@@ -31,6 +31,7 @@ import {
   WINDOW_OVERLAY_KEY,
   WINDOW_OVERLAY_METHODS,
 } from '../shared/window-bridge-protocol.mjs';
+import { HOST_I18N_GLOBAL_KEY } from '../shared/host-i18n-protocol.mjs';
 import {
   DATA_DIR,
   computeRuntimeCodeVersion,
@@ -45,6 +46,13 @@ import {
   getContextWindowModels,
   resolveContextWindowRules,
 } from './context-windows.mjs';
+import {
+  createHostI18nApplyExpression,
+  createHostI18nCollectExpression,
+  createHostI18nDisposeExpression,
+  createHostI18nHeartbeatExpression,
+  getHostI18nBridgeDescriptor,
+} from './host-i18n/index.mjs';
 import {
   ensureDesktopLaunchEntriesConfigured,
   resolveDesktopHostExecutable,
@@ -64,6 +72,7 @@ import { getDefaultCloudCodeProxy } from './cloudcode-proxy.mjs';
 const windowBridgeRef = `window[${JSON.stringify(WINDOW_BRIDGE_KEY)}]`;
 const windowOverlayRef = `window[${JSON.stringify(WINDOW_OVERLAY_KEY)}]`;
 const windowContextWindowsRef = `window[${JSON.stringify(CONTEXT_WINDOWS_GLOBAL_KEY)}]`;
+const windowHostI18nRef = `window[${JSON.stringify(HOST_I18N_GLOBAL_KEY)}]`;
 const windowBridgeRouteKey = JSON.stringify(WINDOW_BRIDGE_ROUTE_KEY);
 const windowBridgeEndpointKey = JSON.stringify(WINDOW_BRIDGE_ENDPOINT_KEY);
 const overlayMethods = Object.fromEntries(
@@ -71,8 +80,74 @@ const overlayMethods = Object.fromEntries(
 );
 
 const BRIDGE_MAX_BODY_BYTES = 64 * 1024;
-const BRIDGE_MAX_EXPORT_BODY_BYTES = 8 * 1024 * 1024;
+// 8 MiB 原始导出文件经 Base64 (4/3x) 编码和 JSON 封装后约 10.7 MiB，预留 12 MiB 请求体上限
+const BRIDGE_MAX_EXPORT_BODY_BYTES = 12 * 1024 * 1024;
 const ALLOWED_BRIDGE_PATHS = new Set(BRIDGE_API_PATHS);
+const CASCADE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const IDE_ROUTE_PROBE_MAX_TIMEOUT_MS = 1000;
+
+function sanitizeRouteCascadeId(raw) {
+  const id = String(raw || '').trim();
+  return CASCADE_UUID_RE.test(id) ? id : '';
+}
+
+const WINDOW_VISIBLE_EXPR = `Boolean(
+  (window.innerWidth === undefined || Number(window.innerWidth) > 80) &&
+  (window.innerHeight === undefined || Number(window.innerHeight) > 80) &&
+  !(typeof document !== 'undefined' && document?.hidden === true)
+)`;
+
+/**
+ * 构建单一事实来源的页面内会话路由提取 IIFE 片段，供常规保活探测与 IDE 聊天 iframe 路由探测共用：
+ * 优先解析 `/c/<uuid>`，其次在非隐藏且非零尺寸的 `conversation-view` 中按聚焦态、选中行交集及首个可见视图裁决。
+ *
+ * @returns {string}
+ */
+function buildDomRouteCascadeIdSnippet() {
+  return `(() => {
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const m = String(window.location?.pathname || '').match(/^\\/c\\/([0-9a-f-]{36})(?:\\/|$)/i);
+    if (m && uuidRe.test(m[1])) return m[1];
+    if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return '';
+    const selectedRow = document.querySelector(
+      '[data-testid^="conversation-row-"][data-selected="true"][data-cascade-id]'
+    );
+    const selectedRowId = String(selectedRow?.getAttribute?.('data-cascade-id') || '').trim();
+    if (typeof document.querySelectorAll === 'function') {
+      const views = document.querySelectorAll('[data-testid="conversation-view"][data-cascade-id]');
+      const visibleIds = [];
+      let focusedId = '';
+      const activeEl = document.activeElement || null;
+      for (const viewEl of views) {
+        const cid = String(viewEl?.getAttribute?.('data-cascade-id') || '').trim();
+        if (!uuidRe.test(cid)) continue;
+        if (viewEl.hasAttribute?.('hidden')) continue;
+        if (viewEl.getBoundingClientRect) {
+          const r = viewEl.getBoundingClientRect();
+          if (r.width <= 0 && r.height <= 0) continue;
+        }
+        visibleIds.push(cid);
+        if (activeEl && viewEl.contains?.(activeEl)) {
+          focusedId = cid;
+        }
+      }
+      if (focusedId) return focusedId;
+      if (
+        selectedRowId &&
+        uuidRe.test(selectedRowId) &&
+        visibleIds.some((id) => id.toLowerCase() === selectedRowId.toLowerCase())
+      ) {
+        return selectedRowId;
+      }
+      if (visibleIds.length > 0) return visibleIds[0];
+    }
+    const singleView = document.querySelector('[data-testid="conversation-view"][data-cascade-id]');
+    const singleViewId = String(singleView?.getAttribute?.('data-cascade-id') || '').trim();
+    if (uuidRe.test(singleViewId)) return singleViewId;
+    if (uuidRe.test(selectedRowId)) return selectedRowId;
+    return '';
+  })()`;
+}
 
 /**
  * 解析各操作系统下 Antigravity 2.0 与 Antigravity IDE 写入 `DevToolsActivePort` 的候选路径列表。
@@ -1084,6 +1159,10 @@ export function createWindowBridgeController(options) {
     cloudCodeProxy = null,
     manageCloudCodeProxy = false,
     resolveLocalContextRulesFn = null,
+    getHostI18nDescriptorFn =
+      options?.env === undefined && options?.homeDir === undefined
+        ? getHostI18nBridgeDescriptor
+        : () => ({ active: false, revision: '', getPayload: null }),
   } = options || {};
 
   const activeCloudCodeProxy =
@@ -1144,6 +1223,10 @@ export function createWindowBridgeController(options) {
   };
   let hadContextWindows = false;
   let contextWindowBootId = `${process.pid}:${Date.now()}`;
+  let hadHostI18n = false;
+  let hostI18nBootId = `hi18n:${process.pid}:${Date.now()}`;
+  let lastHostI18nAppliedCount = 0;
+  let cachedHostI18nApply = { revision: '', bootId: '', expr: '' };
   const cachedBackendCtxModelsByEndpoint = new Map();
   const targetClassifyCache = new Map();
   let nodeDepsPromise = null;
@@ -1343,17 +1426,34 @@ export function createWindowBridgeController(options) {
           return;
         }
 
-        const maxBodyBytes =
+        let maxBodyBytes =
           parsedUrl.pathname === '/api/export-file'
             ? BRIDGE_MAX_EXPORT_BODY_BYTES
             : BRIDGE_MAX_BODY_BYTES;
         const chunks = [];
         let totalBytes = 0;
         let aborted = false;
+        let checkedSettingsExportPrefix = false;
         req.on('data', (chunk) => {
-          totalBytes += chunk.length;
+          const nextTotal = totalBytes + chunk.length;
+          if (
+            nextTotal > maxBodyBytes &&
+            !checkedSettingsExportPrefix &&
+            parsedUrl.pathname === '/api/settings' &&
+            nextTotal <= BRIDGE_MAX_EXPORT_BODY_BYTES
+          ) {
+            checkedSettingsExportPrefix = true;
+            const sampleParts = chunks.length > 0 ? [...chunks, chunk] : [chunk];
+            const headBuf = Buffer.concat(sampleParts, Math.min(nextTotal, 512));
+            const headStr = headBuf.toString('utf8').trimStart();
+            if (/^\{\s*"__exportFileAction"\s*:\s*"(?:save|reveal)"/.test(headStr)) {
+              maxBodyBytes = BRIDGE_MAX_EXPORT_BODY_BYTES;
+            }
+          }
+          totalBytes = nextTotal;
           if (totalBytes > maxBodyBytes) {
             aborted = true;
+            chunks.length = 0;
             res.writeHead(413, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Payload too large' }));
             req.destroy();
@@ -1370,6 +1470,18 @@ export function createWindowBridgeController(options) {
           } catch {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            return;
+          }
+          if (
+            totalBytes > BRIDGE_MAX_BODY_BYTES &&
+            parsedUrl.pathname === '/api/settings' &&
+            (!bodyObj ||
+              typeof bodyObj !== 'object' ||
+              Array.isArray(bodyObj) ||
+              typeof bodyObj.__exportFileAction !== 'string')
+          ) {
+            res.writeHead(413, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Payload too large' }));
             return;
           }
           Promise.resolve(invokeApiHandler(parsedUrl.pathname, 'POST', bodyObj, normalizedReqEndpoint))
@@ -1548,20 +1660,29 @@ export function createWindowBridgeController(options) {
     return { reachableCount, targets: merged };
   }
 
-  async function evaluateOnTarget(wsUrl, expression, timeoutMsOverride = 0) {
+  async function evaluateOnTarget(wsUrl, expression, timeoutMsOverride = 0, signal = null) {
     const WS = WebSocketImpl || globalThis.WebSocket;
     if (typeof WS !== 'function') {
       throw new Error('WebSocket runtime unavailable');
     }
+    if (signal?.aborted) {
+      throw new Error('CDP Runtime.evaluate aborted');
+    }
     const effectiveTimeoutMs = Math.max(500, Number(timeoutMsOverride) || cdpTimeoutMs);
     let ws = null;
     let timer = null;
+    let onAbort = null;
     try {
       ws = new WS(wsUrl);
       const evalResult = await new Promise((resolve, reject) => {
         timer = setTimeout(() => {
           reject(new Error('CDP Runtime.evaluate timeout'));
         }, effectiveTimeoutMs);
+
+        if (signal && typeof signal.addEventListener === 'function') {
+          onAbort = () => reject(new Error('CDP Runtime.evaluate aborted'));
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
 
         const onOpen = () => {
           try {
@@ -1604,6 +1725,9 @@ export function createWindowBridgeController(options) {
       return evalResult;
     } finally {
       if (timer) clearTimeout(timer);
+      if (onAbort && signal && typeof signal.removeEventListener === 'function') {
+        signal.removeEventListener('abort', onAbort);
+      }
       if (ws) {
         try {
           ws.close();
@@ -1772,10 +1896,21 @@ export function createWindowBridgeController(options) {
     const needsMainCdpContext = hasContextWindows && ctxMainEnabled;
     const needsCloudCodeProxy = hasContextWindows && ctxSwarmEnabled;
     const needsAnyCdpContext = hasContextWindows && (ctxMainEnabled || ctxSwarmEnabled);
+    const hostI18nDesc =
+      typeof getHostI18nDescriptorFn === 'function' ? getHostI18nDescriptorFn() : null;
+    const needsHostI18n = Boolean(
+      hostI18nDesc?.active &&
+        hostI18nDesc?.revision &&
+        typeof hostI18nDesc?.getPayload === 'function'
+    );
 
     let leasedBySelf = false;
     let currentLease = null;
-    if ((enabled || needsAnyCdpContext || needsCloudCodeProxy) && leaseFilePath && !forceReinject) {
+    if (
+      (enabled || needsAnyCdpContext || needsCloudCodeProxy || needsHostI18n) &&
+      leaseFilePath &&
+      !forceReinject
+    ) {
       const lease = loadJson(leaseFilePath, null);
       currentLease = lease;
       const leasePid = Number(lease?.pid || 0);
@@ -1844,7 +1979,7 @@ export function createWindowBridgeController(options) {
     }
 
     const shouldCheckLaunchers =
-      (enabled || needsMainCdpContext) &&
+      (enabled || needsMainCdpContext || needsHostI18n) &&
       autoConfigureIdeArgv &&
       (lastLauncherProvisionAtMs === 0 ||
         Date.now() - lastLauncherProvisionAtMs >= launcherRecheckIntervalMs);
@@ -1859,12 +1994,15 @@ export function createWindowBridgeController(options) {
       if (provPending) {
         await provPending.catch(() => {});
       }
-      updateBridgeStatus(enabled || needsMainCdpContext ? 'no_devtools_port' : 'disabled', {
-        enabled,
-        leasedBySelf,
-        bundleVersion,
-        prevLease: currentLease,
-      });
+      updateBridgeStatus(
+        enabled || needsMainCdpContext || needsHostI18n ? 'no_devtools_port' : 'disabled',
+        {
+          enabled,
+          leasedBySelf,
+          bundleVersion,
+          prevLease: currentLease,
+        }
+      );
       return { ok: false, enabled, reason: 'no_devtools_port', injected: 0 };
     }
 
@@ -1877,12 +2015,15 @@ export function createWindowBridgeController(options) {
       if (provPending) {
         await provPending.catch(() => {});
       }
-      updateBridgeStatus(enabled || needsMainCdpContext ? 'cdp_unreachable' : 'disabled', {
-        enabled,
-        leasedBySelf,
-        bundleVersion,
-        prevLease: currentLease,
-      });
+      updateBridgeStatus(
+        enabled || needsMainCdpContext || needsHostI18n ? 'cdp_unreachable' : 'disabled',
+        {
+          enabled,
+          leasedBySelf,
+          bundleVersion,
+          prevLease: currentLease,
+        }
+      );
       return { ok: false, enabled, reason: 'cdp_unreachable', injected: 0 };
     }
 
@@ -1905,6 +2046,8 @@ export function createWindowBridgeController(options) {
       !enabled &&
       !needsAnyCdpContext &&
       !hadContextWindows &&
+      !needsHostI18n &&
+      !hadHostI18n &&
       !hadInjectedTargets &&
       !hadInjectedChatFrames &&
       !forceReinject
@@ -2144,6 +2287,66 @@ export function createWindowBridgeController(options) {
       hadContextWindows = needsAnyCdpContext;
     }
 
+    if (needsHostI18n || hadHostI18n) {
+      const hostI18nWsUrls = new Set();
+      for (const target of targets) {
+        if (target.isIdeWorkbench) continue;
+        const wsUrl = String(target.webSocketDebuggerUrl || '').trim();
+        if (wsUrl) hostI18nWsUrls.add(wsUrl);
+      }
+      for (const chatUrl of collectAllChatDebuggerUrls(targets)) {
+        if (chatUrl) hostI18nWsUrls.add(chatUrl);
+      }
+
+      if (!needsHostI18n) {
+        const disposeHostI18nExpr = createHostI18nDisposeExpression();
+        await Promise.allSettled(
+          Array.from(hostI18nWsUrls).map((wsUrl) => evaluateOnTarget(wsUrl, disposeHostI18nExpr))
+        );
+        hadHostI18n = false;
+        lastHostI18nAppliedCount = 0;
+        cachedHostI18nApply = { revision: '', bootId: '', expr: '' };
+      } else {
+        const heartbeatExpr = createHostI18nHeartbeatExpression(
+          hostI18nBootId,
+          hostI18nDesc.revision
+        );
+        let appliedTargets = 0;
+        await Promise.allSettled(
+          Array.from(hostI18nWsUrls).map(async (wsUrl) => {
+            try {
+              const hbRes = await evaluateOnTarget(wsUrl, heartbeatExpr, 1800);
+              const hbVal = hbRes?.result?.result?.value;
+              if (hbVal?.alive === true && hbVal?.needsApply === false) {
+                appliedTargets += 1;
+                return;
+              }
+            } catch {
+              // 心跳异常时回退完整注入
+            }
+            if (
+              !cachedHostI18nApply.expr ||
+              cachedHostI18nApply.revision !== hostI18nDesc.revision ||
+              cachedHostI18nApply.bootId !== hostI18nBootId
+            ) {
+              const payload = hostI18nDesc.getPayload();
+              cachedHostI18nApply = {
+                revision: hostI18nDesc.revision,
+                bootId: hostI18nBootId,
+                expr: createHostI18nApplyExpression(payload, hostI18nBootId),
+              };
+            }
+            const applyRes = await evaluateOnTarget(wsUrl, cachedHostI18nApply.expr, 8000);
+            if (applyRes?.result?.result?.value?.applied) {
+              appliedTargets += 1;
+            }
+          })
+        );
+        hadHostI18n = true;
+        lastHostI18nAppliedCount = appliedTargets;
+      }
+    }
+
     const disposeExpr = `(() => {
       try {
         const existed = Boolean(${windowOverlayRef} || ${windowBridgeRef});
@@ -2199,6 +2402,7 @@ export function createWindowBridgeController(options) {
     }
 
     const { port, token } = await ensureBridgeServer();
+    const domRouteExpr = buildDomRouteCascadeIdSnippet();
     const probeExpr = `(() => {
       try {
         const ov = ${windowOverlayRef};
@@ -2206,28 +2410,11 @@ export function createWindowBridgeController(options) {
         const alive = Boolean(ov && typeof ov[${overlayMethods.ensureAlive}] === 'function' && ov[${overlayMethods.ensureAlive}]());
         const dockKind = String(ov?.[${overlayMethods.getDockKind}]?.() || '');
         const clientMountMode = String(ov?.[${overlayMethods.getMountMode}]?.() || '');
-        const visible = Boolean(
-          (window.innerWidth === undefined || Number(window.innerWidth) > 80) &&
-          (window.innerHeight === undefined || Number(window.innerHeight) > 80) &&
-          !(typeof document !== 'undefined' && document?.hidden === true)
-        );
+        const visible = ${WINDOW_VISIBLE_EXPR};
         const rpcBatch = Array.isArray(br?.rpcQueue) && br.rpcQueue.length > 0
           ? br.rpcQueue.splice(0, 8)
           : [];
-        let routeCascadeId = '';
-        if (!alive) {
-          const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          const m = String(window.location?.pathname || '').match(/^\\/c\\/([0-9a-f-]{36})(?:\\/|$)/i);
-          if (m && uuidRe.test(m[1])) {
-            routeCascadeId = m[1];
-          } else if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
-            const el =
-              document.querySelector('[data-testid="conversation-view"][data-cascade-id]') ||
-              document.querySelector('[data-testid^="conversation-row-"][data-selected="true"][data-cascade-id]');
-            const cand = String(el?.getAttribute?.('data-cascade-id') || '').trim();
-            if (uuidRe.test(cand)) routeCascadeId = cand;
-          }
-        }
+        const routeCascadeId = !alive ? ${domRouteExpr} : '';
         return {
           alive,
           dockKind,
@@ -2248,6 +2435,107 @@ export function createWindowBridgeController(options) {
       }
     })()`;
 
+    const ideChatRouteProbeExpr = `(() => {
+      try {
+        const visible = ${WINDOW_VISIBLE_EXPR};
+        const focused = Boolean(
+          typeof document !== 'undefined' && typeof document.hasFocus === 'function' && document.hasFocus()
+        );
+        const routeCascadeId = ${domRouteExpr};
+        return { routeCascadeId, visible, focused };
+      } catch {
+        return { routeCascadeId: '', visible: false, focused: false };
+      }
+    })()`;
+
+    const ideRouteProbeTimeoutMs = Math.max(
+      500,
+      Math.min(Number(cdpTimeoutMs) || IDE_ROUTE_PROBE_MAX_TIMEOUT_MS, IDE_ROUTE_PROBE_MAX_TIMEOUT_MS)
+    );
+
+    async function resolveIdeWorkbenchRouteId(targetObj) {
+      const staticRouteId = sanitizeRouteCascadeId(targetObj?.ideRouteCascadeId);
+      const chatList = Array.isArray(targetObj?.ideChatTargets) ? targetObj.ideChatTargets : [];
+      const probeUrls = chatList
+        .map((chatTarget) => String(chatTarget?.webSocketDebuggerUrl || '').trim())
+        .filter(Boolean);
+      if (probeUrls.length === 0) {
+        return staticRouteId;
+      }
+
+      if (probeUrls.length === 1) {
+        try {
+          const res = await evaluateOnTarget(probeUrls[0], ideChatRouteProbeExpr, ideRouteProbeTimeoutMs);
+          const cid = sanitizeRouteCascadeId(res?.result?.result?.value?.routeCascadeId);
+          return cid || staticRouteId;
+        } catch {
+          return staticRouteId;
+        }
+      }
+
+      const abortCtrl = typeof AbortController === 'function' ? new AbortController() : null;
+      const results = new Array(probeUrls.length).fill(null);
+      let settledCount = 0;
+      let resolved = false;
+
+      return new Promise((resolve) => {
+        const pickBest = () => {
+          let bestRouteId = '';
+          let bestRank = 0;
+          for (const item of results) {
+            if (!item || !item.cid) continue;
+            if (item.rank > bestRank) {
+              bestRank = item.rank;
+              bestRouteId = item.cid;
+              if (bestRank === 3) break;
+            }
+          }
+          return bestRouteId || staticRouteId;
+        };
+
+        const finishEarly = (routeId) => {
+          if (resolved) return;
+          resolved = true;
+          try {
+            abortCtrl?.abort();
+          } catch {
+            // 忽略中止异常
+          }
+          resolve(routeId);
+        };
+
+        probeUrls.forEach((chatWsUrl, idx) => {
+          evaluateOnTarget(
+            chatWsUrl,
+            ideChatRouteProbeExpr,
+            ideRouteProbeTimeoutMs,
+            abortCtrl?.signal || null
+          )
+            .then((res) => {
+              const val = res?.result?.result?.value;
+              const cid = sanitizeRouteCascadeId(val?.routeCascadeId);
+              if (cid) {
+                const rank = val?.focused && val?.visible ? 3 : val?.visible ? 2 : 1;
+                results[idx] = { cid, rank };
+                if (rank === 3) {
+                  finishEarly(cid);
+                }
+              }
+            })
+            .catch(() => {
+              // 单个聊天子视图探测异常、超时或提前中止均不阻断其他视图及静态路由兜底
+            })
+            .finally(() => {
+              settledCount += 1;
+              if (!resolved && settledCount === probeUrls.length) {
+                resolved = true;
+                resolve(pickBest());
+              }
+            });
+        });
+      });
+    }
+
     let cachedAssets = null;
     let injected = 0;
     let aliveCount = 0;
@@ -2258,7 +2546,7 @@ export function createWindowBridgeController(options) {
       const wsUrl = String(targetObj?.webSocketDebuggerUrl || '').trim();
       if (!wsUrl) return { alive: false, dockKind: '', visible: false };
       let probedRouteId = '';
-      const ideRouteId = String(ideRouteOverride || targetObj.ideRouteCascadeId || '').trim();
+      const ideRouteId = sanitizeRouteCascadeId(ideRouteOverride || targetObj.ideRouteCascadeId);
       const targetEndpointId = String(targetObj.endpointId || LOCAL_ENDPOINT_ID);
       const targetIsRemote = Boolean(targetObj.isRemoteEndpoint && targetEndpointId !== LOCAL_ENDPOINT_ID);
       const targetEndpointLabel = targetIsRemote ? String(targetObj.endpointLabel || 'SSH') : '';
@@ -2266,7 +2554,7 @@ export function createWindowBridgeController(options) {
       if (!forceReinject) {
         const probeRes = await evaluateOnTarget(wsUrl, probeExpr);
         const snap = probeRes?.result?.result?.value;
-        probedRouteId = String(snap?.routeCascadeId || '').trim();
+        probedRouteId = sanitizeRouteCascadeId(snap?.routeCascadeId);
         if (snap && snap.alive === true) {
           const snapVerNum = Number(snap.bundleVersion) || 0;
           const curVerNum = Number(bundleVersion) || 0;
@@ -2456,12 +2744,16 @@ export function createWindowBridgeController(options) {
           if (chatComposerActive) {
             await disposeSingleTarget(target.webSocketDebuggerUrl);
           } else {
-            await syncSingleTarget(target);
+            const ideRouteOverride = await resolveIdeWorkbenchRouteId(target);
+            await syncSingleTarget(target, { ideRouteOverride });
           }
           continue;
         }
 
-        await syncSingleTarget(target);
+        const ideRouteOverride = target.isIdeWorkbench
+          ? await resolveIdeWorkbenchRouteId(target)
+          : '';
+        await syncSingleTarget(target, { ideRouteOverride });
       } catch {
         // 单个窗口注入异常不阻断其他窗口
       }
@@ -2588,7 +2880,10 @@ export function createWindowBridgeController(options) {
       clearTimeout(pollTimer);
       pollTimer = null;
     }
-    if (disposeWindows && (hadInjectedTargets || hadInjectedChatFrames || hadContextWindows)) {
+    if (
+      disposeWindows &&
+      (hadInjectedTargets || hadInjectedChatFrames || hadContextWindows || hadHostI18n)
+    ) {
       const prevStopped = stopped;
       stopped = false;
       try {
@@ -2599,6 +2894,7 @@ export function createWindowBridgeController(options) {
           }));
           const disposeExpr = `(() => {
             try {
+              ${windowHostI18nRef}?.dispose?.();
               ${windowContextWindowsRef}?.dispose?.();
               ${windowOverlayRef}?.[${overlayMethods.dispose}]?.();
               delete ${windowOverlayRef};
@@ -2624,6 +2920,9 @@ export function createWindowBridgeController(options) {
     hadInjectedTargets = false;
     hadInjectedChatFrames = false;
     hadContextWindows = false;
+    hadHostI18n = false;
+    lastHostI18nAppliedCount = 0;
+    cachedHostI18nApply = { revision: '', bootId: '', expr: '' };
     if (activeCloudCodeProxy) {
       await activeCloudCodeProxy.stop().catch(() => {});
     }
@@ -2646,7 +2945,10 @@ export function createWindowBridgeController(options) {
       const hasCtx =
         Object.keys(cur.modelContextWindows || {}).length > 0 &&
         cur.contextWindowMainEnabled !== false;
-      if (!hasCtx && autoConfigureIdeArgv) {
+      const hasHostI18n = Boolean(
+        typeof getHostI18nDescriptorFn === 'function' && getHostI18nDescriptorFn()?.active
+      );
+      if (!hasCtx && !hasHostI18n && autoConfigureIdeArgv) {
         launcherConfigured = false;
         hasReadOnlyShortcuts = false;
         lastLauncherProvisionAtMs = 0;
@@ -2674,9 +2976,12 @@ export function createWindowBridgeController(options) {
     const hasCtx =
       Object.keys(cur.modelContextWindows || {}).length > 0 &&
       cur.contextWindowMainEnabled !== false;
+    const hasHostI18n = Boolean(
+      typeof getHostI18nDescriptorFn === 'function' && getHostI18nDescriptorFn()?.active
+    );
     if (hasCtx) {
       lastLauncherProvisionAtMs = 0;
-    } else if (!overlayOn && autoConfigureIdeArgv) {
+    } else if (!overlayOn && !hasHostI18n && autoConfigureIdeArgv) {
       launcherConfigured = false;
       hasReadOnlyShortcuts = false;
       lastLauncherProvisionAtMs = 0;
@@ -2693,16 +2998,97 @@ export function createWindowBridgeController(options) {
     return syncAllWindows({ forceReinject: false }).catch(() => ({ ok: false }));
   }
 
+  function notifyHostI18nChanged() {
+    const cur = getSettingsFn() || {};
+    const mountMode = normalizeWindowMountMode(cur.windowMountMode, cur.enableWindowOverlay);
+    const overlayOn = Boolean(cur.enableWindowOverlay !== false && mountMode !== 'sidebar');
+    const hasCtx =
+      Object.keys(cur.modelContextWindows || {}).length > 0 &&
+      cur.contextWindowMainEnabled !== false;
+    const hasHostI18n = Boolean(
+      typeof getHostI18nDescriptorFn === 'function' && getHostI18nDescriptorFn()?.active
+    );
+    if (hasHostI18n) {
+      lastLauncherProvisionAtMs = 0;
+    } else {
+      hadHostI18n = true;
+      if (!overlayOn && !hasCtx && autoConfigureIdeArgv) {
+        launcherConfigured = false;
+        hasReadOnlyShortcuts = false;
+        lastLauncherProvisionAtMs = 0;
+        void ensureDesktopLaunchEntriesConfigured({
+          enabled: false,
+          env,
+          platform,
+          homeDir,
+          execFileFn: launcherExecFileFn,
+          fsOps: launcherFsOps,
+          allowInTest: allowDesktopLauncherInTest,
+        }).catch(() => {});
+      }
+    }
+    return syncAllWindows({ forceReinject: false }).catch(() => ({ ok: false }));
+  }
+
+  async function collectHostI18nUntranslatedFromTargets() {
+    const cdpPorts = findActiveDevToolsPorts();
+    if (!cdpPorts.length) {
+      return { targets: 0, items: [] };
+    }
+    const { targets } = await collectAllMainWindowTargets(cdpPorts).catch(() => ({ targets: [] }));
+    const wsUrls = new Set();
+    for (const target of targets) {
+      if (target.isIdeWorkbench) continue;
+      const wsUrl = String(target.webSocketDebuggerUrl || '').trim();
+      if (wsUrl) wsUrls.add(wsUrl);
+    }
+    for (const chatUrl of collectAllChatDebuggerUrls(targets)) {
+      if (chatUrl) wsUrls.add(chatUrl);
+    }
+    if (wsUrls.size === 0) {
+      return { targets: 0, items: [] };
+    }
+    const collectExpr = createHostI18nCollectExpression();
+    const settled = await Promise.allSettled(
+      Array.from(wsUrls).map((wsUrl) => evaluateOnTarget(wsUrl, collectExpr, 3500))
+    );
+    const mergedCounts = new Map();
+    const mergedKinds = new Map();
+    let scannedTargets = 0;
+    for (const res of settled) {
+      if (res.status !== 'fulfilled') continue;
+      const val = res.value?.result?.result?.value;
+      if (!val || !Array.isArray(val.items)) continue;
+      scannedTargets += 1;
+      for (const item of val.items) {
+        const text = String(item?.text || '').trim();
+        if (!text) continue;
+        mergedCounts.set(text, (mergedCounts.get(text) || 0) + (Number(item?.count || 1) || 1));
+        if (!mergedKinds.has(text)) mergedKinds.set(text, String(item?.kind || 'text'));
+      }
+    }
+    const items = Array.from(mergedCounts.entries())
+      .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+      .slice(0, 200)
+      .map(([text, count]) => ({ text, kind: mergedKinds.get(text) || 'text', count }));
+    return { targets: scannedTargets, items };
+  }
+
   return {
     ensureBridgeServer,
     syncAllWindows,
     invokeRemoteWindowRpc,
     notifySettingChanged,
     notifyContextWindowsChanged,
+    notifyHostI18nChanged,
+    collectHostI18nUntranslatedFromTargets,
     start,
     stop,
     getBridgeInfo: () => ({ port: bridgePort, token: bridgeToken, running: Boolean(server) }),
-    getBridgeStatus: () => ({ ...lastBridgeStatus }),
+    getBridgeStatus: () => ({
+      ...lastBridgeStatus,
+      hostI18nAppliedCount: lastHostI18nAppliedCount,
+    }),
   };
 }
 
@@ -2760,4 +3146,16 @@ export function notifyWindowOverlaySetting(enabled) {
 export function notifyModelContextWindowsChanged() {
   if (!defaultBridgeController) return Promise.resolve({ ok: false });
   return defaultBridgeController.notifyContextWindowsChanged();
+}
+
+export function notifyHostI18nChanged() {
+  if (!defaultBridgeController) return Promise.resolve({ ok: false });
+  return defaultBridgeController.notifyHostI18nChanged();
+}
+
+export function collectHostI18nUntranslatedFromActiveTargets() {
+  if (!defaultBridgeController) {
+    return Promise.resolve({ targets: 0, items: [] });
+  }
+  return defaultBridgeController.collectHostI18nUntranslatedFromTargets();
 }

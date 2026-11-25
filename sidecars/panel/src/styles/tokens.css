@@ -171,6 +171,7 @@
   --ui-panel-scale: 1.18;
 }
 
+:host([data-font-scale]),
 [data-font-scale] {
   --fs-2xs: calc(10.5px * var(--ui-font-scale, 1));
   --fs-xs: calc(11px * var(--ui-font-scale, 1));

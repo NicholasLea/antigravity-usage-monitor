@@ -6,8 +6,10 @@
 
 import { isContextWindowSettingId, isContextWindowOption } from './context-windows.mjs';
 import {
+  ACCOUNT_QUOTA_REFRESH_MINUTES,
   CLI_STATUSLINE_PRESETS,
   CONTEXT_AGENT_MODES,
+  DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES,
   DEFAULT_CLI_STATUSLINE_SLOTS,
   DEFAULT_CONTEXT_AGENT_MODE,
   DEFAULT_HOVER_MODULES,
@@ -32,6 +34,7 @@ import {
   SUPPORTED_LANGUAGES,
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
+  normalizeAccountQuotaRefreshMinutes,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
   normalizeExperimentalModernUi,
@@ -59,8 +62,10 @@ import {
 } from '../shared/settings-normalization.mjs';
 
 export {
+  ACCOUNT_QUOTA_REFRESH_MINUTES,
   CLI_STATUSLINE_PRESETS,
   CONTEXT_AGENT_MODES,
+  DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES,
   DEFAULT_CLI_STATUSLINE_SLOTS,
   DEFAULT_CONTEXT_AGENT_MODE,
   DEFAULT_HOVER_MODULES,
@@ -85,6 +90,7 @@ export {
   SUPPORTED_LANGUAGES,
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
+  normalizeAccountQuotaRefreshMinutes,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
   normalizeExperimentalModernUi,
@@ -162,6 +168,8 @@ export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
   stepTokenComboFormat: DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   stepTableColumns: DEFAULT_STEP_TABLE_COLUMNS,
   experimentalQuotaReservation: true,
+  accountQuotaRefreshMinutes: DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES,
+  accountSwitchRiskAccepted: false,
   contextWindowRiskAccepted: false,
   contextWindowMainEnabled: true,
   contextWindowSwarmEnabled: false,
@@ -246,6 +254,10 @@ export function normalizeFullSettings(rawInput) {
     experimentalQuotaReservation: normalizeExperimentalQuotaReservation(
       safeRaw.experimentalQuotaReservation
     ),
+    accountQuotaRefreshMinutes: normalizeAccountQuotaRefreshMinutes(
+      safeRaw.accountQuotaRefreshMinutes
+    ),
+    accountSwitchRiskAccepted: safeRaw.accountSwitchRiskAccepted === true,
     contextWindowRiskAccepted: safeRaw.contextWindowRiskAccepted === true,
     contextWindowMainEnabled: safeRaw.contextWindowMainEnabled !== false,
     contextWindowSwarmEnabled: safeRaw.contextWindowSwarmEnabled === true,

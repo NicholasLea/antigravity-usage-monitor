@@ -2,7 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import vm from 'node:vm';
-import { createHash, randomUUID } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  randomUUID,
+  scrypt,
+  timingSafeEqual,
+} from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import * as metrics from '../trajectory-metrics.mjs';
 import { stripModuleSyntax } from '../scripts/build-bundle.mjs';
@@ -20,18 +29,23 @@ const BACKEND_MODULE_FILES = [
   '../shared/settings-normalization.mjs',
   '../shared/telemetry-display-rules.mjs',
   '../shared/window-bridge-protocol.mjs',
+  '../shared/host-i18n-protocol.mjs',
   '../shared/workspace-uri.mjs',
   '../shared/prompt-clean.mjs',
   '../backend/fs-atomic.mjs',
   '../backend/context-windows.mjs',
-  '../backend/account-oauth.mjs',
-  '../backend/account-switch.mjs',
   '../backend/http-helpers.mjs',
   '../backend/settings-schema.mjs',
+  '../backend/sqlite-client.mjs',
+  '../backend/trajectory-sqlite-ledger.mjs',
   '../backend/trajectory-cache-store.mjs',
   '../backend/config.mjs',
+  '../backend/account-quota-history.mjs',
+  '../backend/account-oauth.mjs',
+  '../backend/account-login.mjs',
+  '../backend/account-vault-crypto.mjs',
+  '../backend/account-switch.mjs',
   '../backend/endpoint-registry.mjs',
-  '../backend/sqlite-client.mjs',
   '../backend/proto-wire.mjs',
   '../backend/cli-sqlite-reader.mjs',
   '../backend/cli-statusline-config.mjs',
@@ -41,9 +55,14 @@ const BACKEND_MODULE_FILES = [
   '../backend/plugin-updater.mjs',
   '../backend/ls-rpc.mjs',
   '../backend/cloudcode-proxy.mjs',
+  '../backend/host-i18n/http-fetch.mjs',
+  '../backend/host-i18n/pack-manager.mjs',
+  '../backend/host-i18n/runtime-translator.mjs',
+  '../backend/host-i18n/index.mjs',
   '../backend/model-pricing.mjs',
   '../backend/quota-pools.mjs',
   '../backend/quota-reservation.mjs',
+  '../backend/transcript-fallback.mjs',
   '../backend/local-scanner.mjs',
   '../backend/usage-aggregator.mjs',
   '../backend/telemetry-builder.mjs',
@@ -105,7 +124,7 @@ export function backendHarness({
     }
   };
   const ctx={
-    ...metricsImplementation, URL, AbortSignal, Buffer, TextDecoder, ...timerApi, isDeepStrictEqual, createHash, randomUUID,
+    ...metricsImplementation, URL, AbortSignal, Buffer, TextDecoder, ...timerApi, isDeepStrictEqual, createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, scrypt, timingSafeEqual,
     ...(clock ? { Date: class extends Date {
       constructor(...args) { super(...(args.length ? args : [clock()])); }
       static now() { return clock(); }

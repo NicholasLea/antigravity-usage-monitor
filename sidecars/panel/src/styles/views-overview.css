@@ -175,7 +175,7 @@
 .live-task-header-right {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -284,7 +284,7 @@
   font-weight: 500;
   color: var(--text-secondary);
   white-space: nowrap;
-  min-width: 28px;
+  min-width: 22px;
   text-align: right;
   flex-shrink: 0;
 }
@@ -676,7 +676,7 @@
   position: absolute;
   top: 38px;
   left: 12px;
-  width: min(332px, calc(100% - 24px));
+  width: min(352px, calc(100% - 24px));
   z-index: 45;
   display: flex;
   flex-direction: column;
@@ -699,8 +699,6 @@
   justify-content: space-between;
   gap: 10px;
   min-width: 0;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border-hairline);
 }
 
 .quota-rate-pop-title {
@@ -724,7 +722,11 @@
 .quota-rate-pop-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  max-height: min(300px, 58vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .quota-rate-pool-group {
@@ -733,9 +735,11 @@
   gap: 5px;
 }
 
-.quota-rate-pool-group + .quota-rate-pool-group {
-  padding-top: 7px;
-  border-top: 1px solid var(--border-hairline);
+.quota-rate-pool-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .quota-rate-pool-label {
@@ -744,10 +748,42 @@
   color: var(--text-muted);
 }
 
+.quota-rate-shared-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--metric-warn);
+  background: color-mix(in srgb, var(--metric-warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--metric-warn) 28%, transparent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.quota-rate-ext-banner {
+  margin-top: 2px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: var(--fs-2xs);
+  line-height: 1.45;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--metric-warn) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--metric-warn) 22%, var(--border-hairline));
+}
+
+.quota-rate-ext-banner.is-active {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--metric-warn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--metric-warn) 34%, var(--border-hairline));
+}
+
 .quota-rate-model-list {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
 }
 
 .quota-rate-model-row {
@@ -755,11 +791,6 @@
   flex-direction: column;
   gap: 3px;
   min-width: 0;
-}
-
-.quota-rate-model-row + .quota-rate-model-row {
-  padding-top: 7px;
-  border-top: 1px solid var(--border-hairline);
 }
 
 .quota-rate-row-top {
@@ -816,9 +847,11 @@
 
 .quota-rate-eq-grid {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  column-gap: 10px;
+  row-gap: 3px;
 }
 
 .quota-rate-eq-grid.is-single {
@@ -846,18 +879,18 @@
   white-space: nowrap;
 }
 
+.quota-rate-eq-tok {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .quota-rate-pop-empty {
   font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--text-secondary);
-}
-
-.quota-rate-pop-note {
-  padding-top: 6px;
-  border-top: 1px solid var(--border-hairline);
-  font-size: var(--fs-2xs);
-  line-height: 1.45;
-  color: var(--text-muted);
 }
 
 /* --- 4. 上下文双列图例网格 (Context 10-Channel Legend Grid) --- */

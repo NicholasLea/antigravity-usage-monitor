@@ -2,7 +2,7 @@
 'use strict';
 
 // --- shared/settings-normalization.mjs ---
-const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi } = (() => {
+const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi } = (() => {
 /**
  * @fileoverview 前后端与 CLI 共用的偏好设置枚举常量、默认值与无状态纯函数归一化规则。
  */
@@ -551,6 +551,22 @@ function normalizeModernUi(val) {
 const CONTEXT_AGENT_MODES = Object.freeze(['main', 'auto']);
 const DEFAULT_CONTEXT_AGENT_MODE = 'main';
 
+const ACCOUNT_QUOTA_REFRESH_MINUTES = Object.freeze([10, 30, 60, 180, 360, 720, 1440]);
+const DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES = 60;
+
+/**
+ * 归一化非当前账号的后台配额刷新间隔（分钟，默认 `60` 即 1 小时）。
+ *
+ * @param {unknown} raw
+ * @returns {10|30|60|180|360|720|1440}
+ */
+function normalizeAccountQuotaRefreshMinutes(raw) {
+  const num = Number(raw);
+  return ACCOUNT_QUOTA_REFRESH_MINUTES.includes(num)
+    ? /** @type {any} */ (num)
+    : DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES;
+}
+
 /**
  * 归一化顶栏胶囊及悬停速览浮窗的上下文代理来源（默认 `'main'` 锁定主代理，可选 `'auto'` 跟随活跃）。
  *
@@ -592,7 +608,7 @@ function normalizeExperimentalModernUi(val) {
   }
   return Boolean(val);
 }
-return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi };
+return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizeOrchestratorIdMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi };
 })();
 
 // --- shared/telemetry-display-rules.mjs ---
@@ -934,6 +950,8 @@ const BRIDGE_API_ROUTE_DEFS = Object.freeze([
     method: 'GET',
     action: 'quota_reservation_log',
   }),
+  Object.freeze({ path: '/api/host-i18n', method: 'GET', action: 'host_i18n_get' }),
+  Object.freeze({ path: '/api/host-i18n', method: 'POST', action: 'host_i18n_action' }),
 ]);
 
 const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path));
@@ -942,6 +960,69 @@ function readInjectedWindowBridge() {
   return typeof window === 'undefined' ? undefined : window[WINDOW_BRIDGE_KEY];
 }
 return { WINDOW_BRIDGE_KEY, WINDOW_BRIDGE_ROUTE_KEY, WINDOW_BRIDGE_ENDPOINT_KEY, WINDOW_BRIDGE_ENDPOINT_HEADER, LOCAL_ENDPOINT_ID, WINDOW_OVERLAY_KEY, CONTEXT_WINDOWS_GLOBAL_KEY, WINDOW_OVERLAY_METHODS, BRIDGE_API_ROUTE_DEFS, BRIDGE_API_PATHS, readInjectedWindowBridge };
+})();
+
+// --- shared/host-i18n-protocol.mjs ---
+const { HOST_I18N_GLOBAL_KEY, HOST_I18N_API_PATH, HOST_I18N_SCHEMA_VERSION, HOST_I18N_OFF_LOCALE, HOST_I18N_DEFAULT_DEPTH, HOST_I18N_DEPTHS, HOST_I18N_LOCALE_RE, normalizeHostI18nLocale, normalizeHostI18nDepth } = (() => {
+/**
+ * @fileoverview Zero-dependency shared protocol constants and normalizers
+ * for the decoupled Antigravity Host I18n subsystem.
+ */
+
+const HOST_I18N_GLOBAL_KEY = '__AGUsageMonitorHostI18n';
+const HOST_I18N_API_PATH = '/api/host-i18n';
+const HOST_I18N_SCHEMA_VERSION = 1;
+const HOST_I18N_OFF_LOCALE = 'off';
+const HOST_I18N_DEFAULT_DEPTH = 'light';
+const HOST_I18N_DEPTHS = Object.freeze(['light', 'deep']);
+const HOST_I18N_LOCALE_RE = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$/;
+
+/**
+ * Normalizes a host translation locale identifier (`'off'` or canonical BCP-47 tag).
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function normalizeHostI18nLocale(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return HOST_I18N_OFF_LOCALE;
+  const lower = raw.toLowerCase();
+  if (
+    lower === 'off' ||
+    lower === 'none' ||
+    lower === 'disabled' ||
+    lower === 'original' ||
+    lower === 'default'
+  ) {
+    return HOST_I18N_OFF_LOCALE;
+  }
+  const normalized = raw.replace(/_/g, '-');
+  if (!HOST_I18N_LOCALE_RE.test(normalized)) {
+    return HOST_I18N_OFF_LOCALE;
+  }
+  const parts = normalized.split('-');
+  return parts
+    .map((part, idx) => {
+      if (idx === 0) return part.toLowerCase();
+      if (part.length === 2) return part.toUpperCase();
+      if (part.length === 4) return part[0].toUpperCase() + part.slice(1).toLowerCase();
+      return part;
+    })
+    .join('-');
+}
+
+/**
+ * Normalizes translation depth (`'light'` or `'deep'`).
+ *
+ * @param {unknown} value
+ * @returns {'light'|'deep'}
+ */
+function normalizeHostI18nDepth(value) {
+  const lower = String(value || '').trim().toLowerCase();
+  if (lower === 'deep' || lower === 'full') return 'deep';
+  return HOST_I18N_DEFAULT_DEPTH;
+}
+return { HOST_I18N_GLOBAL_KEY, HOST_I18N_API_PATH, HOST_I18N_SCHEMA_VERSION, HOST_I18N_OFF_LOCALE, HOST_I18N_DEFAULT_DEPTH, HOST_I18N_DEPTHS, HOST_I18N_LOCALE_RE, normalizeHostI18nLocale, normalizeHostI18nDepth };
 })();
 
 // --- src/icons/svgRegistry.js ---
@@ -1078,6 +1159,20 @@ const SVG_ICON_DEFS = Object.freeze({
     { tag: 'circle', attrs: { cx: '10', cy: '8', r: '1.05', fill: 'currentColor', stroke: 'none' } },
     { tag: 'circle', attrs: { cx: '6', cy: '12', r: '1.05', fill: 'currentColor', stroke: 'none' } },
     { tag: 'circle', attrs: { cx: '10', cy: '12', r: '1.05', fill: 'currentColor', stroke: 'none' } },
+  ],
+  lock: [
+    { tag: 'rect', attrs: { x: '3', y: '7', width: '10', height: '7', rx: '1.5' } },
+    { tag: 'path', attrs: { d: 'M5.2 7V5.1a2.8 2.8 0 0 1 5.6 0V7' } },
+    { tag: 'circle', attrs: { cx: '8', cy: '10.5', r: '0.9', fill: 'currentColor', stroke: 'none' } },
+  ],
+  unlock: [
+    { tag: 'rect', attrs: { x: '3', y: '7', width: '10', height: '7', rx: '1.5' } },
+    { tag: 'path', attrs: { d: 'M5.2 7V5.1a2.8 2.8 0 0 1 5.3-1.2' } },
+  ],
+  globe: [
+    { tag: 'circle', attrs: { cx: '8', cy: '8', r: '6' } },
+    { tag: 'ellipse', attrs: { cx: '8', cy: '8', rx: '2.7', ry: '6' } },
+    { tag: 'path', attrs: { d: 'M2.3 6h11.4M2.3 10h11.4' } },
   ],
 });
 return { SVG_ICON_DEFS };
@@ -1271,6 +1366,8 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
 
   // Top Session Header
   'header.followLatest': '跟随最新会话',
+  'header.followCurrentWindow': '跟随当前窗口会话',
+  'header.autoFollowBadge': '自动',
   'header.currentWindowNamed': '当前窗口 ({title})',
   'header.latestNamed': '最新 ({title})',
   'header.lockedSession': '已锁定会话 ({id})',
@@ -1278,6 +1375,9 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.convMetaWithSubs': '主{main} · {subs}子 (共{total}步)',
   'header.convMetaWithSwarm': '主{main} · {swarm}蜂 (共{total}步)',
   'header.convMetaWithSwarmAndSubs': '主{main} · {swarm}蜂 · {subs}子 (共{total}步)',
+  'header.convCompactSubs': '{subs}子 · {total}步',
+  'header.convCompactSwarm': '{swarm}蜂 · {total}步',
+  'header.convCompactSwarmAndSubs': '{swarm}蜂{subs}子 · {total}步',
   'header.convMetaSteps': '{count}步',
   'header.hasUpdate': '有新版本',
   'header.upgradeToVer': '升级 v{ver}',
@@ -1291,6 +1391,8 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'header.statusQuotaCached': '额度缓存',
   'header.statusQuotaOffline': '额度离线',
   'header.statusLive': '监控中',
+  'header.scopeAll': '全部代理',
+  'header.scopeAllShort': '全',
   'header.searchSessionPlaceholder': '搜索会话标题、项目或 ID…',
   'select.searchPlaceholder': '输入关键词筛选…',
   'select.noMatches': '没有匹配的选项',
@@ -1449,6 +1551,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.cycle5hTitle': '当前 5h 周期累计 ({pool})：{tok} Tokens · {cost} · {calls} 次调用',
   'quota.cycleWkCustomTitle': '本周自然周累计：{tok} Tokens · {cost} · {calls} 次调用',
   'quota.cycleWkPoolTitle': '当前周限周期累计 ({pool})：{tok} Tokens · {cost} · {calls} 次调用',
+  'quota.cycleFullSuffix': '满池约 {full}',
   'quota.footTokensCustom': '本周累计: {tok} ({cost})',
   'quota.footTokensCycle': '周期累计: {tok} ({cost})',
   'quota.footCredits': 'AI 积分: {credits}',
@@ -1465,8 +1568,15 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.ratePopEqWkLabel': '周限满池',
   'quota.ratePopPerUsd': '{win} {rate}%/$',
   'quota.ratePopSamples': '{n} 样本',
-  'quota.ratePopEmpty': '暂未采集到足够的单模型干净样本（每模型需至少 3 次无抖动扣费），正常使用后自动生成。',
-  'quota.ratePopNote': '按单模型纯净步实测折算，同池最省为 1x，按账号隔离。',
+  'quota.ratePopPrelimSlope': '斜率初估',
+  'quota.ratePopPrelimCycle': '周期初估',
+  'quota.ratePopEmpty': '暂未采集到足够的单模型干净样本（周限满 2% 或单模型满 3 次无抖动扣费后自动生成）。',
+  'quota.ratePopSharedBadge': '共享活跃',
+  'quota.ratePopSharedBadgeTip': '最近 15 分钟内检测到同池外部消耗，新增预占将在二次验证后展示',
+  'quota.ratePopExternalDetail': '检测到家庭组 / 其他设备消耗（已排除约 {detail}），不计入预占',
+  'quota.ratePopExternalBaseline': '检测到本周期存在家庭组 / 其他设备消耗，预占和费率仅按本机实测校准',
+  'quota.ratePopExt5h': '5h {pct}%',
+  'quota.ratePopExtWk': '周限 {pct}%',
 
   // Live Activity Widget
   'live.currentSession': '当前会话',
@@ -1489,6 +1599,13 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
 
   // Consumption View
   'cons.rangeCycle': '周期',
+  'cons.cyclePoolAll': '全部池',
+  'cons.cyclePoolAllShort': '全部',
+  'cons.cyclePoolAria': '当前周期配额池筛选',
+  'cons.cyclePoolRemMeta': '剩 {pct}',
+  'cons.currentCycle': '当前周期',
+  'cons.cycleFallbackWeek': '本周',
+  'cons.cycleFallbackWeekTip': '未获取官方周限重置时间，暂按自然本周一统计',
   'cons.rangeToday': '今天',
   'cons.range24h': '1天',
   'cons.range7d': '7天',
@@ -1513,7 +1630,12 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.replyAndThink': '思考 {think} · 回复 {resp}',
   'cons.trendTitle': '用量趋势',
   'cons.allTime': '全部时间',
-  'cons.trendHeatmapHint': '按日 ({days}天) · 悬停查看',
+  'cons.hmModeAria': '热力图查看维度',
+  'cons.hmModeDay': '日',
+  'cons.hmModeWeek': '周',
+  'cons.hmModeMonth': '月',
+  'cons.hmModeAll': '全部',
+  'cons.trendPointsHintMinute': '按 {minutes} 分钟 ({points}点) · 悬停查看',
   'cons.trendPointsHintHourly': '按小时 ({points}点) · 悬停查看',
   'cons.trendPointsHintDaily': '按日 ({points}点) · 悬停查看',
   'cons.topModels': '模型排行',
@@ -1540,7 +1662,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.rankTabWorkspacesCount': '项目排行 ({count})',
   'cons.workspaceUnbound': '未绑定工作区',
   'cons.workspaceSessions': '{count} 会话',
-  'cons.workspaceJumpTip': '点击跳转到该项目最近会话',
   'cons.exportMenuAria': '导出及报告选项',
   'cons.exportXlsx': '导出 Excel (.xlsx)',
   'cons.exportXlsxTip': '导出多工作表排版精美的 Excel 报表（自动列宽、千分位及对齐）',
@@ -1731,26 +1852,54 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.account.signedOut': '未登录',
   'settings.account.unknown': '暂未获取账号状态',
   'settings.account.email': '账号邮箱',
+  'settings.account.googleLogin': '使用 Google 登录',
+  'settings.account.loginHint': '通过浏览器登录 Google，完成后账号会自动添加到列表。',
+  'settings.account.loginWaiting': '请在浏览器中选择 Google 账号并完成授权，完成后这里会自动更新。',
+  'settings.account.loginFinishing': '授权已收到，正在保存账号…',
+  'settings.account.loginSuccess': '登录成功，账号已添加。',
+  'settings.account.loginCancelled': '已取消本次登录。',
+  'settings.account.loginExpired': '登录已超时，请重新点击「使用 Google 登录」。',
+  'settings.account.loginDenied': 'Google 授权已取消，请重新登录。',
+  'settings.account.loginStartFailed': '未能开始登录，请重试。',
+  'settings.account.loginExchangeFailed': '未能完成登录，请检查网络后重新授权。',
+  'settings.account.openLoginPage': '重新打开 Google 授权页面',
+  'settings.account.cancelLogin': '取消登录',
+  'settings.account.importExisting': '导入已有凭证',
   'settings.account.credential': 'OAuth 凭证',
+  'settings.account.credentialPlaceholder': '粘贴 1// 刷新令牌或 OAuth JSON…',
   'settings.account.importHint': '粘贴 Antigravity 的刷新令牌或含 refresh_token 的 OAuth JSON。插件会验证账号邮箱，并在本机加密保存。',
   'settings.account.save': '导入凭证',
   'settings.account.capture': '保存当前凭证',
   'settings.account.reload': '刷新列表',
-  'settings.account.switch': '切换',
+  'settings.account.switch': '切换并重启',
+  'settings.account.switchHint': '切换会关闭并重新打开 Antigravity App 和共享登录的 IDE，请先保存工作。',
+  'settings.account.restarting': '正在重启 Antigravity 并应用所选账号…',
+  'settings.account.switchStartFailed': '未能启动切号，请刷新列表后重试。',
+  'settings.account.clientCloseFailed': 'Antigravity 未能完全退出，切换未完成。',
+  'settings.account.clientRestartFailed': '凭证已更新，但自动重新打开失败，请手动打开 Antigravity。',
   'settings.account.remove': '移除',
   'settings.account.active': '当前使用',
+  'settings.account.savedBadge': '已备份',
   'settings.account.written': '凭证已写入',
   'settings.account.pending': '已写入 {email} 的凭证，等待宿主更新。如果一直未更新，请重开当前 Antigravity。',
-  'settings.account.savedCredentials': '已保存的凭证',
+  'settings.account.savedCredentials': '已保存的账号',
   'settings.account.empty': '暂无已保存的凭证。',
   'settings.account.loading': '正在读取已保存的凭证…',
   'settings.account.saved': '凭证已保存。',
   'settings.account.removed': '已移除保存的凭证。',
   'settings.account.switched': '已切换账号，正在刷新当前额度。',
-  'settings.account.switching': '正在替换凭证并确认宿主账号…',
+  'settings.account.switching': '正在验证凭证并准备重启…',
   'settings.account.verifying': '正在验证凭证所属账号…',
   'settings.account.loadQuota': '查额度',
-  'settings.account.loadingQuota': '正在查询此凭证的额度…',
+  'settings.account.loadingQuota': '查询中…',
+  'settings.account.refreshFreqAria': '非当前账号配额刷新间隔',
+  'settings.account.refresh10m': '10 分钟',
+  'settings.account.refresh30m': '30 分钟',
+  'settings.account.refresh1h': '1 小时',
+  'settings.account.refresh3h': '3 小时',
+  'settings.account.refresh6h': '6 小时',
+  'settings.account.refresh12h': '12 小时',
+  'settings.account.refresh24h': '24 小时',
   'settings.account.emptyCredentialQuota': '这个账号暂无可显示的额度池。',
   'settings.account.quota': '额度池剩余',
   'settings.account.quota5h': '5 小时 {percent}%',
@@ -1769,10 +1918,53 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.account.credentialAccessDenied': 'Windows 拒绝访问凭据管理器。请在当前 Windows 用户会话中打开 Antigravity 后重试。',
   'settings.account.credentialChanged': '这份凭证已在其他窗口更新，请刷新列表后重试。',
   'settings.account.credentialRejected': 'Google 未接受此凭证。请检查令牌是否属于 Antigravity 且仍然有效。',
-  'settings.account.identityMismatch': '凭证所属账号与宿主或保存的账号不一致。请重新导入该凭证。',
+  'settings.account.identityMismatch': '凭证所属账号跟宿主或保存的账号不一致，请重新导入该凭证。',
   'settings.account.oauthClientUnavailable': '未能从本机 Antigravity 读取 OAuth 客户端配置。',
   'settings.account.oauthUnavailable': '暂时无法完成 Google OAuth 验证，请检查网络后重试。',
   'settings.account.quotaUnavailable': '暂时无法取得此账号的额度，请稍候重试。',
+  'settings.account.switchConfirm': '确认切换',
+  'settings.account.removeConfirm': '确认移除',
+  'settings.account.pwdBtnSet': '二级密码',
+  'settings.account.pwdBtnManage': '密码设置',
+  'settings.account.lockNow': '锁定',
+  'settings.account.lockNowTip': '立即锁定凭证库',
+  'settings.account.unlockBtn': '解锁',
+  'settings.account.unlockPlaceholder': '输入二级密码解锁…',
+  'settings.account.vaultLockedHint': '凭证库已加密锁定，输入二级密码后可切换账号、管理凭证和刷新后台配额。',
+  'settings.account.forgotPwdToggle': '忘记密码？',
+  'settings.account.resetVaultHint': '二级密码采用真实密钥派生加密，遗忘后无法解密旧备份（不影响当前正在使用的账号），可清空凭证库后重新添加。',
+  'settings.account.resetVaultBtn': '清空凭证库',
+  'settings.account.resetVaultConfirm': '确认清空重置',
+  'settings.account.pwdTabChange': '修改密码',
+  'settings.account.pwdTabDisable': '关闭密码',
+  'settings.account.pwdCurrentPlaceholder': '当前二级密码…',
+  'settings.account.pwdNewPlaceholder': '设置二级密码（4~128 位）…',
+  'settings.account.pwdConfirmPlaceholder': '再次确认密码…',
+  'settings.account.pwdEnableSubmit': '启用加密',
+  'settings.account.pwdChangeSubmit': '更新密码',
+  'settings.account.pwdDisableSubmit': '关闭保护',
+  'settings.account.pwdSetHint': '使用二级密码对所有已存刷新令牌追加一层加密，每次启动首次操作时解锁一次；请牢记密码，遗忘后无法找回备份。',
+  'settings.account.pwdManageHint': '验证当前二级密码后可更换新密码，或退回系统默认加密。',
+  'settings.account.pwdEnabledToast': '已启用二级密码加密。',
+  'settings.account.pwdChangedToast': '二级密码已更新。',
+  'settings.account.pwdDisabledToast': '已关闭二级密码保护。',
+  'settings.account.vaultUnlockedToast': '凭证库已解锁。',
+  'settings.account.vaultLockedToast': '凭证库已锁定。',
+  'settings.account.vaultResetToast': '凭证库已清空重置。',
+  'settings.account.vaultLocked': '请先输入二级密码解锁凭证库。',
+  'settings.account.wrongPassword': '二级密码不正确，请核对后重试。',
+  'settings.account.invalidPassword': '密码长度需在 4 到 128 个字符之间且不能全为空格。',
+  'settings.account.passwordMismatch': '两次输入的密码不一致。',
+  'settings.account.passwordRateLimited': '密码连续输错次数过多，请稍候再试。',
+  'settings.account.vaultDecryptFailed': '凭证解密校验失败，请确认密码或重置凭证库。',
+  'settings.account.invalidActionNonce': '安全校验令牌已过期，请重试。',
+  'settings.account.riskNotAccepted': '请先确认并接受非官方能力风险提示。',
+  'settings.account.riskBody': 'Google 官方并未授权在 Antigravity App / IDE 中通过第三方插件导入、保存、切换账号凭证或后台查询多账号配额。擅自启用可能导致 Antigravity 或 GCP 服务被禁用，甚至触发账号封禁；启用该功能即默认由你自行承担全部风险。你最好清楚自己在做什么！',
+  'settings.account.trendTitle': '额度变化',
+  'settings.account.trendWinAria': '配额窗口切换',
+  'settings.account.win5h': '5 小时',
+  'settings.account.winWeekly': '每周',
+  'settings.account.trendEmpty': '当前时间范围内暂无配额记录。',
   'settings.saving': '保存中…',
   'settings.saved': '已保存',
   'settings.saveFailed': '保存失败',
@@ -1836,6 +2028,45 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.gen.manualUpgradeBtn': '手动升级 v{ver}',
   'settings.gen.updateOffSub': '已关闭更新提醒 ({mode})',
   'settings.gen.latestSub': '已是最新 ({mode})',
+
+  // Preferences -> General Tab -> Antigravity Host UI Language (decoupled Host I18n)
+  'settings.hostI18n.title': 'Antigravity 界面语言',
+  'settings.hostI18n.langLabel': '目标语言',
+  'settings.hostI18n.langOff': '原始语言（不翻译）',
+  'settings.hostI18n.langHint': '从仓库按需独立下载语言包并在渲染层无损应用，不修改宿主安装包，不影响聊天内容与代码',
+  'settings.hostI18n.optInstalled': '已下载 v{ver}',
+  'settings.hostI18n.optRemote': '仓库拉取 · {size}',
+  'settings.hostI18n.refreshManifestTip': '刷新仓库语言包清单',
+  'settings.hostI18n.refreshingManifestMsg': '正在拉取语言清单…',
+  'settings.hostI18n.manifestSyncedMsg': '已更新清单（{count} 个语言包）',
+  'settings.hostI18n.manifestFailedMsg': '拉取语言清单失败，请检查网络或代理',
+  'settings.hostI18n.depthLabel': '翻译深度',
+  'settings.hostI18n.depthLight': '浅度',
+  'settings.hostI18n.depthDeep': '深度',
+  'settings.hostI18n.depthLightHint': '浅度模式：保留 MCP、Skill、Workspace、Subagent、Swarm、Diff、Terminal 等高频英文术语及模型名称，仅翻译常规界面',
+  'settings.hostI18n.depthDeepHint': '深度模式：将常见工程术语一并译为目标语言（如工作区、子代理、蜂群、终端、沙箱），仅保留模型名与命令',
+  'settings.hostI18n.downloadingMsg': '正在下载 {locale} 语言包…',
+  'settings.hostI18n.downloadedAndAppliedMsg': '语言包已下载校验并生效',
+  'settings.hostI18n.appliedMsg': '已切换并即时生效',
+  'settings.hostI18n.disabledMsg': '已关闭翻译并还原原始界面',
+  'settings.hostI18n.depthSwitchedMsg': '已热切换翻译深度',
+  'settings.hostI18n.packUpdatedMsg': '语言包已更新并重新应用',
+  'settings.hostI18n.cacheRemovedMsg': '已删除本地语言包缓存',
+  'settings.hostI18n.actionFailed': '语言包操作失败，请重试',
+  'settings.hostI18n.entriesCount': '{count} 条词条',
+  'settings.hostI18n.appliedWindows': '已应用 {count} 窗口',
+  'settings.hostI18n.updatePackBtn': '更新至 v{ver}',
+  'settings.hostI18n.redownloadBtn': '检查更新',
+  'settings.hostI18n.removeCacheBtn': '删除缓存',
+  'settings.hostI18n.devToolsTitle': '词条采集与多语言扩展',
+  'settings.hostI18n.devToolsHint': '仅扫描当前打开的 Antigravity 界面控件中未命中的英文短语（自动排除聊天正文与代码），便于补全漏翻词条或制作新语言包',
+  'settings.hostI18n.collectBtn': '采集未翻译 UI 文案',
+  'settings.hostI18n.collectingBtn': '采集中…',
+  'settings.hostI18n.collectedResult': '共采集到 {count} 条待翻译 UI 文案（扫描 {targets} 个窗口）',
+  'settings.hostI18n.collectedEmpty': '当前页面未检测到待翻译的英文 UI 短语',
+  'settings.hostI18n.collectFailed': '采集失败，请确认已开启调试端口并打开主窗口',
+  'settings.hostI18n.copyJsonBtn': '复制 JSON',
+  'settings.hostI18n.exportJsonBtn': '导出 JSON',
 
   // Preferences -> Structure Tab
   'settings.str.thirdTabAria': '结构子菜单切换',
@@ -2055,6 +2286,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'live.act.schedule': '定时任务',
   'live.act.ask_question': '等待用户选择',
   'live.act.search_marketplace': '查询插件',
+  'live.act.generate_image': '生成图片',
   'live.act.mcp_tool': '调用 MCP',
   'live.act.tool_call': '调用工具',
   'live.act.thinking': '推理中',
@@ -2123,6 +2355,12 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'chart.trend.hmMore': '多',
   'chart.trend.hmActivePeak': '活跃 {active}/{total} 天 · 峰值 {label} · {tokens}',
   'chart.trend.hmActiveZero': '活跃 0/{total} 天',
+  'chart.trend.hmWeekPeak': '活跃 {active}/{total} 周 · 峰值 {label} · {tokens}',
+  'chart.trend.hmWeekZero': '活跃 0/{total} 周',
+  'chart.trend.hmMonthPeak': '活跃 {active}/{total} 月 · 峰值 {label} · {tokens}',
+  'chart.trend.hmMonthZero': '活跃 0/{total} 月',
+  'chart.trend.hmCumSummary': '累计 {days} 天 · 总计 {tokens} · {cost}',
+  'chart.trend.hmCumThrough': '截至 {date} 累计',
   'chart.trend.peakPill': '峰值 {label} · {tokens}',
 
   // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
@@ -2159,6 +2397,8 @@ const I18N_MESSAGES_EN_US = Object.freeze({
 
   // Top Session Header
   'header.followLatest': 'Follow Latest Session',
+  'header.followCurrentWindow': 'Follow Current Window',
+  'header.autoFollowBadge': 'Auto',
   'header.currentWindowNamed': 'Current ({title})',
   'header.latestNamed': 'Latest ({title})',
   'header.lockedSession': 'Pinned Session ({id})',
@@ -2166,6 +2406,9 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'header.convMetaWithSubs': 'Main {main} · {subs} sub ({total} steps)',
   'header.convMetaWithSwarm': 'Main {main} · {swarm} swarm ({total} steps)',
   'header.convMetaWithSwarmAndSubs': 'Main {main} · {swarm} swarm · {subs} sub ({total} steps)',
+  'header.convCompactSubs': '{subs} sub · {total} steps',
+  'header.convCompactSwarm': '{swarm} swm · {total} steps',
+  'header.convCompactSwarmAndSubs': '{swarm} swm {subs} sub · {total} steps',
   'header.convMetaSteps': '{count} steps',
   'header.hasUpdate': 'Update',
   'header.upgradeToVer': 'Update v{ver}',
@@ -2179,6 +2422,8 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'header.statusQuotaCached': 'Quota Cached',
   'header.statusQuotaOffline': 'Quota Offline',
   'header.statusLive': 'Monitoring',
+  'header.scopeAll': 'All Agents',
+  'header.scopeAllShort': 'All',
   'header.searchSessionPlaceholder': 'Search sessions, projects, or ID…',
   'select.searchPlaceholder': 'Filter options…',
   'select.noMatches': 'No matching items',
@@ -2337,6 +2582,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.cycle5hTitle': 'Current 5h cycle ({pool}): {tok} Tokens · {cost} · {calls} calls',
   'quota.cycleWkCustomTitle': 'Current calendar week: {tok} Tokens · {cost} · {calls} calls',
   'quota.cycleWkPoolTitle': 'Current weekly cycle ({pool}): {tok} Tokens · {cost} · {calls} calls',
+  'quota.cycleFullSuffix': 'Full ~{full}',
   'quota.footTokensCustom': 'Week Total: {tok} ({cost})',
   'quota.footTokensCycle': 'Cycle Total: {tok} ({cost})',
   'quota.footCredits': 'AI Credits: {credits}',
@@ -2353,8 +2599,15 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.ratePopEqWkLabel': 'Weekly full',
   'quota.ratePopPerUsd': '{win} {rate}%/$',
   'quota.ratePopSamples': '{n} samples',
-  'quota.ratePopEmpty': 'Not enough clean single-model samples yet (at least 3 clean steps per model). Estimates appear automatically during use.',
-  'quota.ratePopNote': 'Measured from clean single-model steps; lowest burn in pool = 1x. Account isolated.',
+  'quota.ratePopPrelimSlope': 'slope est.',
+  'quota.ratePopPrelimCycle': 'cycle est.',
+  'quota.ratePopEmpty': 'Not enough clean samples yet (unlocks at 2% weekly burn or 3 clean single-model steps).',
+  'quota.ratePopSharedBadge': 'Shared active',
+  'quota.ratePopSharedBadgeTip': 'External pool usage seen within 15 min; new reservations display after verification',
+  'quota.ratePopExternalDetail': 'Family group / other-device usage detected (~{detail} excluded from reservations)',
+  'quota.ratePopExternalBaseline': 'Family group / other-device usage detected this cycle; reservations & rates calibrate on local steps only',
+  'quota.ratePopExt5h': '5h {pct}%',
+  'quota.ratePopExtWk': 'Weekly {pct}%',
 
   // Live Activity Widget
   'live.currentSession': 'Current Session',
@@ -2377,6 +2630,13 @@ const I18N_MESSAGES_EN_US = Object.freeze({
 
   // Consumption View
   'cons.rangeCycle': 'Cycle',
+  'cons.cyclePoolAll': 'All Pools',
+  'cons.cyclePoolAllShort': 'All',
+  'cons.cyclePoolAria': 'Filter current cycle by quota pool',
+  'cons.cyclePoolRemMeta': '{pct} left',
+  'cons.currentCycle': 'Current Cycle',
+  'cons.cycleFallbackWeek': 'This Week',
+  'cons.cycleFallbackWeekTip': 'Official weekly reset time unavailable; using calendar week from Monday',
   'cons.rangeToday': 'Today',
   'cons.range24h': '24h',
   'cons.range7d': '7d',
@@ -2401,7 +2661,12 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.replyAndThink': 'Think {think} · Reply {resp}',
   'cons.trendTitle': 'Usage Trend',
   'cons.allTime': 'All Time',
-  'cons.trendHeatmapHint': 'Daily ({days}d) · Hover for details',
+  'cons.hmModeAria': 'Heatmap view mode',
+  'cons.hmModeDay': 'Day',
+  'cons.hmModeWeek': 'Week',
+  'cons.hmModeMonth': 'Month',
+  'cons.hmModeAll': 'Total',
+  'cons.trendPointsHintMinute': '{minutes}m ({points} pts) · Hover for details',
   'cons.trendPointsHintHourly': 'Hourly ({points} pts) · Hover for details',
   'cons.trendPointsHintDaily': 'Daily ({points} pts) · Hover for details',
   'cons.topModels': 'Top Models',
@@ -2428,7 +2693,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.rankTabWorkspacesCount': 'Projects ({count})',
   'cons.workspaceUnbound': 'Unbound Workspace',
   'cons.workspaceSessions': '{count} sessions',
-  'cons.workspaceJumpTip': 'Click to inspect latest session in this project',
   'cons.exportMenuAria': 'Export and report actions',
   'cons.exportXlsx': 'Export Excel (.xlsx)',
   'cons.exportXlsxTip': 'Export styled multi-sheet Excel workbook with auto column width and alignment',
@@ -2618,26 +2882,54 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.account.signedOut': 'Signed out',
   'settings.account.unknown': 'Account status unavailable',
   'settings.account.email': 'Account email',
+  'settings.account.googleLogin': 'Sign in with Google',
+  'settings.account.loginHint': 'Sign in with Google in your browser. The account will appear in this list automatically.',
+  'settings.account.loginWaiting': 'Choose a Google account and complete authorization in your browser. This list will update automatically.',
+  'settings.account.loginFinishing': 'Authorization received. Saving the account…',
+  'settings.account.loginSuccess': 'Signed in. The account has been added.',
+  'settings.account.loginCancelled': 'Sign-in cancelled.',
+  'settings.account.loginExpired': 'Sign-in expired. Click Sign in with Google to try again.',
+  'settings.account.loginDenied': 'Google authorization was cancelled. Try signing in again.',
+  'settings.account.loginStartFailed': 'Sign-in could not start. Try again.',
+  'settings.account.loginExchangeFailed': 'Sign-in could not finish. Check your connection and authorize again.',
+  'settings.account.openLoginPage': 'Reopen Google authorization',
+  'settings.account.cancelLogin': 'Cancel sign-in',
+  'settings.account.importExisting': 'Import existing credentials',
   'settings.account.credential': 'OAuth credential',
+  'settings.account.credentialPlaceholder': 'Paste 1// refresh token or OAuth JSON…',
   'settings.account.importHint': 'Paste an Antigravity refresh token or OAuth JSON containing a refresh_token. The account email is verified and the credential is encrypted on this device.',
   'settings.account.save': 'Import credential',
   'settings.account.capture': 'Save current credential',
   'settings.account.reload': 'Refresh list',
-  'settings.account.switch': 'Switch',
+  'settings.account.switch': 'Switch and restart',
+  'settings.account.switchHint': 'Switching closes and reopens Antigravity App and the IDE sharing its sign-in. Save your work first.',
+  'settings.account.restarting': 'Restarting Antigravity with the selected account…',
+  'settings.account.switchStartFailed': 'The account switch could not start. Refresh the list and try again.',
+  'settings.account.clientCloseFailed': 'Antigravity could not fully exit. The switch is incomplete.',
+  'settings.account.clientRestartFailed': 'The credential was updated. Open Antigravity manually to finish switching.',
   'settings.account.remove': 'Remove',
   'settings.account.active': 'In use',
+  'settings.account.savedBadge': 'Backed up',
   'settings.account.written': 'Credential written',
   'settings.account.pending': 'The credential for {email} was written. If Antigravity stays on the previous account, reopen it.',
-  'settings.account.savedCredentials': 'Saved credentials',
+  'settings.account.savedCredentials': 'Saved accounts',
   'settings.account.empty': 'No saved credentials.',
   'settings.account.loading': 'Loading saved credentials…',
   'settings.account.saved': 'Credential saved.',
   'settings.account.removed': 'Saved credential removed.',
   'settings.account.switched': 'Account switched. Refreshing the current quota.',
-  'settings.account.switching': 'Replacing the credential and confirming the active account…',
+  'settings.account.switching': 'Verifying the credential and preparing to restart…',
   'settings.account.verifying': 'Verifying the credential owner…',
   'settings.account.loadQuota': 'Check quota',
-  'settings.account.loadingQuota': 'Checking quota for this credential…',
+  'settings.account.loadingQuota': 'Checking…',
+  'settings.account.refreshFreqAria': 'Background account quota refresh interval',
+  'settings.account.refresh10m': '10 min',
+  'settings.account.refresh30m': '30 min',
+  'settings.account.refresh1h': '1 hr',
+  'settings.account.refresh3h': '3 hr',
+  'settings.account.refresh6h': '6 hr',
+  'settings.account.refresh12h': '12 hr',
+  'settings.account.refresh24h': '24 hr',
   'settings.account.emptyCredentialQuota': 'There are no quota pools to display for this account.',
   'settings.account.quota': 'Quota remaining by pool',
   'settings.account.quota5h': '5 hours {percent}%',
@@ -2660,6 +2952,49 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.account.oauthClientUnavailable': 'The local Antigravity OAuth client configuration could not be read.',
   'settings.account.oauthUnavailable': 'Google OAuth verification is unavailable. Check your network and try again.',
   'settings.account.quotaUnavailable': 'Quota for this account is unavailable. Try again shortly.',
+  'settings.account.switchConfirm': 'Confirm switch',
+  'settings.account.removeConfirm': 'Confirm remove',
+  'settings.account.pwdBtnSet': 'Passphrase',
+  'settings.account.pwdBtnManage': 'Passphrase',
+  'settings.account.lockNow': 'Lock',
+  'settings.account.lockNowTip': 'Lock credential vault now',
+  'settings.account.unlockBtn': 'Unlock',
+  'settings.account.unlockPlaceholder': 'Enter passphrase to unlock…',
+  'settings.account.vaultLockedHint': 'Credential vault is locked. Enter your passphrase to switch accounts, manage credentials, or refresh quotas.',
+  'settings.account.forgotPwdToggle': 'Forgot?',
+  'settings.account.resetVaultHint': 'Encrypted backups cannot be recovered without the passphrase (your active IDE sign-in is unaffected). You can clear and reset the vault.',
+  'settings.account.resetVaultBtn': 'Reset vault',
+  'settings.account.resetVaultConfirm': 'Confirm reset',
+  'settings.account.pwdTabChange': 'Change passphrase',
+  'settings.account.pwdTabDisable': 'Remove passphrase',
+  'settings.account.pwdCurrentPlaceholder': 'Current passphrase…',
+  'settings.account.pwdNewPlaceholder': 'New passphrase (4–128 chars)…',
+  'settings.account.pwdConfirmPlaceholder': 'Confirm passphrase…',
+  'settings.account.pwdEnableSubmit': 'Enable',
+  'settings.account.pwdChangeSubmit': 'Update',
+  'settings.account.pwdDisableSubmit': 'Disable',
+  'settings.account.pwdSetHint': 'Adds passphrase encryption to all saved refresh tokens. Asked once per session when managing accounts; cannot be recovered if forgotten.',
+  'settings.account.pwdManageHint': 'Verify your current passphrase to set a new one or return to default OS encryption.',
+  'settings.account.pwdEnabledToast': 'Passphrase encryption enabled.',
+  'settings.account.pwdChangedToast': 'Passphrase updated.',
+  'settings.account.pwdDisabledToast': 'Passphrase protection disabled.',
+  'settings.account.vaultUnlockedToast': 'Credential vault unlocked.',
+  'settings.account.vaultLockedToast': 'Credential vault locked.',
+  'settings.account.vaultResetToast': 'Credential vault cleared and reset.',
+  'settings.account.vaultLocked': 'Enter your passphrase to unlock the vault first.',
+  'settings.account.wrongPassword': 'Incorrect passphrase. Try again.',
+  'settings.account.invalidPassword': 'Passphrase must be 4–128 characters and not blank.',
+  'settings.account.passwordMismatch': 'Passphrases do not match.',
+  'settings.account.passwordRateLimited': 'Too many failed attempts. Wait a moment and try again.',
+  'settings.account.vaultDecryptFailed': 'Vault decryption check failed.',
+  'settings.account.invalidActionNonce': 'Security token expired. Please try again.',
+  'settings.account.riskNotAccepted': 'Acknowledge the unofficial feature risk warning first.',
+  'settings.account.riskBody': 'Google has not authorized importing, storing, or switching Antigravity credentials or polling multi-account quotas in Antigravity App / IDE. Enabling multi-account management may get your Antigravity access, GCP services, or Google account disabled or banned; enabling this feature means you assume all associated risks. Make sure you know what you are doing!',
+  'settings.account.trendTitle': 'Quota Trend',
+  'settings.account.trendWinAria': 'Quota window selector',
+  'settings.account.win5h': '5 Hours',
+  'settings.account.winWeekly': 'Weekly',
+  'settings.account.trendEmpty': 'No quota history recorded in the selected time range.',
   'settings.subTab.aria': 'Preferences category tabs',
   'settings.saving': 'Saving…',
   'settings.saved': 'Saved',
@@ -2724,6 +3059,45 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.gen.manualUpgradeBtn': 'Upgrade v{ver}',
   'settings.gen.updateOffSub': 'Notifications off ({mode})',
   'settings.gen.latestSub': 'Up to date ({mode})',
+
+  // Preferences -> General Tab -> Antigravity Host UI Language (decoupled Host I18n)
+  'settings.hostI18n.title': 'Antigravity UI Language',
+  'settings.hostI18n.langLabel': 'Host Language',
+  'settings.hostI18n.langOff': 'Original (Off)',
+  'settings.hostI18n.langHint': 'Downloads built language packs on demand from the repository and applies lossless runtime UI translation without patching app files or chat content',
+  'settings.hostI18n.optInstalled': 'Installed v{ver}',
+  'settings.hostI18n.optRemote': 'Download · {size}',
+  'settings.hostI18n.refreshManifestTip': 'Refresh repository language pack manifest',
+  'settings.hostI18n.refreshingManifestMsg': 'Refreshing language manifest…',
+  'settings.hostI18n.manifestSyncedMsg': 'Manifest updated ({count} packs)',
+  'settings.hostI18n.manifestFailedMsg': 'Failed to fetch language manifest',
+  'settings.hostI18n.depthLabel': 'Translation Depth',
+  'settings.hostI18n.depthLight': 'Light',
+  'settings.hostI18n.depthDeep': 'Deep',
+  'settings.hostI18n.depthLightHint': 'Light mode keeps common English engineering terms (MCP, Skill, Workspace, Subagent, Swarm, Diff, Terminal) and model names untranslated',
+  'settings.hostI18n.depthDeepHint': 'Deep mode localizes engineering terms alongside general UI copy while preserving model names and slash commands',
+  'settings.hostI18n.downloadingMsg': 'Downloading {locale} pack…',
+  'settings.hostI18n.downloadedAndAppliedMsg': 'Pack verified and applied',
+  'settings.hostI18n.appliedMsg': 'Language applied live',
+  'settings.hostI18n.disabledMsg': 'Translation disabled and UI restored',
+  'settings.hostI18n.depthSwitchedMsg': 'Translation depth switched',
+  'settings.hostI18n.packUpdatedMsg': 'Language pack updated and reapplied',
+  'settings.hostI18n.cacheRemovedMsg': 'Local pack cache removed',
+  'settings.hostI18n.actionFailed': 'Language pack operation failed',
+  'settings.hostI18n.entriesCount': '{count} entries',
+  'settings.hostI18n.appliedWindows': '{count} window(s) active',
+  'settings.hostI18n.updatePackBtn': 'Update to v{ver}',
+  'settings.hostI18n.redownloadBtn': 'Check Update',
+  'settings.hostI18n.removeCacheBtn': 'Remove Cache',
+  'settings.hostI18n.devToolsTitle': 'Missing UI String Collector',
+  'settings.hostI18n.devToolsHint': 'Scans visible Antigravity UI controls for untranslated English phrases (excluding chat content and code) to help complete packs or author new languages',
+  'settings.hostI18n.collectBtn': 'Collect Missing Strings',
+  'settings.hostI18n.collectingBtn': 'Collecting…',
+  'settings.hostI18n.collectedResult': 'Collected {count} untranslated UI strings across {targets} window(s)',
+  'settings.hostI18n.collectedEmpty': 'No untranslated English UI strings detected on active pages',
+  'settings.hostI18n.collectFailed': 'Collection failed — verify remote debugging bridge is active',
+  'settings.hostI18n.copyJsonBtn': 'Copy JSON',
+  'settings.hostI18n.exportJsonBtn': 'Export JSON',
 
   // Preferences -> Structure Tab
   'settings.str.thirdTabAria': 'Structure section tabs',
@@ -2943,6 +3317,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'live.act.schedule': 'Schedule Task',
   'live.act.ask_question': 'Waiting for User Choice',
   'live.act.search_marketplace': 'Search Plugins',
+  'live.act.generate_image': 'Generate Image',
   'live.act.mcp_tool': 'Call MCP Tool',
   'live.act.tool_call': 'Call Tool',
   'live.act.thinking': 'Thinking',
@@ -3011,6 +3386,12 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'chart.trend.hmMore': 'More',
   'chart.trend.hmActivePeak': 'Active {active}/{total}d · Peak {label} · {tokens}',
   'chart.trend.hmActiveZero': 'Active 0/{total}d',
+  'chart.trend.hmWeekPeak': 'Active {active}/{total}w · Peak {label} · {tokens}',
+  'chart.trend.hmWeekZero': 'Active 0/{total}w',
+  'chart.trend.hmMonthPeak': 'Active {active}/{total}m · Peak {label} · {tokens}',
+  'chart.trend.hmMonthZero': 'Active 0/{total}m',
+  'chart.trend.hmCumSummary': 'Cumulative {days}d · Total {tokens} · {cost}',
+  'chart.trend.hmCumThrough': 'Cumulative through {date}',
   'chart.trend.peakPill': 'Peak {label} · {tokens}',
 
   // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
@@ -4036,7 +4417,7 @@ return { defineComponent };
 })();
 
 // --- src/core/formatters.js ---
-const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
+const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
 /**
  * @fileoverview Pure formatting utilities for speed metrics, token counts,
  * USD estimates, countdown timers, and custom datetime displays.
@@ -4046,6 +4427,14 @@ const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpe
 const EN_MONTH_SHORT = Object.freeze([
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]);
+
+const ZH_WEEKDAY_SHORT = Object.freeze([
+  '周日', '周一', '周二', '周三', '周四', '周五', '周六',
+]);
+
+const EN_WEEKDAY_SHORT = Object.freeze([
+  'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
 ]);
 
 function formatMetric(value, unit = '') {
@@ -4123,18 +4512,88 @@ function formatCnyApprox(usdAmount, rate = 7.2) {
 function formatDateSpanBadge(startMs, endMs) {
   const s = startMs && Number.isFinite(startMs) ? new Date(startMs) : new Date();
   const e = endMs && Number.isFinite(endMs) ? new Date(endMs) : new Date();
+  const sameYear = s.getFullYear() === e.getFullYear();
+  const sameMonth = sameYear && s.getMonth() === e.getMonth();
+  const sameDay = sameMonth && s.getDate() === e.getDate();
+
   if (isEnglishLocale()) {
     const sMon = EN_MONTH_SHORT[s.getMonth()] || '';
     const eMon = EN_MONTH_SHORT[e.getMonth()] || '';
-    if (s.getFullYear() !== e.getFullYear()) {
+    if (!sameYear) {
       return `${sMon} ${s.getDate()}, ${s.getFullYear()} ~ ${eMon} ${e.getDate()}, ${e.getFullYear()}`;
+    }
+    if (sameDay) {
+      return `${sMon} ${s.getDate()}`;
+    }
+    if (sameMonth) {
+      return `${sMon} ${s.getDate()} ~ ${e.getDate()}`;
     }
     return `${sMon} ${s.getDate()} ~ ${eMon} ${e.getDate()}`;
   }
-  if (s.getFullYear() !== e.getFullYear()) {
+
+  if (!sameYear) {
     return `${s.getFullYear()}年${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getFullYear()}年${e.getMonth() + 1}月${e.getDate()}日`;
   }
+  if (sameDay) {
+    return `${s.getMonth() + 1}月${s.getDate()}日`;
+  }
+  if (sameMonth) {
+    return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getDate()}日`;
+  }
   return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getMonth() + 1}月${e.getDate()}日`;
+}
+
+function formatTrendSlotFullLabel(slot, { locale, showFullYear = false } = {}) {
+  const en =
+    typeof locale === 'string' && locale.trim()
+      ? locale.trim().toLowerCase().startsWith('en')
+      : isEnglishLocale();
+  const sMs = Number(slot?.startMs);
+  if (Number.isFinite(sMs) && sMs > 0) {
+    const sd = new Date(sMs);
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const rawFull = String(slot?.fullLabel || '');
+    const includeYear = Boolean(
+      showFullYear || /^\d{4}年/.test(rawFull) || sd.getFullYear() !== new Date().getFullYear()
+    );
+    const gran = String(slot?.granularity || '').toLowerCase();
+    const isSubDay =
+      gran === 'minute' ||
+      gran === 'hour' ||
+      (!gran && Number(slot?.endMs) > sMs && Number(slot.endMs) - sMs <= 3600_000 * 2);
+
+    if (isSubDay) {
+      const eMs = Number(slot?.endMs);
+      const ed = Number.isFinite(eMs) && eMs > 0 ? new Date(eMs) : new Date(sMs + 3600_000);
+      const hh = `${pad2(sd.getHours())}:${pad2(sd.getMinutes())}`;
+      const endHh = `${pad2(ed.getHours())}:${pad2(ed.getMinutes())}`;
+      if (en) {
+        const mon = EN_MONTH_SHORT[sd.getMonth()] || '';
+        return includeYear
+          ? `${mon} ${sd.getDate()}, ${sd.getFullYear()}, ${hh} - ${endHh}`
+          : `${mon} ${sd.getDate()}, ${hh} - ${endHh}`;
+      }
+      const yearPrefix = includeYear ? `${sd.getFullYear()}年` : '';
+      return `${yearPrefix}${sd.getMonth() + 1}月${sd.getDate()}日 ${hh} - ${endHh}`;
+    }
+
+    if (en) {
+      const mon = EN_MONTH_SHORT[sd.getMonth()] || '';
+      const wday = EN_WEEKDAY_SHORT[sd.getDay()] || '';
+      return includeYear
+        ? `${mon} ${sd.getDate()}, ${sd.getFullYear()} (${wday})`
+        : `${mon} ${sd.getDate()} (${wday})`;
+    }
+    const yearPrefix = includeYear ? `${sd.getFullYear()}年` : '';
+    return `${yearPrefix}${sd.getMonth() + 1}月${sd.getDate()}日 (${ZH_WEEKDAY_SHORT[sd.getDay()] || ''})`;
+  }
+
+  const rawFull = String(slot?.fullLabel || '').trim();
+  const rawShort = String(slot?.label || '').trim();
+  if (en && rawFull && /[\u4e00-\u9fff]/.test(rawFull)) {
+    return rawShort || rawFull;
+  }
+  return rawFull || rawShort;
 }
 
 function formatUsd(amount, { precise = false } = {}) {
@@ -5402,7 +5861,7 @@ function buildDeterministicModelColorMap(models = []) {
 
   return colorMap;
 }
-return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, normalizeOrchestratorIdDisplayMode, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
 })();
 
 // --- src/core/stepInspector.js ---
@@ -6004,6 +6463,7 @@ const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
   normField('stepTokenComboFormat', normalizeStepTokenComboFormat),
   arrayField('stepTableColumns', normalizeStepTableColumns),
   normField('experimentalQuotaReservation', normalizeExperimentalQuotaReservation),
+  normField('accountQuotaRefreshMinutes', normalizeAccountQuotaRefreshMinutes),
 ]);
 
 /**
@@ -6070,7 +6530,7 @@ return { triggerBlobDownload, triggerTextFileDownload, buildExportableSettingsJs
 })();
 
 // --- src/core/xlsxBuilder.js ---
-const { uint8ArrayToBase64, buildXlsxWorkbookBytes } = (() => {
+const { MAX_EXCEL_CELL_CHARS, uint8ArrayToBase64, buildXlsxWorkbookBytes } = (() => {
 /**
  * @fileoverview 零外部依赖原生 Excel (`.xlsx` / ECMA-376 OOXML) 多工作表构建器 (`xlsxBuilder.js`)。
  * 内置标准 IEEE 802.3 CRC-32 及 ZIP STORE 封装，支持：
@@ -6081,7 +6541,10 @@ const { uint8ArrayToBase64, buildXlsxWorkbookBytes } = (() => {
  * - 全部字符串采用 `inlineStr` 并剔除 XML 1.0 非法控制符，天然免疫公式注入及 Excel 损坏警告。
  */
 
+const MAX_EXCEL_CELL_CHARS = 32767;
 const INVALID_XML_CTRL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g;
+const LONE_SURROGATE_RE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 const INVALID_SHEET_NAME_RE = /[\\/?*[\]:]/g;
 
 // --- 样式索引常量（对应下方 STYLES_XML 中的 cellXfs 顺序） ---
@@ -6277,9 +6740,24 @@ function buildZipStoreArchive(entries) {
   return archive;
 }
 
-function escapeXmlText(val) {
-  return String(val ?? '')
+function sanitizeExcelCellText(val) {
+  const clean = String(val ?? '')
     .replace(INVALID_XML_CTRL_RE, '')
+    .replace(LONE_SURROGATE_RE, '\uFFFD');
+  if (clean.length <= MAX_EXCEL_CELL_CHARS) {
+    return clean;
+  }
+  // 桌面版 Excel 单格文本硬上限为 32,767 UTF-16 码元；预留 1 位给省略号并避免劈断代理对
+  let cut = MAX_EXCEL_CELL_CHARS - 1;
+  const prevCode = clean.charCodeAt(cut - 1);
+  if (prevCode >= 0xd800 && prevCode <= 0xdbff) {
+    cut -= 1;
+  }
+  return `${clean.slice(0, cut)}…`;
+}
+
+function escapeXmlText(val) {
+  return sanitizeExcelCellText(val)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -6299,10 +6777,12 @@ function columnIndexToLetter(index) {
 }
 
 /**
- * 估算文本在 Excel 单元格中的视觉字符宽度（中文/全角约占 2.05 宽，ASCII 约 1.05 宽）。
+ * 估算文本在 Excel 单元格中的视觉字符宽度（中文/全角约占 2.05 宽，ASCII 约 1.05 宽；
+ * 列宽上限为 64，因此仅采样前 128 个字符即可达到饱和，避免超长文本全量遍历）。
  */
 function measureExcelVisualWidth(str) {
-  const s = String(str ?? '').replace(/\r?\n/g, ' ');
+  const raw = String(str ?? '');
+  const s = (raw.length > 128 ? raw.slice(0, 128) : raw).replace(/\r?\n/g, ' ');
   let w = 0;
   for (let i = 0; i < s.length; i += 1) {
     const code = s.charCodeAt(i);
@@ -6714,7 +7194,7 @@ function buildXlsxWorkbookBytes(sheets) {
 
   return buildZipStoreArchive(archiveEntries);
 }
-return { uint8ArrayToBase64, buildXlsxWorkbookBytes };
+return { MAX_EXCEL_CELL_CHARS, uint8ArrayToBase64, buildXlsxWorkbookBytes };
 })();
 
 // --- src/core/reportExporter.js ---
@@ -6728,8 +7208,10 @@ const { escapeCsvCell, sanitizeExportFilename, buildConsumptionExportBaseName, b
 const PLAIN_SIGNED_NUMBER_RE = /^[+-]?\d+(\.\d+)?$/;
 
 const RANGE_LABELS_ZH = Object.freeze({
+  '5h': '近5小时',
   today: '今日',
   '24h': '近24小时',
+  week: '本周',
   '7d': '近7天',
   '14d': '近14天',
   '30d': '近30天',
@@ -6739,8 +7221,10 @@ const RANGE_LABELS_ZH = Object.freeze({
 });
 
 const RANGE_LABELS_EN = Object.freeze({
+  '5h': 'Last 5 Hours',
   today: 'Today',
   '24h': 'Last 24 Hours',
+  week: 'This Week',
   '7d': 'Last 7 Days',
   '14d': 'Last 14 Days',
   '30d': 'Last 30 Days',
@@ -6802,10 +7286,18 @@ function formatExportDate(ms) {
 function resolveLocalizedRangeLabel(range, en) {
   const r = range || {};
   const key = String(r.key || '').trim().toLowerCase();
+  const poolSuffix =
+    key === 'cycle' && r.pool && r.pool !== 'all' ? ` · ${r.poolLabel || r.pool}` : '';
   if (en) {
-    return RANGE_LABELS_EN[key] || r.label || key || 'All Time';
+    const baseEn =
+      key === 'cycle' && r.isFallbackWeek
+        ? 'This Week'
+        : RANGE_LABELS_EN[key] || r.label || key || 'All Time';
+    return `${baseEn}${poolSuffix}`;
   }
-  return r.label || RANGE_LABELS_ZH[key] || key || '全部时间';
+  if (r.label) return r.label;
+  const baseZh = RANGE_LABELS_ZH[key] || key || '全部时间';
+  return `${baseZh}${poolSuffix}`;
 }
 
 function resolveRangeSpanNote(range) {
@@ -6917,6 +7409,7 @@ function summarizeStepsForExport(list, displaySettings) {
 
     const validTps =
       !st.isCompactionStep &&
+      !st.isImageGenStep &&
       outTok >= 50 &&
       !st.selectedSpeedReason &&
       Number.isFinite(Number(st.tokPerSec)) &&
@@ -6927,7 +7420,11 @@ function summarizeStepsForExport(list, displaySettings) {
         : outTok / Number(st.tokPerSec)
       : 0;
     const validTtft =
-      !st.isCompactionStep && Number.isFinite(Number(st.ttftSec)) && Number(st.ttftSec) >= 0;
+      !st.isCompactionStep &&
+      !st.isImageGenStep &&
+      st.ttftSec != null &&
+      Number.isFinite(Number(st.ttftSec)) &&
+      Number(st.ttftSec) >= 0;
     if (validTps && stepSpeedSec > 0) {
       tpsTokSum += outTok;
       tpsSecSum += stepSpeedSec;
@@ -7258,9 +7755,13 @@ function buildStepsXlsx(
       ? en
         ? 'Compaction'
         : '自动压缩'
-      : en
-        ? 'Normal'
-        : '常规';
+      : st.isImageGenStep
+        ? en
+          ? 'Image Gen'
+          : '生成图片'
+        : en
+          ? 'Normal'
+          : '常规';
     const tone = anomCount > 0 ? 'danger' : st.isCompactionStep ? 'info' : '';
 
     stepRows.push({
@@ -7532,8 +8033,10 @@ function buildStepsMarkdownReport(
 function buildConsumptionCsv(
   consumption,
   modelBreakdown = [],
-  { displaySettings = {}, includeBom = true } = {}
+  { displaySettings = {}, includeBom = true, locale } = {}
 ) {
+  const en = resolveExportEnglish(locale);
+  const effectiveLocale = en ? 'en-US' : 'zh-CN';
   const cons = consumption || {};
   const acc = cons.account || {};
   const range = cons.selectedRange || {};
@@ -7559,7 +8062,7 @@ function buildConsumptionCsv(
     ]),
     csvRow([
       'summary',
-      range.label || range.key || 'all',
+      resolveLocalizedRangeLabel(range, en),
       Number(acc.calls || 0),
       Number(acc.inputTokens || 0),
       Number(acc.cacheReadTokens || 0),
@@ -7627,7 +8130,7 @@ function buildConsumptionCsv(
     rows.push(
       csvRow([
         'trend',
-        slot.fullLabel || slot.label || '',
+        formatTrendSlotFullLabel(slot, { locale: effectiveLocale }) || slot.label || '',
         Number(slot.calls || 0),
         Number(slot.inputTokens || 0),
         Number(slot.cacheReadTokens || 0),
@@ -8015,8 +8518,11 @@ function buildConsumptionXlsx(
     let tTot = 0;
     let tCost = 0;
     const trendRows = trend.map((slot) => {
+      const isMinute = slot.granularity === 'minute';
       const isHourly =
-        slot.granularity === 'hour' || String(slot.label || '').includes(':');
+        isMinute ||
+        slot.granularity === 'hour' ||
+        String(slot.label || '').includes(':');
       const calls = Math.max(0, Number(slot.calls || 0));
       const inTok = Math.max(0, Number(slot.inputTokens || 0));
       const cacheTok = Math.max(0, Number(slot.cacheReadTokens || 0));
@@ -8029,13 +8535,18 @@ function buildConsumptionXlsx(
       tOut += outTok;
       tTot += totTok;
       tCost += cost;
-      const granLabel = isHourly
+      const stepMins = Math.max(1, Number(slot.stepMinutes) || 5);
+      const granLabel = isMinute
         ? en
-          ? 'Hourly'
-          : '按小时'
-        : en
-          ? 'Daily'
-          : '按天';
+          ? `${stepMins}m`
+          : `按 ${stepMins} 分钟`
+        : isHourly
+          ? en
+            ? 'Hourly'
+            : '按小时'
+          : en
+            ? 'Daily'
+            : '按天';
       return [
         formatTrendWindowLabel(slot, isHourly),
         granLabel,
@@ -8634,7 +9145,7 @@ function getPickerTypesForFilename(filename, mimeType) {
  * @returns {Promise<boolean>}
  */
 async function revealExportedFile(filePath) {
-  if (!filePath) return false;
+  if (!filePath || !isHostEmbeddedWebview()) return false;
   try {
     const res = await callSidecarApi('/api/reveal-file', {
       method: 'POST',
@@ -8706,25 +9217,25 @@ async function runExportPipelineWithFeedback({
   backendPayload,
   writablePayload,
 }) {
-  const { res: localRes } = await requestLocalBackendExport(backendPayload);
-  if (localRes && localRes.ok && localRes.filePath) {
-    const savedPath = String(localRes.filePath);
-    const savedName = String(localRes.fileName || safeName);
-    showUiToast({
-      message: t('export.savedLocal', { file: savedName }),
-      detail: savedPath,
-      actionLabel: t('export.openFolder'),
-      onAction: () => {
-        void revealExportedFile(savedPath);
-      },
-      tone: 'ok',
-      durationMs: 7000,
-    });
-    return { ok: true, mode: 'local', filePath: savedPath, fileName: savedName };
-  }
-
-  // 在 Antigravity Sidecar / 双栖 Electron 宿主内，<a download> 会被静默吞掉，绝不误报“已下载到浏览器”
   if (isHostEmbeddedWebview()) {
+    const { res: localRes } = await requestLocalBackendExport(backendPayload);
+    if (localRes && localRes.ok && localRes.filePath) {
+      const savedPath = String(localRes.filePath);
+      const savedName = String(localRes.fileName || safeName);
+      showUiToast({
+        message: t('export.savedLocal', { file: savedName }),
+        detail: savedPath,
+        actionLabel: t('export.openFolder'),
+        onAction: () => {
+          void revealExportedFile(savedPath);
+        },
+        tone: 'ok',
+        durationMs: 7000,
+      });
+      return { ok: true, mode: 'local', filePath: savedPath, fileName: savedName };
+    }
+
+    // 在 Antigravity Sidecar / 双栖 Electron 宿主内，<a download> 会被静默吞掉，绝不误报“已下载到浏览器”
     showUiToast({
       message: t('export.failed'),
       detail: t('export.hostUnavailable'),
@@ -8862,8 +9373,87 @@ async function copyTextWithFeedback(text, successMessage) {
 return { revealExportedFile, exportTextFileWithFeedback, exportBinaryFileWithFeedback, copyTextWithFeedback };
 })();
 
+// --- src/core/hostI18nClient.js ---
+const { fetchHostI18nStatus, refreshHostI18nManifest, selectHostI18nLanguage, updateHostI18nDepth, installOrUpdateHostI18nPack, removeHostI18nPack, collectHostI18nUntranslated } = (() => {
+/**
+ * @fileoverview Decoupled HTTP/CDP client for `/api/host-i18n`.
+ * Completely independent from `telemetryStore.js`.
+ */
+
+
+async function fetchHostI18nStatus() {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'GET',
+    abortKey: 'host-i18n-get',
+    cdpTimeoutMs: 12000,
+  });
+}
+
+async function refreshHostI18nManifest() {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: { action: 'refresh_manifest' },
+    cdpTimeoutMs: 18000,
+  });
+}
+
+async function selectHostI18nLanguage(locale, depth) {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: {
+      action: 'select',
+      locale: normalizeHostI18nLocale(locale),
+      ...(depth !== undefined ? { depth: normalizeHostI18nDepth(depth) } : {}),
+    },
+    cdpTimeoutMs: 22000,
+  });
+}
+
+async function updateHostI18nDepth(depth) {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: {
+      action: 'set_depth',
+      depth: normalizeHostI18nDepth(depth),
+    },
+    cdpTimeoutMs: 10000,
+  });
+}
+
+async function installOrUpdateHostI18nPack(locale) {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: {
+      action: 'update',
+      locale: normalizeHostI18nLocale(locale),
+    },
+    cdpTimeoutMs: 22000,
+  });
+}
+
+async function removeHostI18nPack(locale) {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: {
+      action: 'remove',
+      locale: normalizeHostI18nLocale(locale),
+    },
+    cdpTimeoutMs: 10000,
+  });
+}
+
+async function collectHostI18nUntranslated() {
+  return callSidecarApi(HOST_I18N_API_PATH, {
+    method: 'POST',
+    body: { action: 'collect_untranslated' },
+    cdpTimeoutMs: 15000,
+  });
+}
+return { fetchHostI18nStatus, refreshHostI18nManifest, selectHostI18nLanguage, updateHostI18nDepth, installOrUpdateHostI18nPack, removeHostI18nPack, collectHostI18nUntranslated };
+})();
+
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 /**
  * @fileoverview Reactive telemetry store with async non-overlapping poll scheduler
  * and granular slice updates.
@@ -8950,6 +9540,7 @@ const telemetryStore = createReactiveStore({
   selectedConversationId: initialConversationId,
   hostRouteConversationId: extractHostRouteCascadeId(),
   selectedTimeRange: 'today',
+  selectedCyclePool: 'all',
   customStartMs: Date.now() - 24 * 3600 * 1000,
   customEndMs: Date.now(),
   syncState: 'idle', // 'idle' | 'syncing' | 'synced' | 'error'
@@ -8971,7 +9562,7 @@ let inFlightTelemetryPoll = null;
 let inFlightPresetsPrefetch = null;
 let lastPrefetchedUsageRevision = 0;
 let consumptionCacheScopeSig = '';
-const MAX_CONSUMPTION_RANGE_CACHE = 12;
+const MAX_CONSUMPTION_RANGE_CACHE = 24;
 const MAX_CONVERSATION_VIEW_CACHE = 12;
 const CONSUMPTION_PRESET_KEYS = ['cycle', 'today', '24h', '7d', '14d', '30d', 'all'];
 const consumptionRangeCache = new Map();
@@ -8993,10 +9584,18 @@ const TELEMETRY_RECOMPUTE_SETTING_KEYS = new Set([
   'enableWindowOverlay',
 ]);
 
-function makeConsumptionRangeCacheKey(range, customStartMs = 0, customEndMs = 0) {
+function makeConsumptionRangeCacheKey(
+  range,
+  customStartMs = 0,
+  customEndMs = 0,
+  cyclePool = 'all'
+) {
   const key = String(range || 'all');
   if (key === 'custom') {
     return `custom:${Number(customStartMs || 0)}:${Number(customEndMs || 0)}`;
+  }
+  if (key === 'cycle' && cyclePool && cyclePool !== 'all') {
+    return `cycle:${String(cyclePool)}`;
   }
   return key;
 }
@@ -9024,6 +9623,17 @@ function buildConsumptionScopeSig(payload) {
   return `${String(ep.id || LOCAL_ENDPOINT_ID)}|${String(acct.status || '')}|${String(acct.email || acct.name || '').toLowerCase()}|${String(set.weeklyLimitMode || '')}|${String(cloud.catalogVersion || '')}`;
 }
 
+function reconcileSelectedCyclePool(payload) {
+  const curPool = telemetryStore.getState().selectedCyclePool || 'all';
+  if (curPool === 'all') return;
+  const pools = payload?.quotas?.pools;
+  if (!Array.isArray(pools) || pools.length === 0) return;
+  const exists = pools.some((p) => String(p?.poolKey || p?.family || '') === curPool);
+  if (!exists) {
+    telemetryStore.setState({ selectedCyclePool: 'all' });
+  }
+}
+
 function syncConsumptionCacheScope(payload) {
   const nextSig = buildConsumptionScopeSig(payload);
   if (!nextSig) return;
@@ -9032,6 +9642,7 @@ function syncConsumptionCacheScope(payload) {
     clearConversationViewCache();
   }
   consumptionCacheScopeSig = nextSig;
+  reconcileSelectedCyclePool(payload);
 }
 
 function recordConversationViewToCache(payload) {
@@ -9147,14 +9758,19 @@ function putConsumptionRangeCacheEntry(cacheKey, entry) {
 function recordConsumptionSliceToCache(
   cons,
   modelBreakdown,
-  { customStartMs = 0, customEndMs = 0, usageRevision = 0 } = {}
+  { customStartMs = 0, customEndMs = 0, cyclePool = 'all', usageRevision = 0 } = {}
 ) {
   const rangeKey = String(cons?.selectedRange?.key || '');
   if (!rangeKey) return;
+  const resolvedPool =
+    rangeKey === 'cycle'
+      ? String(cons?.selectedRange?.pool || cyclePool || 'all')
+      : 'all';
   const cacheKey = makeConsumptionRangeCacheKey(
     rangeKey,
     rangeKey === 'custom' ? customStartMs || cons.selectedRange?.startMs || 0 : 0,
-    rangeKey === 'custom' ? customEndMs || cons.selectedRange?.endMs || 0 : 0
+    rangeKey === 'custom' ? customEndMs || cons.selectedRange?.endMs || 0 : 0,
+    resolvedPool
   );
   putConsumptionRangeCacheEntry(cacheKey, {
     revision: Number(cons.revision ?? usageRevision ?? 0),
@@ -9272,6 +9888,7 @@ const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
 const normalizeClientContextAgentMode = normalizeContextAgentMode;
 const normalizeClientExperimentalQuotaReservation = normalizeExperimentalQuotaReservation;
+const normalizeClientAccountQuotaRefreshMinutes = normalizeAccountQuotaRefreshMinutes;
 const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
 
 /**
@@ -9430,6 +10047,15 @@ function isEquivalentTelemetry(prev, next) {
   ) {
     return false;
   }
+  if (
+    normalizeClientAccountQuotaRefreshMinutes(pSet?.accountQuotaRefreshMinutes) !==
+    normalizeClientAccountQuotaRefreshMinutes(nSet?.accountQuotaRefreshMinutes)
+  ) {
+    return false;
+  }
+  if (Boolean(pSet?.accountSwitchRiskAccepted) !== Boolean(nSet?.accountSwitchRiskAccepted)) {
+    return false;
+  }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
   if (!sameArr(pSet?.hoverModules, nSet?.hoverModules)) return false;
   if (!sameArr(pSet?.overviewModules, nSet?.overviewModules)) return false;
@@ -9521,6 +10147,7 @@ function isEquivalentTelemetry(prev, next) {
   if (pAct?.aggregated?.activeAgentBadge !== nAct?.aggregated?.activeAgentBadge) return false;
   if (pAct?.aggregated?.latestTokPerSec !== nAct?.aggregated?.latestTokPerSec) return false;
   if (pAct?.aggregated?.latestTtftSec !== nAct?.aggregated?.latestTtftSec) return false;
+  if (pAct?.aggregated?.lastKnownTtftSec !== nAct?.aggregated?.lastKnownTtftSec) return false;
   if (pAct?.aggregated?.avgTokPerSec !== nAct?.aggregated?.avgTokPerSec) return false;
   if (pAct?.aggregated?.latestStepCostUsd !== nAct?.aggregated?.latestStepCostUsd) return false;
   if (pAct?.aggregated?.sessionCostUsd !== nAct?.aggregated?.sessionCostUsd) return false;
@@ -9532,6 +10159,7 @@ function isEquivalentTelemetry(prev, next) {
   if (pAct?.aggregated?.latestSpeedReason !== nAct?.aggregated?.latestSpeedReason) return false;
   if (pAct?.latestTokPerSec !== nAct?.latestTokPerSec) return false;
   if (pAct?.latestTtftSec !== nAct?.latestTtftSec) return false;
+  if (pAct?.lastKnownTtftSec !== nAct?.lastKnownTtftSec) return false;
   if (pAct?.avgTokPerSec !== nAct?.avgTokPerSec) return false;
   if (pAct?.latestCacheHitPct !== nAct?.latestCacheHitPct) return false;
   if (pAct?.sessionCacheHitPct !== nAct?.sessionCacheHitPct) return false;
@@ -9570,6 +10198,7 @@ function isEquivalentTelemetry(prev, next) {
       pa?.liveActivity?.signature !== na?.liveActivity?.signature ||
       pa?.latestTokPerSec !== na?.latestTokPerSec ||
       pa?.latestTtftSec !== na?.latestTtftSec ||
+      pa?.lastKnownTtftSec !== na?.lastKnownTtftSec ||
       pa?.avgTokPerSec !== na?.avgTokPerSec ||
       pa?.latestCacheHitPct !== na?.latestCacheHitPct ||
       pa?.sessionCacheHitPct !== na?.sessionCacheHitPct ||
@@ -9702,11 +10331,14 @@ function isEquivalentTelemetry(prev, next) {
     }
   }
 
-  // 5. 比对消费统计所选时间区间、当前会话累计消费与账号全局累计消费
+  // 5. 比对消费统计所选时间区间、当前会话累计消费和账号全局累计消费
   const pRange = prev.consumption?.selectedRange;
   const nRange = next.consumption?.selectedRange;
   if (pRange?.key !== nRange?.key) return false;
-  if (nRange?.key === 'custom') {
+  if ((pRange?.pool || 'all') !== (nRange?.pool || 'all')) return false;
+  if ((pRange?.label || '') !== (nRange?.label || '')) return false;
+  if (Boolean(pRange?.isFallbackWeek) !== Boolean(nRange?.isFallbackWeek)) return false;
+  if (nRange?.key === 'custom' || nRange?.key === 'cycle') {
     if (pRange?.startMs !== nRange?.startMs || pRange?.endMs !== nRange?.endMs) return false;
   }
 
@@ -9769,6 +10401,8 @@ function isEquivalentTelemetry(prev, next) {
       pTrend[i]?.thinkingTokens !== nTrend[i]?.thinkingTokens ||
       pTrend[i]?.responseTokens !== nTrend[i]?.responseTokens ||
       pTrend[i]?.calls !== nTrend[i]?.calls ||
+      pTrend[i]?.granularity !== nTrend[i]?.granularity ||
+      pTrend[i]?.stepMinutes !== nTrend[i]?.stepMinutes ||
       pTrend[i]?.label !== nTrend[i]?.label ||
       pTrend[i]?.fullLabel !== nTrend[i]?.fullLabel ||
       !areModelSlicesEqual(pTrend[i]?.models, nTrend[i]?.models)
@@ -9914,6 +10548,12 @@ function isEquivalentTelemetry(prev, next) {
       return false;
     }
   }
+  if (
+    JSON.stringify(prev.quotas?.weeklyCapacityEstimate || null) !==
+    JSON.stringify(next.quotas?.weeklyCapacityEstimate || null)
+  ) {
+    return false;
+  }
 
   const pConvs = prev.conversations || [];
   const nConvs = next.conversations || [];
@@ -10025,6 +10665,13 @@ async function fetchTelemetry({ force = false } = {}) {
   const params = new URLSearchParams();
   if (effectiveConvId) params.set('conversationId', effectiveConvId);
   if (current.selectedTimeRange) params.set('range', current.selectedTimeRange);
+  if (
+    current.selectedTimeRange === 'cycle' &&
+    current.selectedCyclePool &&
+    current.selectedCyclePool !== 'all'
+  ) {
+    params.set('pool', current.selectedCyclePool);
+  }
   if (current.selectedTimeRange === 'custom') {
     if (current.customStartMs > 0) params.set('startMs', String(current.customStartMs));
     if (current.customEndMs > 0) params.set('endMs', String(current.customEndMs));
@@ -10072,6 +10719,7 @@ async function requestTelemetry(params, force) {
   const reqSeq = ++latestRequestSeq;
   const reqSettingsRev = settingsRevision;
   const reqRange = String(params.get('range') || '');
+  const reqPool = String(params.get('pool') || 'all');
   const reqStartMs = Number(params.get('startMs') || 0);
   const reqEndMs = Number(params.get('endMs') || 0);
   const startMs = Date.now();
@@ -10131,14 +10779,17 @@ async function requestTelemetry(params, force) {
       recordConsumptionSliceToCache(resolvedPayload.consumption, resolvedPayload.modelBreakdown, {
         customStartMs: reqStartMs,
         customEndMs: reqEndMs,
+        cyclePool: reqPool,
       });
     }
 
     const latestSt = telemetryStore.getState();
     const incomingRev = Number(resolvedPayload?.consumption?.revision || 0);
+    const activePoolPref = latestSt.selectedCyclePool || 'all';
     const matchesCurrentRange =
       !reqRange ||
       (reqRange === latestSt.selectedTimeRange &&
+        (reqRange !== 'cycle' || reqPool === activePoolPref) &&
         (reqRange !== 'custom' ||
           (reqStartMs === Number(latestSt.customStartMs || 0) &&
             reqEndMs === Number(latestSt.customEndMs || 0))));
@@ -10150,7 +10801,8 @@ async function requestTelemetry(params, force) {
       const activeKey = makeConsumptionRangeCacheKey(
         latestSt.selectedTimeRange,
         latestSt.customStartMs,
-        latestSt.customEndMs
+        latestSt.customEndMs,
+        activePoolPref
       );
       const cachedActive = consumptionRangeCache.get(activeKey);
       if (cachedActive) {
@@ -10159,7 +10811,9 @@ async function requestTelemetry(params, force) {
           needsSilentRangeRevalidate = true;
         }
       } else if (
-        latestSt.telemetry?.consumption?.selectedRange?.key === latestSt.selectedTimeRange
+        latestSt.telemetry?.consumption?.selectedRange?.key === latestSt.selectedTimeRange &&
+        (latestSt.selectedTimeRange !== 'cycle' ||
+          (latestSt.telemetry?.consumption?.selectedRange?.pool || 'all') === activePoolPref)
       ) {
         resolvedPayload = {
           ...resolvedPayload,
@@ -10211,6 +10865,7 @@ async function requestTelemetry(params, force) {
           range: latestSt.selectedTimeRange,
           customStartMs: latestSt.customStartMs,
           customEndMs: latestSt.customEndMs,
+          cyclePool: latestSt.selectedCyclePool || 'all',
         });
       }
       return resolvedPayload;
@@ -10236,15 +10891,20 @@ async function fetchConsumptionRangeSlice({
   range,
   customStartMs = 0,
   customEndMs = 0,
+  cyclePool = 'all',
 } = {}) {
   const reqEpoch = endpointSwitchEpoch;
   const reqSeq = ++latestConsumptionReqSeq;
   const targetRange = String(range || 'today');
+  const targetPool = targetRange === 'cycle' ? String(cyclePool || 'all') : 'all';
   const current = telemetryStore.getState();
   const effectiveConvId = current.selectedConversationId || current.hostRouteConversationId || '';
   const params = new URLSearchParams();
   if (effectiveConvId) params.set('conversationId', effectiveConvId);
   params.set('range', targetRange);
+  if (targetRange === 'cycle' && targetPool !== 'all') {
+    params.set('pool', targetPool);
+  }
   if (targetRange === 'custom') {
     if (customStartMs > 0) params.set('startMs', String(customStartMs));
     if (customEndMs > 0) params.set('endMs', String(customEndMs));
@@ -10263,6 +10923,7 @@ async function fetchConsumptionRangeSlice({
       recordConsumptionSliceToCache(payload.consumption, payload.modelBreakdown, {
         customStartMs,
         customEndMs,
+        cyclePool: targetPool,
         usageRevision: usageRev,
       });
       if (reqSeq !== latestConsumptionReqSeq) return payload;
@@ -10270,6 +10931,7 @@ async function fetchConsumptionRangeSlice({
       const latestSt = telemetryStore.getState();
       const stillMatches =
         latestSt.selectedTimeRange === targetRange &&
+        (targetRange !== 'cycle' || (latestSt.selectedCyclePool || 'all') === targetPool) &&
         (targetRange !== 'custom' ||
           (Number(latestSt.customStartMs || 0) === Number(customStartMs || 0) &&
             Number(latestSt.customEndMs || 0) === Number(customEndMs || 0)));
@@ -10375,6 +11037,13 @@ async function selectConversation(
   const params = new URLSearchParams();
   if (effectiveConvId) params.set('conversationId', effectiveConvId);
   if (current.selectedTimeRange) params.set('range', current.selectedTimeRange);
+  if (
+    current.selectedTimeRange === 'cycle' &&
+    current.selectedCyclePool &&
+    current.selectedCyclePool !== 'all'
+  ) {
+    params.set('pool', current.selectedCyclePool);
+  }
   if (current.selectedTimeRange === 'custom') {
     if (current.customStartMs > 0) params.set('startMs', String(current.customStartMs));
     if (current.customEndMs > 0) params.set('endMs', String(current.customEndMs));
@@ -10481,7 +11150,7 @@ async function selectConversation(
  */
 function selectConsumptionTimeRange(
   nextRange,
-  { customStartMs = undefined, customEndMs = undefined } = {}
+  { customStartMs = undefined, customEndMs = undefined, cyclePool = undefined } = {}
 ) {
   const targetRange = String(nextRange || 'today');
   const prevSt = telemetryStore.getState();
@@ -10493,14 +11162,26 @@ function selectConsumptionTimeRange(
     targetRange === 'custom'
       ? Number(customEndMs !== undefined ? customEndMs : prevSt.customEndMs || 0)
       : prevSt.customEndMs;
+  const nextCyclePool =
+    targetRange === 'cycle'
+      ? String(cyclePool !== undefined ? cyclePool || 'all' : prevSt.selectedCyclePool || 'all')
+      : prevSt.selectedCyclePool || 'all';
 
   const statePatch = { selectedTimeRange: targetRange };
+  if (cyclePool !== undefined) {
+    statePatch.selectedCyclePool = nextCyclePool;
+  }
   if (targetRange === 'custom') {
     statePatch.customStartMs = nextStartMs;
     statePatch.customEndMs = nextEndMs;
   }
 
-  const cacheKey = makeConsumptionRangeCacheKey(targetRange, nextStartMs, nextEndMs);
+  const cacheKey = makeConsumptionRangeCacheKey(
+    targetRange,
+    nextStartMs,
+    nextEndMs,
+    targetRange === 'cycle' ? nextCyclePool : 'all'
+  );
   const cached = consumptionRangeCache.get(cacheKey);
   const prevTelemetry = prevSt.telemetry;
 
@@ -10519,6 +11200,7 @@ function selectConsumptionTimeRange(
       range: targetRange,
       customStartMs: nextStartMs,
       customEndMs: nextEndMs,
+      cyclePool: nextCyclePool,
     });
   }
 
@@ -10527,7 +11209,12 @@ function selectConsumptionTimeRange(
     range: targetRange,
     customStartMs: nextStartMs,
     customEndMs: nextEndMs,
+    cyclePool: nextCyclePool,
   });
+}
+
+function selectConsumptionCyclePool(nextPool = 'all') {
+  return selectConsumptionTimeRange('cycle', { cyclePool: String(nextPool || 'all') });
 }
 
 /**
@@ -10630,6 +11317,14 @@ async function saveSettingsPatch(patch) {
     safePatch.experimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
       safePatch.experimentalQuotaReservation
     );
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'accountQuotaRefreshMinutes')) {
+    safePatch.accountQuotaRefreshMinutes = normalizeClientAccountQuotaRefreshMinutes(
+      safePatch.accountQuotaRefreshMinutes
+    );
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'accountSwitchRiskAccepted')) {
+    safePatch.accountSwitchRiskAccepted = Boolean(safePatch.accountSwitchRiskAccepted);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'topbarCapsuleSlots')) {
     safePatch.topbarCapsuleSlots = normalizeClientTopbarSlots(safePatch.topbarCapsuleSlots);
@@ -11204,7 +11899,7 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientOrchestratorIdMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
@@ -11503,7 +12198,7 @@ function filterSelectOptionsByQuery(options = [], rawQuery = '') {
     const opt = options[i];
     if (!opt) continue;
     const haystack =
-      `${opt.label || ''} ${opt.meta || ''} ${opt.title || ''} ${opt.value || ''}`.toLowerCase();
+      `${opt.label || ''} ${opt.subLabel || ''} ${opt.meta || ''} ${opt.searchText || ''} ${opt.title || ''} ${opt.value || ''}`.toLowerCase();
     let matched = true;
     for (let k = 0; k < terms.length; k++) {
       if (!haystack.includes(terms[k])) {
@@ -11663,7 +12358,7 @@ const CustomSelect = defineComponent({
       let sig = `${labelText}|${searchShown}|${searchQuery}|${options.length}`;
       for (let i = 0; i < options.length; i++) {
         const o = options[i];
-        sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.meta ?? ''}`;
+        sig += `|${o?.value ?? ''}:${o?.label ?? ''}:${o?.subLabel ?? ''}:${o?.meta ?? ''}`;
       }
       return sig;
     }
@@ -11816,15 +12511,17 @@ const CustomSelect = defineComponent({
       patchKeyedList(optionsListEl, visibleOpts, {
         keyFn: (opt) => opt.value,
         sigFn: (opt, idx) =>
-          `${multiple}::${opt.value}::${opt.label}::${opt.meta || ''}::${Boolean(opt.disabled)}::${selSet.has(opt.value)}::${idx === focusedIndex}`,
+          `${multiple}::${opt.value}::${opt.label}::${opt.subLabel || ''}::${opt.meta || ''}::${Boolean(opt.dimMeta)}::${Boolean(opt.dividerAfter)}::${opt.title || ''}::${Boolean(opt.disabled)}::${selSet.has(opt.value)}::${idx === focusedIndex}`,
         createRow: (opt) => {
           const checkboxIcon = createSvgIcon('check', { size: 10 });
           const checkboxBox = h('span', { className: 'select-checkbox', hidden: true }, [
             checkboxIcon,
           ]);
           const textSpan = h('span', { className: 'select-option-text' });
+          const subSpan = h('span', { className: 'text-muted select-option-sub', hidden: true });
+          const bodyWrap = h('span', { className: 'select-option-body' }, [textSpan, subSpan]);
           const metaSpan = h('span', { className: 'text-muted select-option-meta' });
-          const checkIcon = createSvgIcon('check', { size: 12 });
+          const checkIcon = createSvgIcon('check', { size: 12, className: 'select-option-check' });
           const btn = h(
             'button',
             {
@@ -11838,9 +12535,12 @@ const CustomSelect = defineComponent({
                 chooseOption(latestOpt);
               },
             },
-            [checkboxBox, textSpan, metaSpan, checkIcon]
+            [checkboxBox, bodyWrap, metaSpan, checkIcon]
           );
-          return { el: btn, refs: { checkboxBox, checkboxIcon, textSpan, metaSpan, checkIcon } };
+          return {
+            el: btn,
+            refs: { checkboxBox, checkboxIcon, textSpan, subSpan, metaSpan, checkIcon },
+          };
         },
         updateRow: (refs, opt, idx, el) => {
           const isMulti = Boolean(getProps().multiple);
@@ -11851,14 +12551,20 @@ const CustomSelect = defineComponent({
           patchClasses(refs.checkboxBox, { 'is-checked': selected });
           patchAttr(refs.checkboxIcon, 'hidden', !selected);
           patchText(refs.textSpan, opt.label);
+          patchText(refs.subSpan, opt.subLabel || '');
+          patchAttr(refs.subSpan, 'hidden', !opt.subLabel);
           patchText(refs.metaSpan, opt.meta || '');
           patchAttr(refs.metaSpan, 'hidden', !opt.meta);
+          patchClasses(refs.metaSpan, { 'is-dim': Boolean(opt.dimMeta) });
           patchAttr(refs.checkIcon, 'hidden', isMulti || !selected);
           patchClasses(el, {
             'is-selected': selected,
             'is-focused': focused,
             'is-disabled': isDisabled,
+            'has-sub': Boolean(opt.subLabel),
+            'has-divider-after': Boolean(opt.dividerAfter),
           });
+          patchAttr(el, 'title', opt.title || null);
           patchAttr(el, 'disabled', isDisabled);
           patchAttr(el, 'aria-disabled', isDisabled ? 'true' : null);
           patchAttr(el, 'aria-selected', selected ? 'true' : 'false');
@@ -11910,8 +12616,8 @@ const CustomSelect = defineComponent({
         const fallbackText = modelValue
           ? `${placeholder} (${String(modelValue).slice(0, 8)})`
           : placeholder;
-        labelText = selectedOpt ? selectedOpt.label : fallbackText;
-        titleText = labelText;
+        labelText = selectedOpt ? selectedOpt.shortLabel || selectedOpt.label : fallbackText;
+        titleText = selectedOpt ? selectedOpt.title || selectedOpt.label : fallbackText;
       }
 
       patchText(triggerLabel, labelText);
@@ -13560,6 +14266,1260 @@ function createConsumptionBreakdownContent({
 return { createConsumptionBreakdownContent };
 })();
 
+// --- src/components/charts/chartMotion.js ---
+const { CHART_CURVE_MORPH_MS, canAnimateChartInBrowser, evalCubicBezier, createReadyClassArmer, pointsToNormalizedCubicSegs, buildPathFromNormalizedSegs, createCubicCurveMorphController, createMultiSeriesCurveMorphController, createFitGridMorphController, createFloatingChartTooltipController } = (() => {
+/**
+ * @fileoverview Shared interactive chart motion & 2D mouse-following tooltip primitives (`chartMotion.js`).
+ *
+ * Reused across:
+ * 1. `TrendAreaChart.js` (ConsumptionView usage trend & heatmap);
+ * 2. `SessionStepCharts.js` (StepsDetailView summary step line chart & LOESS model fit chart);
+ * 3. `AccountQuotaTrendCard.js` (SettingsAccountTab per-account quota trajectory chart).
+ *
+ * Provides:
+ * - GPU-composited 2D pointer-following floating tooltip (`translate3d`) with 4-way collision
+ *   avoidance, viewport clipping, cached layout rects, and `150ms` `.is-tracking` arming
+ *   synchronized with SVG focus dots (`.trend-hover-dot` / `.sstep-hover-raw-dot`);
+ * - Exact CSS `cubic-bezier` solver (`evalCubicBezier`) and `240ms` normalized cubic-Bezier
+ *   chain subdivision morphing for single-series and multi-series curves + area fills;
+ * - Smooth `240ms` LOESS curve, `95% CI` confidence band, and OLS line morphing;
+ * - Next-frame `.is-ready` transition arming for sliding peak badges (`.trend-peak-pill`).
+ */
+
+
+const CHART_CURVE_MORPH_MS = 240;
+
+/**
+ * Checks whether smooth `requestAnimationFrame` chart animations should run in the current
+ * environment (browser runtime with `prefers-reduced-motion` not enabled).
+ */
+function canAnimateChartInBrowser() {
+  if (
+    typeof window === 'undefined' ||
+    typeof window.requestAnimationFrame !== 'function' ||
+    typeof window.getComputedStyle !== 'function' ||
+    typeof performance === 'undefined' ||
+    typeof performance.now !== 'function'
+  ) {
+    return false;
+  }
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Solves standard CSS `cubic-bezier(x1, y1, x2, y2)` at progress `t` (`0..1`)
+ * so JS path morphing, peak-pill gliding, and CSS bar transitions stay in lockstep.
+ */
+function evalCubicBezier(x1, y1, x2, y2, t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 16; i++) {
+    const s = (lo + hi) * 0.5;
+    const inv = 1 - s;
+    const bx = 3 * inv * inv * s * x1 + 3 * inv * s * s * x2 + s * s * s;
+    if (bx < t) lo = s;
+    else hi = s;
+  }
+  const s = (lo + hi) * 0.5;
+  const inv = 1 - s;
+  return 3 * inv * inv * s * y1 + 3 * inv * s * s * y2 + s * s * s;
+}
+
+/**
+ * Arms a CSS transition readiness class (e.g. `.is-ready` on `.trend-peak-pill`) on the next
+ * animation frame so initial placement snaps cleanly without sliding in from `50%`.
+ */
+function createReadyClassArmer(el, readyClass = 'is-ready') {
+  let armed = false;
+  let rafId = 0;
+
+  function cancel() {
+    if (rafId && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(rafId);
+    }
+    rafId = 0;
+  }
+
+  function arm() {
+    if (armed) return;
+    armed = true;
+    if (canAnimateChartInBrowser()) {
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        patchClasses(el, { [readyClass]: true });
+      });
+    } else {
+      patchClasses(el, { [readyClass]: true });
+    }
+  }
+
+  return { arm, cancel };
+}
+
+/**
+ * Converts 2D SVG points into a normalized horizontal (`u` in `0..1`) cubic-Bezier chain
+ * with horizontal endpoint tangents (`0.42` tension by default, zero vertical overshoot).
+ * Supports both uniform slot spacing and arbitrary timestamp/x coordinates via `leftX` + `spanX`.
+ *
+ * @param {Array<{ x?: number, y: number }>} pts
+ * @param {number} bottomY
+ * @param {{ leftX?: number, spanX?: number, tension?: number }} [opts]
+ */
+function pointsToNormalizedCubicSegs(
+  pts,
+  bottomY,
+  { leftX = 0, spanX = 0, tension = 0.42 } = {}
+) {
+  const n = Array.isArray(pts) ? pts.length : 0;
+  const invT = 1 - tension;
+  if (n === 0) {
+    return [
+      {
+        u0: 0,
+        y0: bottomY,
+        cu1: tension,
+        cy1: bottomY,
+        cu2: invT,
+        cy2: bottomY,
+        u3: 1,
+        y3: bottomY,
+      },
+    ];
+  }
+  if (n === 1) {
+    const py = pts[0].y;
+    const uMid =
+      spanX > 0 && Number.isFinite(pts[0].x)
+        ? Math.max(0, Math.min(1, (pts[0].x - leftX) / spanX))
+        : 0.5;
+    if (Math.abs(py - bottomY) < 0.01) {
+      return [
+        {
+          u0: 0,
+          y0: bottomY,
+          cu1: tension,
+          cy1: bottomY,
+          cu2: invT,
+          cy2: bottomY,
+          u3: 1,
+          y3: bottomY,
+        },
+      ];
+    }
+    return [
+      {
+        u0: 0,
+        y0: bottomY,
+        cu1: uMid * tension,
+        cy1: bottomY,
+        cu2: uMid * invT,
+        cy2: py,
+        u3: uMid,
+        y3: py,
+      },
+      {
+        u0: uMid,
+        y0: py,
+        cu1: uMid + (1 - uMid) * tension,
+        cy1: py,
+        cu2: uMid + (1 - uMid) * invT,
+        cy2: bottomY,
+        u3: 1,
+        y3: bottomY,
+      },
+    ];
+  }
+
+  const useCoordU = spanX > 0 && Number.isFinite(pts[0].x);
+  const segs = [];
+  let prevU = useCoordU ? Math.max(0, Math.min(1, (pts[0].x - leftX) / spanX)) : 0;
+  let prevY = pts[0].y;
+
+  for (let i = 1; i < n; i++) {
+    const rawU = useCoordU
+      ? Math.max(0, Math.min(1, (pts[i].x - leftX) / spanX))
+      : i / (n - 1);
+    const u3 = Math.max(prevU, rawU);
+    const y3 = pts[i].y;
+    if (u3 - prevU <= 1e-6 && i < n - 1 && Math.abs(y3 - prevY) < 0.05) {
+      continue;
+    }
+    const safeU3 = u3 - prevU <= 1e-6 ? Math.min(1, prevU + 1e-5) : u3;
+    const du = safeU3 - prevU;
+    segs.push({
+      u0: prevU,
+      y0: prevY,
+      cu1: prevU + du * tension,
+      cy1: prevY,
+      cu2: safeU3 - du * tension,
+      cy2: y3,
+      u3: safeU3,
+      y3,
+    });
+    prevU = safeU3;
+    prevY = y3;
+  }
+
+  if (segs.length === 0) {
+    return [
+      {
+        u0: prevU,
+        y0: prevY,
+        cu1: prevU,
+        cy1: prevY,
+        cu2: prevU,
+        cy2: prevY,
+        u3: prevU,
+        y3: prevY,
+      },
+    ];
+  }
+  return segs;
+}
+
+function solveCubicParamForU(seg, targetU) {
+  if (targetU <= seg.u0) return 0;
+  if (targetU >= seg.u3) return 1;
+  let lo = 0;
+  let hi = 1;
+  for (let it = 0; it < 20; it++) {
+    const s = (lo + hi) * 0.5;
+    const inv = 1 - s;
+    const u =
+      inv * inv * inv * seg.u0 +
+      3 * inv * inv * s * seg.cu1 +
+      3 * inv * s * s * seg.cu2 +
+      s * s * s * seg.u3;
+    if (u < targetU) lo = s;
+    else hi = s;
+  }
+  return (lo + hi) * 0.5;
+}
+
+function splitCubicAt(seg, s) {
+  const u01 = seg.u0 + (seg.cu1 - seg.u0) * s;
+  const y01 = seg.y0 + (seg.cy1 - seg.y0) * s;
+  const u12 = seg.cu1 + (seg.cu2 - seg.cu1) * s;
+  const y12 = seg.cy1 + (seg.cy2 - seg.cy1) * s;
+  const u23 = seg.cu2 + (seg.u3 - seg.cu2) * s;
+  const y23 = seg.cy2 + (seg.y3 - seg.cy2) * s;
+
+  const u012 = u01 + (u12 - u01) * s;
+  const y012 = y01 + (y12 - y01) * s;
+  const u123 = u12 + (u23 - u12) * s;
+  const y123 = y12 + (y23 - y12) * s;
+
+  const u0123 = u012 + (u123 - u012) * s;
+  const y0123 = y012 + (y123 - y012) * s;
+
+  return [
+    { u0: seg.u0, y0: seg.y0, cu1: u01, cy1: y01, cu2: u012, cy2: y012, u3: u0123, y3: y0123 },
+    { u0: u0123, y0: y0123, cu1: u123, cy1: y123, cu2: u23, cy2: y23, u3: seg.u3, y3: seg.y3 },
+  ];
+}
+
+function extractCubicSubsegment(seg, uStart, uEnd) {
+  const s0 = solveCubicParamForU(seg, uStart);
+  const s1 = solveCubicParamForU(seg, uEnd);
+  if (s0 <= 1e-7 && s1 >= 1 - 1e-7) return { ...seg };
+  const [, right] = s0 <= 1e-7 ? [null, seg] : splitCubicAt(seg, s0);
+  const remSpan = 1 - s0;
+  const localS1 = remSpan > 1e-9 ? Math.min(1, Math.max(0, (s1 - s0) / remSpan)) : 1;
+  const [sub] = localS1 >= 1 - 1e-7 ? [right] : splitCubicAt(right, localS1);
+  sub.u0 = uStart;
+  sub.u3 = uEnd;
+  return sub;
+}
+
+/**
+ * Aligns two cubic-Bezier chains (`fromSegs` and `toSegs`, even when their horizontal `[uStart, uEnd]`
+ * spans differ) onto a shared normalized `[0..1]` knot partition so every segment pair interpolates
+ * smoothly without endpoint snapping.
+ */
+function alignCubicChainsForMorph(fromSegs, toSegs) {
+  const fStart = fromSegs[0].u0;
+  const fEnd = fromSegs[fromSegs.length - 1].u3;
+  const fSpan = fEnd - fStart;
+
+  const tStart = toSegs[0].u0;
+  const tEnd = toSegs[toSegs.length - 1].u3;
+  const tSpan = tEnd - tStart;
+
+  const rawTau = [0, 1];
+  const pushChainKnots = (segs, start, span) => {
+    if (!(span > 1e-6)) return;
+    for (let i = 0; i < segs.length; i++) {
+      rawTau.push(Math.max(0, Math.min(1, (segs[i].u0 - start) / span)));
+      rawTau.push(Math.max(0, Math.min(1, (segs[i].u3 - start) / span)));
+    }
+  };
+  pushChainKnots(toSegs, tStart, tSpan);
+  pushChainKnots(fromSegs, fStart, fSpan);
+
+  rawTau.sort((a, b) => a - b);
+  const tauKnots = [0];
+  for (let i = 1; i < rawTau.length; i++) {
+    if (rawTau[i] - tauKnots[tauKnots.length - 1] > 1e-5) {
+      tauKnots.push(rawTau[i]);
+    }
+  }
+  if (tauKnots.length === 1) tauKnots.push(1);
+  else tauKnots[tauKnots.length - 1] = 1;
+
+  const subdivideOnTau = (segs, start, span) => {
+    const out = new Array(tauKnots.length - 1);
+    let j = 0;
+    for (let k = 0; k < tauKnots.length - 1; k++) {
+      const ta = tauKnots[k];
+      const tb = tauKnots[k + 1];
+      if (!(span > 1e-6)) {
+        const s0 = segs[0];
+        out[k] = {
+          u0: start,
+          y0: s0.y0,
+          cu1: start,
+          cy1: s0.y0,
+          cu2: start,
+          cy2: s0.y3,
+          u3: start,
+          y3: s0.y3,
+        };
+        continue;
+      }
+      const ua = start + ta * span;
+      const ub = start + tb * span;
+      const umid = (ua + ub) * 0.5;
+      while (j < segs.length - 1 && segs[j].u3 < umid) j++;
+      out[k] = extractCubicSubsegment(segs[j], ua, ub);
+    }
+    return out;
+  };
+
+  return {
+    alignedFrom: subdivideOnTau(fromSegs, fStart, fSpan),
+    alignedTo: subdivideOnTau(toSegs, tStart, tSpan),
+  };
+}
+
+function buildPathFromNormalizedSegs(segs, leftX, spanX) {
+  const xAt = (u) => (leftX + u * spanX).toFixed(1);
+  let d = `M ${xAt(segs[0].u0)} ${segs[0].y0.toFixed(1)}`;
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    d += ` C ${xAt(s.cu1)} ${s.cy1.toFixed(1)}, ${xAt(s.cu2)} ${s.cy2.toFixed(1)}, ${xAt(s.u3)} ${s.y3.toFixed(1)}`;
+  }
+  return d;
+}
+
+/**
+ * Single-series cubic-Bezier curve + area fill morph controller (used by `TrendAreaChart` and
+ * single-series `SessionStepCharts`).
+ */
+function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
+  let morphRafId = 0;
+  let committedSegs = [];
+  let liveMorphSegs = null;
+  let hasRenderedOnce = false;
+
+  function cancel() {
+    if (
+      morphRafId &&
+      typeof window !== 'undefined' &&
+      typeof window.cancelAnimationFrame === 'function'
+    ) {
+      window.cancelAnimationFrame(morphRafId);
+    }
+    morphRafId = 0;
+  }
+
+  function reset() {
+    cancel();
+    committedSegs = [];
+    liveMorphSegs = null;
+    hasRenderedOnce = false;
+  }
+
+  function getCurrentSegs() {
+    const src = liveMorphSegs || committedSegs;
+    return hasRenderedOnce && src.length > 0 ? src.map((s) => ({ ...s })) : [];
+  }
+
+  function seedSegs(segs) {
+    cancel();
+    if (Array.isArray(segs) && segs.length > 0) {
+      committedSegs = segs.map((s) => ({ ...s }));
+      liveMorphSegs = null;
+      hasRenderedOnce = true;
+    }
+  }
+
+  function morphTo({
+    nextSegs,
+    leftX,
+    spanX,
+    bottomY,
+    linePath,
+    areaPath = null,
+    finalLineD,
+    finalAreaD = '',
+    skipMorph = false,
+  }) {
+    const prevSegs = liveMorphSegs || committedSegs;
+    committedSegs = nextSegs;
+
+    if (
+      skipMorph ||
+      !hasRenderedOnce ||
+      !canAnimateChartInBrowser() ||
+      prevSegs.length === 0 ||
+      nextSegs.length === 0
+    ) {
+      hasRenderedOnce = true;
+      cancel();
+      liveMorphSegs = null;
+      patchAttr(linePath, 'd', finalLineD);
+      if (areaPath) patchAttr(areaPath, 'd', finalAreaD);
+      return;
+    }
+    hasRenderedOnce = true;
+    cancel();
+
+    const { alignedFrom, alignedTo } = alignCubicChainsForMorph(prevSegs, nextSegs);
+    const segCount = alignedTo.length;
+    let maxDelta = 0;
+    for (let i = 0; i < segCount; i++) {
+      const a = alignedFrom[i];
+      const b = alignedTo[i];
+      maxDelta = Math.max(
+        maxDelta,
+        Math.abs(b.y0 - a.y0),
+        Math.abs(b.cy1 - a.cy1),
+        Math.abs(b.cy2 - a.cy2),
+        Math.abs(b.y3 - a.y3),
+        Math.abs(b.u0 - a.u0) * spanX,
+        Math.abs(b.u3 - a.u3) * spanX
+      );
+    }
+
+    if (maxDelta < 0.25) {
+      liveMorphSegs = null;
+      patchAttr(linePath, 'd', finalLineD);
+      if (areaPath) patchAttr(areaPath, 'd', finalAreaD);
+      return;
+    }
+
+    const activeLive = alignedFrom.map((s) => ({ ...s }));
+    liveMorphSegs = activeLive;
+    const initialLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
+    patchAttr(linePath, 'd', initialLineD);
+    if (areaPath) {
+      if (finalAreaD) {
+        const firstX = (leftX + activeLive[0].u0 * spanX).toFixed(1);
+        const lastX = (leftX + activeLive[segCount - 1].u3 * spanX).toFixed(1);
+        patchAttr(areaPath, 'd', `${initialLineD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`);
+      } else {
+        patchAttr(areaPath, 'd', '');
+      }
+    }
+    const startTs = performance.now();
+
+    const step = (nowTs) => {
+      const elapsed = Math.max(0, nowTs - startTs);
+      const rawT = Math.min(1, elapsed / durationMs);
+      if (rawT >= 1) {
+        morphRafId = 0;
+        liveMorphSegs = null;
+        patchAttr(linePath, 'd', finalLineD);
+        if (areaPath) patchAttr(areaPath, 'd', finalAreaD);
+        return;
+      }
+      const ease = evalCubicBezier(0.22, 1, 0.36, 1, rawT);
+      for (let i = 0; i < segCount; i++) {
+        const a = alignedFrom[i];
+        const b = alignedTo[i];
+        const cur = activeLive[i];
+        cur.u0 = a.u0 + (b.u0 - a.u0) * ease;
+        cur.y0 = a.y0 + (b.y0 - a.y0) * ease;
+        cur.cu1 = a.cu1 + (b.cu1 - a.cu1) * ease;
+        cur.cy1 = a.cy1 + (b.cy1 - a.cy1) * ease;
+        cur.cu2 = a.cu2 + (b.cu2 - a.cu2) * ease;
+        cur.cy2 = a.cy2 + (b.cy2 - a.cy2) * ease;
+        cur.u3 = a.u3 + (b.u3 - a.u3) * ease;
+        cur.y3 = a.y3 + (b.y3 - a.y3) * ease;
+      }
+      const morphLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
+      patchAttr(linePath, 'd', morphLineD);
+      if (areaPath) {
+        const firstX = (leftX + activeLive[0].u0 * spanX).toFixed(1);
+        const lastX = (leftX + activeLive[segCount - 1].u3 * spanX).toFixed(1);
+        patchAttr(areaPath, 'd', `${morphLineD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`);
+      }
+      morphRafId = window.requestAnimationFrame(step);
+    };
+
+    morphRafId = window.requestAnimationFrame(step);
+  }
+
+  return { morphTo, cancel, reset, getCurrentSegs, seedSegs };
+}
+
+/**
+ * Coalesced multi-series cubic-Bezier curve, area fill, and endpoint dot morph controller
+ * (used by `AccountQuotaTrendCard` and multi-model `SessionStepCharts`).
+ */
+function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
+  let morphRafId = 0;
+  let hasRenderedOnce = false;
+  const stateByKey = new Map();
+
+  function cancel() {
+    if (
+      morphRafId &&
+      typeof window !== 'undefined' &&
+      typeof window.cancelAnimationFrame === 'function'
+    ) {
+      window.cancelAnimationFrame(morphRafId);
+    }
+    morphRafId = 0;
+  }
+
+  function reset() {
+    cancel();
+    hasRenderedOnce = false;
+    stateByKey.clear();
+  }
+
+  function getSeriesSegs(key) {
+    const rec = stateByKey.get(key);
+    const src = rec ? rec.liveSegs || rec.committedSegs : null;
+    return src && src.length > 0 ? src.map((s) => ({ ...s })) : null;
+  }
+
+  function getFirstSegs() {
+    for (const rec of stateByKey.values()) {
+      const src = rec.liveSegs || rec.committedSegs;
+      if (src && src.length > 0) return src.map((s) => ({ ...s }));
+    }
+    return null;
+  }
+
+  function seedSeries(key, segs) {
+    if (!key || !Array.isArray(segs) || segs.length === 0) return;
+    stateByKey.set(key, {
+      committedSegs: segs.map((s) => ({ ...s })),
+      liveSegs: null,
+      endX: NaN,
+      endY: NaN,
+    });
+    hasRenderedOnce = true;
+  }
+
+  function morphSeries({
+    items,
+    leftX,
+    spanX,
+    bottomY,
+    skipMorph = false,
+    allowBaselineEntry = false,
+  }) {
+    cancel();
+    const canAnim = !skipMorph && canAnimateChartInBrowser();
+    const wasRenderedBefore = hasRenderedOnce;
+    hasRenderedOnce = items.length > 0;
+    const activeSet = new Set();
+    const jobs = [];
+
+    for (let idx = 0; idx < items.length; idx++) {
+      const it = items[idx];
+      activeSet.add(it.key);
+      const prevEntry = stateByKey.get(it.key);
+      let prevSegs = prevEntry ? prevEntry.liveSegs || prevEntry.committedSegs : null;
+      if (
+        (!prevSegs || prevSegs.length === 0) &&
+        canAnim &&
+        allowBaselineEntry &&
+        wasRenderedBefore &&
+        it.nextSegs.length > 0 &&
+        Number.isFinite(bottomY)
+      ) {
+        prevSegs = it.nextSegs.map((s) => ({
+          u0: s.u0,
+          y0: bottomY,
+          cu1: s.cu1,
+          cy1: bottomY,
+          cu2: s.cu2,
+          cy2: bottomY,
+          u3: s.u3,
+          y3: bottomY,
+        }));
+      }
+
+      if (!canAnim || !prevSegs || prevSegs.length === 0 || it.nextSegs.length === 0) {
+        stateByKey.set(it.key, {
+          committedSegs: it.nextSegs,
+          liveSegs: null,
+          endX: it.endX,
+          endY: it.endY,
+        });
+        patchAttr(it.lineEl, 'd', it.finalLineD);
+        if (it.areaEl) patchAttr(it.areaEl, 'd', it.finalAreaD || '');
+        if (it.endDotEl && Number.isFinite(it.endX) && Number.isFinite(it.endY)) {
+          patchAttr(it.endDotEl, 'cx', it.endX.toFixed(1));
+          patchAttr(it.endDotEl, 'cy', it.endY.toFixed(1));
+        }
+        continue;
+      }
+
+      const { alignedFrom, alignedTo } = alignCubicChainsForMorph(prevSegs, it.nextSegs);
+      const segCount = alignedTo.length;
+      let maxDelta = 0;
+      for (let i = 0; i < segCount; i++) {
+        const a = alignedFrom[i];
+        const b = alignedTo[i];
+        maxDelta = Math.max(
+          maxDelta,
+          Math.abs(b.y0 - a.y0),
+          Math.abs(b.cy1 - a.cy1),
+          Math.abs(b.cy2 - a.cy2),
+          Math.abs(b.y3 - a.y3),
+          Math.abs(b.u0 - a.u0) * spanX,
+          Math.abs(b.u3 - a.u3) * spanX
+        );
+      }
+
+      if (maxDelta < 0.25) {
+        stateByKey.set(it.key, {
+          committedSegs: it.nextSegs,
+          liveSegs: null,
+          endX: it.endX,
+          endY: it.endY,
+        });
+        patchAttr(it.lineEl, 'd', it.finalLineD);
+        if (it.areaEl) patchAttr(it.areaEl, 'd', it.finalAreaD || '');
+        if (it.endDotEl && Number.isFinite(it.endX) && Number.isFinite(it.endY)) {
+          patchAttr(it.endDotEl, 'cx', it.endX.toFixed(1));
+          patchAttr(it.endDotEl, 'cy', it.endY.toFixed(1));
+        }
+        continue;
+      }
+
+      const activeLive = alignedFrom.map((s) => ({ ...s }));
+      const fromEndX = Number.isFinite(prevEntry?.endX)
+        ? prevEntry.endX
+        : leftX + alignedFrom[segCount - 1].u3 * spanX;
+      const fromEndY = Number.isFinite(prevEntry?.endY)
+        ? prevEntry.endY
+        : alignedFrom[segCount - 1].y3;
+      const stateRec = {
+        committedSegs: it.nextSegs,
+        liveSegs: activeLive,
+        endX: fromEndX,
+        endY: fromEndY,
+      };
+      stateByKey.set(it.key, stateRec);
+      const initLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
+      patchAttr(it.lineEl, 'd', initLineD);
+      if (it.areaEl) {
+        if (it.finalAreaD) {
+          const firstX = (leftX + activeLive[0].u0 * spanX).toFixed(1);
+          const lastX = (leftX + activeLive[segCount - 1].u3 * spanX).toFixed(1);
+          patchAttr(it.areaEl, 'd', `${initLineD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`);
+        } else {
+          patchAttr(it.areaEl, 'd', '');
+        }
+      }
+      jobs.push({
+        it,
+        alignedFrom,
+        alignedTo,
+        activeLive,
+        segCount,
+        fromEndX,
+        fromEndY,
+        stateRec,
+      });
+    }
+
+    for (const k of Array.from(stateByKey.keys())) {
+      if (!activeSet.has(k)) stateByKey.delete(k);
+    }
+
+    if (jobs.length === 0) return;
+
+    const startTs = performance.now();
+    const step = (nowTs) => {
+      const elapsed = Math.max(0, nowTs - startTs);
+      const rawT = Math.min(1, elapsed / durationMs);
+      if (rawT >= 1) {
+        morphRafId = 0;
+        for (let j = 0; j < jobs.length; j++) {
+          const jb = jobs[j];
+          jb.stateRec.liveSegs = null;
+          jb.stateRec.endX = jb.it.endX;
+          jb.stateRec.endY = jb.it.endY;
+          patchAttr(jb.it.lineEl, 'd', jb.it.finalLineD);
+          if (jb.it.areaEl) patchAttr(jb.it.areaEl, 'd', jb.it.finalAreaD || '');
+          if (jb.it.endDotEl && Number.isFinite(jb.it.endX) && Number.isFinite(jb.it.endY)) {
+            patchAttr(jb.it.endDotEl, 'cx', jb.it.endX.toFixed(1));
+            patchAttr(jb.it.endDotEl, 'cy', jb.it.endY.toFixed(1));
+          }
+        }
+        return;
+      }
+
+      const ease = evalCubicBezier(0.22, 1, 0.36, 1, rawT);
+      for (let j = 0; j < jobs.length; j++) {
+        const jb = jobs[j];
+        const { alignedFrom, alignedTo, activeLive, segCount, it } = jb;
+        for (let i = 0; i < segCount; i++) {
+          const a = alignedFrom[i];
+          const b = alignedTo[i];
+          const cur = activeLive[i];
+          cur.u0 = a.u0 + (b.u0 - a.u0) * ease;
+          cur.y0 = a.y0 + (b.y0 - a.y0) * ease;
+          cur.cu1 = a.cu1 + (b.cu1 - a.cu1) * ease;
+          cur.cy1 = a.cy1 + (b.cy1 - a.cy1) * ease;
+          cur.cu2 = a.cu2 + (b.cu2 - a.cu2) * ease;
+          cur.cy2 = a.cy2 + (b.cy2 - a.cy2) * ease;
+          cur.u3 = a.u3 + (b.u3 - a.u3) * ease;
+          cur.y3 = a.y3 + (b.y3 - a.y3) * ease;
+        }
+        const morphLineD = buildPathFromNormalizedSegs(activeLive, leftX, spanX);
+        patchAttr(it.lineEl, 'd', morphLineD);
+        if (it.areaEl && it.finalAreaD) {
+          const firstX = (leftX + activeLive[0].u0 * spanX).toFixed(1);
+          const lastX = (leftX + activeLive[segCount - 1].u3 * spanX).toFixed(1);
+          patchAttr(it.areaEl, 'd', `${morphLineD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`);
+        }
+        if (it.endDotEl && Number.isFinite(it.endX) && Number.isFinite(it.endY)) {
+          const cx = jb.fromEndX + (it.endX - jb.fromEndX) * ease;
+          const cy = jb.fromEndY + (it.endY - jb.fromEndY) * ease;
+          jb.stateRec.endX = cx;
+          jb.stateRec.endY = cy;
+          patchAttr(it.endDotEl, 'cx', cx.toFixed(1));
+          patchAttr(it.endDotEl, 'cy', cy.toFixed(1));
+        }
+      }
+      morphRafId = window.requestAnimationFrame(step);
+    };
+
+    morphRafId = window.requestAnimationFrame(step);
+  }
+
+  return { morphSeries, cancel, reset, getSeriesSegs, getFirstSegs, seedSeries };
+}
+
+function buildGridFitPolylineD(grid) {
+  if (!grid.length) return '';
+  let d = `M ${grid[0].x.toFixed(1)} ${grid[0].fitY.toFixed(1)}`;
+  for (let i = 1; i < grid.length; i++) {
+    d += ` L ${grid[i].x.toFixed(1)} ${grid[i].fitY.toFixed(1)}`;
+  }
+  return d;
+}
+
+function buildGridCiBandD(grid) {
+  if (grid.length < 2) return '';
+  let d = `M ${grid[0].x.toFixed(1)} ${grid[0].highY.toFixed(1)}`;
+  for (let i = 1; i < grid.length; i++) {
+    d += ` L ${grid[i].x.toFixed(1)} ${grid[i].highY.toFixed(1)}`;
+  }
+  for (let i = grid.length - 1; i >= 0; i--) {
+    d += ` L ${grid[i].x.toFixed(1)} ${grid[i].lowY.toFixed(1)}`;
+  }
+  return `${d} Z`;
+}
+
+function resampleFitGridToTargetXs(sourceGrid, targetGrid) {
+  if (!Array.isArray(sourceGrid) || sourceGrid.length === 0) return null;
+  const sLen = sourceGrid.length;
+  const sFirst = sourceGrid[0];
+  const sLast = sourceGrid[sLen - 1];
+  let j = 0;
+  return targetGrid.map((tg) => {
+    const x = tg.x;
+    if (sLen === 1 || x <= sFirst.x) {
+      return { x, fitY: sFirst.fitY, lowY: sFirst.lowY, highY: sFirst.highY };
+    }
+    if (x >= sLast.x) {
+      return { x, fitY: sLast.fitY, lowY: sLast.lowY, highY: sLast.highY };
+    }
+    while (j < sLen - 2 && sourceGrid[j + 1].x < x) j += 1;
+    const a = sourceGrid[j];
+    const b = sourceGrid[j + 1];
+    const span = b.x - a.x;
+    const r = span > 1e-6 ? Math.max(0, Math.min(1, (x - a.x) / span)) : 0;
+    return {
+      x,
+      fitY: a.fitY + (b.fitY - a.fitY) * r,
+      lowY: a.lowY + (b.lowY - a.lowY) * r,
+      highY: a.highY + (b.highY - a.highY) * r,
+    };
+  });
+}
+
+/**
+ * Smoothly morphs LOESS fit polylines, `95% CI` confidence bands, and optional OLS lines
+ * across metric/model switches in `createModelFitChart`.
+ */
+function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
+  let morphRafId = 0;
+  let hasRenderedOnce = false;
+  const stateByKey = new Map();
+
+  function cancel() {
+    if (
+      morphRafId &&
+      typeof window !== 'undefined' &&
+      typeof window.cancelAnimationFrame === 'function'
+    ) {
+      window.cancelAnimationFrame(morphRafId);
+    }
+    morphRafId = 0;
+  }
+
+  function reset() {
+    cancel();
+    hasRenderedOnce = false;
+    stateByKey.clear();
+  }
+
+  function getGrid(key) {
+    const rec = stateByKey.get(key);
+    const src = rec ? rec.liveGrid || rec.committedGrid : null;
+    return src && src.length > 0 ? src.map((g) => ({ ...g })) : null;
+  }
+
+  function getFirstGrid() {
+    for (const rec of stateByKey.values()) {
+      const src = rec.liveGrid || rec.committedGrid;
+      if (src && src.length > 0) return src.map((g) => ({ ...g }));
+    }
+    return null;
+  }
+
+  function seedGrid(key, gridPts) {
+    if (!key || !Array.isArray(gridPts) || gridPts.length === 0) return;
+    stateByKey.set(key, {
+      committedGrid: gridPts.map((g) => ({ ...g })),
+      liveGrid: null,
+      ols: null,
+    });
+    hasRenderedOnce = true;
+  }
+
+  function morphFits({ items, skipMorph = false, allowBaselineEntry = false, bottomY = NaN }) {
+    cancel();
+    const canAnim = !skipMorph && canAnimateChartInBrowser();
+    const wasRenderedBefore = hasRenderedOnce;
+    hasRenderedOnce = items.length > 0;
+    const activeSet = new Set();
+    const jobs = [];
+
+    for (let idx = 0; idx < items.length; idx++) {
+      const it = items[idx];
+      activeSet.add(it.key);
+      const prevEntry = stateByKey.get(it.key);
+      const rawPrevGrid = prevEntry ? prevEntry.liveGrid || prevEntry.committedGrid : null;
+      let prevGrid =
+        rawPrevGrid && rawPrevGrid.length > 0 && it.gridPts.length >= 2
+          ? rawPrevGrid.length === it.gridPts.length &&
+            Math.abs(rawPrevGrid[0].x - it.gridPts[0].x) < 0.5 &&
+            Math.abs(
+              rawPrevGrid[rawPrevGrid.length - 1].x - it.gridPts[it.gridPts.length - 1].x
+            ) < 0.5
+            ? rawPrevGrid
+            : resampleFitGridToTargetXs(rawPrevGrid, it.gridPts)
+          : null;
+      if (
+        !prevGrid &&
+        canAnim &&
+        allowBaselineEntry &&
+        wasRenderedBefore &&
+        it.gridPts.length >= 2 &&
+        Number.isFinite(bottomY)
+      ) {
+        prevGrid = it.gridPts.map((g) => ({
+          x: g.x,
+          fitY: bottomY,
+          lowY: bottomY,
+          highY: bottomY,
+        }));
+      }
+
+      if (
+        !canAnim ||
+        !prevGrid ||
+        prevGrid.length !== it.gridPts.length ||
+        it.gridPts.length < 2
+      ) {
+        stateByKey.set(it.key, {
+          committedGrid: it.gridPts,
+          liveGrid: null,
+          ols: it.olsCoords || null,
+        });
+        patchAttr(it.curveEl, 'd', it.finalCurveD);
+        if (it.bandEl) patchAttr(it.bandEl, 'd', it.finalBandD || '');
+        if (it.olsEl && it.olsCoords) {
+          patchAttr(it.olsEl, 'x1', it.olsCoords.x1.toFixed(1));
+          patchAttr(it.olsEl, 'y1', it.olsCoords.y1.toFixed(1));
+          patchAttr(it.olsEl, 'x2', it.olsCoords.x2.toFixed(1));
+          patchAttr(it.olsEl, 'y2', it.olsCoords.y2.toFixed(1));
+        }
+        continue;
+      }
+
+      let maxDelta = 0;
+      for (let i = 0; i < it.gridPts.length; i++) {
+        const a = prevGrid[i];
+        const b = it.gridPts[i];
+        maxDelta = Math.max(
+          maxDelta,
+          Math.abs(b.fitY - a.fitY),
+          Math.abs(b.highY - a.highY),
+          Math.abs(b.lowY - a.lowY),
+          Math.abs(b.x - a.x)
+        );
+      }
+      if (maxDelta < 0.25) {
+        stateByKey.set(it.key, {
+          committedGrid: it.gridPts,
+          liveGrid: null,
+          ols: it.olsCoords || null,
+        });
+        patchAttr(it.curveEl, 'd', it.finalCurveD);
+        if (it.bandEl) patchAttr(it.bandEl, 'd', it.finalBandD || '');
+        if (it.olsEl && it.olsCoords) {
+          patchAttr(it.olsEl, 'x1', it.olsCoords.x1.toFixed(1));
+          patchAttr(it.olsEl, 'y1', it.olsCoords.y1.toFixed(1));
+          patchAttr(it.olsEl, 'x2', it.olsCoords.x2.toFixed(1));
+          patchAttr(it.olsEl, 'y2', it.olsCoords.y2.toFixed(1));
+        }
+        continue;
+      }
+
+      const activeLive = prevGrid.map((g) => ({ ...g }));
+      const fromOls = prevEntry?.ols || it.olsCoords || null;
+      const stateRec = {
+        committedGrid: it.gridPts,
+        liveGrid: activeLive,
+        ols: fromOls ? { ...fromOls } : null,
+      };
+      stateByKey.set(it.key, stateRec);
+      patchAttr(it.curveEl, 'd', buildGridFitPolylineD(activeLive));
+      if (it.bandEl) {
+        patchAttr(it.bandEl, 'd', it.finalBandD ? buildGridCiBandD(activeLive) : '');
+      }
+      if (it.olsEl && fromOls) {
+        patchAttr(it.olsEl, 'x1', fromOls.x1.toFixed(1));
+        patchAttr(it.olsEl, 'y1', fromOls.y1.toFixed(1));
+        patchAttr(it.olsEl, 'x2', fromOls.x2.toFixed(1));
+        patchAttr(it.olsEl, 'y2', fromOls.y2.toFixed(1));
+      }
+      jobs.push({ it, fromGrid: prevGrid, activeLive, fromOls, stateRec });
+    }
+
+    for (const k of Array.from(stateByKey.keys())) {
+      if (!activeSet.has(k)) stateByKey.delete(k);
+    }
+
+    if (jobs.length === 0) return;
+
+    const startTs = performance.now();
+    const step = (nowTs) => {
+      const elapsed = Math.max(0, nowTs - startTs);
+      const rawT = Math.min(1, elapsed / durationMs);
+      if (rawT >= 1) {
+        morphRafId = 0;
+        for (let j = 0; j < jobs.length; j++) {
+          const jb = jobs[j];
+          jb.stateRec.liveGrid = null;
+          jb.stateRec.ols = jb.it.olsCoords || null;
+          patchAttr(jb.it.curveEl, 'd', jb.it.finalCurveD);
+          if (jb.it.bandEl) patchAttr(jb.it.bandEl, 'd', jb.it.finalBandD || '');
+          if (jb.it.olsEl && jb.it.olsCoords) {
+            patchAttr(jb.it.olsEl, 'x1', jb.it.olsCoords.x1.toFixed(1));
+            patchAttr(jb.it.olsEl, 'y1', jb.it.olsCoords.y1.toFixed(1));
+            patchAttr(jb.it.olsEl, 'x2', jb.it.olsCoords.x2.toFixed(1));
+            patchAttr(jb.it.olsEl, 'y2', jb.it.olsCoords.y2.toFixed(1));
+          }
+        }
+        return;
+      }
+
+      const ease = evalCubicBezier(0.22, 1, 0.36, 1, rawT);
+      for (let j = 0; j < jobs.length; j++) {
+        const jb = jobs[j];
+        const { fromGrid, activeLive, it } = jb;
+        for (let i = 0; i < activeLive.length; i++) {
+          const a = fromGrid[i];
+          const b = it.gridPts[i];
+          const cur = activeLive[i];
+          cur.x = a.x + (b.x - a.x) * ease;
+          cur.fitY = a.fitY + (b.fitY - a.fitY) * ease;
+          cur.highY = a.highY + (b.highY - a.highY) * ease;
+          cur.lowY = a.lowY + (b.lowY - a.lowY) * ease;
+        }
+        patchAttr(it.curveEl, 'd', buildGridFitPolylineD(activeLive));
+        if (it.bandEl && it.finalBandD) {
+          patchAttr(it.bandEl, 'd', buildGridCiBandD(activeLive));
+        }
+        if (it.olsEl && it.olsCoords && jb.fromOls) {
+          const ox1 = jb.fromOls.x1 + (it.olsCoords.x1 - jb.fromOls.x1) * ease;
+          const oy1 = jb.fromOls.y1 + (it.olsCoords.y1 - jb.fromOls.y1) * ease;
+          const ox2 = jb.fromOls.x2 + (it.olsCoords.x2 - jb.fromOls.x2) * ease;
+          const oy2 = jb.fromOls.y2 + (it.olsCoords.y2 - jb.fromOls.y2) * ease;
+          jb.stateRec.ols = { x1: ox1, y1: oy1, x2: ox2, y2: oy2 };
+          patchAttr(it.olsEl, 'x1', ox1.toFixed(1));
+          patchAttr(it.olsEl, 'y1', oy1.toFixed(1));
+          patchAttr(it.olsEl, 'x2', ox2.toFixed(1));
+          patchAttr(it.olsEl, 'y2', oy2.toFixed(1));
+        }
+      }
+      morphRafId = window.requestAnimationFrame(step);
+    };
+
+    morphRafId = window.requestAnimationFrame(step);
+  }
+
+  return { morphFits, cancel, reset, getGrid, getFirstGrid, seedGrid };
+}
+
+/**
+ * Shared 2D pointer-following floating tooltip & focus-dot tracking controller.
+ * Positions `.trend-tooltip` smoothly around the pointer (`above -> right -> left -> below`),
+ * clamps inside the nearest scrollable viewport container, and arms `.is-tracking` (`150ms`)
+ * on both the tooltip and active SVG focus dots after the initial reveal frame.
+ */
+function createFloatingChartTooltipController({
+  containerEl,
+  tooltipEl,
+  defaultTipWidth = 216,
+  defaultTipHeight = 96,
+  defaultViewWidth = 460,
+  defaultViewHeight = 184,
+  clipSelector = '.view-pane, .cons-view-stage, .models-analytics-pane, .table-viewport',
+  useFloatingClass = true,
+}) {
+  if (useFloatingClass) {
+    tooltipEl.classList.add('is-floating-tip');
+  }
+
+  let cachedWrapRect = null;
+  let cachedClipRect = undefined;
+  let cachedTipW = 0;
+  let cachedTipH = 0;
+  let lastSizeKey = null;
+  let tipTrackRaf = 0;
+  let activeTrackedDots = [];
+
+  function cancelTrackRaf() {
+    if (
+      tipTrackRaf &&
+      typeof window !== 'undefined' &&
+      typeof window.cancelAnimationFrame === 'function'
+    ) {
+      window.cancelAnimationFrame(tipTrackRaf);
+    }
+    tipTrackRaf = 0;
+  }
+
+  function invalidateRects() {
+    cachedWrapRect = null;
+    cachedClipRect = undefined;
+    cachedTipW = 0;
+    cachedTipH = 0;
+    lastSizeKey = null;
+  }
+
+  function getWrapRect() {
+    if (!cachedWrapRect) {
+      cachedWrapRect = containerEl.getBoundingClientRect?.() || null;
+    }
+    return cachedWrapRect;
+  }
+
+  function syncTrackedDots(nextDots, isTrackingActive) {
+    const nextList = Array.isArray(nextDots) ? nextDots.filter(Boolean) : [];
+    for (let i = 0; i < activeTrackedDots.length; i++) {
+      const prevDot = activeTrackedDots[i];
+      if (!nextList.includes(prevDot)) {
+        patchClasses(prevDot, { 'is-tracking': false });
+      }
+    }
+    if (isTrackingActive) {
+      for (let i = 0; i < nextList.length; i++) {
+        patchClasses(nextList[i], { 'is-tracking': true });
+      }
+    }
+    activeTrackedDots = nextList;
+  }
+
+  function armTracking(wasHidden, nextDots) {
+    if (!wasHidden) {
+      syncTrackedDots(nextDots, tooltipEl.classList.contains('is-tracking'));
+      return;
+    }
+    patchClasses(tooltipEl, { 'is-tracking': false });
+    const dotList = Array.isArray(nextDots) ? nextDots.filter(Boolean) : [];
+    for (let i = 0; i < dotList.length; i++) {
+      patchClasses(dotList[i], { 'is-tracking': false });
+    }
+    activeTrackedDots = dotList;
+    void tooltipEl.offsetWidth;
+    cancelTrackRaf();
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      tipTrackRaf = window.requestAnimationFrame(() => {
+        tipTrackRaf = 0;
+        if (!tooltipEl.hasAttribute('hidden')) {
+          patchClasses(tooltipEl, { 'is-tracking': true });
+          for (let i = 0; i < activeTrackedDots.length; i++) {
+            patchClasses(activeTrackedDots[i], { 'is-tracking': true });
+          }
+        }
+      });
+    } else {
+      patchClasses(tooltipEl, { 'is-tracking': true });
+      for (let i = 0; i < activeTrackedDots.length; i++) {
+        patchClasses(activeTrackedDots[i], { 'is-tracking': true });
+      }
+    }
+  }
+
+  function positionNearAnchor({
+    fallbackX,
+    fallbackY,
+    pointer = null,
+    viewWidth = defaultViewWidth,
+    viewHeight = defaultViewHeight,
+    remeasureTip = false,
+  }) {
+    const wrapRect = getWrapRect();
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(containerEl.clientWidth || viewWidth || defaultViewWidth);
+    const wrapH =
+      wrapRect && wrapRect.height > 0
+        ? wrapRect.height
+        : Number(containerEl.offsetHeight || viewHeight || defaultViewHeight);
+
+    if (remeasureTip || !(cachedTipW > 0) || !(cachedTipH > 0)) {
+      cachedTipW = Number(tooltipEl.offsetWidth || 0) || defaultTipWidth;
+      cachedTipH = Number(tooltipEl.offsetHeight || 0) || defaultTipHeight;
+    }
+    const tipW = cachedTipW;
+    const tipH = cachedTipH;
+
+    const hasPointer =
+      pointer &&
+      Number.isFinite(Number(pointer.clientX)) &&
+      Number.isFinite(Number(pointer.clientY)) &&
+      wrapRect &&
+      wrapRect.width > 0 &&
+      wrapRect.height > 0;
+
+    const anchorX = hasPointer ? Number(pointer.clientX) - wrapRect.left : fallbackX;
+    const anchorY = hasPointer ? Number(pointer.clientY) - wrapRect.top : fallbackY;
+
+    if (cachedClipRect === undefined) {
+      const clipEl = containerEl.closest?.(clipSelector) || null;
+      cachedClipRect = clipEl?.getBoundingClientRect?.() || null;
+    }
+    const clipRect = cachedClipRect;
+    const hasClip = Boolean(
+      clipRect && clipRect.height > 0 && wrapRect && wrapRect.height > 0
+    );
+    const minY = hasClip ? clipRect.top - wrapRect.top + 6 : -tipH - 16;
+    const maxY = hasClip ? clipRect.bottom - wrapRect.top - tipH - 6 : wrapH + 16;
+
+    const maxLeft = Math.max(4, wrapW - tipW - 4);
+    let leftPx = Math.max(4, Math.min(maxLeft, anchorX - tipW / 2));
+    const aboveY = anchorY - tipH - 14;
+    let topPx;
+
+    if (aboveY >= minY) {
+      topPx = Math.min(maxY, aboveY);
+    } else if (anchorX + 16 + tipW <= wrapW - 4) {
+      leftPx = anchorX + 16;
+      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
+    } else if (anchorX - 16 - tipW >= 4) {
+      leftPx = anchorX - 16 - tipW;
+      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
+    } else {
+      topPx = Math.max(minY, Math.min(maxY, anchorY + 18));
+    }
+
+    patchStyleVar(tooltipEl, '--tip-x', `${Math.round(leftPx)}px`);
+    patchStyleVar(tooltipEl, '--tip-shift', '0px');
+    patchStyleVar(tooltipEl, '--tip-y', `${Math.round(topPx)}px`);
+  }
+
+  function show({
+    fallbackX,
+    fallbackY,
+    pointer = null,
+    trackedDots = [],
+    viewWidth = defaultViewWidth,
+    viewHeight = defaultViewHeight,
+    sizeKey = '',
+  }) {
+    const wasHidden = tooltipEl.hasAttribute('hidden');
+    if (wasHidden) {
+      patchAttr(tooltipEl, 'hidden', false);
+    }
+    const normalizedKey = String(sizeKey || '');
+    const shouldRemeasure = wasHidden || normalizedKey !== lastSizeKey;
+    lastSizeKey = normalizedKey;
+    positionNearAnchor({
+      fallbackX,
+      fallbackY,
+      pointer,
+      viewWidth,
+      viewHeight,
+      remeasureTip: shouldRemeasure,
+    });
+    armTracking(wasHidden, trackedDots);
+  }
+
+  function hide() {
+    invalidateRects();
+    cancelTrackRaf();
+    patchAttr(tooltipEl, 'hidden', true);
+    patchClasses(tooltipEl, {
+      'is-hm-bottom': false,
+      'is-hm-top': false,
+      'is-line-low': false,
+      'is-tracking': false,
+    });
+    for (let i = 0; i < activeTrackedDots.length; i++) {
+      patchClasses(activeTrackedDots[i], { 'is-tracking': false });
+    }
+    activeTrackedDots = [];
+  }
+
+  function destroy() {
+    cancelTrackRaf();
+    invalidateRects();
+    activeTrackedDots = [];
+  }
+
+  return {
+    show,
+    hide,
+    getWrapRect,
+    invalidateRects,
+    destroy,
+  };
+}
+return { CHART_CURVE_MORPH_MS, canAnimateChartInBrowser, evalCubicBezier, createReadyClassArmer, pointsToNormalizedCubicSegs, buildPathFromNormalizedSegs, createCubicCurveMorphController, createMultiSeriesCurveMorphController, createFitGridMorphController, createFloatingChartTooltipController };
+})();
+
 // --- src/components/charts/TrendAreaChart.js ---
 const { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart } = (() => {
 /**
@@ -13602,7 +15562,7 @@ function buildSmoothSplinePath(points) {
 }
 
 /**
- * 根据分桶总数与标签平均长度，计算底部 X 轴应当展示的均匀刻度下标列表。
+ * 根据分桶总数及标签平均长度，计算底部 X 轴应当展示的均匀刻度下标列表。
  *
  * @param {Array<{ label?: string }>} slots
  * @returns {number[]}
@@ -13610,10 +15570,11 @@ function buildSmoothSplinePath(points) {
 function computeTickIndices(slots) {
   const n = slots.length;
   if (n <= 1) return [0];
-  if (n <= 8) {
+  const sampleLabel = String(slots[Math.floor(n / 2)]?.label || slots[0]?.label || '');
+  const maxDirectTicks = sampleLabel.length > 6 ? 5 : 8;
+  if (n <= maxDirectTicks) {
     return Array.from({ length: n }, (_, i) => i);
   }
-  const sampleLabel = String(slots[Math.floor(n / 2)]?.label || slots[0]?.label || '');
   const maxTicks = sampleLabel.length > 6 ? 5 : 6;
   const set = new Set();
   for (let k = 0; k < maxTicks; k++) {
@@ -13746,6 +15707,332 @@ function buildHeatmapMonthTicks(slots, firstDow, totalWeeks) {
   return ticks;
 }
 
+const EN_SHORT_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+function normalizeHeatmapMode(mode) {
+  return mode === 'week' || mode === 'month' || mode === 'all' ? mode : 'day';
+}
+
+function createHeatmapAggAcc(extra = {}) {
+  return {
+    tokens: 0,
+    inputTokens: 0,
+    cacheReadTokens: 0,
+    thinkingTokens: 0,
+    responseTokens: 0,
+    outputTokens: 0,
+    costUsd: 0,
+    calls: 0,
+    minStartMs: Infinity,
+    maxEndMs: 0,
+    firstLabel: '',
+    lastLabel: '',
+    modelMap: new Map(),
+    ...extra,
+  };
+}
+
+function mergeSlotIntoHeatmapAcc(acc, slot) {
+  if (!slot) return;
+  const tok = safeSlotTokens(slot.tokens);
+  const inTok = safeSlotTokens(slot.inputTokens);
+  const cacheTok = safeSlotTokens(slot.cacheReadTokens);
+  const thinkTok = safeSlotTokens(slot.thinkingTokens);
+  const respTok = safeSlotTokens(slot.responseTokens);
+  const outTok =
+    slot.outputTokens !== undefined && slot.outputTokens !== null
+      ? safeSlotTokens(slot.outputTokens)
+      : thinkTok + respTok;
+  acc.tokens += tok;
+  acc.inputTokens += inTok;
+  acc.cacheReadTokens += cacheTok;
+  acc.thinkingTokens += thinkTok;
+  acc.responseTokens += respTok;
+  acc.outputTokens += outTok;
+  acc.costUsd += Math.max(0, Number(slot.costUsd || 0));
+  acc.calls += Math.max(0, Number(slot.calls || 0));
+
+  const sMs = Number(slot.startMs);
+  const eMs = Number(slot.endMs);
+  if (Number.isFinite(sMs) && sMs > 0 && sMs < acc.minStartMs) {
+    acc.minStartMs = sMs;
+  }
+  if (Number.isFinite(eMs) && eMs > acc.maxEndMs) {
+    acc.maxEndMs = eMs;
+  } else if (Number.isFinite(sMs) && sMs > 0 && sMs + 86_400_000 > acc.maxEndMs) {
+    acc.maxEndMs = sMs + 86_400_000;
+  }
+  const lbl = String(slot.label || '');
+  if (!acc.firstLabel && lbl) acc.firstLabel = lbl;
+  if (lbl) acc.lastLabel = lbl;
+
+  const srcModels = Array.isArray(slot.mergedModels)
+    ? slot.mergedModels
+    : Array.isArray(slot.models)
+      ? slot.models
+      : null;
+  if (srcModels) {
+    for (let i = 0; i < srcModels.length; i++) {
+      const m = srcModels[i];
+      if (!m) continue;
+      const key = String(m.displayText || m.label || m.shortName || '');
+      if (!key) continue;
+      let cur = acc.modelMap.get(key);
+      if (!cur) {
+        cur = {
+          ...m,
+          calls: 0,
+          inputTokens: 0,
+          cacheReadTokens: 0,
+          thinkingTokens: 0,
+          responseTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          costUsd: 0,
+        };
+        acc.modelMap.set(key, cur);
+      }
+      cur.calls += Math.max(0, Number(m.calls || 0));
+      cur.inputTokens += safeSlotTokens(m.inputTokens);
+      cur.cacheReadTokens += safeSlotTokens(m.cacheReadTokens);
+      cur.thinkingTokens += safeSlotTokens(m.thinkingTokens);
+      cur.responseTokens += safeSlotTokens(m.responseTokens);
+      cur.outputTokens += safeSlotTokens(m.outputTokens);
+      cur.totalTokens += safeSlotTokens(m.totalTokens);
+      cur.costUsd += Math.max(0, Number(m.costUsd || 0));
+    }
+  }
+}
+
+function finalizeHeatmapBucket(acc, customTitle, shortLabel, buildSegmentsFn) {
+  const hasStart = Number.isFinite(acc.minStartMs) && acc.minStartMs < Infinity && acc.minStartMs > 0;
+  const startMs = hasStart ? acc.minStartMs : 0;
+  const endMs =
+    hasStart && acc.maxEndMs > startMs
+      ? Math.max(startMs + 60_000, acc.maxEndMs - 1)
+      : 0;
+  let modelSegments = [];
+  if (typeof buildSegmentsFn === 'function' && acc.modelMap.size > 0) {
+    const mergedList = Array.from(acc.modelMap.values(), (m) => ({ ...m })).sort(
+      (a, b) => (b.totalTokens || 0) - (a.totalTokens || 0) || (b.calls || 0) - (a.calls || 0)
+    );
+    modelSegments = buildSegmentsFn(mergedList) || [];
+  }
+  return {
+    startMs,
+    endMs,
+    label: shortLabel || customTitle,
+    fullLabel: customTitle,
+    customTitle,
+    tokens: acc.tokens,
+    inputTokens: acc.inputTokens,
+    cacheReadTokens: acc.cacheReadTokens,
+    thinkingTokens: acc.thinkingTokens,
+    responseTokens: acc.responseTokens,
+    outputTokens: acc.outputTokens,
+    costUsd: +acc.costUsd.toFixed(4),
+    calls: acc.calls,
+    modelSegments,
+  };
+}
+
+function buildHeatmapBarView(slots, firstDow, totalWeeks, mode, buildSegmentsFn) {
+  if (mode === 'week') {
+    const weekAccs = Array.from({ length: totalWeeks }, () => createHeatmapAggAcc());
+    for (let i = 0; i < slots.length; i++) {
+      const col = Math.floor((firstDow + i) / 7);
+      if (col >= 0 && col < totalWeeks) {
+        mergeSlotIntoHeatmapAcc(weekAccs[col], slots[i]);
+      }
+    }
+    let maxTok = 0;
+    let peakIdx = 0;
+    let activeWeeks = 0;
+    const nonZero = [];
+    const buckets = weekAccs.map((acc, idx) => {
+      if (acc.tokens > 0) {
+        activeWeeks++;
+        nonZero.push(acc.tokens);
+      }
+      if (acc.tokens >= maxTok) {
+        maxTok = acc.tokens;
+        peakIdx = idx;
+      }
+      const hasValidRange = Number.isFinite(acc.minStartMs) && acc.minStartMs < Infinity && acc.minStartMs > 0;
+      const spanTitle = hasValidRange
+        ? formatDateSpanBadge(acc.minStartMs, Math.max(acc.minStartMs, acc.maxEndMs - 1))
+        : acc.firstLabel && acc.lastLabel && acc.firstLabel !== acc.lastLabel
+          ? `${acc.firstLabel} ~ ${acc.lastLabel}`
+          : acc.firstLabel || '--';
+      const shortLbl =
+        acc.firstLabel && acc.lastLabel && acc.firstLabel !== acc.lastLabel
+          ? `${acc.firstLabel}~${acc.lastLabel.split('/').pop()}`
+          : acc.firstLabel || spanTitle;
+      return finalizeHeatmapBucket(acc, spanTitle, shortLbl, buildSegmentsFn);
+    });
+    nonZero.sort((a, b) => a - b);
+    const thresholds = computeHeatmapThresholds(nonZero, maxTok);
+    const colSpecs = buckets.map((b, col) => {
+      const litRows =
+        b.tokens > 0 && maxTok > 0 ? Math.max(1, Math.min(7, Math.ceil((b.tokens / maxTok) * 7))) : 0;
+      return {
+        bucketIdx: col,
+        litRows,
+        lv: litRows > 0 ? resolveHeatmapLevel(b.tokens, thresholds) : 0,
+        isMonthEdge: false,
+      };
+    });
+    const peakB = buckets[peakIdx];
+    const summaryText =
+      maxTok > 0 && peakB
+        ? t('chart.trend.hmWeekPeak', {
+            active: activeWeeks,
+            total: totalWeeks,
+            label: peakB.label,
+            tokens: formatTokensPrecise(maxTok),
+          })
+        : t('chart.trend.hmWeekZero', { total: totalWeeks });
+    return { buckets, colSpecs, summaryText };
+  }
+
+  if (mode === 'month') {
+    const monthIndexByKey = new Map();
+    const monthAccs = [];
+    const colMonthCounts = Array.from({ length: totalWeeks }, () => new Map());
+
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      const parts = parseSlotCalendarParts(slot);
+      const mKey = `${parts.year}-${parts.month}`;
+      let mIdx = monthIndexByKey.get(mKey);
+      if (mIdx === undefined) {
+        mIdx = monthAccs.length;
+        monthIndexByKey.set(mKey, mIdx);
+        monthAccs.push(createHeatmapAggAcc({ year: parts.year, month: parts.month }));
+      }
+      mergeSlotIntoHeatmapAcc(monthAccs[mIdx], slot);
+      const col = Math.floor((firstDow + i) / 7);
+      if (col >= 0 && col < totalWeeks) {
+        colMonthCounts[col].set(mIdx, (colMonthCounts[col].get(mIdx) || 0) + 1);
+      }
+    }
+
+    const colMonthIdx = new Array(totalWeeks).fill(0);
+    for (let col = 0; col < totalWeeks; col++) {
+      let bestM = col > 0 ? colMonthIdx[col - 1] : 0;
+      let bestCnt = -1;
+      for (const [mIdx, cnt] of colMonthCounts[col].entries()) {
+        if (cnt >= bestCnt) {
+          bestCnt = cnt;
+          bestM = mIdx;
+        }
+      }
+      colMonthIdx[col] = bestM;
+    }
+    if (monthAccs.length > 0 && totalWeeks >= monthAccs.length) {
+      colMonthIdx[0] = 0;
+      colMonthIdx[totalWeeks - 1] = monthAccs.length - 1;
+    }
+
+    let maxTok = 0;
+    let peakIdx = 0;
+    let activeMonths = 0;
+    const nonZero = [];
+    const en = isEnglishLocale();
+    const buckets = monthAccs.map((acc, idx) => {
+      if (acc.tokens > 0) {
+        activeMonths++;
+        nonZero.push(acc.tokens);
+      }
+      if (acc.tokens >= maxTok) {
+        maxTok = acc.tokens;
+        peakIdx = idx;
+      }
+      const mNum = acc.month || 1;
+      const enShort = EN_SHORT_MONTHS[mNum - 1] || `M${mNum}`;
+      const fullTitle = en ? `${enShort} ${acc.year}` : t('cons.monthFullLabel', { year: acc.year, m: mNum });
+      const shortLbl = en ? enShort : t('cons.monthLabel', { m: mNum });
+      return finalizeHeatmapBucket(acc, fullTitle, shortLbl, buildSegmentsFn);
+    });
+    nonZero.sort((a, b) => a - b);
+    const thresholds = computeHeatmapThresholds(nonZero, maxTok);
+    const colSpecs = colMonthIdx.map((mIdx, col) => {
+      const b = buckets[mIdx] || { tokens: 0 };
+      const litRows =
+        b.tokens > 0 && maxTok > 0 ? Math.max(1, Math.min(7, Math.ceil((b.tokens / maxTok) * 7))) : 0;
+      return {
+        bucketIdx: mIdx,
+        litRows,
+        lv: litRows > 0 ? resolveHeatmapLevel(b.tokens, thresholds) : 0,
+        isMonthEdge: col > 0 && mIdx !== colMonthIdx[col - 1],
+      };
+    });
+    const peakB = buckets[peakIdx];
+    const summaryText =
+      maxTok > 0 && peakB
+        ? t('chart.trend.hmMonthPeak', {
+            active: activeMonths,
+            total: buckets.length,
+            label: peakB.label,
+            tokens: formatTokensPrecise(maxTok),
+          })
+        : t('chart.trend.hmMonthZero', { total: Math.max(1, buckets.length) });
+    return { buckets, colSpecs, summaryText };
+  }
+
+  // mode === 'all' (累计总量爬升柱阵)
+  const runAcc = createHeatmapAggAcc();
+  const buckets = new Array(totalWeeks);
+  for (let col = 0; col < totalWeeks; col++) {
+    for (let row = 0; row < 7; row++) {
+      const sIdx = col * 7 + row - firstDow;
+      if (sIdx >= 0 && sIdx < slots.length) {
+        mergeSlotIntoHeatmapAcc(runAcc, slots[sIdx]);
+      }
+    }
+    const hasEnd = Number.isFinite(runAcc.minStartMs) && runAcc.minStartMs < Infinity && runAcc.maxEndMs > 0;
+    const endDayMs = hasEnd ? Math.max(runAcc.minStartMs, runAcc.maxEndMs - 1) : 0;
+    const endDateStr = endDayMs > 0 ? formatDateSpanBadge(endDayMs, endDayMs) : runAcc.lastLabel || '--';
+    const cumTitle = t('chart.trend.hmCumThrough', { date: endDateStr });
+    buckets[col] = finalizeHeatmapBucket(runAcc, cumTitle, endDateStr, buildSegmentsFn);
+  }
+  const grandTotal = buckets[totalWeeks - 1]?.tokens || 0;
+  const grandCost = buckets[totalWeeks - 1]?.costUsd || 0;
+  const colSpecs = buckets.map((b, col) => {
+    const litRows =
+      b.tokens > 0 && grandTotal > 0
+        ? Math.max(1, Math.min(7, Math.ceil((b.tokens / grandTotal) * 7)))
+        : 0;
+    const ratio = grandTotal > 0 ? b.tokens / grandTotal : 0;
+    const lv = litRows === 0 ? 0 : ratio > 0.75 ? 4 : ratio > 0.5 ? 3 : ratio > 0.25 ? 2 : 1;
+    return {
+      bucketIdx: col,
+      litRows,
+      lv,
+      isMonthEdge: false,
+    };
+  });
+  const summaryText = t('chart.trend.hmCumSummary', {
+    days: slots.length,
+    tokens: formatTokensPrecise(grandTotal),
+    cost: formatUsd(grandCost),
+  });
+  return { buckets, colSpecs, summaryText };
+}
+
 /**
  * 创建交互式历史趋势组件（<=90 天为 SVG 平滑曲线图，>90 天自动切换为类 GitHub 每日小格子热力图）。
  *
@@ -13848,7 +16135,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   hoverDot.setAttribute('hidden', 'true');
   svg.appendChild(hoverDot);
 
-  const peakPill = h('span', { className: 'trend-peak-pill text-mono', text: '0' });
+  const peakPill = h('span', { className: 'trend-peak-pill text-mono', text: '0', hidden: true });
 
   // 共享悬停详情浮层卡片（曲线图和热力格子图共用，含分模型四段进度条及底部四通道明细）
   const tooltipContent = createConsumptionBreakdownContent({
@@ -13922,50 +16209,47 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
 
   let currentSlots = [];
   let currentPts = [];
+  let currentMaxTokens = 0;
   let currentIsHeatmap = false;
+  let currentHmMode = 'day';
+  let lastBuildSegmentsFn = null;
   let currentHeatmapWeeks = 0;
   let currentHeatmapFirstDow = 0;
   let currentHeatmapGapPx = 2;
   let currentCellEls = [];
+  let currentHmBuckets = [];
+  let currentHmBucketCells = [];
+  let currentHmAnchorCells = [];
+  let currentColBucketIdx = [];
+  let hoveredHighlightEls = [];
+  let lastHeatmapSummaryText = '';
   let tickElsByIdx = new Map();
   let hoveredIdx = -1;
   let hoveredCellEl = null;
   let lastPointer = null;
   let lastRenderSig = '';
-  let tipTrackRaf = 0;
+  const vGridLinePool = [];
+  const xAxisTickPool = [];
+  const hmMonthPool = [];
+  const hmCellPool = [];
 
-  function cancelTipTrackRaf() {
-    if (tipTrackRaf && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
-      window.cancelAnimationFrame(tipTrackRaf);
-    }
-    tipTrackRaf = 0;
-  }
-
-  function armTooltipTracking(wasHidden) {
-    if (!wasHidden) return;
-    patchClasses(tooltipEl, { 'is-tracking': false });
-    patchClasses(hoverDot, { 'is-tracking': false });
-    void tooltipEl.offsetWidth;
-    cancelTipTrackRaf();
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      tipTrackRaf = window.requestAnimationFrame(() => {
-        tipTrackRaf = 0;
-        if (!tooltipEl.hasAttribute('hidden')) {
-          patchClasses(tooltipEl, { 'is-tracking': true });
-          patchClasses(hoverDot, { 'is-tracking': true });
-        }
-      });
-    } else {
-      patchClasses(tooltipEl, { 'is-tracking': true });
-      patchClasses(hoverDot, { 'is-tracking': true });
-    }
-  }
+  const curveMorphCtrl = createCubicCurveMorphController();
+  const peakReadyArmer = createReadyClassArmer(peakPill, 'is-ready');
+  const tooltipCtrl = createFloatingChartTooltipController({
+    containerEl: chartWrap,
+    tooltipEl,
+    defaultTipWidth: 216,
+    defaultTipHeight: 104,
+    defaultViewWidth: DEFAULT_VIEW_W,
+    defaultViewHeight: VIEW_H,
+    useFloatingClass: false,
+  });
 
   function populateTooltipContent(slot) {
     const slotTok = safeSlotTokens(slot.tokens);
     const slotCost = Number.isFinite(Number(slot.costUsd)) ? Math.max(0, Number(slot.costUsd)) : 0;
     tooltipContent.update({
-      title: slot.fullLabel || slot.label || '--',
+      title: slot.customTitle || formatTrendSlotFullLabel(slot) || slot.label || '--',
       calls: slot.calls,
       totalTokens: slotTok,
       costText: formatUsd(slotCost, {
@@ -13980,81 +16264,13 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     });
   }
 
-  let cachedWrapRect = null;
   let cachedSvgRect = null;
   let cachedHmGridRect = null;
-  let cachedClipRect = undefined;
 
   function invalidateHoverRects() {
-    cachedWrapRect = null;
+    tooltipCtrl.invalidateRects();
     cachedSvgRect = null;
     cachedHmGridRect = null;
-    cachedClipRect = undefined;
-  }
-
-  function getCachedWrapRect() {
-    if (!cachedWrapRect) {
-      cachedWrapRect = chartWrap.getBoundingClientRect?.() || null;
-    }
-    return cachedWrapRect;
-  }
-
-  function positionTooltipNearAnchor(fallbackX, fallbackY, pointer = null) {
-    const wrapRect = getCachedWrapRect();
-    const wrapW =
-      wrapRect && wrapRect.width > 0
-        ? wrapRect.width
-        : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
-    const wrapH =
-      wrapRect && wrapRect.height > 0
-        ? wrapRect.height
-        : Number(chartWrap.offsetHeight || VIEW_H);
-
-    const tipW = Number(tooltipEl.offsetWidth || 0) || 216;
-    const tipH = Number(tooltipEl.offsetHeight || 0) || 104;
-
-    const hasPointer =
-      pointer &&
-      Number.isFinite(Number(pointer.clientX)) &&
-      Number.isFinite(Number(pointer.clientY)) &&
-      wrapRect &&
-      wrapRect.width > 0 &&
-      wrapRect.height > 0;
-
-    const anchorX = hasPointer ? Number(pointer.clientX) - wrapRect.left : fallbackX;
-    const anchorY = hasPointer ? Number(pointer.clientY) - wrapRect.top : fallbackY;
-
-    if (cachedClipRect === undefined) {
-      const clipEl = chartWrap.closest?.('.view-pane, .cons-view-stage') || null;
-      cachedClipRect = clipEl?.getBoundingClientRect?.() || null;
-    }
-    const clipRect = cachedClipRect;
-    const hasClip = Boolean(
-      clipRect && clipRect.height > 0 && wrapRect && wrapRect.height > 0
-    );
-    const minY = hasClip ? clipRect.top - wrapRect.top + 6 : -tipH - 16;
-    const maxY = hasClip ? clipRect.bottom - wrapRect.top - tipH - 6 : wrapH + 16;
-
-    const maxLeft = Math.max(4, wrapW - tipW - 4);
-    let leftPx = Math.max(4, Math.min(maxLeft, anchorX - tipW / 2));
-    const aboveY = anchorY - tipH - 14;
-    let topPx;
-
-    if (aboveY >= minY) {
-      topPx = Math.min(maxY, aboveY);
-    } else if (anchorX + 16 + tipW <= wrapW - 4) {
-      leftPx = anchorX + 16;
-      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
-    } else if (anchorX - 16 - tipW >= 4) {
-      leftPx = anchorX - 16 - tipW;
-      topPx = Math.max(minY, Math.min(maxY, anchorY - tipH / 2));
-    } else {
-      topPx = Math.max(minY, Math.min(maxY, anchorY + 18));
-    }
-
-    patchStyleVar(tooltipEl, '--tip-x', `${Math.round(leftPx)}px`);
-    patchStyleVar(tooltipEl, '--tip-shift', '0px');
-    patchStyleVar(tooltipEl, '--tip-y', `${Math.round(topPx)}px`);
   }
 
   function showLineHoverAtIndex(idx, pointer = null) {
@@ -14086,7 +16302,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         'is-hm-top': false,
         'is-line-low': false,
       });
-      patchAttr(tooltipEl, 'hidden', false);
       populateTooltipContent(slot);
 
       for (const [tIdx, el] of tickElsByIdx.entries()) {
@@ -14094,23 +16309,32 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       }
     }
 
-    const wrapRect = getCachedWrapRect();
+    const wrapRect = tooltipCtrl.getWrapRect();
     const wrapW =
       wrapRect && wrapRect.width > 0
         ? wrapRect.width
         : Number(chartWrap.clientWidth || viewW || DEFAULT_VIEW_W);
     const fallbackX = (pt.x / Math.max(1, viewW)) * wrapW;
     const fallbackY = pt.y + 6;
-    positionTooltipNearAnchor(fallbackX, fallbackY, pointer || lastPointer);
-    armTooltipTracking(wasHidden);
+    tooltipCtrl.show({
+      fallbackX,
+      fallbackY,
+      pointer: pointer || lastPointer,
+      trackedDots: [hoverDot],
+      viewWidth: viewW,
+      viewHeight: VIEW_H,
+    });
   }
 
   function showHeatmapHoverAtIndex(idx, cellEl, pointer = null) {
-    if (!currentIsHeatmap || idx < 0 || idx >= currentSlots.length) {
+    if (!currentIsHeatmap || idx < 0 || idx >= currentHmBuckets.length) {
       clearHover();
       return;
     }
-    const targetCell = cellEl || currentCellEls[idx] || null;
+    const isBarMode = currentHmMode !== 'day';
+    const targetCell = isBarMode
+      ? currentHmAnchorCells[idx] || cellEl || null
+      : cellEl || currentHmAnchorCells[idx] || currentCellEls[idx] || null;
     if (!targetCell) {
       clearHover();
       return;
@@ -14121,13 +16345,29 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     if (pointer) {
       lastPointer = pointer;
     }
-    if (hoveredCellEl && hoveredCellEl !== targetCell) {
-      patchClasses(hoveredCellEl, { 'is-hovered': false });
-    }
-    hoveredCellEl = targetCell;
-    patchClasses(targetCell, { 'is-hovered': true });
 
-    const slot = currentSlots[idx];
+    if (changedCell || hoveredHighlightEls.length === 0) {
+      for (let i = 0; i < hoveredHighlightEls.length; i++) {
+        patchClasses(hoveredHighlightEls[i], {
+          'is-hovered': false,
+          'is-bar-hovered': false,
+        });
+      }
+      const nextHighlight =
+        currentHmBucketCells[idx] && currentHmBucketCells[idx].length > 0
+          ? currentHmBucketCells[idx]
+          : [targetCell];
+      for (let i = 0; i < nextHighlight.length; i++) {
+        patchClasses(nextHighlight[i], {
+          'is-hovered': !isBarMode,
+          'is-bar-hovered': isBarMode,
+        });
+      }
+      hoveredHighlightEls = nextHighlight;
+      hoveredCellEl = targetCell;
+    }
+
+    const slot = currentHmBuckets[idx];
     const row = Number(targetCell.getAttribute('data-hm-row') || 0);
     const col = Number(targetCell.getAttribute('data-hm-col') || 0);
 
@@ -14137,11 +16377,10 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         'is-hm-top': false,
         'is-line-low': false,
       });
-      patchAttr(tooltipEl, 'hidden', false);
       populateTooltipContent(slot);
     }
 
-    const wrapRect = getCachedWrapRect();
+    const wrapRect = tooltipCtrl.getWrapRect();
     const cellRect = targetCell.getBoundingClientRect?.() || null;
     const wrapW =
       wrapRect && wrapRect.width > 0
@@ -14150,41 +16389,63 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     let fallbackX =
       currentHeatmapWeeks > 0 ? ((col + 0.5) / currentHeatmapWeeks) * wrapW : wrapW / 2;
     let fallbackY = 20 + row * 14;
-    if (
+    const hasValidCellRect = Boolean(
       wrapRect &&
-      wrapRect.width > 0 &&
-      cellRect &&
-      cellRect.width > 0 &&
-      cellRect.width < wrapRect.width
-    ) {
+        wrapRect.width > 0 &&
+        cellRect &&
+        cellRect.width > 0 &&
+        cellRect.width < wrapRect.width
+    );
+    if (hasValidCellRect) {
       fallbackX = cellRect.left + cellRect.width / 2 - wrapRect.left;
       fallbackY = cellRect.top + cellRect.height / 2 - wrapRect.top;
     }
 
-    positionTooltipNearAnchor(fallbackX, fallbackY, pointer || lastPointer);
-    armTooltipTracking(wasHidden);
+    const rawPtr = pointer || lastPointer;
+    const effectivePtr =
+      isBarMode &&
+      rawPtr &&
+      hasValidCellRect &&
+      Number.isFinite(Number(rawPtr.clientX)) &&
+      Number.isFinite(Number(rawPtr.clientY))
+        ? {
+            clientX: Number(rawPtr.clientX),
+            clientY: Math.min(Number(rawPtr.clientY), cellRect.top + 2),
+          }
+        : rawPtr;
+
+    tooltipCtrl.show({
+      fallbackX,
+      fallbackY,
+      pointer: effectivePtr,
+      trackedDots: [],
+      viewWidth: viewW,
+      viewHeight: VIEW_H,
+    });
   }
 
   function clearHover() {
     invalidateHoverRects();
-    cancelTipTrackRaf();
+    tooltipCtrl.hide();
     hoveredIdx = -1;
     lastPointer = null;
     patchAttr(hoverLine, 'hidden', true);
     patchAttr(hoverDot, 'hidden', true);
-    patchAttr(tooltipEl, 'hidden', true);
-    patchClasses(tooltipEl, {
-      'is-hm-bottom': false,
-      'is-hm-top': false,
-      'is-line-low': false,
-      'is-tracking': false,
-    });
     patchClasses(hoverDot, { 'is-tracking': false });
-    if (!currentIsHeatmap) {
+    if (!currentIsHeatmap && currentMaxTokens > 0) {
       patchAttr(peakPill, 'hidden', false);
     }
+    if (hoveredHighlightEls.length > 0) {
+      for (let i = 0; i < hoveredHighlightEls.length; i++) {
+        patchClasses(hoveredHighlightEls[i], {
+          'is-hovered': false,
+          'is-bar-hovered': false,
+        });
+      }
+      hoveredHighlightEls = [];
+    }
     if (hoveredCellEl) {
-      patchClasses(hoveredCellEl, { 'is-hovered': false });
+      patchClasses(hoveredCellEl, { 'is-hovered': false, 'is-bar-hovered': false });
       hoveredCellEl = null;
     }
     for (const el of tickElsByIdx.values()) {
@@ -14241,8 +16502,10 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       const idxAttr = cur.getAttribute?.('data-slot-idx');
       if (idxAttr !== null && idxAttr !== undefined && idxAttr !== '') {
         const idx = Number(idxAttr);
-        if (Number.isFinite(idx) && idx >= 0 && idx < currentSlots.length) {
-          return { idx, cellEl: cur };
+        if (Number.isFinite(idx) && idx >= 0 && idx < currentHmBuckets.length) {
+          const cellEl =
+            currentHmMode !== 'day' ? currentHmAnchorCells[idx] || cur : cur;
+          return { idx, cellEl };
         }
       }
       cur = cur.parentNode || null;
@@ -14257,8 +16520,12 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const clientX = Number(e?.clientX);
     const clientY = Number(e?.clientY);
     if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
-      if (hoveredIdx >= 0 && hoveredIdx < currentSlots.length && currentCellEls[hoveredIdx]) {
-        return { idx: hoveredIdx, cellEl: currentCellEls[hoveredIdx] };
+      if (
+        hoveredIdx >= 0 &&
+        hoveredIdx < currentHmBuckets.length &&
+        currentHmAnchorCells[hoveredIdx]
+      ) {
+        return { idx: hoveredIdx, cellEl: currentHmAnchorCells[hoveredIdx] };
       }
       return null;
     }
@@ -14269,8 +16536,12 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const rect = cachedHmGridRect;
     if (!rect || !(rect.width > 0) || !(rect.height > 0) || currentHeatmapWeeks <= 0) {
       cachedHmGridRect = null;
-      if (hoveredIdx >= 0 && hoveredIdx < currentSlots.length && currentCellEls[hoveredIdx]) {
-        return { idx: hoveredIdx, cellEl: currentCellEls[hoveredIdx] };
+      if (
+        hoveredIdx >= 0 &&
+        hoveredIdx < currentHmBuckets.length &&
+        currentHmAnchorCells[hoveredIdx]
+      ) {
+        return { idx: hoveredIdx, cellEl: currentHmAnchorCells[hoveredIdx] };
       }
       return null;
     }
@@ -14293,6 +16564,36 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const cellW = Math.max(1, pitchX - G);
     const cellH = Math.max(1, pitchY - G);
 
+    // 柱阵模式下按列定位分桶，并在列间隙保持原高亮防闪烁
+    if (currentHmMode !== 'day') {
+      const approxCol = Math.max(0, Math.min(W - 1, Math.floor((relX + G * 0.5) / pitchX)));
+      if (
+        hoveredIdx >= 0 &&
+        hoveredIdx < currentHmBuckets.length &&
+        currentColBucketIdx[approxCol] !== hoveredIdx
+      ) {
+        for (const dc of [-1, 1]) {
+          const nc = approxCol + dc;
+          if (nc < 0 || nc >= W || currentColBucketIdx[nc] !== hoveredIdx) continue;
+          const x0 = nc * pitchX;
+          const dx = relX < x0 ? x0 - relX : relX > x0 + cellW ? relX - (x0 + cellW) : 0;
+          if (dx <= G + 0.75 && currentHmAnchorCells[hoveredIdx]) {
+            return { idx: hoveredIdx, cellEl: currentHmAnchorCells[hoveredIdx] };
+          }
+        }
+      }
+      const bIdx = currentColBucketIdx[approxCol];
+      if (
+        Number.isFinite(bIdx) &&
+        bIdx >= 0 &&
+        bIdx < currentHmBuckets.length &&
+        currentHmAnchorCells[bIdx]
+      ) {
+        return { idx: bIdx, cellEl: currentHmAnchorCells[bIdx] };
+      }
+      return null;
+    }
+
     function distanceToCell(c, r) {
       const x0 = c * pitchX;
       const y0 = r * pitchY;
@@ -14301,7 +16602,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       return { chebyshev: Math.max(dx, dy), distSq: dx * dx + dy * dy };
     }
 
-    // 指针滑入当前悬停格四周的空隙（gap）时保持原高亮，彻底消除跨格空隙闪烁与边缘微抖
+    // 指针滑入当前悬停格四周的空隙（gap）时保持原高亮，彻底消除跨格空隙闪烁和边缘微抖
     if (hoveredIdx >= 0 && hoveredIdx < currentSlots.length && currentCellEls[hoveredIdx]) {
       const curGridPos = currentHeatmapFirstDow + hoveredIdx;
       const curCol = Math.floor(curGridPos / 7);
@@ -14348,7 +16649,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   }
 
   function handleHeatmapPointer(e) {
-    if (!currentIsHeatmap || !currentSlots.length) return;
+    if (!currentIsHeatmap || !currentHmBuckets.length) return;
     const hit = resolveHeatmapCellFromPointer(e);
     if (!hit || !Number.isFinite(hit.idx)) {
       clearHover();
@@ -14400,10 +16701,10 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
 
   function handleHeatmapClick(e) {
     handleHeatmapPointer(e);
-    if (!currentIsHeatmap || !currentSlots.length || typeof onSelectSlot !== 'function') return;
+    if (!currentIsHeatmap || !currentHmBuckets.length || typeof onSelectSlot !== 'function') return;
     const hit = resolveHeatmapCellFromPointer(e);
     if (!hit || !Number.isFinite(hit.idx)) return;
-    const slot = currentSlots[hit.idx];
+    const slot = currentHmBuckets[hit.idx];
     if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
       onSelectSlot(slot);
     }
@@ -14441,7 +16742,9 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   }
 
   function destroy() {
-    cancelTipTrackRaf();
+    tooltipCtrl.destroy();
+    curveMorphCtrl.cancel();
+    peakReadyArmer.cancel();
     plotStage.removeEventListener('mousemove', handlePointerMove);
     plotStage.removeEventListener('click', handleLineClick);
     plotStage.removeEventListener('mouseleave', clearHover);
@@ -14459,9 +16762,20 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   }
 
   /**
-   * 根据最新时间分桶序列重绘平滑曲线（<=90天/小时级）或类 GitHub 每日小格子热力图（>90天）。
+   * 根据最新时间分桶序列重绘平滑曲线（<=90天/小时级）或 7×W 矩阵热力图（>90天，支持日/周/月/全部四档）。
    */
-  function update(series = []) {
+  function update(series = [], opts = {}) {
+    if (opts && opts.heatmapMode !== undefined) {
+      const nextHmMode = normalizeHeatmapMode(opts.heatmapMode);
+      if (nextHmMode !== currentHmMode) {
+        clearHover();
+        currentHmMode = nextHmMode;
+      }
+    }
+    if (opts && typeof opts.buildModelSegments === 'function') {
+      lastBuildSegmentsFn = opts.buildModelSegments;
+    }
+
     const slots =
       Array.isArray(series) && series.length >= 1
         ? series
@@ -14474,13 +16788,16 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     currentSlots = slots;
 
     const isHourly =
-      slots[0]?.granularity === 'hour' || String(slots[0]?.label || '').includes(':');
+      slots[0]?.granularity === 'hour' ||
+      slots[0]?.granularity === 'minute' ||
+      String(slots[0]?.label || '').includes(':');
     const useHeatmap = !isHourly && slots.length > HEATMAP_DAYS_THRESHOLD;
     const modeChanged = useHeatmap !== currentIsHeatmap;
     currentIsHeatmap = useHeatmap;
 
     if (modeChanged) {
       clearHover();
+      curveMorphCtrl.cancel();
     }
     patchClasses(chartWrap, { 'is-heatmap': useHeatmap });
     patchAttr(plotStage, 'hidden', useHeatmap);
@@ -14507,6 +16824,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         peakIdx = i;
       }
     }
+    currentMaxTokens = maxTokens;
 
     const locale = getEffectiveLocale();
     patchText(wdayMonEl, t('chart.trend.wdayMon'));
@@ -14518,7 +16836,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     patchText(hmMoreEl, t('chart.trend.hmMore'));
 
     const sig =
-      `${locale}|${useHeatmap ? 'hm' : `line:${viewW}`}|` +
+      `${locale}|${useHeatmap ? `hm:${currentHmMode}` : `line:${viewW}`}|` +
       slots
         .map((s) => {
           const mSig = Array.isArray(s?.modelSegments)
@@ -14529,21 +16847,19 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
                 )
                 .join(',')
             : '';
-          return `${s?.startMs || ''}:${s?.label || ''}:${s?.fullLabel || ''}:${safeSlotTokens(s?.tokens)}:${safeSlotTokens(s?.inputTokens)}:${safeSlotTokens(s?.cacheReadTokens)}:${safeSlotTokens(s?.thinkingTokens)}:${safeSlotTokens(s?.responseTokens)}:${Number(s?.costUsd || 0)}:${Number(s?.calls || 0)}:${mSig}`;
+          const mergedCnt = Array.isArray(s?.mergedModels) ? s.mergedModels.length : 0;
+          return `${s?.startMs || ''}:${s?.label || ''}:${s?.fullLabel || ''}:${safeSlotTokens(s?.tokens)}:${safeSlotTokens(s?.inputTokens)}:${safeSlotTokens(s?.cacheReadTokens)}:${safeSlotTokens(s?.thinkingTokens)}:${safeSlotTokens(s?.responseTokens)}:${Number(s?.costUsd || 0)}:${Number(s?.calls || 0)}:${mergedCnt}:${mSig}`;
         })
         .join('|');
 
-    if (hoveredIdx >= 0 && hoveredIdx < slots.length && !tooltipEl.hasAttribute('hidden')) {
-      populateTooltipContent(slots[hoveredIdx]);
-    }
-
     if (useHeatmap) {
       currentPts = [];
+      const isBarMode = currentHmMode !== 'day';
+      hmWeekdaysEl.style.visibility = isBarMode ? 'hidden' : '';
+      patchClasses(heatmapStage, { 'is-bar-mode': isBarMode });
+
       if (sig !== lastRenderSig) {
         lastRenderSig = sig;
-        nonZeroVals.sort((a, b) => a - b);
-        const thresholds = computeHeatmapThresholds(nonZeroVals, maxTokens);
-
         const firstStartMs = Number(slots[0]?.startMs);
         const firstDow =
           Number.isFinite(firstStartMs) && firstStartMs > 0
@@ -14552,6 +16868,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         const totalCells = firstDow + slots.length;
         const totalWeeks = Math.max(1, Math.ceil(totalCells / 7));
         const gapPx = totalWeeks > 42 ? 1.5 : 2;
+        const shouldAutoScrollRight = modeChanged || currentHeatmapWeeks !== totalWeeks;
         currentHeatmapWeeks = totalWeeks;
         currentHeatmapFirstDow = firstDow;
         currentHeatmapGapPx = gapPx;
@@ -14559,82 +16876,266 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         patchStyleVar(hmBodyEl, '--hm-weeks', String(totalWeeks));
         patchStyleVar(hmBodyEl, '--hm-gap', `${gapPx}px`);
 
-        // 重建顶部对齐月份标签
-        while (hmMonthsEl.firstChild) hmMonthsEl.removeChild(hmMonthsEl.firstChild);
+        // 就地增量补丁顶部对齐月份标签，避免文字节点销毁重建
         const monthTicks = buildHeatmapMonthTicks(slots, firstDow, totalWeeks);
-        for (const mt of monthTicks) {
-          const mEl = h('span', { className: 'trend-hm-month text-mono', text: mt.text });
+        for (let i = 0; i < monthTicks.length; i++) {
+          const mt = monthTicks[i];
+          let mEl = hmMonthPool[i];
+          if (!mEl) {
+            mEl = h('span', { className: 'trend-hm-month text-mono' });
+            hmMonthPool.push(mEl);
+          }
+          patchText(mEl, mt.text);
           patchStyleVar(mEl, '--hm-col', String(mt.col));
-          hmMonthsEl.appendChild(mEl);
+          if (hmMonthsEl.children[i] !== mEl) {
+            hmMonthsEl.insertBefore(mEl, hmMonthsEl.children[i] || null);
+          }
+        }
+        while (hmMonthsEl.children.length > monthTicks.length) {
+          hmMonthsEl.removeChild(hmMonthsEl.lastChild);
         }
 
-        // 重建 7 行 × N 周列的每日小格子（一格一天），使用 DocumentFragment 一次性批量挂载减少重排
-        while (hmGridEl.firstChild) hmGridEl.removeChild(hmGridEl.firstChild);
-        hoveredCellEl = null;
-        currentCellEls = new Array(slots.length);
-        const gridFrag =
-          typeof document !== 'undefined' && typeof document.createDocumentFragment === 'function'
-            ? document.createDocumentFragment()
-            : null;
-        const gridTarget = gridFrag || hmGridEl;
+        const prevMountedCount = hmGridEl.children.length;
 
-        for (let pad = 0; pad < firstDow; pad++) {
-          gridTarget.appendChild(
-            h('span', { className: 'trend-hm-cell is-pad', 'aria-hidden': 'true' })
+        if (!isBarMode) {
+          nonZeroVals.sort((a, b) => a - b);
+          const thresholds = computeHeatmapThresholds(nonZeroVals, maxTokens);
+
+          // 就地增量复用 7 行 × N 周列的每日小格子，首次批量新增节点使用 DocumentFragment 挂载
+          currentCellEls = new Array(slots.length);
+          const newCellsFrag =
+            totalCells > prevMountedCount &&
+            typeof document !== 'undefined' &&
+            typeof document.createDocumentFragment === 'function'
+              ? document.createDocumentFragment()
+              : null;
+
+          for (let nodeIdx = 0; nodeIdx < totalCells; nodeIdx++) {
+            let cellEl = hmCellPool[nodeIdx];
+            if (!cellEl) {
+              cellEl = h('span', { className: 'trend-hm-cell' });
+              hmCellPool.push(cellEl);
+            }
+            if (nodeIdx < firstDow) {
+              patchClasses(cellEl, {
+                'is-pad': true,
+                'is-hovered': false,
+                'is-bar-hovered': false,
+                'is-month-edge': false,
+                'lv-0': false,
+                'lv-1': false,
+                'lv-2': false,
+                'lv-3': false,
+                'lv-4': false,
+              });
+              patchAttr(cellEl, 'aria-hidden', 'true');
+              patchAttr(cellEl, 'role', null);
+              patchAttr(cellEl, 'data-slot-idx', null);
+              patchAttr(cellEl, 'data-hm-col', null);
+              patchAttr(cellEl, 'data-hm-row', null);
+            } else {
+              const i = nodeIdx - firstDow;
+              const slot = slots[i];
+              const tok = safeSlotTokens(slot?.tokens);
+              const lv = resolveHeatmapLevel(tok, thresholds);
+              const col = Math.floor(nodeIdx / 7);
+              const row = nodeIdx % 7;
+              patchClasses(cellEl, {
+                'is-pad': false,
+                'is-hovered': hoveredIdx === i,
+                'is-bar-hovered': false,
+                'is-month-edge': false,
+                'lv-0': lv === 0,
+                'lv-1': lv === 1,
+                'lv-2': lv === 2,
+                'lv-3': lv === 3,
+                'lv-4': lv === 4,
+              });
+              patchAttr(cellEl, 'aria-hidden', null);
+              patchAttr(cellEl, 'role', 'gridcell');
+              patchAttr(cellEl, 'data-slot-idx', String(i));
+              patchAttr(cellEl, 'data-hm-col', String(col));
+              patchAttr(cellEl, 'data-hm-row', String(row));
+              currentCellEls[i] = cellEl;
+            }
+            if (nodeIdx < prevMountedCount) {
+              if (hmGridEl.children[nodeIdx] !== cellEl) {
+                hmGridEl.insertBefore(cellEl, hmGridEl.children[nodeIdx] || null);
+              }
+            } else if (newCellsFrag) {
+              newCellsFrag.appendChild(cellEl);
+            } else {
+              hmGridEl.appendChild(cellEl);
+            }
+          }
+          if (newCellsFrag) {
+            hmGridEl.appendChild(newCellsFrag);
+          }
+          while (hmGridEl.children.length > totalCells) {
+            hmGridEl.removeChild(hmGridEl.lastChild);
+          }
+
+          currentHmBuckets = slots;
+          currentHmBucketCells = currentCellEls.map((el) => (el ? [el] : []));
+          currentHmAnchorCells = currentCellEls.slice();
+          currentColBucketIdx = [];
+          hoveredCellEl =
+            hoveredIdx >= 0 && hoveredIdx < slots.length ? currentCellEls[hoveredIdx] || null : null;
+          hoveredHighlightEls = hoveredCellEl ? [hoveredCellEl] : [];
+
+          const peakSlot = slots[peakIdx];
+          lastHeatmapSummaryText =
+            maxTokens > 0 && peakSlot?.label
+              ? t('chart.trend.hmActivePeak', {
+                  active: activeDays,
+                  total: slots.length,
+                  label: peakSlot.label,
+                  tokens: formatTokensPrecise(maxTokens),
+                })
+              : t('chart.trend.hmActiveZero', { total: slots.length });
+        } else {
+          // 周 / 月 / 全部柱阵模式：保持 7 行 × N 周列点阵几何不变，自底向上点亮对应格数
+          const barView = buildHeatmapBarView(
+            slots,
+            firstDow,
+            totalWeeks,
+            currentHmMode,
+            lastBuildSegmentsFn
           );
-        }
+          const totalGridCells = totalWeeks * 7;
+          currentCellEls = [];
+          currentHmBuckets = barView.buckets;
+          currentColBucketIdx = barView.colSpecs.map((s) => s.bucketIdx);
 
-        for (let i = 0; i < slots.length; i++) {
-          const slot = slots[i];
-          const tok = safeSlotTokens(slot?.tokens);
-          const lv = resolveHeatmapLevel(tok, thresholds);
-          const gridPos = firstDow + i;
-          const col = Math.floor(gridPos / 7);
-          const row = gridPos % 7;
-          const cellEl = h('span', {
-            className: `trend-hm-cell lv-${lv}`,
-            'data-slot-idx': String(i),
-            'data-hm-col': String(col),
-            'data-hm-row': String(row),
-            role: 'gridcell',
+          const bucketCount = barView.buckets.length;
+          const bucketLitCells = Array.from({ length: bucketCount }, () => []);
+          const bucketBottomCells = Array.from({ length: bucketCount }, () => []);
+          const bucketTopRowCells = Array.from({ length: bucketCount }, () => []);
+
+          const newCellsFrag =
+            totalGridCells > prevMountedCount &&
+            typeof document !== 'undefined' &&
+            typeof document.createDocumentFragment === 'function'
+              ? document.createDocumentFragment()
+              : null;
+
+          for (let nodeIdx = 0; nodeIdx < totalGridCells; nodeIdx++) {
+            let cellEl = hmCellPool[nodeIdx];
+            if (!cellEl) {
+              cellEl = h('span', { className: 'trend-hm-cell' });
+              hmCellPool.push(cellEl);
+            }
+            const col = Math.floor(nodeIdx / 7);
+            const row = nodeIdx % 7;
+            const spec = barView.colSpecs[col] || {
+              bucketIdx: 0,
+              litRows: 0,
+              lv: 0,
+              isMonthEdge: false,
+            };
+            const bIdx = spec.bucketIdx;
+            const topLitRow = spec.litRows > 0 ? 7 - spec.litRows : 6;
+            const isLit = spec.litRows > 0 && row >= topLitRow;
+            const lv = isLit ? spec.lv : 0;
+            const isBarHovered =
+              hoveredIdx === bIdx && (isLit || (spec.litRows === 0 && row === 6));
+
+            patchClasses(cellEl, {
+              'is-pad': false,
+              'is-hovered': false,
+              'is-bar-hovered': isBarHovered,
+              'is-month-edge': Boolean(spec.isMonthEdge),
+              'lv-0': lv === 0,
+              'lv-1': lv === 1,
+              'lv-2': lv === 2,
+              'lv-3': lv === 3,
+              'lv-4': lv === 4,
+            });
+            patchAttr(cellEl, 'aria-hidden', null);
+            patchAttr(cellEl, 'role', 'gridcell');
+            patchAttr(cellEl, 'data-slot-idx', String(bIdx));
+            patchAttr(cellEl, 'data-hm-col', String(col));
+            patchAttr(cellEl, 'data-hm-row', String(row));
+
+            if (bIdx >= 0 && bIdx < bucketCount) {
+              if (isLit) bucketLitCells[bIdx].push(cellEl);
+              if (row === 6) bucketBottomCells[bIdx].push(cellEl);
+              if (row === topLitRow) bucketTopRowCells[bIdx].push(cellEl);
+            }
+
+            if (nodeIdx < prevMountedCount) {
+              if (hmGridEl.children[nodeIdx] !== cellEl) {
+                hmGridEl.insertBefore(cellEl, hmGridEl.children[nodeIdx] || null);
+              }
+            } else if (newCellsFrag) {
+              newCellsFrag.appendChild(cellEl);
+            } else {
+              hmGridEl.appendChild(cellEl);
+            }
+          }
+          if (newCellsFrag) {
+            hmGridEl.appendChild(newCellsFrag);
+          }
+          while (hmGridEl.children.length > totalGridCells) {
+            hmGridEl.removeChild(hmGridEl.lastChild);
+          }
+
+          currentHmBucketCells = barView.buckets.map((_, bIdx) =>
+            bucketLitCells[bIdx].length > 0 ? bucketLitCells[bIdx] : bucketBottomCells[bIdx]
+          );
+          currentHmAnchorCells = barView.buckets.map((_, bIdx) => {
+            const tops = bucketTopRowCells[bIdx];
+            return tops.length > 0 ? tops[Math.floor(tops.length / 2)] : null;
           });
-          gridTarget.appendChild(cellEl);
-          currentCellEls[i] = cellEl;
-        }
-        if (gridFrag) {
-          hmGridEl.appendChild(gridFrag);
+          hoveredCellEl =
+            hoveredIdx >= 0 && hoveredIdx < bucketCount
+              ? currentHmAnchorCells[hoveredIdx] || null
+              : null;
+          hoveredHighlightEls =
+            hoveredIdx >= 0 && hoveredIdx < bucketCount
+              ? currentHmBucketCells[hoveredIdx] || []
+              : [];
+          lastHeatmapSummaryText = barView.summaryText;
         }
 
-        if (typeof requestAnimationFrame === 'function') {
+        if (shouldAutoScrollRight && typeof requestAnimationFrame === 'function') {
           requestAnimationFrame(() => {
             if (hmScrollEl.scrollWidth > hmScrollEl.clientWidth) {
               hmScrollEl.scrollLeft = hmScrollEl.scrollWidth;
             }
           });
         }
+      } else if (currentHmMode === 'day') {
+        const peakSlot = slots[peakIdx];
+        lastHeatmapSummaryText =
+          maxTokens > 0 && peakSlot?.label
+            ? t('chart.trend.hmActivePeak', {
+                active: activeDays,
+                total: slots.length,
+                label: peakSlot.label,
+                tokens: formatTokensPrecise(maxTokens),
+              })
+            : t('chart.trend.hmActiveZero', { total: slots.length });
       }
 
-      const peakSlot = slots[peakIdx];
-      const summaryText =
-        maxTokens > 0 && peakSlot?.label
-          ? t('chart.trend.hmActivePeak', {
-              active: activeDays,
-              total: slots.length,
-              label: peakSlot.label,
-              tokens: formatTokensPrecise(maxTokens),
-            })
-          : t('chart.trend.hmActiveZero', { total: slots.length });
-      patchText(hmSummaryEl, summaryText);
+      patchText(hmSummaryEl, lastHeatmapSummaryText);
 
-      if (hoveredIdx >= slots.length) {
+      if (hoveredIdx >= currentHmBuckets.length) {
         clearHover();
       } else if (hoveredIdx >= 0) {
-        showHeatmapHoverAtIndex(hoveredIdx, currentCellEls[hoveredIdx], lastPointer);
+        if (!tooltipEl.hasAttribute('hidden') && currentHmBuckets[hoveredIdx]) {
+          populateTooltipContent(currentHmBuckets[hoveredIdx]);
+        }
+        showHeatmapHoverAtIndex(hoveredIdx, currentHmAnchorCells[hoveredIdx], lastPointer);
       }
       return;
     }
 
-    // --- <= 90 天（或整点小时级）：渲染平滑面积曲线图（1:1 贴边对齐） ---
+    if (hoveredIdx >= 0 && hoveredIdx < slots.length && !tooltipEl.hasAttribute('hidden')) {
+      populateTooltipContent(slots[hoveredIdx]);
+    }
+
+    // --- <= 90 天（或整点/分钟级）：渲染平滑面积曲线图（1:1 贴边对齐 + 连续插值形变过渡） ---
     currentCellEls = [];
     const { leftX, rightX, spanX } = resolvePlotBounds(viewW);
     const denom = Math.max(1, maxTokens);
@@ -14650,26 +17151,46 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     });
     currentPts = pts;
 
+    const nextSegs = pointsToNormalizedCubicSegs(pts, BOTTOM_Y);
+
     if (sig !== lastRenderSig) {
       lastRenderSig = sig;
       let lineD;
       let areaD;
       if (isSingle) {
-        const yStr = pts[0].y.toFixed(1);
-        lineD = `M ${leftX.toFixed(1)} ${yStr} L ${rightX.toFixed(1)} ${yStr}`;
+        if (maxTokens > 0) {
+          lineD = buildSmoothSplinePath([
+            { x: leftX, y: BOTTOM_Y },
+            pts[0],
+            { x: rightX, y: BOTTOM_Y },
+          ]);
+        } else {
+          const yStr = pts[0].y.toFixed(1);
+          lineD = `M ${leftX.toFixed(1)} ${yStr} L ${rightX.toFixed(1)} ${yStr}`;
+        }
         areaD = `${lineD} L ${rightX.toFixed(1)} ${BOTTOM_Y} L ${leftX.toFixed(1)} ${BOTTOM_Y} Z`;
       } else {
         lineD = buildSmoothSplinePath(pts);
         areaD = `${lineD} L ${pts[pts.length - 1].x.toFixed(1)} ${BOTTOM_Y} L ${pts[0].x.toFixed(1)} ${BOTTOM_Y} Z`;
       }
-      patchAttr(linePath, 'd', lineD);
-      patchAttr(areaPath, 'd', areaD);
 
-      // 渲染与底部刻度对齐的垂直参考网格线及底部 X 轴标签（起止标签严格左右贴边）
+      curveMorphCtrl.morphTo({
+        nextSegs,
+        leftX,
+        spanX,
+        bottomY: BOTTOM_Y,
+        linePath,
+        areaPath,
+        finalLineD: lineD,
+        finalAreaD: areaD,
+        skipMorph: modeChanged,
+      });
+
+      // 就地增量补丁垂直参考网格线及底部 X 轴标签，保持文字常驻不重排不闪烁
       const tickIndices = computeTickIndices(slots);
-      while (vGridGroup.firstChild) vGridGroup.removeChild(vGridGroup.firstChild);
-      while (xAxisEl.firstChild) xAxisEl.removeChild(xAxisEl.firstChild);
       tickElsByIdx = new Map();
+      let vLineCount = 0;
+      let tickCount = 0;
 
       for (let i = 0; i < tickIndices.length; i++) {
         const tIdx = tickIndices[i];
@@ -14678,45 +17199,79 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         if (!pt || !slot) continue;
 
         if (i > 0 && i < tickIndices.length - 1) {
-          const vLine = document.createElementNS(SVG_NS, 'line');
-          vLine.setAttribute('x1', pt.x.toFixed(1));
-          vLine.setAttribute('y1', '16');
-          vLine.setAttribute('x2', pt.x.toFixed(1));
-          vLine.setAttribute('y2', String(BOTTOM_Y));
-          vGridGroup.appendChild(vLine);
+          let vLine = vGridLinePool[vLineCount];
+          if (!vLine) {
+            vLine = document.createElementNS(SVG_NS, 'line');
+            vLine.setAttribute('y1', '16');
+            vLine.setAttribute('y2', String(BOTTOM_Y));
+            vGridLinePool.push(vLine);
+          }
+          const xFixed = pt.x.toFixed(1);
+          patchAttr(vLine, 'x1', xFixed);
+          patchAttr(vLine, 'x2', xFixed);
+          if (vGridGroup.children[vLineCount] !== vLine) {
+            vGridGroup.insertBefore(vLine, vGridGroup.children[vLineCount] || null);
+          }
+          vLineCount++;
         }
 
         const isFirst = !isSingle && i === 0;
         const isLast = !isSingle && i === tickIndices.length - 1;
         const pct = isFirst ? 0 : isLast ? 100 : (pt.x / viewW) * 100;
-        const tickEl = h('span', {
-          className: `trend-x-tick text-mono${isFirst ? ' is-start' : isLast ? ' is-end' : ''}`,
-          text: slot.label || '',
-          title: slot.fullLabel || slot.label || '',
+        let tickRec = xAxisTickPool[tickCount];
+        if (!tickRec) {
+          const el = h('span', { className: 'trend-x-tick text-mono' });
+          const rec = { el, slotIdx: tIdx };
+          el.onclick = () => {
+            lastPointer = null;
+            showLineHoverAtIndex(rec.slotIdx);
+          };
+          tickRec = rec;
+          xAxisTickPool.push(tickRec);
+        }
+        tickRec.slotIdx = tIdx;
+        patchClasses(tickRec.el, {
+          'is-start': isFirst,
+          'is-end': isLast,
+          'is-hovered': hoveredIdx === tIdx,
         });
-        patchStyleVar(tickEl, '--tick-x', `${pct.toFixed(2)}%`);
-        tickEl.onclick = () => {
-          lastPointer = null;
-          showLineHoverAtIndex(tIdx);
-        };
-        xAxisEl.appendChild(tickEl);
-        tickElsByIdx.set(tIdx, tickEl);
+        patchText(tickRec.el, slot.label || '');
+        patchAttr(tickRec.el, 'title', formatTrendSlotFullLabel(slot) || slot.label || '');
+        patchStyleVar(tickRec.el, '--tick-x', `${pct.toFixed(2)}%`);
+        if (xAxisEl.children[tickCount] !== tickRec.el) {
+          xAxisEl.insertBefore(tickRec.el, xAxisEl.children[tickCount] || null);
+        }
+        tickElsByIdx.set(tIdx, tickRec.el);
+        tickCount++;
+      }
+
+      while (vGridGroup.children.length > vLineCount) {
+        vGridGroup.removeChild(vGridGroup.lastChild);
+      }
+      while (xAxisEl.children.length > tickCount) {
+        xAxisEl.removeChild(xAxisEl.lastChild);
       }
     }
 
-    const peakPt = pts[peakIdx] || { x: viewW / 2, y: BOTTOM_Y };
-
-    const peakSlot = slots[peakIdx];
-    const peakText =
-      maxTokens > 0 && peakSlot?.label
+    if (maxTokens > 0) {
+      const peakPt = pts[peakIdx] || { x: viewW / 2, y: BOTTOM_Y };
+      const peakSlot = slots[peakIdx];
+      const peakText = peakSlot?.label
         ? t('chart.trend.peakPill', {
             label: peakSlot.label,
             tokens: formatTokensPrecise(maxTokens),
           })
         : formatTokensPrecise(maxTokens);
-    patchText(peakPill, peakText);
-    const pctLeft = Math.max(12, Math.min(88, (peakPt.x / viewW) * 100));
-    patchStyleVar(peakPill, '--peak-x', `${pctLeft.toFixed(1)}%`);
+      patchText(peakPill, peakText);
+      const pctLeft = Math.max(12, Math.min(88, (peakPt.x / viewW) * 100));
+      patchStyleVar(peakPill, '--peak-x', `${pctLeft.toFixed(1)}%`);
+      peakReadyArmer.arm();
+      if (hoveredIdx < 0) {
+        patchAttr(peakPill, 'hidden', false);
+      }
+    } else {
+      patchAttr(peakPill, 'hidden', true);
+    }
 
     if (hoveredIdx >= slots.length) {
       clearHover();
@@ -14725,27 +17280,36 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     }
   }
 
-  return { el: chartWrap, update, destroy };
+  function setHeatmapMode(nextMode) {
+    const norm = normalizeHeatmapMode(nextMode);
+    if (norm === currentHmMode) return;
+    clearHover();
+    currentHmMode = norm;
+    if (currentSlots.length > 0) {
+      update(currentSlots);
+    }
+  }
+
+  return {
+    el: chartWrap,
+    update,
+    setHeatmapMode,
+    getHeatmapMode: () => currentHmMode,
+    destroy,
+  };
 }
 return { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart };
 })();
 
-// --- src/components/charts/SessionStepCharts.js ---
-const { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, computeLinearFit, computePublicationFit, createSessionLineChart, createModelFitChart } = (() => {
+// --- src/components/charts/stepChartMath.js ---
+const { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact, downsampleStepPointsForPlot, evalStepSplineYAtX } = (() => {
 /**
- * @fileoverview 当前会话步骤级线性走势图与模型趋势拟合图组件 (SessionStepCharts).
- *
- * 包含两部分能力：
- * 1. `createSessionLineChart`：查看当前会话（支持主代理 / 子代理 / 全部汇总）所有模型的步进变化，
- *    支持切换 `总Token`（累计调用总量）、`上下文`（单步上下文体积）、`TPS`、`首字`、`费用` 五大维度；
- * 2. `createModelFitChart`：查看指定模型或全部模型的 `TPS`、`首字`、`缓存`、`费用` 散点与鲁棒局部加权线性回归（LOWESS + OLS 基准）拟合曲线，
- *    内置视图级模型锁定状态机，进入视图时自动锚定当前调用模型，停留在视图期间绝不随轮询跳变。
+ * @fileoverview Pure regression math (OLS + IRLS-LOESS), nice axis tick generators,
+ * SVG spline/polyline path builders, and step metric formatters extracted from SessionStepCharts.js.
  */
 
 
-let sessionChartUid = 0;
-
-/** 多模型节点与多曲线对比语义调色板（全部取自 tokens.css 语义变量，兼顾设计一致性与交叉曲线区分度） */
+/** 多模型节点和多曲线对比语义调色板（全部取自 tokens.css 语义变量，兼顾设计一致性和交叉曲线区分度） */
 const MODEL_COLOR_VARS = Object.freeze([
   'var(--ctx-cached)',
   'var(--ctx-skills)',
@@ -14756,7 +17320,7 @@ const MODEL_COLOR_VARS = Object.freeze([
 ]);
 
 /**
- * 提取步骤所属的基础模型分组键（与后端 `usage-aggregator.mjs` 中 `modelBreakdown[].label` 严格一致），
+ * 提取步骤所属的基础模型分组键（和后端 `usage-aggregator.mjs` 中 `modelBreakdown[].label` 严格一致），
  * 且不受“精简代号 / 原始模型 ID”或“自动压缩”后缀切换影响。
  *
  * @param {object|null|undefined} step
@@ -14868,8 +17432,8 @@ function computeLinearFit(ys, { minVal = 0, maxVal = Infinity, xs = null } = {})
 }
 
 /**
- * 学术论文级回归与 95% 置信带计算引擎（Cleveland & Devlin 高斯局部加权线性回归 LOESS + 精确帽子矩阵标准误，
- * 小样本 n <= 5 时自动采用精确 OLS 线性回归与双曲 t 分布 95% 置信区间，等同于 R `ggplot2::geom_smooth(se = TRUE)`）。
+ * 学术论文级回归和 95% 置信带计算引擎（Cleveland & Devlin 高斯局部加权线性回归 LOESS + 精确帽子矩阵标准误，
+ * 小样本 n <= 5 时自动采用精确 OLS 线性回归和双曲 t 分布 95% 置信区间，等同于 R `ggplot2::geom_smooth(se = TRUE)`）。
  *
  * @param {number[]} xs 严格递增或单调的样本横坐标序列
  * @param {number[]} ys 样本纵坐标序列
@@ -14930,7 +17494,7 @@ function computePublicationFit(
   const M = Math.max(2, gridSize);
   const gridXs = Array.from({ length: M }, (_, k) => xMin + (k / (M - 1)) * xSpan);
 
-  // 小样本（n <= 5）：采用精确 OLS 线性回归与 Student-t 双曲 95% CI 置信带
+  // 小样本（n <= 5）：采用精确 OLS 线性回归和 Student-t 双曲 95% CI 置信带
   if (n <= 5) {
     const meanX = xs.reduce((a, b) => a + b, 0) / n;
     let sxx = 0;
@@ -15089,8 +17653,8 @@ function computePublicationFit(
   let traceL = 0;
   let precomputedGridEval = null;
 
-  // 大样本（n > 200 且 x 单调有序）采用与 R `stats::loess(surface = "interpolate")` 一致的网格插值加速：
-  // 仅在 M 个均匀网格顶点做精确 LOESS（O(M·N)），再线性插值样本拟合值与杠杆度，避免 O(N²) 阻塞主线程。
+  // 大样本（n > 200 且 x 单调有序）采用和 R `stats::loess(surface = "interpolate")` 一致的网格插值加速：
+  // 仅在 M 个均匀网格顶点做精确 LOESS（O(M·N)），再线性插值样本拟合值和杠杆度，避免 O(N²) 阻塞主线程。
   if (n > 200 && sortedXs && M >= 2) {
     const gridRawFit = new Float64Array(M);
     const gridLevSq = new Float64Array(M);
@@ -15396,6 +17960,124 @@ function formatChartMetricCompact(metric, val) {
 }
 
 /**
+ * Downsamples dense chronological step series (`> maxPoints`, e.g. 1,500–5,000 steps) to an
+ * adaptive visual vertex budget (`~2.1px` per segment) so cubic splines never overplot into an
+ * opaque solid wall while strictly preserving the start step, end step, and exact global peak step.
+ *
+ * @template {{ value?: number }} T
+ * @param {T[]} points
+ * @param {number} [maxPoints=208]
+ * @returns {T[]}
+ */
+function downsampleStepPointsForPlot(points, maxPoints = 208) {
+  if (!Array.isArray(points) || points.length <= maxPoints || maxPoints < 8) {
+    return points;
+  }
+  const n = points.length;
+  let globalPeakIdx = -1;
+  let globalPeakVal = -Infinity;
+  for (let i = 0; i < n; i += 1) {
+    const v = Number(points[i]?.value);
+    if (Number.isFinite(v) && v >= globalPeakVal) {
+      globalPeakVal = v;
+      globalPeakIdx = i;
+    }
+  }
+
+  const out = [points[0]];
+  const bucketCount = maxPoints - 2;
+  const interiorLen = n - 2;
+  for (let b = 0; b < bucketCount; b += 1) {
+    const bStart = 1 + Math.floor((b * interiorLen) / bucketCount);
+    const bEnd = Math.max(bStart + 1, 1 + Math.floor(((b + 1) * interiorLen) / bucketCount));
+    let pickIdx = -1;
+    if (globalPeakIdx >= bStart && globalPeakIdx < bEnd) {
+      pickIdx = globalPeakIdx;
+    } else {
+      for (let k = bStart; k < bEnd; k += 1) {
+        if (points[k]?.anomalySummary) {
+          if (pickIdx < 0 || points[k]?.anomalySeverity === 'danger') {
+            pickIdx = k;
+            if (points[k]?.anomalySeverity === 'danger') break;
+          }
+        }
+      }
+      if (pickIdx < 0) {
+        pickIdx = bStart + Math.floor((bEnd - bStart) / 2);
+      }
+    }
+    const picked = points[pickIdx];
+    if (picked && picked !== out[out.length - 1]) {
+      out.push(picked);
+    }
+  }
+  const lastPt = points[n - 1];
+  if (lastPt && lastPt !== out[out.length - 1]) {
+    out.push(lastPt);
+  }
+  return out;
+}
+
+/**
+ * Evaluates the exact `y` coordinate on `buildSplinePath(plotPoints)` at horizontal coordinate `targetX`
+ * so overlay markers (such as anomaly dots) sit flush on the rendered curve even between downsampled knots.
+ *
+ * @param {Array<{ x: number, y: number }>} plotPoints
+ * @param {number} targetX
+ * @returns {number}
+ */
+function evalStepSplineYAtX(plotPoints, targetX) {
+  if (!Array.isArray(plotPoints) || plotPoints.length === 0) return 0;
+  if (plotPoints.length === 1 || targetX <= plotPoints[0].x) return plotPoints[0].y;
+  const last = plotPoints[plotPoints.length - 1];
+  if (targetX >= last.x) return last.y;
+
+  let loIdx = 0;
+  let hiIdx = plotPoints.length - 1;
+  while (loIdx + 1 < hiIdx) {
+    const mid = (loIdx + hiIdx) >>> 1;
+    if (plotPoints[mid].x <= targetX) loIdx = mid;
+    else hiIdx = mid;
+  }
+  const p0 = plotPoints[loIdx];
+  const p1 = plotPoints[hiIdx];
+  const dx = p1.x - p0.x;
+  if (!(dx > 1e-6)) return p0.y;
+
+  const uTarget = Math.max(0, Math.min(1, (targetX - p0.x) / dx));
+  let sLo = 0;
+  let sHi = 1;
+  for (let it = 0; it < 14; it += 1) {
+    const s = (sLo + sHi) * 0.5;
+    const inv = 1 - s;
+    const u = 3 * inv * inv * s * 0.38 + 3 * inv * s * s * 0.62 + s * s * s;
+    if (u < uTarget) sLo = s;
+    else sHi = s;
+  }
+  const s = (sLo + sHi) * 0.5;
+  return p0.y + (p1.y - p0.y) * s * s * (3 - 2 * s);
+}
+return { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact, downsampleStepPointsForPlot, evalStepSplineYAtX };
+})();
+
+// --- src/components/charts/SessionStepCharts.js ---
+const { createSessionLineChart, createModelFitChart } = (() => {
+/**
+ * @fileoverview 当前会话步骤级线性走势图与模型趋势拟合图组件 (SessionStepCharts).
+ *
+ * 包含两部分能力：
+ * 1. `createSessionLineChart`：查看当前会话（支持主代理 / 子代理 / 全部汇总）所有模型的步进变化，
+ *    支持切换 `总Token`（累计调用总量）、`上下文`（单步上下文体积）、`TPS`、`首字`、`费用` 五大维度；
+ * 2. `createModelFitChart`：查看指定模型或全部模型的 `TPS`、`首字`、`缓存`、`费用` 散点与鲁棒局部加权线性回归（LOWESS + OLS 基准）拟合曲线，
+ *    内置视图级模型锁定状态机，进入视图时自动锚定当前调用模型，停留在视图期间绝不随轮询跳变。
+ */
+
+
+
+
+let sessionChartUid = 0;
+
+/**
  * 创建会话全模型线性走势图（支持 `totalTokens` | `context` | `tps` | `ttft` | `cost`，全宽 1:1 贴边对齐）。
  */
 function createSessionLineChart() {
@@ -15528,27 +18210,46 @@ function createSessionLineChart() {
   const plotStage = h('div', { className: 'sstep-plot-stage' }, [
     peakPill,
     emptyHintEl,
-    tooltipEl,
     svg,
   ]);
   const rootEl = h('div', { className: 'sstep-chart-wrap' }, [
     plotStage,
     xAxisEl,
     modelLegendEl,
+    tooltipEl,
   ]);
 
   let currentPoints = [];
+  let currentMaxVal = 0;
   let currentMetric = 'totalTokens';
   let hoveredIdx = -1;
+  let lastPointer = null;
   let tickElsByIdx = new Map();
   let lastSig = '';
   let lastPreSig = '';
   let lastSummaryBadge = '';
   let lastUpdateParams = null;
   let cachedPlotSvgRect = null;
+  let lastLineMode = '';
+  let lastSingleLineKey = '';
+  const multiSeriesNodesByKey = new Map();
+  const anomalyDotElsByKey = new Map();
+
+  const singleCurveMorphCtrl = createCubicCurveMorphController();
+  const multiCurveMorphCtrl = createMultiSeriesCurveMorphController();
+  const peakReadyArmer = createReadyClassArmer(peakPill, 'is-ready');
+  const lineTooltipCtrl = createFloatingChartTooltipController({
+    containerEl: rootEl,
+    tooltipEl,
+    defaultTipWidth: 212,
+    defaultTipHeight: 86,
+    defaultViewWidth: DEFAULT_VIEW_W,
+    defaultViewHeight: VIEW_H,
+  });
 
   function invalidatePlotSvgRect() {
     cachedPlotSvgRect = null;
+    lineTooltipCtrl.invalidateRects();
   }
 
   function syncViewWidth() {
@@ -15570,89 +18271,94 @@ function createSessionLineChart() {
     return false;
   }
 
-  function showHoverAt(idx) {
+  function showHoverAt(idx, pointer = null, { forceRefresh = false } = {}) {
     if (idx < 0 || idx >= currentPoints.length) {
       clearHover();
       return;
     }
     const wasHidden = tooltipEl.hasAttribute('hidden');
+    const changedIdx = forceRefresh || wasHidden || idx !== hoveredIdx;
     hoveredIdx = idx;
+    if (pointer) {
+      lastPointer = pointer;
+    }
     const pt = currentPoints[idx];
-    patchAttr(hoverLine, 'hidden', false);
-    patchAttr(hoverLine, 'x1', pt.x.toFixed(1));
-    patchAttr(hoverLine, 'x2', pt.x.toFixed(1));
-
-    patchAttr(hoverDot, 'hidden', false);
-    patchAttr(hoverDot, 'cx', pt.x.toFixed(1));
-    patchAttr(hoverDot, 'cy', pt.y.toFixed(1));
-    const hoverAccent = pt.anomalySummary
-      ? pt.anomalySeverity === 'danger'
-        ? 'var(--metric-danger)'
-        : 'var(--metric-warn)'
-      : pt.hoverColor || 'var(--ctx-cached)';
-    patchStyleVar(hoverDot, '--hover-dot-color', hoverAccent);
-
-    patchAttr(peakPill, 'hidden', true);
-    patchAttr(tooltipEl, 'hidden', false);
-
-    patchText(tipHeadLeft, pt.stepTag);
-    patchText(tipHeadRight, pt.modelText);
-    patchText(
-      tipMainLeft,
-      pt.valid ? formatChartMetricValue(currentMetric, pt.value) : t('chart.step.excluded')
-    );
-    patchText(tipMainRight, pt.secondaryRight || '');
     const hasIoParts = Boolean(pt.ioParts);
-    patchAttr(tipIoGrid, 'hidden', !hasIoParts);
-    if (hasIoParts) {
-      patchText(tipInLabelEl, t('cons.legInput'));
-      patchText(tipCacheLabelEl, t('cons.legCache'));
-      patchText(tipOutLabelEl, t('cons.legOutput'));
-      patchText(tipInValEl, pt.ioParts.inTok);
-      patchText(tipCacheValEl, pt.ioParts.cacheTok);
-      patchText(tipOutValEl, pt.ioParts.outTok);
-    }
-    patchAttr(tipSub, 'hidden', hasIoParts || !pt.subDetail);
-    if (!hasIoParts && pt.subDetail) {
-      patchText(tipSub, pt.subDetail);
-    }
-    patchAttr(tipAnomaly, 'hidden', !pt.anomalySummary);
-    if (pt.anomalySummary) {
-      patchText(tipAnomaly, pt.anomalySummary);
-      patchClasses(tipAnomaly, { 'is-danger': pt.anomalySeverity === 'danger' });
-    }
 
-    const rawPct = (pt.x / viewW) * 100;
-    const clampedPct = Math.max(1, Math.min(99, rawPct));
-    patchStyleVar(tooltipEl, '--tip-x', `${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-shift', `-${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-y', '0px');
-    if (wasHidden) {
-      patchClasses(tooltipEl, { 'is-tracking': false });
-      void tooltipEl.offsetWidth;
-      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-        window.requestAnimationFrame(() => {
-          if (!tooltipEl.hasAttribute('hidden')) {
-            patchClasses(tooltipEl, { 'is-tracking': true });
-          }
-        });
-      } else {
-        patchClasses(tooltipEl, { 'is-tracking': true });
+    if (changedIdx) {
+      patchAttr(hoverLine, 'hidden', false);
+      patchAttr(hoverLine, 'x1', pt.x.toFixed(1));
+      patchAttr(hoverLine, 'x2', pt.x.toFixed(1));
+
+      patchAttr(hoverDot, 'hidden', false);
+      patchAttr(hoverDot, 'cx', pt.x.toFixed(1));
+      patchAttr(hoverDot, 'cy', pt.y.toFixed(1));
+      const hoverAccent = pt.anomalySummary
+        ? pt.anomalySeverity === 'danger'
+          ? 'var(--metric-danger)'
+          : 'var(--metric-warn)'
+        : pt.hoverColor || 'var(--ctx-cached)';
+      patchStyleVar(hoverDot, '--hover-dot-color', hoverAccent);
+
+      patchAttr(peakPill, 'hidden', true);
+
+      patchText(tipHeadLeft, pt.stepTag);
+      patchText(tipHeadRight, pt.modelText);
+      patchText(
+        tipMainLeft,
+        pt.valid ? formatChartMetricValue(currentMetric, pt.value) : t('chart.step.excluded')
+      );
+      patchText(tipMainRight, pt.secondaryRight || '');
+      patchAttr(tipIoGrid, 'hidden', !hasIoParts);
+      if (hasIoParts) {
+        patchText(tipInLabelEl, t('cons.legInput'));
+        patchText(tipCacheLabelEl, t('cons.legCache'));
+        patchText(tipOutLabelEl, t('cons.legOutput'));
+        patchText(tipInValEl, pt.ioParts.inTok);
+        patchText(tipCacheValEl, pt.ioParts.cacheTok);
+        patchText(tipOutValEl, pt.ioParts.outTok);
+      }
+      patchAttr(tipSub, 'hidden', hasIoParts || !pt.subDetail);
+      if (!hasIoParts && pt.subDetail) {
+        patchText(tipSub, pt.subDetail);
+      }
+      patchAttr(tipAnomaly, 'hidden', !pt.anomalySummary);
+      if (pt.anomalySummary) {
+        patchText(tipAnomaly, pt.anomalySummary);
+        patchClasses(tipAnomaly, { 'is-danger': pt.anomalySeverity === 'danger' });
+      }
+
+      for (const [tIdx, el] of tickElsByIdx.entries()) {
+        patchClasses(el, { 'is-hovered': tIdx === idx });
       }
     }
 
-    for (const [tIdx, el] of tickElsByIdx.entries()) {
-      patchClasses(el, { 'is-hovered': tIdx === idx });
-    }
+    const wrapRect = lineTooltipCtrl.getWrapRect();
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(rootEl.clientWidth || viewW || DEFAULT_VIEW_W);
+    const fallbackX = (pt.x / Math.max(1, viewW)) * wrapW;
+    const fallbackY = pt.y + 4;
+    lineTooltipCtrl.show({
+      fallbackX,
+      fallbackY,
+      pointer: pointer || lastPointer,
+      trackedDots: [hoverDot],
+      viewWidth: viewW,
+      viewHeight: VIEW_H,
+      sizeKey: `${hasIoParts ? 'io' : pt.subDetail ? 'sub' : 'min'}:${pt.anomalySummary ? 'a' : '0'}`,
+    });
   }
 
   function clearHover() {
     hoveredIdx = -1;
+    lastPointer = null;
+    lineTooltipCtrl.hide();
     patchAttr(hoverLine, 'hidden', true);
     patchAttr(hoverDot, 'hidden', true);
-    patchAttr(tooltipEl, 'hidden', true);
-    patchClasses(tooltipEl, { 'is-tracking': false });
-    if (currentPoints.some((p) => p.valid)) {
+    patchClasses(hoverDot, { 'is-tracking': false });
+    if (currentMaxVal > 0 && currentPoints.some((p) => p.valid)) {
       patchAttr(peakPill, 'hidden', false);
     }
     for (const el of tickElsByIdx.values()) {
@@ -15677,7 +18383,11 @@ function createSessionLineChart() {
       0,
       Math.min(currentPoints.length - 1, Math.round(ratio * (currentPoints.length - 1)))
     );
-    showHoverAt(idx);
+    const pointer =
+      Number.isFinite(Number(e?.clientX)) && Number.isFinite(Number(e?.clientY))
+        ? { clientX: Number(e.clientX), clientY: Number(e.clientY) }
+        : null;
+    showHoverAt(idx, pointer);
   });
   plotStage.addEventListener('mouseleave', () => {
     invalidatePlotSvgRect();
@@ -15692,7 +18402,7 @@ function createSessionLineChart() {
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
         lastPreSig = '';
-        update(lastUpdateParams);
+        update({ ...lastUpdateParams, _skipMorph: true });
       }
     });
     resizeObs.observe(plotStage);
@@ -15700,13 +18410,17 @@ function createSessionLineChart() {
     onWinResize = () => {
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
-        update(lastUpdateParams);
+        update({ ...lastUpdateParams, _skipMorph: true });
       }
     };
     window.addEventListener('resize', onWinResize);
   }
 
   function destroy() {
+    singleCurveMorphCtrl.cancel();
+    multiCurveMorphCtrl.cancel();
+    peakReadyArmer.cancel();
+    lineTooltipCtrl.destroy();
     resizeObs?.disconnect();
     resizeObs = null;
     if (onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
@@ -15735,6 +18449,7 @@ function createSessionLineChart() {
     metric = 'totalTokens',
     showAgentPrefix = false,
     displaySettings = {},
+    _skipMorph = false,
   } = {}) {
     lastUpdateParams = {
       steps,
@@ -15771,8 +18486,13 @@ function createSessionLineChart() {
     patchText(emptyHintEl, t('chart.step.empty'));
     if (!matchedSteps.length) {
       currentPoints = [];
+      patchClasses(rootEl, { 'is-dense': false });
       lastSig = 'empty';
       lastPreSig = '';
+      lastLineMode = '';
+      lastSingleLineKey = '';
+      singleCurveMorphCtrl.reset();
+      multiCurveMorphCtrl.reset();
       lastSummaryBadge = t('chart.step.zeroSteps');
       invalidatePlotSvgRect();
       patchAttr(areaPath, 'd', '');
@@ -15781,6 +18501,7 @@ function createSessionLineChart() {
       while (multiLineGroup.firstChild) multiLineGroup.removeChild(multiLineGroup.firstChild);
       while (dotsGroup.firstChild) dotsGroup.removeChild(dotsGroup.firstChild);
       while (anomalyDotsGroup.firstChild) anomalyDotsGroup.removeChild(anomalyDotsGroup.firstChild);
+      anomalyDotElsByKey.clear();
       while (xAxisEl.firstChild) xAxisEl.removeChild(xAxisEl.firstChild);
       patchAttr(modelLegendEl, 'hidden', true);
       patchAttr(peakPill, 'hidden', true);
@@ -15993,8 +18714,10 @@ function createSessionLineChart() {
         peakIdx = i;
       }
     }
+    currentMaxVal = maxVal;
 
     const { leftX, rightX, spanX } = resolvePlotBounds(viewW);
+    const maxPlotPoints = Math.max(128, Math.min(256, Math.floor(spanX / 2.1)));
     const denom = maxVal > 0 ? maxVal : 1;
     const isSingle = rawItems.length === 1;
     const points = rawItems.map((item, i) => {
@@ -16005,9 +18728,28 @@ function createSessionLineChart() {
       const y = item.valid ? BOTTOM_Y - ratio * SPAN_Y : BOTTOM_Y;
       return { ...item, x, y };
     });
-    currentPoints = points;
 
     const validPoints = points.filter((p) => p.valid);
+    let hoverPoints = points;
+    if (isMultiCompare) {
+      if (points.length > maxPlotPoints * targetKeys.length) {
+        const merged = [];
+        for (const gk of targetKeys) {
+          const rawSeries = points.filter((p) => p.modelGroupKey === gk && p.valid);
+          merged.push(...downsampleStepPointsForPlot(rawSeries, maxPlotPoints));
+        }
+        merged.sort((a, b) => a.idx - b.idx);
+        if (merged.length > 0) hoverPoints = merged;
+      }
+    } else if (validPoints.length > maxPlotPoints) {
+      hoverPoints = downsampleStepPointsForPlot(validPoints, maxPlotPoints);
+    }
+    currentPoints = hoverPoints;
+    patchClasses(rootEl, {
+      'is-dense': isMultiCompare
+        ? hoverPoints.length > 120 * targetKeys.length
+        : hoverPoints.length > 120,
+    });
     patchAttr(emptyHintEl, 'hidden', validPoints.length > 0);
 
     const colorSig = Array.from(modelColorMap.entries())
@@ -16024,19 +18766,44 @@ function createSessionLineChart() {
 
     if (sig !== lastSig) {
       lastSig = sig;
-      while (multiAreaGroup.firstChild) multiAreaGroup.removeChild(multiAreaGroup.firstChild);
-      while (multiLineGroup.firstChild) multiLineGroup.removeChild(multiLineGroup.firstChild);
       while (dotsGroup.firstChild) dotsGroup.removeChild(dotsGroup.firstChild);
-      while (anomalyDotsGroup.firstChild) anomalyDotsGroup.removeChild(anomalyDotsGroup.firstChild);
+      const plottedSeriesByKey = new Map();
+      let singlePlottedPts = null;
 
       if (isMultiCompare) {
+        if (lastLineMode === 'single') {
+          const prevSingleSegs = singleCurveMorphCtrl.getCurrentSegs();
+          if (prevSingleSegs.length > 0) {
+            if (lastSingleLineKey && lastSingleLineKey !== '__all__') {
+              multiCurveMorphCtrl.seedSeries(lastSingleLineKey, prevSingleSegs);
+            } else {
+              for (const gk of targetKeys) {
+                multiCurveMorphCtrl.seedSeries(gk, prevSingleSegs);
+              }
+            }
+          }
+        }
+        singleCurveMorphCtrl.reset();
+        lastLineMode = 'multi';
+        lastSingleLineKey = '';
         patchAttr(linePath, 'd', '');
         patchAttr(areaPath, 'd', '');
+        for (let ci = multiLineGroup.children.length - 1; ci >= 0; ci--) {
+          const ch = multiLineGroup.children[ci];
+          if (ch.getAttribute?.('class') === 'sstep-series-single-dot') {
+            ch.remove();
+          }
+        }
+
+        const activeGks = new Set();
+        const morphItems = [];
 
         for (const gk of targetKeys) {
           const seriesColor = modelColorMap.get(gk) || accentColor;
-          const seriesPts = points.filter((p) => p.modelGroupKey === gk && p.valid);
+          const rawSeriesPts = points.filter((p) => p.modelGroupKey === gk && p.valid);
+          const seriesPts = downsampleStepPointsForPlot(rawSeriesPts, maxPlotPoints);
           if (seriesPts.length === 0) continue;
+          plottedSeriesByKey.set(gk, seriesPts);
 
           if (seriesPts.length === 1) {
             const singleDot = document.createElementNS(SVG_NS, 'circle');
@@ -16047,90 +18814,187 @@ function createSessionLineChart() {
             patchStyleVar(singleDot, '--sstep-series-color', seriesColor);
             multiLineGroup.appendChild(singleDot);
           } else {
+            activeGks.add(gk);
+            let nodes = multiSeriesNodesByKey.get(gk);
+            if (!nodes) {
+              const mArea = document.createElementNS(SVG_NS, 'path');
+              mArea.setAttribute('class', 'sstep-multi-area');
+              const mLine = document.createElementNS(SVG_NS, 'path');
+              mLine.setAttribute('class', 'sstep-fit-line');
+              mLine.setAttribute('fill', 'none');
+              nodes = { mArea, mLine };
+              multiSeriesNodesByKey.set(gk, nodes);
+            }
+            patchStyleVar(nodes.mArea, '--sstep-series-color', seriesColor);
+            patchStyleVar(nodes.mLine, '--sstep-fit-accent', seriesColor);
+            multiAreaGroup.appendChild(nodes.mArea);
+            multiLineGroup.appendChild(nodes.mLine);
+
             const seriesLineD = buildSplinePath(seriesPts);
             const firstX = seriesPts[0].x.toFixed(1);
             const lastX = seriesPts[seriesPts.length - 1].x.toFixed(1);
+            const seriesAreaD = `${seriesLineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`;
 
-            const mArea = document.createElementNS(SVG_NS, 'path');
-            mArea.setAttribute('class', 'sstep-multi-area');
-            mArea.setAttribute(
-              'd',
-              `${seriesLineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`
-            );
-            patchStyleVar(mArea, '--sstep-series-color', seriesColor);
-            multiAreaGroup.appendChild(mArea);
-
-            const mLine = document.createElementNS(SVG_NS, 'path');
-            mLine.setAttribute('class', 'sstep-fit-line');
-            mLine.setAttribute('fill', 'none');
-            mLine.setAttribute('d', seriesLineD);
-            patchStyleVar(mLine, '--sstep-fit-accent', seriesColor);
-            multiLineGroup.appendChild(mLine);
-
-            if (seriesPts.length === 1) {
-              const pt = seriesPts[0];
-              const dot = document.createElementNS(SVG_NS, 'circle');
-              dot.setAttribute('cx', pt.x.toFixed(1));
-              dot.setAttribute('cy', pt.y.toFixed(1));
-              dot.setAttribute('r', '2.1');
-              dot.setAttribute('class', 'sstep-node-dot');
-              patchStyleVar(dot, '--dot-stroke', seriesColor);
-              dotsGroup.appendChild(dot);
-            }
+            morphItems.push({
+              key: gk,
+              nextSegs: pointsToNormalizedCubicSegs(seriesPts, BOTTOM_Y, {
+                leftX,
+                spanX,
+              }),
+              lineEl: nodes.mLine,
+              areaEl: nodes.mArea,
+              endDotEl: null,
+              endX: NaN,
+              endY: NaN,
+              finalLineD: seriesLineD,
+              finalAreaD: seriesAreaD,
+            });
           }
         }
+
+        for (const [gk, nodes] of multiSeriesNodesByKey.entries()) {
+          if (!activeGks.has(gk)) {
+            nodes.mArea.remove();
+            nodes.mLine.remove();
+          }
+        }
+
+        multiCurveMorphCtrl.morphSeries({
+          items: morphItems,
+          leftX,
+          spanX,
+          bottomY: BOTTOM_Y,
+          skipMorph: _skipMorph,
+          allowBaselineEntry: true,
+        });
       } else {
-        if (validPoints.length === 0) {
+        const nextSingleKey = isPooledAll ? '__all__' : targetKeys[0] || '__all__';
+        if (lastLineMode === 'multi') {
+          const seedSegs =
+            multiCurveMorphCtrl.getSeriesSegs(nextSingleKey) ||
+            multiCurveMorphCtrl.getFirstSegs();
+          if (seedSegs && seedSegs.length > 0) {
+            singleCurveMorphCtrl.seedSegs(seedSegs);
+          }
+        }
+        multiCurveMorphCtrl.reset();
+        lastLineMode = 'single';
+        lastSingleLineKey = nextSingleKey;
+        for (const nodes of multiSeriesNodesByKey.values()) {
+          nodes.mArea.remove();
+          nodes.mLine.remove();
+        }
+        const plotValidPoints = downsampleStepPointsForPlot(validPoints, maxPlotPoints);
+        singlePlottedPts = plotValidPoints;
+        if (plotValidPoints.length === 0) {
+          singleCurveMorphCtrl.reset();
           patchAttr(linePath, 'd', '');
           patchAttr(areaPath, 'd', '');
-        } else if (validPoints.length === 1) {
-          const yStr = validPoints[0].y.toFixed(1);
+        } else if (plotValidPoints.length === 1) {
+          const yVal = plotValidPoints[0].y;
+          const yStr = yVal.toFixed(1);
           const lineD = `M ${leftX.toFixed(1)} ${yStr} L ${rightX.toFixed(1)} ${yStr}`;
-          patchAttr(linePath, 'd', lineD);
-          patchAttr(
+          const areaD = `${lineD} L ${rightX.toFixed(1)} ${BOTTOM_Y} L ${leftX.toFixed(1)} ${BOTTOM_Y} Z`;
+          const flatPts = [
+            { x: leftX, y: yVal },
+            { x: rightX, y: yVal },
+          ];
+          singleCurveMorphCtrl.morphTo({
+            nextSegs: pointsToNormalizedCubicSegs(flatPts, BOTTOM_Y, { leftX, spanX }),
+            leftX,
+            spanX,
+            bottomY: BOTTOM_Y,
+            linePath,
             areaPath,
-            'd',
-            `${lineD} L ${rightX.toFixed(1)} ${BOTTOM_Y} L ${leftX.toFixed(1)} ${BOTTOM_Y} Z`
-          );
+            finalLineD: lineD,
+            finalAreaD: areaD,
+            skipMorph: _skipMorph,
+          });
         } else {
-          const lineD = buildSplinePath(validPoints);
-          const firstX = validPoints[0].x.toFixed(1);
-          const lastX = validPoints[validPoints.length - 1].x.toFixed(1);
-          patchAttr(linePath, 'd', lineD);
-          patchAttr(areaPath, 'd', `${lineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`);
+          const lineD = buildSplinePath(plotValidPoints);
+          const firstX = plotValidPoints[0].x.toFixed(1);
+          const lastX = plotValidPoints[plotValidPoints.length - 1].x.toFixed(1);
+          const areaD = `${lineD} L ${lastX} ${BOTTOM_Y} L ${firstX} ${BOTTOM_Y} Z`;
+          singleCurveMorphCtrl.morphTo({
+            nextSegs: pointsToNormalizedCubicSegs(plotValidPoints, BOTTOM_Y, { leftX, spanX }),
+            leftX,
+            spanX,
+            bottomY: BOTTOM_Y,
+            linePath,
+            areaPath,
+            finalLineD: lineD,
+            finalAreaD: areaD,
+            skipMorph: _skipMorph,
+          });
         }
       }
 
-      const anomalyTicks = [];
+      const clusteredAnomalies = [];
       for (const pt of points) {
         if (!pt.valid || !pt.anomalySummary) continue;
-        anomalyTicks.push(pt);
+        const curvePts = isMultiCompare
+          ? plottedSeriesByKey.get(pt.modelGroupKey)
+          : singlePlottedPts;
+        if (!curvePts || curvePts.length === 0) continue;
+        const onCurveY =
+          curvePts.length === 1 ? curvePts[0].y : evalStepSplineYAtX(curvePts, pt.x);
+        const prevCluster = clusteredAnomalies[clusteredAnomalies.length - 1];
+        if (
+          prevCluster &&
+          (!isMultiCompare || prevCluster.modelGroupKey === pt.modelGroupKey) &&
+          Math.abs(pt.x - prevCluster.x) < 3.0
+        ) {
+          if (pt.anomalySeverity === 'danger' && prevCluster.severity !== 'danger') {
+            prevCluster.key = `${pt.stepTag}:${pt.modelGroupKey}`;
+            prevCluster.x = pt.x;
+            prevCluster.y = onCurveY;
+            prevCluster.severity = 'danger';
+          }
+          continue;
+        }
+        clusteredAnomalies.push({
+          key: `${pt.stepTag}:${pt.modelGroupKey}`,
+          modelGroupKey: pt.modelGroupKey,
+          x: pt.x,
+          y: onCurveY,
+          severity: pt.anomalySeverity === 'danger' ? 'danger' : 'warn',
+        });
       }
-      anomalyTicks.sort((a, b) =>
-        a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
+      clusteredAnomalies.sort((a, b) =>
+        a.severity === 'danger' ? 1 : b.severity === 'danger' ? -1 : 0
       );
-      const tickTopY = (BOTTOM_Y - 5).toFixed(1);
-      const tickBotY = BOTTOM_Y.toFixed(1);
-      for (const pt of anomalyTicks) {
-        const xStr = pt.x.toFixed(1);
-        const aTick = document.createElementNS(SVG_NS, 'line');
-        aTick.setAttribute('x1', xStr);
-        aTick.setAttribute('x2', xStr);
-        aTick.setAttribute('y1', tickTopY);
-        aTick.setAttribute('y2', tickBotY);
-        aTick.setAttribute(
+
+      const activeAnomalyKeys = new Set();
+      for (const item of clusteredAnomalies) {
+        activeAnomalyKeys.add(item.key);
+        let dotEl = anomalyDotElsByKey.get(item.key);
+        if (!dotEl) {
+          dotEl = document.createElementNS(SVG_NS, 'circle');
+          dotEl.setAttribute('r', '2.1');
+          anomalyDotElsByKey.set(item.key, dotEl);
+        }
+        patchAttr(dotEl, 'cx', item.x.toFixed(1));
+        patchAttr(dotEl, 'cy', item.y.toFixed(1));
+        patchAttr(
+          dotEl,
           'class',
-          `sstep-anomaly-dot sstep-anomaly-tick${pt.anomalySeverity === 'danger' ? ' is-danger' : ''}`
+          `sstep-anomaly-dot${item.severity === 'danger' ? ' is-danger' : ''}`
         );
-        anomalyDotsGroup.appendChild(aTick);
+        anomalyDotsGroup.appendChild(dotEl);
+      }
+      for (const [k, el] of anomalyDotElsByKey.entries()) {
+        if (!activeAnomalyKeys.has(k)) {
+          el.remove();
+          anomalyDotElsByKey.delete(k);
+        }
       }
 
-      const tickIndices = computeStepTickIndices(points.length);
+      const tickIndices = computeStepTickIndices(currentPoints.length);
       while (xAxisEl.firstChild) xAxisEl.removeChild(xAxisEl.firstChild);
       tickElsByIdx = new Map();
       for (let i = 0; i < tickIndices.length; i++) {
         const tIdx = tickIndices[i];
-        const pt = points[tIdx];
+        const pt = currentPoints[tIdx];
         if (!pt) continue;
         const isFirst = !isSingle && i === 0;
         const isLast = !isSingle && i === tickIndices.length - 1;
@@ -16141,7 +19005,10 @@ function createSessionLineChart() {
           title: `${pt.stepTag} · ${pt.modelText}`,
         });
         patchStyleVar(tickEl, '--tick-x', `${pct.toFixed(2)}%`);
-        tickEl.onclick = () => showHoverAt(tIdx);
+        tickEl.onclick = () => {
+          lastPointer = null;
+          showHoverAt(tIdx, null);
+        };
         xAxisEl.appendChild(tickEl);
         tickElsByIdx.set(tIdx, tickEl);
       }
@@ -16194,7 +19061,7 @@ function createSessionLineChart() {
       }
     }
 
-    if (peakIdx >= 0 && validPoints.length > 0) {
+    if (peakIdx >= 0 && validPoints.length > 0 && maxVal > 0) {
       const peakPt = points[peakIdx];
       patchText(
         peakPill,
@@ -16206,15 +19073,16 @@ function createSessionLineChart() {
       patchStyleVar(peakPill, '--sstep-accent', isMultiCompare ? peakPt.dotColor : accentColor);
       const pctLeft = Math.max(14, Math.min(86, (peakPt.x / viewW) * 100));
       patchStyleVar(peakPill, '--peak-x', `${pctLeft.toFixed(1)}%`);
+      peakReadyArmer.arm();
       if (hoveredIdx < 0) patchAttr(peakPill, 'hidden', false);
     } else {
       patchAttr(peakPill, 'hidden', true);
     }
 
-    if (hoveredIdx >= points.length) {
+    if (hoveredIdx >= currentPoints.length) {
       clearHover();
     } else if (hoveredIdx >= 0) {
-      showHoverAt(hoveredIdx);
+      showHoverAt(hoveredIdx, lastPointer, { forceRefresh: true });
     }
 
     let summaryBadge = t('chart.step.stepsCount', { count: matchedSteps.length });
@@ -16387,16 +19255,30 @@ function createModelFitChart() {
     fitStatsEl,
   ]);
 
-  const plotStage = h('div', { className: 'sstep-plot-stage' }, [emptyHintEl, tooltipEl, svg]);
-  const rootEl = h('div', { className: 'sstep-chart-wrap' }, [plotStage, fitLegendFoot]);
+  const plotStage = h('div', { className: 'sstep-plot-stage' }, [emptyHintEl, svg]);
+  const rootEl = h('div', { className: 'sstep-chart-wrap' }, [plotStage, fitLegendFoot, tooltipEl]);
 
   let currentSamples = [];
   let currentMetric = 'tps';
   let hoveredIdx = -1;
+  let lastFitPointer = null;
   let lastSig = '';
   let lastUpdateParams = null;
   let fitCacheMetric = '';
   const fitCache = new Map();
+  const multiFitNodesByKey = new Map();
+
+  const fitMorphCtrl = createFitGridMorphController();
+  let lastFitMode = '';
+  let lastSingleFitKey = '';
+  const fitTooltipCtrl = createFloatingChartTooltipController({
+    containerEl: rootEl,
+    tooltipEl,
+    defaultTipWidth: 216,
+    defaultTipHeight: 82,
+    defaultViewWidth: DEFAULT_VIEW_W,
+    defaultViewHeight: VIEW_H,
+  });
 
   function reusePublicationFit(key, xs, ys, maxVal, isMultiCompare) {
     const previous = fitCache.get(key);
@@ -16431,94 +19313,100 @@ function createModelFitChart() {
     return false;
   }
 
-  function showHoverAt(idx) {
+  function showHoverAt(idx, pointer = null, { forceRefresh = false } = {}) {
     if (idx < 0 || idx >= currentSamples.length) {
       clearHover();
       return;
     }
-    hoveredIdx = idx;
-    const sp = currentSamples[idx];
-    patchAttr(hoverLine, 'hidden', false);
-    patchAttr(hoverLine, 'x1', sp.x.toFixed(1));
-    patchAttr(hoverLine, 'x2', sp.x.toFixed(1));
-
-    patchAttr(hoverFitDot, 'hidden', false);
-    patchAttr(hoverFitDot, 'cx', sp.x.toFixed(1));
-    patchAttr(hoverFitDot, 'cy', sp.fitY.toFixed(1));
-    patchStyleVar(hoverFitDot, '--hover-dot-color', sp.seriesColor || 'var(--accent-primary)');
-
-    patchAttr(hoverRawDot, 'hidden', false);
-    patchAttr(hoverRawDot, 'cx', sp.x.toFixed(1));
-    patchAttr(hoverRawDot, 'cy', sp.rawY.toFixed(1));
-    patchClasses(hoverRawDot, {
-      'is-anomaly': Boolean(sp.anomalySummary),
-      'is-danger': Boolean(sp.anomalySummary && sp.anomalySeverity === 'danger'),
-    });
-
     const wasHidden = tooltipEl.hasAttribute('hidden');
-    patchAttr(tooltipEl, 'hidden', false);
-    patchText(tipHeadLeft, sp.stepTag);
-    patchText(tipHeadRight, sp.modelText);
-    patchText(
-      tipMainLeft,
-      t('chart.fit.tipFit', { val: formatChartMetricValue(currentMetric, sp.fitVal) })
-    );
-    patchText(
-      tipMainRight,
-      t('chart.fit.tipObs', { val: formatChartMetricValue(currentMetric, sp.rawVal) })
-    );
-
-    patchAttr(tipSub, 'hidden', false);
-    if (sp.compareHint) {
-      patchText(tipSub, sp.compareHint);
-    } else if (currentSamples.length >= 3 && sp.ciHalf > 0) {
-      patchText(
-        tipSub,
-        `95% CI [${formatChartMetricCompact(currentMetric, sp.ciLow)}, ${formatChartMetricCompact(currentMetric, sp.ciHigh)}]`
-      );
-    } else {
-      const ctxTok = Math.max(0, Number(sp.st?.contextTokens || 0));
-      patchText(
-        tipSub,
-        t('chart.step.ctxAndCache', {
-          ctxTok: formatTokens(ctxTok),
-          pct: Number(sp.st?.cacheHitPct ?? 0),
-        })
-      );
+    const changedIdx = forceRefresh || wasHidden || idx !== hoveredIdx;
+    hoveredIdx = idx;
+    if (pointer) {
+      lastFitPointer = pointer;
     }
-    patchAttr(tipAnomaly, 'hidden', !sp.anomalySummary);
-    if (sp.anomalySummary) {
-      patchText(tipAnomaly, sp.anomalySummary);
-      patchClasses(tipAnomaly, { 'is-danger': sp.anomalySeverity === 'danger' });
-    }
+    const sp = currentSamples[idx];
 
-    const rawPct = (sp.x / viewW) * 100;
-    const clampedPct = Math.max(1, Math.min(99, rawPct));
-    patchStyleVar(tooltipEl, '--tip-x', `${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-shift', `-${clampedPct.toFixed(1)}%`);
-    patchStyleVar(tooltipEl, '--tip-y', '0px');
-    if (wasHidden) {
-      patchClasses(tooltipEl, { 'is-tracking': false });
-      void tooltipEl.offsetWidth;
-      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-        window.requestAnimationFrame(() => {
-          if (!tooltipEl.hasAttribute('hidden')) {
-            patchClasses(tooltipEl, { 'is-tracking': true });
-          }
-        });
+    if (changedIdx) {
+      patchAttr(hoverLine, 'hidden', false);
+      patchAttr(hoverLine, 'x1', sp.x.toFixed(1));
+      patchAttr(hoverLine, 'x2', sp.x.toFixed(1));
+
+      patchAttr(hoverFitDot, 'hidden', false);
+      patchAttr(hoverFitDot, 'cx', sp.x.toFixed(1));
+      patchAttr(hoverFitDot, 'cy', sp.fitY.toFixed(1));
+      patchStyleVar(hoverFitDot, '--hover-dot-color', sp.seriesColor || 'var(--accent-primary)');
+
+      patchAttr(hoverRawDot, 'hidden', false);
+      patchAttr(hoverRawDot, 'cx', sp.x.toFixed(1));
+      patchAttr(hoverRawDot, 'cy', sp.rawY.toFixed(1));
+      patchClasses(hoverRawDot, {
+        'is-anomaly': Boolean(sp.anomalySummary),
+        'is-danger': Boolean(sp.anomalySummary && sp.anomalySeverity === 'danger'),
+      });
+
+      patchText(tipHeadLeft, sp.stepTag);
+      patchText(tipHeadRight, sp.modelText);
+      patchText(
+        tipMainLeft,
+        t('chart.fit.tipFit', { val: formatChartMetricValue(currentMetric, sp.fitVal) })
+      );
+      patchText(
+        tipMainRight,
+        t('chart.fit.tipObs', { val: formatChartMetricValue(currentMetric, sp.rawVal) })
+      );
+
+      patchAttr(tipSub, 'hidden', false);
+      if (sp.compareHint) {
+        patchText(tipSub, sp.compareHint);
+      } else if (currentSamples.length >= 3 && sp.ciHalf > 0) {
+        patchText(
+          tipSub,
+          `95% CI [${formatChartMetricCompact(currentMetric, sp.ciLow)}, ${formatChartMetricCompact(currentMetric, sp.ciHigh)}]`
+        );
       } else {
-        patchClasses(tooltipEl, { 'is-tracking': true });
+        const ctxTok = Math.max(0, Number(sp.st?.contextTokens || 0));
+        patchText(
+          tipSub,
+          t('chart.step.ctxAndCache', {
+            ctxTok: formatTokens(ctxTok),
+            pct: Number(sp.st?.cacheHitPct ?? 0),
+          })
+        );
+      }
+      patchAttr(tipAnomaly, 'hidden', !sp.anomalySummary);
+      if (sp.anomalySummary) {
+        patchText(tipAnomaly, sp.anomalySummary);
+        patchClasses(tipAnomaly, { 'is-danger': sp.anomalySeverity === 'danger' });
       }
     }
+
+    const wrapRect = fitTooltipCtrl.getWrapRect();
+    const wrapW =
+      wrapRect && wrapRect.width > 0
+        ? wrapRect.width
+        : Number(rootEl.clientWidth || viewW || DEFAULT_VIEW_W);
+    const fallbackX = (sp.x / Math.max(1, viewW)) * wrapW;
+    const fallbackY = sp.fitY + 4;
+    fitTooltipCtrl.show({
+      fallbackX,
+      fallbackY,
+      pointer: pointer || lastFitPointer,
+      trackedDots: [hoverFitDot, hoverRawDot],
+      viewWidth: viewW,
+      viewHeight: VIEW_H,
+      sizeKey: sp.anomalySummary ? 'fit:a' : 'fit:0',
+    });
   }
 
   function clearHover() {
     hoveredIdx = -1;
+    lastFitPointer = null;
+    fitTooltipCtrl.hide();
     patchAttr(hoverLine, 'hidden', true);
     patchAttr(hoverFitDot, 'hidden', true);
     patchAttr(hoverRawDot, 'hidden', true);
-    patchAttr(tooltipEl, 'hidden', true);
-    patchClasses(tooltipEl, { 'is-tracking': false });
+    patchClasses(hoverFitDot, { 'is-tracking': false });
+    patchClasses(hoverRawDot, { 'is-tracking': false });
   }
 
   let cachedFitSvgRect = null;
@@ -16547,10 +19435,15 @@ function createModelFitChart() {
     ) {
       bestIdx = lo - 1;
     }
-    showHoverAt(bestIdx);
+    const pointer =
+      Number.isFinite(Number(e?.clientX)) && Number.isFinite(Number(e?.clientY))
+        ? { clientX: Number(e.clientX), clientY: Number(e.clientY) }
+        : null;
+    showHoverAt(bestIdx, pointer);
   });
   plotStage.addEventListener('mouseleave', () => {
     cachedFitSvgRect = null;
+    fitTooltipCtrl.invalidateRects();
     clearHover();
   });
 
@@ -16559,9 +19452,10 @@ function createModelFitChart() {
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(() => {
       cachedFitSvgRect = null;
+      fitTooltipCtrl.invalidateRects();
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
-        update(lastUpdateParams);
+        update({ ...lastUpdateParams, _skipMorph: true });
       }
     });
     resizeObs.observe(plotStage);
@@ -16569,13 +19463,15 @@ function createModelFitChart() {
     onWinResize = () => {
       if (syncViewWidth() && lastUpdateParams) {
         lastSig = '';
-        update(lastUpdateParams);
+        update({ ...lastUpdateParams, _skipMorph: true });
       }
     };
     window.addEventListener('resize', onWinResize);
   }
 
   function destroy() {
+    fitMorphCtrl.cancel();
+    fitTooltipCtrl.destroy();
     resizeObs?.disconnect();
     resizeObs = null;
     if (onWinResize && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
@@ -16721,6 +19617,7 @@ function createModelFitChart() {
     metric = 'tps',
     showAgentPrefix = false,
     displaySettings = {},
+    _skipMorph = false,
   } = {}) {
     lastUpdateParams = {
       steps,
@@ -16807,13 +19704,18 @@ function createModelFitChart() {
 
     if (matchedItems.length === 0) {
       fitCache.clear();
+      fitMorphCtrl.reset();
+      lastFitMode = '';
+      lastSingleFitKey = '';
       currentSamples = [];
       lastSig = 'empty';
       patchAttr(ciBandPath, 'd', '');
       patchAttr(fitPath, 'd', '');
       patchAttr(olsLine, 'hidden', true);
-      while (multiBandGroup.firstChild) multiBandGroup.removeChild(multiBandGroup.firstChild);
-      while (multiCurveGroup.firstChild) multiCurveGroup.removeChild(multiCurveGroup.firstChild);
+      for (const nodes of multiFitNodesByKey.values()) {
+        nodes.bandEl.remove();
+        nodes.curveEl.remove();
+      }
       while (gridGroup.firstChild) gridGroup.removeChild(gridGroup.firstChild);
       while (axesGroup.firstChild) axesGroup.removeChild(axesGroup.firstChild);
       while (scatterGroup.firstChild) scatterGroup.removeChild(scatterGroup.firstChild);
@@ -16964,9 +19866,7 @@ function createModelFitChart() {
           showAgentPrefix,
         });
 
-        while (multiBandGroup.firstChild) multiBandGroup.removeChild(multiBandGroup.firstChild);
         while (scatterGroup.firstChild) scatterGroup.removeChild(scatterGroup.firstChild);
-        while (multiCurveGroup.firstChild) multiCurveGroup.removeChild(multiCurveGroup.firstChild);
 
         const dotRadius =
           combinedSamples.length > 80 ? '1.8' : combinedSamples.length > 36 ? '2.1' : '2.4';
@@ -16976,6 +19876,8 @@ function createModelFitChart() {
             ? document.createDocumentFragment()
             : scatterGroup;
         const anomalyOverlayDots = [];
+        const activeFitKeys = new Set();
+        const fitMorphItems = [];
 
         for (const s of seriesList) {
           const binCounts = dedupOverdraw ? new Map() : null;
@@ -16999,18 +19901,43 @@ function createModelFitChart() {
             scatterTarget.appendChild(dot);
           }
 
+          activeFitKeys.add(s.key);
+          let nodes = multiFitNodesByKey.get(s.key);
+          if (!nodes) {
+            const bandEl = document.createElementNS(SVG_NS, 'path');
+            bandEl.setAttribute('class', 'sstep-ci-band is-multi');
+            const curveEl = document.createElementNS(SVG_NS, 'path');
+            curveEl.setAttribute('class', 'sstep-fit-line');
+            curveEl.setAttribute('fill', 'none');
+            nodes = { bandEl, curveEl };
+            multiFitNodesByKey.set(s.key, nodes);
+          }
+          patchStyleVar(nodes.bandEl, '--sstep-fit-accent', s.colorVar);
+          patchStyleVar(nodes.curveEl, '--sstep-fit-accent', s.colorVar);
+
           if (s.samples.length === 1) {
             const sp = s.samples[0];
             const segHalf = Math.min(12, plotSpanX * 0.04);
-            const x1 = Math.max(plotLeft, sp.x - segHalf).toFixed(1);
-            const x2 = Math.min(plotRight, sp.x + segHalf).toFixed(1);
+            const x1 = Math.max(plotLeft, sp.x - segHalf);
+            const x2 = Math.min(plotRight, sp.x + segHalf);
             const yStr = sp.fitY.toFixed(1);
-            const lineEl = document.createElementNS(SVG_NS, 'path');
-            lineEl.setAttribute('class', 'sstep-fit-line');
-            lineEl.setAttribute('fill', 'none');
-            lineEl.setAttribute('d', `M ${x1} ${yStr} L ${x2} ${yStr}`);
-            patchStyleVar(lineEl, '--sstep-fit-accent', s.colorVar);
-            multiCurveGroup.appendChild(lineEl);
+            const flatCurveD = `M ${x1.toFixed(1)} ${yStr} L ${x2.toFixed(1)} ${yStr}`;
+            nodes.bandEl.setAttribute('d', '');
+            nodes.bandEl.remove();
+            multiCurveGroup.appendChild(nodes.curveEl);
+            fitMorphItems.push({
+              key: `multi:${s.key}`,
+              gridPts: [
+                { x: x1, fitY: sp.fitY, lowY: sp.fitY, highY: sp.fitY },
+                { x: x2, fitY: sp.fitY, lowY: sp.fitY, highY: sp.fitY },
+              ],
+              curveEl: nodes.curveEl,
+              bandEl: null,
+              olsEl: null,
+              olsCoords: null,
+              finalCurveD: flatCurveD,
+              finalBandD: '',
+            });
           } else {
             const gridPts = s.pubFit.grid.map((g) => ({
               x: mapX(g.x),
@@ -17019,8 +19946,9 @@ function createModelFitChart() {
               highY: mapY(g.ciHigh),
             }));
 
+            let bandD = '';
             if (s.samples.length >= 3) {
-              let bandD = `M ${gridPts[0].x.toFixed(1)} ${gridPts[0].highY.toFixed(1)}`;
+              bandD = `M ${gridPts[0].x.toFixed(1)} ${gridPts[0].highY.toFixed(1)}`;
               for (let i = 1; i < gridPts.length; i++) {
                 bandD += ` L ${gridPts[i].x.toFixed(1)} ${gridPts[i].highY.toFixed(1)}`;
               }
@@ -17028,24 +19956,53 @@ function createModelFitChart() {
                 bandD += ` L ${gridPts[i].x.toFixed(1)} ${gridPts[i].lowY.toFixed(1)}`;
               }
               bandD += ' Z';
-              const bandEl = document.createElementNS(SVG_NS, 'path');
-              bandEl.setAttribute('class', 'sstep-ci-band is-multi');
-              bandEl.setAttribute('d', bandD);
-              patchStyleVar(bandEl, '--sstep-fit-accent', s.colorVar);
-              multiBandGroup.appendChild(bandEl);
+              multiBandGroup.appendChild(nodes.bandEl);
+            } else {
+              nodes.bandEl.setAttribute('d', '');
+              nodes.bandEl.remove();
             }
 
-            const curveEl = document.createElementNS(SVG_NS, 'path');
-            curveEl.setAttribute('class', 'sstep-fit-line');
-            curveEl.setAttribute('fill', 'none');
-            curveEl.setAttribute(
-              'd',
-              buildPolylinePath(gridPts.map((p) => ({ x: p.x, y: p.fitY })))
-            );
-            patchStyleVar(curveEl, '--sstep-fit-accent', s.colorVar);
-            multiCurveGroup.appendChild(curveEl);
+            const curveD = buildPolylinePath(gridPts.map((p) => ({ x: p.x, y: p.fitY })));
+            multiCurveGroup.appendChild(nodes.curveEl);
+            fitMorphItems.push({
+              key: `multi:${s.key}`,
+              gridPts,
+              curveEl: nodes.curveEl,
+              bandEl: bandD ? nodes.bandEl : null,
+              olsEl: null,
+              olsCoords: null,
+              finalCurveD: curveD,
+              finalBandD: bandD,
+            });
           }
         }
+
+        for (const [k, nodes] of multiFitNodesByKey.entries()) {
+          if (!activeFitKeys.has(k)) {
+            nodes.bandEl.remove();
+            nodes.curveEl.remove();
+          }
+        }
+        if (lastFitMode === 'single') {
+          const prevSingleGrid = fitMorphCtrl.getGrid('single');
+          if (prevSingleGrid && prevSingleGrid.length > 0) {
+            if (lastSingleFitKey && lastSingleFitKey !== '__all__') {
+              fitMorphCtrl.seedGrid(`multi:${lastSingleFitKey}`, prevSingleGrid);
+            } else {
+              for (const s of seriesList) {
+                fitMorphCtrl.seedGrid(`multi:${s.key}`, prevSingleGrid);
+              }
+            }
+          }
+        }
+        lastFitMode = 'multi';
+        lastSingleFitKey = '';
+        fitMorphCtrl.morphFits({
+          items: fitMorphItems,
+          skipMorph: _skipMorph,
+          allowBaselineEntry: true,
+          bottomY: BOTTOM_Y,
+        });
         anomalyOverlayDots.sort((a, b) =>
           a.anomalySeverity === 'danger' ? 1 : b.anomalySeverity === 'danger' ? -1 : 0
         );
@@ -17096,7 +20053,7 @@ function createModelFitChart() {
       if (hoveredIdx >= currentSamples.length) {
         clearHover();
       } else if (hoveredIdx >= 0) {
-        showHoverAt(hoveredIdx);
+        showHoverAt(hoveredIdx, lastFitPointer, { forceRefresh: true });
       }
 
       return {
@@ -17109,8 +20066,20 @@ function createModelFitChart() {
     }
 
     // 分支 B：单模型或整体合并单曲线模式
-    while (multiBandGroup.firstChild) multiBandGroup.removeChild(multiBandGroup.firstChild);
-    while (multiCurveGroup.firstChild) multiCurveGroup.removeChild(multiCurveGroup.firstChild);
+    const nextSingleFitKey = isPooledAll ? '__all__' : targetKeys[0] || '__all__';
+    if (lastFitMode === 'multi') {
+      const seedGrid =
+        fitMorphCtrl.getGrid(`multi:${nextSingleFitKey}`) || fitMorphCtrl.getFirstGrid();
+      if (seedGrid && seedGrid.length > 0) {
+        fitMorphCtrl.seedGrid('single', seedGrid);
+      }
+    }
+    lastFitMode = 'single';
+    lastSingleFitKey = nextSingleFitKey;
+    for (const nodes of multiFitNodesByKey.values()) {
+      nodes.bandEl.remove();
+      nodes.curveEl.remove();
+    }
     patchAttr(singleLegendEl, 'hidden', false);
     patchAttr(multiLegendEl, 'hidden', true);
 
@@ -17241,12 +20210,34 @@ function createModelFitChart() {
         scatterGroup.appendChild(scatterTarget);
       }
 
-      // 3. 绘制 95% CI 置信带闭合多边形与回归拟合曲线（绝不向底部 X 轴填充面积！）
+      // 3. 绘制 95% CI 置信带闭合多边形和回归拟合曲线（支持 240ms 平滑连续形变，绝不向底部 X 轴填充面积）
       if (isSingle) {
-        const yStr = samples[0].fitY.toFixed(1);
-        patchAttr(fitPath, 'd', `M ${plotLeft.toFixed(1)} ${yStr} L ${plotRight.toFixed(1)} ${yStr}`);
+        const yVal = samples[0].fitY;
+        const yStr = yVal.toFixed(1);
+        const flatCurveD = `M ${plotLeft.toFixed(1)} ${yStr} L ${plotRight.toFixed(1)} ${yStr}`;
         patchAttr(ciBandPath, 'd', '');
         patchAttr(olsLine, 'hidden', true);
+        const flatGrid = Array.from({ length: 64 }, (_, gi) => ({
+          x: plotLeft + (gi / 63) * plotSpanX,
+          fitY: yVal,
+          lowY: yVal,
+          highY: yVal,
+        }));
+        fitMorphCtrl.morphFits({
+          items: [
+            {
+              key: 'single',
+              gridPts: flatGrid,
+              curveEl: fitPath,
+              bandEl: null,
+              olsEl: null,
+              olsCoords: null,
+              finalCurveD: flatCurveD,
+              finalBandD: '',
+            },
+          ],
+          skipMorph: _skipMorph,
+        });
       } else {
         const gridPts = pubFit.grid.map((g) => ({
           x: mapX(g.x),
@@ -17255,14 +20246,10 @@ function createModelFitChart() {
           highY: mapY(g.ciHigh),
         }));
 
-        patchAttr(
-          fitPath,
-          'd',
-          buildPolylinePath(gridPts.map((p) => ({ x: p.x, y: p.fitY })))
-        );
-
+        const curveD = buildPolylinePath(gridPts.map((p) => ({ x: p.x, y: p.fitY })));
+        let bandD = '';
         if (samples.length >= 3) {
-          let bandD = `M ${gridPts[0].x.toFixed(1)} ${gridPts[0].highY.toFixed(1)}`;
+          bandD = `M ${gridPts[0].x.toFixed(1)} ${gridPts[0].highY.toFixed(1)}`;
           for (let i = 1; i < gridPts.length; i++) {
             bandD += ` L ${gridPts[i].x.toFixed(1)} ${gridPts[i].highY.toFixed(1)}`;
           }
@@ -17270,21 +20257,39 @@ function createModelFitChart() {
             bandD += ` L ${gridPts[i].x.toFixed(1)} ${gridPts[i].lowY.toFixed(1)}`;
           }
           bandD += ' Z';
-          patchAttr(ciBandPath, 'd', bandD);
         } else {
           patchAttr(ciBandPath, 'd', '');
         }
 
         const showOlsRef = samples.length >= 6;
         patchAttr(olsLine, 'hidden', !showOlsRef);
+        let olsCoords = null;
         if (showOlsRef) {
           const olsStartVal = clampValue(pubFit.intercept + pubFit.slope * xMin, minBound, maxBound);
           const olsEndVal = clampValue(pubFit.intercept + pubFit.slope * xMax, minBound, maxBound);
-          patchAttr(olsLine, 'x1', plotLeft.toFixed(1));
-          patchAttr(olsLine, 'y1', mapY(olsStartVal).toFixed(1));
-          patchAttr(olsLine, 'x2', plotRight.toFixed(1));
-          patchAttr(olsLine, 'y2', mapY(olsEndVal).toFixed(1));
+          olsCoords = {
+            x1: plotLeft,
+            y1: mapY(olsStartVal),
+            x2: plotRight,
+            y2: mapY(olsEndVal),
+          };
         }
+
+        fitMorphCtrl.morphFits({
+          items: [
+            {
+              key: 'single',
+              gridPts,
+              curveEl: fitPath,
+              bandEl: bandD ? ciBandPath : null,
+              olsEl: showOlsRef ? olsLine : null,
+              olsCoords,
+              finalCurveD: curveD,
+              finalBandD: bandD,
+            },
+          ],
+          skipMorph: _skipMorph,
+        });
       }
     }
 
@@ -17313,7 +20318,7 @@ function createModelFitChart() {
     if (hoveredIdx >= samples.length) {
       clearHover();
     } else if (hoveredIdx >= 0) {
-      showHoverAt(hoveredIdx);
+      showHoverAt(hoveredIdx, lastFitPointer, { forceRefresh: true });
     }
 
     return { sampleCount: samples.length, summaryBadge };
@@ -17321,7 +20326,7 @@ function createModelFitChart() {
 
   return { el: rootEl, update, destroy };
 }
-return { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, computeLinearFit, computePublicationFit, createSessionLineChart, createModelFitChart };
+return { createSessionLineChart, createModelFitChart };
 })();
 
 // --- src/registries/metricRegistry.js ---
@@ -18881,21 +21886,24 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
 
   patchText(refs.title5h, `5h (${poolLabel})`);
   const c5h = poolData?.cycle5h;
+  const est = poolData?.rateEstimate;
   if (!isPending && has5h && c5h && (c5h.tokens != null || c5h.costUsd != null)) {
     const tok5h = formatTokens(c5h.tokens || 0);
     const cost5h = formatUsd(c5h.costUsd || 0);
     const calls5h = Number(c5h.calls || 0);
+    const full5hRef = formatPoolFullCapRef(est?.eqFull5hUsd, est?.eqFull5hTokens);
+    const baseTip5h = t('quota.cycle5hTitle', {
+      pool: poolLabel,
+      tok: tok5h,
+      cost: cost5h,
+      calls: calls5h,
+    });
     refs.usage5h.hidden = false;
     patchText(refs.usage5h, `· ${tok5h} (${cost5h})`);
     patchAttr(
       refs.left5h,
       'title',
-      t('quota.cycle5hTitle', {
-        pool: poolLabel,
-        tok: tok5h,
-        cost: cost5h,
-        calls: calls5h,
-      })
+      full5hRef ? `${baseTip5h} · ${t('quota.cycleFullSuffix', { full: full5hRef })}` : baseTip5h
     );
   } else {
     refs.usage5h.hidden = true;
@@ -18928,19 +21936,23 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
     const tokWk = formatTokens(cWk.tokens || 0);
     const costWk = formatUsd(cWk.costUsd || 0);
     const callsWk = Number(cWk.calls || 0);
+    const fullWkRef = !useCustomWeekly
+      ? formatPoolFullCapRef(est?.eqFullWeeklyUsd, est?.eqFullWeeklyTokens)
+      : '';
+    const baseTipWk = useCustomWeekly
+      ? t('quota.cycleWkCustomTitle', { tok: tokWk, cost: costWk, calls: callsWk })
+      : t('quota.cycleWkPoolTitle', {
+          pool: poolLabel,
+          tok: tokWk,
+          cost: costWk,
+          calls: callsWk,
+        });
     refs.usageWk.hidden = false;
     patchText(refs.usageWk, `· ${tokWk} (${costWk})`);
     patchAttr(
       refs.leftWk,
       'title',
-      useCustomWeekly
-        ? t('quota.cycleWkCustomTitle', { tok: tokWk, cost: costWk, calls: callsWk })
-        : t('quota.cycleWkPoolTitle', {
-            pool: poolLabel,
-            tok: tokWk,
-            cost: costWk,
-            calls: callsWk,
-          })
+      fullWkRef ? `${baseTipWk} · ${t('quota.cycleFullSuffix', { full: fullWkRef })}` : baseTipWk
     );
   } else {
     refs.usageWk.hidden = true;
@@ -18965,8 +21977,9 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
 function quotaPoolRowSig(item, idx) {
   const c5h = item.poolData?.cycle5h;
   const cWk = item.poolData?.cycleWeekly;
+  const est = item.poolData?.rateEstimate;
   const fw = item.fallbackWeekly;
-  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
+  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${est?.eqFull5hUsd}:${est?.eqFull5hTokens}:${est?.eqFullWeeklyUsd}:${est?.eqFullWeeklyTokens}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
 }
 
 /**
@@ -19042,6 +22055,17 @@ function formatRateEqUsd(val) {
   return `$${Number(num.toFixed(1))}`;
 }
 
+function formatPoolFullCapRef(eqUsd, eqTok) {
+  const usdNum = Number(eqUsd);
+  if (!Number.isFinite(usdNum) || usdNum <= 0) return '';
+  const usdStr = formatRateEqUsd(usdNum);
+  const tokNum = Number(eqTok);
+  if (Number.isFinite(tokNum) && tokNum > 0) {
+    return `${usdStr} (${formatTokens(tokNum)})`;
+  }
+  return usdStr;
+}
+
 function formatRatePerUsdValue(rate) {
   const num = Number(rate);
   if (!Number.isFinite(num) || num <= 0) return '--';
@@ -19063,7 +22087,11 @@ function createRateModelCard({
   rateWeeklyPctPerUsd = null,
   eqFull5hUsd = null,
   eqFullWeeklyUsd = null,
+  eqFull5hTokens = null,
+  eqFullWeeklyTokens = null,
   samples = 0,
+  source = null,
+  isPreliminary = false,
 }) {
   const leftNodes = [
     h('span', {
@@ -19092,32 +22120,50 @@ function createRateModelCard({
       })
     );
   }
-  if (Number(samples) > 0) {
+  if (isPreliminary) {
+    subParts.push(
+      source === 'anchor_slope' ? t('quota.ratePopPrelimSlope') : t('quota.ratePopPrelimCycle')
+    );
+  } else if (Number(samples) > 0) {
     subParts.push(t('quota.ratePopSamples', { n: Number(samples) }));
   }
 
   const eqCells = [];
   if (eqFull5hUsd != null) {
-    eqCells.push(
-      h('div', { className: 'quota-rate-eq-cell' }, [
-        h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEq5hLabel') }),
+    const cell5hChildren = [
+      h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEq5hLabel') }),
+      h('span', {
+        className: 'quota-rate-eq-v text-mono',
+        text: `≈ ${formatRateEqUsd(eqFull5hUsd)}`,
+      }),
+    ];
+    if (Number.isFinite(Number(eqFull5hTokens)) && Number(eqFull5hTokens) > 0) {
+      cell5hChildren.push(
         h('span', {
-          className: 'quota-rate-eq-v text-mono',
-          text: `≈ ${formatRateEqUsd(eqFull5hUsd)}`,
-        }),
-      ])
-    );
+          className: 'quota-rate-eq-tok text-mono',
+          text: `· ${formatTokens(Number(eqFull5hTokens))}`,
+        })
+      );
+    }
+    eqCells.push(h('div', { className: 'quota-rate-eq-cell' }, cell5hChildren));
   }
   if (eqFullWeeklyUsd != null) {
-    eqCells.push(
-      h('div', { className: 'quota-rate-eq-cell' }, [
-        h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEqWkLabel') }),
+    const cellWkChildren = [
+      h('span', { className: 'quota-rate-eq-k', text: t('quota.ratePopEqWkLabel') }),
+      h('span', {
+        className: 'quota-rate-eq-v text-mono',
+        text: `≈ ${formatRateEqUsd(eqFullWeeklyUsd)}`,
+      }),
+    ];
+    if (Number.isFinite(Number(eqFullWeeklyTokens)) && Number(eqFullWeeklyTokens) > 0) {
+      cellWkChildren.push(
         h('span', {
-          className: 'quota-rate-eq-v text-mono',
-          text: `≈ ${formatRateEqUsd(eqFullWeeklyUsd)}`,
-        }),
-      ])
-    );
+          className: 'quota-rate-eq-tok text-mono',
+          text: `· ${formatTokens(Number(eqFullWeeklyTokens))}`,
+        })
+      );
+    }
+    eqCells.push(h('div', { className: 'quota-rate-eq-cell' }, cellWkChildren));
   }
 
   const cardChildren = [
@@ -19167,10 +22213,6 @@ const QuotaPoolsWidget = defineComponent({
       text: t('quota.ratePopAccountCurrent'),
     });
     const ratePopBodyEl = h('div', { className: 'quota-rate-pop-body' });
-    const ratePopNoteEl = h('div', {
-      className: 'quota-rate-pop-note',
-      text: t('quota.ratePopNote'),
-    });
     const ratePopoverEl = h(
       'div',
       {
@@ -19181,7 +22223,6 @@ const QuotaPoolsWidget = defineComponent({
       [
         h('div', { className: 'quota-rate-pop-head' }, [ratePopTitleEl, ratePopAccountEl]),
         ratePopBodyEl,
-        ratePopNoteEl,
       ]
     );
     ratePopoverEl.hidden = true;
@@ -19259,7 +22300,6 @@ const QuotaPoolsWidget = defineComponent({
       lastRatePopSig = sig;
 
       patchText(ratePopTitleEl, t('quota.ratePopTitle'));
-      patchText(ratePopNoteEl, t('quota.ratePopNote'));
       patchAttr(rateHelpBtn, 'aria-label', t('quota.rateHelpAria'));
 
       const acctMasked = maskAccountLabel(data?.account?.email || data?.account?.name || '');
@@ -19285,41 +22325,114 @@ const QuotaPoolsWidget = defineComponent({
         const hasPoolFallback =
           models.length === 0 &&
           (Number.isFinite(est.rate5hPctPerUsd) || Number.isFinite(est.rateWeeklyPctPerUsd));
-        if (models.length === 0 && !hasPoolFallback) continue;
+        const ext = est.externalUsage && est.externalUsage.detected ? est.externalUsage : null;
+        if (models.length === 0 && !hasPoolFallback && !ext) continue;
 
         const poolLabel = p.poolLabel || p.family || p.poolKey || 'Pool';
+        const fallbackPrimaryIs5h = est.rate5hPctPerUsd != null;
+        const anyModelHasWeekly = models.some((m) => m?.eqFullWeeklyUsd != null);
+        const needsWeeklyFallbackRow =
+          models.length > 0 &&
+          !anyModelHasWeekly &&
+          Number.isFinite(est.rateWeeklyPctPerUsd) &&
+          est.eqFullWeeklyUsd != null;
         const rows =
           models.length > 0
-            ? models.map((item) =>
-                createRateModelCard({
-                  name: item.model,
-                  multiplier: item.multiplier,
-                  rate5hPctPerUsd: item.rate5hPctPerUsd,
-                  rateWeeklyPctPerUsd: item.rateWeeklyPctPerUsd,
-                  eqFull5hUsd: item.eqFull5hUsd,
-                  eqFullWeeklyUsd: item.eqFullWeeklyUsd,
-                  samples: item.samples,
-                })
-              )
-            : [
-                createRateModelCard({
-                  name: t('quota.ratePopPoolFallback'),
-                  isMutedName: true,
-                  isFallback: true,
-                  rate5hPctPerUsd: est.rate5hPctPerUsd,
-                  rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
-                  eqFull5hUsd: est.eqFull5hUsd,
-                  eqFullWeeklyUsd: est.eqFullWeeklyUsd,
-                  samples: Math.max(Number(est.samples5h) || 0, Number(est.samplesWeekly) || 0),
-                }),
-              ];
+            ? [
+                ...models.map((item) =>
+                  createRateModelCard({
+                    name: item.model,
+                    multiplier: item.multiplier,
+                    rate5hPctPerUsd: item.rate5hPctPerUsd,
+                    rateWeeklyPctPerUsd: item.rateWeeklyPctPerUsd,
+                    eqFull5hUsd: item.eqFull5hUsd,
+                    eqFullWeeklyUsd: item.eqFullWeeklyUsd,
+                    eqFull5hTokens: item.eqFull5hTokens,
+                    eqFullWeeklyTokens: item.eqFullWeeklyTokens,
+                    samples: item.samples,
+                  })
+                ),
+                ...(needsWeeklyFallbackRow
+                  ? [
+                      createRateModelCard({
+                        name: t('quota.ratePopPoolFallback'),
+                        isMutedName: true,
+                        isFallback: true,
+                        rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
+                        eqFullWeeklyUsd: est.eqFullWeeklyUsd,
+                        eqFullWeeklyTokens: est.eqFullWeeklyTokens,
+                        samples: Number(est.samplesWeekly) || 0,
+                        source: est.sourceWeekly || null,
+                        isPreliminary: Boolean(est.isPreliminaryWeekly),
+                      }),
+                    ]
+                  : []),
+              ]
+            : hasPoolFallback
+              ? [
+                  createRateModelCard({
+                    name: t('quota.ratePopPoolFallback'),
+                    isMutedName: true,
+                    isFallback: true,
+                    rate5hPctPerUsd: est.rate5hPctPerUsd,
+                    rateWeeklyPctPerUsd: est.rateWeeklyPctPerUsd,
+                    eqFull5hUsd: est.eqFull5hUsd,
+                    eqFullWeeklyUsd: est.eqFullWeeklyUsd,
+                    eqFull5hTokens: est.eqFull5hTokens,
+                    eqFullWeeklyTokens: est.eqFullWeeklyTokens,
+                    samples: Math.max(Number(est.samples5h) || 0, Number(est.samplesWeekly) || 0),
+                    source: fallbackPrimaryIs5h ? est.source5h || null : est.sourceWeekly || null,
+                    isPreliminary: fallbackPrimaryIs5h
+                      ? Boolean(est.isPreliminary5h)
+                      : Boolean(est.isPreliminaryWeekly),
+                  }),
+                ]
+              : [];
 
-        populatedGroups.push(
-          h('div', { className: 'quota-rate-pool-group' }, [
-            h('div', { className: 'quota-rate-pool-label', text: poolLabel }),
-            h('div', { className: 'quota-rate-model-list' }, rows),
-          ])
-        );
+        const headChildren = [h('div', { className: 'quota-rate-pool-label', text: poolLabel })];
+        if (ext?.activeRecently) {
+          headChildren.push(
+            h('span', {
+              className: 'quota-rate-shared-badge',
+              text: t('quota.ratePopSharedBadge'),
+              title: t('quota.ratePopSharedBadgeTip'),
+            })
+          );
+        }
+
+        const groupChildren = [h('div', { className: 'quota-rate-pool-head' }, headChildren)];
+        if (rows.length > 0) {
+          groupChildren.push(h('div', { className: 'quota-rate-model-list' }, rows));
+        } else {
+          groupChildren.push(
+            h('div', { className: 'quota-rate-pop-empty', text: t('quota.ratePopEmpty') })
+          );
+        }
+        if (ext) {
+          const extParts = [];
+          if (Number(ext.used5hPct) >= 0.1) {
+            extParts.push(
+              t('quota.ratePopExt5h', { pct: formatPctNumber(Number(ext.used5hPct)) })
+            );
+          }
+          if (Number(ext.usedWeeklyPct) >= 0.1) {
+            extParts.push(
+              t('quota.ratePopExtWk', { pct: formatPctNumber(Number(ext.usedWeeklyPct)) })
+            );
+          }
+          const extText =
+            extParts.length > 0
+              ? t('quota.ratePopExternalDetail', { detail: extParts.join(' · ') })
+              : t('quota.ratePopExternalBaseline');
+          groupChildren.push(
+            h('div', {
+              className: `quota-rate-ext-banner${ext.activeRecently ? ' is-active' : ''}`,
+              text: extText,
+            })
+          );
+        }
+
+        populatedGroups.push(h('div', { className: 'quota-rate-pool-group' }, groupChildren));
       }
 
       if (populatedGroups.length === 0) {
@@ -19420,6 +22533,1333 @@ const QuotaPoolsWidget = defineComponent({
   },
 });
 return { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, formatAccountTierBadge, maskAccountLabel, QuotaPoolsWidget };
+})();
+
+// --- src/components/widgets/AccountQuotaTrendCard.js ---
+const { resolveQuotaWindowBounds, buildQuotaWindowSeries, AccountQuotaTrendCard } = (() => {
+/**
+ * @fileoverview Per-account quota remaining-% trajectory chart (`AccountQuotaTrendCard.js`).
+ * Full-bleed edge-to-edge plot (`x = 1 .. viewW - 1`), X-axis clamped to earliest recorded
+ * sample when history is shorter than the selected preset, and adaptive integer Y-scale so
+ * real quota movements never compress into a tiny corner with wasted whitespace.
+ */
+
+
+const POOL_COLORS = Object.freeze({
+  Gemini: 'var(--accent-primary)',
+  'Claude & GPT': 'var(--metric-ok)',
+  Argon: 'var(--ctx-thinking)',
+  Carbon: 'var(--metric-warn)',
+});
+
+const POOL_ORDER = ['Gemini', 'Argon', 'Carbon', 'Claude & GPT'];
+
+let quotaChartUid = 0;
+
+function floorMinute(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return 0;
+  const d = new Date(n);
+  d.setSeconds(0, 0);
+  return d.getTime();
+}
+
+function ceilMinute(ms) {
+  const n = Number(ms);
+  if (!(n > 0)) return 0;
+  const d = new Date(n);
+  d.setSeconds(59, 999);
+  return d.getTime();
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function formatAxisTickTime(ms, spanMs) {
+  const d = new Date(ms);
+  const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  if (spanMs <= 36 * 3600_000) {
+    return hm;
+  }
+  const md = `${d.getMonth() + 1}/${pad2(d.getDate())}`;
+  if (spanMs <= 7 * 86400_000) {
+    return `${md} ${pad2(d.getHours())}h`;
+  }
+  return md;
+}
+
+function formatHoverTimestamp(ms) {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function buildHorizontalTangentSpline(pts) {
+  if (pts.length === 0) return '';
+  if (pts.length === 1) return `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+  let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i];
+    const p1 = pts[i + 1];
+    const dx = (p1.x - p0.x) * 0.38;
+    d += ` C ${(p0.x + dx).toFixed(1)} ${p0.y.toFixed(1)}, ${(p1.x - dx).toFixed(1)} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
+  }
+  return d;
+}
+
+const HOVER_SLOT_COUNT = 96;
+const MAX_SVG_COLUMN_BUCKETS = 96;
+
+/**
+ * Downsamples dense sub-pixel SVG points (e.g. 12s poll bursts) into `<= maxCols`
+ * min/max-preserving visual knots so curve rasterization and morphing stay crisp and fast,
+ * while `rawPoints` remain intact for exact timestamp interpolation.
+ */
+function simplifySvgPointsForRender(svgPts, leftX, plotW, maxCols = MAX_SVG_COLUMN_BUCKETS) {
+  if (svgPts.length <= maxCols) return svgPts;
+  const colW = Math.max(1, plotW) / maxCols;
+  const out = [svgPts[0]];
+  let idx = 1;
+  const endIdx = svgPts.length - 1;
+  while (idx < endIdx) {
+    const col = Math.floor((svgPts[idx].x - leftX) / colW);
+    let minPt = svgPts[idx];
+    let maxPt = svgPts[idx];
+    let j = idx + 1;
+    while (j < endIdx && Math.floor((svgPts[j].x - leftX) / colW) === col) {
+      const cand = svgPts[j];
+      if (cand.y < minPt.y) minPt = cand;
+      if (cand.y > maxPt.y) maxPt = cand;
+      j += 1;
+    }
+    if (minPt === maxPt) {
+      out.push(minPt);
+    } else if (minPt.x <= maxPt.x) {
+      out.push(minPt, maxPt);
+    } else {
+      out.push(maxPt, minPt);
+    }
+    idx = j;
+  }
+  out.push(svgPts[endIdx]);
+  return out;
+}
+
+/**
+ * Computes tight, integer-aligned `[yMin, yMid, yMax]` bounds (`0..100%`) around
+ * observed `[dataMin, dataMax]` so small-to-moderate quota changes use the full
+ * vertical canvas instead of leaving 80%+ empty bottom space.
+ */
+function computeAdaptiveQuotaScale(dataMin, dataMax) {
+  const lo = Math.max(0, Math.min(100, Number.isFinite(dataMin) ? dataMin : 0));
+  const hi = Math.max(lo, Math.min(100, Number.isFinite(dataMax) ? dataMax : 100));
+  const rawSpan = hi - lo;
+  const pad = Math.max(1.5, rawSpan * 0.14);
+
+  let yMax = hi >= 98.5 ? 100 : Math.min(100, Math.ceil((hi + pad) / 10) * 10);
+  let yMin = lo <= 2 ? 0 : Math.max(0, Math.floor((lo - pad) / 10) * 10);
+
+  if (yMax - yMin < 10) {
+    if (yMax >= 100) {
+      yMax = 100;
+      yMin = 90;
+    } else if (yMin <= 0) {
+      yMin = 0;
+      yMax = 10;
+    } else {
+      yMin = Math.max(0, yMax - 10);
+    }
+  }
+  // Ensure `(yMax - yMin)` is even so midpoint tick is always an exact integer
+  if ((yMax - yMin) % 2 !== 0) {
+    if (yMin > 0) yMin -= 1;
+    else if (yMax < 100) yMax += 1;
+  }
+  const yMid = Math.round((yMin + yMax) / 2);
+  return { yMin, yMid, yMax, span: Math.max(1, yMax - yMin) };
+}
+
+const IMPULSE_GLITCH_MAX_SPAN_MS = 20 * 60_000;
+const IMPULSE_GLITCH_MIN_JUMP_PCT = 3;
+const IMPULSE_GLITCH_MAX_NEIGHBOR_DIFF_PCT = 1.2;
+const CYCLE_RESET_JUMP_MIN_PCT = 3.5;
+
+function stripIsolatedImpulseSpikes(pts) {
+  if (pts.length < 3) return pts;
+  const out = pts.slice();
+  let i = 1;
+  while (i < out.length - 1) {
+    const prev = out[i - 1];
+    const cur = out[i];
+    const next = out[i + 1];
+    const spanMs = next.ts - prev.ts;
+    if (
+      spanMs >= 0 &&
+      spanMs <= IMPULSE_GLITCH_MAX_SPAN_MS &&
+      cur.val - prev.val >= IMPULSE_GLITCH_MIN_JUMP_PCT &&
+      cur.val - next.val >= IMPULSE_GLITCH_MIN_JUMP_PCT &&
+      Math.abs(next.val - prev.val) <= IMPULSE_GLITCH_MAX_NEIGHBOR_DIFF_PCT
+    ) {
+      out.splice(i, 1);
+      if (i > 1) i -= 1;
+      continue;
+    }
+    i += 1;
+  }
+  return out;
+}
+
+function resolveQuotaWindowBounds({
+  pools,
+  selectedRange,
+  selectedWin,
+  selectedPool,
+  customStartMs = 0,
+  customEndMs = 0,
+  nowMs = Date.now(),
+}) {
+  if (selectedRange === 'custom') {
+    return {
+      startMs: Math.min(customStartMs, customEndMs),
+      endMs: Math.max(customStartMs, customEndMs),
+    };
+  }
+  if (selectedRange === 'today') {
+    const d = new Date(nowMs);
+    d.setHours(0, 0, 0, 0);
+    return { startMs: d.getTime(), endMs: nowMs };
+  }
+  if (selectedRange === '24h') return { startMs: nowMs - 24 * 3600_000, endMs: nowMs };
+  if (selectedRange === '7d') return { startMs: nowMs - 7 * 86400_000, endMs: nowMs };
+  if (selectedRange === '14d') return { startMs: nowMs - 14 * 86400_000, endMs: nowMs };
+  if (selectedRange === '30d') return { startMs: nowMs - 30 * 86400_000, endMs: nowMs };
+  if (selectedRange === 'all') {
+    let minTs = Infinity;
+    for (const p of pools) {
+      for (const pt of p.points) {
+        if (pt[0] > 0 && pt[0] < minTs) minTs = pt[0];
+      }
+    }
+    const safeStart =
+      Number.isFinite(minTs) && minTs < nowMs - 60_000 ? minTs : nowMs - 5 * 3600_000;
+    return { startMs: safeStart, endMs: nowMs };
+  }
+
+  const targetPools =
+    selectedPool !== 'all' ? pools.filter((p) => p.poolKey === selectedPool) : pools;
+  const refPools = targetPools.length ? targetPools : pools;
+  const isWeekly = selectedWin === 'weekly';
+  const winDurationMs = isWeekly ? 7 * 86400_000 : 5 * 3600_000;
+
+  let activeMinResetMs = Infinity;
+  let anyMinResetMs = Infinity;
+  for (const p of refPools) {
+    const rMs = isWeekly ? p.resetWeeklyMs : p.reset5hMs;
+    const liveVal = isWeekly ? p.liveWk : p.live5h;
+    if (!(rMs > nowMs)) continue;
+    if (rMs < anyMinResetMs) anyMinResetMs = rMs;
+    if (liveVal !== null && liveVal !== undefined && liveVal < 99.95 && rMs < activeMinResetMs) {
+      activeMinResetMs = rMs;
+    }
+  }
+  const chosenResetMs = Number.isFinite(activeMinResetMs)
+    ? activeMinResetMs
+    : Number.isFinite(anyMinResetMs)
+      ? anyMinResetMs
+      : 0;
+  const startMs = chosenResetMs > nowMs ? chosenResetMs - winDurationMs : nowMs - winDurationMs;
+  return { startMs: Math.min(startMs, nowMs - 60_000), endMs: nowMs };
+}
+
+/**
+ * Extracts per-pool trajectories for the requested window, ensuring `'cycle'` mode
+ * strictly excludes pre-reset points from any previous expired cycle (eliminating
+ * artificial `84% -> 100%` vertical reset spikes at cycle start).
+ */
+function buildQuotaWindowSeries({
+  visiblePools,
+  rawBounds,
+  selectedRange,
+  selectedWin,
+  nowMs = Date.now(),
+}) {
+  const isCycleMode = selectedRange === 'cycle';
+  const isWeekly = selectedWin === 'weekly';
+  const valIdx = isWeekly ? 2 : 1;
+  const winDurationMs = isWeekly ? 7 * 86400_000 : 5 * 3600_000;
+
+  const staged = [];
+  let hasStartAnchor = false;
+  let earliestInWinTs = Infinity;
+
+  for (const p of visiblePools) {
+    const cleanedAll = [];
+    for (let i = 0; i < p.points.length; i++) {
+      const pt = p.points[i];
+      const v = pt[valIdx];
+      if (v === null || v === undefined || !Number.isFinite(Number(v))) continue;
+      cleanedAll.push({
+        ts: pt[0],
+        val: Math.max(0, Math.min(100, Number(v))),
+      });
+    }
+    const sanitized = stripIsolatedImpulseSpikes(cleanedAll);
+    if (sanitized.length === 0) continue;
+
+    const pResetMs = isWeekly ? p.resetWeeklyMs : p.reset5hMs;
+    const pLiveVal = isWeekly ? p.liveWk : p.live5h;
+    const poolCutoffMs =
+      isCycleMode && pResetMs > nowMs && pLiveVal !== null && pLiveVal < 99.95
+        ? Math.max(rawBounds.startMs, pResetMs - winDurationMs)
+        : rawBounds.startMs;
+
+    let carryBefore = null;
+    let inWinPts = [];
+    for (let i = 0; i < sanitized.length; i++) {
+      const sp = sanitized[i];
+      if (sp.ts <= poolCutoffMs) {
+        carryBefore = sp;
+      } else if (sp.ts <= rawBounds.endMs) {
+        inWinPts.push(sp);
+      }
+    }
+
+    // In `'cycle'` mode, `< 99.95%` observations at or before `poolCutoffMs` belong
+    // to the previous expired cycle and must never carry forward into the new cycle.
+    if (isCycleMode && carryBefore && carryBefore.val < 99.95) {
+      carryBefore = null;
+    }
+
+    let hadResetInWindow = false;
+    if (isCycleMode && inWinPts.length >= 2) {
+      let lastResetIdx = 0;
+      for (let k = 1; k < inWinPts.length; k++) {
+        const prev = inWinPts[k - 1].val;
+        const cur = inWinPts[k].val;
+        if (cur - prev >= CYCLE_RESET_JUMP_MIN_PCT || (cur >= 99.5 && prev <= 98.5)) {
+          lastResetIdx = k;
+        }
+      }
+      if (lastResetIdx > 0) {
+        inWinPts = inWinPts.slice(lastResetIdx);
+        carryBefore = null;
+        hadResetInWindow = true;
+      }
+    }
+
+    const isMidWindowReset = hadResetInWindow && inWinPts[0].ts - poolCutoffMs > 5 * 60_000;
+    const anchorsCycleOrigin =
+      isCycleMode &&
+      !isMidWindowReset &&
+      !carryBefore &&
+      inWinPts.length > 0 &&
+      inWinPts[0].ts - poolCutoffMs <= 3 * 60_000;
+
+    if (carryBefore || (anchorsCycleOrigin && poolCutoffMs <= rawBounds.startMs + 5000)) {
+      hasStartAnchor = true;
+    }
+    if (inWinPts.length > 0 && inWinPts[0].ts < earliestInWinTs) {
+      earliestInWinTs = inWinPts[0].ts;
+    }
+
+    staged.push({
+      pool: p,
+      poolCutoffMs,
+      carryBefore,
+      inWinPts,
+      isMidWindowReset,
+      anchorsCycleOrigin,
+    });
+  }
+
+  let plottedStartMs = rawBounds.startMs;
+  if (
+    !hasStartAnchor &&
+    selectedRange !== 'custom' &&
+    Number.isFinite(earliestInWinTs) &&
+    earliestInWinTs > rawBounds.startMs
+  ) {
+    plottedStartMs =
+      rawBounds.endMs - earliestInWinTs >= 60_000
+        ? earliestInWinTs
+        : Math.max(rawBounds.startMs, rawBounds.endMs - 5 * 60_000);
+  }
+  const plottedEndMs = Math.max(plottedStartMs + 60_000, rawBounds.endMs);
+
+  const rawBuilt = [];
+  let dataMin = Infinity;
+  let dataMax = -Infinity;
+
+  for (const item of staged) {
+    const { pool, poolCutoffMs, carryBefore, inWinPts, isMidWindowReset, anchorsCycleOrigin } = item;
+    const seriesPts = [];
+    const anchorStartTs = Math.max(plottedStartMs, poolCutoffMs);
+
+    if (carryBefore) {
+      seriesPts.push({ ts: anchorStartTs, val: carryBefore.val });
+    } else if (anchorsCycleOrigin) {
+      const originVal = Math.max(100, inWinPts[0].val);
+      if (inWinPts[0].ts > anchorStartTs) {
+        seriesPts.push({ ts: anchorStartTs, val: Math.min(100, originVal) });
+      }
+    } else if (
+      !isMidWindowReset &&
+      inWinPts.length > 0 &&
+      inWinPts[0].ts > plottedStartMs &&
+      (inWinPts.length === 1 || inWinPts[0].val >= 99.95)
+    ) {
+      seriesPts.push({ ts: plottedStartMs, val: inWinPts[0].val });
+    }
+
+    for (let i = 0; i < inWinPts.length; i++) {
+      const vp = inWinPts[i];
+      if (vp.ts >= plottedStartMs) {
+        seriesPts.push(vp);
+      }
+    }
+
+    if (seriesPts.length > 0 && plottedEndMs <= nowMs + 60_000) {
+      const tail = seriesPts[seriesPts.length - 1];
+      const tailEnd = Math.min(plottedEndMs, nowMs);
+      if (tailEnd > tail.ts + 1000) {
+        seriesPts.push({ ts: tailEnd, val: tail.val });
+      }
+    }
+    if (seriesPts.length === 0) continue;
+
+    for (let i = 0; i < seriesPts.length; i++) {
+      const v = seriesPts[i].val;
+      if (v < dataMin) dataMin = v;
+      if (v > dataMax) dataMax = v;
+    }
+    rawBuilt.push({
+      poolKey: pool.poolKey,
+      label: pool.label,
+      color: POOL_COLORS[pool.poolKey] || 'var(--accent-primary)',
+      rawPoints: seriesPts,
+      latestVal: seriesPts[seriesPts.length - 1].val,
+    });
+  }
+
+  return {
+    plottedStartMs,
+    plottedEndMs,
+    rawBuilt,
+    yScale: rawBuilt.length > 0 ? computeAdaptiveQuotaScale(dataMin, dataMax) : null,
+  };
+}
+
+function getTimeRangeOptions() {
+  return [
+    { value: 'cycle', label: t('cons.rangeCycle') },
+    { value: 'today', label: t('cons.rangeToday') },
+    { value: '24h', label: t('cons.range24h') },
+    { value: '7d', label: t('cons.range7d') },
+    { value: '14d', label: t('cons.range14d') },
+    { value: '30d', label: t('cons.range30d') },
+    { value: 'all', label: t('cons.rangeAll') },
+    { value: 'custom', label: t('cons.rangeCustom') },
+  ];
+}
+
+function getQuotaWindowOptions() {
+  return [
+    { value: '5h', label: t('settings.account.win5h') },
+    { value: 'weekly', label: t('settings.account.winWeekly') },
+  ];
+}
+
+const AccountQuotaTrendCard = defineComponent({
+  name: 'AccountQuotaTrendCard',
+  setup({ onCleanup }) {
+    const VIEW_H = 184;
+    const TOP_Y = 18;
+    const BOTTOM_Y = 166;
+    const SPAN_Y = BOTTOM_Y - TOP_Y;
+    const LEFT_X = 1;
+    const RIGHT_PAD = 1;
+
+    let viewW = 460;
+    let selectedRange = 'cycle';
+    let selectedWin = '5h';
+    let selectedPool = 'all';
+    let selectedAccountEmail = '';
+
+    const initNow = Date.now();
+    let customStartMs = floorMinute(initNow - 24 * 3600_000);
+    let customEndMs = ceilMinute(initNow);
+    let draftStartMs = customStartMs;
+    let draftEndMs = customEndMs;
+
+    let latestState = {
+      activeEmail: '',
+      activePools: [],
+      riskAccepted: false,
+      accounts: [],
+      savedQuotas: new Map(),
+      quotaHistory: {},
+    };
+
+    let plottedSeries = [];
+    let plottedStartMs = 0;
+    let plottedEndMs = 0;
+    let plottedYScale = { yMin: 0, yMid: 50, yMax: 100, span: 100 };
+
+    const cardTitleText = h('span', { text: t('settings.account.trendTitle') });
+    const spanBadgeEl = h('span', { className: 'cons-badge text-mono', text: '' });
+
+    const accountSelect = CustomSelect({
+      className: 'cons-cycle-pool-select account-trend-email-select',
+      modelValue: '',
+      options: [],
+      onUpdateModelValue: (val) => {
+        selectedAccountEmail = String(val || '').trim().toLowerCase();
+        hideHover();
+        renderChart();
+      },
+    });
+    patchAttr(accountSelect.el, 'hidden', true);
+
+    const poolSelect = CustomSelect({
+      className: 'cons-cycle-pool-select',
+      modelValue: 'all',
+      options: [{ value: 'all', label: t('cons.cyclePoolAll') }],
+      onUpdateModelValue: (val) => {
+        selectedPool = val || 'all';
+        hideHover();
+        renderChart();
+      },
+    });
+
+    const winSwitch = SegmentedControl({
+      ariaLabel: t('settings.account.trendWinAria'),
+      modelValue: selectedWin,
+      options: getQuotaWindowOptions(),
+      onUpdateModelValue: (val) => {
+        selectedWin = val === 'weekly' ? 'weekly' : '5h';
+        winSwitch.setProps({ modelValue: selectedWin, options: getQuotaWindowOptions() });
+        hideHover();
+        renderChart();
+      },
+    });
+
+    const rangeSwitch = SegmentedControl({
+      ariaLabel: t('cons.rangeAria'),
+      modelValue: selectedRange,
+      options: getTimeRangeOptions(),
+      onUpdateModelValue: (nextRange) => {
+        selectedRange = nextRange || 'cycle';
+        if (selectedRange === 'custom') {
+          startPicker.setValue(draftStartMs);
+          endPicker.setValue(draftEndMs);
+        }
+        rangeSwitch.setProps({ modelValue: selectedRange, options: getTimeRangeOptions() });
+        hideHover();
+        renderChart();
+      },
+    });
+
+    const startPicker = CustomDateTimePicker({
+      modelValue: draftStartMs,
+      onUpdateModelValue: (ms) => {
+        draftStartMs = ms;
+        startPicker.setValue(ms);
+      },
+    });
+    const endPicker = CustomDateTimePicker({
+      modelValue: draftEndMs,
+      onUpdateModelValue: (ms) => {
+        draftEndMs = ms;
+        endPicker.setValue(ms);
+      },
+    });
+    const applyCustomLabel = h('span', { text: t('cons.applyFilter') });
+    const applyCustomBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-primary',
+        onClick: () => {
+          const s = Number(draftStartMs || 0);
+          const e = Number(draftEndMs || 0);
+          const lo = floorMinute(s > 0 && e > 0 ? Math.min(s, e) : s);
+          const hi = ceilMinute(s > 0 && e > 0 ? Math.max(s, e) : e);
+          if (lo > 0 && hi > lo) {
+            customStartMs = lo;
+            customEndMs = hi;
+            draftStartMs = lo;
+            draftEndMs = hi;
+            startPicker.setValue(lo);
+            endPicker.setValue(hi);
+            renderChart();
+          }
+        },
+      },
+      [createSvgIcon('check', { size: 12 }), applyCustomLabel]
+    );
+    const rangeToEl = h('span', { className: 'text-muted', text: t('cons.rangeTo') });
+    const customRangeBar = h('div', { className: 'cons-custom-range-bar', hidden: true }, [
+      startPicker.el,
+      rangeToEl,
+      endPicker.el,
+      applyCustomBtn,
+    ]);
+
+    // --- Full-Bleed Edge-to-Edge 184px SVG Stage (reusing TrendAreaChart `.trend-svg`) ---
+    const uid = ++quotaChartUid;
+    const gradId = `acct-quota-grad-${uid}`;
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${viewW} ${VIEW_H}`);
+    svg.setAttribute('class', 'trend-svg');
+    svg.setAttribute('aria-hidden', 'true');
+
+    const defs = document.createElementNS(SVG_NS, 'defs');
+    const grad = document.createElementNS(SVG_NS, 'linearGradient');
+    grad.setAttribute('id', gradId);
+    grad.setAttribute('x1', '0');
+    grad.setAttribute('y1', '0');
+    grad.setAttribute('x2', '0');
+    grad.setAttribute('y2', '1');
+    const stopTop = document.createElementNS(SVG_NS, 'stop');
+    stopTop.setAttribute('offset', '0%');
+    stopTop.setAttribute('stop-color', 'var(--accent-primary)');
+    stopTop.setAttribute('stop-opacity', '0.24');
+    const stopBot = document.createElementNS(SVG_NS, 'stop');
+    stopBot.setAttribute('offset', '100%');
+    stopBot.setAttribute('stop-color', 'var(--accent-primary)');
+    stopBot.setAttribute('stop-opacity', '0.0');
+    grad.appendChild(stopTop);
+    grad.appendChild(stopBot);
+    defs.appendChild(grad);
+    svg.appendChild(defs);
+
+    const gridGroup = document.createElementNS(SVG_NS, 'g');
+    gridGroup.setAttribute('class', 'trend-grid');
+    const gridRowSpecs = [
+      { y: TOP_Y, dy: 3, labeled: true },
+      { y: Math.round(TOP_Y + SPAN_Y * 0.25), dy: 0, labeled: false },
+      { y: Math.round(TOP_Y + SPAN_Y * 0.5), dy: 3, labeled: true },
+      { y: Math.round(TOP_Y + SPAN_Y * 0.75), dy: 0, labeled: false },
+      { y: BOTTOM_Y, dy: -3, labeled: true },
+    ];
+    const gridLines = [];
+    const yLabels = [];
+    for (const row of gridRowSpecs) {
+      const line = document.createElementNS(SVG_NS, 'line');
+      line.setAttribute('x1', '0');
+      line.setAttribute('y1', String(row.y));
+      line.setAttribute('x2', String(viewW));
+      line.setAttribute('y2', String(row.y));
+      gridGroup.appendChild(line);
+      gridLines.push(line);
+
+      if (row.labeled) {
+        const lbl = document.createElementNS(SVG_NS, 'text');
+        lbl.setAttribute('class', 'sstep-axis-label is-y-inline');
+        lbl.setAttribute('x', '3');
+        lbl.setAttribute('y', String(row.y + row.dy));
+        lbl.setAttribute('text-anchor', 'start');
+        yLabels.push(lbl);
+      }
+    }
+    svg.appendChild(gridGroup);
+
+    const seriesGroup = document.createElementNS(SVG_NS, 'g');
+    svg.appendChild(seriesGroup);
+
+    // Append inline Y labels above series fills so halo stroke keeps text crisp
+    const yLabelOverlay = document.createElementNS(SVG_NS, 'g');
+    for (const lbl of yLabels) {
+      yLabelOverlay.appendChild(lbl);
+    }
+    svg.appendChild(yLabelOverlay);
+
+    const hoverLine = document.createElementNS(SVG_NS, 'line');
+    hoverLine.setAttribute('class', 'trend-hover-line');
+    hoverLine.setAttribute('y1', String(TOP_Y));
+    hoverLine.setAttribute('y2', String(BOTTOM_Y));
+    hoverLine.setAttribute('hidden', '');
+    svg.appendChild(hoverLine);
+
+    const hoverDotsGroup = document.createElementNS(SVG_NS, 'g');
+    hoverDotsGroup.setAttribute('hidden', '');
+    svg.appendChild(hoverDotsGroup);
+
+    const tipTimeEl = h('span', { className: 'trend-tip-time text-mono' });
+    const tipWinEl = h('span', { className: 'trend-tip-calls' });
+    const tipRowsHost = h('div', { className: 'account-trend-tip-rows' });
+    const tooltipEl = h('div', { className: 'trend-tooltip', hidden: true }, [
+      h('div', { className: 'trend-tip-head' }, [tipTimeEl, tipWinEl]),
+      tipRowsHost,
+    ]);
+
+    const xAxisEl = h('div', { className: 'trend-x-axis' });
+    const legendRowEl = h('div', { className: 'account-trend-legend' });
+    const emptyStateEl = h('div', { className: 'smodel-empty settings-action-desc', hidden: true });
+
+    const plotStage = h(
+      'div',
+      {
+        className: 'trend-plot-stage',
+        onMousemove: handlePointerMove,
+        onMouseleave: hideHover,
+      },
+      [svg]
+    );
+    const chartWrap = h('div', { className: 'trend-chart-wrap' }, [
+      plotStage,
+      xAxisEl,
+      legendRowEl,
+      tooltipEl,
+    ]);
+
+    const tooltipCtrl = createFloatingChartTooltipController({
+      containerEl: chartWrap,
+      tooltipEl,
+      defaultTipWidth: 204,
+      defaultTipHeight: 78,
+      defaultViewWidth: 460,
+      defaultViewHeight: VIEW_H,
+    });
+    const seriesMorphCtrl = createMultiSeriesCurveMorphController();
+    const seriesNodePoolByKey = new Map();
+    const hoverDotPoolByKey = new Map();
+    let xTickElements = [];
+    let hoveredSlotIdx = -1;
+    let lastActiveDots = [];
+    let lastFallbackX = 0;
+    let lastFallbackY = 0;
+    let lastSizeKey = '';
+    let lastTipTimeStr = '';
+    let lastTipWinStr = '';
+    let lastHoveredTickIdx = -1;
+    let lastPointer = null;
+    let cachedSvgRect = null;
+    let lastPlotSig = '';
+
+    const rootEl = h('section', { className: 'panel account-quota-trend-panel' }, [
+      h('div', { className: 'panel-header account-trend-toprow' }, [
+        h('span', { className: 'panel-title cons-overview-title' }, [
+          createSvgIcon('pulse', { size: 13 }),
+          cardTitleText,
+          accountSelect.el,
+          poolSelect.el,
+        ]),
+        winSwitch.el,
+      ]),
+      h('div', { className: 'panel-header cons-overview-head account-trend-subbar' }, [
+        spanBadgeEl,
+        h('div', { className: 'cons-overview-controls' }, [rangeSwitch.el]),
+      ]),
+      customRangeBar,
+      chartWrap,
+      emptyStateEl,
+    ]);
+
+    function valueToSvgY(val) {
+      const clamped = Math.max(plottedYScale.yMin, Math.min(plottedYScale.yMax, val));
+      return BOTTOM_Y - ((clamped - plottedYScale.yMin) / plottedYScale.span) * SPAN_Y;
+    }
+
+    function syncHoveredTickClass(activeTickIdx) {
+      if (activeTickIdx === lastHoveredTickIdx) return;
+      lastHoveredTickIdx = activeTickIdx;
+      for (let i = 0; i < xTickElements.length; i++) {
+        patchClasses(xTickElements[i], { 'is-hovered': i === activeTickIdx });
+      }
+    }
+
+    function hideHover() {
+      cachedSvgRect = null;
+      hoveredSlotIdx = -1;
+      lastActiveDots = [];
+      lastTipTimeStr = '';
+      lastTipWinStr = '';
+      lastPointer = null;
+      tooltipCtrl.hide();
+      hoverLine.setAttribute('hidden', '');
+      hoverDotsGroup.setAttribute('hidden', '');
+      for (const dot of hoverDotPoolByKey.values()) {
+        dot.setAttribute('hidden', '');
+        patchClasses(dot, { 'is-tracking': false });
+      }
+      syncHoveredTickClass(-1);
+    }
+
+    function sampleSeriesValueAt(points, targetMs) {
+      if (!points.length) return null;
+      if (targetMs < points[0].ts - 1000) return null;
+      if (targetMs <= points[0].ts) return points[0].val;
+      const last = points[points.length - 1];
+      if (targetMs > last.ts + 60_000) return null;
+      if (targetMs >= last.ts) return last.val;
+      let lo = 0;
+      let hi = points.length - 1;
+      while (lo + 1 < hi) {
+        const mid = (lo + hi) >> 1;
+        if (points[mid].ts <= targetMs) lo = mid;
+        else hi = mid;
+      }
+      const a = points[lo];
+      const b = points[hi];
+      const span = b.ts - a.ts;
+      if (span <= 0) return b.val;
+      return a.val + (b.val - a.val) * ((targetMs - a.ts) / span);
+    }
+
+    function showHoverAtSlot(slotIdx, pointer = null, { forceRefresh = false } = {}) {
+      if (!plottedSeries.length || !(plottedEndMs > plottedStartMs) || slotIdx < 0) {
+        hideHover();
+        return;
+      }
+      const clampedSlot = Math.max(0, Math.min(HOVER_SLOT_COUNT, slotIdx));
+      const wasHidden = tooltipEl.hasAttribute('hidden');
+      const changedSlot = forceRefresh || wasHidden || clampedSlot !== hoveredSlotIdx;
+      hoveredSlotIdx = clampedSlot;
+      if (pointer) lastPointer = pointer;
+
+      if (changedSlot) {
+        const u = clampedSlot / HOVER_SLOT_COUNT;
+        const plotW = Math.max(20, viewW - LEFT_X - RIGHT_PAD);
+        const clampedX = LEFT_X + u * plotW;
+        const targetMs = Math.round(plottedStartMs + u * (plottedEndMs - plottedStartMs));
+
+        hoverLine.setAttribute('x1', clampedX.toFixed(1));
+        hoverLine.setAttribute('x2', clampedX.toFixed(1));
+
+        const tipItems = [];
+        const activeDots = [];
+        let sumY = 0;
+        const usedKeys = new Set();
+
+        for (let i = 0; i < plottedSeries.length; i++) {
+          const s = plottedSeries[i];
+          const val = sampleSeriesValueAt(s.rawPoints, targetMs);
+          if (val === null) continue;
+          usedKeys.add(s.poolKey);
+          const y = valueToSvgY(val);
+          sumY += y;
+
+          let dot = hoverDotPoolByKey.get(s.poolKey);
+          if (!dot) {
+            dot = document.createElementNS(SVG_NS, 'circle');
+            dot.setAttribute('class', 'trend-hover-dot');
+            dot.setAttribute('r', '3.2');
+            dot.style.fill = 'var(--surface-panel)';
+            hoverDotPoolByKey.set(s.poolKey, dot);
+            hoverDotsGroup.appendChild(dot);
+          }
+          if (dot._lastColor !== s.color) {
+            dot._lastColor = s.color;
+            dot.style.stroke = s.color;
+          }
+          dot.setAttribute('cx', clampedX.toFixed(1));
+          dot.setAttribute('cy', y.toFixed(1));
+          if (dot.hasAttribute('hidden')) dot.removeAttribute('hidden');
+          activeDots.push(dot);
+          tipItems.push({ key: s.poolKey, label: s.label, color: s.color, val });
+        }
+
+        for (const [k, dot] of hoverDotPoolByKey.entries()) {
+          if (!usedKeys.has(k) && !dot.hasAttribute('hidden')) {
+            dot.setAttribute('hidden', '');
+            patchClasses(dot, { 'is-tracking': false });
+          }
+        }
+
+        if (tipItems.length === 0) {
+          hideHover();
+          return;
+        }
+        if (hoverLine.hasAttribute('hidden')) hoverLine.removeAttribute('hidden');
+        if (hoverDotsGroup.hasAttribute('hidden')) hoverDotsGroup.removeAttribute('hidden');
+
+        if (xTickElements.length > 1) {
+          syncHoveredTickClass(Math.round(u * (xTickElements.length - 1)));
+        }
+
+        const nextTimeStr = formatHoverTimestamp(targetMs);
+        if (nextTimeStr !== lastTipTimeStr) {
+          lastTipTimeStr = nextTimeStr;
+          patchText(tipTimeEl, nextTimeStr);
+        }
+        const nextWinStr = t(
+          selectedWin === 'weekly' ? 'settings.account.winWeekly' : 'settings.account.win5h'
+        );
+        if (nextWinStr !== lastTipWinStr) {
+          lastTipWinStr = nextWinStr;
+          patchText(tipWinEl, nextWinStr);
+        }
+
+        patchKeyedList(tipRowsHost, tipItems, {
+          keyFn: (it) => it.key,
+          sigFn: (it) => `${it.label}:${it.val.toFixed(1)}`,
+          createRow: () => {
+            const sw = h('span', { className: 'dot-swatch' });
+            const nm = h('span', { className: 'account-trend-tip-name' });
+            const vl = h('strong', { className: 'text-mono' });
+            const row = h('div', { className: 'account-trend-tip-row' }, [
+              h('span', { className: 'legend-left' }, [sw, nm]),
+              vl,
+            ]);
+            return { el: row, refs: { sw, nm, vl } };
+          },
+          updateRow: (r, it) => {
+            if (r.sw._lastBg !== it.color) {
+              r.sw._lastBg = it.color;
+              r.sw.style.background = it.color;
+            }
+            patchText(r.nm, it.label);
+            patchText(r.vl, `${+it.val.toFixed(1)}%`);
+          },
+        });
+
+        const wrapRect = tooltipCtrl.getWrapRect();
+        const wrapW =
+          wrapRect && wrapRect.width > 0
+            ? wrapRect.width
+            : Number(chartWrap.clientWidth || viewW || 460);
+        lastFallbackX = (clampedX / Math.max(1, viewW)) * wrapW;
+        lastFallbackY = sumY / activeDots.length + 6;
+        lastActiveDots = activeDots;
+        lastSizeKey = `rows:${tipItems.length}`;
+      }
+
+      tooltipCtrl.show({
+        fallbackX: lastFallbackX,
+        fallbackY: lastFallbackY,
+        pointer: pointer || lastPointer,
+        trackedDots: lastActiveDots,
+        viewWidth: viewW,
+        viewHeight: VIEW_H,
+        sizeKey: lastSizeKey,
+      });
+    }
+
+    function handlePointerMove(ev) {
+      if (!plottedSeries.length || !(plottedEndMs > plottedStartMs)) {
+        hideHover();
+        return;
+      }
+      if (!cachedSvgRect) {
+        cachedSvgRect = svg.getBoundingClientRect?.() || null;
+      }
+      const rect = cachedSvgRect;
+      const widthPx = Number(rect?.width || viewW);
+      if (!(widthPx > 0)) {
+        cachedSvgRect = null;
+        return;
+      }
+      const offsetX = Number(ev.clientX || 0) - Number(rect?.left || 0);
+      const svgX = (offsetX / widthPx) * viewW;
+      const plotW = Math.max(20, viewW - LEFT_X - RIGHT_PAD);
+      const u = Math.max(0, Math.min(1, (svgX - LEFT_X) / plotW));
+      const slotIdx = Math.round(u * HOVER_SLOT_COUNT);
+      const pointer =
+        Number.isFinite(Number(ev?.clientX)) && Number.isFinite(Number(ev?.clientY))
+          ? { clientX: Number(ev.clientX), clientY: Number(ev.clientY) }
+          : null;
+      showHoverAtSlot(slotIdx, pointer);
+    }
+
+    function resolveTargetAccountEmail() {
+      const { activeEmail, riskAccepted, accounts } = latestState;
+      if (!riskAccepted) {
+        return activeEmail || '';
+      }
+      const candidates = [];
+      if (activeEmail) candidates.push(activeEmail);
+      for (const addr of accounts) {
+        if (addr && !candidates.includes(addr)) candidates.push(addr);
+      }
+      if (selectedAccountEmail && candidates.includes(selectedAccountEmail)) {
+        return selectedAccountEmail;
+      }
+      selectedAccountEmail = candidates[0] || '';
+      return selectedAccountEmail;
+    }
+
+    function buildMergedPoolsForEmail(email, nowMs) {
+      const histPools = latestState.quotaHistory?.[email]?.pools || {};
+      const livePools =
+        email && email === latestState.activeEmail
+          ? latestState.activePools || []
+          : latestState.savedQuotas.get(email)?.pools || [];
+
+      const merged = new Map();
+      for (const [pk, hEntry] of Object.entries(histPools)) {
+        merged.set(pk, {
+          poolKey: pk,
+          label: hEntry.label || pk,
+          reset5hMs: Number(hEntry.reset5hMs) || 0,
+          resetWeeklyMs: Number(hEntry.resetWeeklyMs) || 0,
+          points: Array.isArray(hEntry.points) ? hEntry.points.slice() : [],
+          live5h: null,
+          liveWk: null,
+        });
+      }
+
+      for (const lp of livePools) {
+        const pk = String(lp?.poolKey || lp?.family || lp?.poolLabel || '').trim();
+        if (!pk || pk === 'Unknown') continue;
+        let item = merged.get(pk);
+        if (!item) {
+          item = {
+            poolKey: pk,
+            label: String(lp?.poolLabel || pk),
+            reset5hMs: 0,
+            resetWeeklyMs: 0,
+            points: [],
+            live5h: null,
+            liveWk: null,
+          };
+          merged.set(pk, item);
+        }
+        if (lp?.poolLabel) item.label = String(lp.poolLabel);
+        const r5Ms = Date.parse(lp?.resetTime || '');
+        const rWMs = Date.parse(lp?.weeklyResetTime || '');
+        if (Number.isFinite(r5Ms) && r5Ms > 0) item.reset5hMs = r5Ms;
+        if (Number.isFinite(rWMs) && rWMs > 0) item.resetWeeklyMs = rWMs;
+        if (Number.isFinite(lp?.remainingPct)) item.live5h = +Number(lp.remainingPct).toFixed(1);
+        if (Number.isFinite(lp?.weeklyRemainingPct)) {
+          item.liveWk = +Number(lp.weeklyRemainingPct).toFixed(1);
+        }
+        if (item.live5h !== null || item.liveWk !== null) {
+          const last = item.points[item.points.length - 1];
+          if (!last || nowMs >= last[0]) {
+            item.points.push([
+              nowMs,
+              item.live5h ?? (last ? last[1] : null),
+              item.liveWk ?? (last ? last[2] : null),
+            ]);
+          }
+        }
+      }
+
+      return Array.from(merged.values()).sort(
+        (a, b) =>
+          (POOL_ORDER.indexOf(a.poolKey) === -1 ? 99 : POOL_ORDER.indexOf(a.poolKey)) -
+          (POOL_ORDER.indexOf(b.poolKey) === -1 ? 99 : POOL_ORDER.indexOf(b.poolKey))
+      );
+    }
+
+    function renderChart({ skipMorph = false } = {}) {
+      const nowMs = Date.now();
+      const locale = getEffectiveLocale();
+
+      patchText(cardTitleText, t('settings.account.trendTitle'));
+      patchText(rangeToEl, t('cons.rangeTo'));
+      patchText(applyCustomLabel, t('cons.applyFilter'));
+      winSwitch.setProps({ modelValue: selectedWin, options: getQuotaWindowOptions() });
+      rangeSwitch.setProps({ modelValue: selectedRange, options: getTimeRangeOptions() });
+      patchAttr(customRangeBar, 'hidden', selectedRange !== 'custom');
+
+      const targetEmail = resolveTargetAccountEmail();
+      const candidateEmails = [];
+      if (latestState.activeEmail) candidateEmails.push(latestState.activeEmail);
+      if (latestState.riskAccepted) {
+        for (const addr of latestState.accounts) {
+          if (addr && !candidateEmails.includes(addr)) candidateEmails.push(addr);
+        }
+      }
+      const showAccountPicker = latestState.riskAccepted && candidateEmails.length > 1;
+      patchAttr(accountSelect.el, 'hidden', !showAccountPicker);
+      if (showAccountPicker) {
+        accountSelect.setProps({
+          modelValue: targetEmail,
+          options: candidateEmails.map((addr) => ({
+            value: addr,
+            label: addr.split('@')[0] || addr,
+            title: addr,
+          })),
+        });
+      }
+
+      const mergedPools = targetEmail ? buildMergedPoolsForEmail(targetEmail, nowMs) : [];
+      if (selectedPool !== 'all' && !mergedPools.some((p) => p.poolKey === selectedPool)) {
+        selectedPool = 'all';
+      }
+      const poolOpts = [
+        {
+          value: 'all',
+          label: t('cons.cyclePoolAll'),
+        },
+        ...mergedPools.map((p) => ({
+          value: p.poolKey,
+          label: p.poolKey === 'Claude & GPT' ? 'Claude/GPT' : p.label,
+          title: p.label,
+        })),
+      ];
+      poolSelect.setProps({ modelValue: selectedPool, options: poolOpts });
+      patchAttr(poolSelect.el, 'hidden', mergedPools.length <= 1);
+
+      const rawBounds = resolveQuotaWindowBounds({
+        pools: mergedPools,
+        selectedRange,
+        selectedWin,
+        selectedPool,
+        customStartMs,
+        customEndMs,
+        nowMs,
+      });
+      const visiblePools =
+        selectedPool === 'all'
+          ? mergedPools
+          : mergedPools.filter((p) => p.poolKey === selectedPool);
+
+      const built = buildQuotaWindowSeries({
+        visiblePools,
+        rawBounds,
+        selectedRange,
+        selectedWin,
+        nowMs,
+      });
+      plottedStartMs = built.plottedStartMs;
+      plottedEndMs = built.plottedEndMs;
+      const spanMs = plottedEndMs - plottedStartMs;
+      patchText(spanBadgeEl, formatDateSpanBadge(plottedStartMs, plottedEndMs));
+
+      const rawBuilt = built.rawBuilt;
+      const hasPlot = rawBuilt.length > 0;
+      patchAttr(chartWrap, 'hidden', !hasPlot);
+      patchAttr(emptyStateEl, 'hidden', hasPlot);
+      if (!hasPlot) {
+        plottedSeries = [];
+        lastPlotSig = '';
+        seriesMorphCtrl.reset();
+        hideHover();
+        patchText(emptyStateEl, t('settings.account.trendEmpty'));
+        return;
+      }
+
+      plottedYScale = built.yScale;
+      yLabels[0].textContent = `${plottedYScale.yMax}%`;
+      yLabels[1].textContent = `${plottedYScale.yMid}%`;
+      yLabels[2].textContent = `${plottedYScale.yMin}%`;
+
+      const plotW = Math.max(20, viewW - LEFT_X - RIGHT_PAD);
+      svg.setAttribute('viewBox', `0 0 ${viewW} ${VIEW_H}`);
+      for (const gl of gridLines) {
+        gl.setAttribute('x2', String(viewW));
+      }
+
+      plottedSeries = rawBuilt.map((rb) => {
+        const fullSvgPts = rb.rawPoints.map((sp) => {
+          const u = Math.max(0, Math.min(1, (sp.ts - plottedStartMs) / spanMs));
+          return {
+            x: LEFT_X + u * plotW,
+            y: valueToSvgY(sp.val),
+            val: sp.val,
+            ts: sp.ts,
+          };
+        });
+        return {
+          ...rb,
+          svgPts: simplifySvgPointsForRender(fullSvgPts, LEFT_X, plotW),
+        };
+      });
+
+      const plotSig =
+        `${locale}|${viewW}|${targetEmail}|${selectedWin}|${selectedRange}|${selectedPool}|${plottedYScale.yMin}-${plottedYScale.yMax}|` +
+        plottedSeries
+          .map(
+            (s) =>
+              `${s.poolKey}:${s.svgPts.length}:${s.svgPts[0]?.x.toFixed(1)}:${s.svgPts[0]?.y.toFixed(1)}:${s.svgPts[s.svgPts.length - 1]?.x.toFixed(1)}:${s.svgPts[s.svgPts.length - 1]?.y.toFixed(1)}`
+          )
+          .join('|');
+
+      if (plotSig !== lastPlotSig) {
+        lastPlotSig = plotSig;
+        const activePoolKeys = new Set();
+        const morphItems = [];
+
+        for (let i = 0; i < plottedSeries.length; i++) {
+          const s = plottedSeries[i];
+          activePoolKeys.add(s.poolKey);
+          let nodes = seriesNodePoolByKey.get(s.poolKey);
+          if (!nodes) {
+            const areaEl = document.createElementNS(SVG_NS, 'path');
+            const lineEl = document.createElementNS(SVG_NS, 'path');
+            lineEl.setAttribute('fill', 'none');
+            lineEl.setAttribute('stroke-width', '1.9');
+            lineEl.setAttribute('stroke-linecap', 'round');
+            const endDotEl = document.createElementNS(SVG_NS, 'circle');
+            endDotEl.setAttribute('r', '2.7');
+            nodes = { areaEl, lineEl, endDotEl };
+            seriesNodePoolByKey.set(s.poolKey, nodes);
+          }
+
+          const lineD = buildHorizontalTangentSpline(s.svgPts);
+          let areaD = '';
+          if (s.svgPts.length >= 2) {
+            const first = s.svgPts[0];
+            const last = s.svgPts[s.svgPts.length - 1];
+            areaD = `${lineD} L ${last.x.toFixed(1)} ${BOTTOM_Y} L ${first.x.toFixed(1)} ${BOTTOM_Y} Z`;
+            if (plottedSeries.length === 1) {
+              stopTop.setAttribute('stop-color', s.color);
+              stopBot.setAttribute('stop-color', s.color);
+              nodes.areaEl.removeAttribute('class');
+              nodes.areaEl.style.removeProperty('--sstep-series-color');
+              nodes.areaEl.setAttribute('fill', `url(#${gradId})`);
+            } else {
+              nodes.areaEl.removeAttribute('fill');
+              nodes.areaEl.setAttribute('class', 'sstep-multi-area');
+              nodes.areaEl.style.setProperty('--sstep-series-color', s.color);
+            }
+            nodes.areaEl.removeAttribute('hidden');
+          } else {
+            nodes.areaEl.setAttribute('d', '');
+            nodes.areaEl.setAttribute('hidden', '');
+          }
+
+          nodes.lineEl.setAttribute('stroke', s.color);
+          nodes.endDotEl.setAttribute('fill', s.color);
+
+          seriesGroup.appendChild(nodes.areaEl);
+          seriesGroup.appendChild(nodes.lineEl);
+          seriesGroup.appendChild(nodes.endDotEl);
+
+          const endPt = s.svgPts[s.svgPts.length - 1];
+          morphItems.push({
+            key: s.poolKey,
+            nextSegs: pointsToNormalizedCubicSegs(s.svgPts, BOTTOM_Y, {
+              leftX: LEFT_X,
+              spanX: plotW,
+              tension: 0.38,
+            }),
+            lineEl: nodes.lineEl,
+            areaEl: areaD ? nodes.areaEl : null,
+            endDotEl: nodes.endDotEl,
+            endX: endPt.x,
+            endY: endPt.y,
+            finalLineD: lineD,
+            finalAreaD: areaD,
+          });
+        }
+
+        for (const [k, nodes] of seriesNodePoolByKey.entries()) {
+          if (!activePoolKeys.has(k)) {
+            nodes.areaEl.remove();
+            nodes.lineEl.remove();
+            nodes.endDotEl.remove();
+          }
+        }
+
+        seriesMorphCtrl.morphSeries({
+          items: morphItems,
+          leftX: LEFT_X,
+          spanX: plotW,
+          bottomY: BOTTOM_Y,
+          skipMorph,
+        });
+      }
+
+      // Edge-to-edge X-axis ticks (`0% .. 100%`) with active hover highlight & click-to-inspect
+      const tickCount = 5;
+      const activeTickIdx =
+        hoveredSlotIdx >= 0 ? Math.round((hoveredSlotIdx / HOVER_SLOT_COUNT) * (tickCount - 1)) : -1;
+      const ticks = [];
+      for (let k = 0; k < tickCount; k++) {
+        const ratio = k / (tickCount - 1);
+        const tickMs = Math.round(plottedStartMs + ratio * spanMs);
+        const leftPct = ratio * 100;
+        ticks.push({
+          idx: k,
+          slotIdx: Math.round(ratio * HOVER_SLOT_COUNT),
+          leftPct,
+          label: formatAxisTickTime(tickMs, spanMs),
+          fullTitle: formatHoverTimestamp(tickMs),
+          edge: k === 0 ? 'start' : k === tickCount - 1 ? 'end' : '',
+          isHovered: k === activeTickIdx,
+        });
+      }
+      xTickElements = [];
+      lastHoveredTickIdx = activeTickIdx;
+      patchKeyedList(xAxisEl, ticks, {
+        keyFn: (tk) => tk.idx,
+        sigFn: (tk) => `${tk.leftPct.toFixed(1)}:${tk.label}:${tk.edge}:${tk.isHovered}`,
+        createRow: () => {
+          const el = h('span', { className: 'trend-x-tick text-mono' });
+          return { el, refs: { el } };
+        },
+        updateRow: (r, tk) => {
+          patchText(r.el, tk.label);
+          patchAttr(r.el, 'title', tk.fullTitle);
+          patchStyleVar(r.el, '--tick-x', `${tk.leftPct.toFixed(2)}%`);
+          patchClasses(r.el, {
+            'is-start': tk.edge === 'start',
+            'is-end': tk.edge === 'end',
+            'is-hovered': tk.isHovered,
+          });
+          r.el.onclick = () => {
+            lastPointer = null;
+            showHoverAtSlot(tk.slotIdx, null, { forceRefresh: true });
+          };
+          xTickElements[tk.idx] = r.el;
+        },
+      });
+
+      patchKeyedList(legendRowEl, plottedSeries, {
+        keyFn: (s) => s.poolKey,
+        sigFn: (s) => `${s.label}:${s.latestVal.toFixed(1)}:${s.color}`,
+        createRow: () => {
+          const sw = h('span', { className: 'dot-swatch' });
+          const nm = h('span', { className: 'account-trend-leg-name' });
+          const vl = h('strong', { className: 'text-mono' });
+          const el = h('span', { className: 'account-trend-leg-item' }, [sw, nm, vl]);
+          return { el, refs: { sw, nm, vl } };
+        },
+        updateRow: (r, s) => {
+          r.sw.style.background = s.color;
+          patchText(r.nm, s.label);
+          patchText(r.vl, `${+s.latestVal.toFixed(1)}%`);
+        },
+      });
+
+      if (hoveredSlotIdx >= 0) {
+        showHoverAtSlot(hoveredSlotIdx, lastPointer, { forceRefresh: true });
+      }
+    }
+
+    let resizeObs = null;
+    if (typeof ResizeObserver === 'function') {
+      resizeObs = new ResizeObserver((entries) => {
+        cachedSvgRect = null;
+        tooltipCtrl.invalidateRects();
+        const w = Math.floor(Number(entries?.[0]?.contentRect?.width || 0));
+        if (w >= 180 && Math.abs(w - viewW) >= 2) {
+          viewW = w;
+          renderChart({ skipMorph: true });
+        }
+      });
+      resizeObs.observe(plotStage);
+    }
+
+    onCleanup(() => {
+      seriesMorphCtrl.cancel();
+      tooltipCtrl.destroy();
+      resizeObs?.disconnect();
+      accountSelect.destroy();
+      poolSelect.destroy();
+      winSwitch.destroy();
+      rangeSwitch.destroy();
+      startPicker.destroy();
+      endPicker.destroy();
+    });
+
+    function update(nextState) {
+      latestState = { ...latestState, ...nextState };
+      renderChart();
+    }
+
+    renderChart();
+    return {
+      el: rootEl,
+      refs: { update, refreshLabels: () => renderChart() },
+    };
+  },
+});
+return { resolveQuotaWindowBounds, buildQuotaWindowSeries, AccountQuotaTrendCard };
 })();
 
 // --- src/components/widgets/LiveActivityWidget.js ---
@@ -21151,6 +25591,28 @@ function patchCapsuleOdometerText(
   return true;
 }
 
+function isValidTtftSec(val) {
+  return val != null && Number.isFinite(Number(val)) && Number(val) >= 0;
+}
+
+function findFallbackRecentStepTtft(steps) {
+  if (!Array.isArray(steps) || steps.length === 0) return null;
+  const firstIdx = Number(steps[0]?.stepIndex ?? 0);
+  const lastIdx = Number(steps[steps.length - 1]?.stepIndex ?? 0);
+  if (firstIdx >= lastIdx) {
+    for (let i = 0; i < steps.length; i += 1) {
+      const candidate = steps[i]?.ttftSec;
+      if (isValidTtftSec(candidate)) return Number(candidate);
+    }
+    return null;
+  }
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const candidate = steps[i]?.ttftSec;
+    if (isValidTtftSec(candidate)) return Number(candidate);
+  }
+  return null;
+}
+
 /**
  * Compute shared context ring + 1..5 capsule slot metric payload from telemetry & scoped conversation.
  */
@@ -21173,11 +25635,29 @@ function buildCapsuleSlotContext(
   ).toFixed(2);
 
   const isRunning = Boolean(aggregated?.isRunning || activeConv.isRunning);
+  const convId = String(capActive.cascadeId || activeConv.cascadeId || '')
+    .trim()
+    .toLowerCase();
+  const scopeId = String(scopedConv?.agentId || aggregated?.agentId || 'main');
+  const conversationKey = convId ? `${convId}::${scopeId}` : '';
+  const stepCount = Math.max(0, Number(capActive.stepCount ?? activeConv.stepCount ?? 0));
+
+  const rawTtft =
+    scopedConv?.latestTtftSec ?? aggregated?.latestTtftSec ?? activeConv.latestTtftSec ?? null;
+  const fallbackTtft = isValidTtftSec(rawTtft)
+    ? Number(rawTtft)
+    : scopedConv?.lastKnownTtftSec ??
+      findFallbackRecentStepTtft(scopedConv?.recentSteps) ??
+      aggregated?.lastKnownTtftSec ??
+      activeConv.lastKnownTtftSec ??
+      findFallbackRecentStepTtft(activeConv.recentSteps);
+  const resolvedTtft = isValidTtftSec(fallbackTtft) ? Number(fallbackTtft) : null;
+
   const capInTok = Math.max(0, Number(capActive.inputTokens || 0));
   const capCacheTok = Math.max(0, Number(capActive.cacheReadTokens || 0));
   const capOutTok = Math.max(0, Number(capActive.outputTokens || 0));
   const sessionTokens =
-    Number(capActive.stepCount || 0) > 0 ||
+    stepCount > 0 ||
     capActive.totalTokens != null ||
     capInTok + capCacheTok + capOutTok > 0
       ? Math.max(0, Number(capActive.totalTokens ?? capInTok + capCacheTok + capOutTok))
@@ -21185,12 +25665,14 @@ function buildCapsuleSlotContext(
 
   return {
     hasTelemetry: true,
+    conversationKey,
+    stepCount,
     usedPct,
     dashOffset,
     isRunning,
     tps: scopedConv?.latestTokPerSec ?? aggregated?.latestTokPerSec ?? activeConv.latestTokPerSec ?? null,
     avgTps: scopedConv?.avgTokPerSec ?? aggregated?.avgTokPerSec ?? activeConv.avgTokPerSec ?? null,
-    ttft: scopedConv?.latestTtftSec ?? aggregated?.latestTtftSec ?? activeConv.latestTtftSec ?? null,
+    ttft: resolvedTtft,
     stepCost:
       scopedConv?.latestStepCostUsd ??
       aggregated?.latestStepCostUsd ??
@@ -21320,6 +25802,7 @@ function createCapsuleSlotNode(slotIndex, initialMetric) {
     textSpan,
     ringMounted: isCtx,
     prefixMounted: false,
+    heldTtft: null,
   };
 }
 
@@ -21332,7 +25815,25 @@ function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCtx) {
   for (let i = 0; i < capsuleSlots.length; i += 1) {
     const slot = capsuleSlots[i];
     const metricKey = i < slotKeys.length ? slotKeys[i] : 'none';
-    const pres = resolveCapsuleMetricPresentation(metricKey, slotCtx, RING_CIRCUMFERENCE);
+    if (!slotCtx?.hasTelemetry || metricKey !== 'ttft') {
+      slot.heldTtft = null;
+    }
+    let pres = resolveCapsuleMetricPresentation(metricKey, slotCtx, RING_CIRCUMFERENCE);
+    if (metricKey === 'ttft' && slotCtx?.hasTelemetry) {
+      const convKey = String(slotCtx.conversationKey || '');
+      if (isValidTtftSec(slotCtx.ttft)) {
+        slot.heldTtft = convKey ? { conversationKey: convKey, pres } : null;
+      } else if (
+        convKey &&
+        slot.heldTtft &&
+        slot.heldTtft.conversationKey === convKey &&
+        (slotCtx.isRunning || Number(slotCtx.stepCount) > 0)
+      ) {
+        pres = { ...slot.heldTtft.pres, running: Boolean(slotCtx.isRunning) };
+      } else {
+        slot.heldTtft = null;
+      }
+    }
     if (pres.hidden) {
       patchAttr(slot.el, 'hidden', true);
       patchAttr(slot.el, 'data-metric', 'none');
@@ -21589,24 +26090,44 @@ const SIZER_ROW_KEY = '__vsizer__';
 const SPACER_TOP_KEY = '__vspacer_top__';
 const SPACER_BOTTOM_KEY = '__vspacer_bottom__';
 
-function estTokenChars(val) {
-  const n = Math.max(0, Number(val || 0));
-  if (n >= 1_000_000) return n >= 10_000_000 ? 6 : 5;
-  if (n >= 100_000) return 6;
-  if (n >= 10_000) return 5;
-  if (n >= 1_000) return 4;
-  if (n >= 100) return 3;
-  if (n >= 10) return 2;
-  return 1;
+function estProportionalTextWidth(text) {
+  const s = String(text || '');
+  let w = 0;
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if (code > 0x2e7f) {
+      w += 1.8;
+    } else if (
+      code === 105 || code === 108 || code === 73 || code === 116 || code === 102 ||
+      code === 114 || code === 46 || code === 44 || code === 58 || code === 59 ||
+      code === 45 || code === 47 || code === 32
+    ) {
+      w += 0.55;
+    } else if (
+      code === 109 || code === 119 || code === 77 || code === 87 || code === 71 ||
+      code === 79 || code === 81 || code === 67
+    ) {
+      w += 1.32;
+    } else {
+      w += 1.0;
+    }
+  }
+  return w;
 }
 
-function estCostChars(val) {
-  const n = Number(val);
-  if (!Number.isFinite(n) || n <= 0) return 1;
-  if (n >= 100) return 7;
-  if (n >= 10) return 6;
-  if (n >= 0.01) return 5;
-  return 7;
+function estTokenChars(val) {
+  const n = Math.max(0, Number(val || 0));
+  if (n >= 1_000_000) return n >= 10_000_000 ? 6.4 : 5.6;
+  if (n >= 100_000) return 6.0;
+  if (n >= 10_000) return 5.0;
+  if (n >= 1_000) return 4.1;
+  if (n >= 100) return 3.0;
+  if (n >= 10) return 2.0;
+  return 1.0;
+}
+
+function estCostWidth(st) {
+  return estProportionalTextWidth(formatUsd(st?.costUsd, { precise: true }));
 }
 
 function estSegmentChars(seg, st) {
@@ -21702,19 +26223,27 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
   let bestCostObj = firstStep;
 
   let bestBadgeText = '';
+  let bestBadgeWidth = -1;
   let bestBadgeClass = '';
+  let hasBoldFirstCol = false;
   const badgeCandidates = cellCtx?.showAgentBadge ? new Set() : null;
 
   for (let i = 0; i < tableSteps.length; i++) {
     const st = tableSteps[i];
     if (!st || typeof st !== 'object') continue;
 
+    if (!hasBoldFirstCol && (isCompactionStepItem(st) || Number(st?.anomaly?.count) > 0)) {
+      hasBoldFirstCol = true;
+    }
+
     if (badgeCandidates) {
       const bKey = `${st.agentKind || ''}|${st.isSubagent ? 1 : 0}|${st.isSideQuestion ? 1 : 0}|${st.agentOrdinal || 0}|${st.sideIndex || 0}|${st.agentIndex || 0}|${st.agentBadge || ''}`;
       if (!badgeCandidates.has(bKey)) {
         badgeCandidates.add(bKey);
         const text = resolveBadgeTextForStep(st);
-        if (text.length > bestBadgeText.length) {
+        const bw = estProportionalTextWidth(text);
+        if (bw > bestBadgeWidth) {
+          bestBadgeWidth = bw;
           bestBadgeText = text;
           bestBadgeClass = getAgentBadgeClass(st.agentIndex || 0, !st.isSubagent);
         }
@@ -21758,17 +26287,23 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
 
     if (needTtft) {
       const v = Number(st.ttftSec);
-      if (Number.isFinite(v) && v > maxTtftVal) {
-        maxTtftVal = v;
-        bestTtftObj = st;
+      if (Number.isFinite(v) && v >= 0) {
+        const score = estProportionalTextWidth(formatMetric(v, 's')) * 1e6 + v;
+        if (score > maxTtftVal) {
+          maxTtftVal = score;
+          bestTtftObj = st;
+        }
       }
     }
 
     if (needDuration) {
       const v = Number(st.totalDurationSec ?? st.streamDurationSec);
-      if (Number.isFinite(v) && v > maxDurVal) {
-        maxDurVal = v;
-        bestDurObj = st;
+      if (Number.isFinite(v) && v >= 0) {
+        const score = estProportionalTextWidth(formatMetric(v, 's')) * 1e6 + v;
+        if (score > maxDurVal) {
+          maxDurVal = score;
+          bestDurObj = st;
+        }
       }
     }
 
@@ -21854,7 +26389,7 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
 
     if (needCost) {
       const c = Number(st.costUsd);
-      const score = estCostChars(c) * 1e6 + (Number.isFinite(c) && c > 0 ? c : 0);
+      const score = estCostWidth(st) * 1e6 + (Number.isFinite(c) && c > 0 ? c : 0);
       if (score > bestCostScore) {
         bestCostScore = score;
         bestCostObj = st;
@@ -21865,13 +26400,13 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
   if (needStep) colSteps.step = bestStepObj;
   if (needTime) colSteps.time = bestTimeObj || firstStep;
   if (needModel && modelCandidates) {
-    let bestModelLen = -1;
+    let bestModelWidth = -1;
     let bestModelObj = firstStep;
     for (const cand of modelCandidates.values()) {
       const disp = resolveModelDisplayInfo(cand, cellCtx?.displaySettings, { fallback: '—' });
-      const len = disp.baseText?.length || 0;
-      if (len > bestModelLen) {
-        bestModelLen = len;
+      const w = estProportionalTextWidth(disp.baseText || '');
+      if (w > bestModelWidth) {
+        bestModelWidth = w;
         bestModelObj = cand;
       }
     }
@@ -21879,19 +26414,20 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
   }
   if (needTps) {
     let longestReasonKey = null;
-    let longestReasonLen = 0;
+    let longestReasonWidth = 0;
     if (reasonCandidates) {
       for (const rk of reasonCandidates) {
         const txt = speedReasonText(rk);
-        if (txt && txt.length > longestReasonLen) {
-          longestReasonLen = txt.length;
+        const w = txt ? estProportionalTextWidth(txt) : 0;
+        if (w > longestReasonWidth) {
+          longestReasonWidth = w;
           longestReasonKey = rk;
         }
       }
     }
     colSteps.tps = {
       ...(maxTpsObj || firstStep),
-      tokPerSec: maxTpsVal > 0 ? maxTpsVal : firstStep.tokPerSec,
+      tokPerSec: maxTpsObj ? maxTpsObj.tokPerSec : firstStep.tokPerSec,
       selectedSpeedReason: longestReasonKey,
     };
   }
@@ -21914,7 +26450,8 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
     colSteps,
     badgeText: bestBadgeText,
     badgeClass: bestBadgeClass,
-    sig: `sizer:${bestBadgeText}:${sigParts.join('|')}`,
+    hasBoldFirstCol,
+    sig: `sizer:${bestBadgeText}:${hasBoldFirstCol ? 1 : 0}:${sigParts.join('|')}`,
   };
 }
 
@@ -22182,7 +26719,65 @@ const StepTableWidget = defineComponent({
     let lastFontScale = 1;
     let calibratedSingleRowH = 0;
     let calibratedReasonRowH = 0;
+    let lockedColKey = '';
+    let lockedPaneWidth = 0;
     const rowPool = [];
+
+    function computeColLockKey(ds) {
+      if (!ds?.isVirtualized) return '';
+      return `${ds.locale}:${ds.colOrderSig}:${lastFontScale}:${ds.showAgentBadge ? 1 : 0}:${ds.railActive ? 1 : 0}:${ds.sortKey || ''}:${ds.sortDir || ''}:${ds.sizerSpec?.sig || ''}`;
+    }
+
+    function unlockColumnWidths() {
+      lockedColKey = '';
+      lockedPaneWidth = 0;
+      patchClasses(stepsTableEl, { 'is-cols-locked': false });
+      if (stepsTableEl.style) {
+        stepsTableEl.style.minWidth = '';
+      }
+      const ths = stepsTheadRow.children || [];
+      for (let i = 0; i < ths.length; i++) {
+        if (ths[i]?.style) ths[i].style.width = '';
+      }
+    }
+
+    function lockColumnWidthsIfNeeded() {
+      if (!activeDataset?.isVirtualized) return;
+      const paneW = Number(stepsTablePane.clientWidth || 0);
+      if (paneW <= 0) return;
+      const nextKey = computeColLockKey(activeDataset);
+      if (lockedColKey === nextKey && Math.abs(paneW - lockedPaneWidth) < 1) return;
+
+      const ths = stepsTheadRow.children || [];
+      const colCount = activeDataset.colKeys.length;
+      if (ths.length !== colCount) return;
+
+      // Release fixed layout momentarily if stale so browser resolves natural widths from sizer + header
+      if (stepsTableEl.classList?.contains('is-cols-locked')) {
+        unlockColumnWidths();
+      }
+
+      const widths = [];
+      for (let i = 0; i < colCount; i++) {
+        const w = Number(ths[i]?.getBoundingClientRect?.()?.width || 0);
+        if (!Number.isFinite(w) || w <= 0) return;
+        widths.push(w);
+      }
+      const tableW = Number(stepsTableEl.getBoundingClientRect?.()?.width || 0);
+      if (!Number.isFinite(tableW) || tableW <= 0) return;
+
+      for (let i = 0; i < colCount; i++) {
+        if (ths[i]?.style) {
+          ths[i].style.width = `${widths[i].toFixed(2)}px`;
+        }
+      }
+      if (stepsTableEl.style) {
+        stepsTableEl.style.minWidth = tableW > paneW + 0.5 ? `${tableW.toFixed(2)}px` : '';
+      }
+      patchClasses(stepsTableEl, { 'is-cols-locked': true });
+      lockedColKey = nextKey;
+      lockedPaneWidth = paneW;
+    }
 
     function readUiFontScale() {
       try {
@@ -22246,6 +26841,7 @@ const StepTableWidget = defineComponent({
       lastFontScale = nextScale;
       calibratedSingleRowH = 0;
       calibratedReasonRowH = 0;
+      unlockColumnWidths();
       if (activeDataset?.isVirtualized) {
         const rebuilt = buildRowTops(activeDataset.tableSteps.length, activeDataset.hasReasonFlags);
         activeDataset.rowTops = rebuilt.rowTops;
@@ -22394,6 +26990,7 @@ const StepTableWidget = defineComponent({
       calibrateRafId = 0;
       if (!activeDataset?.isVirtualized) return;
       if (Number(stepsTablePane.clientHeight || 0) <= 0) return;
+      lockColumnWidthsIfNeeded();
       const needSingle = calibratedSingleRowH <= 0;
       const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
       if (!needSingle && !needReason) return;
@@ -22486,7 +27083,12 @@ const StepTableWidget = defineComponent({
       if (!activeDataset?.isVirtualized) return;
       const needSingle = calibratedSingleRowH <= 0;
       const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
-      if (!needSingle && !needReason) return;
+      const paneW = Number(stepsTablePane.clientWidth || 0);
+      const needColLock =
+        !lockedColKey ||
+        lockedColKey !== computeColLockKey(activeDataset) ||
+        (paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1);
+      if (!needSingle && !needReason && !needColLock) return;
       if (calibrateRafId) return;
       if (typeof requestAnimationFrame === 'function') {
         calibrateRafId = requestAnimationFrame(calibrateRowHeights);
@@ -22719,6 +27321,7 @@ const StepTableWidget = defineComponent({
         updateRow: (refs, item, _idx, tr) => {
           if (item.isSizer) {
             const spec = item.sizerSpec;
+            patchClasses(tr, { 'has-bold-first': Boolean(spec.hasBoldFirstCol) });
             if (refs.colOrderSig !== colOrderSig) {
               for (const [oldColKey, entry] of refs.cellMap) {
                 if (!wantedSet.has(oldColKey)) {
@@ -23051,6 +27654,10 @@ const StepTableWidget = defineComponent({
     function refreshViewport() {
       if (!activeDataset?.isVirtualized) return;
       const scaleChanged = syncFontScaleIfChanged();
+      const paneW = Number(stepsTablePane.clientWidth || 0);
+      if (lockedColKey && paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1) {
+        unlockColumnWidths();
+      }
       renderCurrentWindow({ force: scaleChanged, enteringRowKeys: null });
       scheduleCalibrateRowHeights();
     }
@@ -23274,8 +27881,13 @@ const StepTableWidget = defineComponent({
         totalBodyH,
         sizerSpec,
         effectiveScopes,
+        sortKey: normSortKey,
+        sortDir: normSortDir,
         formattedPrompts: new Map(),
       };
+      if (!isVirtualized || computeColLockKey(activeDataset) !== lockedColKey) {
+        unlockColumnWidths();
+      }
       renderedSliceStart = -1;
       renderedSliceEnd = -1;
       renderedTopSpacerH = -1;
@@ -23326,6 +27938,878 @@ const StepTableWidget = defineComponent({
   },
 });
 return { formatTurnPromptText, StepTableWidget };
+})();
+
+// --- src/components/widgets/ConsumptionBreakdownRows.js ---
+const { partitionModelSegments, createBreakdownItemRow, updateBreakdownItemRow, createConsumptionBreakdownRowBuilders } = (() => {
+/**
+ * @fileoverview Reusable model, client-source, workspace, and top-conversation breakdown
+ * row builders (`ConsumptionBreakdownRows.js`) extracted from `ConsumptionView.js`.
+ * Consolidates shared long-tail model partitioning, hover-popover event binding, and top-model pill rendering.
+ */
+
+
+function createSourceModelSegment() {
+  const segEl = h('div', { className: 'progress-seg cons-model-seg' });
+  return { el: segEl, refs: { segEl } };
+}
+
+function createSourceTopModelItem() {
+  const dotEl = h('span', { className: 'dot-swatch cons-model-dot cons-source-top-dot' });
+  const nameEl = h('span', { className: 'cons-source-top-name' });
+  const pctEl = h('strong', { className: 'cons-source-top-pct text-mono' });
+  const itemEl = h('span', { className: 'cons-source-top-item' }, [dotEl, nameEl, pctEl]);
+  return { el: itemEl, refs: { itemEl, dotEl, nameEl, pctEl } };
+}
+
+function formatCompactSourceSharePct(pct) {
+  const num = Number(pct || 0);
+  if (!Number.isFinite(num) || num <= 0) return '0%';
+  if (num >= 10) return `${Math.round(num)}%`;
+  return `${num.toFixed(1)}%`;
+}
+
+function renderSegmentedModelBarAndTopPills(
+  trackEl,
+  topModelsEl,
+  partitioned,
+  scaleRatio,
+  fallbackKey
+) {
+  const barItems =
+    partitioned.length > 0
+      ? partitioned.map((seg) => ({
+          key: seg.key,
+          segPct: scaleRatio > 0 ? seg.pct * scaleRatio : 0,
+          color: seg.color,
+        }))
+      : scaleRatio > 0
+        ? [
+            {
+              key: fallbackKey,
+              segPct: scaleRatio * 100,
+              color: 'var(--accent-primary)',
+            },
+          ]
+        : [];
+
+  patchKeyedList(trackEl, barItems, {
+    keyFn: (seg) => seg.key,
+    sigFn: (seg) => `${seg.key}:${seg.segPct.toFixed(2)}:${seg.color}`,
+    createRow: createSourceModelSegment,
+    updateRow: (segRefs, seg) => {
+      patchStyleVar(segRefs.segEl, '--seg-w', `${seg.segPct.toFixed(2)}%`);
+      patchStyleVar(segRefs.segEl, '--seg-color', seg.color);
+    },
+  });
+
+  const topModels = partitioned
+    .filter((seg) => !seg.isOther)
+    .slice(0, 3)
+    .map((seg) => ({
+      key: seg.key,
+      label: seg.label,
+      pctText: formatCompactSourceSharePct(seg.pct),
+      color: seg.color,
+    }));
+  patchAttr(topModelsEl, 'hidden', topModels.length === 0);
+  patchKeyedList(topModelsEl, topModels, {
+    keyFn: (m) => m.key,
+    sigFn: (m) => `${m.key}:${m.label}:${m.pctText}:${m.color}`,
+    createRow: createSourceTopModelItem,
+    updateRow: (mRefs, m) => {
+      patchStyleVar(mRefs.dotEl, '--dot-color', m.color);
+      patchText(mRefs.nameEl, m.label);
+      patchText(mRefs.pctEl, m.pctText);
+      patchAttr(mRefs.itemEl, 'title', `${m.label} (${m.pctText})`);
+    },
+  });
+
+  return topModels;
+}
+
+/**
+ * Collapses long-tail model entries into primary segments + an aggregated "Other (N)" tail.
+ */
+function partitionModelSegments(
+  mergedModels,
+  modelColorMap,
+  { maxMain = 5, minSharePct = 1.5 } = {}
+) {
+  if (!Array.isArray(mergedModels) || mergedModels.length === 0) return [];
+  const sumTok = mergedModels.reduce((sum, m) => sum + Number(m.totalTokens || 0), 0);
+  const mainModels = [];
+  const tailModels = [];
+
+  for (let i = 0; i < mergedModels.length; i += 1) {
+    const m = mergedModels[i];
+    const mTok = Number(m.totalTokens || 0);
+    const sharePct = sumTok > 0 ? (mTok / sumTok) * 100 : 0;
+    if (i === 0 || (mainModels.length < maxMain && sharePct >= minSharePct)) {
+      mainModels.push(m);
+    } else {
+      tailModels.push(m);
+    }
+  }
+
+  if (tailModels.length === 1) {
+    mainModels.push(tailModels.pop());
+  }
+
+  const out = mainModels.map((m) => {
+    const seed = getCanonicalModelColorSeed(m);
+    const color =
+      modelColorMap?.get(seed) || resolveDeterministicModelColor(seed || m.displayText);
+    const tok = Number(m.totalTokens || 0);
+    const pct = sumTok > 0 ? (tok / sumTok) * 100 : 0;
+    const label = m.displayText || m.label || m.shortName || '—';
+    const inputTokens = Math.max(0, Number(m.inputTokens || 0));
+    const cacheReadTokens = Math.max(0, Number(m.cacheReadTokens || 0));
+    const thinkingTokens = Math.max(0, Number(m.thinkingTokens || 0));
+    const responseTokens =
+      m.responseTokens != null
+        ? Math.max(0, Number(m.responseTokens))
+        : Math.max(0, Number(m.outputTokens || 0) - thinkingTokens);
+    return {
+      key: label,
+      label,
+      tok,
+      pct,
+      inputTokens,
+      cacheReadTokens,
+      thinkingTokens,
+      responseTokens,
+      outputTokens: responseTokens + thinkingTokens,
+      tokText: formatTokensPrecise(tok),
+      pctText: formatPctNumber(pct, { withSymbol: true }),
+      color,
+      isOther: false,
+    };
+  });
+
+  if (tailModels.length >= 2) {
+    let otherTok = 0;
+    let otherIn = 0;
+    let otherCache = 0;
+    let otherThink = 0;
+    let otherResp = 0;
+    for (const m of tailModels) {
+      const mt = Math.max(0, Number(m.thinkingTokens || 0));
+      const mr =
+        m.responseTokens != null
+          ? Math.max(0, Number(m.responseTokens))
+          : Math.max(0, Number(m.outputTokens || 0) - mt);
+      otherTok += Number(m.totalTokens || 0);
+      otherIn += Math.max(0, Number(m.inputTokens || 0));
+      otherCache += Math.max(0, Number(m.cacheReadTokens || 0));
+      otherThink += mt;
+      otherResp += mr;
+    }
+    const otherPct = sumTok > 0 ? (otherTok / sumTok) * 100 : 0;
+    const otherLabel = t('cons.otherModelsCount', { count: tailModels.length });
+    out.push({
+      key: '__other__',
+      label: otherLabel,
+      tok: otherTok,
+      pct: otherPct,
+      inputTokens: otherIn,
+      cacheReadTokens: otherCache,
+      thinkingTokens: otherThink,
+      responseTokens: otherResp,
+      outputTokens: otherResp + otherThink,
+      tokText: formatTokensPrecise(otherTok),
+      pctText: formatPctNumber(otherPct, { withSymbol: true }),
+      color: 'var(--cons-other-seg)',
+      isOther: true,
+    });
+  }
+
+  return out;
+}
+
+/**
+ * Creates a model ranking row (`tokens` | `cost` | `speed` | `calls` sort modes).
+ */
+function createBreakdownItemRow() {
+  const nameTextEl = h('span', { className: 'cons-row-title-text' });
+  const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl]);
+  const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
+  const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
+  const costEl = h('strong', { className: 'cons-row-cost text-mono' });
+  const segBar = createFourSegmentBar();
+
+  const inLbl = h('span', { text: t('cons.footInput') });
+  const cacheLbl = h('span', { text: t('cons.footCache') });
+  const outLbl = h('span', { text: t('cons.footOutput') });
+  const thinkLbl = h('span', { text: t('cons.footThinking') });
+  const callsLbl = h('span', { text: t('cons.footCalls') });
+
+  const inVal = h('strong', { className: 'text-mono' });
+  const cacheVal = h('strong', { className: 'text-mono' });
+  const outVal = h('strong', { className: 'text-mono' });
+  const thinkVal = h('strong', { className: 'text-mono' });
+  const callsVal = h('strong', { className: 'text-mono' });
+  const metricBarFillEl = h('div', { className: 'progress-seg cons-metric-fill' });
+  const metricBarEl = h(
+    'div',
+    { className: 'progress-track cons-seg-bar cons-metric-bar', hidden: true },
+    [metricBarFillEl]
+  );
+  const tokenFootEl = h('div', { className: 'cons-item-foot' }, [
+    h('span', { className: 'legend-left' }, [
+      h('span', { className: 'dot-swatch seg-input' }),
+      inLbl,
+      inVal,
+    ]),
+    h('span', { className: 'legend-left' }, [
+      h('span', { className: 'dot-swatch seg-cached' }),
+      cacheLbl,
+      cacheVal,
+    ]),
+    h('span', { className: 'legend-left' }, [
+      h('span', { className: 'dot-swatch seg-thinking' }),
+      thinkLbl,
+      thinkVal,
+    ]),
+    h('span', { className: 'legend-left' }, [
+      h('span', { className: 'dot-swatch seg-output' }),
+      outLbl,
+      outVal,
+    ]),
+    h('span', { className: 'legend-left' }, [callsLbl, callsVal]),
+  ]);
+  const perfMainEl = h('span', { className: 'cons-model-perf-main text-mono' });
+  const perfUnitCostEl = h('span', { className: 'cons-model-unit-cost text-mono', hidden: true });
+  const perfFootEl = h('div', { className: 'cons-model-perf-foot', hidden: true }, [
+    perfMainEl,
+    perfUnitCostEl,
+  ]);
+  const focusLeftEl = h('span', { className: 'cons-model-focus-left text-mono' });
+  const focusRightEl = h('span', { className: 'cons-model-focus-right text-mono' });
+  const focusFootEl = h(
+    'div',
+    { className: 'cons-item-foot cons-model-focus-foot', hidden: true },
+    [focusLeftEl, focusRightEl]
+  );
+
+  const rowEl = h('div', { className: 'cons-item-row' }, [
+    h('div', { className: 'panel-header' }, [
+      nameEl,
+      h('span', { className: 'cons-row-metrics' }, [pctBadge, totalTokEl, costEl]),
+    ]),
+    segBar.el,
+    metricBarEl,
+    tokenFootEl,
+    perfFootEl,
+    focusFootEl,
+  ]);
+
+  return {
+    el: rowEl,
+    refs: {
+      nameEl,
+      nameTextEl,
+      pctBadge,
+      totalTokEl,
+      costEl,
+      segBar,
+      metricBarEl,
+      metricBarFillEl,
+      tokenFootEl,
+      inLbl,
+      cacheLbl,
+      outLbl,
+      thinkLbl,
+      callsLbl,
+      inVal,
+      cacheVal,
+      outVal,
+      thinkVal,
+      callsVal,
+      perfFootEl,
+      perfMainEl,
+      perfUnitCostEl,
+      focusFootEl,
+      focusLeftEl,
+      focusRightEl,
+    },
+  };
+}
+
+/**
+ * Incrementally patches a model ranking row.
+ */
+function updateBreakdownItemRow(refs, item, totalsCtx, sortMode = 'tokens') {
+  const displayLabel = item.label || item.name || item.shortName || '—';
+  patchText(refs.nameTextEl, displayLabel);
+  patchAttr(refs.nameEl, 'title', item.title || displayLabel);
+
+  const total = Number(item.totalTokens || 0);
+  const costVal = Number(item.costUsd || 0);
+  const callsCount = Number(item.calls || 0);
+  const isAllUnpriced =
+    callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
+  const costText = formatUsd(isAllUnpriced ? null : costVal, {
+    precise: costVal > 0 && costVal < 0.1,
+  });
+
+  const avgTps =
+    item.avgTokPerSec != null &&
+    Number.isFinite(Number(item.avgTokPerSec)) &&
+    Number(item.avgTokPerSec) > 0
+      ? Number(item.avgTokPerSec)
+      : null;
+  const avgTtft =
+    item.avgTtftSec != null &&
+    Number.isFinite(Number(item.avgTtftSec)) &&
+    Number(item.avgTtftSec) >= 0
+      ? Number(item.avgTtftSec)
+      : null;
+  const hasExplicitCachePct =
+    item.cacheHitPct != null && Number.isFinite(Number(item.cacheHitPct));
+  const promptTok = Number(item.inputTokens || 0) + Number(item.cacheReadTokens || 0);
+  const cachePctVal = hasExplicitCachePct
+    ? Number(item.cacheHitPct)
+    : promptTok > 0 && Number(item.cacheReadTokens || 0) > 0
+      ? +((Number(item.cacheReadTokens || 0) / promptTok) * 100).toFixed(1)
+      : 0;
+  const cachePctStr = formatPctNumber(cachePctVal);
+  const effCostPer1M =
+    !isAllUnpriced && costVal > 0 && total >= 1000 ? costVal / (total / 1_000_000) : null;
+  const outTok = Number(
+    item.outputTokens ?? Number(item.responseTokens || 0) + Number(item.thinkingTokens || 0)
+  );
+
+  if (sortMode === 'cost') {
+    const costBase = Number(totalsCtx?.totalCost || 0);
+    const costShare = costBase > 0 ? +((costVal / costBase) * 100).toFixed(1) : 0;
+    const barPct =
+      costBase > 0 && costVal > 0 ? Math.min(100, Math.max(1, (costVal / costBase) * 100)) : 0;
+    patchAttr(refs.pctBadge, 'hidden', false);
+    patchAttr(refs.pctBadge, 'title', null);
+    patchText(refs.pctBadge, formatPctNumber(costShare, { withSymbol: true }));
+    patchText(refs.totalTokEl, isAllUnpriced ? '' : formatCnyApprox(costVal));
+    patchText(refs.costEl, costText);
+
+    patchAttr(refs.segBar.el, 'hidden', true);
+    patchAttr(refs.metricBarEl, 'hidden', false);
+    patchStyleVar(refs.metricBarFillEl, '--seg-w', `${barPct.toFixed(2)}%`);
+    patchClasses(refs.metricBarFillEl, {
+      'tone-cost': true,
+      'tone-speed': false,
+      'tone-calls': false,
+    });
+
+    patchAttr(refs.tokenFootEl, 'hidden', true);
+    patchAttr(refs.perfFootEl, 'hidden', true);
+    patchAttr(refs.focusFootEl, 'hidden', false);
+    const unitPart =
+      effCostPer1M !== null
+        ? t('cons.modelUnitCost', {
+            cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
+          })
+        : '';
+    const cachePart = t('cons.topConvCacheMeta', { pct: cachePctStr });
+    patchText(refs.focusLeftEl, unitPart ? `${unitPart} · ${cachePart}` : cachePart);
+    patchText(
+      refs.focusRightEl,
+      `${formatTokensPrecise(total)} · ${t('cons.callsCount', { calls: callsCount })}`
+    );
+    return;
+  }
+
+  if (sortMode === 'speed') {
+    const maxTps = Number(totalsCtx?.maxAvgTps || 0);
+    const speedPct =
+      maxTps > 0 && avgTps !== null ? Math.min(100, Math.max(2, (avgTps / maxTps) * 100)) : 0;
+    patchAttr(refs.pctBadge, 'hidden', avgTps === null);
+    patchAttr(refs.pctBadge, 'title', avgTps !== null ? t('cons.speedRelTip') : null);
+    patchText(refs.pctBadge, avgTps !== null ? `${Math.round(speedPct)}%` : '');
+    patchText(
+      refs.totalTokEl,
+      avgTtft !== null ? t('cons.focusTtft', { ttft: formatMetric(avgTtft, 's') }) : ''
+    );
+    patchText(refs.costEl, formatSpeedMetric(avgTps, ' tok/s'));
+
+    patchAttr(refs.segBar.el, 'hidden', true);
+    patchAttr(refs.metricBarEl, 'hidden', false);
+    patchStyleVar(refs.metricBarFillEl, '--seg-w', `${speedPct.toFixed(2)}%`);
+    patchClasses(refs.metricBarFillEl, {
+      'tone-cost': false,
+      'tone-speed': true,
+      'tone-calls': false,
+    });
+
+    patchAttr(refs.tokenFootEl, 'hidden', true);
+    patchAttr(refs.perfFootEl, 'hidden', true);
+    patchAttr(refs.focusFootEl, 'hidden', false);
+    patchText(
+      refs.focusLeftEl,
+      t('cons.focusSpeedMeta', {
+        ttft: formatMetric(avgTtft, 's'),
+        cache: cachePctStr,
+        out: formatTokensPrecise(outTok),
+      })
+    );
+    patchText(refs.focusRightEl, t('cons.callsCount', { calls: callsCount }));
+    return;
+  }
+
+  if (sortMode === 'calls') {
+    const callsBase = Number(totalsCtx?.totalCalls || 0);
+    const callsShare = callsBase > 0 ? +((callsCount / callsBase) * 100).toFixed(1) : 0;
+    const barPct =
+      callsBase > 0 && callsCount > 0
+        ? Math.min(100, Math.max(1, (callsCount / callsBase) * 100))
+        : 0;
+    patchAttr(refs.pctBadge, 'hidden', false);
+    patchAttr(refs.pctBadge, 'title', null);
+    patchText(refs.pctBadge, formatPctNumber(callsShare, { withSymbol: true }));
+    patchText(refs.totalTokEl, formatTokensPrecise(total));
+    patchText(refs.costEl, t('cons.callsCount', { calls: callsCount }));
+
+    patchAttr(refs.segBar.el, 'hidden', true);
+    patchAttr(refs.metricBarEl, 'hidden', false);
+    patchStyleVar(refs.metricBarFillEl, '--seg-w', `${barPct.toFixed(2)}%`);
+    patchClasses(refs.metricBarFillEl, {
+      'tone-cost': false,
+      'tone-speed': false,
+      'tone-calls': true,
+    });
+
+    patchAttr(refs.tokenFootEl, 'hidden', true);
+    patchAttr(refs.perfFootEl, 'hidden', true);
+    patchAttr(refs.focusFootEl, 'hidden', false);
+    const avgPerCall = callsCount > 0 ? total / callsCount : 0;
+    patchText(
+      refs.focusLeftEl,
+      t('cons.focusCallsMeta', {
+        avgTok: formatTokensPrecise(avgPerCall),
+        cost: costText,
+      })
+    );
+    patchText(refs.focusRightEl, t('cons.topConvCacheMeta', { pct: cachePctStr }));
+    return;
+  }
+
+  patchText(refs.inLbl, t('cons.footInput'));
+  patchText(refs.cacheLbl, t('cons.footCache'));
+  patchText(refs.outLbl, t('cons.footOutput'));
+  patchText(refs.thinkLbl, t('cons.footThinking'));
+  patchText(refs.callsLbl, t('cons.footCalls'));
+  const grandTotalTokens = Number(totalsCtx?.totalTokens || 0);
+  const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
+  const scaleRatio =
+    grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.008, total / grandTotalTokens)) : 0;
+  patchAttr(refs.pctBadge, 'hidden', false);
+  patchAttr(refs.pctBadge, 'title', null);
+  patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
+  patchText(refs.totalTokEl, formatTokensPrecise(total));
+  patchText(refs.costEl, costText);
+
+  const responseTok =
+    item.responseTokens != null
+      ? Number(item.responseTokens)
+      : Math.max(0, Number(item.outputTokens || 0) - Number(item.thinkingTokens || 0));
+  const thinkingTok = Number(item.thinkingTokens || 0);
+
+  patchAttr(refs.segBar.el, 'hidden', false);
+  patchAttr(refs.metricBarEl, 'hidden', true);
+  refs.segBar.update({
+    inputTokens: Number(item.inputTokens || 0),
+    cacheReadTokens: Number(item.cacheReadTokens || 0),
+    responseTokens: responseTok,
+    thinkingTokens: thinkingTok,
+    scaleRatio,
+  });
+
+  patchAttr(refs.tokenFootEl, 'hidden', false);
+  patchAttr(refs.focusFootEl, 'hidden', true);
+  patchText(refs.inVal, formatTokensPrecise(item.inputTokens || 0));
+  patchText(refs.cacheVal, formatTokensPrecise(item.cacheReadTokens || 0));
+  patchText(refs.outVal, formatTokensPrecise(responseTok));
+  patchText(refs.thinkVal, formatTokensPrecise(thinkingTok));
+  patchText(refs.callsVal, String(callsCount));
+
+  const hasPerfMeta = avgTps !== null || avgTtft !== null || effCostPer1M !== null;
+  patchAttr(refs.perfFootEl, 'hidden', !hasPerfMeta);
+  if (hasPerfMeta) {
+    if (avgTps !== null || avgTtft !== null) {
+      patchText(
+        refs.perfMainEl,
+        t('steps.modelPerfFoot', {
+          tps: formatSpeedMetric(avgTps, ' tok/s'),
+          ttft: formatMetric(avgTtft, 's'),
+          cache: cachePctStr,
+        })
+      );
+    } else {
+      patchText(refs.perfMainEl, t('cons.topConvCacheMeta', { pct: cachePctStr }));
+    }
+    patchAttr(refs.perfUnitCostEl, 'hidden', effCostPer1M === null);
+    patchText(
+      refs.perfUnitCostEl,
+      effCostPer1M !== null
+        ? t('cons.modelUnitCost', {
+            cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
+          })
+        : ''
+    );
+  }
+}
+
+/**
+ * Binds shared popover hover callbacks to build source-breakdown and workspace/conversation rows.
+ */
+function createConsumptionBreakdownRowBuilders({
+  showPopover,
+  movePopover,
+  hidePopover,
+  isHoveredTarget,
+  onSelectConversation,
+}) {
+  function isNodeInside(root, node) {
+    if (!root || !node) return false;
+    if (typeof root.contains === 'function') return root.contains(node);
+    let cur = node;
+    while (cur) {
+      if (cur === root) return true;
+      cur = cur.parentNode || null;
+    }
+    return false;
+  }
+
+  function attachUnifiedHoverZone(zoneEl, compatTargets, rowState) {
+    zoneEl.addEventListener('mouseenter', (e) => {
+      if (rowState.hoverPayload) {
+        showPopover(zoneEl, rowState.hoverPayload, e?.clientX ?? null, e?.clientY ?? null);
+      }
+    });
+    zoneEl.addEventListener('mousemove', (e) => {
+      if (rowState.hoverPayload && isHoveredTarget(zoneEl)) {
+        movePopover(zoneEl, e?.clientX ?? null, e?.clientY ?? null);
+      }
+    });
+    zoneEl.addEventListener('mouseleave', () => {
+      if (isHoveredTarget(zoneEl)) hidePopover();
+    });
+
+    for (const childEl of compatTargets) {
+      if (!childEl) continue;
+      childEl.addEventListener('mouseenter', (e) => {
+        if (rowState.hoverPayload) {
+          showPopover(zoneEl, rowState.hoverPayload, e?.clientX ?? null, e?.clientY ?? null);
+        }
+      });
+      childEl.addEventListener('mousemove', (e) => {
+        if (rowState.hoverPayload && isHoveredTarget(zoneEl)) {
+          movePopover(zoneEl, e?.clientX ?? null, e?.clientY ?? null);
+        }
+      });
+      childEl.addEventListener('mouseleave', (e) => {
+        const nextEl = e?.relatedTarget || null;
+        if (isNodeInside(zoneEl, nextEl)) {
+          return;
+        }
+        if (isHoveredTarget(zoneEl)) hidePopover();
+      });
+    }
+  }
+
+  function createSourceBreakdownRow() {
+    const nameTextEl = h('span', { className: 'cons-row-title-text' });
+    const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl]);
+    const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
+    const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
+    const costEl = h('strong', { className: 'cons-row-cost text-mono' });
+    const trackEl = h('div', { className: 'progress-track cons-seg-bar cons-source-model-bar' });
+    const rowState = { hoverPayload: null };
+
+    const barHitEl = h('div', { className: 'cons-source-bar-hit' }, [trackEl]);
+    const topModelsEl = h('div', { className: 'cons-source-top-models', hidden: true });
+
+    const callsLbl = h('span', { text: t('cons.footCalls') });
+    const callsVal = h('strong', { className: 'text-mono' });
+
+    const hoverZoneEl = h('div', { className: 'cons-source-hover-zone' }, [
+      barHitEl,
+      h('div', { className: 'cons-item-foot cons-source-foot' }, [
+        topModelsEl,
+        h('span', { className: 'legend-left cons-calls-stat' }, [callsLbl, callsVal]),
+      ]),
+    ]);
+    attachUnifiedHoverZone(hoverZoneEl, [barHitEl, topModelsEl], rowState);
+
+    const rowEl = h('div', { className: 'cons-item-row cons-source-row' }, [
+      h('div', { className: 'panel-header' }, [
+        nameEl,
+        h('span', { className: 'cons-row-metrics' }, [pctBadge, totalTokEl, costEl]),
+      ]),
+      hoverZoneEl,
+    ]);
+
+    return {
+      el: rowEl,
+      refs: {
+        nameEl,
+        nameTextEl,
+        pctBadge,
+        totalTokEl,
+        costEl,
+        hoverZoneEl,
+        barHitEl,
+        trackEl,
+        topModelsEl,
+        callsLbl,
+        callsVal,
+        rowState,
+      },
+    };
+  }
+
+  function updateSourceBreakdownRow(refs, item, grandTotalTokens, modelColorMap) {
+    patchText(refs.callsLbl, t('cons.footCalls'));
+    const displayLabel = item.label || item.name || '—';
+    patchText(refs.nameTextEl, displayLabel);
+    patchAttr(refs.nameEl, 'title', item.title || displayLabel);
+
+    const total = Number(item.totalTokens || 0);
+    const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
+    const scaleRatio =
+      grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.01, total / grandTotalTokens)) : 0;
+    patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
+    patchText(refs.totalTokEl, formatTokensPrecise(total));
+
+    const costVal = Number(item.costUsd || 0);
+    const callsCount = Number(item.calls || 0);
+    const isAllUnpriced =
+      callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
+    const costText = formatUsd(isAllUnpriced ? null : costVal, {
+      precise: costVal > 0 && costVal < 0.1,
+    });
+    patchText(refs.costEl, costText);
+    patchText(refs.callsVal, String(callsCount));
+
+    const sourceModels = Array.isArray(item.mergedModels) ? item.mergedModels : [];
+    const partitioned = partitionModelSegments(sourceModels, modelColorMap, {
+      maxMain: 5,
+      minSharePct: 1.5,
+    });
+
+    renderSegmentedModelBarAndTopPills(
+      refs.trackEl,
+      refs.topModelsEl,
+      partitioned,
+      total > 0 ? scaleRatio : 0,
+      '__source_fallback__'
+    );
+
+    refs.rowState.hoverPayload =
+      total > 0 || callsCount > 0
+        ? {
+            title: displayLabel,
+            calls: callsCount,
+            totalTokens: total,
+            costText,
+            inputTokens: item.inputTokens,
+            cacheReadTokens: item.cacheReadTokens,
+            thinkingTokens: item.thinkingTokens,
+            responseTokens: item.responseTokens,
+            outputTokens: item.outputTokens,
+            segments: partitioned,
+          }
+        : null;
+    patchClasses(refs.hoverZoneEl, { 'is-interactive': Boolean(refs.rowState.hoverPayload) });
+  }
+
+  function createTopConversationRow() {
+    const titleTextEl = h('span', { className: 'cons-row-title-text' });
+    const wsBadgeEl = h('span', { className: 'cons-ws-sessions-tag text-mono', hidden: true });
+    const titleEl = h('strong', { className: 'cons-row-title cons-top-conv-title' }, [
+      titleTextEl,
+      wsBadgeEl,
+    ]);
+    const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
+    const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
+    const costEl = h('strong', { className: 'cons-row-cost text-mono' });
+    const trackEl = h('div', { className: 'progress-track cons-seg-bar cons-source-model-bar' });
+    const rowState = { cascadeId: '', canJump: false, hoverPayload: null };
+
+    const barHitEl = h('div', { className: 'cons-source-bar-hit' }, [trackEl]);
+    const topModelsEl = h('div', { className: 'cons-source-top-models', hidden: true });
+
+    const fallbackMetaEl = h('span', { className: 'cons-top-conv-meta', hidden: true });
+    const callsLbl = h('span', { text: t('cons.footCalls') });
+    const callsVal = h('strong', { className: 'text-mono' });
+
+    const hoverZoneEl = h('div', { className: 'cons-source-hover-zone' }, [
+      barHitEl,
+      h('div', { className: 'cons-item-foot cons-source-foot' }, [
+        topModelsEl,
+        fallbackMetaEl,
+        h('span', { className: 'legend-left cons-calls-stat' }, [callsLbl, callsVal]),
+      ]),
+    ]);
+    attachUnifiedHoverZone(hoverZoneEl, [barHitEl, topModelsEl], rowState);
+
+    const rowEl = h(
+      'div',
+      {
+        className: 'cons-top-conv-row',
+        onClick: () => {
+          if (!rowState.canJump || !rowState.cascadeId) return;
+          hidePopover();
+          onSelectConversation?.(rowState.cascadeId);
+        },
+      },
+      [
+        h('div', { className: 'panel-header' }, [
+          titleEl,
+          h('span', { className: 'cons-row-metrics' }, [pctBadge, totalTokEl, costEl]),
+        ]),
+        hoverZoneEl,
+      ]
+    );
+
+    return {
+      el: rowEl,
+      refs: {
+        rowEl,
+        titleEl,
+        titleTextEl,
+        wsBadgeEl,
+        pctBadge,
+        totalTokEl,
+        costEl,
+        hoverZoneEl,
+        barHitEl,
+        trackEl,
+        topModelsEl,
+        fallbackMetaEl,
+        callsLbl,
+        callsVal,
+        rowState,
+      },
+    };
+  }
+
+  function updateTopConversationRow(refs, item, bases, modelColorMap, sortMode = 'cost') {
+    patchText(refs.callsLbl, t('cons.footCalls'));
+    const isWorkspaceRow = Boolean(item.isWorkspaceRow);
+    const title = isWorkspaceRow
+      ? item.isUnbound
+        ? t('cons.workspaceUnbound')
+        : String(item.label || item.workspacePath || '—').trim()
+      : String(item.title || item.cascadeId || '—').trim();
+    refs.rowState.cascadeId = isWorkspaceRow ? '' : String(item.cascadeId || '');
+    refs.rowState.canJump =
+      !isWorkspaceRow && item.canJump !== false && Boolean(refs.rowState.cascadeId);
+    patchClasses(refs.rowEl, {
+      'is-jumpable': refs.rowState.canJump,
+      'cons-workspace-row': isWorkspaceRow,
+    });
+    const baseTip =
+      isWorkspaceRow && item.workspacePath && item.workspacePath !== title
+        ? `${title} (${item.workspacePath})`
+        : title;
+    patchAttr(
+      refs.rowEl,
+      'title',
+      refs.rowState.canJump ? `${baseTip} — ${t('cons.topConvJumpTip')}` : baseTip
+    );
+    patchText(refs.titleTextEl, title);
+    if (refs.wsBadgeEl) {
+      const showWsBadge = isWorkspaceRow && Number(item.sessionCount || 0) > 0;
+      patchAttr(refs.wsBadgeEl, 'hidden', !showWsBadge);
+      if (showWsBadge) {
+        patchText(refs.wsBadgeEl, t('cons.workspaceSessions', { count: item.sessionCount }));
+      }
+    }
+
+    const total = Number(item.totalTokens || 0);
+    const costVal = Number(item.costUsd || 0);
+    const callsCount = Number(item.calls || 0);
+    const isAllUnpriced =
+      callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
+    const costText = formatUsd(isAllUnpriced ? null : costVal, {
+      precise: costVal > 0 && costVal < 0.1,
+    });
+
+    const tokBase = Number(bases?.tokens || 0);
+    const costBase = Number(bases?.cost || 0);
+    const useCostBasis = sortMode === 'cost' && costBase > 0;
+    const share = useCostBasis
+      ? +((costVal / costBase) * 100).toFixed(1)
+      : tokBase > 0
+        ? +((total / tokBase) * 100).toFixed(1)
+        : 0;
+    const scaleRatio = useCostBasis
+      ? costVal > 0
+        ? Math.min(1, Math.max(0.01, costVal / costBase))
+        : 0
+      : tokBase > 0 && total > 0
+        ? Math.min(1, Math.max(0.01, total / tokBase))
+        : 0;
+
+    patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
+    if (sortMode === 'tokens') {
+      patchText(refs.totalTokEl, costText);
+      patchText(refs.costEl, formatTokensPrecise(total));
+    } else {
+      patchText(refs.totalTokEl, formatTokensPrecise(total));
+      patchText(refs.costEl, costText);
+    }
+    patchText(refs.callsVal, String(callsCount));
+
+    const convModels = Array.isArray(item.mergedModels) ? item.mergedModels : [];
+    const partitioned = partitionModelSegments(convModels, modelColorMap, {
+      maxMain: 5,
+      minSharePct: 1.5,
+    });
+    const topModels = renderSegmentedModelBarAndTopPills(
+      refs.trackEl,
+      refs.topModelsEl,
+      partitioned,
+      scaleRatio,
+      '__conv_fallback__'
+    );
+
+    const showFallbackMeta = topModels.length === 0;
+    patchAttr(refs.fallbackMetaEl, 'hidden', !showFallbackMeta);
+    if (showFallbackMeta) {
+      const srcLabel = item.sourceName || item.appSource || '';
+      const cacheLabel = t('cons.topConvCacheMeta', {
+        pct: formatPctNumber(item.cacheHitPct ?? 0),
+      });
+      patchText(refs.fallbackMetaEl, srcLabel ? `${srcLabel} · ${cacheLabel}` : cacheLabel);
+    }
+
+    refs.rowState.hoverPayload =
+      partitioned.length > 0 && (total > 0 || callsCount > 0)
+        ? {
+            title,
+            calls: callsCount,
+            totalTokens: total,
+            costText,
+            inputTokens: item.inputTokens,
+            cacheReadTokens: item.cacheReadTokens,
+            thinkingTokens: item.thinkingTokens,
+            responseTokens: item.responseTokens,
+            outputTokens: item.outputTokens,
+            segments: partitioned,
+          }
+        : null;
+    patchClasses(refs.hoverZoneEl, { 'is-interactive': Boolean(refs.rowState.hoverPayload) });
+  }
+
+  return {
+    createSourceBreakdownRow,
+    updateSourceBreakdownRow,
+    createTopConversationRow,
+    updateTopConversationRow,
+  };
+}
+return { partitionModelSegments, createBreakdownItemRow, updateBreakdownItemRow, createConsumptionBreakdownRowBuilders };
 })();
 
 // --- src/components/settings/structurePreviewMock.js ---
@@ -25578,6 +31062,652 @@ const SessionMigrationCard = defineComponent({
 return { SessionMigrationCard };
 })();
 
+// --- src/components/settings/HostI18nCard.js ---
+const { HostI18nCard } = (() => {
+/**
+ * @fileoverview Self-contained Antigravity Host UI Language card (`HostI18nCard.js`).
+ *
+ * Mounted inside `SettingsGeneralTab` with minimal glue; manages:
+ * - Language selection (`off` or any pack listed in repository `manifest.json`),
+ * - Conditional Light / Deep translation depth switching (0-network hot switch),
+ * - On-demand repository pack download, update, and local cache removal,
+ * - CDP bridge notice when DevTools port is unavailable,
+ * - Optional collapsed developer drawer to collect untranslated UI strings.
+ */
+
+
+function formatHostI18nBytes(bytes) {
+  const num = Number(bytes || 0);
+  if (!Number.isFinite(num) || num <= 0) return '';
+  if (num < 1024) return `${num} B`;
+  return `${(num / 1024).toFixed(1)} KB`;
+}
+
+function getHostI18nDepthOptions() {
+  return [
+    { value: 'light', label: t('settings.hostI18n.depthLight') },
+    { value: 'deep', label: t('settings.hostI18n.depthDeep') },
+  ];
+}
+
+const HostI18nCard = defineComponent({
+  name: 'HostI18nCard',
+  setup({ props, onCleanup }) {
+    let status = null;
+    let draftLocale = HOST_I18N_OFF_LOCALE;
+    let draftDepth = 'light';
+    let latestWindowBridge = null;
+    let latestHostPlatform = 'win32';
+    let lastBridgeRenderSig = '';
+    let hasLoadedOnce = false;
+    let isBusy = false;
+    let isCollecting = false;
+    let destroyed = false;
+    let feedbackTimer = null;
+    let devExpanded = false;
+    let lastCollected = null;
+
+    const titleEl = h('span', { text: t('settings.hostI18n.title') });
+    const statusMsgEl = h('span', {
+      className: 'text-muted host-i18n-status-msg',
+      text: '',
+    });
+
+    function showFeedback(text, { isError = false, autoClearMs = 2800 } = {}) {
+      if (feedbackTimer) {
+        clearTimeout(feedbackTimer);
+        feedbackTimer = null;
+      }
+      patchText(statusMsgEl, text || '');
+      patchClasses(statusMsgEl, { 'is-error': Boolean(isError && text) });
+      if (text && autoClearMs > 0) {
+        feedbackTimer = setTimeout(() => {
+          feedbackTimer = null;
+          if (!destroyed) {
+            patchText(statusMsgEl, '');
+            patchClasses(statusMsgEl, { 'is-error': false });
+          }
+        }, autoClearMs);
+      }
+    }
+
+    function getPackList() {
+      return Array.isArray(status?.packs) ? status.packs : [];
+    }
+
+    function findPackByLocale(locale) {
+      return getPackList().find((p) => p.locale === locale) || null;
+    }
+
+    function buildLocaleOptions() {
+      const opts = [{ value: HOST_I18N_OFF_LOCALE, label: t('settings.hostI18n.langOff') }];
+      for (const pack of getPackList()) {
+        const displayName =
+          pack.nativeName && pack.nativeName !== pack.name
+            ? `${pack.nativeName} (${pack.locale})`
+            : `${pack.name || pack.locale} (${pack.locale})`;
+        const tag = pack.installed
+          ? t('settings.hostI18n.optInstalled', { ver: pack.installedVersion || pack.remoteVersion || '1.0.0' })
+          : t('settings.hostI18n.optRemote', {
+              size: formatHostI18nBytes(pack.remoteBytes) || 'pack',
+            });
+        opts.push({
+          value: pack.locale,
+          label: `${displayName} · ${tag}`,
+        });
+      }
+      if (
+        draftLocale !== HOST_I18N_OFF_LOCALE &&
+        !opts.some((o) => o.value === draftLocale)
+      ) {
+        opts.push({ value: draftLocale, label: draftLocale });
+      }
+      return opts;
+    }
+
+    const langLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.hostI18n.langLabel'),
+    });
+    const langSelect = CustomSelect({
+      ariaLabel: t('settings.hostI18n.langLabel'),
+      icon: 'globe',
+      modelValue: draftLocale,
+      options: buildLocaleOptions(),
+      onUpdateModelValue: async (val) => {
+        if (isBusy || destroyed) return;
+        const nextLocale = normalizeHostI18nLocale(val);
+        const targetPack = findPackByLocale(nextLocale);
+        const needsDownload =
+          nextLocale !== HOST_I18N_OFF_LOCALE && !targetPack?.installed;
+        isBusy = true;
+        draftLocale = nextLocale;
+        syncControls();
+        showFeedback(
+          needsDownload
+            ? t('settings.hostI18n.downloadingMsg', { locale: nextLocale })
+            : t('settings.saving'),
+          { autoClearMs: 0 }
+        );
+        try {
+          const res = await selectHostI18nLanguage(nextLocale, draftDepth);
+          if (destroyed) return;
+          applyStatusPayload(res);
+          if (res?.ok === false) {
+            showFeedback(res.error || t('settings.hostI18n.actionFailed'), {
+              isError: true,
+              autoClearMs: 5000,
+            });
+          } else if (nextLocale === HOST_I18N_OFF_LOCALE) {
+            showFeedback(t('settings.hostI18n.disabledMsg'), { autoClearMs: 2500 });
+          } else if (res?.downloaded) {
+            showFeedback(t('settings.hostI18n.downloadedAndAppliedMsg'), { autoClearMs: 3200 });
+          } else {
+            showFeedback(t('settings.hostI18n.appliedMsg'), { autoClearMs: 2200 });
+          }
+        } catch (err) {
+          if (!destroyed) {
+            if (status) applyStatusPayload(status);
+            showFeedback(err?.message || t('settings.hostI18n.actionFailed'), {
+              isError: true,
+              autoClearMs: 5000,
+            });
+          }
+        } finally {
+          isBusy = false;
+          if (!destroyed) {
+            syncControls();
+            props.onLayoutChange?.();
+          }
+        }
+      },
+    });
+
+    const refreshManifestBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-ghost-sm host-i18n-icon-btn',
+        title: t('settings.hostI18n.refreshManifestTip'),
+        'aria-label': t('settings.hostI18n.refreshManifestTip'),
+        onClick: async () => {
+          if (isBusy || destroyed) return;
+          isBusy = true;
+          syncControls();
+          showFeedback(t('settings.hostI18n.refreshingManifestMsg'), { autoClearMs: 0 });
+          try {
+            const res = await refreshHostI18nManifest();
+            if (destroyed) return;
+            applyStatusPayload(res);
+            if (res?.ok === false) {
+              showFeedback(res.error || t('settings.hostI18n.manifestFailedMsg'), {
+                isError: true,
+                autoClearMs: 4500,
+              });
+            } else {
+              showFeedback(
+                t('settings.hostI18n.manifestSyncedMsg', { count: getPackList().length }),
+                { autoClearMs: 2600 }
+              );
+            }
+          } catch (err) {
+            if (!destroyed) {
+              showFeedback(err?.message || t('settings.hostI18n.manifestFailedMsg'), {
+                isError: true,
+                autoClearMs: 4500,
+              });
+            }
+          } finally {
+            isBusy = false;
+            if (!destroyed) {
+              syncControls();
+              props.onLayoutChange?.();
+            }
+          }
+        },
+      },
+      [createSvgIcon('refresh', { size: 12 })]
+    );
+
+    const langHintEl = h('span', {
+      className: 'settings-hint-text',
+      text: t('settings.hostI18n.langHint'),
+    });
+
+    // --- Conditional Depth Row (visible only when locale !== 'off') ---
+    const depthLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.hostI18n.depthLabel'),
+    });
+    const depthSwitch = SegmentedControl({
+      ariaLabel: t('settings.hostI18n.depthLabel'),
+      modelValue: draftDepth,
+      options: getHostI18nDepthOptions(),
+      onUpdateModelValue: async (val) => {
+        if (isBusy || destroyed) return;
+        const nextDepth = normalizeHostI18nDepth(val);
+        if (nextDepth === draftDepth) return;
+        isBusy = true;
+        draftDepth = nextDepth;
+        syncControls();
+        showFeedback(t('settings.saving'), { autoClearMs: 0 });
+        try {
+          const res = await updateHostI18nDepth(nextDepth);
+          if (destroyed) return;
+          applyStatusPayload(res);
+          showFeedback(t('settings.hostI18n.depthSwitchedMsg'), { autoClearMs: 2000 });
+        } catch (err) {
+          if (!destroyed) {
+            if (status) applyStatusPayload(status);
+            showFeedback(err?.message || t('settings.saveFailed'), {
+              isError: true,
+              autoClearMs: 3500,
+            });
+          }
+        } finally {
+          isBusy = false;
+          if (!destroyed) syncControls();
+        }
+      },
+    });
+    const depthHintEl = h('span', {
+      className: 'settings-hint-text',
+      text: t('settings.hostI18n.depthLightHint'),
+    });
+    const depthRowEl = h('div', { className: 'form-row', hidden: true }, [
+      depthLabelEl,
+      depthSwitch.el,
+      depthHintEl,
+    ]);
+
+    // --- Pack Meta & Actions Bar (visible only when locale !== 'off') ---
+    const packMetaTextEl = h('span', { className: 'host-i18n-pack-meta text-muted', text: '' });
+    const updatePackBtnText = h('span', { text: t('settings.hostI18n.redownloadBtn') });
+    const updatePackBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          if (isBusy || destroyed || draftLocale === HOST_I18N_OFF_LOCALE) return;
+          isBusy = true;
+          syncControls();
+          showFeedback(t('settings.hostI18n.downloadingMsg', { locale: draftLocale }), {
+            autoClearMs: 0,
+          });
+          try {
+            const res = await installOrUpdateHostI18nPack(draftLocale);
+            if (destroyed) return;
+            applyStatusPayload(res);
+            if (res?.ok === false) {
+              showFeedback(res.error || t('settings.hostI18n.actionFailed'), {
+                isError: true,
+                autoClearMs: 5000,
+              });
+            } else {
+              showFeedback(t('settings.hostI18n.packUpdatedMsg'), { autoClearMs: 3000 });
+            }
+          } catch (err) {
+            if (!destroyed) {
+              showFeedback(err?.message || t('settings.hostI18n.actionFailed'), {
+                isError: true,
+                autoClearMs: 5000,
+              });
+            }
+          } finally {
+            isBusy = false;
+            if (!destroyed) syncControls();
+          }
+        },
+      },
+      [createSvgIcon('download', { size: 12 }), updatePackBtnText]
+    );
+
+    const removePackBtnText = h('span', { text: t('settings.hostI18n.removeCacheBtn') });
+    const removePackBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        onClick: async () => {
+          if (isBusy || destroyed || draftLocale === HOST_I18N_OFF_LOCALE) return;
+          isBusy = true;
+          syncControls();
+          showFeedback(t('settings.saving'), { autoClearMs: 0 });
+          try {
+            const res = await removeHostI18nPack(draftLocale);
+            if (destroyed) return;
+            applyStatusPayload(res);
+            showFeedback(t('settings.hostI18n.cacheRemovedMsg'), { autoClearMs: 2800 });
+          } catch (err) {
+            if (!destroyed) {
+              showFeedback(err?.message || t('settings.hostI18n.actionFailed'), {
+                isError: true,
+                autoClearMs: 4500,
+              });
+            }
+          } finally {
+            isBusy = false;
+            if (!destroyed) {
+              syncControls();
+              props.onLayoutChange?.();
+            }
+          }
+        },
+      },
+      [removePackBtnText]
+    );
+
+    const packBarEl = h('div', { className: 'host-i18n-pack-bar', hidden: true }, [
+      packMetaTextEl,
+      h('div', { className: 'host-i18n-pack-actions' }, [updatePackBtn, removePackBtn]),
+    ]);
+
+    // --- CDP Bridge Diagnostic Notice (shown only when active locale cannot reach CDP) ---
+    const bridgeNotice = BridgeStatusNotice({ contextMode: true });
+
+    // --- Collapsed Developer Drawer: Untranslated UI String Collector ---
+    const devChevron = createSvgIcon('chevron-right', {
+      size: 11,
+      className: 'host-i18n-dev-chevron',
+    });
+    const devToggleText = h('span', { text: t('settings.hostI18n.devToolsTitle') });
+    const devToggleBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'host-i18n-dev-toggle',
+        'aria-expanded': 'false',
+        onClick: () => {
+          devExpanded = !devExpanded;
+          patchAttr(devToggleBtn, 'aria-expanded', devExpanded ? 'true' : 'false');
+          patchClasses(devDrawerEl, { 'is-expanded': devExpanded });
+          patchAttr(devBodyEl, 'hidden', !devExpanded);
+          props.onLayoutChange?.();
+        },
+      },
+      [devChevron, devToggleText]
+    );
+
+    const devHintEl = h('span', {
+      className: 'settings-hint-text',
+      text: t('settings.hostI18n.devToolsHint'),
+    });
+    const collectBtnText = h('span', { text: t('settings.hostI18n.collectBtn') });
+    const collectResultEl = h('span', { className: 'settings-hint-text', text: '' });
+
+    const copyCollectedBtnText = h('span', { text: t('settings.hostI18n.copyJsonBtn') });
+    const copyCollectedBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        hidden: true,
+        onClick: async () => {
+          if (!lastCollected?.template) return;
+          await copyTextWithFeedback(JSON.stringify(lastCollected.template, null, 2), {
+            onFeedback: (msg) => showFeedback(msg, { autoClearMs: 2400 }),
+          });
+        },
+      },
+      [createSvgIcon('copy', { size: 11 }), copyCollectedBtnText]
+    );
+
+    const exportCollectedBtnText = h('span', { text: t('settings.hostI18n.exportJsonBtn') });
+    const exportCollectedBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        hidden: true,
+        onClick: async () => {
+          if (!lastCollected?.template) return;
+          const fileLocale = draftLocale === HOST_I18N_OFF_LOCALE ? 'en-source' : draftLocale;
+          await exportTextFileWithFeedback({
+            filename: `host-i18n-missing-${fileLocale}.json`,
+            content: JSON.stringify(lastCollected.template, null, 2) + '\n',
+            mimeType: 'application/json',
+            onFeedback: (msg) => showFeedback(msg, { autoClearMs: 3200 }),
+          });
+        },
+      },
+      [createSvgIcon('download', { size: 11 }), exportCollectedBtnText]
+    );
+
+    const collectBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          if (isCollecting || destroyed) return;
+          isCollecting = true;
+          patchAttr(collectBtn, 'disabled', true);
+          patchText(collectBtnText, t('settings.hostI18n.collectingBtn'));
+          try {
+            const res = await collectHostI18nUntranslated();
+            if (destroyed) return;
+            if (res?.ok) {
+              lastCollected = res;
+              patchText(
+                collectResultEl,
+                res.count > 0
+                  ? t('settings.hostI18n.collectedResult', {
+                      count: res.count,
+                      targets: res.targets || 1,
+                    })
+                  : t('settings.hostI18n.collectedEmpty')
+              );
+              patchAttr(copyCollectedBtn, 'hidden', !(res.count > 0));
+              patchAttr(exportCollectedBtn, 'hidden', !(res.count > 0));
+            } else {
+              patchText(collectResultEl, res?.error || t('settings.hostI18n.collectFailed'));
+            }
+          } catch (err) {
+            if (!destroyed) {
+              patchText(collectResultEl, err?.message || t('settings.hostI18n.collectFailed'));
+            }
+          } finally {
+            isCollecting = false;
+            if (!destroyed) {
+              patchAttr(collectBtn, 'disabled', false);
+              patchText(collectBtnText, t('settings.hostI18n.collectBtn'));
+              props.onLayoutChange?.();
+            }
+          }
+        },
+      },
+      [createSvgIcon('search', { size: 12 }), collectBtnText]
+    );
+
+    const devBodyEl = h('div', { className: 'host-i18n-dev-body', hidden: true }, [
+      devHintEl,
+      h('div', { className: 'host-i18n-dev-actions' }, [
+        collectBtn,
+        copyCollectedBtn,
+        exportCollectedBtn,
+      ]),
+      collectResultEl,
+    ]);
+    const devDrawerEl = h('div', { className: 'host-i18n-dev-drawer' }, [
+      devToggleBtn,
+      devBodyEl,
+    ]);
+
+    const rootEl = h('section', { className: 'panel host-i18n-panel' }, [
+      h('div', { className: 'panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('globe', { size: 13 }),
+          titleEl,
+        ]),
+        statusMsgEl,
+      ]),
+      h('div', { className: 'form-row' }, [
+        langLabelEl,
+        h('div', { className: 'host-i18n-select-row' }, [langSelect.el, refreshManifestBtn]),
+        langHintEl,
+      ]),
+      depthRowEl,
+      packBarEl,
+      bridgeNotice.el,
+      devDrawerEl,
+    ]);
+
+    function applyStatusPayload(payload) {
+      if (!payload || typeof payload !== 'object') return;
+      status = payload;
+      draftLocale = normalizeHostI18nLocale(payload.locale);
+      draftDepth = normalizeHostI18nDepth(payload.depth);
+      if (payload.bridgeStatus) {
+        latestWindowBridge = payload.bridgeStatus;
+      }
+      syncControls();
+    }
+
+    function syncControls() {
+      const enabled = draftLocale !== HOST_I18N_OFF_LOCALE;
+      const activePack = enabled ? findPackByLocale(draftLocale) : null;
+
+      langSelect.setProps({
+        modelValue: draftLocale,
+        options: buildLocaleOptions(),
+        disabled: isBusy,
+      });
+      patchAttr(refreshManifestBtn, 'disabled', isBusy);
+
+      patchAttr(depthRowEl, 'hidden', !enabled);
+      depthSwitch.setProps({
+        modelValue: draftDepth,
+        options: getHostI18nDepthOptions(),
+      });
+      patchText(
+        depthHintEl,
+        draftDepth === 'deep'
+          ? t('settings.hostI18n.depthDeepHint')
+          : t('settings.hostI18n.depthLightHint')
+      );
+
+      patchAttr(packBarEl, 'hidden', !enabled);
+      if (enabled) {
+        const ver = activePack?.installedVersion || activePack?.remoteVersion || '1.0.0';
+        const stats = activePack?.stats;
+        const entryCount = stats
+          ? Number(stats.baseExact || 0) +
+            Number(draftDepth === 'deep' ? stats.deepExact || 0 : stats.lightExact || 0) +
+            Number(stats.basePatterns || 0) +
+            Number(draftDepth === 'deep' ? stats.deepPatterns || 0 : stats.lightPatterns || 0)
+          : 0;
+        const sizeStr = formatHostI18nBytes(
+          activePack?.installedBytes || activePack?.remoteBytes || 0
+        );
+        const appliedCount = Number(latestWindowBridge?.hostI18nAppliedCount || 0);
+        const metaParts = [`v${ver}`];
+        if (entryCount > 0) {
+          metaParts.push(t('settings.hostI18n.entriesCount', { count: entryCount }));
+        }
+        if (sizeStr) metaParts.push(sizeStr);
+        if (appliedCount > 0) {
+          metaParts.push(t('settings.hostI18n.appliedWindows', { count: appliedCount }));
+        }
+        patchText(packMetaTextEl, metaParts.join(' · '));
+
+        const hasUpdate = Boolean(activePack?.updateAvailable);
+        patchText(
+          updatePackBtnText,
+          hasUpdate
+            ? t('settings.hostI18n.updatePackBtn', { ver: activePack.remoteVersion })
+            : t('settings.hostI18n.redownloadBtn')
+        );
+        patchClasses(updatePackBtn, {
+          'btn-primary': hasUpdate,
+          'btn-secondary': !hasUpdate,
+        });
+        patchAttr(updatePackBtn, 'disabled', isBusy);
+        patchAttr(removePackBtn, 'disabled', isBusy || !activePack?.installed);
+      }
+
+      bridgeNotice.refs.update({
+        visible: enabled,
+        windowBridge: latestWindowBridge,
+        hostPlatform: latestHostPlatform,
+        contextMode: true,
+      });
+    }
+
+    async function load(force = false) {
+      if (destroyed) return;
+      if (hasLoadedOnce && !force) return;
+      hasLoadedOnce = true;
+      try {
+        const res = await fetchHostI18nStatus();
+        if (destroyed) return;
+        applyStatusPayload(res);
+        props.onLayoutChange?.();
+      } catch {
+        // 静默兜底，保留手动刷新入口
+      }
+    }
+
+    function renderBridgeStatus(windowBridge, hostPlatform) {
+      if (windowBridge) latestWindowBridge = windowBridge;
+      if (hostPlatform) latestHostPlatform = hostPlatform;
+      const sig = [
+        Number(latestWindowBridge?.hostI18nAppliedCount || 0),
+        Boolean(latestWindowBridge?.connected),
+        Boolean(latestWindowBridge?.available),
+        String(latestWindowBridge?.reason || ''),
+        String(latestWindowBridge?.ideStatus?.reason || ''),
+        String(latestHostPlatform || ''),
+      ].join('|');
+      if (sig === lastBridgeRenderSig) return;
+      lastBridgeRenderSig = sig;
+      syncControls();
+    }
+
+    function refreshLabels() {
+      patchText(titleEl, t('settings.hostI18n.title'));
+      patchText(langLabelEl, t('settings.hostI18n.langLabel'));
+      patchText(langHintEl, t('settings.hostI18n.langHint'));
+      patchText(depthLabelEl, t('settings.hostI18n.depthLabel'));
+      patchText(removePackBtnText, t('settings.hostI18n.removeCacheBtn'));
+      patchText(devToggleText, t('settings.hostI18n.devToolsTitle'));
+      patchText(devHintEl, t('settings.hostI18n.devToolsHint'));
+      if (!isCollecting) patchText(collectBtnText, t('settings.hostI18n.collectBtn'));
+      patchText(copyCollectedBtnText, t('settings.hostI18n.copyJsonBtn'));
+      patchText(exportCollectedBtnText, t('settings.hostI18n.exportJsonBtn'));
+      patchAttr(refreshManifestBtn, 'title', t('settings.hostI18n.refreshManifestTip'));
+      patchAttr(refreshManifestBtn, 'aria-label', t('settings.hostI18n.refreshManifestTip'));
+      bridgeNotice.refs.refreshLabels();
+      syncControls();
+    }
+
+    onCleanup(() => {
+      destroyed = true;
+      abortSidecarApiKey('host-i18n-get');
+      if (feedbackTimer) {
+        clearTimeout(feedbackTimer);
+        feedbackTimer = null;
+      }
+      langSelect.destroy();
+      depthSwitch.destroy();
+      bridgeNotice.destroy();
+    });
+
+    return {
+      el: rootEl,
+      refs: {
+        langSelect,
+        depthSwitch,
+        load,
+        renderBridgeStatus,
+        refreshLabels,
+      },
+    };
+  },
+});
+return { HostI18nCard };
+})();
+
 // --- src/views/settings/SettingsGeneralTab.js ---
 const { SettingsGeneralTab } = (() => {
 /**
@@ -25971,9 +32101,20 @@ const SettingsGeneralTab = defineComponent({
       h('div', { className: 'cloud-actions-row' }, [syncPricingBtn, updatePluginBtn]),
     ]);
 
-    const rootEl = h('div', { className: 'settings-tab-stack' }, [appearancePanel, cloudPanel]);
+    const hostI18nCard = HostI18nCard({
+      onLayoutChange: () => props.onLayoutChange?.(),
+    });
 
-    function renderSettings(settings) {
+    const rootEl = h('div', { className: 'settings-tab-stack' }, [
+      appearancePanel,
+      hostI18nCard.el,
+      cloudPanel,
+    ]);
+
+    function renderSettings(settings, windowBridge = null, hostPlatform = 'win32') {
+      if (windowBridge || hostPlatform) {
+        hostI18nCard.refs.renderBridgeStatus(windowBridge, hostPlatform);
+      }
       if (!settings) return;
       latestSettings = settings;
       draftLanguage = normalizeI18nLanguage(settings.language);
@@ -26088,6 +32229,7 @@ const SettingsGeneralTab = defineComponent({
       } else {
         patchText(pricingSyncSub, t('quota.loading'));
       }
+      hostI18nCard.refs.refreshLabels();
     }
 
     onCleanup(() => {
@@ -26098,6 +32240,7 @@ const SettingsGeneralTab = defineComponent({
       fontScaleSwitch.destroy();
       modernUiSwitch.destroy();
       autoUpdateSelect.destroy();
+      hostI18nCard.destroy();
     });
 
     return {
@@ -26110,6 +32253,8 @@ const SettingsGeneralTab = defineComponent({
         autoUpdateSelect,
         syncPricingBtn,
         updatePluginBtn,
+        hostI18nCard,
+        loadHostI18n: (force = false) => hostI18nCard.refs.load(force),
         renderSettings,
         renderCloudStatus,
         refreshLabels,
@@ -27689,6 +33834,1529 @@ const SettingsStructureTab = defineComponent({
 return { SettingsStructureTab };
 })();
 
+// --- src/views/settings/SettingsAccountTab.js ---
+const { SettingsAccountTab } = (() => {
+/**
+ * @fileoverview Multi-account switcher, quota trajectory chart, risk gate, and passphrase vault UI.
+ * Reuses `SegmentedControl`, `CustomSelect`, `AccountQuotaTrendCard`, `.ctx-risk-mask`,
+ * `.settings-bridge-notice`, `.status-tag`, `.btn-ghost-sm`, `.btn-danger-confirm`, and `.quota-pool-row`.
+ */
+
+
+const key = (name) => `settings.account.${name}`;
+const fmtPct = (v) => String(+Number(v).toFixed(1));
+
+let warmAccountCache = null;
+
+const errors = new Set([
+  'unsupported', 'invalidEmail', 'invalidCredential', 'credentialTooLarge', 'notFound',
+  'noCurrentCredential', 'busy', 'storeFailed', 'rollbackFailed', 'credentialAccessDenied',
+  'credentialChanged', 'credentialRejected', 'identityMismatch', 'oauthClientUnavailable',
+  'oauthUnavailable', 'quotaUnavailable',
+  'switchStartFailed', 'clientCloseFailed', 'clientRestartFailed',
+  'loginStartFailed', 'loginExchangeFailed', 'loginExpired', 'loginDenied',
+  'vaultLocked', 'wrongPassword', 'invalidPassword', 'passwordMismatch',
+  'passwordRateLimited', 'vaultDecryptFailed', 'invalidActionNonce', 'riskNotAccepted',
+]);
+
+const okToastKeys = new Set([
+  'saved', 'removed', 'switched',
+  'pwdEnabledToast', 'pwdChangedToast', 'pwdDisabledToast',
+  'vaultUnlockedToast', 'vaultLockedToast', 'vaultResetToast',
+]);
+
+function getAccountRefreshOptions() {
+  return [
+    { value: 10, label: t(key('refresh10m')) },
+    { value: 30, label: t(key('refresh30m')) },
+    { value: 60, label: t(key('refresh1h')) },
+    { value: 180, label: t(key('refresh3h')) },
+    { value: 360, label: t(key('refresh6h')) },
+    { value: 720, label: t(key('refresh12h')) },
+    { value: 1440, label: t(key('refresh24h')) },
+  ];
+}
+
+function getPwdModeOptions() {
+  return [
+    { value: 'change', label: t(key('pwdTabChange')) },
+    { value: 'disable', label: t(key('pwdTabDisable')) },
+  ];
+}
+
+function formatValidCountdown(isoTime) {
+  if (!isoTime) return '';
+  const ms = Date.parse(isoTime);
+  if (!Number.isFinite(ms) || ms <= Date.now()) return '';
+  return formatCountdown(isoTime);
+}
+
+function syncRemainingMeter(wrapEl, quotaLabelEl, resetEl, fillEl, hasData, labelText, remVal, resetTime) {
+  patchAttr(wrapEl, 'hidden', !hasData);
+  if (!hasData) return;
+  const clamped = Math.max(0, Math.min(100, Number(remVal) || 0));
+  patchText(quotaLabelEl, labelText);
+  const cd = formatValidCountdown(resetTime);
+  patchText(resetEl, cd);
+  patchAttr(resetEl, 'hidden', !cd);
+  patchStyleVar(fillEl, '--fill-w', `${+clamped.toFixed(1)}%`);
+  patchClasses(fillEl, {
+    'tone-warn': clamped > 15 && clamped <= 30,
+    'tone-danger': clamped <= 15,
+  });
+}
+
+function renderQuotaRows(container, quotaPools) {
+  const locale = getEffectiveLocale();
+  const pools = (Array.isArray(quotaPools) ? quotaPools : []).filter(
+    (pool) => Number.isFinite(pool?.remainingPct) || Number.isFinite(pool?.weeklyRemainingPct)
+  );
+  patchKeyedList(container, pools, {
+    keyFn: (pool) => pool.poolKey || pool.poolLabel,
+    sigFn: (pool, idx) =>
+      JSON.stringify([
+        idx > 0,
+        locale,
+        pool.poolLabel,
+        pool.remainingPct,
+        pool.weeklyRemainingPct,
+        pool.resetTime,
+        pool.weeklyResetTime,
+      ]),
+    createRow: () => {
+      const poolTitle = h('div', { className: 'account-pool-label' });
+
+      const label5h = h('span', { className: 'quota-win-title settings-account-quota text-mono' });
+      const reset5h = h('span', { className: 'panel-meta quota-win-meta text-mono', hidden: true });
+      const fill5h = h('div', { className: 'progress-fill' });
+      const meter5h = h('div', { className: 'account-meter-col' }, [
+        h('div', { className: 'panel-header quota-win-head' }, [
+          h('span', { className: 'quota-win-left' }, [label5h]),
+          reset5h,
+        ]),
+        h('div', { className: 'progress-track' }, [fill5h]),
+      ]);
+
+      const labelWk = h('span', { className: 'quota-win-title settings-account-quota text-mono' });
+      const resetWk = h('span', { className: 'panel-meta quota-win-meta text-mono', hidden: true });
+      const fillWk = h('div', { className: 'progress-fill' });
+      const meterWk = h('div', { className: 'account-meter-col' }, [
+        h('div', { className: 'panel-header quota-win-head' }, [
+          h('span', { className: 'quota-win-left' }, [labelWk]),
+          resetWk,
+        ]),
+        h('div', { className: 'progress-track' }, [fillWk]),
+      ]);
+
+      const gridEl = h('div', { className: 'account-pool-meters' }, [meter5h, meterWk]);
+      const el = h('div', { className: 'quota-pool-row' }, [poolTitle, gridEl]);
+      return {
+        el,
+        refs: { el, poolTitle, gridEl, meter5h, label5h, reset5h, fill5h, meterWk, labelWk, resetWk, fillWk },
+      };
+    },
+    updateRow: (refs, pool, idx) => {
+      patchClasses(refs.el, { 'has-divider': idx > 0 });
+      patchText(refs.poolTitle, pool.poolLabel || pool.poolKey);
+      const has5h = Number.isFinite(pool.remainingPct);
+      const hasWk = Number.isFinite(pool.weeklyRemainingPct);
+      patchClasses(refs.gridEl, { 'is-single': (has5h ? 1 : 0) + (hasWk ? 1 : 0) <= 1 });
+
+      syncRemainingMeter(
+        refs.meter5h,
+        refs.label5h,
+        refs.reset5h,
+        refs.fill5h,
+        has5h,
+        has5h ? t(key('quota5h'), { percent: fmtPct(pool.remainingPct) }) : '',
+        pool.remainingPct,
+        pool.resetTime
+      );
+      syncRemainingMeter(
+        refs.meterWk,
+        refs.labelWk,
+        refs.resetWk,
+        refs.fillWk,
+        hasWk,
+        hasWk ? t(key('quotaWeekly'), { percent: fmtPct(pool.weeklyRemainingPct) }) : '',
+        pool.weeklyRemainingPct,
+        pool.weeklyResetTime
+      );
+    },
+  });
+  patchAttr(container, 'hidden', pools.length === 0);
+  return pools.length;
+}
+
+function needsLegacyUltraTierRefresh(cached) {
+  if (!cached || cached.tierId || cached.tierMultiplier) return false;
+  const name = String(cached.tierName || '');
+  return /\bultra\b/i.test(name) && !/\b(?:5x|20x)\b/i.test(name);
+}
+
+function isValidVaultPassphrase(raw) {
+  return typeof raw === 'string' && raw.length >= 4 && raw.length <= 128 && Boolean(raw.trim());
+}
+
+const SettingsAccountTab = defineComponent({
+  name: 'SettingsAccountTab',
+  setup({ props, onCleanup }) {
+    const initialSettings = telemetryStore.getState().telemetry?.settings;
+    let account = null;
+    let quotas = null;
+    let refreshMinutes = normalizeAccountQuotaRefreshMinutes(
+      initialSettings?.accountQuotaRefreshMinutes ?? DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES
+    );
+    let draftRiskAccepted = Boolean(initialSettings?.accountSwitchRiskAccepted);
+    let acceptingRisk = false;
+    let riskLockedFromServer = warmAccountCache ? Boolean(warmAccountCache.riskLocked) : true;
+    let accounts = warmAccountCache ? [...warmAccountCache.accounts] : [];
+    let selectedEmail = warmAccountCache ? warmAccountCache.selectedEmail : '';
+    let supported = warmAccountCache ? warmAccountCache.supported : null;
+    let vaultSecurity = warmAccountCache?.vaultSecurity
+      ? { ...warmAccountCache.vaultSecurity }
+      : { enabled: false, unlocked: true };
+    let quotaHistory = warmAccountCache?.quotaHistory ? { ...warmAccountCache.quotaHistory } : {};
+    let actionNonce = warmAccountCache?.actionNonce || '';
+    let operation = '';
+    let status = '';
+    let statusClearTimer = null;
+    let confirmTarget = null;
+    let confirmClearTimer = null;
+    let switchState = null;
+    let importOpen = false;
+    let pwdDrawerOpen = false;
+    let pwdManageMode = 'change';
+    let forgotResetOpen = false;
+    let refreshingSavedQuotas = false;
+    let disposed = false;
+    let loginSession = null;
+    let loginTimer;
+    let loginGeneration = 0;
+    let loginRefreshEmail = '';
+    const savedQuotas = new Map(warmAccountCache ? warmAccountCache.savedQuotasEntries : []);
+    const quotaInFlight = new Set();
+    const quotaVisibleLoading = new Set();
+    const quotaErrors = new Map();
+
+    function isVaultLocked() {
+      return Boolean(vaultSecurity?.enabled && !vaultSecurity?.unlocked);
+    }
+
+    function syncWarmCache() {
+      if (supported !== true) return;
+      warmAccountCache = {
+        supported,
+        riskLocked: riskLockedFromServer,
+        accounts: [...accounts],
+        selectedEmail,
+        savedQuotasEntries: [...savedQuotas.entries()],
+        vaultSecurity: { ...vaultSecurity },
+        quotaHistory: { ...quotaHistory },
+        actionNonce,
+      };
+    }
+
+    function clearConfirmTarget(shouldRender = false) {
+      if (confirmClearTimer) {
+        clearTimeout(confirmClearTimer);
+        confirmClearTimer = null;
+      }
+      if (!confirmTarget) return;
+      confirmTarget = null;
+      if (shouldRender && !disposed) render();
+    }
+
+    function armOrRunConfirm(type, targetKey, runFn) {
+      if (confirmTarget && confirmTarget.type === type && confirmTarget.key === targetKey) {
+        clearConfirmTarget(false);
+        runFn();
+        return;
+      }
+      if (confirmClearTimer) clearTimeout(confirmClearTimer);
+      confirmTarget = { type, key: targetKey };
+      confirmClearTimer = setTimeout(() => clearConfirmTarget(true), 4500);
+      render();
+    }
+
+    function setTransientStatus(nextStatus, autoClearMs = 0) {
+      if (statusClearTimer) {
+        clearTimeout(statusClearTimer);
+        statusClearTimer = null;
+      }
+      status = nextStatus;
+      if (nextStatus && autoClearMs > 0) {
+        statusClearTimer = setTimeout(() => {
+          statusClearTimer = null;
+          if (!disposed && status === nextStatus) {
+            status = '';
+            render();
+          }
+        }, autoClearMs);
+      }
+    }
+
+    function clearPasswordInputs() {
+      unlockInput.value = '';
+      pwdCurrentInput.value = '';
+      pwdNewInput.value = '';
+      pwdConfirmInput.value = '';
+    }
+
+    // --- Section 1: Active Account Card Host ---
+    const activeCardHost = h('div', { className: 'account-cards-stack' });
+
+    // --- Section 2: Quota Trend Line Chart Card ---
+    const quotaTrendCard = AccountQuotaTrendCard();
+
+    // --- Section 3: Multi-Account Toolbar, Drawers, Backup Cards & Risk Gate ---
+    const loginBtnLabel = h('span');
+    const loginButton = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-primary settings-account-login',
+        onClick: () => {
+          clearConfirmTarget(false);
+          void request('loginStart', { language: getEffectiveLocale() });
+        },
+      },
+      [createSvgIcon('plus', { size: 12 }), loginBtnLabel]
+    );
+    const cancelLogin = h('button', {
+      type: 'button',
+      className: 'btn-secondary settings-account-login-cancel',
+      hidden: true,
+      onClick: () => request('loginCancel', { id: loginSession?.id }),
+    });
+    const importToggleLabel = h('span');
+    const importToggleBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: () => {
+          clearConfirmTarget(false);
+          importOpen = !importOpen;
+          if (importOpen) {
+            pwdDrawerOpen = false;
+            clearPasswordInputs();
+          }
+          render();
+          if (importOpen) credential.focus?.();
+        },
+      },
+      [importToggleLabel]
+    );
+
+    const pwdToggleIcon = createSvgIcon('lock', { size: 12 });
+    const pwdToggleLabel = h('span');
+    const pwdToggleBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary settings-account-pwd-toggle',
+        onClick: () => {
+          clearConfirmTarget(false);
+          pwdDrawerOpen = !pwdDrawerOpen;
+          if (pwdDrawerOpen) {
+            importOpen = false;
+            pwdManageMode = 'change';
+            pwdModeSegment.setProps({ modelValue: 'change', options: getPwdModeOptions() });
+          }
+          clearPasswordInputs();
+          render();
+          if (pwdDrawerOpen) {
+            (vaultSecurity.enabled ? pwdCurrentInput : pwdNewInput).focus?.();
+          }
+        },
+      },
+      [pwdToggleIcon, pwdToggleLabel]
+    );
+
+    const lockNowLabel = h('span');
+    const lockNowBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary settings-account-lock-now',
+        hidden: true,
+        onClick: () => {
+          clearConfirmTarget(false);
+          pwdDrawerOpen = false;
+          importOpen = false;
+          clearPasswordInputs();
+          void request('lockVault');
+        },
+      },
+      [createSvgIcon('lock', { size: 12 }), lockNowLabel]
+    );
+
+    const feedback = h('span', {
+      className: 'settings-action-desc account-status-inline',
+      role: 'status',
+      hidden: true,
+    });
+    const refreshIntervalSelect = CustomSelect({
+      className: 'account-refresh-select',
+      icon: 'clock',
+      modelValue: refreshMinutes,
+      options: getAccountRefreshOptions(),
+      onUpdateModelValue: async (nextVal) => {
+        const nextMins = normalizeAccountQuotaRefreshMinutes(nextVal);
+        refreshMinutes = nextMins;
+        refreshIntervalSelect.setValue(nextMins);
+        void refreshSavedQuotas();
+        try {
+          await saveSettingsPatch({ accountQuotaRefreshMinutes: nextMins });
+        } catch {
+          // Keep selected interval locally if save fails transiently
+        }
+      },
+    });
+    patchAttr(refreshIntervalSelect.refs.triggerBtn, 'aria-label', t(key('refreshFreqAria')));
+    patchAttr(refreshIntervalSelect.refs.triggerBtn, 'title', t(key('refreshFreqAria')));
+
+    const reload = h(
+      'button',
+      {
+        type: 'button',
+        className: 'icon-btn',
+        onClick: () => request('list'),
+      },
+      [createSvgIcon('refresh', { size: 13 })]
+    );
+
+    // Locked Vault Notice (reusing `.settings-bridge-notice`)
+    const unlockHintLabel = h('span', { className: 'settings-bridge-title' });
+    const forgotToggleBtn = h('button', {
+      type: 'button',
+      className: 'btn-ghost-sm settings-account-forgot-btn',
+      onClick: () => {
+        forgotResetOpen = !forgotResetOpen;
+        clearConfirmTarget(false);
+        render();
+      },
+    });
+    const unlockInput = h('input', {
+      type: 'password',
+      className: 'settings-text-input account-import-input settings-account-unlock-input',
+      autocomplete: 'off',
+      spellcheck: 'false',
+      maxlength: 128,
+    });
+    const unlockSubmitBtn = h('button', {
+      type: 'submit',
+      className: 'btn-primary settings-account-unlock-submit',
+    });
+    const unlockForm = h(
+      'form',
+      {
+        className: 'account-import-row',
+        autocomplete: 'off',
+        onSubmit: submitUnlock,
+      },
+      [unlockInput, unlockSubmitBtn]
+    );
+    const resetHintEl = h('p', { className: 'settings-bridge-desc', hidden: true });
+    const resetVaultBtn = h('button', {
+      type: 'button',
+      className: 'btn-secondary btn-danger-confirm settings-account-reset-vault',
+      hidden: true,
+      onClick: () => {
+        armOrRunConfirm('resetVault', 'vault', () => {
+          void request('resetVault', { confirmReset: 'RESET' });
+        });
+      },
+    });
+    const unlockBox = h(
+      'div',
+      { className: 'settings-bridge-notice settings-account-unlock-box', hidden: true },
+      [
+        h('div', { className: 'settings-bridge-head' }, [
+          h('span', { className: 'settings-bridge-head-main' }, [
+            createSvgIcon('lock', { size: 13, className: 'settings-bridge-icon' }),
+            unlockHintLabel,
+          ]),
+          forgotToggleBtn,
+        ]),
+        unlockForm,
+        resetHintEl,
+        h('div', { className: 'settings-bridge-actions', hidden: true }, [resetVaultBtn]),
+      ]
+    );
+    const resetActionsWrap = resetVaultBtn.parentElement;
+
+    // Passphrase Setup / Manage Drawer (reusing `SegmentedControl`!)
+    const pwdModeSegment = SegmentedControl({
+      ariaLabel: t(key('pwdBtnManage')),
+      modelValue: pwdManageMode,
+      options: getPwdModeOptions(),
+      onUpdateModelValue: (val) => {
+        pwdManageMode = val === 'disable' ? 'disable' : 'change';
+        pwdModeSegment.setProps({ modelValue: pwdManageMode, options: getPwdModeOptions() });
+        clearPasswordInputs();
+        render();
+      },
+    });
+    const pwdCurrentInput = h('input', {
+      type: 'password',
+      className: 'settings-text-input account-import-input settings-account-pwd-current',
+      autocomplete: 'off',
+      spellcheck: 'false',
+      maxlength: 128,
+      hidden: true,
+    });
+    const pwdNewInput = h('input', {
+      type: 'password',
+      className: 'settings-text-input account-import-input settings-account-pwd-new',
+      autocomplete: 'off',
+      spellcheck: 'false',
+      maxlength: 128,
+    });
+    const pwdConfirmInput = h('input', {
+      type: 'password',
+      className: 'settings-text-input account-import-input settings-account-pwd-confirm',
+      autocomplete: 'off',
+      spellcheck: 'false',
+      maxlength: 128,
+    });
+    const pwdSubmitBtn = h('button', {
+      type: 'submit',
+      className: 'btn-primary settings-account-pwd-submit',
+    });
+    const pwdHint = h('div', { className: 'settings-action-desc' });
+    const pwdForm = h(
+      'form',
+      {
+        className: 'account-import-drawer settings-account-pwd-form',
+        autocomplete: 'off',
+        hidden: true,
+        onSubmit: submitPasswordDrawer,
+      },
+      [
+        pwdModeSegment.el,
+        h('div', { className: 'account-import-row' }, [
+          pwdCurrentInput,
+          pwdNewInput,
+          pwdConfirmInput,
+          pwdSubmitBtn,
+        ]),
+        pwdHint,
+      ]
+    );
+
+    // Credential Import Drawer
+    const credential = h('input', {
+      type: 'password',
+      className: 'settings-text-input account-import-input',
+      required: true,
+      autocomplete: 'off',
+      spellcheck: 'false',
+      maxlength: 16384,
+    });
+    const save = h('button', {
+      type: 'submit',
+      className: 'btn-primary',
+    });
+    const importHint = h('div', { className: 'settings-action-desc' });
+    const form = h(
+      'form',
+      {
+        className: 'settings-account-form account-import-drawer',
+        autocomplete: 'off',
+        hidden: true,
+        onSubmit: importCredential,
+      },
+      [
+        h('div', { className: 'account-import-row' }, [credential, save]),
+        importHint,
+      ]
+    );
+
+    // OAuth Browser Login & Switch Notices (reusing `.settings-bridge-notice`)
+    const loginMessage = h('p', {
+      className: 'settings-bridge-desc settings-action-desc',
+      role: 'status',
+      hidden: true,
+    });
+    const loginLink = h('a', {
+      className: 'settings-bridge-relaunch-btn',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      hidden: true,
+    });
+    const loginStrip = h(
+      'div',
+      { className: 'settings-bridge-notice is-restart', hidden: true },
+      [loginMessage, h('div', { className: 'settings-bridge-actions' }, [loginLink])]
+    );
+    const loginLinkWrap = loginLink.parentElement;
+
+    const pendingDesc = h('p', { className: 'settings-bridge-desc', role: 'status' });
+    const pending = h('div', { className: 'settings-bridge-notice', hidden: true }, [pendingDesc]);
+
+    const toolbarPanel = h('section', { className: 'panel account-toolbar-panel' }, [
+      h('div', { className: 'account-toolbar-row' }, [
+        h('div', { className: 'account-toolbar-left' }, [
+          loginButton,
+          cancelLogin,
+          importToggleBtn,
+          pwdToggleBtn,
+          lockNowBtn,
+        ]),
+        h('div', { className: 'account-toolbar-right' }, [
+          feedback,
+          refreshIntervalSelect.el,
+          reload,
+        ]),
+      ]),
+      unlockBox,
+      pwdForm,
+      form,
+      loginStrip,
+      pending,
+    ]);
+
+    const backupCardsHost = h('div', { className: 'account-cards-stack' });
+    const emptyPanel = h('section', { className: 'panel account-empty-panel', hidden: true }, [
+      h('div', { className: 'settings-action-desc account-empty-text' }),
+    ]);
+    const emptyTextEl = emptyPanel.firstChild;
+
+    // Risk Gate Stage (100% shared `.ctx-risk-stage` / `.ctx-risk-mask` with `SettingsOtherTab`)
+    const riskTitleEl = h('strong', {
+      className: 'ctx-risk-title',
+      text: t('settings.oth.ctxRiskTitle'),
+    });
+    const riskBodyEl = h('p', {
+      className: 'ctx-risk-desc',
+      text: t(key('riskBody')),
+    });
+    const riskAcceptBtnText = h('span', { text: t('settings.oth.ctxRiskAcceptBtn') });
+    const riskAcceptBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary btn-danger-confirm ctx-risk-accept-btn settings-account-risk-accept',
+        onClick: async () => {
+          if (acceptingRisk || draftRiskAccepted) return;
+          acceptingRisk = true;
+          draftRiskAccepted = true;
+          render();
+          try {
+            await saveSettingsPatch({ accountSwitchRiskAccepted: true });
+            await request('list');
+          } catch {
+            draftRiskAccepted = false;
+            setTransientStatus('storeFailed', 2800);
+          } finally {
+            acceptingRisk = false;
+            if (!disposed) render();
+          }
+        },
+      },
+      [createSvgIcon('warning', { size: 12 }), riskAcceptBtnText]
+    );
+    const riskMask = h(
+      'div',
+      {
+        className: 'ctx-risk-mask settings-account-risk-mask',
+        role: 'region',
+        'aria-label': t('settings.oth.ctxRiskTitle'),
+      },
+      [
+        h('div', { className: 'ctx-risk-head' }, [
+          createSvgIcon('warning', { size: 14, className: 'ctx-risk-icon' }),
+          riskTitleEl,
+        ]),
+        riskBodyEl,
+        riskAcceptBtn,
+      ]
+    );
+    const managedControlsBody = h('div', { className: 'ctx-controls-body is-locked' }, [
+      toolbarPanel,
+      backupCardsHost,
+    ]);
+    const riskStage = h('div', { className: 'ctx-risk-stage' }, [managedControlsBody, riskMask]);
+
+    function resolveActiveEmail() {
+      return account?.status === 'signedIn' ? (account.email || '').trim().toLowerCase() : '';
+    }
+
+    function createAccountCardDom(entry) {
+      const emailEl = h('span', {
+        className: 'settings-account-identity account-card-email',
+        text: entry.email,
+        title: entry.email,
+      });
+      const tierPill = h('span', { className: 'status-tag state-synced', hidden: true });
+      const statePill = h('span', { className: 'status-tag', hidden: true });
+
+      const captureBtn = h('button', {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        hidden: true,
+        onClick: () => {
+          clearConfirmTarget(false);
+          void request('capture');
+        },
+      });
+      const selectBtn = h('button', {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        hidden: true,
+        onClick: () => {
+          armOrRunConfirm('switch', entry.email, () => {
+            const curActive = resolveActiveEmail();
+            void request('switch', {
+              email: entry.email,
+              ...(curActive ? { activeEmail: curActive } : {}),
+            });
+          });
+        },
+      });
+      const loadQuotaBtn = h(
+        'button',
+        {
+          type: 'button',
+          className: 'icon-btn settings-account-load-quota',
+          hidden: true,
+          onClick: () => {
+            clearConfirmTarget(false);
+            void request('quota', { email: entry.email, manual: true });
+          },
+        },
+        [createSvgIcon('refresh', { size: 12 })]
+      );
+      const removeBtn = h(
+        'button',
+        {
+          type: 'button',
+          className: 'icon-btn slot-remove-btn settings-account-remove',
+          hidden: true,
+          onClick: () => {
+            armOrRunConfirm('remove', entry.email, () => {
+              void request('remove', { email: entry.email });
+            });
+          },
+        },
+        [createSvgIcon('close', { size: 12 })]
+      );
+      const removeConfirmBtn = h('button', {
+        type: 'button',
+        className: 'btn-ghost-sm btn-danger-confirm settings-account-remove-confirm',
+        hidden: true,
+        onClick: () => {
+          armOrRunConfirm('remove', entry.email, () => {
+            void request('remove', { email: entry.email });
+          });
+        },
+      });
+
+      const actionsWrap = h('div', { className: 'account-card-actions' }, [
+        captureBtn,
+        selectBtn,
+        loadQuotaBtn,
+        removeBtn,
+        removeConfirmBtn,
+      ]);
+      const poolsWrap = h('div', { className: 'account-pools-stack' });
+      const noteEl = h('div', { className: 'settings-action-desc account-card-note', hidden: true });
+
+      const cardEl = h('section', { className: 'panel account-card' }, [
+        h('div', { className: 'panel-header account-card-head' }, [
+          h('div', { className: 'account-card-meta' }, [emailEl, tierPill, statePill]),
+          actionsWrap,
+        ]),
+        poolsWrap,
+        noteEl,
+      ]);
+      return {
+        el: cardEl,
+        refs: {
+          cardEl,
+          emailEl,
+          tierPill,
+          statePill,
+          actionsWrap,
+          captureBtn,
+          selectBtn,
+          loadQuotaBtn,
+          removeBtn,
+          removeConfirmBtn,
+          poolsWrap,
+          noteEl,
+        },
+      };
+    }
+
+    function updateAccountCardDom(row, entry, ctx) {
+      const addr = entry.email;
+      const active = entry.isActive;
+      const isSaved = entry.isSaved;
+      const written = addr === selectedEmail && !active && switchState?.state === 'written';
+      const cached = active ? null : savedQuotas.get(addr);
+      const tierText = active
+        ? ctx.activeTierBadge
+        : cached?.tierName || cached?.tierId
+          ? formatAccountTierBadge({
+              tierId: cached.tierId,
+              tierName: cached.tierName,
+              tierMultiplier: cached.tierMultiplier,
+            })
+          : '';
+      const isSpinning = !active && quotaVisibleLoading.has(addr);
+      const canSwitch = !active && isSaved && ctx.riskAccepted;
+      const armedSwitch = confirmTarget?.type === 'switch' && confirmTarget.key === addr;
+      const armedRemove = confirmTarget?.type === 'remove' && confirmTarget.key === addr;
+
+      patchClasses(row.cardEl, { 'is-active-account': active });
+      patchText(row.emailEl, addr);
+      patchAttr(row.emailEl, 'title', addr);
+
+      patchText(row.tierPill, tierText);
+      patchAttr(row.tierPill, 'hidden', !tierText);
+
+      patchText(row.statePill, active ? t(key('active')) : written ? t(key('written')) : '');
+      patchClasses(row.statePill, { 'state-warn': written && !active });
+      patchAttr(row.statePill, 'hidden', !active && !written);
+
+      const showCapture = active && !isSaved && ctx.riskAccepted && supported !== false;
+      const showRemove = isSaved && ctx.riskAccepted;
+      const showQuotaRefresh = !active && isSaved && ctx.riskAccepted;
+      const hasAnyAction = showCapture || canSwitch || showQuotaRefresh || showRemove;
+      patchAttr(row.actionsWrap, 'hidden', !hasAnyAction);
+
+      patchText(row.captureBtn, t(key('capture')));
+      patchAttr(row.captureBtn, 'hidden', !showCapture);
+      patchAttr(row.captureBtn, 'disabled', !ctx.canWrite);
+
+      patchText(row.selectBtn, t(key(armedSwitch ? 'switchConfirm' : 'switch')));
+      patchAttr(row.selectBtn, 'title', t(key('switchHint')));
+      patchClasses(row.selectBtn, {
+        'settings-account-switch': canSwitch,
+        'btn-danger-confirm': armedSwitch,
+      });
+      patchAttr(row.selectBtn, 'hidden', !canSwitch);
+      patchAttr(row.selectBtn, 'disabled', !ctx.canWrite);
+
+      patchAttr(row.loadQuotaBtn, 'title', t(key(isSpinning ? 'loadingQuota' : 'loadQuota')));
+      patchAttr(row.loadQuotaBtn, 'aria-label', t(key('loadQuota')));
+      patchClasses(row.loadQuotaBtn, { 'is-spinning': isSpinning });
+      patchAttr(row.loadQuotaBtn, 'hidden', !showQuotaRefresh);
+      patchAttr(row.loadQuotaBtn, 'disabled', !ctx.canWrite || isSpinning);
+
+      patchAttr(row.removeBtn, 'title', t(key('remove')));
+      patchAttr(row.removeBtn, 'aria-label', t(key('remove')));
+      patchAttr(row.removeBtn, 'hidden', !showRemove || armedRemove);
+      patchAttr(row.removeBtn, 'disabled', !ctx.canWrite);
+
+      patchText(row.removeConfirmBtn, t(key('removeConfirm')));
+      patchAttr(row.removeConfirmBtn, 'hidden', !showRemove || !armedRemove);
+      patchAttr(row.removeConfirmBtn, 'disabled', !ctx.canWrite);
+
+      const displayedPools = active ? quotas?.pools || [] : cached?.pools || [];
+      const poolCount = renderQuotaRows(row.poolsWrap, displayedPools);
+      const quotaError = active ? '' : quotaErrors.get(addr);
+
+      let noteText = '';
+      if (quotaError) {
+        noteText = t(key(quotaError));
+      } else if (active && poolCount > 0 && quotas?.meta?.isStale) {
+        noteText = t(key('quotaStale'));
+      } else if (active && poolCount === 0) {
+        noteText = t(key('noQuota'));
+      } else if (!active && cached && poolCount === 0) {
+        noteText = t(key('emptyCredentialQuota'));
+      }
+      patchText(row.noteEl, noteText);
+      patchClasses(row.noteEl, { 'is-error': Boolean(quotaError) });
+      patchAttr(row.noteEl, 'hidden', !noteText);
+    }
+
+    function render() {
+      const signedIn = account?.status === 'signedIn';
+      const activeEmail = resolveActiveEmail();
+      if (activeEmail && selectedEmail === activeEmail && switchState?.state !== 'starting') {
+        selectedEmail = '';
+      }
+      const riskAccepted = Boolean(draftRiskAccepted);
+      if (!riskAccepted) {
+        refreshIntervalSelect.close?.();
+      }
+      const vaultLocked = isVaultLocked();
+      const canOperateVault =
+        riskAccepted &&
+        supported === true &&
+        !operation &&
+        status !== 'restarting' &&
+        switchState?.state !== 'starting';
+      const canWrite = canOperateVault && !vaultLocked;
+      const locale = getEffectiveLocale();
+      const activeTierBadge =
+        signedIn && (account?.tierName || account?.planName)
+          ? formatAccountTierBadge(account)
+          : '';
+      const cardCtx = { riskAccepted, canWrite, activeTierBadge };
+
+      // 1. Active Logged-in Account Card
+      const activeEntries = activeEmail
+        ? [
+            {
+              email: activeEmail,
+              isActive: true,
+              isSaved: riskAccepted && accounts.includes(activeEmail),
+            },
+          ]
+        : [];
+      patchAttr(activeCardHost, 'hidden', activeEntries.length === 0);
+      patchKeyedList(activeCardHost, activeEntries, {
+        keyFn: (entry) => entry.email,
+        sigFn: (entry) =>
+          JSON.stringify([
+            locale,
+            entry.isSaved,
+            riskAccepted,
+            canWrite,
+            confirmTarget?.key === entry.email ? confirmTarget.type : '',
+            quotas,
+            activeTierBadge,
+          ]),
+        createRow: createAccountCardDom,
+        updateRow: (row, entry) => updateAccountCardDom(row, entry, cardCtx),
+      });
+
+      // 2. Quota Trend Line Chart Card (always visible; locked to activeEmail when !riskAccepted)
+      quotaTrendCard.refs.update({
+        activeEmail,
+        activePools: quotas?.pools || [],
+        riskAccepted,
+        accounts,
+        savedQuotas,
+        quotaHistory,
+      });
+
+      // 3. Risk Gate Stage & Multi-Account Controls
+      patchClasses(managedControlsBody, { 'is-locked': !riskAccepted });
+      patchAttr(managedControlsBody, 'inert', !riskAccepted);
+      patchAttr(managedControlsBody, 'aria-hidden', riskAccepted ? null : 'true');
+      patchAttr(riskMask, 'hidden', riskAccepted);
+      patchAttr(riskMask, 'aria-label', t('settings.oth.ctxRiskTitle'));
+      patchText(riskTitleEl, t('settings.oth.ctxRiskTitle'));
+      patchText(riskBodyEl, t(key('riskBody')));
+      patchText(riskAcceptBtnText, t('settings.oth.ctxRiskAcceptBtn'));
+      patchAttr(riskAcceptBtn, 'disabled', acceptingRisk);
+
+      const loginActive = ['waiting', 'exchanging', 'saving'].includes(loginSession?.status);
+      patchText(loginBtnLabel, t(key('googleLogin')));
+      patchAttr(loginButton, 'disabled', !canWrite || loginActive);
+      patchText(cancelLogin, t(key('cancelLogin')));
+      patchAttr(cancelLogin, 'hidden', !loginActive);
+      patchAttr(cancelLogin, 'disabled', Boolean(operation) || loginSession?.status === 'saving');
+
+      patchText(importToggleLabel, t(key('importExisting')));
+      patchClasses(importToggleBtn, { 'is-open': importOpen });
+      patchAttr(importToggleBtn, 'hidden', supported === false);
+      patchAttr(importToggleBtn, 'disabled', !canWrite);
+
+      patchSvgIcon(pwdToggleIcon, vaultSecurity.enabled ? 'unlock' : 'lock');
+      patchText(pwdToggleLabel, t(key(vaultSecurity.enabled ? 'pwdBtnManage' : 'pwdBtnSet')));
+      patchClasses(pwdToggleBtn, { 'is-open': pwdDrawerOpen });
+      patchAttr(pwdToggleBtn, 'hidden', supported === false || vaultLocked);
+      patchAttr(pwdToggleBtn, 'disabled', !canOperateVault);
+
+      patchText(lockNowLabel, t(key('lockNow')));
+      patchAttr(lockNowBtn, 'title', t(key('lockNowTip')));
+      patchAttr(lockNowBtn, 'hidden', !vaultSecurity.enabled || vaultLocked || supported === false);
+      patchAttr(lockNowBtn, 'disabled', !canOperateVault);
+
+      // Unlock Notice
+      patchAttr(unlockBox, 'hidden', !riskAccepted || supported !== true || !vaultLocked);
+      patchText(unlockHintLabel, t(key('vaultLockedHint')));
+      patchText(forgotToggleBtn, t(key('forgotPwdToggle')));
+      patchAttr(unlockInput, 'placeholder', t(key('unlockPlaceholder')));
+      patchAttr(unlockInput, 'disabled', !canOperateVault);
+      patchText(unlockSubmitBtn, t(key('unlockBtn')));
+      patchAttr(unlockSubmitBtn, 'disabled', !canOperateVault);
+      const showResetSection = forgotResetOpen && vaultLocked;
+      patchAttr(resetHintEl, 'hidden', !showResetSection);
+      patchAttr(resetActionsWrap, 'hidden', !showResetSection);
+      patchAttr(resetVaultBtn, 'hidden', !showResetSection);
+      patchText(resetHintEl, t(key('resetVaultHint')));
+      const armedVaultReset =
+        confirmTarget?.type === 'resetVault' && confirmTarget.key === 'vault';
+      patchText(resetVaultBtn, t(key(armedVaultReset ? 'resetVaultConfirm' : 'resetVaultBtn')));
+      patchAttr(resetVaultBtn, 'disabled', !canOperateVault);
+
+      // Passphrase Drawer (`SegmentedControl` for Change / Disable)
+      const showPwdDrawer = riskAccepted && pwdDrawerOpen && !vaultLocked && supported === true;
+      patchAttr(pwdForm, 'hidden', !showPwdDrawer);
+      if (showPwdDrawer) {
+        const isSetNew = !vaultSecurity.enabled;
+        const isDisableMode = !isSetNew && pwdManageMode === 'disable';
+        patchAttr(pwdModeSegment.el, 'hidden', isSetNew);
+        if (!isSetNew) {
+          pwdModeSegment.setProps({ modelValue: pwdManageMode, options: getPwdModeOptions() });
+        }
+
+        patchAttr(pwdCurrentInput, 'hidden', isSetNew);
+        patchAttr(pwdCurrentInput, 'placeholder', t(key('pwdCurrentPlaceholder')));
+        patchAttr(pwdCurrentInput, 'disabled', !canOperateVault);
+
+        patchAttr(pwdNewInput, 'hidden', isDisableMode);
+        patchAttr(pwdNewInput, 'placeholder', t(key('pwdNewPlaceholder')));
+        patchAttr(pwdNewInput, 'disabled', !canOperateVault);
+
+        patchAttr(pwdConfirmInput, 'hidden', isDisableMode);
+        patchAttr(pwdConfirmInput, 'placeholder', t(key('pwdConfirmPlaceholder')));
+        patchAttr(pwdConfirmInput, 'disabled', !canOperateVault);
+
+        patchText(
+          pwdSubmitBtn,
+          t(key(isSetNew ? 'pwdEnableSubmit' : isDisableMode ? 'pwdDisableSubmit' : 'pwdChangeSubmit'))
+        );
+        patchClasses(pwdSubmitBtn, {
+          'btn-primary': !isDisableMode,
+          'btn-secondary': isDisableMode,
+          'btn-danger-confirm': isDisableMode,
+        });
+        patchAttr(pwdSubmitBtn, 'disabled', !canOperateVault);
+        patchText(pwdHint, t(key(isSetNew ? 'pwdSetHint' : 'pwdManageHint')));
+      }
+
+      refreshIntervalSelect.setProps({
+        modelValue: refreshMinutes,
+        options: getAccountRefreshOptions(),
+      });
+      patchAttr(refreshIntervalSelect.refs.triggerBtn, 'aria-label', t(key('refreshFreqAria')));
+      patchAttr(refreshIntervalSelect.refs.triggerBtn, 'title', t(key('refreshFreqAria')));
+      patchAttr(refreshIntervalSelect.el, 'hidden', supported === false);
+
+      patchAttr(reload, 'title', t(key('reload')));
+      patchAttr(reload, 'aria-label', t(key('reload')));
+      patchAttr(reload, 'disabled', Boolean(operation));
+      patchClasses(reload, { 'is-spinning': operation === 'list' });
+
+      patchAttr(form, 'hidden', !riskAccepted || !importOpen || vaultLocked || supported === false);
+      patchAttr(credential, 'placeholder', t(key('credentialPlaceholder')));
+      patchAttr(credential, 'disabled', !canWrite);
+      patchText(save, t(key('save')));
+      patchAttr(save, 'disabled', !canWrite);
+      patchText(importHint, t(key('importHint')));
+
+      const loginStatusKeys = {
+        waiting: 'loginWaiting',
+        exchanging: 'loginFinishing',
+        saving: 'loginFinishing',
+        success: 'loginSuccess',
+        cancelled: 'loginCancelled',
+        expired: 'loginExpired',
+      };
+      const hasLoginSession = Boolean(loginSession?.status);
+      const loginIsError =
+        loginSession?.status === 'error' ||
+        loginSession?.status === 'expired' ||
+        loginSession?.error === 'loginDenied';
+      const loginMessageKey =
+        loginSession?.status === 'error'
+          ? errors.has(loginSession.error)
+            ? loginSession.error
+            : 'loginExchangeFailed'
+          : loginSession?.error === 'loginDenied'
+            ? 'loginDenied'
+            : loginStatusKeys[loginSession?.status] || '';
+      patchText(loginMessage, loginMessageKey ? t(key(loginMessageKey)) : '');
+      patchAttr(loginMessage, 'hidden', !loginMessageKey);
+
+      const authUrl =
+        loginSession?.status === 'waiting' &&
+        loginSession.url?.startsWith('https://accounts.google.com/o/oauth2/v2/auth?')
+          ? loginSession.url
+          : '';
+      patchText(loginLink, t(key('openLoginPage')));
+      patchAttr(loginLink, 'href', authUrl || null);
+      patchAttr(loginLink, 'hidden', !authUrl);
+      patchAttr(loginLinkWrap, 'hidden', !authUrl);
+      patchClasses(loginStrip, { 'is-restart': !loginIsError });
+      patchAttr(loginStrip, 'hidden', !hasLoginSession || !loginMessageKey);
+
+      const failedSwitch =
+        switchState?.state === 'failed' && errors.has(switchState.error) ? switchState.error : '';
+      const message =
+        status ||
+        failedSwitch ||
+        (operation === 'switch'
+          ? 'switching'
+          : operation === 'save' || operation === 'capture'
+            ? 'verifying'
+            : '');
+      const isFeedbackError = Boolean(errors.has(message));
+      const isFeedbackOk = okToastKeys.has(message);
+      patchText(feedback, message ? t(key(message)) : '');
+      patchAttr(feedback, 'title', message ? t(key(message)) : null);
+      patchClasses(feedback, {
+        'is-error': isFeedbackError,
+        'is-ok': isFeedbackOk,
+      });
+      patchAttr(feedback, 'hidden', !message);
+
+      const waiting =
+        Boolean(selectedEmail) &&
+        activeEmail !== selectedEmail &&
+        switchState?.state === 'written' &&
+        status !== 'restarting';
+      patchText(pendingDesc, waiting ? t(key('pending'), { email: selectedEmail }) : '');
+      patchAttr(pending, 'hidden', !waiting);
+
+      const backupEntries = riskAccepted
+        ? accounts
+            .filter((addr) => addr && addr !== activeEmail)
+            .map((addr) => ({ email: addr, isActive: false, isSaved: true }))
+        : [];
+      patchAttr(backupCardsHost, 'hidden', backupEntries.length === 0);
+      patchKeyedList(backupCardsHost, backupEntries, {
+        keyFn: (entry) => entry.email,
+        sigFn: (entry) =>
+          JSON.stringify([
+            locale,
+            selectedEmail,
+            switchState?.state || '',
+            canWrite,
+            confirmTarget?.key === entry.email ? confirmTarget.type : '',
+            savedQuotas.get(entry.email),
+            quotaVisibleLoading.has(entry.email),
+            quotaErrors.get(entry.email),
+          ]),
+        createRow: createAccountCardDom,
+        updateRow: (row, entry) => updateAccountCardDom(row, entry, cardCtx),
+      });
+
+      const showEmpty = !activeEmail && (!riskAccepted || backupEntries.length === 0);
+      patchText(
+        emptyTextEl,
+        t(
+          key(
+            supported === null && !activeEmail
+              ? 'loading'
+              : account?.status === 'signedOut'
+                ? 'signedOut'
+                : 'empty'
+          )
+        )
+      );
+      patchAttr(emptyPanel, 'hidden', !showEmpty);
+
+      props.onLayoutChange?.();
+    }
+
+    async function dispatchAccountPost(action, fields) {
+      let res = await callSidecarApi('/api/accounts/update', {
+        method: 'POST',
+        body: {
+          action,
+          ...fields,
+          ...(actionNonce ? { actionNonce } : {}),
+        },
+        cdpTimeoutMs: 40000,
+      });
+      if (res?.actionNonce) {
+        actionNonce = res.actionNonce;
+      }
+      if (res?.error === 'invalidActionNonce' && actionNonce) {
+        res = await callSidecarApi('/api/accounts/update', {
+          method: 'POST',
+          body: {
+            action,
+            ...fields,
+            actionNonce,
+          },
+          cdpTimeoutMs: 40000,
+        });
+        if (res?.actionNonce) {
+          actionNonce = res.actionNonce;
+        }
+      }
+      return res;
+    }
+
+    async function request(action, fields = {}) {
+      if (action !== 'list' && !draftRiskAccepted) return;
+      if (action === 'quota') return refreshQuota(fields.email, Boolean(fields.manual));
+      if (operation) return;
+      operation = action;
+      if (action === 'loginStart' || action === 'loginCancel') {
+        clearTimeout(loginTimer);
+        loginGeneration += 1;
+      }
+      setTransientStatus('');
+      render();
+      try {
+        const result =
+          action === 'list'
+            ? await callSidecarApi('/api/accounts')
+            : await dispatchAccountPost(action, fields);
+        if (disposed) return;
+        if (typeof result?.actionNonce === 'string' && result.actionNonce) {
+          actionNonce = result.actionNonce;
+        }
+        if (result?.quotaHistory && typeof result.quotaHistory === 'object') {
+          quotaHistory = { ...quotaHistory, ...result.quotaHistory };
+        }
+        if (result?.error) {
+          if (result.error === 'unsupported') supported = false;
+          if (result.error === 'vaultLocked') {
+            vaultSecurity = { enabled: true, unlocked: false };
+            syncWarmCache();
+          }
+          setTransientStatus(errors.has(result.error) ? result.error : 'storeFailed', 3600);
+          return;
+        }
+        if (action === 'loginStart' || action === 'loginCancel') {
+          applyLogin(result.login);
+          if (result.login?.status === 'success') loginRefreshEmail = result.login.email;
+          return;
+        }
+        supported = result?.supported === true;
+        riskLockedFromServer = Boolean(result?.riskLocked);
+        accounts = result?.accounts || [];
+        selectedEmail = result?.selectedEmail || '';
+        switchState = result?.switchState || null;
+        if (result?.security) {
+          vaultSecurity = {
+            enabled: Boolean(result.security.enabled),
+            unlocked: result.security.unlocked !== false,
+          };
+        } else {
+          vaultSecurity = { enabled: false, unlocked: true };
+        }
+        if (result.login) applyLogin(result.login);
+        if (action === 'resetVault') {
+          savedQuotas.clear();
+          quotaErrors.clear();
+        }
+        for (const [addr, snapshot] of Object.entries(result?.quotas || {})) {
+          savedQuotas.set(addr, snapshot);
+        }
+        syncWarmCache();
+        if (action !== 'switch' && draftRiskAccepted && !riskLockedFromServer && !isVaultLocked()) {
+          void refreshSavedQuotas();
+        }
+        if (action === 'save' || action === 'capture') {
+          importOpen = false;
+          setTransientStatus('saved', 2600);
+        } else if (action === 'remove') {
+          savedQuotas.delete(fields.email);
+          quotaErrors.delete(fields.email);
+          syncWarmCache();
+          setTransientStatus('removed', 2600);
+        } else if (action === 'switch') {
+          setTransientStatus(result.restarting ? 'restarting' : 'switchStartFailed');
+        } else if (action === 'setPassword') {
+          pwdDrawerOpen = false;
+          setTransientStatus('pwdEnabledToast', 2600);
+        } else if (action === 'changePassword') {
+          pwdDrawerOpen = false;
+          setTransientStatus('pwdChangedToast', 2600);
+        } else if (action === 'disablePassword') {
+          pwdDrawerOpen = false;
+          setTransientStatus('pwdDisabledToast', 2600);
+        } else if (action === 'unlockVault') {
+          forgotResetOpen = false;
+          quotaErrors.clear();
+          setTransientStatus('vaultUnlockedToast', 2200);
+        } else if (action === 'lockVault') {
+          pwdDrawerOpen = false;
+          importOpen = false;
+          setTransientStatus('vaultLockedToast', 2200);
+        } else if (action === 'resetVault') {
+          forgotResetOpen = false;
+          setTransientStatus('vaultResetToast', 2600);
+        }
+      } catch {
+        setTransientStatus('storeFailed', 3200);
+      } finally {
+        operation = '';
+        if (!disposed) {
+          render();
+          if (loginRefreshEmail) {
+            const email = loginRefreshEmail;
+            loginRefreshEmail = '';
+            void refreshLoginAccount(email);
+          }
+        }
+      }
+    }
+
+    async function refreshLoginAccount(email) {
+      if (disposed || !email) return;
+      if (operation) {
+        loginRefreshEmail = email;
+        return;
+      }
+      await request('list');
+      if (!disposed && draftRiskAccepted && !isVaultLocked() && email !== resolveActiveEmail()) {
+        void refreshQuota(email, false);
+      }
+    }
+
+    function applyLogin(session) {
+      loginSession = session;
+      clearTimeout(loginTimer);
+      if (['waiting', 'exchanging', 'saving'].includes(session?.status)) {
+        loginTimer = setTimeout(() => pollLogin(session.id, loginGeneration), 1000);
+      }
+    }
+
+    async function pollLogin(id, generation) {
+      try {
+        const result = await callSidecarApi('/api/accounts/update', {
+          method: 'POST',
+          body: { action: 'loginStatus', id, ...(actionNonce ? { actionNonce } : {}) },
+          cdpTimeoutMs: 10000,
+        });
+        if (disposed || generation !== loginGeneration) return;
+        if (typeof result?.actionNonce === 'string' && result.actionNonce) {
+          actionNonce = result.actionNonce;
+        }
+        if (result.error) throw new Error(result.error);
+        applyLogin(result.login);
+        if (loginSession?.status === 'success') await refreshLoginAccount(loginSession.email);
+      } catch {
+        if (disposed || generation !== loginGeneration) return;
+        loginSession = { id, status: 'error', error: 'loginStartFailed' };
+      }
+      if (!disposed) render();
+    }
+
+    async function refreshSavedQuotas() {
+      if (refreshingSavedQuotas || !draftRiskAccepted || isVaultLocked()) return;
+      refreshingSavedQuotas = true;
+      try {
+        const activeEmail = resolveActiveEmail();
+        const ttlMs = refreshMinutes * 60_000;
+        const staleTargets = accounts.filter((addr) => {
+          if (!addr || addr === activeEmail) return false;
+          const cached = savedQuotas.get(addr);
+          if (needsLegacyUltraTierRefresh(cached)) return true;
+          return Date.now() - (cached?.fetchedAt || 0) >= ttlMs;
+        });
+        const BATCH_SIZE = 3;
+        for (let i = 0; i < staleTargets.length; i += BATCH_SIZE) {
+          if (disposed || operation === 'switch' || !draftRiskAccepted || isVaultLocked()) break;
+          const batch = staleTargets.slice(i, i + BATCH_SIZE);
+          await Promise.all(batch.map((addr) => refreshQuota(addr, false)));
+        }
+      } finally {
+        refreshingSavedQuotas = false;
+      }
+    }
+
+    async function refreshQuota(addr, manual = false) {
+      const activeEmail = resolveActiveEmail();
+      if (
+        !addr ||
+        addr === activeEmail ||
+        !draftRiskAccepted ||
+        isVaultLocked() ||
+        quotaInFlight.has(addr) ||
+        disposed
+      ) {
+        return;
+      }
+      const hasCachedPools = Boolean(savedQuotas.get(addr)?.pools?.length);
+      const showSpinner = manual || !hasCachedPools;
+      quotaInFlight.add(addr);
+      if (showSpinner) quotaVisibleLoading.add(addr);
+      quotaErrors.delete(addr);
+      if (showSpinner || quotaErrors.size > 0) render();
+      try {
+        const result = await callSidecarApi('/api/accounts/update', {
+          method: 'POST',
+          body: { action: 'quota', email: addr, ...(actionNonce ? { actionNonce } : {}) },
+          cdpTimeoutMs: 40000,
+        });
+        if (typeof result?.actionNonce === 'string' && result.actionNonce) {
+          actionNonce = result.actionNonce;
+        }
+        if (result?.error === 'vaultLocked') {
+          vaultSecurity = { enabled: true, unlocked: false };
+          syncWarmCache();
+          return;
+        }
+        if (result?.error) {
+          if (manual || !hasCachedPools) {
+            quotaErrors.set(addr, errors.has(result.error) ? result.error : 'quotaUnavailable');
+          }
+        } else {
+          const prev = savedQuotas.get(addr) || {};
+          const nextTierId = result.tierId || prev.tierId || '';
+          const nextTierName = result.tierName || prev.tierName || '';
+          const nextTierMult = result.tierMultiplier || prev.tierMultiplier || '';
+          const fetchedAt = result.fetchedAt || Date.now();
+          savedQuotas.set(addr, {
+            pools: result.pools,
+            fetchedAt,
+            ...(nextTierId ? { tierId: nextTierId } : {}),
+            ...(nextTierName ? { tierName: nextTierName } : {}),
+            ...(nextTierMult ? { tierMultiplier: nextTierMult } : {}),
+          });
+          syncWarmCache();
+        }
+      } catch {
+        if (manual || !hasCachedPools) {
+          quotaErrors.set(addr, 'quotaUnavailable');
+        }
+      } finally {
+        quotaInFlight.delete(addr);
+        quotaVisibleLoading.delete(addr);
+        if (!disposed) render();
+      }
+    }
+
+    function submitUnlock(event) {
+      event.preventDefault();
+      if (operation) return;
+      const pwd = unlockInput.value;
+      unlockInput.value = '';
+      if (!isValidVaultPassphrase(pwd)) {
+        setTransientStatus('wrongPassword', 3000);
+        render();
+        return;
+      }
+      void request('unlockVault', { password: pwd });
+    }
+
+    function submitPasswordDrawer(event) {
+      event.preventDefault();
+      if (operation) return;
+      const curPwd = pwdCurrentInput.value;
+      const nextPwd = pwdNewInput.value;
+      const confirmPwd = pwdConfirmInput.value;
+      clearPasswordInputs();
+
+      if (!vaultSecurity.enabled) {
+        if (!isValidVaultPassphrase(nextPwd)) {
+          setTransientStatus('invalidPassword', 3200);
+          render();
+          return;
+        }
+        if (nextPwd !== confirmPwd) {
+          setTransientStatus('passwordMismatch', 3200);
+          render();
+          return;
+        }
+        void request('setPassword', { newPassword: nextPwd });
+        return;
+      }
+
+      if (!isValidVaultPassphrase(curPwd)) {
+        setTransientStatus('wrongPassword', 3000);
+        render();
+        return;
+      }
+      if (pwdManageMode === 'disable') {
+        void request('disablePassword', { currentPassword: curPwd });
+        return;
+      }
+      if (!isValidVaultPassphrase(nextPwd)) {
+        setTransientStatus('invalidPassword', 3200);
+        render();
+        return;
+      }
+      if (nextPwd !== confirmPwd) {
+        setTransientStatus('passwordMismatch', 3200);
+        render();
+        return;
+      }
+      void request('changePassword', { currentPassword: curPwd, newPassword: nextPwd });
+    }
+
+    function importCredential(event) {
+      event.preventDefault();
+      if (operation) return;
+      const input = credential.value;
+      credential.value = '';
+      void request('save', { credential: input });
+    }
+
+    function renderAccount(value, quotaData, settingsData) {
+      const nextRefreshMins =
+        settingsData?.accountQuotaRefreshMinutes !== undefined
+          ? normalizeAccountQuotaRefreshMinutes(settingsData.accountQuotaRefreshMinutes)
+          : refreshMinutes;
+      const nextRiskAccepted =
+        acceptingRisk || settingsData?.accountSwitchRiskAccepted === undefined
+          ? draftRiskAccepted
+          : Boolean(settingsData.accountSwitchRiskAccepted);
+      if (
+        account === value &&
+        quotas === quotaData &&
+        refreshMinutes === nextRefreshMins &&
+        draftRiskAccepted === nextRiskAccepted
+      ) {
+        return;
+      }
+      const becameRiskUnlocked = !draftRiskAccepted && nextRiskAccepted;
+      account = value;
+      quotas = quotaData;
+      refreshMinutes = nextRefreshMins;
+      draftRiskAccepted = nextRiskAccepted;
+      render();
+      if (becameRiskUnlocked && riskLockedFromServer && !operation) {
+        void request('list');
+      }
+    }
+
+    const quotaScheduleTimer = setInterval(() => {
+      if (!disposed && draftRiskAccepted && accounts.length > 0 && !operation && !isVaultLocked()) {
+        void refreshSavedQuotas();
+      }
+    }, 60_000);
+    quotaScheduleTimer.unref?.();
+
+    const root = h('div', { className: 'settings-tab-stack settings-account-root' }, [
+      quotaTrendCard.el,
+      activeCardHost,
+      emptyPanel,
+      riskStage,
+    ]);
+    render();
+    onCleanup(() => {
+      disposed = true;
+      clearTimeout(loginTimer);
+      clearInterval(quotaScheduleTimer);
+      if (statusClearTimer) clearTimeout(statusClearTimer);
+      if (confirmClearTimer) clearTimeout(confirmClearTimer);
+      refreshIntervalSelect.destroy();
+      pwdModeSegment.destroy();
+      quotaTrendCard.destroy();
+      loginGeneration += 1;
+      credential.value = '';
+      clearPasswordInputs();
+    });
+    return {
+      el: root,
+      refs: {
+        renderAccount,
+        refreshLabels: () => {
+          quotaTrendCard.refs.refreshLabels();
+          render();
+        },
+        preload: () => (supported === null ? request('list') : Promise.resolve()),
+        load: () =>
+          supported === null || (draftRiskAccepted && riskLockedFromServer)
+            ? request('list')
+            : draftRiskAccepted
+              ? refreshSavedQuotas()
+              : Promise.resolve(),
+      },
+    };
+  },
+});
+return { SettingsAccountTab };
+})();
+
 // --- src/views/settings/SettingsOtherTab.js ---
 const { SettingsOtherTab } = (() => {
 /**
@@ -27767,8 +35435,7 @@ const SettingsOtherTab = defineComponent({
       text: '',
     });
     const maintStatusText = h('span', {
-      className: 'text-muted',
-      style: 'font-size: var(--fs-md);',
+      className: 'text-muted settings-panel-status',
       text: '',
     });
 
@@ -27806,10 +35473,12 @@ const SettingsOtherTab = defineComponent({
         maintTimer = null;
       }
       patchText(maintStatusText, text);
+      patchAttr(maintStatusText, 'title', text || null);
       if (text && autoClearMs > 0) {
         maintTimer = setTimeout(() => {
           maintTimer = null;
           patchText(maintStatusText, '');
+          patchAttr(maintStatusText, 'title', null);
         }, autoClearMs);
       }
     }
@@ -27988,7 +35657,10 @@ const SettingsOtherTab = defineComponent({
     const ctxModelLabel = h('span', { className: 'form-label' });
     const ctxWindowLabel = h('span', { className: 'form-label' });
     const ctxHint = h('span', { className: 'settings-hint-text' });
-    const ctxStatus = h('span', { className: 'text-muted', role: 'status' });
+    const ctxStatus = h('span', {
+      className: 'text-muted settings-panel-status',
+      role: 'status',
+    });
     const ctxModelSelect = CustomSelect({
       className: 'settings-context-model',
       searchable: true,
@@ -28278,7 +35950,7 @@ const SettingsOtherTab = defineComponent({
     }
 
     const baselinePanel = h('section', { className: 'panel' }, [
-      h('div', { className: 'panel-header' }, [
+      h('div', { className: 'panel-header settings-panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('layers', { size: 13 }),
           baselineTitleEl,
@@ -28495,7 +36167,7 @@ const SettingsOtherTab = defineComponent({
     ]);
 
     const maintPanel = h('section', { className: 'panel' }, [
-      h('div', { className: 'panel-header' }, [
+      h('div', { className: 'panel-header settings-panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('refresh', { size: 13 }),
           maintTitleEl,
@@ -28673,18 +36345,49 @@ const { TopSessionHeader } = (() => {
  */
 
 
-function formatConvOptionMeta(c) {
-  const base = formatConversationMeta(c);
-  const wsName = String(c?.workspaceName || '').trim();
-  if (!wsName) return base;
-  return base ? `${wsName} · ${base}` : wsName;
+const INLINE_UUID_RE =
+  /(?<![0-9a-f-])([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])/gi;
+
+function compactInlineUuids(text) {
+  const str = String(text || '').trim();
+  if (!str || str.length < 36) return str;
+  return str.replace(INLINE_UUID_RE, '$1…');
+}
+
+function formatCompactConvStepsMeta(c) {
+  if (!c) return '';
+  const main = Number(c.stepCount || 0);
+  const totalSubs = Number(c.subagentCount || 0);
+  const swarm = Number(c.swarmCount || 0);
+  const otherSubs = Math.max(0, totalSubs - swarm);
+  const total = Number(c.totalStepCount ?? c.totalStepsAllAgents ?? main);
+  if (swarm > 0 && otherSubs > 0) {
+    return t('header.convCompactSwarmAndSubs', { swarm, subs: otherSubs, total });
+  }
+  if (swarm > 0) {
+    return t('header.convCompactSwarm', { swarm, total });
+  }
+  if (totalSubs > 0) {
+    return t('header.convCompactSubs', { subs: totalSubs, total });
+  }
+  return t('header.convMetaSteps', { count: main });
+}
+
+function resolveConvTotalSteps(c) {
+  if (!c) return 0;
+  const main = Number(c.stepCount || 0);
+  return Number(c.totalStepCount ?? c.totalStepsAllAgents ?? main);
 }
 
 function formatConvOptionTitle(c) {
   const parts = [];
   const label = String(c?.title || c?.cascadeId?.slice?.(0, 8) || '').trim();
-  if (c?.swarmTitle && c.swarmTitle !== c.title) {
-    parts.push(`${label} · ${c.swarmTitle}`);
+  if (label) {
+    parts.push(c?.swarmTitle && c.swarmTitle !== c.title ? `${label} · ${c.swarmTitle}` : label);
+  }
+  const fullMeta = formatConversationMeta(c);
+  if (fullMeta) {
+    parts.push(fullMeta);
   }
   const wsPath = String(c?.workspacePath || c?.workspaceName || '').trim();
   if (wsPath) {
@@ -28697,6 +36400,7 @@ const TopSessionHeader = defineComponent({
   name: 'TopSessionHeader',
   setup({ onCleanup }) {
     const convSelect = CustomSelect({
+      className: 'session-select',
       modelValue: telemetryStore.getState().selectedConversationId,
       placeholder: t('header.followLatest'),
       searchable: true,
@@ -28871,53 +36575,63 @@ const TopSessionHeader = defineComponent({
         routeMatch?.isChildRoute && routeMatch.childAgent
           ? formatAgentBadgeText(routeMatch.childAgent)
           : '';
-      const hostBaseTitle = hostMatchedConv?.title || hostRouteId.slice(0, 8);
+      const hostBaseTitle = compactInlineUuids(
+        hostMatchedConv?.title || hostRouteId.slice(0, 8)
+      );
       const hostDisplayTitle = childRouteBadge
         ? `${hostBaseTitle} · ${childRouteBadge}`
         : hostBaseTitle;
-      const defaultOptLabel = hostRouteId
+      const defaultTriggerLabel = hostRouteId
         ? t('header.currentWindowNamed', {
             title: hostDisplayTitle,
           })
         : convs[0]?.title
-          ? t('header.latestNamed', { title: convs[0].title })
+          ? t('header.latestNamed', { title: compactInlineUuids(convs[0].title) })
           : t('header.followLatest');
-      const defaultOptMeta = hostRouteId
-        ? hostMatchedConv
-          ? formatConvOptionMeta(hostMatchedConv)
-          : ''
-        : convs[0]
-          ? formatConvOptionMeta(convs[0])
-          : '';
+
+      const lockedId = telSt.selectedConversationId;
+      const defaultMenuLabel = hostRouteId
+        ? t('header.followCurrentWindow')
+        : t('header.followLatest');
+
       const options = [
         {
           value: '',
-          label: defaultOptLabel,
-          meta: defaultOptMeta,
+          label: defaultMenuLabel,
+          shortLabel: defaultTriggerLabel,
+          meta: t('header.autoFollowBadge'),
+          dividerAfter: convs.length > 0 || Boolean(lockedId),
           ...(hostMatchedConv?.swarmTitle ? { title: hostMatchedConv.swarmTitle } : {}),
         },
         ...convs.map((c) => {
+          const rawTitle = c.title || c.cascadeId.slice(0, 8);
+          const cleanLabel = compactInlineUuids(rawTitle);
+          const wsName = String(c?.workspaceName || '').trim();
           const optTitle = formatConvOptionTitle(c);
           return {
             value: c.cascadeId,
-            label: c.title || c.cascadeId.slice(0, 8),
-            meta: formatConvOptionMeta(c),
+            label: cleanLabel,
+            meta: formatCompactConvStepsMeta(c),
+            dimMeta: resolveConvTotalSteps(c) === 0,
+            searchText: `${rawTitle} ${wsName} ${c.workspacePath || ''} ${c.swarmTitle || ''}`,
             ...(optTitle ? { title: optTitle } : {}),
           };
         }),
       ];
-      const lockedId = telSt.selectedConversationId;
       if (lockedId && !convs.some((c) => c.cascadeId === lockedId)) {
         const isLoadedLocked = actConv?.cascadeId === lockedId;
-        const lockedTitle =
+        const rawLockedTitle =
           isLoadedLocked && actConv?.title
             ? actConv.title
             : t('header.lockedSession', { id: String(lockedId).slice(0, 8) });
-        const lockedMeta = isLoadedLocked ? formatConvOptionMeta(actConv) : t('header.lockedMeta');
+        const lockedLabel = compactInlineUuids(rawLockedTitle);
+        const lockedWs = isLoadedLocked ? String(actConv?.workspaceName || '').trim() : '';
+        const lockedMeta = isLoadedLocked ? formatCompactConvStepsMeta(actConv) : t('header.lockedMeta');
         options.splice(1, 0, {
           value: lockedId,
-          label: lockedTitle,
+          label: lockedLabel,
           meta: lockedMeta,
+          searchText: `${rawLockedTitle} ${lockedWs}`,
         });
       }
       convSelect.setProps({
@@ -29242,6 +36956,16 @@ function getConsumptionTimeRangeOptions() {
   ];
 }
 
+/** 热力图顶栏支持的四档聚合视图选项 */
+function getHeatmapModeOptions() {
+  return [
+    { value: 'day', label: t('cons.hmModeDay') },
+    { value: 'week', label: t('cons.hmModeWeek') },
+    { value: 'month', label: t('cons.hmModeMonth') },
+    { value: 'all', label: t('cons.hmModeAll') },
+  ];
+}
+
 function floorToStartOfMinuteMs(ms) {
   const n = Number(ms);
   if (!(n > 0)) return 0;
@@ -29256,6 +36980,86 @@ function ceilToEndOfMinuteMs(ms) {
   const d = new Date(n);
   d.setSeconds(59, 999);
   return d.getTime();
+}
+
+function formatCyclePoolShortLabel(poolKey, poolLabel) {
+  if (poolKey === 'Argon') return 'Argon';
+  if (poolKey === 'Carbon') return 'Carbon';
+  if (poolKey === 'Claude & GPT') return 'Claude/GPT';
+  return poolLabel || poolKey;
+}
+
+function buildCyclePoolSelectOptions(pools, isCustomWeeklyMode = false) {
+  const list = Array.isArray(pools) ? pools : [];
+  let sumCycleCost = 0;
+  let hasAnyCycleCost = false;
+  for (let i = 0; i < list.length; i++) {
+    const c = Number(list[i]?.cycleWeekly?.costUsd);
+    if (Number.isFinite(c) && c >= 0 && list[i]?.cycleWeekly) {
+      sumCycleCost += c;
+      hasAnyCycleCost = true;
+    }
+  }
+  const allLabel = t('cons.cyclePoolAll');
+  const opts = [
+    {
+      value: 'all',
+      label: allLabel,
+      shortLabel: t('cons.cyclePoolAllShort'),
+      meta: !isCustomWeeklyMode && hasAnyCycleCost ? formatUsd(sumCycleCost) : '',
+      title: allLabel,
+    },
+  ];
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    const key = String(p?.poolKey || p?.family || '').trim();
+    if (!key || key === 'Unknown') continue;
+    const label = String(p?.poolLabel || key).trim();
+    const shortLabel = formatCyclePoolShortLabel(key, label);
+    const metaParts = [];
+    if (
+      !isCustomWeeklyMode &&
+      p?.weeklyRemainingPct != null &&
+      Number.isFinite(Number(p.weeklyRemainingPct))
+    ) {
+      metaParts.push(
+        t('cons.cyclePoolRemMeta', {
+          pct: formatPctNumber(p.weeklyRemainingPct, { withSymbol: true }),
+        })
+      );
+    }
+    if (!isCustomWeeklyMode && p?.cycleWeekly && Number.isFinite(Number(p.cycleWeekly.costUsd))) {
+      metaParts.push(formatUsd(p.cycleWeekly.costUsd));
+    }
+    const meta = metaParts.join(' · ');
+    opts.push({
+      value: key,
+      label,
+      shortLabel,
+      meta,
+      title: meta ? `${label} (${meta})` : label,
+    });
+  }
+  return opts;
+}
+
+function formatCycleMinuteSpanTip(startMs, endMs, isFallbackWeek = false) {
+  const s = Number(startMs);
+  const e = Number(endMs);
+  if (!(s > 0 && e > 0 && Number.isFinite(s) && Number.isFinite(e))) return null;
+  const sd = new Date(s);
+  const ed = new Date(e);
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const sTime = `${pad2(sd.getHours())}:${pad2(sd.getMinutes())}`;
+  const eTime = `${pad2(ed.getHours())}:${pad2(ed.getMinutes())}`;
+  const sameDay =
+    sd.getFullYear() === ed.getFullYear() &&
+    sd.getMonth() === ed.getMonth() &&
+    sd.getDate() === ed.getDate();
+  const sDate = `${sd.getMonth() + 1}/${pad2(sd.getDate())}`;
+  const eDate = `${ed.getMonth() + 1}/${pad2(ed.getDate())}`;
+  const base = sameDay ? `${sDate} ${sTime} ~ ${eTime}` : `${sDate} ${sTime} ~ ${eDate} ${eTime}`;
+  return isFallbackWeek ? `${base} · ${t('cons.cycleFallbackWeekTip')}` : base;
 }
 
 const ConsumptionView = defineComponent({
@@ -29363,6 +37167,16 @@ const ConsumptionView = defineComponent({
 
     // --- Section 1: 用量概览矩阵 (上层 3 列核心总量 + 下层 3 列新输入/缓存读取/输出拆分 + 底部 4 段比例条) ---
     const dateSpanBadge = h('span', { className: 'cons-badge text-mono', text: '-- ~ --' });
+    const cyclePoolSelect = CustomSelect({
+      className: 'cons-cycle-pool-select',
+      modelValue: telemetryStore.getState().selectedCyclePool || 'all',
+      options: buildCyclePoolSelectOptions([]),
+      onUpdateModelValue: (nextPool) => {
+        selectConsumptionCyclePool(nextPool || 'all');
+      },
+    });
+    patchAttr(cyclePoolSelect.el, 'hidden', true);
+    patchAttr(cyclePoolSelect.refs.triggerBtn, 'aria-label', t('cons.cyclePoolAria'));
     const heroTotalTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
     const heroTotalCalls = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.callsCount', { calls: 0 }) });
     const heroCostUsd = h('strong', { className: 'cons-hero-cost text-mono', text: '$0.00' });
@@ -29371,17 +37185,14 @@ const ConsumptionView = defineComponent({
     const cacheHitPctEl = h('strong', { className: 'cons-hero-cache text-mono', text: '0%' });
     const cacheTokensEl = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.cacheHitTokens', { tokens: 0 }) });
 
-    const inputSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-input); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const inputMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const inputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.uncachedInput') });
+    const inputSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const inputMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
-    const cacheSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-cached); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const cacheMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const cacheSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.savedCost', { cost: '$0.00' }) });
+    const cacheSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const cacheMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
-    const outputSharePct = h('span', { className: 'text-mono', style: 'color: var(--ctx-output); font-weight: 600; font-size: var(--fs-base-sm);', text: '0%' });
-    const outputMainTokens = h('strong', { className: 'cons-mid-num text-mono', text: '0' });
-    const outputSubText = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.replyAndThink', { resp: 0, think: 0 }) });
+    const outputSharePct = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '0%' });
+    const outputMainTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
 
     const overviewSegBar = createFourSegmentBar();
     const consExportMenu = ActionMenu({
@@ -29443,10 +37254,54 @@ const ConsumptionView = defineComponent({
     const cacheReadLabel = h('span', { text: t('cons.cacheRead') });
     const outputUsageLabel = h('span', { text: t('cons.outputUsage') });
 
+    const unifiedMatrixEl = h('div', { className: 'cons-box cons-unified-matrix' }, [
+      h('div', { className: 'cons-split-3' }, [
+        h('div', { className: 'cons-col' }, [
+          totalTokensLabel,
+          h('div', { className: 'cons-baseline' }, [heroTotalTokens, heroTotalCalls]),
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          estCostLabel,
+          h('div', { className: 'cons-baseline' }, [heroCostUsd, heroCostCny]),
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          h('span', { className: 'legend-left', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-cached' }),
+            cacheHitRateLabel,
+          ]),
+          h('div', { className: 'cons-baseline' }, [cacheHitPctEl, cacheTokensEl]),
+        ]),
+      ]),
+      h('div', { className: 'cons-split-3 cons-matrix-bottom' }, [
+        h('div', { className: 'cons-col' }, [
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-input' }),
+            newInputLabel,
+          ]),
+          h('div', { className: 'cons-baseline' }, [inputMainTokens, inputSharePct]),
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-cached' }),
+            cacheReadLabel,
+          ]),
+          h('div', { className: 'cons-baseline' }, [cacheMainTokens, cacheSharePct]),
+        ]),
+        h('div', { className: 'cons-col is-bordered-col' }, [
+          h('span', { className: 'legend-left text-muted', style: 'font-size: var(--fs-md);' }, [
+            h('span', { className: 'dot-swatch seg-output' }),
+            outputUsageLabel,
+          ]),
+          h('div', { className: 'cons-baseline' }, [outputMainTokens, outputSharePct]),
+        ]),
+      ]),
+    ]);
+
     const overviewPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header cons-overview-head' }, [
-        h('span', { className: 'panel-title' }, [
+        h('span', { className: 'panel-title cons-overview-title' }, [
           dateSpanBadge,
+          cyclePoolSelect.el,
         ]),
         h('div', { className: 'cons-overview-controls' }, [
           timeFilterSwitch.el,
@@ -29454,60 +37309,7 @@ const ConsumptionView = defineComponent({
         ]),
       ]),
       customRangeBar,
-      h('div', { className: 'cons-box cons-unified-matrix' }, [
-        h('div', { className: 'cons-split-3' }, [
-          h('div', { className: 'cons-col' }, [
-            totalTokensLabel,
-            h('div', { className: 'cons-baseline' }, [heroTotalTokens, heroTotalCalls]),
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            estCostLabel,
-            h('div', { className: 'cons-baseline' }, [heroCostUsd, heroCostCny]),
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            h('span', { className: 'legend-left', style: 'font-size: var(--fs-md);' }, [
-              h('span', { className: 'dot-swatch seg-cached' }),
-              cacheHitRateLabel,
-            ]),
-            h('div', { className: 'cons-baseline' }, [cacheHitPctEl, cacheTokensEl]),
-          ]),
-        ]),
-        h('div', { className: 'cons-split-3 cons-matrix-bottom' }, [
-          h('div', { className: 'cons-col' }, [
-            h('div', { className: 'cons-sub-head' }, [
-              h('span', { className: 'legend-left cons-sub-label' }, [
-                h('span', { className: 'dot-swatch seg-input' }),
-                newInputLabel,
-              ]),
-              inputSharePct,
-            ]),
-            inputMainTokens,
-            inputSubText,
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            h('div', { className: 'cons-sub-head' }, [
-              h('span', { className: 'legend-left cons-sub-label' }, [
-                h('span', { className: 'dot-swatch seg-cached' }),
-                cacheReadLabel,
-              ]),
-              cacheSharePct,
-            ]),
-            cacheMainTokens,
-            cacheSubText,
-          ]),
-          h('div', { className: 'cons-col is-bordered-col' }, [
-            h('div', { className: 'cons-sub-head' }, [
-              h('span', { className: 'legend-left cons-sub-label' }, [
-                h('span', { className: 'dot-swatch seg-output' }),
-                outputUsageLabel,
-              ]),
-              outputSharePct,
-            ]),
-            outputMainTokens,
-            outputSubText,
-          ]),
-        ]),
-      ]),
+      unifiedMatrixEl,
       overviewSegBar.el,
     ]);
 
@@ -29528,14 +37330,29 @@ const ConsumptionView = defineComponent({
       });
     }
 
-    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 + 悬停精确日期/小时浮层 + 点击时段下钻) ---
+    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 / 7×W 四态热力格子图 + 悬停明细浮层 + 点击时段下钻) ---
+    let heatmapViewMode = 'day';
     const trendTitleSpan = h('span', { text: t('cons.trendTitle') });
     const trendRangeBadge = h('span', { className: 'cons-badge', text: t('cons.allTime') });
     const trendGranularityHint = h('span', {
-      className: 'text-muted text-mono',
+      className: 'cons-trend-hint text-muted text-mono',
       style: 'font-size: var(--fs-sm);',
       text: t('cons.trendPointsHintHourly', { points: 0 }),
     });
+    const heatmapModeSwitch = SegmentedControl({
+      ariaLabel: t('cons.hmModeAria'),
+      modelValue: heatmapViewMode,
+      options: getHeatmapModeOptions(),
+      onUpdateModelValue: (nextMode) => {
+        if (!['day', 'week', 'month', 'all'].includes(nextMode)) return;
+        heatmapViewMode = nextMode;
+        heatmapModeSwitch.setValue(nextMode);
+        trendChart.setHeatmapMode(nextMode);
+      },
+    });
+    heatmapModeSwitch.el.classList.add('cons-hm-mode-switch');
+    patchAttr(heatmapModeSwitch.el, 'hidden', true);
+
     const trendChart = createTrendAreaChart({
       onSelectSlot: (slot) => {
         if (slot && Number(slot.startMs) > 0 && Number(slot.endMs) > Number(slot.startMs)) {
@@ -29545,12 +37362,15 @@ const ConsumptionView = defineComponent({
     });
 
     const trendPanel = h('section', { className: 'panel' }, [
-      h('div', { className: 'panel-header' }, [
+      h('div', { className: 'panel-header cons-trend-head' }, [
         h('span', { className: 'panel-title' }, [
           trendTitleSpan,
           trendRangeBadge,
         ]),
-        trendGranularityHint,
+        h('div', { className: 'cons-trend-head-right' }, [
+          trendGranularityHint,
+          heatmapModeSwitch.el,
+        ]),
       ]),
       trendChart.el,
     ]);
@@ -29562,6 +37382,50 @@ const ConsumptionView = defineComponent({
     let lastModelsCount = 0;
     let lastWorkspacesCount = 0;
     let lastConvsCount = 0;
+    let hasCompletedInitialDraw = false;
+    let lastAnimatedRangeSig = '';
+    let lastAnimatedRankingKey = '';
+    let lastAnimatedSortSig = '';
+    const consAnimTimers = new Map();
+    const TRANSIENT_CONS_CLASSES = ['is-bars-revealing'];
+
+    function cleanupConsAnim(el) {
+      const rec = consAnimTimers.get(el);
+      if (!rec) return;
+      clearTimeout(rec.tid);
+      el?.removeEventListener?.('animationend', rec.onEnd);
+      el?.classList?.remove(...TRANSIENT_CONS_CLASSES);
+      consAnimTimers.delete(el);
+    }
+
+    function triggerConsAnim(el, cls, fallbackMs = 650) {
+      if (
+        !el ||
+        !el.classList ||
+        typeof window === 'undefined' ||
+        typeof window.getComputedStyle !== 'function' ||
+        window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+      ) {
+        return;
+      }
+      cleanupConsAnim(el);
+      el.classList.remove(...TRANSIENT_CONS_CLASSES);
+      void el.offsetWidth;
+      const onEnd = (ev) => {
+        if (ev && ev.target && ev.target !== el) return;
+        cleanupConsAnim(el);
+      };
+      const tid = setTimeout(() => cleanupConsAnim(el), fallbackMs);
+      consAnimTimers.set(el, { cls, tid, onEnd });
+      el.addEventListener?.('animationend', onEnd);
+      el.classList.add(cls);
+    }
+
+    function clearConsAnimTimers() {
+      for (const el of Array.from(consAnimTimers.keys())) {
+        cleanupConsAnim(el);
+      }
+    }
 
     function getRankingTabOptions(
       modelsCount = lastModelsCount,
@@ -29701,6 +37565,7 @@ const ConsumptionView = defineComponent({
     });
 
     let activeHoverTargetEl = null;
+    let activeHoverPayload = null;
     let cachedBreakdownRootRect = null;
     let cachedBreakdownAnchorRect = null;
 
@@ -29717,6 +37582,7 @@ const ConsumptionView = defineComponent({
     function hideBreakdownPopover() {
       cachedBreakdownRootRect = null;
       cachedBreakdownAnchorRect = null;
+      activeHoverPayload = null;
       if (activeHoverTargetEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
         activeHoverTargetEl = null;
@@ -29792,6 +37658,9 @@ const ConsumptionView = defineComponent({
         hideBreakdownPopover();
         return;
       }
+      const wasHidden = breakdownPopoverEl.hasAttribute('hidden');
+      const sameTargetAndPayload =
+        !wasHidden && activeHoverTargetEl === anchorEl && activeHoverPayload === payload;
       if (activeHoverTargetEl && activeHoverTargetEl !== anchorEl) {
         patchClasses(activeHoverTargetEl, { 'is-hovered': false });
         cachedBreakdownAnchorRect = null;
@@ -29800,22 +37669,24 @@ const ConsumptionView = defineComponent({
         cachedBreakdownAnchorRect = null;
       }
       activeHoverTargetEl = anchorEl;
+      activeHoverPayload = payload;
       patchClasses(anchorEl, { 'is-hovered': true });
 
-      popoverContent.update({
-        title: payload.title || '—',
-        calls: payload.calls || 0,
-        totalTokens: payload.totalTokens || 0,
-        costText: payload.costText || '$0.00',
-        inputTokens: payload.inputTokens,
-        cacheReadTokens: payload.cacheReadTokens,
-        thinkingTokens: payload.thinkingTokens,
-        responseTokens: payload.responseTokens,
-        outputTokens: payload.outputTokens,
-        segments: Array.isArray(payload.segments) ? payload.segments : [],
-      });
+      if (!sameTargetAndPayload) {
+        popoverContent.update({
+          title: payload.title || '—',
+          calls: payload.calls || 0,
+          totalTokens: payload.totalTokens || 0,
+          costText: payload.costText || '$0.00',
+          inputTokens: payload.inputTokens,
+          cacheReadTokens: payload.cacheReadTokens,
+          thinkingTokens: payload.thinkingTokens,
+          responseTokens: payload.responseTokens,
+          outputTokens: payload.outputTokens,
+          segments: Array.isArray(payload.segments) ? payload.segments : [],
+        });
+      }
 
-      const wasHidden = breakdownPopoverEl.hasAttribute('hidden');
       patchAttr(breakdownPopoverEl, 'hidden', false);
       positionBreakdownPopover(anchorEl, pointerClientX, pointerClientY);
       if (wasHidden) {
@@ -29836,6 +37707,19 @@ const ConsumptionView = defineComponent({
     function createMonthModelSegment() {
       const segEl = h('div', { className: 'month-seg cons-model-seg' });
       return { el: segEl, refs: { segEl } };
+    }
+
+    let monthlyGridEl = null;
+    const monthlyColByEl = new Map();
+
+    function findMonthlyColForNode(node) {
+      let cur = node;
+      while (cur && cur !== monthlyGridEl) {
+        const hit = monthlyColByEl.get(cur);
+        if (hit) return hit;
+        cur = cur.parentNode || null;
+      }
+      return null;
     }
 
     const monthlyCols = Array.from({ length: 12 }, (_, idx) => {
@@ -29864,6 +37748,9 @@ const ConsumptionView = defineComponent({
                 e?.clientY ?? null
               );
             } else {
+              if (activeHoverTargetEl && monthlyColByEl.has(activeHoverTargetEl)) {
+                hideBreakdownPopover();
+              }
               e?.stopPropagation?.();
             }
           },
@@ -29872,8 +37759,16 @@ const ConsumptionView = defineComponent({
               positionBreakdownPopover(colEl, e?.clientX ?? null, e?.clientY ?? null);
             }
           },
-          onMouseLeave: () => {
-            if (activeHoverTargetEl === colEl) hideBreakdownPopover();
+          onMouseLeave: (e) => {
+            if (activeHoverTargetEl !== colEl) return;
+            const nextEl = e?.relatedTarget || null;
+            if (nextEl) {
+              const nextCol = findMonthlyColForNode(nextEl);
+              if ((nextCol && nextCol.colState.hoverPayload) || nextEl === monthlyGridEl) {
+                return;
+              }
+            }
+            hideBreakdownPopover();
           },
         },
         [
@@ -29883,7 +37778,7 @@ const ConsumptionView = defineComponent({
           tokText,
         ]
       );
-      return {
+      const colRec = {
         el: colEl,
         costText,
         stackWrap,
@@ -29892,7 +37787,22 @@ const ConsumptionView = defineComponent({
         tokText,
         colState,
       };
+      monthlyColByEl.set(colEl, colRec);
+      return colRec;
     });
+
+    monthlyGridEl = h(
+      'div',
+      {
+        className: 'monthly-grid',
+        onMouseLeave: () => {
+          if (activeHoverTargetEl && monthlyColByEl.has(activeHoverTargetEl)) {
+            hideBreakdownPopover();
+          }
+        },
+      },
+      monthlyCols.map((c) => c.el)
+    );
 
     const monthlyPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
@@ -29902,11 +37812,7 @@ const ConsumptionView = defineComponent({
         ]),
         monthlyHoverHint,
       ]),
-      h(
-        'div',
-        { className: 'monthly-grid' },
-        monthlyCols.map((c) => c.el)
-      ),
+      monthlyGridEl,
     ]);
 
     const scrollInner = h(
@@ -29934,905 +37840,28 @@ const ConsumptionView = defineComponent({
       breakdownPopoverEl,
     ]);
 
-    /**
-     * 将分模型列表收敛为主力模型 + 长尾「其他 (N)」，避免进度条尾部与浮层出现 0.0% 碎屑噪音。
-     */
-    function partitionModelSegments(
-      mergedModels,
-      modelColorMap,
-      { maxMain = 5, minSharePct = 1.5 } = {}
-    ) {
-      if (!Array.isArray(mergedModels) || mergedModels.length === 0) return [];
-      const sumTok = mergedModels.reduce((sum, m) => sum + Number(m.totalTokens || 0), 0);
-      const mainModels = [];
-      const tailModels = [];
-
-      for (let i = 0; i < mergedModels.length; i++) {
-        const m = mergedModels[i];
-        const mTok = Number(m.totalTokens || 0);
-        const sharePct = sumTok > 0 ? (mTok / sumTok) * 100 : 0;
-        if (i === 0 || (mainModels.length < maxMain && sharePct >= minSharePct)) {
-          mainModels.push(m);
-        } else {
-          tailModels.push(m);
-        }
-      }
-
-      if (tailModels.length === 1) {
-        mainModels.push(tailModels.pop());
-      }
-
-      const out = mainModels.map((m) => {
-        const seed = getCanonicalModelColorSeed(m);
-        const color =
-          modelColorMap?.get(seed) || resolveDeterministicModelColor(seed || m.displayText);
-        const tok = Number(m.totalTokens || 0);
-        const pct = sumTok > 0 ? (tok / sumTok) * 100 : 0;
-        const label = m.displayText || m.label || m.shortName || '—';
-        const inputTokens = Math.max(0, Number(m.inputTokens || 0));
-        const cacheReadTokens = Math.max(0, Number(m.cacheReadTokens || 0));
-        const thinkingTokens = Math.max(0, Number(m.thinkingTokens || 0));
-        const responseTokens =
-          m.responseTokens != null
-            ? Math.max(0, Number(m.responseTokens))
-            : Math.max(0, Number(m.outputTokens || 0) - thinkingTokens);
-        return {
-          key: label,
-          label,
-          tok,
-          pct,
-          inputTokens,
-          cacheReadTokens,
-          thinkingTokens,
-          responseTokens,
-          outputTokens: responseTokens + thinkingTokens,
-          tokText: formatTokensPrecise(tok),
-          pctText: formatPctNumber(pct, { withSymbol: true }),
-          color,
-          isOther: false,
-        };
-      });
-
-      if (tailModels.length >= 2) {
-        let otherTok = 0;
-        let otherIn = 0;
-        let otherCache = 0;
-        let otherThink = 0;
-        let otherResp = 0;
-        for (const m of tailModels) {
-          const mt = Math.max(0, Number(m.thinkingTokens || 0));
-          const mr =
-            m.responseTokens != null
-              ? Math.max(0, Number(m.responseTokens))
-              : Math.max(0, Number(m.outputTokens || 0) - mt);
-          otherTok += Number(m.totalTokens || 0);
-          otherIn += Math.max(0, Number(m.inputTokens || 0));
-          otherCache += Math.max(0, Number(m.cacheReadTokens || 0));
-          otherThink += mt;
-          otherResp += mr;
-        }
-        const otherPct = sumTok > 0 ? (otherTok / sumTok) * 100 : 0;
-        const otherLabel = t('cons.otherModelsCount', { count: tailModels.length });
-        out.push({
-          key: '__other__',
-          label: otherLabel,
-          tok: otherTok,
-          pct: otherPct,
-          inputTokens: otherIn,
-          cacheReadTokens: otherCache,
-          thinkingTokens: otherThink,
-          responseTokens: otherResp,
-          outputTokens: otherResp + otherThink,
-          tokText: formatTokensPrecise(otherTok),
-          pctText: formatPctNumber(otherPct, { withSymbol: true }),
-          color: 'var(--cons-other-seg)',
-          isOther: true,
+    const {
+      createSourceBreakdownRow,
+      updateSourceBreakdownRow,
+      createTopConversationRow,
+      updateTopConversationRow,
+    } = createConsumptionBreakdownRowBuilders({
+      showPopover: showBreakdownPopover,
+      movePopover: positionBreakdownPopover,
+      hidePopover: hideBreakdownPopover,
+      isHoveredTarget: (targetEl) => activeHoverTargetEl === targetEl,
+      onSelectConversation: (cascadeId) => {
+        selectConversation(cascadeId);
+        uiStore.setState({
+          activeView: 'steps',
+          stepsSubTab: 'steps',
+          selectedAgentScope: 'all',
+          ctxInspectorAgentId: getDefaultCtxInspectorAgentId(
+            telemetryStore.getState().telemetry?.settings
+          ),
         });
-      }
-
-      return out;
-    }
-
-    /**
-     * 创建热门模型单行 DOM 结构（模型名称 + 按总占比缩放的 4 段比例条 + 底部分项脚标）。
-     */
-    function createBreakdownItemRow() {
-      const nameTextEl = h('span', { className: 'cons-row-title-text' });
-      const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl]);
-      const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
-      const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
-      const costEl = h('strong', { className: 'cons-row-cost text-mono' });
-      const segBar = createFourSegmentBar();
-
-      const inLbl = h('span', { text: t('cons.footInput') });
-      const cacheLbl = h('span', { text: t('cons.footCache') });
-      const outLbl = h('span', { text: t('cons.footOutput') });
-      const thinkLbl = h('span', { text: t('cons.footThinking') });
-      const callsLbl = h('span', { text: t('cons.footCalls') });
-
-      const inVal = h('strong', { className: 'text-mono' });
-      const cacheVal = h('strong', { className: 'text-mono' });
-      const outVal = h('strong', { className: 'text-mono' });
-      const thinkVal = h('strong', { className: 'text-mono' });
-      const callsVal = h('strong', { className: 'text-mono' });
-      const metricBarFillEl = h('div', { className: 'progress-seg cons-metric-fill' });
-      const metricBarEl = h(
-        'div',
-        { className: 'progress-track cons-seg-bar cons-metric-bar', hidden: true },
-        [metricBarFillEl]
-      );
-      const tokenFootEl = h('div', { className: 'cons-item-foot' }, [
-        h('span', { className: 'legend-left' }, [
-          h('span', { className: 'dot-swatch seg-input' }),
-          inLbl,
-          inVal,
-        ]),
-        h('span', { className: 'legend-left' }, [
-          h('span', { className: 'dot-swatch seg-cached' }),
-          cacheLbl,
-          cacheVal,
-        ]),
-        h('span', { className: 'legend-left' }, [
-          h('span', { className: 'dot-swatch seg-thinking' }),
-          thinkLbl,
-          thinkVal,
-        ]),
-        h('span', { className: 'legend-left' }, [
-          h('span', { className: 'dot-swatch seg-output' }),
-          outLbl,
-          outVal,
-        ]),
-        h('span', { className: 'legend-left' }, [
-          callsLbl,
-          callsVal,
-        ]),
-      ]);
-      const perfMainEl = h('span', { className: 'cons-model-perf-main text-mono' });
-      const perfUnitCostEl = h('span', { className: 'cons-model-unit-cost text-mono', hidden: true });
-      const perfFootEl = h('div', { className: 'cons-model-perf-foot', hidden: true }, [
-        perfMainEl,
-        perfUnitCostEl,
-      ]);
-      const focusLeftEl = h('span', { className: 'cons-model-focus-left text-mono' });
-      const focusRightEl = h('span', { className: 'cons-model-focus-right text-mono' });
-      const focusFootEl = h(
-        'div',
-        { className: 'cons-item-foot cons-model-focus-foot', hidden: true },
-        [focusLeftEl, focusRightEl]
-      );
-
-      const rowEl = h('div', { className: 'cons-item-row' }, [
-        h('div', { className: 'panel-header' }, [
-          nameEl,
-          h('span', { className: 'cons-row-metrics' }, [
-            pctBadge,
-            totalTokEl,
-            costEl,
-          ]),
-        ]),
-        segBar.el,
-        metricBarEl,
-        tokenFootEl,
-        perfFootEl,
-        focusFootEl,
-      ]);
-
-      return {
-        el: rowEl,
-        refs: {
-          nameEl,
-          nameTextEl,
-          pctBadge,
-          totalTokEl,
-          costEl,
-          segBar,
-          metricBarEl,
-          metricBarFillEl,
-          tokenFootEl,
-          inLbl,
-          cacheLbl,
-          outLbl,
-          thinkLbl,
-          callsLbl,
-          inVal,
-          cacheVal,
-          outVal,
-          thinkVal,
-          callsVal,
-          perfFootEl,
-          perfMainEl,
-          perfUnitCostEl,
-          focusFootEl,
-          focusLeftEl,
-          focusRightEl,
-        },
-      };
-    }
-
-    /**
-     * 增量更新模型排行单行：
-     * - `tokens` 模式展示完整四段 Token 构成及效率副行；
-     * - `cost` / `speed` / `calls` 模式切换对应占比百分比、进度条尺度及聚焦单行脚标。
-     */
-    function updateBreakdownItemRow(refs, item, totalsCtx, sortMode = 'tokens') {
-      const displayLabel = item.label || item.name || item.shortName || '—';
-      patchText(refs.nameTextEl, displayLabel);
-      patchAttr(refs.nameEl, 'title', item.title || displayLabel);
-
-      const total = Number(item.totalTokens || 0);
-      const costVal = Number(item.costUsd || 0);
-      const callsCount = Number(item.calls || 0);
-      const isAllUnpriced =
-        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
-      const costText = formatUsd(isAllUnpriced ? null : costVal, {
-        precise: costVal > 0 && costVal < 0.1,
-      });
-
-      const avgTps =
-        item.avgTokPerSec != null &&
-        Number.isFinite(Number(item.avgTokPerSec)) &&
-        Number(item.avgTokPerSec) > 0
-          ? Number(item.avgTokPerSec)
-          : null;
-      const avgTtft =
-        item.avgTtftSec != null &&
-        Number.isFinite(Number(item.avgTtftSec)) &&
-        Number(item.avgTtftSec) >= 0
-          ? Number(item.avgTtftSec)
-          : null;
-      const hasExplicitCachePct =
-        item.cacheHitPct != null && Number.isFinite(Number(item.cacheHitPct));
-      const promptTok = Number(item.inputTokens || 0) + Number(item.cacheReadTokens || 0);
-      const cachePctVal = hasExplicitCachePct
-        ? Number(item.cacheHitPct)
-        : promptTok > 0 && Number(item.cacheReadTokens || 0) > 0
-          ? +((Number(item.cacheReadTokens || 0) / promptTok) * 100).toFixed(1)
-          : 0;
-      const cachePctStr = formatPctNumber(cachePctVal);
-      const effCostPer1M =
-        !isAllUnpriced && costVal > 0 && total >= 1000 ? costVal / (total / 1_000_000) : null;
-      const outTok = Number(
-        item.outputTokens ??
-          Number(item.responseTokens || 0) + Number(item.thinkingTokens || 0)
-      );
-
-      if (sortMode === 'cost') {
-        const costBase = Number(totalsCtx?.totalCost || 0);
-        const costShare = costBase > 0 ? +((costVal / costBase) * 100).toFixed(1) : 0;
-        const barPct = costBase > 0 && costVal > 0 ? Math.min(100, Math.max(1, (costVal / costBase) * 100)) : 0;
-        patchAttr(refs.pctBadge, 'hidden', false);
-        patchAttr(refs.pctBadge, 'title', null);
-        patchText(refs.pctBadge, formatPctNumber(costShare, { withSymbol: true }));
-        patchText(refs.totalTokEl, isAllUnpriced ? '' : formatCnyApprox(costVal));
-        patchText(refs.costEl, costText);
-
-        patchAttr(refs.segBar.el, 'hidden', true);
-        patchAttr(refs.metricBarEl, 'hidden', false);
-        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${barPct.toFixed(2)}%`);
-        patchClasses(refs.metricBarFillEl, {
-          'tone-cost': true,
-          'tone-speed': false,
-          'tone-calls': false,
-        });
-
-        patchAttr(refs.tokenFootEl, 'hidden', true);
-        patchAttr(refs.perfFootEl, 'hidden', true);
-        patchAttr(refs.focusFootEl, 'hidden', false);
-        const unitPart =
-          effCostPer1M !== null
-            ? t('cons.modelUnitCost', {
-                cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
-              })
-            : '';
-        const cachePart = t('cons.topConvCacheMeta', { pct: cachePctStr });
-        patchText(refs.focusLeftEl, unitPart ? `${unitPart} · ${cachePart}` : cachePart);
-        patchText(
-          refs.focusRightEl,
-          `${formatTokensPrecise(total)} · ${t('cons.callsCount', { calls: callsCount })}`
-        );
-        return;
-      }
-
-      if (sortMode === 'speed') {
-        const maxTps = Number(totalsCtx?.maxAvgTps || 0);
-        const speedPct =
-          maxTps > 0 && avgTps !== null ? Math.min(100, Math.max(2, (avgTps / maxTps) * 100)) : 0;
-        patchAttr(refs.pctBadge, 'hidden', avgTps === null);
-        patchAttr(refs.pctBadge, 'title', avgTps !== null ? t('cons.speedRelTip') : null);
-        patchText(refs.pctBadge, avgTps !== null ? `${Math.round(speedPct)}%` : '');
-        patchText(
-          refs.totalTokEl,
-          avgTtft !== null ? t('cons.focusTtft', { ttft: formatMetric(avgTtft, 's') }) : ''
-        );
-        patchText(refs.costEl, formatSpeedMetric(avgTps, ' tok/s'));
-
-        patchAttr(refs.segBar.el, 'hidden', true);
-        patchAttr(refs.metricBarEl, 'hidden', false);
-        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${speedPct.toFixed(2)}%`);
-        patchClasses(refs.metricBarFillEl, {
-          'tone-cost': false,
-          'tone-speed': true,
-          'tone-calls': false,
-        });
-
-        patchAttr(refs.tokenFootEl, 'hidden', true);
-        patchAttr(refs.perfFootEl, 'hidden', true);
-        patchAttr(refs.focusFootEl, 'hidden', false);
-        patchText(
-          refs.focusLeftEl,
-          t('cons.focusSpeedMeta', {
-            ttft: formatMetric(avgTtft, 's'),
-            cache: cachePctStr,
-            out: formatTokensPrecise(outTok),
-          })
-        );
-        patchText(refs.focusRightEl, t('cons.callsCount', { calls: callsCount }));
-        return;
-      }
-
-      if (sortMode === 'calls') {
-        const callsBase = Number(totalsCtx?.totalCalls || 0);
-        const callsShare = callsBase > 0 ? +((callsCount / callsBase) * 100).toFixed(1) : 0;
-        const barPct =
-          callsBase > 0 && callsCount > 0 ? Math.min(100, Math.max(1, (callsCount / callsBase) * 100)) : 0;
-        patchAttr(refs.pctBadge, 'hidden', false);
-        patchAttr(refs.pctBadge, 'title', null);
-        patchText(refs.pctBadge, formatPctNumber(callsShare, { withSymbol: true }));
-        patchText(refs.totalTokEl, formatTokensPrecise(total));
-        patchText(refs.costEl, t('cons.callsCount', { calls: callsCount }));
-
-        patchAttr(refs.segBar.el, 'hidden', true);
-        patchAttr(refs.metricBarEl, 'hidden', false);
-        patchStyleVar(refs.metricBarFillEl, '--seg-w', `${barPct.toFixed(2)}%`);
-        patchClasses(refs.metricBarFillEl, {
-          'tone-cost': false,
-          'tone-speed': false,
-          'tone-calls': true,
-        });
-
-        patchAttr(refs.tokenFootEl, 'hidden', true);
-        patchAttr(refs.perfFootEl, 'hidden', true);
-        patchAttr(refs.focusFootEl, 'hidden', false);
-        const avgPerCall = callsCount > 0 ? total / callsCount : 0;
-        patchText(
-          refs.focusLeftEl,
-          t('cons.focusCallsMeta', {
-            avgTok: formatTokensPrecise(avgPerCall),
-            cost: costText,
-          })
-        );
-        patchText(refs.focusRightEl, t('cons.topConvCacheMeta', { pct: cachePctStr }));
-        return;
-      }
-
-      // 默认 Token 模式：展示全部四段 Token 构成及效率副行
-      patchText(refs.inLbl, t('cons.footInput'));
-      patchText(refs.cacheLbl, t('cons.footCache'));
-      patchText(refs.outLbl, t('cons.footOutput'));
-      patchText(refs.thinkLbl, t('cons.footThinking'));
-      patchText(refs.callsLbl, t('cons.footCalls'));
-      const grandTotalTokens = Number(totalsCtx?.totalTokens || 0);
-      const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
-      const scaleRatio =
-        grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.008, total / grandTotalTokens)) : 0;
-      patchAttr(refs.pctBadge, 'hidden', false);
-      patchAttr(refs.pctBadge, 'title', null);
-      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
-      patchText(refs.totalTokEl, formatTokensPrecise(total));
-      patchText(refs.costEl, costText);
-
-      const responseTok =
-        item.responseTokens != null
-          ? Number(item.responseTokens)
-          : Math.max(0, Number(item.outputTokens || 0) - Number(item.thinkingTokens || 0));
-      const thinkingTok = Number(item.thinkingTokens || 0);
-
-      patchAttr(refs.segBar.el, 'hidden', false);
-      patchAttr(refs.metricBarEl, 'hidden', true);
-      refs.segBar.update({
-        inputTokens: Number(item.inputTokens || 0),
-        cacheReadTokens: Number(item.cacheReadTokens || 0),
-        responseTokens: responseTok,
-        thinkingTokens: thinkingTok,
-        scaleRatio,
-      });
-
-      patchAttr(refs.tokenFootEl, 'hidden', false);
-      patchAttr(refs.focusFootEl, 'hidden', true);
-      patchText(refs.inVal, formatTokensPrecise(item.inputTokens || 0));
-      patchText(refs.cacheVal, formatTokensPrecise(item.cacheReadTokens || 0));
-      patchText(refs.outVal, formatTokensPrecise(responseTok));
-      patchText(refs.thinkVal, formatTokensPrecise(thinkingTok));
-      patchText(refs.callsVal, String(callsCount));
-
-      const hasPerfMeta = avgTps !== null || avgTtft !== null || effCostPer1M !== null;
-      patchAttr(refs.perfFootEl, 'hidden', !hasPerfMeta);
-      if (hasPerfMeta) {
-        if (avgTps !== null || avgTtft !== null) {
-          patchText(
-            refs.perfMainEl,
-            t('steps.modelPerfFoot', {
-              tps: formatSpeedMetric(avgTps, ' tok/s'),
-              ttft: formatMetric(avgTtft, 's'),
-              cache: cachePctStr,
-            })
-          );
-        } else {
-          patchText(refs.perfMainEl, t('cons.topConvCacheMeta', { pct: cachePctStr }));
-        }
-        patchAttr(refs.perfUnitCostEl, 'hidden', effCostPer1M === null);
-        patchText(
-          refs.perfUnitCostEl,
-          effCostPer1M !== null
-            ? t('cons.modelUnitCost', {
-                cost: formatUsd(effCostPer1M, { precise: effCostPer1M < 0.1 }),
-              })
-            : ''
-        );
-      }
-    }
-
-    function createSourceModelSegment() {
-      const segEl = h('div', { className: 'progress-seg cons-model-seg' });
-      return { el: segEl, refs: { segEl } };
-    }
-
-    function createSourceTopModelItem() {
-      const dotEl = h('span', { className: 'dot-swatch cons-model-dot cons-source-top-dot' });
-      const nameEl = h('span', { className: 'cons-source-top-name' });
-      const pctEl = h('strong', { className: 'cons-source-top-pct text-mono' });
-      const itemEl = h('span', { className: 'cons-source-top-item' }, [dotEl, nameEl, pctEl]);
-      return { el: itemEl, refs: { itemEl, dotEl, nameEl, pctEl } };
-    }
-
-    function formatCompactSourceSharePct(pct) {
-      const num = Number(pct || 0);
-      if (!Number.isFinite(num) || num <= 0) return '0%';
-      if (num >= 10) return `${Math.round(num)}%`;
-      return `${num.toFixed(1)}%`;
-    }
-
-    /**
-     * 创建客户端来源单行 DOM 结构（保留长尾合并分段配色进度条、单行不换行的 Top 2-3 模型速览和右侧总调用数，悬停进度条或速览区弹出完整明细浮层）。
-     */
-    function createSourceBreakdownRow() {
-      const nameTextEl = h('span', { className: 'cons-row-title-text' });
-      const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl]);
-      const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
-      const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
-      const costEl = h('strong', { className: 'cons-row-cost text-mono' });
-      const trackEl = h('div', { className: 'progress-track cons-seg-bar cons-source-model-bar' });
-      const rowState = { hoverPayload: null };
-      const bindPopoverHover = (targetEl) => ({
-        onMouseEnter: (e) => {
-          if (rowState.hoverPayload) {
-            showBreakdownPopover(
-              targetEl,
-              rowState.hoverPayload,
-              e?.clientX ?? null,
-              e?.clientY ?? null
-            );
-          }
-        },
-        onMouseMove: (e) => {
-          if (rowState.hoverPayload && activeHoverTargetEl === targetEl) {
-            positionBreakdownPopover(targetEl, e?.clientX ?? null, e?.clientY ?? null);
-          }
-        },
-        onMouseLeave: () => {
-          if (activeHoverTargetEl === targetEl) hideBreakdownPopover();
-        },
-      });
-      const barHitEl = h(
-        'div',
-        {
-          className: 'cons-source-bar-hit',
-        },
-        [trackEl]
-      );
-      const barHandlers = bindPopoverHover(barHitEl);
-      barHitEl.addEventListener('mouseenter', barHandlers.onMouseEnter);
-      barHitEl.addEventListener('mousemove', barHandlers.onMouseMove);
-      barHitEl.addEventListener('mouseleave', barHandlers.onMouseLeave);
-
-      const topModelsEl = h('div', { className: 'cons-source-top-models', hidden: true });
-      const topHandlers = bindPopoverHover(topModelsEl);
-      topModelsEl.addEventListener('mouseenter', topHandlers.onMouseEnter);
-      topModelsEl.addEventListener('mousemove', topHandlers.onMouseMove);
-      topModelsEl.addEventListener('mouseleave', topHandlers.onMouseLeave);
-
-      const callsLbl = h('span', { text: t('cons.footCalls') });
-      const callsVal = h('strong', { className: 'text-mono' });
-
-      const rowEl = h('div', { className: 'cons-item-row cons-source-row' }, [
-        h('div', { className: 'panel-header' }, [
-          nameEl,
-          h('span', { className: 'cons-row-metrics' }, [
-            pctBadge,
-            totalTokEl,
-            costEl,
-          ]),
-        ]),
-        barHitEl,
-        h('div', { className: 'cons-item-foot cons-source-foot' }, [
-          topModelsEl,
-          h('span', { className: 'legend-left cons-calls-stat' }, [
-            callsLbl,
-            callsVal,
-          ]),
-        ]),
-      ]);
-
-      return {
-        el: rowEl,
-        refs: {
-          nameEl,
-          nameTextEl,
-          pctBadge,
-          totalTokEl,
-          costEl,
-          barHitEl,
-          trackEl,
-          topModelsEl,
-          callsLbl,
-          callsVal,
-          rowState,
-        },
-      };
-    }
-
-    function updateSourceBreakdownRow(refs, item, grandTotalTokens, modelColorMap) {
-      patchText(refs.callsLbl, t('cons.footCalls'));
-      const displayLabel = item.label || item.name || '—';
-      patchText(refs.nameTextEl, displayLabel);
-      patchAttr(refs.nameEl, 'title', item.title || displayLabel);
-
-      const total = Number(item.totalTokens || 0);
-      const share = grandTotalTokens > 0 ? +((total / grandTotalTokens) * 100).toFixed(1) : 0;
-      const scaleRatio =
-        grandTotalTokens > 0 && total > 0 ? Math.min(1, Math.max(0.01, total / grandTotalTokens)) : 0;
-      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
-      patchText(refs.totalTokEl, formatTokensPrecise(total));
-
-      const costVal = Number(item.costUsd || 0);
-      const callsCount = Number(item.calls || 0);
-      const isAllUnpriced =
-        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
-      const costText = formatUsd(isAllUnpriced ? null : costVal, {
-        precise: costVal > 0 && costVal < 0.1,
-      });
-      patchText(refs.costEl, costText);
-      patchText(refs.callsVal, String(callsCount));
-
-      const sourceModels = Array.isArray(item.mergedModels) ? item.mergedModels : [];
-      const partitioned = partitionModelSegments(sourceModels, modelColorMap, {
-        maxMain: 5,
-        minSharePct: 1.5,
-      });
-
-      const barItems =
-        partitioned.length > 0
-          ? partitioned.map((seg) => ({
-              key: seg.key,
-              segPct: scaleRatio > 0 ? seg.pct * scaleRatio : 0,
-              color: seg.color,
-            }))
-          : total > 0
-            ? [
-                {
-                  key: '__source_fallback__',
-                  segPct: scaleRatio * 100,
-                  color: 'var(--accent-primary)',
-                },
-              ]
-            : [];
-
-      patchKeyedList(refs.trackEl, barItems, {
-        keyFn: (seg) => seg.key,
-        sigFn: (seg) => `${seg.key}:${seg.segPct.toFixed(2)}:${seg.color}`,
-        createRow: createSourceModelSegment,
-        updateRow: (segRefs, seg) => {
-          patchStyleVar(segRefs.segEl, '--seg-w', `${seg.segPct.toFixed(2)}%`);
-          patchStyleVar(segRefs.segEl, '--seg-color', seg.color);
-        },
-      });
-
-      const topModels = partitioned
-        .filter((seg) => !seg.isOther)
-        .slice(0, 3)
-        .map((seg) => ({
-          key: seg.key,
-          label: seg.label,
-          pctText: formatCompactSourceSharePct(seg.pct),
-          color: seg.color,
-        }));
-      patchAttr(refs.topModelsEl, 'hidden', topModels.length === 0);
-      patchKeyedList(refs.topModelsEl, topModels, {
-        keyFn: (m) => m.key,
-        sigFn: (m) => `${m.key}:${m.label}:${m.pctText}:${m.color}`,
-        createRow: createSourceTopModelItem,
-        updateRow: (mRefs, m) => {
-          patchStyleVar(mRefs.dotEl, '--dot-color', m.color);
-          patchText(mRefs.nameEl, m.label);
-          patchText(mRefs.pctEl, m.pctText);
-          patchAttr(mRefs.itemEl, 'title', `${m.label} (${m.pctText})`);
-        },
-      });
-
-      refs.rowState.hoverPayload =
-        total > 0 || callsCount > 0
-          ? {
-              title: displayLabel,
-              calls: callsCount,
-              totalTokens: total,
-              costText,
-              inputTokens: item.inputTokens,
-              cacheReadTokens: item.cacheReadTokens,
-              thinkingTokens: item.thinkingTokens,
-              responseTokens: item.responseTokens,
-              outputTokens: item.outputTokens,
-              segments: partitioned,
-            }
-          : null;
-    }
-
-    function createTopConversationRow() {
-      const titleTextEl = h('span', { className: 'cons-row-title-text' });
-      const wsBadgeEl = h('span', { className: 'cons-ws-sessions-tag text-mono', hidden: true });
-      const titleEl = h('strong', { className: 'cons-row-title cons-top-conv-title' }, [
-        titleTextEl,
-        wsBadgeEl,
-      ]);
-      const pctBadge = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
-      const totalTokEl = h('span', { className: 'cons-row-tok text-mono' });
-      const costEl = h('strong', { className: 'cons-row-cost text-mono' });
-      const trackEl = h('div', { className: 'progress-track cons-seg-bar cons-source-model-bar' });
-      const rowState = { cascadeId: '', canJump: false, hoverPayload: null };
-
-      const bindPopoverHover = (targetEl) => ({
-        onMouseEnter: (e) => {
-          if (rowState.hoverPayload) {
-            showBreakdownPopover(
-              targetEl,
-              rowState.hoverPayload,
-              e?.clientX ?? null,
-              e?.clientY ?? null
-            );
-          }
-        },
-        onMouseMove: (e) => {
-          if (rowState.hoverPayload && activeHoverTargetEl === targetEl) {
-            positionBreakdownPopover(targetEl, e?.clientX ?? null, e?.clientY ?? null);
-          }
-        },
-        onMouseLeave: () => {
-          if (activeHoverTargetEl === targetEl) hideBreakdownPopover();
-        },
-      });
-
-      const barHitEl = h('div', { className: 'cons-source-bar-hit' }, [trackEl]);
-      const barHandlers = bindPopoverHover(barHitEl);
-      barHitEl.addEventListener('mouseenter', barHandlers.onMouseEnter);
-      barHitEl.addEventListener('mousemove', barHandlers.onMouseMove);
-      barHitEl.addEventListener('mouseleave', barHandlers.onMouseLeave);
-
-      const topModelsEl = h('div', { className: 'cons-source-top-models', hidden: true });
-      const topHandlers = bindPopoverHover(topModelsEl);
-      topModelsEl.addEventListener('mouseenter', topHandlers.onMouseEnter);
-      topModelsEl.addEventListener('mousemove', topHandlers.onMouseMove);
-      topModelsEl.addEventListener('mouseleave', topHandlers.onMouseLeave);
-
-      const fallbackMetaEl = h('span', { className: 'cons-top-conv-meta', hidden: true });
-      const callsLbl = h('span', { text: t('cons.footCalls') });
-      const callsVal = h('strong', { className: 'text-mono' });
-
-      const rowEl = h(
-        'div',
-        {
-          className: 'cons-top-conv-row',
-          onClick: () => {
-            if (!rowState.cascadeId) return;
-            hideBreakdownPopover();
-            selectConversation(rowState.cascadeId);
-            uiStore.setState({
-              activeView: 'steps',
-              stepsSubTab: 'steps',
-              selectedAgentScope: 'all',
-              ctxInspectorAgentId: getDefaultCtxInspectorAgentId(
-                telemetryStore.getState().telemetry?.settings
-              ),
-            });
-          },
-        },
-        [
-          h('div', { className: 'panel-header' }, [
-            titleEl,
-            h('span', { className: 'cons-row-metrics' }, [
-              pctBadge,
-              totalTokEl,
-              costEl,
-            ]),
-          ]),
-          barHitEl,
-          h('div', { className: 'cons-item-foot cons-source-foot' }, [
-            topModelsEl,
-            fallbackMetaEl,
-            h('span', { className: 'legend-left cons-calls-stat' }, [
-              callsLbl,
-              callsVal,
-            ]),
-          ]),
-        ]
-      );
-
-      return {
-        el: rowEl,
-        refs: {
-          rowEl,
-          titleEl,
-          titleTextEl,
-          wsBadgeEl,
-          pctBadge,
-          totalTokEl,
-          costEl,
-          barHitEl,
-          trackEl,
-          topModelsEl,
-          fallbackMetaEl,
-          callsLbl,
-          callsVal,
-          rowState,
-        },
-      };
-    }
-
-    function updateTopConversationRow(refs, item, bases, modelColorMap, sortMode = 'cost') {
-      patchText(refs.callsLbl, t('cons.footCalls'));
-      const isWorkspaceRow = Boolean(item.isWorkspaceRow);
-      const title = isWorkspaceRow
-        ? item.isUnbound
-          ? t('cons.workspaceUnbound')
-          : String(item.label || item.workspacePath || '—').trim()
-        : String(item.title || item.cascadeId || '—').trim();
-      refs.rowState.cascadeId = String(
-        isWorkspaceRow ? item.latestCascadeId || '' : item.cascadeId || ''
-      );
-      refs.rowState.canJump = item.canJump !== false && Boolean(refs.rowState.cascadeId);
-      patchClasses(refs.rowEl, {
-        'is-jumpable': refs.rowState.canJump,
-        'cons-workspace-row': isWorkspaceRow,
-      });
-      const baseTip =
-        isWorkspaceRow && item.workspacePath && item.workspacePath !== title
-          ? `${title} (${item.workspacePath})`
-          : title;
-      const jumpTip = isWorkspaceRow ? t('cons.workspaceJumpTip') : t('cons.topConvJumpTip');
-      patchAttr(refs.rowEl, 'title', refs.rowState.canJump ? `${baseTip} — ${jumpTip}` : baseTip);
-      patchText(refs.titleTextEl, title);
-      if (refs.wsBadgeEl) {
-        const showWsBadge = isWorkspaceRow && Number(item.sessionCount || 0) > 0;
-        patchAttr(refs.wsBadgeEl, 'hidden', !showWsBadge);
-        if (showWsBadge) {
-          patchText(refs.wsBadgeEl, t('cons.workspaceSessions', { count: item.sessionCount }));
-        }
-      }
-
-      const total = Number(item.totalTokens || 0);
-      const costVal = Number(item.costUsd || 0);
-      const callsCount = Number(item.calls || 0);
-      const isAllUnpriced =
-        callsCount > 0 && Number(item.unpricedCalls || 0) >= callsCount && !(costVal > 0);
-      const costText = formatUsd(isAllUnpriced ? null : costVal, {
-        precise: costVal > 0 && costVal < 0.1,
-      });
-
-      const tokBase = Number(bases?.tokens || 0);
-      const costBase = Number(bases?.cost || 0);
-      const useCostBasis = sortMode === 'cost' && costBase > 0;
-      const share = useCostBasis
-        ? +((costVal / costBase) * 100).toFixed(1)
-        : tokBase > 0
-          ? +((total / tokBase) * 100).toFixed(1)
-          : 0;
-      const scaleRatio = useCostBasis
-        ? costVal > 0
-          ? Math.min(1, Math.max(0.01, costVal / costBase))
-          : 0
-        : tokBase > 0 && total > 0
-          ? Math.min(1, Math.max(0.01, total / tokBase))
-          : 0;
-
-      patchText(refs.pctBadge, formatPctNumber(share, { withSymbol: true }));
-      if (sortMode === 'tokens') {
-        patchText(refs.totalTokEl, costText);
-        patchText(refs.costEl, formatTokensPrecise(total));
-      } else {
-        patchText(refs.totalTokEl, formatTokensPrecise(total));
-        patchText(refs.costEl, costText);
-      }
-      patchText(refs.callsVal, String(callsCount));
-
-      // 复用客户端来源同款按模型配色分段进度条、Top 2-3 模型速览及共享悬浮详情浮层
-      const convModels = Array.isArray(item.mergedModels) ? item.mergedModels : [];
-      const partitioned = partitionModelSegments(convModels, modelColorMap, {
-        maxMain: 5,
-        minSharePct: 1.5,
-      });
-      const barItems =
-        partitioned.length > 0
-          ? partitioned.map((seg) => ({
-              key: seg.key,
-              segPct: scaleRatio > 0 ? seg.pct * scaleRatio : 0,
-              color: seg.color,
-            }))
-          : scaleRatio > 0
-            ? [
-                {
-                  key: '__conv_fallback__',
-                  segPct: scaleRatio * 100,
-                  color: 'var(--accent-primary)',
-                },
-              ]
-            : [];
-
-      patchKeyedList(refs.trackEl, barItems, {
-        keyFn: (seg) => seg.key,
-        sigFn: (seg) => `${seg.key}:${seg.segPct.toFixed(2)}:${seg.color}`,
-        createRow: createSourceModelSegment,
-        updateRow: (segRefs, seg) => {
-          patchStyleVar(segRefs.segEl, '--seg-w', `${seg.segPct.toFixed(2)}%`);
-          patchStyleVar(segRefs.segEl, '--seg-color', seg.color);
-        },
-      });
-
-      const topModels = partitioned
-        .filter((seg) => !seg.isOther)
-        .slice(0, 3)
-        .map((seg) => ({
-          key: seg.key,
-          label: seg.label,
-          pctText: formatCompactSourceSharePct(seg.pct),
-          color: seg.color,
-        }));
-      patchAttr(refs.topModelsEl, 'hidden', topModels.length === 0);
-      patchKeyedList(refs.topModelsEl, topModels, {
-        keyFn: (m) => m.key,
-        sigFn: (m) => `${m.key}:${m.label}:${m.pctText}:${m.color}`,
-        createRow: createSourceTopModelItem,
-        updateRow: (mRefs, m) => {
-          patchStyleVar(mRefs.dotEl, '--dot-color', m.color);
-          patchText(mRefs.nameEl, m.label);
-          patchText(mRefs.pctEl, m.pctText);
-          patchAttr(mRefs.itemEl, 'title', `${m.label} (${m.pctText})`);
-        },
-      });
-
-      const showFallbackMeta = topModels.length === 0;
-      patchAttr(refs.fallbackMetaEl, 'hidden', !showFallbackMeta);
-      if (showFallbackMeta) {
-        const srcLabel = item.sourceName || item.appSource || '';
-        const cacheLabel = t('cons.topConvCacheMeta', {
-          pct: formatPctNumber(item.cacheHitPct ?? 0),
-        });
-        patchText(refs.fallbackMetaEl, srcLabel ? `${srcLabel} · ${cacheLabel}` : cacheLabel);
-      }
-
-      refs.rowState.hoverPayload =
-        partitioned.length > 0 && (total > 0 || callsCount > 0)
-          ? {
-              title,
-              calls: callsCount,
-              totalTokens: total,
-              costText,
-              inputTokens: item.inputTokens,
-              cacheReadTokens: item.cacheReadTokens,
-              thinkingTokens: item.thinkingTokens,
-              responseTokens: item.responseTokens,
-              outputTokens: item.outputTokens,
-              segments: partitioned,
-            }
-          : null;
-    }
+      },
+    });
 
     let latestSlice = null;
     let isDirty = false;
@@ -30860,7 +37889,7 @@ const ConsumptionView = defineComponent({
       const cons = slice.consumption || {};
       const rangeInfo = cons.selectedRange || {};
 
-      // 始终在 0ms 同步顶部时间段滑块与自定义日期条显隐，给予即刻交互反馈
+      // 始终在 0ms 同步顶部时间段滑块、周期池选择器及自定义日期条显隐，给予即刻交互反馈
       timeFilterSwitch.setValue(slice.range);
       patchAttr(customRangeBar, 'hidden', slice.range !== 'custom');
       if (!hasUncommittedCustomDraft) {
@@ -30870,17 +37899,45 @@ const ConsumptionView = defineComponent({
         endPicker.setValue(draftEndMs);
       }
 
+      const isCustomWeeklyMode =
+        slice.weeklyLimitMode === 'custom_tokens' || slice.weeklyLimitMode === 'custom_cost';
+      const cyclePoolOptions =
+        slice.range === 'cycle'
+          ? buildCyclePoolSelectOptions(slice.quotaPools, isCustomWeeklyMode)
+          : [];
+      const activePoolFilter = slice.range === 'cycle' ? slice.cyclePool || 'all' : 'all';
+      const showCyclePoolSelect = slice.range === 'cycle' && cyclePoolOptions.length > 2;
+      if (!showCyclePoolSelect) {
+        cyclePoolSelect.close?.();
+        patchAttr(cyclePoolSelect.el, 'hidden', true);
+      } else {
+        cyclePoolSelect.setProps({
+          modelValue: activePoolFilter,
+          options: cyclePoolOptions,
+        });
+        patchAttr(cyclePoolSelect.el, 'hidden', false);
+      }
+
       // 极少数缓存未命中时（如自定义新区间或进页瞬间抢点），跳过用旧趋势/模型跑无效半更新重绘，待几毫秒后单帧原子绘制
-      if (rangeInfo.key && slice.range && rangeInfo.key !== slice.range) {
+      const payloadPool = rangeInfo.key === 'cycle' ? rangeInfo.pool || 'all' : 'all';
+      if (
+        (rangeInfo.key && slice.range && rangeInfo.key !== slice.range) ||
+        (slice.range === 'cycle' && rangeInfo.pool && payloadPool !== activePoolFilter)
+      ) {
         return;
       }
 
       const preset =
-        slice.range !== 'custom' && cons.presets?.[slice.range]
+        slice.range !== 'custom' &&
+        !(slice.range === 'cycle' && activePoolFilter !== 'all') &&
+        cons.presets?.[slice.range]
           ? cons.presets[slice.range]
           : null;
       const acct = cons.account || preset?.account || {};
       const dateSpan = formatDateSpanBadge(rangeInfo.startMs, rangeInfo.endMs);
+      const cycleOptionsSig = showCyclePoolSelect
+        ? cyclePoolOptions.map((o) => `${o.value}:${o.label}:${o.meta || ''}`).join('|')
+        : '';
       const now = new Date();
       const currentMonthIdx = now.getMonth();
       const monthlyYear = cons.monthlyYear || now.getFullYear();
@@ -30888,6 +37945,9 @@ const ConsumptionView = defineComponent({
       const renderTuple = [
         locale,
         slice.range,
+        activePoolFilter,
+        cycleOptionsSig,
+        Boolean(rangeInfo.isFallbackWeek),
         slice.customStartMs,
         slice.customEndMs,
         slice.modelDisplayMode,
@@ -30908,13 +37968,36 @@ const ConsumptionView = defineComponent({
         cons.monthlySeries,
       ];
       if (isSameRenderTuple(lastRenderedTuple, renderTuple)) return;
-      drawConsumptionData(slice, { cons, preset, acct, rangeInfo, dateSpan, currentMonthIdx, monthlyYear });
+      drawConsumptionData(slice, {
+        cons,
+        preset,
+        acct,
+        rangeInfo,
+        activePoolFilter,
+        dateSpan,
+        currentMonthIdx,
+        monthlyYear,
+      });
       lastRenderedTuple = renderTuple;
     }
 
-    function drawConsumptionData(slice, { cons, preset, acct, rangeInfo, dateSpan, currentMonthIdx, monthlyYear }) {
-      // 1. 同步用量概览矩阵与顶部 4 段比例条
+    function drawConsumptionData(
+      slice,
+      { cons, preset, acct, rangeInfo, activePoolFilter, dateSpan, currentMonthIdx, monthlyYear }
+    ) {
+      // 1. 同步用量概览矩阵及顶部 4 段比例条
       patchText(dateSpanBadge, dateSpan);
+      patchAttr(
+        dateSpanBadge,
+        'title',
+        slice.range === 'cycle'
+          ? formatCycleMinuteSpanTip(
+              rangeInfo.startMs,
+              rangeInfo.endMs,
+              Boolean(rangeInfo.isFallbackWeek)
+            )
+          : null
+      );
       const totalTokens = Number(acct.totalTokens || 0);
       const inputTokens = Number(acct.inputTokens || 0);
       const cacheTokens = Number(acct.cacheReadTokens || 0);
@@ -30922,7 +38005,6 @@ const ConsumptionView = defineComponent({
       const responseTokens = Number(acct.responseTokens || 0);
       const thinkingTokens = Number(acct.thinkingTokens || 0);
       const costUsd = Number(acct.costUsd || 0);
-      const savedCostUsd = Number(acct.savedCostUsd || 0);
 
       patchText(heroTotalTokens, formatTokensPrecise(totalTokens));
       patchText(heroTotalCalls, t('cons.callsCount', { calls: acct.calls || 0 }));
@@ -30948,26 +38030,12 @@ const ConsumptionView = defineComponent({
 
       patchText(inputSharePct, `${inPct}%`);
       patchText(inputMainTokens, formatTokensPrecise(inputTokens));
-      patchText(inputSubText, t('cons.uncachedInput'));
 
       patchText(cacheSharePct, `${cachePct}%`);
       patchText(cacheMainTokens, formatTokensPrecise(cacheTokens));
-      patchText(
-        cacheSubText,
-        t('cons.savedCost', {
-          cost: formatUsd(savedCostUsd, { precise: savedCostUsd > 0 && savedCostUsd < 0.01 }),
-        })
-      );
 
       patchText(outputSharePct, `${outPct}%`);
       patchText(outputMainTokens, formatTokensPrecise(outputTokens));
-      patchText(
-        outputSubText,
-        t('cons.replyAndThink', {
-          resp: formatTokensPrecise(responseTokens),
-          think: formatTokensPrecise(thinkingTokens),
-        })
-      );
       consExportMenu.refs.setHidden(!(totalTokens > 0 || Number(acct.calls || 0) > 0));
 
       overviewSegBar.update({
@@ -31105,36 +38173,62 @@ const ConsumptionView = defineComponent({
         ...allTrendMergedModels,
       ]);
 
-      // 2. 同步历史趋势交互式 SVG 面积图 / 类 GitHub 每日热力图（>90天）与悬停分模型浮层
-      const rangeBadgeText = isEnglishLocale()
-        ? getConsumptionTimeRangeOptions().find((o) => o.value === slice.range)?.label ||
-          t('cons.allTime')
-        : preset?.label || rangeInfo.label || t('cons.allTime');
+      // 2. 同步历史趋势交互式 SVG 面积图 / 类 GitHub 每日热力图（>90天）及悬停分模型浮层
+      const rangeBadgeText =
+        slice.range === 'cycle'
+          ? `${rangeInfo.isFallbackWeek || slice.weeklyLimitMode === 'custom_tokens' || slice.weeklyLimitMode === 'custom_cost' ? t('cons.cycleFallbackWeek') : t('cons.currentCycle')}${
+              activePoolFilter && activePoolFilter !== 'all'
+                ? ` · ${rangeInfo.poolLabel || activePoolFilter}`
+                : ''
+            }`
+          : isEnglishLocale()
+            ? getConsumptionTimeRangeOptions().find((o) => o.value === slice.range)?.label ||
+              t('cons.allTime')
+            : preset?.label || rangeInfo.label || t('cons.allTime');
       patchText(trendRangeBadge, rangeBadgeText);
+      const firstTrendSlot = rawTrendSeries[0] || null;
+      const isMinuteTrend = firstTrendSlot?.granularity === 'minute';
       const isHourlyTrend =
-        rawTrendSeries[0]?.granularity === 'hour' ||
-        (rawTrendSeries[0]?.label || '').includes(':');
-      const isHeatmapTrend = !isHourlyTrend && rawTrendSeries.length > HEATMAP_DAYS_THRESHOLD;
-      patchText(
-        trendGranularityHint,
-        isHeatmapTrend
-          ? t('cons.trendHeatmapHint', { days: rawTrendSeries.length })
-          : isHourlyTrend
-            ? t('cons.trendPointsHintHourly', { points: rawTrendSeries.length || 0 })
-            : t('cons.trendPointsHintDaily', { points: rawTrendSeries.length || 0 })
-      );
+        !isMinuteTrend &&
+        (firstTrendSlot?.granularity === 'hour' ||
+          (firstTrendSlot?.label || '').includes(':'));
+      const isHeatmapTrend =
+        !isMinuteTrend && !isHourlyTrend && rawTrendSeries.length > HEATMAP_DAYS_THRESHOLD;
+      patchAttr(trendGranularityHint, 'hidden', isHeatmapTrend);
+      patchAttr(heatmapModeSwitch.el, 'hidden', !isHeatmapTrend);
+      if (!isHeatmapTrend) {
+        patchText(
+          trendGranularityHint,
+          isMinuteTrend
+            ? t('cons.trendPointsHintMinute', {
+                minutes: Math.max(1, Number(firstTrendSlot?.stepMinutes) || 5),
+                points: rawTrendSeries.length || 0,
+              })
+            : isHourlyTrend
+              ? t('cons.trendPointsHintHourly', { points: rawTrendSeries.length || 0 })
+              : t('cons.trendPointsHintDaily', { points: rawTrendSeries.length || 0 })
+        );
+      } else {
+        heatmapModeSwitch.setValue(heatmapViewMode);
+      }
+      const buildTrendModelSegments = (mergedSlotModels) =>
+        partitionModelSegments(mergedSlotModels, modelColorMap, {
+          maxMain: 5,
+          minSharePct: 1.5,
+        });
       const enrichedTrendSeries = rawTrendSeries.map((slot, idx) => {
         const mergedSlotModels = trendMergedByIdx[idx];
         if (!mergedSlotModels || mergedSlotModels.length === 0) return slot;
         return {
           ...slot,
-          modelSegments: partitionModelSegments(mergedSlotModels, modelColorMap, {
-            maxMain: 5,
-            minSharePct: 1.5,
-          }),
+          mergedModels: mergedSlotModels,
+          modelSegments: buildTrendModelSegments(mergedSlotModels),
         };
       });
-      trendChart.update(enrichedTrendSeries);
+      trendChart.update(enrichedTrendSeries, {
+        heatmapMode: heatmapViewMode,
+        buildModelSegments: buildTrendModelSegments,
+      });
 
       // 3. 同步统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」及对应排序控制）
       const sortedTopConvs = [...topConvsWithModels].sort((a, b) =>
@@ -31178,6 +38272,30 @@ const ConsumptionView = defineComponent({
       patchAttr(workspacesListEl, 'hidden', !showWorkspacesTab);
       patchAttr(topConvsEmptyEl, 'hidden', !showSessionsTab || sortedTopConvs.length > 0);
       patchText(topConvsEmptyEl, t('cons.topConvsEmpty'));
+
+      const nextRangeSig = `${slice.range || ''}:${activePoolFilter || 'all'}:${slice.customStartMs || 0}:${slice.customEndMs || 0}`;
+      const nextRankingKey = showWorkspacesTab
+        ? 'workspaces'
+        : showSessionsTab
+          ? 'sessions'
+          : 'models';
+      const nextSortSig = showModelsTab ? `m:${modelsSortBy}` : `c:${topConvsSortBy}`;
+      const activeRankingEl = showWorkspacesTab
+        ? workspacesListEl
+        : showSessionsTab
+          ? sortedTopConvs.length > 0
+            ? topConvsListEl
+            : topConvsEmptyEl
+          : modelsListEl;
+
+      const rangeSwitched = hasCompletedInitialDraw && nextRangeSig !== lastAnimatedRangeSig;
+      const tabSwitched =
+        hasCompletedInitialDraw && !rangeSwitched && nextRankingKey !== lastAnimatedRankingKey;
+      const sortSwitched =
+        hasCompletedInitialDraw &&
+        !rangeSwitched &&
+        !tabSwitched &&
+        nextSortSig !== lastAnimatedSortSig;
 
       patchKeyedList(modelsListEl, models, {
         keyFn: (m) => m.displayText || m.label || m.shortName,
@@ -31259,6 +38377,23 @@ const ConsumptionView = defineComponent({
         createRow: createSourceBreakdownRow,
         updateRow: (refs, s) => updateSourceBreakdownRow(refs, s, sourcesTotalTok, modelColorMap),
       });
+
+      if (tabSwitched || sortSwitched) {
+        triggerConsAnim(activeRankingEl, 'is-bars-revealing');
+      }
+      if (!hasCompletedInitialDraw) {
+        hasCompletedInitialDraw = true;
+        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+          window.requestAnimationFrame(() => {
+            rootEl.classList?.add('is-ready');
+          });
+        } else {
+          rootEl.classList?.add('is-ready');
+        }
+      }
+      lastAnimatedRangeSig = nextRangeSig;
+      lastAnimatedRankingKey = nextRankingKey;
+      lastAnimatedSortSig = nextSortSig;
 
       // 5. 同步 12 个月垂直堆叠柱状图（按模型配色堆叠 + 长尾合并 + 悬停弹出明细浮层）
       patchText(monthlyYearBadge, String(monthlyYear));
@@ -31355,8 +38490,11 @@ const ConsumptionView = defineComponent({
     const unsub = telemetryStore.subscribe(
       (st) => ({
         range: st.selectedTimeRange,
+        cyclePool: st.selectedCyclePool || 'all',
         customStartMs: st.customStartMs,
         customEndMs: st.customEndMs,
+        quotaPools: st.telemetry?.quotas?.pools,
+        weeklyLimitMode: st.telemetry?.settings?.weeklyLimitMode,
         consumption: st.telemetry?.consumption,
         modelBreakdown: st.telemetry?.modelBreakdown,
         modelDisplayMode: normalizeModelDisplayMode(
@@ -31410,6 +38548,7 @@ const ConsumptionView = defineComponent({
         ariaLabel: t('cons.rangeAria'),
         options: getConsumptionTimeRangeOptions(),
       });
+      patchAttr(cyclePoolSelect.refs.triggerBtn, 'aria-label', t('cons.cyclePoolAria'));
       patchText(applyCustomBtnLabel, t('cons.applyFilter'));
       patchText(rangeToSpan, t('cons.rangeTo'));
       patchText(totalTokensLabel, t('cons.totalTokens'));
@@ -31424,6 +38563,11 @@ const ConsumptionView = defineComponent({
         md: { label: t('cons.exportMd'), title: t('cons.exportMdTip') },
       });
       patchText(trendTitleSpan, t('cons.trendTitle'));
+      heatmapModeSwitch.setProps({
+        ariaLabel: t('cons.hmModeAria'),
+        modelValue: heatmapViewMode,
+        options: getHeatmapModeOptions(),
+      });
       rankingTabSwitch.setProps({
         ariaLabel: t('cons.rankTabAria'),
         modelValue: activeRankingTab,
@@ -31461,11 +38605,14 @@ const ConsumptionView = defineComponent({
     );
 
     onCleanup(() => {
+      clearConsAnimTimers();
       hideBreakdownPopover();
       unsub();
       unsubView();
       unsubI18n();
       consExportMenu.destroy();
+      cyclePoolSelect.destroy();
+      heatmapModeSwitch.destroy();
       trendChart.destroy?.();
       rankingTabSwitch.destroy();
       modelsSortSwitch.destroy();
@@ -31480,6 +38627,9 @@ const ConsumptionView = defineComponent({
       el: rootEl,
       refs: {
         timeFilterSwitch,
+        cyclePoolSelect,
+        heatmapModeSwitch,
+        trendChart,
         startPicker,
         endPicker,
         viewScrollbar,
@@ -32777,6 +39927,10 @@ const StepsDetailView = defineComponent({
         const sortedKinds = Object.entries(sumAnomalyByKind)
           .filter(([, v]) => v > 0)
           .sort((a, b) => b[1] - a[1]);
+        const hasDangerKind = sortedKinds.some(
+          ([kind]) => kind === 'rate_limit' || kind === 'auth_or_model'
+        );
+        patchClasses(modelsAnomalyStripEl, { 'has-danger': hasDangerKind });
         const stripSig = `${locale}:${sumAnomalyCount}:${sumAnomalySteps}:${sortedKinds.map(([k, v]) => `${k}=${v}`).join(',')}`;
         if (stripSig !== lastAnomalyStripSig) {
           lastAnomalyStripSig = stripSig;
@@ -32859,15 +40013,19 @@ const StepsDetailView = defineComponent({
           return `${locale}:${m.displayText}:${m.displayTitle}:${m.calls}:${sumCalls}:${sumTokens}:${displayModels.length}:${m.avgTokPerSec}:${avgTtft}:${m.cacheHitPct}:${m.inputTokens}:${m.cacheReadTokens}:${m.thinkingTokens}:${m.responseTokens}:${m.totalTokens}:${m.costUsd}:${m.unpricedCalls}:${isActiveFit}:${hasMultipleModels}:${anomSig}`;
         },
         createRow: () => {
-          const nameEl = h('strong', { className: 'smodel-name' });
-          const callsPillEl = h('span', { className: 'smodel-calls-pill text-mono' });
+          const nameEl = h('strong', { className: 'cons-row-title-text smodel-name' });
           const anomalyTagEl = h('span', {
             className: 'step-anomaly-tag smodel-anomaly-tag text-mono',
             title: '',
             hidden: true,
           });
-          const tokEl = h('span', { className: 'smodel-tok text-mono' });
-          const costEl = h('strong', { className: 'smodel-cost text-mono' });
+          const titleWrapEl = h('strong', { className: 'cons-row-title smodel-ident' }, [
+            nameEl,
+            anomalyTagEl,
+          ]);
+          const pctBadgeEl = h('span', { className: 'cons-share-pill text-mono', text: '0%' });
+          const tokEl = h('span', { className: 'cons-row-tok smodel-tok text-mono' });
+          const costEl = h('strong', { className: 'cons-row-cost smodel-cost text-mono' });
           const segBar = createFourSegmentBar();
           segBar.el.classList.add('smodel-seg-bar');
 
@@ -32875,11 +40033,13 @@ const StepsDetailView = defineComponent({
           const cacheLbl = h('span', { text: t('cons.footCache') });
           const thinkLbl = h('span', { text: t('cons.footThinking') });
           const outLbl = h('span', { text: t('cons.footOutput') });
+          const callsLbl = h('span', { text: t('cons.footCalls') });
           const inVal = h('strong', { className: 'text-mono' });
           const cacheVal = h('strong', { className: 'text-mono' });
           const thinkVal = h('strong', { className: 'text-mono' });
           const outVal = h('strong', { className: 'text-mono' });
-          const splitEl = h('div', { className: 'smodel-split' }, [
+          const callsVal = h('strong', { className: 'text-mono' });
+          const footEl = h('div', { className: 'cons-item-foot smodel-foot' }, [
             h('span', { className: 'legend-left' }, [
               h('span', { className: 'dot-swatch seg-input' }),
               inLbl,
@@ -32900,18 +40060,29 @@ const StepsDetailView = defineComponent({
               outLbl,
               outVal,
             ]),
+            h('span', { className: 'legend-left' }, [callsLbl, callsVal]),
           ]);
-          const perfEl = h('span', { className: 'smodel-perf text-mono' });
-          const unitCostEl = h('span', { className: 'smodel-unit-cost text-mono', hidden: true });
-          const perfFootEl = h('div', { className: 'smodel-perf-foot' }, [perfEl, unitCostEl]);
+          const perfEl = h('span', { className: 'cons-model-perf-main smodel-perf text-mono' });
+          const unitCostEl = h('span', {
+            className: 'cons-model-unit-cost smodel-unit-cost text-mono',
+            hidden: true,
+          });
+          const perfFootEl = h('div', { className: 'cons-model-perf-foot smodel-perf-foot' }, [
+            perfEl,
+            unitCostEl,
+          ]);
 
-          const cardEl = h('div', { className: 'smodel-card' }, [
-            h('div', { className: 'smodel-head' }, [
-              h('div', { className: 'smodel-ident' }, [nameEl, callsPillEl, anomalyTagEl]),
-              h('div', { className: 'smodel-totals' }, [tokEl, costEl]),
+          const cardEl = h('div', { className: 'cons-item-row smodel-card' }, [
+            h('div', { className: 'panel-header smodel-head' }, [
+              titleWrapEl,
+              h('span', { className: 'cons-row-metrics smodel-totals' }, [
+                pctBadgeEl,
+                tokEl,
+                costEl,
+              ]),
             ]),
             segBar.el,
-            h('div', { className: 'smodel-foot' }, [splitEl]),
+            footEl,
             perfFootEl,
           ]);
 
@@ -32919,22 +40090,23 @@ const StepsDetailView = defineComponent({
             el: cardEl,
             refs: {
               nameEl,
-              callsPillEl,
+              pctBadgeEl,
               anomalyTagEl,
               tokEl,
               costEl,
               segBar,
               perfEl,
               unitCostEl,
-              splitEl,
               inLbl,
               cacheLbl,
               thinkLbl,
               outLbl,
+              callsLbl,
               inVal,
               cacheVal,
               thinkVal,
               outVal,
+              callsVal,
               cardTitle: '',
               isHoveringAnomaly: false,
             },
@@ -32954,13 +40126,6 @@ const StepsDetailView = defineComponent({
           patchAttr(refs.nameEl, 'title', dispTitle);
 
           const calls = Math.max(0, Number(m.calls || 0));
-          const callSharePct = sumCalls > 0 ? Math.round((calls / sumCalls) * 100) : 0;
-          patchText(
-            refs.callsPillEl,
-            displayModels.length > 1
-              ? t('steps.modelCallsShare', { calls, pct: callSharePct })
-              : t('steps.modelCallsOnly', { calls })
-          );
 
           const effM = effectiveAnomalyModels.get(m) || m;
           const anomSum = resolveModelAnomalySummary(effM);
@@ -33006,6 +40171,9 @@ const StepsDetailView = defineComponent({
               : Math.max(0, outTok - thinkTok);
 
           const modelTok = Math.max(0, Number(m.totalTokens || 0));
+          const tokSharePct =
+            sumTokens > 0 ? (modelTok / sumTokens) * 100 : sumCalls > 0 ? (calls / sumCalls) * 100 : 0;
+          patchText(refs.pctBadgeEl, formatPctNumber(tokSharePct, { withSymbol: true }));
           patchText(refs.tokEl, formatTokensPrecise(modelTok));
           const costNum = Number(m.costUsd || 0);
           const isAllUnpriced =
@@ -33046,10 +40214,12 @@ const StepsDetailView = defineComponent({
           patchText(refs.cacheLbl, t('cons.footCache'));
           patchText(refs.thinkLbl, t('cons.footThinking'));
           patchText(refs.outLbl, t('cons.footOutput'));
+          patchText(refs.callsLbl, t('cons.footCalls'));
           patchText(refs.inVal, formatTokensPrecise(inTok));
           patchText(refs.cacheVal, formatTokensPrecise(cacheTok));
           patchText(refs.thinkVal, formatTokensPrecise(thinkTok));
           patchText(refs.outVal, formatTokensPrecise(respTok));
+          patchText(refs.callsVal, String(calls));
 
           patchText(
             refs.perfEl,
@@ -33284,7 +40454,7 @@ const { SHOW_ACCOUNT_TAB, SettingsView } = (() => {
  */
 
 
-const SHOW_ACCOUNT_TAB = false;
+const SHOW_ACCOUNT_TAB = true;
 
 function getSettingsSubTabOptions() {
   return [
@@ -33320,10 +40490,11 @@ const SettingsView = defineComponent({
 
     const generalTab = SettingsGeneralTab({ onLayoutChange: refreshScroll });
     const structureTab = SettingsStructureTab({ onLayoutChange: refreshScroll });
-    const accountTab = null; // SettingsAccountTab kept in src/views/settings/ for future opt-in
+    const accountTab = SettingsAccountTab({ onLayoutChange: refreshScroll });
     const otherTab = SettingsOtherTab({ onLayoutChange: refreshScroll });
 
     let showingAccount = false;
+    let preloadedAccountOnce = false;
     function applyActiveSubTab(subTab, activeView) {
       const target =
         subTab === 'structure' ||
@@ -33338,6 +40509,10 @@ const SettingsView = defineComponent({
       patchAttr(otherTab.el, 'hidden', target !== 'other');
       if (accountTab) {
         patchAttr(accountTab.el, 'hidden', target !== 'account');
+        if (activeView === 'settings' && !preloadedAccountOnce) {
+          preloadedAccountOnce = true;
+          void accountTab.refs.preload?.();
+        }
         const nextShowingAccount = target === 'account' && activeView === 'settings';
         if (nextShowingAccount && !showingAccount) void accountTab.refs.load();
         showingAccount = nextShowingAccount;
@@ -33371,6 +40546,9 @@ const SettingsView = defineComponent({
       if (getVisibleMonitorView(ui) !== 'settings') return;
       const telemetry = telemetryStore.getState().telemetry;
       const settings = telemetry?.settings;
+      if (accountTab) {
+        accountTab.refs.renderAccount(telemetry?.account, telemetry?.quotas, settings);
+      }
       if (settingsSubTab === 'structure') {
         if (settings) {
           structureTab.refs.renderSettings(
@@ -33391,10 +40569,15 @@ const SettingsView = defineComponent({
             telemetry?.cloudCodeProxy
           );
         }
-      } else if (accountTab && settingsSubTab === 'account') {
-        accountTab.refs.renderAccount(telemetry?.account, telemetry?.quotas);
-      } else {
-        if (settings) generalTab.refs.renderSettings(settings);
+      } else if (settingsSubTab !== 'account') {
+        if (settings) {
+          generalTab.refs.renderSettings(
+            settings,
+            telemetry?.windowBridge,
+            telemetry?.hostPlatform
+          );
+        }
+        void generalTab.refs.loadHostI18n?.(false);
         if (telemetry?.cloudStatus) generalTab.refs.renderCloudStatus(telemetry.cloudStatus);
       }
       refreshScroll();
@@ -33848,25 +41031,17 @@ const App = defineComponent({
 return { App };
 })();
 
-// --- src/components/layout/WindowOverlayShell.js ---
-const { computeCapsuleLayoutMode, mountWindowOverlay } = (() => {
+// --- src/components/layout/overlayHostAnchors.js ---
+const { CAPSULE_HOST_ID, PORTAL_HOST_ID, computeCapsuleLayoutMode, isImmediatelyBeforeNode, isIdeExtensionChatFrame, resolveActiveDockTarget, findNativeTopRightAnchor, getLeftSidebarRightEdge, attachShadowStyles } = (() => {
 /**
- * @fileoverview 主窗口双栖挂载外壳 (WindowOverlayShell.js).
- *
- * 采用「分离式双 Shadow Host」架构，彻底规避宿主顶栏层叠上下文 (`z-0` / `overflow: hidden`) 裁切与路由重绘卸载问题：
- * 1. `#ag-usage-monitor-capsule`：轻量顶栏胶囊，优先内嵌停靠至 `[class*="@container/titlebar"]` 右侧按钮组，
- *    支持四级迟滞宽度自适应折叠（`wide` -> `compact` -> `minimal` -> `ring-only`），找不到顶栏时自动回退至右上角固定定位；
- * 2. `#ag-usage-monitor-portal`：常驻 `document.body` 顶层的无遮挡浮层宿主，承载悬停速览卡与完整四标签 `App()` 监控面板，
- *    在宿主切换会话重建顶栏 DOM 时始终保持组件实例、滚动位置与动画状态不丢失。
+ * @fileoverview Host IDE/Desktop titlebar & composer button anchor discovery,
+ * 4-stage responsive capsule hysteresis, and shared ShadowRoot CSSStyleSheet mounting
+ * extracted from WindowOverlayShell.js.
  */
 
 
 const CAPSULE_HOST_ID = 'ag-usage-monitor-capsule';
 const PORTAL_HOST_ID = 'ag-usage-monitor-portal';
-const FLOATING_CARD_WIDTH = 522;
-const POPOVER_BASE_WIDTH = 540;
-const POPOVER_MAX_AUTO_WIDTH = 960;
-const MULTI_PANEL_WIDTH = 464;
 
 /**
  * 带迟滞区间（Hysteresis）的四阶段顶栏双胶囊响应式宽度计算，避免临界宽度反复跳动。
@@ -33972,7 +41147,7 @@ const COMPOSER_MODEL_ATTR_RE =
   /\bmodel[-_\s]?(?:select|picker|switch|selector|menu|name)\b|选择模型|切换模型/i;
 const COMPOSER_MODE_EXACT_RE = /^(?:auto|自动)$/i;
 const COMPOSER_MODE_TEXT_RE =
-  /^(?:auto|ask|manual|supervised|autonomous|always\s*allow|turbo|safe|yolo|plan|act|review|confirm|normal|fast|自动|询问|手动|始终允许|受控|规划)(?:\s*(?:mode|模式))?$/i;
+  /^(?:auto|ask|manual|supervised|autonomous|always\s*allow|turbo|safe|yolo|plan|planning|act|review|confirm|normal|fast|自动|询问|始终询问|手动|始终允许|受控|规划|快速)(?:\s*(?:mode|模式))?$/i;
 const COMPOSER_MODE_ATTR_RE =
   /\b(?:auto(?:nomy|matic)?|execution[-_]?mode|agent[-_]?mode|permission|approval|hitl|policy|mode[-_]?selector|mode[-_]?picker)\b|自动|执行模式|权限模式|审批/i;
 const COMPOSER_ICON_FONT_CLASS_RE =
@@ -34441,7 +41616,7 @@ function findHostComposerAutoTarget(capsuleNode = null, portalNode = null, patch
     const porEl = portalNode || document.getElementById?.(PORTAL_HOST_ID) || null;
     const activeRouteId = extractHostRouteCascadeId();
 
-    // 1. 优先从活跃会话的输入框编辑器向上定位底部工具栏与 Auto / 右簇发送按钮
+    // 1. 优先从活跃会话的输入框编辑器向上定位底部工具栏和 Auto / 右簇发送按钮
     const rawEditors = querySimpleSelectorList(document, [
       'textarea',
       '[contenteditable]',
@@ -34725,7 +41900,7 @@ function getLeftSidebarRightEdge(vw) {
 }
 
 /**
- * 在主窗口挂载双栖顶栏胶囊与完整四标签悬浮面板，并注册 `window.__AGUsageMonitorOverlay` 生命周期句柄。
+ * 在主窗口挂载双栖顶栏胶囊和完整四标签悬浮面板，并注册 `window.__AGUsageMonitorOverlay` 生命周期句柄。
  */
 const CAPSULE_EXCLUDED_CSS_SECTIONS = new Set([
   'src/styles/views-overview.css',
@@ -34771,6 +41946,29 @@ function attachShadowStyles(shadowRoot, fullCss, { slimCapsule = false } = {}) {
   styleEl.textContent = slimCapsule ? buildSlimCapsuleCss(fullCss) : fullCss;
   shadowRoot.appendChild(styleEl);
 }
+return { CAPSULE_HOST_ID, PORTAL_HOST_ID, computeCapsuleLayoutMode, isImmediatelyBeforeNode, isIdeExtensionChatFrame, resolveActiveDockTarget, findNativeTopRightAnchor, getLeftSidebarRightEdge, attachShadowStyles };
+})();
+
+// --- src/components/layout/WindowOverlayShell.js ---
+const { mountWindowOverlay } = (() => {
+/**
+ * @fileoverview 主窗口双栖挂载外壳 (WindowOverlayShell.js).
+ *
+ * 采用「分离式双 Shadow Host」架构，彻底规避宿主顶栏层叠上下文 (`z-0` / `overflow: hidden`) 裁切与路由重绘卸载问题：
+ * 1. `#ag-usage-monitor-capsule`：轻量顶栏胶囊，优先内嵌停靠至 `[class*="@container/titlebar"]` 右侧按钮组，
+ *    支持四级迟滞宽度自适应折叠（`wide` -> `compact` -> `minimal` -> `ring-only`），找不到顶栏时自动回退至右上角固定定位；
+ * 2. `#ag-usage-monitor-portal`：常驻 `document.body` 顶层的无遮挡浮层宿主，承载悬停速览卡与完整四标签 `App()` 监控面板，
+ *    在宿主切换会话重建顶栏 DOM 时始终保持组件实例、滚动位置与动画状态不丢失。
+ */
+
+
+
+
+const FLOATING_CARD_WIDTH = 522;
+const POPOVER_BASE_WIDTH = 540;
+const POPOVER_MAX_AUTO_WIDTH = 960;
+const MULTI_PANEL_WIDTH = 464;
+
 
 function mountWindowOverlay() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return null;
@@ -35351,6 +42549,55 @@ function mountWindowOverlay() {
   let observedWorkbench = null;
   let themeObserver = null;
   const mirroredThemeVars = new Map();
+  const mirroredTypographyVars = new Map();
+
+  function isUsableHostFontStack(raw) {
+    const val = String(raw || '').trim();
+    if (!val) return false;
+    const bare = val.replace(/["']/g, '').trim();
+    return !/^(?:initial|inherit|unset|revert|serif|sans-serif|monospace|times new roman|arial)$/i.test(
+      bare
+    );
+  }
+
+  function syncHostTypographyVars(rootCs, bodyCs, wbCs) {
+    const readProp = (cs, prop, fallbackKey = '') => {
+      if (!cs) return '';
+      const v = String(cs.getPropertyValue?.(prop) || (fallbackKey ? cs[fallbackKey] : '') || '').trim();
+      return isUsableHostFontStack(v) ? v : '';
+    };
+    const hostFontSans =
+      readProp(rootCs, '--font-sans') ||
+      readProp(bodyCs, '--font-sans') ||
+      readProp(wbCs, '--vscode-font-family') ||
+      readProp(bodyCs, 'font-family', 'fontFamily') ||
+      readProp(rootCs, 'font-family', 'fontFamily');
+    const hostFontMono =
+      readProp(rootCs, '--font-mono') ||
+      readProp(bodyCs, '--font-mono') ||
+      readProp(wbCs, '--vscode-editor-font-family') ||
+      readProp(rootCs, '--font-code');
+
+    for (const [cssVar, val] of [
+      ['--font-sans', hostFontSans],
+      ['--font-mono', hostFontMono],
+    ]) {
+      const prevVal = mirroredTypographyVars.get(cssVar) || '';
+      if (val) {
+        if (prevVal !== val) {
+          portalHost.style.setProperty?.(cssVar, val);
+          mirroredTypographyVars.set(cssVar, val);
+        }
+      } else if (prevVal) {
+        if (typeof portalHost.style.removeProperty === 'function') {
+          portalHost.style.removeProperty(cssVar);
+        } else {
+          portalHost.style.setProperty?.(cssVar, '');
+        }
+        mirroredTypographyVars.delete(cssVar);
+      }
+    }
+  }
 
   function restorePatchedActionToolbar() {
     if (!patchedActionToolbar) return;
@@ -35380,6 +42627,8 @@ function mountWindowOverlay() {
         ? window.getComputedStyle(document.documentElement)
         : null;
       const bodyCs = document.body ? window.getComputedStyle(document.body) : null;
+      const wbOnlyCs = workbenchEl ? window.getComputedStyle(workbenchEl) : null;
+      syncHostTypographyVars(rootCs, bodyCs, wbOnlyCs);
       const nativeRootBg = String(
         rootCs?.getPropertyValue?.('--background') ||
           bodyCs?.getPropertyValue?.('--background') ||
@@ -36826,7 +44075,7 @@ function mountWindowOverlay() {
   window[WINDOW_OVERLAY_KEY] = handle;
   return handle;
 }
-return { computeCapsuleLayoutMode, mountWindowOverlay };
+return { mountWindowOverlay };
 })();
 
 // --- src/main.js ---

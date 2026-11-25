@@ -31,6 +31,11 @@ body {
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: var(--fs-body);
+  font-weight: 400;
+  font-stretch: 100%;
+  font-variation-settings: normal;
+  font-feature-settings: normal;
+  letter-spacing: normal;
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;

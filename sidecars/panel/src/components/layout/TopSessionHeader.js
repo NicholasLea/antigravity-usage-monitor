@@ -22,18 +22,49 @@ import {
 import { uiStore } from '../../store/uiStore.js';
 import { CustomSelect } from '../ui/CustomSelect.js';
 
-function formatConvOptionMeta(c) {
-  const base = formatConversationMeta(c);
-  const wsName = String(c?.workspaceName || '').trim();
-  if (!wsName) return base;
-  return base ? `${wsName} · ${base}` : wsName;
+const INLINE_UUID_RE =
+  /(?<![0-9a-f-])([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])/gi;
+
+function compactInlineUuids(text) {
+  const str = String(text || '').trim();
+  if (!str || str.length < 36) return str;
+  return str.replace(INLINE_UUID_RE, '$1…');
+}
+
+function formatCompactConvStepsMeta(c) {
+  if (!c) return '';
+  const main = Number(c.stepCount || 0);
+  const totalSubs = Number(c.subagentCount || 0);
+  const swarm = Number(c.swarmCount || 0);
+  const otherSubs = Math.max(0, totalSubs - swarm);
+  const total = Number(c.totalStepCount ?? c.totalStepsAllAgents ?? main);
+  if (swarm > 0 && otherSubs > 0) {
+    return t('header.convCompactSwarmAndSubs', { swarm, subs: otherSubs, total });
+  }
+  if (swarm > 0) {
+    return t('header.convCompactSwarm', { swarm, total });
+  }
+  if (totalSubs > 0) {
+    return t('header.convCompactSubs', { subs: totalSubs, total });
+  }
+  return t('header.convMetaSteps', { count: main });
+}
+
+function resolveConvTotalSteps(c) {
+  if (!c) return 0;
+  const main = Number(c.stepCount || 0);
+  return Number(c.totalStepCount ?? c.totalStepsAllAgents ?? main);
 }
 
 function formatConvOptionTitle(c) {
   const parts = [];
   const label = String(c?.title || c?.cascadeId?.slice?.(0, 8) || '').trim();
-  if (c?.swarmTitle && c.swarmTitle !== c.title) {
-    parts.push(`${label} · ${c.swarmTitle}`);
+  if (label) {
+    parts.push(c?.swarmTitle && c.swarmTitle !== c.title ? `${label} · ${c.swarmTitle}` : label);
+  }
+  const fullMeta = formatConversationMeta(c);
+  if (fullMeta) {
+    parts.push(fullMeta);
   }
   const wsPath = String(c?.workspacePath || c?.workspaceName || '').trim();
   if (wsPath) {
@@ -46,6 +77,7 @@ export const TopSessionHeader = defineComponent({
   name: 'TopSessionHeader',
   setup({ onCleanup }) {
     const convSelect = CustomSelect({
+      className: 'session-select',
       modelValue: telemetryStore.getState().selectedConversationId,
       placeholder: t('header.followLatest'),
       searchable: true,
@@ -220,53 +252,63 @@ export const TopSessionHeader = defineComponent({
         routeMatch?.isChildRoute && routeMatch.childAgent
           ? formatAgentBadgeText(routeMatch.childAgent)
           : '';
-      const hostBaseTitle = hostMatchedConv?.title || hostRouteId.slice(0, 8);
+      const hostBaseTitle = compactInlineUuids(
+        hostMatchedConv?.title || hostRouteId.slice(0, 8)
+      );
       const hostDisplayTitle = childRouteBadge
         ? `${hostBaseTitle} · ${childRouteBadge}`
         : hostBaseTitle;
-      const defaultOptLabel = hostRouteId
+      const defaultTriggerLabel = hostRouteId
         ? t('header.currentWindowNamed', {
             title: hostDisplayTitle,
           })
         : convs[0]?.title
-          ? t('header.latestNamed', { title: convs[0].title })
+          ? t('header.latestNamed', { title: compactInlineUuids(convs[0].title) })
           : t('header.followLatest');
-      const defaultOptMeta = hostRouteId
-        ? hostMatchedConv
-          ? formatConvOptionMeta(hostMatchedConv)
-          : ''
-        : convs[0]
-          ? formatConvOptionMeta(convs[0])
-          : '';
+
+      const lockedId = telSt.selectedConversationId;
+      const defaultMenuLabel = hostRouteId
+        ? t('header.followCurrentWindow')
+        : t('header.followLatest');
+
       const options = [
         {
           value: '',
-          label: defaultOptLabel,
-          meta: defaultOptMeta,
+          label: defaultMenuLabel,
+          shortLabel: defaultTriggerLabel,
+          meta: t('header.autoFollowBadge'),
+          dividerAfter: convs.length > 0 || Boolean(lockedId),
           ...(hostMatchedConv?.swarmTitle ? { title: hostMatchedConv.swarmTitle } : {}),
         },
         ...convs.map((c) => {
+          const rawTitle = c.title || c.cascadeId.slice(0, 8);
+          const cleanLabel = compactInlineUuids(rawTitle);
+          const wsName = String(c?.workspaceName || '').trim();
           const optTitle = formatConvOptionTitle(c);
           return {
             value: c.cascadeId,
-            label: c.title || c.cascadeId.slice(0, 8),
-            meta: formatConvOptionMeta(c),
+            label: cleanLabel,
+            meta: formatCompactConvStepsMeta(c),
+            dimMeta: resolveConvTotalSteps(c) === 0,
+            searchText: `${rawTitle} ${wsName} ${c.workspacePath || ''} ${c.swarmTitle || ''}`,
             ...(optTitle ? { title: optTitle } : {}),
           };
         }),
       ];
-      const lockedId = telSt.selectedConversationId;
       if (lockedId && !convs.some((c) => c.cascadeId === lockedId)) {
         const isLoadedLocked = actConv?.cascadeId === lockedId;
-        const lockedTitle =
+        const rawLockedTitle =
           isLoadedLocked && actConv?.title
             ? actConv.title
             : t('header.lockedSession', { id: String(lockedId).slice(0, 8) });
-        const lockedMeta = isLoadedLocked ? formatConvOptionMeta(actConv) : t('header.lockedMeta');
+        const lockedLabel = compactInlineUuids(rawLockedTitle);
+        const lockedWs = isLoadedLocked ? String(actConv?.workspaceName || '').trim() : '';
+        const lockedMeta = isLoadedLocked ? formatCompactConvStepsMeta(actConv) : t('header.lockedMeta');
         options.splice(1, 0, {
           value: lockedId,
-          label: lockedTitle,
+          label: lockedLabel,
           meta: lockedMeta,
+          searchText: `${rawLockedTitle} ${lockedWs}`,
         });
       }
       convSelect.setProps({

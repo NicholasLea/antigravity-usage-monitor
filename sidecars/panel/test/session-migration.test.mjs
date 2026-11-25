@@ -51,7 +51,24 @@ function initSummaryDb(dbPath) {
   return db;
 }
 
-function createConvDb(dbPath, { cid, tid, source = 17, projectId = 'default-cli-project', wsUri = 'file:///C:/Users/Test', promptText = 'hello from cli', stepCount = 2, preserveTag15 = true }) {
+function createConvDb(
+  dbPath,
+  {
+    cid,
+    tid,
+    trajectoryType = 4,
+    source = 17,
+    projectId = 'default-cli-project',
+    wsUri = 'file:///C:/Users/Test',
+    promptText = 'hello from cli',
+    stepCount = 2,
+    preserveTag15 = true,
+    parentConversationId = '',
+    rootConversationId = '',
+    nestingDepth = 0,
+    subagentSpec = null,
+  }
+) {
   const db = new DatabaseSync(dbPath);
   db.exec(`
     CREATE TABLE trajectory_meta (
@@ -84,16 +101,35 @@ function createConvDb(dbPath, { cid, tid, source = 17, projectId = 'default-cli-
     CREATE TABLE battle_mode_infos (idx integer PRIMARY KEY, data blob);
   `);
 
-  db.prepare('INSERT INTO trajectory_meta VALUES (?, ?, 4, ?)').run(tid, cid, source);
+  db.prepare('INSERT INTO trajectory_meta VALUES (?, ?, ?, ?)').run(
+    tid,
+    cid,
+    trajectoryType,
+    source
+  );
 
   const wsSub = Buffer.concat([encodeProtoStringField(1, wsUri), encodeProtoStringField(3, '')]);
   const metaParts = [
     encodeProtoBytesField(1, wsSub),
     encodeProtoBytesField(2, encodeProtoTimestamp(1795000000000)),
-    encodeProtoStringField(6, cid),
-    encodeProtoStringField(7, wsUri),
-    encodeProtoStringField(18, projectId),
   ];
+  if (parentConversationId) {
+    metaParts.push(encodeProtoStringField(5, parentConversationId));
+  }
+  metaParts.push(
+    encodeProtoStringField(6, rootConversationId || parentConversationId || cid),
+    encodeProtoStringField(7, wsUri)
+  );
+  if (subagentSpec && (subagentSpec.typeName || subagentSpec.role)) {
+    const specParts = [];
+    if (subagentSpec.typeName) specParts.push(encodeProtoStringField(1, subagentSpec.typeName));
+    if (subagentSpec.role) specParts.push(encodeProtoStringField(2, subagentSpec.role));
+    metaParts.push(encodeProtoBytesField(8, Buffer.concat(specParts)));
+  }
+  if (nestingDepth > 0) {
+    metaParts.push(encodeProtoVarintField(17, nestingDepth));
+  }
+  metaParts.push(encodeProtoStringField(18, projectId));
   if (preserveTag15) {
     metaParts.push(encodeProtoBytesField(15, Buffer.from([0xde, 0xad, 0xbe, 0xef])));
   }
@@ -362,10 +398,18 @@ test('Cross-client session migration clones CLI/Legacy-IDE/Desktop SQLite sessio
     );
     cliSum.close();
 
-    // Legacy IDE (.db without conversation_summaries.db)
+    // Legacy IDE (.db without conversation_summaries.db), including subagent & side-question .db files
     const legacyRoot = join(geminiDir, 'antigravity-ide');
     mkdirSync(join(legacyRoot, 'conversations'), { recursive: true });
     const legacyCid = '33333333-3333-4333-8333-333333333331';
+    const legacySubFn5Cid = '33333333-3333-4333-8333-333333333332';
+    const legacySubFn8Cid = '33333333-3333-4333-8333-333333333333';
+    const legacySubFn17Cid = '33333333-3333-4333-8333-333333333334';
+    const legacySubSrc16Cid = '33333333-3333-4333-8333-333333333335';
+    const legacySideQCid = '33333333-3333-4333-8333-333333333336';
+    const cliOrphanSubCid = '22222222-2222-4222-8222-222222222225';
+    const cliRawMetaSubCid = '22222222-2222-4222-8222-222222222226';
+
     createConvDb(join(legacyRoot, 'conversations', `${legacyCid}.db`), {
       cid: legacyCid,
       tid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
@@ -375,17 +419,145 @@ test('Cross-client session migration clones CLI/Legacy-IDE/Desktop SQLite sessio
       promptText: 'Refactor legacy sidebar',
       stepCount: 4,
     });
+    createConvDb(join(legacyRoot, 'conversations', `${legacySubFn5Cid}.db`), {
+      cid: legacySubFn5Cid,
+      tid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+      source: 1,
+      parentConversationId: legacyCid,
+      promptText: 'Subagent via fn=5 parentConversationId',
+      stepCount: 2,
+    });
+    createConvDb(join(legacyRoot, 'conversations', `${legacySubFn8Cid}.db`), {
+      cid: legacySubFn8Cid,
+      tid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3',
+      source: 1,
+      subagentSpec: { typeName: 'research', role: 'Codebase Auditor' },
+      promptText: 'Subagent via fn=8 subagentSpec',
+      stepCount: 2,
+    });
+    createConvDb(join(legacyRoot, 'conversations', `${legacySubFn17Cid}.db`), {
+      cid: legacySubFn17Cid,
+      tid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4',
+      source: 1,
+      nestingDepth: 1,
+      promptText: 'Subagent via fn=17 nestingDepth',
+      stepCount: 2,
+    });
+    createConvDb(join(legacyRoot, 'conversations', `${legacySubSrc16Cid}.db`), {
+      cid: legacySubSrc16Cid,
+      tid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb5',
+      source: 16,
+      promptText: 'Subagent via source=16 CORTEX_TRAJECTORY_SOURCE_SUBAGENT',
+      stepCount: 2,
+    });
+    createConvDb(join(legacyRoot, 'conversations', `${legacySideQCid}.db`), {
+      cid: legacySideQCid,
+      tid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6',
+      trajectoryType: 22,
+      source: 1,
+      promptText: 'Side question via trajectory_type=22',
+      stepCount: 2,
+    });
+    // Orphan subagent .db missing from CLI conversation_summaries.db
+    createConvDb(join(cliRoot, 'conversations', `${cliOrphanSubCid}.db`), {
+      cid: cliOrphanSubCid,
+      tid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5',
+      source: 17,
+      parentConversationId: cliIdleCid,
+      subagentSpec: { typeName: 'research', role: 'Orphan Explorer' },
+      nestingDepth: 1,
+      promptText: 'Orphan CLI subagent without summary row',
+      stepCount: 2,
+    });
+    // Summary row with blank SQL parent_conversation_id/nesting_depth but subagentSpec in raw_summary.fn17
+    createConvDb(join(cliRoot, 'conversations', `${cliRawMetaSubCid}.db`), {
+      cid: cliRawMetaSubCid,
+      tid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6',
+      source: 17,
+      subagentSpec: { typeName: 'browser', role: 'Page Inspector' },
+      promptText: 'CLI subagent flagged in raw_summary.fn17',
+      stepCount: 2,
+    });
+    const cliSumExtra = new DatabaseSync(join(cliRoot, 'conversation_summaries.db'));
+    cliSumExtra
+      .prepare(
+        `INSERT INTO conversation_summaries (
+          conversation_id, title, preview, step_count, last_modified_time,
+          workspace_uris, status, source, project_id, parent_conversation_id,
+          nesting_depth, not_fully_idle, killed, last_user_input_time,
+          last_user_input_step_index, app_data_dir, raw_summary
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        cliRawMetaSubCid,
+        'Browser Helper',
+        'Browser Helper',
+        2,
+        '2026-11-21 11:55:00.000000+00:00',
+        '["file:///C:/Users/Administrator"]',
+        'CASCADE_RUN_STATUS_IDLE',
+        '',
+        'default-cli-project',
+        '',
+        0,
+        0,
+        0,
+        '2026-11-21 11:55:00.000000+00:00',
+        0,
+        'antigravity-cli',
+        Buffer.concat([
+          encodeProtoVarintField(2, 2),
+          encodeProtoBytesField(
+            17,
+            encodeProtoBytesField(
+              8,
+              Buffer.concat([
+                encodeProtoStringField(1, 'browser'),
+                encodeProtoStringField(2, 'Page Inspector'),
+              ])
+            )
+          ),
+        ])
+      );
+    cliSumExtra.close();
 
     const cat = getSessionMigrationCatalog({ geminiDir });
     assert.equal(cat.available, true, 'Multi-client setup exposes migration catalog');
-    assert.equal(cat.sessionsByClient.cli.length, 2, 'Excludes subagent and 0-step empty CLI sessions');
+    assert.equal(
+      cat.sessionsByClient.cli.length,
+      2,
+      'Excludes summary-flagged, raw_summary.fn17-flagged, orphan .db subagent, and 0-step CLI sessions'
+    );
     const idleItem = cat.sessionsByClient.cli.find((s) => s.cascadeId === cliIdleCid);
     const runItem = cat.sessionsByClient.cli.find((s) => s.cascadeId === cliRunCid);
     assert.equal(idleItem.title, 'Fix Braille progress bar width', 'Falls back to cleaned first user prompt title');
     assert.equal(idleItem.isRunning, false);
     assert.equal(runItem.isRunning, true);
-    assert.equal(cat.sessionsByClient.ide_legacy.length, 1);
+    assert.equal(
+      cat.sessionsByClient.ide_legacy.length,
+      1,
+      'Excludes fn=5, fn=8, fn=17, source=16 subagents and trajectory_type=22 side-questions in summaryless ide_legacy'
+    );
+    assert.equal(cat.sessionsByClient.ide_legacy[0].cascadeId, legacyCid);
     assert.equal(cat.sessionsByClient.ide_legacy[0].title, 'Refactor legacy sidebar');
+
+    // Direct migrateSessions call rejects non-root subagent / side-question IDs even without summary DB
+    const nonRootMigRes = migrateSessions(
+      {
+        sourceClient: 'ide_legacy',
+        targetClient: 'desktop',
+        mode: 'clone',
+        cascadeIds: [legacySubFn5Cid, legacySubFn8Cid, legacySubFn17Cid, legacySubSrc16Cid, legacySideQCid],
+      },
+      { geminiDir, backupDir }
+    );
+    assert.equal(nonRootMigRes.ok, false);
+    assert.equal(nonRootMigRes.migratedCount, 0);
+    assert.equal(nonRootMigRes.results.length, 5);
+    for (const r of nonRootMigRes.results) {
+      assert.equal(r.ok, false);
+      assert.equal(r.error, 'non_root_session');
+    }
     assert.ok(cat.desktopProjects.some((p) => p.projectId === projId && p.name === 'antigravity-usage-monitor'));
     assert.ok(cat.desktopProjects.some((p) => p.projectId === 'outside-of-project' && p.isOutsideProject));
 
