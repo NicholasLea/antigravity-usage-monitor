@@ -21,6 +21,41 @@ function isNodeWithin(target, container) {
   return false;
 }
 
+function findScrollableAncestor(el) {
+  let cur = el?.parentNode || null;
+  while (cur) {
+    if (
+      typeof cur.scrollHeight === 'number' &&
+      typeof cur.clientHeight === 'number' &&
+      cur.scrollHeight > cur.clientHeight + 4
+    ) {
+      return cur;
+    }
+    cur = cur.parentNode || null;
+  }
+  return null;
+}
+
+function applyRubberBand(value, minVal, maxVal, maxOvershoot = 24, factor = 0.25) {
+  if (value < minVal) {
+    const excess = minVal - value;
+    return minVal - Math.min(maxOvershoot, excess * factor);
+  }
+  if (value > maxVal) {
+    const excess = value - maxVal;
+    return maxVal + Math.min(maxOvershoot, excess * factor);
+  }
+  return value;
+}
+
+function buildReorderedItems(sourceItems, fromIdx, toIdx) {
+  const next = [...sourceItems];
+  if (fromIdx === toIdx) return next;
+  const [moved] = next.splice(fromIdx, 1);
+  next.splice(toIdx, 0, moved);
+  return next;
+}
+
 function areSlotListsEqual(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -39,6 +74,11 @@ export const EditableSlotList = defineComponent({
     let emptyHintText = String(props.emptyHintText || '');
     let addBtnTextFn = typeof props.addBtnTextFn === 'function' ? props.addBtnTextFn : null;
     let activeDrag = null;
+    let settleCleanupTimer = null;
+    let settlingRowEl = null;
+    let suppressClickTimer = null;
+    let suppressNextClick = false;
+    let pendingSyncAfterDrag = false;
 
     const listEl = h('div', { className: 'editable-slot-list' });
     const emptyEl = h('div', {
@@ -69,6 +109,38 @@ export const EditableSlotList = defineComponent({
 
     const rowPool = [];
 
+    function clearSettleAnimation() {
+      if (settleCleanupTimer) {
+        clearTimeout(settleCleanupTimer);
+        settleCleanupTimer = null;
+      }
+      if (settlingRowEl) {
+        patchClasses(settlingRowEl, { 'is-settling': false });
+        if (settlingRowEl.style) {
+          settlingRowEl.style.transition = '';
+          settlingRowEl.style.transform = '';
+        }
+        settlingRowEl = null;
+      }
+    }
+
+    function clearClickSuppression() {
+      if (suppressClickTimer) {
+        clearTimeout(suppressClickTimer);
+        suppressClickTimer = null;
+      }
+      suppressNextClick = false;
+    }
+
+    function armClickSuppression() {
+      clearClickSuppression();
+      suppressNextClick = true;
+      suppressClickTimer = setTimeout(() => {
+        suppressClickTimer = null;
+        suppressNextClick = false;
+      }, 120);
+    }
+
     function emitChange(nextItems) {
       currentItems = [...nextItems];
       syncRows();
@@ -80,99 +152,302 @@ export const EditableSlotList = defineComponent({
       }
     }
 
-    function teardownActiveDrag({ revert = false } = {}) {
-      if (!activeDrag) return;
-      const { startItems, hasMoved, cleanupListeners } = activeDrag;
-      activeDrag = null;
-      cleanupListeners();
-      patchClasses(listEl, { 'is-dragging-list': false });
+    function resetRowDragStyles() {
       for (const r of rowPool) {
-        patchClasses(r.rowEl, { 'is-dragging': false });
-      }
-      if (revert && hasMoved && !areSlotListsEqual(startItems, currentItems)) {
-        currentItems = [...startItems];
-        syncRows();
-        if (typeof props.onPreview === 'function') {
-          props.onPreview([...currentItems]);
+        patchClasses(r.rowEl, {
+          'is-dragging': false,
+          'is-drag-sibling': false,
+        });
+        if (r.rowEl?.style) {
+          r.rowEl.style.transition = '';
+          r.rowEl.style.transform = '';
         }
       }
     }
 
-    function startPointerDrag(e, initialRowIdx) {
+    function triggerDropSettleAnimation(targetRowEl, residualX, residualY) {
+      if (!targetRowEl || !targetRowEl.style) return;
+      if (Math.abs(residualX) < 0.5 && Math.abs(residualY) < 0.5) return;
+      if (typeof requestAnimationFrame !== 'function') return;
+      clearSettleAnimation();
+      settlingRowEl = targetRowEl;
+      targetRowEl.style.transition = 'none';
+      targetRowEl.style.transform = `translate3d(${residualX.toFixed(2)}px, ${residualY.toFixed(2)}px, 0) scale(1.015)`;
+      patchClasses(targetRowEl, { 'is-settling': true });
+      // Commit initial pre-settle frame before animating into slot
+      void targetRowEl.offsetHeight;
+      requestAnimationFrame(() => {
+        if (settlingRowEl !== targetRowEl) return;
+        targetRowEl.style.transition = '';
+        targetRowEl.style.transform = 'translate3d(0px, 0px, 0)';
+      });
+      settleCleanupTimer = setTimeout(() => {
+        if (settlingRowEl === targetRowEl) {
+          clearSettleAnimation();
+        }
+      }, 220);
+    }
+
+    function teardownActiveDrag({ revert = false } = {}) {
+      if (!activeDrag) return;
+      const { startItems, hasMoved, cleanupListeners, stopAutoScroll } = activeDrag;
+      activeDrag = null;
+      stopAutoScroll?.();
+      cleanupListeners();
+      patchClasses(listEl, { 'is-dragging-list': false });
+      resetRowDragStyles();
+      if (revert && hasMoved && !areSlotListsEqual(startItems, currentItems)) {
+        currentItems = [...startItems];
+        pendingSyncAfterDrag = false;
+        syncRows();
+        if (typeof props.onPreview === 'function') {
+          props.onPreview([...currentItems]);
+        }
+      } else if (pendingSyncAfterDrag) {
+        pendingSyncAfterDrag = false;
+        syncRows();
+      }
+    }
+
+    function startPointerDrag(e, initialRowIdx, { threshold = 3 } = {}) {
       if (e && e.button != null && e.button !== 0) return;
       if (currentItems.length <= 1) return;
       if (activeDrag) {
         teardownActiveDrag({ revert: false });
       }
+      clearSettleAnimation();
 
+      const startX = Number(e?.clientX ?? 0);
       const startY = Number(e?.clientY ?? 0);
       const startItems = [...currentItems];
-      let dragIdx = initialRowIdx;
+      const count = startItems.length;
+      const startIdx = initialRowIdx;
+      let targetIdx = startIdx;
       let hasMoved = false;
+      let slotMetrics = [];
+      let rowGap = 5;
+      let shiftDistance = 33;
+      let startListTop = 0;
+      let hasListRect = false;
+      let lastClientX = startX;
+      let lastClientY = startY;
+      let lastDragOffsetX = 0;
+      let lastDragOffsetY = 0;
+      let scrollContainer = null;
+      let autoScrollRaf = null;
 
-      const onPointerMove = (ev) => {
-        if (!activeDrag) return;
-        const clientY = Number(ev?.clientY ?? startY);
-        if (!hasMoved) {
-          if (Math.abs(clientY - startY) < 4) return;
-          hasMoved = true;
-          activeDrag.hasMoved = true;
-          for (let k = 0; k < currentItems.length; k += 1) {
-            rowPool[k]?.selectComp?.close?.();
-          }
-          patchClasses(listEl, { 'is-dragging-list': true });
-          if (rowPool[dragIdx]) {
-            patchClasses(rowPool[dragIdx].rowEl, { 'is-dragging': true });
-          }
+      function stopAutoScroll() {
+        if (autoScrollRaf != null && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(autoScrollRaf);
         }
-        ev?.preventDefault?.();
+        autoScrollRaf = null;
+      }
 
-        let targetIdx = dragIdx;
-        const count = currentItems.length;
-        for (let i = 0; i < dragIdx; i += 1) {
+      function captureInitialGeometry() {
+        slotMetrics = [];
+        for (let i = 0; i < count; i += 1) {
           const rect = rowPool[i]?.rowEl?.getBoundingClientRect?.();
-          if (rect && rect.height > 0 && clientY < rect.top + rect.height * 0.5) {
-            targetIdx = i;
-            break;
+          const hasRect = Boolean(rect && Number.isFinite(rect.height) && rect.height > 0);
+          const height = hasRect ? rect.height : 28;
+          const top = hasRect ? rect.top : i * 33;
+          slotMetrics.push({ top, height, centerY: top + height * 0.5 });
+        }
+        if (count >= 2) {
+          const measuredGap = slotMetrics[1].top - (slotMetrics[0].top + slotMetrics[0].height);
+          rowGap = Number.isFinite(measuredGap) && measuredGap >= 0 ? measuredGap : 5;
+        } else {
+          rowGap = 5;
+        }
+        shiftDistance = (slotMetrics[startIdx]?.height || 28) + rowGap;
+        const listRect = listEl?.getBoundingClientRect?.();
+        if (listRect && Number.isFinite(listRect.height) && listRect.height > 0) {
+          startListTop = listRect.top;
+          hasListRect = true;
+        } else {
+          startListTop = 0;
+          hasListRect = false;
+        }
+        scrollContainer = findScrollableAncestor(listEl);
+      }
+
+      function computeListShiftY() {
+        if (!hasListRect) return 0;
+        const listRect = listEl?.getBoundingClientRect?.();
+        if (listRect && Number.isFinite(listRect.top) && listRect.height > 0) {
+          return listRect.top - startListTop;
+        }
+        return 0;
+      }
+
+      function updateSiblingPositionsAndBadges() {
+        for (let i = 0; i < count; i += 1) {
+          const entry = rowPool[i];
+          if (!entry) continue;
+          if (i === startIdx) {
+            patchText(entry.indexBadge, String(targetIdx + 1));
+            continue;
+          }
+          let visualSlot = i;
+          let shiftY = 0;
+          if (targetIdx > startIdx && i > startIdx && i <= targetIdx) {
+            visualSlot = i - 1;
+            shiftY = -shiftDistance;
+          } else if (targetIdx < startIdx && i >= targetIdx && i < startIdx) {
+            visualSlot = i + 1;
+            shiftY = shiftDistance;
+          }
+          patchText(entry.indexBadge, String(visualSlot + 1));
+          if (entry.rowEl?.style) {
+            entry.rowEl.style.transform =
+              shiftY !== 0 ? `translate3d(0px, ${shiftY.toFixed(2)}px, 0)` : 'translate3d(0px, 0px, 0)';
           }
         }
-        if (targetIdx === dragIdx) {
-          for (let i = count - 1; i > dragIdx; i -= 1) {
-            const rect = rowPool[i]?.rowEl?.getBoundingClientRect?.();
-            if (rect && rect.height > 0 && clientY > rect.top + rect.height * 0.5) {
-              targetIdx = i;
+      }
+
+      function updateDragFrame(clientX, clientY) {
+        if (!activeDrag || !hasMoved) return;
+        const listShiftY = computeListShiftY();
+        const rawDeltaY = clientY - startY - listShiftY;
+        const rawDeltaX = clientX - startX;
+
+        const minDeltaY = slotMetrics[0].top - slotMetrics[startIdx].top;
+        const maxDeltaY = slotMetrics[count - 1].top - slotMetrics[startIdx].top;
+        const clampedY = applyRubberBand(rawDeltaY, minDeltaY, maxDeltaY, 26, 0.25);
+        const clampedX =
+          rawDeltaX === 0
+            ? 0
+            : Math.sign(rawDeltaX) * Math.min(18, Math.abs(rawDeltaX) * 0.22);
+
+        lastDragOffsetX = clampedX;
+        lastDragOffsetY = clampedY;
+
+        const draggedEntry = rowPool[startIdx];
+        if (draggedEntry?.rowEl?.style) {
+          draggedEntry.rowEl.style.transform = `translate3d(${clampedX.toFixed(2)}px, ${clampedY.toFixed(2)}px, 0) scale(1.015)`;
+        }
+
+        // Static-slot center hit testing prevents any oscillation while siblings animate
+        const draggedCenterY = slotMetrics[startIdx].centerY + rawDeltaY;
+        let nextTarget = startIdx;
+        if (rawDeltaY < 0) {
+          for (let i = 0; i < startIdx; i += 1) {
+            if (draggedCenterY < slotMetrics[i].centerY) {
+              nextTarget = i;
+              break;
+            }
+          }
+        } else if (rawDeltaY > 0) {
+          for (let i = count - 1; i > startIdx; i -= 1) {
+            if (draggedCenterY > slotMetrics[i].centerY) {
+              nextTarget = i;
               break;
             }
           }
         }
 
-        if (targetIdx !== dragIdx) {
-          if (rowPool[dragIdx]) {
-            patchClasses(rowPool[dragIdx].rowEl, { 'is-dragging': false });
-          }
-          const next = [...currentItems];
-          const [moved] = next.splice(dragIdx, 1);
-          next.splice(targetIdx, 0, moved);
-          dragIdx = targetIdx;
-          activeDrag.dragIdx = dragIdx;
-          currentItems = next;
-          syncRows();
-          if (rowPool[dragIdx]) {
-            patchClasses(rowPool[dragIdx].rowEl, { 'is-dragging': true });
-          }
+        if (nextTarget !== targetIdx) {
+          targetIdx = nextTarget;
+          activeDrag.dragIdx = targetIdx;
+          currentItems = buildReorderedItems(startItems, startIdx, targetIdx);
+          updateSiblingPositionsAndBadges();
           if (typeof props.onPreview === 'function') {
             props.onPreview([...currentItems]);
           }
         }
+      }
+
+      function tickAutoScroll() {
+        autoScrollRaf = null;
+        if (!activeDrag || !hasMoved || !scrollContainer) return;
+        const containerRect = scrollContainer.getBoundingClientRect?.();
+        if (!containerRect || containerRect.height <= 0) return;
+        const edgeZone = 34;
+        let step = 0;
+        if (lastClientY < containerRect.top + edgeZone) {
+          const ratio = Math.min(1, (containerRect.top + edgeZone - lastClientY) / edgeZone);
+          step = -Math.ceil(3 + ratio * 7);
+        } else if (lastClientY > containerRect.bottom - edgeZone) {
+          const ratio = Math.min(1, (lastClientY - (containerRect.bottom - edgeZone)) / edgeZone);
+          step = Math.ceil(3 + ratio * 7);
+        }
+        if (step !== 0) {
+          const prevScroll = scrollContainer.scrollTop;
+          scrollContainer.scrollTop = prevScroll + step;
+          if (scrollContainer.scrollTop !== prevScroll) {
+            updateDragFrame(lastClientX, lastClientY);
+            if (typeof requestAnimationFrame === 'function') {
+              autoScrollRaf = requestAnimationFrame(tickAutoScroll);
+            }
+          }
+        }
+      }
+
+      function scheduleAutoScrollCheck() {
+        if (!scrollContainer || autoScrollRaf != null || typeof requestAnimationFrame !== 'function') {
+          return;
+        }
+        const containerRect = scrollContainer.getBoundingClientRect?.();
+        if (!containerRect || containerRect.height <= 0) return;
+        if (lastClientY < containerRect.top + 34 || lastClientY > containerRect.bottom - 34) {
+          autoScrollRaf = requestAnimationFrame(tickAutoScroll);
+        }
+      }
+
+      const onPointerMove = (ev) => {
+        if (!activeDrag) return;
+        const clientX = Number(ev?.clientX ?? startX);
+        const clientY = Number(ev?.clientY ?? startY);
+        lastClientX = clientX;
+        lastClientY = clientY;
+
+        if (!hasMoved) {
+          const dist = Math.hypot(clientX - startX, clientY - startY);
+          if (dist < threshold) return;
+          hasMoved = true;
+          activeDrag.hasMoved = true;
+          captureInitialGeometry();
+          for (let k = 0; k < count; k += 1) {
+            rowPool[k]?.selectComp?.close?.();
+          }
+          patchClasses(listEl, { 'is-dragging-list': true });
+          for (let k = 0; k < count; k += 1) {
+            if (!rowPool[k]) continue;
+            if (k === startIdx) {
+              patchClasses(rowPool[k].rowEl, { 'is-dragging': true, 'is-drag-sibling': false });
+            } else {
+              patchClasses(rowPool[k].rowEl, { 'is-dragging': false, 'is-drag-sibling': true });
+            }
+          }
+          updateSiblingPositionsAndBadges();
+        }
+        ev?.preventDefault?.();
+        updateDragFrame(clientX, clientY);
+        scheduleAutoScrollCheck();
       };
 
       const onPointerUp = () => {
         if (!activeDrag) return;
         const moved = activeDrag.hasMoved;
+        const finalTargetIdx = targetIdx;
+        const targetSlotOffsetY =
+          moved && slotMetrics[finalTargetIdx] && slotMetrics[startIdx]
+            ? slotMetrics[finalTargetIdx].top - slotMetrics[startIdx].top
+            : 0;
+        const residualX = moved ? lastDragOffsetX : 0;
+        const residualY = moved ? lastDragOffsetY - targetSlotOffsetY : 0;
         const changed = !areSlotListsEqual(startItems, currentItems);
+
         teardownActiveDrag({ revert: false });
+        if (moved) {
+          armClickSuppression();
+        }
         if (moved && changed) {
           emitChange([...currentItems]);
+        } else if (moved) {
+          syncRows();
+        }
+        if (moved && rowPool[finalTargetIdx]?.rowEl) {
+          triggerDropSettleAnimation(rowPool[finalTargetIdx].rowEl, residualX, residualY);
         }
       };
 
@@ -190,6 +465,10 @@ export const EditableSlotList = defineComponent({
         typeof document !== 'undefined' && typeof document.addEventListener === 'function'
           ? document
           : null;
+      const winTarget =
+        typeof window !== 'undefined' && typeof window.addEventListener === 'function'
+          ? window
+          : null;
 
       if (docTarget) {
         docTarget.addEventListener('pointermove', onPointerMove);
@@ -197,17 +476,24 @@ export const EditableSlotList = defineComponent({
         docTarget.addEventListener('pointercancel', onPointerCancel);
         docTarget.addEventListener('keydown', onKeyDown);
       }
+      if (winTarget) {
+        winTarget.addEventListener('blur', onPointerCancel);
+      }
 
       activeDrag = {
         startItems,
-        dragIdx,
+        dragIdx: startIdx,
         hasMoved: false,
+        stopAutoScroll,
         cleanupListeners: () => {
           if (docTarget && typeof docTarget.removeEventListener === 'function') {
             docTarget.removeEventListener('pointermove', onPointerMove);
             docTarget.removeEventListener('pointerup', onPointerUp);
             docTarget.removeEventListener('pointercancel', onPointerCancel);
             docTarget.removeEventListener('keydown', onKeyDown);
+          }
+          if (winTarget && typeof winTarget.removeEventListener === 'function') {
+            winTarget.removeEventListener('blur', onPointerCancel);
           }
         },
       };
@@ -292,6 +578,7 @@ export const EditableSlotList = defineComponent({
         [createSvgIcon('minus', { size: 12 })]
       );
 
+      const selectMenuEl = selectComp.el?.querySelector?.('.select-menu') || null;
       const orderBtnsEl = h('span', { className: 'slot-order-btns' }, [upBtn, downBtn, removeBtn]);
 
       const rowEl = h(
@@ -299,14 +586,26 @@ export const EditableSlotList = defineComponent({
         {
           className: 'editable-slot-row',
           onPointerdown: (e) => {
-            if (isNodeWithin(e?.target, selectComp.el) || isNodeWithin(e?.target, orderBtnsEl)) {
-              return;
-            }
-            startPointerDrag(e, rowIndex);
+            if (isNodeWithin(e?.target, orderBtnsEl)) return;
+            if (selectMenuEl && isNodeWithin(e?.target, selectMenuEl)) return;
+            const onSelectTrigger = isNodeWithin(e?.target, selectComp.el);
+            startPointerDrag(e, rowIndex, { threshold: onSelectTrigger ? 5 : 3 });
           },
         },
         [dragHandle, indexBadge, selectComp.el, orderBtnsEl]
       );
+      if (typeof rowEl.addEventListener === 'function') {
+        rowEl.addEventListener(
+          'click',
+          (e) => {
+            if (!suppressNextClick) return;
+            clearClickSuppression();
+            e.preventDefault?.();
+            e.stopPropagation?.();
+          },
+          true
+        );
+      }
 
       return {
         rowEl,
@@ -418,6 +717,10 @@ export const EditableSlotList = defineComponent({
       if (typeof next.addBtnTextFn === 'function') {
         addBtnTextFn = next.addBtnTextFn;
       }
+      if (activeDrag) {
+        pendingSyncAfterDrag = true;
+        return;
+      }
       syncRows();
     }
 
@@ -425,6 +728,8 @@ export const EditableSlotList = defineComponent({
 
     onCleanup(() => {
       teardownActiveDrag({ revert: false });
+      clearSettleAnimation();
+      clearClickSuppression();
       for (const entry of rowPool) {
         entry.selectComp.destroy();
       }

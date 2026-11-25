@@ -659,6 +659,12 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: var(--modern-surface-subtle);
 }
 
+[data-modern-ui="true"] .editable-slot-row.is-dragging {
+  border: none;
+  background: color-mix(in srgb, var(--accent-primary) 13%, var(--modern-surface-card));
+  box-shadow: var(--shadow-popover), 0 0 0 1.5px var(--accent-primary-border);
+}
+
 [data-modern-ui="true"][data-color-scheme="light"] .quota-pool-row.has-divider {
   border-top-color: hsl(216 24% 92%);
 }

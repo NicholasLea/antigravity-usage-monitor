@@ -6325,15 +6325,43 @@ html[data-standalone="true"] .app-shell {
   user-select: none !important;
 }
 
+.editable-slot-row.is-drag-sibling {
+  transition: transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  will-change: transform;
+}
+
 .editable-slot-row.is-dragging {
-  z-index: 40;
+  z-index: 45;
   border-color: var(--accent-primary);
-  background: color-mix(in srgb, var(--accent-primary) 9%, var(--surface-panel));
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--surface-panel));
   box-shadow: var(--shadow-popover);
+  will-change: transform;
+  pointer-events: none;
+  transition:
+    box-shadow 150ms ease-out,
+    background-color 150ms ease-out,
+    border-color 150ms ease-out;
+}
+
+.editable-slot-row.is-settling {
+  z-index: 42;
+  will-change: transform;
+  transition:
+    transform 190ms cubic-bezier(0.2, 0.9, 0.3, 1),
+    box-shadow 190ms ease-out,
+    background-color 190ms ease-out,
+    border-color 190ms ease-out;
 }
 
 .editable-slot-row.is-dragging .slot-drag-handle {
   color: var(--accent-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editable-slot-row.is-drag-sibling,
+  .editable-slot-row.is-settling {
+    transition: none;
+  }
 }
 
 .slot-remove-btn {
@@ -9102,6 +9130,12 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .preview-composer-chip {
   border: none;
   background: var(--modern-surface-subtle);
+}
+
+[data-modern-ui="true"] .editable-slot-row.is-dragging {
+  border: none;
+  background: color-mix(in srgb, var(--accent-primary) 13%, var(--modern-surface-card));
+  box-shadow: var(--shadow-popover), 0 0 0 1.5px var(--accent-primary-border);
 }
 
 [data-modern-ui="true"][data-color-scheme="light"] .quota-pool-row.has-divider {

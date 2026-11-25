@@ -46,6 +46,7 @@ import { ConsumptionView } from '../src/views/ConsumptionView.js';
 import { StepsDetailView } from '../src/views/StepsDetailView.js';
 import { SettingsGeneralTab } from '../src/views/settings/SettingsGeneralTab.js';
 import { SettingsStructureTab } from '../src/views/settings/SettingsStructureTab.js';
+import { EditableSlotList } from '../src/components/settings/EditableSlotList.js';
 
 test('modernUi schema normalization defaults to true, upgrades 1.5.2 settings without modernUi key to true, and respects explicit false', () => {
   assert.equal(DEFAULT_SETTINGS_SCHEMA.language, 'auto');
@@ -1651,4 +1652,124 @@ test('modern-ui floating hover tooltip rules exclude inline .wm-hover-tip.is-pre
     /\.wm-hover-tip\.is-preview\s*\{[^}]*overflow:\s*visible;[^}]*contain:\s*none;/,
     'Inline hover preview resets overflow and contain from floating .wm-hover-tip'
   );
+});
+
+test('EditableSlotList supports continuous pointer-following drag, smooth sibling displacement, deferred mid-drag setProps, and Escape revert', async (t) => {
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRaf = globalThis.requestAnimationFrame;
+  const prevCancelRaf = globalThis.cancelAnimationFrame;
+
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+
+  let comp = null;
+  t.after(() => {
+    comp?.destroy?.();
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.requestAnimationFrame = prevRaf;
+    globalThis.cancelAnimationFrame = prevCancelRaf;
+  });
+
+  const previews = [];
+  const commits = [];
+  comp = EditableSlotList({
+    items: ['metrics', 'context', 'quotas'],
+    options: [
+      { value: 'metrics', label: 'Metrics' },
+      { value: 'context', label: 'Context' },
+      { value: 'quotas', label: 'Quotas' },
+    ],
+    minItems: 0,
+    maxItems: 4,
+    onPreview: (items) => previews.push(items),
+    onChange: (items) => commits.push(items),
+  });
+  document.body.appendChild(comp.el);
+
+  const listEl = comp.refs.listEl;
+  listEl.getBoundingClientRect = () => ({ left: 0, top: 100, right: 320, bottom: 199, width: 320, height: 99 });
+  for (let i = 0; i < 3; i += 1) {
+    const rowEl = listEl.children[i];
+    rowEl.getBoundingClientRect = () => ({
+      left: 0,
+      top: 100 + i * 33,
+      right: 320,
+      bottom: 100 + i * 33 + 28,
+      width: 320,
+      height: 28,
+    });
+  }
+
+  // Drag directly from the row's select-trigger body (stepless continuous follow)
+  const row0 = listEl.children[0];
+  const row1 = listEl.children[1];
+  const row2 = listEl.children[2];
+  const row0Trigger = row0.querySelector('.select-trigger');
+  row0.dispatchEvent({
+    type: 'pointerdown',
+    target: row0Trigger,
+    button: 0,
+    clientX: 120,
+    clientY: 114,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  // 1) Move 15px downward + 20px right: continuous translate3d before crossing row 1 midpoint
+  document.dispatchEvent({ type: 'pointermove', clientX: 140, clientY: 129, preventDefault() {} });
+  assert.equal(listEl.classList.contains('is-dragging-list'), true);
+  assert.equal(row0.classList.contains('is-dragging'), true);
+  assert.equal(row1.classList.contains('is-drag-sibling'), true);
+  assert.match(row0.style.transform, /translate3d\(4\.40px, 15\.00px, 0\) scale\(1\.015\)/);
+  assert.equal(previews.length, 0, 'Order stays unchanged before midpoint threshold');
+
+  // 2) Background poll calls setProps mid-drag -> must not tear down or reset active dragged transform
+  comp.refs.setProps({ items: ['metrics', 'context', 'quotas'] });
+  assert.match(row0.style.transform, /translate3d\(4\.40px, 15\.00px, 0\)/);
+
+  // 3) Drag continuously past row 2 midpoint -> siblings slide up smoothly by -33px and badges update live
+  document.dispatchEvent({ type: 'pointermove', clientX: 120, clientY: 186, preventDefault() {} });
+  assert.deepEqual(previews.at(-1), ['context', 'quotas', 'metrics']);
+  assert.equal(row1.style.transform, 'translate3d(0px, -33.00px, 0)');
+  assert.equal(row2.style.transform, 'translate3d(0px, -33.00px, 0)');
+  assert.equal(row0.querySelector('.slot-index-badge').textContent, '3');
+  assert.equal(row1.querySelector('.slot-index-badge').textContent, '1');
+  assert.equal(row2.querySelector('.slot-index-badge').textContent, '2');
+  assert.equal(commits.length, 0, 'No persistence before drop');
+
+  // 4) Release commits once immediately and runs FLIP drop settle on target row
+  document.dispatchEvent({ type: 'pointerup', clientX: 120, clientY: 186 });
+  assert.equal(listEl.classList.contains('is-dragging-list'), false);
+  assert.deepEqual(commits, [['context', 'quotas', 'metrics']]);
+  assert.equal(row2.classList.contains('is-settling'), true, 'Target row enters smooth drop settle');
+  assert.equal(row2.style.transform, 'translate3d(0.00px, 1.50px, 0) scale(1.015)');
+  await new Promise((r) => setTimeout(r, 25));
+  assert.equal(row2.style.transform, 'translate3d(0px, 0px, 0)', 'Settle transitions smoothly to resting slot');
+
+  // 5) Drag and press Escape -> cleanly reverts order and clears drag classes
+  const row0Handle = listEl.children[0].querySelector('.slot-drag-handle');
+  row0Handle.dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 10,
+    clientY: 114,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 10, clientY: 155, preventDefault() {} });
+  assert.deepEqual(previews.at(-1), ['quotas', 'context', 'metrics']);
+  document.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.equal(listEl.classList.contains('is-dragging-list'), false);
+  assert.deepEqual(comp.refs.getItems(), ['context', 'quotas', 'metrics']);
+  assert.equal(commits.length, 1, 'Cancelled drag does not commit');
 });
