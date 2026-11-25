@@ -373,6 +373,7 @@ export const SessionMigrationCard = defineComponent({
     function syncControlsAndList() {
       const visible = Boolean(catalog?.available);
       patchAttr(rootEl, 'hidden', !visible);
+      props?.onStateChange?.({ status: visible ? 'available' : 'unavailable' });
       if (!visible) {
         props?.onLayoutChange?.();
         return;
@@ -655,6 +656,9 @@ export const SessionMigrationCard = defineComponent({
     async function loadCatalog(force = false) {
       if (isLoading || (hasLoadedOnce && !force)) return;
       isLoading = true;
+      if (!catalog) {
+        props?.onStateChange?.({ status: 'loading' });
+      }
       if (refreshBtn) patchAttr(refreshBtn, 'disabled', true);
       try {
         const res = await loadCatalogFn();
@@ -664,11 +668,15 @@ export const SessionMigrationCard = defineComponent({
           catalog = res;
           ensureValidSelectionDefaults();
           syncControlsAndList();
+        } else {
+          patchAttr(rootEl, 'hidden', true);
+          props?.onStateChange?.({ status: 'unavailable' });
         }
       } catch {
         // 本地目录或 API 暂不可用时静默隐藏卡片，避免干扰其他设置项
         if (!destroyed && !catalog) {
           patchAttr(rootEl, 'hidden', true);
+          props?.onStateChange?.({ status: 'error' });
         }
       } finally {
         isLoading = false;

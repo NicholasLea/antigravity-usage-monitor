@@ -28,7 +28,6 @@ import {
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch.js';
 import { BridgeStatusNotice } from '../../components/settings/BridgeStatusNotice.js';
-import { SessionMigrationCard } from '../../components/settings/SessionMigrationCard.js';
 
 function formatQuotaReservationLogForClipboard(snapshot) {
   const safe = snapshot && typeof snapshot === 'object' ? snapshot : {};
@@ -817,18 +816,11 @@ export const SettingsOtherTab = defineComponent({
       ]),
     ]);
 
-    const sessionMigrationCard = SessionMigrationCard({
-      onLayoutChange: () => {
-        getProps()?.onLayoutChange?.();
-      },
-    });
-
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       modelPanel,
       experimentalPanel,
       baselinePanel,
       maintPanel,
-      sessionMigrationCard.el,
     ]);
 
     function renderSettings(
@@ -867,7 +859,6 @@ export const SettingsOtherTab = defineComponent({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
       renderContextWindows();
-      void sessionMigrationCard.refs.ensureLoaded();
     }
 
     function refreshLabels() {
@@ -909,7 +900,6 @@ export const SettingsOtherTab = defineComponent({
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
-      sessionMigrationCard.refs.refreshLabels();
     }
 
     onCleanup(() => {
@@ -924,7 +914,6 @@ export const SettingsOtherTab = defineComponent({
       ctxSwarmToggle.destroy();
       ctxModelSelect.destroy();
       ctxWindowSelect.destroy();
-      sessionMigrationCard.destroy();
     });
 
     return {
@@ -938,7 +927,6 @@ export const SettingsOtherTab = defineComponent({
         ctxSwarmToggle,
         ctxModelSelect,
         ctxWindowSelect,
-        sessionMigrationCard,
         rebuildCacheBtn,
         resetAllBtn,
         exportJsonBtn,

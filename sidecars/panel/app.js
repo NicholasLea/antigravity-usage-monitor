@@ -1429,7 +1429,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'nav.overview': '实时监控',
   'nav.consumption': '用量统计',
   'nav.steps': '调用明细',
-  'nav.settings': '偏好设置',
+  'nav.settings': '控制中心',
 
   // Top Session Header
   'header.followLatest': '跟随最新会话',
@@ -1909,12 +1909,16 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'stepCol.cost.th': '费用',
   'stepCol.cost.opt': '单步费用 ($)',
 
-  // Preferences (3-Tab Modular Settings)
+  // Control Center (5-Tab Modular Settings)
   'settings.subTab.general': '常规',
   'settings.subTab.structure': '结构',
+  'settings.subTab.sessions': '会话',
   'settings.subTab.account': '账号',
   'settings.subTab.other': '其他',
-  'settings.subTab.aria': '偏好设置分类切换',
+  'settings.subTab.aria': '控制中心分类切换',
+  'settings.sessions.loading': '正在扫描本地客户端会话目录…',
+  'settings.sessions.unavailableDesc': '当前仅检测到 1 个 Antigravity 客户端目录。安装多个端（Antigravity 2.0、IDE 或 CLI）后，可在此跨端迁移或克隆历史会话。',
+  'settings.sessions.rescanBtn': '重新检测',
   'settings.account.current': '当前账号',
   'settings.account.signedOut': '未登录',
   'settings.account.unknown': '暂未获取账号状态',
@@ -2457,7 +2461,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'nav.overview': 'Live',
   'nav.consumption': 'Usage',
   'nav.steps': 'Steps',
-  'nav.settings': 'Settings',
+  'nav.settings': 'Controls',
 
   // Top Session Header
   'header.followLatest': 'Follow Latest Session',
@@ -2937,11 +2941,15 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'stepCol.cost.th': 'Cost',
   'stepCol.cost.opt': 'Step Cost ($)',
 
-  // Preferences (3-Tab Modular Settings)
+  // Control Center (5-Tab Modular Settings)
   'settings.subTab.general': 'General',
   'settings.subTab.structure': 'Structure',
+  'settings.subTab.sessions': 'Sessions',
   'settings.subTab.account': 'Account',
   'settings.subTab.other': 'Other',
+  'settings.sessions.loading': 'Scanning local client session directories…',
+  'settings.sessions.unavailableDesc': 'Only one Antigravity client directory was detected. Once multiple clients (Antigravity 2.0, IDE, or CLI) are installed, you can move or clone sessions here.',
+  'settings.sessions.rescanBtn': 'Re-scan',
   'settings.account.current': 'Current account',
   'settings.account.signedOut': 'Signed out',
   'settings.account.unknown': 'Account status unavailable',
@@ -3059,7 +3067,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.account.win5h': '5 Hours',
   'settings.account.winWeekly': 'Weekly',
   'settings.account.trendEmpty': 'No quota history recorded in the selected time range.',
-  'settings.subTab.aria': 'Preferences category tabs',
+  'settings.subTab.aria': 'Control Center category tabs',
   'settings.saving': 'Saving…',
   'settings.saved': 'Saved',
   'settings.saveFailed': 'Save failed',
@@ -9116,7 +9124,7 @@ const uiStore = createReactiveStore({
   activeView: 'overview',
   monitorVisible: true,
   stepsSubTab: 'steps', // 'steps' | 'models'
-  settingsSubTab: 'general', // 'general' | 'structure' | 'account' | 'other'
+  settingsSubTab: 'general', // 'general' | 'structure' | 'sessions' | 'account' | 'other'
   settingsStructureTab: 'mount', // 'mount' | 'hover' | 'overview' | 'steps'
   selectedAgentScope: 'all', // 'all' | 'main' | <subagent cascadeId>
   ctxInspectorAgentId: 'main', // 'main' | 'auto' | <subagent cascadeId>
@@ -31518,6 +31526,7 @@ const SessionMigrationCard = defineComponent({
     function syncControlsAndList() {
       const visible = Boolean(catalog?.available);
       patchAttr(rootEl, 'hidden', !visible);
+      props?.onStateChange?.({ status: visible ? 'available' : 'unavailable' });
       if (!visible) {
         props?.onLayoutChange?.();
         return;
@@ -31800,6 +31809,9 @@ const SessionMigrationCard = defineComponent({
     async function loadCatalog(force = false) {
       if (isLoading || (hasLoadedOnce && !force)) return;
       isLoading = true;
+      if (!catalog) {
+        props?.onStateChange?.({ status: 'loading' });
+      }
       if (refreshBtn) patchAttr(refreshBtn, 'disabled', true);
       try {
         const res = await loadCatalogFn();
@@ -31809,11 +31821,15 @@ const SessionMigrationCard = defineComponent({
           catalog = res;
           ensureValidSelectionDefaults();
           syncControlsAndList();
+        } else {
+          patchAttr(rootEl, 'hidden', true);
+          props?.onStateChange?.({ status: 'unavailable' });
         }
       } catch {
         // 本地目录或 API 暂不可用时静默隐藏卡片，避免干扰其他设置项
         if (!destroyed && !catalog) {
           patchAttr(rootEl, 'hidden', true);
+          props?.onStateChange?.({ status: 'error' });
         }
       } finally {
         isLoading = false;
@@ -34822,6 +34838,109 @@ const SettingsStructureTab = defineComponent({
 return { SettingsStructureTab };
 })();
 
+// --- src/views/settings/SettingsSessionsTab.js ---
+const { SettingsSessionsTab } = (() => {
+/**
+ * @fileoverview Control Center Tab 3: `SettingsSessionsTab.js` ("会话").
+ * Hosts cross-client session migration (`SessionMigrationCard`) and displays a
+ * clean status fallback when the host only has a single Antigravity client installed.
+ */
+
+
+const SettingsSessionsTab = defineComponent({
+  name: 'SettingsSessionsTab',
+  setup({ getProps, onCleanup }) {
+    let migrationStatus = 'loading';
+
+    const emptyTitleEl = h('span', { text: t('settings.oth.migTitle') });
+    const emptyDescEl = h('p', {
+      className: 'settings-hint-text',
+      text: t('settings.sessions.loading'),
+    });
+    const rescanBtnTextEl = h('span', { text: t('settings.sessions.rescanBtn') });
+    const rescanBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-ghost-sm',
+        hidden: true,
+        onClick: () => {
+          void sessionMigrationCard.refs.reload();
+        },
+      },
+      [createSvgIcon('refresh', { size: 12 }), rescanBtnTextEl]
+    );
+
+    const emptyPanel = h('section', { className: 'panel sessions-empty-panel' }, [
+      h('div', { className: 'panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('layers', { size: 13 }),
+          emptyTitleEl,
+        ]),
+        rescanBtn,
+      ]),
+      emptyDescEl,
+    ]);
+
+    function syncEmptyFallback() {
+      const showFallback = migrationStatus !== 'available';
+      patchAttr(emptyPanel, 'hidden', !showFallback);
+      if (!showFallback) return;
+      const isLoading = migrationStatus === 'loading';
+      patchText(
+        emptyDescEl,
+        isLoading ? t('settings.sessions.loading') : t('settings.sessions.unavailableDesc')
+      );
+      patchAttr(rescanBtn, 'hidden', isLoading);
+    }
+
+    const sessionMigrationCard = SessionMigrationCard({
+      onLayoutChange: () => {
+        getProps()?.onLayoutChange?.();
+      },
+      onStateChange: (next) => {
+        const status = String(next?.status || '').trim();
+        if (!status) return;
+        migrationStatus = status;
+        syncEmptyFallback();
+        getProps()?.onLayoutChange?.();
+      },
+    });
+
+    const rootEl = h('div', { className: 'settings-tab-stack' }, [
+      sessionMigrationCard.el,
+      emptyPanel,
+    ]);
+
+    syncEmptyFallback();
+
+    function refreshLabels() {
+      patchText(emptyTitleEl, t('settings.oth.migTitle'));
+      patchText(rescanBtnTextEl, t('settings.sessions.rescanBtn'));
+      syncEmptyFallback();
+      sessionMigrationCard.refs.refreshLabels();
+    }
+
+    onCleanup(() => {
+      sessionMigrationCard.destroy();
+    });
+
+    return {
+      el: rootEl,
+      refs: {
+        sessionMigrationCard,
+        emptyPanel,
+        rescanBtn,
+        ensureLoaded: () => sessionMigrationCard.refs.ensureLoaded(),
+        reload: () => sessionMigrationCard.refs.reload(),
+        refreshLabels,
+      },
+    };
+  },
+});
+return { SettingsSessionsTab };
+})();
+
 // --- src/views/settings/SettingsAccountTab.js ---
 const { SettingsAccountTab } = (() => {
 /**
@@ -37141,18 +37260,11 @@ const SettingsOtherTab = defineComponent({
       ]),
     ]);
 
-    const sessionMigrationCard = SessionMigrationCard({
-      onLayoutChange: () => {
-        getProps()?.onLayoutChange?.();
-      },
-    });
-
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       modelPanel,
       experimentalPanel,
       baselinePanel,
       maintPanel,
-      sessionMigrationCard.el,
     ]);
 
     function renderSettings(
@@ -37191,7 +37303,6 @@ const SettingsOtherTab = defineComponent({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
       renderContextWindows();
-      void sessionMigrationCard.refs.ensureLoaded();
     }
 
     function refreshLabels() {
@@ -37233,7 +37344,6 @@ const SettingsOtherTab = defineComponent({
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
-      sessionMigrationCard.refs.refreshLabels();
     }
 
     onCleanup(() => {
@@ -37248,7 +37358,6 @@ const SettingsOtherTab = defineComponent({
       ctxSwarmToggle.destroy();
       ctxModelSelect.destroy();
       ctxWindowSelect.destroy();
-      sessionMigrationCard.destroy();
     });
 
     return {
@@ -37262,7 +37371,6 @@ const SettingsOtherTab = defineComponent({
         ctxSwarmToggle,
         ctxModelSelect,
         ctxWindowSelect,
-        sessionMigrationCard,
         rebuildCacheBtn,
         resetAllBtn,
         exportJsonBtn,
@@ -41379,8 +41487,8 @@ return { mergeSelectedAgentUnits, StepsDetailView };
 // --- src/views/SettingsView.js ---
 const { SHOW_ACCOUNT_TAB, SettingsView } = (() => {
 /**
- * @fileoverview View 4: Modular preferences ("常规" / "结构" / "账号" / "其他").
- * Orchestrates the four preference tabs
+ * @fileoverview View 4: Control Center ("常规" / "结构" / "会话" / "账号" / "其他").
+ * Orchestrates the five modular Control Center tabs
  * with top sub-navigation and a shared `CustomScrollbar` viewport.
  */
 
@@ -41391,6 +41499,7 @@ function getSettingsSubTabOptions() {
   return [
     { value: 'general', label: t('settings.subTab.general') },
     { value: 'structure', label: t('settings.subTab.structure') },
+    { value: 'sessions', label: t('settings.subTab.sessions') },
     ...(SHOW_ACCOUNT_TAB ? [{ value: 'account', label: t('settings.subTab.account') }] : []),
     { value: 'other', label: t('settings.subTab.other') },
   ];
@@ -41421,6 +41530,7 @@ const SettingsView = defineComponent({
 
     const generalTab = SettingsGeneralTab({ onLayoutChange: refreshScroll });
     const structureTab = SettingsStructureTab({ onLayoutChange: refreshScroll });
+    const sessionsTab = SettingsSessionsTab({ onLayoutChange: refreshScroll });
     const accountTab = SettingsAccountTab({ onLayoutChange: refreshScroll });
     const otherTab = SettingsOtherTab({ onLayoutChange: refreshScroll });
 
@@ -41429,6 +41539,7 @@ const SettingsView = defineComponent({
     function applyActiveSubTab(subTab, activeView) {
       const target =
         subTab === 'structure' ||
+        subTab === 'sessions' ||
         subTab === 'other' ||
         (accountTab && subTab === 'account')
           ? subTab
@@ -41437,7 +41548,11 @@ const SettingsView = defineComponent({
       patchAttr(generalTab.el, 'hidden', target !== 'general');
       patchAttr(structureTab.el, 'hidden', target !== 'structure');
       patchAttr(structureTab.refs.thirdNavBar, 'hidden', target !== 'structure');
+      patchAttr(sessionsTab.el, 'hidden', target !== 'sessions');
       patchAttr(otherTab.el, 'hidden', target !== 'other');
+      if (target === 'sessions' && activeView === 'settings') {
+        void sessionsTab.refs.ensureLoaded();
+      }
       if (accountTab) {
         patchAttr(accountTab.el, 'hidden', target !== 'account');
         if (activeView === 'settings' && !preloadedAccountOnce) {
@@ -41455,8 +41570,8 @@ const SettingsView = defineComponent({
       'div',
       {},
       accountTab
-        ? [generalTab.el, structureTab.el, accountTab.el, otherTab.el]
-        : [generalTab.el, structureTab.el, otherTab.el]
+        ? [generalTab.el, structureTab.el, sessionsTab.el, accountTab.el, otherTab.el]
+        : [generalTab.el, structureTab.el, sessionsTab.el, otherTab.el]
     );
     viewScrollbar = CustomScrollbar({
       contentEl: contentContainer,
@@ -41490,6 +41605,8 @@ const SettingsView = defineComponent({
             telemetry?.quotas
           );
         }
+      } else if (settingsSubTab === 'sessions') {
+        void sessionsTab.refs.ensureLoaded();
       } else if (settingsSubTab === 'other') {
         if (settings) {
           otherTab.refs.renderSettings(
@@ -41544,11 +41661,13 @@ const SettingsView = defineComponent({
       (st) => st.locale,
       () => {
         subNavSwitch.setProps({
+          ariaLabel: t('settings.subTab.aria'),
           modelValue: uiStore.getState().settingsSubTab || 'general',
           options: getSettingsSubTabOptions(),
         });
         generalTab.refs.refreshLabels();
         structureTab.refs.refreshLabels();
+        sessionsTab.refs.refreshLabels();
         accountTab?.refs.refreshLabels();
         otherTab.refs.refreshLabels();
         refreshScroll();
@@ -41562,6 +41681,7 @@ const SettingsView = defineComponent({
       subNavSwitch.destroy();
       generalTab.destroy();
       structureTab.destroy();
+      sessionsTab.destroy();
       accountTab?.destroy();
       otherTab.destroy();
       viewScrollbar.destroy();
@@ -41573,6 +41693,7 @@ const SettingsView = defineComponent({
         subNavSwitch,
         generalTab,
         structureTab,
+        sessionsTab,
         accountTab,
         otherTab,
         viewScrollbar,
@@ -41580,6 +41701,7 @@ const SettingsView = defineComponent({
         windowMountSelect: structureTab.refs.windowMountSelect,
         multiSessionToggle: structureTab.refs.multiSessionToggle,
         topbarSlotsList: structureTab.refs.topbarSlotsList,
+        sessionMigrationCard: sessionsTab.refs.sessionMigrationCard,
         stepModelSelect: otherTab.refs.stepModelSelect,
         autoUpdateSelect: generalTab.refs.autoUpdateSelect,
       },

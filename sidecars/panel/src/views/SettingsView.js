@@ -1,6 +1,6 @@
 /**
- * @fileoverview View 4: Modular preferences ("常规" / "结构" / "账号" / "其他").
- * Orchestrates the four preference tabs
+ * @fileoverview View 4: Control Center ("常规" / "结构" / "会话" / "账号" / "其他").
+ * Orchestrates the five modular Control Center tabs
  * with top sub-navigation and a shared `CustomScrollbar` viewport.
  */
 
@@ -14,6 +14,7 @@ import { SegmentedControl } from '../components/ui/SegmentedControl.js';
 import { SettingsAccountTab } from './settings/SettingsAccountTab.js';
 import { SettingsGeneralTab } from './settings/SettingsGeneralTab.js';
 import { SettingsOtherTab } from './settings/SettingsOtherTab.js';
+import { SettingsSessionsTab } from './settings/SettingsSessionsTab.js';
 import { SettingsStructureTab } from './settings/SettingsStructureTab.js';
 
 export const SHOW_ACCOUNT_TAB = true;
@@ -22,6 +23,7 @@ function getSettingsSubTabOptions() {
   return [
     { value: 'general', label: t('settings.subTab.general') },
     { value: 'structure', label: t('settings.subTab.structure') },
+    { value: 'sessions', label: t('settings.subTab.sessions') },
     ...(SHOW_ACCOUNT_TAB ? [{ value: 'account', label: t('settings.subTab.account') }] : []),
     { value: 'other', label: t('settings.subTab.other') },
   ];
@@ -52,6 +54,7 @@ export const SettingsView = defineComponent({
 
     const generalTab = SettingsGeneralTab({ onLayoutChange: refreshScroll });
     const structureTab = SettingsStructureTab({ onLayoutChange: refreshScroll });
+    const sessionsTab = SettingsSessionsTab({ onLayoutChange: refreshScroll });
     const accountTab = SettingsAccountTab({ onLayoutChange: refreshScroll });
     const otherTab = SettingsOtherTab({ onLayoutChange: refreshScroll });
 
@@ -60,6 +63,7 @@ export const SettingsView = defineComponent({
     function applyActiveSubTab(subTab, activeView) {
       const target =
         subTab === 'structure' ||
+        subTab === 'sessions' ||
         subTab === 'other' ||
         (accountTab && subTab === 'account')
           ? subTab
@@ -68,7 +72,11 @@ export const SettingsView = defineComponent({
       patchAttr(generalTab.el, 'hidden', target !== 'general');
       patchAttr(structureTab.el, 'hidden', target !== 'structure');
       patchAttr(structureTab.refs.thirdNavBar, 'hidden', target !== 'structure');
+      patchAttr(sessionsTab.el, 'hidden', target !== 'sessions');
       patchAttr(otherTab.el, 'hidden', target !== 'other');
+      if (target === 'sessions' && activeView === 'settings') {
+        void sessionsTab.refs.ensureLoaded();
+      }
       if (accountTab) {
         patchAttr(accountTab.el, 'hidden', target !== 'account');
         if (activeView === 'settings' && !preloadedAccountOnce) {
@@ -86,8 +94,8 @@ export const SettingsView = defineComponent({
       'div',
       {},
       accountTab
-        ? [generalTab.el, structureTab.el, accountTab.el, otherTab.el]
-        : [generalTab.el, structureTab.el, otherTab.el]
+        ? [generalTab.el, structureTab.el, sessionsTab.el, accountTab.el, otherTab.el]
+        : [generalTab.el, structureTab.el, sessionsTab.el, otherTab.el]
     );
     viewScrollbar = CustomScrollbar({
       contentEl: contentContainer,
@@ -121,6 +129,8 @@ export const SettingsView = defineComponent({
             telemetry?.quotas
           );
         }
+      } else if (settingsSubTab === 'sessions') {
+        void sessionsTab.refs.ensureLoaded();
       } else if (settingsSubTab === 'other') {
         if (settings) {
           otherTab.refs.renderSettings(
@@ -175,11 +185,13 @@ export const SettingsView = defineComponent({
       (st) => st.locale,
       () => {
         subNavSwitch.setProps({
+          ariaLabel: t('settings.subTab.aria'),
           modelValue: uiStore.getState().settingsSubTab || 'general',
           options: getSettingsSubTabOptions(),
         });
         generalTab.refs.refreshLabels();
         structureTab.refs.refreshLabels();
+        sessionsTab.refs.refreshLabels();
         accountTab?.refs.refreshLabels();
         otherTab.refs.refreshLabels();
         refreshScroll();
@@ -193,6 +205,7 @@ export const SettingsView = defineComponent({
       subNavSwitch.destroy();
       generalTab.destroy();
       structureTab.destroy();
+      sessionsTab.destroy();
       accountTab?.destroy();
       otherTab.destroy();
       viewScrollbar.destroy();
@@ -204,6 +217,7 @@ export const SettingsView = defineComponent({
         subNavSwitch,
         generalTab,
         structureTab,
+        sessionsTab,
         accountTab,
         otherTab,
         viewScrollbar,
@@ -211,6 +225,7 @@ export const SettingsView = defineComponent({
         windowMountSelect: structureTab.refs.windowMountSelect,
         multiSessionToggle: structureTab.refs.multiSessionToggle,
         topbarSlotsList: structureTab.refs.topbarSlotsList,
+        sessionMigrationCard: sessionsTab.refs.sessionMigrationCard,
         stepModelSelect: otherTab.refs.stepModelSelect,
         autoUpdateSelect: generalTab.refs.autoUpdateSelect,
       },

@@ -18,7 +18,7 @@ export const uiStore = createReactiveStore({
   activeView: 'overview',
   monitorVisible: true,
   stepsSubTab: 'steps', // 'steps' | 'models'
-  settingsSubTab: 'general', // 'general' | 'structure' | 'account' | 'other'
+  settingsSubTab: 'general', // 'general' | 'structure' | 'sessions' | 'account' | 'other'
   settingsStructureTab: 'mount', // 'mount' | 'hover' | 'overview' | 'steps'
   selectedAgentScope: 'all', // 'all' | 'main' | <subagent cascadeId>
   ctxInspectorAgentId: 'main', // 'main' | 'auto' | <subagent cascadeId>

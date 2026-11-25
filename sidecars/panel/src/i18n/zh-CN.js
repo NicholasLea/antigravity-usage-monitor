@@ -8,7 +8,7 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'nav.overview': '实时监控',
   'nav.consumption': '用量统计',
   'nav.steps': '调用明细',
-  'nav.settings': '偏好设置',
+  'nav.settings': '控制中心',
 
   // Top Session Header
   'header.followLatest': '跟随最新会话',
@@ -488,12 +488,16 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'stepCol.cost.th': '费用',
   'stepCol.cost.opt': '单步费用 ($)',
 
-  // Preferences (3-Tab Modular Settings)
+  // Control Center (5-Tab Modular Settings)
   'settings.subTab.general': '常规',
   'settings.subTab.structure': '结构',
+  'settings.subTab.sessions': '会话',
   'settings.subTab.account': '账号',
   'settings.subTab.other': '其他',
-  'settings.subTab.aria': '偏好设置分类切换',
+  'settings.subTab.aria': '控制中心分类切换',
+  'settings.sessions.loading': '正在扫描本地客户端会话目录…',
+  'settings.sessions.unavailableDesc': '当前仅检测到 1 个 Antigravity 客户端目录。安装多个端（Antigravity 2.0、IDE 或 CLI）后，可在此跨端迁移或克隆历史会话。',
+  'settings.sessions.rescanBtn': '重新检测',
   'settings.account.current': '当前账号',
   'settings.account.signedOut': '未登录',
   'settings.account.unknown': '暂未获取账号状态',

@@ -648,6 +648,7 @@ export function buildBundle(panelDir = PANEL_DIR) {
     'src/components/settings/HostI18nCard.js',
     'src/views/settings/SettingsGeneralTab.js',
     'src/views/settings/SettingsStructureTab.js',
+    'src/views/settings/SettingsSessionsTab.js',
     'src/views/settings/SettingsAccountTab.js',
     'src/views/settings/SettingsOtherTab.js',
     'src/components/layout/TopSessionHeader.js',

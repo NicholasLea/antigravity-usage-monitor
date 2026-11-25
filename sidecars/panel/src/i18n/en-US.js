@@ -8,7 +8,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'nav.overview': 'Live',
   'nav.consumption': 'Usage',
   'nav.steps': 'Steps',
-  'nav.settings': 'Settings',
+  'nav.settings': 'Controls',
 
   // Top Session Header
   'header.followLatest': 'Follow Latest Session',
@@ -488,11 +488,15 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'stepCol.cost.th': 'Cost',
   'stepCol.cost.opt': 'Step Cost ($)',
 
-  // Preferences (3-Tab Modular Settings)
+  // Control Center (5-Tab Modular Settings)
   'settings.subTab.general': 'General',
   'settings.subTab.structure': 'Structure',
+  'settings.subTab.sessions': 'Sessions',
   'settings.subTab.account': 'Account',
   'settings.subTab.other': 'Other',
+  'settings.sessions.loading': 'Scanning local client session directories…',
+  'settings.sessions.unavailableDesc': 'Only one Antigravity client directory was detected. Once multiple clients (Antigravity 2.0, IDE, or CLI) are installed, you can move or clone sessions here.',
+  'settings.sessions.rescanBtn': 'Re-scan',
   'settings.account.current': 'Current account',
   'settings.account.signedOut': 'Signed out',
   'settings.account.unknown': 'Account status unavailable',
@@ -610,7 +614,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.account.win5h': '5 Hours',
   'settings.account.winWeekly': 'Weekly',
   'settings.account.trendEmpty': 'No quota history recorded in the selected time range.',
-  'settings.subTab.aria': 'Preferences category tabs',
+  'settings.subTab.aria': 'Control Center category tabs',
   'settings.saving': 'Saving…',
   'settings.saved': 'Saved',
   'settings.saveFailed': 'Save failed',

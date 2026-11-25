@@ -1463,18 +1463,19 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const allPanes = popoverEl.querySelectorAll('.view-pane');
     const settingsRoot = popoverEl.querySelector('.settings-view-root');
     const subNavBtns = settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn');
-    assert.deepEqual(subNavBtns.map((button) => button.textContent), ['常规', '结构', '账号', '其他']);
+    assert.deepEqual(subNavBtns.map((button) => button.textContent), ['常规', '结构', '会话', '账号', '其他']);
     assert.match(
       stylesCss,
       /\.settings-subnav-bar\s+\.segmented\s*\{[^}]*grid-auto-flow:\s*column;[^}]*grid-auto-columns:\s*minmax\(0,\s*1fr\);/,
       'Settings subnav uses auto-sized equal columns regardless of visible tab count'
     );
-    const [generalPane, structurePane, accountPane, otherPane] = settingsRoot.querySelectorAll('.settings-tab-stack');
+    const [generalPane, structurePane, sessionsPane, accountPane, otherPane] = settingsRoot.querySelectorAll('.settings-tab-stack');
     const thirdNavBar = settingsRoot.querySelector('.settings-thirdnav-bar');
     assert.ok(thirdNavBar, '3rd-level structure menu bar mounted in SettingsView');
     assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden when General tab is active');
     assert.equal(generalPane.hasAttribute('hidden'), false, 'General tab active by default');
     assert.equal(structurePane.hasAttribute('hidden'), true);
+    assert.equal(sessionsPane.hasAttribute('hidden'), true);
     assert.equal(otherPane.hasAttribute('hidden'), true);
 
     // --- Tab 0: 常规 (languageSwitch, themeAccent, fontScaleSwitch, modernUiSwitch, hostI18nDepth, pluginUpdateMode) ---
@@ -1559,11 +1560,12 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.language, 'en-US');
     assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, 'Live');
-    assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, 'Settings');
+    assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, 'Controls');
     assert.equal(subNavBtns[0].textContent, 'General');
     assert.equal(subNavBtns[1].textContent, 'Structure');
-    assert.equal(subNavBtns[2].textContent, 'Account');
-    assert.equal(subNavBtns[3].textContent, 'Other');
+    assert.equal(subNavBtns[2].textContent, 'Sessions');
+    assert.equal(subNavBtns[3].textContent, 'Account');
+    assert.equal(subNavBtns[4].textContent, 'Other');
     langBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.language, 'auto');
@@ -1571,6 +1573,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.language, 'zh-CN');
     assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, '实时监控');
+    assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, '控制中心');
     assert.equal(subNavBtns[0].textContent, '常规');
 
     // Verify 3-tier update mode select (manual default -> off hides topbar/hover prompts -> auto -> manual)
@@ -2119,7 +2122,15 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       'Section reset restores monochrome speed classes in preview step table'
     );
 
+    // --- 会话 (dedicated Sessions tab housing SessionMigrationCard) ---
     subNavBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(sessionsPane.hasAttribute('hidden'), false, 'Sessions tab visible directly left of Account');
+    assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden on Sessions tab');
+    assert.ok(sessionsPane.querySelector('.smig-panel'), 'SessionMigrationCard mounted inside Sessions tab');
+    assert.equal(otherPane.querySelector('.smig-panel'), null, 'SessionMigrationCard removed from Other tab');
+
+    subNavBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 35));
     assert.equal(accountPane.hasAttribute('hidden'), false);
     assert.equal(accountPane.querySelector('.settings-account-identity').textContent, 'test@example.com');
@@ -2179,7 +2190,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.ok(accountPane.querySelectorAll('.settings-action-desc').some((el) => el.textContent.includes('正在重启 Antigravity')));
 
     // --- 其他 (model format, context limits, cache rebuild, reset) ---
-    subNavBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
+    subNavBtns[4].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(otherPane.hasAttribute('hidden'), false);
     assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden when switching to Other tab');
