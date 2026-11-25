@@ -880,6 +880,7 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.cacheDesc': '清空内存与磁盘步骤解析缓存并立即重扫全部会话',
   'settings.oth.rebuildBtn': '重建本地轨迹缓存',
   'settings.oth.rebuildingBtn': '重建中…',
+  'settings.oth.rebuildingProgress': '重建中 ({completed}/{total})…',
   'settings.oth.rebuildDone': '本地轨迹缓存已重建',
   'settings.oth.rebuildFailed': '缓存重建失败',
   'settings.oth.resetLabel': '恢复出厂偏好',

@@ -669,3 +669,825 @@ test('SQLite hardening: cold metadata vs peer append safety, mixed-case re-keyin
   assert.throws(() => retryStore.getCachedTrajectory(bakCid), /transient EBUSY/);
   assert.equal(retryStore.getCachedTrajectory(bakCid)?.steps?.length, 1, 'second read succeeds cleanly');
 });
+
+test('Non-blocking progressive cache rebuild: foreground active session priority, macrotask responsiveness, chunked LRU bounds, on-demand historical load, and 100% final token accuracy', async (t) => {
+  const sqliteMod = process.getBuiltinModule?.('node:sqlite');
+  if (!sqliteMod?.DatabaseSync) {
+    t.skip('node:sqlite unavailable');
+    return;
+  }
+  const { DatabaseSync } = sqliteMod;
+
+  // 1. Direct store verification: chunked flush of 30 sessions with hotSessionLimit=12 keeps hot RAM bounded and dirty queue = 0
+  const lruDir = mkdtempSync(join(tmpdir(), 'ag-um-chunk-lru-'));
+  t.after(() => {
+    rmSync(lruDir, { recursive: true, force: true });
+  });
+  const boundedStore = createTrajectoryCacheStore({
+    cacheFilePath: join(lruDir, 'trajectory_usage_cache.json'),
+    sqliteFilePath: join(lruDir, 'trajectory_store.sqlite'),
+    enableSqlite: true,
+    hotSessionLimit: 12,
+    loadJsonFn: loadJsonHelper,
+  });
+  for (let i = 1; i <= 30; i++) {
+    const cid = `${String(i).padStart(8, '0')}-aaaa-4aaa-8aaa-aaaaaaaaaaaa`;
+    boundedStore.setCachedTrajectory(cid, {
+      signature: `v4:chunk:${i}`,
+      title: `Chunk Session ${i}`,
+      steps: [makeRichStep(1, { turnPrompt: `Chunk prompt ${i}` })],
+    });
+    if (boundedStore.getDirtySessionCount() >= 10) {
+      assert.equal(boundedStore.flushTrajectoryCacheNow(), true);
+      assert.equal(boundedStore.getDirtySessionCount(), 0);
+      assert.equal(
+        boundedStore.getHotSessionCount() <= 12,
+        true,
+        'chunked flush evicts overflow cold sessions immediately instead of pinning all dirty sessions in RAM'
+      );
+    }
+  }
+  assert.equal(boundedStore.getHotSessionCount(), 12);
+  // Cold session #1 still hydrates rich detail_json losslessly on demand
+  const hydratedFirst = boundedStore.getHydratedTrajectory('00000001-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  assert.equal(hydratedFirst?.steps?.[0]?.turnPrompt, 'Chunk prompt 1');
+
+  // 2. End-to-end progressive rebuild across 45 live .db sessions + 1 archived deleted session
+  const root = mkdtempSync(join(tmpdir(), 'ag-um-progressive-rebuild-'));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const geminiDir = join(root, '.gemini');
+  const agyDir = join(geminiDir, 'antigravity');
+  const convDir = join(agyDir, 'conversations');
+  const dataDir = join(root, 'plugin-data');
+  mkdirSync(convDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true });
+
+  const sumDbPath = join(agyDir, 'conversation_summaries.db');
+  const sumDb = new DatabaseSync(sumDbPath);
+  sumDb.exec(`
+    CREATE TABLE conversation_summaries (
+      conversation_id TEXT PRIMARY KEY,
+      title TEXT,
+      preview TEXT,
+      status TEXT,
+      source TEXT,
+      parent_conversation_id TEXT,
+      nesting_depth INTEGER,
+      agent_name TEXT,
+      not_fully_idle INTEGER,
+      killed INTEGER,
+      step_count INTEGER,
+      last_modified_time TEXT,
+      app_data_dir TEXT,
+      raw_summary BLOB
+    );
+    CREATE TABLE conversation_parents (conversation_id TEXT, parent_id TEXT);
+  `);
+  const insSum = sumDb.prepare(
+    "INSERT INTO conversation_summaries (conversation_id, title, status, parent_conversation_id, step_count, last_modified_time, app_data_dir, raw_summary) VALUES (?, ?, 'CASCADE_RUN_STATUS_IDLE', '', 2, ?, 'antigravity', ?)"
+  );
+
+  const baseSec = Math.floor(Date.parse('2026-11-22T00:00:00Z') / 1000);
+  const createConvSqlite = (cid, createdOffsetSec, promptText, inTok, outTok) => {
+    const p = join(convDir, `${cid}.db`);
+    const db = new DatabaseSync(p);
+    db.exec(`
+      CREATE TABLE trajectory_meta (trajectory_id TEXT, cascade_id TEXT, trajectory_type INTEGER, source INTEGER);
+      CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);
+      CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+    `);
+    db.prepare('INSERT INTO trajectory_meta VALUES (?, ?, 1, 1)').run(cid, cid);
+    db.prepare('INSERT INTO steps VALUES (0, 14, 3, ?, ?)').run(
+      Buffer.concat([
+        encodeFieldBytes(1, encodeTimestamp(baseSec + createdOffsetSec)),
+        encodeFieldBytes(20, Buffer.concat([encodeFieldVarint(2, 0), encodeFieldBytes(4, cid)])),
+      ]),
+      encodeFieldBytes(19, encodeFieldBytes(2, promptText))
+    );
+    db.prepare('INSERT INTO steps VALUES (1, 15, 3, ?, ?)').run(
+      encodeStepMeta({
+        createdSec: baseSec + createdOffsetSec + 5,
+        finishedSec: baseSec + createdOffsetSec + 9,
+        stepIndex: 1,
+        originCid: cid,
+        inputTokens: inTok,
+        outputTokens: outTok,
+      }),
+      encodeFieldBytes(20, encodeFieldBytes(1, `Response for ${promptText}`))
+    );
+    db.close();
+    return p;
+  };
+
+  const liveCids = [];
+  for (let i = 1; i <= 45; i++) {
+    const cid = `${String(i).padStart(8, '0')}-bbbb-4bbb-8bbb-bbbbbbbbbbbb`;
+    liveCids.push(cid);
+    const modIso = new Date((baseSec + (100 - i) * 60) * 1000).toISOString();
+    insSum.run(cid, `Live Session #${i}`, modIso, Buffer.alloc(0));
+    createConvSqlite(cid, (100 - i) * 60, `Prompt for live session #${i}`, 10_000, 1_000);
+  }
+  const cidActive = liveCids[0];
+  const cidOldHistorical = liveCids[44]; // oldest session -> guaranteed deferred past foreground budget (16)
+
+  const cidDeleted = 'ffffffff-9999-4999-8999-999999999999';
+  insSum.run(cidDeleted, 'Archived Deleted Session', '2026-11-21T00:00:00Z', Buffer.alloc(0));
+  const deletedDbPath = createConvSqlite(cidDeleted, -3600, 'Archived prompt forever', 50_000, 5_000);
+  sumDb.close();
+
+  const apiUrl = new URL('../backend/api-actions.mjs', import.meta.url).href;
+  const scannerUrl = new URL('../backend/local-scanner.mjs', import.meta.url).href;
+  const cfgUrl = new URL('../backend/config.mjs', import.meta.url).href;
+  const epUrl = new URL('../backend/endpoint-registry.mjs', import.meta.url).href;
+
+  const script = `
+    import { unlinkSync } from 'node:fs';
+    import {
+      executeRebuildCacheAction,
+      executeSettingsAction,
+      executeTelemetryAction,
+    } from ${JSON.stringify(apiUrl)};
+    import {
+      getLocalCacheRebuildStatus,
+      isLocalBackgroundRebuildActive,
+      stopLocalBackgroundCacheRebuild,
+    } from ${JSON.stringify(scannerUrl)};
+    import { flushTrajectoryCacheNow } from ${JSON.stringify(cfgUrl)};
+    import { getEndpointCacheStore } from ${JSON.stringify(epUrl)};
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+
+    const waitForDrainIdle = async (timeoutMs = 8000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (isLocalBackgroundRebuildActive() && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    };
+
+    // Initial full warm-up so all 46 sessions (45 live + 1 deleted-to-be) are stored in SQLite ledger
+    await executeTelemetryAction({ conversationId: ${JSON.stringify(cidActive)}, force: true });
+    await waitForDrainIdle();
+    const initialFull = JSON.parse(
+      (await executeTelemetryAction({ conversationId: ${JSON.stringify(cidActive)} })).body
+    );
+    flushTrajectoryCacheNow();
+    const initialTotalTokens = initialFull.consumption.account.totalTokens;
+
+    // Delete cidDeleted from Antigravity (.db + summary row) so it becomes archived
+    unlinkSync(${JSON.stringify(deletedDbPath)});
+    const sdb = new DatabaseSync(${JSON.stringify(sumDbPath)});
+    sdb.prepare('DELETE FROM conversation_summaries WHERE conversation_id = ?').run(${JSON.stringify(cidDeleted)});
+    sdb.close();
+
+    // Monitor event-loop responsiveness while rebuild + foreground + background drain execute
+    let heartbeatTicks = 0;
+    let maxLoopGapMs = 0;
+    let lastBeatMs = Date.now();
+    const heartbeat = setInterval(() => {
+      const now = Date.now();
+      heartbeatTicks += 1;
+      maxLoopGapMs = Math.max(maxLoopGapMs, now - lastBeatMs);
+      lastBeatMs = now;
+    }, 5);
+
+    const tClear0 = Date.now();
+    const rebuildRes1 = executeRebuildCacheAction();
+    const clearElapsedMs = Date.now() - tClear0;
+    const rebuildBody1 = JSON.parse(rebuildRes1.body);
+
+    // Foreground poll for active session returns BEFORE all 45 sessions are rebuilt!
+    const fgRes = JSON.parse(
+      (await executeTelemetryAction({ conversationId: ${JSON.stringify(cidActive)}, force: true })).body
+    );
+    const fgRebuildStatus = fgRes.cacheRebuild;
+
+    // Double-rebuild mid-drain cancels stale generation cleanly and restarts progressive rebuild
+    const rebuildRes2 = executeRebuildCacheAction();
+    const fgResAfterCancel = JSON.parse(
+      (await executeTelemetryAction({ conversationId: ${JSON.stringify(cidActive)}, force: true })).body
+    );
+
+    // Concurrent API requests while background drain is active: settings + on-demand deferred historical conversation
+    const [settingsDuringDrain, oldConvDuringDrain] = await Promise.all([
+      Promise.resolve(executeSettingsAction(undefined)),
+      executeTelemetryAction({
+        scope: 'conversation',
+        conversationId: ${JSON.stringify(cidOldHistorical)},
+      }),
+    ]);
+    const oldConvPayload = JSON.parse(oldConvDuringDrain.body);
+
+    await waitForDrainIdle();
+    clearInterval(heartbeat);
+
+    const finalPayload = JSON.parse(
+      (await executeTelemetryAction({ conversationId: ${JSON.stringify(cidActive)} })).body
+    );
+    const hotCountAfter = getEndpointCacheStore(null).getHotSessionCount();
+    await stopLocalBackgroundCacheRebuild();
+
+    console.log(JSON.stringify({
+      initialTotalTokens,
+      rebuild1Ok: rebuildRes1.ok,
+      rebuild2Ok: rebuildRes2.ok,
+      clearElapsedMs,
+      hintedTotal: rebuildBody1.totalLive || 0,
+      fgActiveCid: fgRes.activeConversation?.cascadeId,
+      fgActiveStepCount: fgRes.activeConversation?.recentSteps?.length || 0,
+      fgRebuildActive: Boolean(fgRebuildStatus?.active),
+      fgCompleted: fgRebuildStatus?.completed || 0,
+      fgTotal: fgRebuildStatus?.total || 0,
+      fgRemaining: fgRebuildStatus?.remaining || 0,
+      fgAfterCancelActive: Boolean(fgResAfterCancel.cacheRebuild?.active),
+      settingsStatusDuringDrain: settingsDuringDrain.status,
+      oldConvCid: oldConvPayload.activeConversation?.cascadeId,
+      oldConvStepCount: oldConvPayload.activeConversation?.recentSteps?.length || 0,
+      oldConvTurnPrompt: oldConvPayload.activeConversation?.recentSteps?.[0]?.turnPrompt || '',
+      heartbeatTicks,
+      maxLoopGapMs,
+      finalRebuildStatus: getLocalCacheRebuildStatus(),
+      finalTotalTokens: finalPayload.consumption?.account?.totalTokens || 0,
+      hotCountAfter,
+    }));
+  `;
+
+  const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '-e', script], {
+    env: {
+      ...process.env,
+      ANTIGRAVITY_GEMINI_DIR: geminiDir,
+      ANTIGRAVITY_APP_DATA_DIR: '',
+      USAGE_MONITOR_APP_DATA_DIR: '',
+      ANTIGRAVITY_EXECUTABLE_DATA_DIR: dataDir,
+      ANTIGRAVITY_LS_ADDRESS: 'test.invalid',
+    },
+  });
+
+  const out = JSON.parse(stdout.trim().split('\n').pop());
+  // 45 * (10k + 1k) + (50k + 5k) = 495,000 + 55,000 = 550,000
+  assert.equal(out.initialTotalTokens, 550_000);
+  assert.equal(out.rebuild1Ok, true);
+  assert.equal(out.rebuild2Ok, true);
+  assert.equal(out.clearElapsedMs < 1000, true, 'synchronous cache clear stays fast');
+  assert.equal(out.hintedTotal, 45);
+  assert.equal(out.fgActiveCid, cidActive);
+  assert.equal(out.fgActiveStepCount, 1, 'foreground active conversation steps ready immediately');
+  assert.equal(out.fgRebuildActive, true, 'background progressive drain scheduled for remaining historical sessions');
+  assert.equal(out.fgCompleted > 0 && out.fgCompleted < out.fgTotal, true);
+  assert.equal(out.fgRemaining > 0, true);
+  assert.equal(out.fgAfterCancelActive, true, 're-triggering rebuild cleanly cancels prior generation and starts new drain');
+  assert.equal(out.settingsStatusDuringDrain, 200, 'settings endpoint responds immediately during rebuild');
+  assert.equal(out.oldConvCid, cidOldHistorical);
+  assert.equal(out.oldConvStepCount, 1, 'clicking an undrained historical session loads its steps immediately on demand');
+  assert.match(out.oldConvTurnPrompt, /Prompt for live session #45/);
+  assert.equal(out.heartbeatTicks > 0, true, 'event loop timer macrotasks kept firing throughout progressive rebuild');
+  assert.equal(out.finalRebuildStatus.active, false);
+  assert.equal(out.finalRebuildStatus.remaining, 0);
+  assert.equal(out.finalRebuildStatus.completed, out.finalRebuildStatus.total);
+  assert.equal(out.finalTotalTokens, 550_000, 'all 45 live sessions + 1 archived deleted session accurately aggregated after drain');
+  assert.equal(out.hotCountAfter <= DEFAULT_HOT_SESSION_LRU_LIMIT, true, 'hot LRU stays strictly within 64-session cap');
+});
+
+test('SettingsOtherTab renders live progressive cacheRebuild status, supports locale hot-switching, and auto-recovers on background completion', async (t) => {
+  const { createMockDom } = await import('./mock-dom.mjs');
+  const { document } = createMockDom();
+
+  const origDocument = globalThis.document;
+  const origWindow = globalThis.window;
+  const origFetch = globalThis.fetch;
+  const mockFetch = async (url) => {
+    const u = String(url || '');
+    if (u.includes('/api/cache/rebuild')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          ok: true,
+          cacheRebuild: { active: false, completed: 0, total: 48, remaining: 48 },
+        }),
+        text: async () =>
+          JSON.stringify({
+            ok: true,
+            cacheRebuild: { active: false, completed: 0, total: 48, remaining: 48 },
+          }),
+      };
+    }
+    const telemetryBody = {
+      generatedAt: new Date().toISOString(),
+      account: { status: 'connected', name: 'tester@example.com' },
+      cacheRebuild: { active: true, completed: 17, total: 48, remaining: 31, updatedAtMs: 1000 },
+      settings: { language: 'zh-CN' },
+      quotaPools: [],
+      conversations: [],
+      activeConversation: { cascadeId: '', recentSteps: [], agents: [] },
+      consumption: { range: 'all', account: { totalTokens: 0 }, daily: [] },
+    };
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: async () => telemetryBody,
+      text: async () => JSON.stringify(telemetryBody),
+    };
+  };
+  globalThis.document = document;
+  globalThis.window = {
+    location: { origin: 'http://127.0.0.1:41234', href: 'http://127.0.0.1:41234/' },
+    addEventListener() {},
+    removeEventListener() {},
+    fetch: mockFetch,
+  };
+  globalThis.fetch = mockFetch;
+
+  const [{ setI18nLanguage }, { stopAsyncTelemetryLoop }, { SettingsOtherTab }] = await Promise.all([
+    import('../src/i18n/index.js'),
+    import('../src/store/telemetryStore.js'),
+    import('../src/views/settings/SettingsOtherTab.js'),
+  ]);
+  setI18nLanguage('zh-CN');
+  const tab = SettingsOtherTab({ onLayoutChange: () => {} });
+
+  t.after(() => {
+    stopAsyncTelemetryLoop();
+    tab.destroy();
+    setI18nLanguage('zh-CN');
+    globalThis.document = origDocument;
+    globalThis.window = origWindow;
+    globalThis.fetch = origFetch;
+  });
+
+  const baseSettings = { language: 'zh-CN', modelDisplayMode: 'short' };
+  tab.refs.renderSettings(baseSettings, [], null, 'win32', null, {
+    active: false,
+    completed: 0,
+    total: 0,
+    remaining: 0,
+  });
+
+  const rebuildBtn = tab.refs.rebuildCacheBtn;
+  const getMaintStatusText = () => {
+    const statuses = tab.el.querySelectorAll('.settings-panel-status');
+    return statuses[statuses.length - 1]?.textContent || '';
+  };
+
+  assert.equal(rebuildBtn.hasAttribute('disabled'), false);
+  assert.match(rebuildBtn.textContent, /重建本地轨迹缓存/);
+
+  // Click Rebuild -> foreground poll returns active progressive rebuild (17/48) after 220ms force-sync feedback minimum
+  rebuildBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+  await new Promise((r) => setTimeout(r, 260));
+
+  assert.equal(rebuildBtn.hasAttribute('disabled'), true, 'button stays disabled while background drain is active');
+  assert.match(rebuildBtn.textContent, /重建中 \(17\/48\)…/);
+  assert.equal(getMaintStatusText(), '重建中 (17/48)…');
+
+  // Hot-switch language to en-US during active rebuild
+  setI18nLanguage('en-US');
+  tab.refs.refreshLabels();
+  assert.equal(rebuildBtn.hasAttribute('disabled'), true);
+  assert.match(rebuildBtn.textContent, /Rebuilding \(17\/48\)…/);
+  assert.equal(getMaintStatusText(), 'Rebuilding (17/48)…');
+
+  // Next poll advances background rebuild progress (33/48)
+  tab.refs.renderSettings({ ...baseSettings, language: 'en-US' }, [], null, 'win32', null, {
+    active: true,
+    completed: 33,
+    total: 48,
+    remaining: 15,
+    updatedAtMs: 2000,
+  });
+  assert.match(rebuildBtn.textContent, /Rebuilding \(33\/48\)…/);
+  assert.equal(getMaintStatusText(), 'Rebuilding (33/48)…');
+
+  // Switch back to zh-CN and deliver background drain completion -> auto re-enable + completion toast
+  setI18nLanguage('zh-CN');
+  tab.refs.refreshLabels();
+  tab.refs.renderSettings(baseSettings, [], null, 'win32', null, {
+    active: false,
+    completed: 48,
+    total: 48,
+    remaining: 0,
+    updatedAtMs: 3000,
+  });
+  assert.equal(rebuildBtn.hasAttribute('disabled'), false, 'button re-enabled automatically once background rebuild finishes');
+  assert.match(rebuildBtn.textContent, /重建本地轨迹缓存/);
+  assert.equal(getMaintStatusText(), '本地轨迹缓存已重建');
+});
+
+test('Progressive sync & rebuild hardening: silent modified-session drain, mid-rebuild swarm subagents, depth-2 root promotion, generation isolation, standalone stop, peer-archive truncate safety, and view-cache clear', async (t) => {
+  const sqliteMod = process.getBuiltinModule?.('node:sqlite');
+  if (!sqliteMod?.DatabaseSync) {
+    t.skip('node:sqlite unavailable');
+    return;
+  }
+  const { DatabaseSync } = sqliteMod;
+
+  // 1. Peer-archive truncateAll safety: if another process archived a session while local store had empty memory,
+  // SQLite truncateAll never wipes is_archived = 1 rows.
+  const peerDir = mkdtempSync(join(tmpdir(), 'ag-um-peer-trunc-'));
+  t.after(() => {
+    rmSync(peerDir, { recursive: true, force: true });
+  });
+  const peerSqlPath = join(peerDir, 'trajectory_store.sqlite');
+  const storeA = createTrajectoryCacheStore({
+    cacheFilePath: join(peerDir, 'cache.json'),
+    sqliteFilePath: peerSqlPath,
+    enableSqlite: true,
+    loadJsonFn: loadJsonHelper,
+  });
+  // Warm storeA empty so loadedOnce = true with 0 entries
+  assert.equal(storeA.listCachedTrajectoryEntries().length, 0);
+
+  // Simulate peer process writing an archived row directly into SQLite while syncExternalChangesIfNeeded is bypassed
+  const peerDb = new DatabaseSync(peerSqlPath);
+  peerDb
+    .prepare(
+      'INSERT INTO conversations (cascade_id, lower_id, is_archived, step_count, write_seq, updated_at_ms, meta_json) VALUES (?, ?, 1, 1, 99, ?, ?)'
+    )
+    .run(
+      'deadbeef-0000-4000-8000-000000000001',
+      'deadbeef-0000-4000-8000-000000000001',
+      Date.now(),
+      JSON.stringify({ signature: 'v4:archived', title: 'Peer Archived', archived: true })
+    );
+  peerDb
+    .prepare(
+      'INSERT INTO steps (cascade_id, pos, accounting_json, detail_json) VALUES (?, 0, ?, ?)'
+    )
+    .run(
+      'deadbeef-0000-4000-8000-000000000001',
+      JSON.stringify([1, 0, 'MODEL_PLACEHOLDER_M429', 'gemini-4-carbon-high', 'Gemini 4 Carbon (High)', 'API_PROVIDER_GOOGLE_GEMINI', 1700000000000, 5000, 0, 500, 100, 400, 6.0]),
+      JSON.stringify({ turnPrompt: 'Preserved forever' })
+    );
+  peerDb.close();
+
+  // Even if flushDeltaBatch is invoked with truncateAll: true directly on a fresh ledger handle, is_archived = 1 survives!
+  const verifyDbBefore = new DatabaseSync(peerSqlPath);
+  verifyDbBefore.close();
+  storeA.clearCache({ liveCascadeIds: new Set() });
+  const verifyDbAfter = new DatabaseSync(peerSqlPath);
+  const survivedRow = verifyDbAfter
+    .prepare('SELECT cascade_id, is_archived FROM conversations WHERE lower_id = ?')
+    .get('deadbeef-0000-4000-8000-000000000001');
+  const survivedStepCount = verifyDbAfter
+    .prepare('SELECT COUNT(*) AS cnt FROM steps WHERE cascade_id = ?')
+    .get('deadbeef-0000-4000-8000-000000000001')?.cnt;
+  verifyDbAfter.close();
+  assert.equal(survivedRow?.is_archived, 1, 'archived conversation survives clearCache / truncateAll');
+  assert.equal(survivedStepCount, 1, 'archived conversation steps survive clearCache / truncateAll');
+
+  // 2. End-to-end backend hardening across modified .db sessions, mid-rebuild swarm subagents,
+  // depth-2 nested subagent root promotion, pre-rebuild generation isolation, and standalone-server stop()
+  const root = mkdtempSync(join(tmpdir(), 'ag-um-rebuild-hardening-'));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+  const geminiDir = join(root, '.gemini');
+  const agyDir = join(geminiDir, 'antigravity');
+  const convDir = join(agyDir, 'conversations');
+  const brainDir = join(agyDir, 'brain');
+  const dataDir = join(root, 'plugin-data');
+  mkdirSync(convDir, { recursive: true });
+  mkdirSync(brainDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true });
+
+  const sumDbPath = join(agyDir, 'conversation_summaries.db');
+  const sumDb = new DatabaseSync(sumDbPath);
+  sumDb.exec(`
+    CREATE TABLE conversation_summaries (
+      conversation_id TEXT PRIMARY KEY,
+      title TEXT, preview TEXT, status TEXT, source TEXT,
+      parent_conversation_id TEXT, nesting_depth INTEGER, agent_name TEXT,
+      not_fully_idle INTEGER, killed INTEGER, step_count INTEGER,
+      last_modified_time TEXT, app_data_dir TEXT, raw_summary BLOB
+    );
+    CREATE TABLE conversation_parents (conversation_id TEXT, parent_id TEXT);
+  `);
+  const insSum = sumDb.prepare(
+    "INSERT INTO conversation_summaries (conversation_id, title, status, parent_conversation_id, step_count, last_modified_time, app_data_dir, raw_summary) VALUES (?, ?, 'CASCADE_RUN_STATUS_IDLE', ?, 2, ?, 'antigravity', ?)"
+  );
+
+  const baseSec = Math.floor(Date.parse('2026-11-24T00:00:00Z') / 1000);
+  const createConvSqlite = (cid, createdOffsetSec, promptText, inTok) => {
+    const p = join(convDir, `${cid}.db`);
+    const db = new DatabaseSync(p);
+    db.exec(`
+      CREATE TABLE trajectory_meta (trajectory_id TEXT, cascade_id TEXT, trajectory_type INTEGER, source INTEGER);
+      CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);
+      CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+    `);
+    db.prepare('INSERT INTO trajectory_meta VALUES (?, ?, 1, 1)').run(cid, cid);
+    db.prepare('INSERT INTO steps VALUES (0, 14, 3, ?, ?)').run(
+      Buffer.concat([
+        encodeFieldBytes(1, encodeTimestamp(baseSec + createdOffsetSec)),
+        encodeFieldBytes(20, Buffer.concat([encodeFieldVarint(2, 0), encodeFieldBytes(4, cid)])),
+      ]),
+      encodeFieldBytes(19, encodeFieldBytes(2, promptText))
+    );
+    db.prepare('INSERT INTO steps VALUES (1, 15, 3, ?, ?)').run(
+      encodeStepMeta({
+        createdSec: baseSec + createdOffsetSec + 2,
+        finishedSec: baseSec + createdOffsetSec + 5,
+        stepIndex: 1,
+        originCid: cid,
+        inputTokens: inTok,
+        outputTokens: 0,
+      }),
+      encodeFieldBytes(20, encodeFieldBytes(1, `Reply for ${promptText}`))
+    );
+    db.close();
+    return p;
+  };
+
+  const cids = [];
+  const dbPaths = [];
+  for (let i = 1; i <= 50; i++) {
+    const cid = `${String(i).padStart(8, '0')}-7777-4777-8777-777777777777`;
+    cids.push(cid);
+    const modIso = new Date((baseSec + (200 - i) * 60) * 1000).toISOString();
+    insSum.run(cid, `Session #${i}`, '', modIso, Buffer.alloc(0));
+    dbPaths.push(createConvSqlite(cid, i * 60, `Prompt #${i}`, 1_000));
+  }
+  // Swarm parent at index 35 (deferred past foreground budget & title loop 30) + 2 swarm workers
+  const swarmParentCid = cids[35];
+  const swarmSubA = 'aaaa0001-7777-4777-8777-777777777777';
+  const swarmSubB = 'aaaa0002-7777-4777-8777-777777777777';
+  createConvSqlite(swarmSubA, 500, 'Swarm worker A', 20_000);
+  createConvSqlite(swarmSubB, 520, 'Swarm worker B', 30_000);
+  const swarmDir = join(brainDir, swarmParentCid, '.system_generated', 'swarm');
+  mkdirSync(swarmDir, { recursive: true });
+  writeFileSync(
+    join(swarmDir, 'members.json'),
+    JSON.stringify({
+      title: 'Test Swarm',
+      members: {
+        'worker-a': { name: 'worker-a', conversation_id: swarmSubA, role: 'worker', wake_mode: 'mentions' },
+        'worker-b': { name: 'worker-b', conversation_id: swarmSubB, role: 'worker', wake_mode: 'mentions' },
+      },
+    })
+  );
+
+  // Depth-2 nested subagent chain (Root -> Sub1 -> Sub2, old timestamps so Root & Sub1 are deferred)
+  const deepRoot = '99990000-7777-4777-8777-777777777777';
+  const deepSub1 = '99990001-7777-4777-8777-777777777777';
+  const deepSub2 = '99990002-7777-4777-8777-777777777777';
+  insSum.run(deepRoot, 'Deep Root', '', new Date((baseSec + 5) * 1000).toISOString(), Buffer.alloc(0));
+  insSum.run(deepSub1, 'Deep Sub1', deepRoot, new Date((baseSec + 10) * 1000).toISOString(), Buffer.alloc(0));
+  insSum.run(deepSub2, 'Deep Sub2', deepSub1, new Date((baseSec + 15) * 1000).toISOString(), Buffer.alloc(0));
+  createConvSqlite(deepRoot, 5, 'Deep root prompt', 8_000);
+  createConvSqlite(deepSub1, 10, 'Deep sub1 prompt', 4_000);
+  createConvSqlite(deepSub2, 15, 'Deep sub2 prompt', 2_000);
+  sumDb.close();
+
+  const step2TplB64 = encodeStepMeta({
+    createdSec: baseSec + 99_999,
+    finishedSec: baseSec + 100_002,
+    stepIndex: 2,
+    originCid: '00000010-7777-4777-8777-777777777777',
+    inputTokens: 2_000,
+    outputTokens: 0,
+  }).toString('base64');
+
+  const apiUrl = new URL('../backend/api-actions.mjs', import.meta.url).href;
+  const scannerUrl = new URL('../backend/local-scanner.mjs', import.meta.url).href;
+  const epUrl = new URL('../backend/endpoint-registry.mjs', import.meta.url).href;
+  const standaloneUrl = new URL('../backend/standalone-server.mjs', import.meta.url).href;
+
+  const childScript = `
+    import { utimesSync } from 'node:fs';
+    import { executeRebuildCacheAction, executeTelemetryAction } from ${JSON.stringify(apiUrl)};
+    import {
+      isLocalBackgroundRebuildActive,
+      stopLocalBackgroundCacheRebuild,
+    } from ${JSON.stringify(scannerUrl)};
+    import { getEndpointCacheStore } from ${JSON.stringify(epUrl)};
+    import { createStandaloneWebServer } from ${JSON.stringify(standaloneUrl)};
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+
+    const cids = ${JSON.stringify(cids)};
+    const dbPaths = ${JSON.stringify(dbPaths)};
+    const swarmParentCid = ${JSON.stringify(swarmParentCid)};
+    const swarmSubB = ${JSON.stringify(swarmSubB)};
+    const deepRoot = ${JSON.stringify(deepRoot)};
+    const deepSub2 = ${JSON.stringify(deepSub2)};
+    const store = getEndpointCacheStore(null);
+
+    const waitDrain = async () => {
+      const dl = Date.now() + 8000;
+      while (isLocalBackgroundRebuildActive() && Date.now() < dl) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+    };
+
+    // Warm up all sessions
+    await executeTelemetryAction({ conversationId: cids[0], force: true });
+    await waitDrain();
+
+    // (A) Modify 30 non-active .db files without clicking Rebuild Cache:
+    // Drain updates all 30 modified sessions silently while cacheRebuild.active stays false!
+    const tplBin = Buffer.from(${JSON.stringify(step2TplB64)}, 'base64').toString('binary');
+    for (let i = 10; i < 40; i++) {
+      const db = new DatabaseSync(dbPaths[i]);
+      db.prepare('INSERT INTO steps VALUES (2, 15, 3, ?, ?)').run(
+        Buffer.from(tplBin.replace('00000010-7777-4777-8777-777777777777', cids[i]), 'binary'),
+        Buffer.from([0xa2, 0x01, 0x04, 0x0a, 0x02, 0x6f, 0x6b])
+      );
+      db.close();
+      const fut = Math.floor(Date.now() / 1000) + 60;
+      utimesSync(dbPaths[i], fut, fut);
+    }
+    const silentPoll1 = JSON.parse((await executeTelemetryAction({ conversationId: cids[0] })).body);
+    const silentPollActive = Boolean(silentPoll1.cacheRebuild?.active);
+    await waitDrain();
+    let modifiedUpdatedCount = 0;
+    for (let i = 10; i < 40; i++) {
+      if ((store.getCachedTrajectory(cids[i])?.steps?.length || 0) === 2) modifiedUpdatedCount += 1;
+    }
+
+    // (B) Mid-rebuild click on deferred Swarm parent after its batch drains -> preserves 2 subagents!
+    executeRebuildCacheAction();
+    await executeTelemetryAction({ conversationId: cids[0], force: true });
+    const dl = Date.now() + 5000;
+    while ((!store.getCachedTrajectory(swarmParentCid) || !store.getCachedTrajectory(swarmSubB)) && Date.now() < dl) {
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    const midSwarmConv = JSON.parse(
+      (await executeTelemetryAction({ scope: 'conversation', conversationId: swarmParentCid })).body
+    );
+    await waitDrain();
+
+    // (C) Depth-2 nested subagent request right after Rebuild Cache -> promotes Deep Root immediately!
+    executeRebuildCacheAction();
+    const depth2Payload = JSON.parse(
+      (await executeTelemetryAction({ conversationId: deepSub2, force: true })).body
+    );
+    await stopLocalBackgroundCacheRebuild();
+
+    // (D) Pre-rebuild in-flight poll interrupted by executeRebuildCacheAction() writes 0 stale entries!
+    executeRebuildCacheAction();
+    const preRebuildScan = executeTelemetryAction({ conversationId: cids[0], force: false });
+    await new Promise((r) => setImmediate(r));
+    executeRebuildCacheAction();
+    await preRebuildScan;
+    const stalePollutedEntries = store.listCachedTrajectoryEntries().length;
+    await stopLocalBackgroundCacheRebuild();
+
+    // (E) standalone-server stop() cleanly stops active background rebuild!
+    const srv = createStandaloneWebServer({ host: '127.0.0.1', port: 0 });
+    await srv.start();
+    executeRebuildCacheAction();
+    await executeTelemetryAction({ conversationId: cids[0], force: true });
+    const activeBeforeStop = isLocalBackgroundRebuildActive();
+    await srv.stop();
+    const activeAfterStop = isLocalBackgroundRebuildActive();
+
+    console.log(JSON.stringify({
+      silentPollActive,
+      modifiedUpdatedCount,
+      midSwarmSubCount: midSwarmConv.activeConversation?.subagentCount || 0,
+      midSwarmAggTokens: midSwarmConv.activeConversation?.aggregated?.totalTokens || 0,
+      depth2RootCid: depth2Payload.activeConversation?.cascadeId,
+      depth2RootSteps: depth2Payload.activeConversation?.recentSteps?.length || 0,
+      depth2AggTokens: depth2Payload.activeConversation?.aggregated?.totalTokens || 0,
+      stalePollutedEntries,
+      activeBeforeStop,
+      activeAfterStop,
+    }));
+  `;
+
+  const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '-e', childScript], {
+    env: {
+      ...process.env,
+      ANTIGRAVITY_GEMINI_DIR: geminiDir,
+      ANTIGRAVITY_APP_DATA_DIR: '',
+      USAGE_MONITOR_APP_DATA_DIR: '',
+      ANTIGRAVITY_EXECUTABLE_DATA_DIR: dataDir,
+      ANTIGRAVITY_LS_ADDRESS: 'test.invalid',
+    },
+  });
+  const res = JSON.parse(stdout.trim().split('\n').pop());
+  assert.equal(res.silentPollActive, false, 'normal modified-session sync never hijacks cacheRebuild.active UI');
+  assert.equal(res.modifiedUpdatedCount, 30, 'all 30 modified sessions refreshed by background drain');
+  assert.equal(res.midSwarmSubCount, 2, 'mid-rebuild scope=conversation preserves swarm subagents');
+  assert.equal(res.midSwarmAggTokens >= 51_000, true, 'mid-rebuild swarm family tokens preserved');
+  assert.equal(res.depth2RootCid, deepRoot);
+  assert.equal(res.depth2RootSteps, 1, 'depth-2 subagent request promotes root conversation steps immediately');
+  assert.equal(res.depth2AggTokens, 14_000, 'depth-2 family tokens complete immediately');
+  assert.equal(res.stalePollutedEntries, 0, 'pre-rebuild in-flight scan never pollutes freshly cleared cache');
+  assert.equal(res.activeBeforeStop, true);
+  assert.equal(res.activeAfterStop, false, 'standalone-server stop() cancels background rebuild cleanly');
+
+  // 3. Frontend telemetryStore clears conversationViewCache on rebuild completion (active: true -> false)
+  const { createMockDom } = await import('./mock-dom.mjs');
+  const { document } = createMockDom();
+  const origDoc = globalThis.document;
+  const origWin = globalThis.window;
+  const origFetch = globalThis.fetch;
+  let mockPhase = 'rebuilding';
+  const mockFetch = async (url) => {
+    const u = String(url || '');
+    const wrap = (b) => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: async () => b,
+      text: async () => JSON.stringify(b),
+    });
+    if (u.includes('scope=conversation')) {
+      const subCnt = mockPhase === 'rebuilding' ? 0 : 2;
+      return wrap({
+        scope: 'conversation',
+        activeCascadeId: swarmParentCid,
+        needsBackgroundSync: false,
+        activeConversation: {
+          cascadeId: swarmParentCid,
+          stepCount: 1,
+          subagentCount: subCnt,
+          totalTokens: 1000,
+          recentSteps: [{ stepIndex: 1, totalTokens: 1000 }],
+          agents: subCnt ? [{ cascadeId: swarmSubA }, { cascadeId: swarmSubB }] : [],
+          aggregated: { totalTokens: subCnt ? 51000 : 1000, stepCount: 1 + subCnt },
+        },
+        quotas: { activePool: null, weekly: null },
+        consumption: { session: { totalTokens: 1000 }, sessionPresets: {} },
+      });
+    }
+    const reb = mockPhase === 'rebuilding';
+    return wrap({
+      timestamp: new Date().toISOString(),
+      endpoint: { id: 'local', isRemote: false },
+      account: { status: 'signedIn', email: 'test@example.com' },
+      settings: { language: 'zh-CN' },
+      cacheRebuild: { active: reb, completed: reb ? 17 : 50, total: 50, remaining: reb ? 33 : 0 },
+      conversations: [{ cascadeId: cids[0], title: 'Active' }, { cascadeId: swarmParentCid, title: 'Swarm' }],
+      activeConversation: {
+        cascadeId: cids[0],
+        stepCount: 1,
+        subagentCount: 0,
+        totalTokens: 1000,
+        recentSteps: [{ stepIndex: 1, totalTokens: 1000 }],
+        agents: [],
+        aggregated: { totalTokens: 1000, stepCount: 1 },
+      },
+      consumption: {
+        revision: reb ? 1 : 2,
+        selectedRange: { key: 'today', label: '今日', startMs: 1, endMs: 2 },
+        session: { totalTokens: 1000 },
+        account: { totalTokens: reb ? 17000 : 50000 },
+        presets: {},
+        trendSeries: [],
+        sourcesBreakdown: [],
+        topConversations: [],
+        topWorkspaces: [],
+        monthlySeries: [],
+      },
+      quotas: { pools: [] },
+      modelBreakdown: [],
+    });
+  };
+  globalThis.document = document;
+  globalThis.window = {
+    location: { origin: 'http://127.0.0.1:41234', href: 'http://127.0.0.1:41234/' },
+    addEventListener() {},
+    removeEventListener() {},
+    fetch: mockFetch,
+  };
+  globalThis.fetch = mockFetch;
+  t.after(() => {
+    globalThis.document = origDoc;
+    globalThis.window = origWin;
+    globalThis.fetch = origFetch;
+  });
+
+  const { fetchTelemetry, selectConversation, telemetryStore, stopAsyncTelemetryLoop } =
+    await import('../src/store/telemetryStore.js');
+  await fetchTelemetry({ force: false });
+  await selectConversation(swarmParentCid);
+  await selectConversation(cids[0]);
+  mockPhase = 'done';
+  await fetchTelemetry({ force: false });
+
+  let firstFrameSubCount = null;
+  const unsub = telemetryStore.subscribe(
+    (st) => st,
+    (st) => {
+      if (
+        firstFrameSubCount === null &&
+        st.selectedConversationId === swarmParentCid &&
+        st.telemetry?.activeConversation?.cascadeId === swarmParentCid
+      ) {
+        firstFrameSubCount = st.telemetry.activeConversation.subagentCount;
+      }
+    }
+  );
+  await selectConversation(swarmParentCid);
+  unsub();
+  stopAsyncTelemetryLoop();
+  assert.equal(
+    firstFrameSubCount,
+    2,
+    'conversationViewCache cleared on rebuild completion so stale 0-subagent slice is never rendered'
+  );
+});

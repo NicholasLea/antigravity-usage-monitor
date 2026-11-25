@@ -751,6 +751,7 @@ export function readLocalSummarySnapshot(productRoots = PRODUCT_DATA_ROOTS, { fo
     localSummaryMemo.available = true;
     localSummaryMemo.summariesObj = nextSummariesObj;
     localSummaryMemo.sideQuestionParents = nextSideQuestionParents;
+    localSummaryMemo.refreshedAtMs = Date.now();
   } else if (rootsKey && localSummaryMemo.byRootsKey instanceof Map) {
     if (!localSummaryMemo.byRootsKey.has(rootsKey) && localSummaryMemo.byRootsKey.size >= 8) {
       localSummaryMemo.byRootsKey.delete(localSummaryMemo.byRootsKey.keys().next().value);

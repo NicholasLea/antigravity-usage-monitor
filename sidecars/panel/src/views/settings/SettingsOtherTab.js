@@ -71,6 +71,7 @@ export const SettingsOtherTab = defineComponent({
     let latestSettings = null;
     let latestWindowBridge = null;
     let latestCloudCodeProxy = null;
+    let latestCacheRebuild = null;
     let latestHostPlatform = 'win32';
     let contextWindowModels = [];
     let contextModelId = '';
@@ -83,6 +84,7 @@ export const SettingsOtherTab = defineComponent({
     let resetConfirmTimer = null;
     let resetConfirmArmed = false;
     let isRebuilding = false;
+    let wasBackgroundRebuilding = false;
     let isResetting = false;
     let isRemovingMacWrapper = false;
 
@@ -765,6 +767,14 @@ export const SettingsOtherTab = defineComponent({
       text: t('settings.oth.cacheDesc'),
     });
 
+    function formatRebuildProgressLabel(reb) {
+      const total = Number(reb?.total || 0);
+      const completed = Math.min(total, Math.max(0, Number(reb?.completed || 0)));
+      return total > 0
+        ? t('settings.oth.rebuildingProgress', { completed, total })
+        : t('settings.oth.rebuildingBtn');
+    }
+
     const rebuildBtnText = h('span', { text: t('settings.oth.rebuildBtn') });
     const rebuildCacheBtn = h(
       'button',
@@ -772,7 +782,7 @@ export const SettingsOtherTab = defineComponent({
         type: 'button',
         className: 'btn-secondary',
         onClick: async () => {
-          if (isRebuilding) return;
+          if (isRebuilding || latestCacheRebuild?.active) return;
           isRebuilding = true;
           patchAttr(rebuildCacheBtn, 'disabled', true);
           patchText(rebuildBtnText, t('settings.oth.rebuildingBtn'));
@@ -780,21 +790,52 @@ export const SettingsOtherTab = defineComponent({
           try {
             const res = await rebuildTrajectoryCache();
             if (res?.ok !== false) {
-              showMaintFeedback(t('settings.oth.rebuildDone'), 2800);
+              if (res?.cacheRebuild) {
+                latestCacheRebuild = res.cacheRebuild;
+              }
+              if (latestCacheRebuild?.active) {
+                wasBackgroundRebuilding = true;
+                showMaintFeedback(formatRebuildProgressLabel(latestCacheRebuild), 0);
+              } else {
+                wasBackgroundRebuilding = false;
+                showMaintFeedback(t('settings.oth.rebuildDone'), 2800);
+              }
             } else {
+              wasBackgroundRebuilding = false;
               showMaintFeedback(t('settings.oth.rebuildFailed'), 3000);
             }
           } catch {
+            wasBackgroundRebuilding = false;
             showMaintFeedback(t('settings.oth.rebuildFailed'), 3000);
           } finally {
             isRebuilding = false;
-            patchAttr(rebuildCacheBtn, 'disabled', false);
-            patchText(rebuildBtnText, t('settings.oth.rebuildBtn'));
+            syncRebuildButtonState();
           }
         },
       },
       [createSvgIcon('refresh', { size: 12 }), rebuildBtnText]
     );
+
+    function syncRebuildButtonState() {
+      const bgActive = Boolean(latestCacheRebuild?.active);
+      const busy = isRebuilding || bgActive;
+      patchAttr(rebuildCacheBtn, 'disabled', busy);
+      patchText(
+        rebuildBtnText,
+        busy
+          ? bgActive
+            ? formatRebuildProgressLabel(latestCacheRebuild)
+            : t('settings.oth.rebuildingBtn')
+          : t('settings.oth.rebuildBtn')
+      );
+      if (bgActive) {
+        wasBackgroundRebuilding = true;
+        showMaintFeedback(formatRebuildProgressLabel(latestCacheRebuild), 0);
+      } else if (wasBackgroundRebuilding && !isRebuilding) {
+        wasBackgroundRebuilding = false;
+        showMaintFeedback(t('settings.oth.rebuildDone'), 2800);
+      }
+    }
 
     const resetLabelEl = h('span', {
       className: 'settings-action-title',
@@ -994,7 +1035,8 @@ export const SettingsOtherTab = defineComponent({
       models = contextWindowModels,
       windowBridge = latestWindowBridge,
       hostPlatform = latestHostPlatform,
-      cloudCodeProxy = latestCloudCodeProxy
+      cloudCodeProxy = latestCloudCodeProxy,
+      cacheRebuild = latestCacheRebuild
     ) {
       if (!settings) return;
       latestSettings = settings;
@@ -1002,6 +1044,8 @@ export const SettingsOtherTab = defineComponent({
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
       if (cloudCodeProxy !== undefined) latestCloudCodeProxy = cloudCodeProxy;
+      if (cacheRebuild !== undefined) latestCacheRebuild = cacheRebuild;
+      syncRebuildButtonState();
       draftModelDisplayMode = normalizeClientModelDisplayMode(
         settings.modelDisplayMode,
         settings.showUpstreamModel
@@ -1077,9 +1121,7 @@ export const SettingsOtherTab = defineComponent({
       patchText(resetLabelEl, t('settings.oth.resetLabel'));
       patchText(resetDescEl, t('settings.oth.resetDesc'));
 
-      if (!isRebuilding) {
-        patchText(rebuildBtnText, t('settings.oth.rebuildBtn'));
-      }
+      syncRebuildButtonState();
       if (!isResetting) {
         patchText(
           resetBtnText,

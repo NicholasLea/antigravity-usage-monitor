@@ -554,12 +554,154 @@ const REMOTE_BACKGROUND_FETCH_LIMIT = 2;
 const REMOTE_CONSECUTIVE_TIMEOUT_BREAKER = 2;
 const TRANSCRIPT_TAIL_MAX_BYTES = 96 * 1024;
 const MAX_TRANSCRIPT_MEMO_ENTRIES = 64;
+const LS_SCAN_TIME_SLICE_MS = 12;
+const LS_SCAN_CHUNK_FLUSH_SIZE = 20;
+const LS_SCAN_FOREGROUND_BUDGET = 16;
+const LS_SCAN_BG_DRAIN_BATCH = 16;
+const LS_SCAN_BG_INTER_BATCH_DELAY_MS = 4;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const failedFetchCooldownMap = new Map();
 const liveActivityMemo = new Map();
 const transcriptTailMemo = new Map();
 const swarmManifestMemo = new Map();
 let lastKnownLocalLiveCascadeIds = null;
+
+let localRebuildGeneration = 0;
+let localBackgroundDrainStopped = false;
+let activeLocalBackgroundDrain = null;
+let localRebuildBatchHook = null;
+let localRebuildState = {
+  armed: false,
+  active: false,
+  generation: 0,
+  completed: 0,
+  total: 0,
+  remaining: 0,
+  updatedAtMs: 0,
+};
+
+function lsScanCanYieldMacrotask() {
+  return typeof setImmediate === 'function';
+}
+
+function lsScanYieldMacrotask() {
+  if (typeof setImmediate === 'function') {
+    return new Promise((resolve) => setImmediate(resolve));
+  }
+  return Promise.resolve();
+}
+
+function lsScanWaitUnrefDelay(delayMs = LS_SCAN_BG_INTER_BATCH_DELAY_MS) {
+  if (typeof setTimeout === 'function') {
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, delayMs);
+      timer?.unref?.();
+    });
+  }
+  return lsScanYieldMacrotask();
+}
+
+function lsScanCreateTimeSliceYielder(budgetMs = LS_SCAN_TIME_SLICE_MS) {
+  if (!lsScanCanYieldMacrotask()) {
+    return {
+      maybeYield: () => null,
+      forceYield: () => Promise.resolve(),
+    };
+  }
+  const nowFn =
+    typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? () => performance.now()
+      : () => Date.now();
+  let sliceStartMs = nowFn();
+  let pendingYield = null;
+  async function waitForSliceTurn() {
+    while (nowFn() - sliceStartMs >= budgetMs) {
+      if (!pendingYield) {
+        pendingYield = lsScanYieldMacrotask().finally(() => {
+          pendingYield = null;
+          sliceStartMs = nowFn();
+        });
+      }
+      await pendingYield;
+    }
+  }
+  return {
+    maybeYield() {
+      if (nowFn() - sliceStartMs < budgetMs) return null;
+      return waitForSliceTurn();
+    },
+    forceYield() {
+      if (!pendingYield) {
+        pendingYield = lsScanYieldMacrotask().finally(() => {
+          pendingYield = null;
+          sliceStartMs = nowFn();
+        });
+      }
+      return pendingYield;
+    },
+  };
+}
+
+export function getLocalRebuildGeneration() {
+  return localRebuildGeneration;
+}
+
+export function setLocalBackgroundRebuildHook(hookFn) {
+  localRebuildBatchHook = typeof hookFn === 'function' ? hookFn : null;
+}
+
+export function getLocalCacheRebuildStatus() {
+  return {
+    active: Boolean(localRebuildState.active),
+    completed: Number(localRebuildState.completed || 0),
+    total: Number(localRebuildState.total || 0),
+    remaining: Number(localRebuildState.remaining || 0),
+    updatedAtMs: Number(localRebuildState.updatedAtMs || 0),
+  };
+}
+
+export function isLocalBackgroundRebuildActive() {
+  return Boolean(
+    localRebuildState.active || localRebuildState.armed || activeLocalBackgroundDrain
+  );
+}
+
+export function resetLocalCacheRebuildState({ totalHint = 0, armed = false } = {}) {
+  localRebuildGeneration += 1;
+  localBackgroundDrainStopped = false;
+  activeLocalBackgroundDrain = null;
+  const cleanTotal = Math.max(0, Math.floor(Number(totalHint) || 0));
+  localRebuildState = {
+    armed: Boolean(armed),
+    active: false,
+    generation: localRebuildGeneration,
+    completed: 0,
+    total: cleanTotal,
+    remaining: cleanTotal,
+    updatedAtMs: Date.now(),
+  };
+}
+
+export async function stopLocalBackgroundCacheRebuild() {
+  localBackgroundDrainStopped = true;
+  localRebuildGeneration += 1;
+  const pending = activeLocalBackgroundDrain;
+  activeLocalBackgroundDrain = null;
+  localRebuildState = {
+    ...localRebuildState,
+    armed: false,
+    active: false,
+    remaining: 0,
+    updatedAtMs: Date.now(),
+  };
+  if (pending) {
+    try {
+      await pending;
+    } catch {
+      // Ignore background drain cancellation errors during shutdown
+    }
+  }
+}
 
 /**
  * 收集目标端点当前仍存活的原始会话源 ID 集合（供「重建缓存」区分“存活待重扫会话”和“原对话已被删除需永久归档留存会话”）。
@@ -626,7 +768,7 @@ export function collectAuthoritativeLiveCascadeIds(endpoint = null) {
   return liveIds;
 }
 
-export function clearScannerRuntimeMemos(endpointId = null) {
+export function clearScannerRuntimeMemos(endpointId = null, { totalHint = 0, armed = false } = {}) {
   if (endpointId && endpointId !== 'local') {
     const ep = getRegisteredRemoteEndpoint(endpointId);
     if (ep) {
@@ -636,6 +778,7 @@ export function clearScannerRuntimeMemos(endpointId = null) {
     }
     return;
   }
+  resetLocalCacheRebuildState({ totalHint, armed });
   failedFetchCooldownMap.clear();
   liveActivityMemo.clear();
   transcriptTailMemo.clear();
@@ -1836,20 +1979,44 @@ export async function enumerateAndSyncConversations({
   currentAccountName = '',
   requestedConvId = '',
   forceRefresh = false,
+  progressiveLocalSync = false,
+  expectedGeneration = null,
   endpoint = null,
 }) {
   const isRemote = Boolean(endpoint && endpoint.isRemote);
+  const scanGeneration =
+    !isRemote && Number.isInteger(expectedGeneration)
+      ? expectedGeneration
+      : localRebuildGeneration;
+  const isStaleLocalGeneration = () => !isRemote && scanGeneration !== localRebuildGeneration;
+  const fgShouldAbort = isRemote ? null : isStaleLocalGeneration;
+  const sliceYielder = lsScanCreateTimeSliceYielder(LS_SCAN_TIME_SLICE_MS);
   const cacheStore = getEndpointCacheStore(endpoint);
   const getEntry = cacheStore.getCachedTrajectory;
   const getHydratedEntry =
     typeof cacheStore.getHydratedTrajectory === 'function'
       ? cacheStore.getHydratedTrajectory
       : getEntry;
-  const setEntry = cacheStore.setCachedTrajectory;
-  const removeEntry = cacheStore.removeCachedTrajectory;
+  const setEntry = isRemote
+    ? cacheStore.setCachedTrajectory
+    : (cid, entry) => {
+        if (isStaleLocalGeneration()) return;
+        cacheStore.setCachedTrajectory(cid, entry);
+      };
+  const removeEntry = isRemote
+    ? cacheStore.removeCachedTrajectory
+    : (cid) => {
+        if (isStaleLocalGeneration()) return;
+        cacheStore.removeCachedTrajectory(cid);
+      };
   const listEntries = cacheStore.listCachedTrajectoryEntries;
   const hasPendingSave = cacheStore.hasPendingTrajectoryCacheSave;
-  const persistCacheIfNeeded = cacheStore.persistTrajectoryCacheIfNeeded;
+  const persistCacheIfNeeded = isRemote
+    ? cacheStore.persistTrajectoryCacheIfNeeded
+    : (opts) => {
+        if (isStaleLocalGeneration()) return;
+        cacheStore.persistTrajectoryCacheIfNeeded(opts);
+      };
   const activeCooldownMap = isRemote ? endpoint.failedFetchCooldownMap : failedFetchCooldownMap;
   const activeLiveActivityMemo = isRemote ? endpoint.liveActivityMemo : liveActivityMemo;
   const maxConcurrentRpc = isRemote ? 1 : MAX_CONCURRENT_RPC;
@@ -2004,7 +2171,13 @@ export async function enumerateAndSyncConversations({
   const STALE_LOCAL_RUNNING_MAX_AGE_MS = 10 * 60_000;
   const reqLower = String(requestedConvId || '').trim().toLowerCase();
   const rawConversations = [];
+  let enumCount = 0;
   for (const [cidLower, cascadeId] of canonicalIdByLower.entries()) {
+    enumCount += 1;
+    if ((enumCount & 31) === 0) {
+      const ypEnum = sliceYielder.maybeYield();
+      if (ypEnum) await ypEnum;
+    }
     const item = summariesByLower.get(cidLower);
     const localSum = localSummaryByLower.get(cidLower) || null;
     const cached = getEntry(cascadeId);
@@ -2321,7 +2494,7 @@ export async function enumerateAndSyncConversations({
    *
    * @param {object[]} targetConvs
    */
-  async function fetchTrajectoryBatch(targetConvs) {
+  async function fetchTrajectoryBatch(targetConvs, { shouldAbort = null } = {}) {
     if (!Array.isArray(targetConvs) || targetConvs.length === 0) return;
     if (isRemote && remoteFetchStartedAtMs <= 0) {
       remoteFetchStartedAtMs = Date.now();
@@ -2330,12 +2503,20 @@ export async function enumerateAndSyncConversations({
       attemptedFetchIds.add(c.cascadeId.toLowerCase());
     }
     for (let i = 0; i < targetConvs.length; i += maxConcurrentRpc) {
-      if (isRemoteFetchHalted()) {
+      if (isRemoteFetchHalted() || shouldAbort?.()) {
+        break;
+      }
+      const ypBatch = sliceYielder.maybeYield();
+      if (ypBatch) await ypBatch;
+      if (shouldAbort?.()) {
         break;
       }
       const batch = targetConvs.slice(i, i + maxConcurrentRpc);
       await Promise.all(
         batch.map(async (conv) => {
+          const ypItem = sliceYielder.maybeYield();
+          if (ypItem) await ypItem;
+          if (shouldAbort?.()) return;
           const sig = buildConvSig(conv);
           const cooldownKey = `${conv.cascadeId.toLowerCase()}::${sig}`;
           const isRunning = conv.status === 'CASCADE_RUN_STATUS_RUNNING';
@@ -2402,6 +2583,7 @@ export async function enumerateAndSyncConversations({
                 rpcTimeoutMs,
                 endpoint
               );
+              if (shouldAbort?.()) return;
             }
             if (isRemote) {
               remoteConsecutiveTimeouts = 0;
@@ -2833,6 +3015,20 @@ export async function enumerateAndSyncConversations({
           }
         })
       );
+      if (
+        !isRemote &&
+        cacheDirty &&
+        cacheStore.isSqliteBacked &&
+        typeof cacheStore.getDirtySessionCount === 'function' &&
+        cacheStore.getDirtySessionCount() >= LS_SCAN_CHUNK_FLUSH_SIZE &&
+        !shouldAbort?.() &&
+        !isStaleLocalGeneration()
+      ) {
+        if (cacheStore.flushTrajectoryCacheNow()) {
+          cacheDirty = false;
+        }
+        await sliceYielder.forceYield();
+      }
     }
   }
 
@@ -3052,6 +3248,11 @@ export async function enumerateAndSyncConversations({
   });
 
   let fetchQueue = toFetch;
+  const useProgressiveLocal =
+    !isRemote && Boolean(progressiveLocalSync) && lsScanCanYieldMacrotask();
+  let deferredConvs = [];
+  const deferredCidSet = new Set();
+
   if (isRemote && toFetch.length > 0) {
     const priorityConvs = [];
     const backgroundConvs = [];
@@ -3071,20 +3272,98 @@ export async function enumerateAndSyncConversations({
       }
     }
     fetchQueue = [...priorityConvs, ...backgroundConvs];
+  } else if (useProgressiveLocal && toFetch.length > 0) {
+    const priorityConvs = [];
+    const nonPriorityConvs = [];
+    for (const conv of toFetch) {
+      const lowerCid = conv.cascadeId.toLowerCase();
+      const parentLower = String(conv.parentConversationId || '').toLowerCase();
+      const rootLower = String(conv.rootConversationId || '').toLowerCase();
+      const isPriority =
+        conv.status === 'CASCADE_RUN_STATUS_RUNNING' ||
+        lowerCid === reqLower ||
+        lowerCid === contextTelemetryCascadeId ||
+        lowerCid === selectedRootId ||
+        Boolean(parentLower && parentLower === selectedRootId) ||
+        Boolean(rootLower && rootLower === selectedRootId);
+      if (isPriority) {
+        priorityConvs.push(conv);
+      } else {
+        nonPriorityConvs.push(conv);
+      }
+    }
+    const drainAlreadyRunning =
+      Boolean(activeLocalBackgroundDrain) && localRebuildState.generation === scanGeneration;
+    if (drainAlreadyRunning) {
+      fetchQueue = priorityConvs;
+      deferredConvs = nonPriorityConvs;
+    } else if (nonPriorityConvs.length > LS_SCAN_FOREGROUND_BUDGET) {
+      fetchQueue = [
+        ...priorityConvs,
+        ...nonPriorityConvs.slice(0, LS_SCAN_FOREGROUND_BUDGET),
+      ];
+      deferredConvs = nonPriorityConvs.slice(LS_SCAN_FOREGROUND_BUDGET);
+    } else {
+      fetchQueue = toFetch;
+    }
+    for (const dc of deferredConvs) {
+      deferredCidSet.add(dc.cascadeId.toLowerCase());
+    }
   }
 
-  await fetchTrajectoryBatch(fetchQueue);
+  await fetchTrajectoryBatch(fetchQueue, { shouldAbort: fgShouldAbort });
+
+  if (deferredCidSet.size > 0 && reqLower && !isStaleLocalGeneration()) {
+    const rawByLower = new Map(rawConversations.map((c) => [c.cascadeId.toLowerCase(), c]));
+    const visitedAnc = new Set([reqLower]);
+    let frontier = [rawByLower.get(reqLower)].filter(Boolean);
+    for (let hop = 0; hop < 8 && frontier.length > 0 && deferredCidSet.size > 0; hop++) {
+      if (isStaleLocalGeneration()) break;
+      const promotedBatch = [];
+      const nextFrontier = [];
+      for (const cur of frontier) {
+        for (const rawAnc of [cur.parentConversationId, cur.rootConversationId]) {
+          const cleanAnc = String(rawAnc || '').trim().toLowerCase();
+          if (!cleanAnc || visitedAnc.has(cleanAnc)) continue;
+          visitedAnc.add(cleanAnc);
+          const ancConv = rawByLower.get(cleanAnc);
+          if (!ancConv) continue;
+          nextFrontier.push(ancConv);
+          if (deferredCidSet.has(cleanAnc)) {
+            deferredCidSet.delete(cleanAnc);
+            promotedBatch.push(ancConv);
+          }
+        }
+      }
+      if (promotedBatch.length > 0) {
+        await fetchTrajectoryBatch(promotedBatch, { shouldAbort: fgShouldAbort });
+      }
+      frontier = nextFrontier;
+    }
+  }
 
   /**
    * 阶段 2：根据父会话的 `subagentRefs` 将子代理归属关系、角色名称与启动顺序回填至子代理会话，
    * 支持多层嵌套子代理（主会话 -> 子代理 -> 二级子代理）逐层补拉与归属收敛。
    */
-  async function reconcileParentSubagentRefs() {
+  async function reconcileParentSubagentRefs({
+    candidateParents = null,
+    skipDeferredSet = null,
+    shouldAbort = null,
+  } = {}) {
+    let currentParents = candidateParents ? [...candidateParents] : null;
     for (let depth = 0; depth < MAX_SUBAGENT_RECONCILE_DEPTH; depth++) {
+      if (shouldAbort?.()) break;
       const byLowerId = new Map(rawConversations.map((c) => [c.cascadeId.toLowerCase(), c]));
       const missingSubagentsToFetch = [];
+      const parentsToInspect = currentParents || [...rawConversations];
 
-      for (const parentConv of [...rawConversations]) {
+      for (const parentConv of parentsToInspect) {
+        if (shouldAbort?.()) break;
+        const parentId = parentConv.cascadeId.toLowerCase();
+        if (skipDeferredSet && skipDeferredSet.has(parentId)) {
+          continue;
+        }
         const parentCached = getEntry(parentConv.cascadeId);
         const baseRefs = parentConv.subagentRefs || parentCached?.subagentRefs || [];
         const swarmManifest =
@@ -3105,7 +3384,6 @@ export async function enumerateAndSyncConversations({
         }
         if (!Array.isArray(refs) || refs.length === 0) continue;
 
-        const parentId = parentConv.cascadeId.toLowerCase();
         const rootId = (
           parentConv.rootConversationId ||
           parentConv.parentConversationId ||
@@ -3115,6 +3393,9 @@ export async function enumerateAndSyncConversations({
         for (const ref of refs) {
           const subCid = String(ref?.cascadeId || '').trim().toLowerCase();
           if (!subCid || subCid === parentId) continue;
+          if (skipDeferredSet) {
+            skipDeferredSet.delete(subCid);
+          }
 
           const canonSubId = canonicalIdByLower.get(subCid) || subCid;
           canonicalIdByLower.set(subCid, canonSubId);
@@ -3283,19 +3564,27 @@ export async function enumerateAndSyncConversations({
         }
         subagentFetchQueue = [...prioritySubs, ...backgroundSubs];
       }
-      if (subagentFetchQueue.length === 0) break;
-      await fetchTrajectoryBatch(subagentFetchQueue);
+      if (subagentFetchQueue.length === 0 || shouldAbort?.()) break;
+      await fetchTrajectoryBatch(subagentFetchQueue, { shouldAbort });
+      if (currentParents) {
+        currentParents = subagentFetchQueue;
+      }
     }
   }
 
-  await reconcileParentSubagentRefs();
+  await reconcileParentSubagentRefs({
+    skipDeferredSet: deferredCidSet.size > 0 ? deferredCidSet : null,
+    shouldAbort: fgShouldAbort,
+  });
 
   // 阶段 3：对剩余尚未标记 subagentRefs 的纯磁盘历史会话每次增量迁移最多 8 个（远端共享整轮背景额度），避免单次轮询阻塞
   const legacyBatchCap = isRemote
     ? isRemoteFetchHalted()
       ? 0
       : Math.min(LEGACY_MIGRATION_BATCH_SIZE, remainingRemoteBackgroundBudget)
-    : LEGACY_MIGRATION_BATCH_SIZE;
+    : deferredCidSet.size > 0
+      ? 0
+      : LEGACY_MIGRATION_BATCH_SIZE;
   const remainingLegacyDiskConvs =
     legacyBatchCap > 0
       ? rawConversations
@@ -3310,54 +3599,239 @@ export async function enumerateAndSyncConversations({
           .slice(0, legacyBatchCap)
       : [];
 
-  if (remainingLegacyDiskConvs.length > 0) {
+  if (remainingLegacyDiskConvs.length > 0 && !isStaleLocalGeneration()) {
     if (isRemote) {
       remainingRemoteBackgroundBudget = Math.max(
         0,
         remainingRemoteBackgroundBudget - remainingLegacyDiskConvs.length
       );
     }
-    await fetchTrajectoryBatch(remainingLegacyDiskConvs);
-    await reconcileParentSubagentRefs();
+    await fetchTrajectoryBatch(remainingLegacyDiskConvs, { shouldAbort: fgShouldAbort });
+    await reconcileParentSubagentRefs({ shouldAbort: fgShouldAbort });
   }
 
   // 阶段 4：将多层嵌套子代理的 rootConversationId 沿着父链向上收敛至最顶层根会话，防止二级子代理丢失
-  const byId = new Map(rawConversations.map((c) => [c.cascadeId.toLowerCase(), c]));
-  for (const conv of rawConversations) {
-    if (!conv.isSubagent) continue;
-    const cid = conv.cascadeId.toLowerCase();
-    let candidate = (conv.rootConversationId || conv.parentConversationId || '').toLowerCase();
-    if (candidate === cid) {
-      candidate = (conv.parentConversationId || '').toLowerCase();
-    }
-    const visited = new Set([cid]);
-    while (candidate && !visited.has(candidate)) {
-      visited.add(candidate);
-      const ancestor = byId.get(candidate);
-      if (!ancestor || !ancestor.isSubagent) break;
-      const nextUp = (
-        ancestor.parentConversationId ||
-        ancestor.rootConversationId ||
-        ''
-      ).toLowerCase();
-      if (!nextUp || nextUp === candidate) break;
-      candidate = nextUp;
-    }
-    if (candidate && candidate !== conv.rootConversationId) {
-      conv.rootConversationId = candidate;
-      const cached = getEntry(conv.cascadeId);
-      if (cached && cached.rootConversationId !== candidate) {
-        setEntry(conv.cascadeId, { ...cached, rootConversationId: candidate });
-        cacheDirty = true;
+  function convergeSubagentRootChain(targetConvs, lookupById) {
+    for (const conv of targetConvs) {
+      if (!conv?.isSubagent) continue;
+      const cid = conv.cascadeId.toLowerCase();
+      let candidate = (conv.rootConversationId || conv.parentConversationId || '').toLowerCase();
+      if (candidate === cid) {
+        candidate = (conv.parentConversationId || '').toLowerCase();
+      }
+      const visited = new Set([cid]);
+      while (candidate && !visited.has(candidate)) {
+        visited.add(candidate);
+        const ancestor = lookupById.get(candidate);
+        if (!ancestor || !ancestor.isSubagent) break;
+        const nextUp = (
+          ancestor.parentConversationId ||
+          ancestor.rootConversationId ||
+          ''
+        ).toLowerCase();
+        if (!nextUp || nextUp === candidate) break;
+        candidate = nextUp;
+      }
+      if (candidate && candidate !== conv.rootConversationId) {
+        conv.rootConversationId = candidate;
+        const cached = getEntry(conv.cascadeId);
+        if (cached && cached.rootConversationId !== candidate) {
+          setEntry(conv.cascadeId, { ...cached, rootConversationId: candidate });
+          cacheDirty = true;
+        }
       }
     }
   }
+
+  const byId = new Map(rawConversations.map((c) => [c.cascadeId.toLowerCase(), c]));
+  convergeSubagentRootChain(rawConversations, byId);
 
   const hasRunningSessions = rawConversations.some(
     (c) => c.status === 'CASCADE_RUN_STATUS_RUNNING'
   );
   if (cacheDirty || (hasPendingSave() && !hasRunningSessions)) {
     persistCacheIfNeeded({ hasRunningSessions });
+    cacheDirty = false;
+  }
+
+  function isDeferredConvAlreadySynced(conv) {
+    if (!conv) return true;
+    const curCached = getEntry(conv.cascadeId);
+    if (!curCached || curCached.offlineTranscriptFallback || curCached.wasRunning) {
+      return false;
+    }
+    const sig = buildConvSig(conv);
+    if (curCached.signature !== sig) return false;
+    if (
+      conv.dbPath &&
+      sqliteAvailable &&
+      !String(curCached.signature || '').startsWith(`${CACHE_SCHEMA_VERSION}:sqlite:`)
+    ) {
+      return false;
+    }
+    if (hasMissingStepFields(curCached) || !Array.isArray(curCached.subagentRefs)) {
+      return false;
+    }
+    const hasIncompleteTiming = curCached._stepFlags
+      ? Boolean(curCached._stepFlags.hasIncompleteTiming)
+      : readStepFieldChecks(curCached.steps).hasIncompleteTiming;
+    if (!curCached.speedClearedTelemetry && hasIncompleteTiming) {
+      return false;
+    }
+    return true;
+  }
+
+  let snapshotDeferredCascadeIds = null;
+  if (!isRemote && useProgressiveLocal) {
+    const remainingDeferred =
+      deferredCidSet.size > 0
+        ? deferredConvs.filter(
+            (c) =>
+              deferredCidSet.has(c.cascadeId.toLowerCase()) &&
+              !isDeferredConvAlreadySynced(c) &&
+              !isFetchInCooldown(c, buildConvSig(c))
+          )
+        : [];
+    if (remainingDeferred.length > 0) {
+      snapshotDeferredCascadeIds = new Set(
+        remainingDeferred.map((c) => c.cascadeId.toLowerCase())
+      );
+    }
+    const trackRebuildProgress =
+      scanGeneration === localRebuildGeneration &&
+      Boolean(localRebuildState.armed || localRebuildState.active);
+    if (
+      remainingDeferred.length > 0 &&
+      !activeLocalBackgroundDrain &&
+      scanGeneration === localRebuildGeneration &&
+      !localBackgroundDrainStopped
+    ) {
+      if (trackRebuildProgress) {
+        const totalToRebuild = Math.max(rawConversations.length, localRebuildState.total || 0);
+        localRebuildState = {
+          armed: false,
+          active: true,
+          generation: scanGeneration,
+          completed: Math.max(0, totalToRebuild - remainingDeferred.length),
+          total: Math.max(totalToRebuild, remainingDeferred.length),
+          remaining: remainingDeferred.length,
+          updatedAtMs: Date.now(),
+        };
+      }
+      const shouldAbortBg = () =>
+        scanGeneration !== localRebuildGeneration || localBackgroundDrainStopped;
+      const drainQueue = remainingDeferred.slice();
+      const drainTask = (async () => {
+        for (let off = 0; off < drainQueue.length; off += LS_SCAN_BG_DRAIN_BATCH) {
+          await lsScanWaitUnrefDelay(LS_SCAN_BG_INTER_BATCH_DELAY_MS);
+          if (shouldAbortBg()) return;
+          const rawChunk = drainQueue.slice(off, off + LS_SCAN_BG_DRAIN_BATCH);
+          for (let j = off; j < Math.min(drainQueue.length, off + LS_SCAN_BG_DRAIN_BATCH); j++) {
+            drainQueue[j] = null;
+          }
+          const pendingChunk = [];
+          for (const conv of rawChunk) {
+            if (!conv || isDeferredConvAlreadySynced(conv)) {
+              continue;
+            }
+            attemptedFetchIds.delete(conv.cascadeId.toLowerCase());
+            pendingChunk.push(conv);
+          }
+          if (pendingChunk.length > 0) {
+            const rawLenBefore = rawConversations.length;
+            await fetchTrajectoryBatch(pendingChunk, { shouldAbort: shouldAbortBg });
+            if (shouldAbortBg()) return;
+            await reconcileParentSubagentRefs({
+              candidateParents: pendingChunk,
+              shouldAbort: shouldAbortBg,
+            });
+            if (shouldAbortBg()) return;
+            const latestById = new Map(rawConversations.map((c) => [c.cascadeId.toLowerCase(), c]));
+            const touchedSubs = [
+              ...pendingChunk.filter((c) => c.isSubagent),
+              ...rawConversations.slice(rawLenBefore),
+            ];
+            if (touchedSubs.length > 0) {
+              convergeSubagentRootChain(touchedSubs, latestById);
+            }
+            if (!shouldAbortBg() && (cacheDirty || hasPendingSave())) {
+              cacheStore.flushTrajectoryCacheNow();
+              cacheDirty = false;
+            }
+            localRebuildBatchHook?.({ finished: false });
+          }
+          if (shouldAbortBg()) return;
+          if (trackRebuildProgress) {
+            const rem = Math.max(0, drainQueue.length - (off + LS_SCAN_BG_DRAIN_BATCH));
+            const tot = Math.max(localRebuildState.total || 0, rawConversations.length);
+            localRebuildState = {
+              armed: false,
+              active: rem > 0,
+              generation: scanGeneration,
+              completed: Math.max(0, tot - rem),
+              total: tot,
+              remaining: rem,
+              updatedAtMs: Date.now(),
+            };
+          }
+        }
+        if (!shouldAbortBg()) {
+          if (cacheDirty || hasPendingSave()) {
+            cacheStore.flushTrajectoryCacheNow();
+            cacheDirty = false;
+          }
+          if (trackRebuildProgress) {
+            const finalTotal = Math.max(localRebuildState.total || 0, rawConversations.length);
+            localRebuildState = {
+              armed: false,
+              active: false,
+              generation: scanGeneration,
+              completed: finalTotal,
+              total: finalTotal,
+              remaining: 0,
+              updatedAtMs: Date.now(),
+            };
+          }
+          localRebuildBatchHook?.({ finished: true });
+        }
+      })().finally(() => {
+        if (activeLocalBackgroundDrain === drainTask) {
+          activeLocalBackgroundDrain = null;
+        }
+      });
+      activeLocalBackgroundDrain = drainTask;
+    } else if (
+      remainingDeferred.length === 0 &&
+      !activeLocalBackgroundDrain &&
+      trackRebuildProgress
+    ) {
+      const doneTotal = Math.max(rawConversations.length, localRebuildState.total || 0);
+      localRebuildState = {
+        armed: false,
+        active: false,
+        generation: scanGeneration,
+        completed: doneTotal,
+        total: doneTotal,
+        remaining: 0,
+        updatedAtMs: Date.now(),
+      };
+    }
+  } else if (
+    !isRemote &&
+    !activeLocalBackgroundDrain &&
+    (localRebuildState.armed || localRebuildState.active) &&
+    scanGeneration === localRebuildGeneration
+  ) {
+    const doneTotal = Math.max(rawConversations.length, localRebuildState.total || 0);
+    localRebuildState = {
+      armed: false,
+      active: false,
+      generation: scanGeneration,
+      completed: doneTotal,
+      total: doneTotal,
+      remaining: 0,
+      updatedAtMs: Date.now(),
+    };
   }
 
   // 确保所有处于 RUNNING 状态的会话（含本轮未触发 RPC 拉取的会话）都同步了最新的实时动作摘要，并剔除已进入 swarm_wait 待命的假运行态
@@ -3439,10 +3913,18 @@ export async function enumerateAndSyncConversations({
   }
 
   let titleBackfillDirty = false;
+  let titleLoopCount = 0;
   for (const rootConv of conversations) {
+    titleLoopCount += 1;
+    if ((titleLoopCount & 23) === 0) {
+      const ypTitle = sliceYielder.maybeYield();
+      if (ypTitle) await ypTitle;
+    }
     const cid = rootConv.cascadeId.toLowerCase();
+    const isDeferredRoot = deferredCidSet.has(cid);
     const rootCached = getEntry(rootConv.cascadeId);
-    const swarmManifest = isRemote ? null : getPollSwarmManifest(cid);
+    const swarmManifest =
+      isRemote || (isDeferredRoot && titleLoopCount > 30) ? null : getPollSwarmManifest(cid);
     const swarmTitle = String(swarmManifest?.title || rootCached?.swarmMeta?.title || '').trim();
     if (swarmTitle) {
       rootConv.swarmTitle = swarmTitle;
@@ -3464,7 +3946,7 @@ export async function enumerateAndSyncConversations({
           extractFirstStepTurnTitle(titleSourceEntry?.steps),
         ]);
       }
-      if (!recoveredTitle && !isRemote) {
+      if (!recoveredTitle && !isRemote && (!isDeferredRoot || titleLoopCount <= 30)) {
         recoveredTitle = probeLocalFallbackTitle(
           cid,
           rootConv.diskMtimeMs || rootConv.lastModifiedMs || 0
@@ -3634,5 +4116,6 @@ export async function enumerateAndSyncConversations({
     conversations,
     activeConvSummary,
     activeCascadeId,
+    deferredCascadeIds: snapshotDeferredCascadeIds,
   };
 }

@@ -138,7 +138,8 @@ export const SettingsView = defineComponent({
             telemetry.contextWindowModels || [],
             telemetry?.windowBridge,
             telemetry?.hostPlatform,
-            telemetry?.cloudCodeProxy
+            telemetry?.cloudCodeProxy,
+            telemetry?.cacheRebuild
           );
         }
       } else if (settingsSubTab !== 'account') {
@@ -166,6 +167,7 @@ export const SettingsView = defineComponent({
         contextWindowModels: st.telemetry?.contextWindowModels,
         account: st.telemetry?.account,
         quotas: st.telemetry?.quotas,
+        cacheRebuild: st.telemetry?.cacheRebuild,
       }),
       syncActiveTab
     );

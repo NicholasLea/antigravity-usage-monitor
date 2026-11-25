@@ -880,6 +880,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.cacheDesc': 'Clear cached step records and rescan all conversation transcripts immediately',
   'settings.oth.rebuildBtn': 'Rebuild Trajectory Cache',
   'settings.oth.rebuildingBtn': 'Rebuilding…',
+  'settings.oth.rebuildingProgress': 'Rebuilding ({completed}/{total})…',
   'settings.oth.rebuildDone': 'Trajectory cache rebuilt',
   'settings.oth.rebuildFailed': 'Failed to rebuild cache',
   'settings.oth.resetLabel': 'Factory Defaults',

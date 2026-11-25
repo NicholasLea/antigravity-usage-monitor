@@ -20,6 +20,7 @@ import {
   getCachedTrajectoryEntryByLower,
   getHydratedTrajectory,
   getHydratedTrajectoryEntryByLower,
+  getLocalTrajectoryCacheStore,
   hasPendingTrajectoryCacheSave,
   listCachedTrajectoryEntries,
   loadJson,
@@ -366,9 +367,11 @@ export function getEndpointCacheStore(endpointOrId = null) {
       ...ep.store,
     };
   }
+  const localStore = getLocalTrajectoryCacheStore();
   return {
     isRemote: false,
     endpointId: LOCAL_ENDPOINT_ID,
+    isSqliteBacked: Boolean(localStore?.isSqliteBacked),
     getCachedTrajectory,
     getCachedTrajectoryEntryByLower,
     getHydratedTrajectory,
@@ -379,6 +382,9 @@ export function getEndpointCacheStore(endpointOrId = null) {
     hasPendingTrajectoryCacheSave,
     persistTrajectoryCacheIfNeeded,
     flushTrajectoryCacheNow,
+    getDirtySessionCount: () => localStore.getDirtySessionCount(),
+    getHotSessionCount: () => localStore.getHotSessionCount(),
+    isConversationCold: (cid) => localStore.isConversationCold(cid),
     clearCache: clearRuntimeCaches,
   };
 }

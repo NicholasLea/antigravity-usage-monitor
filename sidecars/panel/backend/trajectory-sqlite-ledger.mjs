@@ -18,6 +18,7 @@ import { dirname } from 'node:path';
 import { inferCompactionStepModels, normalizeCachedStep } from '../trajectory-metrics.mjs';
 import { isPlainObject } from './http-helpers.mjs';
 import {
+  SQLITE_IN_CHUNK_SIZE,
   computeSqliteWalSig,
   getNodeSqliteDatabaseSync,
   isSqliteBusyError,
@@ -754,10 +755,16 @@ export function createTrajectorySqliteLedger({
    *   upserts: Array<{ cascadeId: string, entry: object }>,
    *   removals: string[],
    *   bumpEpoch?: boolean,
+   *   truncateAll?: boolean,
    * }} batch
    */
-  function flushDeltaBatch({ upserts = [], removals = [], bumpEpoch = false } = {}) {
-    if (upserts.length === 0 && removals.length === 0 && !bumpEpoch) {
+  function flushDeltaBatch({
+    upserts = [],
+    removals = [],
+    bumpEpoch = false,
+    truncateAll = false,
+  } = {}) {
+    if (upserts.length === 0 && removals.length === 0 && !bumpEpoch && !truncateAll) {
       return true;
     }
     tslWithSqliteConnection(sqliteFilePath, { readOnly: false }, (db) => {
@@ -768,29 +775,73 @@ export function createTrajectorySqliteLedger({
         let epoch = tslReadMetaInt(db, 'ledger_epoch', localEpoch);
         const nowMs = Date.now();
 
-        if (bumpEpoch || removals.length > 0) {
+        if (bumpEpoch || truncateAll || removals.length > 0) {
           epoch += 1;
           db.prepare(
             "INSERT OR REPLACE INTO ledger_meta (key, value) VALUES ('ledger_epoch', ?)"
           ).run(String(epoch));
         }
 
-        if (removals.length > 0) {
-          const selByLower = db.prepare(
-            'SELECT cascade_id FROM conversations WHERE lower_id = ?'
+        if (truncateAll) {
+          const hasArchivedInDb = Boolean(
+            db.prepare('SELECT 1 FROM conversations WHERE is_archived = 1 LIMIT 1').get()
           );
-          const delSteps = db.prepare('DELETE FROM steps WHERE cascade_id = ?');
-          const delConv = db.prepare('DELETE FROM conversations WHERE lower_id = ?');
-          for (const rawRem of removals) {
-            const lower = String(rawRem || '').toLowerCase();
-            if (!lower) continue;
-            const existing = selByLower.get(lower);
-            if (existing?.cascade_id) {
-              delSteps.run(existing.cascade_id);
+          if (!hasArchivedInDb) {
+            db.exec('DELETE FROM steps; DELETE FROM conversations;');
+            persistedByLower.clear();
+          } else {
+            db.exec(`
+              DELETE FROM steps WHERE cascade_id NOT IN (
+                SELECT cascade_id FROM conversations WHERE is_archived = 1
+              );
+              DELETE FROM conversations WHERE is_archived = 0;
+            `);
+            for (const [k, digest] of persistedByLower.entries()) {
+              if (!digest?.archivedInt) {
+                persistedByLower.delete(k);
+              }
             }
-            delSteps.run(rawRem);
-            delConv.run(lower);
+          }
+        } else if (removals.length > 0) {
+          const lowerSet = new Set();
+          const stepCidSet = new Set();
+          for (const rawRem of removals) {
+            const rawStr = String(rawRem || '').trim();
+            if (!rawStr) continue;
+            const lower = rawStr.toLowerCase();
+            lowerSet.add(lower);
+            stepCidSet.add(rawStr);
+            const knownDigest = persistedByLower.get(lower);
+            if (knownDigest?.cascadeId) {
+              stepCidSet.add(knownDigest.cascadeId);
+            }
             persistedByLower.delete(lower);
+          }
+          const lowerList = Array.from(lowerSet);
+          for (let off = 0; off < lowerList.length; off += SQLITE_IN_CHUNK_SIZE) {
+            const chunk = lowerList.slice(off, off + SQLITE_IN_CHUNK_SIZE);
+            const placeholders = chunk.map(() => '?').join(',');
+            const existingRows = db
+              .prepare(`SELECT cascade_id FROM conversations WHERE lower_id IN (${placeholders})`)
+              .all(...chunk);
+            for (const row of existingRows || []) {
+              if (row?.cascade_id) {
+                stepCidSet.add(row.cascade_id);
+              }
+            }
+          }
+          const stepCidList = Array.from(stepCidSet);
+          for (let off = 0; off < stepCidList.length; off += SQLITE_IN_CHUNK_SIZE) {
+            const chunk = stepCidList.slice(off, off + SQLITE_IN_CHUNK_SIZE);
+            const placeholders = chunk.map(() => '?').join(',');
+            db.prepare(`DELETE FROM steps WHERE cascade_id IN (${placeholders})`).run(...chunk);
+          }
+          for (let off = 0; off < lowerList.length; off += SQLITE_IN_CHUNK_SIZE) {
+            const chunk = lowerList.slice(off, off + SQLITE_IN_CHUNK_SIZE);
+            const placeholders = chunk.map(() => '?').join(',');
+            db.prepare(`DELETE FROM conversations WHERE lower_id IN (${placeholders})`).run(
+              ...chunk
+            );
           }
         }
 

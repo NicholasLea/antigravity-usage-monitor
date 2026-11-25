@@ -509,6 +509,7 @@ export const localSummaryMemo = {
   available: false,
   summariesObj: {},
   sideQuestionParents: {},
+  refreshedAtMs: 0,
   byRootsKey: new Map(),
 };
 
@@ -562,12 +563,15 @@ export function clearRuntimeCaches(options = {}) {
   if (!localTrajectoryCacheStore.clearCache(options)) return false;
   externalDeepStatsMemo.sig = '';
   externalDeepStatsMemo.convos.clear();
-  localSummaryMemo.sig = '';
-  localSummaryMemo.byId.clear();
-  localSummaryMemo.available = false;
-  localSummaryMemo.summariesObj = {};
-  localSummaryMemo.sideQuestionParents = {};
-  localSummaryMemo.byRootsKey.clear();
+  if (!options?.preserveFreshSummaryMemo) {
+    localSummaryMemo.sig = '';
+    localSummaryMemo.byId.clear();
+    localSummaryMemo.available = false;
+    localSummaryMemo.summariesObj = {};
+    localSummaryMemo.sideQuestionParents = {};
+    localSummaryMemo.refreshedAtMs = 0;
+    localSummaryMemo.byRootsKey.clear();
+  }
   quotaSummaryCache.ts = 0;
   quotaSummaryCache.lastAttemptTs = 0;
   quotaSummaryCache.accountName = '';

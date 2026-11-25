@@ -26,6 +26,7 @@ import { revealLocalExportFile, writeLocalExportFile } from './file-exporter.mjs
 import {
   clearScannerRuntimeMemos,
   collectAuthoritativeLiveCascadeIds,
+  isLocalBackgroundRebuildActive,
 } from './local-scanner.mjs';
 import {
   SETTINGS_FILE,
@@ -281,6 +282,10 @@ export async function executeTelemetryAction(data, opts = {}) {
     startMs: sanitizePositiveFiniteMs(data?.startMs),
     endMs: sanitizePositiveFiniteMs(data?.endMs),
     ...(scope ? { scope } : {}),
+    ...(!isRemote &&
+    (scope === '' || scope === 'conversation' || isLocalBackgroundRebuildActive())
+      ? { progressiveLocalSync: true }
+      : {}),
     endpoint: epCtx.endpoint,
   };
   let payload;
@@ -591,7 +596,7 @@ export function executeRebuildCacheAction(data = undefined, opts = {}) {
   );
   const ok = epCtx.isRemote
     ? clearRemoteEndpointCaches(epCtx.id, { liveCascadeIds })
-    : clearRuntimeCaches({ liveCascadeIds });
+    : clearRuntimeCaches({ liveCascadeIds, preserveFreshSummaryMemo: true });
   if (!ok) {
     return {
       ok: false,
@@ -601,20 +606,30 @@ export function executeRebuildCacheAction(data = undefined, opts = {}) {
       body: JSON.stringify({ ok: false, error: 'Failed to clear trajectory cache' }),
     };
   }
+  inFlightRequests.clear();
   const cachePrefix = `${epCtx.id}::`;
   for (const key of Array.from(displayStepsCache.keys())) {
     if (key.startsWith(cachePrefix)) {
       displayStepsCache.delete(key);
     }
   }
-  clearScannerRuntimeMemos(epCtx.isRemote ? epCtx.id : null);
+  const liveCount = liveCascadeIds instanceof Set ? liveCascadeIds.size : 0;
+  clearScannerRuntimeMemos(epCtx.isRemote ? epCtx.id : null, {
+    totalHint: liveCount,
+    armed: !epCtx.isRemote && liveCount > 0,
+  });
   clearTelemetryBuilderMemo(epCtx.id);
   return {
     ok: true,
     status: 200,
     contentType: 'application/json',
     headers: { 'Cache-Control': 'no-store' },
-    body: JSON.stringify({ ok: true, endpointId: epCtx.id, clearedAt: Date.now() }),
+    body: JSON.stringify({
+      ok: true,
+      endpointId: epCtx.id,
+      clearedAt: Date.now(),
+      totalLive: liveCount,
+    }),
   };
 }
 

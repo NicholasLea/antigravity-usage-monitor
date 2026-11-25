@@ -772,6 +772,16 @@ export function isEquivalentTelemetry(prev, next) {
     return false;
   }
 
+  const pReb = prev.cacheRebuild;
+  const nReb = next.cacheRebuild;
+  if (
+    Boolean(pReb?.active) !== Boolean(nReb?.active) ||
+    Number(pReb?.completed || 0) !== Number(nReb?.completed || 0) ||
+    Number(pReb?.total || 0) !== Number(nReb?.total || 0)
+  ) {
+    return false;
+  }
+
   // 3. 比对活跃会话的实时测速指标
   if (pAct?.cascadeId !== nAct?.cascadeId) return false;
   if (pAct?.stepCount !== nAct?.stepCount) return false;
@@ -1382,6 +1392,13 @@ function readDisplaySteps(payload) {
   };
 }
 
+function clearCachesIfRebuildFinished(prevTelemetry, nextPayload) {
+  if (Boolean(prevTelemetry?.cacheRebuild?.active) && !nextPayload?.cacheRebuild?.active) {
+    clearConsumptionRangeCache();
+    clearConversationViewCache();
+  }
+}
+
 async function requestTelemetry(params, force) {
   const reqSeq = ++latestRequestSeq;
   const reqSettingsRev = settingsRevision;
@@ -1440,6 +1457,7 @@ async function requestTelemetry(params, force) {
     consecutivePollFailures = 0;
 
     let resolvedPayload = reconcileIncomingTelemetrySettings(payload, reqSettingsRev);
+    clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, resolvedPayload);
     syncConsumptionCacheScope(resolvedPayload);
     recordConversationViewToCache(resolvedPayload);
     if (resolvedPayload?.consumption) {
@@ -1508,6 +1526,7 @@ async function requestTelemetry(params, force) {
         return resolvedPayload;
       }
       const finalForcePayload = reconcileIncomingTelemetrySettings(payload, reqSettingsRev);
+      clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, finalForcePayload);
       if (feedbackTimer) clearTimeout(feedbackTimer);
       telemetryStore.setState({
         telemetry: finalForcePayload,
@@ -1548,7 +1567,10 @@ async function requestTelemetry(params, force) {
     if (force) {
       activeForceCount = Math.max(0, activeForceCount - 1);
       if (activeForceCount === 0 && loopActive && loopTickFn && !pollTimer) {
-        pollTimer = setTimeout(loopTickFn, loopIntervalMs);
+        const nextDelay = telemetryStore.getState().telemetry?.cacheRebuild?.active
+          ? Math.min(loopIntervalMs, 800)
+          : loopIntervalMs;
+        pollTimer = setTimeout(loopTickFn, nextDelay);
       }
     }
   }
@@ -1626,6 +1648,7 @@ async function fetchConsumptionRangeSlice({
 
     // 冷启动阶段后端尚无基础快照时会回退返回完整 telemetry，直接平滑复用现有状态合并
     if (payload.consumption) {
+      clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, payload);
       syncConsumptionCacheScope(payload);
       recordConsumptionSliceToCache(payload.consumption, payload.modelBreakdown, {
         customStartMs,
@@ -1786,6 +1809,7 @@ export async function selectConversation(
 
     // 冷启动或全新未入缓存会话回退至完整载荷
     const resolvedPayload = reconcileIncomingTelemetrySettings(payload, reqSettingsRev);
+    clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, resolvedPayload);
     syncConsumptionCacheScope(resolvedPayload);
     lastReceivedSteps = readDisplaySteps(resolvedPayload) || lastReceivedSteps;
     recordConversationViewToCache(resolvedPayload);
@@ -2247,8 +2271,11 @@ export async function rebuildTrajectoryCache() {
   const res = await callSidecarApi('/api/cache/rebuild', { method: 'POST', body: {} });
   clearConsumptionRangeCache();
   clearConversationViewCache();
-  await fetchTelemetry({ force: true });
-  return res;
+  const latestTelemetry = await fetchTelemetry({ force: true });
+  return {
+    ...(res && typeof res === 'object' ? res : {}),
+    cacheRebuild: latestTelemetry?.cacheRebuild || null,
+  };
 }
 
 export async function triggerCloudSync() {
@@ -2385,6 +2412,9 @@ export function startAsyncTelemetryLoop(intervalMs = 2000) {
   loopIntervalMs = intervalMs;
 
   const resolveNextDelay = () => {
+    if (telemetryStore.getState().telemetry?.cacheRebuild?.active) {
+      return Math.min(loopIntervalMs, 800);
+    }
     if (isWindowOverlayMode() && typeof document !== 'undefined' && document.hidden) {
       return Math.max(loopIntervalMs, 8000);
     }

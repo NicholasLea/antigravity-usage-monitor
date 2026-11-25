@@ -17,6 +17,7 @@ import {
 } from './api-actions.mjs';
 import { loadSettings, lsRuntimeEndpoint, setLsRuntimeEndpoint } from './config.mjs';
 import { flushAllEndpointCachesNow } from './endpoint-registry.mjs';
+import { stopLocalBackgroundCacheRebuild } from './local-scanner.mjs';
 import { ensureLsEndpointDiscovered } from './ls-discovery.mjs';
 import { ensureCliStatusLineConfigured } from './cli-statusline-config.mjs';
 import { syncCloudCatalog } from './plugin-updater.mjs';
@@ -694,6 +695,11 @@ export function createStandaloneWebServer(options = {}) {
   }
 
   async function stop() {
+    try {
+      await stopLocalBackgroundCacheRebuild();
+    } catch {
+      // Ignore background rebuild cancellation errors during shutdown
+    }
     flushAllEndpointCachesNow();
     const srv = server;
     server = null;

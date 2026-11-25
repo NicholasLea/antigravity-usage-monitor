@@ -2462,6 +2462,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.cacheDesc': '清空内存与磁盘步骤解析缓存并立即重扫全部会话',
   'settings.oth.rebuildBtn': '重建本地轨迹缓存',
   'settings.oth.rebuildingBtn': '重建中…',
+  'settings.oth.rebuildingProgress': '重建中 ({completed}/{total})…',
   'settings.oth.rebuildDone': '本地轨迹缓存已重建',
   'settings.oth.rebuildFailed': '缓存重建失败',
   'settings.oth.resetLabel': '恢复出厂偏好',
@@ -3513,6 +3514,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.cacheDesc': 'Clear cached step records and rescan all conversation transcripts immediately',
   'settings.oth.rebuildBtn': 'Rebuild Trajectory Cache',
   'settings.oth.rebuildingBtn': 'Rebuilding…',
+  'settings.oth.rebuildingProgress': 'Rebuilding ({completed}/{total})…',
   'settings.oth.rebuildDone': 'Trajectory cache rebuilt',
   'settings.oth.rebuildFailed': 'Failed to rebuild cache',
   'settings.oth.resetLabel': 'Factory Defaults',
@@ -11392,6 +11394,16 @@ function isEquivalentTelemetry(prev, next) {
     return false;
   }
 
+  const pReb = prev.cacheRebuild;
+  const nReb = next.cacheRebuild;
+  if (
+    Boolean(pReb?.active) !== Boolean(nReb?.active) ||
+    Number(pReb?.completed || 0) !== Number(nReb?.completed || 0) ||
+    Number(pReb?.total || 0) !== Number(nReb?.total || 0)
+  ) {
+    return false;
+  }
+
   // 3. 比对活跃会话的实时测速指标
   if (pAct?.cascadeId !== nAct?.cascadeId) return false;
   if (pAct?.stepCount !== nAct?.stepCount) return false;
@@ -12002,6 +12014,13 @@ function readDisplaySteps(payload) {
   };
 }
 
+function clearCachesIfRebuildFinished(prevTelemetry, nextPayload) {
+  if (Boolean(prevTelemetry?.cacheRebuild?.active) && !nextPayload?.cacheRebuild?.active) {
+    clearConsumptionRangeCache();
+    clearConversationViewCache();
+  }
+}
+
 async function requestTelemetry(params, force) {
   const reqSeq = ++latestRequestSeq;
   const reqSettingsRev = settingsRevision;
@@ -12060,6 +12079,7 @@ async function requestTelemetry(params, force) {
     consecutivePollFailures = 0;
 
     let resolvedPayload = reconcileIncomingTelemetrySettings(payload, reqSettingsRev);
+    clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, resolvedPayload);
     syncConsumptionCacheScope(resolvedPayload);
     recordConversationViewToCache(resolvedPayload);
     if (resolvedPayload?.consumption) {
@@ -12128,6 +12148,7 @@ async function requestTelemetry(params, force) {
         return resolvedPayload;
       }
       const finalForcePayload = reconcileIncomingTelemetrySettings(payload, reqSettingsRev);
+      clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, finalForcePayload);
       if (feedbackTimer) clearTimeout(feedbackTimer);
       telemetryStore.setState({
         telemetry: finalForcePayload,
@@ -12168,7 +12189,10 @@ async function requestTelemetry(params, force) {
     if (force) {
       activeForceCount = Math.max(0, activeForceCount - 1);
       if (activeForceCount === 0 && loopActive && loopTickFn && !pollTimer) {
-        pollTimer = setTimeout(loopTickFn, loopIntervalMs);
+        const nextDelay = telemetryStore.getState().telemetry?.cacheRebuild?.active
+          ? Math.min(loopIntervalMs, 800)
+          : loopIntervalMs;
+        pollTimer = setTimeout(loopTickFn, nextDelay);
       }
     }
   }
@@ -12246,6 +12270,7 @@ async function fetchConsumptionRangeSlice({
 
     // 冷启动阶段后端尚无基础快照时会回退返回完整 telemetry，直接平滑复用现有状态合并
     if (payload.consumption) {
+      clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, payload);
       syncConsumptionCacheScope(payload);
       recordConsumptionSliceToCache(payload.consumption, payload.modelBreakdown, {
         customStartMs,
@@ -12406,6 +12431,7 @@ async function selectConversation(
 
     // 冷启动或全新未入缓存会话回退至完整载荷
     const resolvedPayload = reconcileIncomingTelemetrySettings(payload, reqSettingsRev);
+    clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, resolvedPayload);
     syncConsumptionCacheScope(resolvedPayload);
     lastReceivedSteps = readDisplaySteps(resolvedPayload) || lastReceivedSteps;
     recordConversationViewToCache(resolvedPayload);
@@ -12867,8 +12893,11 @@ async function rebuildTrajectoryCache() {
   const res = await callSidecarApi('/api/cache/rebuild', { method: 'POST', body: {} });
   clearConsumptionRangeCache();
   clearConversationViewCache();
-  await fetchTelemetry({ force: true });
-  return res;
+  const latestTelemetry = await fetchTelemetry({ force: true });
+  return {
+    ...(res && typeof res === 'object' ? res : {}),
+    cacheRebuild: latestTelemetry?.cacheRebuild || null,
+  };
 }
 
 async function triggerCloudSync() {
@@ -13005,6 +13034,9 @@ function startAsyncTelemetryLoop(intervalMs = 2000) {
   loopIntervalMs = intervalMs;
 
   const resolveNextDelay = () => {
+    if (telemetryStore.getState().telemetry?.cacheRebuild?.active) {
+      return Math.min(loopIntervalMs, 800);
+    }
     if (isWindowOverlayMode() && typeof document !== 'undefined' && document.hidden) {
       return Math.max(loopIntervalMs, 8000);
     }
@@ -38197,6 +38229,7 @@ const SettingsOtherTab = defineComponent({
     let latestSettings = null;
     let latestWindowBridge = null;
     let latestCloudCodeProxy = null;
+    let latestCacheRebuild = null;
     let latestHostPlatform = 'win32';
     let contextWindowModels = [];
     let contextModelId = '';
@@ -38209,6 +38242,7 @@ const SettingsOtherTab = defineComponent({
     let resetConfirmTimer = null;
     let resetConfirmArmed = false;
     let isRebuilding = false;
+    let wasBackgroundRebuilding = false;
     let isResetting = false;
     let isRemovingMacWrapper = false;
 
@@ -38891,6 +38925,14 @@ const SettingsOtherTab = defineComponent({
       text: t('settings.oth.cacheDesc'),
     });
 
+    function formatRebuildProgressLabel(reb) {
+      const total = Number(reb?.total || 0);
+      const completed = Math.min(total, Math.max(0, Number(reb?.completed || 0)));
+      return total > 0
+        ? t('settings.oth.rebuildingProgress', { completed, total })
+        : t('settings.oth.rebuildingBtn');
+    }
+
     const rebuildBtnText = h('span', { text: t('settings.oth.rebuildBtn') });
     const rebuildCacheBtn = h(
       'button',
@@ -38898,7 +38940,7 @@ const SettingsOtherTab = defineComponent({
         type: 'button',
         className: 'btn-secondary',
         onClick: async () => {
-          if (isRebuilding) return;
+          if (isRebuilding || latestCacheRebuild?.active) return;
           isRebuilding = true;
           patchAttr(rebuildCacheBtn, 'disabled', true);
           patchText(rebuildBtnText, t('settings.oth.rebuildingBtn'));
@@ -38906,21 +38948,52 @@ const SettingsOtherTab = defineComponent({
           try {
             const res = await rebuildTrajectoryCache();
             if (res?.ok !== false) {
-              showMaintFeedback(t('settings.oth.rebuildDone'), 2800);
+              if (res?.cacheRebuild) {
+                latestCacheRebuild = res.cacheRebuild;
+              }
+              if (latestCacheRebuild?.active) {
+                wasBackgroundRebuilding = true;
+                showMaintFeedback(formatRebuildProgressLabel(latestCacheRebuild), 0);
+              } else {
+                wasBackgroundRebuilding = false;
+                showMaintFeedback(t('settings.oth.rebuildDone'), 2800);
+              }
             } else {
+              wasBackgroundRebuilding = false;
               showMaintFeedback(t('settings.oth.rebuildFailed'), 3000);
             }
           } catch {
+            wasBackgroundRebuilding = false;
             showMaintFeedback(t('settings.oth.rebuildFailed'), 3000);
           } finally {
             isRebuilding = false;
-            patchAttr(rebuildCacheBtn, 'disabled', false);
-            patchText(rebuildBtnText, t('settings.oth.rebuildBtn'));
+            syncRebuildButtonState();
           }
         },
       },
       [createSvgIcon('refresh', { size: 12 }), rebuildBtnText]
     );
+
+    function syncRebuildButtonState() {
+      const bgActive = Boolean(latestCacheRebuild?.active);
+      const busy = isRebuilding || bgActive;
+      patchAttr(rebuildCacheBtn, 'disabled', busy);
+      patchText(
+        rebuildBtnText,
+        busy
+          ? bgActive
+            ? formatRebuildProgressLabel(latestCacheRebuild)
+            : t('settings.oth.rebuildingBtn')
+          : t('settings.oth.rebuildBtn')
+      );
+      if (bgActive) {
+        wasBackgroundRebuilding = true;
+        showMaintFeedback(formatRebuildProgressLabel(latestCacheRebuild), 0);
+      } else if (wasBackgroundRebuilding && !isRebuilding) {
+        wasBackgroundRebuilding = false;
+        showMaintFeedback(t('settings.oth.rebuildDone'), 2800);
+      }
+    }
 
     const resetLabelEl = h('span', {
       className: 'settings-action-title',
@@ -39120,7 +39193,8 @@ const SettingsOtherTab = defineComponent({
       models = contextWindowModels,
       windowBridge = latestWindowBridge,
       hostPlatform = latestHostPlatform,
-      cloudCodeProxy = latestCloudCodeProxy
+      cloudCodeProxy = latestCloudCodeProxy,
+      cacheRebuild = latestCacheRebuild
     ) {
       if (!settings) return;
       latestSettings = settings;
@@ -39128,6 +39202,8 @@ const SettingsOtherTab = defineComponent({
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
       if (cloudCodeProxy !== undefined) latestCloudCodeProxy = cloudCodeProxy;
+      if (cacheRebuild !== undefined) latestCacheRebuild = cacheRebuild;
+      syncRebuildButtonState();
       draftModelDisplayMode = normalizeClientModelDisplayMode(
         settings.modelDisplayMode,
         settings.showUpstreamModel
@@ -39203,9 +39279,7 @@ const SettingsOtherTab = defineComponent({
       patchText(resetLabelEl, t('settings.oth.resetLabel'));
       patchText(resetDescEl, t('settings.oth.resetDesc'));
 
-      if (!isRebuilding) {
-        patchText(rebuildBtnText, t('settings.oth.rebuildBtn'));
-      }
+      syncRebuildButtonState();
       if (!isResetting) {
         patchText(
           resetBtnText,
@@ -43456,7 +43530,8 @@ const SettingsView = defineComponent({
             telemetry.contextWindowModels || [],
             telemetry?.windowBridge,
             telemetry?.hostPlatform,
-            telemetry?.cloudCodeProxy
+            telemetry?.cloudCodeProxy,
+            telemetry?.cacheRebuild
           );
         }
       } else if (settingsSubTab !== 'account') {
@@ -43484,6 +43559,7 @@ const SettingsView = defineComponent({
         contextWindowModels: st.telemetry?.contextWindowModels,
         account: st.telemetry?.account,
         quotas: st.telemetry?.quotas,
+        cacheRebuild: st.telemetry?.cacheRebuild,
       }),
       syncActiveTab
     );

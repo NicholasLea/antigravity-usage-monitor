@@ -16,6 +16,7 @@ import {
 import { computeRuntimeCodeVersion } from './config.mjs';
 import { flushAccountQuotaHistoryNow } from './account-quota-history.mjs';
 import { flushAllEndpointCachesNow } from './endpoint-registry.mjs';
+import { stopLocalBackgroundCacheRebuild } from './local-scanner.mjs';
 
 let shuttingDown = false;
 let reloadRequested = false;
@@ -52,6 +53,11 @@ async function gracefulStop() {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(driftWatchTimer);
+  try {
+    await stopLocalBackgroundCacheRebuild();
+  } catch {
+    // Ignore background rebuild cancellation errors
+  }
   try {
     flushAccountQuotaHistoryNow();
     flushAllEndpointCachesNow();

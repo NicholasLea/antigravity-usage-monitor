@@ -222,7 +222,8 @@ export function createTrajectoryCacheStore({
 
   function evictOverflowHotSessions() {
     if (!useSqlite || hotLru.size <= maxHotSessions) return;
-    for (const candidateLower of Array.from(hotLru.keys())) {
+    if (dirtyUpserts.size >= hotLru.size) return;
+    for (const candidateLower of hotLru.keys()) {
       if (hotLru.size <= maxHotSessions) break;
       dehydrateSingleSessionToCold(candidateLower);
     }
@@ -488,12 +489,15 @@ export function createTrajectoryCacheStore({
       }
     }
 
+    const truncateAll =
+      Object.keys(retainedEntries).length === 0 && archivedUpserts.length === 0;
     if (useSqlite && sqliteLedger) {
       try {
         sqliteLedger.flushDeltaBatch({
           upserts: archivedUpserts,
           removals: removedLowers,
           bumpEpoch: true,
+          truncateAll,
         });
       } catch (err) {
         console.error(`Failed clearing trajectory SQLite ledger ${sqliteFilePath}: ${err.message}`);
@@ -555,6 +559,9 @@ export function createTrajectoryCacheStore({
     syncExternalChangesNow,
     getHotSessionCount() {
       return hotLru.size;
+    },
+    getDirtySessionCount() {
+      return dirtyUpserts.size;
     },
     isConversationCold(cascadeId) {
       const hit = lookupRawByLower(cascadeId);
