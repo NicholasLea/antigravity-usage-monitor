@@ -2,7 +2,7 @@
 'use strict';
 
 // --- shared/settings-normalization.mjs ---
-const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi } = (() => {
+const { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi } = (() => {
 /**
  * @fileoverview 前后端与 CLI 共用的偏好设置枚举常量、默认值与无状态纯函数归一化规则。
  */
@@ -73,6 +73,13 @@ const DEFAULT_OVERVIEW_MODULES = Object.freeze([
 
 const DEFAULT_HOVER_MODULES = Object.freeze(['metrics', 'context', 'quotas']);
 
+const METRIC_CARD_STYLES = Object.freeze(['medium', 'large']);
+const HOVER_METRIC_STYLES = METRIC_CARD_STYLES;
+const DEFAULT_OVERVIEW_METRIC_STYLE = 'medium';
+const DEFAULT_HOVER_METRIC_STYLE = 'medium';
+const DEFAULT_HOVER_SYNC_OVERVIEW_METRICS = true;
+const MAX_LARGE_METRIC_SLOTS = 3;
+
 const OVERVIEW_METRIC_KEYS = Object.freeze([
   'tps',
   'ttft',
@@ -91,6 +98,7 @@ const DEFAULT_OVERVIEW_METRICS = Object.freeze([
   'avg_tps',
   'step_cost',
 ]);
+const DEFAULT_HOVER_METRICS = DEFAULT_OVERVIEW_METRICS;
 
 const STEP_TABLE_COLUMN_KEYS = Object.freeze([
   'step',
@@ -478,6 +486,75 @@ function normalizeHoverModules(raw) {
 }
 
 /**
+ * 归一化鼠标悬浮窗实时指标卡片尺寸（`'medium'` 标准 1~4 项 | `'large'` 趋势折线 1~2 项，默认 `'medium'`）。
+ *
+ * @param {unknown} raw
+ * @returns {'medium'|'large'}
+ */
+/**
+ * 归一化实时指标卡片展示尺寸（`'medium'` 紧凑数值 1~4 项，`'large'` 大号数值+趋势折线 1~3 项）。
+ *
+ * @param {unknown} raw
+ * @returns {'medium'|'large'}
+ */
+function normalizeMetricCardStyle(raw) {
+  const val = String(raw ?? '').trim().toLowerCase();
+  return val === 'large' || val === 'sparkline' || val === 'trend' ? 'large' : 'medium';
+}
+
+const normalizeOverviewMetricStyle = normalizeMetricCardStyle;
+const normalizeHoverMetricStyle = normalizeMetricCardStyle;
+
+/**
+ * 归一化鼠标悬浮窗是否同步「实时监控」的实时指标尺寸与列表（默认开启）。
+ *
+ * @param {unknown} raw
+ * @returns {boolean}
+ */
+function normalizeHoverSyncOverviewMetrics(raw) {
+  return raw !== false;
+}
+
+/**
+ * 归一化鼠标悬浮窗独立实时指标列表及左右顺序（1~4 项，与 `overviewMetrics` 共用完整候选集）。
+ *
+ * @param {unknown} raw
+ * @returns {string[]}
+ */
+function normalizeHoverMetrics(raw) {
+  return normalizeOverviewMetrics(raw);
+}
+
+/**
+ * 解析实时监控 (`overview`) 或鼠标悬浮窗 (`hover`) 当前生效的实时指标尺寸与展示项：
+ * - `hover` 且开启 `hoverSyncOverviewMetrics` 时直接复用 `overviewMetricStyle` + `overviewMetrics`；
+ * - 切至 `'large'` 时保留完整 1~4 项配置，仅截取前 `MAX_LARGE_METRIC_SLOTS`（3）项渲染，第 4 项在设置页自动置灰。
+ *
+ * @param {'overview'|'hover'|string} mode
+ * @param {Record<string, any>|null|undefined} [settings]
+ */
+function resolveEffectiveMetricMatrixConfig(mode, settings = {}) {
+  const s = settings && typeof settings === 'object' ? settings : {};
+  const isHover = mode === 'hover';
+  const syncOverview = !isHover || normalizeHoverSyncOverviewMetrics(s.hoverSyncOverviewMetrics);
+  const style = syncOverview
+    ? normalizeOverviewMetricStyle(s.overviewMetricStyle)
+    : normalizeHoverMetricStyle(s.hoverMetricStyle);
+  const allMetrics = syncOverview
+    ? normalizeOverviewMetrics(s.overviewMetrics)
+    : normalizeHoverMetrics(s.hoverMetrics);
+  const isLarge = style === 'large';
+  const metrics = isLarge ? allMetrics.slice(0, MAX_LARGE_METRIC_SLOTS) : allMetrics;
+  return {
+    syncOverview,
+    style,
+    isLarge,
+    allMetrics,
+    metrics,
+  };
+}
+
+/**
  * 归一化调用明细「按步查看」表格列配置与左右顺序（2~14 列，默认保留现有 7 列）。
  *
  * @param {unknown} raw
@@ -598,7 +675,7 @@ function normalizeExperimentalModernUi(val) {
   }
   return Boolean(val);
 }
-return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi };
+return { SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi };
 })();
 
 // --- shared/telemetry-display-rules.mjs ---
@@ -2116,6 +2193,14 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.hoverModulesLabel': '悬浮窗展示模块 (上 → 下，0~4 项，可拖拽)',
   'settings.str.hoverEmptyHint': '已关闭悬浮速览窗（点击胶囊仍可展开完整面板）',
   'settings.str.addHoverModule': '添加模块 ({count}/{max})',
+  'settings.str.hoverMetricStyleLabel': '实时指标尺寸',
+  'settings.str.hoverMetricStyleMedium': '中 · 紧凑数值',
+  'settings.str.hoverMetricStyleLarge': '大 · 趋势折线',
+  'settings.str.hoverSyncOverviewLabel': '与实时监控同步',
+  'settings.str.hoverSyncOverviewHint': '当前与「实时监控布局」共用实时指标，修改将双向同步',
+  'settings.str.hoverMetricsLabel': '实时指标 (左 → 右，1~4 项，可拖拽)',
+  'settings.str.hoverMetricsInactiveHint': '当前悬浮窗已移出「实时指标」模块，重新添加模块后即生效',
+  'settings.str.metricOverflowTag': '大尺寸隐藏',
   'settings.str.overviewSection': '实时监控布局',
   'settings.str.overviewBadge': '{modCount} 模块 · {metCount} 指标',
   'settings.str.overviewModulesLabel': '监控模块与顺序 (上 → 下，至少 1 项，可拖拽)',
@@ -3136,6 +3221,14 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.hoverModulesLabel': 'Hover Popup Modules (Top → Bottom, 0–4, draggable)',
   'settings.str.hoverEmptyHint': 'Hover quick-view disabled (click capsule to open full panel)',
   'settings.str.addHoverModule': 'Add Module ({count}/{max})',
+  'settings.str.hoverMetricStyleLabel': 'Live Metrics Size',
+  'settings.str.hoverMetricStyleMedium': 'Medium · Compact',
+  'settings.str.hoverMetricStyleLarge': 'Large · Sparkline',
+  'settings.str.hoverSyncOverviewLabel': 'Sync with Live Overview',
+  'settings.str.hoverSyncOverviewHint': 'Shares metrics size and order with Live Overview Layout (edits sync both ways)',
+  'settings.str.hoverMetricsLabel': 'Live Metrics (Left → Right, 1–4, draggable)',
+  'settings.str.hoverMetricsInactiveHint': '"Live Metrics" is hidden in Hover modules; add it below to display',
+  'settings.str.metricOverflowTag': 'Hidden in Large',
   'settings.str.overviewSection': 'Live Overview Layout',
   'settings.str.overviewBadge': '{modCount} mod · {metCount} cells',
   'settings.str.overviewModulesLabel': 'Overview Modules & Order (Top → Bottom, min 1, draggable)',
@@ -6417,7 +6510,11 @@ const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
   normField('contextAgentMode', normalizeContextAgentMode),
   arrayField('topbarCapsuleSlots', normalizeTopbarCapsuleSlots),
   arrayField('hoverModules', normalizeHoverModules),
+  boolField('hoverSyncOverviewMetrics', true),
+  normField('hoverMetricStyle', normalizeHoverMetricStyle),
+  arrayField('hoverMetrics', normalizeHoverMetrics),
   arrayField('overviewModules', normalizeOverviewModules),
+  normField('overviewMetricStyle', normalizeOverviewMetricStyle),
   arrayField('overviewMetrics', normalizeOverviewMetrics),
   boolField('showStepTurnRail', false),
   boolField('showStepAgentBadge', true),
@@ -9416,7 +9513,7 @@ return { fetchHostI18nStatus, refreshHostI18nManifest, selectHostI18nLanguage, u
 })();
 
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 /**
  * @fileoverview Reactive telemetry store with async non-overlapping poll scheduler
  * and granular slice updates.
@@ -9834,6 +9931,11 @@ const DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS = DEFAULT_CLI_STATUSLINE_SLOTS;
 const CLIENT_OVERVIEW_MODULE_KEYS = OVERVIEW_MODULE_KEYS;
 const DEFAULT_CLIENT_OVERVIEW_MODULES = DEFAULT_OVERVIEW_MODULES;
 const DEFAULT_CLIENT_HOVER_MODULES = DEFAULT_HOVER_MODULES;
+const DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS = DEFAULT_HOVER_SYNC_OVERVIEW_METRICS;
+const DEFAULT_CLIENT_HOVER_METRIC_STYLE = DEFAULT_HOVER_METRIC_STYLE;
+const DEFAULT_CLIENT_HOVER_METRICS = DEFAULT_HOVER_METRICS;
+const DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE = DEFAULT_OVERVIEW_METRIC_STYLE;
+const MAX_CLIENT_LARGE_METRIC_SLOTS = MAX_LARGE_METRIC_SLOTS;
 const CLIENT_OVERVIEW_METRIC_KEYS = OVERVIEW_METRIC_KEYS;
 const DEFAULT_CLIENT_OVERVIEW_METRICS = DEFAULT_OVERVIEW_METRICS;
 const CLIENT_STEP_COLUMN_KEYS = STEP_TABLE_COLUMN_KEYS;
@@ -9881,8 +9983,13 @@ function resolveOverlayCtxInspectorAgentId(telemetry, ctxInspectorAgentId = 'aut
 }
 const resolveEffectiveClientCliStatusLineSlots = resolveEffectiveCliStatusLineSlots;
 const normalizeClientHoverModules = normalizeHoverModules;
+const normalizeClientHoverSyncOverviewMetrics = normalizeHoverSyncOverviewMetrics;
+const normalizeClientHoverMetricStyle = normalizeHoverMetricStyle;
+const normalizeClientHoverMetrics = normalizeHoverMetrics;
 const normalizeClientOverviewModules = normalizeOverviewModules;
+const normalizeClientOverviewMetricStyle = normalizeOverviewMetricStyle;
 const normalizeClientOverviewMetrics = normalizeOverviewMetrics;
+const resolveEffectiveClientMetricMatrixConfig = resolveEffectiveMetricMatrixConfig;
 const normalizeClientStepColumns = normalizeStepTableColumns;
 const normalizeClientUpdateMode = normalizePluginUpdateMode;
 const normalizeClientWindowMountMode = normalizeWindowMountMode;
@@ -10014,7 +10121,26 @@ function isEquivalentTelemetry(prev, next) {
   }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
   if (!sameArr(pSet?.hoverModules, nSet?.hoverModules)) return false;
+  if (
+    normalizeClientHoverSyncOverviewMetrics(pSet?.hoverSyncOverviewMetrics) !==
+    normalizeClientHoverSyncOverviewMetrics(nSet?.hoverSyncOverviewMetrics)
+  ) {
+    return false;
+  }
+  if (
+    normalizeClientHoverMetricStyle(pSet?.hoverMetricStyle) !==
+    normalizeClientHoverMetricStyle(nSet?.hoverMetricStyle)
+  ) {
+    return false;
+  }
+  if (!sameArr(pSet?.hoverMetrics, nSet?.hoverMetrics)) return false;
   if (!sameArr(pSet?.overviewModules, nSet?.overviewModules)) return false;
+  if (
+    normalizeClientOverviewMetricStyle(pSet?.overviewMetricStyle) !==
+    normalizeClientOverviewMetricStyle(nSet?.overviewMetricStyle)
+  ) {
+    return false;
+  }
   if (!sameArr(pSet?.overviewMetrics, nSet?.overviewMetrics)) return false;
   if (!sameArr(pSet?.stepTableColumns, nSet?.stepTableColumns)) return false;
 
@@ -11291,8 +11417,24 @@ async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverModules')) {
     safePatch.hoverModules = normalizeClientHoverModules(safePatch.hoverModules);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverSyncOverviewMetrics')) {
+    safePatch.hoverSyncOverviewMetrics = normalizeClientHoverSyncOverviewMetrics(
+      safePatch.hoverSyncOverviewMetrics
+    );
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverMetricStyle')) {
+    safePatch.hoverMetricStyle = normalizeClientHoverMetricStyle(safePatch.hoverMetricStyle);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverMetrics')) {
+    safePatch.hoverMetrics = normalizeClientHoverMetrics(safePatch.hoverMetrics);
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'overviewModules')) {
     safePatch.overviewModules = normalizeClientOverviewModules(safePatch.overviewModules);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'overviewMetricStyle')) {
+    safePatch.overviewMetricStyle = normalizeClientOverviewMetricStyle(
+      safePatch.overviewMetricStyle
+    );
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'overviewMetrics')) {
     safePatch.overviewMetrics = normalizeClientOverviewMetrics(safePatch.overviewMetrics);
@@ -11852,7 +11994,7 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientOverviewModules, normalizeClientOverviewMetrics, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
@@ -20283,7 +20425,7 @@ return { createSessionLineChart, createModelFitChart };
 })();
 
 // --- src/registries/metricRegistry.js ---
-const { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions, resolveQuotaCapsuleSummary, resolveSpecificQuotaSlotSummary, resolveCapsuleMetricPresentation, resolveOverviewMetricCell } = (() => {
+const { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions, splitMetricValueAndUnit, extractOverviewMetricSeries, buildSparklineGeometry, resolveQuotaCapsuleSummary, resolveSpecificQuotaSlotSummary, resolveCapsuleMetricPresentation, resolveOverviewMetricCell } = (() => {
 /**
  * @fileoverview Decoupled Metric Registry (`metricRegistry.js`).
  * Centralizes presentation & option metadata for:
@@ -20311,6 +20453,205 @@ function getOverviewMetricOptions() {
     value: key,
     label: t(`ovMetric.${key}`),
   }));
+}
+
+/**
+ * 将格式化后的指标文本拆分为主体数值与尾随单位（如 `'68.4 tok/s'` → `{ main: '68.4', unit: 'tok/s' }`），
+ * 便于大尺寸趋势卡片将数值加粗放大、单位轻量化排版。
+ *
+ * @param {string} valueText
+ * @returns {{ main: string, unit: string }}
+ */
+function splitMetricValueAndUnit(valueText) {
+  const str = String(valueText ?? '—').trim();
+  if (!str) return { main: '—', unit: '' };
+  const match = str.match(/^([+-]?\$?[\d.,]+[kKmMbB]?)(?:\s*(tok\/s|t\/s|ms|s|%))$/);
+  if (match) {
+    return { main: match[1], unit: match[2] };
+  }
+  return { main: str, unit: '' };
+}
+
+/**
+ * 从 `recentSteps`（默认按时间倒序）提取指定指标的时间顺序序列（从旧到新，最多取末 `maxPoints` 点），
+ * 用于驱动悬浮窗大尺寸实时指标卡片右侧的迷你走势折线图。
+ *
+ * @param {string} metricKey
+ * @param {Array<Record<string, any>>} [steps=[]]
+ * @param {{ maxPoints?: number, limitTokens?: number }} [options]
+ * @returns {number[]}
+ */
+function extractOverviewMetricSeries(
+  metricKey,
+  steps = [],
+  { maxPoints = 16, limitTokens = 256000 } = {}
+) {
+  if (!Array.isArray(steps) || steps.length === 0) return [];
+  const cap = Math.max(2, Number(maxPoints) || 16);
+  const safeLimit = Number(limitTokens) > 0 ? Number(limitTokens) : 256000;
+  const series = [];
+
+  if (metricKey === 'avg_tps') {
+    let sum = 0;
+    let count = 0;
+    for (let i = steps.length - 1; i >= 0; i -= 1) {
+      const v = Number(steps[i]?.tokPerSec);
+      if (Number.isFinite(v) && v > 0) {
+        sum += v;
+        count += 1;
+        series.push(+(sum / count).toFixed(2));
+      }
+    }
+    return series.slice(-cap);
+  }
+
+  if (metricKey === 'session_cost') {
+    let acc = 0;
+    for (let i = steps.length - 1; i >= 0; i -= 1) {
+      const raw = steps[i]?.costUsd;
+      if (raw != null && Number.isFinite(Number(raw)) && Number(raw) >= 0) {
+        acc += Number(raw);
+        series.push(+acc.toFixed(4));
+      }
+    }
+    return series.slice(-cap);
+  }
+
+  if (metricKey === 'session_tokens') {
+    let acc = 0;
+    for (let i = steps.length - 1; i >= 0; i -= 1) {
+      const s = steps[i];
+      if (!s) continue;
+      const inTok = Math.max(0, Number(s.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(s.cacheReadTokens || 0));
+      const outTok = Math.max(0, Number(s.outputTokens || 0));
+      const stepTotal = inTok + cacheTok + outTok || Math.max(0, Number(s.contextTokens || 0));
+      if (stepTotal > 0) {
+        acc += stepTotal;
+        series.push(acc);
+      }
+    }
+    return series.slice(-cap);
+  }
+
+  // Non-cumulative per-step metrics: collect at most `cap` most recent valid points in O(cap)
+  const rev = [];
+  for (let i = 0; i < steps.length && rev.length < cap; i += 1) {
+    const s = steps[i];
+    if (!s) continue;
+    let val = null;
+    if (metricKey === 'tps') {
+      const v = Number(s.tokPerSec);
+      if (Number.isFinite(v) && v > 0) val = v;
+    } else if (metricKey === 'ttft') {
+      if (s.ttftSec != null && Number.isFinite(Number(s.ttftSec)) && Number(s.ttftSec) >= 0) {
+        val = Number(s.ttftSec);
+      }
+    } else if (metricKey === 'step_cost') {
+      if (s.costUsd != null && Number.isFinite(Number(s.costUsd)) && Number(s.costUsd) >= 0) {
+        val = Number(s.costUsd);
+      }
+    } else if (metricKey === 'cache_hit') {
+      if (
+        s.cacheHitPct != null &&
+        Number.isFinite(Number(s.cacheHitPct)) &&
+        Number(s.cacheHitPct) >= 0
+      ) {
+        val = Math.min(100, Number(s.cacheHitPct));
+      }
+    } else if (metricKey === 'context_usage') {
+      const v = Number(s.contextTokens);
+      if (Number.isFinite(v) && v > 0) {
+        val = Math.min(100, +((v / safeLimit) * 100).toFixed(2));
+      }
+    }
+    if (val !== null) rev.push(val);
+  }
+  rev.reverse();
+  return rev;
+}
+
+/**
+ * 将数值序列映射为轻量迷你折线图 SVG 几何路径（含折线坐标、底部渐变面积闭合路径与末端圆点坐标）。
+ *
+ * @param {number[]} values
+ * @param {{ width?: number, height?: number, padTop?: number, padBottom?: number, padX?: number }} [dims]
+ */
+function buildSparklineGeometry(
+  values = [],
+  { width = 108, height = 34, padTop = 4, padBottom = 5, padX = 4 } = {}
+) {
+  const pts = Array.isArray(values)
+    ? values.map(Number).filter((n) => Number.isFinite(n))
+    : [];
+  const baselineY = +(height - 2).toFixed(1);
+  const plotTop = padTop;
+  const plotBottom = height - padBottom;
+  const plotH = Math.max(4, plotBottom - plotTop);
+  const plotW = Math.max(8, width - padX * 2);
+
+  if (pts.length === 0) {
+    return {
+      hasLine: false,
+      hasDot: false,
+      linePoints: '',
+      areaPath: '',
+      lastX: 0,
+      lastY: 0,
+      baselineY,
+    };
+  }
+
+  if (pts.length === 1) {
+    const midY = +(plotTop + plotH * 0.5).toFixed(1);
+    const startX = +(padX + plotW * 0.52).toFixed(1);
+    const endX = +(width - padX).toFixed(1);
+    return {
+      hasLine: true,
+      hasDot: true,
+      linePoints: `${startX},${midY} ${endX},${midY}`,
+      areaPath: `M ${startX},${midY} L ${endX},${midY} L ${endX},${baselineY} L ${startX},${baselineY} Z`,
+      lastX: endX,
+      lastY: midY,
+      baselineY,
+    };
+  }
+
+  let min = pts[0];
+  let max = pts[0];
+  for (let i = 1; i < pts.length; i += 1) {
+    if (pts[i] < min) min = pts[i];
+    if (pts[i] > max) max = pts[i];
+  }
+  const span = max - min;
+  const coords = [];
+  for (let i = 0; i < pts.length; i += 1) {
+    const x = +(padX + (i / (pts.length - 1)) * plotW).toFixed(1);
+    const y =
+      span > 1e-9
+        ? +(plotBottom - ((pts[i] - min) / span) * plotH).toFixed(1)
+        : +(plotTop + plotH * 0.5).toFixed(1);
+    coords.push([x, y]);
+  }
+
+  const linePoints = coords.map(([x, y]) => `${x},${y}`).join(' ');
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  const lineSegments = coords
+    .slice(1)
+    .map(([x, y]) => `L ${x},${y}`)
+    .join(' ');
+  const areaPath = `M ${first[0]},${first[1]} ${lineSegments} L ${last[0]},${baselineY} L ${first[0]},${baselineY} Z`;
+
+  return {
+    hasLine: true,
+    hasDot: true,
+    linePoints,
+    areaPath,
+    lastX: last[0],
+    lastY: last[1],
+    baselineY,
+  };
 }
 
 function resolveQuotaCapsuleSummary(quotas) {
@@ -20888,20 +21229,88 @@ function resolveOverviewMetricCell(metricKey, cellCtx = {}) {
     subClass: 'cell-sub',
   };
 }
-return { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions, resolveQuotaCapsuleSummary, resolveSpecificQuotaSlotSummary, resolveCapsuleMetricPresentation, resolveOverviewMetricCell };
+return { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions, splitMetricValueAndUnit, extractOverviewMetricSeries, buildSparklineGeometry, resolveQuotaCapsuleSummary, resolveSpecificQuotaSlotSummary, resolveCapsuleMetricPresentation, resolveOverviewMetricCell };
 })();
 
 // --- src/components/widgets/MetricMatrixWidget.js ---
 const { MetricMatrixWidget } = (() => {
 /**
  * @fileoverview Standalone decoupled Metric Matrix Widget (`MetricMatrixWidget.js`).
- * Renders 1..4 user-selected telemetry cells dynamically via `metricRegistry.js`.
+ * Renders 1..4 user-selected telemetry cells dynamically via `metricRegistry.js`,
+ * plus optional Large Sparkline Trend cards (1..2 items) for Hover Popover mode.
  */
 
+
+let sparklineGradSeq = 0;
+
+function extractToneClass(valueClass = '') {
+  const m = String(valueClass || '').match(/\b(tone-(?:good|info|warn|danger|muted)|accent-(?:speed|ok))\b/);
+  return m ? m[1] : '';
+}
+
+function createSparklineSvg(gradId) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'cell-sparkline-svg');
+  svg.setAttribute('viewBox', '0 0 108 34');
+  svg.setAttribute('preserveAspectRatio', 'xMaxYMid meet');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const defs = document.createElementNS(SVG_NS, 'defs');
+  const grad = document.createElementNS(SVG_NS, 'linearGradient');
+  grad.setAttribute('id', gradId);
+  grad.setAttribute('x1', '0');
+  grad.setAttribute('y1', '0');
+  grad.setAttribute('x2', '0');
+  grad.setAttribute('y2', '1');
+  const stopTop = document.createElementNS(SVG_NS, 'stop');
+  stopTop.setAttribute('offset', '0%');
+  stopTop.setAttribute('stop-color', 'currentColor');
+  stopTop.setAttribute('stop-opacity', '0.22');
+  const stopBot = document.createElementNS(SVG_NS, 'stop');
+  stopBot.setAttribute('offset', '100%');
+  stopBot.setAttribute('stop-color', 'currentColor');
+  stopBot.setAttribute('stop-opacity', '0.02');
+  grad.appendChild(stopTop);
+  grad.appendChild(stopBot);
+  defs.appendChild(grad);
+
+  const axisLine = document.createElementNS(SVG_NS, 'line');
+  axisLine.setAttribute('class', 'cell-sparkline-axis');
+  axisLine.setAttribute('x1', '4');
+  axisLine.setAttribute('y1', '32');
+  axisLine.setAttribute('x2', '104');
+  axisLine.setAttribute('y2', '32');
+
+  const areaPath = document.createElementNS(SVG_NS, 'path');
+  areaPath.setAttribute('class', 'cell-sparkline-area');
+  areaPath.setAttribute('fill', `url(#${gradId})`);
+
+  const polyline = document.createElementNS(SVG_NS, 'polyline');
+  polyline.setAttribute('class', 'cell-sparkline-line');
+  polyline.setAttribute('fill', 'none');
+  polyline.setAttribute('stroke', 'currentColor');
+  polyline.setAttribute('stroke-width', '1.65');
+  polyline.setAttribute('stroke-linecap', 'round');
+  polyline.setAttribute('stroke-linejoin', 'round');
+
+  const dot = document.createElementNS(SVG_NS, 'circle');
+  dot.setAttribute('class', 'cell-sparkline-dot');
+  dot.setAttribute('r', '2.75');
+  dot.setAttribute('fill', 'currentColor');
+
+  svg.appendChild(defs);
+  svg.appendChild(axisLine);
+  svg.appendChild(areaPath);
+  svg.appendChild(polyline);
+  svg.appendChild(dot);
+
+  return { svg, axisLine, areaPath, polyline, dot };
+}
 
 const MetricMatrixWidget = defineComponent({
   name: 'MetricMatrixWidget',
   setup({ props }) {
+    const widgetMode = props?.mode === 'hover' ? 'hover' : 'overview';
     const getCtxAgentId =
       typeof props?.getCtxAgentId === 'function'
         ? props.getCtxAgentId
@@ -20914,64 +21323,179 @@ const MetricMatrixWidget = defineComponent({
     patchStyleVar(matrixEl, '--matrix-cols', '4');
 
     function createMetricCellNode() {
+      const gradId = `wm-spark-grad-${++sparklineGradSeq}`;
       const labelSpan = h('span', { text: '—' });
       const iconSvg = createSvgIcon('pulse', { size: 11 });
       const valueEl = h('strong', { className: 'cell-value', text: '—' });
       const subEl = h('span', { className: 'cell-sub', text: '—' });
+
+      const trendNumEl = h('strong', { className: 'cell-trend-num', text: '—' });
+      const trendUnitEl = h('span', { className: 'cell-trend-unit', text: '' });
+      const trendSubEl = h('span', { className: 'cell-trend-sub', text: '—' });
+      const spark = createSparklineSvg(gradId);
+      const sparkWrapEl = h('div', { className: 'cell-sparkline-wrap' }, [spark.svg]);
+      const trendRowEl = h('div', { className: 'cell-trend-row', hidden: true }, [
+        h('div', { className: 'cell-trend-left' }, [
+          h('div', { className: 'cell-trend-metric' }, [trendNumEl, trendUnitEl]),
+          trendSubEl,
+        ]),
+        sparkWrapEl,
+      ]);
+
       const el = h('div', { className: 'matrix-cell' }, [
         h('div', { className: 'cell-label' }, [labelSpan, iconSvg]),
         valueEl,
         subEl,
+        trendRowEl,
       ]);
       return {
         el,
-        refs: { labelSpan, iconSvg, valueEl, subEl },
+        refs: {
+          el,
+          labelSpan,
+          iconSvg,
+          valueEl,
+          subEl,
+          trendRowEl,
+          trendNumEl,
+          trendUnitEl,
+          trendSubEl,
+          sparkWrapEl,
+          spark,
+        },
       };
     }
 
     function update({ data } = {}) {
       patchAttr(matrixEl, 'aria-label', t('module.metrics'));
-      const metricKeys = normalizeClientOverviewMetrics(data?.settings?.overviewMetrics);
-      const colCount = Math.max(1, Math.min(4, metricKeys.length));
+      const settings = data?.settings || {};
+      const { isLarge: isLargeTrend, metrics: metricKeys } =
+        resolveEffectiveClientMetricMatrixConfig(widgetMode, settings);
+      const maxCols = isLargeTrend ? 3 : 4;
+      const colCount = Math.max(1, Math.min(maxCols, metricKeys.length));
+      patchClasses(matrixEl, { 'is-large-trend': isLargeTrend });
       patchAttr(matrixEl, 'data-cols', String(colCount));
       patchStyleVar(matrixEl, '--matrix-cols', String(colCount));
 
       const { hasSubagents, scopedConv, ctxAgent } = resolveScopedConversation(
         data,
         'all',
-        getCtxAgentId()
+        getCtxAgentId(),
+        isLargeTrend
       );
       const active = scopedConv || data?.activeConversation || {};
       const ctx = ctxAgent?.context || active.context || {};
       const quotas = data?.quotas || {};
-      const settings = data?.settings || {};
       const locale = getEffectiveLocale();
+      const limitTokens = Number(ctx.compactionLimitTokens || ctx.limitTokens || 256000);
+      const seriesSteps = isLargeTrend
+        ? active.sparklineSteps || active.recentSteps || data?.activeConversation?.recentSteps || []
+        : [];
+      const sparkWidth = colCount === 1 ? 248 : colCount === 2 ? 136 : 74;
+      const sparkHeight = 34;
+      const sparkStrokeWidth = colCount === 3 ? '1.55' : '1.65';
+      const sparkDotRadius = colCount === 3 ? '2.5' : '2.75';
 
-      const cells = metricKeys.map((key) =>
-        resolveOverviewMetricCell(key, {
+      const cells = metricKeys.map((key) => {
+        const base = resolveOverviewMetricCell(key, {
           active,
           ctx,
           quotas,
           settings,
           hasSubagents,
-        })
-      );
+        });
+        if (!isLargeTrend) {
+          return { ...base, isLargeTrend: false, sparkSig: '' };
+        }
+        const series = extractOverviewMetricSeries(key, seriesSteps, {
+          maxPoints: 16,
+          limitTokens,
+        });
+        const geom = buildSparklineGeometry(series, { width: sparkWidth, height: sparkHeight });
+        const split = splitMetricValueAndUnit(base.valueText);
+        const tone = extractToneClass(base.valueClass);
+        const sparkSig = `${sparkWidth}x${sparkHeight}:${geom.linePoints}:${geom.lastX},${geom.lastY}`;
+        return {
+          ...base,
+          isLargeTrend: true,
+          tone,
+          trendMain: split.main,
+          trendUnit: split.unit,
+          sparkWidth,
+          sparkHeight,
+          sparkStrokeWidth,
+          sparkDotRadius,
+          geom,
+          sparkSig,
+        };
+      });
 
       patchKeyedList(matrixEl, cells, {
         keyFn: (cell) => cell.key,
         sigFn: (cell) =>
-          `${locale}:${cell.key}:${cell.label}:${cell.icon}:${cell.isPulsing}:${cell.valueClass}:${cell.valueText}:${cell.subClass}:${cell.subText}`,
+          `${locale}:${cell.isLargeTrend ? 'L' : 'M'}:${cell.key}:${cell.label}:${cell.icon}:${cell.isPulsing}:${cell.valueClass}:${cell.valueText}:${cell.subClass}:${cell.subText}:${cell.sparkSig}`,
         createRow: createMetricCellNode,
         updateRow: (refs, cell) => {
+          patchClasses(refs.el, { 'is-trend-card': cell.isLargeTrend });
           patchText(refs.labelSpan, cell.label);
           patchSvgIcon(refs.iconSvg, cell.icon);
           refs.iconSvg.setAttribute('width', String(cell.iconSize));
           refs.iconSvg.setAttribute('height', String(cell.iconSize));
           patchClasses(refs.iconSvg, { 'is-pulsing': Boolean(cell.isPulsing) });
-          patchAttr(refs.valueEl, 'class', cell.valueClass);
-          patchText(refs.valueEl, cell.valueText);
-          patchAttr(refs.subEl, 'class', cell.subClass);
-          patchText(refs.subEl, cell.subText);
+
+          patchAttr(refs.valueEl, 'hidden', cell.isLargeTrend);
+          patchAttr(refs.subEl, 'hidden', cell.isLargeTrend);
+          patchAttr(refs.trendRowEl, 'hidden', !cell.isLargeTrend);
+
+          if (!cell.isLargeTrend) {
+            patchAttr(refs.valueEl, 'class', cell.valueClass);
+            patchText(refs.valueEl, cell.valueText);
+            patchAttr(refs.subEl, 'class', cell.subClass);
+            patchText(refs.subEl, cell.subText);
+            return;
+          }
+
+          patchAttr(
+            refs.trendNumEl,
+            'class',
+            cell.tone ? `cell-trend-num ${cell.tone}` : 'cell-trend-num'
+          );
+          patchText(refs.trendNumEl, cell.trendMain);
+          patchText(refs.trendUnitEl, cell.trendUnit);
+          patchAttr(refs.trendUnitEl, 'hidden', !cell.trendUnit);
+          patchText(refs.trendSubEl, cell.subText);
+
+          patchAttr(
+            refs.sparkWrapEl,
+            'class',
+            cell.tone ? `cell-sparkline-wrap ${cell.tone}` : 'cell-sparkline-wrap'
+          );
+          refs.spark.svg.setAttribute('viewBox', `0 0 ${cell.sparkWidth} ${cell.sparkHeight}`);
+          refs.spark.polyline.setAttribute('stroke-width', cell.sparkStrokeWidth);
+          refs.spark.dot.setAttribute('r', cell.sparkDotRadius);
+          refs.spark.axisLine.setAttribute('x2', String(cell.sparkWidth - 4));
+          refs.spark.axisLine.setAttribute('y1', String(cell.geom.baselineY));
+          refs.spark.axisLine.setAttribute('y2', String(cell.geom.baselineY));
+
+          if (cell.geom.hasLine) {
+            refs.spark.areaPath.setAttribute('d', cell.geom.areaPath);
+            refs.spark.polyline.setAttribute('points', cell.geom.linePoints);
+            patchAttr(refs.spark.areaPath, 'hidden', false);
+            patchAttr(refs.spark.polyline, 'hidden', false);
+          } else {
+            refs.spark.areaPath.setAttribute('d', '');
+            refs.spark.polyline.setAttribute('points', '');
+            patchAttr(refs.spark.areaPath, 'hidden', true);
+            patchAttr(refs.spark.polyline, 'hidden', true);
+          }
+
+          if (cell.geom.hasDot) {
+            refs.spark.dot.setAttribute('cx', String(cell.geom.lastX));
+            refs.spark.dot.setAttribute('cy', String(cell.geom.lastY));
+            patchAttr(refs.spark.dot, 'hidden', false);
+          } else {
+            patchAttr(refs.spark.dot, 'hidden', true);
+          }
         },
       });
     }
@@ -28991,6 +29515,25 @@ function buildStructurePreviewTelemetry(
     },
   ];
 
+  // 14-step realistic sparkline series (newest-first) for hover Large Trend preview cards,
+  // keeping `mockSteps` at 4 compact rows for the Step Table preview.
+  const mockSparklineSteps = [
+    { tokPerSec: 68.4, ttftSec: 1.15, costUsd: 0.042, cacheHitPct: 94.5, contextTokens: 142800, inputTokens: 7800, cacheReadTokens: 133580, outputTokens: 1420 },
+    { tokPerSec: 34.2, ttftSec: 2.35, costUsd: 0.056, cacheHitPct: 86.2, contextTokens: 139200, inputTokens: 16200, cacheReadTokens: 121800, outputTokens: 1200 },
+    { tokPerSec: 91.8, ttftSec: 0.82, costUsd: 0.029, cacheHitPct: 95.1, contextTokens: 136400, inputTokens: 6400, cacheReadTokens: 128800, outputTokens: 1200 },
+    { tokPerSec: 42.6, ttftSec: 1.94, costUsd: 0.051, cacheHitPct: 82.4, contextTokens: 131800, inputTokens: 19400, cacheReadTokens: 111200, outputTokens: 1200 },
+    { tokPerSec: 74.5, ttftSec: 1.08, costUsd: 0.036, cacheHitPct: 91.6, contextTokens: 128400, inputTokens: 9800, cacheReadTokens: 117500, outputTokens: 1100 },
+    { tokPerSec: 36.1, ttftSec: 2.65, costUsd: 0.068, cacheHitPct: 61.4, contextTokens: 124600, inputTokens: 45200, cacheReadTokens: 78300, outputTokens: 1100 },
+    { tokPerSec: 84.3, ttftSec: 0.94, costUsd: 0.033, cacheHitPct: 93.2, contextTokens: 158200, inputTokens: 9600, cacheReadTokens: 147200, outputTokens: 1400 },
+    { tokPerSec: 71.2, ttftSec: 1.26, costUsd: 0.039, cacheHitPct: 90.8, contextTokens: 149500, inputTokens: 12400, cacheReadTokens: 135800, outputTokens: 1300 },
+    { tokPerSec: 48.9, ttftSec: 1.78, costUsd: 0.048, cacheHitPct: 84.5, contextTokens: 138400, inputTokens: 18600, cacheReadTokens: 118600, outputTokens: 1200 },
+    { tokPerSec: 69.7, ttftSec: 1.12, costUsd: 0.037, cacheHitPct: 92.1, contextTokens: 129600, inputTokens: 9200, cacheReadTokens: 119200, outputTokens: 1200 },
+    { tokPerSec: 73.1, ttftSec: 1.05, costUsd: 0.034, cacheHitPct: 91.0, contextTokens: 118400, inputTokens: 9800, cacheReadTokens: 107500, outputTokens: 1100 },
+    { tokPerSec: 77.4, ttftSec: 0.96, costUsd: 0.031, cacheHitPct: 89.4, contextTokens: 106800, inputTokens: 10400, cacheReadTokens: 95400, outputTokens: 1000 },
+    { tokPerSec: 86.2, ttftSec: 0.88, costUsd: 0.028, cacheHitPct: 87.2, contextTokens: 98200, inputTokens: 11600, cacheReadTokens: 85600, outputTokens: 1000 },
+    { tokPerSec: 64.8, ttftSec: 1.45, costUsd: 0.044, cacheHitPct: 76.5, contextTokens: 88400, inputTokens: 19800, cacheReadTokens: 67600, outputTokens: 1000 },
+  ];
+
   const mainAgent = {
     agentId: 'main',
     cascadeId: 'mock-main',
@@ -29043,6 +29586,7 @@ function buildStructurePreviewTelemetry(
     ],
     context: mainContext,
     recentSteps: mockSteps.filter((s) => !s.isSubagent),
+    sparklineSteps: mockSparklineSteps,
   };
 
   const subAgent1 = {
@@ -29128,6 +29672,7 @@ function buildStructurePreviewTelemetry(
     activeAgentBadge: '子1',
     modelBreakdown: [...mainAgent.modelBreakdown, ...subAgent1.modelBreakdown],
     recentSteps: mockSteps,
+    sparklineSteps: mockSparklineSteps,
   };
 
   return {
@@ -29262,6 +29807,7 @@ function buildStructurePreviewTelemetry(
       agents: [mainAgent, subAgent1],
       aggregated,
       recentSteps: mockSteps,
+      sparklineSteps: mockSparklineSteps,
     },
   };
 }
@@ -29513,6 +30059,11 @@ const EditableSlotList = defineComponent({
     let currentOptions = Array.isArray(props.options) ? [...props.options] : [];
     let emptyHintText = String(props.emptyHintText || '');
     let addBtnTextFn = typeof props.addBtnTextFn === 'function' ? props.addBtnTextFn : null;
+    let dimmedFromIndex =
+      Number.isInteger(props.dimmedFromIndex) && props.dimmedFromIndex >= 0
+        ? props.dimmedFromIndex
+        : null;
+    let dimmedTagText = String(props.dimmedTagText || '');
     let activeDrag = null;
     let settleCleanupTimer = null;
     let settlingRowEl = null;
@@ -29719,12 +30270,22 @@ const EditableSlotList = defineComponent({
         return 0;
       }
 
+      function applySlotDimState(entry, visualSlot) {
+        const isDimmed = dimmedFromIndex !== null && visualSlot >= dimmedFromIndex;
+        patchClasses(entry.rowEl, { 'is-dimmed': isDimmed });
+        patchAttr(entry.dimmedTagEl, 'hidden', !isDimmed || !dimmedTagText);
+        if (dimmedTagText) {
+          patchText(entry.dimmedTagEl, dimmedTagText);
+        }
+      }
+
       function updateSiblingPositionsAndBadges() {
         for (let i = 0; i < count; i += 1) {
           const entry = rowPool[i];
           if (!entry) continue;
           if (i === startIdx) {
             patchText(entry.indexBadge, String(targetIdx + 1));
+            applySlotDimState(entry, targetIdx);
             continue;
           }
           let visualSlot = i;
@@ -29737,6 +30298,7 @@ const EditableSlotList = defineComponent({
             shiftY = shiftDistance;
           }
           patchText(entry.indexBadge, String(visualSlot + 1));
+          applySlotDimState(entry, visualSlot);
           if (entry.rowEl?.style) {
             entry.rowEl.style.transform =
               shiftY !== 0 ? `translate3d(0px, ${shiftY.toFixed(2)}px, 0)` : 'translate3d(0px, 0px, 0)';
@@ -30019,6 +30581,7 @@ const EditableSlotList = defineComponent({
       );
 
       const selectMenuEl = selectComp.el?.querySelector?.('.select-menu') || null;
+      const dimmedTagEl = h('span', { className: 'slot-dimmed-tag', hidden: true, text: '' });
       const orderBtnsEl = h('span', { className: 'slot-order-btns' }, [upBtn, downBtn, removeBtn]);
 
       const rowEl = h(
@@ -30032,7 +30595,7 @@ const EditableSlotList = defineComponent({
             startPointerDrag(e, rowIndex, { threshold: onSelectTrigger ? 5 : 3 });
           },
         },
-        [dragHandle, indexBadge, selectComp.el, orderBtnsEl]
+        [dragHandle, indexBadge, selectComp.el, dimmedTagEl, orderBtnsEl]
       );
       if (typeof rowEl.addEventListener === 'function') {
         rowEl.addEventListener(
@@ -30051,6 +30614,7 @@ const EditableSlotList = defineComponent({
         rowEl,
         dragHandle,
         indexBadge,
+        dimmedTagEl,
         selectComp,
         upBtn,
         downBtn,
@@ -30090,8 +30654,14 @@ const EditableSlotList = defineComponent({
         const entry = rowPool[i];
         const itemVal = currentItems[i];
         entry.setIndex(i);
+        const isDimmed = dimmedFromIndex !== null && i >= dimmedFromIndex;
         patchAttr(entry.rowEl, 'data-slot-row', String(i));
+        patchClasses(entry.rowEl, { 'is-dimmed': isDimmed });
         patchText(entry.indexBadge, String(i + 1));
+        patchAttr(entry.dimmedTagEl, 'hidden', !isDimmed || !dimmedTagText);
+        if (dimmedTagText) {
+          patchText(entry.dimmedTagEl, dimmedTagText);
+        }
         patchClasses(entry.dragHandle, { 'is-disabled': !canDrag });
         patchAttr(entry.dragHandle, 'title', dragTitle || null);
 
@@ -30156,6 +30726,15 @@ const EditableSlotList = defineComponent({
       }
       if (typeof next.addBtnTextFn === 'function') {
         addBtnTextFn = next.addBtnTextFn;
+      }
+      if (next.dimmedFromIndex !== undefined) {
+        dimmedFromIndex =
+          Number.isInteger(next.dimmedFromIndex) && next.dimmedFromIndex >= 0
+            ? next.dimmedFromIndex
+            : null;
+      }
+      if (next.dimmedTagText !== undefined) {
+        dimmedTagText = String(next.dimmedTagText || '');
       }
       if (activeDrag) {
         pendingSyncAfterDrag = true;
@@ -32456,6 +33035,13 @@ function getContextAgentModeOptions() {
   ];
 }
 
+function getHoverMetricStyleOptions() {
+  return [
+    { value: 'medium', label: t('settings.str.hoverMetricStyleMedium') },
+    { value: 'large', label: t('settings.str.hoverMetricStyleLarge') },
+  ];
+}
+
 function isSameList(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -32596,7 +33182,11 @@ const SettingsStructureTab = defineComponent({
     let draftContextAgentMode = DEFAULT_CLIENT_CONTEXT_AGENT_MODE;
     let draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
     let draftHoverModules = [...DEFAULT_CLIENT_HOVER_MODULES];
+    let draftHoverSyncOverview = DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS;
+    let draftHoverMetricStyle = DEFAULT_CLIENT_HOVER_METRIC_STYLE;
+    let draftHoverMetrics = [...DEFAULT_CLIENT_HOVER_METRICS];
     let draftOverviewModules = [...DEFAULT_CLIENT_OVERVIEW_MODULES];
+    let draftOverviewMetricStyle = DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE;
     let draftOverviewMetrics = [...DEFAULT_CLIENT_OVERVIEW_METRICS];
     let draftShowStepTurnRail = false;
     let draftShowStepAgentBadge = true;
@@ -32641,7 +33231,11 @@ const SettingsStructureTab = defineComponent({
           contextAgentMode: draftContextAgentMode,
           topbarCapsuleSlots: draftTopbarSlots,
           hoverModules: draftHoverModules,
+          hoverSyncOverviewMetrics: draftHoverSyncOverview,
+          hoverMetricStyle: draftHoverMetricStyle,
+          hoverMetrics: draftHoverMetrics,
           overviewModules: draftOverviewModules,
+          overviewMetricStyle: draftOverviewMetricStyle,
           overviewMetrics: draftOverviewMetrics,
           showStepTurnRail: draftShowStepTurnRail,
           showStepAgentBadge: draftShowStepAgentBadge,
@@ -33237,6 +33831,132 @@ const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.hoverModulesLabel'),
     });
+    const hoverMetricStyleLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.hoverMetricStyleLabel'),
+    });
+    const hoverSyncOverviewLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.hoverSyncOverviewLabel'),
+    });
+    const hoverSyncOverviewHintEl = h('span', {
+      className: 'settings-hint-text',
+      hidden: true,
+      text: t('settings.str.hoverSyncOverviewHint'),
+    });
+    const hoverMetricsInactiveHintEl = h('span', {
+      className: 'settings-hint-text',
+      hidden: true,
+      text: t('settings.str.hoverMetricsInactiveHint'),
+    });
+    const hoverMetricsLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.hoverMetricsLabel'),
+    });
+
+    function getEffectiveHoverMetricStyle() {
+      return draftHoverSyncOverview ? draftOverviewMetricStyle : draftHoverMetricStyle;
+    }
+
+    function getEffectiveHoverMetrics() {
+      return draftHoverSyncOverview ? draftOverviewMetrics : draftHoverMetrics;
+    }
+
+    const hoverMetricStyleSwitch = SegmentedControl({
+      ariaLabel: t('settings.str.hoverMetricStyleLabel'),
+      modelValue: getEffectiveHoverMetricStyle(),
+      options: getHoverMetricStyleOptions(),
+      onUpdateModelValue: (val) => {
+        const nextStyle = normalizeClientHoverMetricStyle(val);
+        if (nextStyle === getEffectiveHoverMetricStyle()) return;
+        if (draftHoverSyncOverview) {
+          draftOverviewMetricStyle = nextStyle;
+          syncOverviewSectionMeta();
+          syncHoverSectionMeta();
+          props.onLayoutChange?.();
+          void persistStructurePatch(hoverSection, {
+            overviewMetricStyle: draftOverviewMetricStyle,
+          });
+        } else {
+          draftHoverMetricStyle = nextStyle;
+          syncHoverSectionMeta();
+          props.onLayoutChange?.();
+          void persistStructurePatch(hoverSection, {
+            hoverMetricStyle: draftHoverMetricStyle,
+          });
+        }
+      },
+    });
+
+    const hoverSyncOverviewToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.hoverSyncOverviewLabel',
+      preset: 'enable',
+      modelValue: draftHoverSyncOverview ? 'on' : 'off',
+      onUpdateModelValue: (val) => {
+        const nextSync = val !== 'off';
+        if (nextSync === draftHoverSyncOverview) return;
+        if (!nextSync) {
+          // Detach smoothly from current Live Overview settings without visual jump
+          draftHoverMetricStyle = draftOverviewMetricStyle;
+          draftHoverMetrics = [...draftOverviewMetrics];
+          draftHoverSyncOverview = false;
+          syncHoverSectionMeta();
+          props.onLayoutChange?.();
+          void persistStructurePatch(hoverSection, {
+            hoverSyncOverviewMetrics: false,
+            hoverMetricStyle: draftHoverMetricStyle,
+            hoverMetrics: draftHoverMetrics,
+          });
+        } else {
+          draftHoverSyncOverview = true;
+          syncHoverSectionMeta();
+          props.onLayoutChange?.();
+          void persistStructurePatch(hoverSection, {
+            hoverSyncOverviewMetrics: true,
+          });
+        }
+      },
+    });
+
+    const hoverMetricsList = EditableSlotList({
+      items: getEffectiveHoverMetrics(),
+      options: getOverviewMetricOptions(),
+      minItems: 1,
+      maxItems: 4,
+      dimmedFromIndex:
+        getEffectiveHoverMetricStyle() === 'large' ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+      dimmedTagText: t('settings.str.metricOverflowTag'),
+      addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
+      onPreview: (previewItems) => {
+        const normalized = normalizeClientHoverMetrics(previewItems);
+        if (draftHoverSyncOverview) {
+          draftOverviewMetrics = normalized;
+          refreshOverviewPreview();
+        } else {
+          draftHoverMetrics = normalized;
+        }
+        refreshHoverPreview();
+      },
+      onChange: (nextItems) => {
+        const normalized = normalizeClientHoverMetrics(nextItems);
+        if (draftHoverSyncOverview) {
+          draftOverviewMetrics = normalized;
+          syncOverviewSectionMeta();
+          syncHoverSectionMeta();
+          props.onLayoutChange?.();
+          void persistStructurePatch(hoverSection, {
+            overviewMetrics: draftOverviewMetrics,
+          });
+        } else {
+          draftHoverMetrics = normalized;
+          syncHoverSectionMeta();
+          props.onLayoutChange?.();
+          void persistStructurePatch(hoverSection, {
+            hoverMetrics: draftHoverMetrics,
+          });
+        }
+      },
+    });
 
     const hoverModulesList = EditableSlotList({
       items: draftHoverModules,
@@ -33247,6 +33967,7 @@ const SettingsStructureTab = defineComponent({
       addBtnTextFn: (count, max) => t('settings.str.addHoverModule', { count, max }),
       onPreview: (previewItems) => {
         draftHoverModules = normalizeClientHoverModules(previewItems);
+        patchAttr(hoverMetricsInactiveHintEl, 'hidden', draftHoverModules.includes('metrics'));
         refreshHoverPreview();
       },
       onChange: (nextItems) => {
@@ -33266,16 +33987,39 @@ const SettingsStructureTab = defineComponent({
       badgeText: t('settings.str.hoverBadgeCount', { count: draftHoverModules.length }),
       onReset: () => {
         draftHoverModules = [...DEFAULT_CLIENT_HOVER_MODULES];
+        draftHoverSyncOverview = DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS;
+        draftHoverMetricStyle = DEFAULT_CLIENT_HOVER_METRIC_STYLE;
+        draftHoverMetrics = [...DEFAULT_CLIENT_HOVER_METRICS];
         syncHoverSectionMeta();
         props.onLayoutChange?.();
         void persistStructurePatch(
           hoverSection,
-          { hoverModules: [...DEFAULT_CLIENT_HOVER_MODULES] },
+          {
+            hoverModules: [...DEFAULT_CLIENT_HOVER_MODULES],
+            hoverSyncOverviewMetrics: DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS,
+            hoverMetricStyle: DEFAULT_CLIENT_HOVER_METRIC_STYLE,
+            hoverMetrics: [...DEFAULT_CLIENT_HOVER_METRICS],
+          },
           'settings.resetDone'
         );
       },
       children: [
         hoverPreviewCanvas,
+        h('div', { className: 'settings-divider' }),
+        h('div', { className: 'form-row' }, [
+          h('div', { className: 'settings-inline-row' }, [
+            hoverMetricStyleLabelEl,
+            hoverMetricStyleSwitch.el,
+          ]),
+          h('div', { className: 'settings-inline-row' }, [
+            hoverSyncOverviewLabelEl,
+            hoverSyncOverviewToggle.el,
+          ]),
+          hoverSyncOverviewHintEl,
+          hoverMetricsInactiveHintEl,
+          hoverMetricsLabelEl,
+          hoverMetricsList.el,
+        ]),
         h('div', { className: 'settings-divider' }),
         h('div', { className: 'form-row' }, [hoverModulesLabelEl, hoverModulesList.el]),
       ],
@@ -33294,6 +34038,30 @@ const SettingsStructureTab = defineComponent({
     }
 
     function syncHoverSectionMeta() {
+      const effectiveStyle = getEffectiveHoverMetricStyle();
+      const effectiveMetrics = getEffectiveHoverMetrics();
+      const isLarge = effectiveStyle === 'large';
+      const metricsEnabled = draftHoverModules.includes('metrics');
+
+      hoverMetricStyleSwitch.setProps({
+        modelValue: effectiveStyle,
+        options: getHoverMetricStyleOptions(),
+        ariaLabel: t('settings.str.hoverMetricStyleLabel'),
+      });
+      hoverSyncOverviewToggle.setProps({
+        modelValue: draftHoverSyncOverview ? 'on' : 'off',
+      });
+      patchAttr(hoverSyncOverviewHintEl, 'hidden', !draftHoverSyncOverview);
+      patchText(hoverSyncOverviewHintEl, t('settings.str.hoverSyncOverviewHint'));
+      patchAttr(hoverMetricsInactiveHintEl, 'hidden', metricsEnabled);
+      patchText(hoverMetricsInactiveHintEl, t('settings.str.hoverMetricsInactiveHint'));
+      hoverMetricsList.refs.setProps({
+        items: effectiveMetrics,
+        options: getOverviewMetricOptions(),
+        dimmedFromIndex: isLarge ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+        dimmedTagText: t('settings.str.metricOverflowTag'),
+        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
+      });
       hoverModulesList.refs.setProps({
         items: draftHoverModules,
         options: getOverviewModuleOptions(),
@@ -33305,9 +34073,12 @@ const SettingsStructureTab = defineComponent({
           ? t('settings.str.hoverBadgeOff')
           : t('settings.str.hoverBadgeCount', { count: draftHoverModules.length })
       );
-      hoverSection.refs.setResetDisabled(
-        isSameList(draftHoverModules, DEFAULT_CLIENT_HOVER_MODULES)
-      );
+      const isDefault =
+        isSameList(draftHoverModules, DEFAULT_CLIENT_HOVER_MODULES) &&
+        draftHoverSyncOverview === DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS &&
+        draftHoverMetricStyle === DEFAULT_CLIENT_HOVER_METRIC_STYLE &&
+        isSameList(draftHoverMetrics, DEFAULT_CLIENT_HOVER_METRICS);
+      hoverSection.refs.setResetDisabled(isDefault);
       refreshHoverPreview();
     }
 
@@ -33324,6 +34095,10 @@ const SettingsStructureTab = defineComponent({
       overviewPreviewContainerEl,
     ]);
 
+    const overviewMetricStyleLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.hoverMetricStyleLabel'),
+    });
     const overviewModulesLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.overviewModulesLabel'),
@@ -33336,6 +34111,25 @@ const SettingsStructureTab = defineComponent({
       className: 'settings-hint-text',
       hidden: true,
       text: t('settings.str.overviewMetricsInactiveHint'),
+    });
+
+    const overviewMetricStyleSwitch = SegmentedControl({
+      ariaLabel: t('settings.str.hoverMetricStyleLabel'),
+      modelValue: draftOverviewMetricStyle,
+      options: getHoverMetricStyleOptions(),
+      onUpdateModelValue: (val) => {
+        const nextStyle = normalizeClientOverviewMetricStyle(val);
+        if (nextStyle === draftOverviewMetricStyle) return;
+        draftOverviewMetricStyle = nextStyle;
+        syncOverviewSectionMeta();
+        if (draftHoverSyncOverview) {
+          syncHoverSectionMeta();
+        }
+        props.onLayoutChange?.();
+        void persistStructurePatch(overviewSection, {
+          overviewMetricStyle: draftOverviewMetricStyle,
+        });
+      },
     });
 
     const overviewModulesList = EditableSlotList({
@@ -33364,14 +34158,23 @@ const SettingsStructureTab = defineComponent({
       options: getOverviewMetricOptions(),
       minItems: 1,
       maxItems: 4,
+      dimmedFromIndex:
+        draftOverviewMetricStyle === 'large' ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+      dimmedTagText: t('settings.str.metricOverflowTag'),
       addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
       onPreview: (previewItems) => {
         draftOverviewMetrics = normalizeClientOverviewMetrics(previewItems);
         refreshOverviewPreview();
+        if (draftHoverSyncOverview) {
+          refreshHoverPreview();
+        }
       },
       onChange: (nextItems) => {
         draftOverviewMetrics = normalizeClientOverviewMetrics(nextItems);
         syncOverviewSectionMeta();
+        if (draftHoverSyncOverview) {
+          syncHoverSectionMeta();
+        }
         props.onLayoutChange?.();
         void persistStructurePatch(overviewSection, {
           overviewMetrics: draftOverviewMetrics,
@@ -33389,13 +34192,18 @@ const SettingsStructureTab = defineComponent({
       }),
       onReset: () => {
         draftOverviewModules = [...DEFAULT_CLIENT_OVERVIEW_MODULES];
+        draftOverviewMetricStyle = DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE;
         draftOverviewMetrics = [...DEFAULT_CLIENT_OVERVIEW_METRICS];
         syncOverviewSectionMeta();
+        if (draftHoverSyncOverview) {
+          syncHoverSectionMeta();
+        }
         props.onLayoutChange?.();
         void persistStructurePatch(
           overviewSection,
           {
             overviewModules: [...DEFAULT_CLIENT_OVERVIEW_MODULES],
+            overviewMetricStyle: DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE,
             overviewMetrics: [...DEFAULT_CLIENT_OVERVIEW_METRICS],
           },
           'settings.resetDone'
@@ -33404,13 +34212,17 @@ const SettingsStructureTab = defineComponent({
       children: [
         overviewPreviewCanvas,
         h('div', { className: 'settings-divider' }),
-        h('div', { className: 'form-row' }, [overviewModulesLabelEl, overviewModulesList.el]),
-        h('div', { className: 'settings-divider' }),
         h('div', { className: 'form-row' }, [
-          overviewMetricsLabelEl,
+          h('div', { className: 'settings-inline-row' }, [
+            overviewMetricStyleLabelEl,
+            overviewMetricStyleSwitch.el,
+          ]),
           overviewMetricsHintEl,
+          overviewMetricsLabelEl,
           overviewMetricsList.el,
         ]),
+        h('div', { className: 'settings-divider' }),
+        h('div', { className: 'form-row' }, [overviewModulesLabelEl, overviewModulesList.el]),
       ],
     });
 
@@ -33423,6 +34235,12 @@ const SettingsStructureTab = defineComponent({
     }
 
     function syncOverviewSectionMeta() {
+      const isLarge = draftOverviewMetricStyle === 'large';
+      overviewMetricStyleSwitch.setProps({
+        modelValue: draftOverviewMetricStyle,
+        options: getHoverMetricStyleOptions(),
+        ariaLabel: t('settings.str.hoverMetricStyleLabel'),
+      });
       overviewModulesList.refs.setProps({
         items: draftOverviewModules,
         options: getOverviewModuleOptions(),
@@ -33431,18 +34249,24 @@ const SettingsStructureTab = defineComponent({
       overviewMetricsList.refs.setProps({
         items: draftOverviewMetrics,
         options: getOverviewMetricOptions(),
+        dimmedFromIndex: isLarge ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+        dimmedTagText: t('settings.str.metricOverflowTag'),
         addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
       });
       const metricsModuleActive = draftOverviewModules.includes('metrics');
       patchAttr(overviewMetricsHintEl, 'hidden', metricsModuleActive);
+      const visibleMetricCount = isLarge
+        ? Math.min(MAX_CLIENT_LARGE_METRIC_SLOTS, draftOverviewMetrics.length)
+        : draftOverviewMetrics.length;
       overviewSection.refs.setBadge(
         t('settings.str.overviewBadge', {
           modCount: draftOverviewModules.length,
-          metCount: draftOverviewMetrics.length,
+          metCount: visibleMetricCount,
         })
       );
       const isDefault =
         isSameList(draftOverviewModules, DEFAULT_CLIENT_OVERVIEW_MODULES) &&
+        draftOverviewMetricStyle === DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE &&
         isSameList(draftOverviewMetrics, DEFAULT_CLIENT_OVERVIEW_METRICS);
       overviewSection.refs.setResetDisabled(isDefault);
       refreshOverviewPreview();
@@ -33816,7 +34640,13 @@ const SettingsStructureTab = defineComponent({
       draftContextAgentMode = normalizeClientContextAgentMode(settings.contextAgentMode);
       draftTopbarSlots = normalizeClientTopbarSlots(settings.topbarCapsuleSlots);
       draftHoverModules = normalizeClientHoverModules(settings.hoverModules);
+      draftHoverSyncOverview = normalizeClientHoverSyncOverviewMetrics(
+        settings.hoverSyncOverviewMetrics
+      );
+      draftHoverMetricStyle = normalizeClientHoverMetricStyle(settings.hoverMetricStyle);
+      draftHoverMetrics = normalizeClientHoverMetrics(settings.hoverMetrics);
       draftOverviewModules = normalizeClientOverviewModules(settings.overviewModules);
+      draftOverviewMetricStyle = normalizeClientOverviewMetricStyle(settings.overviewMetricStyle);
       draftOverviewMetrics = normalizeClientOverviewMetrics(settings.overviewMetrics);
       draftShowStepTurnRail = settings.showStepTurnRail === true;
       draftShowStepAgentBadge = settings.showStepAgentBadge !== false;
@@ -33854,9 +34684,13 @@ const SettingsStructureTab = defineComponent({
       hoverSection.refs.setTitle(t('settings.str.hoverSection'));
       hoverSection.refs.setResetLabel(t('settings.resetBtn'));
       patchText(hoverModulesLabelEl, t('settings.str.hoverModulesLabel'));
+      patchText(hoverMetricStyleLabelEl, t('settings.str.hoverMetricStyleLabel'));
+      patchText(hoverSyncOverviewLabelEl, t('settings.str.hoverSyncOverviewLabel'));
+      patchText(hoverMetricsLabelEl, t('settings.str.hoverMetricsLabel'));
 
       overviewSection.refs.setTitle(t('settings.str.overviewSection'));
       overviewSection.refs.setResetLabel(t('settings.resetBtn'));
+      patchText(overviewMetricStyleLabelEl, t('settings.str.hoverMetricStyleLabel'));
       patchText(overviewModulesLabelEl, t('settings.str.overviewModulesLabel'));
       patchText(overviewMetricsLabelEl, t('settings.str.overviewMetricsLabel'));
       patchText(overviewMetricsHintEl, t('settings.str.overviewMetricsInactiveHint'));
@@ -33925,6 +34759,10 @@ const SettingsStructureTab = defineComponent({
       cliSlotsList.destroy();
       topbarSlotsList.destroy();
       hoverModulesList.destroy();
+      hoverMetricStyleSwitch.destroy();
+      hoverSyncOverviewToggle.destroy();
+      hoverMetricsList.destroy();
+      overviewMetricStyleSwitch.destroy();
       overviewModulesList.destroy();
       overviewMetricsList.destroy();
       stepTurnRailToggle.destroy();
@@ -33960,6 +34798,10 @@ const SettingsStructureTab = defineComponent({
         cliStatusActionBtn,
         topbarSlotsList,
         hoverModulesList,
+        hoverMetricStyleSwitch,
+        hoverSyncOverviewToggle,
+        hoverMetricsList,
+        overviewMetricStyleSwitch,
         overviewModulesList,
         overviewMetricsList,
         stepTurnRailToggle,

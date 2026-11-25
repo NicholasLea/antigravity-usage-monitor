@@ -47,6 +47,13 @@ import { StepsDetailView } from '../src/views/StepsDetailView.js';
 import { SettingsGeneralTab } from '../src/views/settings/SettingsGeneralTab.js';
 import { SettingsStructureTab } from '../src/views/settings/SettingsStructureTab.js';
 import { EditableSlotList } from '../src/components/settings/EditableSlotList.js';
+import { MetricMatrixWidget } from '../src/components/widgets/MetricMatrixWidget.js';
+import {
+  buildSparklineGeometry,
+  extractOverviewMetricSeries,
+  splitMetricValueAndUnit,
+} from '../src/registries/metricRegistry.js';
+import { buildStructurePreviewTelemetry } from '../src/components/settings/structurePreviewMock.js';
 
 test('modernUi schema normalization defaults to true, upgrades 1.5.2 settings without modernUi key to true, and respects explicit false', () => {
   assert.equal(DEFAULT_SETTINGS_SCHEMA.language, 'auto');
@@ -1772,4 +1779,174 @@ test('EditableSlotList supports continuous pointer-following drag, smooth siblin
   assert.equal(listEl.classList.contains('is-dragging-list'), false);
   assert.deepEqual(comp.refs.getItems(), ['context', 'quotas', 'metrics']);
   assert.equal(commits.length, 1, 'Cancelled drag does not commit');
+});
+
+test('Large Trend metric cards support unified 1-4 metrics across Hover & Live Overview, sync/detach cleanly, and dim overflow item #4', async (t) => {
+  const prevDoc = globalThis.document;
+  const { document } = createMockDom();
+  globalThis.document = document;
+  let hoverMatrix = null;
+  let overviewMatrix = null;
+  let slotList = null;
+  t.after(() => {
+    slotList?.destroy();
+    hoverMatrix?.destroy();
+    overviewMatrix?.destroy();
+    globalThis.document = prevDoc;
+  });
+
+  // 1) Value/unit splitter & sparkline geometry edge cases
+  assert.deepEqual(splitMetricValueAndUnit('82.3 tok/s'), { main: '82.3', unit: 'tok/s' });
+  assert.deepEqual(splitMetricValueAndUnit('1.15s'), { main: '1.15', unit: 's' });
+  assert.deepEqual(splitMetricValueAndUnit('94.5%'), { main: '94.5', unit: '%' });
+  assert.deepEqual(splitMetricValueAndUnit('$0.042'), { main: '$0.042', unit: '' });
+  assert.deepEqual(splitMetricValueAndUnit('—'), { main: '—', unit: '' });
+
+  const emptyGeom = buildSparklineGeometry([]);
+  assert.equal(emptyGeom.hasLine, false);
+  assert.equal(emptyGeom.hasDot, false);
+
+  const singleGeom = buildSparklineGeometry([42]);
+  assert.equal(singleGeom.hasLine, true);
+  assert.equal(singleGeom.hasDot, true);
+
+  const flatGeom = buildSparklineGeometry([50, 50, 50]);
+  assert.equal(flatGeom.hasLine, true);
+  assert.ok(flatGeom.linePoints.split(' ').length === 3);
+
+  const mockData = buildStructurePreviewTelemetry(
+    {},
+    {
+      hoverSyncOverviewMetrics: false,
+      hoverMetricStyle: 'large',
+      hoverMetrics: ['tps', 'ttft', 'step_cost', 'avg_tps'],
+      overviewMetricStyle: 'medium',
+      overviewMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+    }
+  );
+  const steps = mockData.activeConversation.sparklineSteps;
+  for (const key of [
+    'tps',
+    'ttft',
+    'avg_tps',
+    'step_cost',
+    'session_cost',
+    'cache_hit',
+    'session_tokens',
+    'context_usage',
+  ]) {
+    const series = extractOverviewMetricSeries(key, steps, { maxPoints: 16, limitTokens: 256000 });
+    assert.equal(series.length, 14, `Metric ${key} extracts all 14 chronological points`);
+    assert.ok(series.every((n) => Number.isFinite(n)), `Metric ${key} contains finite values`);
+  }
+  // Chronological check: oldest first -> newest last (matches latest mock step 68.4 tok/s)
+  const tpsSeries = extractOverviewMetricSeries('tps', steps);
+  assert.equal(tpsSeries.at(-1), 68.4);
+  assert.equal(tpsSeries[0], 64.8);
+
+  // 2) Detached Hover renders top 3 of its 4-metric list in Large mode, while Overview stays in Medium (4 cols)
+  hoverMatrix = MetricMatrixWidget({ mode: 'hover', preview: true });
+  overviewMatrix = MetricMatrixWidget({ mode: 'overview', preview: true });
+
+  hoverMatrix.refs.update({ data: mockData });
+  overviewMatrix.refs.update({ data: mockData });
+
+  assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), true);
+  assert.equal(hoverMatrix.el.getAttribute('data-cols'), '3');
+  assert.equal(hoverMatrix.el.children.length, 3);
+  const card0 = hoverMatrix.el.children[0];
+  assert.equal(card0.classList.contains('is-trend-card'), true);
+  assert.equal(card0.querySelector('.cell-trend-num').textContent, '68.4');
+  assert.equal(card0.querySelector('.cell-trend-unit').textContent, 'tok/s');
+  assert.equal(card0.querySelector('.cell-sparkline-svg').getAttribute('viewBox'), '0 0 74 34');
+  assert.ok(card0.querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length === 14);
+  assert.ok(card0.querySelector('.cell-sparkline-area').getAttribute('d').startsWith('M '));
+
+  // Overview stays in 4-column medium mode when detached
+  assert.equal(overviewMatrix.el.classList.contains('is-large-trend'), false);
+  assert.equal(overviewMatrix.el.getAttribute('data-cols'), '4');
+  assert.equal(overviewMatrix.el.children.length, 4);
+
+  // 3) Synced mode (hoverSyncOverviewMetrics: true) mirrors overviewMetricStyle === 'large' across BOTH Overview and Hover
+  const syncedLargeData = buildStructurePreviewTelemetry(
+    {},
+    {
+      hoverSyncOverviewMetrics: true,
+      hoverMetricStyle: 'medium',
+      overviewMetricStyle: 'large',
+      overviewMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+    }
+  );
+  hoverMatrix.refs.update({ data: syncedLargeData });
+  overviewMatrix.refs.update({ data: syncedLargeData });
+  assert.equal(overviewMatrix.el.classList.contains('is-large-trend'), true);
+  assert.equal(overviewMatrix.el.getAttribute('data-cols'), '3');
+  assert.equal(overviewMatrix.el.children.length, 3);
+  assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), true);
+  assert.equal(hoverMatrix.el.getAttribute('data-cols'), '3');
+
+  // 4) 2-card and 1-card large modes scale viewBox cleanly (136x34 and 248x34)
+  hoverMatrix.refs.update({
+    data: buildStructurePreviewTelemetry(
+      {},
+      { hoverSyncOverviewMetrics: false, hoverMetricStyle: 'large', hoverMetrics: ['tps', 'ttft'] }
+    ),
+  });
+  assert.equal(hoverMatrix.el.getAttribute('data-cols'), '2');
+  assert.equal(
+    hoverMatrix.el.children[0].querySelector('.cell-sparkline-svg').getAttribute('viewBox'),
+    '0 0 136 34'
+  );
+
+  hoverMatrix.refs.update({
+    data: buildStructurePreviewTelemetry(
+      {},
+      { hoverSyncOverviewMetrics: false, hoverMetricStyle: 'large', hoverMetrics: ['tps'] }
+    ),
+  });
+  assert.equal(hoverMatrix.el.getAttribute('data-cols'), '1');
+  assert.equal(hoverMatrix.el.children.length, 1);
+  assert.equal(
+    hoverMatrix.el.children[0].querySelector('.cell-sparkline-svg').getAttribute('viewBox'),
+    '0 0 248 34'
+  );
+
+  // 5) Switching back to medium restores all 4 compact metric cards from the same list
+  hoverMatrix.refs.update({
+    data: buildStructurePreviewTelemetry(
+      {},
+      {
+        hoverSyncOverviewMetrics: false,
+        hoverMetricStyle: 'medium',
+        hoverMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+      }
+    ),
+  });
+  assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), false);
+  assert.equal(hoverMatrix.el.getAttribute('data-cols'), '4');
+  assert.equal(hoverMatrix.el.children.length, 4);
+  assert.equal(hoverMatrix.el.children[0].classList.contains('is-trend-card'), false);
+
+  // 6) EditableSlotList dims item #4 (index >= 3) in Large mode and clears dim on Medium
+  const { EditableSlotList } = await import('../src/components/settings/EditableSlotList.js');
+  slotList = EditableSlotList({
+    items: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+    options: [
+      { value: 'tps', label: 'TPS' },
+      { value: 'ttft', label: 'TTFT' },
+      { value: 'avg_tps', label: 'Avg TPS' },
+      { value: 'step_cost', label: 'Cost' },
+    ],
+    minItems: 1,
+    maxItems: 4,
+    dimmedFromIndex: 3,
+    dimmedTagText: '大尺寸隐藏',
+  });
+  const dimRows = slotList.el.querySelectorAll('.editable-slot-row');
+  assert.equal(dimRows[2].classList.contains('is-dimmed'), false);
+  assert.equal(dimRows[3].classList.contains('is-dimmed'), true);
+  assert.equal(dimRows[3].querySelector('.slot-dimmed-tag').hasAttribute('hidden'), false);
+  slotList.refs.setProps({ dimmedFromIndex: null });
+  assert.equal(dimRows[3].classList.contains('is-dimmed'), false);
+  assert.equal(dimRows[3].querySelector('.slot-dimmed-tag').hasAttribute('hidden'), true);
 });

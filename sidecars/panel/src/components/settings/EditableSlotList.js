@@ -73,6 +73,11 @@ export const EditableSlotList = defineComponent({
     let currentOptions = Array.isArray(props.options) ? [...props.options] : [];
     let emptyHintText = String(props.emptyHintText || '');
     let addBtnTextFn = typeof props.addBtnTextFn === 'function' ? props.addBtnTextFn : null;
+    let dimmedFromIndex =
+      Number.isInteger(props.dimmedFromIndex) && props.dimmedFromIndex >= 0
+        ? props.dimmedFromIndex
+        : null;
+    let dimmedTagText = String(props.dimmedTagText || '');
     let activeDrag = null;
     let settleCleanupTimer = null;
     let settlingRowEl = null;
@@ -279,12 +284,22 @@ export const EditableSlotList = defineComponent({
         return 0;
       }
 
+      function applySlotDimState(entry, visualSlot) {
+        const isDimmed = dimmedFromIndex !== null && visualSlot >= dimmedFromIndex;
+        patchClasses(entry.rowEl, { 'is-dimmed': isDimmed });
+        patchAttr(entry.dimmedTagEl, 'hidden', !isDimmed || !dimmedTagText);
+        if (dimmedTagText) {
+          patchText(entry.dimmedTagEl, dimmedTagText);
+        }
+      }
+
       function updateSiblingPositionsAndBadges() {
         for (let i = 0; i < count; i += 1) {
           const entry = rowPool[i];
           if (!entry) continue;
           if (i === startIdx) {
             patchText(entry.indexBadge, String(targetIdx + 1));
+            applySlotDimState(entry, targetIdx);
             continue;
           }
           let visualSlot = i;
@@ -297,6 +312,7 @@ export const EditableSlotList = defineComponent({
             shiftY = shiftDistance;
           }
           patchText(entry.indexBadge, String(visualSlot + 1));
+          applySlotDimState(entry, visualSlot);
           if (entry.rowEl?.style) {
             entry.rowEl.style.transform =
               shiftY !== 0 ? `translate3d(0px, ${shiftY.toFixed(2)}px, 0)` : 'translate3d(0px, 0px, 0)';
@@ -579,6 +595,7 @@ export const EditableSlotList = defineComponent({
       );
 
       const selectMenuEl = selectComp.el?.querySelector?.('.select-menu') || null;
+      const dimmedTagEl = h('span', { className: 'slot-dimmed-tag', hidden: true, text: '' });
       const orderBtnsEl = h('span', { className: 'slot-order-btns' }, [upBtn, downBtn, removeBtn]);
 
       const rowEl = h(
@@ -592,7 +609,7 @@ export const EditableSlotList = defineComponent({
             startPointerDrag(e, rowIndex, { threshold: onSelectTrigger ? 5 : 3 });
           },
         },
-        [dragHandle, indexBadge, selectComp.el, orderBtnsEl]
+        [dragHandle, indexBadge, selectComp.el, dimmedTagEl, orderBtnsEl]
       );
       if (typeof rowEl.addEventListener === 'function') {
         rowEl.addEventListener(
@@ -611,6 +628,7 @@ export const EditableSlotList = defineComponent({
         rowEl,
         dragHandle,
         indexBadge,
+        dimmedTagEl,
         selectComp,
         upBtn,
         downBtn,
@@ -650,8 +668,14 @@ export const EditableSlotList = defineComponent({
         const entry = rowPool[i];
         const itemVal = currentItems[i];
         entry.setIndex(i);
+        const isDimmed = dimmedFromIndex !== null && i >= dimmedFromIndex;
         patchAttr(entry.rowEl, 'data-slot-row', String(i));
+        patchClasses(entry.rowEl, { 'is-dimmed': isDimmed });
         patchText(entry.indexBadge, String(i + 1));
+        patchAttr(entry.dimmedTagEl, 'hidden', !isDimmed || !dimmedTagText);
+        if (dimmedTagText) {
+          patchText(entry.dimmedTagEl, dimmedTagText);
+        }
         patchClasses(entry.dragHandle, { 'is-disabled': !canDrag });
         patchAttr(entry.dragHandle, 'title', dragTitle || null);
 
@@ -716,6 +740,15 @@ export const EditableSlotList = defineComponent({
       }
       if (typeof next.addBtnTextFn === 'function') {
         addBtnTextFn = next.addBtnTextFn;
+      }
+      if (next.dimmedFromIndex !== undefined) {
+        dimmedFromIndex =
+          Number.isInteger(next.dimmedFromIndex) && next.dimmedFromIndex >= 0
+            ? next.dimmedFromIndex
+            : null;
+      }
+      if (next.dimmedTagText !== undefined) {
+        dimmedTagText = String(next.dimmedTagText || '');
       }
       if (activeDrag) {
         pendingSyncAfterDrag = true;

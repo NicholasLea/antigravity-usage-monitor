@@ -453,6 +453,120 @@
   text-overflow: ellipsis;
 }
 
+/* 悬浮窗大尺寸趋势指标卡（左：大号实时主值+单位与副标，右：迷你折线面积走势图，1~3 列自适应） */
+.matrix-cell.is-trend-card {
+  gap: 5px;
+  padding: 8px 11px 9px;
+}
+
+.cell-trend-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cell-trend-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.cell-trend-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.cell-trend-num {
+  font-size: var(--fs-hero);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-trend-num:not([class*="tone-"]):not([class*="accent-"]) {
+  color: var(--text-primary);
+}
+
+.cell-trend-unit {
+  font-size: var(--fs-md);
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.cell-trend-sub {
+  font-size: var(--fs-sm);
+  line-height: 1.25;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-sparkline-wrap {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  flex: 1 1 136px;
+  min-width: 68px;
+  max-width: 152px;
+  height: 34px;
+}
+
+.cell-sparkline-wrap:not([class*="tone-"]):not([class*="accent-"]) {
+  color: var(--accent-primary);
+}
+
+.telemetry-matrix.is-large-trend[data-cols="1"] .cell-sparkline-wrap {
+  flex: 1 1 248px;
+  max-width: 280px;
+}
+
+.telemetry-matrix.is-large-trend[data-cols="3"] .matrix-cell.is-trend-card {
+  padding: 8px 8px 9px;
+}
+
+.telemetry-matrix.is-large-trend[data-cols="3"] .cell-trend-row {
+  gap: 6px;
+}
+
+.telemetry-matrix.is-large-trend[data-cols="3"] .cell-trend-metric {
+  gap: 2px;
+}
+
+.telemetry-matrix.is-large-trend[data-cols="3"] .cell-trend-unit {
+  font-size: var(--fs-xs);
+}
+
+.telemetry-matrix.is-large-trend[data-cols="3"] .cell-sparkline-wrap {
+  flex: 1 1 74px;
+  min-width: 36px;
+  max-width: 84px;
+}
+
+.cell-sparkline-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.cell-sparkline-axis {
+  stroke: color-mix(in srgb, var(--text-muted) 22%, transparent);
+  stroke-width: 1;
+}
+
 /* --- 3. 10 段上下文进度条与配额池填充条 (Context Segment Meter & Quota Progress Bars) --- */
 .progress-track {
   width: 100%;

@@ -2879,19 +2879,23 @@ test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic 
   assert.equal(latestQuery, '');
   assert.equal(sBox.clearBtnEl.hasAttribute('hidden'), true);
 
-  // 4. Declarative settingsBackup round-trips all 30 portable keys + coupled legacy flags
+  // 4. Declarative settingsBackup round-trips all 34 portable keys + coupled legacy flags
   const exported = buildExportableSettingsJson({
     language: 'en-US',
     modernUi: false,
     modelDisplayMode: 'upstream_compact',
     pluginUpdateMode: 'auto',
     windowMountMode: 'composer',
+    hoverSyncOverviewMetrics: false,
+    hoverMetricStyle: 'large',
+    hoverMetrics: ['tps', 'cache_hit', 'ttft', 'step_cost'],
+    overviewMetricStyle: 'large',
     showStepFilterToolbar: true,
     experimentalQuotaReservation: true,
     accountQuotaRefreshMinutes: 180,
   });
   const parsedExport = JSON.parse(exported);
-  assert.equal(Object.keys(parsedExport.settings).length, 30);
+  assert.equal(Object.keys(parsedExport.settings).length, 34);
   assert.equal('orchestratorIdMode' in parsedExport.settings, false);
   const reimported = parseImportedSettingsJson(
     JSON.stringify({
@@ -2901,6 +2905,10 @@ test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic 
   );
   assert.equal(reimported.ok, true);
   assert.equal('orchestratorIdMode' in reimported.patch, false);
+  assert.equal(reimported.patch.hoverSyncOverviewMetrics, false);
+  assert.equal(reimported.patch.hoverMetricStyle, 'large');
+  assert.deepEqual(reimported.patch.hoverMetrics, ['tps', 'cache_hit', 'ttft', 'step_cost']);
+  assert.equal(reimported.patch.overviewMetricStyle, 'large');
   assert.equal(reimported.patch.modernUi, false);
   assert.equal(reimported.patch.experimentalModernUi, false);
   assert.equal(reimported.patch.modelDisplayMode, 'upstream_compact');

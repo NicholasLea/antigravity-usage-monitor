@@ -68,6 +68,13 @@ export const DEFAULT_OVERVIEW_MODULES = Object.freeze([
 
 export const DEFAULT_HOVER_MODULES = Object.freeze(['metrics', 'context', 'quotas']);
 
+export const METRIC_CARD_STYLES = Object.freeze(['medium', 'large']);
+export const HOVER_METRIC_STYLES = METRIC_CARD_STYLES;
+export const DEFAULT_OVERVIEW_METRIC_STYLE = 'medium';
+export const DEFAULT_HOVER_METRIC_STYLE = 'medium';
+export const DEFAULT_HOVER_SYNC_OVERVIEW_METRICS = true;
+export const MAX_LARGE_METRIC_SLOTS = 3;
+
 export const OVERVIEW_METRIC_KEYS = Object.freeze([
   'tps',
   'ttft',
@@ -86,6 +93,7 @@ export const DEFAULT_OVERVIEW_METRICS = Object.freeze([
   'avg_tps',
   'step_cost',
 ]);
+export const DEFAULT_HOVER_METRICS = DEFAULT_OVERVIEW_METRICS;
 
 export const STEP_TABLE_COLUMN_KEYS = Object.freeze([
   'step',
@@ -470,6 +478,75 @@ export function normalizeHoverModules(raw) {
     if (out.length >= OVERVIEW_MODULE_KEYS.length) break;
   }
   return out;
+}
+
+/**
+ * 归一化鼠标悬浮窗实时指标卡片尺寸（`'medium'` 标准 1~4 项 | `'large'` 趋势折线 1~2 项，默认 `'medium'`）。
+ *
+ * @param {unknown} raw
+ * @returns {'medium'|'large'}
+ */
+/**
+ * 归一化实时指标卡片展示尺寸（`'medium'` 紧凑数值 1~4 项，`'large'` 大号数值+趋势折线 1~3 项）。
+ *
+ * @param {unknown} raw
+ * @returns {'medium'|'large'}
+ */
+export function normalizeMetricCardStyle(raw) {
+  const val = String(raw ?? '').trim().toLowerCase();
+  return val === 'large' || val === 'sparkline' || val === 'trend' ? 'large' : 'medium';
+}
+
+export const normalizeOverviewMetricStyle = normalizeMetricCardStyle;
+export const normalizeHoverMetricStyle = normalizeMetricCardStyle;
+
+/**
+ * 归一化鼠标悬浮窗是否同步「实时监控」的实时指标尺寸与列表（默认开启）。
+ *
+ * @param {unknown} raw
+ * @returns {boolean}
+ */
+export function normalizeHoverSyncOverviewMetrics(raw) {
+  return raw !== false;
+}
+
+/**
+ * 归一化鼠标悬浮窗独立实时指标列表及左右顺序（1~4 项，与 `overviewMetrics` 共用完整候选集）。
+ *
+ * @param {unknown} raw
+ * @returns {string[]}
+ */
+export function normalizeHoverMetrics(raw) {
+  return normalizeOverviewMetrics(raw);
+}
+
+/**
+ * 解析实时监控 (`overview`) 或鼠标悬浮窗 (`hover`) 当前生效的实时指标尺寸与展示项：
+ * - `hover` 且开启 `hoverSyncOverviewMetrics` 时直接复用 `overviewMetricStyle` + `overviewMetrics`；
+ * - 切至 `'large'` 时保留完整 1~4 项配置，仅截取前 `MAX_LARGE_METRIC_SLOTS`（3）项渲染，第 4 项在设置页自动置灰。
+ *
+ * @param {'overview'|'hover'|string} mode
+ * @param {Record<string, any>|null|undefined} [settings]
+ */
+export function resolveEffectiveMetricMatrixConfig(mode, settings = {}) {
+  const s = settings && typeof settings === 'object' ? settings : {};
+  const isHover = mode === 'hover';
+  const syncOverview = !isHover || normalizeHoverSyncOverviewMetrics(s.hoverSyncOverviewMetrics);
+  const style = syncOverview
+    ? normalizeOverviewMetricStyle(s.overviewMetricStyle)
+    : normalizeHoverMetricStyle(s.hoverMetricStyle);
+  const allMetrics = syncOverview
+    ? normalizeOverviewMetrics(s.overviewMetrics)
+    : normalizeHoverMetrics(s.hoverMetrics);
+  const isLarge = style === 'large';
+  const metrics = isLarge ? allMetrics.slice(0, MAX_LARGE_METRIC_SLOTS) : allMetrics;
+  return {
+    syncOverview,
+    style,
+    isLarge,
+    allMetrics,
+    metrics,
+  };
 }
 
 /**

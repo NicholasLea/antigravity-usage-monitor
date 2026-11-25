@@ -376,6 +376,14 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   transition: background-color 160ms var(--ease-modern);
 }
 
+[data-modern-ui="true"] .matrix-cell.is-trend-card {
+  padding: 9px 12px 10px;
+}
+
+[data-modern-ui="true"] .telemetry-matrix.is-large-trend[data-cols="3"] .matrix-cell.is-trend-card {
+  padding: 9px 9px 10px;
+}
+
 /* 面板内的双栏信息项（如版本更新中的「价格表 / 当前版本」）不套二层背景 */
 [data-modern-ui="true"] .dual-grid > .matrix-cell {
   background: transparent;

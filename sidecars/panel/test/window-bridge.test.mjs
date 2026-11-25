@@ -702,7 +702,11 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     enableCliStatusLine: true,
     topbarCapsuleSlots: ['tps', 'ttft', 'context'],
     hoverModules: ['metrics', 'context', 'quotas'],
+    hoverSyncOverviewMetrics: true,
+    hoverMetricStyle: 'medium',
+    hoverMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
     overviewModules: ['metrics', 'context', 'quotas', 'live_tasks'],
+    overviewMetricStyle: 'medium',
     overviewMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
     stepTableColumns: ['step', 'model', 'tps', 'ttft', 'tokens_combo', 'cache', 'cost'],
     showStepTurnRail: false,
@@ -778,6 +782,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
           ...defaultMockSettings,
           topbarCapsuleSlots: [...defaultMockSettings.topbarCapsuleSlots],
           hoverModules: [...defaultMockSettings.hoverModules],
+          hoverMetrics: [...defaultMockSettings.hoverMetrics],
           overviewModules: [...defaultMockSettings.overviewModules],
           overviewMetrics: [...defaultMockSettings.overviewMetrics],
           stepTableColumns: [...defaultMockSettings.stepTableColumns],
@@ -1872,7 +1877,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(hoverPreviewTip.classList.contains('is-preview'), true, 'Real .wm-hover-tip mounted inline in preview');
     assert.equal(hoverPreviewWidgets.children.length, 3, 'Default 3 real hover widgets mounted in preview');
 
-    const hoverSlotWrap = sec1.querySelector('.editable-slot-wrap');
+    const [hoverMetricsWrap, hoverSlotWrap] = sec1.querySelectorAll('.editable-slot-wrap');
     for (let r = 0; r < 3; r += 1) {
       const remBtns = hoverSlotWrap.querySelectorAll('.slot-remove-btn');
       remBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -1900,6 +1905,46 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(hoverPreviewTip.hasAttribute('hidden'), false, 'Hover preview tip restored');
     assert.equal(hoverPreviewWidgets.children.length, 3, '3 real hover widgets restored in preview');
 
+    // Switch real-time metrics style to Large while synced with Live Overview -> updates overviewMetricStyle & dims 4th metric row
+    const [hoverStyleGroup, hoverSyncGroup] = sec1.querySelectorAll('.segmented');
+    const hoverStyleBtns = hoverStyleGroup.querySelectorAll('.seg-btn');
+    const hoverSyncBtns = hoverSyncGroup.querySelectorAll('.seg-btn');
+    assert.equal(hoverStyleBtns.length, 2, 'Hover metric style segmented switch has Medium and Large options');
+    assert.equal(hoverSyncBtns.length, 2, 'Hover sync toggle has On and Off options');
+    hoverStyleBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.hoverSyncOverviewMetrics, true);
+    assert.equal(mockSettings.overviewMetricStyle, 'large');
+    assert.equal(
+      hoverPreviewWidgets.children[0].classList.contains('is-large-trend'),
+      true,
+      'Hover preview MetricMatrixWidget switches to large trend sparkline layout'
+    );
+    assert.equal(hoverPreviewWidgets.children[0].getAttribute('data-cols'), '3');
+    assert.equal(hoverPreviewWidgets.children[0].querySelectorAll('.matrix-cell.is-trend-card').length, 3);
+    assert.equal(hoverPreviewWidgets.children[0].querySelectorAll('.cell-sparkline-svg').length, 3);
+    const hoverMetricRows = hoverMetricsWrap.querySelectorAll('.editable-slot-row');
+    assert.equal(hoverMetricRows.length, 4, 'Unified 1-4 metric list preserves 4th metric row in Large mode');
+    assert.equal(hoverMetricRows[3].classList.contains('is-dimmed'), true, '4th metric row dimmed in Large mode');
+
+    // Turn off Sync with Live Overview -> Hover detaches cleanly while Overview stays Large
+    hoverSyncBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.hoverSyncOverviewMetrics, false);
+    assert.equal(mockSettings.hoverMetricStyle, 'large');
+    hoverStyleBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.hoverMetricStyle, 'medium');
+    assert.equal(mockSettings.overviewMetricStyle, 'large', 'Overview stays Large after Hover detaches');
+    assert.equal(hoverPreviewWidgets.children[0].classList.contains('is-large-trend'), false);
+    assert.equal(hoverPreviewWidgets.children[0].getAttribute('data-cols'), '4');
+    assert.equal(hoverMetricRows[3].classList.contains('is-dimmed'), false, '4th metric row restored when switching back to Medium');
+    // Reset hover pane restores sync=true and hover defaults
+    sec1.querySelector('.btn-ghost-sm').dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(mockSettings.hoverSyncOverviewMetrics, true);
+    assert.equal(mockSettings.hoverMetricStyle, 'medium');
+
     // Pane 2 (3rd-level tab 'overview'): Live Overview Layout + real overview UI preview
     const sec2 = accordionSections[2];
     thirdNavBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -1909,6 +1954,17 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(sec2.hasAttribute('hidden'), false);
     const overviewPreviewHostEl = sec2.querySelector('.overview-modules-host');
     assert.equal(overviewPreviewHostEl.children.length, 4, 'Overview preview mounts all 4 real overview widgets');
+    // Overview is currently in Large mode from earlier synced switch -> verify 3 trend cards + dimmed 4th row, then switch back to Medium
+    assert.equal(overviewPreviewHostEl.children[0].classList.contains('is-large-trend'), true, 'Live Overview preview supports Large sparkline trend cards');
+    assert.equal(overviewPreviewHostEl.children[0].getAttribute('data-cols'), '3');
+    const [ovMetricWrap, ovModWrap] = sec2.querySelectorAll('.editable-slot-wrap');
+    assert.equal(ovMetricWrap.querySelectorAll('.editable-slot-row')[3].classList.contains('is-dimmed'), true, 'Overview 4th metric dimmed in Large mode');
+    const ovStyleBtns = sec2.querySelectorAll('.seg-btn');
+    ovStyleBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.overviewMetricStyle, 'medium');
+    assert.equal(overviewPreviewHostEl.children[0].classList.contains('is-large-trend'), false);
+    assert.equal(ovMetricWrap.querySelectorAll('.editable-slot-row')[3].classList.contains('is-dimmed'), false);
     assert.equal(
       sec2.querySelector('.structure-preview-canvas').classList.contains('is-scaled'),
       false,
@@ -1925,7 +1981,6 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       'Preview quota badge displays Ultra 5x multiplier instead of legacy Pro'
     );
 
-    const [ovModWrap, ovMetricWrap] = sec2.querySelectorAll('.editable-slot-wrap');
     // Move row 2 ('quotas') up above 'context' -> ['metrics', 'quotas', 'context', 'live_tasks']
     ovModWrap.querySelectorAll('.slot-move-btn')[6].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));

@@ -504,7 +504,29 @@
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-xs);
   background: var(--surface-panel);
-  transition: border-color var(--dur-instant) var(--ease-fast);
+  transition:
+    border-color var(--dur-instant) var(--ease-fast),
+    opacity var(--dur-fast) var(--ease-fast);
+}
+
+.editable-slot-row.is-dimmed:not(.is-dragging) {
+  opacity: 0.46;
+}
+
+.editable-slot-row.is-dimmed:not(.is-dragging):hover,
+.editable-slot-row.is-dimmed:not(.is-dragging):focus-within {
+  opacity: 0.78;
+}
+
+.slot-dimmed-tag {
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-2xs);
+  line-height: 1.35;
+  color: var(--text-muted);
+  background: var(--surface-track);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .editable-slot-row:focus-within,

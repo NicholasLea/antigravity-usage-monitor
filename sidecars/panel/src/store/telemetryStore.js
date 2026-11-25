@@ -29,13 +29,18 @@ import {
   CLI_STATUSLINE_PRESETS,
   DEFAULT_CLI_STATUSLINE_SLOTS,
   DEFAULT_CONTEXT_AGENT_MODE,
+  DEFAULT_HOVER_METRICS,
+  DEFAULT_HOVER_METRIC_STYLE,
   DEFAULT_HOVER_MODULES,
+  DEFAULT_HOVER_SYNC_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_METRICS,
+  DEFAULT_OVERVIEW_METRIC_STYLE,
   DEFAULT_OVERVIEW_MODULES,
   DEFAULT_POPOVER_WIDTH,
   DEFAULT_STEP_TABLE_COLUMNS,
   DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_TOPBAR_SLOTS,
+  MAX_LARGE_METRIC_SLOTS,
   MAX_POPOVER_WIDTH,
   MIN_POPOVER_WIDTH,
   OVERVIEW_METRIC_KEYS,
@@ -46,8 +51,12 @@ import {
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
   normalizeExperimentalQuotaReservation,
+  normalizeHoverMetricStyle,
+  normalizeHoverMetrics,
   normalizeHoverModules,
+  normalizeHoverSyncOverviewMetrics,
   normalizeModelDisplayMode,
+  normalizeOverviewMetricStyle,
   normalizeOverviewMetrics,
   normalizeOverviewModules,
   normalizePluginUpdateMode,
@@ -60,6 +69,7 @@ import {
   normalizeWindowMountMode,
   parseStepTokenComboSegments,
   resolveEffectiveCliStatusLineSlots,
+  resolveEffectiveMetricMatrixConfig,
 } from '../../shared/settings-normalization.mjs';
 import {
   LOCAL_ENDPOINT_ID,
@@ -479,6 +489,11 @@ export const DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS = DEFAULT_CLI_STATUSLINE_SLOTS;
 export const CLIENT_OVERVIEW_MODULE_KEYS = OVERVIEW_MODULE_KEYS;
 export const DEFAULT_CLIENT_OVERVIEW_MODULES = DEFAULT_OVERVIEW_MODULES;
 export const DEFAULT_CLIENT_HOVER_MODULES = DEFAULT_HOVER_MODULES;
+export const DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS = DEFAULT_HOVER_SYNC_OVERVIEW_METRICS;
+export const DEFAULT_CLIENT_HOVER_METRIC_STYLE = DEFAULT_HOVER_METRIC_STYLE;
+export const DEFAULT_CLIENT_HOVER_METRICS = DEFAULT_HOVER_METRICS;
+export const DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE = DEFAULT_OVERVIEW_METRIC_STYLE;
+export const MAX_CLIENT_LARGE_METRIC_SLOTS = MAX_LARGE_METRIC_SLOTS;
 export const CLIENT_OVERVIEW_METRIC_KEYS = OVERVIEW_METRIC_KEYS;
 export const DEFAULT_CLIENT_OVERVIEW_METRICS = DEFAULT_OVERVIEW_METRICS;
 export const CLIENT_STEP_COLUMN_KEYS = STEP_TABLE_COLUMN_KEYS;
@@ -526,8 +541,13 @@ export function resolveOverlayCtxInspectorAgentId(telemetry, ctxInspectorAgentId
 }
 export const resolveEffectiveClientCliStatusLineSlots = resolveEffectiveCliStatusLineSlots;
 export const normalizeClientHoverModules = normalizeHoverModules;
+export const normalizeClientHoverSyncOverviewMetrics = normalizeHoverSyncOverviewMetrics;
+export const normalizeClientHoverMetricStyle = normalizeHoverMetricStyle;
+export const normalizeClientHoverMetrics = normalizeHoverMetrics;
 export const normalizeClientOverviewModules = normalizeOverviewModules;
+export const normalizeClientOverviewMetricStyle = normalizeOverviewMetricStyle;
 export const normalizeClientOverviewMetrics = normalizeOverviewMetrics;
+export const resolveEffectiveClientMetricMatrixConfig = resolveEffectiveMetricMatrixConfig;
 export const normalizeClientStepColumns = normalizeStepTableColumns;
 export const normalizeClientUpdateMode = normalizePluginUpdateMode;
 export const normalizeClientWindowMountMode = normalizeWindowMountMode;
@@ -659,7 +679,26 @@ export function isEquivalentTelemetry(prev, next) {
   }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
   if (!sameArr(pSet?.hoverModules, nSet?.hoverModules)) return false;
+  if (
+    normalizeClientHoverSyncOverviewMetrics(pSet?.hoverSyncOverviewMetrics) !==
+    normalizeClientHoverSyncOverviewMetrics(nSet?.hoverSyncOverviewMetrics)
+  ) {
+    return false;
+  }
+  if (
+    normalizeClientHoverMetricStyle(pSet?.hoverMetricStyle) !==
+    normalizeClientHoverMetricStyle(nSet?.hoverMetricStyle)
+  ) {
+    return false;
+  }
+  if (!sameArr(pSet?.hoverMetrics, nSet?.hoverMetrics)) return false;
   if (!sameArr(pSet?.overviewModules, nSet?.overviewModules)) return false;
+  if (
+    normalizeClientOverviewMetricStyle(pSet?.overviewMetricStyle) !==
+    normalizeClientOverviewMetricStyle(nSet?.overviewMetricStyle)
+  ) {
+    return false;
+  }
   if (!sameArr(pSet?.overviewMetrics, nSet?.overviewMetrics)) return false;
   if (!sameArr(pSet?.stepTableColumns, nSet?.stepTableColumns)) return false;
 
@@ -1936,8 +1975,24 @@ export async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverModules')) {
     safePatch.hoverModules = normalizeClientHoverModules(safePatch.hoverModules);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverSyncOverviewMetrics')) {
+    safePatch.hoverSyncOverviewMetrics = normalizeClientHoverSyncOverviewMetrics(
+      safePatch.hoverSyncOverviewMetrics
+    );
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverMetricStyle')) {
+    safePatch.hoverMetricStyle = normalizeClientHoverMetricStyle(safePatch.hoverMetricStyle);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverMetrics')) {
+    safePatch.hoverMetrics = normalizeClientHoverMetrics(safePatch.hoverMetrics);
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'overviewModules')) {
     safePatch.overviewModules = normalizeClientOverviewModules(safePatch.overviewModules);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'overviewMetricStyle')) {
+    safePatch.overviewMetricStyle = normalizeClientOverviewMetricStyle(
+      safePatch.overviewMetricStyle
+    );
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'overviewMetrics')) {
     safePatch.overviewMetrics = normalizeClientOverviewMetrics(safePatch.overviewMetrics);

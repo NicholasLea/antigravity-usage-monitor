@@ -223,6 +223,25 @@ export function buildStructurePreviewTelemetry(
     },
   ];
 
+  // 14-step realistic sparkline series (newest-first) for hover Large Trend preview cards,
+  // keeping `mockSteps` at 4 compact rows for the Step Table preview.
+  const mockSparklineSteps = [
+    { tokPerSec: 68.4, ttftSec: 1.15, costUsd: 0.042, cacheHitPct: 94.5, contextTokens: 142800, inputTokens: 7800, cacheReadTokens: 133580, outputTokens: 1420 },
+    { tokPerSec: 34.2, ttftSec: 2.35, costUsd: 0.056, cacheHitPct: 86.2, contextTokens: 139200, inputTokens: 16200, cacheReadTokens: 121800, outputTokens: 1200 },
+    { tokPerSec: 91.8, ttftSec: 0.82, costUsd: 0.029, cacheHitPct: 95.1, contextTokens: 136400, inputTokens: 6400, cacheReadTokens: 128800, outputTokens: 1200 },
+    { tokPerSec: 42.6, ttftSec: 1.94, costUsd: 0.051, cacheHitPct: 82.4, contextTokens: 131800, inputTokens: 19400, cacheReadTokens: 111200, outputTokens: 1200 },
+    { tokPerSec: 74.5, ttftSec: 1.08, costUsd: 0.036, cacheHitPct: 91.6, contextTokens: 128400, inputTokens: 9800, cacheReadTokens: 117500, outputTokens: 1100 },
+    { tokPerSec: 36.1, ttftSec: 2.65, costUsd: 0.068, cacheHitPct: 61.4, contextTokens: 124600, inputTokens: 45200, cacheReadTokens: 78300, outputTokens: 1100 },
+    { tokPerSec: 84.3, ttftSec: 0.94, costUsd: 0.033, cacheHitPct: 93.2, contextTokens: 158200, inputTokens: 9600, cacheReadTokens: 147200, outputTokens: 1400 },
+    { tokPerSec: 71.2, ttftSec: 1.26, costUsd: 0.039, cacheHitPct: 90.8, contextTokens: 149500, inputTokens: 12400, cacheReadTokens: 135800, outputTokens: 1300 },
+    { tokPerSec: 48.9, ttftSec: 1.78, costUsd: 0.048, cacheHitPct: 84.5, contextTokens: 138400, inputTokens: 18600, cacheReadTokens: 118600, outputTokens: 1200 },
+    { tokPerSec: 69.7, ttftSec: 1.12, costUsd: 0.037, cacheHitPct: 92.1, contextTokens: 129600, inputTokens: 9200, cacheReadTokens: 119200, outputTokens: 1200 },
+    { tokPerSec: 73.1, ttftSec: 1.05, costUsd: 0.034, cacheHitPct: 91.0, contextTokens: 118400, inputTokens: 9800, cacheReadTokens: 107500, outputTokens: 1100 },
+    { tokPerSec: 77.4, ttftSec: 0.96, costUsd: 0.031, cacheHitPct: 89.4, contextTokens: 106800, inputTokens: 10400, cacheReadTokens: 95400, outputTokens: 1000 },
+    { tokPerSec: 86.2, ttftSec: 0.88, costUsd: 0.028, cacheHitPct: 87.2, contextTokens: 98200, inputTokens: 11600, cacheReadTokens: 85600, outputTokens: 1000 },
+    { tokPerSec: 64.8, ttftSec: 1.45, costUsd: 0.044, cacheHitPct: 76.5, contextTokens: 88400, inputTokens: 19800, cacheReadTokens: 67600, outputTokens: 1000 },
+  ];
+
   const mainAgent = {
     agentId: 'main',
     cascadeId: 'mock-main',
@@ -275,6 +294,7 @@ export function buildStructurePreviewTelemetry(
     ],
     context: mainContext,
     recentSteps: mockSteps.filter((s) => !s.isSubagent),
+    sparklineSteps: mockSparklineSteps,
   };
 
   const subAgent1 = {
@@ -360,6 +380,7 @@ export function buildStructurePreviewTelemetry(
     activeAgentBadge: '子1',
     modelBreakdown: [...mainAgent.modelBreakdown, ...subAgent1.modelBreakdown],
     recentSteps: mockSteps,
+    sparklineSteps: mockSparklineSteps,
   };
 
   return {
@@ -494,6 +515,7 @@ export function buildStructurePreviewTelemetry(
       agents: [mainAgent, subAgent1],
       aggregated,
       recentSteps: mockSteps,
+      sparklineSteps: mockSparklineSteps,
     },
   };
 }
