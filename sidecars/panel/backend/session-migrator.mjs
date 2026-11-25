@@ -509,18 +509,24 @@ function migratorComputeDbFileInfo(convDir, cid, walSet = null) {
     const dbStat = statSync(dbPath);
     let sizeBytes = Number(dbStat.size || 0);
     let mtimeMs = Number(dbStat.mtimeMs || 0);
+    let hasNonEmptyWal = false;
     const hasWal = walSet ? walSet.has(`${cid}.db-wal`) : existsSync(`${dbPath}-wal`);
     if (hasWal) {
       const walPath = `${dbPath}-wal`;
       try {
         const walStat = statSync(walPath);
-        sizeBytes += Number(walStat.size || 0);
-        mtimeMs = Math.max(mtimeMs, Number(walStat.mtimeMs || 0));
+        const walSize = Number(walStat.size || 0);
+        sizeBytes += walSize;
+        // 0 字节的空 .db-wal 仅由只读打开/checkpoint 残留，不含真实写入，忽略其 mtime 避免拉平老会话时间
+        if (walSize > 0) {
+          hasNonEmptyWal = true;
+          mtimeMs = Math.max(mtimeMs, Number(walStat.mtimeMs || 0));
+        }
       } catch {
         // 忽略 WAL stat 异常
       }
     }
-    return { dbPath, sizeBytes, mtimeMs };
+    return { dbPath, sizeBytes, mtimeMs, hasNonEmptyWal };
   } catch {
     return null;
   }
@@ -568,11 +574,17 @@ function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSe
     const summaryLastModMs = summary
       ? parseIsoMs(normalizeSqliteIsoTime(summary.last_modified_time)) || 0
       : 0;
+    const effectiveLastModMs =
+      summaryLastModMs > 0
+        ? info.hasNonEmptyWal
+          ? Math.max(summaryLastModMs, info.mtimeMs)
+          : summaryLastModMs
+        : info.mtimeMs;
     dbCandidates.push({
       cid,
       summary,
       info,
-      sortMs: Math.max(summaryLastModMs, info.mtimeMs),
+      sortMs: effectiveLastModMs,
     });
   }
 

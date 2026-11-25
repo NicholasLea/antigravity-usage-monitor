@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
@@ -983,5 +983,115 @@ test('SessionMigrationCard stays hidden for single-client hosts and renders mult
   } finally {
     globalThis.document = prevDoc;
     globalThis.window = prevWin;
+  }
+});
+
+test('getSessionMigrationCatalog ignores 0-byte .db-wal mtime noise and respects summary last_modified_time', () => {
+  const tmpGemini = mkdtempSync(join(tmpdir(), 'ag-smig-wal-mtime-'));
+  try {
+    const deskRoot = join(tmpGemini, 'antigravity');
+    const ideRoot = join(tmpGemini, 'antigravity-ide');
+    mkdirSync(join(deskRoot, 'conversations'), { recursive: true });
+    mkdirSync(join(ideRoot, 'conversations'), { recursive: true });
+
+    const deskCid = '11111111-1111-4111-8111-111111111111';
+    const ideOldCid = '22222222-2222-4222-8222-222222222222';
+    const ideActiveCid = '33333333-3333-4333-8333-333333333333';
+
+    createConvDb(join(deskRoot, 'conversations', `${deskCid}.db`), {
+      cid: deskCid,
+      tid: 'aaaaaaaa-1111-4111-8111-111111111111',
+      source: 1,
+      projectId: 'proj-1',
+      wsUri: 'file:///f%3A/repo',
+      promptText: 'Desktop older summary',
+      stepCount: 6,
+    });
+    const deskSumDb = initSummaryDb(join(deskRoot, 'conversation_summaries.db'));
+    deskSumDb
+      .prepare(
+        `INSERT INTO conversation_summaries (
+          conversation_id, title, preview, step_count, last_modified_time, workspace_uris,
+          status, source, project_id, last_user_input_time, last_user_input_step_index, app_data_dir
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        deskCid,
+        'Desktop older summary',
+        '',
+        6,
+        '2026-08-15 10:00:00.0000000+00:00',
+        '["file:///f%3A/repo"]',
+        'CASCADE_RUN_STATUS_IDLE',
+        'CORTEX_TRAJECTORY_SOURCE_CASCADE',
+        'proj-1',
+        '2026-08-15 10:00:00.0000000+00:00',
+        4,
+        'antigravity'
+      );
+    deskSumDb.close();
+
+    // 0-byte .db-wal with current mtime must NOT override Desktop summary last_modified_time
+    const deskWalPath = join(deskRoot, 'conversations', `${deskCid}.db-wal`);
+    writeFileSync(deskWalPath, Buffer.alloc(0));
+
+    const ideOldDb = join(ideRoot, 'conversations', `${ideOldCid}.db`);
+    createConvDb(ideOldDb, {
+      cid: ideOldCid,
+      tid: 'bbbbbbbb-2222-4222-8222-222222222222',
+      source: 1,
+      promptText: 'Legacy August session',
+      stepCount: 4,
+    });
+    const oldDate = new Date('2026-08-20T12:00:00.000Z');
+    utimesSync(ideOldDb, oldDate, oldDate);
+    // 0-byte .db-wal touched 14 days ago must NOT override the August .db mtime
+    const ideOldWal = `${ideOldDb}-wal`;
+    writeFileSync(ideOldWal, Buffer.alloc(0));
+    const sweepDate = new Date('2026-11-11T03:22:00.000Z');
+    utimesSync(ideOldWal, sweepDate, sweepDate);
+
+    // Non-empty .db-wal (>0 bytes) DOES represent real uncommitted writes and advances mtime
+    const ideActiveDb = join(ideRoot, 'conversations', `${ideActiveCid}.db`);
+    createConvDb(ideActiveDb, {
+      cid: ideActiveCid,
+      tid: 'cccccccc-3333-4333-8333-333333333333',
+      source: 1,
+      promptText: 'Legacy active WAL session',
+      stepCount: 4,
+    });
+    utimesSync(ideActiveDb, oldDate, oldDate);
+    const ideActiveWal = `${ideActiveDb}-wal`;
+    writeFileSync(ideActiveWal, Buffer.alloc(64, 1));
+    const activeWalDate = new Date('2026-11-24T08:00:00.000Z');
+    utimesSync(ideActiveWal, activeWalDate, activeWalDate);
+
+    const cat = getSessionMigrationCatalog({ geminiDir: tmpGemini });
+    const deskSession = cat.sessionsByClient.desktop.find((s) => s.cascadeId === deskCid);
+    assert.ok(deskSession);
+    assert.equal(
+      deskSession.lastModifiedMs,
+      Date.parse('2026-08-15T10:00:00.000Z'),
+      'Desktop session uses authoritative summary last_modified_time when WAL is empty'
+    );
+
+    const ideOld = cat.sessionsByClient.ide_legacy.find((s) => s.cascadeId === ideOldCid);
+    const ideActive = cat.sessionsByClient.ide_legacy.find((s) => s.cascadeId === ideActiveCid);
+    assert.ok(ideOld && ideActive);
+    assert.ok(
+      Math.abs(ideOld.lastModifiedMs - oldDate.getTime()) < 2000,
+      '0-byte .db-wal must not flatten legacy session mtime'
+    );
+    assert.ok(
+      Math.abs(ideActive.lastModifiedMs - activeWalDate.getTime()) < 2000,
+      'Non-empty .db-wal advances legacy session mtime'
+    );
+    assert.equal(
+      cat.sessionsByClient.ide_legacy[0].cascadeId,
+      ideActiveCid,
+      'Active session sorts before August session'
+    );
+  } finally {
+    rmSync(tmpGemini, { recursive: true, force: true });
   }
 });
