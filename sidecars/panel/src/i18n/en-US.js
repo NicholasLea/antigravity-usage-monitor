@@ -431,6 +431,8 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.sortClickTip': 'Click to sort by {col}',
   'steps.searchPlaceholder': 'Filter #step, model, prompt, or anomaly...',
   'steps.searchClearAria': 'Clear step filter',
+  'steps.quickFilterAria': 'Quick diagnostic filters',
+  'steps.chipAll': 'All',
   'steps.chipAnomaly': 'Anomaly {count}',
   'steps.chipCompaction': 'Compact {count}',
   'steps.chipLowCache': 'Low Cache {count}',

@@ -1408,20 +1408,24 @@ test('Feature 10: StepsDetailView live search, dynamic diagnostic chips, and cli
     { sync: true }
   );
   assert.equal(view.refs.stepsFilterToolbarEl.hasAttribute('hidden'), false);
-  const chipBtns = view.refs.stepQuickChipsEl.querySelectorAll('.steps-chip-btn');
-  assert.equal(chipBtns.length, 4);
-  assert.equal(chipBtns.every((b) => !b.hasAttribute('hidden')), true);
+  assert.equal(view.refs.stepQuickChipsEl.classList.contains('segmented'), true);
+  const chipBtns = view.refs.stepQuickChipsEl.querySelectorAll('.seg-btn');
+  assert.equal(chipBtns.length, 5);
+  assert.equal(chipBtns[0].getAttribute('data-seg-value'), '');
+  assert.equal(chipBtns[0].classList.contains('is-active'), true);
 
-  // Click Low Cache chip -> narrows table to step #4
-  chipBtns[2].dispatchEvent({ type: 'click' });
+  // Click Low Cache segment -> narrows table to step #4
+  const lowCacheBtn = chipBtns.find((b) => b.getAttribute('data-seg-value') === 'low_cache');
+  lowCacheBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
   let rows = view.el.querySelectorAll('tbody tr');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].children[0].textContent, '#4');
 
-  // Toggle chip off -> restores all 3 rows
-  chipBtns[2].dispatchEvent({ type: 'click' });
+  // Toggle active segment off -> returns to All and restores all 3 rows
+  lowCacheBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
   rows = view.el.querySelectorAll('tbody tr');
   assert.equal(rows.length, 3);
+  assert.equal(chipBtns[0].classList.contains('is-active'), true);
 
   // Type search query "quota" -> narrows to step #2
   view.refs.stepSearchInput.value = 'quota';

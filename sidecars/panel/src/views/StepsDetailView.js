@@ -458,41 +458,33 @@ export const StepsDetailView = defineComponent({
     const stepSearchClearBtn = stepSearchBox.clearBtnEl;
 
     const QUICK_CHIP_DEFS = [
-      { key: 'anomaly', i18nKey: 'steps.chipAnomaly', tone: 'is-warn' },
-      { key: 'compaction', i18nKey: 'steps.chipCompaction', tone: 'is-info' },
-      { key: 'low_cache', i18nKey: 'steps.chipLowCache', tipKey: 'steps.chipLowCacheTip', tone: 'is-warn' },
-      { key: 'slow_ttft', i18nKey: 'steps.chipSlowTtft', tipKey: 'steps.chipSlowTtftTip', tone: 'is-danger' },
+      { key: 'anomaly', i18nKey: 'steps.chipAnomaly' },
+      { key: 'compaction', i18nKey: 'steps.chipCompaction' },
+      { key: 'low_cache', i18nKey: 'steps.chipLowCache', tipKey: 'steps.chipLowCacheTip' },
+      { key: 'slow_ttft', i18nKey: 'steps.chipSlowTtft', tipKey: 'steps.chipSlowTtftTip' },
     ];
-    const quickChipBtns = QUICK_CHIP_DEFS.map((def) => {
-      const btn = h('button', {
-        type: 'button',
-        className: `steps-chip-btn ${def.tone}`,
-        'data-chip': def.key,
-        hidden: true,
-        onclick: () => {
-          if (def.key === 'anomaly') {
-            const nextOn = !(onlyAnomalies || stepQuickChip === 'anomaly');
-            onlyAnomalies = nextOn;
-            anomalyKindFilter = '';
-            stepQuickChip = nextOn ? 'anomaly' : '';
-          } else {
-            const nextKey = stepQuickChip === def.key ? '' : def.key;
-            stepQuickChip = nextKey;
-            if (nextKey) {
-              onlyAnomalies = false;
-              anomalyKindFilter = '';
-            }
-          }
-          if (latestSlice) renderStepsData(latestSlice);
-        },
-      });
-      return { def, btn };
+    const stepQuickFilterSwitch = SegmentedControl({
+      ariaLabel: t('steps.quickFilterAria'),
+      modelValue: '',
+      deselectToValue: '',
+      options: [],
+      onUpdateModelValue: (val) => {
+        const nextKey = String(val || '');
+        if (nextKey === 'anomaly') {
+          onlyAnomalies = true;
+          anomalyKindFilter = '';
+          stepQuickChip = 'anomaly';
+        } else {
+          onlyAnomalies = false;
+          anomalyKindFilter = '';
+          stepQuickChip = nextKey;
+        }
+        if (latestSlice) renderStepsData(latestSlice);
+      },
     });
-    const stepQuickChipsEl = h(
-      'div',
-      { className: 'steps-quick-chips', hidden: true },
-      quickChipBtns.map((c) => c.btn)
-    );
+    const stepQuickChipsEl = stepQuickFilterSwitch.el;
+    stepQuickChipsEl.classList?.add('steps-quick-chips');
+    patchAttr(stepQuickChipsEl, 'hidden', true);
     const stepsExportMenu = ActionMenu({
       ariaLabel: t('steps.exportMenuAria'),
       className: 'steps-export-menu',
@@ -1053,21 +1045,27 @@ export const StepsDetailView = defineComponent({
       patchAttr(stepsFilterToolbarEl, 'hidden', !showFilterToolbar);
       stepsExportMenu.refs.setHidden(showModels || steps.length === 0);
       if (showFilterToolbar) {
-        let visibleChipsCount = 0;
-        for (const { def, btn } of quickChipBtns) {
+        const activeFilterOpts = [];
+        for (const def of QUICK_CHIP_DEFS) {
           const cnt = chipCounts[def.key] || 0;
           const isActive = effectiveQuickChip === def.key;
-          const showChip = cnt > 0 || isActive;
-          patchAttr(btn, 'hidden', !showChip);
-          if (showChip) {
-            visibleChipsCount += 1;
-            patchText(btn, t(def.i18nKey, { count: cnt }));
-            if (def.tipKey) patchAttr(btn, 'title', t(def.tipKey));
-            patchClasses(btn, { 'is-active': isActive });
-            patchAttr(btn, 'aria-pressed', isActive ? 'true' : 'false');
+          if (cnt > 0 || isActive) {
+            activeFilterOpts.push({
+              value: def.key,
+              label: t(def.i18nKey, { count: cnt }),
+              ...(def.tipKey ? { title: t(def.tipKey) } : {}),
+            });
           }
         }
-        patchAttr(stepQuickChipsEl, 'hidden', visibleChipsCount === 0);
+        const hasFilters = activeFilterOpts.length > 0;
+        patchAttr(stepQuickChipsEl, 'hidden', !hasFilters);
+        if (hasFilters) {
+          stepQuickFilterSwitch.setProps({
+            ariaLabel: t('steps.quickFilterAria'),
+            modelValue: effectiveQuickChip,
+            options: [{ value: '', label: t('steps.chipAll') }, ...activeFilterOpts],
+          });
+        }
       }
 
       const filteredTableSteps = filterStepsBySearchAndChip(modelFilteredSteps, {
@@ -1820,6 +1818,7 @@ export const StepsDetailView = defineComponent({
       modelFitChart.destroy?.();
       inlineScopeSelect.destroy();
       stepsModelSelect.destroy();
+      stepQuickFilterSwitch.destroy();
       subTabSwitch.destroy();
       lineModelSelect.destroy();
       lineMetricSwitch.destroy();

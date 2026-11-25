@@ -96,7 +96,6 @@
 }
 
 .quota-win-usage {
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-sm);
   font-weight: 400;
@@ -824,7 +823,6 @@
 }
 
 .quota-rate-pop-account {
-  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--text-muted);
   white-space: nowrap;
@@ -939,7 +937,6 @@
 }
 
 .quota-rate-mult-badge {
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
   font-weight: 600;

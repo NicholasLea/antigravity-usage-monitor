@@ -431,6 +431,8 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.sortClickTip': '点击按「{col}」排序',
   'steps.searchPlaceholder': '搜索 #步号、模型、提问或异常...',
   'steps.searchClearAria': '清空步骤搜索',
+  'steps.quickFilterAria': '快速诊断筛选',
+  'steps.chipAll': '全部',
   'steps.chipAnomaly': '异常 {count}',
   'steps.chipCompaction': '压缩 {count}',
   'steps.chipLowCache': '低缓存 {count}',

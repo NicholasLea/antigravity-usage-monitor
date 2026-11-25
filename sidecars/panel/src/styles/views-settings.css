@@ -1002,7 +1002,7 @@
   background: var(--surface-subtle);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-xs);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-md);
   color: var(--text-primary);
   outline: none;
@@ -1038,7 +1038,7 @@
   min-width: 48px;
   padding: 0 4px;
   text-align: center;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-md);
 }
 
@@ -1279,7 +1279,6 @@
   min-height: calc(24px * var(--ui-font-scale, 1));
   padding: 2px var(--space-3);
   font-size: var(--fs-xs);
-  font-family: var(--font-mono);
   max-width: 100%;
 }
 
@@ -1508,7 +1507,6 @@
 
 .smig-item-ws {
   font-size: var(--fs-xs);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
