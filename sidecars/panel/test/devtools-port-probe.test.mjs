@@ -733,3 +733,208 @@ test('Adversarial audit regressions: HTTP_404 non-CDP negative caching, dual-hos
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('Verified live DevTools port is not 15s-banned on transient PROBE_TIMEOUT and active bridge avoids false cdp_unreachable alarms', async () => {
+  const http = await import('node:http');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-transient-cdp-'));
+  const desktopPortFile = path.join(tmpDir, 'Antigravity', 'DevToolsActivePort');
+  fs.mkdirSync(path.dirname(desktopPortFile), { recursive: true });
+
+  // 1. Unit check on createDevToolsPortProber: previously-verified live port hitting PROBE_TIMEOUT is NOT negative-cached
+  fs.writeFileSync(desktopPortFile, '54552\n/devtools/browser/live-abc\n', 'utf8');
+  let mode = 'live'; // 'live' | 'timeout' | 'refused'
+  let probeCalls = 0;
+  const prober = createDevToolsPortProber({
+    timeoutNegativeTtlMs: 15_000,
+    fetchVersionFn: async (port) => {
+      probeCalls += 1;
+      if (mode === 'timeout') throw new Error('PROBE_TIMEOUT');
+      if (mode === 'refused') {
+        const err = new Error('connect ECONNREFUSED');
+        err.code = 'ECONNREFUSED';
+        throw err;
+      }
+      return {
+        Browser: 'Chrome/152.0',
+        webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/live-abc`,
+      };
+    },
+  });
+
+  const p1 = await prober.probeActiveDevToolsPorts({ candidateFiles: [desktopPortFile] });
+  assert.deepEqual(p1.livePorts, [54552]);
+  assert.equal(p1.hasTransientTimeout, false);
+  assert.equal(probeCalls, 1);
+
+  // Busy UI hiccup -> PROBE_TIMEOUT does NOT enter 15s negative cache
+  mode = 'timeout';
+  const p2 = await prober.probeActiveDevToolsPorts({ candidateFiles: [desktopPortFile] });
+  assert.deepEqual(p2.livePorts, []);
+  assert.equal(p2.hasTransientTimeout, true);
+  assert.equal(p2.stalePortDetected, false);
+  assert.equal(prober.getNegativeCacheSize(), 0, 'Previously verified live port must not be negative-cached on PROBE_TIMEOUT');
+
+  // Very next poll immediately re-probes and recovers without waiting 15s!
+  mode = 'live';
+  const p3 = await prober.probeActiveDevToolsPorts({ candidateFiles: [desktopPortFile] });
+  assert.deepEqual(p3.livePorts, [54552]);
+  assert.equal(p3.hasTransientTimeout, false);
+  assert.equal(probeCalls, 3);
+
+  // Genuine host exit (ECONNREFUSED) evicts verifiedLiveFiles and enters negativeCache immediately
+  mode = 'refused';
+  const p4 = await prober.probeActiveDevToolsPorts({ candidateFiles: [desktopPortFile] });
+  assert.deepEqual(p4.livePorts, []);
+  assert.equal(p4.hasTransientTimeout, false);
+  assert.equal(p4.stalePortDetected, true);
+  assert.equal(prober.getNegativeCacheSize(), 1);
+
+  // 2. End-to-end WindowBridgeController: active bridge holds 'active' across transient PROBE_TIMEOUT & live HTTP heartbeat,
+  //    then transitions cleanly to 'cdp_unreachable' on genuine ECONNREFUSED or sustained outage without heartbeat.
+  let cdpVersionMode = 'live'; // 'live' | 'timeout' | 'refused'
+  let cdpSrvPort = 0;
+  const cdpSrv = http.createServer((req, res) => {
+    if (req.url === '/json/list') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify([
+          {
+            id: 'main-1',
+            type: 'page',
+            title: 'Antigravity',
+            url: 'https://127.0.0.1:9000/c/11111111-2222-3333-4444-555555555555',
+            webSocketDebuggerUrl: `ws://127.0.0.1:${cdpSrvPort}/devtools/page/main-1`,
+          },
+        ])
+      );
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  class FakeWs {
+    constructor() {
+      this._listeners = new Map();
+      queueMicrotask(() => this._emit('open', {}));
+    }
+    addEventListener(type, fn) {
+      if (!this._listeners.has(type)) this._listeners.set(type, []);
+      this._listeners.get(type).push(fn);
+    }
+    removeEventListener(type, fn) {
+      const list = this._listeners.get(type);
+      if (list) this._listeners.set(type, list.filter((x) => x !== fn));
+    }
+    _emit(type, ev) {
+      for (const fn of this._listeners.get(type) || []) fn(ev);
+    }
+    send(raw) {
+      const msg = JSON.parse(raw);
+      queueMicrotask(() => {
+        this._emit('message', {
+          data: JSON.stringify({
+            id: msg.id,
+            result: {
+              result: {
+                value: {
+                  alive: true,
+                  visible: true,
+                  dockKind: 'flow',
+                  bundleVersion: 'v-transient-1',
+                  bridgePort: 0,
+                  bridgeToken: '',
+                  mountMode: 'dual',
+                },
+              },
+            },
+          }),
+        });
+      });
+    }
+    close() {}
+  }
+
+  let ctrl = null;
+  try {
+    await new Promise((resolve) => cdpSrv.listen(0, '127.0.0.1', resolve));
+    cdpSrvPort = cdpSrv.address().port;
+
+    const appDataDir = path.join(tmpDir, 'AppData', 'Roaming');
+    const portFile = path.join(appDataDir, 'Antigravity', 'DevToolsActivePort');
+    fs.mkdirSync(path.dirname(portFile), { recursive: true });
+    fs.writeFileSync(portFile, `${cdpSrvPort}\n/devtools/browser/bridge-live\n`, 'utf8');
+
+    ctrl = createWindowBridgeController({
+      env: { USERPROFILE: tmpDir, APPDATA: appDataDir, LOCALAPPDATA: path.join(tmpDir, 'AppData', 'Local') },
+      platform: 'win32',
+      homeDir: tmpDir,
+      autoConfigureIdeArgv: false,
+      activeTransientMissTolerance: 2,
+      overlayHeartbeatGraceMs: 15_000,
+      WebSocketImpl: FakeWs,
+      portProberOptions: {
+        fetchVersionFn: async (port) => {
+          if (cdpVersionMode === 'timeout') throw new Error('PROBE_TIMEOUT');
+          if (cdpVersionMode === 'refused') {
+            const err = new Error('connect ECONNREFUSED');
+            err.code = 'ECONNREFUSED';
+            throw err;
+          }
+          return {
+            Browser: 'Chrome/152.0',
+            webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/bridge-live`,
+          };
+        },
+      },
+      getSettingsFn: () => ({ enableWindowOverlay: true, windowMountMode: 'dual' }),
+      getBundleVersionFn: () => 'v-transient-1',
+      readAssetFn: async () => '',
+      handleApiRequest: async () => ({ status: 200, contentType: 'application/json', body: '{"ok":true}' }),
+    });
+
+    // Initial sync establishes active bridge
+    const s1 = await ctrl.syncAllWindows();
+    assert.equal(s1.ok, true);
+    assert.equal(ctrl.getBridgeStatus().state, 'active');
+
+    // Transient busy timeouts (miss 1 & miss 2) MUST hold state='active' (no false restart banner)
+    cdpVersionMode = 'timeout';
+    const s2 = await ctrl.syncAllWindows();
+    assert.equal(s2.reason, 'cdp_transient_busy');
+    assert.equal(ctrl.getBridgeStatus().state, 'active', 'Miss #1 must hold active');
+
+    const s3 = await ctrl.syncAllWindows();
+    assert.equal(s3.reason, 'cdp_transient_busy');
+    assert.equal(ctrl.getBridgeStatus().state, 'active', 'Miss #2 within tolerance must hold active');
+
+    // Active overlay HTTP heartbeat keeps bridge 'active' even past miss #3
+    const info = ctrl.getBridgeInfo();
+    const hbRes = await fetch(`http://127.0.0.1:${info.port}/api/telemetry`, {
+      headers: {
+        Origin: 'https://127.0.0.1:9000',
+        'X-Usage-Monitor-Token': info.token,
+      },
+    });
+    assert.equal(hbRes.status, 200);
+    const s4 = await ctrl.syncAllWindows();
+    assert.equal(s4.reason, 'cdp_transient_busy');
+    assert.equal(ctrl.getBridgeStatus().state, 'active', 'Recent authenticated overlay heartbeat suppresses false cdp_unreachable');
+
+    // Recovery resets miss counter cleanly
+    cdpVersionMode = 'live';
+    const s5 = await ctrl.syncAllWindows();
+    assert.equal(s5.ok, true);
+    assert.equal(ctrl.getBridgeStatus().state, 'active');
+
+    // Genuine host exit (ECONNREFUSED) transitions to 'cdp_unreachable' immediately even after recent heartbeat
+    cdpVersionMode = 'refused';
+    const s6 = await ctrl.syncAllWindows();
+    assert.equal(s6.reason, 'cdp_unreachable');
+    assert.equal(ctrl.getBridgeStatus().state, 'cdp_unreachable', 'Hard ECONNREFUSED surfaces cdp_unreachable immediately');
+  } finally {
+    if (ctrl) await ctrl.stop();
+    await new Promise((r) => cdpSrv.close(r));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

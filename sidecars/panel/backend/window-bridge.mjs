@@ -1490,6 +1490,8 @@ export function createWindowBridgeController(options) {
     resolveLocalContextRulesFn = null,
     portProberOptions = null,
     ideRemoteSshOptions = null,
+    activeTransientMissTolerance = 2,
+    overlayHeartbeatGraceMs = 15_000,
     getHostI18nDescriptorFn =
       options?.env === undefined && options?.homeDir === undefined
         ? getHostI18nBridgeDescriptor
@@ -1657,6 +1659,8 @@ export function createWindowBridgeController(options) {
   const targetClassifyCache = new Map();
   let lastDetectedHostTheme = null;
   let lastPassiveThemeProbeMs = 0;
+  let lastBridgeHttpActivityMs = 0;
+  let consecutiveActiveCdpMisses = 0;
   let nodeDepsPromise = null;
   const allowedDynamicOrigins = new Set();
 
@@ -1808,6 +1812,7 @@ export function createWindowBridgeController(options) {
           res.end(JSON.stringify({ error: 'Invalid bridge token' }));
           return;
         }
+        lastBridgeHttpActivityMs = Date.now();
 
         const headerEndpointRaw = String(
           req.headers[WINDOW_BRIDGE_ENDPOINT_HEADER.toLowerCase()] || ''
@@ -2516,10 +2521,59 @@ export function createWindowBridgeController(options) {
       candidateFiles: candidatePortFiles,
       explicitPortsRaw: String(env?.ANTIGRAVITY_DEVTOOLS_PORT || '').trim(),
     });
-    lastStalePortDetected = Boolean(probeReport.stalePortDetected);
-    lastTargetProduct = resolvePreferredTargetProduct(probeReport);
+    const isHardPortFailureReason = (reason) =>
+      reason === 'ECONNREFUSED' ||
+      reason === 'browser_ws_path_mismatch' ||
+      reason === 'not_devtools_endpoint' ||
+      reason === 'missing_browser_ws_url' ||
+      reason === 'invalid_version_payload';
+    const tryHoldActiveOnTransientCdpMiss = ({ hardRefusal = false } = {}) => {
+      if (!(enabled || needsMainCdpContext || needsHostI18n)) return false;
+      if (hardRefusal) return false;
+      const nowMs = Date.now();
+      const hasRecentOverlayHeartbeat =
+        lastBridgeHttpActivityMs > 0 && nowMs - lastBridgeHttpActivityMs < overlayHeartbeatGraceMs;
+      const wasActive =
+        lastBridgeStatus.state === 'active' && Number(lastBridgeStatus.aliveCount || 0) > 0;
+      if (!wasActive && !hasRecentOverlayHeartbeat) return false;
+      consecutiveActiveCdpMisses += 1;
+      if (!hasRecentOverlayHeartbeat && consecutiveActiveCdpMisses > activeTransientMissTolerance) {
+        return false;
+      }
+      updateBridgeStatus('active', {
+        enabled: Boolean(enabled),
+        aliveCount: Math.max(1, Number(lastBridgeStatus.aliveCount || 0)),
+        targets: Math.max(1, Number(lastBridgeStatus.targets || 0)),
+        leasedBySelf,
+        bundleVersion,
+        prevLease: currentLease,
+      });
+      return true;
+    };
+
     const cdpPorts = probeReport.livePorts;
     if (!cdpPorts.length) {
+      const hasTransientTimeout =
+        Boolean(probeReport.hasTransientTimeout) ||
+        (Array.isArray(probeReport.staleFiles) &&
+          probeReport.staleFiles.some((f) => f?.reason === 'PROBE_TIMEOUT'));
+      const hardRefusal =
+        !hasTransientTimeout &&
+        (!Array.isArray(probeReport.staleFiles) ||
+          probeReport.staleFiles.length === 0 ||
+          probeReport.staleFiles.every((f) => isHardPortFailureReason(f?.reason)));
+      if (tryHoldActiveOnTransientCdpMiss({ hardRefusal })) {
+        return {
+          ok: false,
+          enabled,
+          reason: 'cdp_transient_busy',
+          transientHeld: true,
+          stalePortDetected: lastStalePortDetected,
+          injected: 0,
+        };
+      }
+      lastStalePortDetected = Boolean(probeReport.stalePortDetected || hasTransientTimeout);
+      lastTargetProduct = resolvePreferredTargetProduct(probeReport);
       pruneStaleRemoteEndpoints(new Set());
       const provPending = shouldCheckLaunchers
         ? provisionHostLaunchersOnce({ fastCheckIfActive: !isInitialLauncherPass })
@@ -2528,7 +2582,9 @@ export function createWindowBridgeController(options) {
         await provPending.catch(() => {});
       }
       const hadDeadPortSource = Boolean(
-        probeReport.stalePortDetected || probeReport.explicitPortUnreachable
+        probeReport.stalePortDetected ||
+          probeReport.hasTransientTimeout ||
+          probeReport.explicitPortUnreachable
       );
       const emptyReason = hadDeadPortSource ? 'cdp_unreachable' : 'no_devtools_port';
       updateBridgeStatus(
@@ -2549,8 +2605,19 @@ export function createWindowBridgeController(options) {
       };
     }
 
+    lastStalePortDetected = Boolean(probeReport.stalePortDetected);
+    lastTargetProduct = resolvePreferredTargetProduct(probeReport);
     const { reachableCount, targets } = await collectAllMainWindowTargets(cdpPorts);
     if (reachableCount === 0) {
+      if (tryHoldActiveOnTransientCdpMiss({ hardRefusal: false })) {
+        return {
+          ok: false,
+          enabled,
+          reason: 'cdp_transient_busy',
+          transientHeld: true,
+          injected: 0,
+        };
+      }
       pruneStaleRemoteEndpoints(new Set());
       const provPending = shouldCheckLaunchers
         ? provisionHostLaunchersOnce({ fastCheckIfActive: !isInitialLauncherPass })
@@ -3532,6 +3599,9 @@ export function createWindowBridgeController(options) {
 
     pruneStaleRemoteEndpoints(activeRemoteWsUrls);
     cdpFallbackActive = sawCdpTransport;
+    if (aliveCount > 0) {
+      consecutiveActiveCdpMisses = 0;
+    }
     updateBridgeStatus(aliveCount > 0 ? 'active' : 'no_targets', {
       enabled: true,
       aliveCount,
@@ -3694,6 +3764,8 @@ export function createWindowBridgeController(options) {
     hadHostI18n = false;
     lastHostI18nAppliedCount = 0;
     cachedHostI18nApply = { revision: '', bootId: '', expr: '' };
+    lastBridgeHttpActivityMs = 0;
+    consecutiveActiveCdpMisses = 0;
     portProber.clearCache();
     ideSshCoordinator.disposeAll();
     if (leaseFilePath) {

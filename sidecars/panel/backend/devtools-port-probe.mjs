@@ -9,7 +9,7 @@
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 
-const DEVTOOLS_PROBE_DEFAULT_TIMEOUT_MS = 500;
+const DEVTOOLS_PROBE_DEFAULT_TIMEOUT_MS = 1000;
 const DEVTOOLS_PROBE_TIMEOUT_NEG_TTL_MS = 15_000;
 const DEVTOOLS_PROBE_MAX_NEGATIVE_CACHE = 64;
 const DEVTOOLS_PROBE_MAX_BODY_BYTES = 16 * 1024;
@@ -224,8 +224,10 @@ export function createDevToolsPortProber(options = {}) {
   const fsRead = options.fsOps?.readFileSync || readFileSync;
   const fsStat = options.fsOps?.statSync || statSync;
 
-  /** @type {Map<string, { mtimeMs: number, size: number, port: number, browserWsPath: string, reason: string }>} */
+  /** @type {Map<string, { mtimeMs: number, size: number, port: number, browserWsPath: string, reason: string, cachedAtMs?: number }>} */
   const negativeCache = new Map();
+  /** @type {Map<string, { mtimeMs: number, size: number, port: number, browserWsPath: string }>} */
+  const verifiedLiveFiles = new Map();
 
   function rememberNegative(filePath, entry) {
     if (!filePath) return;
@@ -235,6 +237,28 @@ export function createDevToolsPortProber(options = {}) {
       if (oldestKey !== undefined) negativeCache.delete(oldestKey);
     }
     negativeCache.set(filePath, entry);
+  }
+
+  function rememberVerifiedLive(filePath, entry) {
+    if (!filePath) return;
+    verifiedLiveFiles.delete(filePath);
+    if (verifiedLiveFiles.size >= maxCache) {
+      const oldestKey = verifiedLiveFiles.keys().next().value;
+      if (oldestKey !== undefined) verifiedLiveFiles.delete(oldestKey);
+    }
+    verifiedLiveFiles.set(filePath, entry);
+  }
+
+  function matchesVerifiedLive(filePath, item) {
+    if (!filePath || !item) return false;
+    const prev = verifiedLiveFiles.get(filePath);
+    return Boolean(
+      prev &&
+        prev.mtimeMs === item.mtimeMs &&
+        prev.size === item.size &&
+        prev.port === item.port &&
+        prev.browserWsPath === item.browserWsPath
+    );
   }
 
   /**
@@ -247,6 +271,7 @@ export function createDevToolsPortProber(options = {}) {
    */
   async function probeActiveDevToolsPorts({ candidateFiles = [], explicitPortsRaw = '' } = {}) {
     const staleFiles = [];
+    const transientTimeoutFiles = [];
     const staleProductsSet = new Set();
     const liveProductsSet = new Set();
     /** @type {Array<{ source: 'file'|'env', filePath: string, product: 'ide'|'desktop', port: number, browserWsPath: string, mtimeMs: number, size: number }>} */
@@ -261,6 +286,7 @@ export function createDevToolsPortProber(options = {}) {
       try {
         if (!fsExists(filePath)) {
           negativeCache.delete(filePath);
+          verifiedLiveFiles.delete(filePath);
           continue;
         }
         const st = fsStat(filePath);
@@ -274,6 +300,7 @@ export function createDevToolsPortProber(options = {}) {
       const desc = parseDevToolsActivePortDescriptor(rawText);
       if (!desc) {
         negativeCache.delete(filePath);
+        verifiedLiveFiles.delete(filePath);
         continue;
       }
 
@@ -377,7 +404,15 @@ export function createDevToolsPortProber(options = {}) {
             ? { valid: true, reason: 'ok_list_fallback' }
             : verifyDevToolsBrowserIdentity(probeRes.payload, item.browserWsPath);
         if (identity.valid) {
-          if (item.filePath) negativeCache.delete(item.filePath);
+          if (item.filePath) {
+            negativeCache.delete(item.filePath);
+            rememberVerifiedLive(item.filePath, {
+              mtimeMs: item.mtimeMs,
+              size: item.size,
+              port: item.port,
+              browserWsPath: item.browserWsPath,
+            });
+          }
           if (item.source === 'file') {
             liveProductsSet.add(item.product);
           }
@@ -388,6 +423,7 @@ export function createDevToolsPortProber(options = {}) {
           continue;
         }
         if (item.source === 'file') {
+          verifiedLiveFiles.delete(item.filePath);
           rememberNegative(item.filePath, {
             mtimeMs: item.mtimeMs,
             size: item.size,
@@ -411,21 +447,34 @@ export function createDevToolsPortProber(options = {}) {
 
       const failReason = probeRes?.errorReason || 'unreachable';
       if (item.source === 'file') {
-        rememberNegative(item.filePath, {
-          mtimeMs: item.mtimeMs,
-          size: item.size,
-          port: item.port,
-          browserWsPath: item.browserWsPath,
-          reason: failReason,
-          cachedAtMs: nowFn(),
-        });
-        staleFiles.push({
-          filePath: item.filePath,
-          port: item.port,
-          product: item.product,
-          reason: failReason,
-        });
-        staleProductsSet.add(item.product);
+        const isTransientBusyLivePort =
+          failReason === 'PROBE_TIMEOUT' && matchesVerifiedLive(item.filePath, item);
+        if (isTransientBusyLivePort) {
+          // 已经成功连通的活端口在高负载下单次超时绝不封禁 15 秒，下一轮立即复测
+          transientTimeoutFiles.push({
+            filePath: item.filePath,
+            port: item.port,
+            product: item.product,
+            reason: failReason,
+          });
+        } else {
+          verifiedLiveFiles.delete(item.filePath);
+          rememberNegative(item.filePath, {
+            mtimeMs: item.mtimeMs,
+            size: item.size,
+            port: item.port,
+            browserWsPath: item.browserWsPath,
+            reason: failReason,
+            cachedAtMs: nowFn(),
+          });
+          staleFiles.push({
+            filePath: item.filePath,
+            port: item.port,
+            product: item.product,
+            reason: failReason,
+          });
+          staleProductsSet.add(item.product);
+        }
       } else {
         explicitPortUnreachable = true;
       }
@@ -435,6 +484,8 @@ export function createDevToolsPortProber(options = {}) {
       livePorts,
       liveProducts: Array.from(liveProductsSet),
       staleFiles,
+      transientTimeoutFiles,
+      hasTransientTimeout: transientTimeoutFiles.length > 0,
       staleProducts: Array.from(staleProductsSet),
       stalePortDetected: staleFiles.length > 0,
       explicitPortUnreachable,
@@ -443,7 +494,10 @@ export function createDevToolsPortProber(options = {}) {
 
   return {
     probeActiveDevToolsPorts,
-    clearCache: () => negativeCache.clear(),
+    clearCache: () => {
+      negativeCache.clear();
+      verifiedLiveFiles.clear();
+    },
     getNegativeCacheSize: () => negativeCache.size,
   };
 }
