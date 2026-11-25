@@ -82,18 +82,31 @@ export function applyHostI18nInPage(payload, bootId, globalKey = '__AGUsageMonit
     'code-gutter-diff',
     'diff-gutter-strip',
     'artifact-pdf-view',
+    'pdf-text-layer',
+    'transcript-line-text',
+    'terminal-surface',
+    'terminal-tab-surface',
   ]);
   const SKIP_CLASSES = new Set([
     'monaco-editor',
     'xterm',
     'cm-editor',
+    'cm-content',
+    'cm-line',
     'ProseMirror',
     'markdown-body',
     'prose',
     'bleed-contain',
     'agy-sidebar-row',
+    'code-block',
+    'code-line',
+    'line-content',
     'diff-line',
     'view-lines',
+    'shiki',
+    'prism-code',
+    'hljs',
+    'token-line',
   ]);
   const CONVERSATION_HREF_RE = /^\/c\/[0-9a-f-]{8,}(?:[/?#]|$)/i;
 
@@ -108,7 +121,12 @@ export function applyHostI18nInPage(payload, bootId, globalKey = '__AGUsageMonit
         el.hasAttribute('data-ag-i18n-ignore') ||
         el.hasAttribute('data-markdown-block-index') ||
         el.hasAttribute('data-quotable-inline') ||
-        el.hasAttribute('data-uri')
+        el.hasAttribute('data-uri') ||
+        el.hasAttribute('data-line-tokens') ||
+        el.hasAttribute('data-line-number') ||
+        el.hasAttribute('data-diff-type') ||
+        el.hasAttribute('data-current-original-line') ||
+        el.hasAttribute('data-current-modified-line')
       ) {
         return true;
       }
@@ -840,18 +858,31 @@ export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHos
     'code-gutter-diff',
     'diff-gutter-strip',
     'artifact-pdf-view',
+    'pdf-text-layer',
+    'transcript-line-text',
+    'terminal-surface',
+    'terminal-tab-surface',
   ]);
   const SKIP_CLASSES = new Set([
     'monaco-editor',
     'xterm',
     'cm-editor',
+    'cm-content',
+    'cm-line',
     'ProseMirror',
     'markdown-body',
     'prose',
     'bleed-contain',
     'agy-sidebar-row',
+    'code-block',
+    'code-line',
+    'line-content',
     'diff-line',
     'view-lines',
+    'shiki',
+    'prism-code',
+    'hljs',
+    'token-line',
     'material-symbols-outlined',
     'material-symbols-rounded',
     'material-symbols-sharp',
@@ -867,7 +898,7 @@ export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHos
   const CODE_IDENT_RE =
     /^(?:[a-z0-9]+(?:_[a-z0-9]+)+|[a-z0-9]+(?:-[a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*|v(?:[A-Z]|\d+(?:\.\d+)*))$/;
   const BRAND_OR_UNIT_RE =
-    /^(?:Antigravity|Google|GitHub|GitLab|Bitbucket|Chrome|Chromium|Electron|React|Tailwind|Node\.js|TypeScript|JavaScript|Python|HTML|CSS|JSON|YAML|TOML|XML|SQL|SVG|PDF|PNG|JPEG|WebP|GIF|UTF-8|HTTP|HTTPS|SSH|TLS|SSL|API|SDK|DOM|CDP|RPC|gRPC|REST|MCP|CLI|IDE|CDN|SemVer|URL|URI|UUID|SHA-?256|OAuth|JWT|WSL|macOS|Windows|Linux|KB|MB|GB|TB|ms|px|fps)$/i;
+    /^(?:Antigravity|Google|GitHub|GitLab|Bitbucket|Chrome|Chromium|Electron|React|Tailwind|Node\.js|TypeScript|JavaScript|Python|HTML|CSS|JSON|YAML|TOML|XML|SQL|SVG|PDF|PNG|JPEG|WebP|GIF|UTF-8|HTTP|HTTPS|SSH|TLS|SSL|AI|UI|UX|LLM|OS|ID|PR|CL|CI|CD|DB|IP|CPU|GPU|RAM|DNS|VPN|UTC|GMT|API|SDK|DOM|CDP|RPC|gRPC|REST|MCP|CLI|IDE|CDN|SemVer|URL|URI|UUID|SHA-?256|OAuth|JWT|WSL|macOS|Windows|Linux|KB|MB|GB|TB|ms|px|fps)$/i;
 
   function isSkippedSelf(el) {
     if (!el || el.nodeType !== 1) return false;
@@ -880,7 +911,12 @@ export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHos
         el.hasAttribute('data-ag-i18n-ignore') ||
         el.hasAttribute('data-markdown-block-index') ||
         el.hasAttribute('data-quotable-inline') ||
-        el.hasAttribute('data-uri')
+        el.hasAttribute('data-uri') ||
+        el.hasAttribute('data-line-tokens') ||
+        el.hasAttribute('data-line-number') ||
+        el.hasAttribute('data-diff-type') ||
+        el.hasAttribute('data-current-original-line') ||
+        el.hasAttribute('data-current-modified-line')
       ) {
         return true;
       }

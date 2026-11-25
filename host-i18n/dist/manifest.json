@@ -5,21 +5,21 @@
       "locale": "zh-CN",
       "name": "Chinese (Simplified)",
       "nativeName": "简体中文",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "file": "packs/zh-CN.json",
-      "sha256": "086611b4ad889176d65e00c573cb19ad4a61aa3df8281b9b16cac5289aa5732c",
-      "bytes": 556119,
+      "sha256": "1f3ec6f2baa1900831c362d99caabe9ab661482593542becfeb4ab7375969449",
+      "bytes": 557324,
       "depths": [
         "light",
         "deep"
       ],
       "stats": {
-        "baseExact": 4309,
-        "lightExact": 977,
-        "deepExact": 977,
-        "basePatterns": 793,
-        "lightPatterns": 127,
-        "deepPatterns": 127
+        "baseExact": 4311,
+        "lightExact": 978,
+        "deepExact": 978,
+        "basePatterns": 799,
+        "lightPatterns": 129,
+        "deepPatterns": 129
       }
     }
   ]

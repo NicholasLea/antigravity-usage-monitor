@@ -587,6 +587,7 @@
     "icon in the URL bar.": "URL 栏中的图标。",
     "in the top left.": "在左上角。",
     "in the top menu.": "在顶部菜单中。",
+    "just now": "刚刚",
     "later.": "稍后。",
     "main (or e.g., sc-dev, sc-release)": "main（或例如 sc-dev、sc-release）",
     "managed by your organization": "由您的组织管理",
@@ -625,6 +626,7 @@
     "Model cannot be changed while the agent is running": "Agent 运行期间无法切换模型",
     "Modify permissions for file, terminal, and MCP tools.": "修改文件、Terminal 与 MCP 工具的权限。",
     "Moving Mouse in Browser": "正在 Browser 中移动鼠标",
+    "all agent edits": "全部 Agent 编辑",
     "from a plugin": "来自 Plugin"
   },
   "deep": {
@@ -656,6 +658,7 @@
     "Model cannot be changed while the agent is running": "智能体运行期间无法切换模型",
     "Modify permissions for file, terminal, and MCP tools.": "修改文件、终端与 MCP 工具的权限。",
     "Moving Mouse in Browser": "正在浏览器中移动鼠标",
+    "all agent edits": "全部智能体编辑",
     "from a plugin": "来自插件"
   }
 }

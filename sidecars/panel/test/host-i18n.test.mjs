@@ -1179,3 +1179,104 @@ test('PackManager enforces SemVer 2.0 anti-downgrade on status snapshot and inst
   assert.equal(mgr.loadInstalledPack('zh-CN').pack.version, '1.0.2');
   assert.equal(packFetchCount, 2);
 });
+
+test('runtime translator and collector skip Antigravity code-line/diff/code-block containers, ignore AI/UI acronyms, and translate just now + relative time + diff source labels', () => {
+  const { win, doc, body, MockElement, MockText } = createMockDom();
+  const zhPack = JSON.parse(
+    readFileSync(join(REAL_HOST_I18N_ROOT, 'dist', 'packs', 'zh-CN.json'), 'utf8')
+  );
+  const packHash = sha256(JSON.stringify(zhPack));
+  const lightPayload = compileHostI18nRuntimePayload(zhPack, 'light', packHash);
+  const deepPayload = compileHostI18nRuntimePayload(zhPack, 'deep', packHash);
+
+  const prevWindow = globalThis.window;
+  const prevDocument = globalThis.document;
+  try {
+    globalThis.window = win;
+    globalThis.document = doc;
+
+    // 1. Unified/split diff row (.code-line + data-diff-type + .line-content) containing CSS tokens
+    //    matching dictionary words ('background', 'color', 'none')
+    const diffLine = body.appendChild(
+      new MockElement('div', {
+        className: 'code-line group flex flex-nowrap select-contain',
+        attrs: { 'data-diff-type': '1', 'data-current-original-line': '1377' },
+      })
+    );
+    const diffContent = diffLine.appendChild(
+      new MockElement('div', { className: 'line-content group/line overflow-y-clip' })
+    );
+    const cssPropBg = diffContent.appendChild(new MockElement('span')).appendChild(new MockText('background'));
+    const cssPropColor = diffContent.appendChild(new MockElement('span')).appendChild(new MockText('color'));
+    const cssValNone = diffContent.appendChild(new MockElement('span')).appendChild(new MockText('none'));
+
+    // 2. File viewer line ([data-line-number] + [data-line-tokens]) and standalone .code-block
+    const fileLine = body.appendChild(
+      new MockElement('div', { attrs: { 'data-line-number': '12' } })
+    );
+    const lineTokens = fileLine.appendChild(
+      new MockElement('span', { attrs: { 'data-line-tokens': 'true' } })
+    );
+    const fileTokenBg = lineTokens.appendChild(new MockText('background'));
+    const codeBlock = body.appendChild(
+      new MockElement('div', { className: 'code-block w-full text-sm' })
+    );
+    const codeBlockToken = codeBlock.appendChild(new MockElement('span')).appendChild(new MockText('Color'));
+
+    // 3. Real UI strings: just now, w/mo/y ago, diff source labels, and tab titles
+    const justNowEl = body.appendChild(new MockElement('span')).appendChild(new MockText('just now'));
+    const weeksAgoEl = body.appendChild(new MockElement('span')).appendChild(new MockText('2w ago'));
+    const monthsAgoEl = body.appendChild(new MockElement('span')).appendChild(new MockText('3mo ago'));
+    const yearsAgoEl = body.appendChild(new MockElement('span')).appendChild(new MockText('1y ago'));
+    const singleEditEl = body
+      .appendChild(new MockElement('span', { attrs: { 'data-testid': 'diff-source-label' } }))
+      .appendChild(new MockText('single edit'));
+    const tabTitleSingle = body
+      .appendChild(new MockElement('span'))
+      .appendChild(new MockText('views-tables.css (single edit)'));
+    const tabTitleAllEdits = body
+      .appendChild(new MockElement('span'))
+      .appendChild(new MockText('views-tables.css (all agent edits)'));
+
+    // 4. Universal acronyms AI / UI that collector must NOT flag as missing translations
+    const aiBadge = body.appendChild(new MockElement('span')).appendChild(new MockText('AI'));
+    const uiBadge = body.appendChild(new MockElement('span')).appendChild(new MockText('UI'));
+
+    applyHostI18nInPage(lightPayload, 'boot-code-guard', HOST_I18N_GLOBAL_KEY);
+
+    // Code & diff tokens MUST remain untouched
+    assert.equal(cssPropBg.nodeValue, 'background');
+    assert.equal(cssPropColor.nodeValue, 'color');
+    assert.equal(cssValNone.nodeValue, 'none');
+    assert.equal(fileTokenBg.nodeValue, 'background');
+    assert.equal(codeBlockToken.nodeValue, 'Color');
+
+    // UI strings MUST translate cleanly
+    assert.equal(justNowEl.nodeValue, '刚刚');
+    assert.equal(weeksAgoEl.nodeValue, '2 周前');
+    assert.equal(monthsAgoEl.nodeValue, '3 个月前');
+    assert.equal(yearsAgoEl.nodeValue, '1 年前');
+    assert.equal(singleEditEl.nodeValue, '单次编辑');
+    assert.equal(tabTitleSingle.nodeValue, 'views-tables.css（单次编辑）');
+    assert.equal(tabTitleAllEdits.nodeValue, 'views-tables.css（全部 Agent 编辑）');
+    assert.equal(aiBadge.nodeValue, 'AI');
+    assert.equal(uiBadge.nodeValue, 'UI');
+
+    // Collector must ignore AI, UI, and code/diff contents
+    const collected = collectUntranslatedHostUiInPage(HOST_I18N_GLOBAL_KEY);
+    const collectedTexts = new Set(collected.items.map((item) => item.text));
+    for (const ignored of ['AI', 'UI', 'background', 'color', 'none', 'just now']) {
+      assert.equal(collectedTexts.has(ignored), false, `Collector must not report "${ignored}"`);
+    }
+
+    // Deep mode localizes Agent in diff source labels
+    applyHostI18nInPage(deepPayload, 'boot-code-guard', HOST_I18N_GLOBAL_KEY);
+    assert.equal(tabTitleAllEdits.nodeValue, 'views-tables.css（全部智能体编辑）');
+    assert.equal(cssPropBg.nodeValue, 'background');
+
+    win[HOST_I18N_GLOBAL_KEY].dispose();
+  } finally {
+    globalThis.window = prevWindow;
+    globalThis.document = prevDocument;
+  }
+});

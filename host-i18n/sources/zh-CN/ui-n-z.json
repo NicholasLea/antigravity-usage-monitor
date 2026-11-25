@@ -473,6 +473,7 @@
     "says.": "所说。",
     "script return value is not JSON-serializable": "脚本返回值无法序列化为 JSON",
     "script source must not be empty": "脚本源不能为空",
+    "single edit": "单次编辑",
     "that runs Jetski Web.": "，用于运行 Jetski Web。",
     "this time, the website sent back unusual and incorrect credentials.": "时，该网站发回了异常且不正确的凭据。",
     "to ask for content changes for legal reasons.": "以出于法律原因请求更改内容。",

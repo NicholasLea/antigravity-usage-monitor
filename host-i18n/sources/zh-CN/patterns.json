@@ -4757,6 +4757,42 @@
       "flags": "",
       "replace": "$1/$2 步。收起计划",
       "hint": "steps. Hide plan"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:w|wk|wks|week|weeks) ago$",
+      "flags": "i",
+      "replace": "$1 周前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:mo|mos|month|months) ago$",
+      "flags": "i",
+      "replace": "$1 个月前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:y|yr|yrs|year|years) ago$",
+      "flags": "i",
+      "replace": "$1 年前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(.+?) \\(single edit\\)$",
+      "flags": "",
+      "replace": "$1（单次编辑）",
+      "hint": "(single edit)"
+    },
+    {
+      "source": "^(.+?) \\(uncommitted\\)$",
+      "flags": "",
+      "replace": "$1（未提交）",
+      "hint": "(uncommitted)"
+    },
+    {
+      "source": "^(.+?) \\(staged\\)$",
+      "flags": "",
+      "replace": "$1（已暂存）",
+      "hint": "(staged)"
     }
   ],
   "light": [
@@ -5521,6 +5557,18 @@
       "flags": "",
       "replace": "是，保存 Rule $1",
       "hint": "Yes, save rule"
+    },
+    {
+      "source": "^(.+?) \\(all agent edits\\)$",
+      "flags": "",
+      "replace": "$1（全部 Agent 编辑）",
+      "hint": "(all agent edits)"
+    },
+    {
+      "source": "^(.+?) \\(branch changes\\)$",
+      "flags": "",
+      "replace": "$1（Branch 更改）",
+      "hint": "(branch changes)"
     }
   ],
   "deep": [
@@ -6285,6 +6333,18 @@
       "flags": "",
       "replace": "是，保存规则 $1",
       "hint": "Yes, save rule"
+    },
+    {
+      "source": "^(.+?) \\(all agent edits\\)$",
+      "flags": "",
+      "replace": "$1（全部智能体编辑）",
+      "hint": "(all agent edits)"
+    },
+    {
+      "source": "^(.+?) \\(branch changes\\)$",
+      "flags": "",
+      "replace": "$1（分支更改）",
+      "hint": "(branch changes)"
     }
   ]
 }
