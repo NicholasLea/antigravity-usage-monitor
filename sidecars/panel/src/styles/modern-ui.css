@@ -596,6 +596,17 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: color-mix(in srgb, var(--metric-danger) 21%, transparent);
 }
 
+[data-modern-ui="true"] .data-table tbody tr.is-reverted,
+[data-modern-ui="true"] .data-table:not(.is-virtualized) tbody tr.is-reverted:nth-child(even),
+[data-modern-ui="true"] .data-table.is-virtualized tbody tr.is-stripe-even.is-reverted {
+  background: color-mix(in srgb, var(--text-muted) 13%, transparent);
+}
+
+[data-modern-ui="true"] .data-table tbody tr.is-reverted:hover,
+[data-modern-ui="true"] .data-table.is-virtualized tbody tr.is-stripe-even.is-reverted:hover {
+  background: color-mix(in srgb, var(--text-muted) 19%, transparent);
+}
+
 [data-modern-ui="true"] .form-row > .custom-select > .select-trigger,
 [data-modern-ui="true"] .cons-cycle-pool-select .select-trigger,
 [data-modern-ui="true"] .steps-inline-scope-select .select-trigger,

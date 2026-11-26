@@ -353,6 +353,25 @@ export function buildStepCompactionDiagnostic(st, displaySettings = {}) {
   };
 }
 
+export function buildStepRevertedDiagnostic(st, displaySettings = {}) {
+  if (!st || typeof st !== 'object') return null;
+  const disp = resolveModelDisplayInfo(st, displaySettings, { fallback: '' });
+  return {
+    title: t('steps.revertedStepTitle', { step: Number(st.stepIndex ?? 0) }),
+    sub: disp.baseText || '',
+    rows: [
+      {
+        text: t('steps.revertedDetailHint'),
+        detail: '',
+        mono: false,
+        danger: false,
+      },
+    ],
+    hint: '',
+    severity: 'reverted',
+  };
+}
+
 function finiteNonNegativeSec(val) {
   if (val === null || val === undefined || val === '') return null;
   const num = Number(val);

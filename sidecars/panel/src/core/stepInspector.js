@@ -32,6 +32,9 @@ export function getStepSelectionKey(st, fallbackCascadeId = '') {
   if (!st || typeof st !== 'object') return '';
   const agentKey =
     st.agentCascadeId || st.agentId || st.cascadeId || fallbackCascadeId || 'conv';
+  if (st.isReverted) {
+    return `${agentKey}-${st.stepIndex}-rev-${Number(st.createdAtMs || 0)}-${Number(st.inputTokens || 0)}-${Number(st.outputTokens || 0)}`;
+  }
   return `${agentKey}-${st.stepIndex}`;
 }
 

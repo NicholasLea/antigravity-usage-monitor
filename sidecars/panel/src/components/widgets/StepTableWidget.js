@@ -25,6 +25,7 @@ import {
 import {
   buildStepAnomalyDiagnostic,
   buildStepCompactionDiagnostic,
+  buildStepRevertedDiagnostic,
   buildStepTimingDiagnostic,
   formatMetric,
   formatUsd,
@@ -763,6 +764,7 @@ export const StepTableWidget = defineComponent({
         'is-danger': diag.severity === 'danger',
         'is-compaction': diag.severity === 'compaction',
         'is-timing': diag.severity === 'timing',
+        'is-reverted': diag.severity === 'reverted',
       });
       patchText(anomalyTipTitleEl, diag.title);
       patchAttr(anomalyTipSubEl, 'hidden', !diag.sub);
@@ -1033,21 +1035,43 @@ export const StepTableWidget = defineComponent({
       if (event?.target === badge) hideTurnTip();
     }
 
-    function buildStepRowDiagnostic(st, displaySettings, hasStepAnomaly, isCompactionRow) {
+    function buildStepRowDiagnostic(
+      st,
+      displaySettings,
+      hasStepAnomaly,
+      isCompactionRow,
+      isRevertedRow
+    ) {
       if (hasStepAnomaly) {
         const diag = buildStepAnomalyDiagnostic(st);
-        if (diag && isCompactionRow) {
-          return {
-            ...diag,
-            hint: diag.hint
-              ? `${diag.hint} · ${t('steps.compactionAnomalyHint')}`
-              : t('steps.compactionAnomalyHint'),
-          };
+        if (diag) {
+          const extraHints = [];
+          if (diag.hint) extraHints.push(diag.hint);
+          if (isCompactionRow) extraHints.push(t('steps.compactionAnomalyHint'));
+          if (isRevertedRow) extraHints.push(t('steps.revertedAlsoHint'));
+          if (extraHints.length > 0) {
+            return {
+              ...diag,
+              hint: extraHints.join(' · '),
+            };
+          }
         }
         return diag;
       }
       if (isCompactionRow) {
-        return buildStepCompactionDiagnostic(st, displaySettings);
+        const diag = buildStepCompactionDiagnostic(st, displaySettings);
+        if (diag && isRevertedRow) {
+          return {
+            ...diag,
+            hint: diag.hint
+              ? `${diag.hint} · ${t('steps.revertedAlsoHint')}`
+              : t('steps.revertedAlsoHint'),
+          };
+        }
+        return diag;
+      }
+      if (isRevertedRow) {
+        return buildStepRevertedDiagnostic(st, displaySettings);
       }
       return null;
     }
@@ -1341,7 +1365,8 @@ export const StepTableWidget = defineComponent({
         const st = tableSteps[idx];
         const tIdx = getStepTurnIdx(st);
         if (!Number.isInteger(tIdx) || tIdx <= 0) return '';
-        return useRootTurn ? `root:${tIdx}` : `${st?.agentId || 'main'}:${tIdx}`;
+        const revPrefix = st?.isReverted ? 'rev:' : '';
+        return useRootTurn ? `${revPrefix}root:${tIdx}` : `${revPrefix}${st?.agentId || 'main'}:${tIdx}`;
       }
 
       function formattedTurnPrompt(st) {
@@ -1426,7 +1451,8 @@ export const StepTableWidget = defineComponent({
           const stripeSig = isVirtualized ? (item.isStripeEven ? 'E' : 'O') : 'N';
           const anomalySig = st.anomalySig || '';
           const compactSig = isCompactionStepItem(st) ? 'C' : '';
-          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${compactSig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
+          const revertedSig = st.isReverted ? 'R' : '';
+          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${compactSig}:${revertedSig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
         },
         createRow: (item) => {
           if (item.isSizer) {
@@ -1676,11 +1702,20 @@ export const StepTableWidget = defineComponent({
           const isAnomalyDanger = Boolean(hasStepAnomaly && st.anomaly.severity === 'danger');
           const isAnomalyWarn = Boolean(hasStepAnomaly && !isAnomalyDanger);
           const isCompactionRow = isCompactionStepItem(st);
-          const hasRowTip = hasStepAnomaly || isCompactionRow;
+          const isRevertedRow = Boolean(st?.isReverted);
+          const hasRowTip = hasStepAnomaly || isCompactionRow || isRevertedRow;
           const rowDiagGetter = hasRowTip
-            ? () => buildStepRowDiagnostic(st, cellCtx.displaySettings, hasStepAnomaly, isCompactionRow)
+            ? () =>
+                buildStepRowDiagnostic(
+                  st,
+                  cellCtx.displaySettings,
+                  hasStepAnomaly,
+                  isCompactionRow,
+                  isRevertedRow
+                )
             : null;
           patchClasses(tr, {
+            'is-reverted': isRevertedRow,
             'is-compaction': isCompactionRow,
             'is-anomaly-warn': isAnomalyWarn,
             'is-anomaly-danger': isAnomalyDanger,
@@ -1775,6 +1810,7 @@ export const StepTableWidget = defineComponent({
             patchClasses(tr, {
               'is-stripe-even': false,
               'is-step-entering': false,
+              'is-reverted': false,
               'is-compaction': false,
               'is-anomaly-warn': false,
               'is-anomaly-danger': false,
@@ -1921,7 +1957,10 @@ export const StepTableWidget = defineComponent({
           if (!seenStepKeys.has(rowKey)) {
             seenStepKeys.add(rowKey);
             const prevMax = maxSeenStepByAgent.get(agentKey);
-            if (prevMax === undefined || !Number.isFinite(stepNum) || stepNum > prevMax) {
+            if (
+              !st.isReverted &&
+              (prevMax === undefined || !Number.isFinite(stepNum) || stepNum > prevMax)
+            ) {
               enteringRowKeys ??= new Set();
               enteringRowKeys.add(rowKey);
             }

@@ -124,6 +124,7 @@ const TSL_FLAG_COMPLETE = 1 << 2;
 const TSL_FLAG_SPEED_ELIGIBLE = 1 << 3;
 const TSL_FLAG_VISIBLE_TEXT = 1 << 4;
 const TSL_FLAG_TOOL_CALLS = 1 << 5;
+const TSL_FLAG_REVERTED = 1 << 6;
 
 const TSL_CORE_STEP_KEYS = new Set([
   'stepIndex',
@@ -134,6 +135,7 @@ const TSL_CORE_STEP_KEYS = new Set([
   'speedSampleEligible',
   'hasVisibleText',
   'hasToolCalls',
+  'isReverted',
   'modelKey',
   'responseModel',
   'apiProvider',
@@ -277,6 +279,7 @@ export function splitStepForStorage(step) {
   if (s.speedSampleEligible) flags |= TSL_FLAG_SPEED_ELIGIBLE;
   if (s.hasVisibleText) flags |= TSL_FLAG_VISIBLE_TEXT;
   if (s.hasToolCalls) flags |= TSL_FLAG_TOOL_CALLS;
+  if (s.isReverted) flags |= TSL_FLAG_REVERTED;
 
   const accountingTuple = [
     s.stepIndex ?? null,
@@ -367,6 +370,7 @@ export function buildSlimStepFromAccounting(rawAccounting, internFn = (v) => v |
     speedSampleEligible: Boolean(flags & TSL_FLAG_SPEED_ELIGIBLE),
     hasVisibleText: Boolean(flags & TSL_FLAG_VISIBLE_TEXT),
     hasToolCalls: Boolean(flags & TSL_FLAG_TOOL_CALLS),
+    ...(flags & TSL_FLAG_REVERTED ? { isReverted: true } : {}),
     modelKey: internFn(t[3] || ''),
     responseModel: internFn(t[4] || ''),
     apiProvider: internFn(t[5] || ''),

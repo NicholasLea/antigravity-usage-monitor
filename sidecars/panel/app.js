@@ -2021,6 +2021,9 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.compactionSummaryRow': '输入 {input} → 摘要输出 {output}',
   'steps.compactionDetailHint': '系统自动触发的上下文压缩步骤，用于折叠历史对话以释放窗口空间',
   'steps.compactionAnomalyHint': '该步骤同时为系统自动压缩步骤',
+  'steps.revertedStepTitle': '#{step} · 已回退',
+  'steps.revertedDetailHint': '该步骤已在对话中撤销回退，实际消耗的 Token 和费用仍计入统计',
+  'steps.revertedAlsoHint': '该步骤已在对话中撤销回退（用量仍计入统计）',
   'steps.timingStepTitle': '#{step} · 耗时拆解',
   'steps.timingTotalSub': '总计 {sec}',
   'steps.timingTtftLabel': '首字等待 (TTFT)',
@@ -3160,6 +3163,9 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.compactionSummaryRow': 'Input {input} → Summary {output}',
   'steps.compactionDetailHint': 'Automatic context compaction step triggered to summarize history and free window space',
   'steps.compactionAnomalyHint': 'This step is also an auto-compaction step',
+  'steps.revertedStepTitle': '#{step} · Reverted',
+  'steps.revertedDetailHint': 'Reverted via conversation undo; consumed tokens and cost remain in usage totals',
+  'steps.revertedAlsoHint': 'This step was reverted via conversation undo (usage retained in totals)',
   'steps.timingStepTitle': '#{step} · Timing Breakdown',
   'steps.timingTotalSub': 'Total {sec}',
   'steps.timingTtftLabel': 'First Token (TTFT)',
@@ -5950,7 +5956,7 @@ return { defineComponent };
 })();
 
 // --- src/core/formatters.js ---
-const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
+const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildStepRevertedDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
 const EN_MONTH_SHORT = Object.freeze([
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -6288,6 +6294,25 @@ function buildStepCompactionDiagnostic(st, displaySettings = {}) {
     rows,
     hint: '',
     severity: 'compaction',
+  };
+}
+
+function buildStepRevertedDiagnostic(st, displaySettings = {}) {
+  if (!st || typeof st !== 'object') return null;
+  const disp = resolveModelDisplayInfo(st, displaySettings, { fallback: '' });
+  return {
+    title: t('steps.revertedStepTitle', { step: Number(st.stepIndex ?? 0) }),
+    sub: disp.baseText || '',
+    rows: [
+      {
+        text: t('steps.revertedDetailHint'),
+        detail: '',
+        mono: false,
+        danger: false,
+      },
+    ],
+    hint: '',
+    severity: 'reverted',
   };
 }
 
@@ -7384,7 +7409,7 @@ function buildDeterministicModelColorMap(models = []) {
 
   return colorMap;
 }
-return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildStepRevertedDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
 })();
 
 // --- src/core/stepInspector.js ---
@@ -7404,6 +7429,9 @@ function getStepSelectionKey(st, fallbackCascadeId = '') {
   if (!st || typeof st !== 'object') return '';
   const agentKey =
     st.agentCascadeId || st.agentId || st.cascadeId || fallbackCascadeId || 'conv';
+  if (st.isReverted) {
+    return `${agentKey}-${st.stepIndex}-rev-${Number(st.createdAtMs || 0)}-${Number(st.inputTokens || 0)}-${Number(st.outputTokens || 0)}`;
+  }
   return `${agentKey}-${st.stepIndex}`;
 }
 
@@ -29401,6 +29429,7 @@ const StepTableWidget = defineComponent({
         'is-danger': diag.severity === 'danger',
         'is-compaction': diag.severity === 'compaction',
         'is-timing': diag.severity === 'timing',
+        'is-reverted': diag.severity === 'reverted',
       });
       patchText(anomalyTipTitleEl, diag.title);
       patchAttr(anomalyTipSubEl, 'hidden', !diag.sub);
@@ -29671,21 +29700,43 @@ const StepTableWidget = defineComponent({
       if (event?.target === badge) hideTurnTip();
     }
 
-    function buildStepRowDiagnostic(st, displaySettings, hasStepAnomaly, isCompactionRow) {
+    function buildStepRowDiagnostic(
+      st,
+      displaySettings,
+      hasStepAnomaly,
+      isCompactionRow,
+      isRevertedRow
+    ) {
       if (hasStepAnomaly) {
         const diag = buildStepAnomalyDiagnostic(st);
-        if (diag && isCompactionRow) {
-          return {
-            ...diag,
-            hint: diag.hint
-              ? `${diag.hint} · ${t('steps.compactionAnomalyHint')}`
-              : t('steps.compactionAnomalyHint'),
-          };
+        if (diag) {
+          const extraHints = [];
+          if (diag.hint) extraHints.push(diag.hint);
+          if (isCompactionRow) extraHints.push(t('steps.compactionAnomalyHint'));
+          if (isRevertedRow) extraHints.push(t('steps.revertedAlsoHint'));
+          if (extraHints.length > 0) {
+            return {
+              ...diag,
+              hint: extraHints.join(' · '),
+            };
+          }
         }
         return diag;
       }
       if (isCompactionRow) {
-        return buildStepCompactionDiagnostic(st, displaySettings);
+        const diag = buildStepCompactionDiagnostic(st, displaySettings);
+        if (diag && isRevertedRow) {
+          return {
+            ...diag,
+            hint: diag.hint
+              ? `${diag.hint} · ${t('steps.revertedAlsoHint')}`
+              : t('steps.revertedAlsoHint'),
+          };
+        }
+        return diag;
+      }
+      if (isRevertedRow) {
+        return buildStepRevertedDiagnostic(st, displaySettings);
       }
       return null;
     }
@@ -29979,7 +30030,8 @@ const StepTableWidget = defineComponent({
         const st = tableSteps[idx];
         const tIdx = getStepTurnIdx(st);
         if (!Number.isInteger(tIdx) || tIdx <= 0) return '';
-        return useRootTurn ? `root:${tIdx}` : `${st?.agentId || 'main'}:${tIdx}`;
+        const revPrefix = st?.isReverted ? 'rev:' : '';
+        return useRootTurn ? `${revPrefix}root:${tIdx}` : `${revPrefix}${st?.agentId || 'main'}:${tIdx}`;
       }
 
       function formattedTurnPrompt(st) {
@@ -30064,7 +30116,8 @@ const StepTableWidget = defineComponent({
           const stripeSig = isVirtualized ? (item.isStripeEven ? 'E' : 'O') : 'N';
           const anomalySig = st.anomalySig || '';
           const compactSig = isCompactionStepItem(st) ? 'C' : '';
-          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${compactSig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
+          const revertedSig = st.isReverted ? 'R' : '';
+          return `${locale}:${colOrderSig}:${stripeSig}:${badgeSig}:${anomalySig}:${compactSig}:${revertedSig}:${railActive}:${item.hasTurn}:${item.hasUp}:${item.hasDown}:${item.isStart}:${item.isLatest}:${item.prompt}:${parts}`;
         },
         createRow: (item) => {
           if (item.isSizer) {
@@ -30314,11 +30367,20 @@ const StepTableWidget = defineComponent({
           const isAnomalyDanger = Boolean(hasStepAnomaly && st.anomaly.severity === 'danger');
           const isAnomalyWarn = Boolean(hasStepAnomaly && !isAnomalyDanger);
           const isCompactionRow = isCompactionStepItem(st);
-          const hasRowTip = hasStepAnomaly || isCompactionRow;
+          const isRevertedRow = Boolean(st?.isReverted);
+          const hasRowTip = hasStepAnomaly || isCompactionRow || isRevertedRow;
           const rowDiagGetter = hasRowTip
-            ? () => buildStepRowDiagnostic(st, cellCtx.displaySettings, hasStepAnomaly, isCompactionRow)
+            ? () =>
+                buildStepRowDiagnostic(
+                  st,
+                  cellCtx.displaySettings,
+                  hasStepAnomaly,
+                  isCompactionRow,
+                  isRevertedRow
+                )
             : null;
           patchClasses(tr, {
+            'is-reverted': isRevertedRow,
             'is-compaction': isCompactionRow,
             'is-anomaly-warn': isAnomalyWarn,
             'is-anomaly-danger': isAnomalyDanger,
@@ -30413,6 +30475,7 @@ const StepTableWidget = defineComponent({
             patchClasses(tr, {
               'is-stripe-even': false,
               'is-step-entering': false,
+              'is-reverted': false,
               'is-compaction': false,
               'is-anomaly-warn': false,
               'is-anomaly-danger': false,
@@ -30559,7 +30622,10 @@ const StepTableWidget = defineComponent({
           if (!seenStepKeys.has(rowKey)) {
             seenStepKeys.add(rowKey);
             const prevMax = maxSeenStepByAgent.get(agentKey);
-            if (prevMax === undefined || !Number.isFinite(stepNum) || stepNum > prevMax) {
+            if (
+              !st.isReverted &&
+              (prevMax === undefined || !Number.isFinite(stepNum) || stepNum > prevMax)
+            ) {
               enteringRowKeys ??= new Set();
               enteringRowKeys.add(rowKey);
             }

@@ -3749,6 +3749,50 @@ test('conversation undo preserves 10-channel context breakdown across unindexed 
       ctx3.userRulesTokens,
     27500
   );
+  // Accounting & usage totals never shrink after undo; reverted step stays in recentSteps with isReverted: true
+  assert.equal(afterUndo.activeConversation.totalTokens, beforeUndo.activeConversation.totalTokens);
+  assert.equal(afterUndo.activeConversation.sessionCostUsd, beforeUndo.activeConversation.sessionCostUsd);
+  assert.equal(afterUndo.consumption.session.totalTokens, beforeUndo.consumption.session.totalTokens);
+  assert.equal(afterUndo.consumption.account.totalTokens, beforeUndo.consumption.account.totalTokens);
+  assert.equal(afterUndo.activeConversation.stepCount, 3);
+  assert.equal(afterUndo.activeConversation.recentSteps.length, 3);
+  assert.equal(afterUndo.activeConversation.recentSteps[0].stepIndex, 5);
+  assert.equal(afterUndo.activeConversation.recentSteps[0].isReverted, true);
+  assert.equal(Boolean(afterUndo.activeConversation.recentSteps[1].isReverted), false);
+  assert.equal(Boolean(afterUndo.activeConversation.recentSteps[2].isReverted), false);
+
+  // Branching after undo: new turn reuses stepIndex 5 with a newer timestamp -> both reverted & new active step coexist
+  const step3Branched = {
+    type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    metadata: {
+      createdAt: iso(45),
+      completedAt: iso(47),
+      sourceTrajectoryStepInfo: { stepIndex: 5 },
+      modelUsage: { model: 'MODEL_PLACEHOLDER_M37', inputTokens: '3000', cacheReadTokens: '26000', outputTokens: '1200' },
+    },
+    plannerResponse: { response: 'branched turn 3' },
+  };
+  liveTraj.trajectory.steps = [step1, step2, step3Branched];
+  liveSum.stepCount = 3;
+  liveSum.lastModifiedTime = iso(47);
+
+  const afterBranch = await h3.buildTelemetryPayloadInternal('conv-live-undo');
+  assert.equal(afterBranch.activeConversation.stepCount, 4);
+  assert.equal(afterBranch.activeConversation.recentSteps.length, 4);
+  assert.equal(
+    afterBranch.activeConversation.totalTokens,
+    beforeUndo.activeConversation.totalTokens + 3000 + 26000 + 1200
+  );
+  assert.equal(
+    afterBranch.consumption.account.totalTokens,
+    beforeUndo.consumption.account.totalTokens + 3000 + 26000 + 1200
+  );
+  assert.equal(afterBranch.activeConversation.recentSteps[0].stepIndex, 5);
+  assert.equal(Boolean(afterBranch.activeConversation.recentSteps[0].isReverted), false);
+  assert.equal(afterBranch.activeConversation.recentSteps[1].stepIndex, 5);
+  assert.equal(afterBranch.activeConversation.recentSteps[1].isReverted, true);
+  assert.equal(afterBranch.activeConversation.context.totalTokens, 30200);
 
   // Case 4: Cold start on an already-undone session with zero breakdowns and no compaction still populates channels (never all-0)
   const h4 = backendHarness({

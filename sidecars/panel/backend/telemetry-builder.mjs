@@ -301,11 +301,12 @@ function enrichActiveConversationSteps(
     };
   });
 
-  // 关联每轮用户提问摘要与最新轮次标识，供步骤表极简导轨与气泡展示
+  // 关联每轮用户提问摘要与最新轮次标识，供步骤表极简导轨与气泡展示（已回退步骤保持自身历史摘要，不与新分支混并）
   let maxTurnIndex = 0;
   const promptByTurn = new Map();
   const mediaByTurn = new Map();
   for (const st of enrichedActiveSteps) {
+    if (st.isReverted) continue;
     const tIdx = st.turnIndex;
     if (!Number.isInteger(tIdx) || tIdx <= 0) continue;
     if (tIdx > maxTurnIndex) maxTurnIndex = tIdx;
@@ -330,6 +331,15 @@ function enrichActiveConversationSteps(
       st.turnPromptClean = '';
       st.turnHasMedia = false;
       st.turnMediaOnly = false;
+      continue;
+    }
+    if (st.isReverted) {
+      st.isTurnStart = Boolean(st.isTurnStart);
+      st.isLatestTurn = false;
+      st.turnPrompt = st.turnPrompt || '';
+      st.turnPromptClean = st.turnPromptClean ?? '';
+      st.turnHasMedia = Boolean(st.turnHasMedia);
+      st.turnMediaOnly = Boolean(st.turnMediaOnly);
       continue;
     }
     const turnMedia = mediaByTurn.get(tIdx);
@@ -789,12 +799,15 @@ function prepareAgentSteps(
   }
   const enrichedRes = enrichActiveConversationSteps(rawSteps, resolveStepModel, upstream, agentFields);
   const taggedSteps = enrichedRes.enrichedActiveSteps;
+  const liveTaggedSteps = taggedSteps.filter((st) => !st?.isReverted);
+  const latestLiveEnriched =
+    liveTaggedSteps.length > 0 ? liveTaggedSteps[liveTaggedSteps.length - 1] : null;
   const prepared = {
     enrichedRes,
     recentSteps: taggedSteps.slice().reverse(),
     ctxRes: extractActiveContextTelemetry(
-      taggedSteps,
-      enrichedRes.latestEnriched,
+      liveTaggedSteps,
+      latestLiveEnriched,
       enrichedRes.sessionInputTokens,
       enrichedRes.sessionCacheReadTokens,
       fallbackStaticContext
@@ -1339,6 +1352,7 @@ function buildActiveConversationAssembly({
     const mainTurnByIdx = new Map();
     let maxRootTurn = 0;
     for (const mSt of mainStepsForFamily) {
+      if (mSt.isReverted) continue;
       const tIdx = mSt.turnIndex;
       if (!Number.isInteger(tIdx) || tIdx <= 0) continue;
       if (tIdx > maxRootTurn) maxRootTurn = tIdx;
@@ -1359,6 +1373,18 @@ function buildActiveConversationAssembly({
     if (mainTurns.length > 0) {
       const seenRootStarts = new Set();
       for (const st of allCombinedEnrichedSteps) {
+        if (st.isReverted) {
+          if (Number.isInteger(st.turnIndex) && st.turnIndex > 0) {
+            st.rootTurnIndex = st.turnIndex;
+            st.isRootLatestTurn = false;
+            st.isRootTurnStart = Boolean(st.isTurnStart);
+            st.rootTurnPrompt = st.turnPrompt || '';
+            st.rootTurnPromptClean = st.turnPromptClean ?? '';
+            st.rootTurnHasMedia = Boolean(st.turnHasMedia);
+            st.rootTurnMediaOnly = Boolean(st.turnMediaOnly);
+          }
+          continue;
+        }
         let matched = null;
         if (!st.isSubagent && Number.isInteger(st.turnIndex) && st.turnIndex > 0) {
           matched = mainTurnByIdx.get(st.turnIndex) || null;

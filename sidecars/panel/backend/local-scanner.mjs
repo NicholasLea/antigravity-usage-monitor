@@ -394,6 +394,105 @@ function isSameHistoricalStep(nextStep, prevStep) {
   return true;
 }
 
+function isSameStepSlot(nextStep, prevStep) {
+  if (!nextStep || !prevStep || typeof nextStep !== 'object' || typeof prevStep !== 'object') {
+    return false;
+  }
+  if (Number(nextStep.stepIndex) !== Number(prevStep.stepIndex)) return false;
+  if (Boolean(nextStep.isCompactionStep) !== Boolean(prevStep.isCompactionStep)) return false;
+  if (Boolean(nextStep.isImageGenStep) !== Boolean(prevStep.isImageGenStep)) return false;
+  const nextTs = Number(nextStep.createdAtMs || 0);
+  const prevTs = Number(prevStep.createdAtMs || 0);
+  if (nextTs > 0 && prevTs > 0) {
+    if (Math.abs(nextTs - prevTs) > 2000) return false;
+    if (
+      nextTs !== prevTs &&
+      prevStep.isComplete === true &&
+      nextStep.isComplete === true &&
+      (Number(nextStep.inputTokens || 0) !== Number(prevStep.inputTokens || 0) ||
+        Number(nextStep.cacheReadTokens || 0) !== Number(prevStep.cacheReadTokens || 0) ||
+        Number(nextStep.outputTokens || 0) !== Number(prevStep.outputTokens || 0))
+    ) {
+      return false;
+    }
+    return true;
+  }
+  const prevHasTokens =
+    Number(prevStep.inputTokens || 0) +
+      Number(prevStep.cacheReadTokens || 0) +
+      Number(prevStep.outputTokens || 0) >
+    0;
+  if (
+    prevHasTokens &&
+    prevStep.isComplete !== false &&
+    (Number(nextStep.inputTokens || 0) !== Number(prevStep.inputTokens || 0) ||
+      Number(nextStep.cacheReadTokens || 0) !== Number(prevStep.cacheReadTokens || 0) ||
+      Number(nextStep.outputTokens || 0) !== Number(prevStep.outputTokens || 0))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * 宿主执行「撤销到此处」回退对话分支时，保留已发生过的历史调用步骤并标记 `isReverted: true`，
+ * 确保历史 Token / 费用 / 额度统计不回缩，同时支持回退后继续在同一 `stepIndex` 上分叉产生新步骤。
+ */
+function mergeRetainedRevertedSteps(liveSteps, prev) {
+  const safeLive = Array.isArray(liveSteps) ? liveSteps : [];
+  if (!prev || prev.offlineTranscriptFallback) return safeLive;
+  const isLegacySchemaPrev =
+    !prev.contextLimitTelemetry ||
+    !prev.speedClearedTelemetry ||
+    !prev.turnRailTelemetry ||
+    Number(prev.contextGroupsTelemetry || 0) < 3 ||
+    !prev.anomalyTelemetry ||
+    !prev.imageGenTelemetry;
+  if (isLegacySchemaPrev) return safeLive;
+  const prevSteps = Array.isArray(prev.steps) ? prev.steps : [];
+  if (prevSteps.length === 0) return safeLive;
+
+  const liveByIndex = new Map();
+  for (const st of safeLive) {
+    if (!st || typeof st !== 'object') continue;
+    const idx = Number(st.stepIndex);
+    if (Number.isFinite(idx)) {
+      liveByIndex.set(idx, st);
+    }
+  }
+
+  const retainedReverted = [];
+  for (const ps of prevSteps) {
+    if (!ps || typeof ps !== 'object') continue;
+    const idx = Number(ps.stepIndex);
+    const liveMatch = Number.isFinite(idx) ? liveByIndex.get(idx) : null;
+    if (ps.isReverted) {
+      if (liveMatch && isSameHistoricalStep(liveMatch, ps)) {
+        continue;
+      }
+      retainedReverted.push(ps);
+      continue;
+    }
+    if (!liveMatch || !isSameStepSlot(liveMatch, ps)) {
+      retainedReverted.push({ ...ps, isReverted: true });
+    }
+  }
+
+  if (retainedReverted.length === 0) return safeLive;
+
+  const merged = [...safeLive, ...retainedReverted];
+  merged.sort((a, b) => {
+    const ta = Number(a?.createdAtMs || 0);
+    const tb = Number(b?.createdAtMs || 0);
+    if (ta !== tb) return ta - tb;
+    const ia = Number(a?.stepIndex ?? 0);
+    const ib = Number(b?.stepIndex ?? 0);
+    if (ia !== ib) return ia - ib;
+    return (a?.isReverted ? 0 : 1) - (b?.isReverted ? 0 : 1);
+  });
+  return merged;
+}
+
 /**
  * 宿主只保留末尾一条完整 `gen_metadata` 并裁剪历史拆解；对话运行或回退重扫时，
  * 为当前活跃窗口内（最近压缩前锚点至末尾，最多保留 64 步）完全匹配的未变更历史步保留已缓存的 `contextBreakdown`，
@@ -414,7 +513,7 @@ function preserveCachedContextTelemetry(steps, prev) {
     for (const ps of prevSteps) {
       if (!ps || typeof ps !== 'object' || !ps.contextBreakdown) continue;
       const idx = Number(ps.stepIndex);
-      if (Number.isFinite(idx)) {
+      if (Number.isFinite(idx) && (!ps.isReverted || !prevWithBdByIdx.has(idx))) {
         prevWithBdByIdx.set(idx, ps);
       }
     }
@@ -496,7 +595,9 @@ function attachStepAccountOwners(steps, prev, currentAccountName, entryAccountNa
     if (!ps || typeof ps !== 'object') continue;
     const idx = Number(ps.stepIndex);
     if (Number.isFinite(idx)) {
-      prevByIndex.set(idx, ps);
+      if (!ps.isReverted) {
+        prevByIndex.set(idx, ps);
+      }
       if (idx > maxPrevStepIndex) maxPrevStepIndex = idx;
     }
     const cMs = Number(ps.createdAtMs || 0);
@@ -506,14 +607,15 @@ function attachStepAccountOwners(steps, prev, currentAccountName, entryAccountNa
   let mutated = false;
   const out = steps.map((s) => {
     const idx = Number(s?.stepIndex);
-    const matchedPrev = Number.isFinite(idx) ? prevByIndex.get(idx) : null;
+    const candidatePrev = Number.isFinite(idx) ? prevByIndex.get(idx) : null;
+    const matchedPrev = candidatePrev && isSameStepSlot(s, candidatePrev) ? candidatePrev : null;
     let stepOwner = '';
     if (matchedPrev) {
       stepOwner = normalizeOwnerAccount(matchedPrev.accountName) || prevOwner;
     } else {
       const cMs = Number(s?.createdAtMs || 0);
       const isHistoricalBackfill =
-        (Number.isFinite(idx) && maxPrevStepIndex >= 0 && idx <= maxPrevStepIndex) ||
+        (!candidatePrev && Number.isFinite(idx) && maxPrevStepIndex >= 0 && idx <= maxPrevStepIndex) ||
         (cMs > 0 && maxPrevCreatedAtMs > 0 && cMs <= maxPrevCreatedAtMs);
       stepOwner = isHistoricalBackfill ? prevOwner || activeOwner : activeOwner || prevOwner;
     }
@@ -2799,6 +2901,10 @@ export async function enumerateAndSyncConversations({
               currentAccountName,
               entryAccountName
             );
+            const mergedSteps = mergeRetainedRevertedSteps(stepsWithOwners, prev);
+            const preservedRawStepCount = conv.rawStepCount ?? steps.length;
+            conv.rawStepCount = preservedRawStepCount;
+            conv.stepCount = mergedSteps.length;
             const cacheEntry = {
               signature: finalSig,
               accountName: entryAccountName,
@@ -2806,7 +2912,7 @@ export async function enumerateAndSyncConversations({
               lastModifiedMs: resolvedLastModMs,
               diskMtimeMs:
                 conv.diskMtimeMs ?? readConversationMtime(diskConvMap.get(cidLower)),
-              rawStepCount: conv.rawStepCount ?? stepsWithOwners.length,
+              rawStepCount: preservedRawStepCount,
               wasRunning: conv.status === 'CASCADE_RUN_STATUS_RUNNING',
               contextLimitTelemetry: true,
               speedClearedTelemetry: true,
@@ -2815,7 +2921,7 @@ export async function enumerateAndSyncConversations({
               contextGroupsTelemetry: 3,
               anomalyTelemetry: 1,
               imageGenTelemetry: 1,
-              steps: stepsWithOwners,
+              steps: mergedSteps,
               ...(contextPreserved.lastKnownStaticContext
                 ? { lastKnownStaticContext: contextPreserved.lastKnownStaticContext }
                 : {}),
@@ -2863,7 +2969,7 @@ export async function enumerateAndSyncConversations({
               !prev.anomalyTelemetry ||
               !prev.imageGenTelemetry ||
               metaChanged ||
-              !isDeepStrictEqual(prev.steps, stepsWithOwners);
+              !isDeepStrictEqual(prev.steps, mergedSteps);
 
             if (!stepsChanged) cacheEntry.steps = prev.steps;
             setEntry(conv.cascadeId, cacheEntry);

@@ -2042,3 +2042,104 @@ test('Issue #45: grouped modelBreakdown, trend bucket models, and merged agent u
   assert.equal(merged.models.length, 1);
   assert.equal(merged.models[0].shortName, 'neon-4');
 });
+
+test('Conversation undo UI & SQLite persistence: reverted steps keep distinct keys, render gray .is-reverted rows, break turn rails, and round-trip via SQLite flags', async () => {
+  const { createMockDom } = await import('./mock-dom.mjs');
+  const { getStepSelectionKey } = await import('../src/core/stepInspector.js');
+  const { StepTableWidget } = await import('../src/components/widgets/StepTableWidget.js');
+  const {
+    splitStepForStorage,
+    buildSlimStepFromAccounting,
+  } = await import('../backend/trajectory-sqlite-ledger.mjs');
+
+  // 1. SQLite bitmask round-trips isReverted cleanly without touching detail_json
+  const activeStep = {
+    stepIndex: 5,
+    createdAtMs: 1767225645000,
+    modelKey: 'MODEL_PLACEHOLDER_M37',
+    modelShort: 'Gemini 3.1 Pro',
+    modelLabel: 'Gemini 3.1 Pro',
+    inputTokens: 3000,
+    cacheReadTokens: 26000,
+    outputTokens: 1200,
+    thinkingTokens: 200,
+    responseTokens: 1000,
+    contextTokens: 30200,
+    turnIndex: 3,
+    isTurnStart: true,
+    isLatestTurn: true,
+    turnPrompt: 'new branch prompt',
+  };
+  const revertedStep = {
+    ...activeStep,
+    createdAtMs: 1767225620000,
+    inputTokens: 4000,
+    cacheReadTokens: 27500,
+    outputTokens: 800,
+    contextTokens: 32300,
+    isReverted: true,
+    isLatestTurn: false,
+    turnPrompt: 'reverted prompt',
+  };
+  const packedRev = splitStepForStorage(revertedStep);
+  const unpackedRev = buildSlimStepFromAccounting(packedRev.accountingTuple);
+  assert.equal(unpackedRev.isReverted, true);
+  assert.equal(packedRev.detailObj?.isReverted, undefined, 'isReverted stored in compact flags bitmask');
+  const packedAct = splitStepForStorage(activeStep);
+  const unpackedAct = buildSlimStepFromAccounting(packedAct.accountingTuple);
+  assert.equal(Boolean(unpackedAct.isReverted), false);
+
+  // 2. Distinct selection keys when reverted & active steps share the same stepIndex
+  const kAct = getStepSelectionKey(activeStep, 'conv-undo-ui');
+  const kRev = getStepSelectionKey(revertedStep, 'conv-undo-ui');
+  assert.notEqual(kAct, kRev);
+
+  // 3. StepTableWidget renders both rows, applies .is-reverted only to reverted row, and isolates turn rails
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const { document: doc } = createMockDom();
+  globalThis.document = doc;
+  globalThis.window = {
+    innerWidth: 960,
+    innerHeight: 720,
+    addEventListener() {},
+    removeEventListener() {},
+    requestAnimationFrame: (cb) => setTimeout(cb, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+  };
+  try {
+    const host = doc.createElement('div');
+    doc.body.appendChild(host);
+    const widget = StepTableWidget({ standalone: true });
+    host.appendChild(widget.el);
+    widget.refs.renderStepTable(
+      [activeStep, revertedStep],
+      'conv-undo-ui',
+      ['step', 'model', 'tokens_combo', 'cost'],
+      'zh-CN',
+      {
+        showStepTurnRail: true,
+        allConversationSteps: [activeStep, revertedStep],
+      }
+    );
+    const rows = host.querySelectorAll('tbody tr');
+    assert.equal(rows.length, 2, 'Both active and reverted rows with same stepIndex render without key collision');
+    assert.equal(rows[0].classList.contains('is-reverted'), false);
+    assert.equal(rows[1].classList.contains('is-reverted'), true);
+    const rail0 = rows[0].querySelector('.turn-rail');
+    const rail1 = rows[1].querySelector('.turn-rail');
+    assert.equal(rail0.classList.contains('has-down'), false, 'Active turn rail does not weld into reverted row below');
+    assert.equal(rail1.classList.contains('has-up'), false, 'Reverted turn rail does not weld into active row above');
+    widget.destroy();
+  } finally {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  }
+
+  // 4. Compiled CSS bundle includes classic & modern-ui gray/dimmed styles for .is-reverted
+  const { readFileSync: readBundleFileSync } = await import('node:fs');
+  const stylesCss = readBundleFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  assert.match(stylesCss, /\.data-table\s+tbody\s+tr\.is-reverted\s*\{/);
+  assert.match(stylesCss, /\.data-table\s+tbody\s+tr\.is-reverted\s+td\s*\{[^}]*opacity:\s*0\.62/);
+  assert.match(stylesCss, /\[data-modern-ui="true"\]\s+\.data-table\s+tbody\s+tr\.is-reverted/);
+});

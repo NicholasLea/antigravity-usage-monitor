@@ -428,6 +428,28 @@
   font-weight: 600;
 }
 
+.data-table tbody tr.is-reverted {
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+.data-table tbody tr.is-reverted:hover {
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+}
+
+.data-table tbody tr.is-reverted td {
+  color: var(--text-muted);
+  opacity: 0.62;
+}
+
+.data-table tbody tr.is-reverted td:first-child {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--text-muted) 52%, transparent);
+}
+
+.data-table tbody tr.is-reverted td span:not(.agent-badge):not(.turn-rail),
+.data-table tbody tr.is-reverted td .step-model-compact {
+  color: var(--text-muted);
+}
+
 .step-anomaly-tag {
   display: inline-flex;
   align-items: center;
@@ -501,6 +523,10 @@
   border-color: color-mix(in srgb, var(--accent-primary) 46%, var(--border-strong));
 }
 
+.step-anomaly-tip.is-reverted {
+  border-color: var(--border-strong);
+}
+
 .step-anomaly-tip.is-timing {
   border-color: var(--border-strong);
 }
@@ -531,6 +557,10 @@
 
 .step-anomaly-tip.is-compaction .step-anomaly-tip-title {
   color: var(--accent-primary);
+}
+
+.step-anomaly-tip.is-reverted .step-anomaly-tip-title {
+  color: var(--text-muted);
 }
 
 .step-anomaly-tip.is-timing .step-anomaly-tip-title {

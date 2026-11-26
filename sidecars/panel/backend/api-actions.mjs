@@ -128,7 +128,7 @@ function sanitizePositiveFiniteMs(val) {
 
 function projectDisplayStep(st) {
   const {
-    stepIndex, createdAtMs, isCompactionStep, isImageGenStep, modelKey, modelShort, modelLabel,
+    stepIndex, createdAtMs, isCompactionStep, isImageGenStep, isReverted, modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
     nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason, anomaly, anomalySig,
     contextTokens, inputTokens, cacheReadTokens,
@@ -141,7 +141,9 @@ function projectDisplayStep(st) {
     rootTurnMediaOnly,
   } = st;
   return {
-    stepIndex, createdAtMs, isCompactionStep, isImageGenStep, modelKey, modelShort, modelLabel,
+    stepIndex, createdAtMs, isCompactionStep, isImageGenStep,
+    ...(isReverted ? { isReverted: true } : {}),
+    modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
     nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason,
     ...(anomaly ? { anomaly, anomalySig } : {}),
@@ -158,9 +160,9 @@ function projectDisplayStep(st) {
 
 const MAX_DISPLAY_STEP_CACHE_ENTRIES = 16;
 const displayStepsCache = new Map();
-const displayStepFields = Object.keys(projectDisplayStep({ anomaly: true, anomalySig: '' })).filter(
-  (k) => k !== 'anomaly'
-);
+const displayStepFields = Object.keys(
+  projectDisplayStep({ anomaly: true, anomalySig: '', isReverted: true })
+).filter((k) => k !== 'anomaly');
 
 function buildEndpointErrorResponse(epCtx) {
   return {
