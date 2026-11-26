@@ -166,12 +166,6 @@ const MIN_POPOVER_WIDTH = 440;
 const MAX_POPOVER_WIDTH = 1080;
 const DEFAULT_POPOVER_WIDTH = 580;
 
-/**
- * 归一化界面语言枚举（默认 `'auto'`，支持 `'zh-CN'` 及 `'en-US'`）。
- *
- * @param {unknown} lang
- * @returns {'auto'|'zh-CN'|'en-US'}
- */
 function normalizeLanguageSetting(lang) {
   const raw = String(lang ?? '').trim();
   if (!raw) return 'auto';
@@ -182,35 +176,16 @@ function normalizeLanguageSetting(lang) {
   return 'auto';
 }
 
-/**
- * 归一化主题强调色预设键（默认 `'host'` 跟随宿主原生主题）。
- *
- * @param {unknown} accent
- * @returns {'host'|'blue'|'emerald'|'amber'|'violet'|'cyan'|'rose'}
- */
 function normalizeThemeAccent(accent) {
   const clean = String(accent ?? '').trim().toLowerCase();
-  return THEME_ACCENT_KEYS.includes(clean) ? /** @type {any} */ (clean) : 'host';
+  return THEME_ACCENT_KEYS.includes(clean) ?   (clean) : 'host';
 }
 
-/**
- * 归一化面板字号档位（默认 `'md'` 标准 100%）。
- *
- * @param {unknown} scale
- * @returns {'sm'|'md'|'lg'|'xl'}
- */
 function normalizeFontScale(scale) {
   const clean = String(scale ?? '').trim().toLowerCase();
-  return FONT_SCALE_KEYS.includes(clean) ? /** @type {any} */ (clean) : 'md';
+  return FONT_SCALE_KEYS.includes(clean) ?   (clean) : 'md';
 }
 
-/**
- * 归一化模型名称展示模式（`'short'` | `'upstream_compact'` | `'upstream'`），兼容历史 `showUpstreamModel`。
- *
- * @param {unknown} mode
- * @param {unknown} [legacyShowUpstream]
- * @returns {'short'|'upstream_compact'|'upstream'}
- */
 function normalizeModelDisplayMode(mode, legacyShowUpstream) {
   const m = String(mode ?? '').trim().toLowerCase();
   if (m === 'upstream' || m === 'raw' || m === 'full') return 'upstream';
@@ -222,35 +197,17 @@ function normalizeModelDisplayMode(mode, legacyShowUpstream) {
   return 'short';
 }
 
-/**
- * 归一化悬浮主面板宽度模式（`'auto'` | `'custom'`，默认 `'auto'`）。
- *
- * @param {unknown} mode
- * @returns {'auto'|'custom'}
- */
 function normalizePopoverWidthMode(mode) {
   const m = String(mode ?? '').trim().toLowerCase();
   return m === 'custom' || m === 'fixed' ? 'custom' : 'auto';
 }
 
-/**
- * 归一化悬浮主面板自定义宽度像素值（范围 `440..1080`，默认 `580`）。
- *
- * @param {unknown} width
- * @returns {number}
- */
 function normalizePopoverWidth(width) {
   const num = Number(width);
   if (!Number.isFinite(num) || num <= 0) return DEFAULT_POPOVER_WIDTH;
   return Math.max(MIN_POPOVER_WIDTH, Math.min(MAX_POPOVER_WIDTH, Math.round(num)));
 }
 
-/**
- * 解析步骤表自定义 Token 组合表达式，支持 `:`、`/`、`,`、`|` 分隔与中英文别名（1~4 项不重复）。
- *
- * @param {unknown} raw
- * @returns {Array<'context'|'in'|'out'|'cache'|'think'|'reply'|'total'>}
- */
 function parseStepTokenComboSegments(raw) {
   const str = String(raw ?? '').trim();
   const out = [];
@@ -264,30 +221,17 @@ function parseStepTokenComboSegments(raw) {
         : null;
       if (!mapped || seen.has(mapped)) continue;
       seen.add(mapped);
-      out.push(/** @type {any} */ (mapped));
+      out.push(  (mapped));
       if (out.length >= 4) break;
     }
   }
   return out.length > 0 ? out : ['context', 'in', 'cache'];
 }
 
-/**
- * 归一化步骤表自定义 Token 组合格式字符串（如 `'context:new:cache'` -> `'context:in:cache'`）。
- *
- * @param {unknown} raw
- * @returns {string}
- */
 function normalizeStepTokenComboFormat(raw) {
   return parseStepTokenComboSegments(raw).join(':');
 }
 
-/**
- * 归一化插件更新策略枚举（兼容历史 `autoUpdatePlugin` 布尔开关，默认 `'manual'`）。
- *
- * @param {unknown} mode
- * @param {unknown} [legacyAutoUpdate]
- * @returns {'off'|'manual'|'auto'}
- */
 function normalizePluginUpdateMode(mode, legacyAutoUpdate) {
   const m = String(mode ?? '').trim().toLowerCase();
   if (m === 'off' || m === 'manual' || m === 'auto') return m;
@@ -295,13 +239,6 @@ function normalizePluginUpdateMode(mode, legacyAutoUpdate) {
   return 'manual';
 }
 
-/**
- * 归一化面板挂载方式枚举（`'dual'` | `'composer'` | `'sidebar'`），兼容历史 `enableWindowOverlay`。
- *
- * @param {unknown} mode
- * @param {unknown} [legacyEnableOverlay]
- * @returns {'dual'|'composer'|'sidebar'}
- */
 function normalizeWindowMountMode(mode, legacyEnableOverlay) {
   const m = String(mode ?? '').trim().toLowerCase();
   if (m === 'composer' || m === 'input') return 'composer';
@@ -311,12 +248,6 @@ function normalizeWindowMountMode(mode, legacyEnableOverlay) {
   return 'dual';
 }
 
-/**
- * 归一化每周额度统计模式枚举（`'official'` | `'custom_tokens'` | `'custom_cost'`）。
- *
- * @param {unknown} mode
- * @returns {'official'|'custom_tokens'|'custom_cost'}
- */
 function normalizeWeeklyLimitMode(mode) {
   const m = String(mode || '').trim().toLowerCase();
   if (m === 'custom_tokens' || m === 'tokens') return 'custom_tokens';
@@ -324,12 +255,6 @@ function normalizeWeeklyLimitMode(mode) {
   return 'official';
 }
 
-/**
- * 归一化顶栏/输入框胶囊槽位数组（1~5 项动态自添加，默认 3 项，自动清洗历史 `'none'` 与重复项）。
- *
- * @param {unknown} raw
- * @returns {string[]}
- */
 function normalizeTopbarCapsuleSlots(raw) {
   if (!Array.isArray(raw)) {
     return [...DEFAULT_TOPBAR_SLOTS];
@@ -351,13 +276,6 @@ function normalizeTopbarCapsuleSlots(raw) {
   return out;
 }
 
-/**
- * 归一化 CLI 底部状态栏独立槽位配置（`null` 表示自动跟随宽屏默认或自定义顶栏槽位；
- * 支持预设名 `compact` / `balanced` / `full`、逗号分隔列表或数组，保留 1~6 个去重合法槽位）。
- *
- * @param {unknown} raw
- * @returns {string[]|null}
- */
 function normalizeCliStatusLineSlots(raw) {
   if (raw === undefined || raw === null) return null;
   let items = null;
@@ -390,15 +308,6 @@ function normalizeCliStatusLineSlots(raw) {
   return out.length >= MIN_CLI_STATUSLINE_SLOTS ? out : null;
 }
 
-/**
- * 解析当前生效的 CLI 底栏槽位列表：
- * 1. 若用户显式设置了 `cliStatusLineSlots`，优先使用；
- * 2. 若用户自定义了非默认 `topbarCapsuleSlots`，沿用其自定义顺序保持兼容；
- * 3. 否则采用面向宽终端的 5 槽默认组合（速度 / 首字 / 费用 / 配额 / 上下文）。
- *
- * @param {object|null|undefined} settings
- * @returns {string[]}
- */
 function resolveEffectiveCliStatusLineSlots(settings) {
   const customCli = normalizeCliStatusLineSlots(settings?.cliStatusLineSlots);
   if (customCli && customCli.length > 0) {
@@ -414,12 +323,6 @@ function resolveEffectiveCliStatusLineSlots(settings) {
   return [...DEFAULT_CLI_STATUSLINE_SLOTS];
 }
 
-/**
- * 归一化实时监控第一行指标矩阵的槽位与顺序（1~4 项，默认 4 项）。
- *
- * @param {unknown} raw
- * @returns {string[]}
- */
 function normalizeOverviewMetrics(raw) {
   if (!Array.isArray(raw)) {
     return [...DEFAULT_OVERVIEW_METRICS];
@@ -437,12 +340,6 @@ function normalizeOverviewMetrics(raw) {
   return out.length > 0 ? out : ['tps'];
 }
 
-/**
- * 归一化实时监控视图展示的模块及上下顺序（1~4 项，默认 4 项全开）。
- *
- * @param {unknown} raw
- * @returns {string[]}
- */
 function normalizeOverviewModules(raw) {
   if (!Array.isArray(raw)) {
     return [...DEFAULT_OVERVIEW_MODULES];
@@ -459,12 +356,6 @@ function normalizeOverviewModules(raw) {
   return out.length > 0 ? out : ['metrics'];
 }
 
-/**
- * 归一化鼠标悬停速览窗展示的模块及上下顺序（0~4 项，默认 3 项；显式空数组 `[]` 表示禁用悬停弹窗）。
- *
- * @param {unknown} raw
- * @returns {string[]}
- */
 function normalizeHoverModules(raw) {
   if (!Array.isArray(raw)) {
     return [...DEFAULT_HOVER_MODULES];
@@ -481,18 +372,6 @@ function normalizeHoverModules(raw) {
   return out;
 }
 
-/**
- * 归一化鼠标悬浮窗实时指标卡片尺寸（`'medium'` 标准 1~4 项 | `'large'` 趋势折线 1~2 项，默认 `'medium'`）。
- *
- * @param {unknown} raw
- * @returns {'medium'|'large'}
- */
-/**
- * 归一化实时指标卡片展示尺寸（`'medium'` 紧凑数值 1~4 项，`'large'` 大号数值+趋势折线 1~3 项）。
- *
- * @param {unknown} raw
- * @returns {'medium'|'large'}
- */
 function normalizeMetricCardStyle(raw) {
   const val = String(raw ?? '').trim().toLowerCase();
   return val === 'large' || val === 'sparkline' || val === 'trend' ? 'large' : 'medium';
@@ -501,34 +380,14 @@ function normalizeMetricCardStyle(raw) {
 const normalizeOverviewMetricStyle = normalizeMetricCardStyle;
 const normalizeHoverMetricStyle = normalizeMetricCardStyle;
 
-/**
- * 归一化鼠标悬浮窗是否同步「实时监控」的实时指标尺寸与列表（默认开启）。
- *
- * @param {unknown} raw
- * @returns {boolean}
- */
 function normalizeHoverSyncOverviewMetrics(raw) {
   return raw !== false;
 }
 
-/**
- * 归一化鼠标悬浮窗独立实时指标列表及左右顺序（1~4 项，与 `overviewMetrics` 共用完整候选集）。
- *
- * @param {unknown} raw
- * @returns {string[]}
- */
 function normalizeHoverMetrics(raw) {
   return normalizeOverviewMetrics(raw);
 }
 
-/**
- * 解析实时监控 (`overview`) 或鼠标悬浮窗 (`hover`) 当前生效的实时指标尺寸与展示项：
- * - `hover` 且开启 `hoverSyncOverviewMetrics` 时直接复用 `overviewMetricStyle` + `overviewMetrics`；
- * - 切至 `'large'` 时保留完整 1~4 项配置，仅截取前 `MAX_LARGE_METRIC_SLOTS`（3）项渲染，第 4 项在设置页自动置灰。
- *
- * @param {'overview'|'hover'|string} mode
- * @param {Record<string, any>|null|undefined} [settings]
- */
 function resolveEffectiveMetricMatrixConfig(mode, settings = {}) {
   const s = settings && typeof settings === 'object' ? settings : {};
   const isHover = mode === 'hover';
@@ -550,12 +409,6 @@ function resolveEffectiveMetricMatrixConfig(mode, settings = {}) {
   };
 }
 
-/**
- * 归一化调用明细「按步查看」表格列配置与左右顺序（2~14 列，默认保留现有 7 列）。
- *
- * @param {unknown} raw
- * @returns {string[]}
- */
 function normalizeStepTableColumns(raw) {
   if (!Array.isArray(raw)) {
     return [...DEFAULT_STEP_TABLE_COLUMNS];
@@ -581,12 +434,6 @@ function normalizeStepTableColumns(raw) {
   return out;
 }
 
-/**
- * 归一化独立 Web 服务自动托管端口（`0` 表示关闭自动拉起，合法监听端口范围 `1024..65535`）。
- *
- * @param {unknown} port
- * @returns {number}
- */
 function normalizeStandalonePort(port) {
   const num = Number(port);
   if (!Number.isInteger(num) || num <= 0) return 0;
@@ -594,12 +441,6 @@ function normalizeStandalonePort(port) {
   return 0;
 }
 
-/**
- * 归一化现代化 UI 开关（默认 `true`）。
- *
- * @param {unknown} val
- * @returns {boolean}
- */
 function normalizeModernUi(val) {
   if (val === undefined || val === null || val === '') return true;
   if (typeof val === 'string') {
@@ -617,36 +458,18 @@ const DEFAULT_CONTEXT_AGENT_MODE = 'main';
 const ACCOUNT_QUOTA_REFRESH_MINUTES = Object.freeze([10, 30, 60, 180, 360, 720, 1440]);
 const DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES = 60;
 
-/**
- * 归一化非当前账号的后台配额刷新间隔（分钟，默认 `60` 即 1 小时）。
- *
- * @param {unknown} raw
- * @returns {10|30|60|180|360|720|1440}
- */
 function normalizeAccountQuotaRefreshMinutes(raw) {
   const num = Number(raw);
   return ACCOUNT_QUOTA_REFRESH_MINUTES.includes(num)
-    ? /** @type {any} */ (num)
+    ?   (num)
     : DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES;
 }
 
-/**
- * 归一化顶栏胶囊及悬停速览浮窗的上下文代理来源（默认 `'main'` 锁定主代理，可选 `'auto'` 跟随活跃）。
- *
- * @param {unknown} raw
- * @returns {'main'|'auto'}
- */
 function normalizeContextAgentMode(raw) {
   const val = String(raw || '').trim().toLowerCase();
   return val === 'auto' ? 'auto' : 'main';
 }
 
-/**
- * 归一化配额预占估算开关（默认 `true`）。
- *
- * @param {unknown} val
- * @returns {boolean}
- */
 function normalizeExperimentalQuotaReservation(val) {
   if (val === undefined || val === null || val === '') return true;
   if (typeof val === 'string') {
@@ -658,12 +481,6 @@ function normalizeExperimentalQuotaReservation(val) {
   return Boolean(val);
 }
 
-/**
- * 归一化旧版实验性新 UI 字段（保留兼容，缺省返回 `false`）。
- *
- * @param {unknown} val
- * @returns {boolean}
- */
 function normalizeExperimentalModernUi(val) {
   if (typeof val === 'string') {
     const lower = val.trim().toLowerCase();
@@ -672,12 +489,6 @@ function normalizeExperimentalModernUi(val) {
   return Boolean(val);
 }
 
-/**
- * 归一化宿主启动参数自动维护开关（默认 `true`）。
- *
- * @param {unknown} val
- * @returns {boolean}
- */
 function normalizeAutoConfigureLaunch(val) {
   if (val === undefined || val === null || val === '') return true;
   if (typeof val === 'string') {
@@ -689,12 +500,6 @@ function normalizeAutoConfigureLaunch(val) {
   return Boolean(val);
 }
 
-/**
- * 归一化 IDE Remote-SSH 远端守护发现与独立端点遥测开关（默认 `true`）。
- *
- * @param {unknown} val
- * @returns {boolean}
- */
 function normalizeEnableRemoteSshTelemetry(val) {
   if (val === undefined || val === null || val === '') return true;
   if (typeof val === 'string') {
@@ -713,19 +518,10 @@ const { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyCa
 const THIRD_PARTY_POOL_RE =
   /3p|claude|anthropic|fable|gpt|openai|oss|sonnet|opus|haiku|third[-_\s]?party/i;
 
-/**
- * 判断模型或配额桶文本是否归属第三方模型池（Claude & GPT / OSS / 3P）。
- *
- * @param {unknown} text
- * @returns {boolean}
- */
 function isThirdPartyPoolText(text) {
   return THIRD_PARTY_POOL_RE.test(String(text || ''));
 }
 
-/**
- * 输出速度四档语义色阶分类（`'muted'|'good'|'info'|'warn'|'danger'`）。
- */
 function classifySpeedTier(tokPerSec) {
   if (tokPerSec == null || !Number.isFinite(Number(tokPerSec)) || Number(tokPerSec) <= 0) {
     return 'muted';
@@ -737,9 +533,6 @@ function classifySpeedTier(tokPerSec) {
   return 'danger';
 }
 
-/**
- * 缓存命中率四档语义色阶分类（`'muted'|'good'|'info'|'warn'|'danger'`）。
- */
 function classifyCacheTier(cacheHitPct, promptTokens = null) {
   if (cacheHitPct == null || !Number.isFinite(Number(cacheHitPct))) {
     return 'muted';
@@ -754,9 +547,6 @@ function classifyCacheTier(cacheHitPct, promptTokens = null) {
   return 'danger';
 }
 
-/**
- * 单步费用告警色阶分类（`''|'warn'|'danger'`）。
- */
 function classifyStepCostTier(costUsd) {
   if (costUsd == null || !Number.isFinite(Number(costUsd))) return '';
   const v = Number(costUsd);
@@ -765,9 +555,6 @@ function classifyStepCostTier(costUsd) {
   return '';
 }
 
-/**
- * 首字延迟告警色阶分类（`'muted'|''|'warn'|'danger'`）。
- */
 function classifyTtftTier(ttftSec) {
   if (ttftSec == null || !Number.isFinite(Number(ttftSec)) || Number(ttftSec) < 0) {
     return 'muted';
@@ -816,12 +603,6 @@ function isArgonPoolObject(pool) {
   return /\bargon\b/i.test(String(pool.poolKey || pool.poolLabel || pool.family || ''));
 }
 
-/**
- * 判断当前配额摘要中是否存在独立的 Argon 周限配额池（如 Google AI Pro 账号）。
- *
- * @param {object|null|undefined} quotas
- * @returns {boolean}
- */
 function hasArgonWeeklyQuotaPool(quotas) {
   if (!quotas || typeof quotas !== 'object') return false;
   const pools = Array.isArray(quotas.pools) ? quotas.pools : [];
@@ -836,13 +617,6 @@ function hasArgonWeeklyQuotaPool(quotas) {
   return false;
 }
 
-/**
- * 解析胶囊指定配额槽位（`quota_auto` / `gemini_5h` / `gemini_weekly` / `argon_weekly` / `claude_5h` / `claude_weekly`）的整数剩余百分比。
- *
- * @param {object|null|undefined} quotas
- * @param {string} slotKey
- * @returns {number|null}
- */
 function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
   if (!quotas || typeof quotas !== 'object') return null;
   const pools = Array.isArray(quotas.pools) ? quotas.pools : [];
@@ -942,15 +716,6 @@ function resolveCapsuleQuotaSlotPct(quotas, slotKey) {
   return Math.max(0, Math.min(100, Math.round(rawPct)));
 }
 
-/**
- * 使用最大余数法（Hamilton 方法）将各非零分桶等比缩放至目标整数总和，
- * 保证 0 值通道绝不被凭空分配余数，且缩放后各分桶之和精确等于 `targetTotal`。
- *
- * @param {Record<string, number>} buckets
- * @param {readonly string[]} keys
- * @param {number} targetTotal
- * @returns {Record<string, number>}
- */
 function scaleBucketsExact(buckets, keys, targetTotal) {
   const safeTarget = Math.max(0, Math.round(Number(targetTotal || 0)));
   const out = {};
@@ -1078,12 +843,6 @@ const HOST_I18N_DEFAULT_DEPTH = 'light';
 const HOST_I18N_DEPTHS = Object.freeze(['light', 'deep']);
 const HOST_I18N_LOCALE_RE = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$/;
 
-/**
- * Normalizes a host translation locale identifier (`'off'` or canonical BCP-47 tag).
- *
- * @param {unknown} value
- * @returns {string}
- */
 function normalizeHostI18nLocale(value) {
   const raw = String(value || '').trim();
   if (!raw) return HOST_I18N_OFF_LOCALE;
@@ -1112,12 +871,6 @@ function normalizeHostI18nLocale(value) {
     .join('-');
 }
 
-/**
- * Normalizes translation depth (`'light'` or `'deep'`).
- *
- * @param {unknown} value
- * @returns {'light'|'deep'}
- */
 function normalizeHostI18nDepth(value) {
   const lower = String(value || '').trim().toLowerCase();
   if (lower === 'deep' || lower === 'full') return 'deep';
@@ -1163,12 +916,6 @@ const HOST_THEME_COLOR_SIGNAL_VARS = Object.freeze([
 ]);
 const UNSAFE_CSS_VALUE_RE = /[\r\n;{}<>\\]|url\s*\(|expression\s*\(|@import/i;
 
-/**
- * Sanitize a CSS custom property value before injecting into a `<style>` block.
- *
- * @param {unknown} raw
- * @returns {string}
- */
 function sanitizeHostThemeCssValue(raw) {
   if (typeof raw !== 'string') return '';
   const clean = raw.trim();
@@ -1177,12 +924,6 @@ function sanitizeHostThemeCssValue(raw) {
   return clean;
 }
 
-/**
- * Normalize a host theme snapshot from CDP, `/preload.js`, or disk cache.
- *
- * @param {unknown} raw
- * @returns {{ colorScheme: 'dark' | 'light' | '', vars: Record<string, string>, source: 'cdp' | 'preload' | '', updatedAtMs: number } | null}
- */
 function normalizeHostThemeSnapshot(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const rawScheme = String(raw.colorScheme || '').trim().toLowerCase();
@@ -1215,12 +956,6 @@ function normalizeHostThemeSnapshot(raw) {
   };
 }
 
-/**
- * Produce a deterministic compact signature for change detection (ignoring timestamps/source).
- *
- * @param {unknown} snapshot
- * @returns {string}
- */
 function getHostThemeSignature(snapshot) {
   const norm = normalizeHostThemeSnapshot(snapshot);
   if (!norm) return '';
@@ -1232,14 +967,6 @@ function getHostThemeSignature(snapshot) {
   return `${norm.colorScheme}|${parts.join(';')}`;
 }
 
-/**
- * Build a stylesheet-level `:root` rule for fallback host theme tokens.
- * Inline `:root.style` written by Antigravity `/preload.js` naturally overrides
- * this rule by CSS specificity whenever present.
- *
- * @param {unknown} snapshot
- * @returns {string}
- */
 function buildHostThemeFallbackCss(snapshot) {
   const norm = normalizeHostThemeSnapshot(snapshot);
   if (!norm) return '';
@@ -1261,15 +988,6 @@ function buildHostThemeFallbackCss(snapshot) {
   return `:root{${decls.join(';')}}`;
 }
 
-/**
- * Inject the fallback `<style id="ag-host-theme-fallback">` tag into `index.html`
- * before `/styles.css` so restarted sidecar frames paint with exact host colors
- * on frame 1 while allowing inline `/preload.js` or later host `<style>` tags to win.
- *
- * @param {string} html
- * @param {unknown} snapshot
- * @returns {string}
- */
 function injectHostThemeFallbackIntoHtml(html, snapshot) {
   if (typeof html !== 'string' || !html) return html;
   const css = buildHostThemeFallbackCss(snapshot);
@@ -1613,16 +1331,14 @@ return { createReactiveStore };
 // --- src/i18n/zh-CN.js ---
 const { I18N_MESSAGES_ZH_CN } = (() => {
 const I18N_MESSAGES_ZH_CN = Object.freeze({
-  // Application / Document Metadata
+
   'app.title': '用量监控',
 
-  // Top Navigation
   'nav.overview': '实时监控',
   'nav.consumption': '用量统计',
   'nav.steps': '调用明细',
   'nav.settings': '控制中心',
 
-  // Top Session Header
   'header.followLatest': '跟随最新会话',
   'header.followCurrentWindow': '跟随当前窗口会话',
   'header.autoFollowBadge': '自动',
@@ -1656,7 +1372,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'select.noMatches': '没有匹配的选项',
   'select.clearSearch': '清空搜索',
 
-  // Formatters & Common Labels
   'fmt.pending': '待定',
   'fmt.speedIncomplete': '计时不完整',
   'fmt.speedCanceled': '已取消',
@@ -1694,7 +1409,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'fmt.selectedListTitle': '已选 ({count})：{names}',
   'fmt.selectPlaceholder': '请选择',
 
-  // Capsule & Multi-Session Overlay
   'capsule.ariaMonitor': '用量与速度监控',
   'capsule.ariaMulti': '多会话实时信息',
   'capsule.multiZero': '0 运行中',
@@ -1726,13 +1440,11 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'multi.hereTag': '本窗',
   'multi.inspectSessionTitle': '点击在监控面板中检视会话：{title}',
 
-  // Live Overview & Widgets
   'module.metrics': '实时指标',
   'module.context': '上下文窗口',
   'module.quotas': '可用额度',
   'module.live_tasks': '实时运行任务',
 
-  // Capsule Slot Metric Options
   'capMetric.context': '上下文占用 (%)',
   'capMetric.tps': '输出速度 (TPS)',
   'capMetric.ttft': '首字延迟 (TTFT)',
@@ -1748,7 +1460,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'capMetric.claude_5h': 'Claude 5h 额度',
   'capMetric.claude_weekly': 'Claude 周额度',
 
-  // Overview Matrix Metric Options & Cells
   'ovMetric.tps': '输出速度',
   'ovMetric.ttft': '首字延迟',
   'ovMetric.avg_tps': '平均速度',
@@ -1768,7 +1479,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'ovMetric.subQuotaPool': '{label}',
   'ovMetric.subQuotaPending': '等待配额同步',
 
-  // Context Window Widget
   'ctx.followActive': '跟随活跃 ({badge})',
   'ctx.followActiveTitle': '自动展示当前正在运行或最新活跃的代理上下文窗口',
   'ctx.expandMore': '+{count} 展开',
@@ -1796,7 +1506,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'ctx.ch.userRules': '用户规则',
   'ctx.ch.userRulesTitle': '全局与工作区自定义规则 (user_rules)',
 
-  // Quota Pools Widget
   'quota.weeklyShort': '周限',
   'quota.weeklyPool': '周限 ({pool})',
   'quota.loading': '读取中...',
@@ -1836,7 +1545,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.ratePopExt5h': '5h {pct}%',
   'quota.ratePopExtWk': '周限 {pct}%',
 
-  // Live Activity Widget
   'live.currentSession': '当前会话',
   'live.switchSessionTitle': '点击切换查看会话：{title}',
   'live.thinking': '推理中',
@@ -1855,7 +1563,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'live.subCollapseTitle': '点击收起子代理列表',
   'live.subExpandTitle': '点击展开查看子代理缩略状态',
 
-  // Consumption View
   'cons.rangeCycle': '周期',
   'cons.cyclePoolAll': '全部池',
   'cons.cyclePoolAllShort': '全部',
@@ -1946,7 +1653,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'cons.focusSpeedMeta': '首字 {ttft} · 缓存 {cache}% · 输出 {out}',
   'cons.focusCallsMeta': '单次均耗 {avgTok} · 费用 {cost}',
 
-  // Steps Detail View & Step Column Registry
   'steps.title': '调用记录',
   'steps.tabSteps': '按步查看 ({count})',
   'steps.tabStepsFiltered': '按步查看 ({filtered}/{total})',
@@ -2064,7 +1770,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.exportMdTip': '复制当前步骤 Markdown 诊断报告',
   'steps.exportMdDone': '已复制步骤 Markdown 报告',
 
-  // Export & Toast Feedback
   'export.savedLocal': '已导出 {file}',
   'export.savedPicked': '已保存 {file}',
   'export.savedBrowser': '已下载 {file}',
@@ -2076,7 +1781,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'export.copyFailed': '复制失败，请检查剪贴板权限',
   'export.closeToast': '关闭提示',
 
-  // Step Table Columns (Headers & Option Labels)
   'stepCol.step.th': '步序',
   'stepCol.step.opt': '调用步序 (#)',
   'stepCol.time.th': '时间',
@@ -2105,7 +1809,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'stepCol.cost.th': '费用',
   'stepCol.cost.opt': '单步费用 ($)',
 
-  // Control Center (5-Tab Modular Settings)
   'settings.subTab.general': '常规',
   'settings.subTab.structure': '结构',
   'settings.subTab.sessions': '会话',
@@ -2119,7 +1822,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.sessions.modeManage': '会话管理',
   'settings.sessions.modeMigrate': '跨端迁移',
 
-  // Session Hub — Local Session Manager & Reader
   'settings.smgr.title': '本地会话管理',
   'settings.smgr.refresh': '刷新',
   'settings.smgr.moreAria': '会话管理更多操作',
@@ -2254,16 +1956,16 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.account.quotaWeekly': '每周 {percent}%',
   'settings.account.noQuota': '暂未获取当前账号的额度池。',
   'settings.account.quotaStale': '额度刷新失败，显示的是当前账号上次获取的数据。',
-  'settings.account.unsupported': '凭证切换目前支持 Windows 上的 Antigravity 共享登录。',
+  'settings.account.unsupported': '当前运行环境暂不支持本地共享凭证切换（如远端 SSH 会话）。',
   'settings.account.invalidEmail': '请先选择一个已保存的账号。',
   'settings.account.invalidCredential': '请输入有效的 Antigravity 个人账号 OAuth 凭证。',
-  'settings.account.credentialTooLarge': '凭证超过 Windows 凭据管理器的 2560 字节上限。',
+  'settings.account.credentialTooLarge': '凭证体积超出系统钥匙串安全上限（2560 字节）。',
   'settings.account.notFound': '该凭证已移除，请刷新列表。',
   'settings.account.noCurrentCredential': '暂时无法读取当前账号的共享凭证。',
   'settings.account.busy': '另一个窗口正在操作凭证，请稍后重试。',
   'settings.account.storeFailed': '凭证操作失败，请重试。',
   'settings.account.rollbackFailed': '凭证写入和回滚均失败。请在 Antigravity 中确认当前账号后再继续。',
-  'settings.account.credentialAccessDenied': 'Windows 拒绝访问凭据管理器。请在当前 Windows 用户会话中打开 Antigravity 后重试。',
+  'settings.account.credentialAccessDenied': '系统拒绝访问凭据库或钥匙串，请确认当前桌面会话已解锁密钥环后重试。',
   'settings.account.credentialChanged': '这份凭证已在其他窗口更新，请刷新列表后重试。',
   'settings.account.credentialRejected': 'Google 未接受此凭证。请检查令牌是否属于 Antigravity 且仍然有效。',
   'settings.account.identityMismatch': '凭证所属账号跟宿主或保存的账号不一致，请重新导入该凭证。',
@@ -2305,6 +2007,8 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.account.passwordMismatch': '两次输入的密码不一致。',
   'settings.account.passwordRateLimited': '密码连续输错次数过多，请稍候再试。',
   'settings.account.vaultDecryptFailed': '凭证解密校验失败，请确认密码或重置凭证库。',
+  'settings.account.passphraseRequired': '未检测到系统密钥环（secret-tool），请先设置二级密码加密后再保存账号，或安装 libsecret-tools。',
+  'settings.account.keyringUnavailable': '当前环境未检测到系统密钥环，无法关闭二级密码保护。',
   'settings.account.invalidActionNonce': '安全校验令牌已过期，请重试。',
   'settings.account.riskNotAccepted': '请先确认并接受非官方能力风险提示。',
   'settings.account.riskBody': 'Google 官方并未授权在 Antigravity App / IDE 中通过第三方插件导入、保存、切换账号凭证或后台查询多账号配额。擅自启用可能导致 Antigravity 或 GCP 服务被禁用，甚至触发账号封禁；启用该功能即默认由你自行承担全部风险。你最好清楚自己在做什么！',
@@ -2319,7 +2023,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.resetDone': '已恢复默认',
   'settings.resetBtn': '恢复默认',
 
-  // Preferences -> General Tab
   'settings.gen.appearanceTitle': '界面与外观',
   'settings.gen.language': '界面语言',
   'settings.gen.langZh': '简体中文',
@@ -2377,7 +2080,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.gen.updateOffSub': '已关闭更新提醒 ({mode})',
   'settings.gen.latestSub': '已是最新 ({mode})',
 
-  // Preferences -> General Tab -> Antigravity Host UI Language (decoupled Host I18n)
   'settings.hostI18n.title': 'Antigravity 界面语言',
   'settings.hostI18n.langLabel': '目标语言',
   'settings.hostI18n.langOff': '原始语言（不翻译）',
@@ -2409,7 +2111,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.hostI18n.copyJsonBtn': '复制 JSON',
   'settings.hostI18n.exportJsonBtn': '导出 JSON',
 
-  // Preferences -> Structure Tab
   'settings.str.thirdTabAria': '结构子菜单切换',
   'settings.str.tabMount': '挂载胶囊',
   'settings.str.tabHover': '鼠标悬浮窗',
@@ -2526,7 +2227,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.mock.turnPromptLatest': '排查并发刷新令牌时的竞态问题，补齐单元测试',
   'settings.mock.turnPromptPrev': '梳理路由守卫与过期会话清理逻辑',
 
-  // Preferences -> Other Tab
   'settings.oth.modelTitle': '模型标识显示',
   'settings.oth.modelShort': '精简代号 (如 argon-4-high)',
   'settings.oth.modelUpstream': '原始模型 ID (如 gemini-3.8-flash-n)',
@@ -2632,7 +2332,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.migErrRunning': '该会话正在运行中，请待空闲后再迁移',
   'settings.oth.migFailed': '迁移失败：{reason}',
 
-  // Structured Live Activity Actions
   'live.act.run_command': '执行命令',
   'live.act.read_file': '读取文件',
   'live.act.edit_file': '修改文件',
@@ -2672,7 +2371,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'live.act.awaitingApproval': '等待确认 · {label}',
   'live.act.compactionResuming': '已完成压缩，正在恢复推理',
 
-  // SVG Charts (SessionStepCharts & TrendAreaChart)
   'chart.step.empty': '当前范围暂无可绘制的调用步骤',
   'chart.step.excluded': '未纳入',
   'chart.step.zeroSteps': '0 步',
@@ -2734,7 +2432,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'chart.trend.hmCumThrough': '截至 {date} 累计',
   'chart.trend.peakPill': '峰值 {label} · {tokens}',
 
-  // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
   'ui.dt.wdayMon': '一',
   'ui.dt.wdayTue': '二',
   'ui.dt.wdayWed': '三',
@@ -2755,16 +2452,14 @@ return { I18N_MESSAGES_ZH_CN };
 // --- src/i18n/en-US.js ---
 const { I18N_MESSAGES_EN_US } = (() => {
 const I18N_MESSAGES_EN_US = Object.freeze({
-  // Application / Document Metadata
+
   'app.title': 'Usage & Speed Monitor',
 
-  // Top Navigation
   'nav.overview': 'Live',
   'nav.consumption': 'Usage',
   'nav.steps': 'Steps',
   'nav.settings': 'Controls',
 
-  // Top Session Header
   'header.followLatest': 'Follow Latest Session',
   'header.followCurrentWindow': 'Follow Current Window',
   'header.autoFollowBadge': 'Auto',
@@ -2798,7 +2493,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'select.noMatches': 'No matching items',
   'select.clearSearch': 'Clear search',
 
-  // Formatters & Common Labels
   'fmt.pending': 'N/A',
   'fmt.speedIncomplete': 'Incomplete timing',
   'fmt.speedCanceled': 'Canceled',
@@ -2836,7 +2530,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'fmt.selectedListTitle': 'Selected ({count}): {names}',
   'fmt.selectPlaceholder': 'Select',
 
-  // Capsule & Multi-Session Overlay
   'capsule.ariaMonitor': 'Usage & Speed Monitor',
   'capsule.ariaMulti': 'Active Sessions Overview',
   'capsule.multiZero': '0 active',
@@ -2868,13 +2561,11 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'multi.hereTag': 'Here',
   'multi.inspectSessionTitle': 'Inspect session in monitor: {title}',
 
-  // Live Overview & Widgets
   'module.metrics': 'Live Metrics',
   'module.context': 'Context Window',
   'module.quotas': 'Available Quotas',
   'module.live_tasks': 'Live Running Tasks',
 
-  // Capsule Slot Metric Options
   'capMetric.context': 'Context Usage (%)',
   'capMetric.tps': 'Output Speed (TPS)',
   'capMetric.ttft': 'First Token Latency (TTFT)',
@@ -2890,7 +2581,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'capMetric.claude_5h': 'Claude 5h Quota',
   'capMetric.claude_weekly': 'Claude Weekly Quota',
 
-  // Overview Matrix Metric Options & Cells
   'ovMetric.tps': 'Output Speed',
   'ovMetric.ttft': 'First Token',
   'ovMetric.avg_tps': 'Avg Speed',
@@ -2910,7 +2600,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'ovMetric.subQuotaPool': '{label}',
   'ovMetric.subQuotaPending': 'Waiting for quota sync',
 
-  // Context Window Widget
   'ctx.followActive': 'Follow Active ({badge})',
   'ctx.followActiveTitle': 'Automatically inspect the active or running agent context window',
   'ctx.expandMore': '+{count} More',
@@ -2938,7 +2627,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'ctx.ch.userRules': 'User Rules',
   'ctx.ch.userRulesTitle': 'Global and workspace custom user_rules',
 
-  // Quota Pools Widget
   'quota.weeklyShort': 'Weekly',
   'quota.weeklyPool': 'Weekly ({pool})',
   'quota.loading': 'Loading...',
@@ -2978,7 +2666,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.ratePopExt5h': '5h {pct}%',
   'quota.ratePopExtWk': 'Weekly {pct}%',
 
-  // Live Activity Widget
   'live.currentSession': 'Current Session',
   'live.switchSessionTitle': 'Switch monitor to session: {title}',
   'live.thinking': 'Thinking',
@@ -2997,7 +2684,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'live.subCollapseTitle': 'Collapse subagent list',
   'live.subExpandTitle': 'Expand subagent activity list',
 
-  // Consumption View
   'cons.rangeCycle': 'Cycle',
   'cons.cyclePoolAll': 'All Pools',
   'cons.cyclePoolAllShort': 'All',
@@ -3088,7 +2774,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'cons.focusSpeedMeta': 'TTFT {ttft} · Cache {cache}% · Out {out}',
   'cons.focusCallsMeta': 'Avg {avgTok}/call · Cost {cost}',
 
-  // Steps Detail View & Step Column Registry
   'steps.title': 'Step Records',
   'steps.tabSteps': 'Steps ({count})',
   'steps.tabStepsFiltered': 'Steps ({filtered}/{total})',
@@ -3206,7 +2891,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.exportMdTip': 'Copy Markdown diagnostic report for current steps',
   'steps.exportMdDone': 'Steps Markdown report copied',
 
-  // Export & Toast Feedback
   'export.savedLocal': 'Exported {file}',
   'export.savedPicked': 'Saved {file}',
   'export.savedBrowser': 'Downloaded {file}',
@@ -3218,7 +2902,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'export.copyFailed': 'Copy failed, check clipboard permissions',
   'export.closeToast': 'Dismiss notification',
 
-  // Step Table Columns (Headers & Option Labels)
   'stepCol.step.th': 'Step',
   'stepCol.step.opt': 'Step Number (#)',
   'stepCol.time.th': 'Time',
@@ -3247,7 +2930,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'stepCol.cost.th': 'Cost',
   'stepCol.cost.opt': 'Step Cost ($)',
 
-  // Control Center (5-Tab Modular Settings)
   'settings.subTab.general': 'General',
   'settings.subTab.structure': 'Structure',
   'settings.subTab.sessions': 'Sessions',
@@ -3260,7 +2942,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.sessions.modeManage': 'Sessions',
   'settings.sessions.modeMigrate': 'Migration',
 
-  // Session Hub — Local Session Manager & Reader
   'settings.smgr.title': 'Local Session Manager',
   'settings.smgr.refresh': 'Refresh',
   'settings.smgr.moreAria': 'More session manager actions',
@@ -3395,16 +3076,16 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.account.quotaWeekly': 'Weekly {percent}%',
   'settings.account.noQuota': 'Quota pools are unavailable for the current account.',
   'settings.account.quotaStale': 'Quota refresh failed. Showing the last data for the current account.',
-  'settings.account.unsupported': 'Credential switching currently supports Antigravity shared sign-in on Windows.',
+  'settings.account.unsupported': 'Local credential switching is unavailable in this environment (for example, remote SSH sessions).',
   'settings.account.invalidEmail': 'Select a saved account first.',
   'settings.account.invalidCredential': 'Enter a valid Antigravity OAuth credential for a personal account.',
-  'settings.account.credentialTooLarge': 'The credential exceeds the Windows Credential Manager limit of 2560 bytes.',
+  'settings.account.credentialTooLarge': 'The credential exceeds the OS keyring size limit (2560 bytes).',
   'settings.account.notFound': 'This credential was removed. Refresh the list.',
   'settings.account.noCurrentCredential': 'The shared credential for the current account is unavailable.',
   'settings.account.busy': 'Another window is updating credentials. Try again shortly.',
   'settings.account.storeFailed': 'The credential operation failed. Try again.',
   'settings.account.rollbackFailed': 'Writing and restoring the credential both failed. Check the active account in Antigravity before continuing.',
-  'settings.account.credentialAccessDenied': 'Windows denied access to Credential Manager. Open Antigravity in your Windows user session and try again.',
+  'settings.account.credentialAccessDenied': 'OS keyring access was denied. Unlock your desktop session keyring and try again.',
   'settings.account.credentialChanged': 'This credential was updated in another window. Refresh the list and try again.',
   'settings.account.credentialRejected': 'Google rejected this credential. Check that the Antigravity refresh token is still valid.',
   'settings.account.identityMismatch': 'The credential belongs to a different account. Import the credential again.',
@@ -3446,6 +3127,8 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.account.passwordMismatch': 'Passphrases do not match.',
   'settings.account.passwordRateLimited': 'Too many failed attempts. Wait a moment and try again.',
   'settings.account.vaultDecryptFailed': 'Vault decryption check failed.',
+  'settings.account.passphraseRequired': 'No OS keyring (secret-tool) detected. Set a Passphrase first to encrypt credentials locally, or install libsecret-tools.',
+  'settings.account.keyringUnavailable': 'Cannot disable passphrase protection when no OS keyring is available.',
   'settings.account.invalidActionNonce': 'Security token expired. Please try again.',
   'settings.account.riskNotAccepted': 'Acknowledge the unofficial feature risk warning first.',
   'settings.account.riskBody': 'Google has not authorized importing, storing, or switching Antigravity credentials or polling multi-account quotas in Antigravity App / IDE. Enabling multi-account management may get your Antigravity access, GCP services, or Google account disabled or banned; enabling this feature means you assume all associated risks. Make sure you know what you are doing!',
@@ -3461,7 +3144,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.resetDone': 'Reset to default',
   'settings.resetBtn': 'Reset',
 
-  // Preferences -> General Tab
   'settings.gen.appearanceTitle': 'Interface & Appearance',
   'settings.gen.language': 'Language',
   'settings.gen.langZh': '简体中文',
@@ -3519,7 +3201,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.gen.updateOffSub': 'Notifications off ({mode})',
   'settings.gen.latestSub': 'Up to date ({mode})',
 
-  // Preferences -> General Tab -> Antigravity Host UI Language (decoupled Host I18n)
   'settings.hostI18n.title': 'Antigravity UI Language',
   'settings.hostI18n.langLabel': 'Host Language',
   'settings.hostI18n.langOff': 'Original (Off)',
@@ -3551,7 +3232,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.hostI18n.copyJsonBtn': 'Copy JSON',
   'settings.hostI18n.exportJsonBtn': 'Export JSON',
 
-  // Preferences -> Structure Tab
   'settings.str.thirdTabAria': 'Structure section tabs',
   'settings.str.tabMount': 'Mount & Bar',
   'settings.str.tabHover': 'Hover View',
@@ -3668,7 +3348,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.mock.turnPromptLatest': 'Fix token refresh race condition under concurrent requests and add tests',
   'settings.mock.turnPromptPrev': 'Audit route guards and expired session cleanup logic',
 
-  // Preferences -> Other Tab
   'settings.oth.modelTitle': 'Model Identity Display',
   'settings.oth.modelShort': 'Short Alias (e.g. argon-4-high)',
   'settings.oth.modelUpstream': 'Raw Upstream ID (e.g. gemini-3.8-flash-n)',
@@ -3774,7 +3453,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.migErrRunning': 'Session is currently running; wait until idle before migrating',
   'settings.oth.migFailed': 'Migration failed: {reason}',
 
-  // Structured Live Activity Actions
   'live.act.run_command': 'Run Command',
   'live.act.read_file': 'Read File',
   'live.act.edit_file': 'Edit File',
@@ -3814,7 +3492,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'live.act.awaitingApproval': 'Awaiting Approval · {label}',
   'live.act.compactionResuming': 'Compaction finished, resuming reasoning',
 
-  // SVG Charts (SessionStepCharts & TrendAreaChart)
   'chart.step.empty': 'No plottable steps in current scope',
   'chart.step.excluded': 'Excluded',
   'chart.step.zeroSteps': '0 steps',
@@ -3876,7 +3553,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'chart.trend.hmCumThrough': 'Cumulative through {date}',
   'chart.trend.peakPill': 'Peak {label} · {tokens}',
 
-  // Base UI Controls (CustomDateTimePicker, CustomNumberInput, SegmentedControl)
   'ui.dt.wdayMon': 'Mo',
   'ui.dt.wdayTue': 'Tu',
   'ui.dt.wdayWed': 'We',
@@ -3911,7 +3587,7 @@ function detectHostSystemLocale() {
       return String(navigator.language).toLowerCase().startsWith('zh') ? 'zh-CN' : 'en-US';
     }
   } catch {
-    // Ignore environment navigator read errors
+
   }
   return 'zh-CN';
 }
@@ -3939,13 +3615,6 @@ function isEnglishLocale() {
   return getEffectiveLocale() === 'en-US';
 }
 
-/**
- * Sync `<html lang>` and `<title>` on the panel / standalone document to the active locale.
- * Uses equality guards so repeated calls avoid redundant DOM mutations on `<head>`.
- *
- * @param {Document | null} [doc]
- * @returns {string}
- */
 function syncDocumentLocale(doc = typeof document !== 'undefined' ? document : null) {
   const locale = getEffectiveLocale();
   if (!doc) return locale;
@@ -3958,18 +3627,11 @@ function syncDocumentLocale(doc = typeof document !== 'undefined' ? document : n
       doc.title = nextTitle;
     }
   } catch {
-    // Ignore read-only document environments in constrained webviews/tests
+
   }
   return locale;
 }
 
-/**
- * Translate a message key with optional `{name}` variable interpolation.
- *
- * @param {string} key
- * @param {Record<string, string | number>} [vars]
- * @returns {string}
- */
 function t(key, vars = undefined) {
   const locale = getEffectiveLocale();
   const dict = I18N_DICTIONARIES[locale] || I18N_MESSAGES_ZH_CN;
@@ -4040,12 +3702,6 @@ function resolveSettingsModernUi(settings) {
   return true;
 }
 
-/**
- * Check whether `el` (or its Shadow DOM host / document root) is currently under `[data-modern-ui="true"]`.
- *
- * @param {Node | null | undefined} el
- * @returns {boolean}
- */
 function isModernUiActiveForElement(el) {
   let cur = el || null;
   while (cur) {
@@ -4163,14 +3819,6 @@ function parseCssAngleDeg(rawAngle) {
   return num;
 }
 
-/**
- * Parse `#hex`, `rgb()/rgba()`, `hsl()/hsla()`, `color(srgb|srgb-linear|display-p3 ...)`,
- * `oklab()`, `oklch()`, or bare Tailwind HSL triplets (`222 18% 10%`) into perceptual luminance `[0, 1]`.
- * Returns `null` when transparent (`alpha <= 0.15`) or unparseable.
- *
- * @param {string | null | undefined} rawColor
- * @returns {number | null}
- */
 function parseCssColorLuminance(rawColor) {
   const str = String(rawColor ?? '').trim().toLowerCase();
   if (!str || str === 'transparent' || str === 'none' || str === 'inherit' || str === 'initial') {
@@ -4376,7 +4024,7 @@ function resolveColorLuminanceWithProbe(rawColor, doc, win) {
     try {
       probe?.remove?.();
     } catch {
-      // ignore probe cleanup errors
+
     }
   }
 }
@@ -4397,14 +4045,6 @@ function hasExplicitThemeMarker(el) {
   return false;
 }
 
-/**
- * Determine whether the host environment natively injected theme tokens or markers
- * (e.g. Antigravity `/preload.js` writing `--background` onto `:root.style`, a host `<style>` tag,
- * or VS Code `vscode-dark`/`vscode-light` classes) independent of our own fallback `<style>`.
- *
- * @param {Document | null | undefined} [doc]
- * @returns {boolean}
- */
 function hasNativeHostTheme(doc = typeof document !== 'undefined' ? document : null) {
   if (!doc) return false;
   const root = doc.documentElement;
@@ -4428,18 +4068,11 @@ function hasNativeHostTheme(doc = typeof document !== 'undefined' ? document : n
       }
     }
   } catch {
-    // ignore head traversal errors in constrained DOM mocks
+
   }
   return false;
 }
 
-/**
- * Capture a normalized snapshot of native host CSS tokens when `hasNativeHostTheme(doc)` is true,
- * so the backend can persist it for instant zero-flash recovery across plugin restarts.
- *
- * @param {Document | null | undefined} [doc]
- * @param {Window | null | undefined} [win]
- */
 function captureNativeHostThemeSnapshot(
   doc = typeof document !== 'undefined' ? document : null,
   win = typeof window !== 'undefined' ? window : null
@@ -4459,7 +4092,7 @@ function captureNativeHostThemeSnapshot(
   const vars = {};
   for (const key of HOST_THEME_CSS_VARS) {
     const inlineVal = readInlineStyleVar(root, key) || readInlineStyleVar(body, key);
-    // Avoid mistaking our own tokens.css fallback --font-sans/--font-mono for host /preload.js typography
+
     const isPanelOwnTypographyFallbackVar = key === '--font-sans' || key === '--font-mono';
     const val = isPanelOwnTypographyFallbackVar
       ? inlineVal
@@ -4476,17 +4109,6 @@ function captureNativeHostThemeSnapshot(
   });
 }
 
-/**
- * Detect whether the active host surface is `'light'` or `'dark'`.
- * Inspects explicit Antigravity / VS Code theme classes & attributes first,
- * then actual computed surface/text luminance (avoiding false positives from our own
- * white `tokens.css` fallback when host tokens are absent), then backend `fallbackHostTheme`,
- * then `prefers-color-scheme`.
- *
- * @param {HTMLElement | null | undefined} [targetEl]
- * @param {{ fallbackHostTheme?: { colorScheme?: string } | null }} [options]
- * @returns {'light' | 'dark'}
- */
 function detectHostColorScheme(targetEl = null, { fallbackHostTheme = null } = {}) {
   const doc = typeof document !== 'undefined' ? document : null;
   const win = typeof window !== 'undefined' ? window : null;
@@ -4505,7 +4127,6 @@ function detectHostColorScheme(targetEl = null, { fallbackHostTheme = null } = {
     }
   }
 
-  // 1. Explicit host theme attributes & class tokens (never read our own data-color-scheme)
   for (const el of candidates) {
     const vscodeKind = String(el.getAttribute?.('data-vscode-theme-kind') || '')
       .trim()
@@ -4532,7 +4153,6 @@ function detectHostColorScheme(targetEl = null, { fallbackHostTheme = null } = {
     }
   }
 
-  // 2. Computed / inline host CSS custom properties & surface luminance
   const bgTargets = [];
   for (const el of [targetEl, doc?.body, doc?.documentElement, workbenchEl]) {
     if (el && !bgTargets.includes(el)) {
@@ -4604,7 +4224,6 @@ function detectHostColorScheme(targetEl = null, { fallbackHostTheme = null } = {
     }
   }
 
-  // 3. Computed / inline foreground text luminance
   for (const el of bgTargets) {
     const cs = getCs(el);
     for (const prop of hostFgVars) {
@@ -4622,19 +4241,17 @@ function detectHostColorScheme(targetEl = null, { fallbackHostTheme = null } = {
     }
   }
 
-  // 3b. Backend host theme polarity fallback (CDP / persisted preload cache)
   const fallbackScheme = String(fallbackHostTheme?.colorScheme || '').trim().toLowerCase();
   if (fallbackScheme === 'dark' || fallbackScheme === 'light') {
     return fallbackScheme;
   }
 
-  // 4. OS media query fallback
   try {
     if (win?.matchMedia?.('(prefers-color-scheme: dark)')?.matches) {
       return 'dark';
     }
   } catch {
-    // ignore matchMedia errors
+
   }
 
   return 'light';
@@ -4676,17 +4293,6 @@ function setOrClearStyleVar(el, propName, value) {
   }
 }
 
-/**
- * Keep the sidecar document's fallback host theme stylesheet (`#ag-host-theme-fallback`)
- * and `data-host-theme-fallback` attribute in sync:
- * - Native host theme (`/preload.js` inline `:root.style`, host `<style>`, or VS Code classes) always wins and clears fallback;
- * - When native tokens are absent (e.g. after sidecar restart), applies bridged/cached `hostTheme` CSS vars in `<head>`;
- * - When neither native nor bridged tokens exist, applies `data-host-theme-fallback="dark"` on dark OS / dark polarity.
- *
- * @param {unknown} hostTheme
- * @param {{ doc?: Document | null, win?: Window | null, isStandalone?: boolean }} [options]
- * @returns {{ mode: 'standalone' | 'native' | 'bridged' | 'media-fallback', snapshot: ReturnType<typeof normalizeHostThemeSnapshot> }}
- */
 function syncHostThemeFallback(
   hostTheme,
   {
@@ -4800,14 +4406,6 @@ function syncHostThemeFallback(
   return { mode: 'media-fallback', snapshot: null };
 }
 
-/**
- * Synchronize theme accent, host color scheme polarity, and (optionally) font scale tokens
- * onto a root/host element.
- *
- * @param {HTMLElement | null | undefined} targetEl
- * @param {object | null | undefined} settings
- * @param {{ includeFontScale?: boolean, fallbackHostTheme?: { colorScheme?: string } | null }} [options]
- */
 function applyAppearanceToRoot(
   targetEl,
   settings,
@@ -4957,13 +4555,6 @@ function patchStyleVar(el, varName, nextValue) {
   return true;
 }
 
-/**
- * 判断事件是否发生在目标节点内部（兼容 Shadow DOM 的 `composedPath()` 穿透）。
- *
- * @param {Event|null|undefined} event
- * @param {Node|null|undefined} element
- * @returns {boolean}
- */
 function isEventInside(event, element) {
   if (!event || !element) return false;
   if (typeof event.composedPath === 'function') {
@@ -5009,12 +4600,6 @@ function parseCssTransformScale(transformStr) {
   return null;
 }
 
-/**
- * 读取元素内容区可用宽度（`clientWidth` 扣除左右 `padding`，用于和子元素 `100%` 布局宽度精确对齐）。
- *
- * @param {Element|null|undefined} el
- * @returns {number}
- */
 function getElementContentWidth(el) {
   const clientW = Number(el?.clientWidth || 0);
   if (!(clientW > 0)) return 0;
@@ -5034,20 +4619,12 @@ function getElementContentWidth(el) {
       if (Number.isFinite(pl) && pl > 0) padL = pl;
       if (Number.isFinite(pr) && pr > 0) padR = pr;
     } catch {
-      // 忽略 Mock DOM 样式查询异常
+
     }
   }
   return Math.max(0, clientW - padL - padR);
 }
 
-/**
- * 计算元素当前生效的视觉缩放比（例如入场动画 `scale(0.975)`），
- * 用于将受 `transform` 影响的 `getBoundingClientRect()` 还原为真实 CSS 布局像素。
- *
- * @param {Element|null|undefined} el
- * @param {Element|null|undefined} [stopEl]
- * @returns {{ scaleX: number, scaleY: number }}
- */
 function getVisualTransformScale(el, stopEl = null) {
   let scaleX = 1;
   let scaleY = 1;
@@ -5068,7 +4645,7 @@ function getVisualTransformScale(el, stopEl = null) {
           scaleY *= parsed.scaleY;
         }
       } catch {
-        // 忽略 Mock DOM 样式查询异常
+
       }
       if (stopEl && cur === stopEl) break;
       cur = cur.parentElement || (cur.parentNode && cur.parentNode.nodeType === 1 ? cur.parentNode : null);
@@ -5105,10 +4682,6 @@ function getVisualTransformScale(el, stopEl = null) {
 
 const keyedListState = new WeakMap();
 
-/**
- * Keyed incremental list reconciler.
- * Reuses existing DOM nodes by key and patches only changed items in-place.
- */
 function patchKeyedList(
   container,
   items,
@@ -5151,7 +4724,6 @@ function patchKeyedList(
     orderedNodes.push(record.el);
   }
 
-  // Remove stale keys
   for (const [oldKey, record] of map.entries()) {
     if (!nextKeys.has(oldKey)) {
       if (record.el.parentNode === container) {
@@ -5171,7 +4743,6 @@ function patchKeyedList(
     return;
   }
 
-  // Reorder or insert nodes with minimal DOM moves
   for (let i = 0; i < orderedNodes.length; i++) {
     const targetNode = orderedNodes[i];
     const currentNode = container.children[i] || null;
@@ -5183,13 +4754,6 @@ function patchKeyedList(
 
 const CLIPPING_OVERFLOW_RE = /(?:hidden|clip|auto|scroll)/i;
 
-/**
- * 解析浮层所在的可视裁剪边界（兼容 Shadow DOM 悬浮窗 `.wm-popover-panel`、
- * 侧栏 `.app-shell`、自定义滚动容器 `.custom-scroll-content` 与窗口视口）。
- *
- * @param {HTMLElement} anchorRootEl
- * @returns {{ left: number, top: number, right: number, bottom: number, width: number, height: number } | null}
- */
 function resolvePopupBoundaryRect(anchorRootEl) {
   if (!anchorRootEl) return null;
   const winW = typeof window !== 'undefined' ? Number(window.innerWidth || 0) : 0;
@@ -5226,7 +4790,7 @@ function resolvePopupBoundaryRect(anchorRootEl) {
             clipsY = CLIPPING_OVERFLOW_RE.test(cs.overflowY || cs.overflow || '');
           }
         } catch {
-          // 忽略 Mock DOM 样式查询异常
+
         }
       }
       if (clipsX || clipsY) {
@@ -5244,7 +4808,7 @@ function resolvePopupBoundaryRect(anchorRootEl) {
         }
       }
     }
-    // 到达 ShadowRoot 或文档顶层后停止，避免误受宿主页面外层容器干扰
+
     if (!cur.parentNode) break;
     cur = cur.parentNode;
   }
@@ -5258,16 +4822,6 @@ function resolvePopupBoundaryRect(anchorRootEl) {
   return { left: boundLeft, top: boundTop, right: boundRight, bottom: boundBottom, width, height };
 }
 
-/**
- * 为锚定在触发器上的绝对定位下拉浮层执行水平/垂直碰撞检测与边界夹紧：
- * - 水平方向优先左对齐，右侧溢出时切右对齐，仍越界则直接夹紧在容器可视安全区内；
- * - 垂直方向底部空间不足且上方更宽裕时自动向上翻转（追加 `.is-above`），并按可用空间收紧 `max-height`。
- *
- * @param {HTMLElement} rootEl 定位基准容器 (`position: relative`)
- * @param {HTMLElement} triggerEl 触发按钮
- * @param {HTMLElement} popupEl 下拉浮层 (`position: absolute`)
- * @param {{ margin?: number, gap?: number, maxHeight?: number, minFlipSpace?: number }} [opts]
- */
 function positionAnchoredPopup(
   rootEl,
   triggerEl,
@@ -5290,7 +4844,6 @@ function positionAnchoredPopup(
   const bound = resolvePopupBoundaryRect(rootEl);
   if (!bound) return;
 
-  // 清除旧的动态夹紧值以便读取自然布局宽度
   popupEl.style.left = '';
   popupEl.style.right = '';
   popupEl.style.top = '';
@@ -5308,7 +4861,7 @@ function positionAnchoredPopup(
         cssMaxW = Number.parseFloat(rawMaxW);
       }
     } catch {
-      // 忽略 Mock DOM 样式查询异常
+
     }
   }
   const effectiveMaxW =
@@ -5318,7 +4871,7 @@ function positionAnchoredPopup(
   popupEl.style.maxWidth = `${effectiveMaxW}px`;
 
   const rawRect = popupEl.getBoundingClientRect?.();
-  // 优先读取 offsetWidth，避免入场动画 scale(0.975) 导致测宽偏小
+
   const naturalW = Math.max(
     Number(popupEl.offsetWidth || 0),
     Math.ceil(Number(rawRect?.width || 0))
@@ -5336,7 +4889,7 @@ function positionAnchoredPopup(
   const rawLeft = Number(rawRect?.left);
   const rawRight = Number(rawRect?.right);
   const hasRawBox = Number.isFinite(rawLeft) && Number.isFinite(rawRight) && rawRight > rawLeft;
-  // 若入场缩放动画（如 scale(0.975)）正在首帧生效，按对称补偿还原终态边界再判断是否越界
+
   const scalePadX = hasRawBox ? Math.max(0, (popupW - (rawRight - rawLeft)) / 2) : 0;
   const naturalLeft = hasRawBox ? rawLeft - scalePadX : triggerRect.left;
   const naturalRight = hasRawBox
@@ -5390,9 +4943,6 @@ function positionAnchoredPopup(
   }
 }
 
-/**
- * Clamp `value` to `[minVal, maxVal]` with damped rubber-band overshoot at the ends.
- */
 function applyRubberBand(value, minVal, maxVal, maxOvershoot = 24, factor = 0.25) {
   if (value < minVal) {
     const excess = minVal - value;
@@ -5405,9 +4955,6 @@ function applyRubberBand(value, minVal, maxVal, maxOvershoot = 24, factor = 0.25
   return value;
 }
 
-/**
- * Return a shallow copy of `sourceItems` with the element at `fromIdx` moved to `toIdx`.
- */
 function buildReorderedItems(sourceItems, fromIdx, toIdx) {
   const next = [...sourceItems];
   if (fromIdx === toIdx) return next;
@@ -5416,9 +4963,6 @@ function buildReorderedItems(sourceItems, fromIdx, toIdx) {
   return next;
 }
 
-/**
- * Compare two flat slot-key arrays for exact element-by-element equality.
- */
 function areSlotListsEqual(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -5427,7 +4971,6 @@ function areSlotListsEqual(a, b) {
   return true;
 }
 
-// Measure 1D bounding geometry & average gap along 'x' or 'y'.
 function measureLinearMetrics(els, axis = 'x', fallbackSize = 60, fallbackGap = 8) {
   const isX = axis === 'x';
   const metrics = [];
@@ -5890,7 +5433,7 @@ function defineComponent({ name, setup }) {
     const cleanups = [];
 
     function emit(event, payload) {
-      // Support Vue-style onUpdateModelValue / onChange prop callbacks
+
       if (event === 'update:modelValue') {
         if (typeof props.onUpdateModelValue === 'function') {
           props.onUpdateModelValue(payload);
@@ -5986,13 +5529,6 @@ function formatCachePct(value) {
   return `${num}%`;
 }
 
-/**
- * 格式化百分比数值文本：常规值保留 1 位小数，将边界值 `0.0` / `100.0` 收口为整数 `0` / `100`。
- *
- * @param {number|string|null|undefined} value
- * @param {{ withSymbol?: boolean }} [options]
- * @returns {string}
- */
 function formatPctNumber(value, { withSymbol = false } = {}) {
   const num = Number(value);
   if (!Number.isFinite(num)) return withSymbol ? '0%' : '0';
@@ -6502,13 +6038,6 @@ function formatElapsedSec(seconds) {
   return `${h}h ${remM}m`;
 }
 
-
-/**
- * 隐藏原始模型 ID 开头的 `gemini-`、`claude-`、`gpt-` 厂商前缀以节省单行表格空间（确保剥离后非空）。
- *
- * @param {string} rawText
- * @returns {string}
- */
 function stripVendorModelPrefix(rawText) {
   return String(rawText || '')
     .trim()
@@ -6611,22 +6140,6 @@ function extractDynamicOrchVariant(fields = []) {
   return '';
 }
 
-/**
- * 统一解析步骤、会话摘要或模型汇总行面向用户的模型显示文本及悬停提示。
- *
- * 规则：
- * - 统一遵循 `modelDisplayMode`（`'short'` | `'upstream_compact'` | `'upstream'`，兼容旧版布尔 `showUpstreamModel`）：
- *   - Orchestrator 系列（如 `Orchestrator (Carbon / Argon / Neon / Opus 5.5)`、`Orchestrator Worker (Hydrogen / Neon / ...)`）
- *     在 `'short'` / `'upstream_compact'` 下显示紧凑代号 `orchestrator-<variant>` / `worker-agy-<variant>`，
- *     在 `'upstream'` 下显示带底层模型标注的完整上游 ID；
- *   - 其余普通模型按所选模式显示精简代号、去前缀上游 ID 或原始上游 ID；
- * - 独立拆分 `baseText` 及 `compactionSuffix`（`·压缩`），供步骤表单独保护压缩尾标永不截断。
- *
- * @param {object|null|undefined} target
- * @param {{ modelDisplayMode?: string, showUpstreamModel?: boolean }|boolean} [settings]
- * @param {{ preferLabelInShort?: boolean, fallback?: string }} [options]
- * @returns {{ text: string, baseText: string, compactionSuffix: string, isCompaction: boolean, title: string, isOrchestratorSeries: boolean }}
- */
 function resolveModelDisplayInfo(target, settings = {}, options = {}) {
   const modelDisplayMode =
     typeof settings === 'boolean'
@@ -6823,16 +6336,6 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
   };
 }
 
-/**
- * 按当前显示策略 (`resolveModelDisplayInfo`) 解析出的最终展示名称对模型统计列表执行二次去重归并，
- * 确保当多个外层模型槽位映射到同一展示名（例如切换至“原始模型 ID”后共享同一 `upstreamName`）时，
- * 不会在排行榜或总览中出现重复同名行，同时完整累加 Token、调用次数、未定价计数与速度/首字加权均值。
- *
- * @param {object[]} [models=[]]
- * @param {object|boolean} [settings={}]
- * @param {{ preferLabelInShort?: boolean, fallback?: string }} [options={}]
- * @returns {object[]}
- */
 function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
   if (!Array.isArray(models) || models.length === 0) return [];
   const showUpstream =
@@ -7057,13 +6560,6 @@ function mergeModelsByDisplayName(models = [], settings = {}, options = {}) {
   });
 }
 
-/**
- * 根据代理索引返回对应的微边框语义徽章样式类名。
- *
- * @param {number} [index=0]
- * @param {boolean} [isMain=false]
- * @returns {string}
- */
 function getAgentBadgeClass(index = 0, isMain = false) {
   if (isMain || index <= 0) return 'badge-main';
   const slot = ((index - 1) % 3) + 1;
@@ -7103,12 +6599,6 @@ function normalizeSwarmMemberHandle(rawText) {
   return `@${inner}`;
 }
 
-/**
- * 基于结构化 `agentKind` / `agentOrdinal` 格式化主/子代理、蜂群节点或旁路提问的紧凑徽章文本（零正则反拆中文）。
- *
- * @param {object|null|undefined} agent
- * @returns {string}
- */
 function formatAgentBadgeText(agent) {
   if (!agent) return t('fmt.mainBadge');
   const kind = resolveStructuredAgentKind(agent);
@@ -7132,12 +6622,6 @@ function formatAgentBadgeText(agent) {
   return t('fmt.subBadgeShort');
 }
 
-/**
- * 基于结构化 `agentKind` / `agentOrdinal` / `customRole` 格式化代理完整显示名称（零正则反拆中文）。
- *
- * @param {object|null|undefined} agent
- * @returns {string}
- */
 function formatAgentLabel(agent) {
   if (!agent) return t('fmt.mainAgent');
   const kind = resolveStructuredAgentKind(agent);
@@ -7186,12 +6670,6 @@ function formatAgentLabel(agent) {
   return isGeneric ? baseLabel : `${baseLabel} · ${rawCustom}`;
 }
 
-/**
- * 格式化会话选项右侧元信息（自适应区分纯蜂群、蜂群+子代理混合、常规子代理与单会话步数）。
- *
- * @param {object|null|undefined} conv
- * @returns {string}
- */
 function formatConversationMeta(conv) {
   if (!conv) return '';
   const main = Number(conv.stepCount || 0);
@@ -7211,13 +6689,6 @@ function formatConversationMeta(conv) {
   return t('header.convMetaSteps', { count: main });
 }
 
-/**
- * 基于后端结构化 `actionKey` + `waitingApproval` 渲染实时动作短标题（兼容自定义 `label` 回退）。
- *
- * @param {object|null|undefined} act
- * @param {string} [fallbackKey='live.thinking']
- * @returns {string}
- */
 function formatLiveActivityLabel(act, fallbackKey = 'live.thinking') {
   if (!act || typeof act !== 'object') return t(fallbackKey);
   let baseLabel = '';
@@ -7237,12 +6708,6 @@ function formatLiveActivityLabel(act, fallbackKey = 'live.thinking') {
   return baseLabel;
 }
 
-/**
- * 基于后端结构化 `detailKey` 渲染实时动作补充说明（兼容自由文本 `detail`）。
- *
- * @param {object|null|undefined} act
- * @returns {string}
- */
 function formatLiveActivityDetail(act) {
   if (!act || typeof act !== 'object') return '';
   if (act.detailKey === 'compaction_resuming') {
@@ -7251,42 +6716,29 @@ function formatLiveActivityDetail(act) {
   return String(act.detail || '');
 }
 
-/**
- * 20 色感知均匀色环（无特定模型绑定，兼顾亮/暗背景可读性，彻底消除标准 HSL 绿色/暗红区过度聚集撞色）。
- * 每项为 `[hue, saturationPct, lightnessPct]`。
- */
 const PERCEPTUAL_MODEL_COLOR_RING = [
-  [217, 82, 53], // Royal Blue
-  [14, 80, 52], // Coral / Vermilion
-  [162, 74, 41], // Teal / Jade
-  [272, 74, 58], // Vivid Violet
-  [36, 88, 47], // Rich Amber
-  [336, 78, 53], // Rose / Raspberry
-  [193, 84, 43], // Cerulean / Cyan
-  [138, 66, 41], // Emerald Green
-  [246, 74, 60], // Indigo
-  [25, 86, 50], // Tangerine Orange
-  [306, 70, 52], // Magenta / Orchid
-  [177, 76, 39], // Deep Seafoam
-  [355, 76, 54], // Crimson Red
-  [205, 80, 48], // Ocean Blue
-  [45, 88, 44], // Warm Gold
-  [288, 68, 55], // Amethyst Purple
-  [102, 60, 42], // Leaf Green
-  [230, 76, 57], // Cobalt Blue
-  [322, 74, 51], // Berry Pink
-  [185, 72, 46], // Turquoise
+  [217, 82, 53],
+  [14, 80, 52],
+  [162, 74, 41],
+  [272, 74, 58],
+  [36, 88, 47],
+  [336, 78, 53],
+  [193, 84, 43],
+  [138, 66, 41],
+  [246, 74, 60],
+  [25, 86, 50],
+  [306, 70, 52],
+  [177, 76, 39],
+  [355, 76, 54],
+  [205, 80, 48],
+  [45, 88, 44],
+  [288, 68, 55],
+  [102, 60, 42],
+  [230, 76, 57],
+  [322, 74, 51],
+  [185, 72, 46],
 ];
 
-/**
- * 提取跨平台、跨语言、同屏三栏（模型排行 / 客户端来源 / 月度统计）严格一致的模型颜色种子字符串。
- *
- * 优先取单模型稳定 `sourceLabels[0]`；若多个外层槽位已在当前显示策略下合并（如 `4-argon`），
- * 则以规范化 `displayText` 为种子，确保跨客户端与跨月份聚合子集不同时依然映射至完全相同的颜色。
- *
- * @param {object|string|null|undefined} model
- * @returns {string}
- */
 function getCanonicalModelColorSeed(model) {
   if (typeof model === 'string') {
     return model.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -7331,12 +6783,6 @@ function formatRingSlotHsl(slotIdx, shiftLight = 0) {
   return `hsl(${hue} ${sat}% ${clampedLight}%)`;
 }
 
-/**
- * 基于模型标识通过 32 位雪崩哈希映射至 20 色感知均匀色环，确保跨电脑同模型同色且无需硬编码颜色表。
- *
- * @param {object|string|null|undefined} seedOrModel
- * @returns {string}
- */
 function resolveDeterministicModelColor(seedOrModel) {
   const seed = getCanonicalModelColorSeed(seedOrModel);
   if (!seed) return 'var(--accent-primary)';
@@ -7344,14 +6790,6 @@ function resolveDeterministicModelColor(seedOrModel) {
   return formatRingSlotHsl(h % PERCEPTUAL_MODEL_COLOR_RING.length);
 }
 
-/**
- * 为一组模型构建确定性颜色映射表（双遍固有槽位保护）：
- * 1. 所有无槽位冲突的模型 100% 保持其纯哈希固有色，不受长尾模型增减影响；
- * 2. 仅当同屏两个模型恰好落入同一色环槽位时，按严格字典序以互质步长 `+7` 优先探查未被任何模型占用的空闲槽位。
- *
- * @param {Array<object|string>} [models=[]]
- * @returns {Map<string, string>} `canonicalSeed -> hsl(...)`
- */
 function buildDeterministicModelColorMap(models = []) {
   const ringLen = PERCEPTUAL_MODEL_COLOR_RING.length;
   const uniqueSeeds = Array.from(
@@ -7418,13 +6856,6 @@ const STEP_LOW_CACHE_MIN_PROMPT_TOKENS = 2000;
 const STEP_LOW_CACHE_MAX_PCT = 50;
 const STEP_SLOW_TTFT_MIN_SEC = 30;
 
-/**
- * 同 `StepTableWidget` 保持一致的单步稳定选择键。
- *
- * @param {object|null|undefined} st
- * @param {string} [fallbackCascadeId='']
- * @returns {string}
- */
 function getStepSelectionKey(st, fallbackCascadeId = '') {
   if (!st || typeof st !== 'object') return '';
   const agentKey =
@@ -7453,12 +6884,6 @@ function isSlowTtftStep(st) {
   return classifyTtftTier(st.ttftSec) === 'danger';
 }
 
-/**
- * 单遍 O(N) 统计当前步骤集中各诊断快捷筛选芯片的命中数量。
- *
- * @param {Array<object>} steps
- * @returns {{ anomaly: number, compaction: number, low_cache: number, slow_ttft: number }}
- */
 function computeStepQuickChipCounts(steps) {
   let anomaly = 0;
   let compaction = 0;
@@ -7482,13 +6907,6 @@ function computeStepQuickChipCounts(steps) {
   };
 }
 
-/**
- * 按快捷诊断芯片、异常类型及多词关键字过滤步骤列表（纯函数 O(N)）。
- *
- * @param {Array<object>} steps
- * @param {{ query?: string, quickChip?: string, anomalyKindFilter?: string, displaySettings?: object }} [opts]
- * @returns {Array<object>}
- */
 function filterStepsBySearchAndChip(
   steps,
   { query = '', quickChip = '', anomalyKindFilter = '', displaySettings = {} } = {}
@@ -7576,13 +6994,6 @@ function filterStepsBySearchAndChip(
   return out;
 }
 
-/**
- * 在同代理步骤集合中定位目标步骤之前最近一步的上下文 Token 数，用于展示单步上下文增量。
- *
- * @param {Array<object>} allSteps
- * @param {object|null|undefined} targetStep
- * @returns {number|null}
- */
 function findPrevAgentContextTokens(allSteps, targetStep) {
   if (!Array.isArray(allSteps) || !targetStep || targetStep.stepIndex == null) return null;
   const targetIdx = Number(targetStep.stepIndex);
@@ -7612,12 +7023,6 @@ function findPrevAgentContextTokens(allSteps, targetStep) {
   return bestCtx;
 }
 
-/**
- * 计算单步耗时瀑布分段比例（TTFT 首字等待 / 流式输出 / 工具及尾部阶段）。
- *
- * @param {object|null|undefined} st
- * @returns {{ totalSec: number, ttftSec: number, streamSec: number, otherSec: number, thinkingSec: number, ttftPct: number, streamPct: number, otherPct: number }|null}
- */
 function computeStepTimingWaterfall(st) {
   if (!st || typeof st !== 'object') return null;
   const rawTtft = st.ttftSec ?? st.nativeTtftSec;
@@ -7662,13 +7067,6 @@ function computeStepTimingWaterfall(st) {
   };
 }
 
-/**
- * 生成结构化的单步诊断 Markdown 文本，便于直接复制到工单、讨论或性能复盘中。
- *
- * @param {object} st
- * @param {{ prevContextTokens?: number|null, displaySettings?: object }} [opts]
- * @returns {string}
- */
 function buildStepDiagnosticMarkdown(
   st,
   { prevContextTokens = null, displaySettings = {} } = {}
@@ -7714,12 +7112,6 @@ function buildStepDiagnosticMarkdown(
   return lines.join('\n');
 }
 
-/**
- * 轻量剪贴板复制工具（优先 Clipboard API，降级至隐藏 textarea execCommand）。
- *
- * @param {string} text
- * @returns {Promise<boolean>}
- */
 async function copyPlainTextToClipboard(text) {
   const str = String(text ?? '');
   try {
@@ -7728,7 +7120,7 @@ async function copyPlainTextToClipboard(text) {
       return true;
     }
   } catch {
-    // 降级到 DOM 复制
+
   }
   try {
     if (typeof document !== 'undefined' && document.body && typeof document.execCommand === 'function') {
@@ -7748,20 +7140,11 @@ async function copyPlainTextToClipboard(text) {
       return Boolean(ok);
     }
   } catch {
-    // 忽略非浏览器环境异常
+
   }
   return false;
 }
 
-/**
- * 统一的「已复制」临时反馈计时器控制器（自动重置定时器并在组件销毁时清理）。
- *
- * @param {{
- *   durationMs?: number,
- *   onChange?: (copiedKey: any) => void,
- *   onCleanup?: (cleanupFn: () => void) => void,
- * }} [options={}]
- */
 function createCopiedFeedbackController({
   durationMs = 1800,
   onChange = null,
@@ -7825,14 +7208,6 @@ function sanitizePositiveBudgetNum(val) {
   return Number.isFinite(num) && num > 0 ? num : null;
 }
 
-/**
- * 在浏览器端通过内存 Blob 触发文件下载（统一承载文本与二进制载荷）。
- *
- * @param {string} filename
- * @param {BlobPart} blobPart
- * @param {string} [mimeType]
- * @returns {boolean}
- */
 function triggerBlobDownload(
   filename,
   blobPart,
@@ -7867,14 +7242,6 @@ function triggerBlobDownload(
   }
 }
 
-/**
- * 在浏览器端通过内存 Blob 触发文本文件下载。
- *
- * @param {string} filename
- * @param {string} content
- * @param {string} [mimeType]
- * @returns {boolean}
- */
 function triggerTextFileDownload(
   filename,
   content,
@@ -8010,12 +7377,6 @@ const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
   normField('accountQuotaRefreshMinutes', normalizeAccountQuotaRefreshMinutes),
 ]);
 
-/**
- * 将当前用户偏好设置序列化为跨设备可迁移的安全 JSON 备份文本（仅包含便携偏好项，不包含凭证或高风险覆盖开关）。
- *
- * @param {object} [settings={}]
- * @returns {string}
- */
 function buildExportableSettingsJson(settings = {}) {
   const src = settings && typeof settings === 'object' ? settings : {};
   const outSettings = {};
@@ -8031,12 +7392,6 @@ function buildExportableSettingsJson(settings = {}) {
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
-/**
- * 校验并解析导入的偏好设置 JSON，仅提取并归一化白名单内的便携配置项。
- *
- * @param {string} rawText
- * @returns {{ ok: true, patch: object, appliedCount: number } | { ok: false, errorCode: string }}
- */
 function parseImportedSettingsJson(rawText) {
   if (typeof rawText !== 'string' || !rawText.trim() || rawText.length > MAX_SETTINGS_IMPORT_BYTES) {
     return { ok: false, errorCode: 'invalid_json' };
@@ -8081,7 +7436,6 @@ const LONE_SURROGATE_RE =
   /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 const INVALID_SHEET_NAME_RE = /[\\/?*[\]:]/g;
 
-// --- 样式索引常量（对应下方 STYLES_XML 中的 cellXfs 顺序） ---
 const STYLE_TEXT_LEFT = 1;
 const STYLE_TEXT_LEFT_ALT = 2;
 const STYLE_TEXT_CENTER = 3;
@@ -8160,12 +7514,6 @@ function encodeUtf8Bytes(str) {
   return out;
 }
 
-/**
- * 将 `Uint8Array` 编码为标准 Base64 字符串（兼容浏览器及 Node 环境）。
- *
- * @param {Uint8Array} bytes
- * @returns {string}
- */
 function uint8ArrayToBase64(bytes) {
   if (!(bytes instanceof Uint8Array)) return '';
   if (typeof Buffer !== 'undefined') {
@@ -8180,12 +7528,6 @@ function uint8ArrayToBase64(bytes) {
   return btoa(binary);
 }
 
-/**
- * 标准零依赖 ZIP STORE 打包器（用于生成严格合规的 `.xlsx` OOXML 容器）。
- *
- * @param {Array<{ name: string, data: Uint8Array | string }>} entries
- * @returns {Uint8Array}
- */
 function buildZipStoreArchive(entries) {
   const localParts = [];
   const centralParts = [];
@@ -8200,15 +7542,14 @@ function buildZipStoreArchive(entries) {
     const crc = computeCrc32(dataBytes);
     const size = dataBytes.length;
 
-    // Local File Header (30 bytes + filename + data)
     const lh = new Uint8Array(30 + nameBytes.length);
     const lv = new DataView(lh.buffer);
     lv.setUint32(0, 0x04034b50, true);
-    lv.setUint16(4, 20, true); // version needed: 2.0
-    lv.setUint16(6, 0x0800, true); // UTF-8 filename flag
-    lv.setUint16(8, 0, true); // compression: STORE
-    lv.setUint16(10, 0, true); // mod time
-    lv.setUint16(12, 0x5821, true); // mod date
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true);
+    lv.setUint16(10, 0, true);
+    lv.setUint16(12, 0x5821, true);
     lv.setUint32(14, crc, true);
     lv.setUint32(18, size, true);
     lv.setUint32(22, size, true);
@@ -8218,7 +7559,6 @@ function buildZipStoreArchive(entries) {
 
     localParts.push(lh, dataBytes);
 
-    // Central Directory Header (46 bytes + filename)
     const ch = new Uint8Array(46 + nameBytes.length);
     const cv = new DataView(ch.buffer);
     cv.setUint32(0, 0x02014b50, true);
@@ -8247,7 +7587,6 @@ function buildZipStoreArchive(entries) {
   let cdSize = 0;
   for (let i = 0; i < centralParts.length; i += 1) cdSize += centralParts[i].length;
 
-  // End of Central Directory Record (22 bytes)
   const eocd = new Uint8Array(22);
   const ev = new DataView(eocd.buffer);
   ev.setUint32(0, 0x06054b50, true);
@@ -8281,7 +7620,7 @@ function sanitizeExcelCellText(val) {
   if (clean.length <= MAX_EXCEL_CELL_CHARS) {
     return clean;
   }
-  // 桌面版 Excel 单格文本硬上限为 32,767 UTF-16 码元；预留 1 位给省略号并避免劈断代理对
+
   let cut = MAX_EXCEL_CELL_CHARS - 1;
   const prevCode = clean.charCodeAt(cut - 1);
   if (prevCode >= 0xd800 && prevCode <= 0xdbff) {
@@ -8310,10 +7649,6 @@ function columnIndexToLetter(index) {
   return out;
 }
 
-/**
- * 估算文本在 Excel 单元格中的视觉字符宽度（中文/全角约占 2.05 宽，ASCII 约 1.05 宽；
- * 列宽上限为 64，因此仅采样前 128 个字符即可达到饱和，避免超长文本全量遍历）。
- */
 function measureExcelVisualWidth(str) {
   const raw = String(str ?? '');
   const s = (raw.length > 128 ? raw.slice(0, 128) : raw).replace(/\r?\n/g, ' ');
@@ -8548,7 +7883,7 @@ function buildWorksheetXml(sheet, isFirstSheet) {
   });
 
   const rowXmls = [];
-  // Row 1: Header
+
   const headerCells = [];
   for (let c = 0; c < columns.length; c += 1) {
     const ref = `${columnIndexToLetter(c)}1`;
@@ -8559,7 +7894,6 @@ function buildWorksheetXml(sheet, isFirstSheet) {
   }
   rowXmls.push(`<row r="1" ht="26" customHeight="1">${headerCells.join('')}</row>`);
 
-  // Data Rows
   for (let r = 0; r < rows.length; r += 1) {
     const rowObj = rows[r];
     const rowValues = Array.isArray(rowObj) ? rowObj : Array.isArray(rowObj?.values) ? rowObj.values : [];
@@ -8607,7 +7941,7 @@ function buildWorksheetXml(sheet, isFirstSheet) {
 
   const lastCol = columnIndexToLetter(Math.max(0, columns.length - 1));
   const lastRow = Math.max(1, rows.length + 1);
-  // 若末尾包含合计行，自动筛选区自动排除合计行，避免按列排序时把合计行混入明细
+
   let filterEndRow = lastRow;
   while (filterEndRow > 1) {
     const tailRow = rows[filterEndRow - 2];
@@ -8638,18 +7972,6 @@ function buildWorksheetXml(sheet, isFirstSheet) {
 </worksheet>`;
 }
 
-/**
- * 将结构化多工作表数据编译为标准 `.xlsx` 二进制字节流 (`Uint8Array`)。
- *
- * @param {Array<{
- *   name: string,
- *   columns: Array<{ header: string, type?: 'text'|'center'|'int'|'dec1'|'dec2'|'pct'|'usd2'|'usd4', align?: 'left'|'center'|'right', minWidth?: number, maxWidth?: number }>,
- *   rows: Array<Array<unknown> | { values: Array<unknown>, tone?: ''|'danger'|'info'|'summary' }>,
- *   autoFilter?: boolean,
- *   freezeHeader?: boolean,
- * }>} sheets
- * @returns {Uint8Array}
- */
 function buildXlsxWorkbookBytes(sheets) {
   const validSheets = (Array.isArray(sheets) ? sheets : []).filter(
     (s) => s && Array.isArray(s.columns) && s.columns.length > 0
@@ -9031,12 +8353,6 @@ function summarizeStepsForExport(list, displaySettings) {
   };
 }
 
-/**
- * RFC-4180 安全转义单个 CSV 单元格，并防御电子表格公式注入（`=`, `+`, `-`, `@`, `\t`, `\r`）。
- *
- * @param {unknown} value
- * @returns {string}
- */
 function escapeCsvCell(value) {
   if (value === null || value === undefined) return '';
   let str = String(value);
@@ -9062,14 +8378,6 @@ function csvRow(cells) {
   return cells.map(escapeCsvCell).join(',');
 }
 
-/**
- * 生成安全跨平台导出文件名（剔除非法路径字符并附加 `YYYYMMDD-HHmm` 时间戳）。
- *
- * @param {string} baseName
- * @param {string} ext
- * @param {number} [nowMs]
- * @returns {string}
- */
 function sanitizeExportFilename(baseName, ext = 'xlsx', nowMs = Date.now()) {
   const cleanBase =
     String(baseName || 'usage-report')
@@ -9085,14 +8393,6 @@ function sanitizeExportFilename(baseName, ext = 'xlsx', nowMs = Date.now()) {
   return `${cleanBase}-${stamp}.${cleanExt}`;
 }
 
-/**
- * 生成按当前界面语言本地化的用量统计导出文件前缀。
- *
- * @param {object} consumption
- * @param {string} [fallbackRange='all']
- * @param {{ locale?: string }} [opts]
- * @returns {string}
- */
 function buildConsumptionExportBaseName(
   consumption,
   fallbackRange = 'all',
@@ -9108,14 +8408,6 @@ function buildConsumptionExportBaseName(
   return `用量统计-${zhLabel}`;
 }
 
-/**
- * 生成按当前界面语言本地化的调用明细导出文件前缀。
- *
- * @param {string} [title='']
- * @param {string} [cascadeId='']
- * @param {{ locale?: string }} [opts]
- * @returns {string}
- */
 function buildStepsExportBaseName(title = '', cascadeId = '', { locale } = {}) {
   const en = resolveExportEnglish(locale);
   const name = String(title || cascadeId || '').trim();
@@ -9132,13 +8424,6 @@ function escapeMdCell(value) {
     .trim();
 }
 
-/**
- * 将当前步骤列表导出为带 UTF-8 BOM 的 RFC-4180 安全 CSV 字符串（向后兼容保留）。
- *
- * @param {Array<object>} steps
- * @param {{ displaySettings?: object, includeBom?: boolean }} [opts]
- * @returns {string}
- */
 function buildStepsCsv(steps, { displaySettings = {}, includeBom = true } = {}) {
   const list = Array.isArray(steps) ? steps : [];
   const header = csvRow([
@@ -9227,14 +8512,6 @@ function buildStepsCsv(steps, { displaySettings = {}, includeBom = true } = {}) 
   return `${includeBom ? '\uFEFF' : ''}${rows.join('\r\n')}\r\n`;
 }
 
-/**
- * 将当前步骤列表导出为精排版、多工作表、双语本地化原生 Excel (`.xlsx`) 二进制工作簿。
- * 包含「步骤明细 / Steps」（带异常红底标亮、压缩蓝底提示、自动列宽及数字格式）和「模型汇总 / Model Summary」。
- *
- * @param {Array<object>} steps
- * @param {{ title?: string, cascadeId?: string, displaySettings?: object, locale?: string }} [opts]
- * @returns {Uint8Array}
- */
 function buildStepsXlsx(
   steps,
   { displaySettings = {}, locale } = {}
@@ -9431,13 +8708,6 @@ function buildStepsXlsx(
   return buildXlsxWorkbookBytes(sheets);
 }
 
-/**
- * 生成当前会话（或筛选后步骤子集）的可分享双语 Markdown 诊断报告。
- *
- * @param {Array<object>} steps
- * @param {{ title?: string, cascadeId?: string, displaySettings?: object, filterNote?: string, locale?: string }} [opts]
- * @returns {string}
- */
 function buildStepsMarkdownReport(
   steps,
   { title = '', cascadeId = '', displaySettings = {}, filterNote = '', locale } = {}
@@ -9550,14 +8820,6 @@ function buildStepsMarkdownReport(
   return `${lines.join('\n')}\n`;
 }
 
-/**
- * 将历史用量统计视图当前区间数据导出为结构化 CSV（向后兼容保留）。
- *
- * @param {object} consumption
- * @param {Array<object>} modelBreakdown
- * @param {{ displaySettings?: object, includeBom?: boolean }} [opts]
- * @returns {string}
- */
 function buildConsumptionCsv(
   consumption,
   modelBreakdown = [],
@@ -9674,15 +8936,6 @@ function buildConsumptionCsv(
   return `${includeBom ? '\uFEFF' : ''}${rows.join('\r\n')}\r\n`;
 }
 
-/**
- * 将历史用量统计视图当前区间数据导出为多工作表、全自动列宽及双语本地化原生 Excel (`.xlsx`) 工作簿。
- * 自动拆分为「用量总览 / 模型排行 / 项目排行 / 会话排行 / 时间趋势 / 客户端来源」独立分页。
- *
- * @param {object} consumption
- * @param {Array<object>} modelBreakdown
- * @param {{ displaySettings?: object, locale?: string, nowMs?: number }} [opts]
- * @returns {Uint8Array}
- */
 function buildConsumptionXlsx(
   consumption,
   modelBreakdown = [],
@@ -9803,7 +9056,6 @@ function buildConsumptionXlsx(
     },
   ];
 
-  // Sheet 2: Models
   if (models.length > 0) {
     let mCalls = 0;
     let mIn = 0;
@@ -9891,7 +9143,6 @@ function buildConsumptionXlsx(
     });
   }
 
-  // Sheet 3: Projects
   if (workspaces.length > 0) {
     let wSess = 0;
     let wCalls = 0;
@@ -9967,7 +9218,6 @@ function buildConsumptionXlsx(
     });
   }
 
-  // Sheet 4: Sessions
   if (sessions.length > 0) {
     let sCalls = 0;
     let sIn = 0;
@@ -10037,7 +9287,6 @@ function buildConsumptionXlsx(
     });
   }
 
-  // Sheet 5: Trend
   if (trend.length > 0) {
     let tCalls = 0;
     let tIn = 0;
@@ -10115,7 +9364,6 @@ function buildConsumptionXlsx(
     });
   }
 
-  // Sheet 6: Client Sources
   if (sources.length > 0) {
     let srcCalls = 0;
     let srcIn = 0;
@@ -10182,14 +9430,6 @@ function buildConsumptionXlsx(
   return buildXlsxWorkbookBytes(sheets);
 }
 
-/**
- * 生成历史用量统计当前区间的双语 Markdown 汇总报告。
- *
- * @param {object} consumption
- * @param {Array<object>} modelBreakdown
- * @param {{ displaySettings?: object, locale?: string }} [opts]
- * @returns {string}
- */
 function buildConsumptionMarkdownReport(
   consumption,
   modelBreakdown = [],
@@ -10292,11 +9532,6 @@ function abortSidecarApiKey(abortKey) {
   }
 }
 
-/**
- * 读取主窗口双栖模式下注入的本地桥接配置（`port`、`token`、`bundleVersion`、`stylesCss`）。
- *
- * @returns {{ port: number, token: string, bundleVersion?: string, stylesCss?: string } | null}
- */
 function getWindowBridgeConfig() {
   const br = readInjectedWindowBridge();
   const port = Number(br?.port || 0);
@@ -10306,23 +9541,12 @@ function getWindowBridgeConfig() {
   return null;
 }
 
-/**
- * 判断当前脚本是否以双栖悬浮模式运行在宿主主聊天窗口内（而非右侧辅助栏 Webview）。
- *
- * @returns {boolean}
- */
 function isWindowOverlayMode() {
   if (typeof window === 'undefined') return false;
   if (window.sidecar?.fetch) return false;
   return Boolean(getWindowBridgeConfig());
 }
 
-/**
- * 接收 Sidecar 通过 CDP `Runtime.evaluate` 批量投递的 RPC 响应，完成因 CSP/代理解除 HTTP 直连时的兜底请求。
- *
- * @param {Array<{ id: string, ok: boolean, status?: number, data?: any, error?: string }>} responses
- * @returns {number}
- */
 function deliverCdpBridgeResponses(responses) {
   const br = getWindowBridgeConfig();
   if (!br || !(br.rpcPending instanceof Map) || !Array.isArray(responses)) return 0;
@@ -10503,8 +9727,7 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
       if (signal?.aborted || cdpErr?.name === 'AbortError' || cdpErr?.httpStatus) {
         throw cdpErr;
       }
-      // 热更新或守护重启期间若 CDP 尚未轮询投递（超时/队列取代，无 httpStatus），自动重置回 HTTP 并用最新桥接端口重试一次；
-      // 但若端点已切换（例如本地 <-> SSH），绝不将旧端点请求重放至新端点
+
       const latestBridge = getWindowBridgeConfig() || initialBridge;
       ensureEndpointUnchanged(latestBridge);
       latestBridge.transportMode = 'http';
@@ -10526,7 +9749,7 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
         throw fetchErr;
       }
       if (!bridge) {
-        // 辅助栏 Webview 在 Worker 热替换瞬间若有极短暂波动，延迟 180ms 自动无感重试一次
+
         if (upperMethod === 'GET') {
           await new Promise((r) => setTimeout(r, 180));
           if (!signal?.aborted) {
@@ -10535,8 +9758,7 @@ async function callSidecarApi(path, { method = 'GET', body, abortKey = '', cdpTi
         }
         throw fetchErr;
       }
-      // 仅在网络/CORS 阻断（无 HTTP 状态码）或桥接令牌失配（403）时切换至 CDP 兜底；
-      // 业务/初始化状态码（如 503 Remote endpoint initializing、400、500）保持 HTTP 通道等待正常重试。
+
       if (fetchErr?.httpStatus && fetchErr.httpStatus !== 403) {
         throw fetchErr;
       }
@@ -10575,22 +9797,16 @@ function getViewTabs() {
 const uiStore = createReactiveStore({
   activeView: 'overview',
   monitorVisible: true,
-  stepsSubTab: 'steps', // 'steps' | 'models'
-  settingsSubTab: 'general', // 'general' | 'structure' | 'sessions' | 'account' | 'other'
-  settingsStructureTab: 'mount', // 'mount' | 'hover' | 'overview' | 'steps'
-  selectedAgentScope: 'all', // 'all' | 'main' | <subagent cascadeId>
-  ctxInspectorAgentId: 'main', // 'main' | 'auto' | <subagent cascadeId>
-  toast: null, // { id, message, detail, actionLabel, onAction, tone, durationMs }
+  stepsSubTab: 'steps',
+  settingsSubTab: 'general',
+  settingsStructureTab: 'mount',
+  selectedAgentScope: 'all',
+  ctxInspectorAgentId: 'main',
+  toast: null,
 });
 
 let toastSeq = 0;
 
-/**
- * 触发全局底部轻量通知条（用于文件导出路径提示、一键定位文件夹及剪贴板复制反馈）。
- *
- * @param {{ message: string, detail?: string, actionLabel?: string, onAction?: (() => void) | null, tone?: 'ok' | 'info' | 'warn', durationMs?: number }} toastConfig
- * @returns {number}
- */
 function showUiToast(toastConfig) {
   if (!toastConfig || !toastConfig.message) return 0;
   toastSeq += 1;
@@ -10649,13 +9865,6 @@ function getPickerTypesForFilename(filename, mimeType) {
   return [{ description: 'JSON', accept: { 'application/json': ['.json'] } }];
 }
 
-/**
- * 调用本机后端在系统文件管理器中打开并高亮选中已导出的文件。
- * 兼容热更新后常驻父进程 `main.mjs` 尚未注册新路由的场景，自动回退至 `POST /api/settings` 穿透转发至最新 Worker。
- *
- * @param {string} filePath
- * @returns {Promise<boolean>}
- */
 async function revealExportedFile(filePath) {
   if (!filePath || !isHostEmbeddedWebview()) return false;
   try {
@@ -10704,7 +9913,6 @@ async function requestLocalBackendExport(payload) {
     return { res: null, remoteForbidden: true };
   }
 
-  // 兼容热更新后常驻父进程 main.mjs 尚未重注册 /api/export-file 的场景，回退经 POST /api/settings 穿透至最新 Worker
   try {
     const fallbackRes = await callSidecarApi('/api/settings', {
       method: 'POST',
@@ -10715,14 +9923,11 @@ async function requestLocalBackendExport(payload) {
       return { res: fallbackRes, remoteForbidden: false };
     }
   } catch {
-    // 忽略回退异常，交由下方分环境处理
+
   }
   return { res: null, remoteForbidden: false };
 }
 
-/**
- * 共享多阶段导出与 Toast 反馈骨架（本机落盘 -> 宿主拦截保护 -> File System Access Picker -> Blob 下载）。
- */
 async function runExportPipelineWithFeedback({
   safeName,
   mimeType,
@@ -10747,7 +9952,6 @@ async function runExportPipelineWithFeedback({
       return { ok: true, mode: 'local', filePath: savedPath, fileName: savedName };
     }
 
-    // 在 Antigravity Sidecar / 双栖 Electron 宿主内，<a download> 会被静默吞掉，绝不误报“已下载到浏览器”
     showUiToast({
       message: t('export.failed'),
       detail: t('export.hostUnavailable'),
@@ -10799,15 +10003,6 @@ async function runExportPipelineWithFeedback({
   return { ok: false, mode: 'failed' };
 }
 
-/**
- * 统一文本导出入口：优先本机后端落盘（返回精确路径 + 支持一键打开所在目录），
- * 仅在真正独立浏览器上下文下降级为浏览器保存。
- *
- * @param {string} filename
- * @param {string} content
- * @param {string} [mimeType='application/json;charset=utf-8']
- * @returns {Promise<{ ok: boolean, mode: 'local' | 'picker' | 'browser' | 'cancelled' | 'failed', filePath?: string, fileName?: string }>}
- */
 async function exportTextFileWithFeedback(
   filename,
   content,
@@ -10827,14 +10022,6 @@ async function exportTextFileWithFeedback(
   });
 }
 
-/**
- * 统一二进制文件导出入口（用于原生 `.xlsx` Excel 工作簿）。
- *
- * @param {string} filename
- * @param {Uint8Array} bytes
- * @param {string} [mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
- * @returns {Promise<{ ok: boolean, mode: 'local' | 'picker' | 'browser' | 'cancelled' | 'failed', filePath?: string, fileName?: string }>}
- */
 async function exportBinaryFileWithFeedback(
   filename,
   bytes,
@@ -10858,13 +10045,6 @@ async function exportBinaryFileWithFeedback(
   });
 }
 
-/**
- * 复制文本到剪贴板并弹出轻量提示条。
- *
- * @param {string} text
- * @param {string} successMessage
- * @returns {Promise<boolean>}
- */
 async function copyTextWithFeedback(text, successMessage) {
   const ok = await copyPlainTextToClipboard(text);
   if (ok) {
@@ -10962,14 +10142,6 @@ return { fetchHostI18nStatus, refreshHostI18nManifest, selectHostI18nLanguage, u
 const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, normalizeClientAutoConfigureLaunch, normalizeClientEnableRemoteSshTelemetry, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, fetchLocalSessionsList, fetchSessionCleanupPreview, deleteLocalSessionsAction, redactLocalLedgerPrivacy, revealLocalSessionPathAction, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 const CASCADE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/**
- * 在主窗口双栖模式下，提取当前正在浏览的会话 ID：
- * 1. 优先解析 Antigravity 2.0 路由路径 `/c/<uuid>`；
- * 2. 在 Antigravity IDE (`workbench.html`) 无路径路由时，回退读取活跃对话视图
- *    `[data-testid="conversation-view"][data-cascade-id]` 或侧栏选中项。
- *
- * @returns {string}
- */
 function extractHostRouteCascadeId() {
   if (typeof window === 'undefined' || !isWindowOverlayMode()) return '';
   const pathname = String(window.location?.pathname || '');
@@ -11028,7 +10200,7 @@ function extractHostRouteCascadeId() {
       return selectedRowId;
     }
   } catch {
-    // 忽略宿主 DOM 查询异常
+
   }
   return '';
 }
@@ -11043,7 +10215,7 @@ const telemetryStore = createReactiveStore({
   selectedCyclePool: 'all',
   customStartMs: Date.now() - 24 * 3600 * 1000,
   customEndMs: Date.now(),
-  syncState: 'idle', // 'idle' | 'syncing' | 'synced' | 'error'
+  syncState: 'idle',
   minuteTick: 0,
   telemetry: null,
 });
@@ -11398,25 +10570,10 @@ const normalizeClientExperimentalQuotaReservation = normalizeExperimentalQuotaRe
 const normalizeClientAccountQuotaRefreshMinutes = normalizeAccountQuotaRefreshMinutes;
 const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
 
-/**
- * 根据偏好设置返回默认上下文代理目标（`'main'` 锁定主代理，`'auto'` 跟随活跃）。
- *
- * @param {Record<string, any>|null|undefined} settings
- * @returns {'main'|'auto'}
- */
 function getDefaultCtxInspectorAgentId(settings) {
   return normalizeContextAgentMode(settings?.contextAgentMode) === 'auto' ? 'auto' : 'main';
 }
 
-/**
- * 计算顶栏挂载胶囊及悬停速览浮窗应使用的上下文代理目标：
- * - 当 `contextAgentMode === 'main'`（默认）时始终锁定 `'main'`，不被后台子代理或面板临时点选带偏；
- * - 当 `contextAgentMode === 'auto'` 时跟随面板当前 `ctxInspectorAgentId`（含手动点选 `主`）。
- *
- * @param {Record<string, any>|null|undefined} telemetry
- * @param {string} [ctxInspectorAgentId='auto']
- * @returns {string}
- */
 function resolveOverlayCtxInspectorAgentId(telemetry, ctxInspectorAgentId = 'auto') {
   if (normalizeContextAgentMode(telemetry?.settings?.contextAgentMode) === 'main') {
     return 'main';
@@ -11449,7 +10606,7 @@ function isEquivalentTelemetry(prev, next) {
     }
     return true;
   };
-  // 1. 比对系统设置项（外观语言/主题/字号、模型显示策略、更新策略、挂载与结构布局配置）
+
   const pAct = prev.activeConversation;
   const nAct = next.activeConversation;
   const pSet = prev.settings;
@@ -11602,7 +10759,6 @@ function isEquivalentTelemetry(prev, next) {
   if (!sameArr(pSet?.overviewMetrics, nSet?.overviewMetrics)) return false;
   if (!sameArr(pSet?.stepTableColumns, nSet?.stepTableColumns)) return false;
 
-  // 2. 比对云端状态与桥接健康度
   const pWb = prev.windowBridge;
   const nWb = next.windowBridge;
   if (
@@ -11661,7 +10817,6 @@ function isEquivalentTelemetry(prev, next) {
     return false;
   }
 
-  // 3. 比对活跃会话的实时测速指标
   if (pAct?.cascadeId !== nAct?.cascadeId) return false;
   if (pAct?.stepCount !== nAct?.stepCount) return false;
   if (pAct?.subagentCount !== nAct?.subagentCount) return false;
@@ -11781,7 +10936,7 @@ function isEquivalentTelemetry(prev, next) {
     ) {
       return false;
     }
-    // 主代理步骤由根会话统一比对，避免明细视图组装后的引用造成重复比对。
+
     const paSteps = pa?.isMain && pAct?.recentSteps ? [] : pa?.recentSteps || [];
     const naSteps = na?.isMain && nAct?.recentSteps ? [] : na?.recentSteps || [];
     if (paSteps.length !== naSteps.length) return false;
@@ -11828,7 +10983,6 @@ function isEquivalentTelemetry(prev, next) {
     }
   }
 
-  // 4. 比对 10 通道上下文窗口构成及近期步骤明细
   const pCtx = pAct?.context;
   const nCtx = nAct?.context;
   if (pCtx?.totalTokens !== nCtx?.totalTokens) return false;
@@ -11887,7 +11041,6 @@ function isEquivalentTelemetry(prev, next) {
     }
   }
 
-  // 5. 比对消费统计所选时间区间、当前会话累计消费和账号全局累计消费
   const pRange = prev.consumption?.selectedRange;
   const nRange = next.consumption?.selectedRange;
   if (pRange?.key !== nRange?.key) return false;
@@ -11916,7 +11069,6 @@ function isEquivalentTelemetry(prev, next) {
   if (pAcct?.cacheHitPct !== nAcct?.cacheHitPct) return false;
   if (pAcct?.unpricedCalls !== nAcct?.unpricedCalls) return false;
 
-  // 6. 比对历史趋势时间分桶序列与年度分月序列
   const areModelSlicesEqual = (pList, nList) => {
     const a = pList || [];
     const b = nList || [];
@@ -11982,7 +11134,6 @@ function isEquivalentTelemetry(prev, next) {
     }
   }
 
-  // 7. 比对按模型汇总明细与数据来源汇总明细
   if (!areModelSlicesEqual(pAct?.modelBreakdown, nAct?.modelBreakdown)) {
     return false;
   }
@@ -12039,7 +11190,6 @@ function isEquivalentTelemetry(prev, next) {
     }
   }
 
-  // 8. 比对账号订阅档位与动态多配额池
   if (
     prev.account?.email !== next.account?.email ||
     prev.account?.name !== next.account?.name ||
@@ -12358,8 +11508,6 @@ async function requestTelemetry(params, force) {
           (reqStartMs === Number(latestSt.customStartMs || 0) &&
             reqEndMs === Number(latestSt.customEndMs || 0))));
 
-    // 常规 2 秒轮询在途期间若用户已通过前端缓存瞬切到其他时间段，保留用户当前选中的范围不回跳，
-    // 若后端 usageRevision 已推进则静默补发一次轻量范围校准。
     let needsSilentRangeRevalidate = false;
     if (!force && !matchesCurrentRange && resolvedPayload?.consumption) {
       const activeKey = makeConsumptionRangeCacheKey(
@@ -12525,7 +11673,6 @@ async function fetchConsumptionRangeSlice({
       return payload;
     }
 
-    // 冷启动阶段后端尚无基础快照时会回退返回完整 telemetry，直接平滑复用现有状态合并
     if (payload.consumption) {
       clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, payload);
       syncConsumptionCacheScope(payload);
@@ -12547,12 +11694,6 @@ async function fetchConsumptionRangeSlice({
   }
 }
 
-/**
- * 快速切换当前查看的会话：
- * - 命中前端 `conversationViewCache` 时，0ms 原子切换当前会话快照，并静默走轻量 `scope=conversation` 校准；
- * - 未命中缓存时直接走零 LS RPC、零全盘扫描的 `scope=conversation` 通道；
- * - 若后端提示该会话需要补读最新运行态或懒迁移字段（`needsBackgroundSync`），展示后再在后台静默补齐。
- */
 async function selectConversation(
   nextConvId,
   { hostRouteConversationId = undefined } = {}
@@ -12686,7 +11827,6 @@ async function selectConversation(
       return payload;
     }
 
-    // 冷启动或全新未入缓存会话回退至完整载荷
     const resolvedPayload = reconcileIncomingTelemetrySettings(payload, reqSettingsRev);
     clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, resolvedPayload);
     syncConsumptionCacheScope(resolvedPayload);
@@ -12712,12 +11852,6 @@ async function selectConversation(
   }
 }
 
-/**
- * 切换「用量统计」时间范围：
- * - 命中前端 rangeCache 时，在单次 setState 内 0ms 原子更新概览/趋势/模型/来源（若 usageRevision 一致则 0 次 HTTP 请求）；
- * - 若后台数据已更新则先 0ms 展示缓存，再静默发起轻量 `scope=consumption` 校准；
- * - 未命中缓存（如自定义时段或进页首 20ms 抢点）则直接走 `<5ms` 的 `scope=consumption` 通道。
- */
 function selectConsumptionTimeRange(
   nextRange,
   { customStartMs = undefined, customEndMs = undefined, cyclePool = undefined } = {}
@@ -12787,9 +11921,6 @@ function selectConsumptionCyclePool(nextPool = 'all') {
   return selectConsumptionTimeRange('cycle', { cyclePool: String(nextPool || 'all') });
 }
 
-/**
- * 仅在进入「用量统计」视图时触发一次静默后台预取，拉齐全部 7 个预设区间到前端缓存以实现 0ms 瞬切。
- */
 function prefetchConsumptionPresets() {
   const prevTelemetry = telemetryStore.getState().telemetry;
   const currentRev = Number(prevTelemetry?.consumption?.revision || 0);
@@ -13175,7 +12306,7 @@ async function triggerBridgeHostRelaunch(options = {}) {
   try {
     res = await callSidecarApi('/api/bridge/relaunch', { method: 'POST', body: payload });
   } catch {
-    // 兼容热更新后常驻父进程 main.mjs 尚未重注册新路由的场景，平滑回退至既有 POST /api/settings 通道转发至最新 Worker
+
     res = await callSidecarApi('/api/settings', {
       method: 'POST',
       body: { ...payload, __bridgeAction: 'relaunch' },
@@ -13422,14 +12553,6 @@ function stopAsyncTelemetryLoop() {
   }
 }
 
-
-/**
- * 在遥测快照中解析宿主当前路由会话 ID（兼容顶层主会话 ID 与子代理/蜂群工蜂 ID）。
- *
- * @param {object|null|undefined} telemetry
- * @param {string} rawRouteId
- * @returns {{ rootConv: object|null, childAgent: object|null, isChildRoute: boolean } | null}
- */
 function resolveHostRouteMatch(telemetry, rawRouteId) {
   const routeLower = String(rawRouteId || '').trim().toLowerCase();
   if (!routeLower || !telemetry) return null;
@@ -13471,15 +12594,6 @@ function resolveHostRouteMatch(telemetry, rawRouteId) {
   return null;
 }
 
-/**
- * 解析当前选中的主/子代理作用域视图数据与独立上下文窗口检视目标。
- * 同时在客户端按需组装主代理与全部汇总的 `recentSteps`，避免后端 JSON 载荷重复序列化 2-3 倍步骤列表。
- *
- * @param {object|null} telemetry
- * @param {string} [selectedAgentScope='all']
- * @param {string} [ctxInspectorAgentId='auto']
- * @param {boolean} [includeSteps=false] 是否组装调用明细所需的步骤列表
- */
 const scopedStepProjectionMemo = new WeakMap();
 
 function resolveScopedConversation(
@@ -13599,12 +12713,6 @@ function resolveScopedConversation(
   };
 }
 
-/**
- * 判断宿主系统是否为 macOS (`darwin`)：优先读取后端遥测或双栖桥接注入的 `platform`，首帧缺省时回退 UA/平台标识。
- *
- * @param {Record<string, any>|null|undefined} telemetry
- * @returns {boolean}
- */
 function isMacHostPlatform(telemetry) {
   const p = String(telemetry?.hostPlatform || readInjectedWindowBridge()?.platform || '')
     .trim()
@@ -13736,25 +12844,6 @@ return { TopLongPillNav };
 
 // --- src/components/ui/SearchInput.js ---
 const { createSearchInput } = (() => {
-/**
- * Creates a unified search input box while preserving caller-specific modifier classes.
- *
- * @param {{
- *   wrapClassName?: string,
- *   iconClassName?: string,
- *   inputClassName?: string,
- *   clearClassName?: string,
- *   placeholder?: string,
- *   ariaLabel?: string,
- *   clearAriaLabel?: string,
- *   hidden?: boolean,
- *   stopClickPropagation?: boolean,
- *   closeIconSize?: number,
- *   onInput?: (value: string, event: any) => void,
- *   onClear?: (event: any) => void,
- *   onKeydown?: (event: any) => void,
- * }} [options={}]
- */
 function createSearchInput({
   wrapClassName = '',
   iconClassName = '',
@@ -14667,7 +13756,7 @@ const WEEKDAY_KEYS = [
 
 function buildCalendarDays(viewYear, viewMonth, selectedDate) {
   const firstDay = new Date(viewYear, viewMonth, 1);
-  // Convert Sunday=0..Saturday=6 into Monday=0..Sunday=6
+
   const startOffset = (firstDay.getDay() + 6) % 7;
   const cells = [];
 
@@ -15207,8 +14296,7 @@ const SegmentedControl = defineComponent({
       const w = Number(activeBtnEl.offsetWidth || 0);
       const h = Number(activeBtnEl.offsetHeight || 0);
       if (!(w > 0 && h > 0)) {
-        // Hidden parent tab or headless Mock DOM: keep .seg-btn.is-active fallback background
-        // and snap cleanly on first real paint when tab becomes visible.
+
         cancelReadyRaf();
         hasMeasuredVisible = false;
         patchClasses(rootEl, { 'has-glider': false });
@@ -15256,7 +14344,7 @@ const SegmentedControl = defineComponent({
         try {
           resizeObs.unobserve(observedBtnEl);
         } catch {
-          // ignore
+
         }
       }
       observedBtnEl = nextActiveBtn || null;
@@ -15264,7 +14352,7 @@ const SegmentedControl = defineComponent({
         try {
           resizeObs.observe(observedBtnEl);
         } catch {
-          // ignore
+
         }
       }
     }
@@ -15348,7 +14436,6 @@ const SegmentedControl = defineComponent({
         }
       }
 
-      // Ensure gliderEl remains index 0 and buttons follow in exact option order
       if (rootEl.firstChild !== gliderEl) {
         rootEl.insertBefore(gliderEl, rootEl.firstChild);
       }
@@ -15531,7 +14618,7 @@ const SEGMENT_DEFS = [
 const ContextSegmentMeter = defineComponent({
   name: 'ContextSegmentMeter',
   setup({ getProps }) {
-    // 固定 10 个位置槽位节点，不通过 appendChild 移动 DOM，防止浏览器中断 CSS transition 动画
+
     const slotEls = SEGMENT_DEFS.map((def) =>
       h('div', { className: `progress-seg ${def.cls}` })
     );
@@ -15559,7 +14646,7 @@ const ContextSegmentMeter = defineComponent({
       });
 
       scored.sort((a, b) => b.val - a.val || a.defaultOrder - b.defaultOrder);
-      // 仅关注非零通道的相对顺序变化，决定是否启用 0.05s 先变色再伸缩的衔接延迟
+
       const activeOrderSig = scored
         .filter((x) => x.val > 0)
         .map((x) => x.def.key)
@@ -15607,20 +14694,6 @@ return { ContextSegmentMeter };
 
 // --- src/components/ui/FourSegmentBar.js ---
 const { createFourSegmentBar } = (() => {
-/**
- * 创建 4 段式水平比例进度条实例。
- * 通过动态更新各分段节点的 `--seg-w` CSS 变量实现零重排平滑过渡。
- *
- * @returns {{
- *   el: HTMLElement,
- *   update: (metrics: {
- *     inputTokens?: number,
- *     cacheReadTokens?: number,
- *     responseTokens?: number,
- *     thinkingTokens?: number
- *   }) => void
- * }} 组件根元素及增量更新方法
- */
 function createFourSegmentBar() {
   const segInput = h('div', { className: 'progress-seg seg-input' });
   const segCached = h('div', { className: 'progress-seg seg-cached' });
@@ -15633,9 +14706,6 @@ function createFourSegmentBar() {
     segOutput,
   ]);
 
-  /**
-   * 根据四类 Token 数量与整体行宽占比系数 (`scaleRatio`，默认 `1` 占满 100%) 重新计算并写入各分段百分比宽度。
-   */
   function update({
     inputTokens = 0,
     cacheReadTokens = 0,
@@ -15683,26 +14753,6 @@ function resolveSegmentChannels(seg) {
   return { inputTokens, cacheReadTokens, thinkingTokens, responseTokens };
 }
 
-/**
- * 创建可增量更新的消耗统计悬浮详情内容结构。
- *
- * @param {{ showModelDot?: boolean, monoTitle?: boolean }} [options]
- * @returns {{
- *   children: HTMLElement[],
- *   update: (payload: {
- *     title?: string,
- *     calls?: number,
- *     totalTokens?: number,
- *     costText?: string,
- *     inputTokens?: number,
- *     cacheReadTokens?: number,
- *     thinkingTokens?: number,
- *     responseTokens?: number,
- *     outputTokens?: number,
- *     segments?: Array<object>,
- *   }) => void,
- * }}
- */
 function createConsumptionBreakdownContent({
   showModelDot = false,
   monoTitle = false,
@@ -15909,10 +14959,6 @@ return { createConsumptionBreakdownContent };
 const { CHART_CURVE_MORPH_MS, canAnimateChartInBrowser, evalCubicBezier, createReadyClassArmer, pointsToNormalizedCubicSegs, buildPathFromNormalizedSegs, createCubicCurveMorphController, createMultiSeriesCurveMorphController, createFitGridMorphController, createFloatingChartTooltipController } = (() => {
 const CHART_CURVE_MORPH_MS = 240;
 
-/**
- * Checks whether smooth `requestAnimationFrame` chart animations should run in the current
- * environment (browser runtime with `prefers-reduced-motion` not enabled).
- */
 function canAnimateChartInBrowser() {
   if (
     typeof window === 'undefined' ||
@@ -15929,10 +14975,6 @@ function canAnimateChartInBrowser() {
   return true;
 }
 
-/**
- * Solves standard CSS `cubic-bezier(x1, y1, x2, y2)` at progress `t` (`0..1`)
- * so JS path morphing, peak-pill gliding, and CSS bar transitions stay in lockstep.
- */
 function evalCubicBezier(x1, y1, x2, y2, t) {
   if (t <= 0) return 0;
   if (t >= 1) return 1;
@@ -15950,10 +14992,6 @@ function evalCubicBezier(x1, y1, x2, y2, t) {
   return 3 * inv * inv * s * y1 + 3 * inv * s * s * y2 + s * s * s;
 }
 
-/**
- * Arms a CSS transition readiness class (e.g. `.is-ready` on `.trend-peak-pill`) on the next
- * animation frame so initial placement snaps cleanly without sliding in from `50%`.
- */
 function createReadyClassArmer(el, readyClass = 'is-ready') {
   let armed = false;
   let rafId = 0;
@@ -15981,15 +15019,6 @@ function createReadyClassArmer(el, readyClass = 'is-ready') {
   return { arm, cancel };
 }
 
-/**
- * Converts 2D SVG points into a normalized horizontal (`u` in `0..1`) cubic-Bezier chain
- * with horizontal endpoint tangents (`0.42` tension by default, zero vertical overshoot).
- * Supports both uniform slot spacing and arbitrary timestamp/x coordinates via `leftX` + `spanX`.
- *
- * @param {Array<{ x?: number, y: number }>} pts
- * @param {number} bottomY
- * @param {{ leftX?: number, spanX?: number, tension?: number }} [opts]
- */
 function pointsToNormalizedCubicSegs(
   pts,
   bottomY,
@@ -16156,11 +15185,6 @@ function extractCubicSubsegment(seg, uStart, uEnd) {
   return sub;
 }
 
-/**
- * Aligns two cubic-Bezier chains (`fromSegs` and `toSegs`, even when their horizontal `[uStart, uEnd]`
- * spans differ) onto a shared normalized `[0..1]` knot partition so every segment pair interpolates
- * smoothly without endpoint snapping.
- */
 function alignCubicChainsForMorph(fromSegs, toSegs) {
   const fStart = fromSegs[0].u0;
   const fEnd = fromSegs[fromSegs.length - 1].u3;
@@ -16236,10 +15260,6 @@ function buildPathFromNormalizedSegs(segs, leftX, spanX) {
   return d;
 }
 
-/**
- * Single-series cubic-Bezier curve + area fill morph controller (used by `TrendAreaChart` and
- * single-series `SessionStepCharts`).
- */
 function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
   let morphRafId = 0;
   let committedSegs = [];
@@ -16388,10 +15408,6 @@ function createCubicCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } =
   return { morphTo, cancel, reset, getCurrentSegs, seedSegs };
 }
 
-/**
- * Coalesced multi-series cubic-Bezier curve, area fill, and endpoint dot morph controller
- * (used by `AccountQuotaTrendCard` and multi-model `SessionStepCharts`).
- */
 function createMultiSeriesCurveMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
   let morphRafId = 0;
   let hasRenderedOnce = false;
@@ -16683,10 +15699,6 @@ function resampleFitGridToTargetXs(sourceGrid, targetGrid) {
   });
 }
 
-/**
- * Smoothly morphs LOESS fit polylines, `95% CI` confidence bands, and optional OLS lines
- * across metric/model switches in `createModelFitChart`.
- */
 function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}) {
   let morphRafId = 0;
   let hasRenderedOnce = false;
@@ -16910,12 +15922,6 @@ function createFitGridMorphController({ durationMs = CHART_CURVE_MORPH_MS } = {}
   return { morphFits, cancel, reset, getGrid, getFirstGrid, seedGrid };
 }
 
-/**
- * Shared 2D pointer-following floating tooltip & focus-dot tracking controller.
- * Positions `.trend-tooltip` smoothly around the pointer (`above -> right -> left -> below`),
- * clamps inside the nearest scrollable viewport container, and arms `.is-tracking` (`150ms`)
- * on both the tooltip and active SVG focus dots after the initial reveal frame.
- */
 function createFloatingChartTooltipController({
   containerEl,
   tooltipEl,
@@ -17142,7 +16148,6 @@ return { CHART_CURVE_MORPH_MS, canAnimateChartInBrowser, evalCubicBezier, create
 
 // --- src/components/charts/TrendAreaChart.js ---
 const { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart } = (() => {
-/** 超过该自然日天数（> 90 天）时，趋势图切换为类 GitHub 每日小格子热力图 */
 const HEATMAP_DAYS_THRESHOLD = 90;
 
 let chartUidCounter = 0;
@@ -17152,14 +16157,6 @@ function safeSlotTokens(v) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/**
- * 将二维采样点序列转换为水平张力平滑的三次贝塞尔曲线 SVG 路径 (`M ... C ...`)。
- * 控制点沿 X 轴取相邻点间距的 `0.42` 张力系数，Y 轴与各自端点齐平，
- * 保证曲线在极值点处平缓过渡且不会产生上下过冲 (Overshoot)。
- *
- * @param {Array<{ x: number, y: number }>} points SVG 坐标系下的采样点数组（长度 >= 2）
- * @returns {string} SVG `<path>` 的 `d` 属性字符串
- */
 function buildSmoothSplinePath(points) {
   let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
   for (let i = 0; i < points.length - 1; i++) {
@@ -17172,12 +16169,6 @@ function buildSmoothSplinePath(points) {
   return d;
 }
 
-/**
- * 根据分桶总数及标签平均长度，计算底部 X 轴应当展示的均匀刻度下标列表。
- *
- * @param {Array<{ label?: string }>} slots
- * @returns {number[]}
- */
 function computeTickIndices(slots) {
   const n = slots.length;
   if (n <= 1) return [0];
@@ -17195,13 +16186,6 @@ function computeTickIndices(slots) {
   return Array.from(set).sort((a, b) => a - b);
 }
 
-/**
- * 基于非零活跃日的分位数阈值计算热力图 5 档色阶（0 ~ 4），避免单日极端峰值压缩其余活跃日的层次对比。
- *
- * @param {number[]} nonZeroValues 已升序排列的正数 Token 列表
- * @param {number} maxTokens
- * @returns {{ q1: number, q2: number, q3: number, maxTokens: number, count: number }}
- */
 function computeHeatmapThresholds(nonZeroValues, maxTokens) {
   const n = nonZeroValues.length;
   if (n === 0 || maxTokens <= 0) {
@@ -17233,12 +16217,6 @@ function resolveHeatmapLevel(tokens, thresholds) {
   return 1;
 }
 
-/**
- * 解析日期槽位的年份与月份信息（兼容真实时间戳 `startMs` 与测试简写 `label`）。
- *
- * @param {object} slot
- * @returns {{ year: number, month: number, day: number }}
- */
 function parseSlotCalendarParts(slot) {
   const sMs = Number(slot?.startMs);
   if (Number.isFinite(sMs) && sMs > 0) {
@@ -17252,14 +16230,6 @@ function parseSlotCalendarParts(slot) {
   return { year: new Date().getFullYear(), month: 0, day: 0 };
 }
 
-/**
- * 构建热力图顶部与周列对齐的月份刻度标签（自动跳过首尾过窄残月，防止相邻月份文字重叠）。
- *
- * @param {Array<object>} slots
- * @param {number} firstDow 首日对应的星期行索引（0 = 周一 .. 6 = 周日）
- * @param {number} totalWeeks 总周列数
- * @returns {Array<{ col: number, text: string }>}
- */
 function buildHeatmapMonthTicks(slots, firstDow, totalWeeks) {
   if (!slots.length || totalWeeks <= 0) return [];
   const firstParts = parseSlotCalendarParts(slots[0]);
@@ -17604,7 +16574,6 @@ function buildHeatmapBarView(slots, firstDow, totalWeeks, mode, buildSegmentsFn)
     return { buckets, colSpecs, summaryText };
   }
 
-  // mode === 'all' (累计总量爬升柱阵)
   const runAcc = createHeatmapAggAcc();
   const buckets = new Array(totalWeeks);
   for (let col = 0; col < totalWeeks; col++) {
@@ -17644,16 +16613,6 @@ function buildHeatmapBarView(slots, firstDow, totalWeeks, mode, buildSegmentsFn)
   return { buckets, colSpecs, summaryText };
 }
 
-/**
- * 创建交互式历史趋势组件（<=90 天为 SVG 平滑曲线图，>90 天自动切换为类 GitHub 每日小格子热力图）。
- *
- * @param {{ onSelectSlot?: (slot: object) => void }} [options]
- * @returns {{
- *   el: HTMLElement,
- *   update: (series?: Array<object>) => void,
- *   destroy: () => void
- * }}
- */
 function createTrendAreaChart({ onSelectSlot = null } = {}) {
   const DEFAULT_VIEW_W = 460;
   const VIEW_H = 184;
@@ -17674,7 +16633,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   svg.setAttribute('class', 'trend-svg');
   svg.setAttribute('aria-hidden', 'true');
 
-  // 垂直线性渐变（每实例独立 ID，避免多图表挂载时 SVG url(#...) 冲突）
   const gradId = `trend-area-grad-${++chartUidCounter}`;
   const defs = document.createElementNS(SVG_NS, 'defs');
   const grad = document.createElementNS(SVG_NS, 'linearGradient');
@@ -17699,7 +16657,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   defs.appendChild(grad);
   svg.appendChild(defs);
 
-  // 背景水平与垂直参考网格线（水平网格全宽贴边铺满 0..viewW）
   const hGridGroup = document.createElementNS(SVG_NS, 'g');
   hGridGroup.setAttribute('class', 'trend-grid');
   const hGridLines = [];
@@ -17732,7 +16689,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
   linePath.setAttribute('fill', 'none');
   svg.appendChild(linePath);
 
-  // 悬停十字准星及焦点圆点
   const hoverLine = document.createElementNS(SVG_NS, 'line');
   hoverLine.setAttribute('class', 'trend-hover-line');
   hoverLine.setAttribute('y1', '12');
@@ -17748,7 +16704,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
 
   const peakPill = h('span', { className: 'trend-peak-pill text-mono', text: '0', hidden: true });
 
-  // 共享悬停详情浮层卡片（曲线图和热力格子图共用，含分模型四段进度条及底部四通道明细）
   const tooltipContent = createConsumptionBreakdownContent({
     showModelDot: false,
     monoTitle: true,
@@ -17760,7 +16715,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     tooltipContent.children
   );
 
-  // 底部对齐刻度轴（曲线模式）
   const xAxisEl = h('div', { className: 'trend-x-axis' });
   const plotStage = h(
     'div',
@@ -17768,7 +16722,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     [peakPill, svg]
   );
 
-  // 类 GitHub 每日小格子热力图容器（> 90 天模式）
   const wdayMonEl = h('span', { className: 'trend-hm-wday', text: t('chart.trend.wdayMon') });
   const wdayWedEl = h('span', { className: 'trend-hm-wday', text: t('chart.trend.wdayWed') });
   const wdayFriEl = h('span', { className: 'trend-hm-wday', text: t('chart.trend.wdayFri') });
@@ -18175,7 +17128,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     const cellW = Math.max(1, pitchX - G);
     const cellH = Math.max(1, pitchY - G);
 
-    // 柱阵模式下按列定位分桶，并在列间隙保持原高亮防闪烁
     if (currentHmMode !== 'day') {
       const approxCol = Math.max(0, Math.min(W - 1, Math.floor((relX + G * 0.5) / pitchX)));
       if (
@@ -18213,7 +17165,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       return { chebyshev: Math.max(dx, dy), distSq: dx * dx + dy * dy };
     }
 
-    // 指针滑入当前悬停格四周的空隙（gap）时保持原高亮，彻底消除跨格空隙闪烁和边缘微抖
     if (hoveredIdx >= 0 && hoveredIdx < currentSlots.length && currentCellEls[hoveredIdx]) {
       const curGridPos = currentHeatmapFirstDow + hoveredIdx;
       const curCol = Math.floor(curGridPos / 7);
@@ -18223,7 +17174,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       }
     }
 
-    // 快速扫过或初始落入格子间隙时，按网格步距吸附到最近的有效日期格
     const approxCol = Math.max(0, Math.min(W - 1, Math.floor((relX + G * 0.5) / pitchX)));
     const approxRow = Math.max(0, Math.min(6, Math.floor((relY + G * 0.5) / pitchY)));
     const directSlotIdx = approxCol * 7 + approxRow - currentHeatmapFirstDow;
@@ -18235,7 +17185,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       return { idx: directSlotIdx, cellEl: currentCellEls[directSlotIdx] };
     }
 
-    // 首周补位或末周未来空白边缘：仅当仍在相邻有效格的间隙光晕内才吸附，深入纯空白角则清空
     let bestIdx = -1;
     let bestDistSq = Infinity;
     for (let dc = -1; dc <= 1; dc++) {
@@ -18372,9 +17321,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
     }
   }
 
-  /**
-   * 根据最新时间分桶序列重绘平滑曲线（<=90天/小时级）或 7×W 矩阵热力图（>90天，支持日/周/月/全部四档）。
-   */
   function update(series = [], opts = {}) {
     if (opts && opts.heatmapMode !== undefined) {
       const nextHmMode = normalizeHeatmapMode(opts.heatmapMode);
@@ -18487,7 +17433,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         patchStyleVar(hmBodyEl, '--hm-weeks', String(totalWeeks));
         patchStyleVar(hmBodyEl, '--hm-gap', `${gapPx}px`);
 
-        // 就地增量补丁顶部对齐月份标签，避免文字节点销毁重建
         const monthTicks = buildHeatmapMonthTicks(slots, firstDow, totalWeeks);
         for (let i = 0; i < monthTicks.length; i++) {
           const mt = monthTicks[i];
@@ -18512,7 +17457,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
           nonZeroVals.sort((a, b) => a - b);
           const thresholds = computeHeatmapThresholds(nonZeroVals, maxTokens);
 
-          // 就地增量复用 7 行 × N 周列的每日小格子，首次批量新增节点使用 DocumentFragment 挂载
           currentCellEls = new Array(slots.length);
           const newCellsFrag =
             totalCells > prevMountedCount &&
@@ -18605,7 +17549,7 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
                 })
               : t('chart.trend.hmActiveZero', { total: slots.length });
         } else {
-          // 周 / 月 / 全部柱阵模式：保持 7 行 × N 周列点阵几何不变，自底向上点亮对应格数
+
           const barView = buildHeatmapBarView(
             slots,
             firstDow,
@@ -18746,7 +17690,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
       populateTooltipContent(slots[hoveredIdx]);
     }
 
-    // --- <= 90 天（或整点/分钟级）：渲染平滑面积曲线图（1:1 贴边对齐 + 连续插值形变过渡） ---
     currentCellEls = [];
     const { leftX, rightX, spanX } = resolvePlotBounds(viewW);
     const denom = Math.max(1, maxTokens);
@@ -18797,7 +17740,6 @@ function createTrendAreaChart({ onSelectSlot = null } = {}) {
         skipMorph: modeChanged,
       });
 
-      // 就地增量补丁垂直参考网格线及底部 X 轴标签，保持文字常驻不重排不闪烁
       const tickIndices = computeTickIndices(slots);
       tickElsByIdx = new Map();
       let vLineCount = 0;
@@ -18914,7 +17856,6 @@ return { HEATMAP_DAYS_THRESHOLD, createTrendAreaChart };
 
 // --- src/components/charts/stepChartMath.js ---
 const { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValue, computeLinearFit, computePublicationFit, niceStepNumber, computeNiceYScale, computeNiceXStepTicks, formatYAxisTick, buildPolylinePath, buildSplinePath, computeStepTickIndices, formatStepAxisTag, formatChartMetricValue, formatChartMetricCompact, downsampleStepPointsForPlot, evalStepSplineYAtX } = (() => {
-/** 多模型节点和多曲线对比语义调色板（全部取自 tokens.css 语义变量，兼顾设计一致性和交叉曲线区分度） */
 const MODEL_COLOR_VARS = Object.freeze([
   'var(--ctx-cached)',
   'var(--ctx-skills)',
@@ -18924,13 +17865,6 @@ const MODEL_COLOR_VARS = Object.freeze([
   'var(--ctx-subagent-msg)',
 ]);
 
-/**
- * 提取步骤所属的基础模型分组键（和后端 `usage-aggregator.mjs` 中 `modelBreakdown[].label` 严格一致），
- * 且不受“精简代号 / 原始模型 ID”或“自动压缩”后缀切换影响。
- *
- * @param {object|null|undefined} step
- * @returns {string}
- */
 function getStepModelGroupKey(step) {
   if (!step || typeof step !== 'object') return t('fmt.unknownModel');
   const rawLabel = String(step.baseModelLabel || step.modelLabel || step.label || '')
@@ -18944,13 +17878,6 @@ function getStepModelGroupKey(step) {
   return rawShort || t('fmt.unknownModel');
 }
 
-/**
- * 将逆序或混合代理的步骤列表归一化为严格时间升序序列（最旧 -> 最新）。
- *
- * @param {Array<object>} steps
- * @param {boolean} isMergedAllAgents
- * @returns {Array<object>}
- */
 function toChronologicalSteps(steps, isMergedAllAgents = false) {
   if (!Array.isArray(steps) || steps.length === 0) return [];
   const copy = steps.slice();
@@ -18976,12 +17903,6 @@ function clampValue(v, minVal = 0, maxVal = Infinity) {
   return Math.max(minVal, Math.min(maxVal, v));
 }
 
-/**
- * 双侧 95% 置信区间对应的 Student-t 临界值近似表（t_{0.975, df}）。
- *
- * @param {number} df 残差自由度
- * @returns {number}
- */
 function tCritical95(df) {
   if (!Number.isFinite(df) || df <= 1.5) return 3.182;
   if (df <= 2.5) return 3.182 + (2.5 - df) * 0.9;
@@ -18998,13 +17919,6 @@ function tCritical95(df) {
   return 1.96;
 }
 
-/**
- * 计算普通最小二乘线性回归（OLS: y = intercept + slope * x）。
- *
- * @param {number[]} ys 样本纵坐标序列
- * @param {{ minVal?: number, maxVal?: number, xs?: number[] }} [options]
- * @returns {{ values: number[], slope: number, intercept: number, mean: number, r: number, r2: number }}
- */
 function computeLinearFit(ys, { minVal = 0, maxVal = Infinity, xs = null } = {}) {
   const n = Array.isArray(ys) ? ys.length : 0;
   if (n === 0) {
@@ -19036,14 +17950,6 @@ function computeLinearFit(ys, { minVal = 0, maxVal = Infinity, xs = null } = {})
   return { values, slope, intercept, mean: meanY, r, r2: r * r };
 }
 
-/**
- * 学术论文级回归和 95% 置信带计算引擎（Cleveland & Devlin 高斯局部加权线性回归 LOESS + 精确帽子矩阵标准误，
- * 小样本 n <= 5 时自动采用精确 OLS 线性回归和双曲 t 分布 95% 置信区间，等同于 R `ggplot2::geom_smooth(se = TRUE)`）。
- *
- * @param {number[]} xs 严格递增或单调的样本横坐标序列
- * @param {number[]} ys 样本纵坐标序列
- * @param {{ minVal?: number, maxVal?: number, gridSize?: number, span?: number }} [options]
- */
 function computePublicationFit(
   xs,
   ys,
@@ -19099,7 +18005,6 @@ function computePublicationFit(
   const M = Math.max(2, gridSize);
   const gridXs = Array.from({ length: M }, (_, k) => xMin + (k / (M - 1)) * xSpan);
 
-  // 小样本（n <= 5）：采用精确 OLS 线性回归和 Student-t 双曲 95% CI 置信带
   if (n <= 5) {
     const meanX = xs.reduce((a, b) => a + b, 0) / n;
     let sxx = 0;
@@ -19151,7 +18056,6 @@ function computePublicationFit(
     };
   }
 
-  // n >= 6：Cleveland 高斯局部加权一阶线性回归（LOESS）+ 精确帽子矩阵杠杆度 95% CI 置信带
   const q = Math.max(5, Math.min(n, Math.ceil(span * n)));
   const wBuf = new Float64Array(n);
   const sortedXs = q <= n && xs.slice(0, n).every(
@@ -19159,7 +18063,7 @@ function computePublicationFit(
   );
 
   function loessBandwidth(x0) {
-    // 有序 x 上的 q 个最近样本可取连续区间；二分比较两端，避免每个拟合点都排序。
+
     let left = 0;
     let right = n - q;
     while (left < right) {
@@ -19191,7 +18095,7 @@ function computePublicationFit(
     let start = 0;
     let end = n;
     if (sortedXs) {
-      // 三次权重的支持区间之外权重为零，保留区间内样本原来的累加顺序。
+
       let right = n;
       while (start < right) {
         const mid = (start + right) >>> 1;
@@ -19258,8 +18162,6 @@ function computePublicationFit(
   let traceL = 0;
   let precomputedGridEval = null;
 
-  // 大样本（n > 200 且 x 单调有序）采用和 R `stats::loess(surface = "interpolate")` 一致的网格插值加速：
-  // 仅在 M 个均匀网格顶点做精确 LOESS（O(M·N)），再线性插值样本拟合值和杠杆度，避免 O(N²) 阻塞主线程。
   if (n > 200 && sortedXs && M >= 2) {
     const gridRawFit = new Float64Array(M);
     const gridLevSq = new Float64Array(M);
@@ -19359,9 +18261,6 @@ function computePublicationFit(
   };
 }
 
-/**
- * Heckbert 科学坐标轴刻度取整算法，生成科研图表风格的均匀整洁刻度。
- */
 function niceStepNumber(range, round) {
   if (!Number.isFinite(range) || range <= 0) return 1;
   const exponent = Math.floor(Math.log10(range));
@@ -19564,16 +18463,6 @@ function formatChartMetricCompact(metric, val) {
   }
 }
 
-/**
- * Downsamples dense chronological step series (`> maxPoints`, e.g. 1,500–5,000 steps) to an
- * adaptive visual vertex budget (`~2.1px` per segment) so cubic splines never overplot into an
- * opaque solid wall while strictly preserving the start step, end step, and exact global peak step.
- *
- * @template {{ value?: number }} T
- * @param {T[]} points
- * @param {number} [maxPoints=208]
- * @returns {T[]}
- */
 function downsampleStepPointsForPlot(points, maxPoints = 208) {
   if (!Array.isArray(points) || points.length <= maxPoints || maxPoints < 8) {
     return points;
@@ -19623,14 +18512,6 @@ function downsampleStepPointsForPlot(points, maxPoints = 208) {
   return out;
 }
 
-/**
- * Evaluates the exact `y` coordinate on `buildSplinePath(plotPoints)` at horizontal coordinate `targetX`
- * so overlay markers (such as anomaly dots) sit flush on the rendered curve even between downsampled knots.
- *
- * @param {Array<{ x: number, y: number }>} plotPoints
- * @param {number} targetX
- * @returns {number}
- */
 function evalStepSplineYAtX(plotPoints, targetX) {
   if (!Array.isArray(plotPoints) || plotPoints.length === 0) return 0;
   if (plotPoints.length === 1 || targetX <= plotPoints[0].x) return plotPoints[0].y;
@@ -19669,9 +18550,6 @@ return { MODEL_COLOR_VARS, getStepModelGroupKey, toChronologicalSteps, clampValu
 const { createSessionLineChart, createModelFitChart } = (() => {
 let sessionChartUid = 0;
 
-/**
- * 创建会话全模型线性走势图（支持 `totalTokens` | `context` | `tps` | `ttft` | `cost`，全宽 1:1 贴边对齐）。
- */
 function createSessionLineChart() {
   const DEFAULT_VIEW_W = 460;
   const VIEW_H = 106;
@@ -20021,18 +18899,6 @@ function createSessionLineChart() {
     }
   }
 
-  /**
-   * @param {{
-   *   steps: Array<object>,
-   *   modelGroupKey?: string,
-   *   modelGroupKeys?: string[]|null,
-   *   modelColorByGroup?: Map<string, string>|null,
-   *   metric: 'totalTokens'|'context'|'tps'|'ttft'|'cost',
-   *   showAgentPrefix?: boolean,
-   *   displaySettings?: object,
-   * }} params
-   * @returns {{ summaryBadge: string }}
-   */
   function update({
     steps = [],
     modelGroupKey = '__all__',
@@ -20723,13 +19589,6 @@ function createSessionLineChart() {
   return { el: rootEl, update, destroy };
 }
 
-/**
- * 创建学术论文风格散点回归与 95% 置信带拟合图（全宽 1:1 贴边对齐 + 项目统一冷蓝灰设计语言）：
- * - 全宽水平参考网格与底部线性步序刻度轴（内嵌左对齐 Y 轴刻度标签，零左右缩进留白）；
- * - 半透明冷蓝灰实心观测散点（自然呈现重叠密度）；
- * - 围绕回归曲线的 95% CI 置信区间阴影带（绝不向 y=0 做面积图填充）；
- * - 高斯局部线性回归曲线（LOESS, n >= 6）或精确线性回归（OLS, n <= 5），配相关系数 r 与拟合优度 R²。
- */
 function createModelFitChart() {
   const DEFAULT_VIEW_W = 460;
   const VIEW_H = 136;
@@ -21072,9 +19931,6 @@ function createModelFitChart() {
     }
   }
 
-  /**
-   * 在给定横坐标 x0 处对某模型的回归网格做线性插值（仅当 x0 位于该模型观测区间内时返回拟合值）。
-   */
   function interpolateSeriesGridFit(grid, x0) {
     if (!Array.isArray(grid) || grid.length === 0) return null;
     if (grid.length === 1) {
@@ -21097,9 +19953,6 @@ function createModelFitChart() {
     return grid[grid.length - 1].fit;
   }
 
-  /**
-   * 绘制共享的水平网格线、底部步序坐标轴及左对齐内联 Y 轴刻度标签。
-   */
   function renderFitAxesAndGrid({ yScale, mapY, mapX, xs, isSingle, plotLeft, plotRight, metric, showAgentPrefix }) {
     while (gridGroup.firstChild) gridGroup.removeChild(gridGroup.firstChild);
     while (axesGroup.firstChild) axesGroup.removeChild(axesGroup.firstChild);
@@ -21189,18 +20042,6 @@ function createModelFitChart() {
     }
   }
 
-  /**
-   * @param {{
-   *   steps: Array<object>,
-   *   modelGroupKey?: string,
-   *   modelGroupKeys?: string[]|null,
-   *   modelColorByGroup?: Map<string, string>|null,
-   *   metric: 'tps'|'ttft'|'cache'|'cost',
-   *   showAgentPrefix?: boolean,
-   *   displaySettings?: object,
-   * }} params
-   * @returns {{ sampleCount: number, summaryBadge: string }}
-   */
   function update({
     steps = [],
     modelGroupKey = '__all__',
@@ -21324,7 +20165,6 @@ function createModelFitChart() {
     const minBound = 0;
     const maxBound = metric === 'cache' ? 100 : Infinity;
 
-    // 分支 A：多模型同图独立拟合曲线对比模式（勾选 >= 2 个模型）
     if (isMultiCompare) {
       const seriesList = [];
       for (let kIdx = 0; kIdx < targetKeys.length; kIdx++) {
@@ -21657,7 +20497,6 @@ function createModelFitChart() {
       };
     }
 
-    // 分支 B：单模型或整体合并单曲线模式
     const nextSingleFitKey = isPooledAll ? '__all__' : targetKeys[0] || '__all__';
     if (lastFitMode === 'multi') {
       const seedGrid =
@@ -21757,7 +20596,6 @@ function createModelFitChart() {
         showAgentPrefix,
       });
 
-      // 2. 绘制半透明冷蓝灰实心观测散点（自然呈现局部密度，不抢夺拟合曲线焦点）
       while (scatterGroup.firstChild) scatterGroup.removeChild(scatterGroup.firstChild);
       const dotRadius = samples.length > 80 ? '1.8' : samples.length > 36 ? '2.1' : '2.4';
       const binCounts = samples.length > 200 ? new Map() : null;
@@ -21802,7 +20640,6 @@ function createModelFitChart() {
         scatterGroup.appendChild(scatterTarget);
       }
 
-      // 3. 绘制 95% CI 置信带闭合多边形和回归拟合曲线（支持 240ms 平滑连续形变，绝不向底部 X 轴填充面积）
       if (isSingle) {
         const yVal = samples[0].fitY;
         const yStr = yVal.toFixed(1);
@@ -21944,13 +20781,6 @@ function getOverviewMetricOptions() {
   }));
 }
 
-/**
- * 将格式化后的指标文本拆分为主体数值与尾随单位（如 `'68.4 tok/s'` → `{ main: '68.4', unit: 'tok/s' }`），
- * 便于大尺寸趋势卡片将数值加粗放大、单位轻量化排版。
- *
- * @param {string} valueText
- * @returns {{ main: string, unit: string }}
- */
 function splitMetricValueAndUnit(valueText) {
   const str = String(valueText ?? '—').trim();
   if (!str) return { main: '—', unit: '' };
@@ -21969,15 +20799,6 @@ const SPARKLINE_TARGET_PITCH_PX = 7.5;
 const SPARKLINE_MIN_POINTS = 5;
 const SPARKLINE_MAX_POINTS = 48;
 
-/**
- * 根据折线容器实际可用像素宽度，自适应计算 SVG 画布尺寸、采样步数上限与笔触粗细：
- * - 保持约 7.5px / 步的均衡节奏：极窄 3 列悬浮卡收敛为 5~7 步避免锯齿拥挤，
- *   宽卡 / 单列 / 宽屏面板则平滑扩展至最多 48 步以展示更长趋势；
- * - 未挂载或无法测宽时（如首帧 / 无头测试）按列数回退至默认基准宽度。
- *
- * @param {number} [availableWidth]
- * @param {number} [colCount=3]
- */
 function resolveAdaptiveSparklineSpec(availableWidth, colCount = 3) {
   const safeCols = colCount === 1 || colCount === 2 ? colCount : 3;
   const fallbackWidth = SPARKLINE_DEFAULT_WIDTH_BY_COLS[safeCols];
@@ -22000,15 +20821,6 @@ function resolveAdaptiveSparklineSpec(availableWidth, colCount = 3) {
   };
 }
 
-/**
- * 从 `recentSteps`（默认按时间倒序）提取指定指标的时间顺序序列（从旧到新，最多取末 `maxPoints` 点），
- * 用于驱动悬浮窗大尺寸实时指标卡片右侧的迷你走势折线图。
- *
- * @param {string} metricKey
- * @param {Array<Record<string, any>>} [steps=[]]
- * @param {{ maxPoints?: number, limitTokens?: number }} [options]
- * @returns {number[]}
- */
 function extractOverviewMetricSeries(
   metricKey,
   steps = [],
@@ -22062,7 +20874,6 @@ function extractOverviewMetricSeries(
     return series.slice(-cap);
   }
 
-  // Non-cumulative per-step metrics: collect at most `cap` most recent valid points in O(cap)
   const rev = [];
   for (let i = 0; i < steps.length && rev.length < cap; i += 1) {
     const s = steps[i];
@@ -22099,12 +20910,6 @@ function extractOverviewMetricSeries(
   return rev;
 }
 
-/**
- * 将数值序列映射为轻量迷你折线图 SVG 几何路径（含折线坐标、底部渐变面积闭合路径与末端圆点坐标）。
- *
- * @param {number[]} values
- * @param {{ width?: number, height?: number, padTop?: number, padBottom?: number, padX?: number }} [dims]
- */
 function buildSparklineGeometry(
   values = [],
   { width = 108, height = 34, padTop = 4, padBottom = 5, padX = 4 } = {}
@@ -22275,13 +21080,6 @@ function resolveQuotaCapsulePrefix(metricKey, quotaSum) {
   return isEn ? 'Q' : '余';
 }
 
-/**
- * 解析指定模型池（Gemini 或 Claude & GPT）与指定时间窗口（5h 或周额度）的剩余百分比摘要。
- *
- * @param {object|null|undefined} quotas
- * @param {'gemini_5h'|'gemini_weekly'|'claude_5h'|'claude_weekly'} slotKey
- * @returns {{ roundedPct: number, shortText: string } | null}
- */
 function resolveSpecificQuotaSlotSummary(quotas, slotKey) {
   const rounded = resolveCapsuleQuotaSlotPct(quotas, slotKey);
   if (rounded == null) return null;
@@ -22291,13 +21089,6 @@ function resolveSpecificQuotaSlotSummary(quotas, slotKey) {
   };
 }
 
-/**
- * 解析顶栏/输入框精简胶囊单槽位展示结构。
- *
- * @param {string} metricKey
- * @param {object} slotCtx
- * @param {number} ringCircumference
- */
 function resolveCapsuleMetricPresentation(metricKey, slotCtx, ringCircumference) {
   if (!metricKey || metricKey === 'none') {
     return {
@@ -22548,12 +21339,6 @@ function resolveActiveBadgeText(active) {
   });
 }
 
-/**
- * 解析实时监控第一行矩阵单个单元格的展示数据。
- *
- * @param {string} metricKey
- * @param {{ active?: object, ctx?: object, quotas?: object, settings?: object, hasSubagents?: boolean }} cellCtx
- */
 function resolveOverviewMetricCell(metricKey, cellCtx = {}) {
   const active = cellCtx.active || {};
   const ctx = cellCtx.ctx || active.context || {};
@@ -23382,7 +22167,6 @@ const MetricMatrixWidget = defineComponent({
       measuredWrapWidthByKey.clear();
     });
 
-    // Initialize default 4-cell skeleton so hover/overview has zero initial height jump
     update({ data: null });
 
     return {
@@ -23410,9 +22194,6 @@ function estimateCtxPillWidth(text, withChevron = false) {
   return Math.ceil(w);
 }
 
-/**
- * 10 通道上下文窗口构成定义（通过动态 getter 自动跟随当前激活语言）。
- */
 const CTX_CHANNEL_DEFS = [
   {
     key: 'assistant',
@@ -24009,14 +22790,6 @@ return { CTX_CHANNEL_DEFS, ContextWindowWidget };
 
 // --- src/components/widgets/QuotaPoolsWidget.js ---
 const { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncPoolQuotaRow, quotaPoolRowSig, formatAccountTierBadge, maskAccountLabel, QuotaPoolsWidget } = (() => {
-/**
- * 归一化动态配额池列表；在官方配额尚未返回时回退预占 Gemini 与 Claude & GPT 两个标准池槽位。
- *
- * @param {object|null|undefined} quotas
- * @param {number} minuteTick
- * @param {{ isPending?: boolean }} [options]
- * @returns {Array<object>}
- */
 function buildQuotaPoolItems(
   quotas,
   minuteTick = 0,
@@ -24061,9 +22834,6 @@ function buildQuotaPoolItems(
   return poolItems;
 }
 
-/**
- * 创建单个配额池的 DOM 行结构，内含 5h 限额及每周限额两个可独立显隐的子窗口进度条。
- */
 function createPoolQuotaRow() {
   const title5h = h('span', { className: 'quota-win-title', text: '5h' });
   const usage5h = h('span', { className: 'quota-win-usage', hidden: true, text: '' });
@@ -24117,9 +22887,6 @@ function createPoolQuotaRow() {
   };
 }
 
-/**
- * 格式化可用额度面板底部的汇总行文案（官方配额模式下展示各池周期合计，自定义预算模式下展示自然周累计）。
- */
 function formatQuotaSummaryFooter(quotas, account) {
   const weekly = quotas?.weekly || {};
   const isCustomLocal = weekly.isOfficial === false;
@@ -24196,9 +22963,6 @@ function syncQuotaWindowMeter({
   });
 }
 
-/**
- * 同步单个配额池行的 5h 及每周窗口状态。
- */
 function syncPoolQuotaRow(refs, item, idx, rowEl) {
   const { poolData, poolLabel, fallbackWeekly, isActivePool, isPending, showReserved } = item;
   patchClasses(rowEl, { 'quota-pool-row': true, 'has-divider': idx > 0 });
@@ -24327,12 +23091,6 @@ function quotaPoolRowSig(item, idx) {
   return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${est?.eqFull5hUsd}:${est?.eqFull5hTokens}:${est?.eqFullWeeklyUsd}:${est?.eqFullWeeklyTokens}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
 }
 
-/**
- * 格式化可用额度面板右上角的账号订阅徽章（区分 Ultra 5x / 20x，并对 Pro / Free 去重）。
- *
- * @param {object|null|undefined} account
- * @returns {string}
- */
 function formatAccountTierBadge(account) {
   const tierName = String(account?.tierName || '').trim() || 'Google AI';
   const tierId = String(account?.tierId || '').trim().toLowerCase();
@@ -24366,13 +23124,6 @@ function formatAccountTierBadge(account) {
   return `${tierName} · ${rawPlan}`;
 }
 
-/**
- * 对账号邮箱或名称做轻量隐私脱敏（如 `sjee80343@gmail.com` -> `sj***43@gmail.com`），
- * 兼顾多账号辨识度及截图分享隐私安全。
- *
- * @param {string|null|undefined} raw
- * @returns {string}
- */
 function maskAccountLabel(raw) {
   const str = String(raw || '').trim();
   if (!str) return '';
@@ -24947,11 +23698,6 @@ function buildHorizontalTangentSpline(pts) {
 const HOVER_SLOT_COUNT = 96;
 const MAX_SVG_COLUMN_BUCKETS = 96;
 
-/**
- * Downsamples dense sub-pixel SVG points (e.g. 12s poll bursts) into `<= maxCols`
- * min/max-preserving visual knots so curve rasterization and morphing stay crisp and fast,
- * while `rawPoints` remain intact for exact timestamp interpolation.
- */
 function simplifySvgPointsForRender(svgPts, leftX, plotW, maxCols = MAX_SVG_COLUMN_BUCKETS) {
   if (svgPts.length <= maxCols) return svgPts;
   const colW = Math.max(1, plotW) / maxCols;
@@ -24982,11 +23728,6 @@ function simplifySvgPointsForRender(svgPts, leftX, plotW, maxCols = MAX_SVG_COLU
   return out;
 }
 
-/**
- * Computes tight, integer-aligned `[yMin, yMid, yMax]` bounds (`0..100%`) around
- * observed `[dataMin, dataMax]` so small-to-moderate quota changes use the full
- * vertical canvas instead of leaving 80%+ empty bottom space.
- */
 function computeAdaptiveQuotaScale(dataMin, dataMax) {
   const lo = Math.max(0, Math.min(100, Number.isFinite(dataMin) ? dataMin : 0));
   const hi = Math.max(lo, Math.min(100, Number.isFinite(dataMax) ? dataMax : 100));
@@ -25007,7 +23748,7 @@ function computeAdaptiveQuotaScale(dataMin, dataMax) {
       yMin = Math.max(0, yMax - 10);
     }
   }
-  // Ensure `(yMax - yMin)` is even so midpoint tick is always an exact integer
+
   if ((yMax - yMin) % 2 !== 0) {
     if (yMin > 0) yMin -= 1;
     else if (yMax < 100) yMax += 1;
@@ -25108,11 +23849,6 @@ function resolveQuotaWindowBounds({
   return { startMs: Math.min(startMs, nowMs - 60_000), endMs: nowMs };
 }
 
-/**
- * Extracts per-pool trajectories for the requested window, ensuring `'cycle'` mode
- * strictly excludes pre-reset points from any previous expired cycle (eliminating
- * artificial `84% -> 100%` vertical reset spikes at cycle start).
- */
 function buildQuotaWindowSeries({
   visiblePools,
   rawBounds,
@@ -25161,8 +23897,6 @@ function buildQuotaWindowSeries({
       }
     }
 
-    // In `'cycle'` mode, `< 99.95%` observations at or before `poolCutoffMs` belong
-    // to the previous expired cycle and must never carry forward into the new cycle.
     if (isCycleMode && carryBefore && carryBefore.val < 99.95) {
       carryBefore = null;
     }
@@ -25442,7 +24176,6 @@ const AccountQuotaTrendCard = defineComponent({
       applyCustomBtn,
     ]);
 
-    // --- Full-Bleed Edge-to-Edge 184px SVG Stage (reusing TrendAreaChart `.trend-svg`) ---
     const uid = ++quotaChartUid;
     const gradId = `acct-quota-grad-${uid}`;
     const svg = document.createElementNS(SVG_NS, 'svg');
@@ -25504,7 +24237,6 @@ const AccountQuotaTrendCard = defineComponent({
     const seriesGroup = document.createElementNS(SVG_NS, 'g');
     svg.appendChild(seriesGroup);
 
-    // Append inline Y labels above series fills so halo stroke keeps text crisp
     const yLabelOverlay = document.createElementNS(SVG_NS, 'g');
     for (const lbl of yLabels) {
       yLabelOverlay.appendChild(lbl);
@@ -26091,7 +24823,6 @@ const AccountQuotaTrendCard = defineComponent({
         });
       }
 
-      // Edge-to-edge X-axis ticks (`0% .. 100%`) with active hover highlight & click-to-inspect
       const tickCount = 5;
       const activeTickIdx =
         hoveredSlotIdx >= 0 ? Math.round((hoveredSlotIdx / HOVER_SLOT_COUNT) * (tickCount - 1)) : -1;
@@ -27091,17 +25822,6 @@ function getOverviewModuleOptions() {
   }));
 }
 
-/**
- * Create a dynamic container host that mounts, reorders, updates, and disposes
- * standalone telemetry widgets based on user-configured module keys.
- *
- * @param {{
- *   containerEl: HTMLElement,
- *   mode?: 'overview' | 'hover',
- *   isVisibleFn?: () => boolean,
- *   initialModuleKeys?: string[]
- * }} options
- */
 function createDynamicWidgetHost({
   containerEl,
   mode = 'overview',
@@ -27279,7 +25999,6 @@ function createDynamicWidgetHost({
       validKeys.push(k);
     }
 
-    // Remove and destroy widgets no longer present
     for (const [existingKey, inst] of [...instances.entries()]) {
       if (!seen.has(existingKey)) {
         detachModulePointer(existingKey);
@@ -27293,7 +26012,6 @@ function createDynamicWidgetHost({
       }
     }
 
-    // Instantiate newly added widgets
     for (const key of validKeys) {
       if (!instances.has(key)) {
         const inst = OVERVIEW_WIDGET_REGISTRY[key].create({
@@ -27319,7 +26037,6 @@ function createDynamicWidgetHost({
       }
     }
 
-    // Reorder DOM nodes in containerEl only where needed
     const orderChanged =
       validKeys.length !== currentKeys.length ||
       validKeys.some((k, idx) => currentKeys[idx] !== k) ||
@@ -27868,15 +26585,6 @@ function getStepColumnOptions(
   }));
 }
 
-/**
- * 按指定列对步骤数组进行稳定排序（空值/不可用测速值始终置底）。
- *
- * @param {Array<object>} steps
- * @param {string} sortKey
- * @param {'asc'|'desc'|''} sortDir
- * @param {object} [ctx]
- * @returns {Array<object>}
- */
 function sortStepsByColumn(steps, sortKey, sortDir, ctx = {}) {
   if (!Array.isArray(steps) || steps.length <= 1 || !sortKey || !sortDir) {
     return Array.isArray(steps) ? steps : [];
@@ -27917,14 +26625,6 @@ const RING_CIRCUMFERENCE = +(2 * Math.PI * RING_RADIUS).toFixed(2);
 const ODOMETER_DIGITS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 const capsuleOdometerState = new WeakMap();
 
-/**
- * 将胶囊指标文本拆分为「按数位对齐的数字滚轮 + 静态字符片段」：
- * - 整数部分从右向左按位次键控（个位 `i:0`、十位 `i:1`...），小数部分从左向右键控（`f:0`...）；
- * - 位数增减时既有数位节点原地复用，仅发生变化的数字位执行 0.15s 老虎机垂直滚动，未变位与单位纹丝不动。
- *
- * @param {string} rawText
- * @returns {Array<{ key: string, kind: 'digit' | 'static', digit?: number, text?: string }>}
- */
 function tokenizeCapsuleOdometerText(rawText) {
   const str = String(rawText ?? '');
   if (!str) return [];
@@ -27976,10 +26676,6 @@ function createOdometerDigitReel(initialDigit) {
   return { el: digitEl, trackEl, kind: 'digit', digit: initialDigit };
 }
 
-/**
- * 在实验性新 UI (`[data-modern-ui="true"]`) 下将胶囊数字渲染为 0.15s 老虎机垂直滚轮；
- * 经典 UI 或无数字占位文本（如 `-- t/s`）严格退回原生纯文本 `patchText`，零多余 DOM 与动画。
- */
 function patchCapsuleOdometerText(
   el,
   nextValue,
@@ -28097,9 +26793,6 @@ function findFallbackRecentStepTtft(steps) {
   return null;
 }
 
-/**
- * Compute shared context ring + 1..5 capsule slot metric payload from telemetry & scoped conversation.
- */
 function buildCapsuleSlotContext(
   data,
   { scopedConv = null, overviewConv = null, ctxAgent = null, aggregated = null } = {}
@@ -28174,9 +26867,6 @@ function buildCapsuleSlotContext(
   };
 }
 
-/**
- * Compute multi-session button state & normalized running conversation list.
- */
 function resolveMultiSessionCapsuleState(
   data,
   { agents = [], aggregated = null, latestTokPerSec = undefined, contextUsedPct = undefined } = {}
@@ -28217,9 +26907,6 @@ function resolveMultiSessionCapsuleState(
   };
 }
 
-/**
- * Create a single reusable capsule metric slot node (`0..4`) with an optional SVG context ring.
- */
 function createCapsuleSlotNode(slotIndex, initialMetric) {
   const ringSvg = document.createElementNS(SVG_NS, 'svg');
   ringSvg.setAttribute('viewBox', '0 0 14 14');
@@ -28290,9 +26977,6 @@ function createCapsuleSlotNode(slotIndex, initialMetric) {
   };
 }
 
-/**
- * Patch 5 pre-allocated capsule slots and 4 separators in-place via `metricRegistry`.
- */
 function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCtx) {
   let visRank = 0;
   const visRanks = [0, 0, 0, 0, 0];
@@ -28378,12 +27062,6 @@ function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCtx) {
   }
 }
 
-/**
- * Standalone Capsule Bar Preview Widget mounting the real `.wm-multi-btn` and `.wm-capsule-btn`
- * inside a contextual host bar (`dual` titlebar, `composer` toolbar, or `sidebar` disabled state).
- * When `onReorderSlots` / `onPreviewSlots` callbacks are supplied, metric chips inside the
- * preview capsule support direct horizontal pointer drag-to-reorder.
- */
 const CapsuleBarWidget = defineComponent({
   name: 'CapsuleBarWidget',
   setup({ props, onCleanup }) {
@@ -28451,7 +27129,6 @@ const CapsuleBarWidget = defineComponent({
       capsuleBtn,
     ]);
 
-    // Contextual host chrome affordances for Titlebar vs Composer vs Sidebar-only
     const titlebarLeftMock = h('div', { className: 'preview-host-left is-titlebar' }, [
       h('span', { className: 'preview-win-title', text: 'Antigravity' }),
     ]);
@@ -29490,7 +28167,6 @@ const StepTableWidget = defineComponent({
     const maxSeenStepByAgent = new Map();
     const activeEnterTimers = new Map();
 
-    // Virtualization state (activates transparently only when !standalone && rowCount > 80)
     let activeDataset = null;
     let renderedSliceStart = -1;
     let renderedSliceEnd = -1;
@@ -29542,7 +28218,6 @@ const StepTableWidget = defineComponent({
       const colCount = activeDataset.colKeys.length;
       if (ths.length !== colCount) return;
 
-      // Release fixed layout momentarily if stale so browser resolves natural widths from sizer + header
       if (stepsTableEl.classList?.contains('is-cols-locked')) {
         unlockColumnWidths();
       }
@@ -29594,7 +28269,7 @@ const StepTableWidget = defineComponent({
           }
         }
       } catch {
-        // Fallback to explicit scale key or default in headless/mock environments.
+
       }
       if (fallbackScaleKey) {
         return FONT_SCALE_FACTORS[normalizeClientFontScale(fallbackScaleKey)] ?? 1;
@@ -29824,7 +28499,7 @@ const StepTableWidget = defineComponent({
       const { scaleY } = getVisualTransformScale(stepsTableEl);
       let measuredSingle = 0;
       let measuredReason = 0;
-      // Measure contiguous run of normal rows to eliminate single-row subpixel/border-collapse drift.
+
       let runStartTop = 0;
       let runEndBottom = 0;
       let runCount = 0;
@@ -30907,9 +29582,6 @@ function renderSegmentedModelBarAndTopPills(
   return topModels;
 }
 
-/**
- * Collapses long-tail model entries into primary segments + an aggregated "Other (N)" tail.
- */
 function partitionModelSegments(
   mergedModels,
   modelColorMap,
@@ -31006,9 +29678,6 @@ function partitionModelSegments(
   return out;
 }
 
-/**
- * Creates a model ranking row (`tokens` | `cost` | `speed` | `calls` sort modes).
- */
 function createBreakdownItemRow() {
   const nameTextEl = h('span', { className: 'cons-row-title-text' });
   const nameEl = h('strong', { className: 'cons-row-title' }, [nameTextEl]);
@@ -31115,9 +29784,6 @@ function createBreakdownItemRow() {
   };
 }
 
-/**
- * Incrementally patches a model ranking row.
- */
 function updateBreakdownItemRow(refs, item, totalsCtx, sortMode = 'tokens') {
   const displayLabel = item.label || item.name || item.shortName || '—';
   patchText(refs.nameTextEl, displayLabel);
@@ -31337,9 +30003,6 @@ function updateBreakdownItemRow(refs, item, totalsCtx, sortMode = 'tokens') {
   }
 }
 
-/**
- * Binds shared popover hover callbacks to build source-breakdown and workspace/conversation rows.
- */
 function createConsumptionBreakdownRowBuilders({
   showPopover,
   movePopover,
@@ -31909,9 +30572,6 @@ function buildStructurePreviewTelemetry(
     },
   ];
 
-  // 36-step realistic sparkline series (newest-first) for Large Trend preview cards so
-  // adaptive sparklines smoothly reveal more historical steps on wider 1/2/3-col layouts,
-  // while keeping `mockSteps` at 4 compact rows for the Step Table preview.
   const mockSparklineSteps = [
     { tokPerSec: 68.4, ttftSec: 1.15, costUsd: 0.042, cacheHitPct: 94.5, contextTokens: 142800, inputTokens: 7800, cacheReadTokens: 133580, outputTokens: 1420 },
     { tokPerSec: 34.2, ttftSec: 2.35, costUsd: 0.056, cacheHitPct: 86.2, contextTokens: 139200, inputTokens: 16200, cacheReadTokens: 121800, outputTokens: 1200 },
@@ -32781,7 +31441,6 @@ const EditableSlotList = defineComponent({
         }
       }
 
-      // Close any hidden pooled selects
       for (let j = count; j < rowPool.length; j += 1) {
         rowPool[j].selectComp.close();
       }
@@ -32967,10 +31626,10 @@ const BridgeStatusNotice = defineComponent({
       hostPlatform: 'win32',
     };
     let dismissed = false;
-    let relaunchState = 'idle'; // 'idle' | 'relaunching' | 'failed'
+    let relaunchState = 'idle';
     let relaunchResetTimer = null;
     let macWrapperBusy = false;
-    let macWrapperFeedback = ''; // '' | 'created' | 'removed' | 'failed'
+    let macWrapperFeedback = '';
     let macWrapperFeedbackTimer = null;
     let destroyed = false;
 
@@ -33392,7 +32051,7 @@ function saveCleanupPrefs(prefs) {
     if (typeof localStorage === 'undefined') return;
     localStorage.setItem(SMGR_PREFS_STORAGE_KEY, JSON.stringify(prefs));
   } catch {
-    // 忽略沙箱存储异常
+
   }
 }
 
@@ -33475,19 +32134,19 @@ const SessionManagerCard = defineComponent({
     let isSweeping = false;
     let remoteUnsupported = false;
 
-    let catalog = null; // { clients, runningClients, onlineDeleteClients, sessions, counts, warnings }
-    let sourceFilter = 'all'; // 'all' | 'desktop' | 'cli' | 'ide_legacy'
+    let catalog = null;
+    let sourceFilter = 'all';
     let searchQuery = '';
     let visibleLimit = SMGR_PAGE_SIZE;
     let selectedKeys = new Set();
     let lastAnchorKey = '';
 
     let prefsExpanded = false;
-    let confirmState = null; // { targets, preview, includeOrphans, purgeProtectedBrain }
+    let confirmState = null;
     let previewReqSeq = 0;
     let reloadSeq = 0;
     let activeReloadCount = 0;
-    let resultBanner = null; // { ok, text, detail }
+    let resultBanner = null;
 
     function dismissConfirmDrawer() {
       previewReqSeq += 1;
@@ -33507,7 +32166,6 @@ const SessionManagerCard = defineComponent({
       };
     }
 
-    // 1. 顶栏
     const titleTextEl = h('span', { text: t('settings.smgr.title') });
     const totalCountBadge = h('span', { className: 'smgr-title-count', text: '0' });
     const refreshBtnTextEl = h('span', { text: t('settings.smgr.refresh') });
@@ -33538,7 +32196,6 @@ const SessionManagerCard = defineComponent({
       h('div', { className: 'smgr-header-actions' }, [refreshBtn, moreMenu.el]),
     ]);
 
-    // 2. 来源分段条
     const sourceSeg = SegmentedControl({
       options: [],
       modelValue: sourceFilter,
@@ -33553,10 +32210,8 @@ const SessionManagerCard = defineComponent({
     });
     sourceSeg.el.classList.add('smgr-source-seg');
 
-    // 3. 运行态守卫提示（仅只读受限或进程探测失败时显示）
     const guardNoticeEl = h('div', { className: 'smgr-guard-notice', hidden: true });
 
-    // 4. 可折叠清理偏好抽屉
     const prefRedactLabelEl = h('div', {
       className: 'smgr-pref-title',
       text: t('settings.smgr.prefRedactLedger'),
@@ -33606,7 +32261,6 @@ const SessionManagerCard = defineComponent({
       ]),
     ]);
 
-    // 5. 搜索 + 排行下拉 + 齐平列表操作栏
     const searchControl = createSearchInput({
       wrapClassName: 'smgr-search-wrap',
       inputClassName: 'smgr-search-input',
@@ -33734,11 +32388,9 @@ const SessionManagerCard = defineComponent({
 
     const toolbarEl = h('div', { className: 'smgr-toolbar' }, [searchRowEl, actionBarEl]);
 
-    // 6. 内联二次确认抽屉与结果提示条
     const confirmBoxEl = h('div', { className: 'smgr-confirm-box', hidden: true });
     const resultBoxEl = h('div', { className: 'smgr-result', hidden: true });
 
-    // 7. 100% 高度自适应列表滚动区
     const listEl = h('div', { className: 'smgr-list' });
     const listScrollbar = CustomScrollbar({
       contentEl: listEl,
@@ -33755,10 +32407,6 @@ const SessionManagerCard = defineComponent({
       toolbarEl,
       listScrollbar.el,
     ]);
-
-    // -----------------------------------------------------------------------
-    // 数据过滤、排行与多选辅助
-    // -----------------------------------------------------------------------
 
     function getAllSessions() {
       return Array.isArray(catalog?.sessions) ? catalog.sessions : [];
@@ -34299,10 +32947,6 @@ const SessionManagerCard = defineComponent({
 
       listScrollbar.refresh();
     }
-
-    // -----------------------------------------------------------------------
-    // 异步交互流程
-    // -----------------------------------------------------------------------
 
     function handleToggleSelectAll() {
       const deletable = getFilteredSessions().filter((s) => s.canDelete);
@@ -34999,7 +33643,6 @@ const SessionMigrationCard = defineComponent({
       const all = getCurrentSourceSessions();
       const filtered = getFilteredSessions();
 
-      // 清理已不在当前来源中的选中 ID
       const validSet = new Set(all.filter((s) => !s.isRunning).map((s) => s.cascadeId));
       for (const id of [...selectedIds]) {
         if (!validSet.has(id)) selectedIds.delete(id);
@@ -35311,7 +33954,7 @@ const SessionMigrationCard = defineComponent({
           props?.onStateChange?.({ status: 'unavailable' });
         }
       } catch {
-        // 本地目录或 API 暂不可用时静默隐藏卡片，避免干扰其他设置项
+
         if (!destroyed && seq === catalogLoadSeq && !catalog) {
           patchAttr(rootEl, 'hidden', true);
           props?.onStateChange?.({ status: 'error' });
@@ -35603,7 +34246,6 @@ const HostI18nCard = defineComponent({
       text: t('settings.hostI18n.langHint'),
     });
 
-    // --- Conditional Depth Row (visible only when locale !== 'off') ---
     const depthLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.hostI18n.depthLabel'),
@@ -35649,7 +34291,6 @@ const HostI18nCard = defineComponent({
       depthHintEl,
     ]);
 
-    // --- Pack Update & Missing-String Collection Action Bar ---
     const updatePackBtnText = h('span', { text: t('settings.hostI18n.redownloadBtn') });
     const updatePackBtn = h(
       'button',
@@ -35825,7 +34466,6 @@ const HostI18nCard = defineComponent({
       collectBtn,
     ]);
 
-    // --- CDP Bridge Diagnostic Notice (shown only when active locale cannot reach CDP) ---
     const bridgeNotice = BridgeStatusNotice({ contextMode: true });
 
     const rootEl = h('section', { className: 'panel host-i18n-panel' }, [
@@ -35914,7 +34554,7 @@ const HostI18nCard = defineComponent({
         applyStatusPayload(res);
         props.onLayoutChange?.();
       } catch {
-        // 静默兜底
+
       }
     }
 
@@ -36072,7 +34712,6 @@ const SettingsGeneralTab = defineComponent({
       }
     }
 
-    // --- Card 1: 界面与外观 ---
     const appearanceTitleEl = h('span', { text: t('settings.gen.appearanceTitle') });
     const langLabelEl = h('span', { className: 'form-label', text: t('settings.gen.language') });
     const accentLabelEl = h('span', {
@@ -36217,7 +34856,6 @@ const SettingsGeneralTab = defineComponent({
       h('div', { className: 'form-row' }, [modernUiLabelEl, modernUiSwitch.el, modernUiHintEl]),
     ]);
 
-    // --- Card 2: 版本更新 ---
     const updateTitleEl = h('span', { text: t('settings.gen.updateTitle') });
     const updateModeLabelEl = h('span', {
       className: 'form-label',
@@ -36791,7 +35429,6 @@ const SettingsStructureTab = defineComponent({
       }
     }
 
-    // --- 3rd-Level Navigation Bar ---
     const thirdNavBtnMap = new Map();
     const thirdNavBtns = STRUCTURE_THIRD_TABS.map((item) => {
       const labelEl = h('span', {
@@ -36858,7 +35495,6 @@ const SettingsStructureTab = defineComponent({
       )
     );
 
-    // --- Pane 1: 挂载与胶囊栏 (`mount`) ---
     const syncTopbarList = () =>
       topbarSlotsList.refs.setProps({
         items: draftTopbarSlots,
@@ -37373,7 +36009,6 @@ const SettingsStructureTab = defineComponent({
       refreshMountPreview();
     }
 
-    // --- Pane 2: 鼠标悬浮窗 (`hover`) ---
     const hoverWidgetsContainerEl = h('div', { className: 'wm-hover-widgets' });
     const hoverPreviewTipEl = h('div', { className: 'wm-hover-tip is-preview' }, [
       hoverWidgetsContainerEl,
@@ -37531,7 +36166,7 @@ const SettingsStructureTab = defineComponent({
         const nextSync = val !== 'off';
         if (nextSync === draftHoverSyncOverview) return;
         if (!nextSync) {
-          // Detach smoothly from current Live Overview settings without visual jump
+
           draftHoverMetricStyle = draftOverviewMetricStyle;
           draftHoverMetrics = [...draftOverviewMetrics];
           draftHoverSyncOverview = false;
@@ -37691,7 +36326,6 @@ const SettingsStructureTab = defineComponent({
       refreshHoverPreview();
     }
 
-    // --- Pane 3: 实时监控布局 (`overview`) ---
     const overviewPreviewContainerEl = h('div', { className: 'overview-modules-host is-preview' });
     const overviewPreviewHost = createDynamicWidgetHost({
       containerEl: overviewPreviewContainerEl,
@@ -37885,7 +36519,6 @@ const SettingsStructureTab = defineComponent({
       refreshOverviewPreview();
     }
 
-    // --- Pane 4: 调用明细字段 (`steps`) ---
     const stepTablePreview = StepTableWidget({
       standalone: true,
       interactiveBadges: false,
@@ -38464,10 +37097,9 @@ const SESSIONS_THIRD_TABS = Object.freeze([
 const SettingsSessionsTab = defineComponent({
   name: 'SettingsSessionsTab',
   setup({ getProps, onCleanup }) {
-    let activeMode = 'manage'; // 'manage' | 'migrate'
+    let activeMode = 'manage';
     let migrationStatus = 'loading';
 
-    // --- 顶部三级子导航栏（与「结构」页保持一致，固定于 SettingsView 顶部不随内容滚动） ---
     const thirdNavBtnMap = new Map();
     const thirdNavBtns = SESSIONS_THIRD_TABS.map((item) => {
       const labelEl = h('span', {
@@ -38638,7 +37270,7 @@ const SettingsSessionsTab = defineComponent({
       if ((nextMode !== 'manage' && nextMode !== 'migrate') || nextMode === activeMode) return;
       activeMode = nextMode;
       syncModeVisibility();
-      // 复用同一份扫描数据，切换模式时不再重复触发全量扫描；仅在尚未加载过时懒加载一次
+
       void ensureSharedLoaded();
       getProps()?.onLayoutChange?.();
     }
@@ -38706,7 +37338,8 @@ const errors = new Set([
   'switchStartFailed', 'clientCloseFailed', 'clientRestartFailed',
   'loginStartFailed', 'loginExchangeFailed', 'loginExpired', 'loginDenied',
   'vaultLocked', 'wrongPassword', 'invalidPassword', 'passwordMismatch',
-  'passwordRateLimited', 'vaultDecryptFailed', 'invalidActionNonce', 'riskNotAccepted',
+  'passwordRateLimited', 'vaultDecryptFailed', 'passphraseRequired', 'keyringUnavailable',
+  'invalidActionNonce', 'riskNotAccepted',
 ]);
 
 const okToastKeys = new Set([
@@ -38863,6 +37496,8 @@ const SettingsAccountTab = defineComponent({
     let accounts = warmAccountCache ? [...warmAccountCache.accounts] : [];
     let selectedEmail = warmAccountCache ? warmAccountCache.selectedEmail : '';
     let supported = warmAccountCache ? warmAccountCache.supported : null;
+    let keyringAvailable = warmAccountCache ? warmAccountCache.keyringAvailable !== false : true;
+    let passphraseRequired = warmAccountCache ? Boolean(warmAccountCache.passphraseRequired) : false;
     let vaultSecurity = warmAccountCache?.vaultSecurity
       ? { ...warmAccountCache.vaultSecurity }
       : { enabled: false, unlocked: true };
@@ -38897,6 +37532,8 @@ const SettingsAccountTab = defineComponent({
       if (supported !== true) return;
       warmAccountCache = {
         supported,
+        keyringAvailable,
+        passphraseRequired,
         riskLocked: riskLockedFromServer,
         accounts: [...accounts],
         selectedEmail,
@@ -38953,13 +37590,10 @@ const SettingsAccountTab = defineComponent({
       pwdConfirmInput.value = '';
     }
 
-    // --- Section 1: Active Account Card Host ---
     const activeCardHost = h('div', { className: 'account-cards-stack' });
 
-    // --- Section 2: Quota Trend Line Chart Card ---
     const quotaTrendCard = AccountQuotaTrendCard();
 
-    // --- Section 3: Multi-Account Toolbar, Drawers, Backup Cards & Risk Gate ---
     const loginBtnLabel = h('span');
     const loginButton = h(
       'button',
@@ -39060,7 +37694,7 @@ const SettingsAccountTab = defineComponent({
         try {
           await saveSettingsPatch({ accountQuotaRefreshMinutes: nextMins });
         } catch {
-          // Keep selected interval locally if save fails transiently
+
         }
       },
     });
@@ -39077,7 +37711,6 @@ const SettingsAccountTab = defineComponent({
       [createSvgIcon('refresh', { size: 13 })]
     );
 
-    // Locked Vault Notice (reusing `.settings-bridge-notice`)
     const unlockHintLabel = h('span', { className: 'settings-bridge-title' });
     const forgotToggleBtn = h('button', {
       type: 'button',
@@ -39137,7 +37770,6 @@ const SettingsAccountTab = defineComponent({
     );
     const resetActionsWrap = resetVaultBtn.parentElement;
 
-    // Passphrase Setup / Manage Drawer (reusing `SegmentedControl`!)
     const pwdModeSegment = SegmentedControl({
       ariaLabel: t(key('pwdBtnManage')),
       modelValue: pwdManageMode,
@@ -39196,7 +37828,6 @@ const SettingsAccountTab = defineComponent({
       ]
     );
 
-    // Credential Import Drawer
     const credential = h('input', {
       type: 'password',
       className: 'settings-text-input account-import-input',
@@ -39224,7 +37855,6 @@ const SettingsAccountTab = defineComponent({
       ]
     );
 
-    // OAuth Browser Login & Switch Notices (reusing `.settings-bridge-notice`)
     const loginMessage = h('p', {
       className: 'settings-bridge-desc settings-action-desc',
       role: 'status',
@@ -39274,7 +37904,6 @@ const SettingsAccountTab = defineComponent({
     ]);
     const emptyTextEl = emptyPanel.firstChild;
 
-    // Risk Gate Stage (100% shared `.ctx-risk-stage` / `.ctx-risk-mask` with `SettingsOtherTab`)
     const riskTitleEl = h('strong', {
       className: 'ctx-risk-title',
       text: t('settings.oth.ctxRiskTitle'),
@@ -39550,7 +38179,6 @@ const SettingsAccountTab = defineComponent({
           : '';
       const cardCtx = { riskAccepted, canWrite, activeTierBadge };
 
-      // 1. Active Logged-in Account Card
       const activeEntries = activeEmail
         ? [
             {
@@ -39577,7 +38205,6 @@ const SettingsAccountTab = defineComponent({
         updateRow: (row, entry) => updateAccountCardDom(row, entry, cardCtx),
       });
 
-      // 2. Quota Trend Line Chart Card (always visible; locked to activeEmail when !riskAccepted)
       quotaTrendCard.refs.update({
         activeEmail,
         activePools: quotas?.pools || [],
@@ -39587,7 +38214,6 @@ const SettingsAccountTab = defineComponent({
         quotaHistory,
       });
 
-      // 3. Risk Gate Stage & Multi-Account Controls
       patchClasses(managedControlsBody, { 'is-locked': !riskAccepted });
       patchAttr(managedControlsBody, 'inert', !riskAccepted);
       patchAttr(managedControlsBody, 'aria-hidden', riskAccepted ? null : 'true');
@@ -39621,7 +38247,6 @@ const SettingsAccountTab = defineComponent({
       patchAttr(lockNowBtn, 'hidden', !vaultSecurity.enabled || vaultLocked || supported === false);
       patchAttr(lockNowBtn, 'disabled', !canOperateVault);
 
-      // Unlock Notice
       patchAttr(unlockBox, 'hidden', !riskAccepted || supported !== true || !vaultLocked);
       patchText(unlockHintLabel, t(key('vaultLockedHint')));
       patchText(forgotToggleBtn, t(key('forgotPwdToggle')));
@@ -39639,12 +38264,12 @@ const SettingsAccountTab = defineComponent({
       patchText(resetVaultBtn, t(key(armedVaultReset ? 'resetVaultConfirm' : 'resetVaultBtn')));
       patchAttr(resetVaultBtn, 'disabled', !canOperateVault);
 
-      // Passphrase Drawer (`SegmentedControl` for Change / Disable)
       const showPwdDrawer = riskAccepted && pwdDrawerOpen && !vaultLocked && supported === true;
       patchAttr(pwdForm, 'hidden', !showPwdDrawer);
       if (showPwdDrawer) {
         const isSetNew = !vaultSecurity.enabled;
         const isDisableMode = !isSetNew && pwdManageMode === 'disable';
+        const disableBlockedNoKeyring = !keyringAvailable && isDisableMode;
         patchAttr(pwdModeSegment.el, 'hidden', isSetNew);
         if (!isSetNew) {
           pwdModeSegment.setProps({ modelValue: pwdManageMode, options: getPwdModeOptions() });
@@ -39652,7 +38277,7 @@ const SettingsAccountTab = defineComponent({
 
         patchAttr(pwdCurrentInput, 'hidden', isSetNew);
         patchAttr(pwdCurrentInput, 'placeholder', t(key('pwdCurrentPlaceholder')));
-        patchAttr(pwdCurrentInput, 'disabled', !canOperateVault);
+        patchAttr(pwdCurrentInput, 'disabled', !canOperateVault || disableBlockedNoKeyring);
 
         patchAttr(pwdNewInput, 'hidden', isDisableMode);
         patchAttr(pwdNewInput, 'placeholder', t(key('pwdNewPlaceholder')));
@@ -39671,8 +38296,16 @@ const SettingsAccountTab = defineComponent({
           'btn-secondary': isDisableMode,
           'btn-danger-confirm': isDisableMode,
         });
-        patchAttr(pwdSubmitBtn, 'disabled', !canOperateVault);
-        patchText(pwdHint, t(key(isSetNew ? 'pwdSetHint' : 'pwdManageHint')));
+        patchAttr(pwdSubmitBtn, 'disabled', !canOperateVault || disableBlockedNoKeyring);
+        const pwdHintKey =
+          disableBlockedNoKeyring
+            ? 'keyringUnavailable'
+            : isSetNew && passphraseRequired
+              ? 'passphraseRequired'
+              : isSetNew
+                ? 'pwdSetHint'
+                : 'pwdManageHint';
+        patchText(pwdHint, t(key(pwdHintKey)));
       }
 
       refreshIntervalSelect.setProps({
@@ -39859,7 +38492,18 @@ const SettingsAccountTab = defineComponent({
             vaultSecurity = { enabled: true, unlocked: false };
             syncWarmCache();
           }
-          setTransientStatus(errors.has(result.error) ? result.error : 'storeFailed', 3600);
+          if (result.error === 'passphraseRequired' && !vaultSecurity.enabled) {
+            keyringAvailable = false;
+            passphraseRequired = true;
+            importOpen = false;
+            pwdDrawerOpen = true;
+            clearPasswordInputs();
+            syncWarmCache();
+          } else if (result.error === 'keyringUnavailable') {
+            keyringAvailable = false;
+            syncWarmCache();
+          }
+          setTransientStatus(errors.has(result.error) ? result.error : 'storeFailed', 4500);
           return;
         }
         if (action === 'loginStart' || action === 'loginCancel') {
@@ -39869,6 +38513,8 @@ const SettingsAccountTab = defineComponent({
         }
         supported = result?.supported === true;
         riskLockedFromServer = Boolean(result?.riskLocked);
+        keyringAvailable = result?.keyringAvailable !== false;
+        passphraseRequired = Boolean(result?.passphraseRequired && !result?.security?.enabled);
         accounts = result?.accounts || [];
         selectedEmail = result?.selectedEmail || '';
         switchState = result?.switchState || null;
@@ -39879,6 +38525,10 @@ const SettingsAccountTab = defineComponent({
           };
         } else {
           vaultSecurity = { enabled: false, unlocked: true };
+        }
+        if (passphraseRequired && draftRiskAccepted && !riskLockedFromServer && action === 'list') {
+          importOpen = false;
+          pwdDrawerOpen = true;
         }
         if (result.login) applyLogin(result.login);
         if (action === 'resetVault') {
@@ -40344,7 +38994,6 @@ const SettingsOtherTab = defineComponent({
       }
     }
 
-    // --- Card 1: 模型标识显示 ---
     const modelCardTitleEl = h('span', { text: t('settings.oth.modelTitle') });
 
     const stepModelSelect = CustomSelect({
@@ -40381,7 +39030,6 @@ const SettingsOtherTab = defineComponent({
       stepModelSelect.el,
     ]);
 
-    // --- Card 1.5: 宿主启动自愈与 IDE Remote-SSH ---
     const hostPanelTitleEl = h('span', { text: t('settings.oth.hostTitle') });
     const autoLaunchLabelEl = h('span', {
       className: 'settings-action-title',
@@ -40519,7 +39167,6 @@ const SettingsOtherTab = defineComponent({
       macWrapperCleanRow,
     ]);
 
-    // --- Card 2: 试验性功能 ---
     const expTitleEl = h('span', { text: t('settings.oth.expTitle') });
     const quotaReserveLabelEl = h('span', {
       className: 'settings-action-title',
@@ -40624,7 +39271,6 @@ const SettingsOtherTab = defineComponent({
       ]),
     ]);
 
-    // --- Card 2: 按模型设置上下文窗口 ---
     const baselineTitleEl = h('span', { text: t('settings.oth.baselineTitle') });
     const ctxModelLabel = h('span', { className: 'form-label' });
     const ctxWindowLabel = h('span', { className: 'form-label' });
@@ -40933,7 +39579,6 @@ const SettingsOtherTab = defineComponent({
     ]);
     renderContextWindows();
 
-    // --- Card 3: 缓存与重置 ---
     const maintTitleEl = h('span', { text: t('settings.oth.maintTitle') });
     const cacheLabelEl = h('span', {
       className: 'settings-action-title',
@@ -41897,7 +40542,7 @@ const LiveOverviewView = defineComponent({
       () => {
         if (getVisibleMonitorView() !== 'overview') {
           isDirty = true;
-          // Refresh initial skeleton labels even before telemetry arrives
+
           if (!latestData) {
             widgetHost.update({
               moduleKeys: DEFAULT_CLIENT_OVERVIEW_MODULES,
@@ -41937,7 +40582,6 @@ return { LiveOverviewView };
 
 // --- src/views/ConsumptionView.js ---
 const { ConsumptionView } = (() => {
-/** 消耗统计顶栏支持的时间范围预设项 */
 function getConsumptionTimeRangeOptions() {
   return [
     { value: 'cycle', label: t('cons.rangeCycle') },
@@ -41951,7 +40595,6 @@ function getConsumptionTimeRangeOptions() {
   ];
 }
 
-/** 热力图顶栏支持的四档聚合视图选项 */
 function getHeatmapModeOptions() {
   return [
     { value: 'day', label: t('cons.hmModeDay') },
@@ -42060,7 +40703,7 @@ function formatCycleMinuteSpanTip(startMs, endMs, isFallbackWeek = false) {
 const ConsumptionView = defineComponent({
   name: 'ConsumptionView',
   setup({ onCleanup }) {
-    // --- 时间筛选栏：快速时间段分段控制器与自定义起止时间选择条 ---
+
     let draftStartMs = telemetryStore.getState().customStartMs;
     let draftEndMs = telemetryStore.getState().customEndMs;
     let hasUncommittedCustomDraft = false;
@@ -42160,7 +40803,6 @@ const ConsumptionView = defineComponent({
       ]
     );
 
-    // --- Section 1: 用量概览矩阵 (上层 3 列核心总量 + 下层 3 列新输入/缓存读取/输出拆分 + 底部 4 段比例条) ---
     const dateSpanBadge = h('span', { className: 'cons-badge text-mono', text: '-- ~ --' });
     const cyclePoolSelect = CustomSelect({
       className: 'cons-cycle-pool-select',
@@ -42323,7 +40965,6 @@ const ConsumptionView = defineComponent({
       });
     }
 
-    // --- Section 2: 历史趋势 (交互式 SVG 平滑曲线图 / 7×W 四态热力格子图 + 悬停明细浮层 + 点击时段下钻) ---
     let heatmapViewMode = 'day';
     const trendTitleSpan = h('span', { text: t('cons.trendTitle') });
     const trendRangeBadge = h('span', { className: 'cons-badge', text: t('cons.allTime') });
@@ -42368,7 +41009,6 @@ const ConsumptionView = defineComponent({
       trendChart.el,
     ]);
 
-    // --- Section 3: 统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」，右侧联动对应排序切换） ---
     let activeRankingTab = 'models';
     let modelsSortBy = 'tokens';
     let topConvsSortBy = 'cost';
@@ -42532,7 +41172,6 @@ const ConsumptionView = defineComponent({
       topConvsEmptyEl,
     ]);
 
-    // --- Section 4: 客户端来源列表 ---
     const sourcesTitleSpan = h('span', { className: 'panel-title', text: t('cons.clientSources') });
     const sourcesHoverHint = h('span', {
       className: 'text-muted text-mono',
@@ -42548,7 +41187,6 @@ const ConsumptionView = defineComponent({
       sourcesListEl,
     ]);
 
-    // --- Section 5: 按月细分 (12 个月垂直按模型配色堆叠柱状图 + 悬停明细浮层) ---
     const monthlyTitleSpan = h('span', { text: t('cons.monthlyTitle') });
     const monthlyYearBadge = h('span', { className: 'cons-badge text-mono', text: '2026' });
     const monthlyHoverHint = h('span', {
@@ -42874,15 +41512,11 @@ const ConsumptionView = defineComponent({
       return true;
     }
 
-    /**
-     * 将遥测状态切片同步渲染至消费统计视图的 5 个子面板。
-     */
     function renderConsumptionData(slice) {
       if (!slice) return;
       const cons = slice.consumption || {};
       const rangeInfo = cons.selectedRange || {};
 
-      // 始终在 0ms 同步顶部时间段滑块、周期池选择器及自定义日期条显隐，给予即刻交互反馈
       timeFilterSwitch.setValue(slice.range);
       patchAttr(customRangeBar, 'hidden', slice.range !== 'custom');
       if (!hasUncommittedCustomDraft) {
@@ -42911,7 +41545,6 @@ const ConsumptionView = defineComponent({
         patchAttr(cyclePoolSelect.el, 'hidden', false);
       }
 
-      // 极少数缓存未命中时（如自定义新区间或进页瞬间抢点），跳过用旧趋势/模型跑无效半更新重绘，待几毫秒后单帧原子绘制
       const payloadPool = rangeInfo.key === 'cycle' ? rangeInfo.pool || 'all' : 'all';
       if (
         (rangeInfo.key && slice.range && rangeInfo.key !== slice.range) ||
@@ -42977,7 +41610,7 @@ const ConsumptionView = defineComponent({
       slice,
       { cons, preset, acct, rangeInfo, activePoolFilter, dateSpan, currentMonthIdx, monthlyYear }
     ) {
-      // 1. 同步用量概览矩阵及顶部 4 段比例条
+
       patchText(dateSpanBadge, dateSpan);
       patchAttr(
         dateSpanBadge,
@@ -43037,7 +41670,6 @@ const ConsumptionView = defineComponent({
         thinkingTokens,
       });
 
-      // 2-5. 统一解析展示模式与全局确定性模型配色映射（确保趋势浮层、模型排行圆点、客户端来源条、月度堆叠柱四处完全同色）
       const localeSig = i18nStore.getState().locale;
       const displaySettings = {
         modelDisplayMode: normalizeModelDisplayMode(
@@ -43164,7 +41796,6 @@ const ConsumptionView = defineComponent({
         ...allTrendMergedModels,
       ]);
 
-      // 2. 同步历史趋势交互式 SVG 面积图 / 类 GitHub 每日热力图（>90天）及悬停分模型浮层
       const rangeBadgeText =
         slice.range === 'cycle'
           ? `${rangeInfo.isFallbackWeek || slice.weeklyLimitMode === 'custom_tokens' || slice.weeklyLimitMode === 'custom_cost' ? t('cons.cycleFallbackWeek') : t('cons.currentCycle')}${
@@ -43221,7 +41852,6 @@ const ConsumptionView = defineComponent({
         buildModelSegments: buildTrendModelSegments,
       });
 
-      // 3. 同步统一排行卡片（分段切换「模型排行 | 项目排行 | 会话排行」及对应排序控制）
       const sortedTopConvs = [...topConvsWithModels].sort((a, b) =>
         topConvsSortBy === 'tokens'
           ? (b.totalTokens || 0) - (a.totalTokens || 0) || (b.costUsd || 0) - (a.costUsd || 0)
@@ -43353,7 +41983,6 @@ const ConsumptionView = defineComponent({
           updateTopConversationRow(refs, w, topWsBases, modelColorMap, topConvsSortBy),
       });
 
-      // 4. 同步客户端来源列表（长尾合并分段配色 + 右侧总调用数 + 悬停进度条弹出明细浮层）
       patchKeyedList(sourcesListEl, sourcesWithModels, {
         keyFn: (s) => s.name,
         sigFn: (s) => {
@@ -43386,7 +42015,6 @@ const ConsumptionView = defineComponent({
       lastAnimatedRankingKey = nextRankingKey;
       lastAnimatedSortSig = nextSortSig;
 
-      // 5. 同步 12 个月垂直堆叠柱状图（按模型配色堆叠 + 长尾合并 + 悬停弹出明细浮层）
       patchText(monthlyYearBadge, String(monthlyYear));
       const maxMonthTokens = Math.max(
         1,
@@ -43434,7 +42062,7 @@ const ConsumptionView = defineComponent({
             maxMain: 5,
             minSharePct: 1.5,
           });
-          // 垂直柱状图底端放主力模型、顶端叠放小占比及「其他」，视觉重心稳定
+
           const verticalSegments =
             barPartitioned.length > 0
               ? [...barPartitioned].reverse()
@@ -43955,7 +42583,6 @@ const StepsDetailView = defineComponent({
       },
     });
 
-    // --- 子视图 1：单步明细表（委托给可复用的 `StepTableWidget` 解耦组件） ---
     let stepsScroll = null;
     const stepTableWidget = StepTableWidget({
       onSelectAgentScopes: applyAgentScopesSelection,
@@ -44003,7 +42630,6 @@ const StepsDetailView = defineComponent({
       [anomalyFilterLabelEl, anomalyFilterClearBtn]
     );
 
-    // --- 步骤搜索栏及快捷诊断芯片 ---
     const stepSearchBox = createSearchInput({
       wrapClassName: 'steps-search-wrap',
       iconClassName: 'steps-search-icon',
@@ -44117,7 +42743,6 @@ const StepsDetailView = defineComponent({
       [stepSearchWrapEl, stepQuickChipsEl]
     );
 
-    // --- 子视图 2：总汇总分析面板 ---
     let selectedLineMetric = 'totalTokens';
     let selectedFitMetric = 'tps';
 
@@ -44579,7 +43204,6 @@ const StepsDetailView = defineComponent({
         ...perModelOptions,
       ];
 
-      // 1. “按步查看”动态列头同步与表格行级增量对账
       selectedTableModels = normalizeMultiModelSelection(
         selectedTableModels,
         availableModelKeys
@@ -44750,13 +43374,11 @@ const StepsDetailView = defineComponent({
         }
       }
 
-      // 2. 顶部“会话走势”更新
       selectedLineModels = normalizeMultiModelSelection(
         selectedLineModels,
         availableModelKeys
       );
 
-      // 3. 顶部“趋势拟合”模型锁定随当前会话与代理范围更新。
       const defaultActiveModelKey = resolveDefaultActiveModelKey(
         activeModelSource,
         chronoSteps,
@@ -44829,7 +43451,6 @@ const StepsDetailView = defineComponent({
       });
       patchText(fitSummaryBadge, fitRes.summaryBadge);
 
-      // 4. 极简模型总览列表增量对账
       const displayModels = mergeModelsByDisplayName(models, displaySettings, { fallback: '—' });
       const needStepAnomalyFallback = displayModels.every((m) => !(Number(m?.anomalyCount) > 0));
       let stepAnomalyByGroup = null;
@@ -45664,7 +44285,7 @@ const SettingsView = defineComponent({
         accountTab,
         otherTab,
         viewScrollbar,
-        // Convenience aliases for external callers / tests
+
         windowMountSelect: structureTab.refs.windowMountSelect,
         multiSessionToggle: structureTab.refs.multiSessionToggle,
         topbarSlotsList: structureTab.refs.topbarSlotsList,
@@ -46050,16 +44671,6 @@ const { CAPSULE_HOST_ID, PORTAL_HOST_ID, computeCapsuleLayoutMode, isImmediately
 const CAPSULE_HOST_ID = 'ag-usage-monitor-capsule';
 const PORTAL_HOST_ID = 'ag-usage-monitor-portal';
 
-/**
- * 带迟滞区间（Hysteresis）的四阶段顶栏双胶囊响应式宽度计算，避免临界宽度反复跳动。
- * 当左侧多会话入口关闭（`showMulti === false`）时自动释放约 76px 预算给右侧指标胶囊；
- * 当槽位数超过 3 个（4..5 槽）时自动按槽位增量上浮 `wide` 阈值。
- *
- * @param {number} availWidth
- * @param {'wide'|'compact'|'minimal'|'ring-only'} currentMode
- * @param {{ showMulti?: boolean, hasUpdate?: boolean, slotCount?: number }} [options]
- * @returns {'wide'|'compact'|'minimal'|'ring-only'}
- */
 function computeCapsuleLayoutMode(availWidth, currentMode = 'wide', options = undefined) {
   if (availWidth == null || Number.isNaN(availWidth)) return 'wide';
   const showMulti = options?.showMulti !== false;
@@ -46226,7 +44837,7 @@ function hasExcludedComposerAncestor(el) {
     try {
       if (el.closest(COMPOSER_EXCLUDED_ANCESTOR_SELECTOR)) return true;
     } catch {
-      // 忽略选择器异常并回退祖先链遍历
+
     }
   }
   let cur = el.parentElement || el.parentNode;
@@ -46256,7 +44867,7 @@ function isNodeHiddenByStyle(el) {
       const cs = window.getComputedStyle(el);
       if (cs?.display === 'none' || cs?.visibility === 'hidden') return true;
     } catch {
-      // 忽略样式读取异常
+
     }
   }
   return false;
@@ -46275,7 +44886,7 @@ function getInFlowHostChildren(container, capsuleNode, portalNode) {
         if (cs?.display === 'none') continue;
         if (cs?.position === 'absolute' || cs?.position === 'fixed') continue;
       } catch {
-        // 忽略计算样式异常
+
       }
     }
     out.push(ch);
@@ -46294,7 +44905,7 @@ function isHorizontalFlexContainer(el) {
       const dir = String(cs?.flexDirection || 'row');
       if (disp.includes('flex') && !dir.startsWith('column')) return true;
     } catch {
-      // 忽略计算样式异常
+
     }
   }
   return false;
@@ -46311,7 +44922,7 @@ function isSpaceDistributedFlexContainer(el) {
         return true;
       }
     } catch {
-      // 忽略计算样式异常
+
     }
   }
   return false;
@@ -46373,7 +44984,7 @@ function buildComposerDockDescriptor(autoBtn, composerCard, bottomRowBtns, capsu
           computedLargeMl = true;
         }
       } catch {
-        // 忽略边距测量异常
+
       }
     }
 
@@ -46497,7 +45108,7 @@ function collectComposerBottomButtons(container, editorEl, editorRect, capsuleNo
       continue;
     }
     if (isNodeHiddenByStyle(btn)) continue;
-    // 仅排除嵌套在真实紧凑按钮内部的图标/子触发器，避免外层卡片级 role="button" 误杀工具栏按钮
+
     let nestedInBtn = false;
     let p = btn.parentElement || btn.parentNode;
     while (p && p !== container) {
@@ -46552,14 +45163,12 @@ function pickAutoButtonFromRow(bottomRowBtns, containerRect, options = undefined
     ...bottomRowBtns.filter((b) => b.centerX < rightSplitX),
   ];
 
-  // Tier 1: 精确文本 Auto / 自动 匹配
   for (const item of rightFirst) {
     if (COMPOSER_MODE_EXACT_RE.test(item.cleanText)) {
       return { btn: item.btn, tier: 1 };
     }
   }
 
-  // Tier 2: 执行/权限模式文案或无障碍语义属性匹配（排除模型选择器按钮）
   for (const item of rightFirst) {
     if (isComposerModelButtonItem(item)) continue;
     if (
@@ -46572,7 +45181,6 @@ function pickAutoButtonFromRow(bottomRowBtns, containerRect, options = undefined
 
   const hasModelBtn = bottomRowBtns.some(isComposerModelButtonItem);
 
-  // Tier 3: 几何右簇首按钮兜底（适配 Antigravity IDE 无 Auto 按钮、右侧为发送/语音按钮的输入栏布局）
   if (bottomRowBtns.length >= 2 && (!requireModelForFallback || hasModelBtn)) {
     let maxGap = -Infinity;
     let splitIdx = -1;
@@ -46588,7 +45196,6 @@ function pickAutoButtonFromRow(bottomRowBtns, containerRect, options = undefined
     }
   }
 
-  // Tier 4: 输入为空时若右侧发送按钮暂时隐藏、仅左侧存在模型选择器按钮，停靠至工具栏最右侧
   if (hasModelBtn && containerRect && containerRect.width >= 200) {
     const lastItem = bottomRowBtns[bottomRowBtns.length - 1];
     if (lastItem.rect.right <= containerRect.left + containerRect.width * 0.72) {
@@ -46623,7 +45230,6 @@ function findHostComposerAutoTarget(capsuleNode = null, portalNode = null, patch
     const porEl = portalNode || document.getElementById?.(PORTAL_HOST_ID) || null;
     const activeRouteId = extractHostRouteCascadeId();
 
-    // 1. 优先从活跃会话的输入框编辑器向上定位底部工具栏和 Auto / 右簇发送按钮
     const rawEditors = querySimpleSelectorList(document, [
       'textarea',
       '[contenteditable]',
@@ -46725,7 +45331,6 @@ function findHostComposerAutoTarget(capsuleNode = null, portalNode = null, patch
       }
     }
 
-    // 2. 兜底路径：编辑器自定义封装或暂时只读时，直接扫描底部包含模型选择器或 Auto 按钮的输入工具栏
     const vh = Number(window.innerHeight || 800);
     const allBtns = querySimpleSelectorList(document, ['button', '[role="button"]', '[aria-haspopup]']);
     let modelToolbarFallback = null;
@@ -46786,7 +45391,7 @@ function findHostComposerAutoTarget(capsuleNode = null, portalNode = null, patch
     }
     if (modelToolbarFallback) return modelToolbarFallback;
   } catch {
-    // 忽略输入框探测异常
+
   }
   return null;
 }
@@ -46850,7 +45455,7 @@ function resolveActiveDockTarget(options = undefined) {
       targetContainer = rightGroup;
     }
   } catch {
-    // 忽略子选择器不兼容场景
+
   }
   return {
     kind: 'flow',
@@ -46901,14 +45506,11 @@ function getLeftSidebarRightEdge(vw) {
       }
     }
   } catch {
-    // 忽略侧栏测量异常
+
   }
   return 0;
 }
 
-/**
- * 在主窗口挂载双栖顶栏胶囊和完整四标签悬浮面板，并注册 `window.__AGUsageMonitorOverlay` 生命周期句柄。
- */
 const CAPSULE_EXCLUDED_CSS_SECTIONS = new Set([
   'src/styles/views-overview.css',
   'src/styles/views-consumption.css',
@@ -46946,7 +45548,7 @@ function attachShadowStyles(shadowRoot, fullCss, { slimCapsule = false } = {}) {
       shadowRoot.adoptedStyleSheets = [sharedOverlayStyleSheetMemo.sheet];
       return;
     } catch {
-      // 降级到传统 <style> 节点
+
     }
   }
   const styleEl = document.createElement('style');
@@ -46963,11 +45565,9 @@ const POPOVER_BASE_WIDTH = 540;
 const POPOVER_MAX_AUTO_WIDTH = 960;
 const MULTI_PANEL_WIDTH = 464;
 
-
 function mountWindowOverlay() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return null;
 
-  // 先读取旧实例缓存的遥测快照与展开态（热升级时无缝承接数据与悬停状态，杜绝闪烁或关开），再安全卸载旧实例
   let carryOverTelemetry = null;
   let carryOverTooltipOpen = false;
   let carryOverPopoverOpen = false;
@@ -46984,13 +45584,13 @@ function mountWindowOverlay() {
     carryOverPointer = prevOv?.getLastPointer?.() || null;
     prevOv?.[WINDOW_OVERLAY_METHODS.dispose]?.();
   } catch {
-    // 忽略旧实例卸载异常
+
   }
   try {
     document.getElementById(CAPSULE_HOST_ID)?.remove?.();
     document.getElementById(PORTAL_HOST_ID)?.remove?.();
   } catch {
-    // 忽略残留节点清理异常
+
   }
 
   const bridgeConfig = getWindowBridgeConfig();
@@ -47140,13 +45740,12 @@ function mountWindowOverlay() {
     setPopoverOpen(true);
   }
 
-  // --- 1. 创建顶栏/输入框双胶囊 Shadow Host（左：多会话实时信息；右：单会话指标胶囊） ---
   const capsuleHost = document.createElement('div');
   capsuleHost.id = CAPSULE_HOST_ID;
   capsuleHost.className = 'wm-capsule-host';
   capsuleHost.setAttribute('data-dock', 'fixed');
   capsuleHost.setAttribute('data-layout', layoutMode);
-  // 隔离冒泡事件，防止嵌入输入框工具栏时点击或回车误触外层编辑框聚焦或表单提交
+
   capsuleHost.addEventListener?.('mousedown', (e) => e.stopPropagation?.());
   capsuleHost.addEventListener?.('click', (e) => e.stopPropagation?.());
   capsuleHost.addEventListener?.('keydown', (e) => {
@@ -47157,7 +45756,6 @@ function mountWindowOverlay() {
   const capsuleShadow = capsuleHost.attachShadow({ mode: 'open' });
   attachShadowStyles(capsuleShadow, stylesCss, { slimCapsule: true });
 
-  // 左侧无边框多会话实时触发按钮（固定预占宽度，不随运行数跳动）
   const multiDot = h('span', { className: 'wm-multi-dot' });
   const multiLabel = h('span', { className: 'wm-multi-label', text: t('capsule.multiZero') });
   const multiBtn = h(
@@ -47200,7 +45798,6 @@ function mountWindowOverlay() {
     [multiDot, multiLabel]
   );
 
-  // 构建可复用的预占胶囊槽位节点（由 CapsuleBarWidget 共享创建，支持 1..5 项动态槽位）
   const capsuleSlots = [
     createCapsuleSlotNode(0, 'tps'),
     createCapsuleSlotNode(1, 'ttft'),
@@ -47370,7 +45967,6 @@ function mountWindowOverlay() {
   capsuleShadow.appendChild(capsuleBtn);
   capsuleShadow.appendChild(topbarUpdateBtn);
 
-  // --- 2. 创建 Body 顶层浮层 Portal Shadow Host ---
   const portalHost = document.createElement('div');
   portalHost.id = PORTAL_HOST_ID;
   portalHost.className = 'wm-portal-host';
@@ -47379,7 +45975,6 @@ function mountWindowOverlay() {
 
   const initialSettings = telemetryStore.getState().telemetry?.settings;
 
-  // 悬停全景概览浮层（完全解耦至 widgetRegistry，由 hoverModules 动态驱动 0..4 个独立组件，零硬编码）
   const hoverUpdateVerText = h('span', { text: t('capsule.hoverNewVerGeneric') });
   const hoverUpdateHintText = h('span', {
     className: 'wm-hover-update-hint',
@@ -47422,7 +46017,6 @@ function mountWindowOverlay() {
     [hoverUpdateBar, hoverWidgetsContainer]
   );
 
-  // 左侧多会话实时看板浮层（受控复用 LiveActivityWidget，保持零硬编码与同一套计时器状态机）
   const multiPinBadge = h('span', {
     className: 'wm-pin-badge',
     hidden: true,
@@ -47486,7 +46080,6 @@ function mountWindowOverlay() {
     [multiHeaderEl, multiEmptyEl, multiRunningWidget.el]
   );
 
-  // 完整四标签悬浮容器（首次打开主弹窗时按需懒挂载 App，彻底消除宿主窗口冷启动开销）
   uiStore.setState({ monitorVisible: false });
   let appInstance = null;
   const popoverEl = h(
@@ -47567,7 +46160,6 @@ function mountWindowOverlay() {
   syncPortalAppearance(initialSettings);
   (document.body || document.documentElement).appendChild(portalHost);
 
-  // --- 3. 几何测量、IDE 主题桥接、顶栏停靠与防溢出定位 ---
   let patchedActionToolbar = null;
   let patchedActionToolbarPrevMargin = '';
   let observedWorkbench = null;
@@ -47630,7 +46222,7 @@ function mountWindowOverlay() {
         patchedActionToolbar.style.marginLeft = patchedActionToolbarPrevMargin;
       }
     } catch {
-      // 忽略还原宿主工具栏边距异常
+
     }
     patchedActionToolbar = null;
     patchedActionToolbarPrevMargin = '';
@@ -47750,7 +46342,7 @@ function mountWindowOverlay() {
       try {
         themeObserver.observe(wb, { attributes: true, attributeFilter: ['class', 'style'] });
       } catch {
-        // 忽略工作台属性观察异常
+
       }
     }
   }
@@ -47812,7 +46404,7 @@ function mountWindowOverlay() {
       capsuleHost.style.top = '7px';
       capsuleHost.style.right = `${rightOffset}px`;
     } catch {
-      // 忽略回退坐标计算异常
+
     }
   }
 
@@ -47964,7 +46556,7 @@ function mountWindowOverlay() {
         return window.innerWidth - 360;
       }
     } catch {
-      // 忽略测量异常
+
     }
     return 320;
   }
@@ -48188,7 +46780,7 @@ function mountWindowOverlay() {
         hoverTipEl.style.left = `${left}px`;
       }
     } catch {
-      // 忽略定位异常
+
     }
   }
 
@@ -48315,7 +46907,7 @@ function mountWindowOverlay() {
             if (document.body) resizeObserver.observe(document.body);
           }
         } catch {
-          // 忽略观察器异常
+
         }
       }
     } else if (isIdeExtensionChatFrame()) {
@@ -48522,7 +47114,6 @@ function mountWindowOverlay() {
     });
   }
 
-  // --- 4. 实时遥测状态绑定（双胶囊与多会话/动态组件浮层就地更新，零硬编码、零布局跳动） ---
   function renderCapsuleTelemetry() {
     if (disposed) return;
     const telSt = telemetryStore.getState();
@@ -48646,7 +47237,6 @@ function mountWindowOverlay() {
       updateResponsiveLayout();
     }
 
-    // --- 同步动态悬停组件宿主（0 项且无更新提示时自动关闭悬停窗，点击完整浮窗不受影响） ---
     const hoverModuleKeys = normalizeClientHoverModules(telemetry.settings?.hoverModules);
     patchAttr(hoverWidgetsContainer, 'hidden', hoverModuleKeys.length === 0);
     if (hoverModuleKeys.length === 0 && !showUpdatePrompt && tooltipOpen) {
@@ -48733,7 +47323,6 @@ function mountWindowOverlay() {
     }
   );
 
-  // --- 5. 宿主会话路由跟随与全局交互监听 ---
   function syncHostRouteIfChanged() {
     if (disposed) return;
     const currentRouteId = extractHostRouteCascadeId();
@@ -48901,7 +47490,7 @@ function mountWindowOverlay() {
       }
     }
   } catch {
-    // 忽略观察器初始化异常
+
   }
 
   document.addEventListener?.('mousedown', onDocMouseDown, true);
@@ -48986,7 +47575,7 @@ function mountWindowOverlay() {
               switchErr.name = 'AbortError';
               pending?.reject?.(switchErr);
             } catch {
-              // 忽略旧端点回调异常
+
             }
           }
           cur.rpcPending.clear();
@@ -49263,7 +47852,7 @@ async function bootstrapApp(mountTarget = document.getElementById('app-root')) {
       colorSchemeMql?.addEventListener?.('change', () => onHostThemeChange(null));
     }
   } catch {
-    // ignore observer setup errors in constrained environments
+
   }
 
   const stopPolling = startAsyncTelemetryLoop(2000);

@@ -40,6 +40,8 @@ test('pack-release-zip ships only runtime-essential files, excludes dev bloat, a
     'sidecars/panel/backend/session-online-delete.mjs',
     'sidecars/panel/backend/host-i18n/index.mjs',
     'sidecars/panel/backend/account-credentials.ps1',
+    'sidecars/panel/backend/account-keyring-store.mjs',
+    'sidecars/panel/backend/account-switch-posix-worker.mjs',
     'sidecars/panel/shared/settings-normalization.mjs',
     'sidecars/panel/shared/host-i18n-protocol.mjs',
     'sidecars/panel/shared/workspace-uri.mjs',

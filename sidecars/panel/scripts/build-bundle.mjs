@@ -246,7 +246,7 @@ function recordExportedDeclarationIdent(source, declKeywordIdx, onExport) {
  * @param {(name: string, isClauseExport: boolean) => void} [onExport]
  * @returns {string}
  */
-export function stripModuleSyntax(source, onImport, onExport) {
+export function stripModuleSyntax(source, onImport, onExport, { stripComments = false } = {}) {
   const len = source.length;
   let out = '';
   let i = 0;
@@ -300,7 +300,7 @@ export function stripModuleSyntax(source, onImport, onExport) {
     if (ch === '/' && source[i + 1] === '/') {
       let end = i + 2;
       while (end < len && source[end] !== '\n') end += 1;
-      out += source.slice(i, end);
+      if (!stripComments) out += source.slice(i, end);
       i = end;
       continue;
     }
@@ -310,7 +310,11 @@ export function stripModuleSyntax(source, onImport, onExport) {
       let end = i + 2;
       while (end < len && !(source[end] === '*' && source[end + 1] === '/')) end += 1;
       end = Math.min(len, end + 2);
-      out += source.slice(i, end);
+      if (!stripComments) {
+        out += source.slice(i, end);
+      } else {
+        out += source.slice(i, end).includes('\n') ? '\n' : ' ';
+      }
       i = end;
       continue;
     }
@@ -702,8 +706,11 @@ export function buildBundle(panelDir = PANEL_DIR) {
             return;
           }
           moduleLocalExports.set(name, localName);
-        }
-      );
+        },
+        { stripComments: true }
+      )
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n');
       bundledPaths.add(path);
       const exportEntries = [...moduleLocalExports.entries()];
       for (const [sym] of exportEntries) {

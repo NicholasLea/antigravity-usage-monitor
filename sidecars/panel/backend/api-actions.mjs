@@ -13,6 +13,7 @@ import {
   getAccountQuotaHistoryPayload,
   getLatestRecordedHostEmail,
 } from './account-quota-history.mjs';
+import { isAccountPlatformSupported } from './account-keyring-store.mjs';
 import { handleAccountCredentialAction, warmAccountPublicListCache } from './account-switch.mjs';
 import { issueAccountActionNonce, verifyAccountActionNonce } from './account-vault-crypto.mjs';
 import {
@@ -723,7 +724,7 @@ export async function executeAccountCredentialAction(data, opts = {}) {
       contentType: 'application/json',
       headers: { 'Cache-Control': 'no-store' },
       body: JSON.stringify({
-        supported: process.platform === 'win32',
+        supported: isAccountPlatformSupported(process.platform),
         riskLocked: true,
         accounts: [],
         selectedEmail: '',

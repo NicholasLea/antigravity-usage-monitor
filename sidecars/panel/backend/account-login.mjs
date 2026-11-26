@@ -4,16 +4,86 @@ import { execFile } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
+import { appendWslBridgeEnv, isWslEnvironment } from './account-keyring-store.mjs';
 import { buildGoogleAccountLoginUrl, exchangeGoogleAccountCode } from './account-oauth.mjs';
 
-function openGoogleAccountBrowser(url) {
-  const shell = join(process.env.SystemRoot || 'C:/Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+function runExecBrowserCommand(execFileFn, cmd, args, env) {
   return new Promise((resolve) => {
-    execFile(shell, ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $env:USAGE_MONITOR_LOGIN_URL'], {
-      windowsHide: true, timeout: 5000,
-      env: { ...process.env, USAGE_MONITOR_LOGIN_URL: url },
-    }, (error) => resolve(!error));
+    execFileFn(cmd, args, { windowsHide: true, timeout: 5000, env }, (error) => {
+      resolve(!error);
+    });
   });
+}
+
+export async function openGoogleAccountBrowser(
+  url,
+  {
+    platform = process.platform,
+    env = process.env,
+    execFileFn = execFile,
+  } = {}
+) {
+  let parsed;
+  try {
+    parsed = new URL(String(url || ''));
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'accounts.google.com') {
+    return false;
+  }
+  const safeUrl = parsed.toString();
+
+  if (platform === 'win32') {
+    const shell = join(
+      env?.SystemRoot || 'C:/Windows',
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe'
+    );
+    return runExecBrowserCommand(
+      execFileFn,
+      shell,
+      ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $env:USAGE_MONITOR_LOGIN_URL'],
+      { ...env, USAGE_MONITOR_LOGIN_URL: safeUrl }
+    );
+  }
+
+  if (platform === 'darwin') {
+    return runExecBrowserCommand(execFileFn, '/usr/bin/open', [safeUrl], env);
+  }
+
+  if (platform === 'linux') {
+    if (isWslEnvironment({ platform, env })) {
+      if (await runExecBrowserCommand(execFileFn, 'wslview', [safeUrl], env)) {
+        return true;
+      }
+      const wslEnv = appendWslBridgeEnv(
+        { ...env, USAGE_MONITOR_LOGIN_URL: safeUrl },
+        ['USAGE_MONITOR_LOGIN_URL']
+      );
+      if (
+        await runExecBrowserCommand(
+          execFileFn,
+          'powershell.exe',
+          ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $env:USAGE_MONITOR_LOGIN_URL'],
+          wslEnv
+        )
+      ) {
+        return true;
+      }
+    }
+    if (!env?.DISPLAY && !env?.WAYLAND_DISPLAY) {
+      return false;
+    }
+    if (await runExecBrowserCommand(execFileFn, 'xdg-open', [safeUrl], env)) {
+      return true;
+    }
+    return runExecBrowserCommand(execFileFn, 'gio', ['open', safeUrl], env);
+  }
+
+  return false;
 }
 
 function loginCallbackPage(language, success) {
@@ -122,6 +192,11 @@ export function createAccountLoginController({
             'credentialAccessDenied',
             'busy',
             'oauthClientUnavailable',
+            'vaultLocked',
+            'passphraseRequired',
+            'keyringUnavailable',
+            'credentialRejected',
+            'identityMismatch',
           ].includes(error?.message);
           finish(flow, 'error', preservedError ? error.message : 'loginExchangeFailed');
         }

@@ -44,9 +44,10 @@ const BACKEND_MODULE_FILES = [
   '../backend/devtools-port-probe.mjs',
   '../backend/host-theme-store.mjs',
   '../backend/account-quota-history.mjs',
+  '../backend/account-vault-crypto.mjs',
+  '../backend/account-keyring-store.mjs',
   '../backend/account-oauth.mjs',
   '../backend/account-login.mjs',
-  '../backend/account-vault-crypto.mjs',
   '../backend/account-switch.mjs',
   '../backend/endpoint-registry.mjs',
   '../backend/proto-wire.mjs',
@@ -152,6 +153,7 @@ export function backendHarness({
       const fn = typeof opts === 'function' ? opts : cb;
       fn(new Error('execFile not mocked'));
     }),
+    spawnSync:()=>({status:1,stdout:'',stderr:''}),
     existsSync:p=>{
       const norm = String(p).replace(/\\/g, '/');
       if (norm.endsWith('settings.json') || norm.endsWith('trajectory_usage_cache.json')) return true;
@@ -241,7 +243,7 @@ export function backendHarness({
       if (state.cacheWriteError) throw state.cacheWriteError;
       state.saves.push({path:p,data:JSON.parse(JSON.stringify(data))});
     },
-    homedir:()=>'/test-home',dirname:path.dirname,join:path.join,basename:path.basename,pathWin32:path.win32,delimiter:path.delimiter,pathToFileURL,fileURLToPath:()=>mainPath,
+    homedir:()=>'/test-home',dirname:path.dirname,join:path.join,basename:path.basename,pathWin32:path.win32,winPath:path.win32,posixPath:path.posix,delimiter:path.delimiter,pathToFileURL,fileURLToPath:()=>mainPath,
     Response:class {constructor(body,options){this.body=body;this.options=options;}},
     SidecarApp:class {page(){} api(){} run(){}},
     fetch:async(url,options={})=>{

@@ -1,9 +1,16 @@
-/** @fileoverview Antigravity shared credentials and the plugin's Windows credential vault. */
+/** @fileoverview Antigravity shared credentials and cross-platform encrypted credential vault. */
 
 import { spawn } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import {
+  clearPosixKeyringRuntimeCaches,
+  extractHostCredentialEmail,
+  isAccountPlatformSupported,
+  resolvePosixAccountStoragePaths,
+  runPosixCredentialStore,
+} from './account-keyring-store.mjs';
 import { accountLoginController } from './account-login.mjs';
 import {
   isAllowedOAuthClientId,
@@ -40,7 +47,8 @@ const ACCOUNT_ERRORS = new Set([
   'oauthUnavailable', 'quotaUnavailable',
   'switchStartFailed', 'clientCloseFailed', 'clientRestartFailed',
   'vaultLocked', 'wrongPassword', 'invalidPassword', 'passwordRateLimited',
-  'vaultDecryptFailed', 'invalidActionNonce', 'riskNotAccepted',
+  'vaultDecryptFailed', 'passphraseRequired', 'keyringUnavailable',
+  'invalidActionNonce', 'riskNotAccepted',
 ]);
 
 const ALLOWED_ACTIONS = new Set([
@@ -56,6 +64,7 @@ const vaultSecurityByPath = new Map();
 export function clearAccountVaultRuntimeState() {
   lockVaultSession();
   resetVaultUnlockFailures();
+  clearPosixKeyringRuntimeCaches();
   transientAccessTokens.clear();
   vaultSecurityByPath.clear();
 }
@@ -211,17 +220,24 @@ export function runWindowsCredentialStore(request) {
   });
 }
 
-function serializeHostCredential(credential, { forHostSwitch = false } = {}) {
-  const target =
-    forHostSwitch && !credential.aicode_scope_sign_out_attempted_at
-      ? { ...credential, aicode_scope_sign_out_attempted_at: Math.floor(Date.now() / 1000) }
+function serializeHostCredential(
+  credential,
+  { forHostSwitch = false, fallbackEmail = '', maxBytes = 2560 } = {}
+) {
+  const cleanFallbackEmail = normalizeAccountEmail(fallbackEmail);
+  let target =
+    cleanFallbackEmail && !credential.id_token_email
+      ? { ...credential, id_token_email: cleanFallbackEmail }
       : credential;
+  if (forHostSwitch && !target.aicode_scope_sign_out_attempted_at) {
+    target = { ...target, aicode_scope_sign_out_attempted_at: Math.floor(Date.now() / 1000) };
+  }
   let payload = JSON.stringify(target);
-  if (Buffer.byteLength(payload, 'utf8') > 2560 && target.id_token) {
+  if (Buffer.byteLength(payload, 'utf8') > maxBytes && target.id_token) {
     const { id_token: _ignored, ...compact } = target;
     payload = JSON.stringify(compact);
   }
-  if (Buffer.byteLength(payload, 'utf8') > 2560) throw new Error('credentialTooLarge');
+  if (Buffer.byteLength(payload, 'utf8') > maxBytes) throw new Error('credentialTooLarge');
   return payload;
 }
 
@@ -238,13 +254,27 @@ function computePublicVaultDiskSig(config) {
   }
 }
 
-function recordKnownVaultSecurity(vaultPath, security) {
+function recordKnownVaultSecurity(vaultPath, security, meta = null) {
   if (!vaultPath) return;
-  if (security?.enabled) {
-    vaultSecurityByPath.set(vaultPath, { enabled: true, salt: String(security.salt || '') });
-  } else {
-    vaultSecurityByPath.delete(vaultPath);
+  const prev = vaultSecurityByPath.get(vaultPath);
+  const keyringAvailable =
+    meta && typeof meta.keyringAvailable === 'boolean'
+      ? meta.keyringAvailable
+      : prev?.keyringAvailable !== false;
+  const passphraseRequired =
+    meta && typeof meta.passphraseRequired === 'boolean'
+      ? meta.passphraseRequired
+      : !keyringAvailable && !security?.enabled;
+  if (!vaultSecurityByPath.has(vaultPath) && vaultSecurityByPath.size >= 16) {
+    const oldest = vaultSecurityByPath.keys().next().value;
+    if (oldest !== undefined) vaultSecurityByPath.delete(oldest);
   }
+  vaultSecurityByPath.set(vaultPath, {
+    enabled: Boolean(security?.enabled),
+    salt: security?.enabled ? String(security.salt || '') : '',
+    keyringAvailable,
+    passphraseRequired: Boolean(passphraseRequired && !security?.enabled),
+  });
 }
 
 function cacheSanitizedVaultState(config, result) {
@@ -255,6 +285,11 @@ function cacheSanitizedVaultState(config, result) {
     accounts: [...result.accounts],
     selectedEmail: result.selectedEmail || '',
     quotas: result.quotas ? { ...result.quotas } : {},
+    ...(typeof result.backend === 'string' && result.backend ? { backend: result.backend } : {}),
+    ...(typeof result.keyringAvailable === 'boolean'
+      ? { keyringAvailable: result.keyringAvailable }
+      : {}),
+    ...(result.passphraseRequired ? { passphraseRequired: true } : {}),
     ...(result.security?.enabled
       ? { security: { enabled: true, salt: String(result.security.salt || '') } }
       : {}),
@@ -263,7 +298,7 @@ function cacheSanitizedVaultState(config, result) {
 }
 
 export async function warmAccountPublicListCache() {
-  if (process.platform !== 'win32') return;
+  if (!isAccountPlatformSupported(process.platform)) return;
   await handleAccountCredentialAction({ action: 'list' }).catch(() => null);
 }
 
@@ -312,46 +347,75 @@ export async function handleAccountCredentialAction(
   data,
   {
     platform = process.platform,
-    store = runWindowsCredentialStore,
+    store = undefined,
     rpc = callLsRpc,
     resolveCredential = resolveGoogleCredential,
     getQuota = retrieveCredentialQuota,
     login = accountLoginController,
   } = {}
 ) {
-  if (platform !== 'win32') return { supported: false, accounts: [], error: 'unsupported' };
+  if (!isAccountPlatformSupported(platform)) {
+    return { supported: false, accounts: [], error: 'unsupported' };
+  }
   const action = data?.action || 'list';
   if (!ALLOWED_ACTIONS.has(action)) return { error: 'invalidCredential' };
   const email = normalizeAccountEmail(data?.email);
   if (['switch', 'remove', 'quota'].includes(action) && !email) return { error: 'invalidEmail' };
 
   const gemini = String(process.env.ANTIGRAVITY_GEMINI_DIR || '').trim() || join(homedir(), '.gemini');
-  const config = {
-    target: 'gemini:antigravity',
-    vault: join(
-      process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'),
-      'AntigravityUsageMonitor',
-      'accounts.dpapi'
-    ),
-    statusFile: join(
-      process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'),
-      'AntigravityUsageMonitor',
-      'switch-state.json'
-    ),
-    scriptPath: join(HERE, 'backend', 'account-credentials.ps1'),
-    fallbacks: [
-      join(gemini, 'jetski-standalone-oauth-token'),
-      join(gemini, 'antigravity-cli', 'antigravity-oauth-token'),
-    ],
-  };
+  const posixPaths =
+    platform === 'win32' ? null : resolvePosixAccountStoragePaths({ platform });
+  const config =
+    platform === 'win32'
+      ? {
+          target: 'gemini:antigravity',
+          vault: join(
+            process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'),
+            'AntigravityUsageMonitor',
+            'accounts.dpapi'
+          ),
+          statusFile: join(
+            process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'),
+            'AntigravityUsageMonitor',
+            'switch-state.json'
+          ),
+          scriptPath: join(HERE, 'backend', 'account-credentials.ps1'),
+          fallbacks: [
+            join(gemini, 'jetski-standalone-oauth-token'),
+            join(gemini, 'antigravity-cli', 'antigravity-oauth-token'),
+          ],
+        }
+      : {
+          target: 'gemini:antigravity',
+          vault: posixPaths.vault,
+          statusFile: posixPaths.statusFile,
+          fallbacks: posixPaths.fallbacks,
+        };
 
-  const useDiskSigCache = store === runWindowsCredentialStore;
+  const effectiveStore =
+    store ||
+    (platform === 'win32'
+      ? runWindowsCredentialStore
+      : (req) => runPosixCredentialStore(req, { platform }));
+  const useDiskSigCache = !store;
 
   async function runStore(fields) {
-    const result = await store({ ...config, ...fields });
-    if (!result || result.error) throw new Error(result?.error || 'storeFailed');
-    if (['list', 'read', 'readVault', 'writeVault', 'scheduleSwitch'].includes(fields.action)) {
-      recordKnownVaultSecurity(config.vault, result.security);
+    const result = await effectiveStore({ ...config, ...fields });
+    if (!result || result.error) {
+      if (result?.error === 'passphraseRequired' || result?.error === 'keyringUnavailable') {
+        recordKnownVaultSecurity(config.vault, resolveKnownVaultSecurity(), {
+          keyringAvailable: false,
+          passphraseRequired: true,
+        });
+        if (useDiskSigCache) {
+          cachedPublicVaultState = null;
+          cachedPublicVaultSig = '';
+        }
+      }
+      throw new Error(result?.error || 'storeFailed');
+    }
+    if (['list', 'read', 'readVault', 'writeVault', 'save', 'scheduleSwitch'].includes(fields.action)) {
+      recordKnownVaultSecurity(config.vault, result.security, result);
     }
     if (useDiskSigCache) {
       if (fields.action === 'scheduleSwitch') {
@@ -368,18 +432,54 @@ export async function handleAccountCredentialAction(
     if (useDiskSigCache && cachedPublicVaultState) {
       return cachedPublicVaultState.security || null;
     }
-    return vaultSecurityByPath.get(config.vault) || null;
+    const recorded = vaultSecurityByPath.get(config.vault);
+    return recorded?.enabled ? recorded : null;
   }
 
-  async function ensureUnlockedVaultContext() {
-    if (useDiskSigCache && !cachedPublicVaultState) {
+  function isPassphraseRequiredWithoutKeyring() {
+    if (useDiskSigCache && cachedPublicVaultState) {
+      return Boolean(
+        cachedPublicVaultState.passphraseRequired && !cachedPublicVaultState.security?.enabled
+      );
+    }
+    const recorded = vaultSecurityByPath.get(config.vault);
+    return Boolean(recorded?.passphraseRequired && !recorded?.enabled);
+  }
+
+  async function ensureUnlockedVaultContext({ requireSaveReady = false } = {}) {
+    if (
+      (useDiskSigCache && !cachedPublicVaultState) ||
+      (requireSaveReady && platform !== 'win32' && !vaultSecurityByPath.has(config.vault) && !cachedPublicVaultState)
+    ) {
       await runStore({ action: 'list', email: '' });
     }
     const sec = resolveKnownVaultSecurity();
     if (sec?.enabled && !isVaultSessionUnlocked(sec)) {
       throw new Error('vaultLocked');
     }
+    if (requireSaveReady && !sec?.enabled && isPassphraseRequiredWithoutKeyring()) {
+      throw new Error('passphraseRequired');
+    }
     return sec;
+  }
+
+  function buildSummaryFromReadVault(vaultData, securityOverride = undefined) {
+    const entries = Array.isArray(vaultData?.entries) ? vaultData.entries : [];
+    const effectiveSec = securityOverride !== undefined ? securityOverride : vaultData?.security;
+    return {
+      accounts: entries.map((e) => e?.email).filter(Boolean),
+      selectedEmail: vaultData?.selectedEmail || '',
+      quotas: Object.fromEntries(entries.filter((e) => e?.quota).map((e) => [e.email, e.quota])),
+      ...(typeof vaultData?.backend === 'string' && vaultData.backend
+        ? { backend: vaultData.backend }
+        : {}),
+      ...(typeof vaultData?.keyringAvailable === 'boolean'
+        ? { keyringAvailable: vaultData.keyringAvailable }
+        : {}),
+      ...(vaultData?.passphraseRequired ? { passphraseRequired: true } : {}),
+      ...(effectiveSec?.enabled ? { security: { enabled: true, salt: effectiveSec.salt } } : {}),
+      ...(vaultData?.switchState ? { switchState: vaultData.switchState } : {}),
+    };
   }
 
   function publicList(result) {
@@ -391,6 +491,8 @@ export async function handleAccountCredentialAction(
     const switchState = expiredSwitchState ? null : rawSwitchState;
     const sec = result.security?.enabled ? result.security : null;
     const cooldownSec = checkVaultUnlockCooldown();
+    const keyringAvailable = result.keyringAvailable !== false;
+    const passphraseRequired = Boolean(result.passphraseRequired && !sec?.enabled);
     return {
       supported: true,
       accounts: (Array.isArray(result.accounts) ? result.accounts : [])
@@ -398,6 +500,9 @@ export async function handleAccountCredentialAction(
         .filter(Boolean),
       selectedEmail: expiredSwitchState ? '' : normalizeAccountEmail(result.selectedEmail),
       quotas: result.quotas || {},
+      ...(typeof result.backend === 'string' && result.backend ? { backend: result.backend } : {}),
+      ...(!keyringAvailable ? { keyringAvailable: false } : {}),
+      ...(passphraseRequired ? { passphraseRequired: true } : {}),
       ...(sec || data?.includeSecurity
         ? {
             security: {
@@ -456,7 +561,11 @@ export async function handleAccountCredentialAction(
 
   try {
     if (action === 'list') {
-      if (useDiskSigCache && cachedPublicVaultState) {
+      if (
+        useDiskSigCache &&
+        cachedPublicVaultState &&
+        cachedPublicVaultState.keyringAvailable !== false
+      ) {
         const curSig = computePublicVaultDiskSig(config);
         if (curSig && curSig === cachedPublicVaultSig) {
           return publicList(cachedPublicVaultState);
@@ -505,13 +614,7 @@ export async function handleAccountCredentialAction(
       }
       const vaultData = await runStore({ action: 'readVault' });
       if (!vaultData.security?.enabled) {
-        return publicList({
-          accounts: (vaultData.entries || []).map((e) => e.email),
-          selectedEmail: vaultData.selectedEmail || '',
-          quotas: Object.fromEntries(
-            (vaultData.entries || []).filter((e) => e?.quota).map((e) => [e.email, e.quota])
-          ),
-        });
+        return publicList(buildSummaryFromReadVault(vaultData, null));
       }
       let keyBuf = null;
       try {
@@ -534,14 +637,9 @@ export async function handleAccountCredentialAction(
         }
         setUnlockedVaultSessionKey(vaultData.security.salt, keyBuf);
         resetVaultUnlockFailures();
-        return publicList({
-          accounts: (vaultData.entries || []).map((e) => e.email),
-          selectedEmail: vaultData.selectedEmail || '',
-          quotas: Object.fromEntries(
-            (vaultData.entries || []).filter((e) => e?.quota).map((e) => [e.email, e.quota])
-          ),
-          security: { enabled: true, salt: vaultData.security.salt },
-        });
+        return publicList(
+          buildSummaryFromReadVault(vaultData, { enabled: true, salt: vaultData.security.salt })
+        );
       } finally {
         keyBuf.fill(0);
       }
@@ -620,14 +718,11 @@ export async function handleAccountCredentialAction(
         return { error: 'passwordRateLimited', retryAfterSec: cooldownSec };
       }
       const vaultData = await runStore({ action: 'readVault' });
+      if (vaultData.keyringAvailable === false) {
+        return { error: 'keyringUnavailable' };
+      }
       if (!vaultData.security?.enabled) {
-        return publicList({
-          accounts: (vaultData.entries || []).map((e) => e.email),
-          selectedEmail: vaultData.selectedEmail || '',
-          quotas: Object.fromEntries(
-            (vaultData.entries || []).filter((e) => e?.quota).map((e) => [e.email, e.quota])
-          ),
-        });
+        return publicList(buildSummaryFromReadVault(vaultData, null));
       }
       let oldKeyBuf = null;
       try {
@@ -676,6 +771,7 @@ export async function handleAccountCredentialAction(
       lockVaultSession();
       clearTransientAccessTokens();
       resetVaultUnlockFailures();
+      clearPosixKeyringRuntimeCaches();
       const curLogin = login.getStatus();
       if (curLogin?.id && curLogin.status === 'waiting') {
         login.cancel(curLogin.id);
@@ -691,12 +787,12 @@ export async function handleAccountCredentialAction(
     }
 
     if (action === 'loginStart') {
-      await ensureUnlockedVaultContext();
+      await ensureUnlockedVaultContext({ requireSaveReady: true });
       const session = await login.start(async (verified) => {
         const address = normalizeAccountEmail(verified.email);
         if (!address) throw new Error('credentialRejected');
         rememberTransientAccessToken(address, verified.credential);
-        const activeSec = await ensureUnlockedVaultContext();
+        const activeSec = await ensureUnlockedVaultContext({ requireSaveReady: true });
         const sealed = sealVaultCredential(verified.credential, address, activeSec);
         await runStore({
           action: 'save',
@@ -734,7 +830,7 @@ export async function handleAccountCredentialAction(
     }
 
     if (action === 'save') {
-      const activeSec = await ensureUnlockedVaultContext();
+      const activeSec = await ensureUnlockedVaultContext({ requireSaveReady: true });
       const verified = await verifyCredential(data.credential, true);
       const sealed = sealVaultCredential(verified.credential, verified.email, activeSec);
       return publicList(
@@ -750,11 +846,15 @@ export async function handleAccountCredentialAction(
     }
 
     if (action === 'capture') {
-      const activeSec = await ensureUnlockedVaultContext();
+      const activeSec = await ensureUnlockedVaultContext({ requireSaveReady: true });
       const status = await rpc('GetUserStatus', {}, 2000).catch(() => null);
       const activeEmail = normalizeAccountEmail(status?.userStatus?.email);
       if (!activeEmail) throw new Error('noCurrentCredential');
-      const { credential } = await runStore({ action: 'readCurrent' });
+      const { credential } = await runStore({ action: 'readCurrent', email: activeEmail });
+      const embeddedEmail = extractHostCredentialEmail(credential);
+      if (embeddedEmail && embeddedEmail !== activeEmail) {
+        throw new Error('identityMismatch');
+      }
       const verified = await verifyCredential(credential);
       if (verified.email !== activeEmail) throw new Error('identityMismatch');
       const sealed = sealVaultCredential(verified.credential, activeEmail, activeSec);
@@ -773,11 +873,11 @@ export async function handleAccountCredentialAction(
     const saved = await runStore({ action: 'read', email });
     const entrySec = saved.security || resolveKnownVaultSecurity();
     const openedObj = openStoredVaultCredential(saved.credential, email, entrySec);
-    const verified = await verifyCredentialObj(openedObj);
-    if (verified.email !== email) throw new Error('identityMismatch');
 
-    const sealedCurrent = sealVaultCredential(verified.credential, email, entrySec);
     if (action === 'quota') {
+      const verified = await verifyCredentialObj(openedObj);
+      if (verified.email !== email) throw new Error('identityMismatch');
+      const sealedCurrent = sealVaultCredential(verified.credential, email, entrySec);
       const tokenRotated =
         verified.credential.token.refresh_token !== openedObj.token.refresh_token;
       const legacyUnminimized =
@@ -817,28 +917,77 @@ export async function handleAccountCredentialAction(
       return { email, pools, fetchedAt, ...tierMeta };
     }
 
+    let verified;
+    let offlineFallbackUsed = false;
+    try {
+      verified = await verifyCredentialObj(openedObj);
+    } catch (verifyErr) {
+      if (
+        ['oauthUnavailable', 'oauthClientUnavailable'].includes(verifyErr?.message) &&
+        openedObj?.token?.refresh_token
+      ) {
+        verified = {
+          email,
+          credential: {
+            ...openedObj,
+            auth_method: 'consumer',
+            id_token_email: email,
+          },
+        };
+        offlineFallbackUsed = true;
+      } else {
+        throw verifyErr;
+      }
+    }
+    if (verified.email !== email) throw new Error('identityMismatch');
+
+    const sealedCurrent = offlineFallbackUsed
+      ? {
+          stored: saved.credential,
+          vaultUnlocked: Boolean(entrySec?.enabled),
+          expectedSecuritySalt: entrySec?.enabled ? String(entrySec.salt) : '',
+        }
+      : sealVaultCredential(verified.credential, email, entrySec);
+
     const prevActiveEmail = normalizeAccountEmail(data?.activeEmail);
-    if (prevActiveEmail && prevActiveEmail !== email) {
+    const knownSwitchState = saved.switchState || cachedPublicVaultState?.switchState || null;
+    const knownSwitchAge = knownSwitchState
+      ? Date.now() - Number(knownSwitchState.updatedAt || 0)
+      : Infinity;
+    const midPendingSwitch =
+      (knownSwitchState?.state === 'starting' && knownSwitchAge < 120_000) ||
+      (knownSwitchState?.state === 'written' &&
+        knownSwitchAge < 5 * 60_000 &&
+        normalizeAccountEmail(knownSwitchState.email) !== prevActiveEmail);
+
+    if (prevActiveEmail && prevActiveEmail !== email && !midPendingSwitch) {
       try {
-        const existingPrev = await store({ ...config, action: 'read', email: prevActiveEmail });
+        const existingPrev = await effectiveStore({ ...config, action: 'read', email: prevActiveEmail });
         if (!existingPrev || existingPrev.error === 'notFound') {
-          const currentHost = await store({ ...config, action: 'readCurrent' });
+          const currentHost = await effectiveStore({
+            ...config,
+            action: 'readCurrent',
+            email: prevActiveEmail,
+          });
           if (currentHost?.credential) {
-            const verifiedPrev = await verifyCredential(currentHost.credential);
-            if (verifiedPrev.email === prevActiveEmail) {
-              const sealedPrev = sealVaultCredential(
-                verifiedPrev.credential,
-                prevActiveEmail,
-                entrySec
-              );
-              await runStore({
-                action: 'save',
-                email: prevActiveEmail,
-                credential: sealedPrev.stored,
-                ...(sealedPrev.vaultUnlocked
-                  ? { vaultUnlocked: true, expectedSecuritySalt: sealedPrev.expectedSecuritySalt }
-                  : {}),
-              });
+            const hostEmbeddedEmail = extractHostCredentialEmail(currentHost.credential);
+            if (!hostEmbeddedEmail || hostEmbeddedEmail === prevActiveEmail) {
+              const verifiedPrev = await verifyCredential(currentHost.credential);
+              if (verifiedPrev.email === prevActiveEmail) {
+                const sealedPrev = sealVaultCredential(
+                  verifiedPrev.credential,
+                  prevActiveEmail,
+                  entrySec
+                );
+                await runStore({
+                  action: 'save',
+                  email: prevActiveEmail,
+                  credential: sealedPrev.stored,
+                  ...(sealedPrev.vaultUnlocked
+                    ? { vaultUnlocked: true, expectedSecuritySalt: sealedPrev.expectedSecuritySalt }
+                    : {}),
+                });
+              }
             }
           }
         }
@@ -849,6 +998,8 @@ export async function handleAccountCredentialAction(
 
     const hostSwitchCredential = serializeHostCredential(verified.credential, {
       forHostSwitch: true,
+      fallbackEmail: email,
+      maxBytes: platform === 'darwin' ? 1900 : 2560,
     });
     const updated = await runStore({
       action: 'scheduleSwitch',
