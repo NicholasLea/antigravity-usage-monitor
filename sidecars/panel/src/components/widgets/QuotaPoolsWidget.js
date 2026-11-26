@@ -768,21 +768,11 @@ export const QuotaPoolsWidget = defineComponent({
           );
         }
         if (ext) {
-          const extParts = [];
-          if (Number(ext.used5hPct) >= 0.1) {
-            extParts.push(
-              t('quota.ratePopExt5h', { pct: formatPctNumber(Number(ext.used5hPct)) })
-            );
-          }
-          if (Number(ext.usedWeeklyPct) >= 0.1) {
-            extParts.push(
-              t('quota.ratePopExtWk', { pct: formatPctNumber(Number(ext.usedWeeklyPct)) })
-            );
-          }
-          const extText =
-            extParts.length > 0
-              ? t('quota.ratePopExternalDetail', { detail: extParts.join(' · ') })
-              : t('quota.ratePopExternalBaseline');
+          const hasExtAmount =
+            Number(ext.used5hPct) >= 0.1 || Number(ext.usedWeeklyPct) >= 0.1;
+          const extText = hasExtAmount
+            ? t('quota.ratePopExternalDetail')
+            : t('quota.ratePopExternalBaseline');
           groupChildren.push(
             h('div', {
               className: `quota-rate-ext-banner${ext.activeRecently ? ' is-active' : ''}`,

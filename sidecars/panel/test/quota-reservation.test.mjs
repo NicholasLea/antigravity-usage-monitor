@@ -1524,16 +1524,16 @@ test('QuotaPoolsWidget renders circle-? hover popover for account-isolated model
     assert.equal(rows.length, 2);
     assert.match(rows[0].textContent, /Gemini 4 Carbon/);
     assert.match(rows[0].textContent, /3x/);
-    assert.match(rows[0].textContent, /5h 满池≈ \$50/);
-    assert.match(rows[0].textContent, /周限满池≈ \$200/);
+    assert.match(rows[0].textContent, /5h≈ \$50/);
+    assert.match(rows[0].textContent, /周限≈ \$200/);
     assert.match(rows[0].textContent, /5h 2%\/\$ · 26 样本/);
     assert.equal(rows[0].querySelector('.quota-rate-mult-badge').classList.contains('is-high'), true);
     assert.equal(rows[0].querySelector('.quota-rate-eq-grid').classList.contains('is-single'), false);
 
     assert.match(rows[1].textContent, /Gemini 4 Neon/);
     assert.match(rows[1].textContent, /1x/);
-    assert.match(rows[1].textContent, /5h 满池≈ \$150/);
-    assert.match(rows[1].textContent, /周限满池≈ \$600/);
+    assert.match(rows[1].textContent, /5h≈ \$150/);
+    assert.match(rows[1].textContent, /周限≈ \$600/);
     assert.match(rows[1].textContent, /5h 0\.67%\/\$ · 12 样本/);
     assert.equal(rows[1].querySelector('.quota-rate-mult-badge').classList.contains('is-high'), false);
 
@@ -1569,7 +1569,7 @@ test('QuotaPoolsWidget renders circle-? hover popover for account-isolated model
     const fallbackRow = popover.querySelector('.quota-rate-model-row.is-fallback');
     assert.ok(fallbackRow, 'renders pool-average fallback before per-model reaches 3 samples');
     assert.match(fallbackRow.textContent, /池综合均值/);
-    assert.match(fallbackRow.textContent, /周限满池≈ \$200/);
+    assert.match(fallbackRow.textContent, /周限≈ \$200/);
     assert.match(fallbackRow.textContent, /周限 0\.5%\/\$ · 8 样本/);
     assert.equal(fallbackRow.querySelector('.quota-rate-eq-grid').classList.contains('is-single'), true);
 
@@ -1578,8 +1578,8 @@ test('QuotaPoolsWidget renders circle-? hover popover for account-isolated model
     widget.refs.update({ data: dualData, minuteTick: 3 });
     assert.match(popover.textContent, /Estimated Burn Rates/);
     assert.equal(acctPill.textContent, 'sj***43@gmail.com');
-    assert.match(popover.textContent, /5h full≈ \$50/);
-    assert.match(popover.textContent, /Weekly full≈ \$200/);
+    assert.match(popover.textContent, /5h≈ \$50/);
+    assert.match(popover.textContent, /Weekly≈ \$200/);
 
     // Escape closes popover; click toggles open/close; mouseleave closes after grace delay
     helpBtn.dispatchEvent({ type: 'keydown', key: 'Escape', stopPropagation() {} });
@@ -1920,8 +1920,7 @@ test('QuotaPoolsWidget ? popover renders family-group/external usage banner and 
     assert.equal(sharedBadge.textContent, '共享活跃');
     assert.ok(extBanner, 'external usage banner rendered');
     assert.equal(extBanner.classList.contains('is-active'), true);
-    assert.match(extBanner.textContent, /家庭组 \/ 其他设备消耗/);
-    assert.match(extBanner.textContent, /5h 2\.4% · 周限 0\.6%/);
+    assert.equal(extBanner.textContent, '检测到家庭组 / 其他设备消耗');
     assert.equal(extBanner.textContent.includes('与'), false);
 
     // 3. Baseline-only external detection before any model samples exist
@@ -1969,9 +1968,9 @@ test('QuotaPoolsWidget ? popover renders family-group/external usage banner and 
     setI18nLanguage('en-US');
     widget.refs.update({ data: familyData, minuteTick: 4 });
     assert.equal(popover.querySelector('.quota-rate-shared-badge').textContent, 'Shared active');
-    assert.match(
+    assert.equal(
       popover.querySelector('.quota-rate-ext-banner').textContent,
-      /Family group \/ other-device usage detected.*5h 2\.4% · Weekly 0\.6%/
+      'Family group / other-device usage detected'
     );
 
     widget.destroy();
@@ -2287,7 +2286,7 @@ test('QuotaPoolsWidget ? popover renders preliminary labels and full-pool token 
     assert.ok(fallbackRow);
     assert.match(fallbackRow.textContent, /池综合均值/);
     assert.match(fallbackRow.textContent, /周限 2\.08%\/\$ · 斜率初估/);
-    assert.match(fallbackRow.textContent, /周限满池≈ \$48· 9\.9M/);
+    assert.match(fallbackRow.textContent, /周限≈ \$48· 9\.9M/);
 
     const wkRowLeft = widget.refs.poolsListEl.querySelectorAll('.quota-win-left')[1];
     assert.match(wkRowLeft.getAttribute('title') || '', /满池约 \$48 \(9\.9M\)/);
@@ -2367,15 +2366,15 @@ test('QuotaPoolsWidget ? popover renders preliminary labels and full-pool token 
       },
     };
     widget.refs.update({ data: allReadyData, minuteTick: 2 });
-    assert.match(popover.textContent, /Claude Sonnet 4\.6.*5h 满池≈ \$50· 10\.3M.*周限满池≈ \$50· 10\.3M/);
-    assert.match(popover.textContent, /Gemini.*池综合均值.*5h 满池≈ \$35· 14\.2M/);
+    assert.match(popover.textContent, /Claude Sonnet 4\.6.*5h≈ \$50· 10\.3M.*周限≈ \$50· 10\.3M/);
+    assert.match(popover.textContent, /Gemini.*池综合均值.*5h≈ \$35· 14\.2M/);
 
     // 4. English locale switch updates model cards and row title tooltip without reload
     setI18nLanguage('en-US');
     widget.refs.update({ data: allReadyData, minuteTick: 3 });
     assert.doesNotMatch(popover.textContent, /Est\. Weekly Quota/);
     assert.doesNotMatch(popover.textContent, /lowest in pool/);
-    assert.match(popover.textContent, /5h full≈ \$50· 10\.3M.*Weekly full≈ \$50· 10\.3M/);
+    assert.match(popover.textContent, /5h≈ \$50· 10\.3M.*Weekly≈ \$50· 10\.3M/);
     assert.match(
       widget.refs.poolsListEl.querySelectorAll('.quota-win-left')[1].getAttribute('title') || '',
       /Full ~\$50 \(10\.3M\)/
@@ -2433,8 +2432,8 @@ test('QuotaPoolsWidget ? popover renders preliminary labels and full-pool token 
     });
     const mixedRows = popover.querySelectorAll('.quota-rate-model-row');
     assert.equal(mixedRows.length, 2, 'renders 5h model card + supplementary pool weekly fallback row');
-    assert.match(mixedRows[0].textContent, /Gemini 3\.1 Pro.*5h 满池≈ \$150/);
-    assert.match(mixedRows[1].textContent, /池综合均值.*斜率初估.*周限满池≈ \$600· 200\.0M/);
+    assert.match(mixedRows[0].textContent, /Gemini 3\.1 Pro.*5h≈ \$150/);
+    assert.match(mixedRows[1].textContent, /池综合均值.*斜率初估.*周限≈ \$600· 200\.0M/);
 
     widget.destroy();
   } finally {

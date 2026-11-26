@@ -905,15 +905,15 @@
 .quota-rate-model-row {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
   min-width: 0;
 }
 
 .quota-rate-row-top {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -922,7 +922,7 @@
   align-items: baseline;
   gap: 6px;
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
 }
 
 .quota-rate-model-name {
@@ -964,8 +964,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  justify-content: space-between;
-  column-gap: 10px;
+  justify-content: flex-start;
+  column-gap: 14px;
   row-gap: 3px;
 }
 

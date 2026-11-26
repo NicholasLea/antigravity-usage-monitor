@@ -1760,8 +1760,8 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.ratePopAccountScope': '{account}',
   'quota.ratePopAccountCurrent': '当前账号',
   'quota.ratePopPoolFallback': '池综合均值',
-  'quota.ratePopEq5hLabel': '5h 满池',
-  'quota.ratePopEqWkLabel': '周限满池',
+  'quota.ratePopEq5hLabel': '5h',
+  'quota.ratePopEqWkLabel': '周限',
   'quota.ratePopPerUsd': '{win} {rate}%/$',
   'quota.ratePopSamples': '{n} 样本',
   'quota.ratePopPrelimSlope': '斜率初估',
@@ -1769,10 +1769,8 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.ratePopEmpty': '暂未采集到足够的单模型干净样本（周限满 2% 或单模型满 3 次无抖动扣费后自动生成）。',
   'quota.ratePopSharedBadge': '共享活跃',
   'quota.ratePopSharedBadgeTip': '最近 15 分钟内检测到同池外部消耗，新增预占将在二次验证后展示',
-  'quota.ratePopExternalDetail': '检测到家庭组 / 其他设备消耗（已排除约 {detail}），不计入预占',
+  'quota.ratePopExternalDetail': '检测到家庭组 / 其他设备消耗',
   'quota.ratePopExternalBaseline': '检测到本周期存在家庭组 / 其他设备消耗，预占和费率仅按本机实测校准',
-  'quota.ratePopExt5h': '5h {pct}%',
-  'quota.ratePopExtWk': '周限 {pct}%',
 
   'live.currentSession': '当前会话',
   'live.switchSessionTitle': '点击切换查看会话：{title}',
@@ -3018,8 +3016,8 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "quota.ratePopAccountScope": "{account}",
   "quota.ratePopAccountCurrent": "目前帳號",
   "quota.ratePopPoolFallback": "配額池綜合均值",
-  "quota.ratePopEq5hLabel": "5h 滿池",
-  "quota.ratePopEqWkLabel": "週限滿池",
+  "quota.ratePopEq5hLabel": "5h",
+  "quota.ratePopEqWkLabel": "週限",
   "quota.ratePopPerUsd": "{win} {rate}%/$",
   "quota.ratePopSamples": "{n} 樣本",
   "quota.ratePopPrelimSlope": "斜率初估",
@@ -3027,10 +3025,8 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "quota.ratePopEmpty": "尚未收集到足夠的單模型純淨樣本（週限消耗滿 2% 或單模型滿 3 次無干擾扣費後自動產生）。",
   "quota.ratePopSharedBadge": "共享活躍",
   "quota.ratePopSharedBadgeTip": "最近 15 分鐘內偵測到同池外部消耗，新增預佔將於二次驗證後顯示",
-  "quota.ratePopExternalDetail": "偵測到家庭群組 / 其他裝置消耗（已排除約 {detail}），不計入預佔",
+  "quota.ratePopExternalDetail": "偵測到家庭群組 / 其他裝置消耗",
   "quota.ratePopExternalBaseline": "偵測到本週期存在家庭群組 / 其他裝置消耗，預佔與費率僅依本機實測校準",
-  "quota.ratePopExt5h": "5h {pct}%",
-  "quota.ratePopExtWk": "週限 {pct}%",
   "live.currentSession": "目前工作階段",
   "live.switchSessionTitle": "點擊切換檢視工作階段：{title}",
   "live.thinking": "推理中",
@@ -4271,8 +4267,8 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.ratePopAccountScope': '{account}',
   'quota.ratePopAccountCurrent': 'Current account',
   'quota.ratePopPoolFallback': 'Pool average',
-  'quota.ratePopEq5hLabel': '5h full',
-  'quota.ratePopEqWkLabel': 'Weekly full',
+  'quota.ratePopEq5hLabel': '5h',
+  'quota.ratePopEqWkLabel': 'Weekly',
   'quota.ratePopPerUsd': '{win} {rate}%/$',
   'quota.ratePopSamples': '{n} samples',
   'quota.ratePopPrelimSlope': 'slope est.',
@@ -4280,10 +4276,8 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.ratePopEmpty': 'Not enough clean samples yet (unlocks at 2% weekly burn or 3 clean single-model steps).',
   'quota.ratePopSharedBadge': 'Shared active',
   'quota.ratePopSharedBadgeTip': 'External pool usage seen within 15 min; new reservations display after verification',
-  'quota.ratePopExternalDetail': 'Family group / other-device usage detected (~{detail} excluded from reservations)',
+  'quota.ratePopExternalDetail': 'Family group / other-device usage detected',
   'quota.ratePopExternalBaseline': 'Family group / other-device usage detected this cycle; reservations & rates calibrate on local steps only',
-  'quota.ratePopExt5h': '5h {pct}%',
-  'quota.ratePopExtWk': 'Weekly {pct}%',
 
   'live.currentSession': 'Current Session',
   'live.switchSessionTitle': 'Switch monitor to session: {title}',
@@ -5529,8 +5523,8 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "quota.ratePopAccountScope": "{account}",
   "quota.ratePopAccountCurrent": "現在のアカウント",
   "quota.ratePopPoolFallback": "プール総合平均",
-  "quota.ratePopEq5hLabel": "5h 上限換算",
-  "quota.ratePopEqWkLabel": "週間上限換算",
+  "quota.ratePopEq5hLabel": "5h",
+  "quota.ratePopEqWkLabel": "週間",
   "quota.ratePopPerUsd": "{win} {rate}%/$",
   "quota.ratePopSamples": "{n} 件",
   "quota.ratePopPrelimSlope": "傾き暫定",
@@ -5538,10 +5532,8 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "quota.ratePopEmpty": "単一モデルの有効サンプルが不足しています（週間 2% 以上消費または単一モデル 3 回以上の安定課金で自動算出）。",
   "quota.ratePopSharedBadge": "共有使用中",
   "quota.ratePopSharedBadgeTip": "直近15分以内に同プールで外部消費を検知。新規予約は再検証後に表示されます",
-  "quota.ratePopExternalDetail": "ファミリーグループ・他端末での使用を検知（約 {detail} を予約計算から除外）",
+  "quota.ratePopExternalDetail": "ファミリーグループ・他端末での使用を検知",
   "quota.ratePopExternalBaseline": "今サイクルでファミリーグループ・他端末の使用を検知。予約とレートはこの端末の実測のみで較正されます",
-  "quota.ratePopExt5h": "5h {pct}%",
-  "quota.ratePopExtWk": "週間 {pct}%",
   "live.currentSession": "現在のセッション",
   "live.switchSessionTitle": "モニターをセッションへ切り替え：{title}",
   "live.thinking": "推論中",
@@ -6772,8 +6764,8 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "quota.ratePopAccountScope": "{account}",
   "quota.ratePopAccountCurrent": "현재 계정",
   "quota.ratePopPoolFallback": "풀 평균",
-  "quota.ratePopEq5hLabel": "5시간 전체",
-  "quota.ratePopEqWkLabel": "주간 전체",
+  "quota.ratePopEq5hLabel": "5시간",
+  "quota.ratePopEqWkLabel": "주간",
   "quota.ratePopPerUsd": "{win} {rate}%/$",
   "quota.ratePopSamples": "{n}개 샘플",
   "quota.ratePopPrelimSlope": "기울기 추정",
@@ -6781,10 +6773,8 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "quota.ratePopEmpty": "아직 유효한 단일 모델 샘플이 부족합니다 (주간 소모량 2% 이상 또는 안정적인 단일 모델 3단계 완료 시 표시됩니다).",
   "quota.ratePopSharedBadge": "공유 활성",
   "quota.ratePopSharedBadgeTip": "최근 15분 내 외부 풀 사용이 감지되었습니다. 새 예약은 검증 후 표시됩니다",
-  "quota.ratePopExternalDetail": "가족 그룹 / 다른 기기 사용 감지됨 (약 {detail} 예약에서 제외)",
+  "quota.ratePopExternalDetail": "가족 그룹 / 다른 기기 사용 감지됨",
   "quota.ratePopExternalBaseline": "이번 주기에 가족 그룹 / 다른 기기 사용이 감지되었습니다. 예약 및 소모율은 로컬 단계만 기준으로 보정됩니다",
-  "quota.ratePopExt5h": "5시간 {pct}%",
-  "quota.ratePopExtWk": "주간 {pct}%",
   "live.currentSession": "현재 세션",
   "live.switchSessionTitle": "세션으로 전환: {title}",
   "live.thinking": "추론 중",
@@ -8015,8 +8005,8 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "quota.ratePopAccountScope": "{account}",
   "quota.ratePopAccountCurrent": "Aktuelles Konto",
   "quota.ratePopPoolFallback": "Pool-Durchschnitt",
-  "quota.ratePopEq5hLabel": "5h voll",
-  "quota.ratePopEqWkLabel": "Woche voll",
+  "quota.ratePopEq5hLabel": "5h",
+  "quota.ratePopEqWkLabel": "Woche",
   "quota.ratePopPerUsd": "{win} {rate}%/$",
   "quota.ratePopSamples": "{n} Proben",
   "quota.ratePopPrelimSlope": "Steig.-Sch.",
@@ -8024,10 +8014,8 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "quota.ratePopEmpty": "Noch nicht genug saubere Proben (wird ab 2 % Wochenverbrauch oder 3 sauberen Einzelmodell-Schritten freigeschaltet).",
   "quota.ratePopSharedBadge": "Geteilt aktiv",
   "quota.ratePopSharedBadgeTip": "Externe Pool-Nutzung innerhalb von 15 Min. erkannt; neue Reservierungen erscheinen nach Prüfung",
-  "quota.ratePopExternalDetail": "Nutzung durch Familiengruppe / anderes Gerät erkannt (~{detail} von Reservierungen ausgeschlossen)",
+  "quota.ratePopExternalDetail": "Nutzung durch Familiengruppe / anderes Gerät erkannt",
   "quota.ratePopExternalBaseline": "Nutzung durch Familiengruppe / anderes Gerät in diesem Zyklus erkannt; Reservierungen und Raten kalibrieren nur auf lokalen Schritten",
-  "quota.ratePopExt5h": "5h {pct}%",
-  "quota.ratePopExtWk": "Woche {pct}%",
   "live.currentSession": "Aktuelle Sitzung",
   "live.switchSessionTitle": "Monitor zu Sitzung wechseln: {title}",
   "live.thinking": "Denkt",
@@ -9258,8 +9246,8 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "quota.ratePopAccountScope": "{account}",
   "quota.ratePopAccountCurrent": "Compte actuel",
   "quota.ratePopPoolFallback": "Moyenne du pool",
-  "quota.ratePopEq5hLabel": "5h plein",
-  "quota.ratePopEqWkLabel": "Hebdo plein",
+  "quota.ratePopEq5hLabel": "5h",
+  "quota.ratePopEqWkLabel": "Hebdo",
   "quota.ratePopPerUsd": "{win} {rate}%/$",
   "quota.ratePopSamples": "{n} éch.",
   "quota.ratePopPrelimSlope": "est. pente",
@@ -9267,10 +9255,8 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "quota.ratePopEmpty": "Pas encore assez d'échantillons fiables (débloqué à 2% hebdo ou 3 étapes mono-modèle stables).",
   "quota.ratePopSharedBadge": "Partage actif",
   "quota.ratePopSharedBadgeTip": "Utilisation externe du pool détectée (<15 min) ; nouvelles réservations affichées après vérification",
-  "quota.ratePopExternalDetail": "Utilisation famille / autre appareil détectée (~{detail} exclus des réservations)",
+  "quota.ratePopExternalDetail": "Utilisation famille / autre appareil détectée",
   "quota.ratePopExternalBaseline": "Utilisation famille / autre appareil détectée sur ce cycle ; réservations et taux calibrés uniquement en local",
-  "quota.ratePopExt5h": "5h {pct}%",
-  "quota.ratePopExtWk": "Hebdo {pct}%",
   "live.currentSession": "Session actuelle",
   "live.switchSessionTitle": "Basculer le moniteur sur la session : {title}",
   "live.thinking": "Réflexion",
@@ -30331,21 +30317,11 @@ const QuotaPoolsWidget = defineComponent({
           );
         }
         if (ext) {
-          const extParts = [];
-          if (Number(ext.used5hPct) >= 0.1) {
-            extParts.push(
-              t('quota.ratePopExt5h', { pct: formatPctNumber(Number(ext.used5hPct)) })
-            );
-          }
-          if (Number(ext.usedWeeklyPct) >= 0.1) {
-            extParts.push(
-              t('quota.ratePopExtWk', { pct: formatPctNumber(Number(ext.usedWeeklyPct)) })
-            );
-          }
-          const extText =
-            extParts.length > 0
-              ? t('quota.ratePopExternalDetail', { detail: extParts.join(' · ') })
-              : t('quota.ratePopExternalBaseline');
+          const hasExtAmount =
+            Number(ext.used5hPct) >= 0.1 || Number(ext.usedWeeklyPct) >= 0.1;
+          const extText = hasExtAmount
+            ? t('quota.ratePopExternalDetail')
+            : t('quota.ratePopExternalBaseline');
           groupChildren.push(
             h('div', {
               className: `quota-rate-ext-banner${ext.activeRecently ? ' is-active' : ''}`,

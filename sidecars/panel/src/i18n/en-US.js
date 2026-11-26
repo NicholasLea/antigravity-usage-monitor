@@ -230,8 +230,8 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.ratePopAccountScope': '{account}',
   'quota.ratePopAccountCurrent': 'Current account',
   'quota.ratePopPoolFallback': 'Pool average',
-  'quota.ratePopEq5hLabel': '5h full',
-  'quota.ratePopEqWkLabel': 'Weekly full',
+  'quota.ratePopEq5hLabel': '5h',
+  'quota.ratePopEqWkLabel': 'Weekly',
   'quota.ratePopPerUsd': '{win} {rate}%/$',
   'quota.ratePopSamples': '{n} samples',
   'quota.ratePopPrelimSlope': 'slope est.',
@@ -239,10 +239,8 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.ratePopEmpty': 'Not enough clean samples yet (unlocks at 2% weekly burn or 3 clean single-model steps).',
   'quota.ratePopSharedBadge': 'Shared active',
   'quota.ratePopSharedBadgeTip': 'External pool usage seen within 15 min; new reservations display after verification',
-  'quota.ratePopExternalDetail': 'Family group / other-device usage detected (~{detail} excluded from reservations)',
+  'quota.ratePopExternalDetail': 'Family group / other-device usage detected',
   'quota.ratePopExternalBaseline': 'Family group / other-device usage detected this cycle; reservations & rates calibrate on local steps only',
-  'quota.ratePopExt5h': '5h {pct}%',
-  'quota.ratePopExtWk': 'Weekly {pct}%',
 
   // Live Activity Widget
   'live.currentSession': 'Current Session',
