@@ -20,7 +20,7 @@ import {
   sampleSummary,
   speedReasonText,
 } from '../core/formatters.js';
-import { isEnglishLocale, t } from '../i18n/index.js';
+import { t } from '../i18n/index.js';
 import {
   OVERVIEW_METRIC_KEYS,
   TOPBAR_SLOT_KEYS,
@@ -303,8 +303,9 @@ export function resolveQuotaCapsuleSummary(quotas) {
   const weekly = quotas.weekly;
   const pools = Array.isArray(quotas.pools) ? quotas.pools : [];
   const candidates = [];
-  const defaultPoolName = isEnglishLocale() ? 'Active Pool' : '当前池';
-  const wkTag = isEnglishLocale() ? 'Wk' : '周';
+  const defaultPoolName = t('fmt.activePool');
+  const wkTag = t('fmt.weekTag');
+  const wkCompact = t('fmt.weekCompact');
 
   if (activePool && Number.isFinite(Number(activePool.remainingPct))) {
     candidates.push({
@@ -328,7 +329,7 @@ export function resolveQuotaCapsuleSummary(quotas) {
     candidates.push({
       pct: Number(weekly.remainingPct),
       label: formatQuotaPoolLabel(weekly.poolFamily, {
-        fallback: isEnglishLocale() ? 'Weekly' : '周限额',
+        fallback: t('fmt.weeklyQuota'),
       }),
       windowTag: wkTag,
     });
@@ -361,7 +362,7 @@ export function resolveQuotaCapsuleSummary(quotas) {
   const tightestIsArgon = !tightestIsClaude && /\bargon\b/i.test(String(tightest.label || ''));
   const tightestIsGemini =
     !tightestIsClaude && !tightestIsArgon && /gemini|carbon|neon|flash|pro/i.test(String(tightest.label || ''));
-  const tightestWinShort = tightest.windowTag === '5h' ? '5h' : isEnglishLocale() ? 'w' : '周';
+  const tightestWinShort = tightest.windowTag === '5h' ? '5h' : wkCompact;
   const poolPrefix = tightestIsClaude
     ? `C${tightestWinShort}`
     : tightestIsArgon
@@ -370,9 +371,7 @@ export function resolveQuotaCapsuleSummary(quotas) {
         ? `G${tightestWinShort}`
         : tightest.windowTag === '5h'
           ? '5h'
-          : isEnglishLocale()
-            ? 'Wk'
-            : '周';
+          : wkTag;
   return {
     roundedPct: rounded,
     shortText: t('capsule.quotaLeft', { pct: rounded }),
@@ -388,14 +387,14 @@ export function resolveQuotaCapsuleSummary(quotas) {
 }
 
 function resolveQuotaCapsulePrefix(metricKey, quotaSum) {
-  const isEn = isEnglishLocale();
+  const wkCompact = t('fmt.weekCompact');
   if (metricKey === 'gemini_5h') return 'G5h';
-  if (metricKey === 'gemini_weekly') return isEn ? 'Gw' : 'G周';
-  if (metricKey === 'argon_weekly') return isEn ? 'Aw' : 'A周';
+  if (metricKey === 'gemini_weekly') return `G${wkCompact}`;
+  if (metricKey === 'argon_weekly') return `A${wkCompact}`;
   if (metricKey === 'claude_5h') return 'C5h';
-  if (metricKey === 'claude_weekly') return isEn ? 'Cw' : 'C周';
+  if (metricKey === 'claude_weekly') return `C${wkCompact}`;
   if (quotaSum?.poolPrefix) return quotaSum.poolPrefix;
-  return isEn ? 'Q' : '余';
+  return t('fmt.quotaPrefix');
 }
 
 /**

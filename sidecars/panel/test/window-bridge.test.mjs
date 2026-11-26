@@ -1486,13 +1486,12 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const generalSegControls = generalPane.querySelectorAll('.segmented');
     assert.equal(
       generalSegControls.length,
-      4,
-      'General tab has Language, FontScale, Experimental Modern UI, and Host I18n depth segmented controls'
+      3,
+      'General tab has FontScale, Modern UI, and Host I18n depth segmented controls'
     );
-    const langBtns = generalSegControls[0].querySelectorAll('.seg-btn');
-    const fontScaleBtns = generalSegControls[1].querySelectorAll('.seg-btn');
-    const modernUiBtns = generalSegControls[2].querySelectorAll('.seg-btn');
-    const hostI18nDepthBtns = generalSegControls[3].querySelectorAll('.seg-btn');
+    const fontScaleBtns = generalSegControls[0].querySelectorAll('.seg-btn');
+    const modernUiBtns = generalSegControls[1].querySelectorAll('.seg-btn');
+    const hostI18nDepthBtns = generalSegControls[2].querySelectorAll('.seg-btn');
     assert.deepEqual(
       hostI18nDepthBtns.map((button) => button.textContent),
       ['浅度', '深度'],
@@ -1515,14 +1514,19 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(portalHost.getAttribute('data-modern-ui'), 'true');
     assert.equal(capsuleHost.getAttribute('data-modern-ui'), 'true');
     assert.equal(popoverEl.getAttribute('data-modern-ui'), 'true');
-    assert.equal(langBtns.length, 3, 'Language switch has 跟随系统 / 简体中文 / English');
-    assert.equal(langBtns[0].textContent, '跟随系统');
-    assert.equal(langBtns[1].textContent, '简体中文');
-    assert.equal(langBtns[2].textContent, 'English');
-    assert.equal(langBtns[1].classList.contains('is-active'), true, 'mockSettings language zh-CN selects index 1');
     const generalSelects = generalPane.querySelectorAll('.custom-select');
-    assert.equal(generalSelects.length, 2, 'General tab has Host I18n Language and Update Mode selects');
-    const updateModeSelectEl = generalSelects[1];
+    assert.equal(generalSelects.length, 3, 'General tab has UI Language, Host I18n Language, and Update Mode selects');
+    const langSelectEl = generalSelects[0];
+    const updateModeSelectEl = generalSelects[2];
+    assert.equal(langSelectEl.querySelector('.select-label').textContent, '简体中文');
+    langSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
+    const langOpts = langSelectEl.querySelectorAll('.select-option');
+    assert.deepEqual(
+      langOpts.map((opt) => opt.querySelector('.select-option-text').textContent),
+      ['跟随系统', '简体中文', '繁體中文', 'English', '日本語', '한국어', 'Deutsch', 'Français'],
+      'UI language select lists auto + all 7 supported locales'
+    );
+    langSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
 
     // Theme accent picker: switch to emerald, verify CSS vars injected on both hosts, then restore host
     const swatchBtns = generalPane.querySelectorAll('.theme-swatch-btn');
@@ -1559,9 +1563,13 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(portalHost.getAttribute('data-font-scale'), 'md');
     assert.equal(popoverEl.getAttribute('data-font-scale'), 'md');
 
-    // Live i18n switch: zh-CN -> en-US (index 2) -> auto (index 0) -> zh-CN (index 1) without page reload
-    langBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
-    await new Promise((r) => setTimeout(r, 30));
+    // Live i18n switch: zh-CN -> en-US (index 3) -> ja-JP (index 4) -> auto (index 0) -> zh-CN (index 1) without page reload
+    const selectUiLangByIndex = async (idx) => {
+      langSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
+      langSelectEl.querySelectorAll('.select-option')[idx].dispatchEvent({ type: 'click', stopPropagation() {} });
+      await new Promise((r) => setTimeout(r, 30));
+    };
+    await selectUiLangByIndex(3);
     assert.equal(mockSettings.language, 'en-US');
     assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, 'Live');
     assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, 'Controls');
@@ -1570,11 +1578,14 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(subNavBtns[2].textContent, 'Sessions');
     assert.equal(subNavBtns[3].textContent, 'Account');
     assert.equal(subNavBtns[4].textContent, 'Other');
-    langBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
-    await new Promise((r) => setTimeout(r, 30));
+    await selectUiLangByIndex(4);
+    assert.equal(mockSettings.language, 'ja-JP');
+    assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, 'ライブ');
+    assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, '設定');
+    assert.equal(subNavBtns[0].textContent, '一般');
+    await selectUiLangByIndex(0);
     assert.equal(mockSettings.language, 'auto');
-    langBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
-    await new Promise((r) => setTimeout(r, 30));
+    await selectUiLangByIndex(1);
     assert.equal(mockSettings.language, 'zh-CN');
     assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, '实时监控');
     assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, '控制中心');
@@ -4923,6 +4934,11 @@ test('Issue #44: standalone Web UI & panel sync <html lang> and <title> across e
   // 2. Standalone HTTP server localizes both index.html and token login HTML via settings.language + Accept-Language
   assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'en-US,en;q=0.9' } }, 'auto'), 'en-US');
   assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'en;q=0.5, zh-CN;q=0.9' } }, 'auto'), 'zh-CN');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'zh-TW,zh;q=0.9' } }, 'auto'), 'zh-TW');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'ja-JP,ja;q=0.9' } }, 'auto'), 'ja-JP');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'ko-KR,ko;q=0.9' } }, 'auto'), 'ko-KR');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'de-DE,de;q=0.9' } }, 'auto'), 'de-DE');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'fr-FR,fr;q=0.9' } }, 'auto'), 'fr-FR');
   assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'zh-CN' } }, 'en-US'), 'en-US');
   assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'en-US' } }, 'zh-CN'), 'zh-CN');
 
@@ -4930,6 +4946,9 @@ test('Issue #44: standalone Web UI & panel sync <html lang> and <title> across e
   const enIndexHtml = localizeStandaloneIndexHtml(rawIndexHtml, 'en-US');
   assert.match(enIndexHtml, /<html lang="en-US">/);
   assert.match(enIndexHtml, /<title>Usage & Speed Monitor<\/title>/);
+  const jaIndexHtml = localizeStandaloneIndexHtml(rawIndexHtml, 'ja-JP');
+  assert.match(jaIndexHtml, /<html lang="ja-JP">/);
+  assert.match(jaIndexHtml, /<title>使用量・速度モニター<\/title>/);
 
   let mockLang = 'auto';
   const i18nSrv = createStandaloneWebServer({

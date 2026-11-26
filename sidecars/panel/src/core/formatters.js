@@ -3,8 +3,11 @@
  * USD estimates, countdown timers, and custom datetime displays.
  */
 
-import { isEnglishLocale, t } from '../i18n/index.js';
-import { normalizeModelDisplayMode } from '../../shared/settings-normalization.mjs';
+import { getEffectiveLocale, t, tForLocale } from '../i18n/index.js';
+import {
+  normalizeModelDisplayMode,
+  resolveLocaleFromLanguageTag,
+} from '../../shared/settings-normalization.mjs';
 import {
   classifyCacheTier,
   classifySpeedTier,
@@ -13,18 +16,28 @@ import {
   formatCompactTokens,
 } from '../../shared/telemetry-display-rules.mjs';
 
-const EN_MONTH_SHORT = Object.freeze([
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-]);
+const LOCALE_MONTH_SHORT = Object.freeze({
+  'en-US': Object.freeze(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
+  'de-DE': Object.freeze(['Jan.', 'Feb.', 'Mär.', 'Apr.', 'Mai', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Okt.', 'Nov.', 'Dez.']),
+  'fr-FR': Object.freeze(['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']),
+});
 
-const ZH_WEEKDAY_SHORT = Object.freeze([
-  '周日', '周一', '周二', '周三', '周四', '周五', '周六',
-]);
+const LOCALE_WEEKDAY_SHORT = Object.freeze({
+  'zh-CN': Object.freeze(['周日', '周一', '周二', '周三', '周四', '周五', '周六']),
+  'zh-TW': Object.freeze(['週日', '週一', '週二', '週三', '週四', '週五', '週六']),
+  'en-US': Object.freeze(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']),
+  'ja-JP': Object.freeze(['日', '月', '火', '水', '木', '金', '土']),
+  'ko-KR': Object.freeze(['일', '월', '화', '수', '목', '금', '토']),
+  'de-DE': Object.freeze(['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']),
+  'fr-FR': Object.freeze(['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.']),
+});
 
-const EN_WEEKDAY_SHORT = Object.freeze([
-  'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
-]);
+function resolveFormatterLocale(explicitLocale) {
+  if (typeof explicitLocale === 'string' && explicitLocale.trim()) {
+    return resolveLocaleFromLanguageTag(explicitLocale, getEffectiveLocale());
+  }
+  return getEffectiveLocale();
+}
 
 export function formatMetric(value, unit = '') {
   if (!Number.isFinite(value)) return '—';
@@ -98,45 +111,58 @@ export function formatCnyApprox(usdAmount, rate = 7.2) {
   return `≈ ¥${rmb.toFixed(1)}`;
 }
 
-export function formatDateSpanBadge(startMs, endMs) {
+function formatLocalizedDayDate(dateObj, locale, includeYear) {
+  const y = dateObj.getFullYear();
+  const m = dateObj.getMonth() + 1;
+  const d = dateObj.getDate();
+  if (locale === 'zh-CN' || locale === 'zh-TW' || locale === 'ja-JP') {
+    return includeYear ? `${y}年${m}月${d}日` : `${m}月${d}日`;
+  }
+  if (locale === 'ko-KR') {
+    return includeYear ? `${y}년 ${m}월 ${d}일` : `${m}월 ${d}일`;
+  }
+  const mon = (LOCALE_MONTH_SHORT[locale] || LOCALE_MONTH_SHORT['en-US'])[dateObj.getMonth()] || '';
+  if (locale === 'de-DE') {
+    return includeYear ? `${d}. ${mon} ${y}` : `${d}. ${mon}`;
+  }
+  if (locale === 'fr-FR') {
+    return includeYear ? `${d} ${mon} ${y}` : `${d} ${mon}`;
+  }
+  return includeYear ? `${mon} ${d}, ${y}` : `${mon} ${d}`;
+}
+
+export function formatDateSpanBadge(startMs, endMs, { locale } = {}) {
   const s = startMs && Number.isFinite(startMs) ? new Date(startMs) : new Date();
   const e = endMs && Number.isFinite(endMs) ? new Date(endMs) : new Date();
+  const loc = resolveFormatterLocale(locale);
   const sameYear = s.getFullYear() === e.getFullYear();
   const sameMonth = sameYear && s.getMonth() === e.getMonth();
   const sameDay = sameMonth && s.getDate() === e.getDate();
 
-  if (isEnglishLocale()) {
-    const sMon = EN_MONTH_SHORT[s.getMonth()] || '';
-    const eMon = EN_MONTH_SHORT[e.getMonth()] || '';
-    if (!sameYear) {
-      return `${sMon} ${s.getDate()}, ${s.getFullYear()} ~ ${eMon} ${e.getDate()}, ${e.getFullYear()}`;
-    }
-    if (sameDay) {
-      return `${sMon} ${s.getDate()}`;
-    }
-    if (sameMonth) {
-      return `${sMon} ${s.getDate()} ~ ${e.getDate()}`;
-    }
-    return `${sMon} ${s.getDate()} ~ ${eMon} ${e.getDate()}`;
-  }
-
   if (!sameYear) {
-    return `${s.getFullYear()}年${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getFullYear()}年${e.getMonth() + 1}月${e.getDate()}日`;
+    return `${formatLocalizedDayDate(s, loc, true)} ~ ${formatLocalizedDayDate(e, loc, true)}`;
   }
   if (sameDay) {
-    return `${s.getMonth() + 1}月${s.getDate()}日`;
+    return formatLocalizedDayDate(s, loc, false);
   }
   if (sameMonth) {
-    return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getDate()}日`;
+    if (loc === 'zh-CN' || loc === 'zh-TW' || loc === 'ja-JP') {
+      return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getDate()}日`;
+    }
+    if (loc === 'ko-KR') {
+      return `${s.getMonth() + 1}월 ${s.getDate()}일 ~ ${e.getDate()}일`;
+    }
+    if (loc === 'en-US') {
+      const sMon = LOCALE_MONTH_SHORT['en-US'][s.getMonth()] || '';
+      return `${sMon} ${s.getDate()} ~ ${e.getDate()}`;
+    }
   }
-  return `${s.getMonth() + 1}月${s.getDate()}日 ~ ${e.getMonth() + 1}月${e.getDate()}日`;
+  return `${formatLocalizedDayDate(s, loc, false)} ~ ${formatLocalizedDayDate(e, loc, false)}`;
 }
 
 export function formatTrendSlotFullLabel(slot, { locale, showFullYear = false } = {}) {
-  const en =
-    typeof locale === 'string' && locale.trim()
-      ? locale.trim().toLowerCase().startsWith('en')
-      : isEnglishLocale();
+  const loc = resolveFormatterLocale(locale);
+  const isZhCn = loc === 'zh-CN';
   const sMs = Number(slot?.startMs);
   if (Number.isFinite(sMs) && sMs > 0) {
     const sd = new Date(sMs);
@@ -151,35 +177,23 @@ export function formatTrendSlotFullLabel(slot, { locale, showFullYear = false } 
       gran === 'hour' ||
       (!gran && Number(slot?.endMs) > sMs && Number(slot.endMs) - sMs <= 3600_000 * 2);
 
+    const datePart = formatLocalizedDayDate(sd, loc, includeYear);
     if (isSubDay) {
       const eMs = Number(slot?.endMs);
       const ed = Number.isFinite(eMs) && eMs > 0 ? new Date(eMs) : new Date(sMs + 3600_000);
       const hh = `${pad2(sd.getHours())}:${pad2(sd.getMinutes())}`;
       const endHh = `${pad2(ed.getHours())}:${pad2(ed.getMinutes())}`;
-      if (en) {
-        const mon = EN_MONTH_SHORT[sd.getMonth()] || '';
-        return includeYear
-          ? `${mon} ${sd.getDate()}, ${sd.getFullYear()}, ${hh} - ${endHh}`
-          : `${mon} ${sd.getDate()}, ${hh} - ${endHh}`;
-      }
-      const yearPrefix = includeYear ? `${sd.getFullYear()}年` : '';
-      return `${yearPrefix}${sd.getMonth() + 1}月${sd.getDate()}日 ${hh} - ${endHh}`;
+      const sep = loc === 'en-US' ? ', ' : ' ';
+      return `${datePart}${sep}${hh} - ${endHh}`;
     }
 
-    if (en) {
-      const mon = EN_MONTH_SHORT[sd.getMonth()] || '';
-      const wday = EN_WEEKDAY_SHORT[sd.getDay()] || '';
-      return includeYear
-        ? `${mon} ${sd.getDate()}, ${sd.getFullYear()} (${wday})`
-        : `${mon} ${sd.getDate()} (${wday})`;
-    }
-    const yearPrefix = includeYear ? `${sd.getFullYear()}年` : '';
-    return `${yearPrefix}${sd.getMonth() + 1}月${sd.getDate()}日 (${ZH_WEEKDAY_SHORT[sd.getDay()] || ''})`;
+    const wday = (LOCALE_WEEKDAY_SHORT[loc] || LOCALE_WEEKDAY_SHORT['en-US'])[sd.getDay()] || '';
+    return `${datePart} (${wday})`;
   }
 
   const rawFull = String(slot?.fullLabel || '').trim();
   const rawShort = String(slot?.label || '').trim();
-  if (en && rawFull && /[\u4e00-\u9fff]/.test(rawFull)) {
+  if (!isZhCn && rawFull && /[\u4e00-\u9fff]/.test(rawFull)) {
     return rawShort || rawFull;
   }
   return rawFull || rawShort;
@@ -685,12 +699,12 @@ export function resolveModelDisplayInfo(target, settings = {}, options = {}) {
   const showUpstream = modelDisplayMode !== 'short';
   const preferLabelInShort = Boolean(options?.preferLabelInShort);
   const explicitLocale = typeof options?.locale === 'string' && options.locale.trim().length > 0;
-  const useEn = explicitLocale
-    ? options.locale.trim().toLowerCase().startsWith('en')
-    : isEnglishLocale();
+  const resolvedLocale = explicitLocale
+    ? resolveFormatterLocale(options.locale)
+    : getEffectiveLocale();
   const fallback =
     options?.fallback ??
-    (explicitLocale ? (useEn ? 'Unknown model' : '模型未知') : t('fmt.unknownModel'));
+    (explicitLocale ? tForLocale(resolvedLocale, 'fmt.unknownModel') : t('fmt.unknownModel'));
 
   if (!target || typeof target !== 'object') {
     return {
@@ -733,13 +747,11 @@ export function resolveModelDisplayInfo(target, settings = {}, options = {}) {
 
   const isCompaction =
     Boolean(target.isCompactionStep) ||
-    /·(?:压缩|compact)(?=\s|$)|\[自动压缩\]/iu.test(rawCompactionText);
+    /·(?:压缩|壓縮|圧縮|압축|compact|komp\.?|comp\.?)(?=\s|$)|\[自动压缩\]/iu.test(rawCompactionText);
 
   const compactionSuffix = isCompaction
     ? explicitLocale
-      ? useEn
-        ? '·compact'
-        : '·压缩'
+      ? tForLocale(resolvedLocale, 'fmt.compactionSuffix')
       : t('fmt.compactionSuffix')
     : '';
 
@@ -1174,10 +1186,12 @@ function normalizeSwarmMemberHandle(rawText) {
 export function formatQuotaPoolLabel(rawLabel, { fallback = '', locale } = {}) {
   const text = String(rawLabel || '').trim();
   const explicitLocale = typeof locale === 'string' && locale.trim().length > 0;
-  const useEn = explicitLocale
-    ? locale.trim().toLowerCase().startsWith('en')
-    : isEnglishLocale();
-  const unknownText = explicitLocale ? (useEn ? 'Unknown' : '未知') : t('fmt.unknownPool');
+  const resolvedLocale = explicitLocale
+    ? resolveFormatterLocale(locale)
+    : getEffectiveLocale();
+  const unknownText = explicitLocale
+    ? tForLocale(resolvedLocale, 'fmt.unknownPool')
+    : t('fmt.unknownPool');
   if (!text) return fallback || unknownText;
   if (text === '未知' || text.toLowerCase() === 'unknown') return unknownText;
   return text;
@@ -1194,21 +1208,22 @@ export function formatAgentBadgeText(agent) {
   const kind = resolveStructuredAgentKind(agent);
   if (kind === 'all') return t('header.scopeAllShort');
   if (kind === 'main') return t('fmt.mainBadge');
+  const isZhCn = getEffectiveLocale() === 'zh-CN';
   if (kind === 'side_question') {
     const ord = Number(agent.agentOrdinal || agent.sideIndex || 0);
     if (ord > 0) return t('fmt.sideBadge', { index: ord });
-    if (!isEnglishLocale() && agent.badgeText) return String(agent.badgeText);
+    if (isZhCn && agent.badgeText) return String(agent.badgeText);
     return t('fmt.sideBadgeShort');
   }
   if (kind === 'swarm_worker') {
     const ord = Number(agent.agentOrdinal || agent.index || 0);
     if (ord > 0) return t('fmt.swarmBadge', { index: ord });
-    if (!isEnglishLocale() && agent.badgeText) return String(agent.badgeText);
+    if (isZhCn && agent.badgeText) return String(agent.badgeText);
     return t('fmt.swarmBadgeShort');
   }
   const ord = Number(agent.agentOrdinal || agent.index || 0);
   if (ord > 0) return t('fmt.subBadge', { index: ord });
-  if (!isEnglishLocale() && agent.badgeText) return String(agent.badgeText);
+  if (isZhCn && agent.badgeText) return String(agent.badgeText);
   return t('fmt.subBadgeShort');
 }
 

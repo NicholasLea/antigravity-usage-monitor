@@ -78,30 +78,34 @@ test('host-i18n protocol normalizers handle edge cases cleanly', () => {
 test('host-i18n build-packs --check verifies real repository dist artifacts and rejects unsafe patterns', (t) => {
   const checked = buildAllHostI18nPacks({ rootDir: REAL_HOST_I18N_ROOT, checkOnly: true });
   assert.equal(checked.checked, true);
-  const zhPackMeta = checked.manifest.packs.find((p) => p.locale === 'zh-CN');
-  assert.ok(zhPackMeta, 'zh-CN pack must exist in manifest');
-  assert.ok(
-    zhPackMeta.stats.baseExact + zhPackMeta.stats.deepExact >= 5000,
-    `Expected full zh-CN coverage >= 5000 exact entries, got ${zhPackMeta.stats.baseExact + zhPackMeta.stats.deepExact}`
-  );
-  assert.ok(
-    zhPackMeta.stats.basePatterns + zhPackMeta.stats.deepPatterns >= 800,
-    `Expected full zh-CN coverage >= 800 patterns, got ${zhPackMeta.stats.basePatterns + zhPackMeta.stats.deepPatterns}`
-  );
-
-  // Strict coverage audit against real en-US.catalog.json + ignore.json must have 0 gaps & 0 integrity issues
+  const expectedLocales = ['zh-CN', 'zh-TW', 'ja-JP', 'ko-KR', 'de-DE', 'fr-FR'];
   const realCatalog = JSON.parse(
     readFileSync(join(REAL_HOST_I18N_ROOT, 'sources', 'en-US.catalog.json'), 'utf8')
   );
+  const ignoreLists = loadIgnoreLists(join(REAL_HOST_I18N_ROOT, 'sources', 'ignore.json'));
+  for (const locale of expectedLocales) {
+    const packMeta = checked.manifest.packs.find((p) => p.locale === locale);
+    assert.ok(packMeta, `${locale} pack must exist in manifest`);
+    assert.ok(
+      packMeta.stats.baseExact + packMeta.stats.deepExact >= 5000,
+      `Expected full ${locale} coverage >= 5000 exact entries, got ${packMeta.stats.baseExact + packMeta.stats.deepExact}`
+    );
+    assert.ok(
+      packMeta.stats.basePatterns + packMeta.stats.deepPatterns >= 800,
+      `Expected full ${locale} coverage >= 800 patterns, got ${packMeta.stats.basePatterns + packMeta.stats.deepPatterns}`
+    );
+    const packObj = JSON.parse(
+      readFileSync(join(REAL_HOST_I18N_ROOT, 'dist', 'packs', `${locale}.json`), 'utf8')
+    );
+    const auditReport = auditCatalogAgainstPack(realCatalog, packObj, ignoreLists);
+    assert.equal(auditReport.missingExact.length, 0, `${locale} must have 0 missing exact translations`);
+    assert.equal(auditReport.missingTemplates.length, 0, `${locale} must have 0 missing dynamic templates`);
+    assert.equal(auditReport.brokenPatterns.length, 0, `${locale} must have 0 broken pattern backreferences`);
+    assert.equal(auditReport.redundantModeExact.length, 0, `${locale} must have 0 redundant identical light/deep keys`);
+  }
   const realPackObj = JSON.parse(
     readFileSync(join(REAL_HOST_I18N_ROOT, 'dist', 'packs', 'zh-CN.json'), 'utf8')
   );
-  const ignoreLists = loadIgnoreLists(join(REAL_HOST_I18N_ROOT, 'sources', 'ignore.json'));
-  const auditReport = auditCatalogAgainstPack(realCatalog, realPackObj, ignoreLists);
-  assert.equal(auditReport.missingExact.length, 0, 'Catalog must have 0 missing exact translations');
-  assert.equal(auditReport.missingTemplates.length, 0, 'Catalog must have 0 missing dynamic templates');
-  assert.equal(auditReport.brokenPatterns.length, 0, 'Pack must have 0 broken pattern backreferences');
-  assert.equal(auditReport.redundantModeExact.length, 0, 'Pack must have 0 redundant identical light/deep keys');
 
   // Verify screenshot-reported Appearance, General Mode Copy, Queue, Outside-of-Projects & Model Tags translate cleanly
   const deepMerged = compileHostI18nRuntimePayload(realPackObj, 'deep');

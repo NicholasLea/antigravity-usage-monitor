@@ -218,7 +218,7 @@ test('applyAppearanceToRoot and SettingsGeneralTab toggle data-modern-ui + data-
   assert.equal(document.documentElement.hasAttribute('data-modern-ui'), false);
   assert.equal(document.documentElement.getAttribute('data-color-scheme'), 'light');
 
-  // 2. SettingsGeneralTab renders '现代化 UI' (开启 / 关闭) and Language (跟随系统 / 简体中文 / English)
+  // 2. SettingsGeneralTab renders '现代化 UI' (开启 / 关闭) and 7-locale Language CustomSelect
   tab = SettingsGeneralTab({});
   document.body.appendChild(tab.el);
   tab.refs.renderSettings({
@@ -232,12 +232,19 @@ test('applyAppearanceToRoot and SettingsGeneralTab toggle data-modern-ui + data-
 
   assert.match(tab.el.textContent, /现代化 UI/);
   assert.doesNotMatch(tab.el.textContent, /实验性/);
-  const langSegBtns = tab.refs.languageSwitch.el.querySelectorAll('.seg-btn');
+  assert.equal(tab.refs.languageSwitch.el.querySelector('.select-label').textContent, '跟随系统');
+  tab.refs.languageSwitch.el
+    .querySelector('.select-trigger')
+    .dispatchEvent({ type: 'click', stopPropagation() {} });
+  const langSelectOpts = tab.refs.languageSwitch.el.querySelectorAll('.select-option');
   assert.deepEqual(
-    langSegBtns.map((b) => b.textContent),
-    ['跟随系统', '简体中文', 'English']
+    langSelectOpts.map((opt) => opt.querySelector('.select-option-text').textContent),
+    ['跟随系统', '简体中文', '繁體中文', 'English', '日本語', '한국어', 'Deutsch', 'Français']
   );
-  assert.equal(langSegBtns[0].classList.contains('is-active'), true);
+  assert.equal(langSelectOpts[0].classList.contains('is-selected'), true);
+  tab.refs.languageSwitch.el
+    .querySelector('.select-trigger')
+    .dispatchEvent({ type: 'click', stopPropagation() {} });
 
   const modernBtns = tab.refs.modernUiSwitch.el.querySelectorAll('.seg-btn');
   assert.deepEqual(

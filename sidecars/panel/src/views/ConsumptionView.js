@@ -44,7 +44,7 @@ import {
   copyTextWithFeedback,
   exportBinaryFileWithFeedback,
 } from '../core/fileExportClient.js';
-import { i18nStore, isEnglishLocale, t } from '../i18n/index.js';
+import { getEffectiveLocale, i18nStore, t } from '../i18n/index.js';
 import { createSvgIcon } from '../icons/SvgIcon.js';
 import { ActionMenu } from '../components/ui/ActionMenu.js';
 import {
@@ -1308,7 +1308,7 @@ export const ConsumptionView = defineComponent({
                 ? ` · ${formatQuotaPoolLabel(rangeInfo.poolLabel || activePoolFilter)}`
                 : ''
             }`
-          : isEnglishLocale()
+          : getEffectiveLocale() !== 'zh-CN'
             ? getConsumptionTimeRangeOptions().find((o) => o.value === slice.range)?.label ||
               t('cons.allTime')
             : preset?.label || rangeInfo.label || t('cons.allTime');

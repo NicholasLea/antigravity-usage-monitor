@@ -21,7 +21,10 @@ import { stopLocalBackgroundCacheRebuild } from './local-scanner.mjs';
 import { ensureLsEndpointDiscovered } from './ls-discovery.mjs';
 import { ensureCliStatusLineConfigured } from './cli-statusline-config.mjs';
 import { syncCloudCatalog } from './plugin-updater.mjs';
-import { normalizeLanguageSetting } from '../shared/settings-normalization.mjs';
+import {
+  normalizeLanguageSetting,
+  resolveLocaleFromLanguageTag,
+} from '../shared/settings-normalization.mjs';
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
 const AUTH_COOKIE_NAME = 'ag_um_token';
@@ -100,9 +103,75 @@ function extractBearerToken(authHeader) {
   return m ? m[1].trim() : '';
 }
 
+const STANDALONE_LOCALE_COPY = Object.freeze({
+  'zh-CN': {
+    htmlLang: 'zh-CN',
+    title: '用量监控',
+    authTitle: '用量监控 · 访问验证',
+    desc: '当前独立监控服务已启用访问令牌保护，请输入 Token 继续。',
+    err: '访问令牌无效，请核对后重新输入。',
+    placeholder: '输入 --token 访问密钥',
+    submit: '验证并进入面板',
+  },
+  'zh-TW': {
+    htmlLang: 'zh-TW',
+    title: '用量監控',
+    authTitle: '用量監控 · 存取驗證',
+    desc: '目前獨立監控服務已啟用存取權杖保護，請輸入 Token 繼續。',
+    err: '存取權杖無效，請核對後重新輸入。',
+    placeholder: '輸入 --token 存取金鑰',
+    submit: '驗證並進入面板',
+  },
+  'en-US': {
+    htmlLang: 'en-US',
+    title: 'Usage & Speed Monitor',
+    authTitle: 'Usage & Speed Monitor · Access Verification',
+    desc: 'Access token protection is enabled for this standalone monitor. Enter your token to continue.',
+    err: 'Invalid access token. Please verify and try again.',
+    placeholder: 'Enter --token access secret',
+    submit: 'Verify and Open Monitor',
+  },
+  'ja-JP': {
+    htmlLang: 'ja-JP',
+    title: '使用量・速度モニター',
+    authTitle: '使用量・速度モニター · アクセス認証',
+    desc: 'このスタンドアロンモニターはアクセストークン保護が有効です。続行するにはトークンを入力してください。',
+    err: 'アクセストークンが無効です。確認してもう一度入力してください。',
+    placeholder: '--token アクセスキーを入力',
+    submit: '認証してモニターを開く',
+  },
+  'ko-KR': {
+    htmlLang: 'ko-KR',
+    title: '사용량 및 속도 모니터',
+    authTitle: '사용량 및 속도 모니터 · 접근 인증',
+    desc: '이 독립 실행형 모니터는 액세스 토큰 보호가 활성화되어 있습니다. 계속하려면 토큰을 입력하세요.',
+    err: '액세스 토큰이 올바르지 않습니다. 확인 후 다시 입력하세요.',
+    placeholder: '--token 액세스 키 입력',
+    submit: '인증하고 모니터 열기',
+  },
+  'de-DE': {
+    htmlLang: 'de-DE',
+    title: 'Nutzungs- & Geschwindigkeitsmonitor',
+    authTitle: 'Nutzungs- & Geschwindigkeitsmonitor · Zugriffsprüfung',
+    desc: 'Für diesen eigenständigen Monitor ist der Zugriffstoken-Schutz aktiviert. Geben Sie Ihr Token ein, um fortzufahren.',
+    err: 'Ungültiges Zugriffstoken. Bitte prüfen und erneut eingeben.',
+    placeholder: '--token Zugriffsschlüssel eingeben',
+    submit: 'Bestätigen und Monitor öffnen',
+  },
+  'fr-FR': {
+    htmlLang: 'fr-FR',
+    title: 'Moniteur d’utilisation et de vitesse',
+    authTitle: 'Moniteur d’utilisation et de vitesse · Vérification d’accès',
+    desc: 'La protection par jeton d’accès est activée pour ce moniteur autonome. Saisissez votre jeton pour continuer.',
+    err: 'Jeton d’accès invalide. Veuillez vérifier et réessayer.',
+    placeholder: 'Saisir la clé d’accès --token',
+    submit: 'Vérifier et ouvrir le moniteur',
+  },
+});
+
 export function resolveStandaloneRequestLocale(req, settingsLanguage = 'auto') {
   const normalized = normalizeLanguageSetting(settingsLanguage);
-  if (normalized === 'en-US' || normalized === 'zh-CN') return normalized;
+  if (normalized !== 'auto') return normalized;
   const rawHeader = String(req?.headers?.['accept-language'] || '').trim();
   if (!rawHeader) return 'zh-CN';
   let bestTag = '';
@@ -125,32 +194,25 @@ export function resolveStandaloneRequestLocale(req, settingsLanguage = 'auto') {
     }
   }
   if (!bestTag) return 'zh-CN';
-  return bestTag.startsWith('zh') ? 'zh-CN' : 'en-US';
+  return resolveLocaleFromLanguageTag(bestTag, 'en-US');
 }
 
 export function localizeStandaloneIndexHtml(html, locale = 'zh-CN') {
-  if (typeof html !== 'string' || locale !== 'en-US') return html;
+  if (typeof html !== 'string' || locale === 'zh-CN') return html;
+  const copy = STANDALONE_LOCALE_COPY[locale] || STANDALONE_LOCALE_COPY['en-US'];
   return html
-    .replace('<html lang="zh-CN">', '<html lang="en-US">')
-    .replace('<title>用量监控</title>', '<title>Usage & Speed Monitor</title>');
+    .replace('<html lang="zh-CN">', `<html lang="${copy.htmlLang}">`)
+    .replace('<title>用量监控</title>', `<title>${copy.title}</title>`);
 }
 
 function renderTokenLoginHtml(hasError = false, locale = 'zh-CN') {
-  const isEn = locale === 'en-US';
-  const htmlLang = isEn ? 'en-US' : 'zh-CN';
-  const pageTitle = isEn
-    ? 'Usage & Speed Monitor · Access Verification'
-    : '用量监控 · 访问验证';
-  const descText = isEn
-    ? 'Access token protection is enabled for this standalone monitor. Enter your token to continue.'
-    : '当前独立监控服务已启用访问令牌保护，请输入 Token 继续。';
-  const errHtml = hasError
-    ? `<p class="err">${
-        isEn ? 'Invalid access token. Please verify and try again.' : '访问令牌无效，请核对后重新输入。'
-      }</p>`
-    : '';
-  const placeholderText = isEn ? 'Enter --token access secret' : '输入 --token 访问密钥';
-  const submitText = isEn ? 'Verify and Open Monitor' : '验证并进入面板';
+  const copy = STANDALONE_LOCALE_COPY[locale] || STANDALONE_LOCALE_COPY['zh-CN'];
+  const htmlLang = copy.htmlLang;
+  const pageTitle = copy.authTitle;
+  const descText = copy.desc;
+  const errHtml = hasError ? `<p class="err">${copy.err}</p>` : '';
+  const placeholderText = copy.placeholder;
+  const submitText = copy.submit;
   return `<!DOCTYPE html>
 <html lang="${htmlLang}">
 <head>

@@ -86,11 +86,56 @@ export async function openGoogleAccountBrowser(
   return false;
 }
 
+const LOGIN_CALLBACK_COPY = Object.freeze({
+  'zh-CN': {
+    htmlLang: 'zh-CN',
+    okTitle: '账号已添加',
+    failTitle: '登录未完成',
+    detail: '请返回 Antigravity 的账号页，可关闭此浏览器标签页。',
+  },
+  'zh-TW': {
+    htmlLang: 'zh-TW',
+    okTitle: '帳號已新增',
+    failTitle: '登入未完成',
+    detail: '請返回 Antigravity 的帳號頁，您可關閉此瀏覽器分頁。',
+  },
+  'en-US': {
+    htmlLang: 'en',
+    okTitle: 'Account added',
+    failTitle: 'Sign-in incomplete',
+    detail: 'Return to the Antigravity account page. You can close this browser tab.',
+  },
+  'ja-JP': {
+    htmlLang: 'ja-JP',
+    okTitle: 'アカウントを追加しました',
+    failTitle: 'サインインが完了しませんでした',
+    detail: 'Antigravity のアカウントページへ戻ってください。このブラウザタブは閉じて構いません。',
+  },
+  'ko-KR': {
+    htmlLang: 'ko-KR',
+    okTitle: '계정이 추가되었습니다',
+    failTitle: '로그인이 완료되지 않았습니다',
+    detail: 'Antigravity 계정 페이지로 돌아가세요. 이 브라우저 탭은 닫아도 됩니다.',
+  },
+  'de-DE': {
+    htmlLang: 'de-DE',
+    okTitle: 'Konto hinzugefügt',
+    failTitle: 'Anmeldung nicht abgeschlossen',
+    detail: 'Kehren Sie zur Antigravity-Kontoseite zurück. Sie können diesen Browser-Tab schließen.',
+  },
+  'fr-FR': {
+    htmlLang: 'fr-FR',
+    okTitle: 'Compte ajouté',
+    failTitle: 'Connexion incomplète',
+    detail: 'Retournez sur la page de compte Antigravity. Vous pouvez fermer cet onglet.',
+  },
+});
+
 function loginCallbackPage(language, success) {
-  const english = language === 'en-US';
-  const title = english ? success ? 'Account added' : 'Sign-in incomplete' : success ? '账号已添加' : '登录未完成';
-  const detail = english ? 'Return to the Antigravity account page. You can close this browser tab.' : '请返回 Antigravity 的账号页，可关闭此浏览器标签页。';
-  return `<!doctype html><html lang="${english ? 'en' : 'zh-CN'}"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title><style>body{font:16px system-ui,sans-serif;max-width:36rem;margin:15vh auto;padding:24px;line-height:1.6}h1{font-size:24px}</style><h1>${title}</h1><p>${detail}</p></html>`;
+  const copy = LOGIN_CALLBACK_COPY[language] || LOGIN_CALLBACK_COPY['zh-CN'];
+  const title = success ? copy.okTitle : copy.failTitle;
+  const detail = copy.detail;
+  return `<!doctype html><html lang="${copy.htmlLang}"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title><style>body{font:16px system-ui,sans-serif;max-width:36rem;margin:15vh auto;padding:24px;line-height:1.6}h1{font-size:24px}</style><h1>${title}</h1><p>${detail}</p></html>`;
 }
 
 export function createAccountLoginController({

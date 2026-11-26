@@ -1,0 +1,6368 @@
+{
+  "base": [
+    {
+      "source": "^Thought for (\\d+(?:\\.\\d+)?(?:ms|s|m|h))$",
+      "flags": "",
+      "replace": "已思考 $1",
+      "hint": "Thought for "
+    },
+    {
+      "source": "^Thought for (\\d+) seconds?$",
+      "flags": "i",
+      "replace": "已思考 $1 秒",
+      "hint": "Thought for "
+    },
+    {
+      "source": "^Thought for (\\d+) minutes?$",
+      "flags": "i",
+      "replace": "已思考 $1 分鐘",
+      "hint": "Thought for "
+    },
+    {
+      "source": "^Thinking for (\\d+(?:\\.\\d+)?(?:ms|s|m|h))$",
+      "flags": "",
+      "replace": "思考中 $1",
+      "hint": "Thinking for "
+    },
+    {
+      "source": "^(\\d+) files? changed$",
+      "flags": "i",
+      "replace": "已變更 $1 個檔案",
+      "hint": "changed"
+    },
+    {
+      "source": "^(\\d+) files?$",
+      "flags": "i",
+      "replace": "$1 個檔案",
+      "hint": "file"
+    },
+    {
+      "source": "^(\\d+) steps?$",
+      "flags": "i",
+      "replace": "$1 個步驟",
+      "hint": "step"
+    },
+    {
+      "source": "^Step (\\d+) of (\\d+)$",
+      "flags": "",
+      "replace": "第 $1 / $2 步",
+      "hint": "Step "
+    },
+    {
+      "source": "^(\\d+) results?$",
+      "flags": "i",
+      "replace": "$1 條結果",
+      "hint": "result"
+    },
+    {
+      "source": "^(\\d+) items?$",
+      "flags": "i",
+      "replace": "$1 項",
+      "hint": "item"
+    },
+    {
+      "source": "^(\\d+) errors?$",
+      "flags": "i",
+      "replace": "$1 個錯誤",
+      "hint": "error"
+    },
+    {
+      "source": "^(\\d+) warnings?$",
+      "flags": "i",
+      "replace": "$1 條警告",
+      "hint": "warning"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:s|sec|secs|second|seconds) ago$",
+      "flags": "i",
+      "replace": "$1 秒前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:m|min|mins|minute|minutes) ago$",
+      "flags": "i",
+      "replace": "$1 分鐘前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:h|hr|hrs|hour|hours) ago$",
+      "flags": "i",
+      "replace": "$1 小時前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:d|day|days) ago$",
+      "flags": "i",
+      "replace": "$1 天前",
+      "hint": "ago"
+    },
+    {
+      "source": "^Updated (\\d+(?:\\.\\d+)?[smhd]) ago$",
+      "flags": "i",
+      "replace": "更新於 $1 前",
+      "hint": "Updated "
+    },
+    {
+      "source": "^(\\d+) lines? added$",
+      "flags": "i",
+      "replace": "新增 $1 行",
+      "hint": "added"
+    },
+    {
+      "source": "^(\\d+) lines? removed$",
+      "flags": "i",
+      "replace": "刪除 $1 行",
+      "hint": "removed"
+    },
+    {
+      "source": "^Show (\\d+) more$",
+      "flags": "i",
+      "replace": "展開其餘 $1 項",
+      "hint": "more"
+    },
+    {
+      "source": "^(\\d+) running$",
+      "flags": "i",
+      "replace": "$1 個執行中",
+      "hint": "running"
+    },
+    {
+      "source": "^(\\d+) queued$",
+      "flags": "i",
+      "replace": "$1 個排隊中",
+      "hint": "queued"
+    },
+    {
+      "source": "^(\\d+) selected$",
+      "flags": "i",
+      "replace": "已選 $1 項",
+      "hint": "selected"
+    },
+    {
+      "source": "^Version (\\d+\\.\\d+\\.\\d+(?:-[\\w.-]+)?)$",
+      "flags": "",
+      "replace": "版本 $1",
+      "hint": "Version "
+    },
+    {
+      "source": "^\"(.+?)\" does not support standalone self matching; constrain (.+?)$",
+      "flags": "",
+      "replace": "「$1」不支援獨立自匹配；請限制 $2",
+      "hint": "\" does not support standalone se"
+    },
+    {
+      "source": "^\\(filtered from (\\d+(?:\\.\\d+)?)\\)$",
+      "flags": "",
+      "replace": "（已从 $1 中篩選）",
+      "hint": "(filtered from"
+    },
+    {
+      "source": "^\\((\\d+(?:\\.\\d+)?) steps?\\)$",
+      "flags": "",
+      "replace": "（$1 個步驟）",
+      "hint": "step"
+    },
+    {
+      "source": "^\\+(.+?) attachments$",
+      "flags": "",
+      "replace": "+$1 個附件",
+      "hint": "attachments"
+    },
+    {
+      "source": "^\\+(.+?) more$",
+      "flags": "",
+      "replace": "+$1 更多",
+      "hint": "more"
+    },
+    {
+      "source": "^\\+(.+?) more \\(Show all\\)$",
+      "flags": "",
+      "replace": "+$1 更多（顯示全部）",
+      "hint": "more (Show all)"
+    },
+    {
+      "source": "^\\+(.+?) more options via locator\\('datalist option'\\)$",
+      "flags": "",
+      "replace": "通過 locator('datalist option') 還有 +$1 個選項",
+      "hint": "more options via locator('datali"
+    },
+    {
+      "source": "^@(.+?) is currently unavailable$",
+      "flags": "",
+      "replace": "@$1 目前無法使用",
+      "hint": "is currently unavailable"
+    },
+    {
+      "source": "^A file already exists at (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 處已存在檔案。",
+      "hint": "A file already exists at"
+    },
+    {
+      "source": "^A project's private resources must all belong to one owner \\((.+?)\\)\\.$",
+      "flags": "",
+      "replace": "專案的私有資源必須全部屬於同一所有者（$1）。",
+      "hint": "A project's private resources mu"
+    },
+    {
+      "source": "^Add \\((\\d+(?:\\.\\d+)?)\\)$",
+      "flags": "",
+      "replace": "添加（$1）",
+      "hint": "Add ("
+    },
+    {
+      "source": "^Add all · (.+?)$",
+      "flags": "",
+      "replace": "全部添加 · $1",
+      "hint": "Add all ·"
+    },
+    {
+      "source": "^Add bundle (.+?)$",
+      "flags": "",
+      "replace": "添加捆綁包 $1",
+      "hint": "Add bundle"
+    },
+    {
+      "source": "^Add new (.+?) item$",
+      "flags": "",
+      "replace": "添加新的 $1 項",
+      "hint": "Add new"
+    },
+    {
+      "source": "^Add shortcut for (.+?)$",
+      "flags": "",
+      "replace": "為 $1 添加捷徑",
+      "hint": "Add shortcut for"
+    },
+    {
+      "source": "^Add (.+?)$",
+      "flags": "",
+      "replace": "添加 $1",
+      "hint": "Add"
+    },
+    {
+      "source": "^Add (.+?) (.+?) from (.+?)$",
+      "flags": "",
+      "replace": "从 $3 添加 $1 $2",
+      "hint": "from"
+    },
+    {
+      "source": "^Added (.+?)\\.$",
+      "flags": "",
+      "replace": "已添加 $1。",
+      "hint": "Added"
+    },
+    {
+      "source": "^Adding (.+?)$",
+      "flags": "",
+      "replace": "正在添加 $1",
+      "hint": "Adding"
+    },
+    {
+      "source": "^All changes since (.+?)$",
+      "flags": "",
+      "replace": "自 $1 以來的所有更改",
+      "hint": "All changes since"
+    },
+    {
+      "source": "^All (.+?)$",
+      "flags": "",
+      "replace": "所有 $1",
+      "hint": "All"
+    },
+    {
+      "source": "^Allow (.+?)$",
+      "flags": "",
+      "replace": "允許 $1",
+      "hint": "Allow"
+    },
+    {
+      "source": "^Allow (.+?) to (.+?)\\?$",
+      "flags": "",
+      "replace": "允許 $1 $2？",
+      "hint": "Allow"
+    },
+    {
+      "source": "^Allow (.+?)\\?$",
+      "flags": "",
+      "replace": "是否允許 $1？",
+      "hint": "Allow"
+    },
+    {
+      "source": "^Allowed in (.+?)$",
+      "flags": "",
+      "replace": "已在 $1 中允許",
+      "hint": "Allowed in"
+    },
+    {
+      "source": "^An error occurred while resolving reference to '(.+?)': (.+?)$",
+      "flags": "",
+      "replace": "解析對「$1」的引用時出錯：$2",
+      "hint": "An error occurred while resolvin"
+    },
+    {
+      "source": "^App view for (.+?)$",
+      "flags": "",
+      "replace": "$1 的套用檢視",
+      "hint": "App view for"
+    },
+    {
+      "source": "^Applied (.+?)$",
+      "flags": "",
+      "replace": "已套用 $1",
+      "hint": "Applied"
+    },
+    {
+      "source": "^Apply (.+?)$",
+      "flags": "",
+      "replace": "套用 $1",
+      "hint": "Apply"
+    },
+    {
+      "source": "^Attachment error: (.+?)$",
+      "flags": "",
+      "replace": "附件錯誤：$1",
+      "hint": "Attachment error:"
+    },
+    {
+      "source": "^Attribute: (.+?) was dropped$",
+      "flags": "",
+      "replace": "屬性 $1 已被丟棄",
+      "hint": "was dropped"
+    },
+    {
+      "source": "^Audio file size exceeds (.+?)MB limit$",
+      "flags": "",
+      "replace": "音訊檔案大小超過 $1MB 限制",
+      "hint": "Audio file size exceeds"
+    },
+    {
+      "source": "^Auth code for (.+?)$",
+      "flags": "",
+      "replace": "$1 的授權碼",
+      "hint": "Auth code for"
+    },
+    {
+      "source": "^Authorization code for (.+?)$",
+      "flags": "",
+      "replace": "$1 的授權碼",
+      "hint": "Authorization code for"
+    },
+    {
+      "source": "^Automation (.+?)$",
+      "flags": "",
+      "replace": "自動化任務 $1",
+      "hint": "Automation"
+    },
+    {
+      "source": "^Aux pane (.+?)$",
+      "flags": "",
+      "replace": "輔助窗格 $1",
+      "hint": "Aux pane"
+    },
+    {
+      "source": "^Available AI Credits: (.+?)$",
+      "flags": "",
+      "replace": "可用 AI 額度：$1",
+      "hint": "Available AI Credits:"
+    },
+    {
+      "source": "^Available AI credits: (.+?)$",
+      "flags": "",
+      "replace": "可用 AI 額度：$1",
+      "hint": "Available AI credits:"
+    },
+    {
+      "source": "^Back (.+?)s \\(←\\)$",
+      "flags": "",
+      "replace": "後退 $1 秒 (←)",
+      "hint": "Back"
+    },
+    {
+      "source": "^Bad response from host: (.+?)$",
+      "flags": "",
+      "replace": "主機返回異常回應：$1",
+      "hint": "Bad response from host:"
+    },
+    {
+      "source": "^Blocked navigation to \"(.+?)\"$",
+      "flags": "",
+      "replace": "已阻止導航至「$1」",
+      "hint": "Blocked navigation to \""
+    },
+    {
+      "source": "^Blocked: (.+?)$",
+      "flags": "",
+      "replace": "已阻止：$1",
+      "hint": "Blocked:"
+    },
+    {
+      "source": "^Bounding box on page (.+?)$",
+      "flags": "",
+      "replace": "第 $1 頁上的邊界框",
+      "hint": "Bounding box on page"
+    },
+    {
+      "source": "^CEL: (.+?)$",
+      "flags": "",
+      "replace": "CEL：$1",
+      "hint": "CEL:"
+    },
+    {
+      "source": "^Cancel (.+?)$",
+      "flags": "",
+      "replace": "取消 $1",
+      "hint": "Cancel"
+    },
+    {
+      "source": "^Cannot add folder: \"(.+?)\" is not a valid folder location\\.$",
+      "flags": "",
+      "replace": "無法添加資料夾：「$1」不是有效的資料夾位置。",
+      "hint": "\" is not a valid folder location"
+    },
+    {
+      "source": "^Can’t create this path — “(.+?)” is a file, not a folder\\.$",
+      "flags": "",
+      "replace": "無法建立此路徑——「$1」是檔案，不是資料夾。",
+      "hint": "Can’t create this path — “"
+    },
+    {
+      "source": "^Changes Overview \\((.+?)\\)$",
+      "flags": "",
+      "replace": "更改概覽（$1）",
+      "hint": "Changes Overview ("
+    },
+    {
+      "source": "^Channel name '(.+?)' timed out after (.+?)ms$",
+      "flags": "",
+      "replace": "通道名稱「$1」在 $2ms 後逾時",
+      "hint": "' timed out after"
+    },
+    {
+      "source": "^Check if there is a typo in (.+?), or open the page in your external browser\\.$",
+      "flags": "",
+      "replace": "請檢查 $1 中是否有拼寫錯誤，或在外部瀏覽器中開啟該頁面。",
+      "hint": ", or open the page in your exter"
+    },
+    {
+      "source": "^Checked out in (.+?)$",
+      "flags": "",
+      "replace": "已在 $1 中檢出",
+      "hint": "Checked out in"
+    },
+    {
+      "source": "^Choose (.+?)'s Voice$",
+      "flags": "",
+      "replace": "選擇 $1 的聲音",
+      "hint": "'s Voice"
+    },
+    {
+      "source": "^Chunk (.+?)$",
+      "flags": "",
+      "replace": "分塊 $1",
+      "hint": "Chunk"
+    },
+    {
+      "source": "^Close (.+?)$",
+      "flags": "",
+      "replace": "關閉 $1",
+      "hint": "Close"
+    },
+    {
+      "source": "^Column (.+?)$",
+      "flags": "",
+      "replace": "第 $1 列",
+      "hint": "Column"
+    },
+    {
+      "source": "^Comment on page (.+?)$",
+      "flags": "",
+      "replace": "第 $1 頁上的評論",
+      "hint": "Comment on page"
+    },
+    {
+      "source": "^Committed to (.+?)\\.$",
+      "flags": "",
+      "replace": "已提交至 $1。",
+      "hint": "Committed to"
+    },
+    {
+      "source": "^Compare responses from (.+?) models side-by-side to find the best result\\.$",
+      "flags": "",
+      "replace": "并排比較來自 $1 個模型的回應，以找到最佳結果。",
+      "hint": "models side-by-side to find the "
+    },
+    {
+      "source": "^Configure (.+?)$",
+      "flags": "",
+      "replace": "配置 $1",
+      "hint": "Configure"
+    },
+    {
+      "source": "^Configure (.+?), values missing$",
+      "flags": "",
+      "replace": "配置 $1，缺少值",
+      "hint": ", values missing"
+    },
+    {
+      "source": "^Confirm add (.+?) item$",
+      "flags": "",
+      "replace": "確認添加 $1 項",
+      "hint": "Confirm add"
+    },
+    {
+      "source": "^Conflicts with \"(.+?)\"$",
+      "flags": "",
+      "replace": "與「$1」衝突",
+      "hint": "Conflicts with \""
+    },
+    {
+      "source": "^Conflicts with \"(.+?)\" \\((.+?)\\)$",
+      "flags": "",
+      "replace": "與「$1」衝突（$2）",
+      "hint": "Conflicts with \""
+    },
+    {
+      "source": "^Connect GitHub: (.+?)$",
+      "flags": "",
+      "replace": "連接 GitHub：$1",
+      "hint": "Connect GitHub:"
+    },
+    {
+      "source": "^Connect (.+?)$",
+      "flags": "",
+      "replace": "連接 $1",
+      "hint": "Connect"
+    },
+    {
+      "source": "^Connected to (.+?)$",
+      "flags": "",
+      "replace": "已連接到 $1",
+      "hint": "Connected to"
+    },
+    {
+      "source": "^Connecting to (.+?)…$",
+      "flags": "",
+      "replace": "正在連接到 $1…",
+      "hint": "Connecting to"
+    },
+    {
+      "source": "^ConsoleErrors:\n(.+?)$",
+      "flags": "",
+      "replace": "主控台錯誤：\\n$1",
+      "hint": "ConsoleErrors:"
+    },
+    {
+      "source": "^Content is (\\d+(?:\\.\\d+)?) bytes, exceeds limit of 10485760$",
+      "flags": "",
+      "replace": "內容大小為 $1 位元組，超過 10485760 位元組的上限",
+      "hint": "bytes, exceeds limit of 10485760"
+    },
+    {
+      "source": "^Continue(\\s+\\(.+?\\))$",
+      "flags": "",
+      "replace": "繼續$1",
+      "hint": "Continue"
+    },
+    {
+      "source": "^Conversation (.+?)$",
+      "flags": "",
+      "replace": "對話 $1",
+      "hint": "Conversation"
+    },
+    {
+      "source": "^Copy (.+?)$",
+      "flags": "",
+      "replace": "複製 $1",
+      "hint": "Copy"
+    },
+    {
+      "source": "^Copy (.+?) Name$",
+      "flags": "",
+      "replace": "複製 $1 名稱",
+      "hint": "Copy"
+    },
+    {
+      "source": "^Cost summary: (.+?)$",
+      "flags": "",
+      "replace": "費用摘要：$1",
+      "hint": "Cost summary:"
+    },
+    {
+      "source": "^Could not attach folder \"(.+?)\": (.+?)$",
+      "flags": "",
+      "replace": "無法附加資料夾「$1」：$2",
+      "hint": "Could not attach folder \""
+    },
+    {
+      "source": "^Could not attach image: (.+?)$",
+      "flags": "",
+      "replace": "無法附加圖片：$1",
+      "hint": "Could not attach image:"
+    },
+    {
+      "source": "^Could not find match for matchId \"(.+?)\"\\. Please file an issue!$",
+      "flags": "",
+      "replace": "找不到 matchId 「$1」的匹配項。請提交 issue 意見回饋！",
+      "hint": "Could not find match for matchId"
+    },
+    {
+      "source": "^Could not find parent match for matchId \"(.+?)\"$",
+      "flags": "",
+      "replace": "找不到 matchId 「$1」的父匹配項",
+      "hint": "Could not find parent match for "
+    },
+    {
+      "source": "^Could not find (.+?)$",
+      "flags": "",
+      "replace": "找不到 $1",
+      "hint": "Could not find"
+    },
+    {
+      "source": "^Could not open folder: (.+?)$",
+      "flags": "",
+      "replace": "無法開啟資料夾：$1",
+      "hint": "Could not open folder:"
+    },
+    {
+      "source": "^Could not read (.+?)\\.$",
+      "flags": "",
+      "replace": "無法讀取 $1。",
+      "hint": "Could not read"
+    },
+    {
+      "source": "^Could not resolve reference to (.+?) named '(.+?)'\\.$",
+      "flags": "",
+      "replace": "無法解析對名為「$2」的 $1 的引用。",
+      "hint": "Could not resolve reference to"
+    },
+    {
+      "source": "^Couldn't connect to (.+?)$",
+      "flags": "",
+      "replace": "無法連接到 $1",
+      "hint": "Couldn't connect to"
+    },
+    {
+      "source": "^Couldn't connect to (.+?)\\. (.+?)$",
+      "flags": "",
+      "replace": "無法連接到 $1。$2",
+      "hint": "Couldn't connect to"
+    },
+    {
+      "source": "^Couldn't disconnect (.+?): (.+?)$",
+      "flags": "",
+      "replace": "無法斷開 $1：$2",
+      "hint": "Couldn't disconnect"
+    },
+    {
+      "source": "^Couldn't load apps: (.+?)$",
+      "flags": "",
+      "replace": "無法載入套用：$1",
+      "hint": "Couldn't load apps:"
+    },
+    {
+      "source": "^Couldn't remove (.+?) from Recent$",
+      "flags": "",
+      "replace": "無法从最近使用中移除 $1",
+      "hint": "Couldn't remove"
+    },
+    {
+      "source": "^Couldn't switch to (.+?): (.+?)$",
+      "flags": "",
+      "replace": "無法切換到 $1：$2",
+      "hint": "Couldn't switch to"
+    },
+    {
+      "source": "^Couldn't (.+?) conversation$",
+      "flags": "",
+      "replace": "無法$1對話",
+      "hint": "conversation"
+    },
+    {
+      "source": "^Couldn't (.+?) (.+?) from (.+?)\\.$",
+      "flags": "",
+      "replace": "無法从 $3 $1 $2。",
+      "hint": "Couldn't"
+    },
+    {
+      "source": "^Created automation \"(.+?)\"\\.$",
+      "flags": "",
+      "replace": "已建立自動化任務「$1」。",
+      "hint": "Created automation \""
+    },
+    {
+      "source": "^Created (.+?)$",
+      "flags": "",
+      "replace": "已建立 $1",
+      "hint": "Created"
+    },
+    {
+      "source": "^Creating (.+?)$",
+      "flags": "",
+      "replace": "正在建立 $1",
+      "hint": "Creating"
+    },
+    {
+      "source": "^Daily at (.+?)$",
+      "flags": "",
+      "replace": "每天 $1",
+      "hint": "Daily at"
+    },
+    {
+      "source": "^Data cannot be received because the stream is in (.+?) state\\.$",
+      "flags": "",
+      "replace": "流處於 $1 狀態，無法接收資料。",
+      "hint": "Data cannot be received because "
+    },
+    {
+      "source": "^Data cannot be sent because the stream is in (.+?) state\\.$",
+      "flags": "",
+      "replace": "流處於 $1 狀態，無法傳送資料。",
+      "hint": "Data cannot be sent because the "
+    },
+    {
+      "source": "^Debug Mode (.+?)$",
+      "flags": "",
+      "replace": "調試模式 $1",
+      "hint": "Debug Mode"
+    },
+    {
+      "source": "^Decide between using a controlled or uncontrolled (.+?) element for the lifetime of the component\\.$",
+      "flags": "",
+      "replace": "請決定在組件的生命周期內使用受控還是非受控的 $1 元素。",
+      "hint": "Decide between using a controlle"
+    },
+    {
+      "source": "^Delete cookies for (.+?)$",
+      "flags": "",
+      "replace": "刪除 $1 的 Cookie",
+      "hint": "Delete cookies for"
+    },
+    {
+      "source": "^Delete side question: (.+?)$",
+      "flags": "",
+      "replace": "刪除側邊問題：$1",
+      "hint": "Delete side question:"
+    },
+    {
+      "source": "^Delete (.+?)$",
+      "flags": "",
+      "replace": "刪除 $1",
+      "hint": "Delete"
+    },
+    {
+      "source": "^Deleted \"(.+?)\"\\.$",
+      "flags": "",
+      "replace": "已刪除「$1」。",
+      "hint": "Deleted \""
+    },
+    {
+      "source": "^Deleted cookies for (.+?)$",
+      "flags": "",
+      "replace": "已刪除 $1 的 Cookie",
+      "hint": "Deleted cookies for"
+    },
+    {
+      "source": "^Deleted (.+?)$",
+      "flags": "",
+      "replace": "已刪除 $1",
+      "hint": "Deleted"
+    },
+    {
+      "source": "^Deleted (.+?) \\((.+?)\\)$",
+      "flags": "",
+      "replace": "已刪除 $1 ($2)",
+      "hint": "Deleted"
+    },
+    {
+      "source": "^Detached at (.+?)$",
+      "flags": "",
+      "replace": "分離於 $1",
+      "hint": "Detached at"
+    },
+    {
+      "source": "^Details for (.+?)$",
+      "flags": "",
+      "replace": "$1 詳細資料",
+      "hint": "Details for"
+    },
+    {
+      "source": "^Detected on the page: (.+?) compatible editor\\(s\\) with version (.+?)$",
+      "flags": "",
+      "replace": "在頁面上檢測到：$1 個版本為 $2 的相容編輯器",
+      "hint": "compatible editor(s) with versio"
+    },
+    {
+      "source": "^Diagram (.+?) not found\\.$",
+      "flags": "",
+      "replace": "未找到圖表 $1。",
+      "hint": "not found."
+    },
+    {
+      "source": "^Disable Word Wrap(\\s+\\(.+?\\))$",
+      "flags": "",
+      "replace": "停用自動換行$1",
+      "hint": "Disable Word Wrap"
+    },
+    {
+      "source": "^Disconnect (.+?)$",
+      "flags": "",
+      "replace": "斷開 $1 連接",
+      "hint": "Disconnect"
+    },
+    {
+      "source": "^Dismiss: (.+?)$",
+      "flags": "",
+      "replace": "忽略：$1",
+      "hint": "Dismiss:"
+    },
+    {
+      "source": "^Dismissed: (.+?)$",
+      "flags": "",
+      "replace": "已忽略：$1",
+      "hint": "Dismissed:"
+    },
+    {
+      "source": "^Document file size exceeds (.+?)MB limit$",
+      "flags": "",
+      "replace": "文件檔案大小超過 $1MB 限制",
+      "hint": "Document file size exceeds"
+    },
+    {
+      "source": "^Downloads, (\\d+(?:\\.\\d+)?)% complete$",
+      "flags": "",
+      "replace": "下載，已完成 $1%",
+      "hint": "Downloads,"
+    },
+    {
+      "source": "^Duplicate routes found with id: (.+?)$",
+      "flags": "",
+      "replace": "發現 ID 為 $1 的重複路由",
+      "hint": "Duplicate routes found with id:"
+    },
+    {
+      "source": "^Duplicate (.+?) name$",
+      "flags": "",
+      "replace": "重複的 $1 名稱",
+      "hint": "Duplicate"
+    },
+    {
+      "source": "^Edit comment: (.+?)$",
+      "flags": "",
+      "replace": "編輯評論：$1",
+      "hint": "Edit comment:"
+    },
+    {
+      "source": "^Edit side question title: (.+?)$",
+      "flags": "",
+      "replace": "編輯側邊問題標題：$1",
+      "hint": "Edit side question title:"
+    },
+    {
+      "source": "^Edit (.+?)$",
+      "flags": "",
+      "replace": "編輯 $1",
+      "hint": "Edit"
+    },
+    {
+      "source": "^Edit (.+?) name$",
+      "flags": "",
+      "replace": "編輯 $1 名稱",
+      "hint": "Edit"
+    },
+    {
+      "source": "^Editing (.+?)$",
+      "flags": "",
+      "replace": "正在編輯 $1",
+      "hint": "Editing"
+    },
+    {
+      "source": "^Element: (.+?) was dropped$",
+      "flags": "",
+      "replace": "元素：$1 已被丟棄",
+      "hint": "was dropped"
+    },
+    {
+      "source": "^Enable Word Wrap(\\s+\\(.+?\\))$",
+      "flags": "",
+      "replace": "啟用自動換行$1",
+      "hint": "Enable Word Wrap"
+    },
+    {
+      "source": "^Enable (.+?)$",
+      "flags": "",
+      "replace": "啟用 $1",
+      "hint": "Enable"
+    },
+    {
+      "source": "^Enabled \"(.+?)\"\\.$",
+      "flags": "",
+      "replace": "已啟用「$1」。",
+      "hint": "Enabled \""
+    },
+    {
+      "source": "^Encountered unidirectional transform during encode: (.+?)$",
+      "flags": "",
+      "replace": "編碼期間遇到單向轉換：$1",
+      "hint": "Encountered unidirectional trans"
+    },
+    {
+      "source": "^Endpoint (.+?) not implemented$",
+      "flags": "",
+      "replace": "端點 $1 尚未實現",
+      "hint": "not implemented"
+    },
+    {
+      "source": "^Enter (.+?) name\\.\\.\\.$",
+      "flags": "",
+      "replace": "輸入 $1 名稱...",
+      "hint": "name..."
+    },
+    {
+      "source": "^Enter (.+?)\\.\\.\\.$",
+      "flags": "",
+      "replace": "輸入 $1...",
+      "hint": "Enter"
+    },
+    {
+      "source": "^Environment: (.+?)$",
+      "flags": "",
+      "replace": "環境：$1",
+      "hint": "Environment:"
+    },
+    {
+      "source": "^Error in route match: (.+?)$",
+      "flags": "",
+      "replace": "路由匹配出錯：$1",
+      "hint": "Error in route match:"
+    },
+    {
+      "source": "^Error restarting (.+?): (.+?)$",
+      "flags": "",
+      "replace": "重啟 $1 時出錯：$2",
+      "hint": "Error restarting"
+    },
+    {
+      "source": "^Error starting sign-in: (.+?)$",
+      "flags": "",
+      "replace": "啟動登入時出錯：$1",
+      "hint": "Error starting sign-in:"
+    },
+    {
+      "source": "^Error submitting auth code: (.+?)$",
+      "flags": "",
+      "replace": "提交授權碼時出錯：$1",
+      "hint": "Error submitting auth code:"
+    },
+    {
+      "source": "^Error toggling tool: (.+?)$",
+      "flags": "",
+      "replace": "切換工具狀態時出錯：$1",
+      "hint": "Error toggling tool:"
+    },
+    {
+      "source": "^Error while running: (.+?)$",
+      "flags": "",
+      "replace": "執行時出錯：$1",
+      "hint": "Error while running:"
+    },
+    {
+      "source": "^Error while (.+?)$",
+      "flags": "",
+      "replace": "$1 時出錯",
+      "hint": "Error while"
+    },
+    {
+      "source": "^Error: (.+?)$",
+      "flags": "",
+      "replace": "錯誤：$1",
+      "hint": "Error:"
+    },
+    {
+      "source": "^Event not found: (.+?)$",
+      "flags": "",
+      "replace": "未找到事件：$1",
+      "hint": "Event not found:"
+    },
+    {
+      "source": "^Every (.+?) hours(.+?)$",
+      "flags": "",
+      "replace": "每 $1 小時$2",
+      "hint": "Every"
+    },
+    {
+      "source": "^Every (.+?) minutes(.+?)$",
+      "flags": "",
+      "replace": "每 $1 分鐘$2",
+      "hint": "minutes"
+    },
+    {
+      "source": "^Exited with code (.+?)\\.$",
+      "flags": "",
+      "replace": "已退出，退出碼為 $1。",
+      "hint": "Exited with code"
+    },
+    {
+      "source": "^Expected (.+?), received (.+?)$",
+      "flags": "",
+      "replace": "預期為 $1，實際收到 $2",
+      "hint": ", received"
+    },
+    {
+      "source": "^Expression only constrains non-indexed fields; click a Target chip below or add a positive \"&&\" match on (.+?)$",
+      "flags": "",
+      "replace": "表達式僅限制非索引欄位；請點擊下方的目標標簽，或在 $1 上添加正向 \"&&\" 匹配",
+      "hint": "Expression only constrains non-i"
+    },
+    {
+      "source": "^Failed to archive (.+?)$",
+      "flags": "",
+      "replace": "封存 $1 失敗",
+      "hint": "Failed to archive"
+    },
+    {
+      "source": "^Failed to create project: (.+?)$",
+      "flags": "",
+      "replace": "建立專案失敗：$1",
+      "hint": "Failed to create project:"
+    },
+    {
+      "source": "^Failed to create (.+?)$",
+      "flags": "",
+      "replace": "建立 $1 失敗",
+      "hint": "Failed to create"
+    },
+    {
+      "source": "^Failed to create (.+?)\\.$",
+      "flags": "",
+      "replace": "建立 $1 失敗。",
+      "hint": "Failed to create"
+    },
+    {
+      "source": "^Failed to delete \"(.+?)\"$",
+      "flags": "",
+      "replace": "刪除「$1」失敗",
+      "hint": "Failed to delete \""
+    },
+    {
+      "source": "^Failed to delete recordings: (.+?)$",
+      "flags": "",
+      "replace": "刪除錄製失敗：$1",
+      "hint": "Failed to delete recordings:"
+    },
+    {
+      "source": "^Failed to delete (.+?)$",
+      "flags": "",
+      "replace": "刪除 $1 失敗",
+      "hint": "Failed to delete"
+    },
+    {
+      "source": "^Failed to delete (.+?): (.+?)$",
+      "flags": "",
+      "replace": "刪除 $1 失敗：$2",
+      "hint": "Failed to delete"
+    },
+    {
+      "source": "^Failed to establish WebSocket connection to (.+?)$",
+      "flags": "",
+      "replace": "建立到 $1 的 WebSocket 連接失敗",
+      "hint": "Failed to establish WebSocket co"
+    },
+    {
+      "source": "^Failed to evict annotation index for page (.+?)$",
+      "flags": "",
+      "replace": "清除頁面 $1 的批注索引失敗",
+      "hint": "Failed to evict annotation index"
+    },
+    {
+      "source": "^Failed to load annotations for page (.+?): (.+?)$",
+      "flags": "",
+      "replace": "載入頁面 $1 的批注失敗：$2",
+      "hint": "Failed to load annotations for p"
+    },
+    {
+      "source": "^Failed to load instances: (.+?)$",
+      "flags": "",
+      "replace": "載入實例失敗：$1",
+      "hint": "Failed to load instances:"
+    },
+    {
+      "source": "^Failed to load page (.+?): (.+?)$",
+      "flags": "",
+      "replace": "載入頁面 $1 失敗：$2",
+      "hint": "Failed to load page"
+    },
+    {
+      "source": "^Failed to load trajectory: (.+?)$",
+      "flags": "",
+      "replace": "載入軌跡失敗：$1",
+      "hint": "Failed to load trajectory:"
+    },
+    {
+      "source": "^Failed to read (.+?)$",
+      "flags": "",
+      "replace": "讀取 $1 失敗",
+      "hint": "Failed to read"
+    },
+    {
+      "source": "^Failed to resolve folder: (.+?)$",
+      "flags": "",
+      "replace": "解析資料夾失敗：$1",
+      "hint": "Failed to resolve folder:"
+    },
+    {
+      "source": "^Failed to resolve folder: (.+?) \\((.+?)\\)$",
+      "flags": "",
+      "replace": "解析資料夾失敗：$1 ($2)",
+      "hint": "Failed to resolve folder:"
+    },
+    {
+      "source": "^Failed to save \"(.+?)\"$",
+      "flags": "",
+      "replace": "儲存「$1」失敗",
+      "hint": "Failed to save \""
+    },
+    {
+      "source": "^Failed to save VCS preference: (.+?)$",
+      "flags": "",
+      "replace": "儲存 VCS 偏好設定失敗：$1",
+      "hint": "Failed to save VCS preference:"
+    },
+    {
+      "source": "^Failed to save cloud permission settings: (.+?)$",
+      "flags": "",
+      "replace": "儲存雲端權限設定失敗：$1",
+      "hint": "Failed to save cloud permission "
+    },
+    {
+      "source": "^Failed to save configuration: (.+?)$",
+      "flags": "",
+      "replace": "儲存配置失敗：$1",
+      "hint": "Failed to save configuration:"
+    },
+    {
+      "source": "^Failed to save project Google3 configuration: (.+?)$",
+      "flags": "",
+      "replace": "儲存專案 Google3 配置失敗：$1",
+      "hint": "Failed to save project Google3 c"
+    },
+    {
+      "source": "^Failed to save project permissions: (.+?)$",
+      "flags": "",
+      "replace": "儲存專案權限失敗：$1",
+      "hint": "Failed to save project permissio"
+    },
+    {
+      "source": "^Failed to save project settings: (.+?)$",
+      "flags": "",
+      "replace": "儲存專案設定失敗：$1",
+      "hint": "Failed to save project settings:"
+    },
+    {
+      "source": "^Failed to save project: (.+?)$",
+      "flags": "",
+      "replace": "儲存專案失敗：$1",
+      "hint": "Failed to save project:"
+    },
+    {
+      "source": "^Failed to save settings: (.+?)$",
+      "flags": "",
+      "replace": "儲存設定失敗：$1",
+      "hint": "Failed to save settings:"
+    },
+    {
+      "source": "^Failed to send interaction: (.+?)$",
+      "flags": "",
+      "replace": "傳送交互失敗：$1",
+      "hint": "Failed to send interaction:"
+    },
+    {
+      "source": "^Failed to send response: (.+?)$",
+      "flags": "",
+      "replace": "傳送回應失敗：$1",
+      "hint": "Failed to send response:"
+    },
+    {
+      "source": "^Failed to setup chat: (.+?)$",
+      "flags": "",
+      "replace": "初始化對話失敗：$1",
+      "hint": "Failed to setup chat:"
+    },
+    {
+      "source": "^Failed to start \"(.+?)\"\\.$",
+      "flags": "",
+      "replace": "啟動「$1」失敗。",
+      "hint": "Failed to start \""
+    },
+    {
+      "source": "^Failed to unarchive project: (.+?)$",
+      "flags": "",
+      "replace": "取消封存專案失敗：$1",
+      "hint": "Failed to unarchive project:"
+    },
+    {
+      "source": "^Failed to update \"(.+?)\"$",
+      "flags": "",
+      "replace": "更新「$1」失敗",
+      "hint": "Failed to update \""
+    },
+    {
+      "source": "^Failed to write MCP config: (.+?)$",
+      "flags": "",
+      "replace": "寫入 MCP 配置失敗：$1",
+      "hint": "Failed to write MCP config:"
+    },
+    {
+      "source": "^Failed to write (.+?)$",
+      "flags": "",
+      "replace": "寫入 $1 失敗",
+      "hint": "Failed to write"
+    },
+    {
+      "source": "^Failed to (.+?) conversation$",
+      "flags": "",
+      "replace": "$1對話失敗",
+      "hint": "conversation"
+    },
+    {
+      "source": "^File exceeds 262144 bytes \\((\\d+(?:\\.\\d+)?) bytes\\)$",
+      "flags": "",
+      "replace": "檔案超過 262144 位元組（$1 位元組）",
+      "hint": "File exceeds 262144 bytes ("
+    },
+    {
+      "source": "^Filter does not apply to (.+?) \\(supported on (.+?)\\)$",
+      "flags": "",
+      "replace": "篩選條件不適用於 $1（支援 $2）",
+      "hint": "Filter does not apply to"
+    },
+    {
+      "source": "^Filter only applies to (.+?)$",
+      "flags": "",
+      "replace": "篩選條件僅適用於 $1",
+      "hint": "Filter only applies to"
+    },
+    {
+      "source": "^Fold lines (.+?)-(.+?)$",
+      "flags": "",
+      "replace": "收合第 $1-$2 行",
+      "hint": "Fold lines"
+    },
+    {
+      "source": "^Forked from (.+?)$",
+      "flags": "",
+      "replace": "派生自 $1",
+      "hint": "Forked from"
+    },
+    {
+      "source": "^Forward (.+?)s \\(→\\)$",
+      "flags": "",
+      "replace": "快進 $1 秒 (→)",
+      "hint": "Forward"
+    },
+    {
+      "source": "^Further action is required to use (.+?)$",
+      "flags": "",
+      "replace": "需要進一步操作才能使用 $1",
+      "hint": "Further action is required to us"
+    },
+    {
+      "source": "^Generate with (.+?) 🍌$",
+      "flags": "",
+      "replace": "使用 $1 生成 🍌",
+      "hint": "Generate with"
+    },
+    {
+      "source": "^GitHub: (.+?)$",
+      "flags": "",
+      "replace": "GitHub：$1",
+      "hint": "GitHub:"
+    },
+    {
+      "source": "^Go to page (.+?)$",
+      "flags": "",
+      "replace": "轉到第 $1 頁",
+      "hint": "Go to page"
+    },
+    {
+      "source": "^Go to slide (.+?)$",
+      "flags": "",
+      "replace": "轉到第 $1 張幻燈片",
+      "hint": "Go to slide"
+    },
+    {
+      "source": "^Go to turn (.+?) of (.+?)$",
+      "flags": "",
+      "replace": "轉到第 $1/$2 輪",
+      "hint": "Go to turn"
+    },
+    {
+      "source": "^Good to see you, (.+?)\\. What's next\\?$",
+      "flags": "",
+      "replace": "很高興見到你，$1。接下來做什麼？",
+      "hint": "Good to see you,"
+    },
+    {
+      "source": "^Google Chat (.+?)$",
+      "flags": "",
+      "replace": "Google Chat $1",
+      "hint": "Google Chat"
+    },
+    {
+      "source": "^Google Chat: (.+?)$",
+      "flags": "",
+      "replace": "Google Chat：$1",
+      "hint": "Google Chat:"
+    },
+    {
+      "source": "^HTTP ERROR (.+?)$",
+      "flags": "",
+      "replace": "HTTP 錯誤 $1",
+      "hint": "HTTP ERROR"
+    },
+    {
+      "source": "^Help us improve (.+?)\\.$",
+      "flags": "",
+      "replace": "說明我們改進 $1。",
+      "hint": "Help us improve"
+    },
+    {
+      "source": "^Hey (.+?)!$",
+      "flags": "",
+      "replace": "你好，$1！",
+      "hint": "Hey"
+    },
+    {
+      "source": "^Hey (.+?), what should we build today\\?$",
+      "flags": "",
+      "replace": "你好 $1，今天我們要構建什麼？",
+      "hint": ", what should we build today?"
+    },
+    {
+      "source": "^Hide (.+?) from this list$",
+      "flags": "",
+      "replace": "从此清單中隱藏 $1",
+      "hint": "from this list"
+    },
+    {
+      "source": "^Honors standard VS Code shortcuts without collisions \\(e\\.g\\. (.+?)\\)\\.$",
+      "flags": "",
+      "replace": "遵循標準 VS Code 快速鍵而不產生衝突（例如 $1）。",
+      "hint": "Honors standard VS Code shortcut"
+    },
+    {
+      "source": "^Host stopped responding after (\\d+(?:\\.\\d+)?)ms$",
+      "flags": "",
+      "replace": "主機在 $1 毫秒後停止回應",
+      "hint": "Host stopped responding after"
+    },
+    {
+      "source": "^IDE Name: (.+?)$",
+      "flags": "",
+      "replace": "IDE 名稱：$1",
+      "hint": "IDE Name:"
+    },
+    {
+      "source": "^If (.+?) is a Cloudtop, open it in$",
+      "flags": "",
+      "replace": "如果 $1 是 Cloudtop，则在以下套用中開啟",
+      "hint": "is a Cloudtop, open it in"
+    },
+    {
+      "source": "^Image (.+?)$",
+      "flags": "",
+      "replace": "圖片 $1",
+      "hint": "Image"
+    },
+    {
+      "source": "^Image: (.+?)$",
+      "flags": "",
+      "replace": "圖片：$1",
+      "hint": "Image:"
+    },
+    {
+      "source": "^In review · Code-Review (.+?)$",
+      "flags": "",
+      "replace": "審核中 · Code-Review $1",
+      "hint": "In review · Code-Review"
+    },
+    {
+      "source": "^Input must match (.+?)$",
+      "flags": "",
+      "replace": "輸入必須匹配 $1",
+      "hint": "Input must match"
+    },
+    {
+      "source": "^Install folder \"(.+?)\" is already in use$",
+      "flags": "",
+      "replace": "安裝資料夾「$1」已被佔用",
+      "hint": "\" is already in use"
+    },
+    {
+      "source": "^Install (.+?)$",
+      "flags": "",
+      "replace": "安裝 $1",
+      "hint": "Install"
+    },
+    {
+      "source": "^Invalid dedent level (.+?) at offset: (.+?)\\. Current indentation stack: (.+?)$",
+      "flags": "",
+      "replace": "偏移量 $2 處的取消縮進級別 $1 無效。目前縮進棧：$3",
+      "hint": ". Current indentation stack:"
+    },
+    {
+      "source": "^Invalid discriminator value\\. Expected (.+?)$",
+      "flags": "",
+      "replace": "無效的判別值，期望為 $1",
+      "hint": "Invalid discriminator value. Exp"
+    },
+    {
+      "source": "^Invalid enum value\\. Expected (.+?), received '(.+?)'$",
+      "flags": "",
+      "replace": "無效的枚舉值。期望為 $1，實際收到「$2」",
+      "hint": "Invalid enum value. Expected"
+    },
+    {
+      "source": "^Invalid input: must include \"(.+?)\"$",
+      "flags": "",
+      "replace": "無效輸入：必須包含「$1」",
+      "hint": "Invalid input: must include \""
+    },
+    {
+      "source": "^Invalid literal value, expected (.+?)$",
+      "flags": "",
+      "replace": "無效的字面量值，期望為 $1",
+      "hint": "Invalid literal value, expected"
+    },
+    {
+      "source": "^Is Google User Reported: (.+?)$",
+      "flags": "",
+      "replace": "是否由 Google 用戶報告：$1",
+      "hint": "Is Google User Reported:"
+    },
+    {
+      "source": "^JavaScriptDialogs:\n(.+?)$",
+      "flags": "",
+      "replace": "JavaScript 對話方塊：\\n$1",
+      "hint": "JavaScriptDialogs:"
+    },
+    {
+      "source": "^Keep: (.+?)$",
+      "flags": "",
+      "replace": "保留：$1",
+      "hint": "Keep:"
+    },
+    {
+      "source": "^Label for (.+?)$",
+      "flags": "",
+      "replace": "$1 的標簽",
+      "hint": "Label for"
+    },
+    {
+      "source": "^Language server: (.+?)$",
+      "flags": "",
+      "replace": "語言伺服器：$1",
+      "hint": "Language server:"
+    },
+    {
+      "source": "^Line (.+?)$",
+      "flags": "",
+      "replace": "第 $1 行",
+      "hint": "Line"
+    },
+    {
+      "source": "^Line (.+?) → (.+?)$",
+      "flags": "",
+      "replace": "第 $1 行 → 第 $2 行",
+      "hint": "Line"
+    },
+    {
+      "source": "^Listed directory (.+?)$",
+      "flags": "",
+      "replace": "已列出目錄 $1",
+      "hint": "Listed directory"
+    },
+    {
+      "source": "^Load older messages, showing (.+?) of (.+?)$",
+      "flags": "",
+      "replace": "載入更早的訊息，目前顯示 $1 / $2",
+      "hint": "Load older messages, showing"
+    },
+    {
+      "source": "^Loading (.+?)\\.\\.\\.$",
+      "flags": "",
+      "replace": "正在載入 $1...",
+      "hint": "Loading"
+    },
+    {
+      "source": "^MCP error (.+?): (.+?)$",
+      "flags": "",
+      "replace": "MCP 錯誤 $1：$2",
+      "hint": "MCP error"
+    },
+    {
+      "source": "^MCP error: (.+?)$",
+      "flags": "",
+      "replace": "MCP 錯誤：$1",
+      "hint": "MCP error:"
+    },
+    {
+      "source": "^Make (.+?) the default (.+?) account$",
+      "flags": "",
+      "replace": "將 $1 設為預設 $2 帳號",
+      "hint": "the default"
+    },
+    {
+      "source": "^Manage (.+?) app settings\\.$",
+      "flags": "",
+      "replace": "管理 $1 套用設定。",
+      "hint": "app settings."
+    },
+    {
+      "source": "^Manage (.+?) (.+?) and settings\\.$",
+      "flags": "",
+      "replace": "管理 $1 $2 和設定。",
+      "hint": "and settings."
+    },
+    {
+      "source": "^Marked (.+?) conversations as read$",
+      "flags": "",
+      "replace": "已將 $1 個對話標記為已讀",
+      "hint": "conversations as read"
+    },
+    {
+      "source": "^Maximum length is (\\d+(?:\\.\\d+)?)$",
+      "flags": "",
+      "replace": "最大長度為 $1",
+      "hint": "Maximum length is"
+    },
+    {
+      "source": "^Maximum value is (.+?)$",
+      "flags": "",
+      "replace": "最大值為 $1",
+      "hint": "Maximum value is"
+    },
+    {
+      "source": "^Media upload failed after (.+?) attempts\\.$",
+      "flags": "",
+      "replace": "嘗試 $1 次後媒體上傳失敗。",
+      "hint": "Media upload failed after"
+    },
+    {
+      "source": "^Message from (.+?)$",
+      "flags": "",
+      "replace": "來自 $1 的訊息",
+      "hint": "Message from"
+    },
+    {
+      "source": "^Message queued\\. (.+?) messages in queue\\.$",
+      "flags": "",
+      "replace": "訊息已加入佇列。佇列中共有 $1 條訊息。",
+      "hint": "messages in queue."
+    },
+    {
+      "source": "^Method not found: (.+?)$",
+      "flags": "",
+      "replace": "未找到方法：$1",
+      "hint": "Method not found:"
+    },
+    {
+      "source": "^Minified Redux error #(.+?); visit https://redux\\.js\\.org/Errors\\?code=(.+?) for the full message or use the non-minified dev environment for full errors\\.$",
+      "flags": "",
+      "replace": "精簡版 Redux 錯誤 #$1；請訪問 https://redux.js.org/Errors?code=$2 查看完整資訊，或使用未精簡的開發環境獲取完整錯誤。",
+      "hint": "for the full message or use the "
+    },
+    {
+      "source": "^Minimum length is (\\d+(?:\\.\\d+)?)$",
+      "flags": "",
+      "replace": "最小長度為 $1",
+      "hint": "Minimum length is"
+    },
+    {
+      "source": "^Minimum value is (.+?)$",
+      "flags": "",
+      "replace": "最小值為 $1",
+      "hint": "Minimum value is"
+    },
+    {
+      "source": "^Model #(.+?)$",
+      "flags": "",
+      "replace": "模型 #$1",
+      "hint": "Model #"
+    },
+    {
+      "source": "^Model unavailable, retrying(.+?)$",
+      "flags": "",
+      "replace": "模型無法使用，正在重試$1",
+      "hint": "Model unavailable, retrying"
+    },
+    {
+      "source": "^Model: (.+?), (.+?)$",
+      "flags": "",
+      "replace": "模型：$1，$2",
+      "hint": "Model:"
+    },
+    {
+      "source": "^More actions for (.+?)$",
+      "flags": "",
+      "replace": "$1 的更多操作",
+      "hint": "More actions for"
+    },
+    {
+      "source": "^More for (.+?)$",
+      "flags": "",
+      "replace": "$1 的更多內容",
+      "hint": "More for"
+    },
+    {
+      "source": "^More options for (.+?)$",
+      "flags": "",
+      "replace": "$1 的更多選項",
+      "hint": "More options for"
+    },
+    {
+      "source": "^Move this conversation to \"(.+?)\"\\?$",
+      "flags": "",
+      "replace": "要將此對話移動到「$1」嗎？",
+      "hint": "Move this conversation to \""
+    },
+    {
+      "source": "^Move to Group: (.+?)$",
+      "flags": "",
+      "replace": "移至分組：$1",
+      "hint": "Move to Group:"
+    },
+    {
+      "source": "^Move to (.+?)$",
+      "flags": "",
+      "replace": "移至 $1",
+      "hint": "Move to"
+    },
+    {
+      "source": "^Moved conversation (.+?)$",
+      "flags": "",
+      "replace": "已移動對話 $1",
+      "hint": "Moved conversation"
+    },
+    {
+      "source": "^Multiple markers near page (.+?)$",
+      "flags": "",
+      "replace": "第 $1 頁附近有多個標記",
+      "hint": "Multiple markers near page"
+    },
+    {
+      "source": "^Multiple search matches near page (.+?)$",
+      "flags": "",
+      "replace": "第 $1 頁附近有多個搜尋匹配項",
+      "hint": "Multiple search matches near pag"
+    },
+    {
+      "source": "^Mute (.+?)$",
+      "flags": "",
+      "replace": "靜音 $1",
+      "hint": "Mute"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Cross-origin subframe \\((.+?)\\) requires domain permission$",
+      "flags": "",
+      "replace": "NAVIGATION_BLOCKED：跨源子框架 ($1) 需要域名權限",
+      "hint": "NAVIGATION_BLOCKED: Cross-origin"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Cross-site subframe \\((.+?)\\) requires domain permission$",
+      "flags": "",
+      "replace": "NAVIGATION_BLOCKED：跨站子框架 ($1) 需要域名權限",
+      "hint": "NAVIGATION_BLOCKED: Cross-site s"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: No subframe policy is configured for (.+?)$",
+      "flags": "",
+      "replace": "NAVIGATION_BLOCKED：未為 $1 配置子框架策略",
+      "hint": "NAVIGATION_BLOCKED: No subframe "
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Parent subframe \\((.+?)\\) is not pierceable$",
+      "flags": "",
+      "replace": "NAVIGATION_BLOCKED：父級子框架 ($1) 無法穿透",
+      "hint": "NAVIGATION_BLOCKED: Parent subfr"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Protected Identity Provider subframe \\((.+?)\\) cannot be inspected or actuated$",
+      "flags": "",
+      "replace": "NAVIGATION_BLOCKED：受保护的身份提供商子框架 ($1) 無法檢查或操作",
+      "hint": "NAVIGATION_BLOCKED: Protected Id"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Redirect from non-local origin \"(.+?)\" to private/loopback host \"(.+?)\" \\((.+?)\\) is blocked$",
+      "flags": "",
+      "replace": "NAVIGATION_BLOCKED：已阻止从非本機源「$1」重定向到私有/回環主機「$2」($3)",
+      "hint": "NAVIGATION_BLOCKED: Redirect fro"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Subframe \\((.+?)\\) is past the tracked-subframe limit and cannot be inspected or actuated$",
+      "flags": "",
+      "replace": "NAVIGATION_BLOCKED：子框架 ($1) 超出已跟蹤子框架上限，無法檢查或操作",
+      "hint": ") is past the tracked-subframe l"
+    },
+    {
+      "source": "^NUX location (.+?) is mounted$",
+      "flags": "",
+      "replace": "NUX 位置 $1 已掛載",
+      "hint": "NUX location"
+    },
+    {
+      "source": "^NUX trigger (.+?) has been fired$",
+      "flags": "",
+      "replace": "NUX 觸發器 $1 已觸發",
+      "hint": "has been fired"
+    },
+    {
+      "source": "^NUX (.+?) has been dismissed$",
+      "flags": "",
+      "replace": "NUX $1 已關閉",
+      "hint": "has been dismissed"
+    },
+    {
+      "source": "^Negated condition on \"(.+?)\" \\(\"!=\" or \"!\"\\) cannot be indexed up front; add a positive \"&&\" anchor on (.+?)$",
+      "flags": "",
+      "replace": "「$1」上的否定條件（「!=」或「!」）無法提前建立索引；請在 $2 上添加正向的「&&」錨點",
+      "hint": "\" (\"!=\" or \"!\") cannot be indexe"
+    },
+    {
+      "source": "^New secret for (.+?)$",
+      "flags": "",
+      "replace": "$1 的新金鑰",
+      "hint": "New secret for"
+    },
+    {
+      "source": "^New (.+?)$",
+      "flags": "",
+      "replace": "新建 $1",
+      "hint": "New"
+    },
+    {
+      "source": "^New (.+?)\\.\\.\\.$",
+      "flags": "",
+      "replace": "新建 $1...",
+      "hint": "New"
+    },
+    {
+      "source": "^No connectors match “(.+?)”$",
+      "flags": "",
+      "replace": "没有與「$1」匹配的連接器",
+      "hint": "No connectors match “"
+    },
+    {
+      "source": "^No diagram type detected matching given configuration for text: (.+?)$",
+      "flags": "",
+      "replace": "未檢測到匹配給定配置的圖表類型，對應文字：$1",
+      "hint": "No diagram type detected matchin"
+    },
+    {
+      "source": "^No grammar found for scope (.+?)$",
+      "flags": "",
+      "replace": "未找到作用域 $1 的語法",
+      "hint": "No grammar found for scope"
+    },
+    {
+      "source": "^No matching languages for \"(.+?)\"$",
+      "flags": "",
+      "replace": "没有與「$1」匹配的語言",
+      "hint": "No matching languages for \""
+    },
+    {
+      "source": "^No messages in last (.+?) steps · Load more$",
+      "flags": "",
+      "replace": "最近 $1 步中没有訊息 · 載入更多",
+      "hint": "No messages in last"
+    },
+    {
+      "source": "^No messages in last (.+?) steps — load older$",
+      "flags": "",
+      "replace": "最近 $1 步中没有訊息 — 載入更早訊息",
+      "hint": "No messages in last"
+    },
+    {
+      "source": "^No messages in last (.+?) steps, load older$",
+      "flags": "",
+      "replace": "最近 $1 步中没有訊息，載入更早訊息",
+      "hint": "No messages in last"
+    },
+    {
+      "source": "^No more older messages, showing (.+?) of (.+?)$",
+      "flags": "",
+      "replace": "没有更多更早的訊息了，目前顯示 $1 / $2",
+      "hint": "No more older messages, showing"
+    },
+    {
+      "source": "^No remote (.+?)$",
+      "flags": "",
+      "replace": "没有遠端 $1",
+      "hint": "No remote"
+    },
+    {
+      "source": "^No visible messages in last (\\d+(?:\\.\\d+)?) steps\\. Activate Load older messages to continue\\.$",
+      "flags": "",
+      "replace": "最近 $1 步中没有可見訊息。請激活「載入更早的訊息」以繼續。",
+      "hint": "steps. Activate Load older messa"
+    },
+    {
+      "source": "^No (.+?) configured\\.$",
+      "flags": "",
+      "replace": "未配置 $1。",
+      "hint": "configured."
+    },
+    {
+      "source": "^No (.+?) found$",
+      "flags": "",
+      "replace": "未找到 $1",
+      "hint": "found"
+    },
+    {
+      "source": "^No (.+?) found for$",
+      "flags": "",
+      "replace": "未找到以下內容的 $1：",
+      "hint": "found for"
+    },
+    {
+      "source": "^No (.+?) matching your search$",
+      "flags": "",
+      "replace": "没有符合搜尋條件的 $1",
+      "hint": "matching your search"
+    },
+    {
+      "source": "^Node name was null for node: (.+?)$",
+      "flags": "",
+      "replace": "節點 $1 的節點名稱為空 (null)",
+      "hint": "Node name was null for node:"
+    },
+    {
+      "source": "^Not all conditions satisfied for attribute: (.+?)\\.$",
+      "flags": "",
+      "replace": "屬性 $1 未滿足所有條件。",
+      "hint": "Not all conditions satisfied for"
+    },
+    {
+      "source": "^Nothing is running on port (.+?)$",
+      "flags": "",
+      "replace": "連接埠 $1 上没有正在執行的服務",
+      "hint": "Nothing is running on port"
+    },
+    {
+      "source": "^Number must be a multiple of (.+?)$",
+      "flags": "",
+      "replace": "數字必須是 $1 的倍數",
+      "hint": "Number must be a multiple of"
+    },
+    {
+      "source": "^Numpad(.+?)$",
+      "flags": "",
+      "replace": "數字鍵盤 $1",
+      "hint": "Numpad"
+    },
+    {
+      "source": "^On top of those defaults, (.+?) requests the access below\\.$",
+      "flags": "",
+      "replace": "除了上述預設權限外，$1 還要求以下訪問權限。",
+      "hint": "requests the access below."
+    },
+    {
+      "source": "^Open Google Chrome on (.+?)\\.$",
+      "flags": "",
+      "replace": "在 $1 上開啟 Google Chrome。",
+      "hint": "Open Google Chrome on"
+    },
+    {
+      "source": "^Open URL in system browser: (.+?)$",
+      "flags": "",
+      "replace": "在系統瀏覽器中開啟 URL：$1",
+      "hint": "Open URL in system browser:"
+    },
+    {
+      "source": "^Open conversation (.+?)$",
+      "flags": "",
+      "replace": "開啟對話 $1",
+      "hint": "Open conversation"
+    },
+    {
+      "source": "^Open image (.+?) of (\\d+(?:\\.\\d+)?)$",
+      "flags": "",
+      "replace": "開啟第 $1 / $2 張圖片",
+      "hint": "Open image"
+    },
+    {
+      "source": "^Open in (.+?)$",
+      "flags": "",
+      "replace": "在 $1 中開啟",
+      "hint": "Open in"
+    },
+    {
+      "source": "^Open (.+?)$",
+      "flags": "",
+      "replace": "開啟 $1",
+      "hint": "Open"
+    },
+    {
+      "source": "^Open (.+?) link\\?$",
+      "flags": "",
+      "replace": "要開啟 $1 連結嗎？",
+      "hint": "link?"
+    },
+    {
+      "source": "^Open (.+?) settings$",
+      "flags": "",
+      "replace": "開啟 $1 設定",
+      "hint": "settings"
+    },
+    {
+      "source": "^Open (.+?), (.+?)$",
+      "flags": "",
+      "replace": "開啟 $1，$2",
+      "hint": "Open"
+    },
+    {
+      "source": "^Open (.+?), (.+?)\\. Summarizing call$",
+      "flags": "",
+      "replace": "開啟 $1，$2。正在總結調用",
+      "hint": ". Summarizing call"
+    },
+    {
+      "source": "^Open (.+?), (.+?)\\. (.+?)$",
+      "flags": "",
+      "replace": "開啟 $1，$2。$3",
+      "hint": "Open"
+    },
+    {
+      "source": "^Opened URI (.+?)$",
+      "flags": "",
+      "replace": "已開啟 URI $1",
+      "hint": "Opened URI"
+    },
+    {
+      "source": "^Opens external link: (.+?)$",
+      "flags": "",
+      "replace": "開啟外部連結：$1",
+      "hint": "Opens external link:"
+    },
+    {
+      "source": "^Opens the New Conversation screen for this (.+?)$",
+      "flags": "",
+      "replace": "開啟此 $1 的新建對話介面",
+      "hint": "Opens the New Conversation scree"
+    },
+    {
+      "source": "^Other (.+?)$",
+      "flags": "",
+      "replace": "其他 $1",
+      "hint": "Other"
+    },
+    {
+      "source": "^PDF file size exceeds (.+?)MB limit$",
+      "flags": "",
+      "replace": "PDF 檔案大小超過 $1MB 限制",
+      "hint": "PDF file size exceeds"
+    },
+    {
+      "source": "^Page (.+?) failed to load$",
+      "flags": "",
+      "replace": "頁面 $1 載入失敗",
+      "hint": "failed to load"
+    },
+    {
+      "source": "^Pause (.+?)$",
+      "flags": "",
+      "replace": "暫停 $1",
+      "hint": "Pause"
+    },
+    {
+      "source": "^Pick at most (.+?) reasons$",
+      "flags": "",
+      "replace": "最多選擇 $1 個原因",
+      "hint": "Pick at most"
+    },
+    {
+      "source": "^Pin Entire (.+?)$",
+      "flags": "",
+      "replace": "固定整個 $1",
+      "hint": "Pin Entire"
+    },
+    {
+      "source": "^Plan, (.+?) of (.+?) steps done$",
+      "flags": "",
+      "replace": "計畫，已完成 $1/$2 步",
+      "hint": "steps done"
+    },
+    {
+      "source": "^Playback speed (.+?)x$",
+      "flags": "",
+      "replace": "播放速度 $1x",
+      "hint": "Playback speed"
+    },
+    {
+      "source": "^Please fill in all required fields: (.+?)$",
+      "flags": "",
+      "replace": "請填寫所有必填欄位：$1",
+      "hint": "Please fill in all required fiel"
+    },
+    {
+      "source": "^Preview unavailable — (.+?)$",
+      "flags": "",
+      "replace": "無法預覽 — $1",
+      "hint": "Preview unavailable —"
+    },
+    {
+      "source": "^Property not found: (.+?)$",
+      "flags": "",
+      "replace": "未找到屬性：$1",
+      "hint": "Property not found:"
+    },
+    {
+      "source": "^Publish (.+?) to origin$",
+      "flags": "",
+      "replace": "將 $1 發布到 origin",
+      "hint": "to origin"
+    },
+    {
+      "source": "^Published (.+?) to origin\\.$",
+      "flags": "",
+      "replace": "已將 $1 發布到 origin。",
+      "hint": "to origin."
+    },
+    {
+      "source": "^Pushed to (.+?)\\.$",
+      "flags": "",
+      "replace": "已推送到 $1。",
+      "hint": "Pushed to"
+    },
+    {
+      "source": "^Question (.+?) of (\\d+(?:\\.\\d+)?)$",
+      "flags": "",
+      "replace": "第 $1 個問題（共 $2 個）",
+      "hint": "Question"
+    },
+    {
+      "source": "^Range or zero comparison on \"(.+?)\" cannot extract an exact index key; use \"==\" or \"in \\[\\.\\.\\.\\]\" with a positive value, or add a positive \"&&\" anchor on (.+?)$",
+      "flags": "",
+      "replace": "對 \"$1\" 進行範圍或零值比較無法提取精確的索引鍵；請配合正值使用 \"==\" 或 \"in [...]\"，或在 $2 上添加正值 \"&&\" 錨點",
+      "hint": "\" cannot extract an exact index "
+    },
+    {
+      "source": "^Receive product updates, tips, and promotions from Google (.+?) via email\\.$",
+      "flags": "",
+      "replace": "通過電子郵件接收 Google $1 的產品更新、使用技巧和促銷資訊。",
+      "hint": "Receive product updates, tips, a"
+    },
+    {
+      "source": "^Reconnect (.+?)$",
+      "flags": "",
+      "replace": "重新連接 $1",
+      "hint": "Reconnect"
+    },
+    {
+      "source": "^Recording exceeds 15MB limit \\((.+?)MB\\)$",
+      "flags": "",
+      "replace": "錄製檔案超過 15MB 限制（$1MB）",
+      "hint": "Recording exceeds 15MB limit ("
+    },
+    {
+      "source": "^Recording exceeds (.+?)MB limit \\((.+?)MB\\)$",
+      "flags": "",
+      "replace": "錄製檔案超過 $1MB 限制（$2MB）",
+      "hint": "Recording exceeds"
+    },
+    {
+      "source": "^Recording shortcut for (.+?)\\. Press keys to bind, Enter to save, Escape to cancel\\.$",
+      "flags": "",
+      "replace": "正在錄製 $1 的快速鍵。按下按鍵即可綁定，按 Enter 儲存，按 Escape 取消。",
+      "hint": ". Press keys to bind, Enter to s"
+    },
+    {
+      "source": "^Relaunch (.+?) to finish Screen Recording\\.$",
+      "flags": "",
+      "replace": "重新啟動 $1 以完成螢幕錄製。",
+      "hint": "to finish Screen Recording."
+    },
+    {
+      "source": "^Remove from (.+?)$",
+      "flags": "",
+      "replace": "从 $1 中移除",
+      "hint": "Remove from"
+    },
+    {
+      "source": "^Remove shortcut (.+?) for (.+?)$",
+      "flags": "",
+      "replace": "移除 $2 的快速鍵 $1",
+      "hint": "Remove shortcut"
+    },
+    {
+      "source": "^Remove this conversation from its (.+?)\\?$",
+      "flags": "",
+      "replace": "確定要將此對話从其 $1 中移除嗎？",
+      "hint": "Remove this conversation from it"
+    },
+    {
+      "source": "^Remove (.+?)$",
+      "flags": "",
+      "replace": "移除 $1",
+      "hint": "Remove"
+    },
+    {
+      "source": "^Remove (.+?) from Recent$",
+      "flags": "",
+      "replace": "从最近清單中移除 $1",
+      "hint": "from Recent"
+    },
+    {
+      "source": "^Remove (.+?) from list$",
+      "flags": "",
+      "replace": "从清單中移除 $1",
+      "hint": "from list"
+    },
+    {
+      "source": "^Removed (.+?) from Recent$",
+      "flags": "",
+      "replace": "已从最近清單中移除 $1",
+      "hint": "from Recent"
+    },
+    {
+      "source": "^Removed (.+?)\\.$",
+      "flags": "",
+      "replace": "已移除 $1。",
+      "hint": "Removed"
+    },
+    {
+      "source": "^Reopen (.+?) settings$",
+      "flags": "",
+      "replace": "重新開啟 $1 設定",
+      "hint": "settings"
+    },
+    {
+      "source": "^Requesting permission to (.+?) (.+?)$",
+      "flags": "",
+      "replace": "正在要求 $1 $2 的權限",
+      "hint": "Requesting permission to"
+    },
+    {
+      "source": "^Reset (.+?) overrides?$",
+      "flags": "",
+      "replace": "重設 $1 個覆蓋項",
+      "hint": "override"
+    },
+    {
+      "source": "^Reset (.+?) to default$",
+      "flags": "",
+      "replace": "將 $1 重設為預設值",
+      "hint": "to default"
+    },
+    {
+      "source": "^Resets in (.+?)$",
+      "flags": "",
+      "replace": "將在 $1 後重設",
+      "hint": "Resets in"
+    },
+    {
+      "source": "^Resource not found: (.+?)$",
+      "flags": "",
+      "replace": "未找到資源：$1",
+      "hint": "Resource not found:"
+    },
+    {
+      "source": "^Restart (.+?)$",
+      "flags": "",
+      "replace": "重啟 $1",
+      "hint": "Restart"
+    },
+    {
+      "source": "^Restarted \"(.+?)\"\\.$",
+      "flags": "",
+      "replace": "已重啟「$1」。",
+      "hint": "Restarted \""
+    },
+    {
+      "source": "^Resume (.+?)$",
+      "flags": "",
+      "replace": "恢復 $1",
+      "hint": "Resume"
+    },
+    {
+      "source": "^Retrying transcription \\(attempt (.+?)\\)…$",
+      "flags": "",
+      "replace": "正在重試轉錄（第 $1 次嘗試）…",
+      "hint": "Retrying transcription (attempt"
+    },
+    {
+      "source": "^Review permissions for (.+?)$",
+      "flags": "",
+      "replace": "查看 $1 的權限",
+      "hint": "Review permissions for"
+    },
+    {
+      "source": "^Review (.+?) before installing$",
+      "flags": "",
+      "replace": "安裝前請檢查 $1",
+      "hint": "before installing"
+    },
+    {
+      "source": "^Revoke all: (.+?)$",
+      "flags": "",
+      "replace": "全部復原：$1",
+      "hint": "Revoke all:"
+    },
+    {
+      "source": "^Revoke: (.+?)$",
+      "flags": "",
+      "replace": "復原：$1",
+      "hint": "Revoke:"
+    },
+    {
+      "source": "^Run (.+?) now$",
+      "flags": "",
+      "replace": "立即執行 $1",
+      "hint": "Run"
+    },
+    {
+      "source": "^Running for (.+?)$",
+      "flags": "",
+      "replace": "已執行 $1",
+      "hint": "Running for"
+    },
+    {
+      "source": "^Runs even when your computer is off\\. (.+?)$",
+      "flags": "",
+      "replace": "即使電腦關機也能繼續執行。$1",
+      "hint": "Runs even when your computer is "
+    },
+    {
+      "source": "^SCM state for (.+?)$",
+      "flags": "",
+      "replace": "$1 的 SCM 狀態",
+      "hint": "SCM state for"
+    },
+    {
+      "source": "^SSH config: (.+?)$",
+      "flags": "",
+      "replace": "SSH 配置：$1",
+      "hint": "SSH config:"
+    },
+    {
+      "source": "^SSH: (.+?)$",
+      "flags": "",
+      "replace": "SSH：$1",
+      "hint": "SSH:"
+    },
+    {
+      "source": "^Scroll to: (.+?) on page (.+?)$",
+      "flags": "",
+      "replace": "捲動至第 $2 頁的 $1",
+      "hint": "Scroll to:"
+    },
+    {
+      "source": "^Search Google for \"(.+?)\"$",
+      "flags": "",
+      "replace": "在 Google 中搜尋「$1」",
+      "hint": "Search Google for \""
+    },
+    {
+      "source": "^Search failed: (.+?)$",
+      "flags": "",
+      "replace": "搜尋失敗：$1",
+      "hint": "Search failed:"
+    },
+    {
+      "source": "^Search match on page (.+?)$",
+      "flags": "",
+      "replace": "第 $1 頁上的搜尋匹配項",
+      "hint": "Search match on page"
+    },
+    {
+      "source": "^Secret for a new (.+?) account$",
+      "flags": "",
+      "replace": "新 $1 帳號的金鑰",
+      "hint": "Secret for a new"
+    },
+    {
+      "source": "^Secret for (.+?)$",
+      "flags": "",
+      "replace": "$1 的金鑰",
+      "hint": "Secret for"
+    },
+    {
+      "source": "^See \\[(.+?)\\]\\((.+?)\\)\\.$",
+      "flags": "",
+      "replace": "請參閱 [$1]($2)。",
+      "hint": "See ["
+    },
+    {
+      "source": "^See all \\((.+?)\\)$",
+      "flags": "",
+      "replace": "查看全部 ($1)",
+      "hint": "See all ("
+    },
+    {
+      "source": "^See less in (.+?)$",
+      "flags": "",
+      "replace": "在 $1 中收起部分內容",
+      "hint": "See less in"
+    },
+    {
+      "source": "^See more in (.+?)$",
+      "flags": "",
+      "replace": "在 $1 中查看更多",
+      "hint": "See more in"
+    },
+    {
+      "source": "^See more (.+?)$",
+      "flags": "",
+      "replace": "查看更多 $1",
+      "hint": "See more"
+    },
+    {
+      "source": "^See (.+?) more$",
+      "flags": "",
+      "replace": "查看其餘 $1 項",
+      "hint": "more"
+    },
+    {
+      "source": "^See (.+?) more (.+?)$",
+      "flags": "",
+      "replace": "查看其餘 $1 個 $2",
+      "hint": "more"
+    },
+    {
+      "source": "^See (.+?)\\.$",
+      "flags": "",
+      "replace": "請參閱 $1。",
+      "hint": "See"
+    },
+    {
+      "source": "^See (.+?): (.+?)$",
+      "flags": "",
+      "replace": "請參閱 $1：$2",
+      "hint": "See"
+    },
+    {
+      "source": "^Select at least (\\d+(?:\\.\\d+)?) items$",
+      "flags": "",
+      "replace": "至少選擇 $1 項",
+      "hint": "Select at least"
+    },
+    {
+      "source": "^Select at most (\\d+(?:\\.\\d+)?) items$",
+      "flags": "",
+      "replace": "最多選擇 $1 項",
+      "hint": "Select at most"
+    },
+    {
+      "source": "^Select harnesses, current: (.+?)$",
+      "flags": "",
+      "replace": "選擇執行框架，目前：$1",
+      "hint": "Select harnesses, current:"
+    },
+    {
+      "source": "^Select model with (.+?)$",
+      "flags": "",
+      "replace": "使用 $1 選擇模型",
+      "hint": "Select model with"
+    },
+    {
+      "source": "^Select model, current: (.+?)$",
+      "flags": "",
+      "replace": "選擇模型，目前：$1",
+      "hint": "Select model, current:"
+    },
+    {
+      "source": "^Select modes, current: (.+?)$",
+      "flags": "",
+      "replace": "選擇模式，目前：$1",
+      "hint": "Select modes, current:"
+    },
+    {
+      "source": "^Select project, current: (.+?)$",
+      "flags": "",
+      "replace": "選擇專案，目前：$1",
+      "hint": "Select project, current:"
+    },
+    {
+      "source": "^Select (.+?) Theme$",
+      "flags": "",
+      "replace": "選擇 $1 佈景主題",
+      "hint": "Select"
+    },
+    {
+      "source": "^Selected event types \\((.+?)\\) share no compatible target field$",
+      "flags": "",
+      "replace": "所選事件類型（$1）没有相容的目標欄位",
+      "hint": ") share no compatible target fie"
+    },
+    {
+      "source": "^Self \\((.+?)\\)$",
+      "flags": "",
+      "replace": "自身（$1）",
+      "hint": "Self ("
+    },
+    {
+      "source": "^Send Message (.+?)$",
+      "flags": "",
+      "replace": "傳送訊息 $1",
+      "hint": "Send Message"
+    },
+    {
+      "source": "^Send all \\((\\d+(?:\\.\\d+)?)\\)$",
+      "flags": "",
+      "replace": "全部傳送 ($1)",
+      "hint": "Send all ("
+    },
+    {
+      "source": "^Send feedback as (.+?)$",
+      "flags": "",
+      "replace": "以 $1 身份傳送意見回饋",
+      "hint": "Send feedback as"
+    },
+    {
+      "source": "^Send now: (.+?)$",
+      "flags": "",
+      "replace": "立即傳送：$1",
+      "hint": "Send now:"
+    },
+    {
+      "source": "^Sending (.+?) to command$",
+      "flags": "",
+      "replace": "正在將 $1 傳送到命令",
+      "hint": "to command"
+    },
+    {
+      "source": "^Sent response: (.+?)$",
+      "flags": "",
+      "replace": "已傳送回應：$1",
+      "hint": "Sent response:"
+    },
+    {
+      "source": "^Server \"(.+?)\" not found in config$",
+      "flags": "",
+      "replace": "配置中未找到伺服器「$1」",
+      "hint": "\" not found in config"
+    },
+    {
+      "source": "^Set up (.+?)$",
+      "flags": "",
+      "replace": "設定 $1",
+      "hint": "Set up"
+    },
+    {
+      "source": "^Setting (.+?)$",
+      "flags": "",
+      "replace": "正在設定 $1",
+      "hint": "Setting"
+    },
+    {
+      "source": "^Shared with: (.+?)$",
+      "flags": "",
+      "replace": "已共享給：$1",
+      "hint": "Shared with:"
+    },
+    {
+      "source": "^Shortcut (.+?) for (.+?)$",
+      "flags": "",
+      "replace": "$2 的快速鍵 $1",
+      "hint": "Shortcut"
+    },
+    {
+      "source": "^Show (.+?)$",
+      "flags": "",
+      "replace": "顯示 $1",
+      "hint": "Show"
+    },
+    {
+      "source": "^Show (\\d+(?:\\.\\d+)?) More$",
+      "flags": "",
+      "replace": "再顯示 $1 項",
+      "hint": "Show"
+    },
+    {
+      "source": "^Show (\\d+(?:\\.\\d+)?) breakdowns?$",
+      "flags": "",
+      "replace": "顯示 $1 項明細",
+      "hint": "breakdown"
+    },
+    {
+      "source": "^Show (.+?) earlier steps$",
+      "flags": "",
+      "replace": "顯示更早的 $1 個步驟",
+      "hint": "earlier steps"
+    },
+    {
+      "source": "^Show (.+?) in folder$",
+      "flags": "",
+      "replace": "在資料夾中顯示 $1",
+      "hint": "in folder"
+    },
+    {
+      "source": "^Show (.+?) in the list again$",
+      "flags": "",
+      "replace": "在清單中重新顯示 $1",
+      "hint": "in the list again"
+    },
+    {
+      "source": "^Showing first (.+?) references$",
+      "flags": "",
+      "replace": "正在顯示前 $1 個引用",
+      "hint": "Showing first"
+    },
+    {
+      "source": "^Showing (.+?) again$",
+      "flags": "",
+      "replace": "正在重新顯示 $1",
+      "hint": "Showing"
+    },
+    {
+      "source": "^Side Question: (.+?)$",
+      "flags": "",
+      "replace": "支線提問：$1",
+      "hint": "Side Question:"
+    },
+    {
+      "source": "^Side panel (.+?)$",
+      "flags": "",
+      "replace": "側面板 $1",
+      "hint": "Side panel"
+    },
+    {
+      "source": "^Side question \\(conversation (.+?)\\): (.+?)$",
+      "flags": "",
+      "replace": "支線提問（對話 $1）：$2",
+      "hint": "Side question (conversation"
+    },
+    {
+      "source": "^Side question failed: (.+?)$",
+      "flags": "",
+      "replace": "支線提問失敗：$1",
+      "hint": "Side question failed:"
+    },
+    {
+      "source": "^Sign in from the (.+?) panel\\.$",
+      "flags": "",
+      "replace": "請从 $1 面板登入。",
+      "hint": "Sign in from the"
+    },
+    {
+      "source": "^Sign in to use (.+?)!$",
+      "flags": "",
+      "replace": "登入即可使用 $1！",
+      "hint": "Sign in to use"
+    },
+    {
+      "source": "^Sign in to (.+?)$",
+      "flags": "",
+      "replace": "登入 $1",
+      "hint": "Sign in to"
+    },
+    {
+      "source": "^Sign in to (.+?) remotely$",
+      "flags": "",
+      "replace": "遠端登入 $1",
+      "hint": "Sign in to"
+    },
+    {
+      "source": "^Sign-ins to (.+?) are kept in the cloud with your account\\.$",
+      "flags": "",
+      "replace": "$1 的登入資訊會隨你的帳號儲存在雲端。",
+      "hint": "are kept in the cloud with your "
+    },
+    {
+      "source": "^Signed in: (.+?)$",
+      "flags": "",
+      "replace": "已登入：$1",
+      "hint": "Signed in:"
+    },
+    {
+      "source": "^Skip \\((.+?)\\), Skip All \\((.+?)\\)$",
+      "flags": "",
+      "replace": "略過 ($1)，全部略過 ($2)",
+      "hint": "), Skip All ("
+    },
+    {
+      "source": "^Skipped WebSocket redial to (.+?): priming fetch unhealthy$",
+      "flags": "",
+      "replace": "已略過對 $1 的 WebSocket 重連：預熱要求狀態異常",
+      "hint": "Skipped WebSocket redial to"
+    },
+    {
+      "source": "^Sort and filter conversations \\((\\d+(?:\\.\\d+)?) active\\)$",
+      "flags": "",
+      "replace": "排序和篩選對話（已啟用 $1 項）",
+      "hint": "Sort and filter conversations ("
+    },
+    {
+      "source": "^Source (.+?)$",
+      "flags": "",
+      "replace": "來源 $1",
+      "hint": "Source"
+    },
+    {
+      "source": "^Started \"(.+?)\"\\.$",
+      "flags": "",
+      "replace": "已啟動「$1」。",
+      "hint": "Started \""
+    },
+    {
+      "source": "^Step at index (.+?) not found$",
+      "flags": "",
+      "replace": "未找到索引為 $1 的步驟",
+      "hint": "Step at index"
+    },
+    {
+      "source": "^Step (.+?) of (\\d+(?:\\.\\d+)?)$",
+      "flags": "",
+      "replace": "第 $1 步，共 $2 步",
+      "hint": "Step"
+    },
+    {
+      "source": "^Steps to Reproduce:\n(.+?)$",
+      "flags": "",
+      "replace": "複現步驟：\\n$1",
+      "hint": "Steps to Reproduce:"
+    },
+    {
+      "source": "^Still thinking, (.+?) seconds$",
+      "flags": "",
+      "replace": "仍在思考中，已用時 $1 秒",
+      "hint": "Still thinking,"
+    },
+    {
+      "source": "^Stop (.+?)$",
+      "flags": "",
+      "replace": "停止 $1",
+      "hint": "Stop"
+    },
+    {
+      "source": "^Stop (\\d+(?:\\.\\d+)?) selected$",
+      "flags": "",
+      "replace": "停止選中的 $1",
+      "hint": "selected"
+    },
+    {
+      "source": "^Stop (.+?)\\?$",
+      "flags": "",
+      "replace": "確定要停止 $1 嗎？",
+      "hint": "Stop"
+    },
+    {
+      "source": "^Stopped voice chat · (.+?)$",
+      "flags": "",
+      "replace": "已停止語音對話 · $1",
+      "hint": "Stopped voice chat ·"
+    },
+    {
+      "source": "^Stream is in unsupported state: (.+?)$",
+      "flags": "",
+      "replace": "流處於不支援的狀態：$1",
+      "hint": "Stream is in unsupported state:"
+    },
+    {
+      "source": "^Submit(\\s+\\(.+?\\))$",
+      "flags": "",
+      "replace": "提交$1",
+      "hint": "Submit"
+    },
+    {
+      "source": "^Substring or regex match on \"(.+?)\" cannot be indexed up front; use exact \"==\", \"in \\[\\.\\.\\.\\]\", or prefix matching, or add a positive \"&&\" anchor on (.+?)$",
+      "flags": "",
+      "replace": "無法對「$1」的子串或正则匹配預先建立索引；請使用精確的 \"==\"、\"in [...]\" 或前綴匹配，或在 $2 上添加正向 \"&&\" 錨點",
+      "hint": "\" cannot be indexed up front; us"
+    },
+    {
+      "source": "^Successfully created (.+?)$",
+      "flags": "",
+      "replace": "已成功建立 $1",
+      "hint": "Successfully created"
+    },
+    {
+      "source": "^Switch environment \\((.+?)\\)$",
+      "flags": "",
+      "replace": "切換環境 ($1)",
+      "hint": "Switch environment ("
+    },
+    {
+      "source": "^System default \\((.+?)\\)$",
+      "flags": "",
+      "replace": "系統預設 ($1)",
+      "hint": "System default ("
+    },
+    {
+      "source": "^Text file size exceeds (.+?)MB limit$",
+      "flags": "",
+      "replace": "文字檔案大小超出 $1MB 限制",
+      "hint": "Text file size exceeds"
+    },
+    {
+      "source": "^The `render` prop received a function named `(.+?)` that starts with an uppercase letter\\.$",
+      "flags": "",
+      "replace": "`render` 屬性接收到一個以大寫字母開頭的函式 `$1`。",
+      "hint": "The `render` prop received a fun"
+    },
+    {
+      "source": "^The certificate was rejected \\((.+?)\\)\\.$",
+      "flags": "",
+      "replace": "證書已被拒絕 ($1)。",
+      "hint": "The certificate was rejected ("
+    },
+    {
+      "source": "^The folder “(.+?)” does not exist\\. Would you like to create it\\?$",
+      "flags": "",
+      "replace": "資料夾「$1」不存在，是否建立？",
+      "hint": "” does not exist. Would you like"
+    },
+    {
+      "source": "^The preview did not respond on port (.+?)\\.$",
+      "flags": "",
+      "replace": "預覽未在連接埠 $1 上回應。",
+      "hint": "The preview did not respond on p"
+    },
+    {
+      "source": "^The selected (.+?) can't be found\\. Pick another (.+?) from the (.+?) selector to send\\.$",
+      "flags": "",
+      "replace": "找不到所選的 $1。請从 $3 選擇器中選擇另一個 $2 進行傳送。",
+      "hint": "can't be found. Pick another"
+    },
+    {
+      "source": "^Thinking \\((.+?)s\\)…$",
+      "flags": "",
+      "replace": "思考中 ($1s)…",
+      "hint": "Thinking ("
+    },
+    {
+      "source": "^Thinking for (\\d+(?:\\.\\d+)?)s$",
+      "flags": "",
+      "replace": "已思考 $1s",
+      "hint": "Thinking for"
+    },
+    {
+      "source": "^This deletes (.+?) \\((.+?)\\) from your machine\\. You can't undo this\\.$",
+      "flags": "",
+      "replace": "這將从你的設備中刪除 $1 ($2)，且無法復原。",
+      "hint": ") from your machine. You can't u"
+    },
+    {
+      "source": "^This page wants to connect to (.+?)$",
+      "flags": "",
+      "replace": "此頁面要求連接到 $1",
+      "hint": "This page wants to connect to"
+    },
+    {
+      "source": "^This (.+?) overrides your global permission settings\\.$",
+      "flags": "",
+      "replace": "此 $1 會覆蓋你的全域權限設定。",
+      "hint": "overrides your global permission"
+    },
+    {
+      "source": "^This (.+?)'s source is in (\\d+(?:\\.\\d+)?), which can have looser review standards than standard Google code\\. Review its contents before installing\\.$",
+      "flags": "",
+      "replace": "此 $1 的源碼位於 $2，其審核標準可能比標準 Google 程式碼更寬鬆。安裝前請先檢查其內容。",
+      "hint": ", which can have looser review s"
+    },
+    {
+      "source": "^Today (.+?)$",
+      "flags": "",
+      "replace": "今天 $1",
+      "hint": "Today"
+    },
+    {
+      "source": "^Toggle Word Wrap(\\s+\\(.+?\\))$",
+      "flags": "",
+      "replace": "切換自動換行$1",
+      "hint": "Toggle Word Wrap"
+    },
+    {
+      "source": "^Toggle (.+?)$",
+      "flags": "",
+      "replace": "切換 $1",
+      "hint": "Toggle"
+    },
+    {
+      "source": "^Tomorrow (.+?)$",
+      "flags": "",
+      "replace": "明天 $1",
+      "hint": "Tomorrow"
+    },
+    {
+      "source": "^Tot: (.+?)/(.+?)$",
+      "flags": "",
+      "replace": "總計：$1/$2",
+      "hint": "Tot:"
+    },
+    {
+      "source": "^Total media size exceeds (.+?)MB limit$",
+      "flags": "",
+      "replace": "媒體總大小超出 $1MB 限制",
+      "hint": "Total media size exceeds"
+    },
+    {
+      "source": "^Trajectory not found \\((.+?)\\)\\.$",
+      "flags": "",
+      "replace": "未找到軌跡 ($1)。",
+      "hint": "Trajectory not found ("
+    },
+    {
+      "source": "^Triggered (.+?)$",
+      "flags": "",
+      "replace": "已觸發 $1",
+      "hint": "Triggered"
+    },
+    {
+      "source": "^Turn (\\d+(?:\\.\\d+)?)$",
+      "flags": "",
+      "replace": "第 $1 輪",
+      "hint": "Turn"
+    },
+    {
+      "source": "^Turn (.+?) of (.+?)$",
+      "flags": "",
+      "replace": "第 $1 輪，共 $2 輪",
+      "hint": "Turn"
+    },
+    {
+      "source": "^Turn: (.+?)/(.+?)$",
+      "flags": "",
+      "replace": "輪次：$1/$2",
+      "hint": "Turn:"
+    },
+    {
+      "source": "^Turns (.+?)–(.+?)$",
+      "flags": "",
+      "replace": "第 $1–$2 輪",
+      "hint": "Turns"
+    },
+    {
+      "source": "^UNSUPPORTED_IN_CROSS_ORIGIN_FRAME: Cross-site subframe \\((.+?)\\) is redacted and raw input cannot be delivered there\\. Act on it through page\\.frameLocator\\(\\.\\.\\.\\) or its fN\\.\\* refs, which reveal it\\.$",
+      "flags": "",
+      "replace": "UNSUPPORTED_IN_CROSS_ORIGIN_FRAME：跨站子框架 ($1) 已被隱藏，無法向其傳遞原始輸入。請通過 page.frameLocator(...) 或其 fN.* 引用來對其進行操作以將其顯露。",
+      "hint": ") is redacted and raw input cann"
+    },
+    {
+      "source": "^Unable to load and parse grammar for scope (.+?) from (.+?)$",
+      "flags": "",
+      "replace": "無法从 $2 載入并解析作用域 $1 的語法",
+      "hint": "Unable to load and parse grammar"
+    },
+    {
+      "source": "^Unable to search @(.+?)$",
+      "flags": "",
+      "replace": "無法搜尋 @$1",
+      "hint": "Unable to search @"
+    },
+    {
+      "source": "^Unfold lines (.+?)-(.+?)$",
+      "flags": "",
+      "replace": "展開第 $1-$2 行",
+      "hint": "Unfold lines"
+    },
+    {
+      "source": "^Unpin (.+?)$",
+      "flags": "",
+      "replace": "取消固定 $1",
+      "hint": "Unpin"
+    },
+    {
+      "source": "^Unrecognized key\\(s\\) in object: (.+?)$",
+      "flags": "",
+      "replace": "物件中存在無法識別的鍵：$1",
+      "hint": "Unrecognized key(s) in object:"
+    },
+    {
+      "source": "^Updated (.+?), (.+?)$",
+      "flags": "",
+      "replace": "已更新 $1，$2",
+      "hint": "Updated"
+    },
+    {
+      "source": "^Upload error: (.+?)$",
+      "flags": "",
+      "replace": "上傳錯誤：$1",
+      "hint": "Upload error:"
+    },
+    {
+      "source": "^Upstream stream error: HTTP (.+?)$",
+      "flags": "",
+      "replace": "上游流錯誤：HTTP $1",
+      "hint": "Upstream stream error: HTTP"
+    },
+    {
+      "source": "^Url in attribute (.+?) was modified during sanitization\\. Original url:\"(.+?)\" was sanitized to: \"(.+?)\"$",
+      "flags": "",
+      "replace": "屬性 $1 中的 URL 在清理過程中已被修改。原始 URL \"$2\" 已被清理為：\"$3\"",
+      "hint": "was modified during sanitization"
+    },
+    {
+      "source": "^Use custom repository: \"(.+?)\"$",
+      "flags": "",
+      "replace": "使用自訂存放庫：「$1」",
+      "hint": "Use custom repository: \""
+    },
+    {
+      "source": "^User uploaded media (.+?)$",
+      "flags": "",
+      "replace": "用戶上傳的媒體 $1",
+      "hint": "User uploaded media"
+    },
+    {
+      "source": "^Uses standalone Antigravity chords \\(e\\.g\\. (.+?)$",
+      "flags": "",
+      "replace": "使用獨立的 Antigravity 組合鍵（例如 $1",
+      "hint": "Uses standalone Antigravity chor"
+    },
+    {
+      "source": "^Using default (.+?) name$",
+      "flags": "",
+      "replace": "正在使用預設 $1 名稱",
+      "hint": "Using default"
+    },
+    {
+      "source": "^Version (.+?)$",
+      "flags": "",
+      "replace": "版本 $1",
+      "hint": "Version"
+    },
+    {
+      "source": "^View (.+?)$",
+      "flags": "",
+      "replace": "查看 $1",
+      "hint": "View"
+    },
+    {
+      "source": "^View (.+?) side questions?$",
+      "flags": "",
+      "replace": "查看 $1 個附加問題",
+      "hint": "side question"
+    },
+    {
+      "source": "^Viewed (.+?)$",
+      "flags": "",
+      "replace": "已查看 $1",
+      "hint": "Viewed"
+    },
+    {
+      "source": "^Voice Speed, (.+?)$",
+      "flags": "",
+      "replace": "語速，$1",
+      "hint": "Voice Speed,"
+    },
+    {
+      "source": "^Voice speed, (.+?)$",
+      "flags": "",
+      "replace": "語速，$1",
+      "hint": "Voice speed,"
+    },
+    {
+      "source": "^Waiting for command completion \\(up to (\\d+(?:\\.\\d+)?) seconds\\)$",
+      "flags": "",
+      "replace": "正在等待命令完成（最多 $1 秒）",
+      "hint": "Waiting for command completion ("
+    },
+    {
+      "source": "^Waiting on (.+?)$",
+      "flags": "",
+      "replace": "正在等待 $1",
+      "hint": "Waiting on"
+    },
+    {
+      "source": "^WebSocket connection closed unexpectedly \\((.+?)\\)$",
+      "flags": "",
+      "replace": "WebSocket 連接意外關閉 ($1)",
+      "hint": "WebSocket connection closed unex"
+    },
+    {
+      "source": "^WebSocket connection to (.+?) closed before opening$",
+      "flags": "",
+      "replace": "到 $1 的 WebSocket 連接在開啟前已關閉",
+      "hint": "WebSocket connection to"
+    },
+    {
+      "source": "^WebSocket connection to (.+?) timed out after (.+?)ms$",
+      "flags": "",
+      "replace": "到 $1 的 WebSocket 連接在 $2ms 後逾時",
+      "hint": "WebSocket connection to"
+    },
+    {
+      "source": "^Welcome back, (.+?)\\. Where should we pick up\\?$",
+      "flags": "",
+      "replace": "歡迎回來，$1。我們从哪裡繼續？",
+      "hint": ". Where should we pick up?"
+    },
+    {
+      "source": "^Welcome to (.+?)$",
+      "flags": "",
+      "replace": "歡迎使用 $1",
+      "hint": "Welcome to"
+    },
+    {
+      "source": "^Welcome to (.+?)!$",
+      "flags": "",
+      "replace": "歡迎使用 $1！",
+      "hint": "Welcome to"
+    },
+    {
+      "source": "^When toggled on, (.+?) collects usage data to help Google enhance performance and features\\.$",
+      "flags": "",
+      "replace": "開啟後，$1 會收集使用資料，以說明 Google 改進性能和功能。",
+      "hint": "collects usage data to help Goog"
+    },
+    {
+      "source": "^When toggled on, (.+?) will use your AI credits to fulfill model requests once you're out of model quota\\. (.+?) will always use your model quota first before using AI credits\\.$",
+      "flags": "",
+      "replace": "開啟後，當模型配額用盡時，$1 將使用你的 AI 積分來滿足模型要求。$2 始終會優先使用模型配額，然後再使用 AI 積分。",
+      "hint": "will use your AI credits to fulf"
+    },
+    {
+      "source": "^Work in (.+?)$",
+      "flags": "",
+      "replace": "在 $1 中工作",
+      "hint": "Work in"
+    },
+    {
+      "source": "^Worked for (.+?)$",
+      "flags": "",
+      "replace": "已工作 $1",
+      "hint": "Worked for"
+    },
+    {
+      "source": "^Working · (.+?)s$",
+      "flags": "",
+      "replace": "處理中 · $1s",
+      "hint": "Working ·"
+    },
+    {
+      "source": "^Yes, and always allow (.+?)$",
+      "flags": "",
+      "replace": "是，并始終允許 $1",
+      "hint": "Yes, and always allow"
+    },
+    {
+      "source": "^Yesterday (.+?)$",
+      "flags": "",
+      "replace": "昨天 $1",
+      "hint": "Yesterday"
+    },
+    {
+      "source": "^You have (\\d+(?:\\.\\d+)?) conversations in progress\\. Updating will cancel them and you'll need to manually restart them\\.$",
+      "flags": "",
+      "replace": "你有 $1 個正在進行的對話。更新將會取消這些對話，你需要手動重新啟動它們。",
+      "hint": "conversations in progress. Updat"
+    },
+    {
+      "source": "^You have (\\d+(?:\\.\\d+)?) conversations in progress\\. Updating will interrupt them, and they will automatically resume once the update completes\\.$",
+      "flags": "",
+      "replace": "你有 $1 個正在進行的對話。更新將會中斷這些對話，但更新完成後它們會自動恢復。",
+      "hint": "conversations in progress. Updat"
+    },
+    {
+      "source": "^You need (.+?) AI Credits to send messages\\. To continue using (.+?) now, purchase more AI Credits\\.$",
+      "flags": "",
+      "replace": "你需要 $1 點 AI 積分才能傳送訊息。要立即繼續使用 $2，請購買更多 AI 積分。",
+      "hint": "AI Credits to send messages. To "
+    },
+    {
+      "source": "^You're signing in on (.+?)\\. Your sign-in stays on that machine\\.$",
+      "flags": "",
+      "replace": "你正在 $1 上登入。你的登入狀態將保留在該設備上。",
+      "hint": ". Your sign-in stays on that mac"
+    },
+    {
+      "source": "^Your plan's baseline quota will refresh on (.+?)\\.$",
+      "flags": "",
+      "replace": "你方案的基礎配額將於 $1 重新整理。",
+      "hint": "Your plan's baseline quota will "
+    },
+    {
+      "source": "^Your plan: (.+?)$",
+      "flags": "",
+      "replace": "你的方案：$1",
+      "hint": "Your plan:"
+    },
+    {
+      "source": "^Your quota for (.+?) has been reached\\. Switch to another available model to continue\\.$",
+      "flags": "",
+      "replace": "你對 $1 的配額已達上限。請切換到其他可用模型以繼續。",
+      "hint": "has been reached. Switch to anot"
+    },
+    {
+      "source": "^Zip file size exceeds (.+?)MB limit$",
+      "flags": "",
+      "replace": "Zip 檔案大小超出 $1MB 限制",
+      "hint": "Zip file size exceeds"
+    },
+    {
+      "source": "^Zoom (.+?)%, reset to fit$",
+      "flags": "",
+      "replace": "縮放 $1%，重設以適應",
+      "hint": "%, reset to fit"
+    },
+    {
+      "source": "^\\[\\.\\.\\. \\+(.+?) more options; read via page\\.locator\\('select option'\\)\\]$",
+      "flags": "",
+      "replace": "[…… 另有 $1 個選項；請通過 page.locator('select option') 讀取]",
+      "hint": "more options; read via page.loca"
+    },
+    {
+      "source": "^\\[File Watcher \\((.+?)\\)\\] (.+?)$",
+      "flags": "",
+      "replace": "[檔案監聽器 ($1)] $2",
+      "hint": "[File Watcher ("
+    },
+    {
+      "source": "^\\[InteractiveFolderPickerFeature\\] Failed to parse URI (.+?) with error: (.+?)$",
+      "flags": "",
+      "replace": "[InteractiveFolderPickerFeature] 解析 URI $1 失敗，錯誤：$2",
+      "hint": "[InteractiveFolderPickerFeature]"
+    },
+    {
+      "source": "^cannot use (.+?) with message (.+?)$",
+      "flags": "",
+      "replace": "無法將 $1 與訊息 $2 一起使用",
+      "hint": "with message"
+    },
+    {
+      "source": "^cherry-picked (.+?) into (.+?)$",
+      "flags": "",
+      "replace": "已將 $1 cherry-pick 到 $2",
+      "hint": "cherry-picked"
+    },
+    {
+      "source": "^compatible (.+?) event types$",
+      "flags": "",
+      "replace": "相容的 $1 事件類型",
+      "hint": "event types"
+    },
+    {
+      "source": "^fulfill is (.+?) B, max (.+?) B$",
+      "flags": "",
+      "replace": "fulfill 大小為 $1 B，最大限制 $2 B",
+      "hint": "fulfill is"
+    },
+    {
+      "source": "^handler hello\\(\\) did not settle within (.+?) ms$",
+      "flags": "",
+      "replace": "處理程序 hello() 未在 $1 ms 內完成",
+      "hint": "handler hello() did not settle w"
+    },
+    {
+      "source": "^hello is (.+?) B, max (.+?) B$",
+      "flags": "",
+      "replace": "hello 大小為 $1 B，最大限制 $2 B",
+      "hint": "hello is"
+    },
+    {
+      "source": "^payload is (.+?) B, max (.+?) B$",
+      "flags": "",
+      "replace": "負載大小為 $1 B，上限為 $2 B",
+      "hint": "payload is"
+    },
+    {
+      "source": "^script return value is not JSON-serializable: (.+?)$",
+      "flags": "",
+      "replace": "指令碼返回值無法序列化為 JSON：$1",
+      "hint": "script return value is not JSON-"
+    },
+    {
+      "source": "^script timed out after (.+?)ms$",
+      "flags": "",
+      "replace": "指令碼在 $1ms 後逾時",
+      "hint": "script timed out after"
+    },
+    {
+      "source": "^valid (.+?) filter$",
+      "flags": "",
+      "replace": "有效的 $1 篩選器",
+      "hint": "filter"
+    },
+    {
+      "source": "^(.+?)  dependencies:$",
+      "flags": "",
+      "replace": "$1  依賴項：",
+      "hint": "dependencies:"
+    },
+    {
+      "source": "^(.+?) \\(Default\\)$",
+      "flags": "",
+      "replace": "$1（預設）",
+      "hint": "(Default)"
+    },
+    {
+      "source": "^(.+?) \\(Experimental\\)$",
+      "flags": "",
+      "replace": "$1（實驗性）",
+      "hint": "(Experimental)"
+    },
+    {
+      "source": "^(.+?) \\(Remote\\)$",
+      "flags": "",
+      "replace": "$1（遠端）",
+      "hint": "(Remote)"
+    },
+    {
+      "source": "^(.+?) \\(excluded by current filter\\)$",
+      "flags": "",
+      "replace": "$1（已被目前篩選條件排除）",
+      "hint": "(excluded by current filter)"
+    },
+    {
+      "source": "^(.+?) \\(experimental\\)$",
+      "flags": "",
+      "replace": "$1（實驗性）",
+      "hint": "(experimental)"
+    },
+    {
+      "source": "^(.+?) \\(incompatible with current filter\\)$",
+      "flags": "",
+      "replace": "$1（與目前篩選條件不相容）",
+      "hint": "(incompatible with current filte"
+    },
+    {
+      "source": "^(.+?) \\(latest\\)$",
+      "flags": "",
+      "replace": "$1（最新）",
+      "hint": "(latest)"
+    },
+    {
+      "source": "^(.+?) \\(unavailable\\)$",
+      "flags": "",
+      "replace": "$1（無法使用）",
+      "hint": "(unavailable)"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) / (\\d+(?:\\.\\d+)?) rows$",
+      "flags": "",
+      "replace": "$1 / $2 行",
+      "hint": "rows"
+    },
+    {
+      "source": "^(.+?) Background Process(?:es)? Running$",
+      "flags": "",
+      "replace": "正在執行 $1 個後台程序",
+      "hint": "Background Process"
+    },
+    {
+      "source": "^(.+?) CEL values$",
+      "flags": "",
+      "replace": "$1 個 CEL 值",
+      "hint": "CEL values"
+    },
+    {
+      "source": "^(.+?) Comments$",
+      "flags": "",
+      "replace": "$1 條評論",
+      "hint": "Comments"
+    },
+    {
+      "source": "^(.+?) Failed$",
+      "flags": "",
+      "replace": "$1 失敗",
+      "hint": "Failed"
+    },
+    {
+      "source": "^(.+?) Files? With Changes$",
+      "flags": "",
+      "replace": "$1 個已更改的檔案",
+      "hint": "With Changes"
+    },
+    {
+      "source": "^(.+?) Name$",
+      "flags": "",
+      "replace": "$1 名稱",
+      "hint": "Name"
+    },
+    {
+      "source": "^(.+?) Queues after the turn$",
+      "flags": "",
+      "replace": "$1 在本輪完成後排隊傳送",
+      "hint": "Queues after the turn"
+    },
+    {
+      "source": "^(.+?) Sends immediately$",
+      "flags": "",
+      "replace": "$1 立即傳送",
+      "hint": "Sends immediately"
+    },
+    {
+      "source": "^(.+?) Settings$",
+      "flags": "",
+      "replace": "$1 設定",
+      "hint": "Settings"
+    },
+    {
+      "source": "^(.+?) Side Questions?$",
+      "flags": "",
+      "replace": "$1 個附帶問題",
+      "hint": "Side Question"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) accounts$",
+      "flags": "",
+      "replace": "$1 個帳號",
+      "hint": "accounts"
+    },
+    {
+      "source": "^(.+?) active conversations$",
+      "flags": "",
+      "replace": "$1 個活躍對話",
+      "hint": "active conversations"
+    },
+    {
+      "source": "^(.+?) active modes?$",
+      "flags": "",
+      "replace": "$1 個活躍模式",
+      "hint": "active mode"
+    },
+    {
+      "source": "^(.+?) added$",
+      "flags": "",
+      "replace": "$1 已添加",
+      "hint": "added"
+    },
+    {
+      "source": "^(.+?) annotation on page (.+?)$",
+      "flags": "",
+      "replace": "第 $2 頁上的 $1 條批注",
+      "hint": "annotation on page"
+    },
+    {
+      "source": "^(.+?) archived$",
+      "flags": "",
+      "replace": "$1 已封存",
+      "hint": "archived"
+    },
+    {
+      "source": "^(.+?) archived conversations$",
+      "flags": "",
+      "replace": "$1 個已封存對話",
+      "hint": "archived conversations"
+    },
+    {
+      "source": "^(.+?) at one or more positions greater than or equal to (.+?)$",
+      "flags": "",
+      "replace": "$1 位於一個或多個大於或等於 $2 的位置",
+      "hint": "at one or more positions greater"
+    },
+    {
+      "source": "^(.+?) audio attachments$",
+      "flags": "",
+      "replace": "$1 個音訊附件",
+      "hint": "audio attachments"
+    },
+    {
+      "source": "^(.+?) background tasks$",
+      "flags": "",
+      "replace": "$1 個後台任務",
+      "hint": "background tasks"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) blobs, max (.+?)$",
+      "flags": "",
+      "replace": "$1 個 Blob，上限為 $2",
+      "hint": "blobs, max"
+    },
+    {
+      "source": "^(.+?) blocked$",
+      "flags": "",
+      "replace": "$1 已攔截",
+      "hint": "blocked"
+    },
+    {
+      "source": "^(.+?) cannot be used with intent (.+?)$",
+      "flags": "",
+      "replace": "$1 無法與意圖 $2 一起使用",
+      "hint": "cannot be used with intent"
+    },
+    {
+      "source": "^(.+?) comments? in (.+?)$",
+      "flags": "",
+      "replace": "$2 中有 $1 條評論",
+      "hint": "comment"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) comments$",
+      "flags": "",
+      "replace": "$1 條評論",
+      "hint": "comments"
+    },
+    {
+      "source": "^(.+?) could not find the requested page\\.$",
+      "flags": "",
+      "replace": "$1 找不到要求的頁面。",
+      "hint": "could not find the requested pag"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) customizations failed to load$",
+      "flags": "",
+      "replace": "$1 項自訂配置載入失敗",
+      "hint": "customizations failed to load"
+    },
+    {
+      "source": "^(.+?) days$",
+      "flags": "",
+      "replace": "$1 天",
+      "hint": "days"
+    },
+    {
+      "source": "^(.+?) deleted$",
+      "flags": "",
+      "replace": "$1 已刪除",
+      "hint": "deleted"
+    },
+    {
+      "source": "^(.+?) does not apply to (.+?) \\(supported on (.+?)\\)$",
+      "flags": "",
+      "replace": "$1 不適用於 $2（支援 $3）",
+      "hint": "does not apply to"
+    },
+    {
+      "source": "^(.+?) download progress$",
+      "flags": "",
+      "replace": "$1 下載進度",
+      "hint": "download progress"
+    },
+    {
+      "source": "^(.+?) error #(.+?); visit (.+?) for the full message\\.$",
+      "flags": "",
+      "replace": "$1 錯誤 #$2；請訪問 $3 查看完整資訊。",
+      "hint": "for the full message."
+    },
+    {
+      "source": "^(.+?) failed$",
+      "flags": "",
+      "replace": "$1 失敗",
+      "hint": "failed"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) folders in this project could not be loaded because their locations are invalid\\.$",
+      "flags": "",
+      "replace": "此專案中有 $1 個資料夾因位置無效而無法載入。",
+      "hint": "folders in this project could no"
+    },
+    {
+      "source": "^(.+?) header$",
+      "flags": "",
+      "replace": "$1 標頭",
+      "hint": "header"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) hidden hosts$",
+      "flags": "",
+      "replace": "$1 個隱藏的主機",
+      "hint": "hidden hosts"
+    },
+    {
+      "source": "^(.+?) image attachments$",
+      "flags": "",
+      "replace": "$1 個圖片附件",
+      "hint": "image attachments"
+    },
+    {
+      "source": "^(.+?) installed$",
+      "flags": "",
+      "replace": "$1 已安裝",
+      "hint": "installed"
+    },
+    {
+      "source": "^(.+?) installed: (.+?)$",
+      "flags": "",
+      "replace": "$1 已安裝：$2",
+      "hint": "installed:"
+    },
+    {
+      "source": "^(.+?) is currently unable to handle this request\\.$",
+      "flags": "",
+      "replace": "$1 目前無法處理此要求。",
+      "hint": "is currently unable to handle th"
+    },
+    {
+      "source": "^(.+?) is no longer available\\. Runs will fail until you pick another model\\.$",
+      "flags": "",
+      "replace": "$1 已不再可用。在您選擇其他模型之前，執行將會失敗。",
+      "hint": "is no longer available. Runs wil"
+    },
+    {
+      "source": "^(.+?) is paused in (.+?); its view keeps playing here\\. Resume to let it continue\\.$",
+      "flags": "",
+      "replace": "$1 已在 $2 中暫停；其檢視仍會在此處繼續顯示。恢復執行即可讓其繼續。",
+      "hint": "; its view keeps playing here. R"
+    },
+    {
+      "source": "^(.+?) is read-only$",
+      "flags": "",
+      "replace": "$1 為唯讀",
+      "hint": "is read-only"
+    },
+    {
+      "source": "^(.+?) is (\\d+(?:\\.\\d+)?) bytes, exceeds limit of 10485760$",
+      "flags": "",
+      "replace": "$1 大小為 $2 位元組，超出了 10485760 的上限",
+      "hint": "bytes, exceeds limit of 10485760"
+    },
+    {
+      "source": "^(.+?) is (.+?) bytes; the limit is 64$",
+      "flags": "",
+      "replace": "$1 大小為 $2 位元組；上限為 64",
+      "hint": "bytes; the limit is 64"
+    },
+    {
+      "source": "^(.+?) item (.+?)$",
+      "flags": "",
+      "replace": "$1 項 $2",
+      "hint": "item"
+    },
+    {
+      "source": "^(.+?) lines added, (.+?) lines removed$",
+      "flags": "",
+      "replace": "新增 $1 行，刪除 $2 行",
+      "hint": "lines removed"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) matching (\\d+(?:\\.\\d+)?)$",
+      "flags": "",
+      "replace": "$1 個匹配 $2",
+      "hint": "matching"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) may have looser code review\\. Review (\\d+(?:\\.\\d+)?) contents before adding the bundle\\.$",
+      "flags": "",
+      "replace": "$1 的程式碼審查可能較為寬鬆。添加該擴充功能包前，請先檢查 $2 的內容。",
+      "hint": "may have looser code review. Rev"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) models selected$",
+      "flags": "",
+      "replace": "已選擇 $1 個模型",
+      "hint": "models selected"
+    },
+    {
+      "source": "^(.+?) needs you to sign in before it can be used\\.$",
+      "flags": "",
+      "replace": "$1 需要您先登入才能使用。",
+      "hint": "needs you to sign in before it c"
+    },
+    {
+      "source": "^(.+?) needs (.+?) to use your computer\\.$",
+      "flags": "",
+      "replace": "$1 需要 $2 才能使用您的電腦。",
+      "hint": "to use your computer."
+    },
+    {
+      "source": "^(.+?) notebook$",
+      "flags": "",
+      "replace": "$1 筆記本",
+      "hint": "notebook"
+    },
+    {
+      "source": "^(.+?) notebook cells$",
+      "flags": "",
+      "replace": "$1 個筆記本單元格",
+      "hint": "notebook cells"
+    },
+    {
+      "source": "^(.+?) only applies to (.+?)$",
+      "flags": "",
+      "replace": "$1 僅適用於 $2",
+      "hint": "only applies to"
+    },
+    {
+      "source": "^(.+?) out of range$",
+      "flags": "",
+      "replace": "$1 超出範圍",
+      "hint": "out of range"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) questions?$",
+      "flags": "",
+      "replace": "$1 個問題",
+      "hint": "question"
+    },
+    {
+      "source": "^(.+?) requires (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 需要 $2。",
+      "hint": "requires"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) rows$",
+      "flags": "",
+      "replace": "$1 行",
+      "hint": "rows"
+    },
+    {
+      "source": "^(.+?) seconds$",
+      "flags": "",
+      "replace": "$1 秒",
+      "hint": "seconds"
+    },
+    {
+      "source": "^(.+?) settings$",
+      "flags": "",
+      "replace": "$1 設定",
+      "hint": "settings"
+    },
+    {
+      "source": "^(.+?) tab$",
+      "flags": "",
+      "replace": "$1 分頁",
+      "hint": "tab"
+    },
+    {
+      "source": "^(.+?) target filter$",
+      "flags": "",
+      "replace": "$1 目標篩選器",
+      "hint": "target filter"
+    },
+    {
+      "source": "^(.+?) took too long to respond\\.$",
+      "flags": "",
+      "replace": "$1 回應時間過長。",
+      "hint": "took too long to respond."
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) tools? disabled$",
+      "flags": "",
+      "replace": "已停用 $1 個工具",
+      "hint": "disabled"
+    },
+    {
+      "source": "^(.+?) tools? enabled$",
+      "flags": "",
+      "replace": "已啟用 $1 個工具",
+      "hint": "enabled"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) tools$",
+      "flags": "",
+      "replace": "$1 個工具",
+      "hint": "tools"
+    },
+    {
+      "source": "^(.+?) video attachments$",
+      "flags": "",
+      "replace": "$1 個視訊附件",
+      "hint": "video attachments"
+    },
+    {
+      "source": "^(.+?) waiting on you$",
+      "flags": "",
+      "replace": "$1 正在等待您的處理",
+      "hint": "waiting on you"
+    },
+    {
+      "source": "^(.+?) was requested as a (.+?), but the response Content-Type, \"(.+?) is not appropriate for this type of content\\.$",
+      "flags": "",
+      "replace": "$1 作為 $2 被要求，但回應的 Content-Type \"$3 不適用於此類內容。",
+      "hint": "is not appropriate for this type"
+    },
+    {
+      "source": "^(.+?) (.+?) tool for (.+?)$",
+      "flags": "",
+      "replace": "用於 $3 的 $1 $2 工具",
+      "hint": "tool for"
+    },
+    {
+      "source": "^(.+?) · target$",
+      "flags": "",
+      "replace": "$1 · 目標",
+      "hint": "· target"
+    },
+    {
+      "source": "^(.+?), error$",
+      "flags": "",
+      "replace": "$1，錯誤",
+      "hint": ", error"
+    },
+    {
+      "source": "^(.+?), from (.+?)$",
+      "flags": "",
+      "replace": "$1，來自 $2",
+      "hint": ", from"
+    },
+    {
+      "source": "^(.+?), setup required$",
+      "flags": "",
+      "replace": "$1，需要配置",
+      "hint": ", setup required"
+    },
+    {
+      "source": "^(.+?), showing (.+?) of (.+?)$",
+      "flags": "",
+      "replace": "$1，顯示 $2 / $3",
+      "hint": ", showing"
+    },
+    {
+      "source": "^(.+?), voice (.+?) of (\\d+(?:\\.\\d+)?)$",
+      "flags": "",
+      "replace": "$1，語音 $2 / $3",
+      "hint": ", voice"
+    },
+    {
+      "source": "^(.+?)\\. Disabling or removing the bundle applies only to the ones it installed\\.$",
+      "flags": "",
+      "replace": "$1。停用或移除該擴充功能包僅影響其安裝的專案。",
+      "hint": ". Disabling or removing the bund"
+    },
+    {
+      "source": "^(.+?)\\. Show in (.+?)$",
+      "flags": "",
+      "replace": "$1。在 $2 中顯示",
+      "hint": ". Show in"
+    },
+    {
+      "source": "^(.+?)\\. Switch mic$",
+      "flags": "",
+      "replace": "$1。切換麥克風",
+      "hint": ". Switch mic"
+    },
+    {
+      "source": "^(.+?)\\. Switch microphone\\.$",
+      "flags": "",
+      "replace": "$1。切換麥克風。",
+      "hint": ". Switch microphone."
+    },
+    {
+      "source": "^(.+?)\\. View site information$",
+      "flags": "",
+      "replace": "$1。查看網站資訊",
+      "hint": ". View site information"
+    },
+    {
+      "source": "^(.+?)\\. (.+?) plan$",
+      "flags": "",
+      "replace": "$1。$2 方案",
+      "hint": "plan"
+    },
+    {
+      "source": "^(.+?): Connect GitHub$",
+      "flags": "",
+      "replace": "$1：連接 GitHub",
+      "hint": ": Connect GitHub"
+    },
+    {
+      "source": "^“(.+?)” isn’t a valid folder name\\.$",
+      "flags": "",
+      "replace": "「$1」不是有效的資料夾名稱。",
+      "hint": "” isn’t a valid folder name."
+    },
+    {
+      "source": "^, \\+(.+?) more$",
+      "flags": "",
+      "replace": "，+$1 項",
+      "hint": "more"
+    },
+    {
+      "source": "^Added (.+?) and installed (.+?)\\.$",
+      "flags": "",
+      "replace": "已添加 $1 并安裝 $2。",
+      "hint": "and installed"
+    },
+    {
+      "source": "^An embedded page at (.+?) says$",
+      "flags": "",
+      "replace": "位於 $1 的內嵌頁面提示",
+      "hint": "An embedded page at"
+    },
+    {
+      "source": "^An embedded page at (.+?) wants to connect to (.+?)$",
+      "flags": "",
+      "replace": "位於 $1 的內嵌頁面要求連接到 $2",
+      "hint": "An embedded page at"
+    },
+    {
+      "source": "^An embedded page on this page wants to connect to (.+?)$",
+      "flags": "",
+      "replace": "此頁面中的內嵌頁面要求連接到 $1",
+      "hint": "An embedded page on this page wa"
+    },
+    {
+      "source": "^Archive (.+?)$",
+      "flags": "",
+      "replace": "封存 $1",
+      "hint": "Archive"
+    },
+    {
+      "source": "^Array must contain (.+?) (.+?) element\\(s\\)$",
+      "flags": "",
+      "replace": "陣列必須包含 $1 $2 個元素",
+      "hint": "Array must contain"
+    },
+    {
+      "source": "^Back to (.+?)$",
+      "flags": "",
+      "replace": "返回 $1",
+      "hint": "Back to"
+    },
+    {
+      "source": "^BigInt must be (.+?) (.+?)$",
+      "flags": "",
+      "replace": "BigInt 必須為 $1 $2",
+      "hint": "BigInt must be"
+    },
+    {
+      "source": "^Can't access \"(.+?)\"\\. (.+?)$",
+      "flags": "",
+      "replace": "無法訪問「$1」。$2",
+      "hint": "Can't access \""
+    },
+    {
+      "source": "^Closed (.+?)$",
+      "flags": "",
+      "replace": "已關閉 $1",
+      "hint": "Closed"
+    },
+    {
+      "source": "^Code search: \"(.+?)\"$",
+      "flags": "",
+      "replace": "程式碼搜尋：「$1」",
+      "hint": "Code search: \""
+    },
+    {
+      "source": "^Comment \\((.+?)\\)$",
+      "flags": "",
+      "replace": "評論 ($1)",
+      "hint": "Comment ("
+    },
+    {
+      "source": "^Conflict: also assigned to (.+?)$",
+      "flags": "",
+      "replace": "衝突：同時已分配給 $1",
+      "hint": "Conflict: also assigned to"
+    },
+    {
+      "source": "^Conflicts with \"(.+?)\" \\(press Enter to replace\\)$",
+      "flags": "",
+      "replace": "與「$1」衝突（按 Enter 取代）",
+      "hint": "\" (press Enter to replace)"
+    },
+    {
+      "source": "^Conflicts with your configured Ask permission: (.+?)$",
+      "flags": "",
+      "replace": "與你配置的詢問權限衝突：$1",
+      "hint": "Conflicts with your configured A"
+    },
+    {
+      "source": "^Credentials expire in (.+?)\\. Refresh credentials to keep this automation running$",
+      "flags": "",
+      "replace": "憑據將在 $1 後過期。請重新整理憑據以保持此自動化任務執行",
+      "hint": ". Refresh credentials to keep th"
+    },
+    {
+      "source": "^Date must be (.+?) (.+?)$",
+      "flags": "",
+      "replace": "日期必須為 $1 $2",
+      "hint": "Date must be"
+    },
+    {
+      "source": "^Delete: (.+?)$",
+      "flags": "",
+      "replace": "刪除：$1",
+      "hint": "Delete:"
+    },
+    {
+      "source": "^Edit: (.+?)$",
+      "flags": "",
+      "replace": "編輯：$1",
+      "hint": "Edit:"
+    },
+    {
+      "source": "^Edited (.+?)$",
+      "flags": "",
+      "replace": "已編輯 $1",
+      "hint": "Edited"
+    },
+    {
+      "source": "^Enlarged media: (.+?)$",
+      "flags": "",
+      "replace": "放大媒體：$1",
+      "hint": "Enlarged media:"
+    },
+    {
+      "source": "^Environment paused\\. Click to resume it and load the (.+?)\\.$",
+      "flags": "",
+      "replace": "環境已暫停。點擊恢復以載入 $1。",
+      "hint": "Environment paused. Click to res"
+    },
+    {
+      "source": "^Error sending (.+?) to command$",
+      "flags": "",
+      "replace": "向命令傳送 $1 時出錯",
+      "hint": "Error sending"
+    },
+    {
+      "source": "^Error while running (.+?)$",
+      "flags": "",
+      "replace": "執行 $1 時出錯",
+      "hint": "Error while running"
+    },
+    {
+      "source": "^Executing task: (.+?)$",
+      "flags": "",
+      "replace": "正在執行任務：$1",
+      "hint": "Executing task:"
+    },
+    {
+      "source": "^Explored (.+?)$",
+      "flags": "",
+      "replace": "已探索 $1",
+      "hint": "Explored"
+    },
+    {
+      "source": "^Failed to create directory (.+?): (.+?)$",
+      "flags": "",
+      "replace": "建立目錄 $1 失敗：$2",
+      "hint": "Failed to create directory"
+    },
+    {
+      "source": "^Failed to fetch directory contents: (.+?)$",
+      "flags": "",
+      "replace": "獲取目錄內容失敗：$1",
+      "hint": "Failed to fetch directory conten"
+    },
+    {
+      "source": "^Failed to load (.+?)$",
+      "flags": "",
+      "replace": "載入 $1 失敗",
+      "hint": "Failed to load"
+    },
+    {
+      "source": "^Failed: (.+?)$",
+      "flags": "",
+      "replace": "失敗：$1",
+      "hint": "Failed:"
+    },
+    {
+      "source": "^For (.+?), telemetry is force disabled\\.$",
+      "flags": "",
+      "replace": "對於 $1，遙測已被強制關閉。",
+      "hint": ", telemetry is force disabled."
+    },
+    {
+      "source": "^For (.+?), this setting is disabled\\.$",
+      "flags": "",
+      "replace": "對於 $1，此設定已停用。",
+      "hint": ", this setting is disabled."
+    },
+    {
+      "source": "^Generated image: \"(.+?)\"$",
+      "flags": "",
+      "replace": "已生成圖片：「$1」",
+      "hint": "Generated image: \""
+    },
+    {
+      "source": "^Generated with (.+?) 🍌$",
+      "flags": "",
+      "replace": "由 $1 生成 🍌",
+      "hint": "Generated with"
+    },
+    {
+      "source": "^Generating with (.+?) 🍌$",
+      "flags": "",
+      "replace": "正在使用 $1 生成 🍌",
+      "hint": "Generating with"
+    },
+    {
+      "source": "^Help: (.+?)$",
+      "flags": "",
+      "replace": "說明：$1",
+      "hint": "Help:"
+    },
+    {
+      "source": "^Hid (.+?)$",
+      "flags": "",
+      "replace": "已隱藏 $1",
+      "hint": "Hid"
+    },
+    {
+      "source": "^Hidden by policy \\((.+?)\\)\\.$",
+      "flags": "",
+      "replace": "已被策略隱藏（$1）。",
+      "hint": "Hidden by policy ("
+    },
+    {
+      "source": "^In review · (\\d+(?:\\.\\d+)?) LGTMs?$",
+      "flags": "",
+      "replace": "審查中 · $1 個 LGTM",
+      "hint": "In review ·"
+    },
+    {
+      "source": "^Inherits your Global Permissions when working (.+?)\\.$",
+      "flags": "",
+      "replace": "在 $1 工作時繼承你的全域權限。",
+      "hint": "Inherits your Global Permissions"
+    },
+    {
+      "source": "^Internal search: \"(.+?)\"$",
+      "flags": "",
+      "replace": "內部搜尋：「$1」",
+      "hint": "Internal search: \""
+    },
+    {
+      "source": "^Invalid input: must end with \"(.+?)\"$",
+      "flags": "",
+      "replace": "輸入無效：必須以「$1」結尾",
+      "hint": "Invalid input: must end with \""
+    },
+    {
+      "source": "^Invalid input: must start with \"(.+?)\"$",
+      "flags": "",
+      "replace": "輸入無效：必須以「$1」開頭",
+      "hint": "Invalid input: must start with \""
+    },
+    {
+      "source": "^Invalid notebook JSON: (.+?)$",
+      "flags": "",
+      "replace": "無效的筆記本 JSON：$1",
+      "hint": "Invalid notebook JSON:"
+    },
+    {
+      "source": "^Invalid (.+?)$",
+      "flags": "",
+      "replace": "無效的 $1",
+      "hint": "Invalid"
+    },
+    {
+      "source": "^Listing (.+?)$",
+      "flags": "",
+      "replace": "正在列出 $1",
+      "hint": "Listing"
+    },
+    {
+      "source": "^Live preview unavailable · (.+?)$",
+      "flags": "",
+      "replace": "即時預覽無法使用 · $1",
+      "hint": "Live preview unavailable ·"
+    },
+    {
+      "source": "^Low contrast ratio \\((.+?):1\\)\\. Text may be hard to read\\.$",
+      "flags": "",
+      "replace": "對比度偏低（$1:1），文字可能難以閱讀。",
+      "hint": ":1). Text may be hard to read."
+    },
+    {
+      "source": "^Managed by the (.+?) automation$",
+      "flags": "",
+      "replace": "由自動化任務 $1 管理",
+      "hint": "Managed by the"
+    },
+    {
+      "source": "^Matches (.+?)$",
+      "flags": "",
+      "replace": "匹配 $1",
+      "hint": "Matches"
+    },
+    {
+      "source": "^Matches (\\d+(?:\\.\\d+)?) of (\\d+(?:\\.\\d+)?) event types$",
+      "flags": "",
+      "replace": "匹配 $1 / $2 種事件類型",
+      "hint": "event types"
+    },
+    {
+      "source": "^Microphone access for (.+?) was denied\\. Quit and reopen the app to be asked again\\.$",
+      "flags": "",
+      "replace": "$1 的麥克風訪問權限已被拒絕。退出并重新開啟套用可再次要求授權。",
+      "hint": "was denied. Quit and reopen the"
+    },
+    {
+      "source": "^Microphone blocked\\. Allow in (.+?)\\.$",
+      "flags": "",
+      "replace": "麥克風已被阻止。請在 $1 中允許。",
+      "hint": "Microphone blocked. Allow in"
+    },
+    {
+      "source": "^Model unavailable, retrying in (.+?)s(.+?)$",
+      "flags": "",
+      "replace": "模型暫無法使用，將於 $1 秒後重試$2",
+      "hint": "Model unavailable, retrying in"
+    },
+    {
+      "source": "^Monthly on the (.+?) at (.+?)$",
+      "flags": "",
+      "replace": "每月 $1 $2",
+      "hint": "Monthly on the"
+    },
+    {
+      "source": "^No apps found for \"(.+?)\"\\.$",
+      "flags": "",
+      "replace": "未找到匹配「$1」的套用。",
+      "hint": "No apps found for \""
+    },
+    {
+      "source": "^No audio from (.+?)$",
+      "flags": "",
+      "replace": "未檢測到來自 $1 的音訊",
+      "hint": "No audio from"
+    },
+    {
+      "source": "^Number must be (.+?) (.+?)$",
+      "flags": "",
+      "replace": "數值必須為 $1 $2",
+      "hint": "Number must be"
+    },
+    {
+      "source": "^Ran command: `(.+?)`$",
+      "flags": "",
+      "replace": "已執行命令：`$1`",
+      "hint": "Ran command: `"
+    },
+    {
+      "source": "^Ran command: (.+?) \\(`(.+?)`\\)$",
+      "flags": "",
+      "replace": "已執行命令：$1 (`$2`)",
+      "hint": "Ran command:"
+    },
+    {
+      "source": "^Reading (.+?)$",
+      "flags": "",
+      "replace": "正在讀取 $1",
+      "hint": "Reading"
+    },
+    {
+      "source": "^Rejected sending (.+?) to command$",
+      "flags": "",
+      "replace": "已拒絕向命令傳送 $1",
+      "hint": "Rejected sending"
+    },
+    {
+      "source": "^Required to (.+?): (.+?)$",
+      "flags": "",
+      "replace": "需要 $1：$2",
+      "hint": "Required to"
+    },
+    {
+      "source": "^Requires manual confirmation: (.+?)$",
+      "flags": "",
+      "replace": "需要手動確認：$1",
+      "hint": "Requires manual confirmation:"
+    },
+    {
+      "source": "^Resolved \"(.+?)\"$",
+      "flags": "",
+      "replace": "已解決「$1」",
+      "hint": "Resolved \""
+    },
+    {
+      "source": "^Running (.+?)$",
+      "flags": "",
+      "replace": "正在執行 $1",
+      "hint": "Running"
+    },
+    {
+      "source": "^SSH Config \\((.+?)\\)$",
+      "flags": "",
+      "replace": "SSH 配置 ($1)",
+      "hint": "SSH Config ("
+    },
+    {
+      "source": "^Searched for \"(.+?)\"$",
+      "flags": "",
+      "replace": "已搜尋「$1」",
+      "hint": "Searched for \""
+    },
+    {
+      "source": "^Searched for files: (.+?)$",
+      "flags": "",
+      "replace": "已搜尋檔案：$1",
+      "hint": "Searched for files:"
+    },
+    {
+      "source": "^Searched web: \"(.+?)\"$",
+      "flags": "",
+      "replace": "已搜尋網頁：「$1」",
+      "hint": "Searched web: \""
+    },
+    {
+      "source": "^Searching as (.+?)$",
+      "flags": "",
+      "replace": "正在以 $1 身份搜尋",
+      "hint": "Searching as"
+    },
+    {
+      "source": "^Searching (.+?)$",
+      "flags": "",
+      "replace": "正在搜尋 $1",
+      "hint": "Searching"
+    },
+    {
+      "source": "^Sent (.+?) to command$",
+      "flags": "",
+      "replace": "已向命令傳送 $1",
+      "hint": "to command"
+    },
+    {
+      "source": "^Settings for conversations outside of (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 之外的對話設定。",
+      "hint": "Settings for conversations outsi"
+    },
+    {
+      "source": "^Sign-in failed: (.+?)$",
+      "flags": "",
+      "replace": "登入失敗：$1",
+      "hint": "Sign-in failed:"
+    },
+    {
+      "source": "^Sorry, this account is ineligible to use (.+?)$",
+      "flags": "",
+      "replace": "抱歉，此帳號暫不符合使用 $1 的條件",
+      "hint": "Sorry, this account is ineligibl"
+    },
+    {
+      "source": "^Started voice chat · (.+?)$",
+      "flags": "",
+      "replace": "已開啟語音對話 · $1",
+      "hint": "Started voice chat ·"
+    },
+    {
+      "source": "^Stopping (.+?)$",
+      "flags": "",
+      "replace": "正在停止 $1",
+      "hint": "Stopping"
+    },
+    {
+      "source": "^Storage: Application & Profile \\(path: (.+?), default profile\\)$",
+      "flags": "",
+      "replace": "存儲：套用與設定檔（路徑：$1，預設配置）",
+      "hint": "Storage: Application & Profile ("
+    },
+    {
+      "source": "^Storage: Application \\(path: (.+?)\\)$",
+      "flags": "",
+      "replace": "存儲：套用（路徑：$1）",
+      "hint": "Storage: Application (path:"
+    },
+    {
+      "source": "^Storage: Profile \\(path: (.+?), profile specific\\)$",
+      "flags": "",
+      "replace": "存儲：設定檔（路徑：$1，配置專用）",
+      "hint": "Storage: Profile (path:"
+    },
+    {
+      "source": "^String must contain (.+?) (.+?) character\\(s\\)$",
+      "flags": "",
+      "replace": "字串必須包含 $1 $2 個字元",
+      "hint": "String must contain"
+    },
+    {
+      "source": "^Suggested sending (.+?) to command$",
+      "flags": "",
+      "replace": "建議向命令傳送 $1",
+      "hint": "Suggested sending"
+    },
+    {
+      "source": "^There was an error determining the code changes that this undo action will make: (.+?)$",
+      "flags": "",
+      "replace": "計算此復原操作涉及的程式碼變更時出錯：$1",
+      "hint": "There was an error determining t"
+    },
+    {
+      "source": "^Thought for (\\d+(?:\\.\\d+)?)s$",
+      "flags": "",
+      "replace": "已思考 $1s",
+      "hint": "Thought for"
+    },
+    {
+      "source": "^UI Extension (.+?)$",
+      "flags": "",
+      "replace": "UI 擴充功能 $1",
+      "hint": "UI Extension"
+    },
+    {
+      "source": "^Unmute (.+?)$",
+      "flags": "",
+      "replace": "取消 $1 靜音",
+      "hint": "Unmute"
+    },
+    {
+      "source": "^Updated (.+?)$",
+      "flags": "",
+      "replace": "已更新 $1",
+      "hint": "Updated"
+    },
+    {
+      "source": "^Used MCP tool: (.+?)$",
+      "flags": "",
+      "replace": "已調用 MCP 工具：$1",
+      "hint": "Used MCP tool:"
+    },
+    {
+      "source": "^Used MCP tool: (.+?)/(.+?)$",
+      "flags": "",
+      "replace": "已調用 MCP 工具：$1/$2",
+      "hint": "Used MCP tool:"
+    },
+    {
+      "source": "^Used tool: (.+?)$",
+      "flags": "",
+      "replace": "已調用工具：$1",
+      "hint": "Used tool:"
+    },
+    {
+      "source": "^View (.+?) help(\\s+\\(.+?\\))$",
+      "flags": "",
+      "replace": "查看 $1 說明$2",
+      "hint": "help"
+    },
+    {
+      "source": "^Viewed (.+?):(.+?)-(.+?)$",
+      "flags": "",
+      "replace": "已查看 $1:$2-$3",
+      "hint": "Viewed"
+    },
+    {
+      "source": "^Waiting for your input(\\s+.+?|[.:…·—–-].+?)$",
+      "flags": "",
+      "replace": "正在等待你的輸入$1",
+      "hint": "Waiting for your input"
+    },
+    {
+      "source": "^Waiting for (.+?)$",
+      "flags": "",
+      "replace": "正在等待 $1",
+      "hint": "Waiting for"
+    },
+    {
+      "source": "^Waiting for (.+?) timers$",
+      "flags": "",
+      "replace": "正在等待 $1 個計時器",
+      "hint": "Waiting for"
+    },
+    {
+      "source": "^Wants to run: (.+?)$",
+      "flags": "",
+      "replace": "要求執行：$1",
+      "hint": "Wants to run:"
+    },
+    {
+      "source": "^Work locally on (.+?)$",
+      "flags": "",
+      "replace": "在本機處理 $1",
+      "hint": "Work locally on"
+    },
+    {
+      "source": "^Worked for (.+?) · (.+?)$",
+      "flags": "",
+      "replace": "已處理 $1 · $2",
+      "hint": "Worked for"
+    },
+    {
+      "source": "^Yes, and always allow '(.+?)'$",
+      "flags": "",
+      "replace": "是，且始終允許 '$1'",
+      "hint": "Yes, and always allow '"
+    },
+    {
+      "source": "^Yes, and always allow '(.+?)' in this conversation$",
+      "flags": "",
+      "replace": "是，且在目前對話中始終允許 '$1'",
+      "hint": "Yes, and always allow '"
+    },
+    {
+      "source": "^Yes, and always allow '(.+?)' (.+?)$",
+      "flags": "",
+      "replace": "是，且始終允許 '$1' $2",
+      "hint": "Yes, and always allow '"
+    },
+    {
+      "source": "^You: (.+?)$",
+      "flags": "",
+      "replace": "你：$1",
+      "hint": "You:"
+    },
+    {
+      "source": "^Your quota for (.+?) will reset on (.+?)\\. Switch to another available model to continue\\.$",
+      "flags": "",
+      "replace": "你的 $1 額度將於 $2 重設。請切換至其他可用模型以繼續。",
+      "hint": ". Switch to another available mo"
+    },
+    {
+      "source": "^(.+?) Dev$",
+      "flags": "",
+      "replace": "$1 開發版",
+      "hint": "Dev"
+    },
+    {
+      "source": "^(.+?) Help$",
+      "flags": "",
+      "replace": "$1 說明",
+      "hint": "Help"
+    },
+    {
+      "source": "^(.+?) Help · (.+?) Side Questions?$",
+      "flags": "",
+      "replace": "$1 說明 · $2 個支線問題",
+      "hint": "Side Question"
+    },
+    {
+      "source": "^(.+?) Hold$",
+      "flags": "",
+      "replace": "$1 按住",
+      "hint": "Hold"
+    },
+    {
+      "source": "^(.+?) Release$",
+      "flags": "",
+      "replace": "$1 鬆開",
+      "hint": "Release"
+    },
+    {
+      "source": "^(.+?) attachment\\(s\\)$",
+      "flags": "",
+      "replace": "$1 個附件",
+      "hint": "attachment(s)"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) chunks$",
+      "flags": "",
+      "replace": "$1 個分塊",
+      "hint": "chunks"
+    },
+    {
+      "source": "^(.+?) color picker$",
+      "flags": "",
+      "replace": "$1 色彩選擇器",
+      "hint": "color picker"
+    },
+    {
+      "source": "^(.+?) could not be stopped: (.+?)$",
+      "flags": "",
+      "replace": "無法停止 $1：$2",
+      "hint": "could not be stopped:"
+    },
+    {
+      "source": "^(.+?) demoted$",
+      "flags": "",
+      "replace": "$1 已降級",
+      "hint": "demoted"
+    },
+    {
+      "source": "^(.+?) excluded$",
+      "flags": "",
+      "replace": "$1 已排除",
+      "hint": "excluded"
+    },
+    {
+      "source": "^(.+?) is no longer available\\. Runs use (.+?) instead\\.$",
+      "flags": "",
+      "replace": "$1 已不再可用，後續執行將改用 $2。",
+      "hint": "is no longer available. Runs use"
+    },
+    {
+      "source": "^(.+?) limit$",
+      "flags": "",
+      "replace": "$1 上限",
+      "hint": "limit"
+    },
+    {
+      "source": "^(.+?) more$",
+      "flags": "",
+      "replace": "其餘 $1 項",
+      "hint": "more"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) pinned (\\d+(?:\\.\\d+)?)$",
+      "flags": "",
+      "replace": "已固定 $1 / $2",
+      "hint": "pinned"
+    },
+    {
+      "source": "^(.+?) refused to connect\\.$",
+      "flags": "",
+      "replace": "$1 拒絕連接。",
+      "hint": "refused to connect."
+    },
+    {
+      "source": "^(.+?) says$",
+      "flags": "",
+      "replace": "$1 提示",
+      "hint": "says"
+    },
+    {
+      "source": "^(.+?) setting$",
+      "flags": "",
+      "replace": "$1 設定",
+      "hint": "setting"
+    },
+    {
+      "source": "^(.+?) skipped$",
+      "flags": "",
+      "replace": "$1 已略過",
+      "hint": "skipped"
+    },
+    {
+      "source": "^(.+?) tasks? running$",
+      "flags": "",
+      "replace": "$1 個任務執行中",
+      "hint": "running"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) unresolved$",
+      "flags": "",
+      "replace": "$1 項未解決",
+      "hint": "unresolved"
+    },
+    {
+      "source": "^(.+?) wants to connect to (.+?)$",
+      "flags": "",
+      "replace": "$1 要求連接到 $2",
+      "hint": "wants to connect to"
+    },
+    {
+      "source": "^(.+?) (.+?) changed$",
+      "flags": "",
+      "replace": "$1 $2 已變更",
+      "hint": "changed"
+    },
+    {
+      "source": "^(.+?) will be removed from Antigravity on (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 將於 $2 从 Antigravity 中移除。",
+      "hint": "will be removed from Antigravity"
+    },
+    {
+      "source": "^(.+?) is being removed from Antigravity on (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 將於 $2 从 Antigravity 中移除。",
+      "hint": "being removed from Antigravity"
+    },
+    {
+      "source": "^(.+?) will be removed on (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 將於 $2 移除。",
+      "hint": "will be removed on"
+    },
+    {
+      "source": "^(.+?) will be deprecated on (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 將於 $2 棄用。",
+      "hint": "will be deprecated on"
+    },
+    {
+      "source": "^(.+?) is being deprecated on (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 將於 $2 棄用。",
+      "hint": "is being deprecated on"
+    },
+    {
+      "source": "^(.+?) will be retired on (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 將於 $2 停用。",
+      "hint": "will be retired on"
+    },
+    {
+      "source": "^(.+?) is leaving Antigravity on (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 將於 $2 从 Antigravity 下線。",
+      "hint": "is leaving Antigravity on"
+    },
+    {
+      "source": "^(.+?) will no longer be available after (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 將在 $2 後不再可用。",
+      "hint": "no longer be available after"
+    },
+    {
+      "source": "^(.+?) will no longer be available on (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 將於 $2 起不再可用。",
+      "hint": "no longer be available on"
+    },
+    {
+      "source": "^(.+?) is no longer supported\\.$",
+      "flags": "",
+      "replace": "$1 已不再受支援。",
+      "hint": "is no longer supported."
+    },
+    {
+      "source": "^This model will be removed from Antigravity on (.+?)\\.$",
+      "flags": "",
+      "replace": "此模型將於 $1 从 Antigravity 中移除。",
+      "hint": "This model will be removed from"
+    },
+    {
+      "source": "^This model will be deprecated on (.+?)\\.$",
+      "flags": "",
+      "replace": "此模型將於 $1 棄用。",
+      "hint": "This model will be deprecated on"
+    },
+    {
+      "source": "^Try (.+?) instead\\.$",
+      "flags": "",
+      "replace": "建議改用 $1。",
+      "hint": "instead."
+    },
+    {
+      "source": "^Switch to (.+?) instead\\.$",
+      "flags": "",
+      "replace": "建議切換至 $1。",
+      "hint": "Switch to"
+    },
+    {
+      "source": "^Use (.+?) instead\\.$",
+      "flags": "",
+      "replace": "請改用 $1。",
+      "hint": "instead."
+    },
+    {
+      "source": "^ABFS workspace (.+?) created and selected\\.$",
+      "flags": "",
+      "replace": "已建立并選中 ABFS 工作區 $1。",
+      "hint": "created and selected."
+    },
+    {
+      "source": "^Automatically create a new (.+?) workspace when the conversation starts$",
+      "flags": "",
+      "replace": "對話開始時自動建立新的 $1 工作區",
+      "hint": "workspace when the conversation "
+    },
+    {
+      "source": "^Creating ABFS workspace (.+?)\\.\\.\\.$",
+      "flags": "",
+      "replace": "正在建立 ABFS 工作區 $1...",
+      "hint": "Creating ABFS workspace"
+    },
+    {
+      "source": "^Creating workspace \"(.+?)\"\\.\\.\\.$",
+      "flags": "",
+      "replace": "正在建立工作區「$1」...",
+      "hint": "Creating workspace \""
+    },
+    {
+      "source": "^Delete workspace (.+?)$",
+      "flags": "",
+      "replace": "刪除工作區 $1",
+      "hint": "Delete workspace"
+    },
+    {
+      "source": "^Deleted workspace (.+?)$",
+      "flags": "",
+      "replace": "已刪除工作區 $1",
+      "hint": "Deleted workspace"
+    },
+    {
+      "source": "^Failed to create workspace: (.+?)$",
+      "flags": "",
+      "replace": "建立工作區失敗：$1",
+      "hint": "Failed to create workspace:"
+    },
+    {
+      "source": "^Failed to select workspace: (.+?)$",
+      "flags": "",
+      "replace": "選擇工作區失敗：$1",
+      "hint": "Failed to select workspace:"
+    },
+    {
+      "source": "^Parent workspace not found for battle (.+?)$",
+      "flags": "",
+      "replace": "未找到對局 $1 的父級工作區",
+      "hint": "Parent workspace not found for b"
+    },
+    {
+      "source": "^Remount workspace (.+?)$",
+      "flags": "",
+      "replace": "重新掛載工作區 $1",
+      "hint": "Remount workspace"
+    },
+    {
+      "source": "^Remounted workspace (.+?)$",
+      "flags": "",
+      "replace": "已重新掛載工作區 $1",
+      "hint": "Remounted workspace"
+    },
+    {
+      "source": "^Resume the conversation to start its workspace again, then start the server on port (.+?) and retry\\.$",
+      "flags": "",
+      "replace": "請恢復該對話以重新啟動其工作區，然後在連接埠 $1 上啟動伺服器并重試。",
+      "hint": "Resume the conversation to start"
+    },
+    {
+      "source": "^Total Active Workspace Windows: (.+?)$",
+      "flags": "",
+      "replace": "活躍工作區視窗總數：$1",
+      "hint": "Total Active Workspace Windows:"
+    },
+    {
+      "source": "^Unmount workspace (.+?)$",
+      "flags": "",
+      "replace": "解除安裝工作區 $1",
+      "hint": "Unmount workspace"
+    },
+    {
+      "source": "^Unmounted workspace (.+?)$",
+      "flags": "",
+      "replace": "已解除安裝工作區 $1",
+      "hint": "Unmounted workspace"
+    },
+    {
+      "source": "^Workspace URI not found for battle arm (.+?)$",
+      "flags": "",
+      "replace": "未找到對比分支 $1 的工作區 URI",
+      "hint": "Workspace URI not found for batt"
+    },
+    {
+      "source": "^(.+?)\\. Starting in local workspace\\.$",
+      "flags": "",
+      "replace": "$1。正在本機工作區中啟動。",
+      "hint": ". Starting in local workspace."
+    },
+    {
+      "source": "^Failed to open workspace: (.+?)$",
+      "flags": "",
+      "replace": "開啟工作區失敗：$1",
+      "hint": "Failed to open workspace:"
+    },
+    {
+      "source": "^Storage: Workspace \\(path: (.+?)\\)$",
+      "flags": "",
+      "replace": "存儲：工作區（路徑：$1）",
+      "hint": "Storage: Workspace (path:"
+    },
+    {
+      "source": "^Yes, and always allow '(.+?)' in this workspace$",
+      "flags": "",
+      "replace": "是，且在目前工作區中始終允許 '$1'",
+      "hint": "Yes, and always allow '"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps$",
+      "flags": "",
+      "replace": "$1/$2 步",
+      "hint": "steps"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps · (\\d+) failed$",
+      "flags": "",
+      "replace": "$1/$2 步 · $3 項失敗",
+      "hint": "steps ·"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps · (\\d+) skipped$",
+      "flags": "",
+      "replace": "$1/$2 步 · $3 項略過",
+      "hint": "steps ·"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps · (\\d+) failed · (\\d+) skipped$",
+      "flags": "",
+      "replace": "$1/$2 步 · $3 項失敗 · $4 項略過",
+      "hint": "steps ·"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps\\. Show plan$",
+      "flags": "",
+      "replace": "$1/$2 步。展開計畫",
+      "hint": "steps. Show plan"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps\\. Hide plan$",
+      "flags": "",
+      "replace": "$1/$2 步。收起計畫",
+      "hint": "steps. Hide plan"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:w|wk|wks|week|weeks) ago$",
+      "flags": "i",
+      "replace": "$1 周前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:mo|mos|month|months) ago$",
+      "flags": "i",
+      "replace": "$1 個月前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:y|yr|yrs|year|years) ago$",
+      "flags": "i",
+      "replace": "$1 年前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(.+?) \\(single edit\\)$",
+      "flags": "",
+      "replace": "$1（單次編輯）",
+      "hint": "(single edit)"
+    },
+    {
+      "source": "^(.+?) \\(uncommitted\\)$",
+      "flags": "",
+      "replace": "$1（未提交）",
+      "hint": "(uncommitted)"
+    },
+    {
+      "source": "^(.+?) \\(staged\\)$",
+      "flags": "",
+      "replace": "$1（已暫存）",
+      "hint": "(staged)"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. Applies to /btw and messages sent after this turn$",
+      "flags": "",
+      "replace": "選擇模型，目前：$1。適用於 /btw 及本輪之後傳送的訊息",
+      "hint": "Applies to /btw"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. Applies to messages sent after this turn$",
+      "flags": "",
+      "replace": "選擇模型，目前：$1。適用於本輪之後傳送的訊息",
+      "hint": "Applies to messages sent after"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. (.+?)$",
+      "flags": "",
+      "replace": "選擇模型，目前：$1。$2",
+      "hint": "Select model, current:"
+    }
+  ],
+  "light": [
+    {
+      "source": "^(\\d+) plugins? installed$",
+      "flags": "i",
+      "replace": "已安裝 $1 個 Plugin",
+      "hint": "installed"
+    },
+    {
+      "source": "^(\\d+) skills? enabled$",
+      "flags": "i",
+      "replace": "已啟用 $1 個 Skill",
+      "hint": "enabled"
+    },
+    {
+      "source": "^(\\d+) subagents? running$",
+      "flags": "i",
+      "replace": "$1 個 Subagent 執行中",
+      "hint": "subagent"
+    },
+    {
+      "source": "^(\\d+) MCP servers? connected$",
+      "flags": "i",
+      "replace": "已連接 $1 個 MCP Server",
+      "hint": "MCP"
+    },
+    {
+      "source": "^Account this MCP server uses: (.+?)$",
+      "flags": "",
+      "replace": "此 MCP Server 使用的帳號：$1",
+      "hint": "Account this MCP server uses:"
+    },
+    {
+      "source": "^Added MCP server \"(.+?)\", but it failed to start: (.+?)$",
+      "flags": "",
+      "replace": "已添加 MCP Server「$1」，但啟動失敗：$2",
+      "hint": "\", but it failed to start:"
+    },
+    {
+      "source": "^Adding plugins from (.+?)$",
+      "flags": "",
+      "replace": "正在从 $1 添加 Plugin",
+      "hint": "Adding plugins from"
+    },
+    {
+      "source": "^Agent needs permission to act on (.+?)$",
+      "flags": "",
+      "replace": "Agent 需要權限才能在 $1 上執行操作",
+      "hint": "Agent needs permission to act on"
+    },
+    {
+      "source": "^Agent needs permission to execute JavaScript on (.+?)$",
+      "flags": "",
+      "replace": "Agent 需要權限才能在 $1 上執行 JavaScript",
+      "hint": "Agent needs permission to execut"
+    },
+    {
+      "source": "^Agent permissions preset selector, current: (.+?)$",
+      "flags": "",
+      "replace": "Agent 權限預設選擇器，目前：$1",
+      "hint": "Agent permissions preset selecto"
+    },
+    {
+      "source": "^Agent permissions preset: (.+?), (.+?)$",
+      "flags": "",
+      "replace": "Agent 權限預設：$1，$2",
+      "hint": "Agent permissions preset:"
+    },
+    {
+      "source": "^Agent: (.+?)$",
+      "flags": "",
+      "replace": "Agent：$1",
+      "hint": "Agent:"
+    },
+    {
+      "source": "^Agents created by this (.+?) run in a dedicated (.+?) with its own permissions\\. You can change the permissions in the (.+?) settings page\\.$",
+      "flags": "",
+      "replace": "由此 $1 建立的 Agent 會在具有獨立權限的專用 $2 中執行。你可以在 $3 設定頁面中更改權限。",
+      "hint": "with its own permissions. You ca"
+    },
+    {
+      "source": "^All (\\d+(?:\\.\\d+)?) will be revoked\\. The plugin will ask before doing this again\\.$",
+      "flags": "",
+      "replace": "所有 $1 都將被復原。此 Plugin 再次執行此操作前會先詢問。",
+      "hint": "will be revoked. The plugin will"
+    },
+    {
+      "source": "^Amended commit on (.+?)\\.$",
+      "flags": "",
+      "replace": "已修正 $1 上的 Commit。",
+      "hint": "Amended commit on"
+    },
+    {
+      "source": "^Are you sure you want to delete the hook \"(.+?)\"\\?$",
+      "flags": "",
+      "replace": "確定要刪除 Hook「$1」嗎？",
+      "hint": "Are you sure you want to delete "
+    },
+    {
+      "source": "^Artifact image (.+?)$",
+      "flags": "",
+      "replace": "Artifact 影像 $1",
+      "hint": "Artifact image"
+    },
+    {
+      "source": "^Artifacts \\((\\d+(?:\\.\\d+)?) Files for Conversation\\)$",
+      "flags": "",
+      "replace": "Artifact（目前對話的 $1 個檔案）",
+      "hint": "Files for Conversation)"
+    },
+    {
+      "source": "^Branch (.+?) no longer exists$",
+      "flags": "",
+      "replace": "Branch $1 已不存在",
+      "hint": "no longer exists"
+    },
+    {
+      "source": "^Build with (.+?) Plugins$",
+      "flags": "",
+      "replace": "使用 $1 個 Plugin 構建",
+      "hint": "Build with"
+    },
+    {
+      "source": "^Cancel Questionnaire and Stop the Agent \\((.+?)\\)$",
+      "flags": "",
+      "replace": "取消問卷并停止 Agent（$1）",
+      "hint": "Cancel Questionnaire and Stop th"
+    },
+    {
+      "source": "^Changes the base URL for marketplace search results\\. You must restart (.+?) to use the new marketplace after changing this value\\.$",
+      "flags": "",
+      "replace": "更改 Marketplace 搜尋結果的基礎 URL。修改此值後，必須重啟 $1 才能使用新的 Marketplace。",
+      "hint": "Changes the base URL for marketp"
+    },
+    {
+      "source": "^Changes the base URL on each extension page\\. You must restart (.+?) to use the new marketplace after changing this value\\.$",
+      "flags": "",
+      "replace": "更改每個擴充功能頁面上的基礎 URL。修改此值後，必須重啟 $1 才能使用新的 Marketplace。",
+      "hint": "Changes the base URL on each ext"
+    },
+    {
+      "source": "^Commit (.+?)$",
+      "flags": "",
+      "replace": "Commit $1",
+      "hint": "Commit"
+    },
+    {
+      "source": "^Connect an account for (.+?) so the agent can run automations\\.$",
+      "flags": "",
+      "replace": "為 $1 連接帳號，以便 Agent 執行自動化任務。",
+      "hint": "so the agent can run automations"
+    },
+    {
+      "source": "^Couldn't save base branch: (.+?)$",
+      "flags": "",
+      "replace": "無法儲存基礎 Branch：$1",
+      "hint": "Couldn't save base branch:"
+    },
+    {
+      "source": "^Error deleting MCP server: (.+?)$",
+      "flags": "",
+      "replace": "刪除 MCP Server 時出錯：$1",
+      "hint": "Error deleting MCP server:"
+    },
+    {
+      "source": "^Error disconnecting MCP server: (.+?)$",
+      "flags": "",
+      "replace": "斷開 MCP Server 連接時出錯：$1",
+      "hint": "Error disconnecting MCP server:"
+    },
+    {
+      "source": "^Error installing MCP server: (.+?)$",
+      "flags": "",
+      "replace": "安裝 MCP Server 時出錯：$1",
+      "hint": "Error installing MCP server:"
+    },
+    {
+      "source": "^Error refreshing MCP servers: (.+?)$",
+      "flags": "",
+      "replace": "重新整理 MCP Server 時出錯：$1",
+      "hint": "Error refreshing MCP servers:"
+    },
+    {
+      "source": "^Error restarting MCP server: (.+?)$",
+      "flags": "",
+      "replace": "重啟 MCP Server 時出錯：$1",
+      "hint": "Error restarting MCP server:"
+    },
+    {
+      "source": "^Error signing in to MCP server: (.+?)$",
+      "flags": "",
+      "replace": "登入 MCP Server 時出錯：$1",
+      "hint": "Error signing in to MCP server:"
+    },
+    {
+      "source": "^Error toggling MCP server: (.+?)$",
+      "flags": "",
+      "replace": "切換 MCP Server 狀態時出錯：$1",
+      "hint": "Error toggling MCP server:"
+    },
+    {
+      "source": "^Error updating agent: (.+?)$",
+      "flags": "",
+      "replace": "更新 Agent 時出錯：$1",
+      "hint": "Error updating agent:"
+    },
+    {
+      "source": "^Exceeded the customization token budget \\((.+?) tokens\\) and was excluded from context\\.$",
+      "flags": "",
+      "replace": "已超出自訂 Token 預算（$1 個 Token），已从 Context 中排除。",
+      "hint": "Exceeded the customization token"
+    },
+    {
+      "source": "^Exceeded the rules token budget\\. Full rule content \\((.+?) tokens\\) was replaced with a lightweight file-path pointer in context\\.$",
+      "flags": "",
+      "replace": "已超出 Rule Token 預算。完整 Rule 內容（$1 個 Token）已在 Context 中取代為輕量級檔案路徑指針。",
+      "hint": "tokens) was replaced with a ligh"
+    },
+    {
+      "source": "^Failed to load skills: (.+?)$",
+      "flags": "",
+      "replace": "載入 Skill 失敗：$1",
+      "hint": "Failed to load skills:"
+    },
+    {
+      "source": "^Failed to remove agent: (.+?)$",
+      "flags": "",
+      "replace": "移除 Agent 失敗：$1",
+      "hint": "Failed to remove agent:"
+    },
+    {
+      "source": "^Failed to remove plugin: (.+?)$",
+      "flags": "",
+      "replace": "移除 Plugin 失敗：$1",
+      "hint": "Failed to remove plugin:"
+    },
+    {
+      "source": "^Failed to save project branch: (.+?)$",
+      "flags": "",
+      "replace": "儲存專案 Branch 失敗：$1",
+      "hint": "Failed to save project branch:"
+    },
+    {
+      "source": "^Failed to scan skills config file: (.+?)$",
+      "flags": "",
+      "replace": "掃描 Skill 設定檔失敗：$1",
+      "hint": "Failed to scan skills config fil"
+    },
+    {
+      "source": "^Failed to toggle plugin: (.+?)$",
+      "flags": "",
+      "replace": "切換 Plugin 狀態失敗：$1",
+      "hint": "Failed to toggle plugin:"
+    },
+    {
+      "source": "^Failed to update agent: (.+?)$",
+      "flags": "",
+      "replace": "更新 Agent 失敗：$1",
+      "hint": "Failed to update agent:"
+    },
+    {
+      "source": "^Failed to (.+?) skill paths:$",
+      "flags": "",
+      "replace": "$1 Skill 路徑失敗：",
+      "hint": "skill paths:"
+    },
+    {
+      "source": "^Filter skills and rules: (.+?)$",
+      "flags": "",
+      "replace": "篩選 Skill 和 Rule：$1",
+      "hint": "Filter skills and rules:"
+    },
+    {
+      "source": "^Fix with Agent: (.+?)$",
+      "flags": "",
+      "replace": "使用 Agent 修復：$1",
+      "hint": "Fix with Agent:"
+    },
+    {
+      "source": "^For (.+?), this setting is disabled\\. This means (.+?) does not collect any of your prompts, content, or model responses, but will still collect general usage patterns \\(e\\.g\\., feature adoption, active user counts\\)\\.$",
+      "flags": "",
+      "replace": "對於 $1，此設定已停用。這意味著 $2 不會收集您的任何 Prompt、內容或模型回覆，但仍會收集常規使用模式（例如功能採用情况、活躍用戶數）。",
+      "hint": "does not collect any of your pro"
+    },
+    {
+      "source": "^GitHub token validation failed \\(status (.+?)\\)\\.$",
+      "flags": "",
+      "replace": "GitHub Token 驗證失敗（狀態碼 $1）。",
+      "hint": "GitHub token validation failed ("
+    },
+    {
+      "source": "^Give each Best of N fork a full clone of your workspace, including its local commit history\\. Choosing a winner then gives your workspace that fork's state, so the commits it made are kept\\. Forks take longer to create than the default CitC clone\\.(.+?)$",
+      "flags": "",
+      "replace": "為每個 Best of N 分支副本提供您工作區的完整複製，包括其本機 Commit 歷史記錄。選定勝出者後，您的工作區將採用該分支副本的狀態，从而保留其所做的 Commit。建立分支副本比預設的 CitC 複製耗時更長。$1",
+      "hint": "Give each Best of N fork a full "
+    },
+    {
+      "source": "^In addition to the custom skills folder, (.+?) will search the following paths in order to find skills for the agent\\.(.+?)$",
+      "flags": "",
+      "replace": "除了自訂 Skill 資料夾外，$1 還會按順序搜尋以下路徑，以尋找適用於 Agent 的 Skill。$2",
+      "hint": "will search the following paths "
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have a remote configuration\\.$",
+      "flags": "",
+      "replace": "MCP Server「$1」没有遠端配置。",
+      "hint": "\" does not have a remote configu"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have a supported configuration\\.$",
+      "flags": "",
+      "replace": "MCP Server「$1」没有受支援的配置。",
+      "hint": "\" does not have a supported conf"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have any installation commands\\.$",
+      "flags": "",
+      "replace": "MCP Server「$1」没有任何安裝命令。",
+      "hint": "\" does not have any installation"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" not found in the store\\.$",
+      "flags": "",
+      "replace": "商店中未找到 MCP Server「$1」。",
+      "hint": "\" not found in the store."
+    },
+    {
+      "source": "^Manage (.+?) (.+?), agent settings, and permissions\\.$",
+      "flags": "",
+      "replace": "管理 $1 $2、Agent 設定和權限。",
+      "hint": ", agent settings, and permission"
+    },
+    {
+      "source": "^Managed by the (.+?) plugin$",
+      "flags": "",
+      "replace": "由 $1 Plugin 管理",
+      "hint": "Managed by the"
+    },
+    {
+      "source": "^Missing Worker RPC batch result for (.+?) \\(id=(.+?)\\)$",
+      "flags": "",
+      "replace": "缺少 $1 (id=$2) 的 Worker RPC 批處理結果",
+      "hint": "Missing Worker RPC batch result "
+    },
+    {
+      "source": "^No MCP servers found for \"(.+?)\"$",
+      "flags": "",
+      "replace": "未找到與「$1」匹配的 MCP Server",
+      "hint": "No MCP servers found for \""
+    },
+    {
+      "source": "^No installation command found for MCP server \"(.+?)\"\\.$",
+      "flags": "",
+      "replace": "未找到 MCP Server「$1」的安裝命令。",
+      "hint": "No installation command found fo"
+    },
+    {
+      "source": "^No plugins found for \"(.+?)\"\\.$",
+      "flags": "",
+      "replace": "未找到與「$1」匹配的 Plugin。",
+      "hint": "No plugins found for \""
+    },
+    {
+      "source": "^No server is listening on port (.+?) inside the remote workspace\\. Start it, or ask the agent to, then retry\\.$",
+      "flags": "",
+      "replace": "遠端工作區中的連接埠 $1 上没有服務正在監聽。請啟動該服務（或讓 Agent 啟動），然後重試。",
+      "hint": "inside the remote workspace. Sta"
+    },
+    {
+      "source": "^Open Subagent: (.+?)$",
+      "flags": "",
+      "replace": "開啟 Subagent：$1",
+      "hint": "Open Subagent:"
+    },
+    {
+      "source": "^Open the (.+?) plugin$",
+      "flags": "",
+      "replace": "開啟 $1 Plugin",
+      "hint": "Open the"
+    },
+    {
+      "source": "^Open (.+?) skill$",
+      "flags": "",
+      "replace": "開啟 $1 Skill",
+      "hint": "skill"
+    },
+    {
+      "source": "^Plugins in (.+?)$",
+      "flags": "",
+      "replace": "$1 中的 Plugin",
+      "hint": "Plugins in"
+    },
+    {
+      "source": "^Proceed with implementation plan and (\\d+(?:\\.\\d+)?) comments?$",
+      "flags": "",
+      "replace": "繼續執行 Implementation Plan 及 $1 條評論",
+      "hint": "Proceed with implementation plan"
+    },
+    {
+      "source": "^Push (.+?) commits? to (.+?)$",
+      "flags": "",
+      "replace": "將 $1 個 Commit 推送到 $2",
+      "hint": "commit"
+    },
+    {
+      "source": "^Pushed (.+?) commits? to (.+?)\\.$",
+      "flags": "",
+      "replace": "已將 $1 個 Commit 推送到 $2。",
+      "hint": "Pushed"
+    },
+    {
+      "source": "^Remove context from (.+?)$",
+      "flags": "",
+      "replace": "从 $1 中移除 Context",
+      "hint": "Remove context from"
+    },
+    {
+      "source": "^Rule (.+?)$",
+      "flags": "",
+      "replace": "Rule $1",
+      "hint": "Rule"
+    },
+    {
+      "source": "^Search for \"(.+?)\" in the Marketplace$",
+      "flags": "",
+      "replace": "在 Marketplace 中搜尋「$1」",
+      "hint": "\" in the Marketplace"
+    },
+    {
+      "source": "^Show (\\d+(?:\\.\\d+)?) more subagents?$",
+      "flags": "",
+      "replace": "展開其餘 $1 個 Subagent",
+      "hint": "more subagent"
+    },
+    {
+      "source": "^Showing latest (\\d+(?:\\.\\d+)?) browser steps$",
+      "flags": "",
+      "replace": "正在顯示最近 $1 個 Browser 步驟",
+      "hint": "Showing latest"
+    },
+    {
+      "source": "^Specifies Agent's behavior when asking for review on artifacts, which are documents it creates to enable a richer conversation experience\\.\n(.+?)$",
+      "flags": "",
+      "replace": "指定 Agent 在要求審閱 Artifact 時的行為，Artifact 是其為提供更豐富對話體驗而建立的文件。\\n$1",
+      "hint": "Specifies Agent's behavior when "
+    },
+    {
+      "source": "^Telemetry is turned off for your account\\. This means (.+?) does not collect any of your prompts, content, or model responses, but will still collect general usage patterns \\(e\\.g\\., feature adoption, active user counts\\)\\.$",
+      "flags": "",
+      "replace": "你的帳號已關閉 Telemetry。這意味著 $1 不會收集你的任何 Prompt、內容或模型回覆，但仍會收集常規使用模式（例如功能使用情况、活躍用戶數）。",
+      "hint": "does not collect any of your pro"
+    },
+    {
+      "source": "^Terminal \\((.+?)\\)$",
+      "flags": "",
+      "replace": "Terminal ($1)",
+      "hint": "Terminal ("
+    },
+    {
+      "source": "^The MCP server \"(.+?)\"(.+?) failed to start\\.$",
+      "flags": "",
+      "replace": "MCP Server 「$1」$2 啟動失敗。",
+      "hint": "The MCP server \""
+    },
+    {
+      "source": "^The agent asks for permission before executing commands matched by a deny list entry\\.(.+?) The deny list follows the same matching rules as the allow list and takes precedence over the allow list\\.$",
+      "flags": "",
+      "replace": "Agent 在執行匹配 Denylist 條目的命令前會要求權限。$1 Denylist 遵循與 Allowlist 相同的匹配規则，且優先級高於 Allowlist。",
+      "hint": "The deny list follows the same m"
+    },
+    {
+      "source": "^The user signed in to the plugin \"(.+?)\" \\(catalog id: (.+?)\\) from the card in your last reply\\. Retry the task with it\\.$",
+      "flags": "",
+      "replace": "用戶已通過你上一條回覆中的卡片登入 Plugin 「$1」（目錄 ID：$2）。請使用它重試該任務。",
+      "hint": ") from the card in your last rep"
+    },
+    {
+      "source": "^The (.+?) MCP server requires configuration parameters before it can be started\\.$",
+      "flags": "",
+      "replace": "$1 MCP Server 需要先配置參數才能啟動。",
+      "hint": "MCP server requires configuratio"
+    },
+    {
+      "source": "^These plugins in (.+?) may have looser code review\\. Review their contents before adding the bundle\\.$",
+      "flags": "",
+      "replace": "$1 中的這些 Plugin 可能程式碼審核較為寬鬆。添加此套件前，請先檢查其內容。",
+      "hint": "may have looser code review. Rev"
+    },
+    {
+      "source": "^This plugin in (.+?) may have looser code review\\. Review its contents before adding the bundle\\.$",
+      "flags": "",
+      "replace": "$1 中的此 Plugin 可能程式碼審核較為寬鬆。添加此套件前，請先檢查其內容。",
+      "hint": "may have looser code review. Rev"
+    },
+    {
+      "source": "^This window's agents, files, and terminals are on (.+?)\\.$",
+      "flags": "",
+      "replace": "此視窗的 Agent、檔案和 Terminal 位於 $1 上。",
+      "hint": "This window's agents, files, and"
+    },
+    {
+      "source": "^Typed '(.+?)' in Browser$",
+      "flags": "",
+      "replace": "已在 Browser 中輸入「$1」",
+      "hint": "' in Browser"
+    },
+    {
+      "source": "^Unnamed Agent (.+?)$",
+      "flags": "",
+      "replace": "未命名 Agent $1",
+      "hint": "Unnamed Agent"
+    },
+    {
+      "source": "^Unnamed skill (.+?)$",
+      "flags": "",
+      "replace": "未命名 Skill $1",
+      "hint": "Unnamed skill"
+    },
+    {
+      "source": "^Using browser \\((.+?)s\\)$",
+      "flags": "",
+      "replace": "正在使用 Browser ($1s)",
+      "hint": "Using browser ("
+    },
+    {
+      "source": "^Using browser · (.+?)$",
+      "flags": "",
+      "replace": "正在使用 Browser · $1",
+      "hint": "Using browser ·"
+    },
+    {
+      "source": "^View Diff for (.+?)$",
+      "flags": "",
+      "replace": "查看 $1 的 Diff",
+      "hint": "View Diff for"
+    },
+    {
+      "source": "^Where the agent runs, current: (.+?)$",
+      "flags": "",
+      "replace": "Agent 執行位置，目前：$1",
+      "hint": "Where the agent runs, current:"
+    },
+    {
+      "source": "^Worker sandbox initialization failed: (.+?)$",
+      "flags": "",
+      "replace": "Worker Sandbox 初始化失敗：$1",
+      "hint": "Worker sandbox initialization fa"
+    },
+    {
+      "source": "^Worktree from (.+?)$",
+      "flags": "",
+      "replace": "來自 $1 的 Worktree",
+      "hint": "Worktree from"
+    },
+    {
+      "source": "^merged branch (.+?) into (.+?)$",
+      "flags": "",
+      "replace": "已將 Branch $1 合併到 $2",
+      "hint": "merged branch"
+    },
+    {
+      "source": "^the (.+?) plugin$",
+      "flags": "",
+      "replace": "$1 Plugin",
+      "hint": "plugin"
+    },
+    {
+      "source": "^(.+?) MCP servers failed to start$",
+      "flags": "",
+      "replace": "$1 個 MCP Server 啟動失敗",
+      "hint": "MCP servers failed to start"
+    },
+    {
+      "source": "^(.+?) On empty prompt, sends next in queue$",
+      "flags": "",
+      "replace": "$1 Prompt 為空時，傳送佇列中的下一條",
+      "hint": "On empty prompt, sends next in q"
+    },
+    {
+      "source": "^(.+?) Rule$",
+      "flags": "",
+      "replace": "$1 Rule",
+      "hint": "Rule"
+    },
+    {
+      "source": "^(.+?) Rule Lookahead$",
+      "flags": "",
+      "replace": "$1 Rule 預讀",
+      "hint": "Rule Lookahead"
+    },
+    {
+      "source": "^(.+?) Sends after agent finishes working\\. Actions available: Send Now, Edit, Delete\\.$",
+      "flags": "",
+      "replace": "$1 在 Agent 完成工作後傳送。可用操作：立即傳送、編輯、刪除。",
+      "hint": "Sends after agent finishes worki"
+    },
+    {
+      "source": "^(.+?) browser steps$",
+      "flags": "",
+      "replace": "$1 個 Browser 步驟",
+      "hint": "browser steps"
+    },
+    {
+      "source": "^(.+?) subagents$",
+      "flags": "",
+      "replace": "$1 個 Subagent",
+      "hint": "subagents"
+    },
+    {
+      "source": "^(.+?) terminal:$",
+      "flags": "",
+      "replace": "$1 Terminal：",
+      "hint": "terminal:"
+    },
+    {
+      "source": "^(.+?) · Context window$",
+      "flags": "",
+      "replace": "$1 · Context 視窗",
+      "hint": "· Context window"
+    },
+    {
+      "source": "^(.+?)\\. This commit is already pushed; amending will require a force push\\.$",
+      "flags": "",
+      "replace": "$1。此 Commit 已推送；修改它將需要強制推送。",
+      "hint": ". This commit is already pushed;"
+    },
+    {
+      "source": "^(.+?): (.+?) tokens$",
+      "flags": "",
+      "replace": "$1：$2 個 Token",
+      "hint": "tokens"
+    },
+    {
+      "source": "^Agent settings and permissions for conversations outside of (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 之外對話的 Agent 設定與權限。",
+      "hint": "Agent settings and permissions f"
+    },
+    {
+      "source": "^All tools in this MCP server \\((.+?) tokens\\) exceeded the customization budget and were excluded from context\\.$",
+      "flags": "",
+      "replace": "此 MCP Server 中的全部工具（$1 Token）超出自訂擴充功能預算，已从 Context 中排除。",
+      "hint": "tokens) exceeded the customizati"
+    },
+    {
+      "source": "^Approved · Code-Review \\+(.+?)$",
+      "flags": "",
+      "replace": "已批準 · Code-Review +$1",
+      "hint": "Approved · Code-Review +"
+    },
+    {
+      "source": "^Browser task: \"(.+?)\"$",
+      "flags": "",
+      "replace": "Browser 任務：「$1」",
+      "hint": "Browser task: \""
+    },
+    {
+      "source": "^Browser tools run on (.+?), the SSH host this window is connected to, and Chrome there isn't accepting remote debugging\\. Complete these steps on (.+?), not on this computer:$",
+      "flags": "",
+      "replace": "Browser 工具執行在此視窗連接的 SSH 主機 $1 上，但該主機上的 Chrome 未開啟遠端調試。請在 $2（而非本機）完成以下步驟：",
+      "hint": ", the SSH host this window is co"
+    },
+    {
+      "source": "^Checkpoint #(.+?)$",
+      "flags": "",
+      "replace": "Checkpoint #$1",
+      "hint": "Checkpoint #"
+    },
+    {
+      "source": "^Invoked subagent: (.+?)$",
+      "flags": "",
+      "replace": "已調用 Subagent：$1",
+      "hint": "Invoked subagent:"
+    },
+    {
+      "source": "^MCP server (.+?) requires authentication$",
+      "flags": "",
+      "replace": "MCP Server $1 需要身份認證",
+      "hint": "requires authentication"
+    },
+    {
+      "source": "^MCP server (.+?) requires authentication: sign in to \"(.+?)\" in the Accounts section of plugin \"(.+?)\"$",
+      "flags": "",
+      "replace": "MCP Server $1 需要身份認證：請在 Plugin 「$3」 的帳號欄登入「$2」",
+      "hint": "requires authentication: sign in"
+    },
+    {
+      "source": "^Open Subagent: (.+?) \\((.+?)\\)$",
+      "flags": "",
+      "replace": "開啟 Subagent：$1 ($2)",
+      "hint": "Open Subagent:"
+    },
+    {
+      "source": "^Opened browser: (.+?)$",
+      "flags": "",
+      "replace": "已開啟 Browser：$1",
+      "hint": "Opened browser:"
+    },
+    {
+      "source": "^Read URL: (.+?)$",
+      "flags": "",
+      "replace": "已讀取 URL：$1",
+      "hint": "Read URL:"
+    },
+    {
+      "source": "^Save rule to always allow (.+?)\\?$",
+      "flags": "",
+      "replace": "是否儲存 Rule 以始終允許 $1？",
+      "hint": "Save rule to always allow"
+    },
+    {
+      "source": "^Typing '(.+?)' in Browser$",
+      "flags": "",
+      "replace": "正在 Browser 中輸入 '$1'",
+      "hint": "' in Browser"
+    },
+    {
+      "source": "^UI Plugin (.+?)$",
+      "flags": "",
+      "replace": "UI Plugin $1",
+      "hint": "UI Plugin"
+    },
+    {
+      "source": "^Using browser · (.+?) \\((.+?)s\\)$",
+      "flags": "",
+      "replace": "正在使用 Browser · $1 ($2s)",
+      "hint": "Using browser ·"
+    },
+    {
+      "source": "^Where the agent runs, current: (.+?) \\((.+?)\\)$",
+      "flags": "",
+      "replace": "Agent 執行位置，目前：$1 ($2)",
+      "hint": "Where the agent runs, current:"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' globally$",
+      "flags": "",
+      "replace": "是，全域儲存 '$1' 的 Rule",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' in this conversation$",
+      "flags": "",
+      "replace": "是，在目前對話中儲存 '$1' 的 Rule",
+      "hint": "' in this conversation"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' in this workspace$",
+      "flags": "",
+      "replace": "是，在目前工作區中儲存 '$1' 的 Rule",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' (.+?)$",
+      "flags": "",
+      "replace": "是，儲存 '$1' 的 Rule ($2)",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule (.+?)$",
+      "flags": "",
+      "replace": "是，儲存 Rule $1",
+      "hint": "Yes, save rule"
+    },
+    {
+      "source": "^(.+?) \\(all agent edits\\)$",
+      "flags": "",
+      "replace": "$1（全部 Agent 編輯）",
+      "hint": "(all agent edits)"
+    },
+    {
+      "source": "^(.+?) \\(branch changes\\)$",
+      "flags": "",
+      "replace": "$1（Branch 更改）",
+      "hint": "(branch changes)"
+    }
+  ],
+  "deep": [
+    {
+      "source": "^(\\d+) plugins? installed$",
+      "flags": "i",
+      "replace": "已安裝 $1 個外掛",
+      "hint": "installed"
+    },
+    {
+      "source": "^(\\d+) skills? enabled$",
+      "flags": "i",
+      "replace": "已啟用 $1 個技能",
+      "hint": "enabled"
+    },
+    {
+      "source": "^(\\d+) subagents? running$",
+      "flags": "i",
+      "replace": "$1 個子代理執行中",
+      "hint": "subagent"
+    },
+    {
+      "source": "^(\\d+) MCP servers? connected$",
+      "flags": "i",
+      "replace": "已連接 $1 個 MCP 服務",
+      "hint": "MCP"
+    },
+    {
+      "source": "^Account this MCP server uses: (.+?)$",
+      "flags": "",
+      "replace": "此 MCP 服務使用的帳號：$1",
+      "hint": "Account this MCP server uses:"
+    },
+    {
+      "source": "^Added MCP server \"(.+?)\", but it failed to start: (.+?)$",
+      "flags": "",
+      "replace": "已添加 MCP 服務「$1」，但啟動失敗：$2",
+      "hint": "\", but it failed to start:"
+    },
+    {
+      "source": "^Adding plugins from (.+?)$",
+      "flags": "",
+      "replace": "正在从 $1 添加外掛",
+      "hint": "Adding plugins from"
+    },
+    {
+      "source": "^Agent needs permission to act on (.+?)$",
+      "flags": "",
+      "replace": "智能體需要權限才能在 $1 上執行操作",
+      "hint": "Agent needs permission to act on"
+    },
+    {
+      "source": "^Agent needs permission to execute JavaScript on (.+?)$",
+      "flags": "",
+      "replace": "智能體需要權限才能在 $1 上執行 JavaScript",
+      "hint": "Agent needs permission to execut"
+    },
+    {
+      "source": "^Agent permissions preset selector, current: (.+?)$",
+      "flags": "",
+      "replace": "智能體權限預設選擇器，目前：$1",
+      "hint": "Agent permissions preset selecto"
+    },
+    {
+      "source": "^Agent permissions preset: (.+?), (.+?)$",
+      "flags": "",
+      "replace": "智能體權限預設：$1，$2",
+      "hint": "Agent permissions preset:"
+    },
+    {
+      "source": "^Agent: (.+?)$",
+      "flags": "",
+      "replace": "智能體：$1",
+      "hint": "Agent:"
+    },
+    {
+      "source": "^Agents created by this (.+?) run in a dedicated (.+?) with its own permissions\\. You can change the permissions in the (.+?) settings page\\.$",
+      "flags": "",
+      "replace": "由此 $1 建立的智能體會在具有獨立權限的專用 $2 中執行。你可以在 $3 設定頁面中更改權限。",
+      "hint": "with its own permissions. You ca"
+    },
+    {
+      "source": "^All (\\d+(?:\\.\\d+)?) will be revoked\\. The plugin will ask before doing this again\\.$",
+      "flags": "",
+      "replace": "所有 $1 都將被復原。此外掛再次執行此操作前會先詢問。",
+      "hint": "will be revoked. The plugin will"
+    },
+    {
+      "source": "^Amended commit on (.+?)\\.$",
+      "flags": "",
+      "replace": "已修正 $1 上的提交。",
+      "hint": "Amended commit on"
+    },
+    {
+      "source": "^Are you sure you want to delete the hook \"(.+?)\"\\?$",
+      "flags": "",
+      "replace": "確定要刪除鉤子「$1」嗎？",
+      "hint": "Are you sure you want to delete "
+    },
+    {
+      "source": "^Artifact image (.+?)$",
+      "flags": "",
+      "replace": "產物影像 $1",
+      "hint": "Artifact image"
+    },
+    {
+      "source": "^Artifacts \\((\\d+(?:\\.\\d+)?) Files for Conversation\\)$",
+      "flags": "",
+      "replace": "產物（目前對話的 $1 個檔案）",
+      "hint": "Files for Conversation)"
+    },
+    {
+      "source": "^Branch (.+?) no longer exists$",
+      "flags": "",
+      "replace": "分支 $1 已不存在",
+      "hint": "no longer exists"
+    },
+    {
+      "source": "^Build with (.+?) Plugins$",
+      "flags": "",
+      "replace": "使用 $1 個外掛構建",
+      "hint": "Build with"
+    },
+    {
+      "source": "^Cancel Questionnaire and Stop the Agent \\((.+?)\\)$",
+      "flags": "",
+      "replace": "取消問卷并停止智能體（$1）",
+      "hint": "Cancel Questionnaire and Stop th"
+    },
+    {
+      "source": "^Changes the base URL for marketplace search results\\. You must restart (.+?) to use the new marketplace after changing this value\\.$",
+      "flags": "",
+      "replace": "更改外掛市場搜尋結果的基礎 URL。修改此值後，必須重啟 $1 才能使用新的外掛市場。",
+      "hint": "Changes the base URL for marketp"
+    },
+    {
+      "source": "^Changes the base URL on each extension page\\. You must restart (.+?) to use the new marketplace after changing this value\\.$",
+      "flags": "",
+      "replace": "更改每個擴充功能頁面上的基礎 URL。修改此值後，必須重啟 $1 才能使用新的外掛市場。",
+      "hint": "Changes the base URL on each ext"
+    },
+    {
+      "source": "^Commit (.+?)$",
+      "flags": "",
+      "replace": "提交 $1",
+      "hint": "Commit"
+    },
+    {
+      "source": "^Connect an account for (.+?) so the agent can run automations\\.$",
+      "flags": "",
+      "replace": "為 $1 連接帳號，以便智能體執行自動化任務。",
+      "hint": "so the agent can run automations"
+    },
+    {
+      "source": "^Couldn't save base branch: (.+?)$",
+      "flags": "",
+      "replace": "無法儲存基礎分支：$1",
+      "hint": "Couldn't save base branch:"
+    },
+    {
+      "source": "^Error deleting MCP server: (.+?)$",
+      "flags": "",
+      "replace": "刪除 MCP 服務時出錯：$1",
+      "hint": "Error deleting MCP server:"
+    },
+    {
+      "source": "^Error disconnecting MCP server: (.+?)$",
+      "flags": "",
+      "replace": "斷開 MCP 服務連接時出錯：$1",
+      "hint": "Error disconnecting MCP server:"
+    },
+    {
+      "source": "^Error installing MCP server: (.+?)$",
+      "flags": "",
+      "replace": "安裝 MCP 服務時出錯：$1",
+      "hint": "Error installing MCP server:"
+    },
+    {
+      "source": "^Error refreshing MCP servers: (.+?)$",
+      "flags": "",
+      "replace": "重新整理 MCP 服務時出錯：$1",
+      "hint": "Error refreshing MCP servers:"
+    },
+    {
+      "source": "^Error restarting MCP server: (.+?)$",
+      "flags": "",
+      "replace": "重啟 MCP 服務時出錯：$1",
+      "hint": "Error restarting MCP server:"
+    },
+    {
+      "source": "^Error signing in to MCP server: (.+?)$",
+      "flags": "",
+      "replace": "登入 MCP 服務時出錯：$1",
+      "hint": "Error signing in to MCP server:"
+    },
+    {
+      "source": "^Error toggling MCP server: (.+?)$",
+      "flags": "",
+      "replace": "切換 MCP 服務狀態時出錯：$1",
+      "hint": "Error toggling MCP server:"
+    },
+    {
+      "source": "^Error updating agent: (.+?)$",
+      "flags": "",
+      "replace": "更新智能體時出錯：$1",
+      "hint": "Error updating agent:"
+    },
+    {
+      "source": "^Exceeded the customization token budget \\((.+?) tokens\\) and was excluded from context\\.$",
+      "flags": "",
+      "replace": "已超出自訂詞元預算（$1 個詞元），已从上下文中排除。",
+      "hint": "Exceeded the customization token"
+    },
+    {
+      "source": "^Exceeded the rules token budget\\. Full rule content \\((.+?) tokens\\) was replaced with a lightweight file-path pointer in context\\.$",
+      "flags": "",
+      "replace": "已超出規则詞元預算。完整規则內容（$1 個詞元）已在上下文中取代為輕量級檔案路徑指針。",
+      "hint": "tokens) was replaced with a ligh"
+    },
+    {
+      "source": "^Failed to load skills: (.+?)$",
+      "flags": "",
+      "replace": "載入技能失敗：$1",
+      "hint": "Failed to load skills:"
+    },
+    {
+      "source": "^Failed to remove agent: (.+?)$",
+      "flags": "",
+      "replace": "移除智能體失敗：$1",
+      "hint": "Failed to remove agent:"
+    },
+    {
+      "source": "^Failed to remove plugin: (.+?)$",
+      "flags": "",
+      "replace": "移除外掛失敗：$1",
+      "hint": "Failed to remove plugin:"
+    },
+    {
+      "source": "^Failed to save project branch: (.+?)$",
+      "flags": "",
+      "replace": "儲存專案分支失敗：$1",
+      "hint": "Failed to save project branch:"
+    },
+    {
+      "source": "^Failed to scan skills config file: (.+?)$",
+      "flags": "",
+      "replace": "掃描技能設定檔失敗：$1",
+      "hint": "Failed to scan skills config fil"
+    },
+    {
+      "source": "^Failed to toggle plugin: (.+?)$",
+      "flags": "",
+      "replace": "切換外掛狀態失敗：$1",
+      "hint": "Failed to toggle plugin:"
+    },
+    {
+      "source": "^Failed to update agent: (.+?)$",
+      "flags": "",
+      "replace": "更新智能體失敗：$1",
+      "hint": "Failed to update agent:"
+    },
+    {
+      "source": "^Failed to (.+?) skill paths:$",
+      "flags": "",
+      "replace": "$1技能路徑失敗：",
+      "hint": "skill paths:"
+    },
+    {
+      "source": "^Filter skills and rules: (.+?)$",
+      "flags": "",
+      "replace": "篩選技能和規则：$1",
+      "hint": "Filter skills and rules:"
+    },
+    {
+      "source": "^Fix with Agent: (.+?)$",
+      "flags": "",
+      "replace": "使用智能體修復：$1",
+      "hint": "Fix with Agent:"
+    },
+    {
+      "source": "^For (.+?), this setting is disabled\\. This means (.+?) does not collect any of your prompts, content, or model responses, but will still collect general usage patterns \\(e\\.g\\., feature adoption, active user counts\\)\\.$",
+      "flags": "",
+      "replace": "對於 $1，此設定已停用。這意味著 $2 不會收集您的任何提示詞、內容或模型回覆，但仍會收集常規使用模式（例如功能採用情况、活躍用戶數）。",
+      "hint": "does not collect any of your pro"
+    },
+    {
+      "source": "^GitHub token validation failed \\(status (.+?)\\)\\.$",
+      "flags": "",
+      "replace": "GitHub 權杖驗證失敗（狀態碼 $1）。",
+      "hint": "GitHub token validation failed ("
+    },
+    {
+      "source": "^Give each Best of N fork a full clone of your workspace, including its local commit history\\. Choosing a winner then gives your workspace that fork's state, so the commits it made are kept\\. Forks take longer to create than the default CitC clone\\.(.+?)$",
+      "flags": "",
+      "replace": "為每個 Best of N 分支副本提供您工作區的完整複製，包括其本機提交歷史記錄。選定勝出者後，您的工作區將採用該分支副本的狀態，从而保留其所做的提交。建立分支副本比預設的 CitC 複製耗時更長。$1",
+      "hint": "Give each Best of N fork a full "
+    },
+    {
+      "source": "^In addition to the custom skills folder, (.+?) will search the following paths in order to find skills for the agent\\.(.+?)$",
+      "flags": "",
+      "replace": "除了自訂技能資料夾外，$1 還會按順序搜尋以下路徑，以尋找適用於智能體的技能。$2",
+      "hint": "will search the following paths "
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have a remote configuration\\.$",
+      "flags": "",
+      "replace": "MCP 服務「$1」没有遠端配置。",
+      "hint": "\" does not have a remote configu"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have a supported configuration\\.$",
+      "flags": "",
+      "replace": "MCP 服務「$1」没有受支援的配置。",
+      "hint": "\" does not have a supported conf"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have any installation commands\\.$",
+      "flags": "",
+      "replace": "MCP 服務「$1」没有任何安裝命令。",
+      "hint": "\" does not have any installation"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" not found in the store\\.$",
+      "flags": "",
+      "replace": "商店中未找到 MCP 服務「$1」。",
+      "hint": "\" not found in the store."
+    },
+    {
+      "source": "^Manage (.+?) (.+?), agent settings, and permissions\\.$",
+      "flags": "",
+      "replace": "管理 $1 $2、智能體設定和權限。",
+      "hint": ", agent settings, and permission"
+    },
+    {
+      "source": "^Managed by the (.+?) plugin$",
+      "flags": "",
+      "replace": "由 $1 外掛管理",
+      "hint": "Managed by the"
+    },
+    {
+      "source": "^Missing Worker RPC batch result for (.+?) \\(id=(.+?)\\)$",
+      "flags": "",
+      "replace": "缺少 $1 (id=$2) 的執行節點 RPC 批處理結果",
+      "hint": "Missing Worker RPC batch result "
+    },
+    {
+      "source": "^No MCP servers found for \"(.+?)\"$",
+      "flags": "",
+      "replace": "未找到與「$1」匹配的 MCP 服務",
+      "hint": "No MCP servers found for \""
+    },
+    {
+      "source": "^No installation command found for MCP server \"(.+?)\"\\.$",
+      "flags": "",
+      "replace": "未找到 MCP 服務「$1」的安裝命令。",
+      "hint": "No installation command found fo"
+    },
+    {
+      "source": "^No plugins found for \"(.+?)\"\\.$",
+      "flags": "",
+      "replace": "未找到與「$1」匹配的外掛。",
+      "hint": "No plugins found for \""
+    },
+    {
+      "source": "^No server is listening on port (.+?) inside the remote workspace\\. Start it, or ask the agent to, then retry\\.$",
+      "flags": "",
+      "replace": "遠端工作區中的連接埠 $1 上没有服務正在監聽。請啟動該服務（或讓智能體啟動），然後重試。",
+      "hint": "inside the remote workspace. Sta"
+    },
+    {
+      "source": "^Open Subagent: (.+?)$",
+      "flags": "",
+      "replace": "開啟子代理：$1",
+      "hint": "Open Subagent:"
+    },
+    {
+      "source": "^Open the (.+?) plugin$",
+      "flags": "",
+      "replace": "開啟 $1 外掛",
+      "hint": "Open the"
+    },
+    {
+      "source": "^Open (.+?) skill$",
+      "flags": "",
+      "replace": "開啟 $1 技能",
+      "hint": "skill"
+    },
+    {
+      "source": "^Plugins in (.+?)$",
+      "flags": "",
+      "replace": "$1 中的外掛",
+      "hint": "Plugins in"
+    },
+    {
+      "source": "^Proceed with implementation plan and (\\d+(?:\\.\\d+)?) comments?$",
+      "flags": "",
+      "replace": "繼續執行實施方案及 $1 條評論",
+      "hint": "Proceed with implementation plan"
+    },
+    {
+      "source": "^Push (.+?) commits? to (.+?)$",
+      "flags": "",
+      "replace": "將 $1 個提交推送到 $2",
+      "hint": "commit"
+    },
+    {
+      "source": "^Pushed (.+?) commits? to (.+?)\\.$",
+      "flags": "",
+      "replace": "已將 $1 個提交推送到 $2。",
+      "hint": "Pushed"
+    },
+    {
+      "source": "^Remove context from (.+?)$",
+      "flags": "",
+      "replace": "从 $1 中移除上下文",
+      "hint": "Remove context from"
+    },
+    {
+      "source": "^Rule (.+?)$",
+      "flags": "",
+      "replace": "規则 $1",
+      "hint": "Rule"
+    },
+    {
+      "source": "^Search for \"(.+?)\" in the Marketplace$",
+      "flags": "",
+      "replace": "在外掛市場中搜尋「$1」",
+      "hint": "\" in the Marketplace"
+    },
+    {
+      "source": "^Show (\\d+(?:\\.\\d+)?) more subagents?$",
+      "flags": "",
+      "replace": "展開其餘 $1 個子代理",
+      "hint": "more subagent"
+    },
+    {
+      "source": "^Showing latest (\\d+(?:\\.\\d+)?) browser steps$",
+      "flags": "",
+      "replace": "正在顯示最近 $1 個瀏覽器步驟",
+      "hint": "Showing latest"
+    },
+    {
+      "source": "^Specifies Agent's behavior when asking for review on artifacts, which are documents it creates to enable a richer conversation experience\\.\n(.+?)$",
+      "flags": "",
+      "replace": "指定智能體在要求審閱產物時的行為，產物是其為提供更豐富對話體驗而建立的文件。\\n$1",
+      "hint": "Specifies Agent's behavior when "
+    },
+    {
+      "source": "^Telemetry is turned off for your account\\. This means (.+?) does not collect any of your prompts, content, or model responses, but will still collect general usage patterns \\(e\\.g\\., feature adoption, active user counts\\)\\.$",
+      "flags": "",
+      "replace": "你的帳號已關閉遙測資料。這意味著 $1 不會收集你的任何提示詞、內容或模型回覆，但仍會收集常規使用模式（例如功能使用情况、活躍用戶數）。",
+      "hint": "does not collect any of your pro"
+    },
+    {
+      "source": "^Terminal \\((.+?)\\)$",
+      "flags": "",
+      "replace": "終端機 ($1)",
+      "hint": "Terminal ("
+    },
+    {
+      "source": "^The MCP server \"(.+?)\"(.+?) failed to start\\.$",
+      "flags": "",
+      "replace": "MCP 服務「$1」$2 啟動失敗。",
+      "hint": "The MCP server \""
+    },
+    {
+      "source": "^The agent asks for permission before executing commands matched by a deny list entry\\.(.+?) The deny list follows the same matching rules as the allow list and takes precedence over the allow list\\.$",
+      "flags": "",
+      "replace": "智能體在執行匹配禁止名單條目的命令前會要求權限。$1 禁止名單遵循與允許名單相同的匹配規则，且優先級高於允許名單。",
+      "hint": "The deny list follows the same m"
+    },
+    {
+      "source": "^The user signed in to the plugin \"(.+?)\" \\(catalog id: (.+?)\\) from the card in your last reply\\. Retry the task with it\\.$",
+      "flags": "",
+      "replace": "用戶已通過你上一條回覆中的卡片登入外掛「$1」（目錄 ID：$2）。請使用它重試該任務。",
+      "hint": ") from the card in your last rep"
+    },
+    {
+      "source": "^The (.+?) MCP server requires configuration parameters before it can be started\\.$",
+      "flags": "",
+      "replace": "$1 MCP 服務需要先配置參數才能啟動。",
+      "hint": "MCP server requires configuratio"
+    },
+    {
+      "source": "^These plugins in (.+?) may have looser code review\\. Review their contents before adding the bundle\\.$",
+      "flags": "",
+      "replace": "$1 中的這些外掛可能程式碼審核較為寬鬆。添加此套件前，請先檢查其內容。",
+      "hint": "may have looser code review. Rev"
+    },
+    {
+      "source": "^This plugin in (.+?) may have looser code review\\. Review its contents before adding the bundle\\.$",
+      "flags": "",
+      "replace": "$1 中的此外掛可能程式碼審核較為寬鬆。添加此套件前，請先檢查其內容。",
+      "hint": "may have looser code review. Rev"
+    },
+    {
+      "source": "^This window's agents, files, and terminals are on (.+?)\\.$",
+      "flags": "",
+      "replace": "此視窗的智能體、檔案和終端機位於 $1 上。",
+      "hint": "This window's agents, files, and"
+    },
+    {
+      "source": "^Typed '(.+?)' in Browser$",
+      "flags": "",
+      "replace": "已在瀏覽器中輸入「$1」",
+      "hint": "' in Browser"
+    },
+    {
+      "source": "^Unnamed Agent (.+?)$",
+      "flags": "",
+      "replace": "未命名智能體 $1",
+      "hint": "Unnamed Agent"
+    },
+    {
+      "source": "^Unnamed skill (.+?)$",
+      "flags": "",
+      "replace": "未命名技能 $1",
+      "hint": "Unnamed skill"
+    },
+    {
+      "source": "^Using browser \\((.+?)s\\)$",
+      "flags": "",
+      "replace": "正在使用瀏覽器 ($1s)",
+      "hint": "Using browser ("
+    },
+    {
+      "source": "^Using browser · (.+?)$",
+      "flags": "",
+      "replace": "正在使用瀏覽器 · $1",
+      "hint": "Using browser ·"
+    },
+    {
+      "source": "^View Diff for (.+?)$",
+      "flags": "",
+      "replace": "查看 $1 的變更對比",
+      "hint": "View Diff for"
+    },
+    {
+      "source": "^Where the agent runs, current: (.+?)$",
+      "flags": "",
+      "replace": "智能體執行位置，目前：$1",
+      "hint": "Where the agent runs, current:"
+    },
+    {
+      "source": "^Worker sandbox initialization failed: (.+?)$",
+      "flags": "",
+      "replace": "執行節點沙盒初始化失敗：$1",
+      "hint": "Worker sandbox initialization fa"
+    },
+    {
+      "source": "^Worktree from (.+?)$",
+      "flags": "",
+      "replace": "來自 $1 的工作樹",
+      "hint": "Worktree from"
+    },
+    {
+      "source": "^merged branch (.+?) into (.+?)$",
+      "flags": "",
+      "replace": "已將分支 $1 合併到 $2",
+      "hint": "merged branch"
+    },
+    {
+      "source": "^the (.+?) plugin$",
+      "flags": "",
+      "replace": "$1 外掛",
+      "hint": "plugin"
+    },
+    {
+      "source": "^(.+?) MCP servers failed to start$",
+      "flags": "",
+      "replace": "$1 個 MCP 服務啟動失敗",
+      "hint": "MCP servers failed to start"
+    },
+    {
+      "source": "^(.+?) On empty prompt, sends next in queue$",
+      "flags": "",
+      "replace": "$1 提示詞為空時，傳送佇列中的下一條",
+      "hint": "On empty prompt, sends next in q"
+    },
+    {
+      "source": "^(.+?) Rule$",
+      "flags": "",
+      "replace": "$1 規则",
+      "hint": "Rule"
+    },
+    {
+      "source": "^(.+?) Rule Lookahead$",
+      "flags": "",
+      "replace": "$1 規则預讀",
+      "hint": "Rule Lookahead"
+    },
+    {
+      "source": "^(.+?) Sends after agent finishes working\\. Actions available: Send Now, Edit, Delete\\.$",
+      "flags": "",
+      "replace": "$1 在智能體完成工作後傳送。可用操作：立即傳送、編輯、刪除。",
+      "hint": "Sends after agent finishes worki"
+    },
+    {
+      "source": "^(.+?) browser steps$",
+      "flags": "",
+      "replace": "$1 個瀏覽器步驟",
+      "hint": "browser steps"
+    },
+    {
+      "source": "^(.+?) subagents$",
+      "flags": "",
+      "replace": "$1 個子代理",
+      "hint": "subagents"
+    },
+    {
+      "source": "^(.+?) terminal:$",
+      "flags": "",
+      "replace": "$1 終端機：",
+      "hint": "terminal:"
+    },
+    {
+      "source": "^(.+?) · Context window$",
+      "flags": "",
+      "replace": "$1 · 上下文視窗",
+      "hint": "· Context window"
+    },
+    {
+      "source": "^(.+?)\\. This commit is already pushed; amending will require a force push\\.$",
+      "flags": "",
+      "replace": "$1。此提交已推送；修改它將需要強制推送。",
+      "hint": ". This commit is already pushed;"
+    },
+    {
+      "source": "^(.+?): (.+?) tokens$",
+      "flags": "",
+      "replace": "$1：$2 個詞元",
+      "hint": "tokens"
+    },
+    {
+      "source": "^Agent settings and permissions for conversations outside of (.+?)\\.$",
+      "flags": "",
+      "replace": "$1 之外對話的智能體設定與權限。",
+      "hint": "Agent settings and permissions f"
+    },
+    {
+      "source": "^All tools in this MCP server \\((.+?) tokens\\) exceeded the customization budget and were excluded from context\\.$",
+      "flags": "",
+      "replace": "此 MCP 服務中的全部工具（$1 詞元）超出自訂擴充功能預算，已从上下文中排除。",
+      "hint": "tokens) exceeded the customizati"
+    },
+    {
+      "source": "^Approved · Code-Review \\+(.+?)$",
+      "flags": "",
+      "replace": "已批準 · 程式碼審查 +$1",
+      "hint": "Approved · Code-Review +"
+    },
+    {
+      "source": "^Browser task: \"(.+?)\"$",
+      "flags": "",
+      "replace": "瀏覽器任務：「$1」",
+      "hint": "Browser task: \""
+    },
+    {
+      "source": "^Browser tools run on (.+?), the SSH host this window is connected to, and Chrome there isn't accepting remote debugging\\. Complete these steps on (.+?), not on this computer:$",
+      "flags": "",
+      "replace": "瀏覽器工具執行在此視窗連接的 SSH 主機 $1 上，但該主機上的 Chrome 未開啟遠端調試。請在 $2（而非本機）完成以下步驟：",
+      "hint": ", the SSH host this window is co"
+    },
+    {
+      "source": "^Checkpoint #(.+?)$",
+      "flags": "",
+      "replace": "檢查點 #$1",
+      "hint": "Checkpoint #"
+    },
+    {
+      "source": "^Invoked subagent: (.+?)$",
+      "flags": "",
+      "replace": "已調用子代理：$1",
+      "hint": "Invoked subagent:"
+    },
+    {
+      "source": "^MCP server (.+?) requires authentication$",
+      "flags": "",
+      "replace": "MCP 服務 $1 需要身份認證",
+      "hint": "requires authentication"
+    },
+    {
+      "source": "^MCP server (.+?) requires authentication: sign in to \"(.+?)\" in the Accounts section of plugin \"(.+?)\"$",
+      "flags": "",
+      "replace": "MCP 服務 $1 需要身份認證：請在外掛「$3」的帳號欄登入「$2」",
+      "hint": "requires authentication: sign in"
+    },
+    {
+      "source": "^Open Subagent: (.+?) \\((.+?)\\)$",
+      "flags": "",
+      "replace": "開啟子代理：$1 ($2)",
+      "hint": "Open Subagent:"
+    },
+    {
+      "source": "^Opened browser: (.+?)$",
+      "flags": "",
+      "replace": "已開啟瀏覽器：$1",
+      "hint": "Opened browser:"
+    },
+    {
+      "source": "^Read URL: (.+?)$",
+      "flags": "",
+      "replace": "已讀取連結：$1",
+      "hint": "Read URL:"
+    },
+    {
+      "source": "^Save rule to always allow (.+?)\\?$",
+      "flags": "",
+      "replace": "是否儲存規则以始終允許 $1？",
+      "hint": "Save rule to always allow"
+    },
+    {
+      "source": "^Typing '(.+?)' in Browser$",
+      "flags": "",
+      "replace": "正在瀏覽器中輸入 '$1'",
+      "hint": "' in Browser"
+    },
+    {
+      "source": "^UI Plugin (.+?)$",
+      "flags": "",
+      "replace": "UI 外掛 $1",
+      "hint": "UI Plugin"
+    },
+    {
+      "source": "^Using browser · (.+?) \\((.+?)s\\)$",
+      "flags": "",
+      "replace": "正在使用瀏覽器 · $1 ($2s)",
+      "hint": "Using browser ·"
+    },
+    {
+      "source": "^Where the agent runs, current: (.+?) \\((.+?)\\)$",
+      "flags": "",
+      "replace": "智能體執行位置，目前：$1 ($2)",
+      "hint": "Where the agent runs, current:"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' globally$",
+      "flags": "",
+      "replace": "是，全域儲存 '$1' 的規则",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' in this conversation$",
+      "flags": "",
+      "replace": "是，在目前對話中儲存 '$1' 的規则",
+      "hint": "' in this conversation"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' in this workspace$",
+      "flags": "",
+      "replace": "是，在目前工作區中儲存 '$1' 的規则",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' (.+?)$",
+      "flags": "",
+      "replace": "是，儲存 '$1' 的規则 ($2)",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule (.+?)$",
+      "flags": "",
+      "replace": "是，儲存規则 $1",
+      "hint": "Yes, save rule"
+    },
+    {
+      "source": "^(.+?) \\(all agent edits\\)$",
+      "flags": "",
+      "replace": "$1（全部智能體編輯）",
+      "hint": "(all agent edits)"
+    },
+    {
+      "source": "^(.+?) \\(branch changes\\)$",
+      "flags": "",
+      "replace": "$1（分支更改）",
+      "hint": "(branch changes)"
+    }
+  ]
+}

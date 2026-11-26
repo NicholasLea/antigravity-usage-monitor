@@ -1522,10 +1522,13 @@ test('5h quota cycle includes cycle-opening compaction CHECKPOINT and cross-boun
   assert.equal(payload.consumption.account.totalTokens, 491_000);
 });
 
-test('i18n static t(...) key completeness guard, scopeAll formatters, and localized en-US trend/CSV date labels', async () => {
-  const { I18N_MESSAGES_ZH_CN } = await import('../src/i18n/zh-CN.js');
-  const { I18N_MESSAGES_EN_US } = await import('../src/i18n/en-US.js');
-  const { setI18nLanguage } = await import('../src/i18n/index.js');
+test('i18n static t(...) key completeness guard across all 7 locales, scopeAll formatters, and localized trend/export outputs', async () => {
+  const { I18N_DICTIONARIES, setI18nLanguage } = await import('../src/i18n/index.js');
+  const {
+    SUPPORTED_LOCALES,
+    normalizeLanguageSetting,
+    resolveLocaleFromLanguageTag,
+  } = await import('../shared/settings-normalization.mjs');
   const {
     formatAgentBadgeText,
     formatAgentLabel,
@@ -1543,7 +1546,7 @@ test('i18n static t(...) key completeness guard, scopeAll formatters, and locali
   const { createTrendAreaChart } = await import('../src/components/charts/TrendAreaChart.js');
   const { createMockDom } = await import('./mock-dom.mjs');
 
-  // 1. Every static t('...') call across sidecars/panel/src/** resolves in both zh-CN and en-US
+  // 1. Every static t('...') call across sidecars/panel/src/** resolves in all 7 locales with 100% key & placeholder parity
   const srcRoot = fileURLToPath(new URL('../src', import.meta.url));
   const walkJs = (dir) => {
     const out = [];
@@ -1554,10 +1557,44 @@ test('i18n static t(...) key completeness guard, scopeAll formatters, and locali
     }
     return out;
   };
-  const zhKeys = new Set(Object.keys(I18N_MESSAGES_ZH_CN));
-  const enKeys = new Set(Object.keys(I18N_MESSAGES_EN_US));
-  assert.deepEqual([...zhKeys].filter((k) => !enKeys.has(k)), []);
-  assert.deepEqual([...enKeys].filter((k) => !zhKeys.has(k)), []);
+  assert.deepEqual(
+    Object.keys(I18N_DICTIONARIES).sort(),
+    [...SUPPORTED_LOCALES].sort(),
+    'I18N_DICTIONARIES must register every supported locale'
+  );
+  const enDict = I18N_DICTIONARIES['en-US'];
+  const enKeys = new Set(Object.keys(enDict));
+  const extractPh = (str) => [...String(str).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
+  const emojiRe = /\p{Extended_Pictographic}/u;
+  for (const loc of SUPPORTED_LOCALES) {
+    const dict = I18N_DICTIONARIES[loc];
+    const locKeys = new Set(Object.keys(dict));
+    assert.deepEqual([...enKeys].filter((k) => !locKeys.has(k)), [], `${loc} missing keys`);
+    assert.deepEqual([...locKeys].filter((k) => !enKeys.has(k)), [], `${loc} extra keys`);
+    for (const k of enKeys) {
+      const val = dict[k];
+      assert.equal(typeof val === 'string' && val.length > 0, true, `${loc}.${k} must be non-empty`);
+      assert.equal(extractPh(val), extractPh(enDict[k]), `${loc}.${k} placeholder mismatch`);
+      assert.equal(emojiRe.test(val), false, `${loc}.${k} must not contain emoji`);
+      if (k.startsWith('report.sheet')) {
+        assert.equal(val.length <= 31 && !/[\[\]:*?\/\\]/.test(val), true, `${loc}.${k} invalid Excel sheet name`);
+      }
+    }
+  }
+
+  // BCP-47 tag normalization across all 7 locales + regional aliases
+  assert.equal(resolveLocaleFromLanguageTag('zh-HK'), 'zh-TW');
+  assert.equal(resolveLocaleFromLanguageTag('zh-Hant-TW'), 'zh-TW');
+  assert.equal(resolveLocaleFromLanguageTag('zh-Hans-CN'), 'zh-CN');
+  assert.equal(resolveLocaleFromLanguageTag('ja'), 'ja-JP');
+  assert.equal(resolveLocaleFromLanguageTag('ko'), 'ko-KR');
+  assert.equal(resolveLocaleFromLanguageTag('de-AT'), 'de-DE');
+  assert.equal(resolveLocaleFromLanguageTag('fr-CA'), 'fr-FR');
+  assert.equal(normalizeLanguageSetting('ja-JP'), 'ja-JP');
+  assert.equal(normalizeLanguageSetting('zh-TW'), 'zh-TW');
+  assert.equal(normalizeLanguageSetting('ko-KR'), 'ko-KR');
+  assert.equal(normalizeLanguageSetting('de-DE'), 'de-DE');
+  assert.equal(normalizeLanguageSetting('fr-FR'), 'fr-FR');
 
   const missingKeys = [];
   for (const filePath of walkJs(srcRoot)) {
@@ -1566,8 +1603,10 @@ test('i18n static t(...) key completeness guard, scopeAll formatters, and locali
     let m;
     while ((m = re.exec(srcText)) !== null) {
       const k = m[2];
-      if (!zhKeys.has(k) || !enKeys.has(k)) {
-        missingKeys.push(`${filePath}:${k}`);
+      for (const loc of SUPPORTED_LOCALES) {
+        if (!(k in I18N_DICTIONARIES[loc])) {
+          missingKeys.push(`${filePath}:${loc}:${k}`);
+        }
       }
     }
   }
@@ -1728,6 +1767,21 @@ test('i18n static t(...) key completeness guard, scopeAll formatters, and locali
     assert.match(stepsXlsxEnRaw, />Main</);
     assert.match(stepsXlsxEnRaw, />Subagent #1</);
     assert.doesNotMatch(stepsXlsxEnRaw, /[\u4e00-\u9fff]/);
+
+    // Non-binary locales (ja-JP / ko-KR / de-DE / fr-FR / zh-TW) export cleanly with localized labels
+    const stepsCsvJa = buildStepsCsv(backendLikeSteps, { locale: 'ja-JP', includeBom: false });
+    assert.match(stepsCsvJa, /carbon-4-high·圧縮/);
+    const stepsCsvDe = buildStepsCsv(backendLikeSteps, { locale: 'de-DE', includeBom: false });
+    assert.match(stepsCsvDe, /carbon-4-high·komp\./);
+    assert.doesNotMatch(stepsCsvDe, /[\u4e00-\u9fff]/);
+    const stepsCsvFr = buildStepsCsv(backendLikeSteps, { locale: 'fr-FR', includeBom: false });
+    assert.match(stepsCsvFr, /carbon-4-high·comp\./);
+    assert.doesNotMatch(stepsCsvFr, /[\u4e00-\u9fff]/);
+    const stepsCsvKo = buildStepsCsv(backendLikeSteps, { locale: 'ko-KR', includeBom: false });
+    assert.match(stepsCsvKo, /carbon-4-high·압축/);
+    assert.doesNotMatch(stepsCsvKo, /[\u4e00-\u9fff]/);
+    const stepsCsvTw = buildStepsCsv(backendLikeSteps, { locale: 'zh-TW', includeBom: false });
+    assert.match(stepsCsvTw, /carbon-4-high·壓縮/);
   } finally {
     setI18nLanguage('zh-CN');
     globalThis.document = prevDoc;

@@ -31,7 +31,12 @@ function getLanguageOptions() {
   return [
     { value: 'auto', label: t('settings.gen.langAuto') },
     { value: 'zh-CN', label: t('settings.gen.langZh') },
+    { value: 'zh-TW', label: t('settings.gen.langZhTw') },
     { value: 'en-US', label: t('settings.gen.langEn') },
+    { value: 'ja-JP', label: t('settings.gen.langJa') },
+    { value: 'ko-KR', label: t('settings.gen.langKo') },
+    { value: 'de-DE', label: t('settings.gen.langDe') },
+    { value: 'fr-FR', label: t('settings.gen.langFr') },
   ];
 }
 
@@ -135,8 +140,9 @@ export const SettingsGeneralTab = defineComponent({
       text: t('settings.gen.modernUiHint'),
     });
 
-    const languageSwitch = SegmentedControl({
+    const languageSwitch = CustomSelect({
       ariaLabel: t('settings.gen.language'),
+      icon: 'globe',
       modelValue: draftLanguage,
       options: getLanguageOptions(),
       onUpdateModelValue: async (val) => {
@@ -433,6 +439,7 @@ export const SettingsGeneralTab = defineComponent({
       );
 
       languageSwitch.setProps({
+        ariaLabel: t('settings.gen.language'),
         modelValue: draftLanguage,
         options: getLanguageOptions(),
       });
@@ -514,6 +521,7 @@ export const SettingsGeneralTab = defineComponent({
         patchText(syncPricingBtnText, t('settings.gen.syncBtn'));
       }
       languageSwitch.setProps({
+        ariaLabel: t('settings.gen.language'),
         modelValue: draftLanguage,
         options: getLanguageOptions(),
       });

@@ -2,7 +2,16 @@
  * @fileoverview 前后端与 CLI 共用的偏好设置枚举常量、默认值与无状态纯函数归一化规则。
  */
 
-export const SUPPORTED_LANGUAGES = Object.freeze(['auto', 'zh-CN', 'en-US']);
+export const SUPPORTED_LOCALES = Object.freeze([
+  'zh-CN',
+  'zh-TW',
+  'en-US',
+  'ja-JP',
+  'ko-KR',
+  'de-DE',
+  'fr-FR',
+]);
+export const SUPPORTED_LANGUAGES = Object.freeze(['auto', ...SUPPORTED_LOCALES]);
 
 export const THEME_ACCENT_KEYS = Object.freeze([
   'host',
@@ -166,19 +175,49 @@ export const MAX_POPOVER_WIDTH = 1080;
 export const DEFAULT_POPOVER_WIDTH = 580;
 
 /**
- * 归一化界面语言枚举（默认 `'auto'`，支持 `'zh-CN'` 及 `'en-US'`）。
+ * 将任意 BCP-47 / POSIX 语言标签映射到受支持的 7 种界面 Locale 之一。
+ *
+ * @param {unknown} rawTag
+ * @param {'zh-CN'|'zh-TW'|'en-US'|'ja-JP'|'ko-KR'|'de-DE'|'fr-FR'} [fallback='en-US']
+ * @returns {'zh-CN'|'zh-TW'|'en-US'|'ja-JP'|'ko-KR'|'de-DE'|'fr-FR'}
+ */
+export function resolveLocaleFromLanguageTag(rawTag, fallback = 'en-US') {
+  const clean = String(rawTag ?? '')
+    .trim()
+    .replace(/_/g, '-')
+    .replace(/\..*$/, '')
+    .toLowerCase();
+  if (!clean || clean === 'c' || clean === 'posix') return fallback;
+  if (
+    clean === 'zh-tw' ||
+    clean === 'zh-hk' ||
+    clean === 'zh-mo' ||
+    clean.startsWith('zh-hant')
+  ) {
+    return 'zh-TW';
+  }
+  if (clean === 'zh' || clean.startsWith('zh-')) return 'zh-CN';
+  if (clean === 'ja' || clean.startsWith('ja-')) return 'ja-JP';
+  if (clean === 'ko' || clean.startsWith('ko-')) return 'ko-KR';
+  if (clean === 'de' || clean.startsWith('de-')) return 'de-DE';
+  if (clean === 'fr' || clean.startsWith('fr-')) return 'fr-FR';
+  if (clean === 'en' || clean.startsWith('en-')) return 'en-US';
+  return fallback;
+}
+
+/**
+ * 归一化界面语言枚举（默认 `'auto'`，支持 7 国界面语言）。
  *
  * @param {unknown} lang
- * @returns {'auto'|'zh-CN'|'en-US'}
+ * @returns {'auto'|'zh-CN'|'zh-TW'|'en-US'|'ja-JP'|'ko-KR'|'de-DE'|'fr-FR'}
  */
 export function normalizeLanguageSetting(lang) {
   const raw = String(lang ?? '').trim();
   if (!raw) return 'auto';
-  const lower = raw.toLowerCase();
+  const lower = raw.toLowerCase().replace(/_/g, '-');
   if (lower === 'auto' || lower === 'system') return 'auto';
-  if (lower === 'en' || lower === 'en-us' || lower.startsWith('en-')) return 'en-US';
-  if (lower === 'zh' || lower === 'zh-cn' || lower.startsWith('zh')) return 'zh-CN';
-  return 'auto';
+  const resolved = resolveLocaleFromLanguageTag(lower, /** @type {any} */ (''));
+  return resolved || 'auto';
 }
 
 /**
