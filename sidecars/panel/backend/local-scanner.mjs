@@ -591,10 +591,32 @@ function lsScanYieldMacrotask() {
   return Promise.resolve();
 }
 
+const pendingBgDrainDelayWakers = new Set();
+
+function wakePendingBackgroundDrainDelays() {
+  if (pendingBgDrainDelayWakers.size === 0) return;
+  for (const wake of [...pendingBgDrainDelayWakers]) {
+    wake();
+  }
+}
+
 function lsScanWaitUnrefDelay(delayMs = LS_SCAN_BG_INTER_BATCH_DELAY_MS) {
   if (typeof setTimeout === 'function') {
     return new Promise((resolve) => {
-      const timer = setTimeout(resolve, delayMs);
+      let settled = false;
+      let timer = null;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        pendingBgDrainDelayWakers.delete(done);
+        resolve();
+      };
+      pendingBgDrainDelayWakers.add(done);
+      timer = setTimeout(done, delayMs);
       timer?.unref?.();
     });
   }
@@ -670,6 +692,7 @@ export function resetLocalCacheRebuildState({ totalHint = 0, armed = false } = {
   localRebuildGeneration += 1;
   localBackgroundDrainStopped = false;
   activeLocalBackgroundDrain = null;
+  wakePendingBackgroundDrainDelays();
   const cleanTotal = Math.max(0, Math.floor(Number(totalHint) || 0));
   localRebuildState = {
     armed: Boolean(armed),
@@ -687,6 +710,7 @@ export async function stopLocalBackgroundCacheRebuild() {
   localRebuildGeneration += 1;
   const pending = activeLocalBackgroundDrain;
   activeLocalBackgroundDrain = null;
+  wakePendingBackgroundDrainDelays();
   localRebuildState = {
     ...localRebuildState,
     armed: false,
@@ -3730,6 +3754,7 @@ export async function enumerateAndSyncConversations({
       const drainQueue = remainingDeferred.slice();
       const drainTask = (async () => {
         for (let off = 0; off < drainQueue.length; off += LS_SCAN_BG_DRAIN_BATCH) {
+          if (shouldAbortBg()) return;
           await lsScanWaitUnrefDelay(LS_SCAN_BG_INTER_BATCH_DELAY_MS);
           if (shouldAbortBg()) return;
           const rawChunk = drainQueue.slice(off, off + LS_SCAN_BG_DRAIN_BATCH);
