@@ -32,10 +32,19 @@ test('pack-release-zip ships only runtime-essential files, excludes dev bloat, a
     'sidecars/panel/cli-statusline.mjs',
     'sidecars/panel/trajectory-metrics.mjs',
     'sidecars/panel/backend/api-actions.mjs',
+    'sidecars/panel/backend/devtools-port-probe.mjs',
+    'sidecars/panel/backend/ide-remote-ssh.mjs',
+    'sidecars/panel/backend/session-store.mjs',
+    'sidecars/panel/backend/session-cleaner.mjs',
+    'sidecars/panel/backend/session-manager.mjs',
+    'sidecars/panel/backend/session-online-delete.mjs',
     'sidecars/panel/backend/host-i18n/index.mjs',
     'sidecars/panel/backend/account-credentials.ps1',
+    'sidecars/panel/backend/account-keyring-store.mjs',
+    'sidecars/panel/backend/account-switch-posix-worker.mjs',
     'sidecars/panel/shared/settings-normalization.mjs',
     'sidecars/panel/shared/host-i18n-protocol.mjs',
+    'sidecars/panel/shared/workspace-uri.mjs',
   ]) {
     assert.ok(relFiles.includes(mustHave), `Release whitelist must include ${mustHave}`);
   }
@@ -67,8 +76,8 @@ test('pack-release-zip ships only runtime-essential files, excludes dev bloat, a
   assert.ok(existsSync(zipPath));
   assert.ok(summary.zipBytes > 100 * 1024, 'ZIP should contain compiled assets and backend');
   assert.ok(
-    summary.zipBytes < 900 * 1024,
-    `Runtime-only ZIP should stay compact (<900 KB), got ${(summary.zipBytes / 1024).toFixed(1)} KB`
+    summary.zipBytes < 1250 * 1024,
+    `Runtime-only ZIP should stay compact (<1250 KB), got ${(summary.zipBytes / 1024).toFixed(1)} KB`
   );
 
   // Extract via OS-native expander (same path used by plugin-updater.mjs, where extractDir already exists)
@@ -93,6 +102,10 @@ test('pack-release-zip ships only runtime-essential files, excludes dev bloat, a
   const manifest = JSON.parse(readFileSync(join(pluginRoot, 'plugin.json'), 'utf8'));
   assert.equal(manifest.name, 'usage-monitor');
   assert.ok(existsSync(join(pluginRoot, manifest.logo)));
+  const sidecarManifest = JSON.parse(readFileSync(join(pluginRoot, 'sidecars/panel/sidecar.json'), 'utf8'));
+  assert.equal(sidecarManifest.display_name, 'Usage Monitor');
+  assert.equal(sidecarManifest.ui_config?.display_name, 'Usage Monitor');
+  assert.equal(sidecarManifest.ui_config?.views?.[0]?.title, 'Usage Monitor');
 
   // Verify zero broken syntax and clean standalone ESM load from the extracted clean tree (no src/, test/, package.json)
   for (const rel of relFiles) {

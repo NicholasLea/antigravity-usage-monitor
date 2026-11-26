@@ -1,7 +1,7 @@
 import {
   closeSync, fstatSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writevSync,
 } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 const MAX_TRACKED_CACHE_FILES = 16;
 const lastWritesByPath = new Map();
@@ -16,11 +16,18 @@ function readReusableBytes(filePath, expected) {
   try {
     fd = openSync(filePath, 'r');
     const before = fstatSync(fd, { bigint: true });
-    if (!isSameFile(before, expected) || before.ctimeNs !== expected.ctimeNs) return null;
+    if (!isSameFile(before, expected.file) || before.ctimeNs !== expected.file.ctimeNs) return null;
     const bytes = readFileSync(fd);
     const after = fstatSync(fd, { bigint: true });
-    return isSameFile(before, after) && before.ctimeNs === after.ctimeNs &&
-      BigInt(bytes.length) === after.size ? bytes : null;
+    if (
+      !isSameFile(before, after) ||
+      before.ctimeNs !== after.ctimeNs ||
+      BigInt(bytes.length) !== after.size
+    ) {
+      return null;
+    }
+    const digest = createHash('sha256').update(bytes).digest();
+    return digest.equals(expected.sha256) ? bytes : null;
   } catch {
     return null;
   } finally {
@@ -31,13 +38,15 @@ function readReusableBytes(filePath, expected) {
 // 只复用上次确认写入的步骤字节。扫描器用新数组替换变更步骤，每次仍重新序列化会话元数据。
 export function writeTrajectoryCacheFile(filePath, data) {
   const previous = lastWritesByPath.get(filePath) || null;
-  const bytes = previous ? readReusableBytes(filePath, previous.file) : null;
+  const bytes = previous ? readReusableBytes(filePath, previous) : null;
   const ranges = new WeakMap();
   const parts = [];
+  const hash = createHash('sha256');
   let position = 0;
   function append(part) {
     const buffer = typeof part === 'string' ? Buffer.from(part) : part;
     parts.push(buffer);
+    hash.update(buffer);
     position += buffer.length;
   }
 
@@ -55,6 +64,7 @@ export function writeTrajectoryCacheFile(filePath, data) {
     separator = ',';
   }
   append('}');
+  const sha256 = hash.digest();
 
   const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
   let renamed = false;
@@ -81,7 +91,7 @@ export function writeTrajectoryCacheFile(filePath, data) {
         const oldestPath = lastWritesByPath.keys().next().value;
         if (oldestPath !== undefined) lastWritesByPath.delete(oldestPath);
       }
-      lastWritesByPath.set(filePath, { filePath, file, ranges });
+      lastWritesByPath.set(filePath, { filePath, file, sha256, ranges });
     }
   } finally {
     if (!renamed) {

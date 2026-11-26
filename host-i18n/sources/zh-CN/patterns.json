@@ -4601,6 +4601,216 @@
       "flags": "",
       "replace": "请改用 $1。",
       "hint": "instead."
+    },
+    {
+      "source": "^ABFS workspace (.+?) created and selected\\.$",
+      "flags": "",
+      "replace": "已创建并选中 ABFS 工作区 $1。",
+      "hint": "created and selected."
+    },
+    {
+      "source": "^Automatically create a new (.+?) workspace when the conversation starts$",
+      "flags": "",
+      "replace": "对话开始时自动创建新的 $1 工作区",
+      "hint": "workspace when the conversation "
+    },
+    {
+      "source": "^Creating ABFS workspace (.+?)\\.\\.\\.$",
+      "flags": "",
+      "replace": "正在创建 ABFS 工作区 $1...",
+      "hint": "Creating ABFS workspace"
+    },
+    {
+      "source": "^Creating workspace \"(.+?)\"\\.\\.\\.$",
+      "flags": "",
+      "replace": "正在创建工作区“$1”...",
+      "hint": "Creating workspace \""
+    },
+    {
+      "source": "^Delete workspace (.+?)$",
+      "flags": "",
+      "replace": "删除工作区 $1",
+      "hint": "Delete workspace"
+    },
+    {
+      "source": "^Deleted workspace (.+?)$",
+      "flags": "",
+      "replace": "已删除工作区 $1",
+      "hint": "Deleted workspace"
+    },
+    {
+      "source": "^Failed to create workspace: (.+?)$",
+      "flags": "",
+      "replace": "创建工作区失败：$1",
+      "hint": "Failed to create workspace:"
+    },
+    {
+      "source": "^Failed to select workspace: (.+?)$",
+      "flags": "",
+      "replace": "选择工作区失败：$1",
+      "hint": "Failed to select workspace:"
+    },
+    {
+      "source": "^Parent workspace not found for battle (.+?)$",
+      "flags": "",
+      "replace": "未找到对局 $1 的父级工作区",
+      "hint": "Parent workspace not found for b"
+    },
+    {
+      "source": "^Remount workspace (.+?)$",
+      "flags": "",
+      "replace": "重新挂载工作区 $1",
+      "hint": "Remount workspace"
+    },
+    {
+      "source": "^Remounted workspace (.+?)$",
+      "flags": "",
+      "replace": "已重新挂载工作区 $1",
+      "hint": "Remounted workspace"
+    },
+    {
+      "source": "^Resume the conversation to start its workspace again, then start the server on port (.+?) and retry\\.$",
+      "flags": "",
+      "replace": "请恢复该对话以重新启动其工作区，然后在端口 $1 上启动服务器并重试。",
+      "hint": "Resume the conversation to start"
+    },
+    {
+      "source": "^Total Active Workspace Windows: (.+?)$",
+      "flags": "",
+      "replace": "活跃工作区窗口总数：$1",
+      "hint": "Total Active Workspace Windows:"
+    },
+    {
+      "source": "^Unmount workspace (.+?)$",
+      "flags": "",
+      "replace": "卸载工作区 $1",
+      "hint": "Unmount workspace"
+    },
+    {
+      "source": "^Unmounted workspace (.+?)$",
+      "flags": "",
+      "replace": "已卸载工作区 $1",
+      "hint": "Unmounted workspace"
+    },
+    {
+      "source": "^Workspace URI not found for battle arm (.+?)$",
+      "flags": "",
+      "replace": "未找到对比分支 $1 的工作区 URI",
+      "hint": "Workspace URI not found for batt"
+    },
+    {
+      "source": "^(.+?)\\. Starting in local workspace\\.$",
+      "flags": "",
+      "replace": "$1。正在本地工作区中启动。",
+      "hint": ". Starting in local workspace."
+    },
+    {
+      "source": "^Failed to open workspace: (.+?)$",
+      "flags": "",
+      "replace": "打开工作区失败：$1",
+      "hint": "Failed to open workspace:"
+    },
+    {
+      "source": "^Storage: Workspace \\(path: (.+?)\\)$",
+      "flags": "",
+      "replace": "存储：工作区（路径：$1）",
+      "hint": "Storage: Workspace (path:"
+    },
+    {
+      "source": "^Yes, and always allow '(.+?)' in this workspace$",
+      "flags": "",
+      "replace": "是，且在当前工作区中始终允许 '$1'",
+      "hint": "Yes, and always allow '"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps$",
+      "flags": "",
+      "replace": "$1/$2 步",
+      "hint": "steps"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps · (\\d+) failed$",
+      "flags": "",
+      "replace": "$1/$2 步 · $3 项失败",
+      "hint": "steps ·"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps · (\\d+) skipped$",
+      "flags": "",
+      "replace": "$1/$2 步 · $3 项跳过",
+      "hint": "steps ·"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps · (\\d+) failed · (\\d+) skipped$",
+      "flags": "",
+      "replace": "$1/$2 步 · $3 项失败 · $4 项跳过",
+      "hint": "steps ·"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps\\. Show plan$",
+      "flags": "",
+      "replace": "$1/$2 步。展开计划",
+      "hint": "steps. Show plan"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps\\. Hide plan$",
+      "flags": "",
+      "replace": "$1/$2 步。收起计划",
+      "hint": "steps. Hide plan"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:w|wk|wks|week|weeks) ago$",
+      "flags": "i",
+      "replace": "$1 周前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:mo|mos|month|months) ago$",
+      "flags": "i",
+      "replace": "$1 个月前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:y|yr|yrs|year|years) ago$",
+      "flags": "i",
+      "replace": "$1 年前",
+      "hint": "ago"
+    },
+    {
+      "source": "^(.+?) \\(single edit\\)$",
+      "flags": "",
+      "replace": "$1（单次编辑）",
+      "hint": "(single edit)"
+    },
+    {
+      "source": "^(.+?) \\(uncommitted\\)$",
+      "flags": "",
+      "replace": "$1（未提交）",
+      "hint": "(uncommitted)"
+    },
+    {
+      "source": "^(.+?) \\(staged\\)$",
+      "flags": "",
+      "replace": "$1（已暂存）",
+      "hint": "(staged)"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. Applies to /btw and messages sent after this turn$",
+      "flags": "",
+      "replace": "选择模型，当前：$1。适用于 /btw 及本轮之后发送的消息",
+      "hint": "Applies to /btw"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. Applies to messages sent after this turn$",
+      "flags": "",
+      "replace": "选择模型，当前：$1。适用于本轮之后发送的消息",
+      "hint": "Applies to messages sent after"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. (.+?)$",
+      "flags": "",
+      "replace": "选择模型，当前：$1。$2",
+      "hint": "Select model, current:"
     }
   ],
   "light": [
@@ -4627,12 +4837,6 @@
       "flags": "i",
       "replace": "已连接 $1 个 MCP Server",
       "hint": "MCP"
-    },
-    {
-      "source": "^ABFS workspace (.+?) created and selected\\.$",
-      "flags": "",
-      "replace": "已创建并选中 ABFS Workspace $1。",
-      "hint": "created and selected."
     },
     {
       "source": "^Account this MCP server uses: (.+?)$",
@@ -4719,12 +4923,6 @@
       "hint": "Files for Conversation)"
     },
     {
-      "source": "^Automatically create a new (.+?) workspace when the conversation starts$",
-      "flags": "",
-      "replace": "对话开始时自动创建新的 $1 Workspace",
-      "hint": "workspace when the conversation "
-    },
-    {
       "source": "^Branch (.+?) no longer exists$",
       "flags": "",
       "replace": "Branch $1 已不存在",
@@ -4771,30 +4969,6 @@
       "flags": "",
       "replace": "无法保存基础 Branch：$1",
       "hint": "Couldn't save base branch:"
-    },
-    {
-      "source": "^Creating ABFS workspace (.+?)\\.\\.\\.$",
-      "flags": "",
-      "replace": "正在创建 ABFS Workspace $1...",
-      "hint": "Creating ABFS workspace"
-    },
-    {
-      "source": "^Creating workspace \"(.+?)\"\\.\\.\\.$",
-      "flags": "",
-      "replace": "正在创建 Workspace“$1”...",
-      "hint": "Creating workspace \""
-    },
-    {
-      "source": "^Delete workspace (.+?)$",
-      "flags": "",
-      "replace": "删除 Workspace $1",
-      "hint": "Delete workspace"
-    },
-    {
-      "source": "^Deleted workspace (.+?)$",
-      "flags": "",
-      "replace": "已删除 Workspace $1",
-      "hint": "Deleted workspace"
     },
     {
       "source": "^Error deleting MCP server: (.+?)$",
@@ -4857,12 +5031,6 @@
       "hint": "tokens) was replaced with a ligh"
     },
     {
-      "source": "^Failed to create workspace: (.+?)$",
-      "flags": "",
-      "replace": "创建 Workspace 失败：$1",
-      "hint": "Failed to create workspace:"
-    },
-    {
       "source": "^Failed to load skills: (.+?)$",
       "flags": "",
       "replace": "加载 Skill 失败：$1",
@@ -4891,12 +5059,6 @@
       "flags": "",
       "replace": "扫描 Skill 配置文件失败：$1",
       "hint": "Failed to scan skills config fil"
-    },
-    {
-      "source": "^Failed to select workspace: (.+?)$",
-      "flags": "",
-      "replace": "选择 Workspace 失败：$1",
-      "hint": "Failed to select workspace:"
     },
     {
       "source": "^Failed to toggle plugin: (.+?)$",
@@ -4943,7 +5105,7 @@
     {
       "source": "^Give each Best of N fork a full clone of your workspace, including its local commit history\\. Choosing a winner then gives your workspace that fork's state, so the commits it made are kept\\. Forks take longer to create than the default CitC clone\\.(.+?)$",
       "flags": "",
-      "replace": "为每个 Best of N 分支副本提供您 Workspace 的完整克隆，包括其本地 Commit 历史记录。选定胜出者后，您的 Workspace 将采用该分支副本的状态，从而保留其所做的 Commit。创建分支副本比默认的 CitC 克隆耗时更长。$1",
+      "replace": "为每个 Best of N 分支副本提供您工作区的完整克隆，包括其本地 Commit 历史记录。选定胜出者后，您的工作区将采用该分支副本的状态，从而保留其所做的 Commit。创建分支副本比默认的 CitC 克隆耗时更长。$1",
       "hint": "Give each Best of N fork a full "
     },
     {
@@ -5015,7 +5177,7 @@
     {
       "source": "^No server is listening on port (.+?) inside the remote workspace\\. Start it, or ask the agent to, then retry\\.$",
       "flags": "",
-      "replace": "远程 Workspace 中的端口 $1 上没有服务正在监听。请启动该服务（或让 Agent 启动），然后重试。",
+      "replace": "远程工作区中的端口 $1 上没有服务正在监听。请启动该服务（或让 Agent 启动），然后重试。",
       "hint": "inside the remote workspace. Sta"
     },
     {
@@ -5035,12 +5197,6 @@
       "flags": "",
       "replace": "打开 $1 Skill",
       "hint": "skill"
-    },
-    {
-      "source": "^Parent workspace not found for battle (.+?)$",
-      "flags": "",
-      "replace": "未找到对局 $1 的父级 Workspace",
-      "hint": "Parent workspace not found for b"
     },
     {
       "source": "^Plugins in (.+?)$",
@@ -5067,28 +5223,10 @@
       "hint": "Pushed"
     },
     {
-      "source": "^Remount workspace (.+?)$",
-      "flags": "",
-      "replace": "重新挂载 Workspace $1",
-      "hint": "Remount workspace"
-    },
-    {
-      "source": "^Remounted workspace (.+?)$",
-      "flags": "",
-      "replace": "已重新挂载 Workspace $1",
-      "hint": "Remounted workspace"
-    },
-    {
       "source": "^Remove context from (.+?)$",
       "flags": "",
       "replace": "从 $1 中移除 Context",
       "hint": "Remove context from"
-    },
-    {
-      "source": "^Resume the conversation to start its workspace again, then start the server on port (.+?) and retry\\.$",
-      "flags": "",
-      "replace": "请恢复该对话以重新启动其 Workspace，然后在端口 $1 上启动服务器并重试。",
-      "hint": "Resume the conversation to start"
     },
     {
       "source": "^Rule (.+?)$",
@@ -5175,28 +5313,10 @@
       "hint": "This window's agents, files, and"
     },
     {
-      "source": "^Total Active Workspace Windows: (.+?)$",
-      "flags": "",
-      "replace": "活跃 Workspace 窗口总数：$1",
-      "hint": "Total Active Workspace Windows:"
-    },
-    {
       "source": "^Typed '(.+?)' in Browser$",
       "flags": "",
       "replace": "已在 Browser 中输入“$1”",
       "hint": "' in Browser"
-    },
-    {
-      "source": "^Unmount workspace (.+?)$",
-      "flags": "",
-      "replace": "卸载 Workspace $1",
-      "hint": "Unmount workspace"
-    },
-    {
-      "source": "^Unmounted workspace (.+?)$",
-      "flags": "",
-      "replace": "已卸载 Workspace $1",
-      "hint": "Unmounted workspace"
     },
     {
       "source": "^Unnamed Agent (.+?)$",
@@ -5239,12 +5359,6 @@
       "flags": "",
       "replace": "Worker Sandbox 初始化失败：$1",
       "hint": "Worker sandbox initialization fa"
-    },
-    {
-      "source": "^Workspace URI not found for battle arm (.+?)$",
-      "flags": "",
-      "replace": "未找到对比分支 $1 的 Workspace URI",
-      "hint": "Workspace URI not found for batt"
     },
     {
       "source": "^Worktree from (.+?)$",
@@ -5319,12 +5433,6 @@
       "hint": "· Context window"
     },
     {
-      "source": "^(.+?)\\. Starting in local workspace\\.$",
-      "flags": "",
-      "replace": "$1。正在本地 Workspace 中启动。",
-      "hint": ". Starting in local workspace."
-    },
-    {
       "source": "^(.+?)\\. This commit is already pushed; amending will require a force push\\.$",
       "flags": "",
       "replace": "$1。此 Commit 已推送；修改它将需要强制推送。",
@@ -5373,12 +5481,6 @@
       "hint": "Checkpoint #"
     },
     {
-      "source": "^Failed to open workspace: (.+?)$",
-      "flags": "",
-      "replace": "打开 Workspace 失败：$1",
-      "hint": "Failed to open workspace:"
-    },
-    {
       "source": "^Invoked subagent: (.+?)$",
       "flags": "",
       "replace": "已调用 Subagent：$1",
@@ -5421,12 +5523,6 @@
       "hint": "Save rule to always allow"
     },
     {
-      "source": "^Storage: Workspace \\(path: (.+?)\\)$",
-      "flags": "",
-      "replace": "存储：Workspace（路径：$1）",
-      "hint": "Storage: Workspace (path:"
-    },
-    {
       "source": "^Typing '(.+?)' in Browser$",
       "flags": "",
       "replace": "正在 Browser 中输入 '$1'",
@@ -5451,12 +5547,6 @@
       "hint": "Where the agent runs, current:"
     },
     {
-      "source": "^Yes, and always allow '(.+?)' in this workspace$",
-      "flags": "",
-      "replace": "是，且在当前 Workspace 中始终允许 '$1'",
-      "hint": "Yes, and always allow '"
-    },
-    {
       "source": "^Yes, save rule for '(.+?)' globally$",
       "flags": "",
       "replace": "是，全局保存 '$1' 的 Rule",
@@ -5471,7 +5561,7 @@
     {
       "source": "^Yes, save rule for '(.+?)' in this workspace$",
       "flags": "",
-      "replace": "是，在当前 Workspace 中保存 '$1' 的 Rule",
+      "replace": "是，在当前工作区中保存 '$1' 的 Rule",
       "hint": "Yes, save rule for '"
     },
     {
@@ -5485,6 +5575,18 @@
       "flags": "",
       "replace": "是，保存 Rule $1",
       "hint": "Yes, save rule"
+    },
+    {
+      "source": "^(.+?) \\(all agent edits\\)$",
+      "flags": "",
+      "replace": "$1（全部 Agent 编辑）",
+      "hint": "(all agent edits)"
+    },
+    {
+      "source": "^(.+?) \\(branch changes\\)$",
+      "flags": "",
+      "replace": "$1（Branch 更改）",
+      "hint": "(branch changes)"
     }
   ],
   "deep": [
@@ -5511,12 +5613,6 @@
       "flags": "i",
       "replace": "已连接 $1 个 MCP 服务",
       "hint": "MCP"
-    },
-    {
-      "source": "^ABFS workspace (.+?) created and selected\\.$",
-      "flags": "",
-      "replace": "已创建并选中 ABFS 工作区 $1。",
-      "hint": "created and selected."
     },
     {
       "source": "^Account this MCP server uses: (.+?)$",
@@ -5603,12 +5699,6 @@
       "hint": "Files for Conversation)"
     },
     {
-      "source": "^Automatically create a new (.+?) workspace when the conversation starts$",
-      "flags": "",
-      "replace": "对话开始时自动创建新的 $1 工作区",
-      "hint": "workspace when the conversation "
-    },
-    {
       "source": "^Branch (.+?) no longer exists$",
       "flags": "",
       "replace": "分支 $1 已不存在",
@@ -5655,30 +5745,6 @@
       "flags": "",
       "replace": "无法保存基础分支：$1",
       "hint": "Couldn't save base branch:"
-    },
-    {
-      "source": "^Creating ABFS workspace (.+?)\\.\\.\\.$",
-      "flags": "",
-      "replace": "正在创建 ABFS 工作区 $1...",
-      "hint": "Creating ABFS workspace"
-    },
-    {
-      "source": "^Creating workspace \"(.+?)\"\\.\\.\\.$",
-      "flags": "",
-      "replace": "正在创建工作区“$1”...",
-      "hint": "Creating workspace \""
-    },
-    {
-      "source": "^Delete workspace (.+?)$",
-      "flags": "",
-      "replace": "删除工作区 $1",
-      "hint": "Delete workspace"
-    },
-    {
-      "source": "^Deleted workspace (.+?)$",
-      "flags": "",
-      "replace": "已删除工作区 $1",
-      "hint": "Deleted workspace"
     },
     {
       "source": "^Error deleting MCP server: (.+?)$",
@@ -5741,12 +5807,6 @@
       "hint": "tokens) was replaced with a ligh"
     },
     {
-      "source": "^Failed to create workspace: (.+?)$",
-      "flags": "",
-      "replace": "创建工作区失败：$1",
-      "hint": "Failed to create workspace:"
-    },
-    {
       "source": "^Failed to load skills: (.+?)$",
       "flags": "",
       "replace": "加载技能失败：$1",
@@ -5775,12 +5835,6 @@
       "flags": "",
       "replace": "扫描技能配置文件失败：$1",
       "hint": "Failed to scan skills config fil"
-    },
-    {
-      "source": "^Failed to select workspace: (.+?)$",
-      "flags": "",
-      "replace": "选择工作区失败：$1",
-      "hint": "Failed to select workspace:"
     },
     {
       "source": "^Failed to toggle plugin: (.+?)$",
@@ -5921,12 +5975,6 @@
       "hint": "skill"
     },
     {
-      "source": "^Parent workspace not found for battle (.+?)$",
-      "flags": "",
-      "replace": "未找到对局 $1 的父级工作区",
-      "hint": "Parent workspace not found for b"
-    },
-    {
       "source": "^Plugins in (.+?)$",
       "flags": "",
       "replace": "$1 中的插件",
@@ -5951,28 +5999,10 @@
       "hint": "Pushed"
     },
     {
-      "source": "^Remount workspace (.+?)$",
-      "flags": "",
-      "replace": "重新挂载工作区 $1",
-      "hint": "Remount workspace"
-    },
-    {
-      "source": "^Remounted workspace (.+?)$",
-      "flags": "",
-      "replace": "已重新挂载工作区 $1",
-      "hint": "Remounted workspace"
-    },
-    {
       "source": "^Remove context from (.+?)$",
       "flags": "",
       "replace": "从 $1 中移除上下文",
       "hint": "Remove context from"
-    },
-    {
-      "source": "^Resume the conversation to start its workspace again, then start the server on port (.+?) and retry\\.$",
-      "flags": "",
-      "replace": "请恢复该对话以重新启动其工作区，然后在端口 $1 上启动服务器并重试。",
-      "hint": "Resume the conversation to start"
     },
     {
       "source": "^Rule (.+?)$",
@@ -6059,28 +6089,10 @@
       "hint": "This window's agents, files, and"
     },
     {
-      "source": "^Total Active Workspace Windows: (.+?)$",
-      "flags": "",
-      "replace": "活跃工作区窗口总数：$1",
-      "hint": "Total Active Workspace Windows:"
-    },
-    {
       "source": "^Typed '(.+?)' in Browser$",
       "flags": "",
       "replace": "已在浏览器中输入“$1”",
       "hint": "' in Browser"
-    },
-    {
-      "source": "^Unmount workspace (.+?)$",
-      "flags": "",
-      "replace": "卸载工作区 $1",
-      "hint": "Unmount workspace"
-    },
-    {
-      "source": "^Unmounted workspace (.+?)$",
-      "flags": "",
-      "replace": "已卸载工作区 $1",
-      "hint": "Unmounted workspace"
     },
     {
       "source": "^Unnamed Agent (.+?)$",
@@ -6123,12 +6135,6 @@
       "flags": "",
       "replace": "执行节点沙箱初始化失败：$1",
       "hint": "Worker sandbox initialization fa"
-    },
-    {
-      "source": "^Workspace URI not found for battle arm (.+?)$",
-      "flags": "",
-      "replace": "未找到对比分支 $1 的工作区 URI",
-      "hint": "Workspace URI not found for batt"
     },
     {
       "source": "^Worktree from (.+?)$",
@@ -6203,12 +6209,6 @@
       "hint": "· Context window"
     },
     {
-      "source": "^(.+?)\\. Starting in local workspace\\.$",
-      "flags": "",
-      "replace": "$1。正在本地工作区中启动。",
-      "hint": ". Starting in local workspace."
-    },
-    {
       "source": "^(.+?)\\. This commit is already pushed; amending will require a force push\\.$",
       "flags": "",
       "replace": "$1。此提交已推送；修改它将需要强制推送。",
@@ -6257,12 +6257,6 @@
       "hint": "Checkpoint #"
     },
     {
-      "source": "^Failed to open workspace: (.+?)$",
-      "flags": "",
-      "replace": "打开工作区失败：$1",
-      "hint": "Failed to open workspace:"
-    },
-    {
       "source": "^Invoked subagent: (.+?)$",
       "flags": "",
       "replace": "已调用子代理：$1",
@@ -6305,12 +6299,6 @@
       "hint": "Save rule to always allow"
     },
     {
-      "source": "^Storage: Workspace \\(path: (.+?)\\)$",
-      "flags": "",
-      "replace": "存储：工作区（路径：$1）",
-      "hint": "Storage: Workspace (path:"
-    },
-    {
       "source": "^Typing '(.+?)' in Browser$",
       "flags": "",
       "replace": "正在浏览器中输入 '$1'",
@@ -6333,12 +6321,6 @@
       "flags": "",
       "replace": "智能体运行位置，当前：$1 ($2)",
       "hint": "Where the agent runs, current:"
-    },
-    {
-      "source": "^Yes, and always allow '(.+?)' in this workspace$",
-      "flags": "",
-      "replace": "是，且在当前工作区中始终允许 '$1'",
-      "hint": "Yes, and always allow '"
     },
     {
       "source": "^Yes, save rule for '(.+?)' globally$",
@@ -6369,6 +6351,18 @@
       "flags": "",
       "replace": "是，保存规则 $1",
       "hint": "Yes, save rule"
+    },
+    {
+      "source": "^(.+?) \\(all agent edits\\)$",
+      "flags": "",
+      "replace": "$1（全部智能体编辑）",
+      "hint": "(all agent edits)"
+    },
+    {
+      "source": "^(.+?) \\(branch changes\\)$",
+      "flags": "",
+      "replace": "$1（分支更改）",
+      "hint": "(branch changes)"
     }
   ]
 }

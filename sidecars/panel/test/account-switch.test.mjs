@@ -1,13 +1,28 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rmdir, unlink } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { createAccountLoginController } from '../backend/account-login.mjs';
+import {
+  clearPosixKeyringRuntimeCaches,
+  extractHostCredentialEmail,
+  runPosixCredentialStore,
+} from '../backend/account-keyring-store.mjs';
+import {
+  classifyLinuxProcCandidate,
+  inspectAndStopDarwinClients,
+} from '../backend/account-switch-posix-worker.mjs';
+import {
+  createAccountLoginController,
+  openGoogleAccountBrowser,
+} from '../backend/account-login.mjs';
 import {
   buildGoogleAccountLoginUrl,
   collectNativeOAuthBinaryCandidates,
   extractNativeOAuthClients,
+  loadNativeOAuthClients,
   resolveGoogleCredential,
   retrieveCredentialQuota,
 } from '../backend/account-oauth.mjs';
@@ -397,6 +412,7 @@ test('enforces OAuth client_id allowlist, minimizes at-rest vault payload, and v
   assert.deepEqual(extractNativeOAuthClients(peBuf), [{ id: fakeId, secret: fakeSecret }]);
 
   const discoveredCands = collectNativeOAuthBinaryCandidates({
+    platform: 'win32',
     env: {
       USAGE_MONITOR_HOST_EXE: 'D:\\Custom\\Antigravity\\Antigravity.exe',
       ANTIGRAVITY_GEMINI_DIR: 'D:\\CustomGemini',
@@ -430,6 +446,42 @@ test('enforces OAuth client_id allowlist, minimizes at-rest vault payload, and v
   const riskLockedList = JSON.parse((await executeAccountCredentialAction(undefined)).body);
   assert.equal(riskLockedList.riskLocked, true);
   assert.deepEqual(riskLockedList.accounts, []);
+
+  // Even if accountSwitchRiskAccepted were spoofed while Developer Mode / High-Risk gate is closed,
+  // backend still treats account credentials as risk-locked
+  const { isAccountSwitchFeatureActive } = await import('../shared/settings-normalization.mjs');
+  assert.equal(
+    isAccountSwitchFeatureActive({
+      developerModeEnabled: false,
+      riskyFeaturesEnabled: false,
+      accountSwitchRiskAccepted: true,
+    }),
+    false
+  );
+  assert.equal(
+    isAccountSwitchFeatureActive({
+      developerModeEnabled: true,
+      riskyFeaturesEnabled: false,
+      accountSwitchRiskAccepted: true,
+    }),
+    false
+  );
+  assert.equal(
+    isAccountSwitchFeatureActive({
+      developerModeEnabled: true,
+      riskyFeaturesEnabled: true,
+      accountSwitchRiskAccepted: false,
+    }),
+    false
+  );
+  assert.equal(
+    isAccountSwitchFeatureActive({
+      developerModeEnabled: true,
+      riskyFeaturesEnabled: true,
+      accountSwitchRiskAccepted: true,
+    }),
+    true
+  );
 
   // Once risk check passes, mutations still require a valid HMAC actionNonce
   const missingNonceRes = await executeAccountCredentialAction(
@@ -763,5 +815,1280 @@ test('cycle quota chart strips pre-reset tail points and cross-account impulse s
     persistedPts.some((p) => p[0] === cycleStartMs + 61 * 60_000),
     false,
     'Isolated cross-account [100, 100] spike is removed'
+  );
+});
+
+test('macOS Keychain store seals vault with agmk1 master key, avoids argv secret leaks, guards drift, and syncs app_storage.json', async (t) => {
+  const dir = await mkdtemp(fileURLToPath(new URL('../.account-mac-test-', import.meta.url)));
+  t.after(async () => {
+    clearAccountVaultRuntimeState();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const keychain = new Map();
+  const spawnCalls = [];
+  const runSpawn = (cmd, args, opts = {}) => {
+    spawnCalls.push({ cmd, args });
+    assert.equal(cmd, '/usr/bin/security');
+    // Ensure no token or hex payload is ever passed on command-line arguments
+    assert.equal(args.join(' ').includes('1//'), false);
+    assert.equal(args.includes('-X'), false);
+    if (args[0] === 'find-generic-password') {
+      const k = `${args[2]}:${args[4]}`;
+      if (!keychain.has(k)) return { status: 44, stdout: '', stderr: 'could not be found' };
+      return { status: 0, stdout: `${keychain.get(k)}\n`, stderr: '' };
+    }
+    if (args[0] === '-i') {
+      const m = String(opts.input || '').match(
+        /^add-generic-password -U -s "([^"]+)" -a "([^"]+)" -X ([0-9a-f]+)\n$/i
+      );
+      assert.ok(m, 'Interactive security stdin command must use hex encoding');
+      keychain.set(`${m[1]}:${m[2]}`, Buffer.from(m[3], 'hex').toString('utf8'));
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    if (args[0] === 'delete-generic-password') {
+      keychain.delete(`${args[2]}:${args[4]}`);
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    return { status: 1, stdout: '', stderr: 'unexpected' };
+  };
+
+  const appStorageDir = join(dir, 'Library', 'Application Support', 'Antigravity');
+  await mkdir(appStorageDir, { recursive: true });
+  const appStoragePath = join(appStorageDir, 'app_storage.json');
+  await writeFile(
+    appStoragePath,
+    JSON.stringify({ 'agy.onboarding.lastLoginUsername': 'old@example.com' }),
+    'utf8'
+  );
+  const tokenFallbackPath = join(dir, '.gemini', 'jetski-standalone-oauth-token');
+  await mkdir(join(dir, '.gemini'), { recursive: true });
+
+  const vaultPath = join(dir, 'vault', 'accounts.vault.json');
+  const statusFile = join(dir, 'vault', 'switch-state.json');
+  let workerJob = null;
+
+  const store = (req) =>
+    runPosixCredentialStore(
+      { ...req, vault: vaultPath, statusFile, fallbacks: [tokenFallbackPath] },
+      {
+        platform: 'darwin',
+        homeDir: dir,
+        env: {},
+        runSpawn,
+        spawnBackgroundWorker: async (job) => {
+          workerJob = job;
+        },
+      }
+    );
+
+  const options = {
+    platform: 'darwin',
+    store,
+    rpc: async () => ({ userStatus: { email: 'active@example.com' } }),
+    resolveCredential: async (cred) => {
+      const rt = cred.token.refresh_token;
+      const email = rt.includes('mac-next') ? 'mac-next@example.com' : 'active@example.com';
+      return {
+        email,
+        credential: {
+          token: {
+            access_token: `access-${email}`,
+            refresh_token: rt,
+            token_type: 'Bearer',
+            expiry: new Date(Date.now() + 3600_000).toISOString(),
+          },
+          auth_method: 'consumer',
+          id_token_email: email,
+        },
+      };
+    },
+  };
+
+  // List on empty macOS vault spawns zero security subprocesses
+  const initialList = await handleAccountCredentialAction({ action: 'list' }, options);
+  assert.equal(initialList.supported, true);
+  assert.equal(initialList.backend, 'darwin-keychain');
+  assert.equal(spawnCalls.length, 0);
+
+  // Save encrypts entry with agmk1: master key stored in macOS Keychain
+  const saveRes = await handleAccountCredentialAction(
+    { action: 'save', credential: '1//mac-next-refresh-token-1234567890' },
+    options
+  );
+  assert.deepEqual(saveRes.accounts, ['mac-next@example.com']);
+  const rawDiskVault = await readFile(vaultPath, 'utf8');
+  assert.equal(rawDiskVault.includes('mac-next-refresh-token'), false);
+  assert.match(rawDiskVault, /"agmk1:/);
+  assert.ok(keychain.has('antigravity-usage-monitor:vault-master-key'));
+
+  // Capture blocks credential/UI drift immediately before network refresh when keyring holds wrong email
+  keychain.set(
+    'gemini:antigravity',
+    JSON.stringify({
+      token: { refresh_token: '1//drifted-other-account-token-1234567890', token_type: 'Bearer' },
+      auth_method: 'consumer',
+      id_token_email: 'drifted@example.com',
+    })
+  );
+  const driftCapture = await handleAccountCredentialAction({ action: 'capture' }, options);
+  assert.equal(driftCapture.error, 'identityMismatch');
+
+  // Offline-resilient switch falls back cleanly on transient oauthUnavailable, then worker commit writes Keychain + app_storage.json
+  const offlineSwitch = await handleAccountCredentialAction(
+    { action: 'switch', email: 'mac-next@example.com' },
+    {
+      ...options,
+      resolveCredential: async () => {
+        throw new Error('oauthUnavailable');
+      },
+    }
+  );
+  assert.equal(offlineSwitch.restarting, true);
+  assert.ok(workerJob);
+
+  const workerCommit = await runPosixCredentialStore(
+    { ...workerJob, action: 'switch' },
+    { platform: 'darwin', homeDir: dir, env: {}, runSpawn }
+  );
+  assert.equal(workerCommit.selectedEmail, 'mac-next@example.com');
+  assert.equal(extractHostCredentialEmail(keychain.get('gemini:antigravity')), 'mac-next@example.com');
+  const updatedStorage = JSON.parse(await readFile(appStoragePath, 'utf8'));
+  assert.equal(updatedStorage['agy.onboarding.lastLoginUsername'], 'mac-next@example.com');
+});
+
+test('Linux without secret-tool enforces passphraseRequired fallback, while WSL2 bridges master key to Windows Credential Manager', async (t) => {
+  const dir = await mkdtemp(fileURLToPath(new URL('../.account-linux-test-', import.meta.url)));
+  t.after(async () => {
+    clearAccountVaultRuntimeState();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  // 1. Headless / no-keyring Linux (`secret-tool` ENOENT)
+  const vaultNoKeyring = join(dir, 'headless', 'accounts.vault.json');
+  const tokenFile = join(dir, 'headless', 'jetski-standalone-oauth-token');
+  const headlessStore = (req) =>
+    runPosixCredentialStore(
+      { ...req, vault: vaultNoKeyring, statusFile: '', fallbacks: [tokenFile] },
+      {
+        platform: 'linux',
+        homeDir: dir,
+        env: {},
+        runSpawn: () => ({ status: 1, error: Object.assign(new Error('ENOENT'), { code: 'ENOENT' }) }),
+      }
+    );
+  const headlessOpts = {
+    platform: 'linux',
+    store: headlessStore,
+    resolveCredential: async (cred) => ({
+      email: 'linux@example.com',
+      credential: {
+        token: {
+          access_token: 'linux-access',
+          refresh_token: cred.token.refresh_token,
+          token_type: 'Bearer',
+          expiry: new Date(Date.now() + 3600_000).toISOString(),
+        },
+        auth_method: 'consumer',
+      },
+    }),
+  };
+
+  const headlessList = await handleAccountCredentialAction({ action: 'list' }, headlessOpts);
+  assert.equal(headlessList.supported, true);
+  assert.equal(headlessList.keyringAvailable, false);
+  assert.equal(headlessList.passphraseRequired, true);
+
+  // Saving without passphrase must reject with passphraseRequired and never write vault file
+  const blockedSave = await handleAccountCredentialAction(
+    { action: 'save', credential: '1//linux-headless-token-12345678901234' },
+    headlessOpts
+  );
+  assert.equal(blockedSave.error, 'passphraseRequired');
+
+  // Setting passphrase unlocks encrypted local storage (`agv1:`) without OS keyring
+  const setPwd = await handleAccountCredentialAction(
+    { action: 'setPassword', newPassword: 'linux-strong-passphrase' },
+    headlessOpts
+  );
+  assert.equal(setPwd.security?.enabled, true);
+  assert.equal(setPwd.passphraseRequired, undefined);
+
+  const savedLinux = await handleAccountCredentialAction(
+    { action: 'save', credential: '1//linux-headless-token-12345678901234' },
+    headlessOpts
+  );
+  assert.deepEqual(savedLinux.accounts, ['linux@example.com']);
+  const rawHeadlessVault = await readFile(vaultNoKeyring, 'utf8');
+  assert.equal(rawHeadlessVault.includes('linux-headless-token'), false);
+  assert.match(rawHeadlessVault, /"agv1:/);
+
+  // Disabling passphrase while OS keyring is unavailable must reject with keyringUnavailable
+  const disableAttempt = await handleAccountCredentialAction(
+    { action: 'disablePassword', currentPassword: 'linux-strong-passphrase' },
+    headlessOpts
+  );
+  assert.equal(disableAttempt.error, 'keyringUnavailable');
+
+  // 2. WSL2 (`wsl-wincred`) bridges master key to Windows CredMan and writes active token to ~/.gemini/jetski-standalone-oauth-token
+  clearAccountVaultRuntimeState();
+  const winCred = new Map();
+  const wslTokenFile = join(dir, 'wsl-home', '.gemini', 'jetski-standalone-oauth-token');
+  const wslVault = join(dir, 'wsl-home', '.local', 'share', 'AntigravityUsageMonitor', 'accounts.vault.json');
+  const winAppStorageDir = join(dir, 'mnt-c-appdata', 'Antigravity');
+  await mkdir(winAppStorageDir, { recursive: true });
+  await writeFile(
+    join(winAppStorageDir, 'app_storage.json'),
+    JSON.stringify({ 'agy.onboarding.lastLoginUsername': 'before@example.com' }),
+    'utf8'
+  );
+
+  const wslRunSpawn = (cmd, args, opts = {}) => {
+    if (cmd === 'cmd.exe') {
+      return { status: 0, stdout: 'C:\\Users\\Alice\\AppData\\Roaming\r\n', stderr: '' };
+    }
+    if (cmd === 'wslpath') {
+      return { status: 0, stdout: `${join(dir, 'mnt-c-appdata')}\n`, stderr: '' };
+    }
+    assert.equal(cmd, 'powershell.exe');
+    assert.match(String(opts.env?.WSLENV || ''), /UM_CRED_OP/);
+    const op = opts.env.UM_CRED_OP;
+    const target = opts.env.UM_CRED_TARGET;
+    if (op === 'probe') return { status: 0, stdout: '{"ok":true}\n', stderr: '' };
+    if (op === 'read') {
+      if (!winCred.has(target)) return { status: 0, stdout: '{"ok":true,"exists":false,"data":""}\n', stderr: '' };
+      return {
+        status: 0,
+        stdout: JSON.stringify({ ok: true, exists: true, data: Buffer.from(winCred.get(target), 'utf8').toString('base64') }),
+        stderr: '',
+      };
+    }
+    if (op === 'write') {
+      winCred.set(target, Buffer.from(String(opts.input || '').trim(), 'base64').toString('utf8'));
+      return { status: 0, stdout: '{"ok":true}\n', stderr: '' };
+    }
+    return { status: 1, stdout: '', stderr: '' };
+  };
+
+  let wslJob = null;
+  const wslEnv = { WSL_DISTRO_NAME: 'Ubuntu-24.04' };
+  const wslStore = (req) =>
+    runPosixCredentialStore(
+      { ...req, vault: wslVault, statusFile: '', fallbacks: [wslTokenFile] },
+      {
+        platform: 'linux',
+        homeDir: join(dir, 'wsl-home'),
+        env: wslEnv,
+        runSpawn: wslRunSpawn,
+        spawnBackgroundWorker: async (job) => {
+          wslJob = job;
+        },
+      }
+    );
+
+  const wslSaved = await handleAccountCredentialAction(
+    { action: 'save', credential: '1//wsl-account-token-123456789012345' },
+    {
+      platform: 'linux',
+      store: wslStore,
+      resolveCredential: async (cred) => ({
+        email: 'wsl@example.com',
+        credential: {
+          token: {
+            access_token: 'wsl-access',
+            refresh_token: cred.token.refresh_token,
+            token_type: 'Bearer',
+            expiry: new Date(Date.now() + 3600_000).toISOString(),
+          },
+          auth_method: 'consumer',
+        },
+      }),
+    }
+  );
+  assert.equal(wslSaved.backend, 'wsl-wincred');
+  assert.ok(winCred.has('AntigravityUsageMonitor:wsl:Ubuntu-24.04:master-key'));
+
+  await handleAccountCredentialAction(
+    { action: 'switch', email: 'wsl@example.com' },
+    {
+      platform: 'linux',
+      store: wslStore,
+      resolveCredential: async (cred) => ({ email: 'wsl@example.com', credential: cred }),
+    }
+  );
+  assert.ok(wslJob);
+  await runPosixCredentialStore(
+    { ...wslJob, action: 'switch' },
+    { platform: 'linux', homeDir: join(dir, 'wsl-home'), env: wslEnv, runSpawn: wslRunSpawn }
+  );
+  assert.equal(extractHostCredentialEmail(await readFile(wslTokenFile, 'utf8')), 'wsl@example.com');
+  const wslSyncedStorage = JSON.parse(
+    await readFile(join(winAppStorageDir, 'app_storage.json'), 'utf8')
+  );
+  assert.equal(wslSyncedStorage['agy.onboarding.lastLoginUsername'], 'wsl@example.com');
+});
+
+test('extracts OAuth clients from packed ELF64 and Universal Fat Mach-O 64 binaries and opens browsers cross-platform', async () => {
+  const fakeId = '109876543210-linux-elf-client.apps.googleusercontent.com';
+  // 35-char standard Google desktop secret packed back-to-back with next Go string without \0
+  const fakeSecret35 = 'GOCSPX-AbCdEfGhIjKlMnOpQrStUvWx1234';
+  const packedGoRodata = Buffer.from(
+    `leadingLiteral${fakeSecret35}nextPackedGoStringWithoutNulls...${fakeId}trailingGoString`,
+    'ascii'
+  );
+
+  // 1. Synthetic 64-bit ELF (`.shstrtab` + `.rodata`)
+  const shstr = Buffer.from('\0.shstrtab\0.rodata\0', 'ascii');
+  const rodataOff = 256;
+  const shstrOff = rodataOff + packedGoRodata.length;
+  const shoff = shstrOff + shstr.length;
+  const elfBuf = Buffer.alloc(shoff + 3 * 64);
+  Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1]).copy(elfBuf, 0);
+  elfBuf.writeUInt32LE(shoff, 40);
+  elfBuf.writeUInt16LE(64, 58); // e_shentsize
+  elfBuf.writeUInt16LE(3, 60); // e_shnum
+  elfBuf.writeUInt16LE(1, 62); // e_shstrndx
+  packedGoRodata.copy(elfBuf, rodataOff);
+  shstr.copy(elfBuf, shstrOff);
+  // Section 1: .shstrtab (nameOff=1, sh_type=3)
+  elfBuf.writeUInt32LE(1, shoff + 64 + 0);
+  elfBuf.writeUInt32LE(3, shoff + 64 + 4);
+  elfBuf.writeUInt32LE(shstrOff, shoff + 64 + 24);
+  elfBuf.writeUInt32LE(shstr.length, shoff + 64 + 32);
+  // Section 2: .rodata (nameOff=11, sh_type=1 SHT_PROGBITS)
+  elfBuf.writeUInt32LE(11, shoff + 128 + 0);
+  elfBuf.writeUInt32LE(1, shoff + 128 + 4);
+  elfBuf.writeUInt32LE(rodataOff, shoff + 128 + 24);
+  elfBuf.writeUInt32LE(packedGoRodata.length, shoff + 128 + 32);
+
+  assert.deepEqual(extractNativeOAuthClients(elfBuf), [{ id: fakeId, secret: fakeSecret35 }]);
+
+  // 2. Synthetic Universal Fat Binary (`0xcafebabe`) wrapping Mach-O 64 (`0xfeedfacf` arm64 `__TEXT,__rodata`)
+  const sliceOff = 64;
+  const cmdSize = 72 + 80; // LC_SEGMENT_64 + 1 section_64
+  const machDataOff = 32 + cmdSize + 16;
+  const sliceSize = machDataOff + packedGoRodata.length;
+  const fatBuf = Buffer.alloc(sliceOff + sliceSize);
+  fatBuf.writeUInt32BE(0xcafebabe, 0);
+  fatBuf.writeUInt32BE(1, 4); // nfat_arch = 1
+  fatBuf.writeUInt32BE(sliceOff, 16); // fat_arch[0].offset
+  fatBuf.writeUInt32BE(sliceSize, 20); // fat_arch[0].size
+  // mach_header_64 at sliceOff
+  fatBuf.writeUInt32LE(0xfeedfacf, sliceOff + 0);
+  fatBuf.writeUInt32LE(1, sliceOff + 16); // ncmds = 1
+  fatBuf.writeUInt32LE(cmdSize, sliceOff + 20); // sizeofcmds
+  // LC_SEGMENT_64 at sliceOff + 32
+  const segPos = sliceOff + 32;
+  fatBuf.writeUInt32LE(0x19, segPos + 0); // LC_SEGMENT_64
+  fatBuf.writeUInt32LE(cmdSize, segPos + 4);
+  fatBuf.write('__TEXT', segPos + 8, 'ascii');
+  fatBuf.writeUInt32LE(1, segPos + 64); // nsects = 1
+  // section_64 at segPos + 72
+  const secPos = segPos + 72;
+  fatBuf.write('__rodata', secPos + 0, 'ascii');
+  fatBuf.write('__TEXT', secPos + 16, 'ascii');
+  fatBuf.writeUInt32LE(packedGoRodata.length, secPos + 40); // size (64-bit lo)
+  fatBuf.writeUInt32LE(machDataOff, secPos + 48); // offset relative to slice
+  packedGoRodata.copy(fatBuf, sliceOff + machDataOff);
+
+  assert.deepEqual(extractNativeOAuthClients(fatBuf), [{ id: fakeId, secret: fakeSecret35 }]);
+
+  // 3. Cross-platform candidate paths & browser launcher validation
+  const macCands = collectNativeOAuthBinaryCandidates({
+    platform: 'darwin',
+    env: { USAGE_MONITOR_HOST_EXE: '/Applications/Antigravity.app/Contents/MacOS/Antigravity' },
+    homeDir: '/Users/alice',
+    existsFn: null,
+  });
+  assert.ok(macCands.some((p) => p.includes('language_server_macos_arm')));
+  const linuxCands = collectNativeOAuthBinaryCandidates({
+    platform: 'linux',
+    env: {},
+    homeDir: '/home/alice',
+    existsFn: null,
+  });
+  assert.ok(linuxCands.some((p) => p.includes('language_server_linux_x64')));
+
+  const browserCalls = [];
+  const mockExecFile = (cmd, args, opts, cb) => {
+    browserCalls.push({ cmd, args, env: opts?.env });
+    cb(null);
+  };
+  assert.equal(
+    await openGoogleAccountBrowser('javascript:alert(1)', { platform: 'darwin', execFileFn: mockExecFile }),
+    false,
+    'Must reject non-Google OAuth URLs'
+  );
+  assert.equal(
+    await openGoogleAccountBrowser('https://accounts.google.com/o/oauth2/v2/auth?client_id=1', {
+      platform: 'darwin',
+      execFileFn: mockExecFile,
+    }),
+    true
+  );
+  assert.equal(browserCalls.at(-1).cmd, '/usr/bin/open');
+
+  assert.equal(
+    await openGoogleAccountBrowser('https://accounts.google.com/o/oauth2/v2/auth?client_id=1', {
+      platform: 'linux',
+      env: {},
+      execFileFn: mockExecFile,
+    }),
+    false,
+    'Headless Linux without DISPLAY/WAYLAND must return false cleanly so manual link is shown'
+  );
+  assert.equal(
+    await openGoogleAccountBrowser('https://accounts.google.com/o/oauth2/v2/auth?client_id=1', {
+      platform: 'linux',
+      env: { DISPLAY: ':0' },
+      execFileFn: mockExecFile,
+    }),
+    true
+  );
+  assert.equal(browserCalls.at(-1).cmd, 'xdg-open');
+});
+
+test('cross-platform audit regressions: macOS 4095B security -i guard & hex decode, WSL2 host WinCred sync, AppImage /proc isolation, detached worker port cleanup & restart error guard, and 1MB boundary / stripped ELF64 streaming', async (t) => {
+  const dir = await mkdtemp(fileURLToPath(new URL('../.account-audit-reg-', import.meta.url)));
+  t.after(async () => {
+    clearAccountVaultRuntimeState();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  // 1. macOS: realistic 4095-byte `security -i` line limit + hex stdout from `find-generic-password -w` + double-envelope (`agmk1:` + `agv1:`)
+  {
+    clearAccountVaultRuntimeState();
+    const keychain = new Map();
+    const macSpawn = (cmd, args, opts = {}) => {
+      assert.equal(cmd, '/usr/bin/security');
+      if (args[0] === 'find-generic-password') {
+        const k = `${args[2]}:${args[4]}`;
+        if (!keychain.has(k)) return { status: 44, stdout: '', stderr: 'could not be found' };
+        const raw = keychain.get(k);
+        if (/[\r\n]|[^\x20-\x7e]/.test(raw)) {
+          return { status: 0, stdout: `${Buffer.from(raw, 'utf8').toString('hex')}\n`, stderr: '' };
+        }
+        return { status: 0, stdout: `${raw}\n`, stderr: '' };
+      }
+      if (args[0] === '-i') {
+        const line = String(opts.input || '').replace(/\n$/, '');
+        assert.ok(line.length <= 4095, `security -i line exceeded 4095B fgets limit: ${line.length}`);
+        const m = line.match(/^add-generic-password -U -s "([^"]+)" -a "([^"]+)" -X ([0-9a-f]+)$/i);
+        assert.ok(m);
+        keychain.set(`${m[1]}:${m[2]}`, Buffer.from(m[3], 'hex').toString('utf8'));
+        return { status: 0, stdout: '', stderr: '' };
+      }
+      if (args[0] === 'delete-generic-password') {
+        keychain.delete(`${args[2]}:${args[4]}`);
+        return { status: 0, stdout: '', stderr: '' };
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    };
+
+    const macVault = join(dir, 'mac', 'accounts.vault.json');
+    const macStatus = join(dir, 'mac', 'switch-state.json');
+    const macFb = join(dir, 'mac', 'jetski-standalone-oauth-token');
+    let macWorkerJob = null;
+    const macStore = (req) =>
+      runPosixCredentialStore(
+        { ...req, vault: macVault, statusFile: macStatus, fallbacks: [macFb] },
+        {
+          platform: 'darwin',
+          homeDir: join(dir, 'mac'),
+          env: {},
+          runSpawn: macSpawn,
+          spawnBackgroundWorker: async (job) => {
+            macWorkerJob = job;
+          },
+        }
+      );
+
+    // Pretty-printed JSON in Keychain triggers hex output on `find-generic-password -w`
+    keychain.set(
+      'gemini:antigravity',
+      JSON.stringify(
+        {
+          token: { refresh_token: '1//pretty-mac-host-token-1234567890', token_type: 'Bearer' },
+          auth_method: 'consumer',
+          id_token_email: 'pretty@example.com',
+        },
+        null,
+        2
+      )
+    );
+    const largeJwt = `eyJhbGciOiJSUzI1NiJ9.${'a'.repeat(1500)}.${'b'.repeat(350)}`;
+    const macOpts = {
+      platform: 'darwin',
+      store: macStore,
+      rpc: async () => ({ userStatus: { email: 'pretty@example.com' } }),
+      resolveCredential: async (cred) => ({
+        email: 'pretty@example.com',
+        credential: {
+          token: {
+            access_token: `ya29.${'x'.repeat(220)}`,
+            refresh_token: cred.token.refresh_token,
+            token_type: 'Bearer',
+            expiry: new Date(Date.now() + 3600_000).toISOString(),
+          },
+          auth_method: 'consumer',
+          id_token: largeJwt,
+        },
+      }),
+    };
+
+    const captured = await handleAccountCredentialAction({ action: 'capture' }, macOpts);
+    assert.deepEqual(captured.accounts, ['pretty@example.com']);
+
+    await handleAccountCredentialAction(
+      { action: 'setPassword', newPassword: 'mac-layered-passphrase' },
+      macOpts
+    );
+    const switched = await handleAccountCredentialAction(
+      { action: 'switch', email: 'pretty@example.com' },
+      macOpts
+    );
+    assert.equal(switched.restarting, true);
+    assert.ok(Buffer.byteLength(macWorkerJob.credential, 'utf8') <= 1900);
+    const committed = await runPosixCredentialStore(
+      { ...macWorkerJob, action: 'switch' },
+      { platform: 'darwin', homeDir: join(dir, 'mac'), env: {}, runSpawn: macSpawn }
+    );
+    assert.equal(committed.selectedEmail, 'pretty@example.com');
+    assert.equal(extractHostCredentialEmail(keychain.get('gemini:antigravity')), 'pretty@example.com');
+  }
+
+  // 2. WSL2: `capture` reads Windows CredMan, `switch` updates BOTH WinCred & WSL token file, and `probe()` memoizes per adapter
+  {
+    clearAccountVaultRuntimeState();
+    const wslHome = join(dir, 'wsl2');
+    const wslVault = join(wslHome, 'vault', 'accounts.vault.json');
+    const wslToken = join(wslHome, '.gemini', 'jetski-standalone-oauth-token');
+    const winCred = new Map([
+      [
+        'gemini:antigravity',
+        JSON.stringify({
+          token: { refresh_token: '1//win-gui-active-token-123456789012', token_type: 'Bearer' },
+          auth_method: 'consumer',
+          id_token_email: 'win-gui@example.com',
+        }),
+      ],
+    ]);
+    let probeCalls = 0;
+    const wslEnv = { WSL_DISTRO_NAME: 'Ubuntu-24.04' };
+    const wslSpawn = (cmd, _args, opts = {}) => {
+      if (cmd === 'cmd.exe' || cmd === 'wslpath') return { status: 1, stdout: '', stderr: '' };
+      if (cmd === 'powershell.exe') {
+        const op = opts.env?.UM_CRED_OP;
+        const target = opts.env?.UM_CRED_TARGET;
+        if (op === 'probe') {
+          probeCalls += 1;
+          return { status: 0, stdout: '{"ok":true}\n', stderr: '' };
+        }
+        if (op === 'read') {
+          if (!winCred.has(target)) return { status: 0, stdout: '{"ok":true,"exists":false,"data":""}\n', stderr: '' };
+          return {
+            status: 0,
+            stdout: JSON.stringify({ ok: true, exists: true, data: Buffer.from(winCred.get(target), 'utf8').toString('base64') }),
+            stderr: '',
+          };
+        }
+        if (op === 'write') {
+          winCred.set(target, Buffer.from(String(opts.input || '').trim(), 'base64').toString('utf8'));
+          return { status: 0, stdout: '{"ok":true}\n', stderr: '' };
+        }
+        if (op === 'delete') {
+          winCred.delete(target);
+          return { status: 0, stdout: '{"ok":true}\n', stderr: '' };
+        }
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    };
+
+    let wslJob = null;
+    const wslStore = (req) =>
+      runPosixCredentialStore(
+        { ...req, vault: wslVault, statusFile: '', fallbacks: [wslToken] },
+        {
+          platform: 'linux',
+          homeDir: wslHome,
+          env: wslEnv,
+          runSpawn: wslSpawn,
+          spawnBackgroundWorker: async (job) => {
+            wslJob = job;
+          },
+        }
+      );
+
+    const wslOpts = {
+      platform: 'linux',
+      store: wslStore,
+      rpc: async () => ({ userStatus: { email: 'win-gui@example.com' } }),
+      resolveCredential: async (cred) => ({
+        email: cred.token.refresh_token.includes('win-gui') ? 'win-gui@example.com' : 'wsl-target@example.com',
+        credential: {
+          token: {
+            access_token: 'ya29.wsl',
+            refresh_token: cred.token.refresh_token,
+            token_type: 'Bearer',
+            expiry: new Date(Date.now() + 3600_000).toISOString(),
+          },
+          auth_method: 'consumer',
+        },
+      }),
+    };
+
+    const capturedWsl = await handleAccountCredentialAction({ action: 'capture' }, wslOpts);
+    assert.deepEqual(capturedWsl.accounts, ['win-gui@example.com']);
+
+    probeCalls = 0;
+    await handleAccountCredentialAction(
+      { action: 'save', credential: '1//wsl-target-token-123456789012345' },
+      wslOpts
+    );
+    assert.equal(probeCalls, 1, 'Adapter must memoize probe() across internal read/write calls');
+
+    await handleAccountCredentialAction({ action: 'switch', email: 'wsl-target@example.com' }, wslOpts);
+    await runPosixCredentialStore(
+      { ...wslJob, action: 'switch' },
+      { platform: 'linux', homeDir: wslHome, env: wslEnv, runSpawn: wslSpawn }
+    );
+    assert.equal(extractHostCredentialEmail(winCred.get('gemini:antigravity')), 'wsl-target@example.com');
+    assert.equal(extractHostCredentialEmail(await readFile(wslToken, 'utf8')), 'wsl-target@example.com');
+
+    // Unrecognized fs errors during switch rollback must normalize to `'storeFailed'` so UI displays error feedback
+    const realFs = await import('node:fs');
+    const diskFullRes = await runPosixCredentialStore(
+      { ...wslJob, action: 'switch' },
+      {
+        platform: 'linux',
+        homeDir: wslHome,
+        env: wslEnv,
+        runSpawn: wslSpawn,
+        fsOps: {
+          ...realFs,
+          writeFileSync: (p, data, o) => {
+            if (typeof p === 'string' && p.includes('jetski-standalone-oauth-token')) {
+              throw new Error('ENOSPC: no space left on device');
+            }
+            return realFs.writeFileSync(p, data, o);
+          },
+        },
+      }
+    );
+    assert.equal(diskFullRes.error, 'storeFailed');
+  }
+
+  // 3. Linux AppImage `/proc` classification + real detached POSIX worker port cleanup & restart error guard
+  {
+    assert.equal(
+      classifyLinuxProcCandidate({
+        exePath: '/usr/bin/bash',
+        argv: ['/usr/bin/bash', '-i'],
+        rawEnviron: 'APPIMAGE=/home/alice/Antigravity-1.5.6.AppImage\0HOME=/home/alice',
+      }),
+      null,
+      'User shells inheriting APPIMAGE must never be classified as Antigravity clients'
+    );
+    assert.deepEqual(
+      classifyLinuxProcCandidate({
+        exePath: '/tmp/.mount_Antigr1234/AppRun',
+        argv: ['/tmp/.mount_Antigr1234/AppRun', '--remote-debugging-port=0'],
+        rawEnviron: 'APPIMAGE=/home/alice/Antigravity-1.5.6.AppImage',
+      }),
+      {
+        role: 'client-root',
+        restartExe: '/home/alice/Antigravity-1.5.6.AppImage',
+        useDebugPort: true,
+      }
+    );
+    assert.equal(
+      classifyLinuxProcCandidate({
+        exePath: '/opt/Antigravity/antigravity',
+        argv: ['/opt/Antigravity/antigravity', 'sidecar_sdk/register_loader.js'],
+        rawEnviron: 'ELECTRON_RUN_AS_NODE=1',
+      })?.role,
+      'client-helper'
+    );
+
+    clearAccountVaultRuntimeState();
+    const wkHome = join(dir, 'worker');
+    const wkVault = join(wkHome, 'vault', 'accounts.vault.json');
+    const wkStatus = join(wkHome, 'vault', 'switch-state.json');
+    const wkToken = join(wkHome, 'jetski-standalone-oauth-token');
+    const explicitPortFile = join(wkHome, 'custom-DevToolsActivePort');
+    await mkdir(join(wkHome, '.local', 'bin'), { recursive: true });
+    await writeFile(explicitPortFile, '9222\n/devtools/browser/1\n', 'utf8');
+    // Non-executable stub triggers async spawn error without crashing worker
+    await writeFile(join(wkHome, '.local', 'bin', 'antigravity'), 'not-an-elf', 'utf8');
+
+    const wkStore = (req) =>
+      runPosixCredentialStore(
+        { ...req, vault: wkVault, statusFile: wkStatus, fallbacks: [wkToken] },
+        {
+          platform: 'linux',
+          homeDir: wkHome,
+          env: {},
+          runSpawn: () => ({ status: 1, error: Object.assign(new Error('ENOENT'), { code: 'ENOENT' }) }),
+        }
+      );
+    await handleAccountCredentialAction(
+      { action: 'setPassword', newPassword: 'wk-passphrase' },
+      { platform: 'linux', store: wkStore }
+    );
+    await handleAccountCredentialAction(
+      { action: 'save', credential: '1//wk-refresh-token-123456789012345' },
+      {
+        platform: 'linux',
+        store: wkStore,
+        resolveCredential: async (cred) => ({
+          email: 'wk@example.com',
+          credential: {
+            token: {
+              access_token: 'ya29.wk',
+              refresh_token: cred.token.refresh_token,
+              token_type: 'Bearer',
+              expiry: new Date(Date.now() + 3600_000).toISOString(),
+            },
+            auth_method: 'consumer',
+          },
+        }),
+      }
+    );
+    const savedEntry = await wkStore({ action: 'read', email: 'wk@example.com' });
+    const workerScript = fileURLToPath(new URL('../backend/account-switch-posix-worker.mjs', import.meta.url));
+    const exitCode = await new Promise((resolveExit) => {
+      const child = spawn(process.execPath, [workerScript], {
+        stdio: ['pipe', 'ignore', 'ignore'],
+        env: {
+          ...process.env,
+          HOME: wkHome,
+          USERPROFILE: wkHome,
+          ANTIGRAVITY_DEVTOOLS_PORT_FILE: explicitPortFile,
+          DBUS_SESSION_BUS_ADDRESS: '',
+          DISPLAY: '',
+          WAYLAND_DISPLAY: '',
+        },
+      });
+      child.on('close', resolveExit);
+      child.stdin.end(
+        JSON.stringify({
+          email: 'wk@example.com',
+          credential: JSON.stringify({
+            token: { access_token: 'ya29.wk', refresh_token: '1//wk-refresh-token-123456789012345', token_type: 'Bearer', expiry: '2030-01-01T00:00:00.000Z' },
+            auth_method: 'consumer',
+            id_token_email: 'wk@example.com',
+          }),
+          vaultCredential: savedEntry.credential,
+          expectedCredential: savedEntry.credential,
+          vaultUnlocked: true,
+          expectedSecuritySalt: savedEntry.security.salt,
+          vault: wkVault,
+          statusFile: wkStatus,
+          fallbacks: [wkToken],
+          platform: 'linux',
+          homeDir: wkHome,
+        }),
+        'utf8'
+      );
+    });
+    assert.equal(exitCode, 0);
+    assert.equal(existsSync(explicitPortFile), false, 'Stale DevToolsActivePort must be removed');
+    const finalStatus = JSON.parse(await readFile(wkStatus, 'utf8'));
+    assert.equal(finalStatus.state, 'failed');
+    assert.equal(finalStatus.error, 'clientRestartFailed');
+  }
+
+  // 4. Streaming >2MB ELF64 across 1MB chunk boundary + section-stripped ELF64 + login callback vaultLocked preservation
+  {
+    const boundaryId = '554433221100-boundary-stream.apps.googleusercontent.com';
+    const boundarySecret35 = 'GOCSPX-BoundarySecretTest1234567890';
+    const rodataSize = 1024 * 1024 + 4096;
+    const rodataBuf = Buffer.alloc(rodataSize, 0x2e);
+    const splitPos = 1024 * 1024 - 17;
+    rodataBuf.write(`${boundarySecret35}PackedNextGoLiteral`, splitPos, 'ascii');
+    rodataBuf.write(boundaryId, splitPos + 80, 'ascii');
+
+    const shstr = Buffer.from('\0.shstrtab\0.rodata\0', 'ascii');
+    const rodataOff = 256;
+    const shstrOff = rodataOff + rodataBuf.length;
+    const shoff = shstrOff + shstr.length;
+    const elfBig = Buffer.alloc(shoff + 3 * 64);
+    Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1]).copy(elfBig, 0);
+    elfBig.writeBigUInt64LE(BigInt(shoff), 40);
+    elfBig.writeUInt16LE(64, 58);
+    elfBig.writeUInt16LE(3, 60);
+    elfBig.writeUInt16LE(1, 62);
+    rodataBuf.copy(elfBig, rodataOff);
+    shstr.copy(elfBig, shstrOff);
+    elfBig.writeUInt32LE(1, shoff + 64);
+    elfBig.writeUInt32LE(3, shoff + 64 + 4);
+    elfBig.writeBigUInt64LE(BigInt(shstrOff), shoff + 64 + 24);
+    elfBig.writeBigUInt64LE(BigInt(shstr.length), shoff + 64 + 32);
+    elfBig.writeUInt32LE(11, shoff + 128);
+    elfBig.writeUInt32LE(1, shoff + 128 + 4);
+    elfBig.writeBigUInt64LE(BigInt(rodataOff), shoff + 128 + 24);
+    elfBig.writeBigUInt64LE(BigInt(rodataBuf.length), shoff + 128 + 32);
+
+    const elfBigPath = join(dir, 'language_server_linux_x64');
+    await writeFile(elfBigPath, elfBig);
+    const streamed = await loadNativeOAuthClients({
+      platform: 'linux',
+      env: { ANTIGRAVITY_LS_BIN: elfBigPath },
+      homeDir: dir,
+      discoverRunningFn: async () => [],
+    });
+    assert.equal(streamed[0]?.id, boundaryId);
+    assert.equal(streamed[0]?.secret, boundarySecret35);
+
+    const strippedElf = Buffer.alloc(2048);
+    Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1]).copy(strippedElf, 0);
+    strippedElf.write(`${boundaryId}\0${boundarySecret35}\0`, 512, 'ascii');
+    const strippedPath = join(dir, 'language_server_stripped');
+    await writeFile(strippedPath, strippedElf);
+    const strippedClients = await loadNativeOAuthClients({
+      platform: 'linux',
+      env: { ANTIGRAVITY_LS_BIN: strippedPath },
+      homeDir: dir,
+      discoverRunningFn: async () => [],
+    });
+    assert.deepEqual(strippedClients, [{ id: boundaryId, secret: boundarySecret35 }]);
+
+    const loginCtrl = createAccountLoginController({
+      getClients: async () => [{ id: boundaryId, secret: boundarySecret35 }],
+      openBrowser: async () => true,
+      exchangeCode: async () => ({
+        email: 'cb@example.com',
+        credential: { token: { refresh_token: '1//cb-12345678901234567890' } },
+      }),
+    });
+    const loginSession = await loginCtrl.start(async () => {
+      throw new Error('vaultLocked');
+    });
+    const authUrl = new URL(loginSession.url);
+    const cbUrl = new URL(authUrl.searchParams.get('redirect_uri'));
+    cbUrl.search = new URLSearchParams({
+      state: authUrl.searchParams.get('state'),
+      code: 'ok',
+    }).toString();
+    await fetch(cbUrl);
+    assert.equal(loginCtrl.getStatus(loginSession.id)?.error, 'vaultLocked');
+  }
+});
+
+test('deep cross-platform regressions: 0B lock contention, D-Bus secret-service absence fallback, master-key self-healing, Darwin UID/sidecar filtering, Linux leaf boundaries, Mach-O slice fallback, and unlock state preservation', async (t) => {
+  const dir = await mkdtemp(fileURLToPath(new URL('../.account-deep-reg-', import.meta.url)));
+  t.after(async () => {
+    clearAccountVaultRuntimeState();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  // 1. 0-byte mid-write lock file must NEVER be unlinked by a contending process; releases cleanly once holder finishes
+  {
+    const realFs = await import('node:fs');
+    const lockDir = join(dir, 'lock-race');
+    await mkdir(lockDir, { recursive: true });
+    const vault = join(lockDir, 'accounts.vault.json');
+    const lockFile = `${vault}.lock`;
+    await writeFile(lockFile, '', { mode: 0o600 });
+
+    let stoleZeroByteLock = false;
+    setTimeout(() => {
+      try {
+        realFs.unlinkSync(lockFile);
+      } catch {
+        // already removed
+      }
+    }, 110);
+
+    const res = await runPosixCredentialStore(
+      { action: 'list', vault, statusFile: '' },
+      {
+        platform: 'darwin',
+        homeDir: lockDir,
+        env: {},
+        runSpawn: () => ({ status: 0, stdout: '', stderr: '' }),
+        fsOps: {
+          ...realFs,
+          unlinkSync: (p) => {
+            if (p === lockFile && realFs.existsSync(lockFile) && realFs.readFileSync(lockFile, 'utf8') === '') {
+              stoleZeroByteLock = true;
+            }
+            return realFs.unlinkSync(p);
+          },
+        },
+      }
+    );
+    assert.equal(stoleZeroByteLock, false, 'Contending store call must wait rather than unlinking active 0B lock');
+    assert.deepEqual(res.accounts, []);
+  }
+
+  // 2. Linux with `secret-tool` binary installed but missing `org.freedesktop.secrets` D-Bus service degrades to passphrase-only & preserves state across unlockVault
+  {
+    clearAccountVaultRuntimeState();
+    const swayDir = join(dir, 'sway');
+    await mkdir(swayDir, { recursive: true });
+    const vault = join(swayDir, 'accounts.vault.json');
+    const statusFile = join(swayDir, 'switch-state.json');
+    await writeFile(
+      statusFile,
+      JSON.stringify({ email: 'prev@example.com', state: 'failed', error: 'clientRestartFailed', updatedAt: Date.now() }),
+      'utf8'
+    );
+
+    const noDaemonSpawn = (cmd, args) => {
+      if (cmd === 'secret-tool' && args[0] === '--version') {
+        return { status: 0, stdout: '0.21.4\n', stderr: '' };
+      }
+      return {
+        status: 1,
+        stdout: '',
+        stderr: 'secret-tool: The name org.freedesktop.secrets was not provided by any .service files\n',
+      };
+    };
+    const store = (req) =>
+      runPosixCredentialStore(
+        { ...req, vault, statusFile, fallbacks: [join(swayDir, 'tok')] },
+        { platform: 'linux', homeDir: swayDir, env: { DISPLAY: ':0' }, runSpawn: noDaemonSpawn }
+      );
+    const opts = {
+      platform: 'linux',
+      store,
+      resolveCredential: async (c) => ({
+        email: 'sway@example.com',
+        credential: {
+          token: {
+            access_token: 'ya29.sway',
+            refresh_token: c.token.refresh_token,
+            token_type: 'Bearer',
+            expiry: new Date(Date.now() + 3600_000).toISOString(),
+          },
+          auth_method: 'consumer',
+        },
+      }),
+    };
+
+    const firstSave = await handleAccountCredentialAction(
+      { action: 'save', credential: '1//sway-token-123456789012345' },
+      opts
+    );
+    assert.equal(firstSave.error, 'passphraseRequired');
+
+    const setPwd = await handleAccountCredentialAction(
+      { action: 'setPassword', newPassword: 'sway-passphrase' },
+      opts
+    );
+    assert.equal(setPwd.security?.enabled, true);
+
+    // Even on empty vault without keyring, disablePassword must reject with keyringUnavailable
+    const emptyDisable = await handleAccountCredentialAction(
+      { action: 'disablePassword', currentPassword: 'sway-passphrase' },
+      opts
+    );
+    assert.equal(emptyDisable.error, 'keyringUnavailable');
+
+    const saved = await handleAccountCredentialAction(
+      { action: 'save', credential: '1//sway-token-123456789012345' },
+      opts
+    );
+    assert.deepEqual(saved.accounts, ['sway@example.com']);
+    assert.equal(saved.keyringAvailable, false);
+    assert.equal(saved.backend, 'linux-passphrase-only');
+
+    await handleAccountCredentialAction({ action: 'lockVault' }, opts);
+    const unlocked = await handleAccountCredentialAction(
+      { action: 'unlockVault', password: 'sway-passphrase', includeSecurity: true },
+      opts
+    );
+    assert.equal(unlocked.keyringAvailable, false, 'unlockVault must preserve keyringAvailable=false');
+    assert.equal(unlocked.backend, 'linux-passphrase-only');
+    assert.equal(unlocked.switchState?.error, 'clientRestartFailed', 'unlockVault must preserve switchState');
+  }
+
+  // 3. Master key durability: self-heals deleted OS Keychain item on active vault AND mints fresh key after resetVault
+  {
+    clearAccountVaultRuntimeState();
+    const mkDir = join(dir, 'mk-heal');
+    const vault = join(mkDir, 'accounts.vault.json');
+    const kc = new Map();
+    const macSpawn = (_cmd, args, opts = {}) => {
+      if (args[0] === 'find-generic-password') {
+        const k = `${args[2]}:${args[4]}`;
+        return kc.has(k)
+          ? { status: 0, stdout: `${kc.get(k)}\n`, stderr: '' }
+          : { status: 44, stdout: '', stderr: 'not found' };
+      }
+      if (args[0] === '-i') {
+        const m = String(opts.input || '').match(/^add-generic-password -U -s "([^"]+)" -a "([^"]+)" -X ([0-9a-f]+)\n$/i);
+        kc.set(`${m[1]}:${m[2]}`, Buffer.from(m[3], 'hex').toString('utf8'));
+        return { status: 0, stdout: '', stderr: '' };
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    };
+    const store = (req) =>
+      runPosixCredentialStore(
+        { ...req, vault, statusFile: '', fallbacks: [join(mkDir, 'tok')] },
+        { platform: 'darwin', homeDir: mkDir, env: {}, runSpawn: macSpawn, spawnBackgroundWorker: async () => {} }
+      );
+    const makeOpts = (email) => ({
+      platform: 'darwin',
+      store,
+      resolveCredential: async (c) => ({
+        email,
+        credential: {
+          token: {
+            access_token: 'ya29.m',
+            refresh_token: c.token.refresh_token,
+            token_type: 'Bearer',
+            expiry: new Date(Date.now() + 3600_000).toISOString(),
+          },
+          auth_method: 'consumer',
+        },
+      }),
+    });
+
+    await handleAccountCredentialAction({ action: 'save', credential: '1//acc1-token-123456789012345' }, makeOpts('acc1@example.com'));
+    // Case A: Accidental Keychain deletion while vault still holds acc1 -> saving acc2 re-persists RAM key so BOTH survive restart
+    kc.delete('antigravity-usage-monitor:vault-master-key');
+    await handleAccountCredentialAction({ action: 'save', credential: '1//acc2-token-123456789012345' }, makeOpts('acc2@example.com'));
+    assert.equal(kc.has('antigravity-usage-monitor:vault-master-key'), true);
+    clearPosixKeyringRuntimeCaches();
+    assert.equal((await store({ action: 'read', email: 'acc1@example.com' })).error, undefined);
+    assert.equal((await store({ action: 'read', email: 'acc2@example.com' })).error, undefined);
+
+    // Case B: Keychain deletion + resetVault -> saving acc3 mints fresh master key in Keychain
+    kc.delete('antigravity-usage-monitor:vault-master-key');
+    await handleAccountCredentialAction({ action: 'resetVault', confirmReset: 'RESET' }, makeOpts('acc3@example.com'));
+    await handleAccountCredentialAction({ action: 'save', credential: '1//acc3-token-123456789012345' }, makeOpts('acc3@example.com'));
+    assert.equal(kc.has('antigravity-usage-monitor:vault-master-key'), true);
+    clearPosixKeyringRuntimeCaches();
+    const swAfterReset = await handleAccountCredentialAction(
+      { action: 'switch', email: 'acc3@example.com' },
+      makeOpts('acc3@example.com')
+    );
+    assert.equal(swAfterReset.restarting, true);
+  }
+
+  // 4. Darwin UID/sidecar isolation, Linux leaf boundaries, midPendingSwitch via saved.switchState, WSL error 5, and Mach-O slice fallback
+  {
+    const osaQuitTargets = [];
+    const psOut = [
+      ' 4100   501 /Applications/Antigravity.app/Contents/MacOS/Antigravity --remote-debugging-port=0',
+      ' 4120   501 /Applications/Antigravity.app/Contents/MacOS/Antigravity --import=/Applications/Antigravity.app/Contents/Resources/app/extensions/sidecar_sdk/register_loader.js /Users/alice/main.mjs',
+      ' 8801   502 /Users/bob/Applications/Antigravity IDE.app/Contents/MacOS/Antigravity IDE',
+      ' 8820   502 /Users/bob/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm',
+    ].join('\n');
+    const darwinSnap = inspectAndStopDarwinClients('/Users/alice', {}, {
+      myUid: 501,
+      selfPid: 9999,
+      resolveFallbackFn: () => ({ found: false }),
+      runSpawn: (cmd, args) => {
+        if (cmd === '/bin/ps') return { status: 0, stdout: psOut, stderr: '' };
+        if (cmd === '/usr/bin/osascript') osaQuitTargets.push(args.at(-1));
+        return { status: 0, stdout: '', stderr: '' };
+      },
+    });
+    assert.deepEqual(darwinSnap.rootPids, [4100]);
+    assert.deepEqual(darwinSnap.hubPids, []);
+    assert.deepEqual(osaQuitTargets, ['/Applications/Antigravity.app']);
+
+    assert.equal(
+      classifyLinuxProcCandidate({
+        exePath: '/usr/local/bin/antigravity-cli',
+        argv: ['/usr/local/bin/antigravity-cli', 'status'],
+      }),
+      null
+    );
+    assert.equal(
+      classifyLinuxProcCandidate({
+        exePath: '/home/alice/.antigravity-server/bin/antigravity-server',
+        argv: ['/home/alice/.antigravity-server/bin/antigravity-server'],
+      }),
+      null
+    );
+    assert.equal(
+      classifyLinuxProcCandidate({
+        exePath: '/home/alice/Apps/Antigravity_Linux_x86_64.AppImage',
+        argv: ['/home/alice/Apps/Antigravity_Linux_x86_64.AppImage', '--remote-debugging-port=0'],
+      })?.role,
+      'client-root'
+    );
+
+    // WSL2 Win32 error 5 maps to credentialAccessDenied
+    const wslDenied = await runPosixCredentialStore(
+      {
+        action: 'save',
+        email: 'w@example.com',
+        vault: join(dir, 'wsl-denied', 'accounts.vault.json'),
+        statusFile: '',
+        credential: '{"token":{"refresh_token":"1//abc","token_type":"Bearer"},"auth_method":"consumer"}',
+      },
+      {
+        platform: 'linux',
+        homeDir: join(dir, 'wsl-denied'),
+        env: { WSL_DISTRO_NAME: 'Ubuntu' },
+        runSpawn: (_c, _a, o = {}) => {
+          if (o.env?.UM_CRED_OP === 'probe') return { status: 0, stdout: '{"ok":true}\n', stderr: '' };
+          if (o.env?.UM_CRED_OP === 'read') return { status: 0, stdout: '{"ok":true,"exists":false,"data":""}\n', stderr: '' };
+          return { status: 1, stdout: '{"ok":false,"error":"wincred_write_5"}\n', stderr: '' };
+        },
+      }
+    );
+    assert.equal(wslDenied.error, 'credentialAccessDenied');
+
+    // Mach-O 64 file-streaming slice fallback for custom section names
+    const machoId = '887766554433-macho-custom-sec.apps.googleusercontent.com';
+    const machoSec = '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';
+    const payload = Buffer.from(`prefix\0${machoId}\0${machoSec}\0`, 'ascii');
+    const cmdSize = 72 + 80;
+    const dataOff = 32 + cmdSize + 16;
+    const machBuf = Buffer.alloc(dataOff + payload.length);
+    machBuf.writeUInt32LE(0xfeedfacf, 0);
+    machBuf.writeUInt32LE(1, 16);
+    machBuf.writeUInt32LE(cmdSize, 20);
+    machBuf.writeUInt32LE(0x19, 32);
+    machBuf.writeUInt32LE(cmdSize, 36);
+    machBuf.write('__TEXT', 40, 'ascii');
+    machBuf.writeUInt32LE(1, 32 + 64);
+    machBuf.write('__go_rodata', 32 + 72, 'ascii');
+    machBuf.write('__TEXT', 32 + 72 + 16, 'ascii');
+    machBuf.writeUInt32LE(payload.length, 32 + 72 + 40);
+    machBuf.writeUInt32LE(dataOff, 32 + 72 + 48);
+    payload.copy(machBuf, dataOff);
+    const machPath = join(dir, 'language_server_macos_arm64');
+    await writeFile(machPath, machBuf);
+    const machoClients = await loadNativeOAuthClients({
+      platform: 'darwin',
+      env: { ANTIGRAVITY_LS_BIN: machPath },
+      homeDir: dir,
+      discoverRunningFn: async () => [],
+    });
+    assert.deepEqual(machoClients, [{ id: machoId, secret: machoSec }]);
+  }
+});
+
+test('macOS go-keyring-base64 Keychain entries work for capture, manual import, hex stdout, and pre-switch auto-backup', async (t) => {
+  const dir = await mkdtemp(fileURLToPath(new URL('../.account-mac-gokeyring-', import.meta.url)));
+  t.after(async () => {
+    clearAccountVaultRuntimeState();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const makeHostCred = (email, rt) =>
+    JSON.stringify({
+      token: {
+        access_token: `access-${rt}`,
+        token_type: 'Bearer',
+        refresh_token: rt,
+        expiry: new Date(Date.now() + 3600_000).toISOString(),
+        expires_in: 3599,
+      },
+      auth_method: 'consumer',
+      id_token_email: email,
+      writer_id: 'language_server_macos_arm64',
+    });
+
+  const oldCredJson = makeHostCred('old-mac@gmail.com', '1//old-mac-refresh-token-1234567890');
+  const goKeyringRaw = `go-keyring-base64:${Buffer.from(oldCredJson, 'utf8').toString('base64')}`;
+
+  // 1. Direct manual import and email extraction accept go-keyring-base64: wrapper
+  assert.equal(extractHostCredentialEmail(goKeyringRaw), 'old-mac@gmail.com');
+  const normalizedManual = normalizeAccountCredential(goKeyringRaw);
+  assert.ok(normalizedManual, 'normalizeAccountCredential must unwrap go-keyring-base64:');
+  assert.equal(JSON.parse(normalizedManual).token.refresh_token, '1//old-mac-refresh-token-1234567890');
+
+  // 2. Capture from macOS Keychain (both direct ASCII and hex-encoded go-keyring-base64:)
+  const keychain = new Map();
+  keychain.set('gemini:antigravity', goKeyringRaw);
+  let returnHexForHost = false;
+  const runSpawn = (cmd, args, opts = {}) => {
+    assert.equal(cmd, '/usr/bin/security');
+    if (args[0] === 'find-generic-password') {
+      const sIdx = args.indexOf('-s');
+      const aIdx = args.indexOf('-a');
+      const k = `${args[sIdx + 1]}:${args[aIdx + 1]}`;
+      if (!keychain.has(k)) return { status: 44, stdout: '', stderr: 'SecKeychainSearchCopyNext' };
+      const val = keychain.get(k);
+      const out =
+        returnHexForHost && k === 'gemini:antigravity'
+          ? Buffer.from(`${val}\n`, 'utf8').toString('hex')
+          : val;
+      return { status: 0, stdout: `${out}\n`, stderr: '' };
+    }
+    if (args[0] === '-i') {
+      const m = String(opts.input || '').match(
+        /add-generic-password -U -s "([^"]+)" -a "([^"]+)" -X ([0-9a-fA-F]+)/
+      );
+      if (m) {
+        keychain.set(`${m[1]}:${m[2]}`, Buffer.from(m[3], 'hex').toString('utf8'));
+        return { status: 0, stdout: '', stderr: '' };
+      }
+    }
+    return { status: 1, stdout: '', stderr: 'unexpected' };
+  };
+
+  const vaultPath = join(dir, 'accounts.vault.json');
+  const statusFile = join(dir, 'switch-state.json');
+  const fallbackToken = join(dir, 'jetski-standalone-oauth-token');
+  const store = (req) =>
+    runPosixCredentialStore(
+      { ...req, vault: vaultPath, statusFile, fallbacks: [fallbackToken] },
+      { platform: 'darwin', homeDir: dir, env: {}, runSpawn, spawnBackgroundWorker: async () => {} }
+    );
+
+  const mkOpts = (activeEmail) => ({
+    platform: 'darwin',
+    store,
+    rpc: async () => ({ userStatus: { email: activeEmail } }),
+    resolveCredential: async (cred) => {
+      const rt = cred.token.refresh_token;
+      const email = rt.includes('old-mac') ? 'old-mac@gmail.com' : 'new-mac@gmail.com';
+      return {
+        email,
+        credential: {
+          token: {
+            access_token: `verified-${rt}`,
+            refresh_token: rt,
+            token_type: 'Bearer',
+            expiry: new Date(Date.now() + 3600_000).toISOString(),
+          },
+          auth_method: 'consumer',
+          id_token_email: email,
+        },
+      };
+    },
+  });
+
+  // Direct ASCII go-keyring-base64: capture
+  const captured = await handleAccountCredentialAction({ action: 'capture' }, mkOpts('old-mac@gmail.com'));
+  assert.equal(captured.error, undefined);
+  assert.deepEqual(captured.accounts, ['old-mac@gmail.com']);
+
+  // Hex-encoded go-keyring-base64: capture after removing
+  await handleAccountCredentialAction({ action: 'remove', email: 'old-mac@gmail.com' }, mkOpts('old-mac@gmail.com'));
+  returnHexForHost = true;
+  const capturedHex = await handleAccountCredentialAction({ action: 'capture' }, mkOpts('old-mac@gmail.com'));
+  assert.equal(capturedHex.error, undefined);
+  assert.deepEqual(capturedHex.accounts, ['old-mac@gmail.com']);
+
+  // 3. Pre-switch auto-backup preserves unsaved old macOS account stored with go-keyring-base64:
+  await handleAccountCredentialAction({ action: 'remove', email: 'old-mac@gmail.com' }, mkOpts('old-mac@gmail.com'));
+  const savedNew = await handleAccountCredentialAction(
+    { action: 'save', credential: '1//new-mac-refresh-token-1234567890' },
+    mkOpts('old-mac@gmail.com')
+  );
+  assert.deepEqual(savedNew.accounts, ['new-mac@gmail.com']);
+  returnHexForHost = false;
+  keychain.set('gemini:antigravity', goKeyringRaw);
+
+  const switched = await handleAccountCredentialAction(
+    { action: 'switch', email: 'new-mac@gmail.com', activeEmail: 'old-mac@gmail.com' },
+    mkOpts('old-mac@gmail.com')
+  );
+  assert.equal(switched.error, undefined);
+  assert.equal(switched.restarting, true);
+  assert.deepEqual(
+    switched.accounts.sort(),
+    ['new-mac@gmail.com', 'old-mac@gmail.com'],
+    'Unsaved macOS old account in go-keyring-base64: format must be auto-backed-up before switching'
   );
 });

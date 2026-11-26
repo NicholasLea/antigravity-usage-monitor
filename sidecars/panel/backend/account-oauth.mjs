@@ -1,11 +1,12 @@
 /** @fileoverview Google OAuth identity and quota queries for saved Antigravity credentials. */
 
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, promises as fsPromises } from 'node:fs';
+import { existsSync, promises as fsPromises, readdirSync, readlinkSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { join, posix as posixPath, win32 as winPath } from 'node:path';
 import { fetchGoogleAccount } from './account-http.mjs';
+import { isWslEnvironment } from './account-keyring-store.mjs';
 import { buildOfficialQuotaPools } from './quota-pools.mjs';
 
 const OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -35,12 +36,14 @@ function sha256Hex(value) {
   return createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
 }
 
-function parsePeTextAndRdata(headerBuf) {
+function parsePeSections(headerBuf) {
   if (!Buffer.isBuffer(headerBuf) || headerBuf.length < 64) return null;
   const pe = headerBuf.readUInt16LE(0) === 0x5a4d ? headerBuf.readUInt32LE(60) : 0;
-  if (!pe || pe + 24 > headerBuf.length || headerBuf.readUInt32LE(pe) !== 0x4550 || headerBuf.readUInt16LE(pe + 4) !== 0x8664) {
+  if (!pe || pe + 24 > headerBuf.length || headerBuf.readUInt32LE(pe) !== 0x4550) {
     return null;
   }
+  const machine = headerBuf.readUInt16LE(pe + 4);
+  if (machine !== 0x8664 && machine !== 0xaa64) return null;
   const count = headerBuf.readUInt16LE(pe + 6);
   const table = pe + 24 + headerBuf.readUInt16LE(pe + 20);
   if (table + count * 40 > headerBuf.length) return null;
@@ -59,7 +62,225 @@ function parsePeTextAndRdata(headerBuf) {
     if (name === '.text') text = section;
     else if (name === '.rdata') rodata = section;
   }
-  return text && rodata ? { text, rodata } : null;
+  return rodata ? { machine, text, rodata } : null;
+}
+
+function readSafeUInt64LE(buf, offset) {
+  if (offset + 8 > buf.length) return -1;
+  const lo = buf.readUInt32LE(offset);
+  const hi = buf.readUInt32LE(offset + 4);
+  if (hi > 0x1fffff) return -1;
+  return hi * 0x100000000 + lo;
+}
+
+function parseMachO64RodataRanges(headerBuf, sliceOffset = 0, totalSize = Infinity) {
+  if (!Buffer.isBuffer(headerBuf) || headerBuf.length < 32) return null;
+  if (headerBuf.readUInt32LE(0) !== 0xfeedfacf) return null;
+  const ncmds = headerBuf.readUInt32LE(16);
+  const sizeofcmds = headerBuf.readUInt32LE(20);
+  if (ncmds <= 0 || ncmds > 256 || 32 + sizeofcmds > headerBuf.length) return null;
+
+  const ranges = [];
+  let pos = 32;
+  const end = 32 + sizeofcmds;
+  for (let i = 0; i < ncmds && pos + 8 <= end; i += 1) {
+    const cmd = headerBuf.readUInt32LE(pos);
+    const cmdsize = headerBuf.readUInt32LE(pos + 4);
+    if (cmdsize < 8 || pos + cmdsize > end) break;
+    // LC_SEGMENT_64 = 0x19
+    if (cmd === 0x19 && cmdsize >= 72) {
+      const nsects = headerBuf.readUInt32LE(pos + 64);
+      let sectPos = pos + 72;
+      for (let s = 0; s < nsects && sectPos + 80 <= pos + cmdsize; s += 1) {
+        const sectName = headerBuf.toString('ascii', sectPos, sectPos + 16).replace(/\0+$/, '');
+        if (sectName === '__rodata' || sectName === '__cstring' || sectName === '__const') {
+          const size = readSafeUInt64LE(headerBuf, sectPos + 40);
+          const relOffset = headerBuf.readUInt32LE(sectPos + 48);
+          const absStart = sliceOffset + relOffset;
+          if (size > 0 && absStart >= 0 && absStart + size <= totalSize) {
+            ranges.push({ start: absStart, size, priority: sectName === '__rodata' ? 0 : 1 });
+          }
+        }
+        sectPos += 80;
+      }
+    }
+    pos += cmdsize;
+  }
+  ranges.sort((a, b) => a.priority - b.priority);
+  return ranges.length > 0 ? ranges : null;
+}
+
+function isElf64LittleEndian(headerBuf) {
+  return (
+    Buffer.isBuffer(headerBuf) &&
+    headerBuf.length >= 64 &&
+    headerBuf[0] === 0x7f &&
+    headerBuf[1] === 0x45 &&
+    headerBuf[2] === 0x4c &&
+    headerBuf[3] === 0x46 &&
+    headerBuf[4] === 2 &&
+    headerBuf[5] === 1
+  );
+}
+
+function parseElf64HeaderMeta(headerBuf) {
+  if (!isElf64LittleEndian(headerBuf)) {
+    return null;
+  }
+  const shoff = readSafeUInt64LE(headerBuf, 40);
+  const shentsize = headerBuf.readUInt16LE(58);
+  const shnum = headerBuf.readUInt16LE(60);
+  const shstrndx = headerBuf.readUInt16LE(62);
+  if (shoff <= 0 || shentsize < 64 || shnum <= 0 || shnum > 512) return null;
+  return { shoff, shentsize, shnum, shstrndx };
+}
+
+function extractElf64LoadRangesFromPhdrs(phTableBuf, phentsize, phnum, totalSize) {
+  const roRanges = [];
+  const allRanges = [];
+  for (let i = 0; i < phnum; i += 1) {
+    const base = i * phentsize;
+    if (base + 56 > phTableBuf.length) break;
+    const pType = phTableBuf.readUInt32LE(base);
+    const pFlags = phTableBuf.readUInt32LE(base + 4);
+    const pOffset = readSafeUInt64LE(phTableBuf, base + 8);
+    const pFilesz = readSafeUInt64LE(phTableBuf, base + 32);
+    if (pType !== 1 || pOffset < 0 || pFilesz <= 0 || pOffset + pFilesz > totalSize) continue;
+    const range = { start: pOffset, size: pFilesz };
+    allRanges.push(range);
+    if ((pFlags & 2) === 0) {
+      roRanges.push(range);
+    }
+  }
+  return roRanges.length > 0 ? roRanges : allRanges;
+}
+
+function extractElf64RodataRangesFromTables(shTableBuf, shentsize, shnum, shstrBuf, totalSize) {
+  const ranges = [];
+  for (let i = 0; i < shnum; i += 1) {
+    const base = i * shentsize;
+    if (base + 64 > shTableBuf.length) break;
+    const nameOff = shTableBuf.readUInt32LE(base);
+    const shType = shTableBuf.readUInt32LE(base + 4);
+    const shOffset = readSafeUInt64LE(shTableBuf, base + 24);
+    const shSize = readSafeUInt64LE(shTableBuf, base + 32);
+    if (shType !== 1 || shOffset <= 0 || shSize <= 0 || shOffset + shSize > totalSize) continue;
+    let secName = '';
+    if (shstrBuf && nameOff < shstrBuf.length) {
+      const zeroIdx = shstrBuf.indexOf(0, nameOff);
+      secName = shstrBuf.toString('ascii', nameOff, zeroIdx >= 0 ? zeroIdx : shstrBuf.length);
+    }
+    if (!shstrBuf || secName === '.rodata' || secName.startsWith('.rodata.')) {
+      ranges.push({ start: shOffset, size: shSize });
+    }
+  }
+  return ranges;
+}
+
+const PACKED_CLIENT_ID_RE = /(\d{6,30})(-[A-Za-z0-9_-]{8,80}\.apps\.googleusercontent\.com)/g;
+const PACKED_CLIENT_SECRET_RE = /GOCSPX-[A-Za-z0-9_-]{8,80}/g;
+const GOOGLE_DESKTOP_SECRET_LEN = 35; // "GOCSPX-" (7) + 28 base64url chars
+
+function refinePackedClientId(digits, suffix) {
+  const full = `${digits}${suffix}`;
+  if (OFFICIAL_OAUTH_CLIENT_ID_HASHES.has(sha256Hex(full))) {
+    return { id: full, official: true };
+  }
+  // Go's string table packs literals without null terminators; if the preceding literal ended
+  // with digits, check suffix slices against the official SHA-256 allowlist to recover exact bounds.
+  for (let trim = 1; trim <= digits.length - 8; trim += 1) {
+    const candidate = `${digits.slice(trim)}${suffix}`;
+    if (OFFICIAL_OAUTH_CLIENT_ID_HASHES.has(sha256Hex(candidate))) {
+      return { id: candidate, official: true };
+    }
+  }
+  const boundedDigits = digits.length > 24 ? digits.slice(-24) : digits;
+  const fallback = `${boundedDigits}${suffix}`;
+  return OAUTH_CLIENT_ID_RE.test(fallback) ? { id: fallback, official: false } : null;
+}
+
+function collectOAuthTokensFromAsciiChunk(
+  asciiText,
+  baseOffset,
+  idMap,
+  secretList,
+  { hasMoreChunks = false } = {}
+) {
+  PACKED_CLIENT_ID_RE.lastIndex = 0;
+  let m;
+  while ((m = PACKED_CLIENT_ID_RE.exec(asciiText)) !== null) {
+    if (hasMoreChunks && m.index + m[0].length >= asciiText.length) {
+      continue;
+    }
+    const refined = refinePackedClientId(m[1], m[2]);
+    if (!refined) continue;
+    const absPos = baseOffset + m.index + (m[0].length - refined.id.length);
+    const prev = idMap.get(refined.id);
+    if (!prev || (refined.official && !prev.official)) {
+      idMap.set(refined.id, { id: refined.id, official: refined.official, pos: absPos });
+    }
+  }
+
+  PACKED_CLIENT_SECRET_RE.lastIndex = 0;
+  while ((m = PACKED_CLIENT_SECRET_RE.exec(asciiText)) !== null) {
+    const raw = m[0];
+    if (hasMoreChunks && m.index + raw.length >= asciiText.length) {
+      continue;
+    }
+    const absPos = baseOffset + m.index;
+    const afterIdx = m.index + raw.length;
+    const nextCode = afterIdx < asciiText.length ? asciiText.charCodeAt(afterIdx) : 0;
+    const hasCleanDelimiter =
+      afterIdx >= asciiText.length ||
+      !(
+        (nextCode >= 48 && nextCode <= 57) ||
+        (nextCode >= 65 && nextCode <= 90) ||
+        (nextCode >= 97 && nextCode <= 122) ||
+        nextCode === 45 ||
+        nextCode === 95
+      );
+    // In packed Go `.rodata` without null terminators, a 35-byte `GOCSPX-...` secret may run
+    // directly into the next string literal; slice the standard 35-byte desktop secret.
+    if (raw.length > GOOGLE_DESKTOP_SECRET_LEN) {
+      const stdSlice = raw.slice(0, GOOGLE_DESKTOP_SECRET_LEN);
+      if (OAUTH_CLIENT_SECRET_RE.test(stdSlice)) {
+        secretList.push({ secret: stdSlice, pos: absPos, exact: false });
+      }
+    } else if (OAUTH_CLIENT_SECRET_RE.test(raw)) {
+      secretList.push({ secret: raw, pos: absPos, exact: hasCleanDelimiter });
+    }
+  }
+}
+
+function pairDiscoveredOAuthTokens(idMap, secretList) {
+  if (idMap.size === 0 || secretList.length === 0) return [];
+  const uniqueSecrets = new Map();
+  for (const item of secretList) {
+    const prev = uniqueSecrets.get(item.secret);
+    if (!prev || (item.exact && !prev.exact)) {
+      uniqueSecrets.set(item.secret, item);
+    }
+  }
+  const secrets = [...uniqueSecrets.values()];
+  const ids = [...idMap.values()].sort((a, b) => {
+    if (a.official !== b.official) return a.official ? -1 : 1;
+    return a.pos - b.pos;
+  });
+
+  const pairs = [];
+  const seenPairs = new Set();
+  for (const idEntry of ids) {
+    const rankedSecrets = [...secrets].sort(
+      (a, b) => Math.abs(a.pos - idEntry.pos) - Math.abs(b.pos - idEntry.pos)
+    );
+    for (const secEntry of rankedSecrets.slice(0, 4)) {
+      const pairKey = `${idEntry.id}|${secEntry.secret}`;
+      if (seenPairs.has(pairKey)) continue;
+      seenPairs.add(pairKey);
+      pairs.push({ id: idEntry.id, secret: secEntry.secret });
+    }
+  }
+  return pairs;
 }
 
 // Go's x64 OAuth config initializer stores ClientID and ClientSecret as two consecutive pointer/length pairs.
@@ -97,23 +318,160 @@ function scanGoOAuthInitializerMatches(machineCode, textRva, rodata) {
   return matches;
 }
 
+function scanBufferRangesForOAuthClients(binary, ranges) {
+  const idMap = new Map();
+  const secretList = [];
+  for (const r of ranges) {
+    const end = Math.min(binary.length, r.start + r.size);
+    if (r.start < 0 || end <= r.start) continue;
+    const ascii = binary.toString('latin1', r.start, end);
+    collectOAuthTokensFromAsciiChunk(ascii, r.start, idMap, secretList);
+  }
+  return pairDiscoveredOAuthTokens(idMap, secretList);
+}
+
 export function extractNativeOAuthClients(binary) {
-  const sections = parsePeTextAndRdata(binary);
-  if (!sections) return [];
-  const { text, rodata } = sections;
-  if (text.start + text.size > binary.length || rodata.start + rodata.size > binary.length) {
+  if (!Buffer.isBuffer(binary) || binary.length < 64) return [];
+
+  // 1. Windows PE (x64 exact RIP-relative initializer match + ARM64/fallback .rdata scan)
+  const peSections = parsePeSections(binary);
+  if (peSections) {
+    const { machine, text, rodata } = peSections;
+    if (
+      machine === 0x8664 &&
+      text &&
+      text.start + text.size <= binary.length &&
+      rodata.start + rodata.size <= binary.length
+    ) {
+      const machineCode = binary.subarray(text.start, text.start + text.size);
+      const clients = new Map();
+      for (const m of scanGoOAuthInitializerMatches(machineCode, text.rva, rodata)) {
+        const id = binary.toString(
+          'ascii',
+          rodata.start + m.idOffset,
+          rodata.start + m.idOffset + m.idLen
+        );
+        const secret = binary.toString(
+          'ascii',
+          rodata.start + m.secretOffset,
+          rodata.start + m.secretOffset + m.secretLen
+        );
+        if (OAUTH_CLIENT_ID_RE.test(id) && OAUTH_CLIENT_SECRET_RE.test(secret)) {
+          clients.set(id, { id, secret });
+        }
+      }
+      if (clients.size > 0) {
+        return Array.from(clients.values()).reverse();
+      }
+    }
+    if (rodata.start + rodata.size <= binary.length) {
+      return scanBufferRangesForOAuthClients(binary, [{ start: rodata.start, size: rodata.size }]);
+    }
     return [];
   }
-  const machineCode = binary.subarray(text.start, text.start + text.size);
-  const clients = new Map();
-  for (const m of scanGoOAuthInitializerMatches(machineCode, text.rva, rodata)) {
-    const id = binary.toString('ascii', rodata.start + m.idOffset, rodata.start + m.idOffset + m.idLen);
-    const secret = binary.toString('ascii', rodata.start + m.secretOffset, rodata.start + m.secretOffset + m.secretLen);
-    if (OAUTH_CLIENT_ID_RE.test(id) && OAUTH_CLIENT_SECRET_RE.test(secret)) {
-      clients.set(id, { id, secret });
+
+  // 2. Linux ELF64 (x86_64 & aarch64)
+  const elfMeta = parseElf64HeaderMeta(binary);
+  if (elfMeta) {
+    const tableEnd = elfMeta.shoff + elfMeta.shnum * elfMeta.shentsize;
+    if (tableEnd <= binary.length) {
+      const shTable = binary.subarray(elfMeta.shoff, tableEnd);
+      let shstrBuf = null;
+      if (elfMeta.shstrndx < elfMeta.shnum) {
+        const strBase = elfMeta.shstrndx * elfMeta.shentsize;
+        const strOff = readSafeUInt64LE(shTable, strBase + 24);
+        const strSize = readSafeUInt64LE(shTable, strBase + 32);
+        if (strOff > 0 && strSize > 0 && strOff + strSize <= binary.length) {
+          shstrBuf = binary.subarray(strOff, strOff + strSize);
+        }
+      }
+      const ranges = extractElf64RodataRangesFromTables(
+        shTable,
+        elfMeta.shentsize,
+        elfMeta.shnum,
+        shstrBuf,
+        binary.length
+      );
+      if (ranges.length > 0) {
+        return scanBufferRangesForOAuthClients(binary, ranges);
+      }
+    }
+    return scanBufferRangesForOAuthClients(binary, [{ start: 0, size: binary.length }]);
+  }
+
+  // 3. macOS Mach-O 64 & Universal Fat Binary (Apple Silicon arm64 & Intel x86_64)
+  let machSliceOffset = 0;
+  let machSliceSize = binary.length;
+  if (binary.readUInt32BE(0) === 0xcafebabe) {
+    const nfat = binary.readUInt32BE(4);
+    if (nfat > 0 && nfat <= 8 && 8 + nfat * 20 <= binary.length) {
+      for (let i = 0; i < nfat; i += 1) {
+        const off = binary.readUInt32BE(8 + i * 20 + 8);
+        const sz = binary.readUInt32BE(8 + i * 20 + 12);
+        if (off > 0 && off + 32 <= binary.length && binary.readUInt32LE(off) === 0xfeedfacf) {
+          machSliceOffset = off;
+          machSliceSize = Math.min(sz, binary.length - off);
+          break;
+        }
+      }
     }
   }
-  return Array.from(clients.values()).reverse();
+  if (
+    machSliceOffset + 32 <= binary.length &&
+    binary.readUInt32LE(machSliceOffset) === 0xfeedfacf
+  ) {
+    const headerWindow = binary.subarray(
+      machSliceOffset,
+      Math.min(binary.length, machSliceOffset + 16384)
+    );
+    const ranges = parseMachO64RodataRanges(
+      headerWindow,
+      machSliceOffset,
+      machSliceOffset + machSliceSize
+    );
+    if (ranges) {
+      return scanBufferRangesForOAuthClients(binary, ranges);
+    }
+    return scanBufferRangesForOAuthClients(binary, [{ start: machSliceOffset, size: machSliceSize }]);
+  }
+
+  return [];
+}
+
+const STREAM_CHUNK_BYTES = 1024 * 1024;
+const STREAM_OVERLAP_BYTES = 256;
+
+async function streamHandleRangesForOAuthClients(handle, ranges) {
+  const idMap = new Map();
+  const secretList = [];
+  const chunkBuf = Buffer.allocUnsafe(STREAM_CHUNK_BYTES + STREAM_OVERLAP_BYTES);
+
+  for (const r of ranges) {
+    let cursor = r.start;
+    const rangeEnd = r.start + r.size;
+    let carryLen = 0;
+
+    while (cursor < rangeEnd) {
+      const toRead = Math.min(STREAM_CHUNK_BYTES, rangeEnd - cursor);
+      const { bytesRead } = await handle.read(chunkBuf, carryLen, toRead, cursor);
+      if (bytesRead <= 0) break;
+      const windowLen = carryLen + bytesRead;
+      const hasMoreChunks = cursor + bytesRead < rangeEnd;
+      const ascii = chunkBuf.toString('latin1', 0, windowLen);
+      collectOAuthTokensFromAsciiChunk(ascii, cursor - carryLen, idMap, secretList, {
+        hasMoreChunks,
+      });
+      const nextCarry = Math.min(STREAM_OVERLAP_BYTES, windowLen);
+      if (nextCarry > 0 && hasMoreChunks) {
+        chunkBuf.copy(chunkBuf, 0, windowLen - nextCarry, windowLen);
+      }
+      carryLen = nextCarry;
+      cursor += bytesRead;
+    }
+  }
+
+  chunkBuf.fill(0);
+  return pairDiscoveredOAuthTokens(idMap, secretList);
 }
 
 async function extractNativeOAuthClientsFromFile(filePath) {
@@ -125,40 +483,159 @@ async function extractNativeOAuthClientsFromFile(filePath) {
     handle = await fsPromises.open(filePath, 'r');
     const st = await handle.stat();
     if (!st.isFile() || st.size < 64) return [];
-    const headerLen = Math.min(4096, st.size);
+    const headerLen = Math.min(16384, st.size);
     const headerBuf = Buffer.alloc(headerLen);
     await handle.read(headerBuf, 0, headerLen, 0);
-    const sections = parsePeTextAndRdata(headerBuf);
-    if (!sections) return [];
-    const { text, rodata } = sections;
-    if (text.start + text.size > st.size || rodata.start + rodata.size > st.size) {
+
+    // 1. Windows PE
+    const peSections = parsePeSections(headerBuf);
+    if (peSections) {
+      const { machine, text, rodata } = peSections;
+      if (
+        machine === 0x8664 &&
+        text &&
+        text.start + text.size <= st.size &&
+        rodata.start + rodata.size <= st.size
+      ) {
+        const textBuf = Buffer.allocUnsafe(text.size);
+        let offset = 0;
+        while (offset < text.size) {
+          const { bytesRead } = await handle.read(
+            textBuf,
+            offset,
+            text.size - offset,
+            text.start + offset
+          );
+          if (bytesRead <= 0) break;
+          offset += bytesRead;
+        }
+        if (offset === text.size) {
+          const matches = scanGoOAuthInitializerMatches(textBuf, text.rva, rodata);
+          const clients = new Map();
+          for (const m of matches) {
+            const idBuf = Buffer.allocUnsafe(m.idLen);
+            const secBuf = Buffer.allocUnsafe(m.secretLen);
+            const [idRead, secRead] = await Promise.all([
+              handle.read(idBuf, 0, m.idLen, rodata.start + m.idOffset),
+              handle.read(secBuf, 0, m.secretLen, rodata.start + m.secretOffset),
+            ]);
+            if (idRead.bytesRead === m.idLen && secRead.bytesRead === m.secretLen) {
+              const id = idBuf.toString('ascii');
+              const secret = secBuf.toString('ascii');
+              if (OAUTH_CLIENT_ID_RE.test(id) && OAUTH_CLIENT_SECRET_RE.test(secret)) {
+                clients.set(id, { id, secret });
+              }
+            }
+            secBuf.fill(0);
+          }
+          if (clients.size > 0) {
+            return Array.from(clients.values()).reverse();
+          }
+        }
+      }
+      if (rodata.start + rodata.size <= st.size) {
+        return await streamHandleRangesForOAuthClients(handle, [
+          { start: rodata.start, size: rodata.size },
+        ]);
+      }
       return [];
     }
-    // Read only .text into memory and fetch matching <=100B literals directly from .rdata on demand.
-    const textBuf = Buffer.allocUnsafe(text.size);
-    let offset = 0;
-    while (offset < text.size) {
-      const { bytesRead } = await handle.read(textBuf, offset, text.size - offset, text.start + offset);
-      if (bytesRead <= 0) return [];
-      offset += bytesRead;
+
+    // 2. Linux ELF64
+    if (isElf64LittleEndian(headerBuf)) {
+      const elfMeta = parseElf64HeaderMeta(headerBuf);
+      if (elfMeta) {
+        const shTableBytes = elfMeta.shnum * elfMeta.shentsize;
+        if (elfMeta.shoff + shTableBytes <= st.size && shTableBytes <= 65536) {
+          const shTableBuf = Buffer.allocUnsafe(shTableBytes);
+          const { bytesRead } = await handle.read(shTableBuf, 0, shTableBytes, elfMeta.shoff);
+          if (bytesRead === shTableBytes) {
+            let shstrBuf = null;
+            if (elfMeta.shstrndx < elfMeta.shnum) {
+              const strBase = elfMeta.shstrndx * elfMeta.shentsize;
+              const strOff = readSafeUInt64LE(shTableBuf, strBase + 24);
+              const strSize = readSafeUInt64LE(shTableBuf, strBase + 32);
+              if (strOff > 0 && strSize > 0 && strSize <= 262144 && strOff + strSize <= st.size) {
+                shstrBuf = Buffer.allocUnsafe(strSize);
+                await handle.read(shstrBuf, 0, strSize, strOff);
+              }
+            }
+            const ranges = extractElf64RodataRangesFromTables(
+              shTableBuf,
+              elfMeta.shentsize,
+              elfMeta.shnum,
+              shstrBuf,
+              st.size
+            );
+            if (ranges.length > 0) {
+              return await streamHandleRangesForOAuthClients(handle, ranges);
+            }
+          }
+        }
+      }
+      // Fallback for stripped ELF64 binaries without section headers (`sstrip` / `e_shnum === 0`)
+      const phoff = readSafeUInt64LE(headerBuf, 32);
+      const phentsize = headerBuf.readUInt16LE(54);
+      const phnum = headerBuf.readUInt16LE(56);
+      if (phoff > 0 && phentsize >= 56 && phnum > 0 && phnum <= 128) {
+        const phBytes = phnum * phentsize;
+        if (phoff + phBytes <= st.size && phBytes <= 16384) {
+          const phBuf = Buffer.allocUnsafe(phBytes);
+          const { bytesRead } = await handle.read(phBuf, 0, phBytes, phoff);
+          if (bytesRead === phBytes) {
+            const loadRanges = extractElf64LoadRangesFromPhdrs(phBuf, phentsize, phnum, st.size);
+            if (loadRanges.length > 0) {
+              return await streamHandleRangesForOAuthClients(handle, loadRanges);
+            }
+          }
+        }
+      }
+      if (st.size <= 256 * 1024 * 1024) {
+        return await streamHandleRangesForOAuthClients(handle, [{ start: 0, size: st.size }]);
+      }
+      return [];
     }
-    const matches = scanGoOAuthInitializerMatches(textBuf, text.rva, rodata);
-    const clients = new Map();
-    for (const m of matches) {
-      const idBuf = Buffer.allocUnsafe(m.idLen);
-      const secBuf = Buffer.allocUnsafe(m.secretLen);
-      const [idRead, secRead] = await Promise.all([
-        handle.read(idBuf, 0, m.idLen, rodata.start + m.idOffset),
-        handle.read(secBuf, 0, m.secretLen, rodata.start + m.secretOffset),
-      ]);
-      if (idRead.bytesRead !== m.idLen || secRead.bytesRead !== m.secretLen) continue;
-      const id = idBuf.toString('ascii');
-      const secret = secBuf.toString('ascii');
-      if (OAUTH_CLIENT_ID_RE.test(id) && OAUTH_CLIENT_SECRET_RE.test(secret)) {
-        clients.set(id, { id, secret });
+
+    // 3. macOS Mach-O 64 & Universal Fat Binary
+    let machSliceOffset = 0;
+    let machSliceSize = st.size;
+    let sliceHeader = headerBuf;
+    if (headerBuf.readUInt32BE(0) === 0xcafebabe) {
+      const nfat = headerBuf.readUInt32BE(4);
+      if (nfat > 0 && nfat <= 8 && 8 + nfat * 20 <= headerBuf.length) {
+        for (let i = 0; i < nfat; i += 1) {
+          const off = headerBuf.readUInt32BE(8 + i * 20 + 8);
+          const sz = headerBuf.readUInt32BE(8 + i * 20 + 12);
+          if (off > 0 && off + 64 <= st.size) {
+            const probeHdr = Buffer.alloc(Math.min(16384, st.size - off));
+            const { bytesRead } = await handle.read(probeHdr, 0, probeHdr.length, off);
+            if (bytesRead >= 32 && probeHdr.readUInt32LE(0) === 0xfeedfacf) {
+              machSliceOffset = off;
+              machSliceSize = Math.min(sz, st.size - off);
+              sliceHeader = probeHdr.subarray(0, bytesRead);
+              break;
+            }
+          }
+        }
       }
     }
-    return Array.from(clients.values()).reverse();
+    if (sliceHeader.length >= 32 && sliceHeader.readUInt32LE(0) === 0xfeedfacf) {
+      const ranges = parseMachO64RodataRanges(
+        sliceHeader,
+        machSliceOffset,
+        machSliceOffset + machSliceSize
+      );
+      if (ranges && ranges.length > 0) {
+        return await streamHandleRangesForOAuthClients(handle, ranges);
+      }
+      if (machSliceSize > 0 && machSliceSize <= 256 * 1024 * 1024) {
+        return await streamHandleRangesForOAuthClients(handle, [
+          { start: machSliceOffset, size: machSliceSize },
+        ]);
+      }
+    }
+
+    return [];
   } catch {
     return [];
   } finally {
@@ -167,24 +644,77 @@ async function extractNativeOAuthClientsFromFile(filePath) {
 }
 
 export function collectNativeOAuthBinaryCandidates({
+  platform = process.platform,
   env = process.env,
   homeDir = homedir(),
   existsFn = existsSync,
 } = {}) {
+  const pathMod = platform === 'win32' ? winPath : posixPath;
   const seen = new Set();
   const candidates = [];
   const add = (filePath) => {
     const clean = String(filePath || '').trim();
     if (!clean) return;
-    const key = clean.toLowerCase();
+    const key = platform === 'win32' ? clean.toLowerCase() : clean;
     if (seen.has(key)) return;
     seen.add(key);
     candidates.push(clean);
   };
+
   const addFromInstallRoot = (installRoot) => {
     if (!installRoot) return;
-    add(join(installRoot, 'resources', 'bin', 'language_server.exe'));
-    add(join(installRoot, 'resources', 'app', 'extensions', 'antigravity', 'bin', 'language_server_windows_x64.exe'));
+    if (platform === 'win32') {
+      add(pathMod.join(installRoot, 'resources', 'bin', 'language_server.exe'));
+      add(
+        pathMod.join(
+          installRoot,
+          'resources',
+          'app',
+          'extensions',
+          'antigravity',
+          'bin',
+          'language_server_windows_x64.exe'
+        )
+      );
+      add(
+        pathMod.join(
+          installRoot,
+          'resources',
+          'app',
+          'extensions',
+          'antigravity',
+          'bin',
+          'language_server_windows_arm64.exe'
+        )
+      );
+      return;
+    }
+    if (platform === 'darwin') {
+      const resRoot = installRoot.endsWith('.app')
+        ? pathMod.join(installRoot, 'Contents', 'Resources')
+        : installRoot.endsWith('/Contents')
+          ? pathMod.join(installRoot, 'Resources')
+          : pathMod.join(installRoot, 'resources');
+      add(pathMod.join(resRoot, 'bin', 'language_server'));
+      for (const binName of [
+        'language_server_macos_arm',
+        'language_server_macos_arm64',
+        'language_server_macos_x64',
+        'language_server_darwin_arm64',
+        'language_server_darwin_x64',
+      ]) {
+        add(pathMod.join(resRoot, 'app', 'extensions', 'antigravity', 'bin', binName));
+      }
+      return;
+    }
+    add(pathMod.join(installRoot, 'resources', 'bin', 'language_server'));
+    for (const binName of [
+      'language_server_linux_x64',
+      'language_server_linux_arm',
+      'language_server_linux_arm64',
+    ]) {
+      add(pathMod.join(installRoot, 'resources', 'app', 'extensions', 'antigravity', 'bin', binName));
+    }
   };
 
   add(env?.ANTIGRAVITY_LS_BIN);
@@ -192,36 +722,101 @@ export function collectNativeOAuthBinaryCandidates({
     env?.USAGE_MONITOR_HOST_EXE,
     env?.ANTIGRAVITY_AGENTAPI_EXE,
     env?.CHROME_DEVTOOLS_MCP_JS,
+    env?.APPIMAGE,
   ];
   for (const rawHint of hints) {
     const hint = String(rawHint || '').trim();
     if (!hint) continue;
-    const leaf = basename(hint).toLowerCase();
-    if (/^(?:language_server.*|agy)\.exe$/i.test(leaf)) {
+    const leaf = pathMod.basename(hint).toLowerCase();
+    if (/^(?:language_server.*|agy)(?:\.exe)?$/i.test(leaf)) {
       add(hint);
       continue;
     }
-    if (/\.exe$/i.test(leaf)) {
-      addFromInstallRoot(dirname(hint));
+    if (platform === 'win32' && /\.exe$/i.test(leaf)) {
+      addFromInstallRoot(pathMod.dirname(hint));
+    }
+    if (platform === 'darwin') {
+      const appIdx = hint.toLowerCase().indexOf('.app/');
+      if (appIdx > 0) {
+        addFromInstallRoot(hint.slice(0, appIdx + 4));
+      } else if (hint.toLowerCase().endsWith('.app')) {
+        addFromInstallRoot(hint);
+      }
     }
     let cur = hint;
-    for (let depth = 0; depth < 8 && cur && dirname(cur) !== cur; depth += 1) {
-      if (basename(cur).toLowerCase() === 'resources') {
-        addFromInstallRoot(dirname(cur));
+    for (let depth = 0; depth < 8 && cur && pathMod.dirname(cur) !== cur; depth += 1) {
+      if (pathMod.basename(cur).toLowerCase() === 'resources') {
+        addFromInstallRoot(pathMod.dirname(cur));
         break;
       }
-      cur = dirname(cur);
+      cur = pathMod.dirname(cur);
     }
   }
 
-  const localAppData = String(env?.LOCALAPPDATA || '').trim() || join(homeDir, 'AppData', 'Local');
-  const programFiles = String(env?.ProgramFiles || '').trim() || 'C:\\Program Files';
-  const geminiBase = String(env?.ANTIGRAVITY_GEMINI_DIR || '').trim() || join(homeDir, '.gemini');
-  addFromInstallRoot(join(localAppData, 'Programs', 'Antigravity'));
-  addFromInstallRoot(join(localAppData, 'Programs', 'Antigravity IDE'));
-  addFromInstallRoot(join(programFiles, 'Antigravity'));
-  addFromInstallRoot(join(programFiles, 'Antigravity IDE'));
-  add(join(geminiBase, 'bin', 'agy.exe'));
+  const geminiBase =
+    String(env?.ANTIGRAVITY_GEMINI_DIR || '').trim() || pathMod.join(homeDir, '.gemini');
+
+  if (platform === 'win32') {
+    const localAppData =
+      String(env?.LOCALAPPDATA || '').trim() || pathMod.join(homeDir, 'AppData', 'Local');
+    const programFiles = String(env?.ProgramFiles || '').trim() || 'C:\\Program Files';
+    addFromInstallRoot(pathMod.join(localAppData, 'Programs', 'Antigravity'));
+    addFromInstallRoot(pathMod.join(localAppData, 'Programs', 'Antigravity IDE'));
+    addFromInstallRoot(pathMod.join(programFiles, 'Antigravity'));
+    addFromInstallRoot(pathMod.join(programFiles, 'Antigravity IDE'));
+    add(pathMod.join(geminiBase, 'bin', 'agy.exe'));
+  } else if (platform === 'darwin') {
+    for (const bundle of [
+      '/Applications/Antigravity.app',
+      pathMod.join(homeDir, 'Applications', 'Antigravity.app'),
+      '/Applications/Antigravity IDE.app',
+      pathMod.join(homeDir, 'Applications', 'Antigravity IDE.app'),
+    ]) {
+      addFromInstallRoot(bundle);
+    }
+    add(pathMod.join(geminiBase, 'bin', 'agy'));
+    add('/opt/homebrew/bin/agy');
+    add('/usr/local/bin/agy');
+  } else {
+    for (const root of [
+      '/opt/Antigravity',
+      '/opt/antigravity',
+      '/usr/share/antigravity',
+      '/opt/Antigravity IDE',
+      '/opt/antigravity-ide',
+      '/usr/share/antigravity-ide',
+    ]) {
+      addFromInstallRoot(root);
+    }
+    add(pathMod.join(geminiBase, 'bin', 'agy'));
+    add(pathMod.join(homeDir, '.local', 'bin', 'agy'));
+    add('/usr/local/bin/agy');
+    add('/usr/bin/agy');
+
+    // WSL2: also inspect host Windows Antigravity installation if mounted under /mnt/*
+    if (isWslEnvironment({ platform, env }) && typeof spawnSync === 'function' && env === process.env) {
+      try {
+        const cmdRes = spawnSync('cmd.exe', ['/d', '/c', 'echo %LOCALAPPDATA%'], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 3000,
+        });
+        const winLocal = String(cmdRes?.stdout || '').trim().split(/\r?\n/)[0]?.trim() || '';
+        const m = winLocal.match(/^([A-Za-z]):[\\/](.*)$/);
+        if (m) {
+          const wslLocal = `/mnt/${m[1].toLowerCase()}/${m[2].replace(/\\/g, '/')}`;
+          for (const dirName of ['Antigravity', 'antigravity', 'Antigravity IDE']) {
+            add(`${wslLocal}/Programs/${dirName}/resources/bin/language_server.exe`);
+            add(
+              `${wslLocal}/Programs/${dirName}/resources/app/extensions/antigravity/bin/language_server_windows_x64.exe`
+            );
+          }
+        }
+      } catch {
+        // Ignore WSL interop probe failure
+      }
+    }
+  }
 
   if (typeof existsFn !== 'function') return candidates;
   return candidates.filter((p) => {
@@ -233,10 +828,58 @@ export function collectNativeOAuthBinaryCandidates({
   });
 }
 
-function discoverRunningOAuthBinaryPaths() {
-  if (process.platform !== 'win32' || typeof execFile !== 'function') {
+function discoverRunningOAuthBinaryPaths(platform = process.platform) {
+  if (platform === 'linux' && existsSync('/proc')) {
+    const myUid = typeof process.getuid === 'function' ? process.getuid() : null;
+    const found = new Set();
+    try {
+      for (const name of readdirSync('/proc')) {
+        if (!/^\d+$/.test(name)) continue;
+        const procDir = `/proc/${name}`;
+        try {
+          if (myUid !== null && statSync(procDir).uid !== myUid) continue;
+          const exe = readlinkSync(`${procDir}/exe`).replace(/ \(deleted\)$/, '');
+          if (/^(?:language_server.*|agy)$/i.test(posixPath.basename(exe))) {
+            found.add(exe);
+          }
+        } catch {
+          // Process exited or unreadable
+        }
+      }
+    } catch {
+      // Ignore /proc scan error
+    }
+    return Promise.resolve([...found]);
+  }
+
+  if (typeof execFile !== 'function') {
     return Promise.resolve([]);
   }
+
+  if (platform === 'darwin') {
+    return new Promise((resolve) => {
+      execFile('/bin/ps', ['-axo', 'comm='], { timeout: 3000, encoding: 'utf8' }, (err, stdout) => {
+        if (err || !stdout) {
+          resolve([]);
+          return;
+        }
+        const paths = [
+          ...new Set(
+            String(stdout)
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter((p) => p.startsWith('/') && /^(?:language_server.*|agy)$/i.test(posixPath.basename(p)))
+          ),
+        ];
+        resolve(paths);
+      });
+    });
+  }
+
+  if (platform !== 'win32') {
+    return Promise.resolve([]);
+  }
+
   const shell = join(
     process.env.SystemRoot || 'C:/Windows',
     'System32',
@@ -259,7 +902,7 @@ function discoverRunningOAuthBinaryPaths() {
         const paths = String(stdout)
           .split(/\r?\n/)
           .map((line) => line.trim())
-          .filter((p) => /^(?:language_server.*|agy)\.exe$/i.test(basename(p)));
+          .filter((p) => /^(?:language_server.*|agy)\.exe$/i.test(winPath.basename(p)));
         resolve(paths);
       }
     );
@@ -283,16 +926,20 @@ export async function loadNativeOAuthClients(options = undefined) {
   }
 
   const runLoad = async () => {
+    const platform = options?.platform ?? process.platform;
+    const normKey = (p) => (platform === 'win32' ? String(p).toLowerCase() : String(p));
     const extractFromFileFn = options?.extractFromFileFn || extractNativeOAuthClientsFromFile;
-    const discoverRunningFn = options?.discoverRunningFn || discoverRunningOAuthBinaryPaths;
+    const discoverRunningFn =
+      options?.discoverRunningFn || (() => discoverRunningOAuthBinaryPaths(platform));
     const candidates = collectNativeOAuthBinaryCandidates({
+      platform,
       env,
       homeDir: options?.homeDir ?? homedir(),
       existsFn: options?.existsFn ?? existsSync,
     });
     const tried = new Set();
     for (const filePath of candidates) {
-      tried.add(filePath.toLowerCase());
+      tried.add(normKey(filePath));
       const clients = await extractFromFileFn(filePath);
       if (Array.isArray(clients) && clients.length > 0) {
         return rememberDiscoveredClients(clients);
@@ -300,10 +947,11 @@ export async function loadNativeOAuthClients(options = undefined) {
     }
     const runningPaths = await discoverRunningFn().catch(() => []);
     for (const filePath of runningPaths) {
-      const key = String(filePath || '').trim().toLowerCase();
+      const clean = String(filePath || '').trim();
+      const key = normKey(clean);
       if (!key || tried.has(key)) continue;
       tried.add(key);
-      const clients = await extractFromFileFn(filePath);
+      const clients = await extractFromFileFn(clean);
       if (Array.isArray(clients) && clients.length > 0) {
         return rememberDiscoveredClients(clients);
       }
@@ -379,25 +1027,41 @@ export async function exchangeGoogleAccountCode(
   if (!Array.isArray(clients) || !clients.length || !clients[0]?.id || !clients[0]?.secret) {
     throw new Error('oauthClientUnavailable');
   }
-  const client = clients[0];
-  const response = await fetchFn(OAUTH_TOKEN_URL, {
-    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
-    headers: { 'User-Agent': ACCOUNT_USER_AGENT },
-    body: new URLSearchParams({
-      client_id: client.id,
-      client_secret: client.secret,
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: redirectUri,
-      code_verifier: codeVerifier,
-    }),
-  });
-  const result = await response.json();
-  if (!response.ok || !result.access_token || !result.refresh_token ||
-      !Number.isFinite(result.expires_in) || result.expires_in <= 0) throw new Error('loginExchangeFailed');
+  const primaryId = clients[0].id;
+  const matchingClients = clients.filter((c) => c?.id === primaryId && c?.secret);
+  let exchanged = null;
+  for (const client of matchingClients) {
+    const response = await fetchFn(OAUTH_TOKEN_URL, {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
+      headers: { 'User-Agent': ACCOUNT_USER_AGENT },
+      body: new URLSearchParams({
+        client_id: client.id,
+        client_secret: client.secret,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+      }),
+    });
+    const result = await response.json();
+    if (
+      response.ok &&
+      result.access_token &&
+      result.refresh_token &&
+      Number.isFinite(result.expires_in) &&
+      result.expires_in > 0
+    ) {
+      exchanged = result;
+      break;
+    }
+    if (!['invalid_client', 'unauthorized_client'].includes(result?.error)) {
+      break;
+    }
+  }
+  if (!exchanged) throw new Error('loginExchangeFailed');
   return resolveGoogleCredential({
-    token: { ...result, expiry: new Date(Date.now() + result.expires_in * 1000).toISOString() },
-    ...(result.id_token ? { id_token: result.id_token } : {}),
+    token: { ...exchanged, expiry: new Date(Date.now() + exchanged.expires_in * 1000).toISOString() },
+    ...(exchanged.id_token ? { id_token: exchanged.id_token } : {}),
   }, { fetchFn, getClients: async () => clients });
 }
 

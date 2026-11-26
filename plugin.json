@@ -1,12 +1,12 @@
 {
   "name": "usage-monitor",
   "displayName": "Usage & Speed Monitor",
-  "version": "1.5.5",
-  "description": "实时查看生成速度、首字延迟、上下文占用、可用额度及历史用量。",
+  "version": "1.5.6",
+  "description": "Monitor live generation speed, TTFT, context window usage, quota pools, and historical consumption.",
   "logo": "assets/logo.svg",
   "suggestedPrompts": [
-    "打开用量监控面板",
-    "查看当前会话的 Token 消耗",
-    "查看今日和本周的模型用量明细"
+    "Open the Usage Monitor panel",
+    "Show token consumption for the current session",
+    "View today's and this week's model usage breakdown"
   ]
 }

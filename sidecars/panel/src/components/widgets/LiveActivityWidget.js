@@ -757,10 +757,18 @@ export const LiveActivityWidget = defineComponent({
                     : sub.agentKind === 'swarm_worker'
                       ? `${t('fmt.swarmAgent')}${sub.agentOrdinal || sub.index ? ` #${sub.agentOrdinal || sub.index}` : ''}`
                       : `${t('fmt.subAgent')}${sub.agentOrdinal || sub.index ? ` #${sub.agentOrdinal || sub.index}` : ''}`;
+                const rawFallbackRole = String(sub.role || sub.shortLabel || '').trim();
+                const isGenericBackendRole =
+                  !rawFallbackRole ||
+                  /^(?:主代理|子代理(?:\s*#\d+)?|蜂群(?:\s*#\d+)?|旁路提问(?:\s*#\d+)?|Main Agent|Subagent(?:\s*#\d+)?|Swarm(?:\s*#\d+)?|Side Question(?:\s*#\d+)?)$/i.test(
+                    rawFallbackRole
+                  );
                 const roleText =
                   sub.customRole !== undefined
                     ? sub.customRole || fallbackRole
-                    : sub.role || sub.shortLabel || fallbackRole;
+                    : isGenericBackendRole
+                      ? fallbackRole
+                      : rawFallbackRole;
                 patchText(subRefs.subRole, roleText);
 
                 const idleFallbackKey = isKilledSub

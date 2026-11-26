@@ -81,7 +81,7 @@ function Write-SwitchState($request, $state, $errorCode = '') {
 function Get-AccountClients {
     $sessionId = (Get-Process -Id $PID).SessionId
     $userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    $candidates = @(Get-CimInstance Win32_Process -Filter "Name = 'Antigravity.exe' OR Name = 'Antigravity IDE.exe' OR Name = 'agy.exe' OR Name = 'language_server.exe'")
+    $candidates = @(Get-CimInstance Win32_Process -Filter "Name = 'Antigravity.exe' OR Name = 'Antigravity IDE.exe' OR Name = 'agy.exe' OR Name LIKE 'language_server%.exe'")
     $owned = @($candidates | Where-Object {
         $_.SessionId -eq $sessionId -and $_.ExecutablePath -and (Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid).Sid -eq $userSid
     })
@@ -97,7 +97,7 @@ function Get-AccountClients {
         $candidate = $_
         $trustedPath = [string]::Equals($candidate.ExecutablePath, $agyCliHubPath, [StringComparison]::OrdinalIgnoreCase) -or
             @($installDirectories | Where-Object { $candidate.ExecutablePath.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
-        ($candidate.Name -eq 'language_server.exe' -or
+        ($candidate.Name -like 'language_server*.exe' -or
          ($candidate.Name -eq 'agy.exe' -and $candidate.CommandLine -match '(?:^|\s)--hub(?:\s|$)')) -and $trustedPath
     })
     return @{ roots = $roots; hubs = $hubs; sessionId = $sessionId }
@@ -164,6 +164,25 @@ function Start-AccountClients {
     $script:clientsStopped = $false
 }
 
+function Sync-OnboardingAppStorage($email) {
+    if ([string]::IsNullOrWhiteSpace($email)) { return }
+    $appData = if ($env:APPDATA) { $env:APPDATA } else { Join-Path $env:USERPROFILE 'AppData\Roaming' }
+    foreach ($dirName in @('Antigravity', 'Antigravity IDE')) {
+        $storagePath = Join-Path (Join-Path $appData $dirName) 'app_storage.json'
+        try {
+            if (-not (Test-AccountFile $storagePath)) { continue }
+            $raw = [IO.File]::ReadAllText($storagePath, $utf8)
+            $obj = ConvertFrom-Json -InputObject $raw
+            if ($null -eq $obj) { continue }
+            $existingProp = $obj.PSObject.Properties['agy.onboarding.lastLoginUsername']
+            if ($existingProp -and [string]$existingProp.Value -ieq $email) { continue }
+            $obj | Add-Member -NotePropertyName 'agy.onboarding.lastLoginUsername' -NotePropertyValue $email -Force
+            $jsonBytes = $utf8.GetBytes(($obj | ConvertTo-Json -Depth 50))
+            Write-AccountFile $storagePath $jsonBytes
+        } catch {}
+    }
+}
+
 function Schedule-AccountSwitch($request) {
     if (Test-AccountFile $request.statusFile) {
         $status = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($request.statusFile))
@@ -176,16 +195,22 @@ function Schedule-AccountSwitch($request) {
     $job = Join-Path ([IO.Path]::GetDirectoryName($request.vault)) ('switch-' + [guid]::NewGuid().ToString() + '.dpapi')
     Save-Vault $job $request
     Write-SwitchState $request 'starting'
-    $scriptPath = $request.scriptPath.Replace("'", "''")
-    $jobLiteral = $job.Replace("'", "''")
-    $code = "& '$scriptPath' -JobPath '$jobLiteral'"
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
-    $shell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-    $command = '"' + $shell + '" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand ' + $encoded
+    $shell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $argLine = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $request.scriptPath + '" -JobPath "' + $job + '"'
+    $command = '"' + $shell + '" ' + $argLine
     try {
-        # WMI starts the worker outside the client job so closing the App cannot terminate the switch.
-        $started = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $command }
-        if ($started.ReturnValue -ne 0) { throw 'switchStartFailed' }
+        # Start the worker outside the client job without -EncodedCommand (avoids AV/AMSI false positives).
+        $dispatched = $false
+        try {
+            $started = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $command }
+            if ($started -and $started.ReturnValue -eq 0) { $dispatched = $true }
+        } catch {}
+        if (-not $dispatched -and (Test-Path -LiteralPath $shell)) {
+            $shellApp = New-Object -ComObject Shell.Application
+            $shellApp.ShellExecute($shell, $argLine, '', 'open', 0)
+            $dispatched = $true
+        }
+        if (-not $dispatched) { throw 'switchStartFailed' }
     } catch {
         [IO.File]::Delete($job)
         Write-SwitchState $request 'failed' 'switchStartFailed'
@@ -293,11 +318,15 @@ function Invoke-AccountAction($request) {
             return @{ clients = @($clients.roots | ForEach-Object { @{ name = $_.Name; path = $_.ExecutablePath } }); hubs = $clients.hubs.Count }
         }
         'readVault' {
-            return @{
+            $vaultOut = @{
                 entries = @($vault.entries)
                 selectedEmail = [string]$vault.selectedEmail
                 security = $vault.security
             }
+            if ($request.statusFile -and (Test-AccountFile $request.statusFile)) {
+                try { $vaultOut.switchState = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($request.statusFile)) } catch {}
+            }
+            return $vaultOut
         }
         'writeVault' {
             $nextVault = @{
@@ -350,6 +379,9 @@ function Invoke-AccountAction($request) {
             if ($vaultSecured) {
                 $readOut.security = @{ enabled = $true; salt = [string]$vault.security.salt }
             }
+            if ($request.statusFile -and (Test-AccountFile $request.statusFile)) {
+                try { $readOut.switchState = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($request.statusFile)) } catch {}
+            }
             return $readOut
         }
         'save' {
@@ -390,6 +422,7 @@ function Invoke-AccountAction($request) {
                     $entry.credential = if ($request.vaultCredential) { $request.vaultCredential } else { $entry.credential }
                     $vault.selectedEmail = $request.email
                     Save-Vault $request.vault $vault
+                    Sync-OnboardingAppStorage $request.email
                 } catch {
                     $restored = $true
                     try { [NativeAccountCredential]::Restore($request.target, $previous) } catch { $restored = $false }

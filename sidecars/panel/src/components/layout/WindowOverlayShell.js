@@ -24,6 +24,8 @@ import {
   resolveSettingsModernUi,
 } from '../../core/appearance.js';
 import {
+  getElementContentWidth,
+  getVisualTransformScale,
   h,
   isEventInside,
   patchAttr,
@@ -622,13 +624,43 @@ export function mountWindowOverlay() {
     []
   );
 
+  let popoverLayoutMicrotaskPending = false;
+  function schedulePopoverLayoutSync() {
+    if (disposed || !popoverOpen || popoverLayoutMicrotaskPending) return;
+    popoverLayoutMicrotaskPending = true;
+    const run = () => {
+      popoverLayoutMicrotaskPending = false;
+      if (disposed || !popoverOpen) return;
+      positionFloatingElements();
+    };
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(run);
+    } else {
+      Promise.resolve().then(run);
+    }
+  }
+
   function ensureAppMounted() {
     if (!appInstance) {
-      appInstance = App();
+      appInstance = App({
+        onLayoutChange: () => {
+          if (!disposed && popoverOpen) {
+            schedulePopoverLayoutSync();
+          }
+        },
+      });
       popoverEl.appendChild(appInstance.el);
     }
     return appInstance;
   }
+
+  const onPopoverAnimationEnd = (e) => {
+    if (disposed || !popoverOpen) return;
+    if (e?.target && e.target !== popoverEl) return;
+    positionFloatingElements();
+    refreshActiveViewScrollbars();
+  };
+  popoverEl.addEventListener?.('animationend', onPopoverAnimationEnd);
 
   function syncPortalAppearance(settings) {
     applyAppearanceToRoot(capsuleHost, settings, { includeFontScale: false });
@@ -1137,6 +1169,13 @@ export function mountWindowOverlay() {
           );
         } else if (typeof popoverEl.querySelectorAll === 'function') {
           const panes = popoverEl.querySelectorAll('.table-viewport.is-step-table');
+          const { scaleX: popScaleX } = getVisualTransformScale(popoverEl);
+          const rawPopRectW = Number(popoverEl.getBoundingClientRect?.()?.width || 0);
+          const curPopW = Number(
+            popoverEl.offsetWidth ||
+              (rawPopRectW > 0 ? rawPopRectW / popScaleX : 0) ||
+              POPOVER_BASE_WIDTH
+          );
           for (const pane of panes) {
             let anc = pane;
             let inHiddenTree = false;
@@ -1150,33 +1189,49 @@ export function mountWindowOverlay() {
             if (inHiddenTree) continue;
             const tableEl = pane.querySelector?.('.steps-data-table') || pane.firstElementChild;
             if (!tableEl) continue;
-            const paneClientW = Number(pane.clientWidth || 0);
-            const curPopW = Number(
-              popoverEl.offsetWidth ||
-                popoverEl.getBoundingClientRect?.().width ||
-                POPOVER_BASE_WIDTH
-            );
+            const paneContentW = getElementContentWidth(pane);
             let naturalTableW = 0;
             if (tableEl.style) {
+              const wasLocked = Boolean(tableEl.classList?.contains?.('is-cols-locked'));
               const prevW = tableEl.style.width || '';
+              const prevMinW = tableEl.style.minWidth || '';
+              const theadEl = wasLocked ? tableEl.querySelector?.('thead') : null;
+              const lockedThs = theadEl?.querySelectorAll
+                ? Array.from(theadEl.querySelectorAll('th'))
+                : [];
+              const prevThWidths = lockedThs.map((th) => th?.style?.width || '');
+              if (wasLocked) {
+                tableEl.classList.remove('is-cols-locked');
+                for (let i = 0; i < lockedThs.length; i++) {
+                  if (lockedThs[i]?.style) lockedThs[i].style.width = '';
+                }
+              }
+              tableEl.style.minWidth = '';
               tableEl.style.width = 'max-content';
-              naturalTableW = Math.ceil(
-                Number(
-                  tableEl.getBoundingClientRect?.().width ||
-                    tableEl.scrollWidth ||
-                    tableEl.offsetWidth ||
-                    0
-                )
+              const { scaleX: tableScaleX } = getVisualTransformScale(tableEl, popoverEl);
+              const rawTableRectW = Number(tableEl.getBoundingClientRect?.()?.width || 0);
+              const unscaledRectW = rawTableRectW > 0 ? rawTableRectW / tableScaleX : 0;
+              const layoutTableW = Math.max(
+                Number(tableEl.scrollWidth || 0),
+                Number(tableEl.offsetWidth || 0)
               );
+              naturalTableW = Math.ceil(Math.max(unscaledRectW, layoutTableW));
               tableEl.style.width = prevW;
+              tableEl.style.minWidth = prevMinW;
+              if (wasLocked) {
+                for (let i = 0; i < lockedThs.length; i++) {
+                  if (lockedThs[i]?.style) lockedThs[i].style.width = prevThWidths[i];
+                }
+                tableEl.classList.add('is-cols-locked');
+              }
             } else {
               naturalTableW = Math.ceil(Number(tableEl.scrollWidth || tableEl.offsetWidth || 0));
             }
             if (naturalTableW > 0) {
               const chromeW =
-                paneClientW > 0 && curPopW >= paneClientW
-                  ? Math.max(24, curPopW - paneClientW)
-                  : 34;
+                paneContentW > 0 && curPopW >= paneContentW
+                  ? Math.max(24, curPopW - paneContentW)
+                  : 52;
               desiredPopW = Math.max(
                 desiredPopW,
                 Math.min(POPOVER_MAX_AUTO_WIDTH, maxPopCardW, naturalTableW + chromeW + 4)
@@ -1184,12 +1239,13 @@ export function mountWindowOverlay() {
             }
           }
         }
-        popoverEl.style.setProperty?.('--wm-popover-w', `${desiredPopW}px`);
-        popoverEl.style.width = `${desiredPopW}px`;
+        const prevPopWidthStyle = popoverEl.style.width || '';
+        const nextPopWidthStyle = `${desiredPopW}px`;
+        popoverEl.style.setProperty?.('--wm-popover-w', nextPopWidthStyle);
+        popoverEl.style.width = nextPopWidthStyle;
 
         const rawW =
           Number(popoverEl.offsetWidth) ||
-          Number(popoverEl.getBoundingClientRect?.().width) ||
           desiredPopW;
         const panelW = Math.min(rawW, maxPopCardW);
         const spaceBelowPop = vh - bRect.bottom - 12;
@@ -1217,6 +1273,9 @@ export function mountWindowOverlay() {
         left = Math.max(minLeft, left);
         popoverEl.style.top = `${top}px`;
         popoverEl.style.left = `${left}px`;
+        if (prevPopWidthStyle && prevPopWidthStyle !== nextPopWidthStyle) {
+          refreshActiveViewScrollbars();
+        }
       }
 
       if (tooltipOpen && !popoverOpen && !multiOpen) {
@@ -1751,6 +1810,7 @@ export function mountWindowOverlay() {
       renderCapsuleTelemetry();
       if (popoverOpen) {
         positionFloatingElements();
+        schedulePopoverLayoutSync();
       }
     }
   );
@@ -1768,6 +1828,7 @@ export function mountWindowOverlay() {
       renderCapsuleTelemetry();
       if (popoverOpen) {
         positionFloatingElements();
+        schedulePopoverLayoutSync();
         if (typeof requestAnimationFrame === 'function') {
           requestAnimationFrame(() => {
             if (!disposed && popoverOpen) {
@@ -2161,6 +2222,7 @@ export function mountWindowOverlay() {
       document.removeEventListener?.('keydown', onDocKeyDown);
       document.removeEventListener?.('focusin', onDocFocusIn);
       document.removeEventListener?.('visibilitychange', onVisibilityChange);
+      popoverEl.removeEventListener?.('animationend', onPopoverAnimationEnd);
       window.removeEventListener?.('pointermove', onWindowPointerMove);
       window.removeEventListener?.('blur', onWindowBlur);
       window.removeEventListener?.('resize', onWindowResize);

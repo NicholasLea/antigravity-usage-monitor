@@ -28,43 +28,67 @@ export {
   CONTEXT_AGENT_MODES,
   DEFAULT_CLI_STATUSLINE_SLOTS,
   DEFAULT_CONTEXT_AGENT_MODE,
+  DEFAULT_DISPLAY_CURRENCY,
+  DEFAULT_HOVER_METRICS,
+  DEFAULT_HOVER_METRIC_STYLE,
   DEFAULT_HOVER_MODULES,
+  DEFAULT_HOVER_SYNC_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_METRICS,
+  DEFAULT_OVERVIEW_METRIC_STYLE,
   DEFAULT_OVERVIEW_MODULES,
   DEFAULT_POPOVER_WIDTH,
+  DEFAULT_QUOTA_DISPLAY_MODE,
   DEFAULT_SETTINGS_SCHEMA,
   DEFAULT_STEP_TABLE_COLUMNS,
   DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_TOPBAR_SLOTS,
   FONT_SCALE_KEYS,
+  HOVER_METRIC_STYLES,
   MAX_CLI_STATUSLINE_SLOTS,
+  MAX_LARGE_METRIC_SLOTS,
   MAX_POPOVER_WIDTH,
   MAX_TOPBAR_SLOTS,
+  METRIC_CARD_STYLES,
   MIN_CLI_STATUSLINE_SLOTS,
   MIN_POPOVER_WIDTH,
   MIN_TOPBAR_SLOTS,
   OVERVIEW_METRIC_KEYS,
   OVERVIEW_MODULE_KEYS,
+  QUOTA_DISPLAY_MODES,
   STEP_TABLE_COLUMN_KEYS,
+  SUPPORTED_DISPLAY_CURRENCIES,
   SUPPORTED_LANGUAGES,
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
   createDefaultSettingsObject,
+  isAccountSwitchFeatureActive,
+  isContextWindowFeatureActive,
+  isRiskyFeaturesGateOpen,
+  normalizeAutoConfigureLaunch,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeDeveloperModeEnabled,
+  normalizeDisplayCurrency,
+  normalizeEnableRemoteSshTelemetry,
   normalizeExperimentalQuotaReservation,
   normalizeFontScale,
   normalizeFullSettings,
+  normalizeHoverMetricStyle,
+  normalizeHoverMetrics,
   normalizeHoverModules,
+  normalizeHoverSyncOverviewMetrics,
   normalizeLanguageSetting,
+  normalizeMetricCardStyle,
   normalizeModelDisplayMode,
   normalizeModernUi,
-  normalizeOrchestratorIdMode,
+  normalizeOverviewMetricStyle,
   normalizeOverviewMetrics,
   normalizeOverviewModules,
   normalizePluginUpdateMode,
   normalizePopoverWidth,
   normalizePopoverWidthMode,
+  normalizeQuotaDisplayMode,
+  normalizeRiskyFeaturesEnabled,
   normalizeStandalonePort,
   normalizeStepTableColumns,
   normalizeStepTokenComboFormat,
@@ -144,20 +168,24 @@ function resolveDefaultDataDir() {
   }
   const geminiBase = resolveGeminiBaseDir();
   const antigravityRoot = join(geminiBase, 'antigravity');
+  const ideRoot = join(geminiBase, 'antigravity-ide');
   const cliRoot = join(geminiBase, 'antigravity-cli');
   const panelDataDir = join(antigravityRoot, 'sidecar_data', 'usage-monitor', 'panel', 'data');
   const legacyDataDir = join(antigravityRoot, 'sidecar_data', 'usage-monitor', 'data');
+  const idePanelDataDir = join(ideRoot, 'sidecar_data', 'usage-monitor', 'panel', 'data');
   const cliPanelDataDir = join(cliRoot, 'sidecar_data', 'usage-monitor', 'panel', 'data');
+  const pluginEnvDataDir =
+    process.env.USAGE_MONITOR_PLUGIN_DATA && !process.env.USAGE_MONITOR_PLUGIN_DATA.includes('${')
+      ? process.env.USAGE_MONITOR_PLUGIN_DATA
+      : '';
   if (existsSync(panelDataDir)) return panelDataDir;
   if (existsSync(legacyDataDir)) return legacyDataDir;
+  if (pluginEnvDataDir && existsSync(pluginEnvDataDir)) return pluginEnvDataDir;
+  if (existsSync(idePanelDataDir)) return idePanelDataDir;
   if (existsSync(cliPanelDataDir)) return cliPanelDataDir;
   if (existsSync(antigravityRoot)) return panelDataDir;
-  if (
-    process.env.USAGE_MONITOR_PLUGIN_DATA &&
-    !process.env.USAGE_MONITOR_PLUGIN_DATA.includes('${')
-  ) {
-    return process.env.USAGE_MONITOR_PLUGIN_DATA;
-  }
+  if (pluginEnvDataDir) return pluginEnvDataDir;
+  if (existsSync(ideRoot)) return idePanelDataDir;
   if (existsSync(cliRoot)) return cliPanelDataDir;
   return join(HERE, '.data');
 }
@@ -167,6 +195,7 @@ export const SETTINGS_FILE = join(DATA_DIR, 'settings.json');
 export const CACHE_FILE = join(DATA_DIR, 'trajectory_usage_cache.json');
 export const TRAJECTORY_DB_FILE = join(DATA_DIR, 'trajectory_store.sqlite');
 export const REMOTE_CATALOG_CACHE_FILE = join(DATA_DIR, 'remote_pricing_cache.json');
+export const FX_RATES_CACHE_FILE = join(DATA_DIR, 'fx_rates_cache.json');
 export const CLI_STATUS_SNAPSHOT_FILE = join(DATA_DIR, 'cli-status-snapshot.json');
 export const QUOTA_RESERVATION_STATE_FILE = join(DATA_DIR, 'quota_reservation_state.json');
 export const ACCOUNT_QUOTA_HISTORY_FILE = join(DATA_DIR, 'account_quota_history.json');
@@ -492,6 +521,7 @@ export const localSummaryMemo = {
   available: false,
   summariesObj: {},
   sideQuestionParents: {},
+  refreshedAtMs: 0,
   byRootsKey: new Map(),
 };
 
@@ -545,12 +575,15 @@ export function clearRuntimeCaches(options = {}) {
   if (!localTrajectoryCacheStore.clearCache(options)) return false;
   externalDeepStatsMemo.sig = '';
   externalDeepStatsMemo.convos.clear();
-  localSummaryMemo.sig = '';
-  localSummaryMemo.byId.clear();
-  localSummaryMemo.available = false;
-  localSummaryMemo.summariesObj = {};
-  localSummaryMemo.sideQuestionParents = {};
-  localSummaryMemo.byRootsKey.clear();
+  if (!options?.preserveFreshSummaryMemo) {
+    localSummaryMemo.sig = '';
+    localSummaryMemo.byId.clear();
+    localSummaryMemo.available = false;
+    localSummaryMemo.summariesObj = {};
+    localSummaryMemo.sideQuestionParents = {};
+    localSummaryMemo.refreshedAtMs = 0;
+    localSummaryMemo.byRootsKey.clear();
+  }
   quotaSummaryCache.ts = 0;
   quotaSummaryCache.lastAttemptTs = 0;
   quotaSummaryCache.accountName = '';

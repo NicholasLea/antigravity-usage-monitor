@@ -23,6 +23,7 @@ import {
   normalizeLanguageSetting,
   normalizeTopbarCapsuleSlots,
 } from './config.mjs';
+import { resolveLocaleFromLanguageTag } from '../shared/settings-normalization.mjs';
 import {
   classifyCacheTier,
   classifySpeedTier,
@@ -798,13 +799,203 @@ function cliBuildBarGauge(label, pct, { fillFg = SGR_FG_ACCENT, valFg = SGR_FG_B
   return `${SGR_FG_MUTED}${label} ${fillFg}${filledPart}${emptyPart ? `${SGR_FG_DIM}${emptyPart}` : ''} ${valFg}${valStr}${SGR_RESET}`;
 }
 
-function cliResolveQuotaSlotPrefix(metricKey, isEn) {
+const CLI_STATUS_COPY = Object.freeze({
+  'zh-CN': {
+    ctx: '上下文',
+    gen: '生成中...',
+    idle: '空闲',
+    avg: '均 ',
+    sum: '总 ',
+    cache: '缓 ',
+    quotaAuto: '余',
+    quotaEmpty: '余 --%',
+    wk: '周',
+    activeSub: (r, s) => `${r} 运行中 · ${s} 子`,
+    active: (r) => `${r} 运行中`,
+    idleZero: '0 运行中',
+    anom: {
+      capacity: (n) => (n === 1 ? '503' : `503×${n}`),
+      upstream: (n) => (n === 1 ? '500' : `500×${n}`),
+      rate_limit: (n) => `限流${n}`,
+      timeout: (n) => `超时${n}`,
+      disconnect: (n) => `断连${n}`,
+      model_output: (n) => `纠偏${n}`,
+      safety: (n) => `过滤${n}`,
+      auth_or_model: (n) => `受限${n}`,
+      mixed: (n) => `异常${n}`,
+      error: (n) => `报错${n}`,
+    },
+  },
+  'zh-TW': {
+    ctx: '上下文',
+    gen: '生成中...',
+    idle: '閒置',
+    avg: '均 ',
+    sum: '總 ',
+    cache: '快取 ',
+    quotaAuto: '餘',
+    quotaEmpty: '餘 --%',
+    wk: '週',
+    activeSub: (r, s) => `${r} 執行中 · ${s} 子`,
+    active: (r) => `${r} 執行中`,
+    idleZero: '0 執行中',
+    anom: {
+      capacity: (n) => (n === 1 ? '503' : `503×${n}`),
+      upstream: (n) => (n === 1 ? '500' : `500×${n}`),
+      rate_limit: (n) => `限流${n}`,
+      timeout: (n) => `逾時${n}`,
+      disconnect: (n) => `斷線${n}`,
+      model_output: (n) => `糾偏${n}`,
+      safety: (n) => `過濾${n}`,
+      auth_or_model: (n) => `受限${n}`,
+      mixed: (n) => `異常${n}`,
+      error: (n) => `錯誤${n}`,
+    },
+  },
+  'en-US': {
+    ctx: 'Ctx',
+    gen: 'Gen...',
+    idle: 'Idle',
+    avg: 'avg ',
+    sum: 'sum ',
+    cache: 'cache ',
+    quotaAuto: '5h',
+    quotaEmpty: 'Quota --',
+    wk: 'w',
+    activeSub: (r, s) => `${r} active · ${s} sub`,
+    active: (r) => `${r} active`,
+    idleZero: '0 active',
+    anom: {
+      capacity: (n) => (n === 1 ? '503' : `503x${n}`),
+      upstream: (n) => (n === 1 ? '500' : `500x${n}`),
+      rate_limit: (n) => `429x${n}`,
+      timeout: (n) => `TO${n}`,
+      disconnect: (n) => `Drop${n}`,
+      model_output: (n) => `Fix${n}`,
+      safety: (n) => `Safe${n}`,
+      auth_or_model: (n) => `Err${n}`,
+      mixed: (n) => `Warn${n}`,
+      error: (n) => `Err${n}`,
+    },
+  },
+  'ja-JP': {
+    ctx: 'Ctx',
+    gen: '生成中...',
+    idle: '待機',
+    avg: '平均 ',
+    sum: '計 ',
+    cache: 'キャッシュ ',
+    quotaAuto: '残',
+    quotaEmpty: '残 --%',
+    wk: '週',
+    activeSub: (r, s) => `${r} 実行中 · ${s} 子`,
+    active: (r) => `${r} 実行中`,
+    idleZero: '0 実行中',
+    anom: {
+      capacity: (n) => (n === 1 ? '503' : `503×${n}`),
+      upstream: (n) => (n === 1 ? '500' : `500×${n}`),
+      rate_limit: (n) => `429×${n}`,
+      timeout: (n) => `TO${n}`,
+      disconnect: (n) => `切断${n}`,
+      model_output: (n) => `補正${n}`,
+      safety: (n) => `制限${n}`,
+      auth_or_model: (n) => `拒否${n}`,
+      mixed: (n) => `警告${n}`,
+      error: (n) => `異常${n}`,
+    },
+  },
+  'ko-KR': {
+    ctx: 'Ctx',
+    gen: '생성중...',
+    idle: '대기',
+    avg: '평균 ',
+    sum: '합 ',
+    cache: '캐시 ',
+    quotaAuto: '잔여',
+    quotaEmpty: '잔여 --%',
+    wk: '주',
+    activeSub: (r, s) => `${r} 실행 · ${s} 서브`,
+    active: (r) => `${r} 실행`,
+    idleZero: '0 실행',
+    anom: {
+      capacity: (n) => (n === 1 ? '503' : `503×${n}`),
+      upstream: (n) => (n === 1 ? '500' : `500×${n}`),
+      rate_limit: (n) => `429×${n}`,
+      timeout: (n) => `TO${n}`,
+      disconnect: (n) => `끊김${n}`,
+      model_output: (n) => `보정${n}`,
+      safety: (n) => `필터${n}`,
+      auth_or_model: (n) => `제한${n}`,
+      mixed: (n) => `경고${n}`,
+      error: (n) => `오류${n}`,
+    },
+  },
+  'de-DE': {
+    ctx: 'Ctx',
+    gen: 'Gen...',
+    idle: 'Leerlauf',
+    avg: 'Ø ',
+    sum: 'Σ ',
+    cache: 'Cache ',
+    quotaAuto: '5h',
+    quotaEmpty: 'Kontingent --',
+    wk: 'W',
+    activeSub: (r, s) => `${r} aktiv · ${s} Sub`,
+    active: (r) => `${r} aktiv`,
+    idleZero: '0 aktiv',
+    anom: {
+      capacity: (n) => (n === 1 ? '503' : `503x${n}`),
+      upstream: (n) => (n === 1 ? '500' : `500x${n}`),
+      rate_limit: (n) => `429x${n}`,
+      timeout: (n) => `TO${n}`,
+      disconnect: (n) => `Drop${n}`,
+      model_output: (n) => `Fix${n}`,
+      safety: (n) => `Safe${n}`,
+      auth_or_model: (n) => `Err${n}`,
+      mixed: (n) => `Warn${n}`,
+      error: (n) => `Err${n}`,
+    },
+  },
+  'fr-FR': {
+    ctx: 'Ctx',
+    gen: 'Gén...',
+    idle: 'Inactif',
+    avg: 'moy. ',
+    sum: 'tot. ',
+    cache: 'cache ',
+    quotaAuto: '5h',
+    quotaEmpty: 'Quota --',
+    wk: 'S',
+    activeSub: (r, s) => `${r} actif · ${s} sous`,
+    active: (r) => `${r} actif`,
+    idleZero: '0 actif',
+    anom: {
+      capacity: (n) => (n === 1 ? '503' : `503x${n}`),
+      upstream: (n) => (n === 1 ? '500' : `500x${n}`),
+      rate_limit: (n) => `429x${n}`,
+      timeout: (n) => `TO${n}`,
+      disconnect: (n) => `Drop${n}`,
+      model_output: (n) => `Fix${n}`,
+      safety: (n) => `Safe${n}`,
+      auth_or_model: (n) => `Err${n}`,
+      mixed: (n) => `Warn${n}`,
+      error: (n) => `Err${n}`,
+    },
+  },
+});
+
+function getCliCopy(locale) {
+  return CLI_STATUS_COPY[locale] || CLI_STATUS_COPY['en-US'];
+}
+
+function cliResolveQuotaSlotPrefix(metricKey, locale) {
+  const copy = getCliCopy(locale);
   if (metricKey === 'gemini_5h') return 'G5h';
-  if (metricKey === 'gemini_weekly') return isEn ? 'Gw' : 'G周';
-  if (metricKey === 'argon_weekly') return isEn ? 'Aw' : 'A周';
+  if (metricKey === 'gemini_weekly') return `G${copy.wk}`;
+  if (metricKey === 'argon_weekly') return `A${copy.wk}`;
   if (metricKey === 'claude_5h') return 'C5h';
-  if (metricKey === 'claude_weekly') return isEn ? 'Cw' : 'C周';
-  return isEn ? '5h' : '余';
+  if (metricKey === 'claude_weekly') return `C${copy.wk}`;
+  return copy.quotaAuto;
 }
 
 /**
@@ -813,8 +1004,9 @@ function cliResolveQuotaSlotPrefix(metricKey, isEn) {
 function cliRenderSingleSlot(
   metricKey,
   slotCtx,
-  { isEn = false, useColor = true, slotSet, usePill = true, gaugeStyle = '' } = {}
+  { locale = 'zh-CN', useColor = true, slotSet, usePill = true, gaugeStyle = '' } = {}
 ) {
+  const copy = getCliCopy(locale);
   const hasTelemetry = slotCtx.hasTelemetry !== false;
   const resolvedStyle = gaugeStyle
     ? normalizeCliStatusLineGaugeStyle(gaugeStyle)
@@ -825,7 +1017,7 @@ function cliRenderSingleSlot(
   if (metricKey === 'context') {
     const valid = hasTelemetry && slotCtx.usedPct != null && Number.isFinite(Number(slotCtx.usedPct));
     const pctNum = valid ? Math.max(0, Math.min(100, Math.round(Number(slotCtx.usedPct)))) : null;
-    const label = isEn ? 'Ctx' : '上下文';
+    const label = copy.ctx;
     const textVal = pctNum != null ? `${pctNum}%` : '--%';
     if (!useColor) {
       return `${label} ${textVal}`;
@@ -865,12 +1057,8 @@ function cliRenderSingleSlot(
     const textVal = valid
       ? `${numVal >= 100 ? Math.round(numVal) : numVal.toFixed(1)} t/s`
       : slotCtx.isRunning
-        ? isEn
-          ? 'Gen...'
-          : '生成中...'
-        : isEn
-          ? 'Idle'
-          : '空闲';
+        ? copy.gen
+        : copy.idle;
     if (!useColor) return textVal;
     const color = valid
       ? `${SGR_BOLD}${cliStatusSpeedSgr(numVal)}`
@@ -885,7 +1073,7 @@ function cliRenderSingleSlot(
       hasTelemetry && Number.isFinite(Number(slotCtx.avgTps)) && Number(slotCtx.avgTps) > 0;
     const numVal = valid ? Number(slotCtx.avgTps) : 0;
     const needPrefix = slotSet?.has('tps');
-    const prefix = needPrefix ? (isEn ? 'avg ' : '均 ') : '';
+    const prefix = needPrefix ? copy.avg : '';
     const textVal = valid
       ? `${prefix}${numVal >= 100 ? Math.round(numVal) : numVal.toFixed(1)} t/s`
       : `${prefix}-- t/s`;
@@ -909,8 +1097,7 @@ function cliRenderSingleSlot(
       : metricKey === 'session_cost'
         ? slotCtx.sessionCost
         : slotCtx.stepCost;
-    const needPrefix =
-      metricKey === 'session_cost' && slotSet?.has('cost') ? (isEn ? 'sum ' : '总 ') : '';
+    const needPrefix = metricKey === 'session_cost' && slotSet?.has('cost') ? copy.sum : '';
     const textVal = `${needPrefix}${hasTelemetry ? cliFormatCompactCost(rawVal) : '--'}`;
     if (!useColor) return textVal;
     const color =
@@ -926,7 +1113,7 @@ function cliRenderSingleSlot(
     const valid =
       hasTelemetry && slotCtx.cacheHitPct != null && Number.isFinite(Number(slotCtx.cacheHitPct));
     const numVal = valid ? Math.max(0, Math.min(100, Math.round(Number(slotCtx.cacheHitPct)))) : 0;
-    const prefix = isEn ? 'cache ' : '缓 ';
+    const prefix = copy.cache;
     const textVal = valid ? `${prefix}${numVal}%` : `${prefix}--%`;
     if (!useColor) return textVal;
     const color = valid
@@ -947,7 +1134,7 @@ function cliRenderSingleSlot(
   }
 
   const quotaPct = hasTelemetry ? cliResolveQuotaPct(slotCtx.quotas, metricKey) : null;
-  const prefix = cliResolveQuotaSlotPrefix(metricKey, isEn);
+  const prefix = cliResolveQuotaSlotPrefix(metricKey, locale);
   const isDanger = quotaPct != null && quotaPct <= 15;
   const isWarn = !isDanger && quotaPct != null && quotaPct <= 30;
   const pctSgr = isDanger
@@ -959,8 +1146,7 @@ function cliRenderSingleSlot(
         : SGR_FG_MUTED;
 
   if (quotaPct == null) {
-    const emptyText =
-      metricKey === 'quota_auto' && isEn ? 'Quota --' : `${prefix} --%`;
+    const emptyText = metricKey === 'quota_auto' ? copy.quotaEmpty : `${prefix} --%`;
     return useColor ? `${SGR_FG_MUTED}${emptyText}${SGR_RESET}` : emptyText;
   }
 
@@ -1023,22 +1209,22 @@ function cliRenderSingleSlot(
  * }} [options]
  * @returns {string}
  */
-function detectCliHostLanguageIsEn() {
+function detectCliHostLocale() {
   const envLang = String(
     process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || ''
   ).trim();
   if (envLang) {
-    return !envLang.toLowerCase().startsWith('zh');
+    return resolveLocaleFromLanguageTag(envLang, 'en-US');
   }
   try {
     const navLang = globalThis.navigator?.language;
     if (navLang) {
-      return !String(navLang).toLowerCase().startsWith('zh');
+      return resolveLocaleFromLanguageTag(navLang, 'en-US');
     }
   } catch {
     // 忽略无 navigator 环境
   }
-  return false;
+  return 'zh-CN';
 }
 
 const CLI_STATUS_SLOT_KEEP_PRIORITY = Object.freeze({
@@ -1095,33 +1281,13 @@ function cliStatusHasRenderableValue(metricKey, slotCtx) {
   return cliResolveQuotaPct(slotCtx.quotas, metricKey) != null;
 }
 
-function cliStatusFormatAnomalyTag(anomaly, { isEn = false, useColor = true } = {}) {
+function cliStatusFormatAnomalyTag(anomaly, { locale = 'zh-CN', useColor = true } = {}) {
   if (!anomaly || !(Number(anomaly.count) > 0)) return '';
   const n = Math.max(1, Math.floor(Number(anomaly.count) || 1));
   const kind = String(anomaly.primaryKind || 'error');
-  let label = '';
-  if (isEn) {
-    if (kind === 'capacity') label = n === 1 ? '503' : `503x${n}`;
-    else if (kind === 'upstream') label = n === 1 ? '500' : `500x${n}`;
-    else if (kind === 'rate_limit') label = `429x${n}`;
-    else if (kind === 'timeout') label = `TO${n}`;
-    else if (kind === 'disconnect') label = `Drop${n}`;
-    else if (kind === 'model_output') label = `Fix${n}`;
-    else if (kind === 'safety') label = `Safe${n}`;
-    else if (kind === 'mixed') label = `Warn${n}`;
-    else label = `Err${n}`;
-  } else {
-    if (kind === 'capacity') label = n === 1 ? '503' : `503×${n}`;
-    else if (kind === 'upstream') label = n === 1 ? '500' : `500×${n}`;
-    else if (kind === 'rate_limit') label = `限流${n}`;
-    else if (kind === 'timeout') label = `超时${n}`;
-    else if (kind === 'disconnect') label = `断连${n}`;
-    else if (kind === 'model_output') label = `纠偏${n}`;
-    else if (kind === 'safety') label = `过滤${n}`;
-    else if (kind === 'auth_or_model') label = `受限${n}`;
-    else if (kind === 'mixed') label = `异常${n}`;
-    else label = `报错${n}`;
-  }
+  const copy = getCliCopy(locale);
+  const fmt = copy.anom[kind] || copy.anom.error;
+  const label = fmt(n);
   const plain = `! ${label}`;
   if (!useColor) return plain;
   const color =
@@ -1151,7 +1317,8 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
   const showMulti = options.showMultiSession !== false;
   const showAnomaly = options.showAnomaly !== false;
   const normLang = normalizeLanguageSetting(options.language);
-  const isEn = normLang === 'auto' ? detectCliHostLanguageIsEn() : normLang === 'en-US';
+  const locale = normLang === 'auto' ? detectCliHostLocale() : normLang;
+  const copy = getCliCopy(locale);
   const useColor = options.color !== false;
 
   // 新会话尚无任何完成步骤（stepCount === 0）时，隐藏纯占位性的 "--s" / "--" 槽位，避免刚启动显得满屏缺数据
@@ -1180,15 +1347,9 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
     const labelText =
       runningCount > 0
         ? runningSubCount > 0
-          ? isEn
-            ? `${runningCount} active · ${runningSubCount} sub`
-            : `${runningCount} 运行中 · ${runningSubCount} 子`
-          : isEn
-            ? `${runningCount} active`
-            : `${runningCount} 运行中`
-        : isEn
-          ? '0 active'
-          : '0 运行中';
+          ? copy.activeSub(runningCount, runningSubCount)
+          : copy.active(runningCount)
+        : copy.idleZero;
     if (!useColor) {
       multiCore = `● ${labelText}`;
     } else {
@@ -1205,7 +1366,7 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
 
   const sep = useColor ? `${SGR_FG_SEP} | ${SGR_RESET}` : ' | ';
   const anomalyBadge = showAnomaly
-    ? cliStatusFormatAnomalyTag(slotCtx.latestAnomaly, { isEn, useColor })
+    ? cliStatusFormatAnomalyTag(slotCtx.latestAnomaly, { locale, useColor })
     : '';
 
   const primaryGaugeStyle =
@@ -1223,7 +1384,7 @@ export function formatCliStatusLineCapsule(slotCtx = {}, options = {}) {
   ) => {
     const slotSet = new Set(slotList);
     const rendered = slotList.map((key) =>
-      cliRenderSingleSlot(key, slotCtx, { isEn, useColor, slotSet, gaugeStyle })
+      cliRenderSingleSlot(key, slotCtx, { locale, useColor, slotSet, gaugeStyle })
     );
     if (includeAnomaly && anomalyBadge) {
       rendered.push(anomalyBadge);

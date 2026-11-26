@@ -506,7 +506,7 @@ export function createSessionLineChart() {
       const s = matchedSteps[i];
       preStepParts += `${s.stepIndex ?? i},${s.agentIndex ?? 0},${s.modelKey || s.modelShort || ''},${s.inputTokens || 0},${s.cacheReadTokens || 0},${s.outputTokens || 0},${s.contextTokens || 0},${s.tokPerSec ?? ''},${s.ttftSec ?? ''},${s.costUsd ?? ''},${s.anomalySig || ''};`;
     }
-    const preSig = `${locale}|${viewW}|${metric}|${showAgentPrefix}|${displaySettings?.modelDisplayMode || ''}|${Boolean(displaySettings?.showUpstreamModel)}|${displaySettings?.orchestratorIdMode || ''}|${targetKeys.join(',')}|${extColorSig}|${preStepParts}`;
+    const preSig = `${locale}|${viewW}|${metric}|${showAgentPrefix}|${displaySettings?.modelDisplayMode || ''}|${Boolean(displaySettings?.showUpstreamModel)}|${targetKeys.join(',')}|${extColorSig}|${preStepParts}`;
     if (preSig === lastPreSig && lastSummaryBadge) {
       return { summaryBadge: lastSummaryBadge };
     }

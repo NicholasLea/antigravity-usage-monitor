@@ -45,7 +45,11 @@ import {
   isLoopbackBindHost,
   parseStandaloneCliArgs,
 } from '../backend/standalone-server.mjs';
-import { handleMcpJsonRpcMessage } from '../mcp-entry.mjs';
+import {
+  handleMcpJsonRpcMessage,
+  isOneShotCliParentCommand,
+  shouldSkipDaemonForParentProcess,
+} from '../mcp-entry.mjs';
 import { computeCapsuleLayoutMode } from '../src/components/layout/WindowOverlayShell.js';
 import {
   getCacheToneClass,
@@ -702,18 +706,25 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     enableCliStatusLine: true,
     topbarCapsuleSlots: ['tps', 'ttft', 'context'],
     hoverModules: ['metrics', 'context', 'quotas'],
+    hoverSyncOverviewMetrics: true,
+    hoverMetricStyle: 'medium',
+    hoverMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
     overviewModules: ['metrics', 'context', 'quotas', 'live_tasks'],
+    overviewMetricStyle: 'medium',
     overviewMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
     stepTableColumns: ['step', 'model', 'tps', 'ttft', 'tokens_combo', 'cache', 'cost'],
     showStepTurnRail: false,
     showStepAgentBadge: true,
     showStepSpeedColor: false,
     showStepFilterToolbar: false,
+    modelDisplayMode: 'short',
     showUpstreamModel: false,
-    orchestratorIdMode: 'compact',
     weeklyLimitMode: 'official',
     weeklyTokenBudget: 150000000,
     weeklyCostBudget: 100,
+    developerModeEnabled: false,
+    riskyFeaturesEnabled: false,
+    accountSwitchRiskAccepted: false,
     contextWindowRiskAccepted: false,
     modelContextWindows: {},
   };
@@ -778,6 +789,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
           ...defaultMockSettings,
           topbarCapsuleSlots: [...defaultMockSettings.topbarCapsuleSlots],
           hoverModules: [...defaultMockSettings.hoverModules],
+          hoverMetrics: [...defaultMockSettings.hoverMetrics],
           overviewModules: [...defaultMockSettings.overviewModules],
           overviewMetrics: [...defaultMockSettings.overviewMetrics],
           stepTableColumns: [...defaultMockSettings.stepTableColumns],
@@ -1458,31 +1470,36 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const allPanes = popoverEl.querySelectorAll('.view-pane');
     const settingsRoot = popoverEl.querySelector('.settings-view-root');
     const subNavBtns = settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn');
-    assert.deepEqual(subNavBtns.map((button) => button.textContent), ['常规', '结构', '账号', '其他']);
+    assert.deepEqual(
+      subNavBtns.map((button) => button.textContent),
+      ['常规', '结构', '会话', '其他'],
+      'Account tab stays hidden until Developer Mode and High-Risk Features are both enabled'
+    );
     assert.match(
       stylesCss,
       /\.settings-subnav-bar\s+\.segmented\s*\{[^}]*grid-auto-flow:\s*column;[^}]*grid-auto-columns:\s*minmax\(0,\s*1fr\);/,
       'Settings subnav uses auto-sized equal columns regardless of visible tab count'
     );
-    const [generalPane, structurePane, accountPane, otherPane] = settingsRoot.querySelectorAll('.settings-tab-stack');
+    const [generalPane, structurePane, sessionsPane, accountPane, otherPane] = settingsRoot.querySelectorAll('.settings-tab-stack');
     const thirdNavBar = settingsRoot.querySelector('.settings-thirdnav-bar');
     assert.ok(thirdNavBar, '3rd-level structure menu bar mounted in SettingsView');
     assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden when General tab is active');
     assert.equal(generalPane.hasAttribute('hidden'), false, 'General tab active by default');
     assert.equal(structurePane.hasAttribute('hidden'), true);
+    assert.equal(sessionsPane.hasAttribute('hidden'), true);
+    assert.equal(accountPane.hasAttribute('hidden'), true);
     assert.equal(otherPane.hasAttribute('hidden'), true);
 
     // --- Tab 0: 常规 (languageSwitch, themeAccent, fontScaleSwitch, modernUiSwitch, hostI18nDepth, pluginUpdateMode) ---
     const generalSegControls = generalPane.querySelectorAll('.segmented');
     assert.equal(
       generalSegControls.length,
-      4,
-      'General tab has Language, FontScale, Experimental Modern UI, and Host I18n depth segmented controls'
+      3,
+      'General tab has FontScale, Modern UI, and Host I18n depth segmented controls'
     );
-    const langBtns = generalSegControls[0].querySelectorAll('.seg-btn');
-    const fontScaleBtns = generalSegControls[1].querySelectorAll('.seg-btn');
-    const modernUiBtns = generalSegControls[2].querySelectorAll('.seg-btn');
-    const hostI18nDepthBtns = generalSegControls[3].querySelectorAll('.seg-btn');
+    const fontScaleBtns = generalSegControls[0].querySelectorAll('.seg-btn');
+    const modernUiBtns = generalSegControls[1].querySelectorAll('.seg-btn');
+    const hostI18nDepthBtns = generalSegControls[2].querySelectorAll('.seg-btn');
     assert.deepEqual(
       hostI18nDepthBtns.map((button) => button.textContent),
       ['浅度', '深度'],
@@ -1505,14 +1522,25 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(portalHost.getAttribute('data-modern-ui'), 'true');
     assert.equal(capsuleHost.getAttribute('data-modern-ui'), 'true');
     assert.equal(popoverEl.getAttribute('data-modern-ui'), 'true');
-    assert.equal(langBtns.length, 3, 'Language switch has 跟随系统 / 简体中文 / English');
-    assert.equal(langBtns[0].textContent, '跟随系统');
-    assert.equal(langBtns[1].textContent, '简体中文');
-    assert.equal(langBtns[2].textContent, 'English');
-    assert.equal(langBtns[1].classList.contains('is-active'), true, 'mockSettings language zh-CN selects index 1');
     const generalSelects = generalPane.querySelectorAll('.custom-select');
-    assert.equal(generalSelects.length, 2, 'General tab has Host I18n Language and Update Mode selects');
-    const updateModeSelectEl = generalSelects[1];
+    assert.equal(
+      generalSelects.length,
+      4,
+      'General tab has UI Language, Display Currency, Host I18n Language, and Update Mode selects'
+    );
+    const langSelectEl = generalSelects[0];
+    const currencySelectEl = generalSelects[1];
+    const updateModeSelectEl = generalSelects[3];
+    assert.match(currencySelectEl.querySelector('.select-label').textContent, /CNY/);
+    assert.equal(langSelectEl.querySelector('.select-label').textContent, '简体中文');
+    langSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
+    const langOpts = langSelectEl.querySelectorAll('.select-option');
+    assert.deepEqual(
+      langOpts.map((opt) => opt.querySelector('.select-option-text').textContent),
+      ['跟随系统', '简体中文', '繁體中文', 'English', '日本語', '한국어', 'Deutsch', 'Français'],
+      'UI language select lists auto + all 7 supported locales'
+    );
+    langSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
 
     // Theme accent picker: switch to emerald, verify CSS vars injected on both hosts, then restore host
     const swatchBtns = generalPane.querySelectorAll('.theme-swatch-btn');
@@ -1549,23 +1577,34 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(portalHost.getAttribute('data-font-scale'), 'md');
     assert.equal(popoverEl.getAttribute('data-font-scale'), 'md');
 
-    // Live i18n switch: zh-CN -> en-US (index 2) -> auto (index 0) -> zh-CN (index 1) without page reload
-    langBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
-    await new Promise((r) => setTimeout(r, 30));
+    // Live i18n switch: zh-CN -> en-US (index 3) -> ja-JP (index 4) -> auto (index 0) -> zh-CN (index 1) without page reload
+    const selectUiLangByIndex = async (idx) => {
+      langSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
+      langSelectEl.querySelectorAll('.select-option')[idx].dispatchEvent({ type: 'click', stopPropagation() {} });
+      await new Promise((r) => setTimeout(r, 30));
+    };
+    await selectUiLangByIndex(3);
     assert.equal(mockSettings.language, 'en-US');
+    assert.match(currencySelectEl.querySelector('.select-label').textContent, /USD Only/i);
     assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, 'Live');
-    assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, 'Settings');
+    assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, 'Controls');
     assert.equal(subNavBtns[0].textContent, 'General');
     assert.equal(subNavBtns[1].textContent, 'Structure');
-    assert.equal(subNavBtns[2].textContent, 'Account');
+    assert.equal(subNavBtns[2].textContent, 'Sessions');
     assert.equal(subNavBtns[3].textContent, 'Other');
-    langBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
-    await new Promise((r) => setTimeout(r, 30));
+    await selectUiLangByIndex(4);
+    assert.equal(mockSettings.language, 'ja-JP');
+    assert.match(currencySelectEl.querySelector('.select-label').textContent, /JPY/);
+    assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, 'ライブ');
+    assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, '設定');
+    assert.equal(subNavBtns[0].textContent, '一般');
+    await selectUiLangByIndex(0);
     assert.equal(mockSettings.language, 'auto');
-    langBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
-    await new Promise((r) => setTimeout(r, 30));
+    await selectUiLangByIndex(1);
     assert.equal(mockSettings.language, 'zh-CN');
+    assert.match(currencySelectEl.querySelector('.select-label').textContent, /CNY/);
     assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, '实时监控');
+    assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, '控制中心');
     assert.equal(subNavBtns[0].textContent, '常规');
 
     // Verify 3-tier update mode select (manual default -> off hides topbar/hover prompts -> auto -> manual)
@@ -1642,13 +1681,15 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(thirdNavBtns[0].classList.contains('is-active'), true, 'First 3rd-level tab active by default');
 
     const accordionSections = structurePane.querySelectorAll('.collapsible-section');
-    assert.equal(accordionSections.length, 4, 'Structure tab has 4 static pane sections');
-    assert.equal(accordionSections[0].hasAttribute('hidden'), false, 'Pane 0 visible by default');
-    assert.equal(accordionSections[1].hasAttribute('hidden'), true, 'Pane 1 hidden until selected');
-    assert.equal(accordionSections[2].hasAttribute('hidden'), true, 'Pane 2 hidden until selected');
-    assert.equal(accordionSections[3].hasAttribute('hidden'), true, 'Pane 3 hidden until selected');
+    assert.equal(accordionSections.length, 5, 'Structure tab has 5 static section cards (App mount + CLI + 3 other panes)');
+    assert.equal(accordionSections[0].hasAttribute('hidden'), false, 'App mount card visible by default');
+    assert.equal(accordionSections[1].hasAttribute('hidden'), true, 'CLI card hidden until CLI is installed');
+    assert.equal(accordionSections[2].hasAttribute('hidden'), true, 'Pane 1 hidden until selected');
+    assert.equal(accordionSections[3].hasAttribute('hidden'), true, 'Pane 2 hidden until selected');
+    assert.equal(accordionSections[4].hasAttribute('hidden'), true, 'Pane 3 hidden until selected');
 
     const sec0 = accordionSections[0];
+    const cliSec = accordionSections[1];
     assert.equal(sec0.querySelector('.structure-preview-stage'), null, 'No outer preview wrapper box');
     assert.equal(sec0.querySelector('.structure-preview-head'), null, 'No redundant mock data label header');
     const previewCapsuleBar = sec0.querySelector('.preview-capsule-bar');
@@ -1697,9 +1738,11 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(mockSettings.enableWindowOverlay, true, 'enableWindowOverlay persisted back to true');
     assert.equal(previewCapsuleBar.getAttribute('data-mount-mode'), 'dual');
 
-    // Toggle popover width mode (auto -> custom 640px -> step +10px -> auto), topbar multi-session switch, capsule/hover context agent mode (main -> auto -> main), and CLI bottom capsule switch
+    // Toggle popover width mode (auto -> custom 640px -> step +10px -> auto), topbar multi-session switch, capsule/hover context agent mode (main -> auto -> main), and separate CLI bottom capsule switch
     const topbarSegBtns = sec0.querySelectorAll('.seg-btn');
-    assert.equal(topbarSegBtns.length, 8, 'Popover width + Topbar multi-session + Capsule/Hover context mode + CLI bottom capsule toggles render 8 buttons');
+    assert.equal(topbarSegBtns.length, 6, 'App mount card renders 6 segmented buttons (Popover width + Topbar multi-session + Capsule/Hover context mode)');
+    const cliSegBtns = cliSec.querySelectorAll('.seg-btn');
+    assert.equal(cliSegBtns.length, 2, 'Separate CLI section card renders 2 segmented buttons for CLI bottom capsule toggle');
     const popWidthInput = sec0.querySelector('.num-field');
     const popWidthStepBtns = sec0.querySelectorAll('.num-step-btn');
     assert.ok(popWidthInput, 'CustomNumberInput field exists without native <input type="number">');
@@ -1739,10 +1782,10 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.contextAgentMode, 'main', 'Capsule/Hover context mode switches back to lock main agent');
 
-    topbarSegBtns[7].dispatchEvent({ type: 'click', stopPropagation() {} });
+    cliSegBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.enableCliStatusLine, false, 'CLI bottom capsule toggle turns off enableCliStatusLine');
-    topbarSegBtns[6].dispatchEvent({ type: 'click', stopPropagation() {} });
+    cliSegBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.enableCliStatusLine, true, 'CLI bottom capsule toggle restores enableCliStatusLine');
 
@@ -1828,6 +1871,57 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(capSlots[1].getAttribute('data-metric'), 'cost');
     assert.equal(capSlots[2].getAttribute('data-metric'), 'ttft');
 
+    // Direct drag-to-reorder on the preview capsule bar itself: drag slot 2 ('ttft') left to slot 0 -> ['ttft', 'gemini_5h', 'cost']
+    assert.equal(
+      previewCapsuleBar.classList.contains('is-slot-reorderable'),
+      true,
+      'Preview capsule bar exposes direct horizontal slot drag affordance'
+    );
+    const previewCapsuleBtn = previewCapsuleBar.querySelector('.wm-capsule-btn');
+    previewCapsuleBtn.getBoundingClientRect = () => ({ left: 10, top: 10, right: 240, bottom: 38, width: 230, height: 28 });
+    const prevSlotRects = [
+      { left: 20, right: 88, top: 15, bottom: 33, width: 68, height: 18 },
+      { left: 105, right: 157, top: 15, bottom: 33, width: 52, height: 18 },
+      { left: 174, right: 220, top: 15, bottom: 33, width: 46, height: 18 },
+    ];
+    for (let i = 0; i < 3; i += 1) {
+      previewCapsuleSlots[i].getBoundingClientRect = () => prevSlotRects[i];
+    }
+    previewCapsuleSlots[2].dispatchEvent({
+      type: 'pointerdown',
+      button: 0,
+      clientX: 197,
+      clientY: 24,
+      preventDefault() {},
+      stopPropagation() {},
+    });
+    mockDocument.dispatchEvent({ type: 'pointermove', clientX: 30, clientY: 24, preventDefault() {} });
+    assert.equal(previewCapsuleBar.classList.contains('is-dragging-capsule'), true);
+    assert.deepEqual(
+      mockSettings.topbarCapsuleSlots,
+      ['gemini_5h', 'cost', 'ttft'],
+      'Direct capsule drag does not spam settings API before pointerup'
+    );
+    const liveRowVals = Array.from(capSlotListEl.children)
+      .slice(0, 3)
+      .map((row) => row.querySelector('.select-trigger .select-label')?.textContent || '');
+    assert.equal(
+      liveRowVals[0] !== liveRowVals[2],
+      true,
+      'EditableSlotList below updates live while dragging preview capsule directly'
+    );
+    mockDocument.dispatchEvent({ type: 'pointerup', clientX: 30, clientY: 24 });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(previewCapsuleBar.classList.contains('is-dragging-capsule'), false);
+    assert.deepEqual(
+      mockSettings.topbarCapsuleSlots,
+      ['ttft', 'gemini_5h', 'cost'],
+      'Direct preview capsule drag persists new order once on pointerup'
+    );
+    assert.equal(capSlots[0].getAttribute('data-metric'), 'ttft');
+    assert.equal(capSlots[1].getAttribute('data-metric'), 'gemini_5h');
+    assert.equal(capSlots[2].getAttribute('data-metric'), 'cost');
+
     // Click `+ 添加指标` twice to expand from 3 -> 5 slots
     const capAddBtn = capSlotWrap.querySelector('.slot-add-btn');
     capAddBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -1861,7 +1955,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(readCapVal(capSlots[2].querySelector('.wm-ctx-pct')), '50%');
 
     // Pane 1 (3rd-level tab 'hover'): Hover Popup Modules (0..4) + real hover UI preview
-    const sec1 = accordionSections[1];
+    const sec1 = accordionSections[2];
     thirdNavBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(thirdNavBtns[1].classList.contains('is-active'), true, 'Hover 3rd-level tab active');
@@ -1872,7 +1966,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(hoverPreviewTip.classList.contains('is-preview'), true, 'Real .wm-hover-tip mounted inline in preview');
     assert.equal(hoverPreviewWidgets.children.length, 3, 'Default 3 real hover widgets mounted in preview');
 
-    const hoverSlotWrap = sec1.querySelector('.editable-slot-wrap');
+    const [hoverMetricsWrap, hoverSlotWrap] = sec1.querySelectorAll('.editable-slot-wrap');
     for (let r = 0; r < 3; r += 1) {
       const remBtns = hoverSlotWrap.querySelectorAll('.slot-remove-btn');
       remBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -1900,8 +1994,66 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(hoverPreviewTip.hasAttribute('hidden'), false, 'Hover preview tip restored');
     assert.equal(hoverPreviewWidgets.children.length, 3, '3 real hover widgets restored in preview');
 
+    // Direct vertical drag on Hover preview modules: drag 'quotas' (idx 2) above 'metrics' (idx 0)
+    assert.equal(hoverPreviewWidgets.classList.contains('is-modules-reorderable'), true);
+    hoverPreviewWidgets.getBoundingClientRect = () => ({ left: 0, top: 0, right: 320, bottom: 320, width: 320, height: 320 });
+    hoverPreviewWidgets.children[0].getBoundingClientRect = () => ({ left: 0, top: 0, right: 320, bottom: 80, width: 320, height: 80 });
+    hoverPreviewWidgets.children[1].getBoundingClientRect = () => ({ left: 0, top: 88, right: 320, bottom: 208, width: 320, height: 120 });
+    hoverPreviewWidgets.children[2].getBoundingClientRect = () => ({ left: 0, top: 216, right: 320, bottom: 316, width: 320, height: 100 });
+    hoverPreviewWidgets.children[2].dispatchEvent({ type: 'pointerdown', button: 0, clientX: 80, clientY: 260, preventDefault() {} });
+    mockDocument.dispatchEvent({ type: 'pointermove', clientX: 80, clientY: 20, preventDefault() {} });
+    assert.equal(hoverPreviewWidgets.classList.contains('is-dragging-modules'), true);
+    assert.deepEqual(mockSettings.hoverModules, ['metrics', 'context', 'quotas'], 'Hover module drag does not spam settings before drop');
+    mockDocument.dispatchEvent({ type: 'pointerup', clientX: 80, clientY: 20 });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(mockSettings.hoverModules, ['quotas', 'metrics', 'context'], 'Direct Hover preview module drag persists order');
+    // Reset Hover pane back to default order for subsequent assertions
+    sec1.querySelector('.btn-ghost-sm').dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 40));
+    assert.deepEqual(mockSettings.hoverModules, ['metrics', 'context', 'quotas']);
+
+    // Switch real-time metrics style to Large while synced with Live Overview -> updates overviewMetricStyle & dims 4th metric row
+    const [hoverStyleGroup, hoverSyncGroup] = sec1.querySelectorAll('.segmented');
+    const hoverStyleBtns = hoverStyleGroup.querySelectorAll('.seg-btn');
+    const hoverSyncBtns = hoverSyncGroup.querySelectorAll('.seg-btn');
+    assert.equal(hoverStyleBtns.length, 2, 'Hover metric style segmented switch has Medium and Large options');
+    assert.equal(hoverSyncBtns.length, 2, 'Hover sync toggle has On and Off options');
+    hoverStyleBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.hoverSyncOverviewMetrics, true);
+    assert.equal(mockSettings.overviewMetricStyle, 'large');
+    assert.equal(
+      hoverPreviewWidgets.children[0].classList.contains('is-large-trend'),
+      true,
+      'Hover preview MetricMatrixWidget switches to large trend sparkline layout'
+    );
+    assert.equal(hoverPreviewWidgets.children[0].getAttribute('data-cols'), '3');
+    assert.equal(hoverPreviewWidgets.children[0].querySelectorAll('.matrix-cell.is-trend-card').length, 3);
+    assert.equal(hoverPreviewWidgets.children[0].querySelectorAll('.cell-sparkline-svg').length, 3);
+    const hoverMetricRows = hoverMetricsWrap.querySelectorAll('.editable-slot-row');
+    assert.equal(hoverMetricRows.length, 4, 'Unified 1-4 metric list preserves 4th metric row in Large mode');
+    assert.equal(hoverMetricRows[3].classList.contains('is-dimmed'), true, '4th metric row dimmed in Large mode');
+
+    // Turn off Sync with Live Overview -> Hover detaches cleanly while Overview stays Large
+    hoverSyncBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.hoverSyncOverviewMetrics, false);
+    assert.equal(mockSettings.hoverMetricStyle, 'large');
+    hoverStyleBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.hoverMetricStyle, 'medium');
+    assert.equal(mockSettings.overviewMetricStyle, 'large', 'Overview stays Large after Hover detaches');
+    assert.equal(hoverPreviewWidgets.children[0].classList.contains('is-large-trend'), false);
+    assert.equal(hoverPreviewWidgets.children[0].getAttribute('data-cols'), '4');
+    assert.equal(hoverMetricRows[3].classList.contains('is-dimmed'), false, '4th metric row restored when switching back to Medium');
+    // Reset hover pane restores sync=true and hover defaults
+    sec1.querySelector('.btn-ghost-sm').dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(mockSettings.hoverSyncOverviewMetrics, true);
+    assert.equal(mockSettings.hoverMetricStyle, 'medium');
+
     // Pane 2 (3rd-level tab 'overview'): Live Overview Layout + real overview UI preview
-    const sec2 = accordionSections[2];
+    const sec2 = accordionSections[3];
     thirdNavBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(thirdNavBtns[2].classList.contains('is-active'), true, 'Overview 3rd-level tab active');
@@ -1909,6 +2061,17 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(sec2.hasAttribute('hidden'), false);
     const overviewPreviewHostEl = sec2.querySelector('.overview-modules-host');
     assert.equal(overviewPreviewHostEl.children.length, 4, 'Overview preview mounts all 4 real overview widgets');
+    // Overview is currently in Large mode from earlier synced switch -> verify 3 trend cards + dimmed 4th row, then switch back to Medium
+    assert.equal(overviewPreviewHostEl.children[0].classList.contains('is-large-trend'), true, 'Live Overview preview supports Large sparkline trend cards');
+    assert.equal(overviewPreviewHostEl.children[0].getAttribute('data-cols'), '3');
+    const [ovMetricWrap, ovModWrap] = sec2.querySelectorAll('.editable-slot-wrap');
+    assert.equal(ovMetricWrap.querySelectorAll('.editable-slot-row')[3].classList.contains('is-dimmed'), true, 'Overview 4th metric dimmed in Large mode');
+    const ovStyleBtns = sec2.querySelectorAll('.seg-btn');
+    ovStyleBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.overviewMetricStyle, 'medium');
+    assert.equal(overviewPreviewHostEl.children[0].classList.contains('is-large-trend'), false);
+    assert.equal(ovMetricWrap.querySelectorAll('.editable-slot-row')[3].classList.contains('is-dimmed'), false);
     assert.equal(
       sec2.querySelector('.structure-preview-canvas').classList.contains('is-scaled'),
       false,
@@ -1925,7 +2088,6 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       'Preview quota badge displays Ultra 5x multiplier instead of legacy Pro'
     );
 
-    const [ovModWrap, ovMetricWrap] = sec2.querySelectorAll('.editable-slot-wrap');
     // Move row 2 ('quotas') up above 'context' -> ['metrics', 'quotas', 'context', 'live_tasks']
     ovModWrap.querySelectorAll('.slot-move-btn')[6].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
@@ -1951,13 +2113,25 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     );
     pillTabs[3].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
+    // Direct horizontal drag on Overview preview metric cells (currently ['tps', 'ttft'] -> ['ttft', 'tps'])
+    const ovMatrixEl = overviewPreviewHostEl.children[0];
+    assert.equal(ovMatrixEl.classList.contains('is-metrics-reorderable'), true);
+    ovMatrixEl.getBoundingClientRect = () => ({ left: 0, top: 0, right: 320, bottom: 72, width: 320, height: 72 });
+    ovMatrixEl.children[0].getBoundingClientRect = () => ({ left: 0, right: 156, top: 0, bottom: 72, width: 156, height: 72 });
+    ovMatrixEl.children[1].getBoundingClientRect = () => ({ left: 162, right: 318, top: 0, bottom: 72, width: 156, height: 72 });
+    ovMatrixEl.children[1].dispatchEvent({ type: 'pointerdown', button: 0, clientX: 240, clientY: 36, preventDefault() {}, stopPropagation() {} });
+    mockDocument.dispatchEvent({ type: 'pointermove', clientX: 40, clientY: 36, preventDefault() {} });
+    assert.equal(ovMatrixEl.classList.contains('is-dragging-matrix'), true);
+    mockDocument.dispatchEvent({ type: 'pointerup', clientX: 40, clientY: 36 });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(mockSettings.overviewMetrics, ['ttft', 'tps'], 'Direct Overview preview metric drag persists order');
     sec2.querySelector('.btn-ghost-sm').dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 40));
     assert.deepEqual(mockSettings.overviewModules, ['metrics', 'context', 'quotas', 'live_tasks']);
     assert.deepEqual(mockSettings.overviewMetrics, ['tps', 'ttft', 'avg_tps', 'step_cost']);
 
     // Pane 3 (3rd-level tab 'steps'): Step Table Columns (2..12) + real StepTableWidget preview
-    const sec3 = accordionSections[3];
+    const sec3 = accordionSections[4];
     thirdNavBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(thirdNavBtns[3].classList.contains('is-active'), true, 'Steps 3rd-level tab active');
@@ -1968,6 +2142,39 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(previewStepTable.classList.contains('has-turn-rail'), false, 'Preview step table hides turn rail by default');
     assert.equal(previewStepTable.children[0].children[0].children.length, 7, 'Preview step table renders 7 default columns');
     assert.equal(previewStepTable.children[1].children.length, 4, 'Preview step table renders 4 simulated steps');
+
+    // Direct horizontal column drag on Steps preview table header: drag col 1 ('model') left of col 0 ('step'), then drag back
+    assert.equal(previewStepTable.classList.contains('is-col-reorderable'), true);
+    const prevTheadRow = previewStepTable.children[0].children[0];
+    previewStepTable.getBoundingClientRect = () => ({ left: 0, top: 0, right: 420, bottom: 140, width: 420, height: 140 });
+    const assignThRects = () => {
+      for (let c = 0; c < prevTheadRow.children.length; c += 1) {
+        prevTheadRow.children[c].getBoundingClientRect = () => ({
+          left: c * 60,
+          right: (c + 1) * 60,
+          top: 0,
+          bottom: 26,
+          width: 60,
+          height: 26,
+        });
+      }
+    };
+    assignThRects();
+    prevTheadRow.children[1].dispatchEvent({ type: 'pointerdown', button: 0, clientX: 90, clientY: 13, preventDefault() {}, stopPropagation() {} });
+    mockDocument.dispatchEvent({ type: 'pointermove', clientX: 15, clientY: 13, preventDefault() {} });
+    assert.equal(previewStepTable.classList.contains('is-dragging-cols'), true);
+    mockDocument.dispatchEvent({ type: 'pointerup', clientX: 15, clientY: 13 });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.stepTableColumns[0], 'model', 'Direct Steps preview column header drag persists new order');
+    assert.equal(mockSettings.stepTableColumns[1], 'step');
+    // Drag 'step' back to col 0 so subsequent assertions see the original mockSettings.stepTableColumns
+    assignThRects();
+    prevTheadRow.children[1].dispatchEvent({ type: 'pointerdown', button: 0, clientX: 90, clientY: 13, preventDefault() {}, stopPropagation() {} });
+    mockDocument.dispatchEvent({ type: 'pointermove', clientX: 15, clientY: 13, preventDefault() {} });
+    mockDocument.dispatchEvent({ type: 'pointerup', clientX: 15, clientY: 13 });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.stepTableColumns[0], 'step');
+    assert.equal(mockSettings.stepTableColumns[1], 'model');
 
     const sec3SettingLabels = sec3.querySelectorAll('.form-label').map((el) => el.textContent);
     assert.ok(sec3SettingLabels.includes('对话轮次导轨'), 'Turn rail switch rendered in 调用明细字段');
@@ -2064,7 +2271,55 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
       'Section reset restores monochrome speed classes in preview step table'
     );
 
+    // --- 会话 (dedicated Sessions tab housing SessionMigrationCard) ---
     subNavBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(sessionsPane.hasAttribute('hidden'), false, 'Sessions tab visible directly left of Other by default');
+    assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden on Sessions tab');
+    assert.ok(sessionsPane.querySelector('.smig-panel'), 'SessionMigrationCard mounted inside Sessions tab');
+    assert.equal(otherPane.querySelector('.smig-panel'), null, 'SessionMigrationCard removed from Other tab');
+
+    // --- Two-level Developer Mode -> High-Risk Features gate inside Other tab ---
+    subNavBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(otherPane.hasAttribute('hidden'), false);
+    const devPanel = otherPane.querySelector('.settings-developer-panel');
+    const devModeRow = otherPane.querySelector('.settings-dev-mode-row');
+    const riskyFeaturesRow = otherPane.querySelector('.settings-risky-features-row');
+    const contextPanel = otherPane.querySelector('.settings-context-panel');
+    assert.ok(devPanel && devModeRow && riskyFeaturesRow && contextPanel, 'Developer & Context panels exist in Other tab');
+    assert.equal(riskyFeaturesRow.hasAttribute('hidden'), true, 'High-Risk toggle hidden while Developer Mode is off');
+    assert.equal(contextPanel.hasAttribute('hidden'), true, 'Model Context Settings hidden by default');
+    assert.equal(accountRequests.length, 0, 'No account API calls occur while High-Risk gate is closed');
+
+    // Step 1: Turn ON Developer Mode -> reveals High-Risk Features switch, but Account & Context stay hidden
+    const devModeBtns = devModeRow.querySelectorAll('.seg-btn');
+    devModeBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.developerModeEnabled, true);
+    assert.equal(mockSettings.riskyFeaturesEnabled, false);
+    assert.equal(riskyFeaturesRow.hasAttribute('hidden'), false, 'High-Risk toggle appears after Developer Mode is enabled');
+    assert.equal(contextPanel.hasAttribute('hidden'), true, 'Model Context Settings stays hidden until High-Risk Features is enabled');
+    assert.deepEqual(
+      settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn').map((b) => b.textContent),
+      ['常规', '结构', '会话', '其他'],
+      'Account tab still hidden when only Developer Mode is enabled'
+    );
+
+    // Step 2: Turn ON High-Risk Features -> reveals Account tab & Model Context Settings (BOTH still keeping risk warning masks!)
+    const riskyFeaturesBtns = riskyFeaturesRow.querySelectorAll('.seg-btn');
+    riskyFeaturesBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(mockSettings.riskyFeaturesEnabled, true);
+    assert.equal(contextPanel.hasAttribute('hidden'), false, 'Model Context Settings visible once High-Risk Features is enabled');
+    const expandedSubNavBtns = settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn');
+    assert.deepEqual(
+      expandedSubNavBtns.map((button) => button.textContent),
+      ['常规', '结构', '会话', '账号', '其他'],
+      'Account tab appears once Developer Mode and High-Risk Features are both enabled'
+    );
+
+    expandedSubNavBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 35));
     assert.equal(accountPane.hasAttribute('hidden'), false);
     assert.equal(accountPane.querySelector('.settings-account-identity').textContent, 'test@example.com');
@@ -2100,13 +2355,30 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     await new Promise((r) => setTimeout(r, 20));
     assert.ok(accountRequests.some((item) => item.action === 'loginStart' && item.language === 'zh-CN'));
     assert.ok(accountPane.querySelectorAll('.settings-action-desc').some((el) => el.textContent.includes('请在浏览器中选择 Google 账号')));
-    assert.equal(accountPane.querySelector('.settings-account-login-cancel').hasAttribute('hidden'), false);
+    const cancelBtn = accountPane.querySelector('.settings-account-login-cancel');
+    assert.equal(cancelBtn.hasAttribute('hidden'), false);
+    assert.equal(
+      accountPane.querySelector('.account-toolbar-left .settings-account-login-cancel'),
+      null,
+      'cancelLogin must live inside login notice actions rather than crowding .account-toolbar-left'
+    );
+    assert.equal(
+      accountPane.querySelector('.settings-bridge-notice .settings-bridge-actions .settings-account-login-cancel'),
+      cancelBtn,
+      'cancelLogin must sit beside the reopen authorization link inside .settings-bridge-actions'
+    );
     assert.equal(accountPane.querySelector('a').getAttribute('href'), 'https://accounts.google.com/o/oauth2/v2/auth?state=synthetic');
-    accountPane.querySelector('.settings-account-login-cancel').dispatchEvent({ type: 'click', stopPropagation() {} });
+    cancelBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 20));
     assert.ok(accountRequests.some((item) => item.action === 'loginCancel' && item.id === 'browser-login'));
-    assert.equal(accountPane.querySelector('.settings-account-login-cancel').hasAttribute('hidden'), true);
+    assert.equal(cancelBtn.hasAttribute('hidden'), true);
     assert.equal(googleLogin.hasAttribute('disabled'), false);
+    // Opening a drawer immediately clears an idle terminal cancelled notice instead of keeping it stuck
+    const importBtn = accountPane.querySelectorAll('.account-toolbar-left .btn-secondary')[0];
+    importBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    const cancelledNotice = accountPane.querySelector('.settings-bridge-notice.is-restart');
+    assert.equal(cancelledNotice.hasAttribute('hidden'), true, 'terminal cancelled login notice dismisses cleanly');
+    importBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
     googleLogin.dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 20));
     assert.ok(accountPane.querySelectorAll('.settings-account-identity').some((el) => el.textContent === 'browser@example.com'));
@@ -2124,16 +2396,15 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.ok(accountPane.querySelectorAll('.settings-action-desc').some((el) => el.textContent.includes('正在重启 Antigravity')));
 
     // --- 其他 (model format, context limits, cache rebuild, reset) ---
-    subNavBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
+    expandedSubNavBtns[4].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(otherPane.hasAttribute('hidden'), false);
     assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden when switching to Other tab');
     const otherSelects = otherPane.querySelectorAll('.custom-select');
-    assert.equal(otherSelects.length, 4);
+    assert.equal(otherSelects.length, 3);
     const modelFormatSelectEl = otherSelects[0];
-    const orchestratorIdSelectEl = otherSelects[1];
 
-    // Toggle stepModelSelect: short -> upstream -> upstream_compact -> short
+    // Toggle stepModelSelect: short -> upstream -> upstream_compact
     assert.ok(modelFormatSelectEl.querySelector('.select-label').textContent.includes('精简代号'));
     modelFormatSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
     modelFormatSelectEl.querySelectorAll('.select-option')[1].dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -2147,21 +2418,8 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(mockSettings.modelDisplayMode, 'upstream_compact');
     assert.equal(mockSettings.showUpstreamModel, true);
     assert.ok(modelFormatSelectEl.querySelector('.select-label').textContent.includes('去前缀原始 ID'));
-    modelFormatSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
-    modelFormatSelectEl.querySelectorAll('.select-option')[0].dispatchEvent({ type: 'click', stopPropagation() {} });
-    await new Promise((r) => setTimeout(r, 30));
-    assert.equal(mockSettings.modelDisplayMode, 'short');
-    assert.equal(mockSettings.showUpstreamModel, false);
 
-    // Toggle orchestratorIdSelect: compact -> full
-    assert.ok(orchestratorIdSelectEl.querySelector('.select-label').textContent.includes('精简代号'));
-    orchestratorIdSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
-    orchestratorIdSelectEl.querySelectorAll('.select-option')[1].dispatchEvent({ type: 'click', stopPropagation() {} });
-    await new Promise((r) => setTimeout(r, 30));
-    assert.equal(mockSettings.orchestratorIdMode, 'full');
-    assert.ok(orchestratorIdSelectEl.querySelector('.select-label').textContent.includes('原始完整 ID'));
-
-    const [contextModel, contextWindow] = otherSelects.slice(2);
+    const [contextModel, contextWindow] = otherSelects.slice(1);
     const selectOption = (select, index) => {
       select.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
       select.querySelectorAll('.select-option')[index].dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -2205,6 +2463,34 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     selectOption(contextModel, 3);
     assert.equal(contextWindow.querySelector('.select-trigger').hasAttribute('disabled'), true);
 
+    // Turning OFF High-Risk Features immediately hides & re-locks BOTH Account and Context Windows
+    riskyFeaturesBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(mockSettings.riskyFeaturesEnabled, false);
+    assert.equal(mockSettings.accountSwitchRiskAccepted, false);
+    assert.equal(mockSettings.contextWindowRiskAccepted, false);
+    assert.equal(contextPanel.hasAttribute('hidden'), true, 'Model Context Settings immediately hides when High-Risk is turned off');
+    assert.deepEqual(
+      settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn').map((b) => b.textContent),
+      ['常规', '结构', '会话', '其他'],
+      'Account tab immediately hides when High-Risk is turned off'
+    );
+
+    // Re-enabling High-Risk Features brings both back STILL locked behind their warning masks
+    riskyFeaturesBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(contextPanel.hasAttribute('hidden'), false);
+    assert.equal(ctxRiskMask.hasAttribute('hidden'), false, 'Context risk mask reappears after re-enabling High-Risk');
+    assert.equal(accountRiskMask.hasAttribute('hidden'), false, 'Account risk mask reappears after re-enabling High-Risk');
+
+    // Turning OFF Developer Mode cascades High-Risk Features OFF as well
+    devModeBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(mockSettings.developerModeEnabled, false);
+    assert.equal(mockSettings.riskyFeaturesEnabled, false);
+    assert.equal(riskyFeaturesRow.hasAttribute('hidden'), true);
+    assert.equal(contextPanel.hasAttribute('hidden'), true);
+
     const maintBtns = otherPane
       .querySelectorAll('.btn-secondary')
       .filter((btn) => !btn.classList.contains('ctx-risk-accept-btn'));
@@ -2219,12 +2505,15 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     // Two-step confirm for Reset All Settings: 1st click arms confirm, 2nd click resets all settings
     resetAllBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
     assert.equal(resetAllBtn.classList.contains('btn-danger-confirm'), true, '1st click arms confirmation state');
-    assert.equal(mockSettings.orchestratorIdMode, 'full', 'Not yet reset on 1st click');
+    assert.equal(mockSettings.modelDisplayMode, 'upstream_compact', 'Not yet reset on 1st click');
     resetAllBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 260));
-    assert.equal(mockSettings.orchestratorIdMode, 'compact', '2nd click resets orchestratorIdMode to default');
+    assert.equal(mockSettings.modelDisplayMode, 'short', '2nd click resets modelDisplayMode to default');
+    assert.equal(mockSettings.developerModeEnabled, false, 'Reset restores developerModeEnabled to false');
+    assert.equal(mockSettings.riskyFeaturesEnabled, false, 'Reset restores riskyFeaturesEnabled to false');
     assert.equal(mockSettings.contextWindowRiskAccepted, false, 'Reset restores contextWindowRiskAccepted to false');
     assert.equal(ctxRiskMask.hasAttribute('hidden'), false, 'Risk mask re-locks after factory reset');
+    assert.equal(contextPanel.hasAttribute('hidden'), true, 'Model Context Settings stays hidden after factory reset');
 
     // Verify ConsumptionView omits "+ 待定" / "3993 步费用待定" and StepsDetailView protects header title
     pillTabs[1].dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -3079,7 +3368,13 @@ test('Multi-port CDP discovery tolerates stale 2.0 DevToolsActivePort while inje
   );
 
   const prefetchedConvIds = [];
-  const settings = { enableWindowOverlay: true, modelContextWindows: { [modelId]: '900K' } };
+  const settings = {
+    enableWindowOverlay: true,
+    developerModeEnabled: true,
+    riskyFeaturesEnabled: true,
+    contextWindowRiskAccepted: true,
+    modelContextWindows: { [modelId]: '900K' },
+  };
   const mockAppJs = `
     (() => {
       const br = window.__AGUsageMonitorBridge;
@@ -3657,7 +3952,6 @@ test('Composer mount mode (输入框挂载) docks capsule immediately left of Au
     weeklyTokenBudget: 150000000,
     weeklyCostBudget: 100,
     showUpstreamModel: false,
-    orchestratorIdMode: 'compact',
     pluginUpdateMode: 'manual',
     autoUpdatePlugin: false,
     windowMountMode: 'composer',
@@ -4676,6 +4970,143 @@ test('Standalone Web server enforces loopback/non-loopback security boundaries, 
   }
 });
 
+test('Issue #44: standalone Web UI & panel sync <html lang> and <title> across en-US/zh-CN/auto without mutating overlay host title', async () => {
+  const { setI18nLanguage, syncDocumentLocale } = await import('../src/i18n/index.js');
+  const {
+    resolveStandaloneRequestLocale,
+    localizeStandaloneIndexHtml,
+  } = await import('../backend/standalone-server.mjs');
+
+  // 1. Pure helper equality guard & locale sync
+  let titleWrites = 0;
+  let langWrites = 0;
+  let curTitle = '用量监控';
+  let curLang = 'zh-CN';
+  const fakeDoc = {
+    documentElement: {
+      get lang() {
+        return curLang;
+      },
+      set lang(v) {
+        langWrites += 1;
+        curLang = v;
+      },
+    },
+    get title() {
+      return curTitle;
+    },
+    set title(v) {
+      titleWrites += 1;
+      curTitle = v;
+    },
+  };
+
+  try {
+    setI18nLanguage('en-US');
+    syncDocumentLocale(fakeDoc);
+    assert.equal(curLang, 'en-US');
+    assert.equal(curTitle, 'Usage & Speed Monitor');
+    assert.equal(langWrites, 1);
+    assert.equal(titleWrites, 1);
+
+    // Repeated sync with same locale must not mutate DOM again (prevents head observer churn)
+    syncDocumentLocale(fakeDoc);
+    assert.equal(langWrites, 1);
+    assert.equal(titleWrites, 1);
+
+    setI18nLanguage('zh-CN');
+    syncDocumentLocale(fakeDoc);
+    assert.equal(curLang, 'zh-CN');
+    assert.equal(curTitle, '用量监控');
+    assert.equal(langWrites, 2);
+    assert.equal(titleWrites, 2);
+  } finally {
+    setI18nLanguage('zh-CN');
+  }
+
+  // 2. Standalone HTTP server localizes both index.html and token login HTML via settings.language + Accept-Language
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'en-US,en;q=0.9' } }, 'auto'), 'en-US');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'en;q=0.5, zh-CN;q=0.9' } }, 'auto'), 'zh-CN');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'zh-TW,zh;q=0.9' } }, 'auto'), 'zh-TW');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'ja-JP,ja;q=0.9' } }, 'auto'), 'ja-JP');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'ko-KR,ko;q=0.9' } }, 'auto'), 'ko-KR');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'de-DE,de;q=0.9' } }, 'auto'), 'de-DE');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'fr-FR,fr;q=0.9' } }, 'auto'), 'fr-FR');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'zh-CN' } }, 'en-US'), 'en-US');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'en-US' } }, 'zh-CN'), 'zh-CN');
+
+  const rawIndexHtml = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const enIndexHtml = localizeStandaloneIndexHtml(rawIndexHtml, 'en-US');
+  assert.match(enIndexHtml, /<html lang="en-US">/);
+  assert.match(enIndexHtml, /<title>Usage & Speed Monitor<\/title>/);
+  const jaIndexHtml = localizeStandaloneIndexHtml(rawIndexHtml, 'ja-JP');
+  assert.match(jaIndexHtml, /<html lang="ja-JP">/);
+  assert.match(jaIndexHtml, /<title>使用量・速度モニター<\/title>/);
+
+  let mockLang = 'auto';
+  const i18nSrv = createStandaloneWebServer({
+    host: '127.0.0.1',
+    port: 0,
+    token: 'i18n-secret',
+    skipStartupDiscovery: true,
+    getSettingsFn: () => ({ language: mockLang }),
+    readAssetFn: async (rel) => (rel === 'index.html' ? rawIndexHtml : ''),
+    handleApiRequest: async () => ({ status: 200, contentType: 'application/json', body: '{}' }),
+  });
+
+  try {
+    const st = await i18nSrv.start();
+
+    // Unauthenticated English browser -> localized English login page
+    const enLogin = await fetch(`${st.url}/`, { headers: { 'Accept-Language': 'en-US,en;q=0.9' } });
+    assert.equal(enLogin.status, 401);
+    const enLoginHtml = await enLogin.text();
+    assert.match(enLoginHtml, /<html lang="en-US">/);
+    assert.match(enLoginHtml, /<title>Usage & Speed Monitor · Access Verification<\/title>/);
+    assert.match(enLoginHtml, /Verify and Open Monitor/);
+
+    // Invalid token POST from English browser -> English error message
+    const enBadPost = await fetch(`${st.url}/api/standalone-auth`, {
+      method: 'POST',
+      headers: {
+        Origin: st.url,
+        'Accept-Language': 'en-US',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'token=wrong',
+    });
+    assert.equal(enBadPost.status, 401);
+    assert.match(await enBadPost.text(), /Invalid access token/);
+
+    // Authenticated English browser with auto language -> localized index.html on first byte
+    const enAuthed = await fetch(`${st.url}/`, {
+      headers: {
+        Authorization: 'Bearer i18n-secret',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    assert.equal(enAuthed.status, 200);
+    const enPage = await enAuthed.text();
+    assert.match(enPage, /<html lang="en-US">/);
+    assert.match(enPage, /<title>Usage & Speed Monitor<\/title>/);
+
+    // Explicit zh-CN setting overrides English Accept-Language header
+    mockLang = 'zh-CN';
+    const zhOverride = await fetch(`${st.url}/`, {
+      headers: {
+        Authorization: 'Bearer i18n-secret',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    assert.equal(zhOverride.status, 200);
+    const zhPage = await zhOverride.text();
+    assert.match(zhPage, /<html lang="zh-CN">/);
+    assert.match(zhPage, /<title>用量监控<\/title>/);
+  } finally {
+    await i18nSrv.stop();
+  }
+});
+
 test('v1.5 feedback E2E: sticky bridge port/token across hot-reloads, CDP->HTTP self-healing, trimmed raw model IDs, non-truncating compaction suffix, custom token combo DSL, and adaptive popover width', async () => {
   const stickyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-wm-sticky-'));
   const leaseFile = path.join(stickyDir, 'window-bridge-lease.json');
@@ -4739,7 +5170,6 @@ test('v1.5 feedback E2E: sticky bridge port/token across hot-reloads, CDP->HTTP 
     popoverWidth: 580,
     modelDisplayMode: 'upstream_compact',
     showUpstreamModel: true,
-    orchestratorIdMode: 'compact',
     stepTokenComboFormat: 'context:in:cache',
     stepTableColumns: ['step', 'model', 'tps', 'tokens_io_cache', 'tokens_custom', 'cost'],
   };
@@ -4971,6 +5401,232 @@ test('v1.5 feedback E2E: sticky bridge port/token across hot-reloads, CDP->HTTP 
     failHttpOnce = false;
     ov.updateBridge({ port: 43222, token: 'b'.repeat(64) });
     assert.equal(mockWin.__AGUsageMonitorBridge.transportMode, 'http', 'updateBridge immediately heals transportMode back to http');
+  } finally {
+    ov.dispose();
+  }
+});
+
+test('WindowOverlayShell adaptive popover width handles virtualized .is-cols-locked step table, pop-in scale(0.975), and pane padding', async () => {
+  const appJs = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const stylesCss = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+  const savedSettings = {
+    language: 'zh-CN',
+    windowMountMode: 'dual',
+    enableWindowOverlay: true,
+    modernUi: true,
+    popoverWidthMode: 'auto',
+    popoverWidth: 580,
+    modelDisplayMode: 'upstream_compact',
+    stepTableColumns: ['time', 'model', 'tps', 'ttft', 'tokens_combo', 'cache', 'cost'],
+  };
+
+  const makeSteps = (count) =>
+    Array.from({ length: count }, (_, i) => ({
+      stepIndex: count - i,
+      createdAtMs: 1795600000000 - i * 10000,
+      modelShort: '4-carbon',
+      modelLabel: 'Gemini 4 Carbon',
+      modelUpstream: 'gemini-4-carbon',
+      tokPerSec: 32.6,
+      ttftSec: 44.3,
+      contextTokens: 312200,
+      inputTokens: 1000,
+      cacheReadTokens: 309000,
+      outputTokens: 2225,
+      thinkingTokens: 25,
+      responseTokens: 2200,
+      cacheHitPct: 98.9,
+      costUsd: 0.62,
+    }));
+
+  const buildPayload = () => ({
+    uiBundleVersion: 'ver-v156-auto',
+    settings: { ...savedSettings },
+    cloudStatus: { currentPluginVersion: '1.5.6', latestPluginVersion: '1.5.6', updateAvailable: false },
+    account: { planName: 'Google AI Ultra' },
+    quotas: { activePool: { remainingPct: 62 }, pools: [], weekly: {} },
+    runningConversations: [],
+    conversations: [{ cascadeId: 'aaaa1111-2222-3333-4444-555555555555', title: 'Virtualized 138', stepCount: 138 }],
+    activeConversation: {
+      cascadeId: 'aaaa1111-2222-3333-4444-555555555555',
+      title: 'Virtualized 138',
+      isRunning: false,
+      stepCount: 138,
+      latestTokPerSec: 32.6,
+      latestTtftSec: 44.3,
+      context: { totalTokens: 312200, compactionLimitTokens: 512000, limitTokens: 512000 },
+      recentSteps: makeSteps(138),
+      agents: [],
+    },
+    consumption: {
+      selectedRange: { key: 'today', label: '今天', startMs: 1, endMs: 2 },
+      session: {},
+      account: {},
+      trendSeries: [],
+      monthlySeries: [],
+    },
+    modelBreakdown: [],
+  });
+
+  let popAnimScale = 0.975;
+  let trueNaturalTableW = 556;
+  let lockedFixedTableW = 480;
+  let popElRef = null;
+  let tableElRef = null;
+
+  const { document: mockDoc } = createMockDom({
+    resolveRect: (el) => {
+      const scale = el === popElRef || (tableElRef && (el === tableElRef || el.tagName === 'TH' || el.tagName === 'TR'))
+        ? popAnimScale
+        : 1;
+      if (el === tableElRef) {
+        const isLocked = el.classList?.contains?.('is-cols-locked');
+        const ths = el.querySelector?.('thead')?.querySelectorAll?.('th') || [];
+        const hasInlineThW = ths.some((th) => Boolean(th?.style?.width));
+        const hasMinW = Number.parseFloat(el.style?.minWidth) || 0;
+        let layoutW;
+        if (isLocked || hasInlineThW) {
+          layoutW = lockedFixedTableW;
+        } else if (el.style?.width === 'max-content') {
+          layoutW = Math.max(trueNaturalTableW, hasMinW);
+        } else {
+          layoutW = Math.max(488, hasMinW);
+        }
+        return { left: 0, right: layoutW * scale, top: 0, bottom: 400 * scale, width: layoutW * scale, height: 400 * scale };
+      }
+      if (el.tagName === 'TH') {
+        const w = 72;
+        return { left: 0, right: w * scale, top: 0, bottom: 28 * scale, width: w * scale, height: 28 * scale };
+      }
+      if (el.tagName === 'TR') {
+        return { left: 0, right: 556 * scale, top: 0, bottom: 28 * scale, width: 556 * scale, height: 28 * scale };
+      }
+      const w = Number.parseFloat(el.style.width) || el.offsetWidth || 120;
+      return { left: 900, right: 900 + w * scale, top: 8, bottom: 36, width: w * scale, height: 28 };
+    },
+  });
+
+  const mockWin = {
+    innerWidth: 1280,
+    innerHeight: 820,
+    location: { pathname: '/c/aaaa1111-2222-3333-4444-555555555555', search: '' },
+    __AGUsageMonitorBridge: {
+      port: 43112,
+      token: 'b'.repeat(64),
+      bundleVersion: 'ver-v156-auto',
+      stylesCss,
+      initialTelemetry: buildPayload(),
+    },
+    addEventListener() {},
+    removeEventListener() {},
+    getComputedStyle: (el) => {
+      if (el === popElRef) {
+        return {
+          transform: popAnimScale === 1 ? 'none' : `matrix(${popAnimScale}, 0, 0, ${popAnimScale}, 0, -4)`,
+          getPropertyValue: () => '',
+        };
+      }
+      if (el?.classList?.contains?.('is-step-table')) {
+        return {
+          paddingLeft: '0px',
+          paddingRight: '10px',
+          transform: 'none',
+          getPropertyValue: () => '',
+        };
+      }
+      return { transform: 'none', getPropertyValue: () => '', display: 'flex', flexDirection: 'row' };
+    },
+    fetch: async () => ({ ok: true, status: 200, json: async () => buildPayload() }),
+  };
+
+  const sandbox = {
+    window: mockWin,
+    document: mockDoc,
+    navigator: { language: 'zh-CN' },
+    URLSearchParams,
+    AbortController,
+    queueMicrotask,
+    requestAnimationFrame: (fn) => setTimeout(fn, 0),
+    cancelAnimationFrame: clearTimeout,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    Promise,
+    Math,
+    Date,
+    JSON,
+    Number,
+    String,
+    Boolean,
+    Array,
+    Object,
+    Map,
+    Set,
+    WeakMap,
+    RegExp,
+    Error,
+    TypeError,
+    parseFloat,
+    parseInt,
+    isNaN,
+  };
+  sandbox.globalThis = sandbox;
+  vm.runInNewContext(appJs, sandbox);
+
+  const ov = mockWin.__AGUsageMonitorOverlay;
+  assert.ok(ov, 'Overlay mounted');
+  try {
+    ov.open();
+    const portalHost = mockDoc.getElementById('ag-usage-monitor-portal');
+    const popEl = portalHost.shadowRoot.querySelector('.wm-popover-panel');
+    popElRef = popEl;
+    const navPills = popEl.querySelectorAll('.pill-tab');
+    const tableViewport = popEl.querySelector('.table-viewport.is-step-table');
+    const stepTable = tableViewport.querySelector('.steps-data-table');
+    tableElRef = stepTable;
+
+    // Simulate real Modern UI geometry: popover 540px, pane clientWidth 498px with 10px right padding -> 488px content box (chrome = 52px)
+    popEl.offsetWidth = 540;
+    tableViewport.clientWidth = 498;
+    tableViewport.clientHeight = 400;
+    stepTable.scrollWidth = 0;
+    stepTable.offsetWidth = 0;
+
+    // Pre-poison table as .is-cols-locked with stale narrow th.style.width + minWidth to mimic reopen/re-entry
+    stepTable.classList.add('is-cols-locked');
+    stepTable.style.minWidth = '480px';
+    for (const th of stepTable.querySelector('thead').querySelectorAll('th')) {
+      th.style.width = '68.57px';
+    }
+
+    // Switch to Steps tab while pop-in animation is at scale(0.975)
+    navPills[2].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+
+    // Must release stale .is-cols-locked, unscale 0.975, count pane paddingRight=10px (chrome=52px) -> 556 + 52 + 4 = 612px
+    assert.equal(
+      popEl.style.width,
+      '612px',
+      'Auto width must pierce .is-cols-locked, unscale pop-in scale(0.975), and include pane padding-right'
+    );
+    assert.equal(stepTable.classList.contains('is-cols-locked'), true, 'Virtualized 138-row table stays column-locked after measuring');
+
+    // Animation finishes -> animationend re-verifies cleanly at scale=1
+    popAnimScale = 1;
+    popEl.offsetWidth = 612;
+    tableViewport.clientWidth = 570; // 612 - 52 + 10 = 570
+    popEl.dispatchEvent({ type: 'animationend', target: popEl });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(popEl.style.width, '612px', 'Popover preserves exact 612px width after animationend');
+
+    // Narrowing table content (e.g. fewer columns) shrinks popover back to 540px even when previously locked with minWidth
+    trueNaturalTableW = 360;
+    stepTable.style.minWidth = '600px';
+    popEl.dispatchEvent({ type: 'animationend', target: popEl });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(popEl.style.width, '540px', 'Auto width ignores stale locked minWidth and shrinks back to 540px');
   } finally {
     ov.dispose();
   }
@@ -5706,9 +6362,15 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
     assert.equal(relaunchMacRes.ok, true);
     assert.equal(macSpawnArgs.env.AGY_RELAUNCH_APP, '/Applications/Antigravity.app');
     assert.equal(macSpawnArgs.env.AGY_APP_NAME, 'Antigravity');
-    assert.match(macSpawnArgs.args[1], /if osascript .* then .* pgrep -ax "\$AGY_APP_NAME".* fi/);
+    assert.equal(macSpawnArgs.env.AGY_BUNDLE_MACOS, '/Applications/Antigravity.app/Contents/MacOS/');
+    assert.match(macSpawnArgs.args[1], /ENVIRON\["AGY_BUNDLE_MACOS"\]/);
+    assert.doesNotMatch(macSpawnArgs.args[1], /grep -F -- "\$AGY_BUNDLE_MACOS"/);
+    assert.match(macSpawnArgs.args[1], /pgrep -ax "\$AGY_APP_NAME"/);
     assert.match(macSpawnArgs.args[1], /pkill -TERM -ax "\$AGY_APP_NAME"/);
     assert.match(macSpawnArgs.args[1], /pkill -KILL -ax "\$AGY_APP_NAME"/);
+    assert.match(macSpawnArgs.args[1], /if osascript .* then .* is_alive.* fi/);
+    assert.match(macSpawnArgs.args[1], /kill -TERM \$pids/);
+    assert.match(macSpawnArgs.args[1], /kill -KILL \$pids/);
     assert.match(macSpawnArgs.args[1], /open -a "\$AGY_RELAUNCH_APP" --args --remote-debugging-port=0/);
 
     // macOS TCC-blocked osascript falls back to ps -axo comm= and derives custom .app name
@@ -5756,11 +6418,12 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
     });
     assert.equal(relaunchLinuxRes.ok, true);
     assert.equal(linuxSpawnArgs.env.AGY_RELAUNCH_EXE, '/home/alice/Apps/Antigravity-2.33.0.AppImage');
-    assert.equal(linuxSpawnArgs.env.AGY_PROC_COMM, 'Antigravity-2.3');
     assert.equal(linuxSpawnArgs.env.APPIMAGE, undefined, 'Strips APPIMAGE from relaunch env');
     assert.equal(linuxSpawnArgs.env.LD_LIBRARY_PATH, undefined, 'Strips mount LD_LIBRARY_PATH');
-    assert.match(linuxSpawnArgs.args[1], /for pn in "\$AGY_PROC_NAME" antigravity Antigravity "\$AGY_PROC_COMM"/);
-    assert.match(linuxSpawnArgs.args[1], /pkill -KILL -u "\$uid" -x "\$pn"/);
+    assert.match(linuxSpawnArgs.args[1], /readlink -f "\$AGY_RELAUNCH_EXE"/);
+    assert.match(linuxSpawnArgs.args[1], /readlink "\$d\/exe"/);
+    assert.match(linuxSpawnArgs.args[1], /APPIMAGE=\$AGY_RELAUNCH_EXE/);
+    assert.match(linuxSpawnArgs.args[1], /kill -KILL \$pids/);
 
     // Explicit ANTIGRAVITY_DEVTOOLS_PORT fallback, HKLM UAC patching, single-quoted UAC script safety & de-elevation
     const innerScriptCheck = buildWindowsRelaunchInnerScript(fakeExe, [stalePortFile], 'desktop', {
@@ -5974,7 +6637,12 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
 
     // Locked risk mask -> notice stays hidden
     othTab.refs.renderSettings(
-      { contextWindowRiskAccepted: false, modelContextWindows: {} },
+      {
+        developerModeEnabled: true,
+        riskyFeaturesEnabled: true,
+        contextWindowRiskAccepted: false,
+        modelContextWindows: {},
+      },
       mockCtxModels,
       { state: 'no_devtools_port', launcherConfigured: true, canRelaunch: true },
       'win32'
@@ -5984,6 +6652,8 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
     // Unlocked + no_devtools_port -> notice immediately visible AND saved option meta shows "待重启生效" instead of "已设置"
     othTab.refs.renderSettings(
       {
+        developerModeEnabled: true,
+        riskyFeaturesEnabled: true,
         contextWindowRiskAccepted: true,
         modelContextWindows: { 'model:gemini-4-carbon': '256000' },
       },
@@ -6004,6 +6674,8 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
 
     othTab.refs.renderSettings(
       {
+        developerModeEnabled: true,
+        riskyFeaturesEnabled: true,
         contextWindowRiskAccepted: true,
         modelContextWindows: { 'model:gemini-4-carbon': '256000' },
       },
@@ -6187,6 +6859,32 @@ test('SettingsStructureTab CLI statusLine controls stay hidden unless CLI is det
     assert.match(hintEl.textContent, /命令行参数将优先/);
     assert.equal(actionBtn.hasAttribute('hidden'), false);
     assert.equal(actionBtn.textContent, '清除命令行覆盖');
+
+    // 7. App/IDE card and CLI card are distinct sibling sections with independent resets and tab visibility
+    assert.equal(strTab.refs.cliSection.el, groupEl, 'CLI controls render in dedicated sibling section card');
+    assert.equal(strTab.refs.mountSection.el.contains(groupEl), false, 'CLI card is decoupled from App/IDE mount card');
+    assert.equal(groupEl.parentNode, strTab.el, 'CLI card sits directly inside settings-tab-stack');
+    const hoverTabBtn = strTab.refs.thirdNavBar.querySelector('[data-structure-tab="hover"]');
+    hoverTabBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    assert.equal(strTab.refs.mountSection.el.hasAttribute('hidden'), true, 'App card hides on non-mount tab');
+    assert.equal(groupEl.hasAttribute('hidden'), true, 'CLI card hides on non-mount tab');
+    const mountTabBtn = strTab.refs.thirdNavBar.querySelector('[data-structure-tab="mount"]');
+    mountTabBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    assert.equal(groupEl.hasAttribute('hidden'), false, 'CLI card reappears when returning to mount tab');
+
+    // Resetting CLI card only patches CLI keys without touching App mount settings
+    strTab.refs.renderSettings(
+      { windowMountMode: 'composer', enableCliStatusLine: false, cliStatusLineSlots: ['tps', 'context'] },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: false, preservedCustom: false, managedFlags: '' }
+    );
+    strTab.refs.cliSection.refs.resetBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 25));
+    const cliResetPatch = savedPatches[savedPatches.length - 1];
+    assert.equal(cliResetPatch.enableCliStatusLine, true);
+    assert.equal(cliResetPatch.cliStatusLineSlots, null);
+    assert.equal('windowMountMode' in cliResetPatch, false, 'CLI reset never overwrites App mount mode');
 
     strTab.destroy();
   } finally {
@@ -7062,5 +7760,275 @@ test('WindowOverlayShell mirrors host --font-sans and --font-mono onto portalHos
     globalThis.ResizeObserver = prevRo;
     globalThis.MutationObserver = prevMo;
     globalThis.fetch = prevFetch;
+  }
+});
+
+test('isOneShotCliParentCommand & shouldSkipDaemonForParentProcess detect one-shot agy CLI across direct and shell-wrapped parents', async () => {
+  assert.equal(
+    isOneShotCliParentCommand(
+      'agy --model gemini-4-neon-medium --sandbox --disable-slash-commands --print-timeout 210s --output-format json -p hello'
+    ),
+    true
+  );
+  assert.equal(isOneShotCliParentCommand('/usr/local/bin/agy --print "summarize diff"'), true);
+  assert.equal(
+    isOneShotCliParentCommand('"C:\\Program Files\\Antigravity\\antigravity-cli.exe" --output-format=json -p test'),
+    true
+  );
+  assert.equal(isOneShotCliParentCommand('agy'), false);
+  assert.equal(isOneShotCliParentCommand('agy --model gemini-4-neon-high'), false);
+  assert.equal(isOneShotCliParentCommand('agy --sandbox'), false);
+  assert.equal(isOneShotCliParentCommand('agy --hub --http-port 5387'), false);
+  assert.equal(isOneShotCliParentCommand('agy remote-control serve --output-format json'), false);
+  assert.equal(
+    isOneShotCliParentCommand(
+      '/Applications/Antigravity.app/Contents/Resources/bin/language_server --standalone --subclient_type hub'
+    ),
+    false
+  );
+  assert.equal(isOneShotCliParentCommand(''), false);
+
+  // Linux: shell wrapper parent -> walks /proc/<pid>/stat to grandparent agy -p
+  const linuxFs = new Map([
+    ['/proc', ''],
+    ['/proc/4200/cmdline', '/bin/sh\0-c\0node mcp-entry.mjs'],
+    ['/proc/4200/stat', '4200 (sh) S 4100 4100 4100 0 -1 4194304'],
+    ['/proc/4100/cmdline', '/usr/local/bin/agy\0--output-format\0json\0-p\0hi'],
+  ]);
+  assert.equal(
+    await shouldSkipDaemonForParentProcess(4200, {
+      platform: 'linux',
+      existsSyncFn: (p) => linuxFs.has(p),
+      readFileSyncFn: (p) => linuxFs.get(p) || '',
+    }),
+    true
+  );
+
+  // Windows: single async PowerShell call returning [parent, grandparent] catches cmd.exe wrapper
+  assert.equal(
+    await shouldSkipDaemonForParentProcess(5200, {
+      platform: 'win32',
+      execFileFn: (_file, _args, _opts, cb) => {
+        cb(
+          null,
+          JSON.stringify([
+            'C:\\Windows\\System32\\cmd.exe /d /s /c node mcp-entry.mjs',
+            '"C:\\Program Files\\Antigravity\\agy.exe" --sandbox --output-format json -p hi',
+          ])
+        );
+      },
+    }),
+    true
+  );
+  assert.equal(
+    await shouldSkipDaemonForParentProcess(5201, {
+      platform: 'win32',
+      execFileFn: (_file, _args, _opts, cb) => {
+        cb(null, JSON.stringify('C:\\Program Files\\Antigravity\\agy.exe --hub --http-port 5387'));
+      },
+    }),
+    false
+  );
+
+  // macOS: ps -o ppid=,command= catches shell-wrapped grandparent agy --print
+  assert.equal(
+    await shouldSkipDaemonForParentProcess(6200, {
+      platform: 'darwin',
+      execFileFn: (_file, args, _opts, cb) => {
+        if (args.includes('6200')) {
+          cb(null, '6100 /bin/zsh -c node mcp-entry.mjs\n');
+        } else {
+          cb(null, '/usr/local/bin/agy --print "hello"\n');
+        }
+      },
+    }),
+    true
+  );
+});
+
+test('window-bridge stop({ disposeWindows: true }) preserves Desktop overlay using lease peers & leader checks across concurrent exits', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-um-lease-dispose-'));
+  const agUserDataDir = path.join(tmpDir, 'Antigravity');
+  const leaseFilePath = path.join(tmpDir, 'window-bridge-lease.json');
+  fs.mkdirSync(agUserDataDir, { recursive: true });
+
+  const liveExternalPid = process.ppid > 1 && process.ppid !== process.pid ? process.ppid : 1;
+  let disposeCalls = 0;
+  let overlayAlive = false;
+  const cdpServer = http.createServer((req, res) => {
+    if (req.url === '/json/list') {
+      const addr = cdpServer.address();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify([
+          {
+            id: 'main-win',
+            type: 'page',
+            title: 'Antigravity',
+            url: 'https://127.0.0.1:51234/c/11111111-2222-3333-4444-555555555555',
+            webSocketDebuggerUrl: `ws://127.0.0.1:${addr.port}/devtools/page/main-win`,
+          },
+        ])
+      );
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise((resolve) => cdpServer.listen(0, '127.0.0.1', resolve));
+  const cdpPort = cdpServer.address().port;
+  fs.writeFileSync(path.join(agUserDataDir, 'DevToolsActivePort'), `${cdpPort}\n/devtools/browser/test\n`, 'utf8');
+
+  class FakeCdpWebSocket extends EventTarget {
+    constructor() {
+      super();
+      queueMicrotask(() => this.dispatchEvent(new Event('open')));
+    }
+    send(raw) {
+      const msg = JSON.parse(String(raw));
+      const expr = String(msg?.params?.expression || '');
+      let value = true;
+      if (expr.includes('delete window["__AGUsageMonitorOverlay"]')) {
+        disposeCalls += 1;
+        overlayAlive = false;
+      } else if (expr.includes('window["__AGUsageMonitorBridge"] =')) {
+        overlayAlive = true;
+      } else if (expr.includes('ensureAlive')) {
+        value = {
+          injected: overlayAlive,
+          alive: overlayAlive,
+          bundleVersion: 'v-test',
+          mountMode: 'dual',
+          dockKind: 'titlebar',
+        };
+      }
+      queueMicrotask(() => {
+        this.dispatchEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({ id: msg.id, result: { result: { value } } }),
+          })
+        );
+      });
+    }
+    close() {}
+  }
+
+  const makeController = (extra = {}) =>
+    createWindowBridgeController({
+      handleApiRequest: async () => ({ status: 200, contentType: 'application/json', body: '{}' }),
+      readAssetFn: (name) =>
+        name === 'styles.css' ? '' : 'window.__AGUsageMonitorOverlay={ensureAlive:()=>true,dispose:()=>{}};',
+      getSettingsFn: () => ({ enableWindowOverlay: true, windowMountMode: 'dual' }),
+      getBundleVersionFn: () => 'v-test',
+      bootBundleVersion: 'v-test',
+      env: { APPDATA: tmpDir, USAGE_MONITOR_HOST_PPID: '99999,88888' },
+      platform: 'win32',
+      homeDir: tmpDir,
+      leaseFilePath,
+      WebSocketImpl: FakeCdpWebSocket,
+      ...extra,
+    });
+
+  try {
+    // Case 1: Exiting daemon holds lease while Desktop sidecar is registered in lease.peers -> release lease, skip CDP dispose.
+    const ctrl1 = makeController();
+    await ctrl1.syncAllWindows();
+    assert.equal(overlayAlive, true);
+    const lease1 = JSON.parse(fs.readFileSync(leaseFilePath, 'utf8'));
+    assert.equal(lease1.pid, process.pid);
+    lease1.peers[String(liveExternalPid)] = { role: 'sidecar', updatedAtMs: Date.now() };
+    fs.writeFileSync(leaseFilePath, JSON.stringify(lease1), 'utf8');
+
+    await ctrl1.stop({ disposeWindows: true });
+    assert.equal(disposeCalls, 0, 'Must not dispose Desktop overlay while another live peer is in lease.peers');
+    assert.equal(overlayAlive, true);
+    const lease1After = JSON.parse(fs.readFileSync(leaseFilePath, 'utf8'));
+    assert.equal(lease1After.pid, 0, 'Exiting leader releases lease immediately for zero-delay takeover');
+    assert.equal(lease1After.peers?.[String(process.pid)], undefined, 'Exiting host unregisters itself from peers');
+    assert.ok(lease1After.peers?.[String(liveExternalPid)], 'Surviving Desktop peer stays registered');
+
+    // Case 2: Another live PID owns lease.pid (even if hasOtherHostAliveFn returns false) -> do not dispose or clobber lease.
+    const ctrl2 = makeController({ hasOtherHostAliveFn: () => false });
+    fs.rmSync(leaseFilePath, { force: true });
+    await ctrl2.syncAllWindows();
+    fs.writeFileSync(
+      leaseFilePath,
+      JSON.stringify({ pid: liveExternalPid, bundleVersion: 'v-test', updatedAtMs: Date.now(), peers: {} }),
+      'utf8'
+    );
+    await ctrl2.stop({ disposeWindows: true });
+    assert.equal(disposeCalls, 0, 'Must not dispose overlay when another live leader holds lease.pid');
+    assert.equal(overlayAlive, true);
+    const lease2After = JSON.parse(fs.readFileSync(leaseFilePath, 'utf8'));
+    assert.equal(lease2After.pid, liveExternalPid, 'Exiting follower preserves active leader lease.pid');
+
+    // Case 3: Concurrent exit race where lease.pid was already cleared to 0, but Desktop peer is still alive in peers.
+    const ctrl3 = makeController();
+    fs.rmSync(leaseFilePath, { force: true });
+    await ctrl3.syncAllWindows();
+    fs.writeFileSync(
+      leaseFilePath,
+      JSON.stringify({
+        pid: 0,
+        bundleVersion: 'v-test',
+        updatedAtMs: 0,
+        peers: {
+          [String(process.pid)]: { role: 'daemon', updatedAtMs: Date.now() },
+          [String(liveExternalPid)]: { role: 'sidecar', updatedAtMs: Date.now() },
+        },
+      }),
+      'utf8'
+    );
+    await ctrl3.stop({ disposeWindows: true });
+    assert.equal(disposeCalls, 0, 'Must not dispose overlay when lease.pid is 0 but surviving peer is alive');
+    assert.equal(overlayAlive, true);
+
+    // Case 4: No other live host (only dead PID + expired peer) -> cleanly disposes Desktop overlay.
+    const ctrl4 = makeController();
+    fs.rmSync(leaseFilePath, { force: true });
+    await ctrl4.syncAllWindows();
+    fs.writeFileSync(
+      leaseFilePath,
+      JSON.stringify({
+        pid: process.pid,
+        bundleVersion: 'v-test',
+        updatedAtMs: Date.now(),
+        peers: {
+          [String(process.pid)]: { role: 'daemon', updatedAtMs: Date.now() },
+          '999999999': { role: 'sidecar', updatedAtMs: Date.now() },
+          [String(liveExternalPid)]: { role: 'sidecar', updatedAtMs: Date.now() - 60_000 },
+        },
+      }),
+      'utf8'
+    );
+    await ctrl4.stop({ disposeWindows: true });
+    assert.equal(disposeCalls, 1, 'Disposes overlay cleanly when no other live usage-monitor host remains');
+    assert.equal(overlayAlive, false);
+    const lease4After = JSON.parse(fs.readFileSync(leaseFilePath, 'utf8'));
+    assert.equal(lease4After.pid, 0);
+    assert.deepEqual(lease4After.peers, {});
+
+    // Case 5: follower_yield records self in lease.peers without overriding leader pid.
+    fs.writeFileSync(
+      leaseFilePath,
+      JSON.stringify({
+        pid: liveExternalPid,
+        bundleVersion: 'v-test',
+        updatedAtMs: Date.now(),
+        peers: { [String(liveExternalPid)]: { role: 'sidecar', updatedAtMs: Date.now() } },
+      }),
+      'utf8'
+    );
+    const ctrl5 = makeController();
+    const syncRes = await ctrl5.syncAllWindows();
+    assert.equal(syncRes.reason, 'follower_yield');
+    const lease5 = JSON.parse(fs.readFileSync(leaseFilePath, 'utf8'));
+    assert.equal(lease5.pid, liveExternalPid);
+    assert.equal(lease5.peers?.[String(process.pid)]?.role, 'daemon');
+    await ctrl5.stop({ disposeWindows: false });
+  } finally {
+    await new Promise((resolve) => cdpServer.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

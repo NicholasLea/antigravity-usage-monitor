@@ -26,6 +26,7 @@ export const BRIDGE_API_ROUTE_DEFS = Object.freeze([
   Object.freeze({ path: '/api/settings/reset', method: 'POST', action: 'settings_reset' }),
   Object.freeze({ path: '/api/cache/rebuild', method: 'POST', action: 'cache_rebuild' }),
   Object.freeze({ path: '/api/cloud-sync', method: 'POST', action: 'cloud_sync' }),
+  Object.freeze({ path: '/api/fx-sync', method: 'POST', action: 'fx_sync' }),
   Object.freeze({ path: '/api/plugin-update', method: 'POST', action: 'plugin_update' }),
   Object.freeze({ path: '/api/bridge/relaunch', method: 'POST', action: 'bridge_relaunch' }),
   Object.freeze({
@@ -47,6 +48,19 @@ export const BRIDGE_API_ROUTE_DEFS = Object.freeze([
   }),
   Object.freeze({ path: '/api/host-i18n', method: 'GET', action: 'host_i18n_get' }),
   Object.freeze({ path: '/api/host-i18n', method: 'POST', action: 'host_i18n_action' }),
+  Object.freeze({ path: '/api/sessions/list', method: 'GET', action: 'sessions_list' }),
+  Object.freeze({
+    path: '/api/sessions/cleanup-preview',
+    method: 'POST',
+    action: 'sessions_cleanup_preview',
+  }),
+  Object.freeze({ path: '/api/sessions/delete', method: 'POST', action: 'sessions_delete' }),
+  Object.freeze({
+    path: '/api/sessions/redact-ledger',
+    method: 'POST',
+    action: 'sessions_redact_ledger',
+  }),
+  Object.freeze({ path: '/api/sessions/reveal', method: 'POST', action: 'sessions_reveal' }),
 ]);
 
 export const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path));

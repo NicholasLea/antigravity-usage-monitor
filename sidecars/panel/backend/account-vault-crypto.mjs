@@ -14,9 +14,11 @@ import {
 } from 'node:crypto';
 
 export const VAULT_CIPHER_PREFIX = 'agv1:';
+export const VAULT_MASTER_CIPHER_PREFIX = 'agmk1:';
 const VAULT_VERIFIER_CHALLENGE = 'ag-vault-v1:ok';
 const VAULT_VERIFIER_AAD = 'ag-vault-verifier:v1';
 const VAULT_ENTRY_AAD_PREFIX = 'ag-vault-entry:v1:';
+const VAULT_MASTER_AAD_PREFIX = 'ag-vault-mk:v1:';
 
 const VAULT_SCRYPT_N = 16384;
 const VAULT_SCRYPT_R = 8;
@@ -43,6 +45,10 @@ export function normalizeVaultPassword(raw) {
 
 export function isEncryptedVaultCredential(raw) {
   return typeof raw === 'string' && raw.startsWith(VAULT_CIPHER_PREFIX);
+}
+
+export function isMasterEncryptedVaultCredential(raw) {
+  return typeof raw === 'string' && raw.startsWith(VAULT_MASTER_CIPHER_PREFIX);
 }
 
 function isPowerOfTwo(n) {
@@ -159,6 +165,40 @@ export function decryptVaultEntryCredential(storedText, keyBuf, email) {
   const payload = storedText.slice(VAULT_CIPHER_PREFIX.length);
   try {
     return aeadOpen(payload, keyBuf, `${VAULT_ENTRY_AAD_PREFIX}${normalizedEmail}`);
+  } catch {
+    throw new Error('vaultDecryptFailed');
+  }
+}
+
+export function encryptVaultMasterCredential(innerText, masterKeyBuf, email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (
+    typeof innerText !== 'string' ||
+    !innerText ||
+    !normalizedEmail ||
+    !Buffer.isBuffer(masterKeyBuf) ||
+    masterKeyBuf.length !== VAULT_KEY_LEN
+  ) {
+    throw new Error('storeFailed');
+  }
+  return `${VAULT_MASTER_CIPHER_PREFIX}${aeadSeal(
+    innerText,
+    masterKeyBuf,
+    `${VAULT_MASTER_AAD_PREFIX}${normalizedEmail}`
+  )}`;
+}
+
+export function decryptVaultMasterCredential(storedText, masterKeyBuf, email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!isMasterEncryptedVaultCredential(storedText) || !normalizedEmail) {
+    throw new Error('storeFailed');
+  }
+  if (!Buffer.isBuffer(masterKeyBuf) || masterKeyBuf.length !== VAULT_KEY_LEN) {
+    throw new Error('credentialAccessDenied');
+  }
+  const payload = storedText.slice(VAULT_MASTER_CIPHER_PREFIX.length);
+  try {
+    return aeadOpen(payload, masterKeyBuf, `${VAULT_MASTER_AAD_PREFIX}${normalizedEmail}`);
   } catch {
     throw new Error('vaultDecryptFailed');
   }

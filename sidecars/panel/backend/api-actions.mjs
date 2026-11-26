@@ -13,6 +13,7 @@ import {
   getAccountQuotaHistoryPayload,
   getLatestRecordedHostEmail,
 } from './account-quota-history.mjs';
+import { isAccountPlatformSupported } from './account-keyring-store.mjs';
 import { handleAccountCredentialAction, warmAccountPublicListCache } from './account-switch.mjs';
 import { issueAccountActionNonce, verifyAccountActionNonce } from './account-vault-crypto.mjs';
 import {
@@ -22,10 +23,15 @@ import {
   trackEndpointRequestStart,
 } from './endpoint-registry.mjs';
 import { isLocalHostRequest, readLocalAsync } from './http-helpers.mjs';
-import { revealLocalExportFile, writeLocalExportFile } from './file-exporter.mjs';
+import {
+  revealLocalExportFile,
+  revealLocalSessionPath,
+  writeLocalExportFile,
+} from './file-exporter.mjs';
 import {
   clearScannerRuntimeMemos,
   collectAuthoritativeLiveCascadeIds,
+  isLocalBackgroundRebuildActive,
 } from './local-scanner.mjs';
 import {
   SETTINGS_FILE,
@@ -34,6 +40,8 @@ import {
   computeRuntimeCodeVersion,
   createDefaultSettingsObject,
   inFlightRequests,
+  isAccountSwitchFeatureActive,
+  isContextWindowFeatureActive,
   isPlainObject,
   loadSettings,
   lsRuntimeEndpoint,
@@ -60,9 +68,13 @@ import {
   syncCloudCatalog,
 } from './plugin-updater.mjs';
 import { getCloudStatus } from './pricing-catalog.mjs';
+import { syncFxRates } from './fx-rates.mjs';
 import { buildTelemetryPayload, clearTelemetryBuilderMemo } from './telemetry-builder.mjs';
 import {
+  createMacOsLaunchWrapper,
   ensureDesktopLaunchEntriesConfigured,
+  inspectMacOsLaunchWrapperStatus,
+  removeMacOsLaunchWrapper,
   triggerDesktopHostRelaunch,
 } from './desktop-launcher-config.mjs';
 import {
@@ -79,8 +91,23 @@ import {
   handleHostI18nGetRequest,
   handleHostI18nPostAction,
 } from './host-i18n/index.mjs';
+import { getEffectiveHostTheme, recordPreloadHostTheme } from './host-theme-store.mjs';
 import { getQuotaReservationLogSnapshot } from './quota-reservation.mjs';
+import {
+  authorizeSessionPathsForReveal,
+  clearSessionManagerScanCaches,
+  deleteLocalSessions,
+  deleteLocalSessionsAsync,
+  getAuthorizedRevealSnapshot,
+  previewSessionCleanup,
+  previewSessionCleanupAsync,
+  scanLocalSessions,
+  scanLocalSessionsAsync,
+  sweepLedgerPrivacy,
+} from './session-manager.mjs';
 import { getSessionMigrationCatalog, migrateSessions } from './session-migrator.mjs';
+import { SESSION_CLIENT_DEFS, resolveClientRoot } from './session-store.mjs';
+import { clearUsageAggregatorMemo } from './usage-aggregator.mjs';
 import {
   ensureCliStatusLineConfigured,
   getCliStatusLineRuntimeStatus,
@@ -105,7 +132,7 @@ function sanitizePositiveFiniteMs(val) {
 
 function projectDisplayStep(st) {
   const {
-    stepIndex, createdAtMs, isCompactionStep, isImageGenStep, modelKey, modelShort, modelLabel,
+    stepIndex, createdAtMs, isCompactionStep, isImageGenStep, isReverted, modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
     nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason, anomaly, anomalySig,
     contextTokens, inputTokens, cacheReadTokens,
@@ -118,7 +145,9 @@ function projectDisplayStep(st) {
     rootTurnMediaOnly,
   } = st;
   return {
-    stepIndex, createdAtMs, isCompactionStep, isImageGenStep, modelKey, modelShort, modelLabel,
+    stepIndex, createdAtMs, isCompactionStep, isImageGenStep,
+    ...(isReverted ? { isReverted: true } : {}),
+    modelKey, modelShort, modelLabel,
     modelUpstream, responseModel, modelSource, tokPerSec, ttftSec, totalDurationSec,
     nativeStreamSec, thinkingDurationSec, hasToolCalls, selectedSpeedReason,
     ...(anomaly ? { anomaly, anomalySig } : {}),
@@ -135,9 +164,9 @@ function projectDisplayStep(st) {
 
 const MAX_DISPLAY_STEP_CACHE_ENTRIES = 16;
 const displayStepsCache = new Map();
-const displayStepFields = Object.keys(projectDisplayStep({ anomaly: true, anomalySig: '' })).filter(
-  (k) => k !== 'anomaly'
-);
+const displayStepFields = Object.keys(
+  projectDisplayStep({ anomaly: true, anomalySig: '', isReverted: true })
+).filter((k) => k !== 'anomaly');
 
 function buildEndpointErrorResponse(epCtx) {
   return {
@@ -261,6 +290,7 @@ export async function executeTelemetryAction(data, opts = {}) {
       } else {
         syncCloudCatalog({ force: false }).catch(() => {});
       }
+      syncFxRates({ force: false }).catch(() => {});
     }
   }
   const rawScope = String(data?.scope || '').trim();
@@ -277,6 +307,10 @@ export async function executeTelemetryAction(data, opts = {}) {
     startMs: sanitizePositiveFiniteMs(data?.startMs),
     endMs: sanitizePositiveFiniteMs(data?.endMs),
     ...(scope ? { scope } : {}),
+    ...(!isRemote &&
+    (scope === '' || scope === 'conversation' || isLocalBackgroundRebuildActive())
+      ? { progressiveLocalSync: true }
+      : {}),
     endpoint: epCtx.endpoint,
   };
   let payload;
@@ -394,15 +428,28 @@ export function executeSettingsAction(data) {
     current.windowMountMode,
     current.enableWindowOverlay
   );
+  const prevContextActive = isContextWindowFeatureActive(current);
+  const nextContextActive = isContextWindowFeatureActive(updated);
+  const riskyGateChanged =
+    Boolean(updated.developerModeEnabled) !== Boolean(current.developerModeEnabled) ||
+    Boolean(updated.riskyFeaturesEnabled) !== Boolean(current.riskyFeaturesEnabled) ||
+    Boolean(updated.accountSwitchRiskAccepted) !== Boolean(current.accountSwitchRiskAccepted) ||
+    Boolean(updated.contextWindowRiskAccepted) !== Boolean(current.contextWindowRiskAccepted);
   const contextWindowScopeChanged =
+    prevContextActive !== nextContextActive ||
     (updated.contextWindowMainEnabled !== false) !== (current.contextWindowMainEnabled !== false) ||
     (updated.contextWindowSwarmEnabled === true) !== (current.contextWindowSwarmEnabled === true);
+  const bridgeAuxChanged =
+    (updated.autoConfigureLaunch !== false) !== (current.autoConfigureLaunch !== false) ||
+    (updated.enableRemoteSshTelemetry !== false) !== (current.enableRemoteSshTelemetry !== false);
   const affectsBackendTelemetry =
     updated.weeklyLimitMode !== current.weeklyLimitMode ||
     updated.weeklyTokenBudget !== current.weeklyTokenBudget ||
     updated.weeklyCostBudget !== current.weeklyCostBudget ||
     updated.enableWindowOverlay !== (current.enableWindowOverlay !== false) ||
     updated.windowMountMode !== prevMountMode ||
+    bridgeAuxChanged ||
+    riskyGateChanged ||
     contextWindowScopeChanged;
   inFlightRequests.clear();
   if (affectsBackendTelemetry) {
@@ -410,7 +457,8 @@ export function executeSettingsAction(data) {
   }
   if (
     updated.enableWindowOverlay !== (current.enableWindowOverlay !== false) ||
-    updated.windowMountMode !== prevMountMode
+    updated.windowMountMode !== prevMountMode ||
+    bridgeAuxChanged
   ) {
     void notifyWindowOverlaySetting(updated.enableWindowOverlay);
   } else if (contextWindowScopeChanged) {
@@ -451,6 +499,9 @@ export async function executeModelContextWindowAction(data, opts = {}) {
     headers: { 'Cache-Control': 'no-store' },
     body: JSON.stringify(payload),
   });
+  if (opts?.bypassRiskCheck !== true && !isContextWindowFeatureActive(loadSettings())) {
+    return respond(403, { error: 'riskNotAccepted' });
+  }
   if (!isContextWindowSettingId(modelId) || (option !== null && !isContextWindowOption(option))) {
     return respond(400, { error: 'Invalid model context window' });
   }
@@ -533,12 +584,17 @@ export function executeResetSettingsAction() {
     current.windowMountMode,
     current.enableWindowOverlay
   );
+  const bridgeAuxChanged =
+    (updated.autoConfigureLaunch !== false) !== (current.autoConfigureLaunch !== false) ||
+    (updated.enableRemoteSshTelemetry !== false) !== (current.enableRemoteSshTelemetry !== false);
   if (
     updated.enableWindowOverlay !== (current.enableWindowOverlay !== false) ||
-    updated.windowMountMode !== prevMountMode
+    updated.windowMountMode !== prevMountMode ||
+    bridgeAuxChanged
   ) {
     void notifyWindowOverlaySetting(updated.enableWindowOverlay);
   } else if (
+    isContextWindowFeatureActive(current) ||
     Object.keys(current.modelContextWindows).length ||
     current.contextWindowMainEnabled === false ||
     current.contextWindowSwarmEnabled === true
@@ -578,7 +634,7 @@ export function executeRebuildCacheAction(data = undefined, opts = {}) {
   );
   const ok = epCtx.isRemote
     ? clearRemoteEndpointCaches(epCtx.id, { liveCascadeIds })
-    : clearRuntimeCaches({ liveCascadeIds });
+    : clearRuntimeCaches({ liveCascadeIds, preserveFreshSummaryMemo: true });
   if (!ok) {
     return {
       ok: false,
@@ -588,20 +644,30 @@ export function executeRebuildCacheAction(data = undefined, opts = {}) {
       body: JSON.stringify({ ok: false, error: 'Failed to clear trajectory cache' }),
     };
   }
+  inFlightRequests.clear();
   const cachePrefix = `${epCtx.id}::`;
   for (const key of Array.from(displayStepsCache.keys())) {
     if (key.startsWith(cachePrefix)) {
       displayStepsCache.delete(key);
     }
   }
-  clearScannerRuntimeMemos(epCtx.isRemote ? epCtx.id : null);
+  const liveCount = liveCascadeIds instanceof Set ? liveCascadeIds.size : 0;
+  clearScannerRuntimeMemos(epCtx.isRemote ? epCtx.id : null, {
+    totalHint: liveCount,
+    armed: !epCtx.isRemote && liveCount > 0,
+  });
   clearTelemetryBuilderMemo(epCtx.id);
   return {
     ok: true,
     status: 200,
     contentType: 'application/json',
     headers: { 'Cache-Control': 'no-store' },
-    body: JSON.stringify({ ok: true, endpointId: epCtx.id, clearedAt: Date.now() }),
+    body: JSON.stringify({
+      ok: true,
+      endpointId: epCtx.id,
+      clearedAt: Date.now(),
+      totalLive: liveCount,
+    }),
   };
 }
 
@@ -613,6 +679,18 @@ export async function executeCloudSyncAction() {
     contentType: 'application/json',
     headers: { 'Cache-Control': 'no-store' },
     body: JSON.stringify({ ok: !cloudStatus.lastSyncError, cloudStatus }),
+  };
+}
+
+export async function executeFxSyncAction(opts = {}) {
+  const syncFn = typeof opts?.syncFxRatesFn === 'function' ? opts.syncFxRatesFn : syncFxRates;
+  const fxStatus = await syncFn({ force: true });
+  clearTelemetryBuilderMemo();
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify({ ok: !fxStatus.lastError, fxStatus }),
   };
 }
 
@@ -656,7 +734,7 @@ export async function executeAccountCredentialAction(data, opts = {}) {
   const cleanData = stripEndpointField(data);
   const action = cleanData?.action || 'list';
   const riskAccepted =
-    opts?.bypassRiskCheck === true || loadSettings().accountSwitchRiskAccepted === true;
+    opts?.bypassRiskCheck === true || isAccountSwitchFeatureActive(loadSettings());
   if (!riskAccepted) {
     if (action !== 'list') {
       return {
@@ -675,7 +753,7 @@ export async function executeAccountCredentialAction(data, opts = {}) {
       contentType: 'application/json',
       headers: { 'Cache-Control': 'no-store' },
       body: JSON.stringify({
-        supported: process.platform === 'win32',
+        supported: isAccountPlatformSupported(process.platform),
         riskLocked: true,
         accounts: [],
         selectedEmail: '',
@@ -734,12 +812,66 @@ export async function executeAccountCredentialAction(data, opts = {}) {
   };
 }
 
-export async function executeBridgeRelaunchAction() {
-  ensureIdeRemoteDebuggingArgv({ enabled: true });
-  const launchConfig = await ensureDesktopLaunchEntriesConfigured({ enabled: true }).catch(
-    () => null
-  );
+export async function executeBridgeRelaunchAction(data = {}) {
+  const payload = isPlainObject(data) ? data : {};
+  const action = String(payload.action || 'relaunch').trim().toLowerCase();
+  const rawProduct = String(payload.product || 'auto').trim().toLowerCase();
+  const bridgeSnap = getDefaultWindowBridgeStatus();
+  const preferredProduct =
+    rawProduct === 'ide' || rawProduct === 'desktop'
+      ? rawProduct
+      : String(bridgeSnap?.targetProduct || 'auto').trim().toLowerCase() || 'auto';
+
+  if (action === 'create_macos_wrapper') {
+    const targetProd = preferredProduct === 'ide' ? 'ide' : 'desktop';
+    const created = await createMacOsLaunchWrapper({ product: targetProd });
+    const wrapperStatus = inspectMacOsLaunchWrapperStatus();
+    clearTelemetryBuilderMemo();
+    return {
+      status: created.ok ? 200 : Number(created.status || 500),
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        ...created,
+        macWrapperExists: Boolean(wrapperStatus.exists),
+        macDesktopWrapperExists: Boolean(wrapperStatus.desktopExists),
+        macIdeWrapperExists: Boolean(wrapperStatus.ideExists),
+        macWrapperPaths: wrapperStatus.paths || [],
+      }),
+    };
+  }
+
+  if (action === 'remove_macos_wrapper') {
+    const removeProd =
+      rawProduct === 'ide' || rawProduct === 'desktop' ? rawProduct : 'both';
+    const removed = removeMacOsLaunchWrapper({ product: removeProd });
+    const wrapperStatus = inspectMacOsLaunchWrapperStatus();
+    clearTelemetryBuilderMemo();
+    return {
+      status: removed.ok ? 200 : Number(removed.status || 500),
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        ...removed,
+        macWrapperExists: Boolean(wrapperStatus.exists),
+        macDesktopWrapperExists: Boolean(wrapperStatus.desktopExists),
+        macIdeWrapperExists: Boolean(wrapperStatus.ideExists),
+        macWrapperPaths: wrapperStatus.paths || [],
+      }),
+    };
+  }
+
+  if (preferredProduct !== 'desktop') {
+    ensureIdeRemoteDebuggingArgv({ enabled: true });
+  }
+  const launchProduct =
+    preferredProduct === 'ide' ? 'ide' : preferredProduct === 'desktop' ? 'desktop' : 'both';
+  const launchConfig = await ensureDesktopLaunchEntriesConfigured({
+    enabled: true,
+    product: launchProduct,
+  }).catch(() => null);
   const result = await triggerDesktopHostRelaunch({
+    preferredProduct,
     stalePortFiles: resolveDevToolsPortCandidates(),
     readOnlyShortcutPaths: launchConfig?.readOnlyPaths || [],
   });
@@ -814,7 +946,7 @@ export function executeSessionMigrationCatalogAction(data = undefined, opts = {}
       }),
     };
   }
-  const catalog = getSessionMigrationCatalog();
+  const catalog = getSessionMigrationCatalog(opts?.sessionOptions || {});
   return {
     status: 200,
     contentType: 'application/json',
@@ -837,10 +969,10 @@ export function executeSessionMigrationMigrateAction(data = undefined, opts = {}
     };
   }
   const cleanData = stripEndpointField(data);
-  const result = migrateSessions(cleanData);
+  const result = migrateSessions(cleanData, opts?.sessionOptions || {});
   if (result.migratedCount > 0) {
-    clearScannerRuntimeMemos(LOCAL_ENDPOINT_ID);
-    clearTelemetryBuilderMemo(LOCAL_ENDPOINT_ID);
+    clearSessionManagerScanCaches();
+    invalidateLocalSessionDisplayCaches();
   }
   return {
     status: Number(result.status || (result.ok ? 200 : 400)),
@@ -918,6 +1050,187 @@ export function executeRevealFileAction(data, opts = {}) {
   };
 }
 
+let inFlightSessionsListPromise = null;
+
+export async function executeSessionsListAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        ok: false,
+        error: 'unsupported_remote',
+        clients: [],
+        sessions: [],
+        counts: { total: 0, indexOnly: 0, byClient: { desktop: 0, cli: 0, ide_legacy: 0 } },
+        warnings: [],
+      }),
+    };
+  }
+  const sessionOpts = opts?.sessionOptions || {};
+  const isDefaultLocal = !opts?.sessionOptions;
+  let result;
+  if (isDefaultLocal) {
+    if (!inFlightSessionsListPromise) {
+      inFlightSessionsListPromise = scanLocalSessionsAsync(sessionOpts).finally(() => {
+        inFlightSessionsListPromise = null;
+      });
+    }
+    result = await inFlightSessionsListPromise;
+  } else {
+    result = await scanLocalSessionsAsync(sessionOpts);
+  }
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+export async function executeSessionsCleanupPreviewAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'unsupported_remote' }),
+    };
+  }
+  const cleanData = stripEndpointField(data);
+  const result = await previewSessionCleanupAsync(cleanData || {}, opts?.sessionOptions || {});
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+function invalidateLocalSessionDisplayCaches() {
+  const localPrefix = `${LOCAL_ENDPOINT_ID}::`;
+  for (const key of Array.from(displayStepsCache.keys())) {
+    if (key.startsWith(localPrefix)) {
+      displayStepsCache.delete(key);
+    }
+  }
+  clearScannerRuntimeMemos(LOCAL_ENDPOINT_ID);
+  clearTelemetryBuilderMemo(LOCAL_ENDPOINT_ID);
+  clearUsageAggregatorMemo(LOCAL_ENDPOINT_ID);
+}
+
+export async function executeSessionsDeleteAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'unsupported_remote', deletedCount: 0, failedCount: 0 }),
+    };
+  }
+  const cleanData = stripEndpointField(data);
+  const result = await deleteLocalSessionsAsync(cleanData || {}, opts?.sessionOptions || {});
+  if (result.deletedCount > 0 || (result.ledgerRedaction?.redactedConversations || 0) > 0) {
+    invalidateLocalSessionDisplayCaches();
+  }
+  return {
+    status: Number(result.status || (result.ok ? 200 : 400)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+export function executeSessionsRedactLedgerAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'unsupported_remote' }),
+    };
+  }
+  const sessionOpts = opts?.sessionOptions || {};
+  const extraLiveIds =
+    !sessionOpts.geminiDir && !sessionOpts.extraLiveIds
+      ? collectAuthoritativeLiveCascadeIds(null)
+      : sessionOpts.extraLiveIds;
+  const result = sweepLedgerPrivacy({
+    ...sessionOpts,
+    ...(extraLiveIds ? { extraLiveIds } : {}),
+  });
+  if ((result.redactedConversations || 0) > 0 || (result.redactedSteps || 0) > 0) {
+    invalidateLocalSessionDisplayCaches();
+  }
+  return {
+    status: Number(result.status || (result.ok ? 200 : 500)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+export function executeSessionsRevealAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'unsupported_remote' }),
+    };
+  }
+  const cleanData = stripEndpointField(data);
+  const explicitGeminiDir = opts?.sessionOptions?.geminiDir;
+  const allowedRoots = SESSION_CLIENT_DEFS.map((def) => resolveClientRoot(def, explicitGeminiDir)).filter(Boolean);
+  const targetRawPath = cleanData?.path || cleanData?.filePath || '';
+  const revealBaseOpts = {
+    allowedRoots,
+    ...(opts?.platform ? { platform: opts.platform } : {}),
+    ...(typeof opts?.spawnFn === 'function' ? { spawnFn: opts.spawnFn } : {}),
+  };
+  let result = revealLocalSessionPath(targetRawPath, {
+    ...revealBaseOpts,
+    allowedPaths: getAuthorizedRevealSnapshot(),
+  });
+  if (!result.ok && result.status === 403 && cleanData?.clientId && cleanData?.sessionId) {
+    const refreshedPaths = authorizeSessionPathsForReveal(
+      { clientId: cleanData.clientId, sessionId: cleanData.sessionId },
+      opts?.sessionOptions || {}
+    );
+    result = revealLocalSessionPath(targetRawPath, {
+      ...revealBaseOpts,
+      allowedPaths: refreshedPaths,
+    });
+  }
+  return {
+    status: Number(result.status || (result.ok ? 200 : 400)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
 const BRIDGE_ROUTE_LOOKUP = new Map(
   BRIDGE_API_ROUTE_DEFS.map((r) => [`${r.method}:${r.path}`, r.action])
 );
@@ -929,7 +1242,7 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executeTelemetryAction(data, opts);
     case 'settings':
       if (isPlainObject(data) && data.__bridgeAction === 'relaunch') {
-        return executeBridgeRelaunchAction();
+        return executeBridgeRelaunchAction(data);
       }
       if (isPlainObject(data) && typeof data.__cliStatusLineAction === 'string') {
         return executeCliStatusLineAction(data.__cliStatusLineAction);
@@ -939,6 +1252,24 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       }
       if (isPlainObject(data) && data.__sessionMigrationAction === 'migrate') {
         return executeSessionMigrationMigrateAction(data.payload || data, opts);
+      }
+      if (isPlainObject(data) && typeof data.__sessionManagerAction === 'string') {
+        const smPayload = isPlainObject(data.payload) ? data.payload : data;
+        if (data.__sessionManagerAction === 'list') {
+          return executeSessionsListAction(smPayload, opts);
+        }
+        if (data.__sessionManagerAction === 'cleanup_preview') {
+          return executeSessionsCleanupPreviewAction(smPayload, opts);
+        }
+        if (data.__sessionManagerAction === 'delete') {
+          return executeSessionsDeleteAction(smPayload, opts);
+        }
+        if (data.__sessionManagerAction === 'redact_ledger') {
+          return executeSessionsRedactLedgerAction(smPayload, opts);
+        }
+        if (data.__sessionManagerAction === 'reveal') {
+          return executeSessionsRevealAction(smPayload, opts);
+        }
       }
       if (isPlainObject(data) && data.__exportFileAction === 'save') {
         return executeExportFileAction(data.payload || data, opts);
@@ -958,6 +1289,21 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
           opts
         );
       }
+      if (isPlainObject(data) && data.__fxAction === 'sync') {
+        return executeFxSyncAction(opts);
+      }
+      if (isPlainObject(data) && data.__hostThemeAction === 'cache') {
+        const saved = recordPreloadHostTheme(data.payload);
+        return {
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'Cache-Control': 'no-store' },
+          body: JSON.stringify({
+            ok: Boolean(saved),
+            hostTheme: saved || getEffectiveHostTheme(),
+          }),
+        };
+      }
       return executeSettingsAction(data);
     case 'accounts_get':
       return executeAccountCredentialAction(undefined, opts);
@@ -971,10 +1317,12 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executeRebuildCacheAction(data, opts);
     case 'cloud_sync':
       return executeCloudSyncAction();
+    case 'fx_sync':
+      return executeFxSyncAction(opts);
     case 'plugin_update':
       return executePluginUpdateAction();
     case 'bridge_relaunch':
-      return executeBridgeRelaunchAction();
+      return executeBridgeRelaunchAction(data);
     case 'session_migration_catalog':
       return executeSessionMigrationCatalogAction(data, opts);
     case 'session_migration_migrate':
@@ -989,6 +1337,16 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executeHostI18nGetAction(opts);
     case 'host_i18n_action':
       return executeHostI18nPostAction(data, opts);
+    case 'sessions_list':
+      return executeSessionsListAction(data, opts);
+    case 'sessions_cleanup_preview':
+      return executeSessionsCleanupPreviewAction(data, opts);
+    case 'sessions_delete':
+      return executeSessionsDeleteAction(data, opts);
+    case 'sessions_redact_ledger':
+      return executeSessionsRedactLedgerAction(data, opts);
+    case 'sessions_reveal':
+      return executeSessionsRevealAction(data, opts);
     default:
       return {
         status: 404,
@@ -1009,7 +1367,7 @@ export function bootWindowBridgeRuntime({ allowDynamicLs = false, onRestart = nu
 
   const bootSettings = loadSettings();
   ensureCliStatusLineConfigured({ enabled: bootSettings.enableCliStatusLine !== false });
-  if (allowDynamicLs && bootSettings.accountSwitchRiskAccepted === true) {
+  if (allowDynamicLs && isAccountSwitchFeatureActive(bootSettings)) {
     setTimeout(() => {
       void warmAccountPublicListCache();
     }, 80).unref?.();
@@ -1032,6 +1390,7 @@ export function bootWindowBridgeRuntime({ allowDynamicLs = false, onRestart = nu
       })
       .catch(() => {});
   }
+  syncFxRates({ force: false }).catch(() => {});
 
   return startDefaultWindowBridge({
     handleApiRequest: (pathname, method, data, ctx) =>

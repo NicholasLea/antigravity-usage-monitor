@@ -246,7 +246,7 @@ function recordExportedDeclarationIdent(source, declKeywordIdx, onExport) {
  * @param {(name: string, isClauseExport: boolean) => void} [onExport]
  * @returns {string}
  */
-export function stripModuleSyntax(source, onImport, onExport) {
+export function stripModuleSyntax(source, onImport, onExport, { stripComments = false } = {}) {
   const len = source.length;
   let out = '';
   let i = 0;
@@ -300,7 +300,7 @@ export function stripModuleSyntax(source, onImport, onExport) {
     if (ch === '/' && source[i + 1] === '/') {
       let end = i + 2;
       while (end < len && source[end] !== '\n') end += 1;
-      out += source.slice(i, end);
+      if (!stripComments) out += source.slice(i, end);
       i = end;
       continue;
     }
@@ -310,7 +310,11 @@ export function stripModuleSyntax(source, onImport, onExport) {
       let end = i + 2;
       while (end < len && !(source[end] === '*' && source[end + 1] === '/')) end += 1;
       end = Math.min(len, end + 2);
-      out += source.slice(i, end);
+      if (!stripComments) {
+        out += source.slice(i, end);
+      } else {
+        out += source.slice(i, end).includes('\n') ? '\n' : ' ';
+      }
       i = end;
       continue;
     }
@@ -582,22 +586,33 @@ export function buildBundle(panelDir = PANEL_DIR) {
 
   const cssBundle =
     cssOrder
-      .map(
-        (rel) =>
-          `/* --- ${rel} --- */\n${readFileSync(join(panelDir, rel), 'utf8').replace(/\r\n/g, '\n').trim()}`
-      )
+      .map((rel) => {
+        const strippedCss = readFileSync(join(panelDir, rel), 'utf8')
+          .replace(/\r\n/g, '\n')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+        return `/* --- ${rel} --- */\n${strippedCss}`;
+      })
       .join('\n\n') + '\n';
 
   const jsOrder = [
     'shared/settings-normalization.mjs',
+    'shared/currency-catalog.mjs',
     'shared/telemetry-display-rules.mjs',
     'shared/window-bridge-protocol.mjs',
     'shared/host-i18n-protocol.mjs',
+    'shared/host-theme.mjs',
     'src/icons/svgRegistry.js',
     'src/icons/SvgIcon.js',
     'src/core/reactive.js',
     'src/i18n/zh-CN.js',
+    'src/i18n/zh-TW.js',
     'src/i18n/en-US.js',
+    'src/i18n/ja-JP.js',
+    'src/i18n/ko-KR.js',
+    'src/i18n/de-DE.js',
+    'src/i18n/fr-FR.js',
     'src/i18n/index.js',
     'src/core/appearance.js',
     'src/core/domPatch.js',
@@ -644,10 +659,12 @@ export function buildBundle(panelDir = PANEL_DIR) {
     'src/components/settings/EditableSlotList.js',
     'src/components/settings/ThemeColorPicker.js',
     'src/components/settings/BridgeStatusNotice.js',
+    'src/components/settings/SessionManagerCard.js',
     'src/components/settings/SessionMigrationCard.js',
     'src/components/settings/HostI18nCard.js',
     'src/views/settings/SettingsGeneralTab.js',
     'src/views/settings/SettingsStructureTab.js',
+    'src/views/settings/SettingsSessionsTab.js',
     'src/views/settings/SettingsAccountTab.js',
     'src/views/settings/SettingsOtherTab.js',
     'src/components/layout/TopSessionHeader.js',
@@ -667,7 +684,9 @@ export function buildBundle(panelDir = PANEL_DIR) {
     .map((rel) => {
       const path = resolve(panelDir, rel);
       if (bundledPaths.has(path)) throw new Error(`${rel}: duplicate entry in jsOrder`);
-      const raw = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+      const raw = readFileSync(path, 'utf8')
+        .replace(/\r\n/g, '\n')
+        .replace(/^\s*\/\*\*[\s\S]*?\*\/\s*/, '');
       const moduleImportedNames = new Set();
       const moduleImportAliases = new Map();
       const moduleLocalExports = new Map();
@@ -693,8 +712,11 @@ export function buildBundle(panelDir = PANEL_DIR) {
             return;
           }
           moduleLocalExports.set(name, localName);
-        }
-      );
+        },
+        { stripComments: true }
+      )
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n');
       bundledPaths.add(path);
       const exportEntries = [...moduleLocalExports.entries()];
       for (const [sym] of exportEntries) {

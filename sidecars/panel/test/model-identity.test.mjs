@@ -190,8 +190,15 @@ test('empty session does not invent an Argon model or a model quota pool', async
 });
 
 test('unknown single-step cost renders as pending while aggregate subtotals omit pending suffix', () => {
-  assert.equal(formatUsd(null),'待定'); assert.equal(formatUsd(0),'$0.00');
-  assert.equal(formatUsd(0.1,{unpricedCalls:1}),'$0.10');
+  const prevLang = i18nStore.getState().language;
+  setI18nLanguage('zh-CN');
+  try {
+    assert.equal(formatUsd(null), '待定');
+    assert.equal(formatUsd(0), '$0.00');
+    assert.equal(formatUsd(0.1, { unpricedCalls: 1 }), '$0.10');
+  } finally {
+    setI18nLanguage(prevLang);
+  }
 });
 
 test('custom cost budget cannot claim a complete remaining percentage when prices are missing', async () => {
@@ -414,23 +421,24 @@ test('future uncatalogued Orchestrator variants never fall back to Carbon identi
   assert.notEqual(s2.modelShort, 'orch-carbon');
 
   // Frontend dynamically renders orchestrator-<variant> without silently falling back to orchestrator-carbon
-  assert.equal(resolveModelDisplayInfo(s1, { orchestratorIdMode: 'compact' }).text, 'orchestrator-xenon');
-  assert.equal(resolveModelDisplayInfo(s1, { orchestratorIdMode: 'full' }).text, 'gemini-pro-orchestrator-xenon');
-  assert.equal(resolveModelDisplayInfo(s2, { orchestratorIdMode: 'compact' }).text, 'orchestrator-helium');
-  assert.equal(resolveModelDisplayInfo(s2, { orchestratorIdMode: 'full' }).text, 'gemini-pro-orchestrator (helium)');
+  assert.equal(resolveModelDisplayInfo(s1, { modelDisplayMode: 'short' }).text, 'orchestrator-xenon');
+  assert.equal(resolveModelDisplayInfo(s1, { modelDisplayMode: 'upstream_compact' }).text, 'orchestrator-xenon');
+  assert.equal(resolveModelDisplayInfo(s1, { modelDisplayMode: 'upstream' }).text, 'gemini-pro-orchestrator-xenon');
+  assert.equal(resolveModelDisplayInfo(s2, { modelDisplayMode: 'short' }).text, 'orchestrator-helium');
+  assert.equal(resolveModelDisplayInfo(s2, { modelDisplayMode: 'upstream' }).text, 'gemini-pro-orchestrator (helium)');
 
   // Direct non-Orchestrator Carbon/Argon/Neon models remain unaffected
   assert.equal(
     resolveModelDisplayInfo(
       { modelKey: 'MODEL_PLACEHOLDER_M429', modelShort: 'carbon-4-high', modelLabel: 'Gemini 4 Carbon (High)', modelUpstream: 'gemini-4-carbon-high' },
-      { showUpstreamModel: false, orchestratorIdMode: 'compact' }
+      { showUpstreamModel: false }
     ).text,
     'carbon-4-high'
   );
   assert.equal(
     resolveModelDisplayInfo(
       { modelKey: 'MODEL_PLACEHOLDER_M535', modelShort: 'neon-4-xhigh', modelLabel: 'Gemini 4 Neon (XHigh)', modelUpstream: 'gemini-4-neon-xhigh' },
-      { showUpstreamModel: false, orchestratorIdMode: 'compact' }
+      { showUpstreamModel: false }
     ).text,
     'neon-4-xhigh'
   );
@@ -530,24 +538,24 @@ test('Orchestrator (Opus 5.5) resolves Claude family, Opus 5.5 pricing, distinct
   assert.ok(quotaPoolsMap.get('Claude & GPT').models.includes('Orchestrator (Opus 5.5)'));
   assert.equal(quotaPoolsMap.get('Gemini').models.includes('Orchestrator (Opus 5.5)'), false);
 
-  // Frontend compact/full Orchestrator display works cleanly and stays separate from standalone Opus 5.5
-  assert.equal(resolveModelDisplayInfo(s1, { orchestratorIdMode: 'compact' }).text, 'orchestrator-opus-5.5');
-  assert.equal(resolveModelDisplayInfo(s1, { orchestratorIdMode: 'full' }).text, 'claude-opus-5-5');
-  assert.equal(resolveModelDisplayInfo(s2, { orchestratorIdMode: 'compact' }).text, 'orchestrator-opus-5.5');
-  assert.equal(resolveModelDisplayInfo(s2, { orchestratorIdMode: 'full' }).text, 'claude-opus-5-5-orchestrator (opus-5.5)');
-  assert.equal(resolveModelDisplayInfo(s3, { orchestratorIdMode: 'compact' }).text, 'orchestrator-opus-5.5');
-  assert.equal(resolveModelDisplayInfo(s3, { orchestratorIdMode: 'full' }).text, 'claude-orchestrator (opus-5.5)');
+  // Frontend Orchestrator display follows modelDisplayMode cleanly and stays separate from standalone Opus 5.5
+  assert.equal(resolveModelDisplayInfo(s1, { modelDisplayMode: 'short' }).text, 'orchestrator-opus-5.5');
+  assert.equal(resolveModelDisplayInfo(s1, { modelDisplayMode: 'upstream' }).text, 'claude-opus-5-5');
+  assert.equal(resolveModelDisplayInfo(s2, { modelDisplayMode: 'short' }).text, 'orchestrator-opus-5.5');
+  assert.equal(resolveModelDisplayInfo(s2, { modelDisplayMode: 'upstream' }).text, 'claude-opus-5-5-orchestrator (opus-5.5)');
+  assert.equal(resolveModelDisplayInfo(s3, { modelDisplayMode: 'short' }).text, 'orchestrator-opus-5.5');
+  assert.equal(resolveModelDisplayInfo(s3, { modelDisplayMode: 'upstream' }).text, 'claude-orchestrator (opus-5.5)');
   assert.equal(
     resolveModelDisplayInfo(
       { modelKey: OPUS_ORCH_PH, modelLabel: 'Orchestrator (Opus 5.5)' },
-      { orchestratorIdMode: 'full' }
+      { modelDisplayMode: 'upstream' }
     ).text,
     'orchestrator-opus-5.5',
     'Non-Gemini Orchestrator without upstream never fabricates gemini-pro-orchestrator-*'
   );
   const mergedCompact = mergeModelsByDisplayName(
     p.modelBreakdown,
-    { modelDisplayMode: 'short', orchestratorIdMode: 'compact' },
+    { modelDisplayMode: 'short' },
     { preferLabelInShort: true }
   );
   assert.ok(mergedCompact.some((m) => m.displayText === 'orchestrator-opus-5.5'));
@@ -647,8 +655,8 @@ test('Orchestrator executionModel supports Neon and Claude workers without hijac
   assert.equal(s2.modelUpstream, 'gemini-neon-worker-agy (neon-4)');
   assert.equal(s2.family, 'Gemini');
   assert.equal(s2.costUsd, 0.0193);
-  assert.equal(resolveModelDisplayInfo(s2, { orchestratorIdMode: 'compact' }).text, 'worker-agy-neon');
-  assert.equal(resolveModelDisplayInfo(s2, { orchestratorIdMode: 'full' }).text, 'gemini-neon-worker-agy (neon-4)');
+  assert.equal(resolveModelDisplayInfo(s2, { modelDisplayMode: 'short' }).text, 'worker-agy-neon');
+  assert.equal(resolveModelDisplayInfo(s2, { modelDisplayMode: 'upstream' }).text, 'gemini-neon-worker-agy (neon-4)');
 
   // Direct M535 Neon execution step with leaked planner name clears leaked label and resolves as Gemini 4 Neon (XHigh)
   assert.equal(s3.modelLabel, 'Gemini 4 Neon (XHigh)');
@@ -660,14 +668,14 @@ test('Orchestrator executionModel supports Neon and Claude workers without hijac
   assert.equal(s4.modelLabel, 'Orchestrator Worker (Sonnet 5.5)');
   assert.equal(s4.family, 'Claude');
   assert.equal(s4.costUsd, 0.0129);
-  assert.equal(resolveModelDisplayInfo(s4, { orchestratorIdMode: 'compact' }).text, 'worker-agy-sonnet-5.5');
-  assert.equal(resolveModelDisplayInfo(s4, { orchestratorIdMode: 'full' }).text, 'claude-sonnet-5-5');
+  assert.equal(resolveModelDisplayInfo(s4, { modelDisplayMode: 'short' }).text, 'worker-agy-sonnet-5.5');
+  assert.equal(resolveModelDisplayInfo(s4, { modelDisplayMode: 'upstream' }).text, 'claude-sonnet-5-5');
 
   // Unknown future worker remains unpriced and renders worker-agy-krypton instead of worker-agy-hydrogen
   assert.equal(s5.modelLabel, 'Orchestrator Worker (Krypton)');
   assert.equal(s5.costUsd, null);
-  assert.equal(resolveModelDisplayInfo(s5, { orchestratorIdMode: 'compact' }).text, 'worker-agy-krypton');
-  assert.equal(resolveModelDisplayInfo(s5, { orchestratorIdMode: 'full' }).text, 'mystery-worker-agy (krypton)');
+  assert.equal(resolveModelDisplayInfo(s5, { modelDisplayMode: 'short' }).text, 'worker-agy-krypton');
+  assert.equal(resolveModelDisplayInfo(s5, { modelDisplayMode: 'upstream' }).text, 'mystery-worker-agy (krypton)');
 });
 
 test('real-world M669 worker steps (responseModel gemini-flash-worker-agy, displayName Gemini Flash) and uncatalogued executionModel resolve to Hydrogen', async () => {
@@ -788,16 +796,13 @@ test('new Carbon (M427/M437/M438) and Hydrogen XHigh/High/Medium/Low (M525-M528)
   assert.equal(getBaseModelLabel('Orchestrator Worker (Hydrogen)'), 'Orchestrator Worker (Hydrogen)');
 });
 
-test('orchestratorIdMode defaults to compact, persists via settings action, and controls Orchestrator series independently of showUpstreamModel', () => {
+test('Orchestrator series display follows modelDisplayMode cleanly and legacy orchestratorIdMode setting is ignored', () => {
   const h = backendHarness();
-  assert.equal(h.loadSettings().orchestratorIdMode, 'compact');
+  assert.equal('orchestratorIdMode' in h.loadSettings(), false);
 
-  const resFull = h.executeSettingsAction({ orchestratorIdMode: 'full' });
-  assert.equal(resFull.ok, true);
-  assert.equal(resFull.updated.orchestratorIdMode, 'full');
-
-  const resInvalid = h.executeSettingsAction({ orchestratorIdMode: 'unexpected' });
-  assert.equal(resInvalid.updated.orchestratorIdMode, 'compact');
+  const resLegacy = h.executeSettingsAction({ orchestratorIdMode: 'full' });
+  assert.equal(resLegacy.ok, true);
+  assert.equal('orchestratorIdMode' in resLegacy.updated, false);
 
   const orchCarbon = {
     modelKey: ORCH_CARBON,
@@ -843,60 +848,77 @@ test('orchestratorIdMode defaults to compact, persists via settings action, and 
     modelUpstream: 'gemini-4-hydrogen-xhigh',
   };
 
-  for (const showUpstreamModel of [false, true]) {
-    assert.equal(
-      resolveModelDisplayInfo(orchCarbon, { showUpstreamModel, orchestratorIdMode: 'compact' }).text,
-      'orchestrator-carbon'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchArgon, { showUpstreamModel, orchestratorIdMode: 'compact' }).text,
-      'orchestrator-argon'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchNeon, { showUpstreamModel, orchestratorIdMode: 'compact' }).text,
-      'orchestrator-neon'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchNeonCompaction, { showUpstreamModel, orchestratorIdMode: 'compact' }).text,
-      'orchestrator-neon·压缩'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchWorkerCompaction, { showUpstreamModel, orchestratorIdMode: 'compact' }).text,
-      'worker-agy-hydrogen·压缩'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchCarbon, { showUpstreamModel, orchestratorIdMode: 'full' }).text,
-      'gemini-pro-orchestrator (carbon-4)'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchArgon, { showUpstreamModel, orchestratorIdMode: 'full' }).text,
-      'gemini-pro-orchestrator-argon (argon-4)'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchNeon, { showUpstreamModel, orchestratorIdMode: 'full' }).text,
-      'gemini-pro-orchestrator-neon (neon-4)'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchNeonCompaction, { showUpstreamModel, orchestratorIdMode: 'full' }).text,
-      'gemini-pro-orchestrator-neon (neon-4)·压缩'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchWorkerCompaction, { showUpstreamModel, orchestratorIdMode: 'full' }).text,
-      'gemini-flash-worker-agy (hydrogen-4)·压缩'
-    );
+  const prevLang = i18nStore.getState().language;
+  setI18nLanguage('zh-CN');
+  try {
+    for (const compactMode of ['short', 'upstream_compact']) {
+      assert.equal(
+        resolveModelDisplayInfo(orchCarbon, { modelDisplayMode: compactMode }).text,
+        'orchestrator-carbon'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchArgon, { modelDisplayMode: compactMode }).text,
+        'orchestrator-argon'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchNeon, { modelDisplayMode: compactMode }).text,
+        'orchestrator-neon'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchNeonCompaction, { modelDisplayMode: compactMode }).text,
+        'orchestrator-neon·压缩'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchWorkerCompaction, { modelDisplayMode: compactMode }).text,
+        'worker-agy-hydrogen·压缩'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchCarbon, { modelDisplayMode: compactMode }).title,
+        'gemini-pro-orchestrator (carbon-4)'
+      );
+    }
+
+    for (const fullSettings of [{ modelDisplayMode: 'upstream' }, { showUpstreamModel: true }, true]) {
+      assert.equal(
+        resolveModelDisplayInfo(orchCarbon, fullSettings).text,
+        'gemini-pro-orchestrator (carbon-4)'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchArgon, fullSettings).text,
+        'gemini-pro-orchestrator-argon (argon-4)'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchNeon, fullSettings).text,
+        'gemini-pro-orchestrator-neon (neon-4)'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchNeonCompaction, fullSettings).text,
+        'gemini-pro-orchestrator-neon (neon-4)·压缩'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchWorkerCompaction, fullSettings).text,
+        'gemini-flash-worker-agy (hydrogen-4)·压缩'
+      );
+    }
+  } finally {
+    setI18nLanguage(prevLang);
   }
 
-  // Non-Orchestrator direct Hydrogen still follows showUpstreamModel regardless of orchestratorIdMode
+  // Non-Orchestrator direct Hydrogen continues to follow modelDisplayMode cleanly
   assert.equal(
-    resolveModelDisplayInfo(directHydrogen, { showUpstreamModel: false, orchestratorIdMode: 'compact' }).text,
+    resolveModelDisplayInfo(directHydrogen, { modelDisplayMode: 'short' }).text,
     'hydrogen-4-xhigh'
   );
   assert.equal(
-    resolveModelDisplayInfo(directHydrogen, { showUpstreamModel: true, orchestratorIdMode: 'compact' }).text,
+    resolveModelDisplayInfo(directHydrogen, { modelDisplayMode: 'upstream_compact' }).text,
+    '4-hydrogen-xhigh'
+  );
+  assert.equal(
+    resolveModelDisplayInfo(directHydrogen, { modelDisplayMode: 'upstream' }).text,
     'gemini-4-hydrogen-xhigh'
   );
   assert.equal(
-    resolveModelDisplayInfo(directHydrogen, { showUpstreamModel: false, orchestratorIdMode: 'full' }, { preferLabelInShort: true }).text,
+    resolveModelDisplayInfo(directHydrogen, { modelDisplayMode: 'short' }, { preferLabelInShort: true }).text,
     'Gemini 4 Hydrogen (XHigh)'
   );
 });

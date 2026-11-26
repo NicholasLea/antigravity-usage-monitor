@@ -28,11 +28,13 @@ import {
 import {
   compileHostI18nRuntimePayload,
   createHostI18nPackManager,
+  isRemoteHostI18nPackNewer,
 } from '../backend/host-i18n/pack-manager.mjs';
 import {
   applyHostI18nInPage,
   collectUntranslatedHostUiInPage,
   createHostI18nApplyExpression,
+  createHostI18nCollectExpression,
   createHostI18nDisposeExpression,
   createHostI18nHeartbeatExpression,
 } from '../backend/host-i18n/runtime-translator.mjs';
@@ -77,30 +79,34 @@ test('host-i18n protocol normalizers handle edge cases cleanly', () => {
 test('host-i18n build-packs --check verifies real repository dist artifacts and rejects unsafe patterns', (t) => {
   const checked = buildAllHostI18nPacks({ rootDir: REAL_HOST_I18N_ROOT, checkOnly: true });
   assert.equal(checked.checked, true);
-  const zhPackMeta = checked.manifest.packs.find((p) => p.locale === 'zh-CN');
-  assert.ok(zhPackMeta, 'zh-CN pack must exist in manifest');
-  assert.ok(
-    zhPackMeta.stats.baseExact + zhPackMeta.stats.deepExact >= 5000,
-    `Expected full zh-CN coverage >= 5000 exact entries, got ${zhPackMeta.stats.baseExact + zhPackMeta.stats.deepExact}`
-  );
-  assert.ok(
-    zhPackMeta.stats.basePatterns + zhPackMeta.stats.deepPatterns >= 800,
-    `Expected full zh-CN coverage >= 800 patterns, got ${zhPackMeta.stats.basePatterns + zhPackMeta.stats.deepPatterns}`
-  );
-
-  // Strict coverage audit against real en-US.catalog.json + ignore.json must have 0 gaps & 0 integrity issues
+  const expectedLocales = ['zh-CN', 'zh-TW', 'ja-JP', 'ko-KR', 'de-DE', 'fr-FR'];
   const realCatalog = JSON.parse(
     readFileSync(join(REAL_HOST_I18N_ROOT, 'sources', 'en-US.catalog.json'), 'utf8')
   );
+  const ignoreLists = loadIgnoreLists(join(REAL_HOST_I18N_ROOT, 'sources', 'ignore.json'));
+  for (const locale of expectedLocales) {
+    const packMeta = checked.manifest.packs.find((p) => p.locale === locale);
+    assert.ok(packMeta, `${locale} pack must exist in manifest`);
+    assert.ok(
+      packMeta.stats.baseExact + packMeta.stats.deepExact >= 5000,
+      `Expected full ${locale} coverage >= 5000 exact entries, got ${packMeta.stats.baseExact + packMeta.stats.deepExact}`
+    );
+    assert.ok(
+      packMeta.stats.basePatterns + packMeta.stats.deepPatterns >= 800,
+      `Expected full ${locale} coverage >= 800 patterns, got ${packMeta.stats.basePatterns + packMeta.stats.deepPatterns}`
+    );
+    const packObj = JSON.parse(
+      readFileSync(join(REAL_HOST_I18N_ROOT, 'dist', 'packs', `${locale}.json`), 'utf8')
+    );
+    const auditReport = auditCatalogAgainstPack(realCatalog, packObj, ignoreLists);
+    assert.equal(auditReport.missingExact.length, 0, `${locale} must have 0 missing exact translations`);
+    assert.equal(auditReport.missingTemplates.length, 0, `${locale} must have 0 missing dynamic templates`);
+    assert.equal(auditReport.brokenPatterns.length, 0, `${locale} must have 0 broken pattern backreferences`);
+    assert.equal(auditReport.redundantModeExact.length, 0, `${locale} must have 0 redundant identical light/deep keys`);
+  }
   const realPackObj = JSON.parse(
     readFileSync(join(REAL_HOST_I18N_ROOT, 'dist', 'packs', 'zh-CN.json'), 'utf8')
   );
-  const ignoreLists = loadIgnoreLists(join(REAL_HOST_I18N_ROOT, 'sources', 'ignore.json'));
-  const auditReport = auditCatalogAgainstPack(realCatalog, realPackObj, ignoreLists);
-  assert.equal(auditReport.missingExact.length, 0, 'Catalog must have 0 missing exact translations');
-  assert.equal(auditReport.missingTemplates.length, 0, 'Catalog must have 0 missing dynamic templates');
-  assert.equal(auditReport.brokenPatterns.length, 0, 'Pack must have 0 broken pattern backreferences');
-  assert.equal(auditReport.redundantModeExact.length, 0, 'Pack must have 0 redundant identical light/deep keys');
 
   // Verify screenshot-reported Appearance, General Mode Copy, Queue, Outside-of-Projects & Model Tags translate cleanly
   const deepMerged = compileHostI18nRuntimePayload(realPackObj, 'deep');
@@ -855,4 +861,665 @@ test('dispatchBridgeApiRequest routes GET/POST /api/host-i18n and __hostI18nActi
   const badRes = await handleHostI18nPostAction({ action: 'invalid_op' }, { manager: mgr });
   assert.equal(badRes.status, 400);
   assert.equal(badRes.payload.ok, false);
+});
+
+test('zh-CN@1.0.1 light/deep rules cover Customizations/Workspace/effort tiers/plan copy and collector catches div/shadowRoot/multiline strings while skipping icons', () => {
+  const { win, doc, body, MockElement, MockText } = createMockDom();
+  const prevWindow = globalThis.window;
+  const prevDocument = globalThis.document;
+  globalThis.window = win;
+  globalThis.document = doc;
+
+  try {
+    const packObj = JSON.parse(
+      readFileSync(join(REAL_HOST_I18N_ROOT, 'dist', 'packs', 'zh-CN.json'), 'utf8')
+    );
+    const packHash = sha256(JSON.stringify(packObj));
+    const lightPayload = compileHostI18nRuntimePayload(packObj, 'light', packHash);
+    const deepPayload = compileHostI18nRuntimePayload(packObj, 'deep', packHash);
+
+    // Build DOM nodes matching Antigravity's real layout (including <div>, <span>, shadowRoot, icon ligatures)
+    const navCustomizations = body.appendChild(new MockElement('span'));
+    const txtCustomizations = navCustomizations.appendChild(new MockText('Customizations'));
+
+    const titleWorkspace = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'title-menu-bar-item' } })
+    );
+    const txtWorkspace = titleWorkspace.appendChild(new MockText('Workspace'));
+
+    const effortLow = body.appendChild(new MockElement('span'));
+    const txtLow = effortLow.appendChild(new MockText('Low'));
+    const effortMed = body.appendChild(new MockElement('span'));
+    const txtMed = effortMed.appendChild(new MockText('Medium'));
+    const effortHigh = body.appendChild(new MockElement('span'));
+    const txtHigh = effortHigh.appendChild(new MockText('High'));
+    const effortExtra = body.appendChild(new MockElement('span'));
+    const txtExtra = effortExtra.appendChild(new MockText('Extra'));
+    const effortMax = body.appendChild(new MockElement('span'));
+    const txtMax = effortMax.appendChild(new MockText('Max'));
+
+    const planDesc = body.appendChild(new MockElement('span'));
+    const txtPlanDesc = planDesc.appendChild(
+      new MockText('You are subscribed to the best Google AI plan.')
+    );
+
+    // Untranslated nodes in <div>, <li>, multiline, and shadowRoot (previously missed by UI_CONTROL_SELECTOR)
+    const missingDiv = body.appendChild(new MockElement('div'));
+    missingDiv.appendChild(new MockText('Unmapped Div Banner'));
+
+    const missingLi = body.appendChild(new MockElement('li'));
+    missingLi.appendChild(new MockText('Unmapped List Item'));
+
+    const missingMultiline = body.appendChild(new MockElement('div'));
+    missingMultiline.appendChild(new MockText('First unmapped line\nSecond unmapped line'));
+
+    const shadowHost = body.appendChild(new MockElement('div'));
+    const shadowRoot = new MockElement('div');
+    shadowRoot.nodeType = 11;
+    const shadowInner = shadowRoot.appendChild(new MockElement('div'));
+    shadowInner.appendChild(new MockText('Shadow Panel Heading'));
+    shadowHost.shadowRoot = shadowRoot;
+
+    // Icon ligatures and skipped zones that must NOT be collected
+    const iconSpan = body.appendChild(
+      new MockElement('span', { className: 'material-symbols-outlined' })
+    );
+    iconSpan.appendChild(new MockText('chevron_right'));
+    const ariaHiddenIcon = body.appendChild(
+      new MockElement('span', { attrs: { 'aria-hidden': 'true' } })
+    );
+    ariaHiddenIcon.appendChild(new MockText('refresh'));
+    const proseDiv = body.appendChild(new MockElement('div', { className: 'prose' }));
+    proseDiv.appendChild(new MockText('Assistant prose paragraph should never leak'));
+
+    // Real Antigravity AI reply bubble (.bleed-contain + data-markdown-block-index), sidebar conversation row,
+    // file pills, breadcrumbs, step items, and noise tokens (filenames, kebab-case, fullwidth punct, acronyms)
+    const aiBubble = body.appendChild(new MockElement('div', { className: 'bleed-contain bg-muted' }));
+    const aiBubbleText = aiBubble.appendChild(new MockText('Settings'));
+    aiBubble.appendChild(new MockText('Unmapped AI Reply Prose'));
+
+    const mdBlock = body.appendChild(
+      new MockElement('div', { attrs: { 'data-markdown-block-index': '0' } })
+    );
+    const mdBlockText = mdBlock.appendChild(new MockText('Cancel'));
+
+    const sidebarRow = body.appendChild(new MockElement('div', { className: 'agy-sidebar-row' }));
+    const convTitleText = sidebarRow.appendChild(new MockText('Settings'));
+    sidebarRow.appendChild(new MockText('Chinese Greeting'));
+
+    const convHistoryLink = body.appendChild(
+      new MockElement('a', {
+        attrs: { href: '/c/12345678-1234-1234-1234-1234567890ab', 'aria-label': 'Greeting and Hello' },
+      })
+    );
+    convHistoryLink.appendChild(new MockText('Opening Two Bees'));
+
+    const entityPill = body.appendChild(
+      new MockElement('a', { attrs: { 'data-testid': 'entity-pill', 'data-quotable-inline': 'true' } })
+    );
+    entityPill.appendChild(new MockText('HostI18nCard.js'));
+
+    const breadcrumbSeg = body.appendChild(
+      new MockElement('span', {
+        attrs: { 'data-testid': 'breadcrumb-segment', 'aria-label': 'Project: antigravity-usage-monitor' },
+      })
+    );
+    breadcrumbSeg.appendChild(new MockText('antigravity-usage-monitor'));
+
+    const stepItem = body.appendChild(
+      new MockElement('li', { attrs: { 'data-testid': 'step-plan-item' } })
+    );
+    stepItem.appendChild(new MockText('Dynamic Agent Step Title'));
+
+    const noiseWrap = body.appendChild(new MockElement('div'));
+    for (const noise of [
+      'host-i18n.test.mjs',
+      'image.png',
+      'host-i18n',
+      'antigravity-usage-monitor',
+      'Antigravity',
+      'DOM',
+      'KB',
+      'React',
+      'SemVer',
+      'vX',
+      '：Antigravity',
+      '（sha256',
+    ]) {
+      noiseWrap.appendChild(new MockText(noise));
+    }
+
+    const stepChip = body.appendChild(
+      new MockElement('button', {
+        attrs: { 'data-testid': 'step-plan-chip', 'aria-label': '5/5 steps. Show plan' },
+      })
+    );
+    const txtStepChip = stepChip.appendChild(new MockText('5/5 steps'));
+    const navBreadcrumb = body.appendChild(
+      new MockElement('nav', { attrs: { 'aria-label': 'Breadcrumb' } })
+    );
+
+    // 1. Apply Light mode
+    applyHostI18nInPage(lightPayload, 'boot-v101', HOST_I18N_GLOBAL_KEY);
+    assert.equal(txtCustomizations.nodeValue, '自定义扩展');
+    assert.equal(txtWorkspace.nodeValue, '工作区');
+    assert.equal(txtLow.nodeValue, 'Low');
+    assert.equal(txtMed.nodeValue, 'Medium');
+    assert.equal(txtHigh.nodeValue, 'High');
+    assert.equal(txtExtra.nodeValue, 'Extra');
+    assert.equal(txtMax.nodeValue, 'Max');
+    assert.equal(txtPlanDesc.nodeValue, '您已订阅最高级别的 Google AI 方案。');
+    assert.equal(txtStepChip.nodeValue, '5/5 步');
+    assert.equal(stepChip.getAttribute('aria-label'), '5/5 步。展开计划');
+    assert.equal(navBreadcrumb.getAttribute('aria-label'), '面包屑导航');
+    assert.equal(aiBubbleText.nodeValue, 'Settings');
+    assert.equal(mdBlockText.nodeValue, 'Cancel');
+    assert.equal(convTitleText.nodeValue, 'Settings');
+    assert.equal(
+      lightPayload.exact['Ask anything, @ to mention, / for actions'],
+      '输入任何问题，@ 提及内容，/ 调用操作'
+    );
+    assert.equal(
+      lightPayload.exact['Message subagent, @ to mention, / for actions'],
+      '向 Subagent 发送消息，@ 提及内容，/ 调用操作'
+    );
+    assert.equal(
+      deepPayload.exact['Message subagent, @ to mention, / for actions'],
+      '向子代理发送消息，@ 提及内容，/ 调用操作'
+    );
+
+    // 2. Collector must catch <div>, <li>, multiline, and shadowRoot, while excluding AI replies, sidebar titles, pills, filenames, and acronyms
+    const collected = collectUntranslatedHostUiInPage(HOST_I18N_GLOBAL_KEY);
+    const texts = new Set(collected.items.map((item) => item.text));
+    assert.ok(texts.has('Unmapped Div Banner'));
+    assert.ok(texts.has('Unmapped List Item'));
+    assert.ok(texts.has('First unmapped line\nSecond unmapped line'));
+    assert.ok(texts.has('Shadow Panel Heading'));
+    for (const forbidden of [
+      'Low',
+      'High',
+      'chevron_right',
+      'refresh',
+      'Assistant prose paragraph should never leak',
+      'Unmapped AI Reply Prose',
+      'Chinese Greeting',
+      'Greeting and Hello',
+      'Opening Two Bees',
+      'HostI18nCard.js',
+      'Project: antigravity-usage-monitor',
+      'antigravity-usage-monitor',
+      'Dynamic Agent Step Title',
+      'host-i18n.test.mjs',
+      'image.png',
+      'host-i18n',
+      'Antigravity',
+      'DOM',
+      'KB',
+      'React',
+      'SemVer',
+      'vX',
+      '：Antigravity',
+      '（sha256',
+      '5/5 steps',
+      'Breadcrumb',
+    ]) {
+      assert.equal(texts.has(forbidden), false, `Collector must not report "${forbidden}"`);
+    }
+
+    // 3. Hot-switch Light -> Deep translates effort tiers cleanly
+    applyHostI18nInPage(deepPayload, 'boot-v101', HOST_I18N_GLOBAL_KEY);
+    assert.equal(txtCustomizations.nodeValue, '自定义扩展');
+    assert.equal(txtWorkspace.nodeValue, '工作区');
+    assert.equal(txtLow.nodeValue, '低');
+    assert.equal(txtMed.nodeValue, '中');
+    assert.equal(txtHigh.nodeValue, '高');
+    assert.equal(txtExtra.nodeValue, '极高');
+    assert.equal(txtMax.nodeValue, '最高');
+    assert.equal(txtPlanDesc.nodeValue, '您已订阅最高级别的 Google AI 方案。');
+
+    win[HOST_I18N_GLOBAL_KEY].dispose();
+  } finally {
+    globalThis.window = prevWindow;
+    globalThis.document = prevDocument;
+  }
+});
+
+test('PackManager enforces SemVer 2.0 anti-downgrade on status snapshot and install/update (1.0.1 never downgrades to 1.0.0)', async (t) => {
+  assert.equal(isRemoteHostI18nPackNewer('1.0.0', '1.0.1'), false);
+  assert.equal(isRemoteHostI18nPackNewer('1.0.1', '1.0.1'), false);
+  assert.equal(isRemoteHostI18nPackNewer('1.0.1-beta.1', '1.0.1'), false);
+  assert.equal(isRemoteHostI18nPackNewer('1.0.1', '1.0.0'), true);
+  assert.equal(isRemoteHostI18nPackNewer('1.0.1', '1.0.1-beta.1'), true);
+  assert.equal(isRemoteHostI18nPackNewer('invalid', '1.0.0'), false);
+
+  const dataDir = createTempDir(t);
+  const makePack = (version, extraKey) =>
+    JSON.stringify({
+      schemaVersion: 1,
+      locale: 'zh-CN',
+      name: 'Chinese (Simplified)',
+      nativeName: '简体中文',
+      version,
+      depths: ['light', 'deep'],
+      base: { exact: { Settings: '设置', [extraKey]: '测试' }, patterns: [] },
+      modes: { light: { exact: {}, patterns: [] }, deep: { exact: {}, patterns: [] } },
+    }) + '\n';
+
+  const pack100 = makePack('1.0.0', 'OldKey');
+  const pack101 = makePack('1.0.1', 'NewKey');
+  const pack102 = makePack('1.0.2', 'NewerKey');
+
+  let activeRemotePack = pack101;
+  let activeRemoteVersion = '1.0.1';
+  let packFetchCount = 0;
+
+  const mockFetch = async (url) => {
+    if (url.endsWith('/manifest.json')) {
+      const manifest = {
+        schemaVersion: 1,
+        generatedAt: '2026-11-25T00:00:00.000Z',
+        packs: [
+          {
+            locale: 'zh-CN',
+            name: 'Chinese (Simplified)',
+            nativeName: '简体中文',
+            version: activeRemoteVersion,
+            file: 'packs/zh-CN.json',
+            sha256: sha256(activeRemotePack),
+            bytes: Buffer.byteLength(activeRemotePack, 'utf8'),
+            depths: ['light', 'deep'],
+          },
+        ],
+      };
+      return { ok: true, status: 200, text: async () => JSON.stringify(manifest) };
+    }
+    if (url.endsWith('/packs/zh-CN.json')) {
+      packFetchCount += 1;
+      return { ok: true, status: 200, text: async () => activeRemotePack };
+    }
+    return { ok: false, status: 404, text: async () => 'not found' };
+  };
+
+  const mgr = createHostI18nPackManager({ dataDir, fetchImpl: mockFetch, ref: 'main' });
+
+  // 1. Install 1.0.1 initially
+  await mgr.selectLanguage({ locale: 'zh-CN', depth: 'light' });
+  assert.equal(mgr.loadInstalledPack('zh-CN').pack.version, '1.0.1');
+  assert.equal(packFetchCount, 1);
+
+  // 2. Remote serves older 1.0.0 (different hash & lower SemVer) -> updateAvailable MUST be false & update MUST NOT downgrade
+  activeRemotePack = pack100;
+  activeRemoteVersion = '1.0.0';
+  const manifestRes100 = await mgr.refreshManifest({ force: true });
+  const snap100 = mgr.getStatusSnapshot({ manifestResult: manifestRes100 });
+  const zh100 = snap100.packs.find((p) => p.locale === 'zh-CN');
+  assert.equal(zh100.installedVersion, '1.0.1');
+  assert.equal(zh100.remoteVersion, '1.0.0');
+  assert.equal(zh100.updateAvailable, false);
+
+  const downgradeRes = await handleHostI18nPostAction(
+    { action: 'update', locale: 'zh-CN' },
+    { manager: mgr }
+  );
+  assert.equal(downgradeRes.status, 200);
+  assert.equal(downgradeRes.payload.updated, false);
+  assert.equal(downgradeRes.payload.alreadyUpToDate, true);
+  assert.equal(mgr.loadInstalledPack('zh-CN').pack.version, '1.0.1');
+  assert.equal(packFetchCount, 1, 'Must NOT even download older remote pack');
+
+  // 3. Remote serves newer 1.0.2 -> updateAvailable MUST be true & update upgrades cleanly
+  activeRemotePack = pack102;
+  activeRemoteVersion = '1.0.2';
+  const manifestRes102 = await mgr.refreshManifest({ force: true });
+  const snap102 = mgr.getStatusSnapshot({ manifestResult: manifestRes102 });
+  assert.equal(snap102.packs.find((p) => p.locale === 'zh-CN').updateAvailable, true);
+
+  const upgradeRes = await handleHostI18nPostAction(
+    { action: 'update', locale: 'zh-CN' },
+    { manager: mgr }
+  );
+  assert.equal(upgradeRes.status, 200);
+  assert.equal(upgradeRes.payload.updated, true);
+  assert.equal(upgradeRes.payload.alreadyUpToDate, false);
+  assert.equal(mgr.loadInstalledPack('zh-CN').pack.version, '1.0.2');
+  assert.equal(packFetchCount, 2);
+});
+
+test('runtime translator and collector skip Antigravity code-line/diff/code-block containers, ignore AI/UI acronyms, and translate just now + relative time + diff source labels', () => {
+  const { win, doc, body, MockElement, MockText } = createMockDom();
+  const zhPack = JSON.parse(
+    readFileSync(join(REAL_HOST_I18N_ROOT, 'dist', 'packs', 'zh-CN.json'), 'utf8')
+  );
+  const packHash = sha256(JSON.stringify(zhPack));
+  const lightPayload = compileHostI18nRuntimePayload(zhPack, 'light', packHash);
+  const deepPayload = compileHostI18nRuntimePayload(zhPack, 'deep', packHash);
+
+  const prevWindow = globalThis.window;
+  const prevDocument = globalThis.document;
+  try {
+    globalThis.window = win;
+    globalThis.document = doc;
+
+    // 1. Unified/split diff row (.code-line + data-diff-type + .line-content) containing CSS tokens
+    //    matching dictionary words ('background', 'color', 'none')
+    const diffLine = body.appendChild(
+      new MockElement('div', {
+        className: 'code-line group flex flex-nowrap select-contain',
+        attrs: { 'data-diff-type': '1', 'data-current-original-line': '1377' },
+      })
+    );
+    const diffContent = diffLine.appendChild(
+      new MockElement('div', { className: 'line-content group/line overflow-y-clip' })
+    );
+    const cssPropBg = diffContent.appendChild(new MockElement('span')).appendChild(new MockText('background'));
+    const cssPropColor = diffContent.appendChild(new MockElement('span')).appendChild(new MockText('color'));
+    const cssValNone = diffContent.appendChild(new MockElement('span')).appendChild(new MockText('none'));
+
+    // 2. File viewer line ([data-line-number] + [data-line-tokens]) and standalone .code-block
+    const fileLine = body.appendChild(
+      new MockElement('div', { attrs: { 'data-line-number': '12' } })
+    );
+    const lineTokens = fileLine.appendChild(
+      new MockElement('span', { attrs: { 'data-line-tokens': 'true' } })
+    );
+    const fileTokenBg = lineTokens.appendChild(new MockText('background'));
+    const codeBlock = body.appendChild(
+      new MockElement('div', { className: 'code-block w-full text-sm' })
+    );
+    const codeBlockToken = codeBlock.appendChild(new MockElement('span')).appendChild(new MockText('Color'));
+
+    // 3. Real UI strings: just now, w/mo/y ago, diff source labels, and tab titles
+    const justNowEl = body.appendChild(new MockElement('span')).appendChild(new MockText('just now'));
+    const weeksAgoEl = body.appendChild(new MockElement('span')).appendChild(new MockText('2w ago'));
+    const monthsAgoEl = body.appendChild(new MockElement('span')).appendChild(new MockText('3mo ago'));
+    const yearsAgoEl = body.appendChild(new MockElement('span')).appendChild(new MockText('1y ago'));
+    const singleEditEl = body
+      .appendChild(new MockElement('span', { attrs: { 'data-testid': 'diff-source-label' } }))
+      .appendChild(new MockText('single edit'));
+    const tabTitleSingle = body
+      .appendChild(new MockElement('span'))
+      .appendChild(new MockText('views-tables.css (single edit)'));
+    const tabTitleAllEdits = body
+      .appendChild(new MockElement('span'))
+      .appendChild(new MockText('views-tables.css (all agent edits)'));
+
+    // 4. Universal acronyms AI / UI that collector must NOT flag as missing translations
+    const aiBadge = body.appendChild(new MockElement('span')).appendChild(new MockText('AI'));
+    const uiBadge = body.appendChild(new MockElement('span')).appendChild(new MockText('UI'));
+
+    applyHostI18nInPage(lightPayload, 'boot-code-guard', HOST_I18N_GLOBAL_KEY);
+
+    // Code & diff tokens MUST remain untouched
+    assert.equal(cssPropBg.nodeValue, 'background');
+    assert.equal(cssPropColor.nodeValue, 'color');
+    assert.equal(cssValNone.nodeValue, 'none');
+    assert.equal(fileTokenBg.nodeValue, 'background');
+    assert.equal(codeBlockToken.nodeValue, 'Color');
+
+    // UI strings MUST translate cleanly
+    assert.equal(justNowEl.nodeValue, '刚刚');
+    assert.equal(weeksAgoEl.nodeValue, '2 周前');
+    assert.equal(monthsAgoEl.nodeValue, '3 个月前');
+    assert.equal(yearsAgoEl.nodeValue, '1 年前');
+    assert.equal(singleEditEl.nodeValue, '单次编辑');
+    assert.equal(tabTitleSingle.nodeValue, 'views-tables.css（单次编辑）');
+    assert.equal(tabTitleAllEdits.nodeValue, 'views-tables.css（全部 Agent 编辑）');
+    assert.equal(aiBadge.nodeValue, 'AI');
+    assert.equal(uiBadge.nodeValue, 'UI');
+
+    // Collector must ignore AI, UI, and code/diff contents
+    const collected = collectUntranslatedHostUiInPage(HOST_I18N_GLOBAL_KEY);
+    const collectedTexts = new Set(collected.items.map((item) => item.text));
+    for (const ignored of ['AI', 'UI', 'background', 'color', 'none', 'just now']) {
+      assert.equal(collectedTexts.has(ignored), false, `Collector must not report "${ignored}"`);
+    }
+
+    // Deep mode localizes Agent in diff source labels
+    applyHostI18nInPage(deepPayload, 'boot-code-guard', HOST_I18N_GLOBAL_KEY);
+    assert.equal(tabTitleAllEdits.nodeValue, 'views-tables.css（全部智能体编辑）');
+    assert.equal(cssPropBg.nodeValue, 'background');
+
+    win[HOST_I18N_GLOBAL_KEY].dispose();
+  } finally {
+    globalThis.window = prevWindow;
+    globalThis.document = prevDocument;
+  }
+});
+
+test('Issue #54: runtime translator and collector exempt AI replies (streaming word spans), thinking markdown, KaTeX math, tables, and single lowercase prose words without breaking UI chrome or CDP serialization', () => {
+  const { win, doc, body, MockElement, MockText, observers } = createMockDom();
+  const zhPack = JSON.parse(
+    readFileSync(join(REAL_HOST_I18N_ROOT, 'dist', 'packs', 'zh-CN.json'), 'utf8')
+  );
+  const packHash = sha256(JSON.stringify(zhPack));
+  const lightPayload = compileHostI18nRuntimePayload(zhPack, 'light', packHash);
+
+  const prevWindow = globalThis.window;
+  const prevDocument = globalThis.document;
+  try {
+    globalThis.window = win;
+    globalThis.document = doc;
+
+    // 1. Streaming AI reply inside planner-response-text + [data-markdown-root] (.md-divider-spacing)
+    //    Reproduces per-word <span> split where exactMap ('for','the','waiting','result') and
+    //    exactLowerMap ('display','on','all','tasks','before') previously mangled English replies.
+    const plannerTurn = body.appendChild(new MockElement('div'));
+    const thinkingTrigger = plannerTurn.appendChild(
+      new MockElement('button', { attrs: { 'data-testid': 'thinking-collapsible-trigger' } })
+    );
+    const txtThinkingTrigger = thinkingTrigger.appendChild(new MockText('Thought for 12s'));
+    const thinkingBody = plannerTurn.appendChild(new MockElement('div', { className: 'cursor-edit pl-2' }));
+    // IDE-style markdown root (only .md-divider-spacing, no data-markdown-root)
+    const thinkingMdRoot = thinkingBody.appendChild(
+      new MockElement('div', { className: 'text-base md-divider-spacing break-words' })
+    );
+    const thinkingWordFor = thinkingMdRoot.appendChild(new MockElement('span')).appendChild(new MockText('for '));
+    const thinkingWordEffort = thinkingMdRoot
+      .appendChild(new MockElement('strong'))
+      .appendChild(new MockText('effort'));
+
+    const plannerResp = plannerTurn.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'planner-response-text' } })
+    );
+    const mdRoot = plannerResp.appendChild(
+      new MockElement('div', {
+        className: 'text-base leading-relaxed select-text md-divider-spacing break-words',
+        attrs: { 'data-markdown-root': '' },
+      })
+    );
+    const streamingParagraph = mdRoot.appendChild(new MockElement('p'));
+    const streamingWords = [
+      'Thanks ',
+      'for ',
+      'the ',
+      'proposal ',
+      'and ',
+      'reference ',
+      'implementation! ',
+      'Multi-currency ',
+      'display ',
+      'has ',
+      'long ',
+      'been ',
+      'on ',
+      'the ',
+      'v1.5.6 ',
+      'roadmap. ',
+      'Just ',
+      'waiting ',
+      'for ',
+      'all ',
+      'remaining ',
+      'tasks ',
+      'in ',
+      'that ',
+      'release ',
+      'to ',
+      'wrap ',
+      'up ',
+      'before ',
+      'shipping ',
+      '— ',
+      'should ',
+      'have ',
+      'a ',
+      'result ',
+      'today. ',
+      'Stay ',
+      'tuned 🙏',
+    ];
+    const streamingTextNodes = streamingWords.map((w) =>
+      streamingParagraph.appendChild(new MockElement('span')).appendChild(new MockText(w))
+    );
+
+    // Sibling action bar outside planner-response-text MUST keep translating
+    const actionBar = plannerTurn.appendChild(new MockElement('div'));
+    const btnCopy = actionBar.appendChild(
+      new MockElement('button', { attrs: { 'aria-label': 'Copy' } })
+    );
+    const tipGood = actionBar.appendChild(new MockElement('span')).appendChild(new MockText('Good Response'));
+    const tipBad = actionBar.appendChild(new MockElement('span')).appendChild(new MockText('Bad Response'));
+    const relTime = actionBar.appendChild(new MockElement('span')).appendChild(new MockText('just now'));
+
+    // 2. Standalone KaTeX inline & display formulas (even outside planner-response-text)
+    const katexInline = body.appendChild(new MockElement('span', { className: 'katex' }));
+    const katexMathml = katexInline.appendChild(new MockElement('span', { className: 'katex-mathml' }));
+    const katexMathTag = katexMathml.appendChild(new MockElement('math'));
+    const txtMathmlEffort = katexMathTag.appendChild(new MockText('effort'));
+    const katexHtml = katexInline.appendChild(
+      new MockElement('span', { className: 'katex-html', attrs: { 'aria-hidden': 'true' } })
+    );
+    const txtKatexHtmlEffort = katexHtml
+      .appendChild(new MockElement('span', { className: 'mord text' }))
+      .appendChild(new MockText('effort'));
+    const txtKatexHtmlTitleEffort = katexHtml
+      .appendChild(new MockElement('span', { className: 'mord text' }))
+      .appendChild(new MockText('Effort'));
+
+    const katexDisplayWrap = body.appendChild(
+      new MockElement('span', { className: 'md-math-display block my-2' })
+    );
+    const katexDisplay = katexDisplayWrap.appendChild(new MockElement('span', { className: 'katex-display' }));
+    const txtKatexDisplayFor = katexDisplay
+      .appendChild(new MockElement('span'))
+      .appendChild(new MockText('for'));
+
+    // 3. Markdown table cells ([data-md-table]) vs table menu toolbar (portal / sibling UI chrome)
+    const mdTableHost = body.appendChild(new MockElement('div', { className: 'md-table-host' }));
+    const mdTableMenuBtn = mdTableHost.appendChild(
+      new MockElement('button', { attrs: { 'data-testid': 'markdown-table-menu', 'aria-label': 'Copy' } })
+    );
+    const mdTableCopyItem = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'markdown-table-copy-markdown' } })
+    );
+    const txtMdTableCopyItem = mdTableCopyItem.appendChild(new MockText('Copy as Markdown'));
+    const mdTableBody = mdTableHost.appendChild(
+      new MockElement('div', { attrs: { 'data-md-table': 'table-1' } })
+    );
+    const txtTableCellEffort = mdTableBody
+      .appendChild(new MockElement('table'))
+      .appendChild(new MockElement('td'))
+      .appendChild(new MockText('Effort'));
+
+    // 4. Additional AI/user content containers
+    const progressUpdate = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'progress-update-response-text' } })
+    );
+    const txtProgressUpdate = progressUpdate.appendChild(new MockText('waiting'));
+    const askHeader = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'ask-question-header-text' } })
+    );
+    const txtAskHeader = askHeader.appendChild(new MockText('Effort'));
+    const askOption = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'ask-question-option-text' } })
+    );
+    const txtAskOption = askOption.appendChild(new MockText('Settings'));
+    const commentText = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'comment-card-text' } })
+    );
+    const txtComment = commentText.appendChild(new MockText('Settings'));
+    const liveAgent = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'live-agent-turn' } })
+    );
+    const txtLiveAgent = liveAgent.appendChild(new MockText('Settings'));
+
+    // 5. Defense-in-depth: single lowercase words outside exempt containers MUST NOT hit Title Case exactLowerMap,
+    //    while Title Case labels & mixed-case UI phrases STILL translate accurately.
+    const bareLowerEffort = body.appendChild(new MockElement('span')).appendChild(new MockText('effort'));
+    const bareLowerDisplay = body.appendChild(new MockElement('span')).appendChild(new MockText('display'));
+    const bareLowerOn = body.appendChild(new MockElement('span')).appendChild(new MockText('on'));
+    const bareLowerAll = body.appendChild(new MockElement('span')).appendChild(new MockText('all'));
+    const bareLowerTasks = body.appendChild(new MockElement('span')).appendChild(new MockText('tasks'));
+    const bareLowerBefore = body.appendChild(new MockElement('span')).appendChild(new MockText('before'));
+
+    const uiTitleEffort = body.appendChild(new MockElement('span')).appendChild(new MockText('Effort'));
+    const uiAcceptAll = body.appendChild(new MockElement('button')).appendChild(new MockText('Accept All'));
+    const uiFontSize = body.appendChild(new MockElement('span')).appendChild(new MockText('Font size'));
+    const uiImage = body.appendChild(new MockElement('span')).appendChild(new MockText('Image'));
+
+    // Execute via isolated CDP Runtime.evaluate expression (`new Function` has ZERO access to module scope!)
+    const applyExpr = createHostI18nApplyExpression(lightPayload, 'boot-issue54');
+    const applyRes = new Function(`return (${applyExpr});`)();
+    assert.equal(applyRes.applied, true);
+
+    // Streaming AI reply & thinking body stayed 100% untouched
+    assert.equal(
+      streamingTextNodes.map((n) => n.nodeValue).join(''),
+      streamingWords.join('')
+    );
+    assert.equal(thinkingWordFor.nodeValue, 'for ');
+    assert.equal(thinkingWordEffort.nodeValue, 'effort');
+
+    // MutationObserver incremental streaming word append inside planner-response-text stays untouched
+    const streamedSpan = streamingParagraph.appendChild(new MockElement('span'));
+    const txtStreamedFor = streamedSpan.appendChild(new MockText('for '));
+    observers[0].trigger([{ type: 'childList', addedNodes: [streamedSpan] }]);
+    assert.equal(txtStreamedFor.nodeValue, 'for ');
+
+    // KaTeX math formulas, table cells, and extra AI/user content containers stayed 100% untouched
+    assert.equal(txtMathmlEffort.nodeValue, 'effort');
+    assert.equal(txtKatexHtmlEffort.nodeValue, 'effort');
+    assert.equal(txtKatexHtmlTitleEffort.nodeValue, 'Effort');
+    assert.equal(txtKatexDisplayFor.nodeValue, 'for');
+    assert.equal(txtTableCellEffort.nodeValue, 'Effort');
+    assert.equal(txtProgressUpdate.nodeValue, 'waiting');
+    assert.equal(txtAskHeader.nodeValue, 'Effort');
+    assert.equal(txtAskOption.nodeValue, 'Settings');
+    assert.equal(txtComment.nodeValue, 'Settings');
+    assert.equal(txtLiveAgent.nodeValue, 'Settings');
+
+    // Bare single lowercase words did NOT falsely trigger Title Case exactLowerMap
+    assert.equal(bareLowerEffort.nodeValue, 'effort');
+    assert.equal(bareLowerDisplay.nodeValue, 'display');
+    assert.equal(bareLowerOn.nodeValue, 'on');
+    assert.equal(bareLowerAll.nodeValue, 'all');
+    assert.equal(bareLowerTasks.nodeValue, 'tasks');
+    assert.equal(bareLowerBefore.nodeValue, 'before');
+
+    // Legitimate Antigravity UI chrome & mixed-case phrases translated cleanly
+    assert.equal(txtThinkingTrigger.nodeValue, '已思考 12s');
+    assert.equal(btnCopy.getAttribute('aria-label'), '复制');
+    assert.equal(tipGood.nodeValue, '优质回复');
+    assert.equal(tipBad.nodeValue, '回复不佳');
+    assert.equal(relTime.nodeValue, '刚刚');
+    assert.equal(mdTableMenuBtn.getAttribute('aria-label'), '复制');
+    assert.equal(txtMdTableCopyItem.nodeValue, '复制为 Markdown');
+    assert.equal(uiTitleEffort.nodeValue, '思考强度');
+    assert.equal(uiAcceptAll.nodeValue, '全部接受');
+    assert.equal(uiFontSize.nodeValue, '字号');
+    assert.equal(uiImage.nodeValue, '图片');
+
+    // Isolated CDP collect expression must NOT throw ReferenceError and must NOT leak AI prose / KaTeX
+    const collectExpr = createHostI18nCollectExpression();
+    const collected = new Function(`return (${collectExpr});`)();
+    const collectedTexts = new Set(collected.items.map((item) => item.text));
+    for (const leaked of ['Multi-currency', 'proposal', 'implementation!', 'roadmap.']) {
+      assert.equal(collectedTexts.has(leaked), false, `Collector must not report AI prose "${leaked}"`);
+    }
+
+    win[HOST_I18N_GLOBAL_KEY].dispose();
+  } finally {
+    globalThis.window = prevWindow;
+    globalThis.document = prevDocument;
+  }
 });

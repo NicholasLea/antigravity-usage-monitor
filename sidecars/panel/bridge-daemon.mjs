@@ -17,10 +17,12 @@ export async function startBridgeDaemon() {
     { bootBundleVersion, bootWindowBridgeRuntime, setStandalonePortListener },
     { computeRuntimeCodeVersion, loadSettings, normalizeStandalonePort },
     { createStandaloneWebServer, parseStandaloneCliArgs },
+    { stopLocalBackgroundCacheRebuild },
   ] = await Promise.all([
     import('./backend/api-actions.mjs'),
     import('./backend/config.mjs'),
     import('./backend/standalone-server.mjs'),
+    import('./backend/local-scanner.mjs'),
   ]);
 
   let shuttingDown = false;
@@ -122,6 +124,7 @@ export async function startBridgeDaemon() {
     }, 1500);
     forceTimer.unref?.();
     try {
+      await stopLocalBackgroundCacheRebuild().catch(() => {});
       await Promise.allSettled([
         controller?.stop?.({ disposeWindows }),
         standaloneController?.stop?.(),

@@ -13,6 +13,7 @@
 import { lsRuntimeEndpoint } from './config.mjs';
 import {
   getEndpointQuotaCache,
+  getRemoteEndpointTargetWsUrls,
   getRemoteWindowRpcInvoker,
   markRemoteEndpointPreferTier2,
   shouldRemoteEndpointPreferTier2,
@@ -38,7 +39,7 @@ export function setLoopbackHttpsRequester(requester) {
   customLoopbackHttpsRequester = typeof requester === 'function' ? requester : null;
 }
 
-function isStrictLoopbackUrl(rawUrl) {
+export function isStrictLoopbackUrl(rawUrl) {
   try {
     const parsed = new URL(String(rawUrl || ''));
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
@@ -62,19 +63,27 @@ async function getLoopbackHttpsRequestFn() {
   return loopbackHttpsModulePromise;
 }
 
-async function postLoopbackHttpsJson(urlStr, csrfToken, bodyText, timeoutMs) {
+export async function postLoopbackHttpsJson(
+  urlStr,
+  csrfToken,
+  bodyText,
+  timeoutMs,
+  extraHeaders = null
+) {
   const parsed = new URL(urlStr);
   if (!isStrictLoopbackUrl(urlStr) || parsed.protocol !== 'https:') {
     throw new Error('Refusing non-loopback HTTPS request');
   }
+  const baseHeaders = {
+    'Content-Type': 'application/json',
+    ...(csrfToken ? { 'x-codeium-csrf-token': csrfToken } : {}),
+    ...(extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : {}),
+  };
   const requestFn = await getLoopbackHttpsRequestFn();
   if (typeof requestFn !== 'function') {
     return fetch(urlStr, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(csrfToken ? { 'x-codeium-csrf-token': csrfToken } : {}),
-      },
+      headers: baseHeaders,
       body: bodyText,
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -104,9 +113,8 @@ async function postLoopbackHttpsJson(urlStr, csrfToken, bodyText, timeoutMs) {
         method: 'POST',
         rejectUnauthorized: false,
         headers: {
-          'Content-Type': 'application/json',
+          ...baseHeaders,
           'Content-Length': bodyBuf.length,
-          ...(csrfToken ? { 'x-codeium-csrf-token': csrfToken } : {}),
         },
       },
       (res) => {
@@ -227,11 +235,16 @@ async function callRemoteEndpointLsRpc(endpoint, method, body, timeoutMs) {
   const baseUrl = String(endpoint.baseUrl || endpoint.origin || '').trim().replace(/\/+$/, '');
   const csrfToken = String(endpoint.csrfToken || '').trim();
   const windowInvoker = getRemoteWindowRpcInvoker();
+  const hasTier2Targets =
+    typeof windowInvoker === 'function' &&
+    (!(endpoint.targets instanceof Map) ||
+      endpoint.targets.size === 0 ||
+      getRemoteEndpointTargetWsUrls(endpoint).length > 0);
   const canTryTier1 =
     Boolean(baseUrl) &&
     isStrictLoopbackUrl(baseUrl) &&
-    Boolean(csrfToken) &&
-    !shouldRemoteEndpointPreferTier2(endpoint);
+    (Boolean(csrfToken) || endpoint.tier1Verified === true) &&
+    (!shouldRemoteEndpointPreferTier2(endpoint) || !hasTier2Targets);
 
   let tier1Err = null;
   if (canTryTier1) {
@@ -252,10 +265,10 @@ async function callRemoteEndpointLsRpc(endpoint, method, body, timeoutMs) {
         status === 401 ||
         status === 403 ||
         (status === 404 && method !== 'GetCascadeTrajectory');
-      if (isTransportAuthOrRouteMiss) {
+      if (isTransportAuthOrRouteMiss && hasTier2Targets) {
         markRemoteEndpointPreferTier2(endpoint);
       } else {
-        // 业务级 4xx（如单个会话已被删除导致的 GetCascadeTrajectory 404）直接上抛，不误触熔断
+        // 业务级 4xx 或当前无可用 Tier-2 窗口目标时直接上抛，避免在无 Tier-2 目标时进入 60s 静默黑洞
         throw tier1Err;
       }
     } catch (err) {
@@ -263,11 +276,13 @@ async function callRemoteEndpointLsRpc(endpoint, method, body, timeoutMs) {
         throw err;
       }
       tier1Err = err;
-      markRemoteEndpointPreferTier2(endpoint);
+      if (hasTier2Targets) {
+        markRemoteEndpointPreferTier2(endpoint);
+      }
     }
   }
 
-  if (typeof windowInvoker === 'function') {
+  if (hasTier2Targets) {
     const remainingMs = canTryTier1 ? deadlineMs - Date.now() : safeTimeoutMs;
     if (!canTryTier1 || remainingMs >= REMOTE_TIER2_MIN_REMAINING_MS) {
       return windowInvoker(

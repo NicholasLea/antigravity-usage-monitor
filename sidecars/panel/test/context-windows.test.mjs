@@ -40,7 +40,12 @@ const carbonModels = [
 
 test('saves and restores one model at a time using host presets or verified model capacity', async () => {
   const h = backendHarness({
-    settings: { contextLimitOverrideTokens: 900000 },
+    settings: {
+      contextLimitOverrideTokens: 900000,
+      developerModeEnabled: true,
+      riskyFeaturesEnabled: true,
+      contextWindowRiskAccepted: true,
+    },
     availableModels,
     userStatus: {
       cascadeModelConfigData: {
@@ -539,10 +544,23 @@ test('independent Main Agent & Subagents/Swarm switches persist, pin back main d
     userStatus: { cascadeModelConfigData: { clientModelConfigs: carbonModels } },
   });
   const initSettings = h.loadSettings();
+  assert.equal(initSettings.developerModeEnabled, false);
+  assert.equal(initSettings.riskyFeaturesEnabled, false);
   assert.equal(initSettings.contextWindowMainEnabled, true);
   assert.equal(initSettings.contextWindowSwarmEnabled, false);
 
+  // Blocked while Developer Mode / High-Risk gate is closed
+  const lockedCtxRes = await h.executeModelContextWindowAction({
+    modelId: carbonGroup,
+    option: '300000',
+  });
+  assert.equal(lockedCtxRes.status, 403);
+  assert.equal(JSON.parse(lockedCtxRes.body).error, 'riskNotAccepted');
+
   const patchRes = h.executeSettingsAction({
+    developerModeEnabled: true,
+    riskyFeaturesEnabled: true,
+    contextWindowRiskAccepted: true,
     contextWindowMainEnabled: false,
     contextWindowSwarmEnabled: true,
   });
@@ -555,7 +573,15 @@ test('independent Main Agent & Subagents/Swarm switches persist, pin back main d
   assert.equal(tele.settings.contextWindowSwarmEnabled, true);
   assert.equal(tele.cloudCodeProxy.state, 'disabled');
 
+  // Closing riskyFeaturesEnabled immediately re-locks riskAccepted & Swarm proxy
+  const relockRes = h.executeSettingsAction({ riskyFeaturesEnabled: false });
+  assert.equal(relockRes.status, 200);
+  assert.equal(h.loadSettings().contextWindowRiskAccepted, false);
+  assert.equal(h.loadSettings().contextWindowSwarmEnabled, false);
+
   h.executeResetSettingsAction();
+  assert.equal(h.loadSettings().developerModeEnabled, false);
+  assert.equal(h.loadSettings().riskyFeaturesEnabled, false);
   assert.equal(h.loadSettings().contextWindowMainEnabled, true);
   assert.equal(h.loadSettings().contextWindowSwarmEnabled, false);
 
@@ -621,12 +647,15 @@ test('independent Main Agent & Subagents/Swarm switches persist, pin back main d
   }
   assert.equal(win.fetch, nativeFetch);
 
-  // 3. Window bridge reconciles CloudCode proxy even without CDP ports when Swarm toggle is enabled
+  // 3. Window bridge reconciles CloudCode proxy only when Developer + High-Risk + RiskAccepted + Swarm are all enabled
   const proxyLog = [];
   let proxyStopped = false;
   let currentSettings = {
     enableWindowOverlay: false,
     windowMountMode: 'sidebar',
+    developerModeEnabled: false,
+    riskyFeaturesEnabled: false,
+    contextWindowRiskAccepted: false,
     modelContextWindows: { [carbonGroup]: '300000' },
     contextWindowMainEnabled: false,
     contextWindowSwarmEnabled: true,
@@ -657,14 +686,24 @@ test('independent Main Agent & Subagents/Swarm switches persist, pin back main d
   });
   await bridgeCtrl.syncAllWindows();
   assert.equal(proxyLog.length, 1);
-  assert.equal(proxyLog[0].enabled, true);
-  assert.deepEqual(proxyLog[0].rulesByModelId, { [carbon]: 300000 });
+  assert.equal(proxyLog[0].enabled, false, 'Proxy stays disabled when developer/risk gate is closed');
 
-  // Turning off Swarm switch disables CloudCode proxy
-  currentSettings = { ...currentSettings, contextWindowSwarmEnabled: false };
+  currentSettings = {
+    ...currentSettings,
+    developerModeEnabled: true,
+    riskyFeaturesEnabled: true,
+    contextWindowRiskAccepted: true,
+  };
   await bridgeCtrl.syncAllWindows();
   assert.equal(proxyLog.length, 2);
-  assert.equal(proxyLog[1].enabled, false);
+  assert.equal(proxyLog[1].enabled, true);
+  assert.deepEqual(proxyLog[1].rulesByModelId, { [carbon]: 300000 });
+
+  // Turning off Developer Mode immediately disables CloudCode proxy even if stale fields existed
+  currentSettings = { ...currentSettings, developerModeEnabled: false };
+  await bridgeCtrl.syncAllWindows();
+  assert.equal(proxyLog.length, 3);
+  assert.equal(proxyLog[2].enabled, false);
 
   await bridgeCtrl.stop();
   assert.equal(proxyStopped, true);
@@ -710,6 +749,8 @@ test('SettingsOtherTab renders independent Main Agent and Subagents/Swarm switch
     ];
     tab.refs.renderSettings(
       {
+        developerModeEnabled: true,
+        riskyFeaturesEnabled: true,
         contextWindowRiskAccepted: true,
         contextWindowMainEnabled: true,
         contextWindowSwarmEnabled: true,
@@ -752,6 +793,8 @@ test('SettingsOtherTab renders independent Main Agent and Subagents/Swarm switch
     // Error state surfaces cleanly
     tab.refs.renderSettings(
       {
+        developerModeEnabled: true,
+        riskyFeaturesEnabled: true,
         contextWindowRiskAccepted: true,
         contextWindowMainEnabled: false,
         contextWindowSwarmEnabled: true,
@@ -773,6 +816,8 @@ test('SettingsOtherTab renders independent Main Agent and Subagents/Swarm switch
     // Both off -> stays clean without extra small-text clutter
     tab.refs.renderSettings(
       {
+        developerModeEnabled: true,
+        riskyFeaturesEnabled: true,
         contextWindowRiskAccepted: true,
         contextWindowMainEnabled: false,
         contextWindowSwarmEnabled: false,
@@ -1027,7 +1072,7 @@ test('cloudcode-proxy handles socks5:// and authenticated HTTP/HTTPS proxies, en
     createCloudCodeProxyController({
       allowHttpUpstream: true,
       allowTestEndpoint: true,
-      tunnelTimeoutMs: 120,
+      tunnelTimeoutMs: 3000,
       upstreamTlsOptions: { rejectUnauthorized: false },
       detectUpstreamFn: () => upstreamHttpsUrl,
       detectProxyFn: async () => activeProxyUrl,
@@ -1038,7 +1083,7 @@ test('cloudcode-proxy handles socks5:// and authenticated HTTP/HTTPS proxies, en
 
   const ctrlSocks = makeProxyCtrl();
   const ctrlHttpAuth = makeProxyCtrl();
-  const ctrlHung = makeProxyCtrl();
+  const ctrlHung = makeProxyCtrl({ tunnelTimeoutMs: 120 });
 
   try {
     // A. SOCKS5 tunnel rewrites fetchAvailableModels over real TLS and POOLS Keep-Alive tunnel across consecutive requests

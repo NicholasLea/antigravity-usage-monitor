@@ -5,7 +5,7 @@
  * - 总汇总视图提供会话线性走势图、多模型同图趋势拟合曲线与极简高密度模型总览卡片。
  */
 
-import { resolveSettingsModernUi } from '../core/appearance.js';
+import { normalizeClientFontScale, resolveSettingsModernUi } from '../core/appearance.js';
 import { defineComponent } from '../core/component.js';
 import {
   h,
@@ -27,10 +27,8 @@ import {
   formatUsd,
   mergeModelsByDisplayName,
   normalizeModelDisplayMode,
-  normalizeOrchestratorIdDisplayMode,
   resolveModelAnomalySummary,
   resolveModelDisplayInfo,
-  speedReasonText,
 } from '../core/formatters.js';
 import {
   computeStepQuickChipCounts,
@@ -91,6 +89,7 @@ export function mergeSelectedAgentUnits(units) {
         acc = {
           label: m.label || gk,
           shortName: m.shortName || gk,
+          shortNameCounts: new Map(),
           rawModel: m.rawModel || '',
           upstreamName: m.upstreamName || m.upstreamModel || '',
           upstreamSet: new Set(
@@ -133,6 +132,12 @@ export function mergeSelectedAgentUnits(units) {
         }
       }
       const calls = Math.max(0, Number(m.calls || 0));
+      if (m.shortName) {
+        acc.shortNameCounts.set(
+          m.shortName,
+          (acc.shortNameCounts.get(m.shortName) || 0) + Math.max(1, calls)
+        );
+      }
       const inTok = Math.max(0, Number(m.inputTokens || 0));
       const cacheTok = Math.max(0, Number(m.cacheReadTokens || 0));
       const outTok = Math.max(0, Number(m.outputTokens || 0));
@@ -217,9 +222,22 @@ export function mergeSelectedAgentUnits(units) {
     .map((acc) => {
       const promptTok = acc.inputTokens + acc.cacheReadTokens;
       const rawAvgTps = acc._speedSeconds > 0 ? acc._speedTokens / acc._speedSeconds : null;
+      let primaryShortName = acc.shortName;
+      let bestShortCount = -1;
+      for (const [sn, cnt] of acc.shortNameCounts.entries()) {
+        if (
+          cnt > bestShortCount ||
+          (cnt === bestShortCount &&
+            (sn.length < primaryShortName.length ||
+              (sn.length === primaryShortName.length && sn < primaryShortName)))
+        ) {
+          primaryShortName = sn;
+          bestShortCount = cnt;
+        }
+      }
       return {
         label: acc.label,
-        shortName: acc.shortName,
+        shortName: primaryShortName,
         rawModel: acc.rawModel,
         upstreamName: acc.upstreamName,
         upstreamModels: Array.from(acc.upstreamSet),
@@ -286,7 +304,9 @@ function getFitMetricSwitchOptions() {
 
 export const StepsDetailView = defineComponent({
   name: 'StepsDetailView',
-  setup({ onCleanup }) {
+  setup({ getProps, onCleanup }) {
+    const onLayoutChange =
+      typeof getProps?.()?.onLayoutChange === 'function' ? getProps().onLayoutChange : null;
     let selectedAgentScopes = [uiStore.getState().selectedAgentScope || 'all'];
     let lastSyncedUiScope = uiStore.getState().selectedAgentScope || 'all';
     let selectedTableModels = ['__all__'];
@@ -459,41 +479,33 @@ export const StepsDetailView = defineComponent({
     const stepSearchClearBtn = stepSearchBox.clearBtnEl;
 
     const QUICK_CHIP_DEFS = [
-      { key: 'anomaly', i18nKey: 'steps.chipAnomaly', tone: 'is-warn' },
-      { key: 'compaction', i18nKey: 'steps.chipCompaction', tone: 'is-info' },
-      { key: 'low_cache', i18nKey: 'steps.chipLowCache', tipKey: 'steps.chipLowCacheTip', tone: 'is-warn' },
-      { key: 'slow_ttft', i18nKey: 'steps.chipSlowTtft', tipKey: 'steps.chipSlowTtftTip', tone: 'is-danger' },
+      { key: 'anomaly', i18nKey: 'steps.chipAnomaly' },
+      { key: 'compaction', i18nKey: 'steps.chipCompaction' },
+      { key: 'low_cache', i18nKey: 'steps.chipLowCache', tipKey: 'steps.chipLowCacheTip' },
+      { key: 'slow_ttft', i18nKey: 'steps.chipSlowTtft', tipKey: 'steps.chipSlowTtftTip' },
     ];
-    const quickChipBtns = QUICK_CHIP_DEFS.map((def) => {
-      const btn = h('button', {
-        type: 'button',
-        className: `steps-chip-btn ${def.tone}`,
-        'data-chip': def.key,
-        hidden: true,
-        onclick: () => {
-          if (def.key === 'anomaly') {
-            const nextOn = !(onlyAnomalies || stepQuickChip === 'anomaly');
-            onlyAnomalies = nextOn;
-            anomalyKindFilter = '';
-            stepQuickChip = nextOn ? 'anomaly' : '';
-          } else {
-            const nextKey = stepQuickChip === def.key ? '' : def.key;
-            stepQuickChip = nextKey;
-            if (nextKey) {
-              onlyAnomalies = false;
-              anomalyKindFilter = '';
-            }
-          }
-          if (latestSlice) renderStepsData(latestSlice);
-        },
-      });
-      return { def, btn };
+    const stepQuickFilterSwitch = SegmentedControl({
+      ariaLabel: t('steps.quickFilterAria'),
+      modelValue: '',
+      deselectToValue: '',
+      options: [],
+      onUpdateModelValue: (val) => {
+        const nextKey = String(val || '');
+        if (nextKey === 'anomaly') {
+          onlyAnomalies = true;
+          anomalyKindFilter = '';
+          stepQuickChip = 'anomaly';
+        } else {
+          onlyAnomalies = false;
+          anomalyKindFilter = '';
+          stepQuickChip = nextKey;
+        }
+        if (latestSlice) renderStepsData(latestSlice);
+      },
     });
-    const stepQuickChipsEl = h(
-      'div',
-      { className: 'steps-quick-chips', hidden: true },
-      quickChipBtns.map((c) => c.btn)
-    );
+    const stepQuickChipsEl = stepQuickFilterSwitch.el;
+    stepQuickChipsEl.classList?.add('steps-quick-chips');
+    patchAttr(stepQuickChipsEl, 'hidden', true);
     const stepsExportMenu = ActionMenu({
       ariaLabel: t('steps.exportMenuAria'),
       className: 'steps-export-menu',
@@ -935,7 +947,6 @@ export const StepsDetailView = defineComponent({
           slice.showUpstreamModel
         ),
         showUpstreamModel: Boolean(slice.showUpstreamModel),
-        orchestratorIdMode: slice.orchestratorIdMode,
       };
 
       const showAgentPrefix = isMergedMultiAgents;
@@ -1055,21 +1066,27 @@ export const StepsDetailView = defineComponent({
       patchAttr(stepsFilterToolbarEl, 'hidden', !showFilterToolbar);
       stepsExportMenu.refs.setHidden(showModels || steps.length === 0);
       if (showFilterToolbar) {
-        let visibleChipsCount = 0;
-        for (const { def, btn } of quickChipBtns) {
+        const activeFilterOpts = [];
+        for (const def of QUICK_CHIP_DEFS) {
           const cnt = chipCounts[def.key] || 0;
           const isActive = effectiveQuickChip === def.key;
-          const showChip = cnt > 0 || isActive;
-          patchAttr(btn, 'hidden', !showChip);
-          if (showChip) {
-            visibleChipsCount += 1;
-            patchText(btn, t(def.i18nKey, { count: cnt }));
-            if (def.tipKey) patchAttr(btn, 'title', t(def.tipKey));
-            patchClasses(btn, { 'is-active': isActive });
-            patchAttr(btn, 'aria-pressed', isActive ? 'true' : 'false');
+          if (cnt > 0 || isActive) {
+            activeFilterOpts.push({
+              value: def.key,
+              label: t(def.i18nKey, { count: cnt }),
+              ...(def.tipKey ? { title: t(def.tipKey) } : {}),
+            });
           }
         }
-        patchAttr(stepQuickChipsEl, 'hidden', visibleChipsCount === 0);
+        const hasFilters = activeFilterOpts.length > 0;
+        patchAttr(stepQuickChipsEl, 'hidden', !hasFilters);
+        if (hasFilters) {
+          stepQuickFilterSwitch.setProps({
+            ariaLabel: t('steps.quickFilterAria'),
+            modelValue: effectiveQuickChip,
+            options: [{ value: '', label: t('steps.chipAll') }, ...activeFilterOpts],
+          });
+        }
       }
 
       const filteredTableSteps = filterStepsBySearchAndChip(modelFilteredSteps, {
@@ -1080,7 +1097,7 @@ export const StepsDetailView = defineComponent({
       });
 
       const normTokenFmt = normalizeClientStepTokenComboFormat(slice.stepTokenComboFormat);
-      const sortSig = `${sortKey}:${sortDir}:${normTokenFmt}:${displaySettings.modelDisplayMode}:${displaySettings.showUpstreamModel ? 1 : 0}:${displaySettings.orchestratorIdMode}`;
+      const sortSig = `${sortKey}:${sortDir}:${normTokenFmt}:${displaySettings.modelDisplayMode}:${displaySettings.showUpstreamModel ? 1 : 0}`;
       let tableSteps = filteredTableSteps;
       if (sortKey && sortDir) {
         if (cachedSortSrc === filteredTableSteps && cachedSortSig === sortSig) {
@@ -1147,11 +1164,13 @@ export const StepsDetailView = defineComponent({
           displaySettings,
           allConversationSteps,
           allowNewRowFade: shouldAnimateNewRows,
+          fontScale: slice.fontScale,
           sortKey,
           sortDir,
         });
         stepsScroll.refresh();
         fitPinnedWhileVisible = false;
+        onLayoutChange?.();
         return;
       }
 
@@ -1701,6 +1720,7 @@ export const StepsDetailView = defineComponent({
       });
 
       modelsScroll.refresh();
+      onLayoutChange?.();
     }
 
     const unsubUi = uiStore.subscribe(
@@ -1741,9 +1761,6 @@ export const StepsDetailView = defineComponent({
           st.telemetry?.settings?.showUpstreamModel
         ),
         showUpstreamModel: Boolean(st.telemetry?.settings?.showUpstreamModel),
-        orchestratorIdMode: normalizeOrchestratorIdDisplayMode(
-          st.telemetry?.settings?.orchestratorIdMode
-        ),
         showStepTurnRail: st.telemetry?.settings?.showStepTurnRail === true,
         showStepAgentBadge: st.telemetry?.settings?.showStepAgentBadge !== false,
         showStepSpeedColor: st.telemetry?.settings?.showStepSpeedColor === true,
@@ -1752,6 +1769,7 @@ export const StepsDetailView = defineComponent({
           st.telemetry?.settings?.stepTokenComboFormat
         ),
         stepTableColumns: st.telemetry?.settings?.stepTableColumns,
+        fontScale: normalizeClientFontScale(st.telemetry?.settings?.fontScale),
         experimentalModernUi: resolveSettingsModernUi(st.telemetry?.settings),
       }),
       (slice) => {
@@ -1825,6 +1843,7 @@ export const StepsDetailView = defineComponent({
       modelFitChart.destroy?.();
       inlineScopeSelect.destroy();
       stepsModelSelect.destroy();
+      stepQuickFilterSwitch.destroy();
       subTabSwitch.destroy();
       lineModelSelect.destroy();
       lineMetricSwitch.destroy();

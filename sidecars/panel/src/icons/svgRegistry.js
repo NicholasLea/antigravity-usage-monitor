@@ -145,4 +145,18 @@ export const SVG_ICON_DEFS = Object.freeze({
     { tag: 'ellipse', attrs: { cx: '8', cy: '8', rx: '2.7', ry: '6' } },
     { tag: 'path', attrs: { d: 'M2.3 6h11.4M2.3 10h11.4' } },
   ],
+  terminal: [
+    { tag: 'rect', attrs: { x: '2', y: '3', width: '12', height: '10', rx: '1.8' } },
+    { tag: 'path', attrs: { d: 'M4.8 6.4 7 8.2 4.8 10M8.4 10h2.8' } },
+  ],
+  trash: [
+    { tag: 'path', attrs: { d: 'M2.8 4.5h10.4' } },
+    { tag: 'path', attrs: { d: 'M6 4.5V3.1a.9.9 0 0 1 .9-.9h2.2a.9.9 0 0 1 .9.9v1.4' } },
+    { tag: 'path', attrs: { d: 'M4.2 4.5l.6 8.4a1.1 1.1 0 0 0 1.1 1h4.2a1.1 1.1 0 0 0 1.1-1l.6-8.4' } },
+    { tag: 'path', attrs: { d: 'M6.6 7.2v4.2M9.4 7.2v4.2' } },
+  ],
+  shield: [
+    { tag: 'path', attrs: { d: 'M8 2L3 4v3.8c0 3.1 2.1 5.3 5 6.2 2.9-.9 5-3.1 5-6.2V4L8 2z' } },
+    { tag: 'path', attrs: { d: 'M6 8l1.4 1.4L10.3 6.5' } },
+  ],
 });

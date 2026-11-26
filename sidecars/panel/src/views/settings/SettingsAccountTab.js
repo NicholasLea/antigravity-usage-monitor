@@ -31,6 +31,23 @@ const key = (name) => `settings.account.${name}`;
 const fmtPct = (v) => String(+Number(v).toFixed(1));
 
 let warmAccountCache = null;
+const ACTIVE_LOGIN_STATUSES = new Set(['waiting', 'exchanging', 'saving']);
+const MAX_DISMISSED_TERMINAL_LOGINS = 32;
+const dismissedTerminalLogins = new Set();
+
+function getTerminalLoginKey(session) {
+  if (!session?.status || ACTIVE_LOGIN_STATUSES.has(session.status)) return '';
+  return `${session.id || ''}:${session.status}:${session.error || ''}`;
+}
+
+function rememberDismissedTerminalLogin(termKey) {
+  if (!termKey) return;
+  if (!dismissedTerminalLogins.has(termKey) && dismissedTerminalLogins.size >= MAX_DISMISSED_TERMINAL_LOGINS) {
+    const oldest = dismissedTerminalLogins.values().next().value;
+    if (oldest !== undefined) dismissedTerminalLogins.delete(oldest);
+  }
+  dismissedTerminalLogins.add(termKey);
+}
 
 const errors = new Set([
   'unsupported', 'invalidEmail', 'invalidCredential', 'credentialTooLarge', 'notFound',
@@ -40,7 +57,8 @@ const errors = new Set([
   'switchStartFailed', 'clientCloseFailed', 'clientRestartFailed',
   'loginStartFailed', 'loginExchangeFailed', 'loginExpired', 'loginDenied',
   'vaultLocked', 'wrongPassword', 'invalidPassword', 'passwordMismatch',
-  'passwordRateLimited', 'vaultDecryptFailed', 'invalidActionNonce', 'riskNotAccepted',
+  'passwordRateLimited', 'vaultDecryptFailed', 'passphraseRequired', 'keyringUnavailable',
+  'invalidActionNonce', 'riskNotAccepted',
 ]);
 
 const okToastKeys = new Set([
@@ -197,6 +215,8 @@ export const SettingsAccountTab = defineComponent({
     let accounts = warmAccountCache ? [...warmAccountCache.accounts] : [];
     let selectedEmail = warmAccountCache ? warmAccountCache.selectedEmail : '';
     let supported = warmAccountCache ? warmAccountCache.supported : null;
+    let keyringAvailable = warmAccountCache ? warmAccountCache.keyringAvailable !== false : true;
+    let passphraseRequired = warmAccountCache ? Boolean(warmAccountCache.passphraseRequired) : false;
     let vaultSecurity = warmAccountCache?.vaultSecurity
       ? { ...warmAccountCache.vaultSecurity }
       : { enabled: false, unlocked: true };
@@ -216,6 +236,7 @@ export const SettingsAccountTab = defineComponent({
     let disposed = false;
     let loginSession = null;
     let loginTimer;
+    let loginDismissTimer = null;
     let loginGeneration = 0;
     let loginRefreshEmail = '';
     const savedQuotas = new Map(warmAccountCache ? warmAccountCache.savedQuotasEntries : []);
@@ -231,6 +252,8 @@ export const SettingsAccountTab = defineComponent({
       if (supported !== true) return;
       warmAccountCache = {
         supported,
+        keyringAvailable,
+        passphraseRequired,
         riskLocked: riskLockedFromServer,
         accounts: [...accounts],
         selectedEmail,
@@ -280,6 +303,21 @@ export const SettingsAccountTab = defineComponent({
       }
     }
 
+    function clearLoginDismissTimer() {
+      if (loginDismissTimer) {
+        clearTimeout(loginDismissTimer);
+        loginDismissTimer = null;
+      }
+    }
+
+    function dismissTerminalLoginIfIdle() {
+      const termKey = getTerminalLoginKey(loginSession);
+      if (!termKey) return;
+      clearLoginDismissTimer();
+      rememberDismissedTerminalLogin(termKey);
+      loginSession = null;
+    }
+
     function clearPasswordInputs() {
       unlockInput.value = '';
       pwdCurrentInput.value = '';
@@ -321,6 +359,7 @@ export const SettingsAccountTab = defineComponent({
         className: 'btn-secondary',
         onClick: () => {
           clearConfirmTarget(false);
+          dismissTerminalLoginIfIdle();
           importOpen = !importOpen;
           if (importOpen) {
             pwdDrawerOpen = false;
@@ -342,6 +381,7 @@ export const SettingsAccountTab = defineComponent({
         className: 'btn-secondary settings-account-pwd-toggle',
         onClick: () => {
           clearConfirmTarget(false);
+          dismissTerminalLoginIfIdle();
           pwdDrawerOpen = !pwdDrawerOpen;
           if (pwdDrawerOpen) {
             importOpen = false;
@@ -573,7 +613,7 @@ export const SettingsAccountTab = defineComponent({
     const loginStrip = h(
       'div',
       { className: 'settings-bridge-notice is-restart', hidden: true },
-      [loginMessage, h('div', { className: 'settings-bridge-actions' }, [loginLink])]
+      [loginMessage, h('div', { className: 'settings-bridge-actions' }, [loginLink, cancelLogin])]
     );
     const loginLinkWrap = loginLink.parentElement;
 
@@ -584,7 +624,6 @@ export const SettingsAccountTab = defineComponent({
       h('div', { className: 'account-toolbar-row' }, [
         h('div', { className: 'account-toolbar-left' }, [
           loginButton,
-          cancelLogin,
           importToggleBtn,
           pwdToggleBtn,
           lockNowBtn,
@@ -979,6 +1018,7 @@ export const SettingsAccountTab = defineComponent({
       if (showPwdDrawer) {
         const isSetNew = !vaultSecurity.enabled;
         const isDisableMode = !isSetNew && pwdManageMode === 'disable';
+        const disableBlockedNoKeyring = !keyringAvailable && isDisableMode;
         patchAttr(pwdModeSegment.el, 'hidden', isSetNew);
         if (!isSetNew) {
           pwdModeSegment.setProps({ modelValue: pwdManageMode, options: getPwdModeOptions() });
@@ -986,7 +1026,7 @@ export const SettingsAccountTab = defineComponent({
 
         patchAttr(pwdCurrentInput, 'hidden', isSetNew);
         patchAttr(pwdCurrentInput, 'placeholder', t(key('pwdCurrentPlaceholder')));
-        patchAttr(pwdCurrentInput, 'disabled', !canOperateVault);
+        patchAttr(pwdCurrentInput, 'disabled', !canOperateVault || disableBlockedNoKeyring);
 
         patchAttr(pwdNewInput, 'hidden', isDisableMode);
         patchAttr(pwdNewInput, 'placeholder', t(key('pwdNewPlaceholder')));
@@ -1005,8 +1045,16 @@ export const SettingsAccountTab = defineComponent({
           'btn-secondary': isDisableMode,
           'btn-danger-confirm': isDisableMode,
         });
-        patchAttr(pwdSubmitBtn, 'disabled', !canOperateVault);
-        patchText(pwdHint, t(key(isSetNew ? 'pwdSetHint' : 'pwdManageHint')));
+        patchAttr(pwdSubmitBtn, 'disabled', !canOperateVault || disableBlockedNoKeyring);
+        const pwdHintKey =
+          disableBlockedNoKeyring
+            ? 'keyringUnavailable'
+            : isSetNew && passphraseRequired
+              ? 'passphraseRequired'
+              : isSetNew
+                ? 'pwdSetHint'
+                : 'pwdManageHint';
+        patchText(pwdHint, t(key(pwdHintKey)));
       }
 
       refreshIntervalSelect.setProps({
@@ -1061,7 +1109,7 @@ export const SettingsAccountTab = defineComponent({
       patchText(loginLink, t(key('openLoginPage')));
       patchAttr(loginLink, 'href', authUrl || null);
       patchAttr(loginLink, 'hidden', !authUrl);
-      patchAttr(loginLinkWrap, 'hidden', !authUrl);
+      patchAttr(loginLinkWrap, 'hidden', !authUrl && !loginActive);
       patchClasses(loginStrip, { 'is-restart': !loginIsError });
       patchAttr(loginStrip, 'hidden', !hasLoginSession || !loginMessageKey);
 
@@ -1193,7 +1241,18 @@ export const SettingsAccountTab = defineComponent({
             vaultSecurity = { enabled: true, unlocked: false };
             syncWarmCache();
           }
-          setTransientStatus(errors.has(result.error) ? result.error : 'storeFailed', 3600);
+          if (result.error === 'passphraseRequired' && !vaultSecurity.enabled) {
+            keyringAvailable = false;
+            passphraseRequired = true;
+            importOpen = false;
+            pwdDrawerOpen = true;
+            clearPasswordInputs();
+            syncWarmCache();
+          } else if (result.error === 'keyringUnavailable') {
+            keyringAvailable = false;
+            syncWarmCache();
+          }
+          setTransientStatus(errors.has(result.error) ? result.error : 'storeFailed', 4500);
           return;
         }
         if (action === 'loginStart' || action === 'loginCancel') {
@@ -1203,6 +1262,8 @@ export const SettingsAccountTab = defineComponent({
         }
         supported = result?.supported === true;
         riskLockedFromServer = Boolean(result?.riskLocked);
+        keyringAvailable = result?.keyringAvailable !== false;
+        passphraseRequired = Boolean(result?.passphraseRequired && !result?.security?.enabled);
         accounts = result?.accounts || [];
         selectedEmail = result?.selectedEmail || '';
         switchState = result?.switchState || null;
@@ -1214,7 +1275,15 @@ export const SettingsAccountTab = defineComponent({
         } else {
           vaultSecurity = { enabled: false, unlocked: true };
         }
-        if (result.login) applyLogin(result.login);
+        if (passphraseRequired && draftRiskAccepted && !riskLockedFromServer && action === 'list') {
+          importOpen = false;
+          pwdDrawerOpen = true;
+        }
+        if (result.login) {
+          applyLogin(result.login);
+        } else if (!ACTIVE_LOGIN_STATUSES.has(loginSession?.status) && !loginDismissTimer) {
+          loginSession = null;
+        }
         if (action === 'resetVault') {
           savedQuotas.clear();
           quotaErrors.clear();
@@ -1235,7 +1304,10 @@ export const SettingsAccountTab = defineComponent({
           syncWarmCache();
           setTransientStatus('removed', 2600);
         } else if (action === 'switch') {
-          setTransientStatus(result.restarting ? 'restarting' : 'switchStartFailed');
+          setTransientStatus(
+            result.restarting ? 'restarting' : 'switchStartFailed',
+            result.restarting ? 0 : 4500
+          );
         } else if (action === 'setPassword') {
           pwdDrawerOpen = false;
           setTransientStatus('pwdEnabledToast', 2600);
@@ -1285,10 +1357,42 @@ export const SettingsAccountTab = defineComponent({
     }
 
     function applyLogin(session) {
-      loginSession = session;
       clearTimeout(loginTimer);
-      if (['waiting', 'exchanging', 'saving'].includes(session?.status)) {
+      const termKey = getTerminalLoginKey(session);
+      if (termKey && dismissedTerminalLogins.has(termKey)) {
+        clearLoginDismissTimer();
+        loginSession = null;
+        return;
+      }
+      const prevTermKey = getTerminalLoginKey(loginSession);
+      loginSession = session || null;
+      if (ACTIVE_LOGIN_STATUSES.has(session?.status)) {
+        clearLoginDismissTimer();
         loginTimer = setTimeout(() => pollLogin(session.id, loginGeneration), 1000);
+        loginTimer.unref?.();
+        return;
+      }
+      if (termKey) {
+        if (prevTermKey === termKey && loginDismissTimer) {
+          return;
+        }
+        clearLoginDismissTimer();
+        const isErr =
+          session.status === 'error' ||
+          session.status === 'expired' ||
+          session.error === 'loginDenied';
+        const autoHideMs = isErr ? 4500 : 2800;
+        loginDismissTimer = setTimeout(() => {
+          loginDismissTimer = null;
+          rememberDismissedTerminalLogin(termKey);
+          if (!disposed && getTerminalLoginKey(loginSession) === termKey) {
+            loginSession = null;
+            render();
+          }
+        }, autoHideMs);
+        loginDismissTimer.unref?.();
+      } else {
+        clearLoginDismissTimer();
       }
     }
 
@@ -1308,7 +1412,7 @@ export const SettingsAccountTab = defineComponent({
         if (loginSession?.status === 'success') await refreshLoginAccount(loginSession.email);
       } catch {
         if (disposed || generation !== loginGeneration) return;
-        loginSession = { id, status: 'error', error: 'loginStartFailed' };
+        applyLogin({ id, status: 'error', error: 'loginStartFailed' });
       }
       if (!disposed) render();
     }
@@ -1509,6 +1613,7 @@ export const SettingsAccountTab = defineComponent({
     onCleanup(() => {
       disposed = true;
       clearTimeout(loginTimer);
+      clearLoginDismissTimer();
       clearInterval(quotaScheduleTimer);
       if (statusClearTimer) clearTimeout(statusClearTimer);
       if (confirmClearTimer) clearTimeout(confirmClearTimer);

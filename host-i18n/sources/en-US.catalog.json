@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "extractedAt": "2026-11-25T04:07:26.401Z",
+  "extractedAt": "2026-11-26T11:05:19.665Z",
   "sources": [
     {
       "source": "ls:main.js",
-      "createElementCount": 15175,
+      "createElementCount": 15178,
       "jsxChildrenCount": 523,
-      "exactCount": 4042,
+      "exactCount": 4043,
       "templateCount": 750
     },
     {
@@ -39,7 +39,7 @@
     }
   ],
   "counts": {
-    "exact": 5062,
+    "exact": 5063,
     "templates": 900
   },
   "exact": [
@@ -399,6 +399,8 @@
     "Application",
     "Application Menu",
     "Applied",
+    "Applies to /btw and messages sent after this turn",
+    "Applies to messages sent after this turn",
     "Apply",
     "Approve",
     "Approved",
@@ -2573,7 +2575,6 @@
     "Model Summarization Failed",
     "Model URL",
     "Model URL info",
-    "Model cannot be changed while the agent is running",
     "Model must be available on the Gemini API and use the gemini-api scheme.",
     "Model quota reached",
     "Model selection",
@@ -7740,13 +7741,6 @@
       "captureCount": 1
     },
     {
-      "key": "Model: {1}, {2}",
-      "source": "^Model: (.+?), (.+?)$",
-      "flags": "",
-      "hint": "Model:",
-      "captureCount": 2
-    },
-    {
       "key": "Monthly on the {1} at {2}",
       "source": "^Monthly on the (.+?) at (.+?)$",
       "flags": "",
@@ -8977,6 +8971,13 @@
       "flags": "",
       "hint": "Select model, current:",
       "captureCount": 1
+    },
+    {
+      "key": "Select model, current: {1}. {2}",
+      "source": "^Select model, current: (.+?)\\. (.+?)$",
+      "flags": "",
+      "hint": "Select model, current:",
+      "captureCount": 2
     },
     {
       "key": "Select modes, current: {1}",

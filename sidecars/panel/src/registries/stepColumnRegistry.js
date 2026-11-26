@@ -195,20 +195,15 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.tps.th'),
     optLabel: () => t('stepCol.tps.opt'),
     sigPart: (st, ctx) =>
-      `${st.tokPerSec}:${st.selectedSpeedReason || ''}:${ctx?.showStepSpeedColor === true ? 1 : 0}`,
+      `${st.tokPerSec}:${st.selectedSpeedReason || ''}:${st.anomaly?.count ? 1 : 0}:${isCompactionStepItem(st) ? 1 : 0}:${ctx?.showStepSpeedColor === true ? 1 : 0}`,
     sortValue: (st) => finiteSortNum(st?.tokPerSec, { allowZero: false }),
     createCell: () => {
       const speedMain = h('strong', {
         className: 'cell-value tone-muted',
         style: 'font-size: var(--fs-base-sm);',
       });
-      const wrapEl = h(
-        'span',
-        { style: 'display: inline-block; vertical-align: middle;' },
-        [speedMain]
-      );
-      const td = h('td', {}, [wrapEl]);
-      return { td, refs: { wrapEl, speedMain, speedReason: null } };
+      const td = h('td', {}, [speedMain]);
+      return { td, refs: { td, speedMain } };
     },
     updateCell: (refs, st, ctx) => {
       patchText(refs.speedMain, formatSpeedMetric(st.tokPerSec, ' tok/s'));
@@ -221,18 +216,9 @@ export const STEP_COLUMN_REGISTRY = Object.freeze({
             ? ''
             : 'tone-muted';
       patchAttr(refs.speedMain, 'class', toneCls ? `cell-value ${toneCls}` : 'cell-value');
-      const reason = speedReasonText(st.selectedSpeedReason);
-      if (reason && !refs.speedReason) {
-        refs.speedReason = h('div', {
-          className: 'text-muted',
-          style: 'font-size: var(--fs-xs);',
-        });
-        refs.wrapEl.appendChild(refs.speedReason);
-      }
-      if (refs.speedReason) {
-        patchText(refs.speedReason, reason);
-        patchAttr(refs.speedReason, 'hidden', !reason);
-      }
+      const hasCustomRowTip = Boolean(Number(st.anomaly?.count) > 0 || isCompactionStepItem(st));
+      const reasonTip = !hasValidSpeed && !hasCustomRowTip ? speedReasonText(st.selectedSpeedReason) : '';
+      patchAttr(refs.td, 'title', reasonTip || null);
     },
   },
 

@@ -17,6 +17,7 @@ import {
   speedReasonText,
 } from '../src/core/formatters.js';
 import { createReactiveStore } from '../src/core/reactive.js';
+import { i18nStore, setI18nLanguage } from '../src/i18n/index.js';
 import { buildBundle, stripModuleSyntax } from '../scripts/build-bundle.mjs';
 
 const nowMs = Date.now();
@@ -464,11 +465,17 @@ test('BUG-09, BUG-14 & BUG-15: SemVer 2.0 prerelease/build ordering, future-only
   assert.equal(claudePool.remainingPct, 40);
   assert.equal(claudePool.weeklyRemainingPct, 80);
 
-  assert.equal(formatCountdown(new Date(nowMs + 30_000).toISOString(), nowMs), '<1分钟后重置');
-  assert.equal(formatCountdown('1969-12-31T23:59:59Z', nowMs), '未知重置时间');
-  assert.equal(formatUsd(0.0004, { precise: true }), '<$0.001');
-  assert.equal(formatUsd(12.34, { unpricedCalls: 1, compactPending: true }), '$12.34');
-  assert.equal(speedReasonText('short_timing'), '耗时过短 (<0.5s)');
+  const prevLang = i18nStore.getState().language;
+  setI18nLanguage('zh-CN');
+  try {
+    assert.equal(formatCountdown(new Date(nowMs + 30_000).toISOString(), nowMs), '<1分钟后重置');
+    assert.equal(formatCountdown('1969-12-31T23:59:59Z', nowMs), '未知重置时间');
+    assert.equal(formatUsd(0.0004, { precise: true }), '<$0.001');
+    assert.equal(formatUsd(12.34, { unpricedCalls: 1, compactPending: true }), '$12.34');
+    assert.equal(speedReasonText('short_timing'), '耗时过短 (<0.5s)');
+  } finally {
+    setI18nLanguage(prevLang);
+  }
 });
 
 test('BUG-17 & CANCEL-06: extractContextBreakdown classifies messagePrompts when children are empty and blocks post-compaction carryover', () => {
@@ -798,8 +805,8 @@ test('panel typography scales all view/table/chart CSS rules via --fs-* tokens w
     );
   }
   const tokensCss = fs.readFileSync(join(stylesDir, 'tokens.css'), 'utf8');
-  assert.match(tokensCss, /--font-sans\s*:[^;]+"SF Pro Text"/);
-  assert.match(tokensCss, /--font-mono\s*:\s*ui-monospace,\s*SFMono-Regular,\s*"SF Mono"/);
+  assert.match(tokensCss, /--font-sans\s*:\s*var\(--host-font-sans,\s*[^;]+"SF Pro Text"/);
+  assert.match(tokensCss, /--font-mono\s*:\s*var\(--host-font-mono,\s*ui-monospace,\s*SFMono-Regular,\s*"SF Mono"/);
   assert.match(tokensCss, /:host\(\[data-font-scale="xl"\]\)/);
   assert.match(tokensCss, /\[data-font-scale\]\s*\{[\s\S]*?--fs-base-sm:/);
   assert.doesNotMatch(tokensCss, /:root,\s*:host\s*\{[^}]*--ui-font-scale\s*:\s*1\s*;/);
@@ -1136,7 +1143,8 @@ test('P1 audit fixes: shared third-party pool & route single-source, pure frozen
 
   assert.equal(normalizeI18nLanguage('system'), 'auto');
   assert.equal(typeof isEquivalentTelemetry, 'function');
-  assert.equal(BRIDGE_API_ROUTE_DEFS.length, 17);
+  assert.equal(BRIDGE_API_ROUTE_DEFS.length, 23);
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/fx-sync' && r.method === 'POST'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/bridge/relaunch'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/session-migration/catalog'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/session-migration/migrate'));
@@ -1145,6 +1153,11 @@ test('P1 audit fixes: shared third-party pool & route single-source, pure frozen
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/quota-reservation/log'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/host-i18n' && r.method === 'GET'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/host-i18n' && r.method === 'POST'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/sessions/list' && r.method === 'GET'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/sessions/cleanup-preview' && r.method === 'POST'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/sessions/delete' && r.method === 'POST'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/sessions/redact-ledger' && r.method === 'POST'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/sessions/reveal' && r.method === 'POST'));
 
   // 1. Third-party pool parity across backend, CLI statusline, and frontend metricRegistry
   const h = backendHarness();
@@ -1510,21 +1523,31 @@ test('5h quota cycle includes cycle-opening compaction CHECKPOINT and cross-boun
   assert.equal(payload.consumption.account.totalTokens, 491_000);
 });
 
-test('i18n static t(...) key completeness guard, scopeAll formatters, and localized en-US trend/CSV date labels', async () => {
-  const { I18N_MESSAGES_ZH_CN } = await import('../src/i18n/zh-CN.js');
-  const { I18N_MESSAGES_EN_US } = await import('../src/i18n/en-US.js');
-  const { setI18nLanguage } = await import('../src/i18n/index.js');
+test('i18n static t(...) key completeness guard across all 7 locales, scopeAll formatters, and localized trend/export outputs', async () => {
+  const { I18N_DICTIONARIES, setI18nLanguage } = await import('../src/i18n/index.js');
+  const {
+    SUPPORTED_LOCALES,
+    normalizeLanguageSetting,
+    resolveLocaleFromLanguageTag,
+  } = await import('../shared/settings-normalization.mjs');
   const {
     formatAgentBadgeText,
     formatAgentLabel,
+    formatQuotaPoolLabel,
     formatTrendSlotFullLabel,
   } = await import('../src/core/formatters.js');
   const { buildStructurePreviewTelemetry } = await import('../src/components/settings/structurePreviewMock.js');
-  const { buildConsumptionCsv } = await import('../src/core/reportExporter.js');
+  const {
+    buildConsumptionCsv,
+    buildStepsCsv,
+    buildStepsMarkdownReport,
+    buildStepsXlsx,
+  } = await import('../src/core/reportExporter.js');
+  const { TopLongPillNav } = await import('../src/components/ui/TopLongPillNav.js');
   const { createTrendAreaChart } = await import('../src/components/charts/TrendAreaChart.js');
   const { createMockDom } = await import('./mock-dom.mjs');
 
-  // 1. Every static t('...') call across sidecars/panel/src/** resolves in both zh-CN and en-US
+  // 1. Every static t('...') call across sidecars/panel/src/** resolves in all 7 locales with 100% key & placeholder parity
   const srcRoot = fileURLToPath(new URL('../src', import.meta.url));
   const walkJs = (dir) => {
     const out = [];
@@ -1535,10 +1558,44 @@ test('i18n static t(...) key completeness guard, scopeAll formatters, and locali
     }
     return out;
   };
-  const zhKeys = new Set(Object.keys(I18N_MESSAGES_ZH_CN));
-  const enKeys = new Set(Object.keys(I18N_MESSAGES_EN_US));
-  assert.deepEqual([...zhKeys].filter((k) => !enKeys.has(k)), []);
-  assert.deepEqual([...enKeys].filter((k) => !zhKeys.has(k)), []);
+  assert.deepEqual(
+    Object.keys(I18N_DICTIONARIES).sort(),
+    [...SUPPORTED_LOCALES].sort(),
+    'I18N_DICTIONARIES must register every supported locale'
+  );
+  const enDict = I18N_DICTIONARIES['en-US'];
+  const enKeys = new Set(Object.keys(enDict));
+  const extractPh = (str) => [...String(str).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
+  const emojiRe = /\p{Extended_Pictographic}/u;
+  for (const loc of SUPPORTED_LOCALES) {
+    const dict = I18N_DICTIONARIES[loc];
+    const locKeys = new Set(Object.keys(dict));
+    assert.deepEqual([...enKeys].filter((k) => !locKeys.has(k)), [], `${loc} missing keys`);
+    assert.deepEqual([...locKeys].filter((k) => !enKeys.has(k)), [], `${loc} extra keys`);
+    for (const k of enKeys) {
+      const val = dict[k];
+      assert.equal(typeof val === 'string' && val.length > 0, true, `${loc}.${k} must be non-empty`);
+      assert.equal(extractPh(val), extractPh(enDict[k]), `${loc}.${k} placeholder mismatch`);
+      assert.equal(emojiRe.test(val), false, `${loc}.${k} must not contain emoji`);
+      if (k.startsWith('report.sheet')) {
+        assert.equal(val.length <= 31 && !/[\[\]:*?\/\\]/.test(val), true, `${loc}.${k} invalid Excel sheet name`);
+      }
+    }
+  }
+
+  // BCP-47 tag normalization across all 7 locales + regional aliases
+  assert.equal(resolveLocaleFromLanguageTag('zh-HK'), 'zh-TW');
+  assert.equal(resolveLocaleFromLanguageTag('zh-Hant-TW'), 'zh-TW');
+  assert.equal(resolveLocaleFromLanguageTag('zh-Hans-CN'), 'zh-CN');
+  assert.equal(resolveLocaleFromLanguageTag('ja'), 'ja-JP');
+  assert.equal(resolveLocaleFromLanguageTag('ko'), 'ko-KR');
+  assert.equal(resolveLocaleFromLanguageTag('de-AT'), 'de-DE');
+  assert.equal(resolveLocaleFromLanguageTag('fr-CA'), 'fr-FR');
+  assert.equal(normalizeLanguageSetting('ja-JP'), 'ja-JP');
+  assert.equal(normalizeLanguageSetting('zh-TW'), 'zh-TW');
+  assert.equal(normalizeLanguageSetting('ko-KR'), 'ko-KR');
+  assert.equal(normalizeLanguageSetting('de-DE'), 'de-DE');
+  assert.equal(normalizeLanguageSetting('fr-FR'), 'fr-FR');
 
   const missingKeys = [];
   for (const filePath of walkJs(srcRoot)) {
@@ -1547,8 +1604,10 @@ test('i18n static t(...) key completeness guard, scopeAll formatters, and locali
     let m;
     while ((m = re.exec(srcText)) !== null) {
       const k = m[2];
-      if (!zhKeys.has(k) || !enKeys.has(k)) {
-        missingKeys.push(`${filePath}:${k}`);
+      for (const loc of SUPPORTED_LOCALES) {
+        if (!(k in I18N_DICTIONARIES[loc])) {
+          missingKeys.push(`${filePath}:${loc}:${k}`);
+        }
       }
     }
   }
@@ -1637,6 +1696,93 @@ test('i18n static t(...) key completeness guard, scopeAll formatters, and locali
     assert.match(csvEn, /summary,Current Cycle,/);
     assert.match(csvEn, /trend,"Nov 24, 10:00 - 11:00",/);
     assert.doesNotMatch(csvEn, /[\u4e00-\u9fff]/);
+
+    // 4. TopLongPillNav aria-label, structurePreviewMock, formatQuotaPoolLabel & explicit en-US step exports never leak Chinese
+    setI18nLanguage('zh-CN');
+    const pillNav = TopLongPillNav({
+      modelValue: 'overview',
+      items: [{ value: 'overview', label: '实时监控' }],
+    });
+    assert.equal(pillNav.el.getAttribute('aria-label'), '主功能视图分割导航');
+    assert.equal(formatQuotaPoolLabel('未知'), '未知');
+
+    setI18nLanguage('en-US');
+    pillNav.setProps({ items: [{ value: 'overview', label: 'Live' }] });
+    assert.equal(pillNav.el.getAttribute('aria-label'), 'Main navigation views');
+    assert.equal(formatQuotaPoolLabel('未知'), 'Unknown');
+    pillNav.destroy();
+
+    const enPreview = buildStructurePreviewTelemetry();
+    assert.doesNotMatch(JSON.stringify(enPreview), /[\u4e00-\u9fff]/);
+
+    // Even when global i18nStore is zh-CN, explicit { locale: 'en-US' } step exports must not leak Chinese agent/compaction labels
+    setI18nLanguage('zh-CN');
+    const backendLikeSteps = [
+      {
+        stepIndex: 1,
+        createdAtMs: localStart,
+        agentKind: 'main',
+        agentLabel: '主代理',
+        agentBadge: '主',
+        isSubagent: false,
+        isCompactionStep: true,
+        modelLabel: 'Gemini 4 Carbon (High) [自动压缩]',
+        modelShort: 'carbon-4-high·压缩',
+        modelUpstream: 'gemini-4-carbon-high·压缩',
+        inputTokens: 1000,
+        cacheReadTokens: 4000,
+        outputTokens: 300,
+        costUsd: 0.02,
+      },
+      {
+        stepIndex: 2,
+        createdAtMs: localStart + 5000,
+        agentKind: 'subagent',
+        agentOrdinal: 1,
+        agentLabel: '子代理 #1',
+        agentBadge: '子1',
+        isSubagent: true,
+        modelLabel: 'Gemini 3.8 Flash',
+        modelShort: 'flash-3.8',
+        inputTokens: 500,
+        cacheReadTokens: 1500,
+        outputTokens: 200,
+        costUsd: 0.005,
+      },
+    ];
+    const stepsCsvEn = buildStepsCsv(backendLikeSteps, { locale: 'en-US', includeBom: false });
+    assert.match(stepsCsvEn, /,Main,carbon-4-high·compact,/);
+    assert.match(stepsCsvEn, /,Subagent #1,flash-3\.8,/);
+    assert.doesNotMatch(stepsCsvEn, /[\u4e00-\u9fff]/);
+
+    const stepsMdEn = buildStepsMarkdownReport(backendLikeSteps, {
+      title: 'Session Audit',
+      locale: 'en-US',
+    });
+    assert.match(stepsMdEn, /carbon-4-high·compact/);
+    assert.doesNotMatch(stepsMdEn, /[\u4e00-\u9fff]/);
+
+    const stepsXlsxEnBytes = buildStepsXlsx(backendLikeSteps, { locale: 'en-US' });
+    const stepsXlsxEnRaw = Buffer.from(stepsXlsxEnBytes).toString('utf8');
+    assert.match(stepsXlsxEnRaw, /carbon-4-high·compact/);
+    assert.match(stepsXlsxEnRaw, />Main</);
+    assert.match(stepsXlsxEnRaw, />Subagent #1</);
+    assert.doesNotMatch(stepsXlsxEnRaw, /[\u4e00-\u9fff]/);
+
+    // Non-binary locales (ja-JP / ko-KR / de-DE / fr-FR / zh-TW) export cleanly with localized labels
+    const stepsCsvJa = buildStepsCsv(backendLikeSteps, { locale: 'ja-JP', includeBom: false });
+    assert.match(stepsCsvJa, /carbon-4-high·圧縮/);
+    const stepsCsvDe = buildStepsCsv(backendLikeSteps, { locale: 'de-DE', includeBom: false });
+    assert.match(stepsCsvDe, /carbon-4-high·komp\./);
+    assert.doesNotMatch(stepsCsvDe, /[\u4e00-\u9fff]/);
+    const stepsCsvFr = buildStepsCsv(backendLikeSteps, { locale: 'fr-FR', includeBom: false });
+    assert.match(stepsCsvFr, /carbon-4-high·comp\./);
+    assert.doesNotMatch(stepsCsvFr, /[\u4e00-\u9fff]/);
+    const stepsCsvKo = buildStepsCsv(backendLikeSteps, { locale: 'ko-KR', includeBom: false });
+    assert.match(stepsCsvKo, /carbon-4-high·압축/);
+    assert.doesNotMatch(stepsCsvKo, /[\u4e00-\u9fff]/);
+    const stepsCsvTw = buildStepsCsv(backendLikeSteps, { locale: 'zh-TW', includeBom: false });
+    assert.match(stepsCsvTw, /carbon-4-high·壓縮/);
   } finally {
     setI18nLanguage('zh-CN');
     globalThis.document = prevDoc;
@@ -1727,7 +1873,7 @@ test('ConsumptionView and TrendAreaChart patch text DOM nodes in-place without o
     document.body.appendChild(view.el);
 
     const makeRangePayload = (rangeKey, tokBase, labels) => ({
-      settings: { modelDisplayMode: 'short', showUpstreamModel: false, orchestratorIdMode: 'label' },
+      settings: { modelDisplayMode: 'short', showUpstreamModel: false },
       consumption: {
         revision: 0,
         selectedRange: {
@@ -1933,4 +2079,201 @@ test('ConsumptionView and TrendAreaChart patch text DOM nodes in-place without o
     globalThis.document = prevDoc;
     globalThis.window = prevWin;
   }
+});
+
+test('Issue #45: grouped modelBreakdown, trend bucket models, and merged agent units pick dominant shortName (tie-breaking to shorter base alias)', async () => {
+  const { buildScopedModelBreakdown, aggregateSelectedWindowUsage } = await import(
+    '../backend/usage-aggregator.mjs'
+  );
+  const { mergeSelectedAgentUnits } = await import('../src/views/StepsDetailView.js');
+
+  const mkStep = (tier, createdAtMs) => ({
+    modelKey: tier,
+    inputTokens: 1000,
+    cacheReadTokens: 2000,
+    outputTokens: 300,
+    thinkingTokens: 100,
+    createdAtMs,
+  });
+  const resolveTier = (st) => {
+    if (st.modelKey === 'low') {
+      return {
+        label: 'Gemini 4 Neon (Low)',
+        baseLabel: 'Gemini 4 Neon',
+        shortName: 'neon-4-low',
+        modelId: 'gemini-4-neon',
+        family: 'Gemini',
+        pricing: null,
+      };
+    }
+    return {
+      label: 'Gemini 4 Neon (Medium)',
+      baseLabel: 'Gemini 4 Neon',
+      shortName: 'neon-4',
+      modelId: 'gemini-4-neon',
+      family: 'Gemini',
+      pricing: null,
+    };
+  };
+
+  // 1. Dominant tier wins even when minority tier appears first
+  const now = Date.now();
+  const mixedSteps = [
+    mkStep('low', now - 5000),
+    mkStep('medium', now - 4000),
+    mkStep('medium', now - 3000),
+    mkStep('medium', now - 2000),
+    mkStep('medium', now - 1000),
+  ];
+  const dominantBreakdown = buildScopedModelBreakdown(mixedSteps, resolveTier);
+  assert.equal(dominantBreakdown.length, 1);
+  assert.equal(dominantBreakdown[0].calls, 5);
+  assert.equal(dominantBreakdown[0].shortName, 'neon-4');
+
+  // 2. Tie breaks in favor of shorter base alias regardless of scan order
+  const tiedSteps = [
+    mkStep('low', now - 4000),
+    mkStep('low', now - 3000),
+    mkStep('medium', now - 2000),
+    mkStep('medium', now - 1000),
+  ];
+  const tiedBreakdown = buildScopedModelBreakdown(tiedSteps, resolveTier);
+  assert.equal(tiedBreakdown[0].shortName, 'neon-4');
+
+  // 3. Trend series bucket perModelStats also resolves dominant shortName
+  const rangeRes = aggregateSelectedWindowUsage({
+    precollectedEntries: [
+      {
+        cascadeId: 'cid-issue-45',
+        steps: mixedSteps,
+        stepCount: mixedSteps.length,
+        lastModifiedMs: now,
+      },
+    ],
+    filterOpts: { range: 'today' },
+    resolveStepModel: resolveTier,
+  });
+  assert.equal(rangeRes.modelBreakdown[0].shortName, 'neon-4');
+  const activeTrendBuckets = (rangeRes.trendSeries || []).filter(
+    (b) => Array.isArray(b.models) && b.models.length > 0
+  );
+  assert.ok(activeTrendBuckets.length > 0, 'Trend bucket populated');
+  assert.equal(activeTrendBuckets[0].models[0].shortName, 'neon-4');
+
+  // 4. StepsDetailView mergeSelectedAgentUnits weights shortName by calls
+  const merged = mergeSelectedAgentUnits([
+    {
+      modelBreakdown: [
+        { label: 'Gemini 4 Neon', shortName: 'neon-4-low', calls: 2, inputTokens: 2000, outputTokens: 400, totalTokens: 2400, costUsd: 0.01 },
+      ],
+    },
+    {
+      modelBreakdown: [
+        { label: 'Gemini 4 Neon', shortName: 'neon-4', calls: 10, inputTokens: 10000, outputTokens: 2000, totalTokens: 12000, costUsd: 0.05 },
+      ],
+    },
+  ]);
+  assert.equal(merged.models.length, 1);
+  assert.equal(merged.models[0].shortName, 'neon-4');
+});
+
+test('Conversation undo UI & SQLite persistence: reverted steps keep distinct keys, render gray .is-reverted rows, break turn rails, and round-trip via SQLite flags', async () => {
+  const { createMockDom } = await import('./mock-dom.mjs');
+  const { getStepSelectionKey } = await import('../src/core/stepInspector.js');
+  const { StepTableWidget } = await import('../src/components/widgets/StepTableWidget.js');
+  const {
+    splitStepForStorage,
+    buildSlimStepFromAccounting,
+  } = await import('../backend/trajectory-sqlite-ledger.mjs');
+
+  // 1. SQLite bitmask round-trips isReverted cleanly without touching detail_json
+  const activeStep = {
+    stepIndex: 5,
+    createdAtMs: 1767225645000,
+    modelKey: 'MODEL_PLACEHOLDER_M37',
+    modelShort: 'Gemini 3.1 Pro',
+    modelLabel: 'Gemini 3.1 Pro',
+    inputTokens: 3000,
+    cacheReadTokens: 26000,
+    outputTokens: 1200,
+    thinkingTokens: 200,
+    responseTokens: 1000,
+    contextTokens: 30200,
+    turnIndex: 3,
+    isTurnStart: true,
+    isLatestTurn: true,
+    turnPrompt: 'new branch prompt',
+  };
+  const revertedStep = {
+    ...activeStep,
+    createdAtMs: 1767225620000,
+    inputTokens: 4000,
+    cacheReadTokens: 27500,
+    outputTokens: 800,
+    contextTokens: 32300,
+    isReverted: true,
+    isLatestTurn: false,
+    turnPrompt: 'reverted prompt',
+  };
+  const packedRev = splitStepForStorage(revertedStep);
+  const unpackedRev = buildSlimStepFromAccounting(packedRev.accountingTuple);
+  assert.equal(unpackedRev.isReverted, true);
+  assert.equal(packedRev.detailObj?.isReverted, undefined, 'isReverted stored in compact flags bitmask');
+  const packedAct = splitStepForStorage(activeStep);
+  const unpackedAct = buildSlimStepFromAccounting(packedAct.accountingTuple);
+  assert.equal(Boolean(unpackedAct.isReverted), false);
+
+  // 2. Distinct selection keys when reverted & active steps share the same stepIndex
+  const kAct = getStepSelectionKey(activeStep, 'conv-undo-ui');
+  const kRev = getStepSelectionKey(revertedStep, 'conv-undo-ui');
+  assert.notEqual(kAct, kRev);
+
+  // 3. StepTableWidget renders both rows, applies .is-reverted only to reverted row, and isolates turn rails
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const { document: doc } = createMockDom();
+  globalThis.document = doc;
+  globalThis.window = {
+    innerWidth: 960,
+    innerHeight: 720,
+    addEventListener() {},
+    removeEventListener() {},
+    requestAnimationFrame: (cb) => setTimeout(cb, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+  };
+  try {
+    const host = doc.createElement('div');
+    doc.body.appendChild(host);
+    const widget = StepTableWidget({ standalone: true });
+    host.appendChild(widget.el);
+    widget.refs.renderStepTable(
+      [activeStep, revertedStep],
+      'conv-undo-ui',
+      ['step', 'model', 'tokens_combo', 'cost'],
+      'zh-CN',
+      {
+        showStepTurnRail: true,
+        allConversationSteps: [activeStep, revertedStep],
+      }
+    );
+    const rows = host.querySelectorAll('tbody tr');
+    assert.equal(rows.length, 2, 'Both active and reverted rows with same stepIndex render without key collision');
+    assert.equal(rows[0].classList.contains('is-reverted'), false);
+    assert.equal(rows[1].classList.contains('is-reverted'), true);
+    const rail0 = rows[0].querySelector('.turn-rail');
+    const rail1 = rows[1].querySelector('.turn-rail');
+    assert.equal(rail0.classList.contains('has-down'), false, 'Active turn rail does not weld into reverted row below');
+    assert.equal(rail1.classList.contains('has-up'), false, 'Reverted turn rail does not weld into active row above');
+    widget.destroy();
+  } finally {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  }
+
+  // 4. Compiled CSS bundle includes classic & modern-ui gray/dimmed styles for .is-reverted
+  const { readFileSync: readBundleFileSync } = await import('node:fs');
+  const stylesCss = readBundleFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  assert.match(stylesCss, /\.data-table\s+tbody\s+tr\.is-reverted\s*\{/);
+  assert.match(stylesCss, /\.data-table\s+tbody\s+tr\.is-reverted\s+td\s*\{[^}]*opacity:\s*0\.62/);
+  assert.match(stylesCss, /\[data-modern-ui="true"\]\s+\.data-table\s+tbody\s+tr\.is-reverted/);
 });

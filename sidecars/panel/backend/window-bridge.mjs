@@ -15,6 +15,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  statSync,
   unlinkSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -33,14 +34,24 @@ import {
 } from '../shared/window-bridge-protocol.mjs';
 import { HOST_I18N_GLOBAL_KEY } from '../shared/host-i18n-protocol.mjs';
 import {
+  HOST_THEME_CSS_VARS,
+  getHostThemeSignature,
+  normalizeHostThemeSnapshot,
+} from '../shared/host-theme.mjs';
+import { parseIdeRemoteAuthority } from '../shared/workspace-uri.mjs';
+import {
   DATA_DIR,
   computeRuntimeCodeVersion,
+  isContextWindowFeatureActive,
   loadJson,
   loadSettings,
   lsRuntimeEndpoint,
+  normalizeAutoConfigureLaunch,
+  normalizeEnableRemoteSshTelemetry,
   normalizeWindowMountMode,
   saveJson,
 } from './config.mjs';
+import { recordLiveCdpHostTheme } from './host-theme-store.mjs';
 import {
   createContextWindowSyncExpression,
   getContextWindowModels,
@@ -53,8 +64,10 @@ import {
   createHostI18nHeartbeatExpression,
   getHostI18nBridgeDescriptor,
 } from './host-i18n/index.mjs';
+import { createDevToolsPortProber } from './devtools-port-probe.mjs';
 import {
   ensureDesktopLaunchEntriesConfigured,
+  inspectMacOsLaunchWrapperStatus,
   resolveDesktopHostExecutable,
 } from './desktop-launcher-config.mjs';
 import {
@@ -65,6 +78,7 @@ import {
   registerRemoteEndpoint,
   setRemoteWindowRpcInvoker,
 } from './endpoint-registry.mjs';
+import { createIdeRemoteSshCoordinator } from './ide-remote-ssh.mjs';
 import { getLocalHubPorts } from './ls-discovery.mjs';
 import { callLsRpc, getContextModelCatalog } from './ls-rpc.mjs';
 import { getDefaultCloudCodeProxy } from './cloudcode-proxy.mjs';
@@ -146,6 +160,137 @@ function buildDomRouteCascadeIdSnippet() {
     if (uuidRe.test(singleViewId)) return singleViewId;
     if (uuidRe.test(selectedRowId)) return selectedRowId;
     return '';
+  })()`;
+}
+
+/**
+ * 构建运行在宿主主窗口（Antigravity 2.0 或 Antigravity IDE）内的只读主题令牌采集 IIFE 片段。
+ * 优先提取原生 `--background` / `--card` / `--foreground` 等 CSS 变量，IDE 环境下自动映射 `--vscode-*`，
+ * 并通过显式类名属性或实际渲染色探针判定 `'dark' | 'light'` 极性。
+ *
+ * @returns {string}
+ */
+export function buildHostThemeProbeSnippet() {
+  const varNamesJson = JSON.stringify(HOST_THEME_CSS_VARS);
+  return `(() => {
+    try {
+      if (typeof document === 'undefined' || typeof window === 'undefined') return null;
+      const root = document.documentElement;
+      const body = document.body;
+      const wb = typeof document.querySelector === 'function' ? document.querySelector('.monaco-workbench') : null;
+      const getCs = (el) => {
+        if (!el || typeof window.getComputedStyle !== 'function') return null;
+        try { return window.getComputedStyle(el); } catch { return null; }
+      };
+      const rootCs = getCs(root);
+      const bodyCs = getCs(body);
+      const wbCs = getCs(wb);
+      const readCssVar = (name) => {
+        for (const cs of [rootCs, bodyCs, wbCs]) {
+          const v = String(cs?.getPropertyValue?.(name) || '').trim();
+          if (v) return v;
+        }
+        return '';
+      };
+      const vars = {};
+      for (const name of ${varNamesJson}) {
+        const val = readCssVar(name);
+        if (val) vars[name] = val;
+      }
+      const pick = (...names) => {
+        for (const n of names) {
+          const v = readCssVar(n);
+          if (v) return v;
+        }
+        return '';
+      };
+      if (!vars['--background']) {
+        const mapped = [
+          ['--background', pick('--vscode-sideBar-background', '--vscode-editor-background', '--vscode-panel-background')],
+          ['--card', pick('--vscode-editorWidget-background', '--vscode-sideBar-background', '--vscode-editor-background')],
+          ['--foreground', pick('--vscode-foreground', '--vscode-editor-foreground')],
+          ['--muted-foreground', pick('--vscode-descriptionForeground', '--vscode-sideBarTitle-foreground')],
+          ['--border', pick('--vscode-widget-border', '--vscode-panel-border', '--vscode-commandCenter-border', '--vscode-contrastBorder')],
+          ['--primary', pick('--vscode-textLink-foreground', '--vscode-button-background', '--vscode-focusBorder')],
+          ['--destructive', pick('--vscode-errorForeground', '--vscode-editorError-foreground')],
+        ];
+        for (const [k, v] of mapped) {
+          if (v && !vars[k]) vars[k] = v;
+        }
+      }
+      const isUsableFont = (raw) => {
+        const v = String(raw || '').trim();
+        if (!v) return false;
+        const bare = v.replace(/["']/g, '').trim();
+        return !/^(?:initial|inherit|unset|revert|serif|sans-serif|monospace|times new roman|arial)$/i.test(bare);
+      };
+      if (!vars['--font-sans']) {
+        const bodyFont = String(bodyCs?.fontFamily || '').trim();
+        const rootFont = String(rootCs?.fontFamily || '').trim();
+        const mappedSans =
+          pick('--vscode-font-family') ||
+          (isUsableFont(bodyFont) ? bodyFont : '') ||
+          (isUsableFont(rootFont) ? rootFont : '');
+        if (mappedSans) vars['--font-sans'] = mappedSans;
+      }
+      if (!vars['--font-mono']) {
+        const mappedMono = pick('--vscode-editor-font-family', '--font-code');
+        if (mappedMono) vars['--font-mono'] = mappedMono;
+      }
+
+      let colorScheme = '';
+      const lightClasses = { light: 1, 'vs-light': 1, 'vscode-light': 1, 'hc-light': 1, 'vscode-high-contrast-light': 1 };
+      const darkClasses = { dark: 1, 'vs-dark': 1, 'vscode-dark': 1, 'hc-black': 1, 'vscode-high-contrast': 1 };
+      for (const el of [body, root, wb]) {
+        if (!el || colorScheme) continue;
+        const vk = String(el.getAttribute?.('data-vscode-theme-kind') || '').trim().toLowerCase();
+        if (vk) {
+          if (vk.includes('light')) { colorScheme = 'light'; break; }
+          if (vk.includes('dark') || vk.includes('high-contrast')) { colorScheme = 'dark'; break; }
+        }
+        const dt = String(el.getAttribute?.('data-theme') || el.getAttribute?.('data-color-mode') || '').trim().toLowerCase();
+        if (dt === 'light' || dt.endsWith('-light')) { colorScheme = 'light'; break; }
+        if (dt === 'dark' || dt.endsWith('-dark')) { colorScheme = 'dark'; break; }
+        const cls = typeof el.className === 'string' ? el.className.trim().toLowerCase().split(/\\s+/) : [];
+        for (const tok of cls) {
+          if (lightClasses[tok]) { colorScheme = 'light'; break; }
+          if (darkClasses[tok]) { colorScheme = 'dark'; break; }
+        }
+      }
+
+      if (!colorScheme && typeof document.createElement === 'function' && typeof window.getComputedStyle === 'function') {
+        const probeColor = vars['--background'] || vars['--card'] || String(bodyCs?.backgroundColor || rootCs?.backgroundColor || '').trim();
+        if (probeColor && root && typeof root.appendChild === 'function') {
+          let probe = null;
+          try {
+            probe = document.createElement('span');
+            probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;color:' + probeColor;
+            root.appendChild(probe);
+            const resolved = String(window.getComputedStyle(probe)?.color || '').trim().toLowerCase();
+            probe.remove();
+            probe = null;
+            const nums = (resolved.match(/[\\d.]+/g) || []).map(Number);
+            if (nums.length >= 3) {
+              const scale = resolved.startsWith('color(') ? 1 : 255;
+              const r = nums[0] / scale;
+              const g = nums[1] / scale;
+              const b = nums[2] / scale;
+              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+              if (Number.isFinite(lum)) colorScheme = lum > 0.52 ? 'light' : 'dark';
+            }
+          } catch {
+            try { probe?.remove?.(); } catch {}
+          }
+        }
+      }
+
+      if (!colorScheme && !vars['--background'] && !vars['--foreground'] && !vars['--card']) {
+        return null;
+      }
+      return { colorScheme, vars, source: 'cdp' };
+    } catch {
+      return null;
+    }
   })()`;
 }
 
@@ -411,6 +556,8 @@ function scanJsoncObject(rawText) {
         keyStart: tok.start,
         valStart: valFirst.start,
         valEnd: valLast.end,
+        prevCommaIdx: tokens[idx - 1]?.raw === ',' ? tokens[idx - 1].start : -1,
+        nextCommaIdx: tokens[valLastIdx + 1]?.raw === ',' ? tokens[valLastIdx + 1].start : -1,
       });
       idx = valLastIdx;
     }
@@ -434,7 +581,85 @@ function scanJsoncObject(rawText) {
  * @param {string} rawText
  * @returns {{ changed: boolean, valid: boolean, alreadyConfigured?: boolean, portValue?: string, reason?: string, text: string }}
  */
-export function ensureRemoteDebuggingInArgvText(rawText) {
+export function ensureRemoteDebuggingInArgvText(rawText, { enabled = true } = {}) {
+  if (!enabled) {
+    if (typeof rawText !== 'string' || !rawText.trim()) {
+      return { changed: false, valid: true, text: String(rawText || '') };
+    }
+    const scanned = scanJsoncObject(rawText);
+    if (!scanned) {
+      return { changed: false, valid: false, reason: 'invalid_jsonc', text: rawText };
+    }
+    const existingVal = scanned.parsed['remote-debugging-port'];
+    const isManagedZero =
+      existingVal === 0 || (typeof existingVal === 'string' && existingVal.trim() === '0');
+    if (!isManagedZero) {
+      return {
+        changed: false,
+        valid: true,
+        alreadyConfigured:
+          (typeof existingVal === 'string' && existingVal.trim().length > 0) ||
+          (typeof existingVal === 'number' &&
+            Number.isInteger(existingVal) &&
+            existingVal > 0 &&
+            existingVal <= 65535),
+        text: rawText,
+      };
+    }
+    const propSpan = scanned.topProps.get('remote-debugging-port');
+    if (!propSpan) {
+      return { changed: false, valid: true, text: rawText };
+    }
+    let lineStart = propSpan.keyStart;
+    while (lineStart > 0 && (rawText[lineStart - 1] === ' ' || rawText[lineStart - 1] === '\t')) {
+      lineStart -= 1;
+    }
+    const ownsLineStart =
+      lineStart === 0 || rawText[lineStart - 1] === '\n' || rawText[lineStart - 1] === '\r';
+    const delStart = ownsLineStart ? lineStart : propSpan.keyStart;
+
+    let nextText = rawText;
+    if (propSpan.nextCommaIdx >= 0) {
+      let delEnd = propSpan.nextCommaIdx + 1;
+      let cursor = delEnd;
+      while (cursor < rawText.length && (rawText[cursor] === ' ' || rawText[cursor] === '\t')) {
+        cursor += 1;
+      }
+      if (ownsLineStart && (rawText[cursor] === '\r' || rawText[cursor] === '\n')) {
+        delEnd = rawText[cursor] === '\r' && rawText[cursor + 1] === '\n' ? cursor + 2 : cursor + 1;
+      }
+      nextText = rawText.slice(0, delStart) + rawText.slice(delEnd);
+    } else if (propSpan.prevCommaIdx >= 0) {
+      let delEnd = propSpan.valEnd;
+      let cursor = delEnd;
+      while (cursor < rawText.length && (rawText[cursor] === ' ' || rawText[cursor] === '\t')) {
+        cursor += 1;
+      }
+      if (ownsLineStart && (rawText[cursor] === '\r' || rawText[cursor] === '\n')) {
+        delEnd = rawText[cursor] === '\r' && rawText[cursor + 1] === '\n' ? cursor + 2 : cursor + 1;
+      }
+      const withoutProp = rawText.slice(0, delStart) + rawText.slice(delEnd);
+      nextText =
+        withoutProp.slice(0, propSpan.prevCommaIdx) + withoutProp.slice(propSpan.prevCommaIdx + 1);
+    } else {
+      let delEnd = propSpan.valEnd;
+      let cursor = delEnd;
+      while (cursor < rawText.length && (rawText[cursor] === ' ' || rawText[cursor] === '\t')) {
+        cursor += 1;
+      }
+      if (ownsLineStart && (rawText[cursor] === '\r' || rawText[cursor] === '\n')) {
+        delEnd = rawText[cursor] === '\r' && rawText[cursor + 1] === '\n' ? cursor + 2 : cursor + 1;
+      }
+      nextText = rawText.slice(0, delStart) + rawText.slice(delEnd);
+    }
+
+    const verifyOff = scanJsoncObject(nextText);
+    if (!verifyOff || Object.prototype.hasOwnProperty.call(verifyOff.parsed, 'remote-debugging-port')) {
+      return { changed: false, valid: false, reason: 'post_check_failed', text: rawText };
+    }
+    return { changed: nextText !== rawText, valid: true, removed: true, text: nextText };
+  }
+
   if (typeof rawText !== 'string' || !rawText.trim()) {
     // 新建文件使用纯 JSON（无注释），同时兼容 VS Code/IDE JSONC 解析器与 Electron 严格 JSON.parse()
     const fresh = '{\n\t"remote-debugging-port": "0"\n}\n';
@@ -509,17 +734,23 @@ export function ensureRemoteDebuggingInArgvText(rawText) {
   };
 }
 
-function patchSingleHostArgvFile(argvPath, { createDir = false, missingReason = 'dir_missing' } = {}) {
+function patchSingleHostArgvFile(
+  argvPath,
+  { enabled = true, createDir = false, missingReason = 'dir_missing' } = {}
+) {
   try {
     const dirPath = dirname(argvPath);
     if (!existsSync(dirPath)) {
-      if (!createDir) {
+      if (!createDir || !enabled) {
         return { checked: true, updated: false, reason: missingReason, argvPath };
       }
       mkdirSync(dirPath, { recursive: true });
     }
+    if (!enabled && !existsSync(argvPath)) {
+      return { checked: true, updated: false, alreadyConfigured: false, argvPath };
+    }
     const rawText = existsSync(argvPath) ? readFileSync(argvPath, 'utf8') : '';
-    const patched = ensureRemoteDebuggingInArgvText(rawText);
+    const patched = ensureRemoteDebuggingInArgvText(rawText, { enabled });
     if (!patched.valid) {
       return { checked: true, updated: false, reason: patched.reason || 'invalid_jsonc', argvPath };
     }
@@ -527,7 +758,7 @@ function patchSingleHostArgvFile(argvPath, { createDir = false, missingReason = 
       return {
         checked: true,
         updated: false,
-        alreadyConfigured: true,
+        alreadyConfigured: Boolean(patched.alreadyConfigured),
         portValue: patched.portValue,
         argvPath,
       };
@@ -536,6 +767,8 @@ function patchSingleHostArgvFile(argvPath, { createDir = false, missingReason = 
     return {
       checked: true,
       updated: true,
+      removed: Boolean(patched.removed),
+      alreadyConfigured: Boolean(enabled),
       portValue: patched.portValue,
       argvPath,
     };
@@ -551,7 +784,7 @@ function patchSingleHostArgvFile(argvPath, { createDir = false, missingReason = 
 
 /**
  * 当本机存在 `~/.antigravity-ide` 配置目录且开启双栖模式时，自动补齐 `argv.json` 中的
- * `"remote-debugging-port": "0"`，使 Antigravity IDE 下次启动时自动生成 `DevToolsActivePort`。
+ * `"remote-debugging-port": "0"`；显式关闭时剥离受管 `"0"` 端口并保留自定义配置与注释。
  *
  * @param {{ env?: Record<string, string|undefined>, homeDir?: string, enabled?: boolean }} [options]
  */
@@ -560,11 +793,9 @@ export function ensureIdeRemoteDebuggingArgv({
   homeDir = homedir(),
   enabled = true,
 } = {}) {
-  if (!enabled) {
-    return { checked: false, updated: false, reason: 'disabled' };
-  }
   const argvPath = resolveIdeArgvPath(env, homeDir);
   return patchSingleHostArgvFile(argvPath, {
+    enabled,
     createDir: false,
     missingReason: 'ide_dir_missing',
   });
@@ -632,29 +863,12 @@ export function extractIdeExtensionCascadeId(rawUrl) {
   return m ? m[1] : '';
 }
 
-/**
- * 判断 CDP 目标是否为 Antigravity IDE 内嵌扩展聊天视图（OOPIF `iframe`），
- * 严格限定本机回环地址并校验 `extensionView`/`extensionVariant` 参数、`/c/<uuid>` 路由或已发现的 LS Hub 端口。
- *
- * @param {object} target
- * @param {string} [lsAddr='']
- * @returns {boolean}
- */
-export function isIdeExtensionChatTarget(target, lsAddr = '') {
-  if (!target || typeof target !== 'object') return false;
-  if (isAntigravityMainPageTarget(target)) return false;
-  const type = String(target.type || '').trim().toLowerCase();
-  if (type !== 'iframe' && type !== 'webview' && type !== 'page') return false;
-  const url = String(target.url || '').trim();
-  if (!/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d+(?:\/|$)/i.test(url)) {
-    return false;
-  }
+const ALLOWED_IDE_CHAT_EXTENSION_ID_RE = /(?:antigravity|codeium|jetski|gemini)/i;
+
+function hasStrongIdeChatSignal(rawUrl, lsAddr = '') {
+  const url = String(rawUrl || '').trim();
+  if (!url) return false;
   if (/[?&]extension(?:View|Variant)=/i.test(url)) {
-    return true;
-  }
-  if (
-    /\/c\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[/?#]|$)/i.test(url)
-  ) {
     return true;
   }
   const cleanLsAddr = String(lsAddr || '').trim().toLowerCase();
@@ -672,7 +886,35 @@ export function isIdeExtensionChatTarget(target, lsAddr = '') {
 }
 
 /**
- * 将同一调试端口下的扩展聊天子 iframe 会话路由与可注入聊天目标（按 `parentId` 树隔离，单窗口缺省时安全兜底）
+ * 判断 CDP 目标是否为 Antigravity IDE 内嵌扩展聊天视图（OOPIF `iframe` / `webview`），
+ * 严格限定本机回环地址并排除顶层 `page` 目标，校验 `extensionView`/`extensionVariant` 参数、`/c/<uuid>` 路由或已发现的 LS Hub 端口。
+ *
+ * @param {object} target
+ * @param {string} [lsAddr='']
+ * @returns {boolean}
+ */
+export function isIdeExtensionChatTarget(target, lsAddr = '') {
+  if (!target || typeof target !== 'object') return false;
+  if (isAntigravityMainPageTarget(target)) return false;
+  const type = String(target.type || '').trim().toLowerCase();
+  if (type !== 'iframe' && type !== 'webview') return false;
+  const url = String(target.url || '').trim();
+  if (!/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d+(?:\/|$)/i.test(url)) {
+    return false;
+  }
+  if (hasStrongIdeChatSignal(url, lsAddr)) {
+    return true;
+  }
+  if (
+    /\/c\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[/?#]|$)/i.test(url)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 将同一调试端口下的扩展聊天子 iframe 会话路由与可注入聊天目标（按 `parentId` 树隔离 + 扩展 Webview 白名单校验）
  * 关联到对应的 Antigravity IDE `workbench.html` 主窗口目标上。
  *
  * @param {Array<object>} rawTargets
@@ -710,6 +952,7 @@ export function associateIdeIframeRoutes(rawTargets, mainTargets, options = unde
     if (!cascadeId && !isChatFrame) continue;
 
     let matchedMainId = '';
+    let isRejectedExtensionSubframe = false;
     let curId = String(t.parentId || '').trim();
     const visited = new Set();
     while (curId && !visited.has(curId)) {
@@ -719,8 +962,23 @@ export function associateIdeIframeRoutes(rawTargets, mainTargets, options = unde
         break;
       }
       const parentTarget = byId.get(curId);
+      const parentUrl = String(parentTarget?.url || '');
+      const extIdMatch = parentUrl.match(/[?&]extensionId=([^&#?\s]+)/i);
+      if (extIdMatch) {
+        let extId = extIdMatch[1];
+        try {
+          extId = decodeURIComponent(extId);
+        } catch {
+          // 保留原始片段继续白名单校验
+        }
+        if (!ALLOWED_IDE_CHAT_EXTENSION_ID_RE.test(extId)) {
+          isRejectedExtensionSubframe = true;
+          break;
+        }
+      }
       curId = parentTarget ? String(parentTarget.parentId || '').trim() : '';
     }
+    if (isRejectedExtensionSubframe) continue;
 
     if (cascadeId) {
       if (matchedMainId) {
@@ -763,7 +1021,7 @@ export function associateIdeIframeRoutes(rawTargets, mainTargets, options = unde
           chatTargetsByMainId.set(matchedMainId, []);
         }
         chatTargetsByMainId.get(matchedMainId).push(chatEntry);
-      } else {
+      } else if (hasStrongIdeChatSignal(rawUrl, lsAddr)) {
         unanchoredChatTargets.push(chatEntry);
       }
     }
@@ -839,14 +1097,49 @@ export function extractRemoteHostMetadata(appConfig, title = '') {
   return { hasExplicitRemoteFlag, stableHostKey, hostLabel, bracketedTitleHost };
 }
 
+const NON_SSH_IDE_REMOTE_PREFIX_RE =
+  /^(?:vscode-remote:\/\/)?(?:wsl|dev-container|attached-container|codespaces|tunnel|k8s-container)\+/i;
+
 /**
- * 依据三级优先级严格区分本地窗口与 SSH / 远端窗口，避免 2.33.0+ 无 `csrfToken` 或无 `hub_*.json` 时误判本地桌面窗口。
+ * 从 Antigravity IDE `workbench.html?config=...` 静态 URL 中提取远端权威域标识（无需等待 CDP 执行）。
+ *
+ * @param {unknown} rawUrl
+ * @returns {{ rawAuthority: string, folderUri: string }}
+ */
+export function extractIdeWorkbenchUrlConfig(rawUrl) {
+  const urlStr = String(rawUrl || '').trim();
+  if (!urlStr) return { rawAuthority: '', folderUri: '' };
+  try {
+    const parsed = new URL(urlStr);
+    const rawConfig = parsed.searchParams.get('config');
+    if (!rawConfig) return { rawAuthority: '', folderUri: '' };
+    const cfg = JSON.parse(rawConfig);
+    if (!cfg || typeof cfg !== 'object') return { rawAuthority: '', folderUri: '' };
+    const rawAuthority = String(cfg.remoteAuthority || '').trim();
+    const folderUri = String(
+      cfg.folderUri ||
+        cfg.workspaceUri ||
+        (typeof cfg.workspace === 'object' && cfg.workspace
+          ? cfg.workspace.configPath || cfg.workspace.uri || ''
+          : '') ||
+        ''
+    ).trim();
+    return { rawAuthority, folderUri };
+  } catch {
+    return { rawAuthority: '', folderUri: '' };
+  }
+}
+
+/**
+ * 依据三级优先级严格区分本地窗口与 SSH / 远端窗口（同时覆盖 Desktop SSH 与 IDE Remote-SSH），
+ * 避免 2.33.0+ 无 `csrfToken` 或无 `hub_*.json` 时误判本地窗口，并严格排除 WSL / Dev Container。
  *
  * @param {{
  *   target: object,
- *   probedInfo?: { origin?: string, csrfToken?: string, observedCsrfToken?: string, appConfig?: object, title?: string }|null,
+ *   probedInfo?: { origin?: string, csrfToken?: string, observedCsrfToken?: string, appConfig?: object, title?: string, ideRemoteAuthority?: string, ideFolderUri?: string }|null,
  *   localHubInfo?: { allPorts?: Set<number>, httpsPorts?: Set<number>, csrfTokens?: Set<string> }|null,
  *   confirmedLocalPorts?: Set<number>|null,
+ *   enableRemoteSsh?: boolean,
  * }} params
  */
 export function classifyWindowTargetEndpoint({
@@ -854,8 +1147,62 @@ export function classifyWindowTargetEndpoint({
   probedInfo = null,
   localHubInfo = null,
   confirmedLocalPorts = null,
+  enableRemoteSsh = true,
 }) {
-  if (!target || target.isIdeWorkbench) {
+  if (!target) {
+    return { isRemote: false, endpointId: LOCAL_ENDPOINT_ID, label: '', origin: '', csrfToken: '' };
+  }
+
+  if (target.isIdeWorkbench) {
+    if (!enableRemoteSsh) {
+      return { isRemote: false, endpointId: LOCAL_ENDPOINT_ID, label: '', origin: '', csrfToken: '' };
+    }
+    const urlCfg = extractIdeWorkbenchUrlConfig(target.url);
+    const candidates = [
+      String(probedInfo?.ideRemoteAuthority || '').trim(),
+      String(probedInfo?.ideFolderUri || '').trim(),
+      String(probedInfo?.appConfig?.remoteAuthority || '').trim(),
+      urlCfg.rawAuthority,
+      urlCfg.folderUri,
+    ].filter(Boolean);
+
+    for (const cand of candidates) {
+      if (NON_SSH_IDE_REMOTE_PREFIX_RE.test(cand)) {
+        return { isRemote: false, endpointId: LOCAL_ENDPOINT_ID, label: '', origin: '', csrfToken: '' };
+      }
+      const parsedAuth = parseIdeRemoteAuthority(cand);
+      if (parsedAuth.isSshRemote) {
+        return {
+          isRemote: true,
+          isIdeRemoteSsh: true,
+          parsedIdeAuthority: parsedAuth,
+          origin: '',
+          originPort: 0,
+          csrfToken: '',
+          stableHostKey: parsedAuth.stableHostKey,
+          hostLabel: parsedAuth.displayLabel,
+        };
+      }
+    }
+
+    const ideTitle = String(probedInfo?.title || target.title || '').trim();
+    const sshTitleMatch = ideTitle.match(/\[SSH:\s*([^\]\r\n]+)\]/i);
+    if (sshTitleMatch && sshTitleMatch[1]) {
+      const parsedFromTitle = parseIdeRemoteAuthority(`ssh-remote+${sshTitleMatch[1].trim()}`);
+      if (parsedFromTitle.isSshRemote) {
+        return {
+          isRemote: true,
+          isIdeRemoteSsh: true,
+          parsedIdeAuthority: parsedFromTitle,
+          origin: '',
+          originPort: 0,
+          csrfToken: '',
+          stableHostKey: parsedFromTitle.stableHostKey,
+          hostLabel: parsedFromTitle.displayLabel,
+        };
+      }
+    }
+
     return { isRemote: false, endpointId: LOCAL_ENDPOINT_ID, label: '', origin: '', csrfToken: '' };
   }
 
@@ -1159,6 +1506,11 @@ export function createWindowBridgeController(options) {
     cloudCodeProxy = null,
     manageCloudCodeProxy = false,
     resolveLocalContextRulesFn = null,
+    hasOtherHostAliveFn = null,
+    portProberOptions = null,
+    ideRemoteSshOptions = null,
+    activeTransientMissTolerance = 2,
+    overlayHeartbeatGraceMs = 15_000,
     getHostI18nDescriptorFn =
       options?.env === undefined && options?.homeDir === undefined
         ? getHostI18nBridgeDescriptor
@@ -1167,6 +1519,15 @@ export function createWindowBridgeController(options) {
 
   const activeCloudCodeProxy =
     cloudCodeProxy || (manageCloudCodeProxy ? getDefaultCloudCodeProxy() : null);
+  const portProber = createDevToolsPortProber({
+    ...(portProberOptions || {}),
+    fsOps: {
+      existsSync: portProberOptions?.fsOps?.existsSync || existsSync,
+      readFileSync: portProberOptions?.fsOps?.readFileSync || readFileSync,
+      statSync: portProberOptions?.fsOps?.statSync || statSync,
+    },
+  });
+  const ideSshCoordinator = createIdeRemoteSshCoordinator(ideRemoteSshOptions || {});
 
   function isPidAlive(pid) {
     if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -1196,19 +1557,191 @@ export function createWindowBridgeController(options) {
   let argvConfigured = false;
   let launcherConfigured = false;
   let hasReadOnlyShortcuts = false;
-  const hostExecInfo = resolveDesktopHostExecutable({
+  let hasReadOnlySplit = false;
+  let hasReadOnlyDesktop = false;
+  let hasReadOnlyIde = false;
+  let managedLaunchersActive = false;
+  let lastObservedUserAutoLaunch = null;
+  let lastStalePortDetected = false;
+  const desktopExecInfo = resolveDesktopHostExecutable({
     env,
     platform,
     homeDir,
     existsFn: existsHostFn,
+    preferredProduct: 'desktop',
   });
+  const ideExecInfo = resolveDesktopHostExecutable({
+    env,
+    platform,
+    homeDir,
+    existsFn: existsHostFn,
+    preferredProduct: 'ide',
+  });
+  const hostExecInfo = desktopExecInfo.found ? desktopExecInfo : ideExecInfo;
+  let lastTargetProduct =
+    !desktopExecInfo.found && ideExecInfo.found ? 'ide' : 'auto';
   // Windows / macOS / Linux 均支持从运行中宿主进程动态反查路径（含自定义盘符与 AppImage），自定义安装路径亦可一键重拉
   const canRelaunch = Boolean(
     hostExecInfo.found ||
       ((platform === 'win32' || platform === 'darwin' || platform === 'linux') &&
         options?.existsHostFn === undefined)
   );
+  function resolveEffectiveReadOnlyShortcuts(targetProd = lastTargetProduct) {
+    if (!hasReadOnlyShortcuts) return false;
+    if (hasReadOnlySplit) {
+      if (targetProd === 'ide') return hasReadOnlyIde;
+      if (targetProd === 'desktop') return hasReadOnlyDesktop;
+    }
+    return hasReadOnlyShortcuts;
+  }
+  function readMacWrapperSnapshot() {
+    if (platform !== 'darwin') {
+      return { exists: false, desktopExists: false, ideExists: false, paths: [] };
+    }
+    const snap = inspectMacOsLaunchWrapperStatus({
+      platform,
+      homeDir,
+      existsFn: launcherFsOps?.existsFn || existsHostFn,
+      readFn: launcherFsOps?.readFn || readFileSync,
+      ...(launcherFsOps?.lstatFn ? { lstatFn: launcherFsOps.lstatFn } : {}),
+    });
+    return {
+      exists: Boolean(snap.exists),
+      desktopExists: Boolean(snap.desktopExists),
+      ideExists: Boolean(snap.ideExists),
+      paths: snap.paths || [],
+    };
+  }
+  function computeLeaseSignature(st, themeObj) {
+    const hostThemeSig = getHostThemeSignature(themeObj);
+    return `${st.state}:${st.aliveCount}:${st.targets}:${st.argvUpdatedThisBoot ? 1 : 0}:${st.launcherConfigured ? 1 : 0}:${st.hasReadOnlyShortcuts ? 1 : 0}:${st.stalePortDetected ? 1 : 0}:${st.targetProduct || 'auto'}:${st.canRelaunch ? 1 : 0}:${hostThemeSig}`;
+  }
+  function resolvePreferredTargetProduct(probeReport) {
+    const staleList = Array.isArray(probeReport?.staleProducts) ? probeReport.staleProducts : [];
+    const liveList = Array.isArray(probeReport?.liveProducts) ? probeReport.liveProducts : [];
+    if (staleList.includes('ide') && !staleList.includes('desktop')) return 'ide';
+    if (staleList.includes('desktop') && !staleList.includes('ide')) return 'desktop';
+    if (liveList.includes('desktop') && !liveList.includes('ide') && (ideExecInfo.found || argvConfigured)) {
+      return 'ide';
+    }
+    if (liveList.includes('ide') && !liveList.includes('desktop') && desktopExecInfo.found) {
+      return 'desktop';
+    }
+    if (!desktopExecInfo.found && (ideExecInfo.found || argvConfigured)) return 'ide';
+    if (desktopExecInfo.found && !ideExecInfo.found && !argvConfigured) return 'desktop';
+    return 'auto';
+  }
+  const hostRole = env?.USAGE_MONITOR_HOST_PPID ? 'daemon' : 'sidecar';
+  const LEASE_PEER_TTL_MS = 30_000;
+  const LEASE_PEER_HEARTBEAT_MS = 10_000;
+  const MAX_LEASE_PEERS = 32;
+  let lastPeerTouchMs = 0;
+
+  function pruneLeasePeers(rawPeers, now = Date.now(), { excludePid = 0 } = {}) {
+    if (!rawPeers || typeof rawPeers !== 'object') return {};
+    const valid = [];
+    for (const [key, entry] of Object.entries(rawPeers)) {
+      const pid = Number(key);
+      if (!Number.isInteger(pid) || pid <= 0 || pid === excludePid) continue;
+      const updatedAtMs = Number(entry?.updatedAtMs || 0);
+      const ageMs = now - updatedAtMs;
+      if (!(updatedAtMs > 0 && ageMs >= 0 && ageMs < LEASE_PEER_TTL_MS)) continue;
+      if (!isPidAlive(pid)) continue;
+      valid.push([
+        String(pid),
+        {
+          role: entry?.role === 'daemon' ? 'daemon' : 'sidecar',
+          updatedAtMs,
+        },
+      ]);
+    }
+    if (valid.length > MAX_LEASE_PEERS) {
+      valid.sort((a, b) => b[1].updatedAtMs - a[1].updatedAtMs);
+      valid.length = MAX_LEASE_PEERS;
+    }
+    return Object.fromEntries(valid);
+  }
+
+  function buildMergedLeasePeers(baseLease = null, { includeSelf = true, now = Date.now() } = {}) {
+    const diskLease = leaseFilePath ? loadJson(leaseFilePath, null) : null;
+    const mergedRaw = {
+      ...(baseLease?.peers && typeof baseLease.peers === 'object' ? baseLease.peers : {}),
+      ...(diskLease?.peers && typeof diskLease.peers === 'object' ? diskLease.peers : {}),
+    };
+    const peers = pruneLeasePeers(mergedRaw, now, { excludePid: includeSelf ? 0 : process.pid });
+    if (includeSelf) {
+      peers[String(process.pid)] = { role: hostRole, updatedAtMs: now };
+      lastPeerTouchMs = now;
+    }
+    return peers;
+  }
+
+  function saveLeaseWithPeers(payload, { includeSelf = true, baseLease = null } = {}) {
+    if (!leaseFilePath) return;
+    const now = Date.now();
+    const peers = buildMergedLeasePeers(baseLease, { includeSelf, now });
+    saveJson(leaseFilePath, {
+      ...payload,
+      peers,
+    });
+  }
+
+  function touchSelfPeerInLease({ force = false } = {}) {
+    if (!leaseFilePath) return;
+    const now = Date.now();
+    const curLease = loadJson(leaseFilePath, null);
+    const selfEntry = curLease?.peers?.[String(process.pid)];
+    const selfAgeMs = selfEntry ? now - Number(selfEntry.updatedAtMs || 0) : Infinity;
+    if (!force && selfAgeMs >= 0 && selfAgeMs < LEASE_PEER_HEARTBEAT_MS && now - lastPeerTouchMs < LEASE_PEER_HEARTBEAT_MS) {
+      return;
+    }
+    try {
+      saveLeaseWithPeers(curLease && typeof curLease === 'object' ? curLease : { pid: 0, updatedAtMs: 0 }, {
+        includeSelf: true,
+        baseLease: curLease,
+      });
+    } catch {
+      // 忽略租约心跳写入失败
+    }
+  }
+
+  function hasOtherLiveUsageMonitorHost(currentLease = null) {
+    const lease = currentLease ?? (leaseFilePath ? loadJson(leaseFilePath, null) : null);
+    const leasePid = Number(lease?.pid || 0);
+    if (leasePid > 0 && leasePid !== process.pid && isPidAlive(leasePid)) {
+      return true;
+    }
+    if (typeof hasOtherHostAliveFn === 'function') {
+      try {
+        return Boolean(hasOtherHostAliveFn());
+      } catch {
+        return false;
+      }
+    }
+    if (!lease || typeof lease !== 'object') return false;
+    const liveOtherPeers = pruneLeasePeers(lease.peers, Date.now(), { excludePid: process.pid });
+    return Object.keys(liveOtherPeers).length > 0;
+  }
+
+  function hasActiveExternalLeaderLease(curBundleVersion = '') {
+    if (!leaseFilePath) return false;
+    const lease = loadJson(leaseFilePath, null);
+    const leasePid = Number(lease?.pid || 0);
+    const leaseAgeMs = Date.now() - Number(lease?.updatedAtMs || 0);
+    if (!(leasePid > 0 && leasePid !== process.pid && leaseAgeMs >= 0 && leaseAgeMs < 9000 && isPidAlive(leasePid))) {
+      return false;
+    }
+    const myVerStr = String(curBundleVersion || getBundleVersionFn() || '');
+    const leaseVerStr = String(lease?.bundleVersion || '');
+    const leaseVerNum = Number(leaseVerStr) || 0;
+    const myVerNum = Number(myVerStr) || 0;
+    if (leaseVerNum > 0 && myVerNum > 0) {
+      return leaseVerNum >= myVerNum;
+    }
+    return Boolean(leaseVerStr && leaseVerStr === myVerStr);
+  }
   let lastPersistedLeaseSig = '';
+  const initialMacWrapper = readMacWrapperSnapshot();
   let lastBridgeStatus = {
     state: 'pending',
     enabled: true,
@@ -1218,6 +1751,12 @@ export function createWindowBridgeController(options) {
     argvConfigured: false,
     launcherConfigured: false,
     hasReadOnlyShortcuts: false,
+    stalePortDetected: false,
+    targetProduct: lastTargetProduct,
+    macWrapperExists: initialMacWrapper.exists,
+    macDesktopWrapperExists: initialMacWrapper.desktopExists,
+    macIdeWrapperExists: initialMacWrapper.ideExists,
+    macWrapperPaths: initialMacWrapper.paths,
     canRelaunch,
     updatedAtMs: 0,
   };
@@ -1229,6 +1768,10 @@ export function createWindowBridgeController(options) {
   let cachedHostI18nApply = { revision: '', bootId: '', expr: '' };
   const cachedBackendCtxModelsByEndpoint = new Map();
   const targetClassifyCache = new Map();
+  let lastDetectedHostTheme = null;
+  let lastPassiveThemeProbeMs = 0;
+  let lastBridgeHttpActivityMs = 0;
+  let consecutiveActiveCdpMisses = 0;
   let nodeDepsPromise = null;
   const allowedDynamicOrigins = new Set();
 
@@ -1296,6 +1839,7 @@ export function createWindowBridgeController(options) {
             ok: false,
             status,
             error: parsedBody?.error || `HTTP ${status}`,
+            data: parsedBody,
           });
         }
       } catch (err) {
@@ -1380,6 +1924,7 @@ export function createWindowBridgeController(options) {
           res.end(JSON.stringify({ error: 'Invalid bridge token' }));
           return;
         }
+        lastBridgeHttpActivityMs = Date.now();
 
         const headerEndpointRaw = String(
           req.headers[WINDOW_BRIDGE_ENDPOINT_HEADER.toLowerCase()] || ''
@@ -1539,8 +2084,8 @@ export function createWindowBridgeController(options) {
       const addr = srv.address();
       bridgePort = typeof addr === 'object' && addr ? Number(addr.port || 0) : 0;
       server = srv;
-      if (leaseFilePath && bridgePort > 0) {
-        saveJson(leaseFilePath, {
+      if (leaseFilePath && bridgePort > 0 && !hasActiveExternalLeaderLease()) {
+        saveLeaseWithPeers({
           pid: process.pid,
           bundleVersion: String(getBundleVersionFn() || ''),
           bridgePort,
@@ -1739,6 +2284,9 @@ export function createWindowBridgeController(options) {
   }
 
   function updateBridgeStatus(nextState, { enabled = true, aliveCount = 0, targets = 0, leasedBySelf = false, bundleVersion = '', prevLease = null } = {}) {
+    const macSnap = readMacWrapperSnapshot();
+    const targetProd = lastTargetProduct || 'auto';
+    const effectiveReadOnly = resolveEffectiveReadOnlyShortcuts(targetProd);
     lastBridgeStatus = {
       state: nextState,
       enabled: Boolean(enabled),
@@ -1747,40 +2295,53 @@ export function createWindowBridgeController(options) {
       argvUpdatedThisBoot: Boolean(argvUpdatedThisBoot),
       argvConfigured: Boolean(argvConfigured || launcherConfigured),
       launcherConfigured: Boolean(launcherConfigured || argvConfigured),
-      hasReadOnlyShortcuts: Boolean(hasReadOnlyShortcuts),
+      hasReadOnlyShortcuts: Boolean(effectiveReadOnly),
+      stalePortDetected: Boolean(lastStalePortDetected),
+      targetProduct: targetProd,
+      macWrapperExists: macSnap.exists,
+      macDesktopWrapperExists: macSnap.desktopExists,
+      macIdeWrapperExists: macSnap.ideExists,
+      macWrapperPaths: macSnap.paths,
       canRelaunch: Boolean(canRelaunch),
       updatedAtMs: Date.now(),
     };
     if (leasedBySelf && leaseFilePath) {
-      const sig = `${nextState}:${lastBridgeStatus.aliveCount}:${lastBridgeStatus.targets}:${lastBridgeStatus.argvUpdatedThisBoot ? 1 : 0}:${lastBridgeStatus.launcherConfigured ? 1 : 0}:${lastBridgeStatus.hasReadOnlyShortcuts ? 1 : 0}:${lastBridgeStatus.canRelaunch ? 1 : 0}`;
+      const sig = computeLeaseSignature(lastBridgeStatus, lastDetectedHostTheme);
       if (sig !== lastPersistedLeaseSig) {
         lastPersistedLeaseSig = sig;
-        saveJson(leaseFilePath, {
-          pid: process.pid,
-          bundleVersion,
-          bridgePort: bridgePort > 0 ? bridgePort : Number(prevLease?.bridgePort || 0) || undefined,
-          bridgeToken: bridgeToken || String(prevLease?.bridgeToken || '') || undefined,
-          syncState: lastBridgeStatus.state,
-          aliveCount: lastBridgeStatus.aliveCount,
-          targets: lastBridgeStatus.targets,
-          argvUpdatedThisBoot: lastBridgeStatus.argvUpdatedThisBoot,
-          argvConfigured: lastBridgeStatus.argvConfigured,
-          launcherConfigured: lastBridgeStatus.launcherConfigured,
-          hasReadOnlyShortcuts: lastBridgeStatus.hasReadOnlyShortcuts,
-          canRelaunch: lastBridgeStatus.canRelaunch,
-          updatedAtMs: Date.now(),
-        });
+        saveLeaseWithPeers(
+          {
+            pid: process.pid,
+            bundleVersion,
+            bridgePort: bridgePort > 0 ? bridgePort : Number(prevLease?.bridgePort || 0) || undefined,
+            bridgeToken: bridgeToken || String(prevLease?.bridgeToken || '') || undefined,
+            syncState: lastBridgeStatus.state,
+            aliveCount: lastBridgeStatus.aliveCount,
+            targets: lastBridgeStatus.targets,
+            argvUpdatedThisBoot: lastBridgeStatus.argvUpdatedThisBoot,
+            argvConfigured: lastBridgeStatus.argvConfigured,
+            launcherConfigured: lastBridgeStatus.launcherConfigured,
+            hasReadOnlyShortcuts: lastBridgeStatus.hasReadOnlyShortcuts,
+            stalePortDetected: lastBridgeStatus.stalePortDetected,
+            targetProduct: lastBridgeStatus.targetProduct,
+            canRelaunch: lastBridgeStatus.canRelaunch,
+            ...(lastDetectedHostTheme ? { hostTheme: lastDetectedHostTheme } : {}),
+            updatedAtMs: Date.now(),
+          },
+          { baseLease: prevLease }
+        );
       }
     }
   }
 
-  function provisionHostLaunchersOnce({ fastCheckIfActive = false } = {}) {
+  function provisionHostLaunchersOnce({ fastCheckIfActive = false, targetEnabled = true } = {}) {
     if (hostLauncherPromise) return hostLauncherPromise;
     hostLauncherPromise = (async () => {
-      const ideRes = ensureIdeRemoteDebuggingArgv({ env, homeDir, enabled: true });
+      const ideRes = ensureIdeRemoteDebuggingArgv({ env, homeDir, enabled: targetEnabled });
       const desktopRes = await ensureDesktopLaunchEntriesConfigured({
-        enabled: true,
+        enabled: targetEnabled,
         fastCheckIfActive,
+        product: 'both',
         env,
         platform,
         homeDir,
@@ -1788,19 +2349,38 @@ export function createWindowBridgeController(options) {
         fsOps: launcherFsOps,
         allowInTest: allowDesktopLauncherInTest,
       });
-      if (ideRes.updated || desktopRes.updated) {
-        argvUpdatedThisBoot = true;
+      if (targetEnabled) {
+        managedLaunchersActive = true;
+        if (ideRes.updated || desktopRes.updated) {
+          argvUpdatedThisBoot = true;
+        }
+        if (ideRes.updated || ideRes.alreadyConfigured) {
+          argvConfigured = true;
+        }
+        launcherConfigured = Boolean(
+          desktopRes.updated || desktopRes.alreadyConfigured || desktopRes.configured
+        );
+        if (!desktopRes.fastPath) {
+          hasReadOnlyShortcuts = Boolean(desktopRes.hasReadOnlyShortcuts);
+          hasReadOnlySplit = Boolean(desktopRes.readOnlySplitByProduct);
+          hasReadOnlyDesktop = Array.isArray(desktopRes.readOnlyDesktopPaths)
+            ? desktopRes.readOnlyDesktopPaths.length > 0
+            : false;
+          hasReadOnlyIde = Array.isArray(desktopRes.readOnlyIdePaths)
+            ? desktopRes.readOnlyIdePaths.length > 0
+            : false;
+        }
+        lastLauncherProvisionAtMs = Date.now();
+      } else {
+        managedLaunchersActive = false;
+        argvConfigured = Boolean(ideRes.alreadyConfigured);
+        launcherConfigured = false;
+        hasReadOnlyShortcuts = false;
+        hasReadOnlySplit = false;
+        hasReadOnlyDesktop = false;
+        hasReadOnlyIde = false;
+        lastLauncherProvisionAtMs = 0;
       }
-      if (ideRes.updated || ideRes.alreadyConfigured) {
-        argvConfigured = true;
-      }
-      launcherConfigured = Boolean(
-        desktopRes.updated || desktopRes.alreadyConfigured || desktopRes.configured
-      );
-      if (!desktopRes.fastPath) {
-        hasReadOnlyShortcuts = Boolean(desktopRes.hasReadOnlyShortcuts);
-      }
-      lastLauncherProvisionAtMs = Date.now();
     })().finally(() => {
       hostLauncherPromise = null;
     });
@@ -1889,10 +2469,11 @@ export function createWindowBridgeController(options) {
       curSettings.enableWindowOverlay
     );
     const enabled = Boolean(curSettings.enableWindowOverlay !== false && mountMode !== 'sidebar');
-    const contextWindows = curSettings.modelContextWindows || {};
+    const contextWindowAllowed = isContextWindowFeatureActive(curSettings);
+    const contextWindows = contextWindowAllowed ? curSettings.modelContextWindows || {} : {};
     const hasContextWindows = Object.keys(contextWindows).length > 0;
-    const ctxMainEnabled = curSettings.contextWindowMainEnabled !== false;
-    const ctxSwarmEnabled = curSettings.contextWindowSwarmEnabled === true;
+    const ctxMainEnabled = contextWindowAllowed && curSettings.contextWindowMainEnabled !== false;
+    const ctxSwarmEnabled = contextWindowAllowed && curSettings.contextWindowSwarmEnabled === true;
     const needsMainCdpContext = hasContextWindows && ctxMainEnabled;
     const needsCloudCodeProxy = hasContextWindows && ctxSwarmEnabled;
     const needsAnyCdpContext = hasContextWindows && (ctxMainEnabled || ctxSwarmEnabled);
@@ -1923,42 +2504,92 @@ export function createWindowBridgeController(options) {
           return { ok: false, enabled: true, reason: 'older_than_leader', injected: 0 };
         }
         if (leaseVerNum === myVerNum || String(lease?.bundleVersion || '') === bundleVersion) {
-          const mergedConfigured = Boolean(
-            lease?.launcherConfigured || lease?.argvConfigured || launcherConfigured || argvConfigured
-          );
+          const hasLeaseConfiguredFlag =
+            typeof lease?.launcherConfigured === 'boolean' ||
+            typeof lease?.argvConfigured === 'boolean';
+          const mergedConfigured = hasLeaseConfiguredFlag
+            ? Boolean(lease?.launcherConfigured || lease?.argvConfigured)
+            : Boolean(launcherConfigured || argvConfigured);
+          const macFollowerSnap = readMacWrapperSnapshot();
           lastBridgeStatus = {
             state: String(lease?.syncState || 'active'),
             enabled: Boolean(enabled),
             aliveCount: Number(lease?.aliveCount || 0),
             targets: Number(lease?.targets || 0),
-            argvUpdatedThisBoot: Boolean(lease?.argvUpdatedThisBoot || argvUpdatedThisBoot),
+            argvUpdatedThisBoot:
+              typeof lease?.argvUpdatedThisBoot === 'boolean'
+                ? lease.argvUpdatedThisBoot
+                : Boolean(argvUpdatedThisBoot),
             argvConfigured: mergedConfigured,
             launcherConfigured: mergedConfigured,
-            hasReadOnlyShortcuts: Boolean(lease?.hasReadOnlyShortcuts || hasReadOnlyShortcuts),
+            hasReadOnlyShortcuts:
+              typeof lease?.hasReadOnlyShortcuts === 'boolean'
+                ? lease.hasReadOnlyShortcuts
+                : Boolean(resolveEffectiveReadOnlyShortcuts()),
+            stalePortDetected:
+              typeof lease?.stalePortDetected === 'boolean'
+                ? lease.stalePortDetected
+                : Boolean(lastStalePortDetected),
+            targetProduct: String(lease?.targetProduct || lastTargetProduct || 'auto'),
+            macWrapperExists: macFollowerSnap.exists,
+            macDesktopWrapperExists: macFollowerSnap.desktopExists,
+            macIdeWrapperExists: macFollowerSnap.ideExists,
+            macWrapperPaths: macFollowerSnap.paths,
             canRelaunch: Boolean(lease?.canRelaunch ?? canRelaunch),
             updatedAtMs: Date.now(),
           };
+          if (lease?.hostTheme) {
+            const hydratedTheme = recordLiveCdpHostTheme(lease.hostTheme, { persist: false });
+            if (hydratedTheme) lastDetectedHostTheme = hydratedTheme;
+          }
+          touchSelfPeerInLease();
           return { ok: true, enabled: true, reason: 'follower_yield', leaderPid: leasePid, injected: 0 };
         }
       }
       leasedBySelf = true;
       const mergedLauncherConfigured = Boolean(argvConfigured || launcherConfigured);
-      lastPersistedLeaseSig = `${lastBridgeStatus.state}:${lastBridgeStatus.aliveCount}:${lastBridgeStatus.targets}:${Boolean(argvUpdatedThisBoot) ? 1 : 0}:${mergedLauncherConfigured ? 1 : 0}:${Boolean(hasReadOnlyShortcuts) ? 1 : 0}:${Boolean(canRelaunch) ? 1 : 0}`;
-      saveJson(leaseFilePath, {
-        pid: process.pid,
-        bundleVersion,
-        bridgePort: bridgePort > 0 ? bridgePort : Number(lease?.bridgePort || 0) || undefined,
-        bridgeToken: bridgeToken || String(lease?.bridgeToken || '') || undefined,
-        syncState: lastBridgeStatus.state,
+      const effectiveTopReadOnly = resolveEffectiveReadOnlyShortcuts();
+      const topLeaseStatus = {
+        state: lastBridgeStatus.state,
         aliveCount: lastBridgeStatus.aliveCount,
         targets: lastBridgeStatus.targets,
         argvUpdatedThisBoot: Boolean(argvUpdatedThisBoot),
-        argvConfigured: mergedLauncherConfigured,
         launcherConfigured: mergedLauncherConfigured,
-        hasReadOnlyShortcuts: Boolean(hasReadOnlyShortcuts),
+        hasReadOnlyShortcuts: Boolean(effectiveTopReadOnly),
+        stalePortDetected: Boolean(lastStalePortDetected),
+        targetProduct: lastTargetProduct || 'auto',
         canRelaunch: Boolean(canRelaunch),
-        updatedAtMs: Date.now(),
-      });
+      };
+      const topSig = computeLeaseSignature(topLeaseStatus, lastDetectedHostTheme);
+      if (
+        leasePid !== process.pid ||
+        leaseAgeMs >= 3500 ||
+        topSig !== lastPersistedLeaseSig ||
+        !lastPersistedLeaseSig
+      ) {
+        lastPersistedLeaseSig = topSig;
+        saveLeaseWithPeers(
+          {
+            pid: process.pid,
+            bundleVersion,
+            bridgePort: bridgePort > 0 ? bridgePort : Number(lease?.bridgePort || 0) || undefined,
+            bridgeToken: bridgeToken || String(lease?.bridgeToken || '') || undefined,
+            syncState: topLeaseStatus.state,
+            aliveCount: topLeaseStatus.aliveCount,
+            targets: topLeaseStatus.targets,
+            argvUpdatedThisBoot: topLeaseStatus.argvUpdatedThisBoot,
+            argvConfigured: mergedLauncherConfigured,
+            launcherConfigured: mergedLauncherConfigured,
+            hasReadOnlyShortcuts: topLeaseStatus.hasReadOnlyShortcuts,
+            stalePortDetected: topLeaseStatus.stalePortDetected,
+            targetProduct: topLeaseStatus.targetProduct,
+            canRelaunch: topLeaseStatus.canRelaunch,
+            ...(lastDetectedHostTheme ? { hostTheme: lastDetectedHostTheme } : {}),
+            updatedAtMs: Date.now(),
+          },
+          { baseLease: lease }
+        );
+      }
     }
 
     let preResolvedLocalCtx = null;
@@ -1978,15 +2609,91 @@ export function createWindowBridgeController(options) {
       }
     }
 
+    const userAutoLaunch = normalizeAutoConfigureLaunch(curSettings.autoConfigureLaunch);
+    const remoteSshEnabled = normalizeEnableRemoteSshTelemetry(
+      curSettings.enableRemoteSshTelemetry
+    );
+    if (!remoteSshEnabled) {
+      ideSshCoordinator.disposeAll();
+    }
+    const transitionedAutoLaunchOff = lastObservedUserAutoLaunch === true && !userAutoLaunch;
+    lastObservedUserAutoLaunch = userAutoLaunch;
+    if (
+      autoConfigureIdeArgv &&
+      !userAutoLaunch &&
+      (transitionedAutoLaunchOff || managedLaunchersActive) &&
+      !hostLauncherPromise
+    ) {
+      void provisionHostLaunchersOnce({ fastCheckIfActive: false, targetEnabled: false }).catch(
+        () => {}
+      );
+    }
     const shouldCheckLaunchers =
       (enabled || needsMainCdpContext || needsHostI18n) &&
       autoConfigureIdeArgv &&
+      userAutoLaunch &&
       (lastLauncherProvisionAtMs === 0 ||
         Date.now() - lastLauncherProvisionAtMs >= launcherRecheckIntervalMs);
     const isInitialLauncherPass = lastLauncherProvisionAtMs === 0;
 
-    const cdpPorts = findActiveDevToolsPorts();
+    const candidatePortFiles = resolveDevToolsPortCandidates(env, platform, homeDir);
+    const probeReport = await portProber.probeActiveDevToolsPorts({
+      candidateFiles: candidatePortFiles,
+      explicitPortsRaw: String(env?.ANTIGRAVITY_DEVTOOLS_PORT || '').trim(),
+    });
+    const isHardPortFailureReason = (reason) =>
+      reason === 'ECONNREFUSED' ||
+      reason === 'browser_ws_path_mismatch' ||
+      reason === 'not_devtools_endpoint' ||
+      reason === 'missing_browser_ws_url' ||
+      reason === 'invalid_version_payload';
+    const tryHoldActiveOnTransientCdpMiss = ({ hardRefusal = false } = {}) => {
+      if (!(enabled || needsMainCdpContext || needsHostI18n)) return false;
+      if (hardRefusal) return false;
+      const nowMs = Date.now();
+      const hasRecentOverlayHeartbeat =
+        lastBridgeHttpActivityMs > 0 && nowMs - lastBridgeHttpActivityMs < overlayHeartbeatGraceMs;
+      const wasActive =
+        lastBridgeStatus.state === 'active' && Number(lastBridgeStatus.aliveCount || 0) > 0;
+      if (!wasActive && !hasRecentOverlayHeartbeat) return false;
+      consecutiveActiveCdpMisses += 1;
+      if (!hasRecentOverlayHeartbeat && consecutiveActiveCdpMisses > activeTransientMissTolerance) {
+        return false;
+      }
+      updateBridgeStatus('active', {
+        enabled: Boolean(enabled),
+        aliveCount: Math.max(1, Number(lastBridgeStatus.aliveCount || 0)),
+        targets: Math.max(1, Number(lastBridgeStatus.targets || 0)),
+        leasedBySelf,
+        bundleVersion,
+        prevLease: currentLease,
+      });
+      return true;
+    };
+
+    const cdpPorts = probeReport.livePorts;
     if (!cdpPorts.length) {
+      const hasTransientTimeout =
+        Boolean(probeReport.hasTransientTimeout) ||
+        (Array.isArray(probeReport.staleFiles) &&
+          probeReport.staleFiles.some((f) => f?.reason === 'PROBE_TIMEOUT'));
+      const hardRefusal =
+        !hasTransientTimeout &&
+        (!Array.isArray(probeReport.staleFiles) ||
+          probeReport.staleFiles.length === 0 ||
+          probeReport.staleFiles.every((f) => isHardPortFailureReason(f?.reason)));
+      if (tryHoldActiveOnTransientCdpMiss({ hardRefusal })) {
+        return {
+          ok: false,
+          enabled,
+          reason: 'cdp_transient_busy',
+          transientHeld: true,
+          stalePortDetected: lastStalePortDetected,
+          injected: 0,
+        };
+      }
+      lastStalePortDetected = Boolean(probeReport.stalePortDetected || hasTransientTimeout);
+      lastTargetProduct = resolvePreferredTargetProduct(probeReport);
       pruneStaleRemoteEndpoints(new Set());
       const provPending = shouldCheckLaunchers
         ? provisionHostLaunchersOnce({ fastCheckIfActive: !isInitialLauncherPass })
@@ -1994,8 +2701,14 @@ export function createWindowBridgeController(options) {
       if (provPending) {
         await provPending.catch(() => {});
       }
+      const hadDeadPortSource = Boolean(
+        probeReport.stalePortDetected ||
+          probeReport.hasTransientTimeout ||
+          probeReport.explicitPortUnreachable
+      );
+      const emptyReason = hadDeadPortSource ? 'cdp_unreachable' : 'no_devtools_port';
       updateBridgeStatus(
-        enabled || needsMainCdpContext || needsHostI18n ? 'no_devtools_port' : 'disabled',
+        enabled || needsMainCdpContext || needsHostI18n ? emptyReason : 'disabled',
         {
           enabled,
           leasedBySelf,
@@ -2003,11 +2716,28 @@ export function createWindowBridgeController(options) {
           prevLease: currentLease,
         }
       );
-      return { ok: false, enabled, reason: 'no_devtools_port', injected: 0 };
+      return {
+        ok: false,
+        enabled,
+        reason: emptyReason,
+        stalePortDetected: lastStalePortDetected,
+        injected: 0,
+      };
     }
 
+    lastStalePortDetected = Boolean(probeReport.stalePortDetected);
+    lastTargetProduct = resolvePreferredTargetProduct(probeReport);
     const { reachableCount, targets } = await collectAllMainWindowTargets(cdpPorts);
     if (reachableCount === 0) {
+      if (tryHoldActiveOnTransientCdpMiss({ hardRefusal: false })) {
+        return {
+          ok: false,
+          enabled,
+          reason: 'cdp_transient_busy',
+          transientHeld: true,
+          injected: 0,
+        };
+      }
       pruneStaleRemoteEndpoints(new Set());
       const provPending = shouldCheckLaunchers
         ? provisionHostLaunchersOnce({ fastCheckIfActive: !isInitialLauncherPass })
@@ -2042,6 +2772,8 @@ export function createWindowBridgeController(options) {
       return { ok: true, enabled, reason: 'no_targets', injected: 0 };
     }
 
+    const hostThemeProbeExpr = buildHostThemeProbeSnippet();
+
     if (
       !enabled &&
       !needsAnyCdpContext &&
@@ -2052,6 +2784,18 @@ export function createWindowBridgeController(options) {
       !hadInjectedChatFrames &&
       !forceReinject
     ) {
+      const nowPassiveMs = Date.now();
+      const themeTarget = targets.find((t) => !t.isIdeWorkbench && t.webSocketDebuggerUrl) || targets.find((t) => t.webSocketDebuggerUrl);
+      if (themeTarget?.webSocketDebuggerUrl && nowPassiveMs - lastPassiveThemeProbeMs >= 5000) {
+        lastPassiveThemeProbeMs = nowPassiveMs;
+        try {
+          const themeRes = await evaluateOnTarget(themeTarget.webSocketDebuggerUrl, hostThemeProbeExpr, 1200);
+          const recorded = recordLiveCdpHostTheme(themeRes?.result?.result?.value);
+          if (recorded) lastDetectedHostTheme = recorded;
+        } catch {
+          // 忽略被动只读主题探测超时或断开异常
+        }
+      }
       pruneStaleRemoteEndpoints(new Set());
       updateBridgeStatus('disabled', {
         enabled: false,
@@ -2076,6 +2820,7 @@ export function createWindowBridgeController(options) {
           title: String((typeof document !== 'undefined' && document?.title) || '').trim(),
           csrfToken: String(cfg?.csrfToken || '').trim(),
           observedCsrfToken: observedCsrf,
+          hostTheme: ${hostThemeProbeExpr},
           appConfig: cfg ? {
             isRemoteControl: cfg.isRemoteControl === true,
             isRemote: cfg.isRemote === true,
@@ -2092,7 +2837,30 @@ export function createWindowBridgeController(options) {
           } : null,
         };
       } catch {
-        return { origin: '', title: '', csrfToken: '', observedCsrfToken: '', appConfig: null };
+        return { origin: '', title: '', csrfToken: '', observedCsrfToken: '', hostTheme: null, appConfig: null };
+      }
+    })()`;
+
+    const ideClassifyExpr = `(() => {
+      try {
+        const vsCfg = typeof window !== 'undefined' && typeof window.vscode?.context?.configuration === 'function'
+          ? window.vscode.context.configuration()
+          : null;
+        const appCfg = typeof window !== 'undefined' && window.__APP_CONFIG__ && typeof window.__APP_CONFIG__ === 'object'
+          ? window.__APP_CONFIG__
+          : null;
+        const rawFolderObj = vsCfg?.folderUri || vsCfg?.workspace?.configPath || vsCfg?.workspace || null;
+        const ideFolderUri = typeof rawFolderObj === 'string'
+          ? rawFolderObj.trim()
+          : String(rawFolderObj?.external || rawFolderObj?.path || '').trim();
+        return {
+          ideRemoteAuthority: String(vsCfg?.remoteAuthority || appCfg?.remoteAuthority || '').trim(),
+          ideFolderUri,
+          title: String((typeof document !== 'undefined' && document?.title) || '').trim(),
+          hostTheme: ${hostThemeProbeExpr},
+        };
+      } catch {
+        return { ideRemoteAuthority: '', ideFolderUri: '', title: '', hostTheme: null };
       }
     })()`;
 
@@ -2101,9 +2869,10 @@ export function createWindowBridgeController(options) {
       typeof getLocalHubPortsFn === 'function' ? getLocalHubPortsFn() : { allPorts: new Set(), httpsPorts: new Set(), csrfTokens: new Set() };
     const probedByWsUrl = new Map();
     const desktopTargets = targets.filter((t) => !t.isIdeWorkbench && t.webSocketDebuggerUrl);
+    const ideTargets = targets.filter((t) => t.isIdeWorkbench && t.webSocketDebuggerUrl);
 
-    await Promise.allSettled(
-      desktopTargets.map(async (target) => {
+    await Promise.allSettled([
+      ...desktopTargets.map(async (target) => {
         const wsUrl = String(target.webSocketDebuggerUrl || '');
         let targetOriginKey = '';
         try {
@@ -2127,8 +2896,27 @@ export function createWindowBridgeController(options) {
         } catch {
           if (cached?.info) probedByWsUrl.set(wsUrl, cached.info);
         }
-      })
-    );
+      }),
+      ...ideTargets.map(async (target) => {
+        const wsUrl = String(target.webSocketDebuggerUrl || '');
+        const cacheKey = `ide::${wsUrl}::${String(target.url || '')}`;
+        const cached = targetClassifyCache.get(cacheKey);
+        if (cached && nowClassifyMs - cached.ts < 4000) {
+          probedByWsUrl.set(wsUrl, cached.info);
+          return;
+        }
+        try {
+          const res = await evaluateOnTarget(wsUrl, ideClassifyExpr, 1500);
+          const info = res?.result?.result?.value;
+          if (info && typeof info === 'object') {
+            probedByWsUrl.set(wsUrl, info);
+            targetClassifyCache.set(cacheKey, { ts: nowClassifyMs, info });
+          }
+        } catch {
+          if (cached?.info) probedByWsUrl.set(wsUrl, cached.info);
+        }
+      }),
+    ]);
 
     if (targetClassifyCache.size > 64) {
       for (const [k, rec] of targetClassifyCache.entries()) {
@@ -2136,7 +2924,7 @@ export function createWindowBridgeController(options) {
       }
     }
 
-    // 两趟分类：第一趟确认明确归属本机的 Desktop 窗口端口，第二趟据此精准识别 SSH 远端窗口
+    // 两趟分类：第一趟确认明确归属本机的 Desktop 窗口端口，第二趟据此精准识别 SSH 远端窗口与 IDE Remote-SSH 窗口
     const confirmedLocalPorts = new Set();
     for (const target of desktopTargets) {
       const probedInfo = probedByWsUrl.get(String(target.webSocketDebuggerUrl || '')) || null;
@@ -2145,6 +2933,7 @@ export function createWindowBridgeController(options) {
         probedInfo,
         localHubInfo,
         confirmedLocalPorts: null,
+        enableRemoteSsh: remoteSshEnabled,
       });
       if (
         !firstPass.isRemote &&
@@ -2157,6 +2946,9 @@ export function createWindowBridgeController(options) {
     }
 
     const activeRemoteWsUrls = new Set();
+    const classifiedTargets = [];
+    const ideSshGroupsByHostKey = new Map();
+
     for (const target of targets) {
       const wsUrl = String(target.webSocketDebuggerUrl || '');
       const probedInfo = probedByWsUrl.get(wsUrl) || null;
@@ -2165,25 +2957,182 @@ export function createWindowBridgeController(options) {
         probedInfo,
         localHubInfo,
         confirmedLocalPorts,
+        enableRemoteSsh: remoteSshEnabled,
       });
+      classifiedTargets.push({ target, wsUrl, cls });
+      if (cls.isRemote && wsUrl && cls.isIdeRemoteSsh && cls.parsedIdeAuthority) {
+        let group = ideSshGroupsByHostKey.get(cls.stableHostKey);
+        if (!group) {
+          group = {
+            stableHostKey: cls.stableHostKey,
+            parsedIdeAuthority: cls.parsedIdeAuthority,
+            forwardedOrigins: new Set(),
+            rpcWsUrls: new Set(),
+            resolvedConn: null,
+          };
+          ideSshGroupsByHostKey.set(cls.stableHostKey, group);
+        }
+        const chatList = Array.isArray(target.ideChatTargets) ? target.ideChatTargets : [];
+        for (const ct of chatList) {
+          const orig = String(ct?.origin || '').trim();
+          if (orig) group.forwardedOrigins.add(orig);
+          const chatWs = String(ct?.webSocketDebuggerUrl || '').trim();
+          if (chatWs) group.rpcWsUrls.add(chatWs);
+        }
+      }
+    }
+
+    if (ideSshGroupsByHostKey.size > 0) {
+      const ideSshSyncWaitBudgetMs = Math.max(
+        100,
+        Math.min(4000, Number(ideRemoteSshOptions?.syncWaitBudgetMs) || 1800)
+      );
+      await Promise.all(
+        Array.from(ideSshGroupsByHostKey.values()).map(async (group) => {
+          const resolvePromise = ideSshCoordinator.resolveEndpointConnection({
+            parsedAuthority: group.parsedIdeAuthority,
+            forwardedOrigins: Array.from(group.forwardedOrigins),
+          });
+          let budgetTimer = null;
+          let timedOut = false;
+          try {
+            group.resolvedConn = await Promise.race([
+              resolvePromise,
+              new Promise((resolve) => {
+                budgetTimer = setTimeout(() => {
+                  timedOut = true;
+                  resolve({
+                    ok: false,
+                    reason: 'probe_pending',
+                    baseUrl: '',
+                    csrfToken: '',
+                    mode: 'pending',
+                  });
+                }, ideSshSyncWaitBudgetMs);
+                budgetTimer.unref?.();
+              }),
+            ]);
+          } finally {
+            if (budgetTimer) {
+              clearTimeout(budgetTimer);
+              budgetTimer = null;
+            }
+          }
+          if (timedOut) {
+            resolvePromise
+              .then((lateRes) => {
+                if (lateRes?.ok && !stopped) {
+                  void syncAllWindows({ forceReinject: false }).catch(() => {});
+                }
+              })
+              .catch(() => {});
+          }
+        })
+      );
+    }
+
+    for (const { target, wsUrl, cls } of classifiedTargets) {
       if (cls.isRemote && wsUrl) {
-        const ep = registerRemoteEndpoint({
-          origin: cls.origin,
-          baseUrl: cls.origin,
-          csrfToken: cls.csrfToken,
-          wsUrl,
-          label: cls.hostLabel,
-          stableHostKey: cls.stableHostKey,
-        });
+        let ep;
+        if (cls.isIdeRemoteSsh && cls.parsedIdeAuthority) {
+          const group = ideSshGroupsByHostKey.get(cls.stableHostKey);
+          const allForwarded = group ? Array.from(group.forwardedOrigins) : [];
+          const sshConn = group?.resolvedConn || { ok: false, baseUrl: '', csrfToken: '', mode: 'none' };
+          const useTunnel = Boolean(sshConn.ok && sshConn.mode === 'tunnel');
+          const effectiveRpcWsUrls = useTunnel
+            ? []
+            : group
+              ? Array.from(group.rpcWsUrls)
+              : [];
+          const bestBaseUrl = String(sshConn.baseUrl || allForwarded[0] || '').trim();
+          ep = registerRemoteEndpoint({
+            origin: allForwarded[0] || bestBaseUrl,
+            baseUrl: bestBaseUrl,
+            csrfToken: sshConn.csrfToken || '',
+            wsUrl,
+            canInvokeRpc: false,
+            rpcWsUrls: effectiveRpcWsUrls,
+            clearRpcTargets: useTunnel,
+            tier1Verified: Boolean(sshConn.ok),
+            onDisposeKey: 'ide-ssh',
+            onDispose: () => ideSshCoordinator.disposeHost(cls.stableHostKey),
+            label: cls.hostLabel,
+            stableHostKey: cls.stableHostKey,
+          });
+          for (const rpcWs of effectiveRpcWsUrls) {
+            activeRemoteWsUrls.add(rpcWs);
+          }
+        } else {
+          ep = registerRemoteEndpoint({
+            origin: cls.origin,
+            baseUrl: cls.origin,
+            csrfToken: cls.csrfToken,
+            wsUrl,
+            label: cls.hostLabel,
+            stableHostKey: cls.stableHostKey,
+          });
+        }
         target.endpointId = ep.id;
         target.isRemoteEndpoint = true;
         target.endpointLabel = ep.label;
         activeRemoteWsUrls.add(wsUrl);
+        if (Array.isArray(target.ideChatTargets)) {
+          for (const ct of target.ideChatTargets) {
+            ct.endpointId = ep.id;
+            ct.isRemoteEndpoint = true;
+            ct.endpointLabel = ep.label;
+          }
+        }
       } else {
         target.endpointId = LOCAL_ENDPOINT_ID;
         target.isRemoteEndpoint = false;
         target.endpointLabel = '';
+        if (Array.isArray(target.ideChatTargets)) {
+          for (const ct of target.ideChatTargets) {
+            ct.endpointId = LOCAL_ENDPOINT_ID;
+            ct.isRemoteEndpoint = false;
+            ct.endpointLabel = '';
+          }
+        }
       }
+    }
+
+    let pickedHostTheme = null;
+    for (const target of targets) {
+      if (target.isIdeWorkbench || target.isRemoteEndpoint) continue;
+      const candidate = normalizeHostThemeSnapshot(
+        probedByWsUrl.get(String(target.webSocketDebuggerUrl || ''))?.hostTheme
+      );
+      if (candidate) {
+        pickedHostTheme = candidate;
+        break;
+      }
+    }
+    if (!pickedHostTheme) {
+      for (const target of desktopTargets) {
+        const candidate = normalizeHostThemeSnapshot(
+          probedByWsUrl.get(String(target.webSocketDebuggerUrl || ''))?.hostTheme
+        );
+        if (candidate) {
+          pickedHostTheme = candidate;
+          break;
+        }
+      }
+    }
+    if (!pickedHostTheme) {
+      for (const target of ideTargets) {
+        const candidate = normalizeHostThemeSnapshot(
+          probedByWsUrl.get(String(target.webSocketDebuggerUrl || ''))?.hostTheme
+        );
+        if (candidate) {
+          pickedHostTheme = candidate;
+          break;
+        }
+      }
+    }
+    if (pickedHostTheme) {
+      const recordedTheme = recordLiveCdpHostTheme(pickedHostTheme);
+      if (recordedTheme) lastDetectedHostTheme = recordedTheme;
     }
 
     if (needsAnyCdpContext || hadContextWindows) {
@@ -2207,7 +3156,7 @@ export function createWindowBridgeController(options) {
       const remoteFallbackRulesById = new Map();
       const uniqueRemoteIds = new Set(
         targets
-          .filter((t) => !t.isIdeWorkbench && t.isRemoteEndpoint && t.endpointId)
+          .filter((t) => t.isRemoteEndpoint && t.endpointId)
           .map((t) => t.endpointId)
       );
       for (const cachedKey of Array.from(cachedBackendCtxModelsByEndpoint.keys())) {
@@ -2261,27 +3210,36 @@ export function createWindowBridgeController(options) {
         }
         ctxEvalTasks.push(evaluateOnTarget(wsUrl, expr));
       }
-      const ideChatExpr = !needsAnyCdpContext
-        ? createContextWindowSyncExpression({}, contextWindowBootId, {}, false, null)
-        : pinMainBackToDefaults
-          ? createContextWindowSyncExpression(
-              contextWindows,
-              contextWindowBootId,
-              pinBackRules,
-              false,
-              pinBackRules
-            )
-          : createContextWindowSyncExpression(
-              contextWindows,
-              contextWindowBootId,
-              localFallbackRules,
-              false,
-              null
-            );
-      for (const chatUrl of collectAllChatDebuggerUrls(targets)) {
-        if (!chatUrl || seenCtxUrls.has(chatUrl)) continue;
-        seenCtxUrls.add(chatUrl);
-        ctxEvalTasks.push(evaluateOnTarget(chatUrl, ideChatExpr));
+      for (const target of targets) {
+        if (!Array.isArray(target?.ideChatTargets)) continue;
+        for (const chatTarget of target.ideChatTargets) {
+          const chatUrl = String(chatTarget?.webSocketDebuggerUrl || '').trim();
+          if (!chatUrl || seenCtxUrls.has(chatUrl)) continue;
+          seenCtxUrls.add(chatUrl);
+          const isRemoteChat = Boolean(chatTarget.isRemoteEndpoint && chatTarget.endpointId);
+          const ideChatExpr = !needsAnyCdpContext
+            ? createContextWindowSyncExpression({}, contextWindowBootId, {}, false, null)
+            : pinMainBackToDefaults
+              ? isRemoteChat
+                ? createContextWindowSyncExpression({}, contextWindowBootId, {}, false, null)
+                : createContextWindowSyncExpression(
+                    contextWindows,
+                    contextWindowBootId,
+                    pinBackRules,
+                    false,
+                    pinBackRules
+                  )
+              : createContextWindowSyncExpression(
+                  contextWindows,
+                  contextWindowBootId,
+                  isRemoteChat
+                    ? remoteFallbackRulesById.get(chatTarget.endpointId) || localFallbackRules
+                    : localFallbackRules,
+                  false,
+                  null
+                );
+          ctxEvalTasks.push(evaluateOnTarget(chatUrl, ideChatExpr));
+        }
       }
       await Promise.allSettled(ctxEvalTasks);
       hadContextWindows = needsAnyCdpContext;
@@ -2761,6 +3719,9 @@ export function createWindowBridgeController(options) {
 
     pruneStaleRemoteEndpoints(activeRemoteWsUrls);
     cdpFallbackActive = sawCdpTransport;
+    if (aliveCount > 0) {
+      consecutiveActiveCdpMisses = 0;
+    }
     updateBridgeStatus(aliveCount > 0 ? 'active' : 'no_targets', {
       enabled: true,
       aliveCount,
@@ -2850,6 +3811,10 @@ export function createWindowBridgeController(options) {
     if (pollTimer) clearTimeout(pollTimer);
 
     if (leaseFilePath) {
+      touchSelfPeerInLease({ force: true });
+    }
+
+    if (leaseFilePath && !hasActiveExternalLeaderLease()) {
       const curSettings = getSettingsFn() || {};
       const mountMode = normalizeWindowMountMode(
         curSettings.windowMountMode,
@@ -2880,10 +3845,35 @@ export function createWindowBridgeController(options) {
       clearTimeout(pollTimer);
       pollTimer = null;
     }
-    if (
+    let shouldDisposeWindows = Boolean(
       disposeWindows &&
-      (hadInjectedTargets || hadInjectedChatFrames || hadContextWindows || hadHostI18n)
-    ) {
+        (hadInjectedTargets || hadInjectedChatFrames || hadContextWindows || hadHostI18n)
+    );
+    let leaseReleasedInStop = false;
+    if (leaseFilePath) {
+      const currentLease = loadJson(leaseFilePath, null);
+      const leasePid = Number(currentLease?.pid || 0);
+      const otherHostAlive = hasOtherLiveUsageMonitorHost(currentLease);
+      if (otherHostAlive) {
+        shouldDisposeWindows = false;
+      }
+      if (currentLease && typeof currentLease === 'object') {
+        const isSelfLeader = leasePid === process.pid;
+        const hadSelfPeer = Boolean(currentLease?.peers?.[String(process.pid)]);
+        if (isSelfLeader || hadSelfPeer) {
+          try {
+            saveLeaseWithPeers(
+              isSelfLeader ? { ...currentLease, pid: 0, updatedAtMs: 0 } : currentLease,
+              { includeSelf: false, baseLease: currentLease }
+            );
+            leaseReleasedInStop = true;
+          } catch {
+            // 忽略租约释放失败
+          }
+        }
+      }
+    }
+    if (shouldDisposeWindows) {
       const prevStopped = stopped;
       stopped = false;
       try {
@@ -2923,6 +3913,23 @@ export function createWindowBridgeController(options) {
     hadHostI18n = false;
     lastHostI18nAppliedCount = 0;
     cachedHostI18nApply = { revision: '', bootId: '', expr: '' };
+    lastBridgeHttpActivityMs = 0;
+    consecutiveActiveCdpMisses = 0;
+    portProber.clearCache();
+    ideSshCoordinator.disposeAll();
+    if (leaseFilePath && !leaseReleasedInStop) {
+      const curLease = loadJson(leaseFilePath, null);
+      if (curLease && Number(curLease.pid || 0) === process.pid) {
+        saveLeaseWithPeers(
+          {
+            ...curLease,
+            pid: 0,
+            updatedAtMs: 0,
+          },
+          { includeSelf: false, baseLease: curLease }
+        );
+      }
+    }
     if (activeCloudCodeProxy) {
       await activeCloudCodeProxy.stop().catch(() => {});
     }
@@ -2937,33 +3944,44 @@ export function createWindowBridgeController(options) {
     }
   }
 
+  function stripManagedLaunchersWhenIdle(cur) {
+    if (!autoConfigureIdeArgv) return;
+    const allowAuto = normalizeAutoConfigureLaunch(cur?.autoConfigureLaunch);
+    const transitionedOff = lastObservedUserAutoLaunch === true && !allowAuto;
+    lastObservedUserAutoLaunch = allowAuto;
+    if (!allowAuto && !transitionedOff && !managedLaunchersActive) {
+      return;
+    }
+    lastLauncherProvisionAtMs = 0;
+    void provisionHostLaunchersOnce({ fastCheckIfActive: false, targetEnabled: false }).catch(
+      () => {}
+    );
+  }
+
   function notifySettingChanged(enabled) {
+    const cur = getSettingsFn() || {};
+    if (!normalizeEnableRemoteSshTelemetry(cur.enableRemoteSshTelemetry)) {
+      ideSshCoordinator.disposeAll();
+    }
     if (!enabled) {
       hadInjectedTargets = true;
       hadInjectedChatFrames = true;
-      const cur = getSettingsFn() || {};
       const hasCtx =
+        isContextWindowFeatureActive(cur) &&
         Object.keys(cur.modelContextWindows || {}).length > 0 &&
         cur.contextWindowMainEnabled !== false;
       const hasHostI18n = Boolean(
         typeof getHostI18nDescriptorFn === 'function' && getHostI18nDescriptorFn()?.active
       );
-      if (!hasCtx && !hasHostI18n && autoConfigureIdeArgv) {
-        launcherConfigured = false;
-        hasReadOnlyShortcuts = false;
-        lastLauncherProvisionAtMs = 0;
-        void ensureDesktopLaunchEntriesConfigured({
-          enabled: false,
-          env,
-          platform,
-          homeDir,
-          execFileFn: launcherExecFileFn,
-          fsOps: launcherFsOps,
-          allowInTest: allowDesktopLauncherInTest,
-        }).catch(() => {});
+      if (!hasCtx && !hasHostI18n) {
+        stripManagedLaunchersWhenIdle(cur);
       }
     } else {
-      lastLauncherProvisionAtMs = 0;
+      if (!normalizeAutoConfigureLaunch(cur.autoConfigureLaunch)) {
+        stripManagedLaunchersWhenIdle(cur);
+      } else {
+        lastLauncherProvisionAtMs = 0;
+      }
       hadInjectedChatFrames = true;
     }
     return syncAllWindows({ forceReinject: false }).catch(() => ({ ok: false }));
@@ -2974,26 +3992,18 @@ export function createWindowBridgeController(options) {
     const mountMode = normalizeWindowMountMode(cur.windowMountMode, cur.enableWindowOverlay);
     const overlayOn = Boolean(cur.enableWindowOverlay !== false && mountMode !== 'sidebar');
     const hasCtx =
+      isContextWindowFeatureActive(cur) &&
       Object.keys(cur.modelContextWindows || {}).length > 0 &&
       cur.contextWindowMainEnabled !== false;
     const hasHostI18n = Boolean(
       typeof getHostI18nDescriptorFn === 'function' && getHostI18nDescriptorFn()?.active
     );
     if (hasCtx) {
-      lastLauncherProvisionAtMs = 0;
-    } else if (!overlayOn && !hasHostI18n && autoConfigureIdeArgv) {
-      launcherConfigured = false;
-      hasReadOnlyShortcuts = false;
-      lastLauncherProvisionAtMs = 0;
-      void ensureDesktopLaunchEntriesConfigured({
-        enabled: false,
-        env,
-        platform,
-        homeDir,
-        execFileFn: launcherExecFileFn,
-        fsOps: launcherFsOps,
-        allowInTest: allowDesktopLauncherInTest,
-      }).catch(() => {});
+      if (normalizeAutoConfigureLaunch(cur.autoConfigureLaunch)) {
+        lastLauncherProvisionAtMs = 0;
+      }
+    } else if (!overlayOn && !hasHostI18n) {
+      stripManagedLaunchersWhenIdle(cur);
     }
     return syncAllWindows({ forceReinject: false }).catch(() => ({ ok: false }));
   }
@@ -3003,28 +4013,20 @@ export function createWindowBridgeController(options) {
     const mountMode = normalizeWindowMountMode(cur.windowMountMode, cur.enableWindowOverlay);
     const overlayOn = Boolean(cur.enableWindowOverlay !== false && mountMode !== 'sidebar');
     const hasCtx =
+      isContextWindowFeatureActive(cur) &&
       Object.keys(cur.modelContextWindows || {}).length > 0 &&
       cur.contextWindowMainEnabled !== false;
     const hasHostI18n = Boolean(
       typeof getHostI18nDescriptorFn === 'function' && getHostI18nDescriptorFn()?.active
     );
     if (hasHostI18n) {
-      lastLauncherProvisionAtMs = 0;
+      if (normalizeAutoConfigureLaunch(cur.autoConfigureLaunch)) {
+        lastLauncherProvisionAtMs = 0;
+      }
     } else {
       hadHostI18n = true;
-      if (!overlayOn && !hasCtx && autoConfigureIdeArgv) {
-        launcherConfigured = false;
-        hasReadOnlyShortcuts = false;
-        lastLauncherProvisionAtMs = 0;
-        void ensureDesktopLaunchEntriesConfigured({
-          enabled: false,
-          env,
-          platform,
-          homeDir,
-          execFileFn: launcherExecFileFn,
-          fsOps: launcherFsOps,
-          allowInTest: allowDesktopLauncherInTest,
-        }).catch(() => {});
+      if (!overlayOn && !hasCtx) {
+        stripManagedLaunchersWhenIdle(cur);
       }
     }
     return syncAllWindows({ forceReinject: false }).catch(() => ({ ok: false }));
@@ -3099,6 +4101,7 @@ let defaultBridgeController = null;
  */
 export function getDefaultWindowBridgeStatus() {
   if (!defaultBridgeController) {
+    const macSnap = inspectMacOsLaunchWrapperStatus();
     return {
       state: 'pending',
       enabled: true,
@@ -3108,6 +4111,12 @@ export function getDefaultWindowBridgeStatus() {
       argvConfigured: false,
       launcherConfigured: false,
       hasReadOnlyShortcuts: false,
+      stalePortDetected: false,
+      targetProduct: 'auto',
+      macWrapperExists: Boolean(macSnap.exists),
+      macDesktopWrapperExists: Boolean(macSnap.desktopExists),
+      macIdeWrapperExists: Boolean(macSnap.ideExists),
+      macWrapperPaths: macSnap.paths || [],
       canRelaunch: false,
       updatedAtMs: 0,
     };

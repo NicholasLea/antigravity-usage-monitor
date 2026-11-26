@@ -18,15 +18,105 @@ import { dirname } from 'node:path';
 import { inferCompactionStepModels, normalizeCachedStep } from '../trajectory-metrics.mjs';
 import { isPlainObject } from './http-helpers.mjs';
 import {
+  SQLITE_IN_CHUNK_SIZE,
   computeSqliteWalSig,
   getNodeSqliteDatabaseSync,
   isSqliteBusyError,
 } from './sqlite-client.mjs';
 
 export const LEDGER_SCHEMA_VERSION = '1';
+export const DEFAULT_REDACTED_SESSION_TITLE = '[Deleted Session]';
 const TSL_BUSY_TIMEOUT_WRITE_MS = 3000;
 const TSL_BUSY_TIMEOUT_READ_MS = 1500;
 const TSL_MAX_BUSY_ATTEMPTS = 3;
+const TSL_REDACTED_STEP_DETAIL_KEYS = Object.freeze(['turnPrompt', 'turnPromptClean', 'userPrompt']);
+
+/**
+ * 原地/浅拷贝脱敏账本会话元数据对象（隐藏标题、Swarm 标题、子代理初始提示词及旁路提问角色），
+ * 完整保留所有计费、模型与归属统计元数据。
+ *
+ * @param {Record<string, any>} rawMeta
+ * @param {{ placeholderTitle?: string }} [options={}]
+ * @returns {{ meta: Record<string, any>, changed: boolean }}
+ */
+export function redactLedgerMetaObject(
+  rawMeta,
+  { placeholderTitle = DEFAULT_REDACTED_SESSION_TITLE } = {}
+) {
+  const placeholder = String(placeholderTitle || DEFAULT_REDACTED_SESSION_TITLE).trim() || DEFAULT_REDACTED_SESSION_TITLE;
+  const meta = isPlainObject(rawMeta) ? { ...rawMeta } : {};
+  let changed = false;
+
+  if (typeof meta.title === 'string' && meta.title.trim() && meta.title !== placeholder) {
+    meta.title = placeholder;
+    changed = true;
+  }
+  if (isPlainObject(meta.swarmMeta)) {
+    const nextSwarm = { ...meta.swarmMeta };
+    if (
+      typeof nextSwarm.title === 'string' &&
+      nextSwarm.title.trim() &&
+      nextSwarm.title !== placeholder
+    ) {
+      nextSwarm.title = placeholder;
+      meta.swarmMeta = nextSwarm;
+      changed = true;
+    }
+  }
+  if (isPlainObject(meta.subagentSpec)) {
+    const nextSpec = { ...meta.subagentSpec };
+    let specChanged = false;
+    if (Object.prototype.hasOwnProperty.call(nextSpec, 'initialPrompt') && nextSpec.initialPrompt) {
+      delete nextSpec.initialPrompt;
+      specChanged = true;
+    }
+    if (
+      String(nextSpec.typeName || '').trim().toLowerCase() === 'side_question' &&
+      typeof nextSpec.role === 'string' &&
+      nextSpec.role.trim() &&
+      nextSpec.role !== placeholder
+    ) {
+      nextSpec.role = placeholder;
+      specChanged = true;
+    }
+    if (specChanged) {
+      meta.subagentSpec = nextSpec;
+      changed = true;
+    }
+  }
+  if (meta.archived !== true) {
+    meta.archived = true;
+    changed = true;
+  }
+  return { meta, changed };
+}
+
+/**
+ * 脱敏单步 `detail_json` 对象中的用户输入提示词字段，100% 保留其余上下文构成、时间戳与模型诊断字段。
+ *
+ * @param {Record<string, any> | null} rawDetail
+ * @returns {{ detail: Record<string, any> | null, changed: boolean }}
+ */
+export function redactLedgerStepDetailObject(rawDetail) {
+  if (!isPlainObject(rawDetail)) {
+    return { detail: rawDetail ?? null, changed: false };
+  }
+  let changed = false;
+  const next = { ...rawDetail };
+  for (const key of TSL_REDACTED_STEP_DETAIL_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(next, key) && next[key] !== undefined && next[key] !== '') {
+      delete next[key];
+      changed = true;
+    }
+  }
+  if (!changed) {
+    return { detail: rawDetail, changed: false };
+  }
+  return {
+    detail: Object.keys(next).length > 0 ? next : null,
+    changed: true,
+  };
+}
 
 const TSL_FLAG_COMPACTION = 1 << 0;
 const TSL_FLAG_IMAGE_GEN = 1 << 1;
@@ -34,6 +124,7 @@ const TSL_FLAG_COMPLETE = 1 << 2;
 const TSL_FLAG_SPEED_ELIGIBLE = 1 << 3;
 const TSL_FLAG_VISIBLE_TEXT = 1 << 4;
 const TSL_FLAG_TOOL_CALLS = 1 << 5;
+const TSL_FLAG_REVERTED = 1 << 6;
 
 const TSL_CORE_STEP_KEYS = new Set([
   'stepIndex',
@@ -44,6 +135,7 @@ const TSL_CORE_STEP_KEYS = new Set([
   'speedSampleEligible',
   'hasVisibleText',
   'hasToolCalls',
+  'isReverted',
   'modelKey',
   'responseModel',
   'apiProvider',
@@ -187,6 +279,7 @@ export function splitStepForStorage(step) {
   if (s.speedSampleEligible) flags |= TSL_FLAG_SPEED_ELIGIBLE;
   if (s.hasVisibleText) flags |= TSL_FLAG_VISIBLE_TEXT;
   if (s.hasToolCalls) flags |= TSL_FLAG_TOOL_CALLS;
+  if (s.isReverted) flags |= TSL_FLAG_REVERTED;
 
   const accountingTuple = [
     s.stepIndex ?? null,
@@ -277,6 +370,7 @@ export function buildSlimStepFromAccounting(rawAccounting, internFn = (v) => v |
     speedSampleEligible: Boolean(flags & TSL_FLAG_SPEED_ELIGIBLE),
     hasVisibleText: Boolean(flags & TSL_FLAG_VISIBLE_TEXT),
     hasToolCalls: Boolean(flags & TSL_FLAG_TOOL_CALLS),
+    ...(flags & TSL_FLAG_REVERTED ? { isReverted: true } : {}),
     modelKey: internFn(t[3] || ''),
     responseModel: internFn(t[4] || ''),
     apiProvider: internFn(t[5] || ''),
@@ -754,10 +848,16 @@ export function createTrajectorySqliteLedger({
    *   upserts: Array<{ cascadeId: string, entry: object }>,
    *   removals: string[],
    *   bumpEpoch?: boolean,
+   *   truncateAll?: boolean,
    * }} batch
    */
-  function flushDeltaBatch({ upserts = [], removals = [], bumpEpoch = false } = {}) {
-    if (upserts.length === 0 && removals.length === 0 && !bumpEpoch) {
+  function flushDeltaBatch({
+    upserts = [],
+    removals = [],
+    bumpEpoch = false,
+    truncateAll = false,
+  } = {}) {
+    if (upserts.length === 0 && removals.length === 0 && !bumpEpoch && !truncateAll) {
       return true;
     }
     tslWithSqliteConnection(sqliteFilePath, { readOnly: false }, (db) => {
@@ -768,29 +868,73 @@ export function createTrajectorySqliteLedger({
         let epoch = tslReadMetaInt(db, 'ledger_epoch', localEpoch);
         const nowMs = Date.now();
 
-        if (bumpEpoch || removals.length > 0) {
+        if (bumpEpoch || truncateAll || removals.length > 0) {
           epoch += 1;
           db.prepare(
             "INSERT OR REPLACE INTO ledger_meta (key, value) VALUES ('ledger_epoch', ?)"
           ).run(String(epoch));
         }
 
-        if (removals.length > 0) {
-          const selByLower = db.prepare(
-            'SELECT cascade_id FROM conversations WHERE lower_id = ?'
+        if (truncateAll) {
+          const hasArchivedInDb = Boolean(
+            db.prepare('SELECT 1 FROM conversations WHERE is_archived = 1 LIMIT 1').get()
           );
-          const delSteps = db.prepare('DELETE FROM steps WHERE cascade_id = ?');
-          const delConv = db.prepare('DELETE FROM conversations WHERE lower_id = ?');
-          for (const rawRem of removals) {
-            const lower = String(rawRem || '').toLowerCase();
-            if (!lower) continue;
-            const existing = selByLower.get(lower);
-            if (existing?.cascade_id) {
-              delSteps.run(existing.cascade_id);
+          if (!hasArchivedInDb) {
+            db.exec('DELETE FROM steps; DELETE FROM conversations;');
+            persistedByLower.clear();
+          } else {
+            db.exec(`
+              DELETE FROM steps WHERE cascade_id NOT IN (
+                SELECT cascade_id FROM conversations WHERE is_archived = 1
+              );
+              DELETE FROM conversations WHERE is_archived = 0;
+            `);
+            for (const [k, digest] of persistedByLower.entries()) {
+              if (!digest?.archivedInt) {
+                persistedByLower.delete(k);
+              }
             }
-            delSteps.run(rawRem);
-            delConv.run(lower);
+          }
+        } else if (removals.length > 0) {
+          const lowerSet = new Set();
+          const stepCidSet = new Set();
+          for (const rawRem of removals) {
+            const rawStr = String(rawRem || '').trim();
+            if (!rawStr) continue;
+            const lower = rawStr.toLowerCase();
+            lowerSet.add(lower);
+            stepCidSet.add(rawStr);
+            const knownDigest = persistedByLower.get(lower);
+            if (knownDigest?.cascadeId) {
+              stepCidSet.add(knownDigest.cascadeId);
+            }
             persistedByLower.delete(lower);
+          }
+          const lowerList = Array.from(lowerSet);
+          for (let off = 0; off < lowerList.length; off += SQLITE_IN_CHUNK_SIZE) {
+            const chunk = lowerList.slice(off, off + SQLITE_IN_CHUNK_SIZE);
+            const placeholders = chunk.map(() => '?').join(',');
+            const existingRows = db
+              .prepare(`SELECT cascade_id FROM conversations WHERE lower_id IN (${placeholders})`)
+              .all(...chunk);
+            for (const row of existingRows || []) {
+              if (row?.cascade_id) {
+                stepCidSet.add(row.cascade_id);
+              }
+            }
+          }
+          const stepCidList = Array.from(stepCidSet);
+          for (let off = 0; off < stepCidList.length; off += SQLITE_IN_CHUNK_SIZE) {
+            const chunk = stepCidList.slice(off, off + SQLITE_IN_CHUNK_SIZE);
+            const placeholders = chunk.map(() => '?').join(',');
+            db.prepare(`DELETE FROM steps WHERE cascade_id IN (${placeholders})`).run(...chunk);
+          }
+          for (let off = 0; off < lowerList.length; off += SQLITE_IN_CHUNK_SIZE) {
+            const chunk = lowerList.slice(off, off + SQLITE_IN_CHUNK_SIZE);
+            const placeholders = chunk.map(() => '?').join(',');
+            db.prepare(`DELETE FROM conversations WHERE lower_id IN (${placeholders})`).run(
+              ...chunk
+            );
           }
         }
 
@@ -1045,6 +1189,278 @@ export function createTrajectorySqliteLedger({
     return { changed: true, fullReset: false, updatedEntries };
   }
 
+  /**
+   * 在单事务内在线脱敏指定已删会话的标题、Swarm 标题、子代理初始提示词及步骤明文提示词，
+   * 100% 保留 `accounting_json` 与用量统计，递增 `ledger_epoch` 并执行 WAL 截断检查点清除旧明文页。
+   *
+   * @param {Iterable<string>} targetIds
+   * @param {{ placeholderTitle?: string }} [options={}]
+   * @returns {{ redactedConversations: number, redactedSteps: number, changedIds: string[] }}
+   */
+  function redactConversations(targetIds, { placeholderTitle = DEFAULT_REDACTED_SESSION_TITLE } = {}) {
+    const lowers = [];
+    const seen = new Set();
+    for (const raw of targetIds || []) {
+      const lower = String(raw || '').trim().toLowerCase();
+      if (!lower || seen.has(lower)) continue;
+      seen.add(lower);
+      lowers.push(lower);
+    }
+    if (lowers.length === 0 || !existsSync(sqliteFilePath)) {
+      return { redactedConversations: 0, redactedSteps: 0, changedIds: [] };
+    }
+
+    let redactedConversations = 0;
+    let redactedSteps = 0;
+    const changedIds = [];
+
+    tslWithSqliteConnection(sqliteFilePath, { readOnly: false }, (db) => {
+      tslEnsureSchema(db);
+      db.exec('PRAGMA secure_delete = ON;');
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        let seq = tslReadMetaInt(db, 'last_write_seq', localWriteSeq);
+        let epoch = tslReadMetaInt(db, 'ledger_epoch', localEpoch);
+        const nowMs = Date.now();
+
+        const selConv = db.prepare(
+          'SELECT cascade_id, lower_id, is_archived, meta_json FROM conversations WHERE lower_id = ?'
+        );
+        const updConv = db.prepare(
+          'UPDATE conversations SET is_archived = 1, write_seq = ?, updated_at_ms = ?, meta_json = ? WHERE lower_id = ?'
+        );
+        const selSteps = db.prepare(
+          'SELECT pos, detail_json FROM steps WHERE cascade_id = ? AND detail_json IS NOT NULL'
+        );
+        const updStep = db.prepare(
+          'UPDATE steps SET detail_json = ? WHERE cascade_id = ? AND pos = ?'
+        );
+
+        let anyChanged = false;
+
+        for (const lower of lowers) {
+          const convRow = selConv.get(lower);
+          if (!convRow) continue;
+
+          let parsedMeta = {};
+          try {
+            parsedMeta = JSON.parse(convRow.meta_json) || {};
+          } catch {
+            parsedMeta = {};
+          }
+          const { meta: nextMeta, changed: metaChanged } = redactLedgerMetaObject(parsedMeta, {
+            placeholderTitle,
+          });
+
+          const stepRows = selSteps.all(convRow.cascade_id) || [];
+          let convStepsChanged = 0;
+          for (const sr of stepRows) {
+            let parsedDet = null;
+            try {
+              parsedDet = JSON.parse(sr.detail_json);
+            } catch {
+              continue;
+            }
+            const { detail: nextDet, changed: detChanged } = redactLedgerStepDetailObject(parsedDet);
+            if (!detChanged) continue;
+            updStep.run(nextDet ? JSON.stringify(nextDet) : null, convRow.cascade_id, sr.pos);
+            convStepsChanged += 1;
+            redactedSteps += 1;
+          }
+
+          if (metaChanged || !convRow.is_archived || convStepsChanged > 0) {
+            seq += 1;
+            const nextMetaJson = JSON.stringify(nextMeta);
+            updConv.run(seq, nowMs, nextMetaJson, lower);
+            persistedByLower.set(lower, {
+              cascadeId: convRow.cascade_id,
+              metaJson: nextMetaJson,
+              archivedInt: 1,
+              stepSigs: null,
+            });
+            redactedConversations += 1;
+            changedIds.push(convRow.cascade_id);
+            anyChanged = true;
+          }
+        }
+
+        if (anyChanged) {
+          epoch += 1;
+          db.prepare(
+            "INSERT OR REPLACE INTO ledger_meta (key, value) VALUES ('ledger_epoch', ?)"
+          ).run(String(epoch));
+          db.prepare(
+            "INSERT OR REPLACE INTO ledger_meta (key, value) VALUES ('last_write_seq', ?)"
+          ).run(String(seq));
+        }
+
+        db.exec('COMMIT');
+        localEpoch = epoch;
+        localWriteSeq = seq;
+      } catch (err) {
+        try {
+          db.exec('ROLLBACK');
+        } catch {
+          // Ignore rollback error
+        }
+        throw err;
+      }
+
+      if (redactedConversations > 0 || redactedSteps > 0) {
+        try {
+          db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+        } catch {
+          // 忽略检查点异常，已提交数据安全无损
+        }
+      }
+    });
+
+    if (redactedConversations > 0 || redactedSteps > 0) {
+      refreshWalSigAfterOwnWrite();
+    }
+    return { redactedConversations, redactedSteps, changedIds };
+  }
+
+  /**
+   * 在单事务内将跨端 `move` 迁移的源会话账本条目无损重绑到新分配的 `toCascadeId`，
+   * 保留全部历史步级 `accounting_json` 与 `detail_json`，同时消除源 ID 永久归档导致的双倍计费。
+   *
+   * @param {Array<{ fromCascadeId: string, toCascadeId: string, patchMeta?: Record<string, any> }>} rekeySpecs
+   * @returns {{ rekeyedCount: number, pairs: Array<{ fromCascadeId: string, toCascadeId: string }> }}
+   */
+  function rekeyConversations(rekeySpecs = []) {
+    const validSpecs = [];
+    const seenFrom = new Set();
+    for (const raw of Array.isArray(rekeySpecs) ? rekeySpecs : []) {
+      const fromLower = String(raw?.fromCascadeId || '').trim().toLowerCase();
+      const toCid = String(raw?.toCascadeId || '').trim();
+      const toLower = toCid.toLowerCase();
+      if (!fromLower || !toLower || fromLower === toLower || seenFrom.has(fromLower)) continue;
+      seenFrom.add(fromLower);
+      validSpecs.push({
+        fromLower,
+        toCid,
+        toLower,
+        patchMeta: isPlainObject(raw?.patchMeta) ? raw.patchMeta : null,
+      });
+    }
+    if (validSpecs.length === 0 || !existsSync(sqliteFilePath)) {
+      return { rekeyedCount: 0, pairs: [] };
+    }
+
+    const pairs = [];
+    tslWithSqliteConnection(sqliteFilePath, { readOnly: false }, (db) => {
+      tslEnsureSchema(db);
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        let seq = tslReadMetaInt(db, 'last_write_seq', localWriteSeq);
+        let epoch = tslReadMetaInt(db, 'ledger_epoch', localEpoch);
+        const nowMs = Date.now();
+
+        const selConv = db.prepare(
+          'SELECT cascade_id, lower_id, is_archived, step_count, meta_json FROM conversations WHERE lower_id = ?'
+        );
+        const delConv = db.prepare('DELETE FROM conversations WHERE lower_id = ?');
+        const delSteps = db.prepare('DELETE FROM steps WHERE cascade_id = ?');
+        const moveSteps = db.prepare('UPDATE steps SET cascade_id = ? WHERE cascade_id = ?');
+        const insConv = db.prepare(`
+          INSERT OR REPLACE INTO conversations (
+            cascade_id, lower_id, is_archived, step_count, write_seq, updated_at_ms, meta_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const { fromLower, toCid, toLower, patchMeta } of validSpecs) {
+          const srcRow = selConv.get(fromLower);
+          if (!srcRow) continue;
+
+          const dstRow = selConv.get(toLower);
+          const prevFromDigest = persistedByLower.get(fromLower) || null;
+
+          if (dstRow && Number(dstRow.step_count || 0) >= Number(srcRow.step_count || 0)) {
+            delSteps.run(srcRow.cascade_id);
+            delConv.run(fromLower);
+            persistedByLower.delete(fromLower);
+            pairs.push({ fromCascadeId: srcRow.cascade_id, toCascadeId: dstRow.cascade_id });
+            continue;
+          }
+
+          if (dstRow) {
+            delSteps.run(dstRow.cascade_id);
+            delConv.run(toLower);
+            persistedByLower.delete(toLower);
+          }
+
+          let parsedMeta = {};
+          try {
+            parsedMeta = JSON.parse(srcRow.meta_json) || {};
+          } catch {
+            parsedMeta = {};
+          }
+          const mergedMeta = patchMeta ? { ...parsedMeta, ...patchMeta } : { ...parsedMeta };
+          delete mergedMeta.signature;
+          let archivedInt = srcRow.is_archived ? 1 : 0;
+          if (patchMeta && Object.prototype.hasOwnProperty.call(patchMeta, 'archived')) {
+            archivedInt = patchMeta.archived ? 1 : 0;
+          }
+          if (!archivedInt && mergedMeta.archived) {
+            delete mergedMeta.archived;
+          } else if (archivedInt) {
+            mergedMeta.archived = true;
+          }
+          const nextMetaJson = JSON.stringify(mergedMeta);
+
+          moveSteps.run(toCid, srcRow.cascade_id);
+          delConv.run(fromLower);
+          seq += 1;
+          insConv.run(
+            toCid,
+            toLower,
+            archivedInt,
+            Number(srcRow.step_count || 0),
+            seq,
+            nowMs,
+            nextMetaJson
+          );
+
+          persistedByLower.delete(fromLower);
+          persistedByLower.set(toLower, {
+            cascadeId: toCid,
+            metaJson: nextMetaJson,
+            archivedInt,
+            stepSigs: prevFromDigest?.stepSigs || null,
+          });
+          pairs.push({ fromCascadeId: srcRow.cascade_id, toCascadeId: toCid });
+        }
+
+        if (pairs.length > 0) {
+          epoch += 1;
+          db.prepare(
+            "INSERT OR REPLACE INTO ledger_meta (key, value) VALUES ('ledger_epoch', ?)"
+          ).run(String(epoch));
+          db.prepare(
+            "INSERT OR REPLACE INTO ledger_meta (key, value) VALUES ('last_write_seq', ?)"
+          ).run(String(seq));
+        }
+
+        db.exec('COMMIT');
+        localEpoch = epoch;
+        localWriteSeq = seq;
+      } catch (err) {
+        try {
+          db.exec('ROLLBACK');
+        } catch {
+          // Ignore rollback error
+        }
+        throw err;
+      }
+    });
+
+    if (pairs.length > 0) {
+      refreshWalSigAfterOwnWrite();
+    }
+    return { rekeyedCount: pairs.length, pairs };
+  }
+
   return {
     sqliteFilePath,
     internString,
@@ -1052,6 +1468,8 @@ export function createTrajectorySqliteLedger({
     loadHydratedStepsForConversation,
     flushDeltaBatch,
     syncExternalChangesIfNeeded,
+    redactConversations,
+    rekeyConversations,
     dehydrateStep: (step) => dehydrateStepForColdMemory(step, internString),
   };
 }

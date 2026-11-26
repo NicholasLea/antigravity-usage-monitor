@@ -19,6 +19,7 @@ import {
   getAgentBadgeClass,
 } from '../core/formatters.js';
 import { normalizeI18nLanguage, t } from '../i18n/index.js';
+import { normalizeDisplayCurrency } from '../../shared/currency-catalog.mjs';
 import {
   normalizeClientFontScale,
   normalizeClientModernUi,
@@ -29,31 +30,46 @@ import {
   CLI_STATUSLINE_PRESETS,
   DEFAULT_CLI_STATUSLINE_SLOTS,
   DEFAULT_CONTEXT_AGENT_MODE,
+  DEFAULT_HOVER_METRICS,
+  DEFAULT_HOVER_METRIC_STYLE,
   DEFAULT_HOVER_MODULES,
+  DEFAULT_HOVER_SYNC_OVERVIEW_METRICS,
   DEFAULT_OVERVIEW_METRICS,
+  DEFAULT_OVERVIEW_METRIC_STYLE,
   DEFAULT_OVERVIEW_MODULES,
   DEFAULT_POPOVER_WIDTH,
+  DEFAULT_QUOTA_DISPLAY_MODE,
   DEFAULT_STEP_TABLE_COLUMNS,
   DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_TOPBAR_SLOTS,
+  MAX_LARGE_METRIC_SLOTS,
   MAX_POPOVER_WIDTH,
   MIN_POPOVER_WIDTH,
   OVERVIEW_METRIC_KEYS,
   OVERVIEW_MODULE_KEYS,
   STEP_TABLE_COLUMN_KEYS,
   TOPBAR_SLOT_KEYS,
+  isRiskyFeaturesGateOpen,
   normalizeAccountQuotaRefreshMinutes,
+  normalizeAutoConfigureLaunch,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeDeveloperModeEnabled,
+  normalizeEnableRemoteSshTelemetry,
   normalizeExperimentalQuotaReservation,
+  normalizeHoverMetricStyle,
+  normalizeHoverMetrics,
   normalizeHoverModules,
+  normalizeHoverSyncOverviewMetrics,
   normalizeModelDisplayMode,
-  normalizeOrchestratorIdMode,
+  normalizeOverviewMetricStyle,
   normalizeOverviewMetrics,
   normalizeOverviewModules,
   normalizePluginUpdateMode,
   normalizePopoverWidth,
   normalizePopoverWidthMode,
+  normalizeQuotaDisplayMode,
+  normalizeRiskyFeaturesEnabled,
   normalizeStepTableColumns,
   normalizeStepTokenComboFormat,
   normalizeTopbarCapsuleSlots,
@@ -61,6 +77,7 @@ import {
   normalizeWindowMountMode,
   parseStepTokenComboSegments,
   resolveEffectiveCliStatusLineSlots,
+  resolveEffectiveMetricMatrixConfig,
 } from '../../shared/settings-normalization.mjs';
 import {
   LOCAL_ENDPOINT_ID,
@@ -68,6 +85,7 @@ import {
   WINDOW_BRIDGE_ROUTE_KEY,
   readInjectedWindowBridge,
 } from '../../shared/window-bridge-protocol.mjs';
+import { getHostThemeSignature } from '../../shared/host-theme.mjs';
 
 const CASCADE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -191,6 +209,8 @@ const TELEMETRY_RECOMPUTE_SETTING_KEYS = new Set([
   'weeklyCostBudget',
   'windowMountMode',
   'enableWindowOverlay',
+  'autoConfigureLaunch',
+  'enableRemoteSshTelemetry',
 ]);
 
 function makeConsumptionRangeCacheKey(
@@ -480,6 +500,11 @@ export const DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS = DEFAULT_CLI_STATUSLINE_SLOTS;
 export const CLIENT_OVERVIEW_MODULE_KEYS = OVERVIEW_MODULE_KEYS;
 export const DEFAULT_CLIENT_OVERVIEW_MODULES = DEFAULT_OVERVIEW_MODULES;
 export const DEFAULT_CLIENT_HOVER_MODULES = DEFAULT_HOVER_MODULES;
+export const DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS = DEFAULT_HOVER_SYNC_OVERVIEW_METRICS;
+export const DEFAULT_CLIENT_HOVER_METRIC_STYLE = DEFAULT_HOVER_METRIC_STYLE;
+export const DEFAULT_CLIENT_HOVER_METRICS = DEFAULT_HOVER_METRICS;
+export const DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE = DEFAULT_OVERVIEW_METRIC_STYLE;
+export const MAX_CLIENT_LARGE_METRIC_SLOTS = MAX_LARGE_METRIC_SLOTS;
 export const CLIENT_OVERVIEW_METRIC_KEYS = OVERVIEW_METRIC_KEYS;
 export const DEFAULT_CLIENT_OVERVIEW_METRICS = DEFAULT_OVERVIEW_METRICS;
 export const CLIENT_STEP_COLUMN_KEYS = STEP_TABLE_COLUMN_KEYS;
@@ -488,6 +513,7 @@ export const DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT = DEFAULT_STEP_TOKEN_COMBO_F
 export const MIN_CLIENT_POPOVER_WIDTH = MIN_POPOVER_WIDTH;
 export const MAX_CLIENT_POPOVER_WIDTH = MAX_POPOVER_WIDTH;
 export const DEFAULT_CLIENT_POPOVER_WIDTH = DEFAULT_POPOVER_WIDTH;
+export const DEFAULT_CLIENT_QUOTA_DISPLAY_MODE = DEFAULT_QUOTA_DISPLAY_MODE;
 
 export const parseClientStepTokenComboSegments = parseStepTokenComboSegments;
 export const normalizeClientStepTokenComboFormat = normalizeStepTokenComboFormat;
@@ -496,6 +522,7 @@ export const normalizeClientPopoverWidth = normalizePopoverWidth;
 export const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 export const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
 export const normalizeClientContextAgentMode = normalizeContextAgentMode;
+export const normalizeClientQuotaDisplayMode = normalizeQuotaDisplayMode;
 export const normalizeClientExperimentalQuotaReservation = normalizeExperimentalQuotaReservation;
 export const normalizeClientAccountQuotaRefreshMinutes = normalizeAccountQuotaRefreshMinutes;
 export const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
@@ -527,12 +554,17 @@ export function resolveOverlayCtxInspectorAgentId(telemetry, ctxInspectorAgentId
 }
 export const resolveEffectiveClientCliStatusLineSlots = resolveEffectiveCliStatusLineSlots;
 export const normalizeClientHoverModules = normalizeHoverModules;
+export const normalizeClientHoverSyncOverviewMetrics = normalizeHoverSyncOverviewMetrics;
+export const normalizeClientHoverMetricStyle = normalizeHoverMetricStyle;
+export const normalizeClientHoverMetrics = normalizeHoverMetrics;
 export const normalizeClientOverviewModules = normalizeOverviewModules;
+export const normalizeClientOverviewMetricStyle = normalizeOverviewMetricStyle;
 export const normalizeClientOverviewMetrics = normalizeOverviewMetrics;
+export const resolveEffectiveClientMetricMatrixConfig = resolveEffectiveMetricMatrixConfig;
 export const normalizeClientStepColumns = normalizeStepTableColumns;
 export const normalizeClientUpdateMode = normalizePluginUpdateMode;
-export const normalizeClientOrchestratorIdMode = normalizeOrchestratorIdMode;
 export const normalizeClientWindowMountMode = normalizeWindowMountMode;
+export const normalizeClientDisplayCurrency = normalizeDisplayCurrency;
 
 export function isEquivalentTelemetry(prev, next) {
   if (!prev || !next) return false;
@@ -554,14 +586,27 @@ export function isEquivalentTelemetry(prev, next) {
   const nSet = next.settings;
 
   if ((pSet?.language ?? 'auto') !== (nSet?.language ?? 'auto')) return false;
+  if (
+    normalizeDisplayCurrency(pSet?.displayCurrency) !==
+    normalizeDisplayCurrency(nSet?.displayCurrency)
+  ) {
+    return false;
+  }
   if ((pSet?.themeAccent ?? 'host') !== (nSet?.themeAccent ?? 'host')) return false;
   if ((pSet?.fontScale ?? 'md') !== (nSet?.fontScale ?? 'md')) return false;
   if (resolveSettingsModernUi(pSet) !== resolveSettingsModernUi(nSet)) return false;
   if ((prev.hostPlatform || '') !== (next.hostPlatform || '')) return false;
+  if (getHostThemeSignature(prev.hostTheme) !== getHostThemeSignature(next.hostTheme)) return false;
   if (
     (prev.endpoint?.id || LOCAL_ENDPOINT_ID) !== (next.endpoint?.id || LOCAL_ENDPOINT_ID) ||
     Boolean(prev.endpoint?.isRemote) !== Boolean(next.endpoint?.isRemote) ||
     (prev.endpoint?.label || '') !== (next.endpoint?.label || '')
+  ) {
+    return false;
+  }
+  if (
+    Boolean(pSet?.developerModeEnabled) !== Boolean(nSet?.developerModeEnabled) ||
+    Boolean(pSet?.riskyFeaturesEnabled) !== Boolean(nSet?.riskyFeaturesEnabled)
   ) {
     return false;
   }
@@ -607,12 +652,6 @@ export function isEquivalentTelemetry(prev, next) {
   ) {
     return false;
   }
-  if (
-    normalizeOrchestratorIdMode(pSet?.orchestratorIdMode) !==
-    normalizeOrchestratorIdMode(nSet?.orchestratorIdMode)
-  ) {
-    return false;
-  }
   if (pSet?.weeklyLimitMode !== nSet?.weeklyLimitMode) return false;
   if (pSet?.weeklyTokenBudget !== nSet?.weeklyTokenBudget) return false;
   if (pSet?.weeklyCostBudget !== nSet?.weeklyCostBudget) return false;
@@ -651,6 +690,12 @@ export function isEquivalentTelemetry(prev, next) {
     return false;
   }
   if (
+    normalizeClientQuotaDisplayMode(pSet?.quotaDisplayMode) !==
+    normalizeClientQuotaDisplayMode(nSet?.quotaDisplayMode)
+  ) {
+    return false;
+  }
+  if (
     normalizeClientExperimentalQuotaReservation(pSet?.experimentalQuotaReservation) !==
     normalizeClientExperimentalQuotaReservation(nSet?.experimentalQuotaReservation)
   ) {
@@ -665,9 +710,43 @@ export function isEquivalentTelemetry(prev, next) {
   if (Boolean(pSet?.accountSwitchRiskAccepted) !== Boolean(nSet?.accountSwitchRiskAccepted)) {
     return false;
   }
+  if (Number(pSet?.standalonePort || 0) !== Number(nSet?.standalonePort || 0)) {
+    return false;
+  }
+  if (
+    normalizeAutoConfigureLaunch(pSet?.autoConfigureLaunch) !==
+    normalizeAutoConfigureLaunch(nSet?.autoConfigureLaunch)
+  ) {
+    return false;
+  }
+  if (
+    normalizeEnableRemoteSshTelemetry(pSet?.enableRemoteSshTelemetry) !==
+    normalizeEnableRemoteSshTelemetry(nSet?.enableRemoteSshTelemetry)
+  ) {
+    return false;
+  }
   if (!sameArr(pSet?.topbarCapsuleSlots, nSet?.topbarCapsuleSlots)) return false;
   if (!sameArr(pSet?.hoverModules, nSet?.hoverModules)) return false;
+  if (
+    normalizeClientHoverSyncOverviewMetrics(pSet?.hoverSyncOverviewMetrics) !==
+    normalizeClientHoverSyncOverviewMetrics(nSet?.hoverSyncOverviewMetrics)
+  ) {
+    return false;
+  }
+  if (
+    normalizeClientHoverMetricStyle(pSet?.hoverMetricStyle) !==
+    normalizeClientHoverMetricStyle(nSet?.hoverMetricStyle)
+  ) {
+    return false;
+  }
+  if (!sameArr(pSet?.hoverMetrics, nSet?.hoverMetrics)) return false;
   if (!sameArr(pSet?.overviewModules, nSet?.overviewModules)) return false;
+  if (
+    normalizeClientOverviewMetricStyle(pSet?.overviewMetricStyle) !==
+    normalizeClientOverviewMetricStyle(nSet?.overviewMetricStyle)
+  ) {
+    return false;
+  }
   if (!sameArr(pSet?.overviewMetrics, nSet?.overviewMetrics)) return false;
   if (!sameArr(pSet?.stepTableColumns, nSet?.stepTableColumns)) return false;
 
@@ -679,6 +758,12 @@ export function isEquivalentTelemetry(prev, next) {
     Boolean(pWb?.argvUpdatedThisBoot) !== Boolean(nWb?.argvUpdatedThisBoot) ||
     Boolean(pWb?.argvConfigured) !== Boolean(nWb?.argvConfigured) ||
     Boolean(pWb?.launcherConfigured) !== Boolean(nWb?.launcherConfigured) ||
+    Boolean(pWb?.hasReadOnlyShortcuts) !== Boolean(nWb?.hasReadOnlyShortcuts) ||
+    Boolean(pWb?.stalePortDetected) !== Boolean(nWb?.stalePortDetected) ||
+    String(pWb?.targetProduct || 'auto') !== String(nWb?.targetProduct || 'auto') ||
+    Boolean(pWb?.macWrapperExists) !== Boolean(nWb?.macWrapperExists) ||
+    Boolean(pWb?.macDesktopWrapperExists) !== Boolean(nWb?.macDesktopWrapperExists) ||
+    Boolean(pWb?.macIdeWrapperExists) !== Boolean(nWb?.macIdeWrapperExists) ||
     Boolean(pWb?.canRelaunch) !== Boolean(nWb?.canRelaunch) ||
     Number(pWb?.aliveCount || 0) !== Number(nWb?.aliveCount || 0)
   ) {
@@ -710,6 +795,28 @@ export function isEquivalentTelemetry(prev, next) {
     pCloud?.lastSyncError !== nCloud?.lastSyncError ||
     pCloud?.lastUpdateError !== nCloud?.lastUpdateError ||
     pCloud?.lastUpdateResult?.updatedAtMs !== nCloud?.lastUpdateResult?.updatedAtMs
+  ) {
+    return false;
+  }
+
+  const pFx = prev.fxStatus;
+  const nFx = next.fxStatus;
+  if (
+    pFx?.source !== nFx?.source ||
+    pFx?.date !== nFx?.date ||
+    Number(pFx?.fetchedAtMs || 0) !== Number(nFx?.fetchedAtMs || 0) ||
+    Boolean(pFx?.isSyncing) !== Boolean(nFx?.isSyncing) ||
+    (pFx?.lastError || null) !== (nFx?.lastError || null)
+  ) {
+    return false;
+  }
+
+  const pReb = prev.cacheRebuild;
+  const nReb = next.cacheRebuild;
+  if (
+    Boolean(pReb?.active) !== Boolean(nReb?.active) ||
+    Number(pReb?.completed || 0) !== Number(nReb?.completed || 0) ||
+    Number(pReb?.total || 0) !== Number(nReb?.total || 0)
   ) {
     return false;
   }
@@ -1324,6 +1431,13 @@ function readDisplaySteps(payload) {
   };
 }
 
+function clearCachesIfRebuildFinished(prevTelemetry, nextPayload) {
+  if (Boolean(prevTelemetry?.cacheRebuild?.active) && !nextPayload?.cacheRebuild?.active) {
+    clearConsumptionRangeCache();
+    clearConversationViewCache();
+  }
+}
+
 async function requestTelemetry(params, force) {
   const reqSeq = ++latestRequestSeq;
   const reqSettingsRev = settingsRevision;
@@ -1382,6 +1496,7 @@ async function requestTelemetry(params, force) {
     consecutivePollFailures = 0;
 
     let resolvedPayload = reconcileIncomingTelemetrySettings(payload, reqSettingsRev);
+    clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, resolvedPayload);
     syncConsumptionCacheScope(resolvedPayload);
     recordConversationViewToCache(resolvedPayload);
     if (resolvedPayload?.consumption) {
@@ -1450,6 +1565,7 @@ async function requestTelemetry(params, force) {
         return resolvedPayload;
       }
       const finalForcePayload = reconcileIncomingTelemetrySettings(payload, reqSettingsRev);
+      clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, finalForcePayload);
       if (feedbackTimer) clearTimeout(feedbackTimer);
       telemetryStore.setState({
         telemetry: finalForcePayload,
@@ -1490,7 +1606,10 @@ async function requestTelemetry(params, force) {
     if (force) {
       activeForceCount = Math.max(0, activeForceCount - 1);
       if (activeForceCount === 0 && loopActive && loopTickFn && !pollTimer) {
-        pollTimer = setTimeout(loopTickFn, loopIntervalMs);
+        const nextDelay = telemetryStore.getState().telemetry?.cacheRebuild?.active
+          ? Math.min(loopIntervalMs, 800)
+          : loopIntervalMs;
+        pollTimer = setTimeout(loopTickFn, nextDelay);
       }
     }
   }
@@ -1568,6 +1687,7 @@ async function fetchConsumptionRangeSlice({
 
     // 冷启动阶段后端尚无基础快照时会回退返回完整 telemetry，直接平滑复用现有状态合并
     if (payload.consumption) {
+      clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, payload);
       syncConsumptionCacheScope(payload);
       recordConsumptionSliceToCache(payload.consumption, payload.modelBreakdown, {
         customStartMs,
@@ -1728,6 +1848,7 @@ export async function selectConversation(
 
     // 冷启动或全新未入缓存会话回退至完整载荷
     const resolvedPayload = reconcileIncomingTelemetrySettings(payload, reqSettingsRev);
+    clearCachesIfRebuildFinished(telemetryStore.getState().telemetry, resolvedPayload);
     syncConsumptionCacheScope(resolvedPayload);
     lastReceivedSteps = readDisplaySteps(resolvedPayload) || lastReceivedSteps;
     recordConversationViewToCache(resolvedPayload);
@@ -1922,6 +2043,9 @@ export async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepFilterToolbar')) {
     safePatch.showStepFilterToolbar = Boolean(safePatch.showStepFilterToolbar);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'quotaDisplayMode')) {
+    safePatch.quotaDisplayMode = normalizeClientQuotaDisplayMode(safePatch.quotaDisplayMode);
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalQuotaReservation')) {
     safePatch.experimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
       safePatch.experimentalQuotaReservation
@@ -1931,6 +2055,29 @@ export async function saveSettingsPatch(patch) {
     safePatch.accountQuotaRefreshMinutes = normalizeClientAccountQuotaRefreshMinutes(
       safePatch.accountQuotaRefreshMinutes
     );
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'developerModeEnabled')) {
+    safePatch.developerModeEnabled = normalizeDeveloperModeEnabled(safePatch.developerModeEnabled);
+    if (!safePatch.developerModeEnabled) {
+      safePatch.riskyFeaturesEnabled = false;
+      safePatch.accountSwitchRiskAccepted = false;
+      safePatch.contextWindowRiskAccepted = false;
+      safePatch.contextWindowSwarmEnabled = false;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'riskyFeaturesEnabled')) {
+    const effectiveDevMode = Object.prototype.hasOwnProperty.call(safePatch, 'developerModeEnabled')
+      ? safePatch.developerModeEnabled
+      : telemetryStore.getState().telemetry?.settings?.developerModeEnabled === true;
+    safePatch.riskyFeaturesEnabled = normalizeRiskyFeaturesEnabled(
+      safePatch.riskyFeaturesEnabled,
+      effectiveDevMode
+    );
+    if (!safePatch.riskyFeaturesEnabled) {
+      safePatch.accountSwitchRiskAccepted = false;
+      safePatch.contextWindowRiskAccepted = false;
+      safePatch.contextWindowSwarmEnabled = false;
+    }
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'accountSwitchRiskAccepted')) {
     safePatch.accountSwitchRiskAccepted = Boolean(safePatch.accountSwitchRiskAccepted);
@@ -1944,8 +2091,24 @@ export async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverModules')) {
     safePatch.hoverModules = normalizeClientHoverModules(safePatch.hoverModules);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverSyncOverviewMetrics')) {
+    safePatch.hoverSyncOverviewMetrics = normalizeClientHoverSyncOverviewMetrics(
+      safePatch.hoverSyncOverviewMetrics
+    );
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverMetricStyle')) {
+    safePatch.hoverMetricStyle = normalizeClientHoverMetricStyle(safePatch.hoverMetricStyle);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'hoverMetrics')) {
+    safePatch.hoverMetrics = normalizeClientHoverMetrics(safePatch.hoverMetrics);
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'overviewModules')) {
     safePatch.overviewModules = normalizeClientOverviewModules(safePatch.overviewModules);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'overviewMetricStyle')) {
+    safePatch.overviewMetricStyle = normalizeClientOverviewMetricStyle(
+      safePatch.overviewMetricStyle
+    );
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'overviewMetrics')) {
     safePatch.overviewMetrics = normalizeClientOverviewMetrics(safePatch.overviewMetrics);
@@ -1984,13 +2147,18 @@ export async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'contextWindowSwarmEnabled')) {
     safePatch.contextWindowSwarmEnabled = Boolean(safePatch.contextWindowSwarmEnabled);
   }
-  if (Object.prototype.hasOwnProperty.call(safePatch, 'orchestratorIdMode')) {
-    safePatch.orchestratorIdMode = normalizeClientOrchestratorIdMode(safePatch.orchestratorIdMode);
-  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'standalonePort')) {
     const numPort = Number(safePatch.standalonePort);
     safePatch.standalonePort =
       Number.isInteger(numPort) && numPort >= 1024 && numPort <= 65535 ? numPort : 0;
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'autoConfigureLaunch')) {
+    safePatch.autoConfigureLaunch = normalizeAutoConfigureLaunch(safePatch.autoConfigureLaunch);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'enableRemoteSshTelemetry')) {
+    safePatch.enableRemoteSshTelemetry = normalizeEnableRemoteSshTelemetry(
+      safePatch.enableRemoteSshTelemetry
+    );
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'windowMountMode')) {
     const normMount = normalizeClientWindowMountMode(
@@ -2168,8 +2336,11 @@ export async function rebuildTrajectoryCache() {
   const res = await callSidecarApi('/api/cache/rebuild', { method: 'POST', body: {} });
   clearConsumptionRangeCache();
   clearConversationViewCache();
-  await fetchTelemetry({ force: true });
-  return res;
+  const latestTelemetry = await fetchTelemetry({ force: true });
+  return {
+    ...(res && typeof res === 'object' ? res : {}),
+    cacheRebuild: latestTelemetry?.cacheRebuild || null,
+  };
 }
 
 export async function triggerCloudSync() {
@@ -2180,16 +2351,69 @@ export async function triggerCloudSync() {
   return res;
 }
 
-export async function triggerBridgeHostRelaunch() {
+export async function triggerFxSync() {
+  let res;
   try {
-    return await callSidecarApi('/api/bridge/relaunch', { method: 'POST', body: {} });
+    res = await callSidecarApi('/api/fx-sync', { method: 'POST', body: {} });
   } catch {
-    // 兼容热更新后常驻父进程 main.mjs 尚未重注册新路由的场景，平滑回退至既有 POST /api/settings 通道转发至最新 Worker
-    return callSidecarApi('/api/settings', {
+    res = await callSidecarApi('/api/settings', {
       method: 'POST',
-      body: { __bridgeAction: 'relaunch' },
+      body: { __fxAction: 'sync' },
     });
   }
+  if (res?.fxStatus) {
+    const cur = telemetryStore.getState().telemetry;
+    if (cur) {
+      telemetryStore.setState({
+        telemetry: { ...cur, fxStatus: res.fxStatus },
+      });
+    }
+  }
+  return res;
+}
+
+export const normalizeClientAutoConfigureLaunch = normalizeAutoConfigureLaunch;
+export const normalizeClientEnableRemoteSshTelemetry = normalizeEnableRemoteSshTelemetry;
+
+export async function triggerBridgeHostRelaunch(options = {}) {
+  const payload =
+    options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+  let res;
+  try {
+    res = await callSidecarApi('/api/bridge/relaunch', { method: 'POST', body: payload });
+  } catch {
+    // 兼容热更新后常驻父进程 main.mjs 尚未重注册新路由的场景，平滑回退至既有 POST /api/settings 通道转发至最新 Worker
+    res = await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { ...payload, __bridgeAction: 'relaunch' },
+    });
+  }
+  if (
+    payload.action === 'create_macos_wrapper' ||
+    payload.action === 'remove_macos_wrapper'
+  ) {
+    const cur = telemetryStore.getState().telemetry;
+    if (cur && res && typeof res === 'object' && typeof res.macWrapperExists === 'boolean') {
+      telemetryStore.setState({
+        telemetry: {
+          ...cur,
+          windowBridge: {
+            ...(cur.windowBridge || {}),
+            macWrapperExists: res.macWrapperExists,
+            ...(typeof res.macDesktopWrapperExists === 'boolean'
+              ? { macDesktopWrapperExists: res.macDesktopWrapperExists }
+              : {}),
+            ...(typeof res.macIdeWrapperExists === 'boolean'
+              ? { macIdeWrapperExists: res.macIdeWrapperExists }
+              : {}),
+            macWrapperPaths: Array.isArray(res.macWrapperPaths) ? res.macWrapperPaths : [],
+          },
+        },
+      });
+    }
+    void fetchTelemetry({ force: true }).catch(() => {});
+  }
+  return res;
 }
 
 export async function triggerCliStatusLineAction(action) {
@@ -2251,6 +2475,94 @@ export async function executeSessionMigration(payload) {
   return res;
 }
 
+function isUnregisteredSessionRouteError(err) {
+  if (!err || Number(err.httpStatus) !== 404) return false;
+  if (err.data && typeof err.data === 'object' && err.data.ok === false) return false;
+  const msg = String(err.message || '').trim();
+  return /^(?:not found|http 404|unknown.*route)$/i.test(msg);
+}
+
+async function callSessionManagerEndpoint(path, method, fallbackAction, payload = undefined) {
+  try {
+    return await callSidecarApi(path, {
+      method,
+      ...(method === 'POST' ? { body: payload || {} } : {}),
+    });
+  } catch (err) {
+    if (!isUnregisteredSessionRouteError(err)) {
+      if (err?.data && typeof err.data === 'object' && err.data.ok === false) {
+        return err.data;
+      }
+      throw err;
+    }
+  }
+  try {
+    return await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: {
+        __sessionManagerAction: fallbackAction,
+        ...(payload !== undefined ? { payload } : {}),
+      },
+    });
+  } catch (fallbackErr) {
+    if (
+      fallbackErr?.data &&
+      typeof fallbackErr.data === 'object' &&
+      fallbackErr.data.ok === false
+    ) {
+      return fallbackErr.data;
+    }
+    throw fallbackErr;
+  }
+}
+
+export async function fetchLocalSessionsList() {
+  return callSessionManagerEndpoint('/api/sessions/list', 'GET', 'list');
+}
+
+export async function fetchSessionCleanupPreview(payload) {
+  return callSessionManagerEndpoint(
+    '/api/sessions/cleanup-preview',
+    'POST',
+    'cleanup_preview',
+    payload || {}
+  );
+}
+
+export async function deleteLocalSessionsAction(payload) {
+  const res = await callSessionManagerEndpoint(
+    '/api/sessions/delete',
+    'POST',
+    'delete',
+    payload || {}
+  );
+  if (res?.deletedCount > 0 || (res?.ledgerRedaction?.redactedConversations || 0) > 0) {
+    void fetchTelemetry({ force: true }).catch(() => {});
+  }
+  return res;
+}
+
+export async function redactLocalLedgerPrivacy() {
+  const res = await callSessionManagerEndpoint(
+    '/api/sessions/redact-ledger',
+    'POST',
+    'redact_ledger',
+    {}
+  );
+  if ((res?.redactedConversations || 0) > 0 || (res?.redactedSteps || 0) > 0) {
+    void fetchTelemetry({ force: true }).catch(() => {});
+  }
+  return res;
+}
+
+export async function revealLocalSessionPathAction(targetPath, context = undefined) {
+  return callSessionManagerEndpoint('/api/sessions/reveal', 'POST', 'reveal', {
+    path: String(targetPath || ''),
+    ...(context?.clientId ? { clientId: String(context.clientId) } : {}),
+    ...(context?.sessionId ? { sessionId: String(context.sessionId) } : {}),
+  });
+}
+
 export async function triggerPluginUpdate() {
   const res = await callSidecarApi('/api/plugin-update', { method: 'POST', body: {} });
   if (res?.ok && res?.restarting) {
@@ -2274,6 +2586,9 @@ export function startAsyncTelemetryLoop(intervalMs = 2000) {
   loopIntervalMs = intervalMs;
 
   const resolveNextDelay = () => {
+    if (telemetryStore.getState().telemetry?.cacheRebuild?.active) {
+      return Math.min(loopIntervalMs, 800);
+    }
     if (isWindowOverlayMode() && typeof document !== 'undefined' && document.hidden) {
       return Math.max(loopIntervalMs, 8000);
     }

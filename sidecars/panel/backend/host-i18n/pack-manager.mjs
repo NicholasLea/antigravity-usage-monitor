@@ -22,6 +22,7 @@ import {
 import { DATA_DIR, OFFICIAL_GITHUB_REPO, detectCustomGitForkRepo } from '../config.mjs';
 import { writeJsonAtomicSync, writeTextFileAtomicSync } from '../fs-atomic.mjs';
 import { isPlainObject } from '../http-helpers.mjs';
+import { compareSemver, isValidSemver } from '../pricing-catalog.mjs';
 import { fetchHostI18nTextWithFallback } from './http-fetch.mjs';
 
 export const DEFAULT_HOST_I18N_REF = 'main';
@@ -32,6 +33,21 @@ const HOST_I18N_UNSAFE_REGEX_RE = /\([^)]*[+*][^)]*\)[+*{]/;
 
 function hostI18nSha256(text) {
   return createHash('sha256').update(String(text || ''), 'utf8').digest('hex');
+}
+
+/**
+ * 按 SemVer 2.0 判断远端语言包版本是否严格高于本地已安装版本，防止旧版远端清单触发降级覆盖。
+ *
+ * @param {string} remoteVersion
+ * @param {string} installedVersion
+ * @returns {boolean}
+ */
+export function isRemoteHostI18nPackNewer(remoteVersion, installedVersion) {
+  const remote = String(remoteVersion || '').trim();
+  const local = String(installedVersion || '').trim();
+  if (!remote || !isValidSemver(remote)) return false;
+  if (!local || !isValidSemver(local)) return true;
+  return compareSemver(remote, local) > 0;
 }
 
 function hostI18nResolveStoragePaths(baseDataDir = DATA_DIR) {
@@ -545,7 +561,7 @@ export function createHostI18nPackManager(options = {}) {
     return inFlightManifest;
   }
 
-  async function installPack(rawLocale, { forceManifestRefresh = false } = {}) {
+  async function installPack(rawLocale, { forceManifestRefresh = false, allowDowngrade = false } = {}) {
     const locale = normalizeHostI18nLocale(rawLocale);
     if (locale === HOST_I18N_OFF_LOCALE) {
       throw new Error('Cannot install pack for "off" locale');
@@ -569,6 +585,28 @@ export function createHostI18nPackManager(options = {}) {
         );
       }
 
+      const existingPack = loadInstalledPack(locale);
+      const existingMeta = loadInstalledMeta()[locale] || null;
+      const existingVersion = existingPack?.pack?.version || existingMeta?.version || '';
+      if (
+        existingPack &&
+        !allowDowngrade &&
+        existingVersion &&
+        !isRemoteHostI18nPackNewer(entry.version, existingVersion)
+      ) {
+        return {
+          ok: true,
+          locale,
+          updated: false,
+          alreadyUpToDate: true,
+          version: existingVersion,
+          remoteVersion: entry.version,
+          sha256: existingPack.sha256,
+          bytes: existingPack.bytes,
+          source: 'local-cache',
+        };
+      }
+
       const res = await fetchAssetText(entry.file);
       const actualHash = hostI18nSha256(res.text);
       if (actualHash !== entry.sha256) {
@@ -578,6 +616,25 @@ export function createHostI18nPackManager(options = {}) {
       }
 
       const pack = sanitizeHostI18nPack(JSON.parse(res.text), locale);
+      if (
+        existingPack &&
+        !allowDowngrade &&
+        existingVersion &&
+        !isRemoteHostI18nPackNewer(pack.version, existingVersion)
+      ) {
+        return {
+          ok: true,
+          locale,
+          updated: false,
+          alreadyUpToDate: true,
+          version: existingVersion,
+          remoteVersion: pack.version,
+          sha256: existingPack.sha256,
+          bytes: existingPack.bytes,
+          source: 'local-cache',
+        };
+      }
+
       mkdirSync(paths.packsDir, { recursive: true });
       const targetPath = getPackFilePath(locale);
       writeTextFileAtomicSync(targetPath, res.text);
@@ -595,13 +652,15 @@ export function createHostI18nPackManager(options = {}) {
       };
       saveInstalledMeta(meta);
       cachedPacks.delete(locale);
-    if (cachedCompiledRuntime?.payload?.locale === locale) {
-      cachedCompiledRuntime = null;
-    }
+      if (cachedCompiledRuntime?.payload?.locale === locale) {
+        cachedCompiledRuntime = null;
+      }
       const loaded = loadInstalledPack(locale);
       return {
         ok: true,
         locale,
+        updated: true,
+        alreadyUpToDate: false,
         version: pack.version,
         sha256: actualHash,
         bytes: loaded?.bytes || meta[locale].bytes,
@@ -732,7 +791,9 @@ export function createHostI18nPackManager(options = {}) {
         installedVersion,
         installedBytes: localPack?.bytes || localInfo?.bytes || 0,
         downloadedAtMs: localInfo?.downloadedAtMs || 0,
-        updateAvailable: Boolean(installed && installedSha && installedSha !== remote.sha256),
+        updateAvailable: Boolean(
+          installed && isRemoteHostI18nPackNewer(remote.version, installedVersion)
+        ),
       });
     }
 

@@ -8,6 +8,7 @@ import { defineComponent } from '../../core/component.js';
 import { h, patchAttr, patchClasses, patchText } from '../../core/domPatch.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 import { setI18nLanguage, t } from '../../i18n/index.js';
+import { isRiskyFeaturesGateOpen } from '../../../shared/settings-normalization.mjs';
 import {
   buildExportableSettingsJson,
   parseImportedSettingsJson,
@@ -18,18 +19,19 @@ import {
 } from '../../core/fileExportClient.js';
 import {
   fetchQuotaReservationLog,
+  normalizeClientAutoConfigureLaunch,
+  normalizeClientEnableRemoteSshTelemetry,
   normalizeClientExperimentalQuotaReservation,
   normalizeClientModelDisplayMode,
-  normalizeClientOrchestratorIdMode,
   rebuildTrajectoryCache,
   resetAllSettings,
   saveModelContextWindow,
   saveSettingsPatch,
+  triggerBridgeHostRelaunch,
 } from '../../store/telemetryStore.js';
 import { CustomSelect } from '../../components/ui/CustomSelect.js';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch.js';
 import { BridgeStatusNotice } from '../../components/settings/BridgeStatusNotice.js';
-import { SessionMigrationCard } from '../../components/settings/SessionMigrationCard.js';
 
 function formatQuotaReservationLogForClipboard(snapshot) {
   const safe = snapshot && typeof snapshot === 'object' ? snapshot : {};
@@ -55,19 +57,16 @@ function getStepModelDisplayOptions() {
   ];
 }
 
-function getOrchestratorIdDisplayOptions() {
-  return [
-    { value: 'compact', label: t('settings.oth.orchCompact') },
-    { value: 'full', label: t('settings.oth.orchFull') },
-  ];
-}
-
 export const SettingsOtherTab = defineComponent({
   name: 'SettingsOtherTab',
   setup({ onCleanup, getProps }) {
     let draftModelDisplayMode = 'short';
-    let draftOrchestratorIdMode = 'compact';
+    let draftAutoConfigureLaunch = true;
+    let draftEnableRemoteSshTelemetry = true;
     let draftExperimentalQuotaReservation = true;
+    let draftDeveloperModeEnabled = false;
+    let draftRiskyFeaturesEnabled = false;
+    let savingDeveloperGate = false;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
     let draftContextMainEnabled = true;
@@ -76,22 +75,31 @@ export const SettingsOtherTab = defineComponent({
     let latestSettings = null;
     let latestWindowBridge = null;
     let latestCloudCodeProxy = null;
+    let latestCacheRebuild = null;
     let latestHostPlatform = 'win32';
     let contextWindowModels = [];
     let contextModelId = '';
     let savingContextWindow = false;
     let contextFeedback = '';
     let modelTimer = null;
+    let hostTimer = null;
     let expTimer = null;
+    let devTimer = null;
     let maintTimer = null;
     let resetConfirmTimer = null;
     let resetConfirmArmed = false;
     let isRebuilding = false;
+    let wasBackgroundRebuilding = false;
     let isResetting = false;
+    let isRemovingMacWrapper = false;
 
     const modelStatusText = h('span', {
       className: 'text-muted',
       style: 'font-size: var(--fs-md);',
+      text: '',
+    });
+    const hostStatusText = h('span', {
+      className: 'text-muted settings-panel-status',
       text: '',
     });
     const expStatusText = h('span', {
@@ -99,10 +107,30 @@ export const SettingsOtherTab = defineComponent({
       style: 'font-size: var(--fs-md);',
       text: '',
     });
+    const devStatusText = h('span', {
+      className: 'text-muted settings-panel-status',
+      text: '',
+    });
     const maintStatusText = h('span', {
       className: 'text-muted settings-panel-status',
       text: '',
     });
+
+    function showDevFeedback(text, autoClearMs = 1500) {
+      if (devTimer) {
+        clearTimeout(devTimer);
+        devTimer = null;
+      }
+      patchText(devStatusText, text);
+      patchAttr(devStatusText, 'title', text || null);
+      if (text && autoClearMs > 0) {
+        devTimer = setTimeout(() => {
+          devTimer = null;
+          patchText(devStatusText, '');
+          patchAttr(devStatusText, 'title', null);
+        }, autoClearMs);
+      }
+    }
 
     function showExpFeedback(text, autoClearMs = 1500) {
       if (expTimer) {
@@ -148,18 +176,27 @@ export const SettingsOtherTab = defineComponent({
       }
     }
 
+    function showHostFeedback(text, autoClearMs = 1800) {
+      if (hostTimer) {
+        clearTimeout(hostTimer);
+        hostTimer = null;
+      }
+      patchText(hostStatusText, text);
+      patchAttr(hostStatusText, 'title', text || null);
+      if (text && autoClearMs > 0) {
+        hostTimer = setTimeout(() => {
+          hostTimer = null;
+          patchText(hostStatusText, '');
+          patchAttr(hostStatusText, 'title', null);
+        }, autoClearMs);
+      }
+    }
+
     // --- Card 1: 模型标识显示 ---
     const modelCardTitleEl = h('span', { text: t('settings.oth.modelTitle') });
-    const modelFormatLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.oth.modelFormat'),
-    });
-    const orchFormatLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.oth.orchFormat'),
-    });
 
     const stepModelSelect = CustomSelect({
+      ariaLabel: t('settings.oth.modelTitle'),
       modelValue: 'short',
       icon: 'table',
       options: getStepModelDisplayOptions(),
@@ -181,25 +218,6 @@ export const SettingsOtherTab = defineComponent({
       },
     });
 
-    const orchestratorIdSelect = CustomSelect({
-      modelValue: 'compact',
-      icon: 'layers',
-      options: getOrchestratorIdDisplayOptions(),
-      onUpdateModelValue: async (val) => {
-        const nextMode = normalizeClientOrchestratorIdMode(val);
-        draftOrchestratorIdMode = nextMode;
-        orchestratorIdSelect.setValue(nextMode);
-        showModelFeedback(t('settings.saving'), 0);
-        try {
-          await saveSettingsPatch({ orchestratorIdMode: nextMode });
-          showModelFeedback(t('settings.saved'), 1500);
-        } catch {
-          if (latestSettings) renderSettings(latestSettings);
-          showModelFeedback(t('settings.saveFailed'), 2500);
-        }
-      },
-    });
-
     const modelPanel = h('section', { className: 'panel' }, [
       h('div', { className: 'panel-header' }, [
         h('span', { className: 'panel-title' }, [
@@ -208,8 +226,145 @@ export const SettingsOtherTab = defineComponent({
         ]),
         modelStatusText,
       ]),
-      h('div', { className: 'form-row' }, [modelFormatLabelEl, stepModelSelect.el]),
-      h('div', { className: 'form-row' }, [orchFormatLabelEl, orchestratorIdSelect.el]),
+      stepModelSelect.el,
+    ]);
+
+    // --- Card 1.5: 宿主启动自愈与 IDE Remote-SSH ---
+    const hostPanelTitleEl = h('span', { text: t('settings.oth.hostTitle') });
+    const autoLaunchLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.autoLaunchLabel'),
+    });
+    const autoLaunchDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.autoLaunchDesc'),
+    });
+    const autoLaunchToggle = ToggleSwitch({
+      modelValue: 'on',
+      ariaLabelKey: 'settings.oth.autoLaunchLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        const nextEnabled = val === 'on';
+        draftAutoConfigureLaunch = nextEnabled;
+        autoLaunchToggle.setProps({ modelValue: nextEnabled ? 'on' : 'off' });
+        showHostFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ autoConfigureLaunch: nextEnabled });
+          showHostFeedback(t('settings.saved'), 1500);
+        } catch {
+          if (latestSettings) renderSettings(latestSettings);
+          showHostFeedback(t('settings.saveFailed'), 2500);
+        }
+      },
+    });
+
+    const remoteSshLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.remoteSshLabel'),
+    });
+    const remoteSshDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.remoteSshDesc'),
+    });
+    const remoteSshToggle = ToggleSwitch({
+      modelValue: 'on',
+      ariaLabelKey: 'settings.oth.remoteSshLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        const nextEnabled = val === 'on';
+        draftEnableRemoteSshTelemetry = nextEnabled;
+        remoteSshToggle.setProps({ modelValue: nextEnabled ? 'on' : 'off' });
+        showHostFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ enableRemoteSshTelemetry: nextEnabled });
+          showHostFeedback(t('settings.saved'), 1500);
+        } catch {
+          if (latestSettings) renderSettings(latestSettings);
+          showHostFeedback(t('settings.saveFailed'), 2500);
+        }
+      },
+    });
+
+    const macWrapperLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.macWrapperLabel'),
+    });
+    const macWrapperDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.macWrapperDesc'),
+    });
+    const macWrapperRemoveBtnText = h('span', {
+      text: t('settings.oth.macRemoveWrapperBtn'),
+    });
+    const macWrapperRemoveBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary',
+        onClick: async () => {
+          if (isRemovingMacWrapper) return;
+          isRemovingMacWrapper = true;
+          patchAttr(macWrapperRemoveBtn, 'disabled', true);
+          showHostFeedback(t('settings.saving'), 0);
+          try {
+            const res = await triggerBridgeHostRelaunch({
+              action: 'remove_macos_wrapper',
+              product: 'both',
+            });
+            if (res && res.ok !== false) {
+              latestWindowBridge = {
+                ...(latestWindowBridge || {}),
+                macWrapperExists: Boolean(res.macWrapperExists),
+                macWrapperPaths: Array.isArray(res.macWrapperPaths) ? res.macWrapperPaths : [],
+              };
+              syncHostIntegrationRows();
+              showHostFeedback(t('settings.oth.macWrapperRemovedDone'), 2500);
+            } else {
+              showHostFeedback(t('settings.saveFailed'), 2500);
+            }
+          } catch {
+            showHostFeedback(t('settings.saveFailed'), 2500);
+          } finally {
+            isRemovingMacWrapper = false;
+            patchAttr(macWrapperRemoveBtn, 'disabled', false);
+          }
+        },
+      },
+      [createSvgIcon('close', { size: 12 }), macWrapperRemoveBtnText]
+    );
+    const macWrapperCleanRow = h(
+      'div',
+      { className: 'settings-action-block', hidden: true },
+      [
+        h('div', { className: 'settings-action-info' }, [macWrapperLabelEl, macWrapperDescEl]),
+        macWrapperRemoveBtn,
+      ]
+    );
+
+    function syncHostIntegrationRows() {
+      const showMacClean =
+        String(latestHostPlatform || '').toLowerCase() === 'darwin' &&
+        Boolean(latestWindowBridge?.macWrapperExists);
+      patchAttr(macWrapperCleanRow, 'hidden', !showMacClean);
+    }
+
+    const hostIntegrationPanel = h('section', { className: 'panel' }, [
+      h('div', { className: 'panel-header settings-panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('terminal', { size: 13 }),
+          hostPanelTitleEl,
+        ]),
+        hostStatusText,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [autoLaunchLabelEl, autoLaunchDescEl]),
+        autoLaunchToggle.el,
+      ]),
+      h('div', { className: 'settings-action-block' }, [
+        h('div', { className: 'settings-action-info' }, [remoteSshLabelEl, remoteSshDescEl]),
+        remoteSshToggle.el,
+      ]),
+      macWrapperCleanRow,
     ]);
 
     // --- Card 2: 试验性功能 ---
@@ -315,6 +470,154 @@ export const SettingsOtherTab = defineComponent({
         ]),
         exportReserveLogBtn,
       ]),
+    ]);
+
+    // --- Card 2.5: 开发者选项与高风险功能双层开关 ---
+    const devTitleEl = h('span', { text: t('settings.oth.devTitle') });
+    const devModeLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.devModeLabel'),
+    });
+    const riskyFeaturesLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.riskyFeaturesLabel'),
+    });
+    const riskyFeaturesDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.riskyFeaturesDesc'),
+    });
+
+    const developerModeToggle = ToggleSwitch({
+      modelValue: 'off',
+      ariaLabelKey: 'settings.oth.devModeLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        if (savingDeveloperGate) return;
+        const nextDev = val === 'on';
+        const prevDev = draftDeveloperModeEnabled;
+        const prevRisky = draftRiskyFeaturesEnabled;
+        const prevCtxRisk = draftContextRiskAccepted;
+        const prevSwarm = draftContextSwarmEnabled;
+        const prevSettings = latestSettings;
+        savingDeveloperGate = true;
+        draftDeveloperModeEnabled = nextDev;
+        if (!nextDev) {
+          draftRiskyFeaturesEnabled = false;
+          draftContextRiskAccepted = false;
+          draftContextSwarmEnabled = false;
+          latestSettings = {
+            ...(latestSettings || {}),
+            developerModeEnabled: false,
+            riskyFeaturesEnabled: false,
+            accountSwitchRiskAccepted: false,
+            contextWindowRiskAccepted: false,
+            contextWindowSwarmEnabled: false,
+          };
+        } else {
+          latestSettings = { ...(latestSettings || {}), developerModeEnabled: true };
+        }
+        renderDeveloperOptions();
+        renderContextWindows();
+        showDevFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ developerModeEnabled: nextDev });
+          showDevFeedback(t('settings.saved'), 1500);
+        } catch {
+          draftDeveloperModeEnabled = prevDev;
+          draftRiskyFeaturesEnabled = prevRisky;
+          draftContextRiskAccepted = prevCtxRisk;
+          draftContextSwarmEnabled = prevSwarm;
+          latestSettings = prevSettings;
+          showDevFeedback(t('settings.saveFailed'), 2500);
+        } finally {
+          savingDeveloperGate = false;
+          renderDeveloperOptions();
+          renderContextWindows();
+        }
+      },
+    });
+
+    const riskyFeaturesToggle = ToggleSwitch({
+      modelValue: 'off',
+      ariaLabelKey: 'settings.oth.riskyFeaturesLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        if (savingDeveloperGate || !draftDeveloperModeEnabled) return;
+        const nextRisky = val === 'on';
+        const prevRisky = draftRiskyFeaturesEnabled;
+        const prevCtxRisk = draftContextRiskAccepted;
+        const prevSwarm = draftContextSwarmEnabled;
+        const prevSettings = latestSettings;
+        savingDeveloperGate = true;
+        draftRiskyFeaturesEnabled = nextRisky;
+        if (!nextRisky) {
+          draftContextRiskAccepted = false;
+          draftContextSwarmEnabled = false;
+          latestSettings = {
+            ...(latestSettings || {}),
+            riskyFeaturesEnabled: false,
+            accountSwitchRiskAccepted: false,
+            contextWindowRiskAccepted: false,
+            contextWindowSwarmEnabled: false,
+          };
+        } else {
+          latestSettings = { ...(latestSettings || {}), riskyFeaturesEnabled: true };
+        }
+        renderDeveloperOptions();
+        renderContextWindows();
+        showDevFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ riskyFeaturesEnabled: nextRisky });
+          showDevFeedback(t('settings.saved'), 1500);
+        } catch {
+          draftRiskyFeaturesEnabled = prevRisky;
+          draftContextRiskAccepted = prevCtxRisk;
+          draftContextSwarmEnabled = prevSwarm;
+          latestSettings = prevSettings;
+          showDevFeedback(t('settings.saveFailed'), 2500);
+        } finally {
+          savingDeveloperGate = false;
+          renderDeveloperOptions();
+          renderContextWindows();
+        }
+      },
+    });
+
+    const devModeRow = h('div', { className: 'settings-action-block settings-dev-mode-row' }, [
+      h('div', { className: 'settings-action-info' }, [devModeLabelEl]),
+      developerModeToggle.el,
+    ]);
+    const riskyFeaturesRow = h(
+      'div',
+      { className: 'settings-action-block settings-risky-features-row', hidden: true },
+      [
+        h('div', { className: 'settings-action-info' }, [
+          riskyFeaturesLabelEl,
+          riskyFeaturesDescEl,
+        ]),
+        riskyFeaturesToggle.el,
+      ]
+    );
+
+    function renderDeveloperOptions() {
+      const devEnabled = Boolean(draftDeveloperModeEnabled);
+      const riskyEnabled = devEnabled && Boolean(draftRiskyFeaturesEnabled);
+      developerModeToggle.setProps({ modelValue: devEnabled ? 'on' : 'off' });
+      riskyFeaturesToggle.setProps({ modelValue: riskyEnabled ? 'on' : 'off' });
+      patchAttr(riskyFeaturesRow, 'hidden', !devEnabled);
+      getProps().onLayoutChange?.();
+    }
+
+    const developerPanel = h('section', { className: 'panel settings-developer-panel' }, [
+      h('div', { className: 'panel-header settings-panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('terminal', { size: 13 }),
+          devTitleEl,
+        ]),
+        devStatusText,
+      ]),
+      devModeRow,
+      riskyFeaturesRow,
     ]);
 
     // --- Card 2: 按模型设置上下文窗口 ---
@@ -451,7 +754,16 @@ export const SettingsOtherTab = defineComponent({
         type: 'button',
         className: 'btn-secondary btn-danger-confirm ctx-risk-accept-btn',
         onClick: async () => {
-          if (acceptingContextRisk || draftContextRiskAccepted) return;
+          if (
+            acceptingContextRisk ||
+            draftContextRiskAccepted ||
+            !isRiskyFeaturesGateOpen({
+              developerModeEnabled: draftDeveloperModeEnabled,
+              riskyFeaturesEnabled: draftRiskyFeaturesEnabled,
+            })
+          ) {
+            return;
+          }
           acceptingContextRisk = true;
           draftContextRiskAccepted = true;
           latestSettings = { ...(latestSettings || {}), contextWindowRiskAccepted: true };
@@ -491,7 +803,12 @@ export const SettingsOtherTab = defineComponent({
     const ctxRiskStage = h('div', { className: 'ctx-risk-stage' }, [ctxControlsBody, ctxRiskMask]);
 
     function renderContextWindows() {
-      const unlocked = Boolean(draftContextRiskAccepted);
+      const gateOpen = isRiskyFeaturesGateOpen({
+        developerModeEnabled: draftDeveloperModeEnabled,
+        riskyFeaturesEnabled: draftRiskyFeaturesEnabled,
+      });
+      patchAttr(baselinePanel, 'hidden', !gateOpen);
+      const unlocked = gateOpen && Boolean(draftContextRiskAccepted);
       if (!unlocked) {
         ctxModelSelect.close();
         ctxWindowSelect.close();
@@ -614,7 +931,7 @@ export const SettingsOtherTab = defineComponent({
       getProps().onLayoutChange?.();
     }
 
-    const baselinePanel = h('section', { className: 'panel' }, [
+    const baselinePanel = h('section', { className: 'panel settings-context-panel', hidden: true }, [
       h('div', { className: 'panel-header settings-panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('layers', { size: 13 }),
@@ -624,6 +941,7 @@ export const SettingsOtherTab = defineComponent({
       ]),
       ctxRiskStage,
     ]);
+    renderDeveloperOptions();
     renderContextWindows();
 
     // --- Card 3: 缓存与重置 ---
@@ -637,6 +955,14 @@ export const SettingsOtherTab = defineComponent({
       text: t('settings.oth.cacheDesc'),
     });
 
+    function formatRebuildProgressLabel(reb) {
+      const total = Number(reb?.total || 0);
+      const completed = Math.min(total, Math.max(0, Number(reb?.completed || 0)));
+      return total > 0
+        ? t('settings.oth.rebuildingProgress', { completed, total })
+        : t('settings.oth.rebuildingBtn');
+    }
+
     const rebuildBtnText = h('span', { text: t('settings.oth.rebuildBtn') });
     const rebuildCacheBtn = h(
       'button',
@@ -644,7 +970,7 @@ export const SettingsOtherTab = defineComponent({
         type: 'button',
         className: 'btn-secondary',
         onClick: async () => {
-          if (isRebuilding) return;
+          if (isRebuilding || latestCacheRebuild?.active) return;
           isRebuilding = true;
           patchAttr(rebuildCacheBtn, 'disabled', true);
           patchText(rebuildBtnText, t('settings.oth.rebuildingBtn'));
@@ -652,21 +978,52 @@ export const SettingsOtherTab = defineComponent({
           try {
             const res = await rebuildTrajectoryCache();
             if (res?.ok !== false) {
-              showMaintFeedback(t('settings.oth.rebuildDone'), 2800);
+              if (res?.cacheRebuild) {
+                latestCacheRebuild = res.cacheRebuild;
+              }
+              if (latestCacheRebuild?.active) {
+                wasBackgroundRebuilding = true;
+                showMaintFeedback(formatRebuildProgressLabel(latestCacheRebuild), 0);
+              } else {
+                wasBackgroundRebuilding = false;
+                showMaintFeedback(t('settings.oth.rebuildDone'), 2800);
+              }
             } else {
+              wasBackgroundRebuilding = false;
               showMaintFeedback(t('settings.oth.rebuildFailed'), 3000);
             }
           } catch {
+            wasBackgroundRebuilding = false;
             showMaintFeedback(t('settings.oth.rebuildFailed'), 3000);
           } finally {
             isRebuilding = false;
-            patchAttr(rebuildCacheBtn, 'disabled', false);
-            patchText(rebuildBtnText, t('settings.oth.rebuildBtn'));
+            syncRebuildButtonState();
           }
         },
       },
       [createSvgIcon('refresh', { size: 12 }), rebuildBtnText]
     );
+
+    function syncRebuildButtonState() {
+      const bgActive = Boolean(latestCacheRebuild?.active);
+      const busy = isRebuilding || bgActive;
+      patchAttr(rebuildCacheBtn, 'disabled', busy);
+      patchText(
+        rebuildBtnText,
+        busy
+          ? bgActive
+            ? formatRebuildProgressLabel(latestCacheRebuild)
+            : t('settings.oth.rebuildingBtn')
+          : t('settings.oth.rebuildBtn')
+      );
+      if (bgActive) {
+        wasBackgroundRebuilding = true;
+        showMaintFeedback(formatRebuildProgressLabel(latestCacheRebuild), 0);
+      } else if (wasBackgroundRebuilding && !isRebuilding) {
+        wasBackgroundRebuilding = false;
+        showMaintFeedback(t('settings.oth.rebuildDone'), 2800);
+      }
+    }
 
     const resetLabelEl = h('span', {
       className: 'settings-action-title',
@@ -853,18 +1210,13 @@ export const SettingsOtherTab = defineComponent({
       ]),
     ]);
 
-    const sessionMigrationCard = SessionMigrationCard({
-      onLayoutChange: () => {
-        getProps()?.onLayoutChange?.();
-      },
-    });
-
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       modelPanel,
+      hostIntegrationPanel,
       experimentalPanel,
+      developerPanel,
       baselinePanel,
       maintPanel,
-      sessionMigrationCard.el,
     ]);
 
     function renderSettings(
@@ -872,7 +1224,8 @@ export const SettingsOtherTab = defineComponent({
       models = contextWindowModels,
       windowBridge = latestWindowBridge,
       hostPlatform = latestHostPlatform,
-      cloudCodeProxy = latestCloudCodeProxy
+      cloudCodeProxy = latestCloudCodeProxy,
+      cacheRebuild = latestCacheRebuild
     ) {
       if (!settings) return;
       latestSettings = settings;
@@ -880,40 +1233,73 @@ export const SettingsOtherTab = defineComponent({
       if (windowBridge !== undefined) latestWindowBridge = windowBridge;
       if (hostPlatform) latestHostPlatform = hostPlatform;
       if (cloudCodeProxy !== undefined) latestCloudCodeProxy = cloudCodeProxy;
+      if (cacheRebuild !== undefined) latestCacheRebuild = cacheRebuild;
+      syncRebuildButtonState();
       draftModelDisplayMode = normalizeClientModelDisplayMode(
         settings.modelDisplayMode,
         settings.showUpstreamModel
       );
-      draftOrchestratorIdMode = normalizeClientOrchestratorIdMode(settings.orchestratorIdMode);
+      draftAutoConfigureLaunch = normalizeClientAutoConfigureLaunch(settings.autoConfigureLaunch);
+      draftEnableRemoteSshTelemetry = normalizeClientEnableRemoteSshTelemetry(
+        settings.enableRemoteSshTelemetry
+      );
       draftExperimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
         settings.experimentalQuotaReservation
       );
+      if (!savingDeveloperGate) {
+        draftDeveloperModeEnabled = settings.developerModeEnabled === true;
+        draftRiskyFeaturesEnabled =
+          draftDeveloperModeEnabled && settings.riskyFeaturesEnabled === true;
+      }
       if (!acceptingContextRisk) {
-        draftContextRiskAccepted = Boolean(settings.contextWindowRiskAccepted);
+        draftContextRiskAccepted =
+          draftDeveloperModeEnabled &&
+          draftRiskyFeaturesEnabled &&
+          Boolean(settings.contextWindowRiskAccepted);
       }
       if (!savingContextScope) {
         draftContextMainEnabled = settings.contextWindowMainEnabled !== false;
-        draftContextSwarmEnabled = settings.contextWindowSwarmEnabled === true;
+        draftContextSwarmEnabled =
+          draftDeveloperModeEnabled &&
+          draftRiskyFeaturesEnabled &&
+          settings.contextWindowSwarmEnabled === true;
       }
       stepModelSelect.setProps({
+        ariaLabel: t('settings.oth.modelTitle'),
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
-      orchestratorIdSelect.setProps({
-        modelValue: draftOrchestratorIdMode,
-        options: getOrchestratorIdDisplayOptions(),
+      autoLaunchToggle.setProps({
+        modelValue: draftAutoConfigureLaunch ? 'on' : 'off',
       });
+      remoteSshToggle.setProps({
+        modelValue: draftEnableRemoteSshTelemetry ? 'on' : 'off',
+      });
+      syncHostIntegrationRows();
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
+      renderDeveloperOptions();
       renderContextWindows();
-      void sessionMigrationCard.refs.ensureLoaded();
     }
 
     function refreshLabels() {
       patchText(modelCardTitleEl, t('settings.oth.modelTitle'));
-      patchText(modelFormatLabelEl, t('settings.oth.modelFormat'));
-      patchText(orchFormatLabelEl, t('settings.oth.orchFormat'));
+      patchText(hostPanelTitleEl, t('settings.oth.hostTitle'));
+      patchText(autoLaunchLabelEl, t('settings.oth.autoLaunchLabel'));
+      patchText(autoLaunchDescEl, t('settings.oth.autoLaunchDesc'));
+      patchText(remoteSshLabelEl, t('settings.oth.remoteSshLabel'));
+      patchText(remoteSshDescEl, t('settings.oth.remoteSshDesc'));
+      patchText(macWrapperLabelEl, t('settings.oth.macWrapperLabel'));
+      patchText(macWrapperDescEl, t('settings.oth.macWrapperDesc'));
+      patchText(macWrapperRemoveBtnText, t('settings.oth.macRemoveWrapperBtn'));
+      autoLaunchToggle.setProps({
+        modelValue: draftAutoConfigureLaunch ? 'on' : 'off',
+      });
+      remoteSshToggle.setProps({
+        modelValue: draftEnableRemoteSshTelemetry ? 'on' : 'off',
+      });
+      syncHostIntegrationRows();
       patchText(expTitleEl, t('settings.oth.expTitle'));
       patchText(quotaReserveLabelEl, t('settings.oth.quotaReserveLabel'));
       patchText(quotaReserveBadgeEl, t('settings.oth.expBadge'));
@@ -924,6 +1310,11 @@ export const SettingsOtherTab = defineComponent({
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
+      patchText(devTitleEl, t('settings.oth.devTitle'));
+      patchText(devModeLabelEl, t('settings.oth.devModeLabel'));
+      patchText(riskyFeaturesLabelEl, t('settings.oth.riskyFeaturesLabel'));
+      patchText(riskyFeaturesDescEl, t('settings.oth.riskyFeaturesDesc'));
+      renderDeveloperOptions();
       patchText(baselineTitleEl, t('settings.oth.baselineTitle'));
       renderContextWindows();
       patchText(maintTitleEl, t('settings.oth.maintTitle'));
@@ -936,9 +1327,7 @@ export const SettingsOtherTab = defineComponent({
       patchText(resetLabelEl, t('settings.oth.resetLabel'));
       patchText(resetDescEl, t('settings.oth.resetDesc'));
 
-      if (!isRebuilding) {
-        patchText(rebuildBtnText, t('settings.oth.rebuildBtn'));
-      }
+      syncRebuildButtonState();
       if (!isResetting) {
         patchText(
           resetBtnText,
@@ -947,45 +1336,50 @@ export const SettingsOtherTab = defineComponent({
       }
 
       stepModelSelect.setProps({
+        ariaLabel: t('settings.oth.modelTitle'),
         modelValue: draftModelDisplayMode,
         options: getStepModelDisplayOptions(),
       });
-      orchestratorIdSelect.setProps({
-        modelValue: draftOrchestratorIdMode,
-        options: getOrchestratorIdDisplayOptions(),
-      });
-      sessionMigrationCard.refs.refreshLabels();
     }
 
     onCleanup(() => {
       if (modelTimer) clearTimeout(modelTimer);
+      if (hostTimer) clearTimeout(hostTimer);
       if (expTimer) clearTimeout(expTimer);
+      if (devTimer) clearTimeout(devTimer);
       if (maintTimer) clearTimeout(maintTimer);
       if (resetConfirmTimer) clearTimeout(resetConfirmTimer);
       stepModelSelect.destroy();
-      orchestratorIdSelect.destroy();
+      autoLaunchToggle.destroy();
+      remoteSshToggle.destroy();
       quotaReserveToggle.destroy();
+      developerModeToggle.destroy();
+      riskyFeaturesToggle.destroy();
       ctxBridgeNotice.destroy();
       ctxMainToggle.destroy();
       ctxSwarmToggle.destroy();
       ctxModelSelect.destroy();
       ctxWindowSelect.destroy();
-      sessionMigrationCard.destroy();
     });
 
     return {
       el: rootEl,
       refs: {
         stepModelSelect,
-        orchestratorIdSelect,
+        autoLaunchToggle,
+        remoteSshToggle,
+        macWrapperRemoveBtn,
         quotaReserveToggle,
         exportReserveLogBtn,
+        developerPanel,
+        developerModeToggle,
+        riskyFeaturesToggle,
+        baselinePanel,
         ctxBridgeNotice,
         ctxMainToggle,
         ctxSwarmToggle,
         ctxModelSelect,
         ctxWindowSelect,
-        sessionMigrationCard,
         rebuildCacheBtn,
         resetAllBtn,
         exportJsonBtn,

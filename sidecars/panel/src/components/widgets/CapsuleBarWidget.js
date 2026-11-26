@@ -6,7 +6,17 @@
 
 import { isModernUiActiveForElement } from '../../core/appearance.js';
 import { defineComponent } from '../../core/component.js';
-import { h, patchAttr, patchClasses, patchStyleVar, patchText } from '../../core/domPatch.js';
+import {
+  areSlotListsEqual,
+  createDropSettleAnimator,
+  h,
+  patchAttr,
+  patchClasses,
+  patchStyleVar,
+  patchText,
+  setTranslate3d,
+  startLinearDragReorder,
+} from '../../core/domPatch.js';
 import { t } from '../../i18n/index.js';
 import { createSvgIcon, SVG_NS } from '../../icons/SvgIcon.js';
 import { resolveCapsuleMetricPresentation } from '../../registries/metricRegistry.js';
@@ -488,10 +498,20 @@ export function syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCt
 /**
  * Standalone Capsule Bar Preview Widget mounting the real `.wm-multi-btn` and `.wm-capsule-btn`
  * inside a contextual host bar (`dual` titlebar, `composer` toolbar, or `sidebar` disabled state).
+ * When `onReorderSlots` / `onPreviewSlots` callbacks are supplied, metric chips inside the
+ * preview capsule support direct horizontal pointer drag-to-reorder.
  */
 export const CapsuleBarWidget = defineComponent({
   name: 'CapsuleBarWidget',
-  setup() {
+  setup({ props, onCleanup }) {
+    const hasReorderCallbacks =
+      typeof props?.onReorderSlots === 'function' || typeof props?.onPreviewSlots === 'function';
+    let currentSlotKeys = ['tps', 'ttft', 'context'];
+    let lastUpdatePayload = null;
+    let pendingUpdatePayload = null;
+    let activeDrag = null;
+    const settleAnimator = createDropSettleAnimator('is-settling', ' scale(1.04)');
+
     const multiDot = h('span', { className: 'wm-multi-dot' });
     const multiLabel = h('span', {
       className: 'wm-multi-label',
@@ -528,7 +548,7 @@ export const CapsuleBarWidget = defineComponent({
         type: 'button',
         className: 'wm-capsule-btn',
         tabindex: '-1',
-        'aria-hidden': 'true',
+        ...(hasReorderCallbacks ? {} : { 'aria-hidden': 'true' }),
       },
       [
         capsuleSlots[0].el,
@@ -583,7 +603,143 @@ export const CapsuleBarWidget = defineComponent({
 
     const rootEl = h('div', { className: 'capsule-preview-widget' }, [hostBarEl, sidebarHintEl]);
 
-    function update({ data } = {}) {
+    function resetDragVisuals() {
+      patchClasses(hostBarEl, { 'is-dragging-capsule': false });
+      patchClasses(capsuleBtn, { 'is-dragging-capsule': false });
+      for (const slot of capsuleSlots) {
+        patchClasses(slot.el, { 'is-dragging': false, 'is-drag-sibling': false });
+        if (slot.el?.style) {
+          slot.el.style.transition = '';
+          slot.el.style.transform = '';
+        }
+      }
+      for (const sep of capsuleSeps) {
+        patchClasses(sep, { 'is-drag-sep': false });
+        if (sep?.style) {
+          sep.style.transition = '';
+          sep.style.transform = '';
+        }
+      }
+    }
+
+    function syncSlotDragAffordances(slotCount) {
+      const canDrag = hasReorderCallbacks && slotCount > 1;
+      patchClasses(hostBarEl, { 'is-slot-reorderable': canDrag });
+      patchClasses(capsuleBtn, { 'is-slot-reorderable': canDrag });
+      const hint = canDrag ? t('settings.str.capsuleDragHint') : null;
+      for (let i = 0; i < capsuleSlots.length; i += 1) {
+        patchAttr(capsuleSlots[i].el, 'title', canDrag && i < slotCount ? hint : null);
+      }
+    }
+
+    function teardownActiveDrag({ revert = false, flushPending = true } = {}) {
+      if (!activeDrag) return;
+      const { startKeys, getWorkingKeys, session } = activeDrag;
+      const moved = session.isMoved();
+      activeDrag = null;
+      session.cancel(true);
+      resetDragVisuals();
+      if (revert && moved && !areSlotListsEqual(startKeys, getWorkingKeys())) {
+        props?.onPreviewSlots?.([...startKeys]);
+      }
+      if (flushPending && pendingUpdatePayload) {
+        const queued = pendingUpdatePayload;
+        pendingUpdatePayload = null;
+        applyUpdatePayload(queued);
+      }
+    }
+
+    function startSlotDrag(e, initialSlotIdx) {
+      if (!hasReorderCallbacks || (e && e.button != null && e.button !== 0)) return;
+      if (currentSlotKeys.length <= 1 || initialSlotIdx < 0 || initialSlotIdx >= currentSlotKeys.length) {
+        return;
+      }
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      if (activeDrag) teardownActiveDrag({ revert: false, flushPending: true });
+      settleAnimator.clear();
+
+      const startKeys = [...currentSlotKeys];
+      const count = startKeys.length;
+      const startIdx = initialSlotIdx;
+      let sepMetrics = [];
+
+      const session = startLinearDragReorder(e, {
+        axis: 'x',
+        items: startKeys,
+        startIdx,
+        itemEls: capsuleSlots.slice(0, count).map((s) => s.el),
+        containerEl: capsuleBtn,
+        fallbackSize: 54,
+        fallbackGap: 17,
+        threshold: 3,
+        rubberBandMax: 12,
+        crossMax: 4,
+        crossRatio: 0.14,
+        dragScale: ' scale(1.04)',
+        onStart: ({ metrics }) => {
+          sepMetrics = [];
+          for (let s = 0; s < count - 1; s += 1) {
+            const sr = capsuleSeps[s]?.getBoundingClientRect?.();
+            const ok = Boolean(sr && Number.isFinite(sr.width) && sr.width > 0);
+            sepMetrics.push({ left: ok ? sr.left : metrics[s].end + 8, width: ok ? sr.width : 1 });
+          }
+          patchClasses(hostBarEl, { 'is-dragging-capsule': true });
+          patchClasses(capsuleBtn, { 'is-dragging-capsule': true });
+          for (let k = 0; k < count; k += 1) {
+            patchClasses(capsuleSlots[k].el, { 'is-dragging': k === startIdx, 'is-drag-sibling': k !== startIdx });
+          }
+          for (let s = 0; s < count - 1; s += 1) patchClasses(capsuleSeps[s], { 'is-drag-sep': true });
+        },
+        onLayout: ({ perm, targetStartByOrig, metrics, gap }) => {
+          for (let s = 0; s < count - 1; s += 1) {
+            if (!sepMetrics[s]) continue;
+            const leftOrig = perm[s];
+            const desiredSepLeft =
+              targetStartByOrig[leftOrig] + metrics[leftOrig].size + (gap - (sepMetrics[s].width || 1)) * 0.5;
+            setTranslate3d(capsuleSeps[s], desiredSepLeft - sepMetrics[s].left);
+          }
+        },
+        onPreview: (working) => props?.onPreviewSlots?.(working),
+        onCancel: () => teardownActiveDrag({ revert: true, flushPending: true }),
+        onFinish: ({ moved, changed, targetIdx, finalItems, residualX, residualY }) => {
+          teardownActiveDrag({ revert: false, flushPending: !changed });
+          if (changed) {
+            pendingUpdatePayload = null;
+            currentSlotKeys = finalItems;
+            if (lastUpdatePayload?.data) {
+              applyUpdatePayload({
+                data: {
+                  ...lastUpdatePayload.data,
+                  settings: { ...(lastUpdatePayload.data.settings || {}), topbarCapsuleSlots: finalItems },
+                },
+              });
+            }
+            props?.onReorderSlots?.([...finalItems]);
+          }
+          if (moved && capsuleSlots[targetIdx]?.el) {
+            settleAnimator.trigger(capsuleSlots[targetIdx].el, residualX, residualY);
+          }
+        },
+      });
+
+      activeDrag = { startKeys, getWorkingKeys: session.getWorkingItems, session };
+    }
+
+    const slotPointerCleanups = [];
+    if (hasReorderCallbacks) {
+      for (let i = 0; i < capsuleSlots.length; i += 1) {
+        const slotEl = capsuleSlots[i].el;
+        const onSlotPointerDown = (e) => startSlotDrag(e, i);
+        slotEl.addEventListener?.('pointerdown', onSlotPointerDown);
+        slotPointerCleanups.push(() => {
+          slotEl.removeEventListener?.('pointerdown', onSlotPointerDown);
+        });
+      }
+    }
+
+    function applyUpdatePayload({ data } = {}) {
+      lastUpdatePayload = { data };
       const settings = data?.settings || {};
       const mountMode = normalizeClientWindowMountMode(
         settings.windowMountMode,
@@ -591,6 +747,7 @@ export const CapsuleBarWidget = defineComponent({
       );
       const showMulti = settings.showTopbarMultiSession !== false;
       const slotKeys = normalizeClientTopbarSlots(settings.topbarCapsuleSlots);
+      currentSlotKeys = [...slotKeys];
 
       const isComposer = mountMode === 'composer';
       const isSidebar = mountMode === 'sidebar';
@@ -612,6 +769,7 @@ export const CapsuleBarWidget = defineComponent({
         patchClasses(multiBtn, { 'is-running': false, 'is-waiting': false });
         patchCapsuleOdometerText(multiLabel, t('capsule.multiZero'), { resetKey: 'multi' });
         syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, { hasTelemetry: false });
+        syncSlotDragAffordances(slotKeys.length);
         return;
       }
 
@@ -635,7 +793,25 @@ export const CapsuleBarWidget = defineComponent({
 
       patchClasses(capsuleBtn, { 'is-running': slotCtx.isRunning });
       syncCapsuleSlotNodes(capsuleSlots, capsuleSeps, slotKeys, slotCtx);
+      syncSlotDragAffordances(slotKeys.length);
     }
+
+    function update(payload = {}) {
+      if (activeDrag) {
+        pendingUpdatePayload = payload;
+        return;
+      }
+      applyUpdatePayload(payload);
+    }
+
+    onCleanup(() => {
+      teardownActiveDrag({ revert: false, flushPending: false });
+      settleAnimator.clear();
+      for (const cleanup of slotPointerCleanups) {
+        cleanup();
+      }
+      slotPointerCleanups.length = 0;
+    });
 
     return {
       el: rootEl,

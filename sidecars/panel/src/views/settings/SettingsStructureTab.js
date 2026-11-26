@@ -24,22 +24,33 @@ import {
 } from '../../registries/widgetRegistry.js';
 import {
   DEFAULT_CLIENT_CONTEXT_AGENT_MODE,
+  DEFAULT_CLIENT_HOVER_METRICS,
+  DEFAULT_CLIENT_HOVER_METRIC_STYLE,
   DEFAULT_CLIENT_HOVER_MODULES,
+  DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS,
   DEFAULT_CLIENT_OVERVIEW_METRICS,
+  DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE,
   DEFAULT_CLIENT_OVERVIEW_MODULES,
   DEFAULT_CLIENT_POPOVER_WIDTH,
+  DEFAULT_CLIENT_QUOTA_DISPLAY_MODE,
   DEFAULT_CLIENT_STEP_COLUMNS,
   DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_CLIENT_TOPBAR_SLOTS,
+  MAX_CLIENT_LARGE_METRIC_SLOTS,
   MAX_CLIENT_POPOVER_WIDTH,
   MIN_CLIENT_POPOVER_WIDTH,
   normalizeClientCliStatusLineSlots,
   normalizeClientContextAgentMode,
+  normalizeClientHoverMetricStyle,
+  normalizeClientHoverMetrics,
   normalizeClientHoverModules,
+  normalizeClientHoverSyncOverviewMetrics,
+  normalizeClientOverviewMetricStyle,
   normalizeClientOverviewMetrics,
   normalizeClientOverviewModules,
   normalizeClientPopoverWidth,
   normalizeClientPopoverWidthMode,
+  normalizeClientQuotaDisplayMode,
   normalizeClientStepColumns,
   normalizeClientStepTokenComboFormat,
   normalizeClientTopbarSlots,
@@ -99,6 +110,20 @@ function getContextAgentModeOptions() {
   ];
 }
 
+function getHoverMetricStyleOptions() {
+  return [
+    { value: 'medium', label: t('settings.str.hoverMetricStyleMedium') },
+    { value: 'large', label: t('settings.str.hoverMetricStyleLarge') },
+  ];
+}
+
+function getQuotaDisplayModeOptions() {
+  return [
+    { value: 'used', label: t('settings.str.quotaDisplayUsed') },
+    { value: 'remaining', label: t('settings.str.quotaDisplayRemaining') },
+  ];
+}
+
 function isSameList(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -107,9 +132,10 @@ function isSameList(a, b) {
   return true;
 }
 
-function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
+function formatCliPreviewSlot(slotKey, slotCtx) {
   const safeCtx = slotCtx || {};
   const quotas = safeCtx.quotas || {};
+  const wkCompact = t('fmt.weekCompact');
   const quotaPct = (key, fallback) => {
     const summary = resolveSpecificQuotaSlotSummary(quotas, key);
     return summary && Number.isFinite(summary.roundedPct) ? summary.roundedPct : fallback;
@@ -123,7 +149,7 @@ function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
       const val = Number.isFinite(Number(safeCtx.avgTps)) ? Number(safeCtx.avgTps).toFixed(1) : '59.6';
       return {
         prefix: '',
-        text: isEn ? `avg ${val}` : `均 ${val}`,
+        text: t('fmt.cliAvg', { val }),
         tone: 'info',
         pillPct: null,
       };
@@ -146,7 +172,7 @@ function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
         : 95;
       return {
         prefix: '',
-        text: isEn ? `cache ${pct}%` : `缓 ${pct}%`,
+        text: t('fmt.cliCache', { pct }),
         tone: 'good',
         pillPct: null,
       };
@@ -160,7 +186,7 @@ function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
     case 'quota_auto': {
       const pct = quotaPct('quota_auto', 64);
       return {
-        prefix: isEn ? '5h ' : '余 ',
+        prefix: t('fmt.cliQuotaAuto'),
         text: `${pct}%`,
         tone: 'good',
         pillPct: pct,
@@ -178,7 +204,7 @@ function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
     case 'gemini_weekly': {
       const pct = quotaPct('gemini_weekly', 52);
       return {
-        prefix: isEn ? 'Gw ' : 'G周 ',
+        prefix: `G${wkCompact} `,
         text: `${pct}%`,
         tone: 'good',
         pillPct: pct,
@@ -187,7 +213,7 @@ function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
     case 'argon_weekly': {
       const pct = quotaPct('argon_weekly', 42);
       return {
-        prefix: isEn ? 'Aw ' : 'A周 ',
+        prefix: `A${wkCompact} `,
         text: `${pct}%`,
         tone: 'good',
         pillPct: pct,
@@ -205,7 +231,7 @@ function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
     case 'claude_weekly': {
       const pct = quotaPct('claude_weekly', 59);
       return {
-        prefix: isEn ? 'Cw ' : 'C周 ',
+        prefix: `C${wkCompact} `,
         text: `${pct}%`,
         tone: 'good',
         pillPct: pct,
@@ -217,7 +243,7 @@ function formatCliPreviewSlot(slotKey, slotCtx, isEn) {
         ? Math.round(Number(safeCtx.usedPct))
         : 56;
       return {
-        prefix: isEn ? 'Ctx ' : '上下文 ',
+        prefix: t('fmt.cliCtx'),
         text: `${pct}%`,
         tone: 'accent',
         pillPct: pct,
@@ -239,8 +265,13 @@ export const SettingsStructureTab = defineComponent({
     let draftContextAgentMode = DEFAULT_CLIENT_CONTEXT_AGENT_MODE;
     let draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
     let draftHoverModules = [...DEFAULT_CLIENT_HOVER_MODULES];
+    let draftHoverSyncOverview = DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS;
+    let draftHoverMetricStyle = DEFAULT_CLIENT_HOVER_METRIC_STYLE;
+    let draftHoverMetrics = [...DEFAULT_CLIENT_HOVER_METRICS];
     let draftOverviewModules = [...DEFAULT_CLIENT_OVERVIEW_MODULES];
+    let draftOverviewMetricStyle = DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE;
     let draftOverviewMetrics = [...DEFAULT_CLIENT_OVERVIEW_METRICS];
+    let draftQuotaDisplayMode = DEFAULT_CLIENT_QUOTA_DISPLAY_MODE;
     let draftShowStepTurnRail = false;
     let draftShowStepAgentBadge = true;
     let draftShowStepSpeedColor = false;
@@ -284,8 +315,13 @@ export const SettingsStructureTab = defineComponent({
           contextAgentMode: draftContextAgentMode,
           topbarCapsuleSlots: draftTopbarSlots,
           hoverModules: draftHoverModules,
+          hoverSyncOverviewMetrics: draftHoverSyncOverview,
+          hoverMetricStyle: draftHoverMetricStyle,
+          hoverMetrics: draftHoverMetrics,
           overviewModules: draftOverviewModules,
+          overviewMetricStyle: draftOverviewMetricStyle,
           overviewMetrics: draftOverviewMetrics,
+          quotaDisplayMode: draftQuotaDisplayMode,
           showStepTurnRail: draftShowStepTurnRail,
           showStepAgentBadge: draftShowStepAgentBadge,
           showStepSpeedColor: draftShowStepSpeedColor,
@@ -378,7 +414,25 @@ export const SettingsStructureTab = defineComponent({
     );
 
     // --- Pane 1: 挂载与胶囊栏 (`mount`) ---
-    const capsulePreviewWidget = CapsuleBarWidget({});
+    const syncTopbarList = () =>
+      topbarSlotsList.refs.setProps({
+        items: draftTopbarSlots,
+        options: getCapsuleMetricOptions({ quotas: latestQuotas, selectedSlots: draftTopbarSlots }),
+        addBtnTextFn: (count, max) => t('settings.str.addCapsuleSlot', { count, max }),
+      });
+    const capsulePreviewWidget = CapsuleBarWidget({
+      onPreviewSlots: (previewKeys) => {
+        draftTopbarSlots = normalizeClientTopbarSlots(previewKeys);
+        syncTopbarList();
+        refreshCliPreview();
+      },
+      onReorderSlots: (nextKeys) => {
+        draftTopbarSlots = normalizeClientTopbarSlots(nextKeys);
+        syncMountSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(mountSection, { topbarCapsuleSlots: draftTopbarSlots });
+      },
+    });
     const mountPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       capsulePreviewWidget.el,
     ]);
@@ -403,10 +457,6 @@ export const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.cliCapsuleToggle'),
     });
-    const cliSlotsLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.str.cliSlotsLabel'),
-    });
     const cliStatusHintEl = h('span', {
       className: 'settings-hint-text cli-status-hint',
     });
@@ -423,7 +473,7 @@ export const SettingsStructureTab = defineComponent({
         const actionToRun = activeCliStatusAction;
         patchAttr(cliStatusActionBtn, 'disabled', true);
         patchText(cliStatusActionBtn, t('settings.str.cliRestoringBtn'));
-        mountSection.refs.showStatus(t('settings.saving'), 0);
+        cliSection.refs.showStatus(t('settings.saving'), 0);
         try {
           const res = await triggerCliStatusLineAction(actionToRun);
           if (res?.cliStatusLine) {
@@ -433,25 +483,20 @@ export const SettingsStructureTab = defineComponent({
             latestSettings = { ...(latestSettings || {}), ...res.settings };
             draftEnableCliStatusLine = latestSettings.enableCliStatusLine !== false;
           }
-          mountSection.refs.showStatus(
+          cliSection.refs.showStatus(
             res?.ok === false ? t('settings.saveFailed') : t('settings.saved'),
             1800
           );
         } catch {
-          mountSection.refs.showStatus(t('settings.saveFailed'), 2500);
+          cliSection.refs.showStatus(t('settings.saveFailed'), 2500);
         } finally {
           cliActionBusy = false;
           patchAttr(cliStatusActionBtn, 'disabled', false);
-          syncMountSectionMeta();
+          syncCliSectionMeta();
           props.onLayoutChange?.();
         }
       },
     });
-    const capsuleSlotsLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.str.capsuleSlotsLabel'),
-    });
-
     const windowMountSelect = CustomSelect({
       modelValue: draftWindowMountMode,
       icon: 'dock',
@@ -542,9 +587,9 @@ export const SettingsStructureTab = defineComponent({
       modelValue: 'on',
       onUpdateModelValue: (val) => {
         draftEnableCliStatusLine = val !== 'off';
-        syncMountSectionMeta();
+        syncCliSectionMeta();
         props.onLayoutChange?.();
-        void persistStructurePatch(mountSection, {
+        void persistStructurePatch(cliSection, {
           enableCliStatusLine: draftEnableCliStatusLine,
         });
       },
@@ -593,9 +638,9 @@ export const SettingsStructureTab = defineComponent({
       },
       onChange: (nextItems) => {
         draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(nextItems);
-        syncMountSectionMeta();
+        syncCliSectionMeta();
         props.onLayoutChange?.();
-        void persistStructurePatch(mountSection, {
+        void persistStructurePatch(cliSection, {
           cliStatusLineSlots: draftCliStatusLineSlots,
         });
       },
@@ -608,15 +653,38 @@ export const SettingsStructureTab = defineComponent({
 
     const cliStatusDetailEl = h('div', { className: 'cli-statusline-detail' }, [
       cliPreviewEl,
-      h('div', { className: 'form-row' }, [cliSlotsLabelEl, cliSlotsList.el]),
+      h('div', { className: 'settings-divider' }),
+      h('div', { className: 'form-row' }, [cliSlotsList.el]),
       cliStatusFooterEl,
     ]);
 
-    const cliStatusGroupEl = h('div', { className: 'cli-statusline-group', hidden: true }, [
-      h('div', { className: 'settings-divider' }),
-      h('div', { className: 'settings-inline-row' }, [cliCapsuleLabelEl, cliCapsuleToggle.el]),
-      cliStatusDetailEl,
-    ]);
+    const cliSection = CollapsibleSection({
+      collapsible: false,
+      icon: 'terminal',
+      title: t('settings.str.cliSection'),
+      badgeText: t('settings.str.cliBadge', { count: getEffectiveDraftCliSlots().length }),
+      onReset: () => {
+        draftEnableCliStatusLine = true;
+        draftCliStatusLineSlots = null;
+        syncCliSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(
+          cliSection,
+          {
+            enableCliStatusLine: true,
+            cliStatusLineSlots: null,
+          },
+          'settings.resetDone'
+        );
+      },
+      children: [
+        h('div', { className: 'settings-inline-row' }, [cliCapsuleLabelEl, cliCapsuleToggle.el]),
+        cliStatusDetailEl,
+      ],
+    });
+    patchClasses(cliSection.el, { 'cli-statusline-group': true });
+    patchAttr(cliSection.el, 'hidden', true);
+    const cliStatusGroupEl = cliSection.el;
 
     const topbarSlotsList = EditableSlotList({
       items: draftTopbarSlots,
@@ -650,8 +718,6 @@ export const SettingsStructureTab = defineComponent({
         draftPopoverWidthMode = 'auto';
         draftPopoverWidth = DEFAULT_CLIENT_POPOVER_WIDTH;
         popoverWidthStepper.setProps({ modelValue: DEFAULT_CLIENT_POPOVER_WIDTH });
-        draftEnableCliStatusLine = true;
-        draftCliStatusLineSlots = null;
         draftShowTopbarMulti = true;
         draftContextAgentMode = DEFAULT_CLIENT_CONTEXT_AGENT_MODE;
         draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
@@ -665,8 +731,6 @@ export const SettingsStructureTab = defineComponent({
             enableWindowOverlay: true,
             popoverWidthMode: 'auto',
             popoverWidth: DEFAULT_CLIENT_POPOVER_WIDTH,
-            enableCliStatusLine: true,
-            cliStatusLineSlots: null,
             showTopbarMultiSession: true,
             contextAgentMode: DEFAULT_CLIENT_CONTEXT_AGENT_MODE,
             topbarCapsuleSlots: [...DEFAULT_CLIENT_TOPBAR_SLOTS],
@@ -694,8 +758,7 @@ export const SettingsStructureTab = defineComponent({
           contextAgentModeLabelEl,
           contextAgentModeToggle.el,
         ]),
-        h('div', { className: 'form-row' }, [capsuleSlotsLabelEl, topbarSlotsList.el]),
-        cliStatusGroupEl,
+        h('div', { className: 'form-row' }, [topbarSlotsList.el]),
       ],
     });
 
@@ -747,37 +810,14 @@ export const SettingsStructureTab = defineComponent({
       refreshCliPreview(mockData);
     }
 
-    function syncMountSectionMeta() {
-      windowMountSelect.setProps({
-        modelValue: draftWindowMountMode,
-        options: getMountModeOptions(),
-      });
-      mountBridgeNotice.refs.update({
-        visible: draftWindowMountMode !== 'sidebar',
-        windowBridge: latestWindowBridge,
-        hostPlatform: latestHostPlatform,
-      });
-      popoverWidthModeToggle.setProps({
-        modelValue: draftPopoverWidthMode,
-        options: getPopoverWidthModeOptions(),
-      });
-      patchAttr(popoverWidthNumWrap, 'hidden', draftPopoverWidthMode !== 'custom');
-      if (document?.activeElement !== popoverWidthStepper.refs.textField) {
-        popoverWidthStepper.setProps({
-          modelValue: draftPopoverWidth,
-          ariaLabel: t('settings.str.popoverWidthLabel'),
-        });
-      }
-      multiSessionToggle.setProps({
-        modelValue: draftShowTopbarMulti ? 'show' : 'hide',
-      });
-      contextAgentModeToggle.setProps({
-        modelValue: draftContextAgentMode,
-        options: getContextAgentModeOptions(),
-        ariaLabel: t('settings.str.contextAgentModeLabel'),
-      });
+    function syncCliSectionVisibility() {
       const cliInstalled = Boolean(latestCliStatusLine?.installed);
-      patchAttr(cliStatusGroupEl, 'hidden', !cliInstalled);
+      patchAttr(cliSection.el, 'hidden', !(activeThirdTab === 'mount' && cliInstalled));
+    }
+
+    function syncCliSectionMeta() {
+      const cliInstalled = Boolean(latestCliStatusLine?.installed);
+      syncCliSectionVisibility();
       cliCapsuleToggle.setProps({
         modelValue: draftEnableCliStatusLine ? 'on' : 'off',
       });
@@ -791,6 +831,14 @@ export const SettingsStructureTab = defineComponent({
         }),
         addBtnTextFn: (count, max) => t('settings.str.addCliSlot', { count, max }),
       });
+      cliSection.refs.setBadge(
+        draftEnableCliStatusLine
+          ? t('settings.str.cliBadge', { count: effectiveCliSlots.length })
+          : t('settings.str.cliBadgeOff')
+      );
+      cliSection.refs.setResetDisabled(
+        draftEnableCliStatusLine === true && draftCliStatusLineSlots === null
+      );
       const preservedCustom = Boolean(latestCliStatusLine?.preservedCustom);
       const isConfigured = Boolean(latestCliStatusLine?.configured);
       const hasInlineSlotFlags = /(?:^|\s)--(?:slots|preset)(?:=|\s|$)/i.test(
@@ -825,14 +873,38 @@ export const SettingsStructureTab = defineComponent({
         );
       }
       refreshCliPreview();
-      topbarSlotsList.refs.setProps({
-        items: draftTopbarSlots,
-        options: getCapsuleMetricOptions({
-          quotas: latestQuotas,
-          selectedSlots: draftTopbarSlots,
-        }),
-        addBtnTextFn: (count, max) => t('settings.str.addCapsuleSlot', { count, max }),
+    }
+
+    function syncMountSectionMeta() {
+      windowMountSelect.setProps({
+        modelValue: draftWindowMountMode,
+        options: getMountModeOptions(),
       });
+      mountBridgeNotice.refs.update({
+        visible: draftWindowMountMode !== 'sidebar',
+        windowBridge: latestWindowBridge,
+        hostPlatform: latestHostPlatform,
+      });
+      popoverWidthModeToggle.setProps({
+        modelValue: draftPopoverWidthMode,
+        options: getPopoverWidthModeOptions(),
+      });
+      patchAttr(popoverWidthNumWrap, 'hidden', draftPopoverWidthMode !== 'custom');
+      if (document?.activeElement !== popoverWidthStepper.refs.textField) {
+        popoverWidthStepper.setProps({
+          modelValue: draftPopoverWidth,
+          ariaLabel: t('settings.str.popoverWidthLabel'),
+        });
+      }
+      multiSessionToggle.setProps({
+        modelValue: draftShowTopbarMulti ? 'show' : 'hide',
+      });
+      contextAgentModeToggle.setProps({
+        modelValue: draftContextAgentMode,
+        options: getContextAgentModeOptions(),
+        ariaLabel: t('settings.str.contextAgentModeLabel'),
+      });
+      syncTopbarList();
       mountSection.refs.setBadge(
         t('settings.str.mountBadge', { count: draftTopbarSlots.length })
       );
@@ -840,8 +912,6 @@ export const SettingsStructureTab = defineComponent({
         draftWindowMountMode === 'dual' &&
         draftPopoverWidthMode === 'auto' &&
         draftPopoverWidth === DEFAULT_CLIENT_POPOVER_WIDTH &&
-        draftEnableCliStatusLine === true &&
-        draftCliStatusLineSlots === null &&
         draftShowTopbarMulti === true &&
         draftContextAgentMode === DEFAULT_CLIENT_CONTEXT_AGENT_MODE &&
         isSameList(draftTopbarSlots, DEFAULT_CLIENT_TOPBAR_SLOTS);
@@ -859,6 +929,45 @@ export const SettingsStructureTab = defineComponent({
       hidden: true,
       text: t('settings.str.hoverEmptyHint'),
     });
+    const syncHoverMetricListProps = () =>
+      hoverMetricsList.refs.setProps({
+        items: getEffectiveHoverMetrics(),
+        options: getOverviewMetricOptions(),
+        dimmedFromIndex: getEffectiveHoverMetricStyle() === 'large' ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+        dimmedTagText: t('settings.str.metricOverflowTag'),
+        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
+      });
+    const syncOverviewMetricListProps = () =>
+      overviewMetricsList.refs.setProps({
+        items: draftOverviewMetrics,
+        options: getOverviewMetricOptions(),
+        dimmedFromIndex: draftOverviewMetricStyle === 'large' ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+        dimmedTagText: t('settings.str.metricOverflowTag'),
+        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
+      });
+    const commitHoverMetricsOrder = (nextMetrics) => {
+      const normalized = normalizeClientHoverMetrics(nextMetrics);
+      if (draftHoverSyncOverview) {
+        draftOverviewMetrics = normalized;
+        syncOverviewSectionMeta();
+        syncHoverSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(hoverSection, { overviewMetrics: draftOverviewMetrics });
+      } else {
+        draftHoverMetrics = normalized;
+        syncHoverSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(hoverSection, { hoverMetrics: draftHoverMetrics });
+      }
+    };
+    const commitOverviewMetricsOrder = (nextMetrics) => {
+      draftOverviewMetrics = normalizeClientOverviewMetrics(nextMetrics);
+      syncOverviewSectionMeta();
+      if (draftHoverSyncOverview) syncHoverSectionMeta();
+      props.onLayoutChange?.();
+      void persistStructurePatch(overviewSection, { overviewMetrics: draftOverviewMetrics });
+    };
+
     const hoverPreviewHost = createDynamicWidgetHost({
       containerEl: hoverWidgetsContainerEl,
       mode: 'hover',
@@ -870,6 +979,29 @@ export const SettingsStructureTab = defineComponent({
           { settings: { contextAgentMode: draftContextAgentMode } },
           'auto'
         ),
+      onPreviewModules: (previewModules) => {
+        draftHoverModules = normalizeClientHoverModules(previewModules);
+        patchAttr(hoverMetricsInactiveHintEl, 'hidden', draftHoverModules.includes('metrics'));
+        hoverModulesList.refs.setProps({ items: draftHoverModules });
+      },
+      onReorderModules: (nextModules) => {
+        draftHoverModules = normalizeClientHoverModules(nextModules);
+        syncHoverSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(hoverSection, { hoverModules: draftHoverModules });
+      },
+      onPreviewMetrics: (previewMetrics) => {
+        const normalized = normalizeClientHoverMetrics(previewMetrics);
+        if (draftHoverSyncOverview) {
+          draftOverviewMetrics = normalized;
+          syncOverviewMetricListProps();
+          refreshOverviewPreview();
+        } else {
+          draftHoverMetrics = normalized;
+        }
+        syncHoverMetricListProps();
+      },
+      onReorderMetrics: commitHoverMetricsOrder,
     });
     const hoverPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       hoverPreviewTipEl,
@@ -879,6 +1011,109 @@ export const SettingsStructureTab = defineComponent({
     const hoverModulesLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.hoverModulesLabel'),
+    });
+    const hoverMetricStyleLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.hoverMetricStyleLabel'),
+    });
+    const hoverSyncOverviewLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.hoverSyncOverviewLabel'),
+    });
+    const hoverMetricsInactiveHintEl = h('span', {
+      className: 'settings-hint-text',
+      hidden: true,
+      text: t('settings.str.hoverMetricsInactiveHint'),
+    });
+    const hoverMetricsLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.hoverMetricsLabel'),
+    });
+
+    function getEffectiveHoverMetricStyle() {
+      return draftHoverSyncOverview ? draftOverviewMetricStyle : draftHoverMetricStyle;
+    }
+
+    function getEffectiveHoverMetrics() {
+      return draftHoverSyncOverview ? draftOverviewMetrics : draftHoverMetrics;
+    }
+
+    const hoverMetricStyleSwitch = SegmentedControl({
+      ariaLabel: t('settings.str.hoverMetricStyleLabel'),
+      modelValue: getEffectiveHoverMetricStyle(),
+      options: getHoverMetricStyleOptions(),
+      onUpdateModelValue: (val) => {
+        const nextStyle = normalizeClientHoverMetricStyle(val);
+        if (nextStyle === getEffectiveHoverMetricStyle()) return;
+        if (draftHoverSyncOverview) {
+          draftOverviewMetricStyle = nextStyle;
+          syncOverviewSectionMeta();
+          syncHoverSectionMeta();
+          props.onLayoutChange?.();
+          void persistStructurePatch(hoverSection, {
+            overviewMetricStyle: draftOverviewMetricStyle,
+          });
+        } else {
+          draftHoverMetricStyle = nextStyle;
+          syncHoverSectionMeta();
+          props.onLayoutChange?.();
+          void persistStructurePatch(hoverSection, {
+            hoverMetricStyle: draftHoverMetricStyle,
+          });
+        }
+      },
+    });
+
+    const hoverSyncOverviewToggle = ToggleSwitch({
+      ariaLabelKey: 'settings.str.hoverSyncOverviewLabel',
+      preset: 'enable',
+      modelValue: draftHoverSyncOverview ? 'on' : 'off',
+      onUpdateModelValue: (val) => {
+        const nextSync = val !== 'off';
+        if (nextSync === draftHoverSyncOverview) return;
+        if (!nextSync) {
+          // Detach smoothly from current Live Overview settings without visual jump
+          draftHoverMetricStyle = draftOverviewMetricStyle;
+          draftHoverMetrics = [...draftOverviewMetrics];
+          draftHoverSyncOverview = false;
+          syncHoverSectionMeta();
+          props.onLayoutChange?.();
+          void persistStructurePatch(hoverSection, {
+            hoverSyncOverviewMetrics: false,
+            hoverMetricStyle: draftHoverMetricStyle,
+            hoverMetrics: draftHoverMetrics,
+          });
+        } else {
+          draftHoverSyncOverview = true;
+          syncHoverSectionMeta();
+          props.onLayoutChange?.();
+          void persistStructurePatch(hoverSection, {
+            hoverSyncOverviewMetrics: true,
+          });
+        }
+      },
+    });
+
+    const hoverMetricsList = EditableSlotList({
+      items: getEffectiveHoverMetrics(),
+      options: getOverviewMetricOptions(),
+      minItems: 1,
+      maxItems: 4,
+      dimmedFromIndex:
+        getEffectiveHoverMetricStyle() === 'large' ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+      dimmedTagText: t('settings.str.metricOverflowTag'),
+      addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
+      onPreview: (previewItems) => {
+        const normalized = normalizeClientHoverMetrics(previewItems);
+        if (draftHoverSyncOverview) {
+          draftOverviewMetrics = normalized;
+          refreshOverviewPreview();
+        } else {
+          draftHoverMetrics = normalized;
+        }
+        refreshHoverPreview();
+      },
+      onChange: commitHoverMetricsOrder,
     });
 
     const hoverModulesList = EditableSlotList({
@@ -890,6 +1125,7 @@ export const SettingsStructureTab = defineComponent({
       addBtnTextFn: (count, max) => t('settings.str.addHoverModule', { count, max }),
       onPreview: (previewItems) => {
         draftHoverModules = normalizeClientHoverModules(previewItems);
+        patchAttr(hoverMetricsInactiveHintEl, 'hidden', draftHoverModules.includes('metrics'));
         refreshHoverPreview();
       },
       onChange: (nextItems) => {
@@ -909,16 +1145,38 @@ export const SettingsStructureTab = defineComponent({
       badgeText: t('settings.str.hoverBadgeCount', { count: draftHoverModules.length }),
       onReset: () => {
         draftHoverModules = [...DEFAULT_CLIENT_HOVER_MODULES];
+        draftHoverSyncOverview = DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS;
+        draftHoverMetricStyle = DEFAULT_CLIENT_HOVER_METRIC_STYLE;
+        draftHoverMetrics = [...DEFAULT_CLIENT_HOVER_METRICS];
         syncHoverSectionMeta();
         props.onLayoutChange?.();
         void persistStructurePatch(
           hoverSection,
-          { hoverModules: [...DEFAULT_CLIENT_HOVER_MODULES] },
+          {
+            hoverModules: [...DEFAULT_CLIENT_HOVER_MODULES],
+            hoverSyncOverviewMetrics: DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS,
+            hoverMetricStyle: DEFAULT_CLIENT_HOVER_METRIC_STYLE,
+            hoverMetrics: [...DEFAULT_CLIENT_HOVER_METRICS],
+          },
           'settings.resetDone'
         );
       },
       children: [
         hoverPreviewCanvas,
+        h('div', { className: 'settings-divider' }),
+        h('div', { className: 'form-row' }, [
+          h('div', { className: 'settings-inline-row' }, [
+            hoverMetricStyleLabelEl,
+            hoverMetricStyleSwitch.el,
+          ]),
+          h('div', { className: 'settings-inline-row' }, [
+            hoverSyncOverviewLabelEl,
+            hoverSyncOverviewToggle.el,
+          ]),
+          hoverMetricsInactiveHintEl,
+          hoverMetricsLabelEl,
+          hoverMetricsList.el,
+        ]),
         h('div', { className: 'settings-divider' }),
         h('div', { className: 'form-row' }, [hoverModulesLabelEl, hoverModulesList.el]),
       ],
@@ -937,6 +1195,20 @@ export const SettingsStructureTab = defineComponent({
     }
 
     function syncHoverSectionMeta() {
+      const effectiveStyle = getEffectiveHoverMetricStyle();
+      const metricsEnabled = draftHoverModules.includes('metrics');
+
+      hoverMetricStyleSwitch.setProps({
+        modelValue: effectiveStyle,
+        options: getHoverMetricStyleOptions(),
+        ariaLabel: t('settings.str.hoverMetricStyleLabel'),
+      });
+      hoverSyncOverviewToggle.setProps({
+        modelValue: draftHoverSyncOverview ? 'on' : 'off',
+      });
+      patchAttr(hoverMetricsInactiveHintEl, 'hidden', metricsEnabled);
+      patchText(hoverMetricsInactiveHintEl, t('settings.str.hoverMetricsInactiveHint'));
+      syncHoverMetricListProps();
       hoverModulesList.refs.setProps({
         items: draftHoverModules,
         options: getOverviewModuleOptions(),
@@ -948,9 +1220,12 @@ export const SettingsStructureTab = defineComponent({
           ? t('settings.str.hoverBadgeOff')
           : t('settings.str.hoverBadgeCount', { count: draftHoverModules.length })
       );
-      hoverSection.refs.setResetDisabled(
-        isSameList(draftHoverModules, DEFAULT_CLIENT_HOVER_MODULES)
-      );
+      const isDefault =
+        isSameList(draftHoverModules, DEFAULT_CLIENT_HOVER_MODULES) &&
+        draftHoverSyncOverview === DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS &&
+        draftHoverMetricStyle === DEFAULT_CLIENT_HOVER_METRIC_STYLE &&
+        isSameList(draftHoverMetrics, DEFAULT_CLIENT_HOVER_METRICS);
+      hoverSection.refs.setResetDisabled(isDefault);
       refreshHoverPreview();
     }
 
@@ -962,11 +1237,35 @@ export const SettingsStructureTab = defineComponent({
       preview: true,
       isVisibleFn: () => isStructureVisible() && activeThirdTab === 'overview',
       initialModuleKeys: [],
+      onPreviewModules: (previewModules) => {
+        draftOverviewModules = normalizeClientOverviewModules(previewModules);
+        patchAttr(overviewMetricsHintEl, 'hidden', draftOverviewModules.includes('metrics'));
+        overviewModulesList.refs.setProps({ items: draftOverviewModules });
+      },
+      onReorderModules: (nextModules) => {
+        draftOverviewModules = normalizeClientOverviewModules(nextModules);
+        syncOverviewSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(overviewSection, { overviewModules: draftOverviewModules });
+      },
+      onPreviewMetrics: (previewMetrics) => {
+        draftOverviewMetrics = normalizeClientOverviewMetrics(previewMetrics);
+        syncOverviewMetricListProps();
+        if (draftHoverSyncOverview) {
+          syncHoverMetricListProps();
+          refreshHoverPreview();
+        }
+      },
+      onReorderMetrics: commitOverviewMetricsOrder,
     });
     const overviewPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       overviewPreviewContainerEl,
     ]);
 
+    const overviewMetricStyleLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.hoverMetricStyleLabel'),
+    });
     const overviewModulesLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.str.overviewModulesLabel'),
@@ -979,6 +1278,46 @@ export const SettingsStructureTab = defineComponent({
       className: 'settings-hint-text',
       hidden: true,
       text: t('settings.str.overviewMetricsInactiveHint'),
+    });
+    const quotaDisplayModeLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.quotaDisplayModeLabel'),
+    });
+
+    const overviewMetricStyleSwitch = SegmentedControl({
+      ariaLabel: t('settings.str.hoverMetricStyleLabel'),
+      modelValue: draftOverviewMetricStyle,
+      options: getHoverMetricStyleOptions(),
+      onUpdateModelValue: (val) => {
+        const nextStyle = normalizeClientOverviewMetricStyle(val);
+        if (nextStyle === draftOverviewMetricStyle) return;
+        draftOverviewMetricStyle = nextStyle;
+        syncOverviewSectionMeta();
+        if (draftHoverSyncOverview) {
+          syncHoverSectionMeta();
+        }
+        props.onLayoutChange?.();
+        void persistStructurePatch(overviewSection, {
+          overviewMetricStyle: draftOverviewMetricStyle,
+        });
+      },
+    });
+
+    const quotaDisplayModeToggle = SegmentedControl({
+      ariaLabel: t('settings.str.quotaDisplayModeLabel'),
+      modelValue: draftQuotaDisplayMode,
+      options: getQuotaDisplayModeOptions(),
+      onUpdateModelValue: (val) => {
+        const nextMode = normalizeClientQuotaDisplayMode(val);
+        if (nextMode === draftQuotaDisplayMode) return;
+        draftQuotaDisplayMode = nextMode;
+        syncOverviewSectionMeta();
+        refreshHoverPreview();
+        props.onLayoutChange?.();
+        void persistStructurePatch(overviewSection, {
+          quotaDisplayMode: draftQuotaDisplayMode,
+        });
+      },
     });
 
     const overviewModulesList = EditableSlotList({
@@ -1007,19 +1346,18 @@ export const SettingsStructureTab = defineComponent({
       options: getOverviewMetricOptions(),
       minItems: 1,
       maxItems: 4,
+      dimmedFromIndex:
+        draftOverviewMetricStyle === 'large' ? MAX_CLIENT_LARGE_METRIC_SLOTS : null,
+      dimmedTagText: t('settings.str.metricOverflowTag'),
       addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
       onPreview: (previewItems) => {
         draftOverviewMetrics = normalizeClientOverviewMetrics(previewItems);
         refreshOverviewPreview();
+        if (draftHoverSyncOverview) {
+          refreshHoverPreview();
+        }
       },
-      onChange: (nextItems) => {
-        draftOverviewMetrics = normalizeClientOverviewMetrics(nextItems);
-        syncOverviewSectionMeta();
-        props.onLayoutChange?.();
-        void persistStructurePatch(overviewSection, {
-          overviewMetrics: draftOverviewMetrics,
-        });
-      },
+      onChange: commitOverviewMetricsOrder,
     });
 
     const overviewSection = CollapsibleSection({
@@ -1032,14 +1370,23 @@ export const SettingsStructureTab = defineComponent({
       }),
       onReset: () => {
         draftOverviewModules = [...DEFAULT_CLIENT_OVERVIEW_MODULES];
+        draftOverviewMetricStyle = DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE;
         draftOverviewMetrics = [...DEFAULT_CLIENT_OVERVIEW_METRICS];
+        draftQuotaDisplayMode = DEFAULT_CLIENT_QUOTA_DISPLAY_MODE;
         syncOverviewSectionMeta();
+        if (draftHoverSyncOverview) {
+          syncHoverSectionMeta();
+        } else {
+          refreshHoverPreview();
+        }
         props.onLayoutChange?.();
         void persistStructurePatch(
           overviewSection,
           {
             overviewModules: [...DEFAULT_CLIENT_OVERVIEW_MODULES],
+            overviewMetricStyle: DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE,
             overviewMetrics: [...DEFAULT_CLIENT_OVERVIEW_METRICS],
+            quotaDisplayMode: DEFAULT_CLIENT_QUOTA_DISPLAY_MODE,
           },
           'settings.resetDone'
         );
@@ -1047,13 +1394,21 @@ export const SettingsStructureTab = defineComponent({
       children: [
         overviewPreviewCanvas,
         h('div', { className: 'settings-divider' }),
-        h('div', { className: 'form-row' }, [overviewModulesLabelEl, overviewModulesList.el]),
-        h('div', { className: 'settings-divider' }),
         h('div', { className: 'form-row' }, [
-          overviewMetricsLabelEl,
+          h('div', { className: 'settings-inline-row' }, [
+            overviewMetricStyleLabelEl,
+            overviewMetricStyleSwitch.el,
+          ]),
+          h('div', { className: 'settings-inline-row' }, [
+            quotaDisplayModeLabelEl,
+            quotaDisplayModeToggle.el,
+          ]),
           overviewMetricsHintEl,
+          overviewMetricsLabelEl,
           overviewMetricsList.el,
         ]),
+        h('div', { className: 'settings-divider' }),
+        h('div', { className: 'form-row' }, [overviewModulesLabelEl, overviewModulesList.el]),
       ],
     });
 
@@ -1066,27 +1421,39 @@ export const SettingsStructureTab = defineComponent({
     }
 
     function syncOverviewSectionMeta() {
+      const isLarge = draftOverviewMetricStyle === 'large';
+      overviewMetricStyleSwitch.setProps({
+        modelValue: draftOverviewMetricStyle,
+        options: getHoverMetricStyleOptions(),
+        ariaLabel: t('settings.str.hoverMetricStyleLabel'),
+      });
+      quotaDisplayModeToggle.setProps({
+        modelValue: draftQuotaDisplayMode,
+        options: getQuotaDisplayModeOptions(),
+        ariaLabel: t('settings.str.quotaDisplayModeLabel'),
+      });
       overviewModulesList.refs.setProps({
         items: draftOverviewModules,
         options: getOverviewModuleOptions(),
         addBtnTextFn: (count, max) => t('settings.str.addOverviewModule', { count, max }),
       });
-      overviewMetricsList.refs.setProps({
-        items: draftOverviewMetrics,
-        options: getOverviewMetricOptions(),
-        addBtnTextFn: (count, max) => t('settings.str.addOverviewMetric', { count, max }),
-      });
+      syncOverviewMetricListProps();
       const metricsModuleActive = draftOverviewModules.includes('metrics');
       patchAttr(overviewMetricsHintEl, 'hidden', metricsModuleActive);
+      const visibleMetricCount = isLarge
+        ? Math.min(MAX_CLIENT_LARGE_METRIC_SLOTS, draftOverviewMetrics.length)
+        : draftOverviewMetrics.length;
       overviewSection.refs.setBadge(
         t('settings.str.overviewBadge', {
           modCount: draftOverviewModules.length,
-          metCount: draftOverviewMetrics.length,
+          metCount: visibleMetricCount,
         })
       );
       const isDefault =
         isSameList(draftOverviewModules, DEFAULT_CLIENT_OVERVIEW_MODULES) &&
-        isSameList(draftOverviewMetrics, DEFAULT_CLIENT_OVERVIEW_METRICS);
+        draftOverviewMetricStyle === DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE &&
+        isSameList(draftOverviewMetrics, DEFAULT_CLIENT_OVERVIEW_METRICS) &&
+        draftQuotaDisplayMode === DEFAULT_CLIENT_QUOTA_DISPLAY_MODE;
       overviewSection.refs.setResetDisabled(isDefault);
       refreshOverviewPreview();
     }
@@ -1095,6 +1462,16 @@ export const SettingsStructureTab = defineComponent({
     const stepTablePreview = StepTableWidget({
       standalone: true,
       interactiveBadges: false,
+      onPreviewColumns: (previewCols) => {
+        draftStepColumns = normalizeClientStepColumns(previewCols);
+        stepColumnsList.refs.setProps({ items: draftStepColumns });
+      },
+      onReorderColumns: (nextCols) => {
+        draftStepColumns = normalizeClientStepColumns(nextCols);
+        syncStepsSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(stepsSection, { stepTableColumns: draftStepColumns });
+      },
     });
     const stepsPreviewCanvas = h('div', { className: 'structure-preview-canvas' }, [
       stepTablePreview.el,
@@ -1419,6 +1796,7 @@ export const SettingsStructureTab = defineComponent({
         patchAttr(entry.btn, 'aria-selected', isActive ? 'true' : 'false');
       }
       patchAttr(mountSection.el, 'hidden', nextTab !== 'mount');
+      syncCliSectionVisibility();
       patchAttr(hoverSection.el, 'hidden', nextTab !== 'hover');
       patchAttr(overviewSection.el, 'hidden', nextTab !== 'overview');
       patchAttr(stepsSection.el, 'hidden', nextTab !== 'steps');
@@ -1429,6 +1807,7 @@ export const SettingsStructureTab = defineComponent({
 
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       mountSection.el,
+      cliSection.el,
       hoverSection.el,
       overviewSection.el,
       stepsSection.el,
@@ -1459,8 +1838,15 @@ export const SettingsStructureTab = defineComponent({
       draftContextAgentMode = normalizeClientContextAgentMode(settings.contextAgentMode);
       draftTopbarSlots = normalizeClientTopbarSlots(settings.topbarCapsuleSlots);
       draftHoverModules = normalizeClientHoverModules(settings.hoverModules);
+      draftHoverSyncOverview = normalizeClientHoverSyncOverviewMetrics(
+        settings.hoverSyncOverviewMetrics
+      );
+      draftHoverMetricStyle = normalizeClientHoverMetricStyle(settings.hoverMetricStyle);
+      draftHoverMetrics = normalizeClientHoverMetrics(settings.hoverMetrics);
       draftOverviewModules = normalizeClientOverviewModules(settings.overviewModules);
+      draftOverviewMetricStyle = normalizeClientOverviewMetricStyle(settings.overviewMetricStyle);
       draftOverviewMetrics = normalizeClientOverviewMetrics(settings.overviewMetrics);
+      draftQuotaDisplayMode = normalizeClientQuotaDisplayMode(settings.quotaDisplayMode);
       draftShowStepTurnRail = settings.showStepTurnRail === true;
       draftShowStepAgentBadge = settings.showStepAgentBadge !== false;
       draftShowStepSpeedColor = settings.showStepSpeedColor === true;
@@ -1472,6 +1858,7 @@ export const SettingsStructureTab = defineComponent({
       draftStepColumns = normalizeClientStepColumns(settings.stepTableColumns);
 
       syncMountSectionMeta();
+      syncCliSectionMeta();
       syncHoverSectionMeta();
       syncOverviewSectionMeta();
       syncStepsSectionMeta();
@@ -1485,24 +1872,29 @@ export const SettingsStructureTab = defineComponent({
 
       mountSection.refs.setTitle(t('settings.str.mountSection'));
       mountSection.refs.setResetLabel(t('settings.resetBtn'));
+      cliSection.refs.setTitle(t('settings.str.cliSection'));
+      cliSection.refs.setResetLabel(t('settings.resetBtn'));
       patchText(mountModeLabelEl, t('settings.str.mountMode'));
       patchText(popoverWidthLabelEl, t('settings.str.popoverWidthLabel'));
       popoverWidthStepper.setProps({ ariaLabel: t('settings.str.popoverWidthLabel') });
       patchText(multiToggleLabelEl, t('settings.str.multiToggle'));
       patchText(contextAgentModeLabelEl, t('settings.str.contextAgentModeLabel'));
       patchText(cliCapsuleLabelEl, t('settings.str.cliCapsuleToggle'));
-      patchText(cliSlotsLabelEl, t('settings.str.cliSlotsLabel'));
-      patchText(capsuleSlotsLabelEl, t('settings.str.capsuleSlotsLabel'));
 
       hoverSection.refs.setTitle(t('settings.str.hoverSection'));
       hoverSection.refs.setResetLabel(t('settings.resetBtn'));
       patchText(hoverModulesLabelEl, t('settings.str.hoverModulesLabel'));
+      patchText(hoverMetricStyleLabelEl, t('settings.str.hoverMetricStyleLabel'));
+      patchText(hoverSyncOverviewLabelEl, t('settings.str.hoverSyncOverviewLabel'));
+      patchText(hoverMetricsLabelEl, t('settings.str.hoverMetricsLabel'));
 
       overviewSection.refs.setTitle(t('settings.str.overviewSection'));
       overviewSection.refs.setResetLabel(t('settings.resetBtn'));
+      patchText(overviewMetricStyleLabelEl, t('settings.str.hoverMetricStyleLabel'));
       patchText(overviewModulesLabelEl, t('settings.str.overviewModulesLabel'));
       patchText(overviewMetricsLabelEl, t('settings.str.overviewMetricsLabel'));
       patchText(overviewMetricsHintEl, t('settings.str.overviewMetricsInactiveHint'));
+      patchText(quotaDisplayModeLabelEl, t('settings.str.quotaDisplayModeLabel'));
 
       stepsSection.refs.setTitle(t('settings.str.stepsSection'));
       stepsSection.refs.setResetLabel(t('settings.resetBtn'));
@@ -1518,6 +1910,7 @@ export const SettingsStructureTab = defineComponent({
       patchText(stepColsLabelEl, t('settings.str.stepsColsLabel'));
 
       syncMountSectionMeta();
+      syncCliSectionMeta();
       syncHoverSectionMeta();
       syncOverviewSectionMeta();
       syncStepsSectionMeta();
@@ -1547,6 +1940,7 @@ export const SettingsStructureTab = defineComponent({
     );
 
     syncMountSectionMeta();
+    syncCliSectionMeta();
     syncHoverSectionMeta();
     syncOverviewSectionMeta();
     syncStepsSectionMeta();
@@ -1568,6 +1962,11 @@ export const SettingsStructureTab = defineComponent({
       cliSlotsList.destroy();
       topbarSlotsList.destroy();
       hoverModulesList.destroy();
+      hoverMetricStyleSwitch.destroy();
+      hoverSyncOverviewToggle.destroy();
+      hoverMetricsList.destroy();
+      overviewMetricStyleSwitch.destroy();
+      quotaDisplayModeToggle.destroy();
       overviewModulesList.destroy();
       overviewMetricsList.destroy();
       stepTurnRailToggle.destroy();
@@ -1576,6 +1975,7 @@ export const SettingsStructureTab = defineComponent({
       stepFilterToolbarToggle.destroy();
       stepColumnsList.destroy();
       mountSection.destroy();
+      cliSection.destroy();
       hoverSection.destroy();
       overviewSection.destroy();
       stepsSection.destroy();
@@ -1594,6 +1994,7 @@ export const SettingsStructureTab = defineComponent({
         multiSessionToggle,
         contextAgentModeToggle,
         cliCapsuleToggle,
+        cliSection,
         cliStatusGroupEl,
         cliStatusDetailEl,
         cliPreviewEl,
@@ -1603,6 +2004,11 @@ export const SettingsStructureTab = defineComponent({
         cliStatusActionBtn,
         topbarSlotsList,
         hoverModulesList,
+        hoverMetricStyleSwitch,
+        hoverSyncOverviewToggle,
+        hoverMetricsList,
+        overviewMetricStyleSwitch,
+        quotaDisplayModeToggle,
         overviewModulesList,
         overviewMetricsList,
         stepTurnRailToggle,

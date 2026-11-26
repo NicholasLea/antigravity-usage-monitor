@@ -24,6 +24,7 @@ import { CustomSelect } from '../src/components/ui/CustomSelect.js';
 import { SegmentedControl } from '../src/components/ui/SegmentedControl.js';
 import { AccountQuotaTrendCard } from '../src/components/widgets/AccountQuotaTrendCard.js';
 import {
+  CapsuleBarWidget,
   buildCapsuleSlotContext,
   createCapsuleSlotNode,
   patchCapsuleOdometerText,
@@ -46,6 +47,15 @@ import { ConsumptionView } from '../src/views/ConsumptionView.js';
 import { StepsDetailView } from '../src/views/StepsDetailView.js';
 import { SettingsGeneralTab } from '../src/views/settings/SettingsGeneralTab.js';
 import { SettingsStructureTab } from '../src/views/settings/SettingsStructureTab.js';
+import { EditableSlotList } from '../src/components/settings/EditableSlotList.js';
+import { MetricMatrixWidget } from '../src/components/widgets/MetricMatrixWidget.js';
+import {
+  buildSparklineGeometry,
+  extractOverviewMetricSeries,
+  resolveAdaptiveSparklineSpec,
+  splitMetricValueAndUnit,
+} from '../src/registries/metricRegistry.js';
+import { buildStructurePreviewTelemetry } from '../src/components/settings/structurePreviewMock.js';
 
 test('modernUi schema normalization defaults to true, upgrades 1.5.2 settings without modernUi key to true, and respects explicit false', () => {
   assert.equal(DEFAULT_SETTINGS_SCHEMA.language, 'auto');
@@ -208,7 +218,7 @@ test('applyAppearanceToRoot and SettingsGeneralTab toggle data-modern-ui + data-
   assert.equal(document.documentElement.hasAttribute('data-modern-ui'), false);
   assert.equal(document.documentElement.getAttribute('data-color-scheme'), 'light');
 
-  // 2. SettingsGeneralTab renders '现代化 UI' (开启 / 关闭) and Language (跟随系统 / 简体中文 / English)
+  // 2. SettingsGeneralTab renders '现代化 UI' (开启 / 关闭) and 7-locale Language CustomSelect
   tab = SettingsGeneralTab({});
   document.body.appendChild(tab.el);
   tab.refs.renderSettings({
@@ -222,12 +232,19 @@ test('applyAppearanceToRoot and SettingsGeneralTab toggle data-modern-ui + data-
 
   assert.match(tab.el.textContent, /现代化 UI/);
   assert.doesNotMatch(tab.el.textContent, /实验性/);
-  const langSegBtns = tab.refs.languageSwitch.el.querySelectorAll('.seg-btn');
+  assert.equal(tab.refs.languageSwitch.el.querySelector('.select-label').textContent, '跟随系统');
+  tab.refs.languageSwitch.el
+    .querySelector('.select-trigger')
+    .dispatchEvent({ type: 'click', stopPropagation() {} });
+  const langSelectOpts = tab.refs.languageSwitch.el.querySelectorAll('.select-option');
   assert.deepEqual(
-    langSegBtns.map((b) => b.textContent),
-    ['跟随系统', '简体中文', 'English']
+    langSelectOpts.map((opt) => opt.querySelector('.select-option-text').textContent),
+    ['跟随系统', '简体中文', '繁體中文', 'English', '日本語', '한국어', 'Deutsch', 'Français']
   );
-  assert.equal(langSegBtns[0].classList.contains('is-active'), true);
+  assert.equal(langSelectOpts[0].classList.contains('is-selected'), true);
+  tab.refs.languageSwitch.el
+    .querySelector('.select-trigger')
+    .dispatchEvent({ type: 'click', stopPropagation() {} });
 
   const modernBtns = tab.refs.modernUiSwitch.el.querySelectorAll('.seg-btn');
   assert.deepEqual(
@@ -1632,4 +1649,1380 @@ test('Capsule odometer digit rolling (0.15s) and color transition (0.1s) stay st
   );
   assert.equal(capSlots[1].textSpan.textContent, '--s');
   assert.equal(capSlots[1].textSpan.hasAttribute('data-od-active'), false);
+});
+
+test('modern-ui floating hover tooltip rules exclude inline .wm-hover-tip.is-preview inside Shadow DOM popover', () => {
+  const stylesCss = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  assert.match(
+    stylesCss,
+    /:host\(\[data-modern-ui="true"\]\)\s+\.wm-hover-tip:not\(\.is-preview\)/,
+    'Shadow DOM modern-ui floating .wm-hover-tip chrome must not bleed into inline Settings preview'
+  );
+  assert.doesNotMatch(
+    stylesCss,
+    /:host\(\[data-modern-ui="true"\]\)\s+\.wm-hover-tip(?:\.is-above)?\s*[,{]/,
+    'No unguarded :host([data-modern-ui="true"]) .wm-hover-tip rule may override .wm-hover-tip.is-preview'
+  );
+  assert.match(
+    stylesCss,
+    /\.wm-hover-tip\.is-preview\s*\{[^}]*overflow:\s*visible;[^}]*contain:\s*none;/,
+    'Inline hover preview resets overflow and contain from floating .wm-hover-tip'
+  );
+});
+
+test('EditableSlotList supports continuous pointer-following drag, smooth sibling displacement, deferred mid-drag setProps, and Escape revert', async (t) => {
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRaf = globalThis.requestAnimationFrame;
+  const prevCancelRaf = globalThis.cancelAnimationFrame;
+
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+
+  let comp = null;
+  t.after(() => {
+    comp?.destroy?.();
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.requestAnimationFrame = prevRaf;
+    globalThis.cancelAnimationFrame = prevCancelRaf;
+  });
+
+  const previews = [];
+  const commits = [];
+  comp = EditableSlotList({
+    items: ['metrics', 'context', 'quotas'],
+    options: [
+      { value: 'metrics', label: 'Metrics' },
+      { value: 'context', label: 'Context' },
+      { value: 'quotas', label: 'Quotas' },
+    ],
+    minItems: 0,
+    maxItems: 4,
+    onPreview: (items) => previews.push(items),
+    onChange: (items) => commits.push(items),
+  });
+  document.body.appendChild(comp.el);
+
+  const listEl = comp.refs.listEl;
+  listEl.getBoundingClientRect = () => ({ left: 0, top: 100, right: 320, bottom: 199, width: 320, height: 99 });
+  for (let i = 0; i < 3; i += 1) {
+    const rowEl = listEl.children[i];
+    rowEl.getBoundingClientRect = () => ({
+      left: 0,
+      top: 100 + i * 33,
+      right: 320,
+      bottom: 100 + i * 33 + 28,
+      width: 320,
+      height: 28,
+    });
+  }
+
+  // Drag directly from the row's select-trigger body (stepless continuous follow)
+  const row0 = listEl.children[0];
+  const row1 = listEl.children[1];
+  const row2 = listEl.children[2];
+  const row0Trigger = row0.querySelector('.select-trigger');
+  row0.dispatchEvent({
+    type: 'pointerdown',
+    target: row0Trigger,
+    button: 0,
+    clientX: 120,
+    clientY: 114,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  // 1) Move 15px downward + 20px right: continuous translate3d before crossing row 1 midpoint
+  document.dispatchEvent({ type: 'pointermove', clientX: 140, clientY: 129, preventDefault() {} });
+  assert.equal(listEl.classList.contains('is-dragging-list'), true);
+  assert.equal(row0.classList.contains('is-dragging'), true);
+  assert.equal(row1.classList.contains('is-drag-sibling'), true);
+  assert.match(row0.style.transform, /translate3d\(4\.40px, 15\.00px, 0\) scale\(1\.015\)/);
+  assert.equal(previews.length, 0, 'Order stays unchanged before midpoint threshold');
+
+  // 2) Background poll calls setProps mid-drag -> must not tear down or reset active dragged transform
+  comp.refs.setProps({ items: ['metrics', 'context', 'quotas'] });
+  assert.match(row0.style.transform, /translate3d\(4\.40px, 15\.00px, 0\)/);
+
+  // 3) Drag continuously past row 2 midpoint -> siblings slide up smoothly by -33px and badges update live
+  document.dispatchEvent({ type: 'pointermove', clientX: 120, clientY: 186, preventDefault() {} });
+  assert.deepEqual(previews.at(-1), ['context', 'quotas', 'metrics']);
+  assert.equal(row1.style.transform, 'translate3d(0px, -33.00px, 0)');
+  assert.equal(row2.style.transform, 'translate3d(0px, -33.00px, 0)');
+  assert.equal(row0.querySelector('.slot-index-badge').textContent, '3');
+  assert.equal(row1.querySelector('.slot-index-badge').textContent, '1');
+  assert.equal(row2.querySelector('.slot-index-badge').textContent, '2');
+  assert.equal(commits.length, 0, 'No persistence before drop');
+
+  // 4) Release commits once immediately and runs FLIP drop settle on target row
+  document.dispatchEvent({ type: 'pointerup', clientX: 120, clientY: 186 });
+  assert.equal(listEl.classList.contains('is-dragging-list'), false);
+  assert.deepEqual(commits, [['context', 'quotas', 'metrics']]);
+  assert.equal(row2.classList.contains('is-settling'), true, 'Target row enters smooth drop settle');
+  assert.equal(row2.style.transform, 'translate3d(0.00px, 1.50px, 0) scale(1.015)');
+  await new Promise((r) => setTimeout(r, 25));
+  assert.equal(row2.style.transform, 'translate3d(0px, 0px, 0)', 'Settle transitions smoothly to resting slot');
+
+  // 5) Drag and press Escape -> cleanly reverts order and clears drag classes
+  const row0Handle = listEl.children[0].querySelector('.slot-drag-handle');
+  row0Handle.dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 10,
+    clientY: 114,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 10, clientY: 155, preventDefault() {} });
+  assert.deepEqual(previews.at(-1), ['quotas', 'context', 'metrics']);
+  document.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.equal(listEl.classList.contains('is-dragging-list'), false);
+  assert.deepEqual(comp.refs.getItems(), ['context', 'quotas', 'metrics']);
+  assert.equal(commits.length, 1, 'Cancelled drag does not commit');
+});
+
+test('Large Trend metric cards support unified 1-4 metrics across Hover & Live Overview, sync/detach cleanly, and dim overflow item #4', async (t) => {
+  const prevDoc = globalThis.document;
+  const { document } = createMockDom();
+  globalThis.document = document;
+  let hoverMatrix = null;
+  let overviewMatrix = null;
+  let slotList = null;
+  t.after(() => {
+    slotList?.destroy();
+    hoverMatrix?.destroy();
+    overviewMatrix?.destroy();
+    globalThis.document = prevDoc;
+  });
+
+  // 1) Value/unit splitter & sparkline geometry edge cases
+  assert.deepEqual(splitMetricValueAndUnit('82.3 tok/s'), { main: '82.3', unit: 'tok/s' });
+  assert.deepEqual(splitMetricValueAndUnit('1.15s'), { main: '1.15', unit: 's' });
+  assert.deepEqual(splitMetricValueAndUnit('94.5%'), { main: '94.5', unit: '%' });
+  assert.deepEqual(splitMetricValueAndUnit('$0.042'), { main: '$0.042', unit: '' });
+  assert.deepEqual(splitMetricValueAndUnit('—'), { main: '—', unit: '' });
+
+  const emptyGeom = buildSparklineGeometry([]);
+  assert.equal(emptyGeom.hasLine, false);
+  assert.equal(emptyGeom.hasDot, false);
+
+  const singleGeom = buildSparklineGeometry([42]);
+  assert.equal(singleGeom.hasLine, true);
+  assert.equal(singleGeom.hasDot, true);
+
+  const flatGeom = buildSparklineGeometry([50, 50, 50]);
+  assert.equal(flatGeom.hasLine, true);
+  assert.ok(flatGeom.linePoints.split(' ').length === 3);
+
+  const mockData = buildStructurePreviewTelemetry(
+    {},
+    {
+      hoverSyncOverviewMetrics: false,
+      hoverMetricStyle: 'large',
+      hoverMetrics: ['tps', 'ttft', 'step_cost', 'avg_tps'],
+      overviewMetricStyle: 'medium',
+      overviewMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+    }
+  );
+  const steps = mockData.activeConversation.sparklineSteps;
+  for (const key of [
+    'tps',
+    'ttft',
+    'avg_tps',
+    'step_cost',
+    'session_cost',
+    'cache_hit',
+    'session_tokens',
+    'context_usage',
+  ]) {
+    const series = extractOverviewMetricSeries(key, steps, { maxPoints: 16, limitTokens: 256000 });
+    assert.equal(series.length, 16, `Metric ${key} extracts up to maxPoints chronological points`);
+    assert.ok(series.every((n) => Number.isFinite(n)), `Metric ${key} contains finite values`);
+  }
+  // Chronological check: oldest first -> newest last (matches latest mock step 68.4 tok/s)
+  const tpsSeries = extractOverviewMetricSeries('tps', steps, { maxPoints: 14 });
+  assert.equal(tpsSeries.at(-1), 68.4);
+  assert.equal(tpsSeries[0], 64.8);
+
+  // Adaptive spec scales step count smoothly with available pixel width
+  const narrowSpec = resolveAdaptiveSparklineSpec(38, 3);
+  const default3Spec = resolveAdaptiveSparklineSpec(0, 3);
+  const default2Spec = resolveAdaptiveSparklineSpec(0, 2);
+  const default1Spec = resolveAdaptiveSparklineSpec(0, 1);
+  const ultraWideSpec = resolveAdaptiveSparklineSpec(500, 1);
+  assert.equal(narrowSpec.width, 38);
+  assert.equal(narrowSpec.maxPoints, 5);
+  assert.equal(default3Spec.width, 74);
+  assert.equal(default3Spec.maxPoints, 9);
+  assert.equal(default2Spec.width, 136);
+  assert.equal(default2Spec.maxPoints, 18);
+  assert.equal(default1Spec.width, 248);
+  assert.equal(default1Spec.maxPoints, 33);
+  assert.equal(ultraWideSpec.maxPoints, 48);
+
+  // 2) Detached Hover renders top 3 of its 4-metric list in Large mode, while Overview stays in Medium (4 cols)
+  const prevRO = globalThis.ResizeObserver;
+  const roInstances = [];
+  globalThis.ResizeObserver = class MockResizeObserver {
+    constructor(cb) {
+      this.cb = cb;
+      this.observed = new Set();
+      roInstances.push(this);
+    }
+    observe(el) {
+      this.observed.add(el);
+    }
+    unobserve(el) {
+      this.observed.delete(el);
+    }
+    disconnect() {
+      this.observed.clear();
+    }
+    emit(entries) {
+      this.cb(entries);
+    }
+  };
+  try {
+    hoverMatrix = MetricMatrixWidget({ mode: 'hover', preview: true });
+    overviewMatrix = MetricMatrixWidget({ mode: 'overview', preview: true });
+
+    hoverMatrix.refs.update({ data: mockData });
+    overviewMatrix.refs.update({ data: mockData });
+
+    assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), true);
+    assert.equal(hoverMatrix.el.getAttribute('data-cols'), '3');
+    assert.equal(hoverMatrix.el.children.length, 3);
+    const card0 = hoverMatrix.el.children[0];
+    assert.equal(card0.classList.contains('is-trend-card'), true);
+    assert.equal(card0.querySelector('.cell-trend-num').textContent, '68.4');
+    assert.equal(card0.querySelector('.cell-trend-unit').textContent, 'tok/s');
+    assert.equal(card0.querySelector('.cell-sparkline-svg').getAttribute('viewBox'), '0 0 74 34');
+    assert.equal(
+      card0.querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length,
+      default3Spec.maxPoints
+    );
+    assert.equal(card0.querySelector('.cell-sparkline-axis'), null);
+    assert.ok(card0.querySelector('.cell-sparkline-area').getAttribute('d').startsWith('M '));
+
+    // Live ResizeObserver adapts each card independently to narrow vs wide sparkline space
+    const hoverRO = roInstances[0];
+    const wrap0 = card0.querySelector('.cell-sparkline-wrap');
+    const wrap1 = hoverMatrix.el.children[1].querySelector('.cell-sparkline-wrap');
+    hoverRO.emit([
+      { target: wrap0, contentRect: { width: 42 } },
+      { target: wrap1, contentRect: { width: 120 } },
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(card0.querySelector('.cell-sparkline-svg').getAttribute('viewBox'), '0 0 42 34');
+    assert.equal(
+      card0.querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length,
+      resolveAdaptiveSparklineSpec(42, 3).maxPoints
+    );
+    assert.equal(
+      hoverMatrix.el.children[1].querySelector('.cell-sparkline-svg').getAttribute('viewBox'),
+      '0 0 120 34'
+    );
+    assert.equal(
+      hoverMatrix.el.children[1].querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length,
+      resolveAdaptiveSparklineSpec(120, 3).maxPoints
+    );
+
+    // Overview stays in 4-column medium mode when detached
+    assert.equal(overviewMatrix.el.classList.contains('is-large-trend'), false);
+    assert.equal(overviewMatrix.el.getAttribute('data-cols'), '4');
+    assert.equal(overviewMatrix.el.children.length, 4);
+
+    // 3) Synced mode (hoverSyncOverviewMetrics: true) mirrors overviewMetricStyle === 'large' across BOTH Overview and Hover
+    const syncedLargeData = buildStructurePreviewTelemetry(
+      {},
+      {
+        hoverSyncOverviewMetrics: true,
+        hoverMetricStyle: 'medium',
+        overviewMetricStyle: 'large',
+        overviewMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+      }
+    );
+    hoverMatrix.refs.update({ data: syncedLargeData });
+    overviewMatrix.refs.update({ data: syncedLargeData });
+    assert.equal(overviewMatrix.el.classList.contains('is-large-trend'), true);
+    assert.equal(overviewMatrix.el.getAttribute('data-cols'), '3');
+    assert.equal(overviewMatrix.el.children.length, 3);
+    assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), true);
+    assert.equal(hoverMatrix.el.getAttribute('data-cols'), '3');
+
+    // 4) 2-card and 1-card large modes reset stale col widths & scale both viewBox and step count cleanly
+    hoverMatrix.refs.update({
+      data: buildStructurePreviewTelemetry(
+        {},
+        { hoverSyncOverviewMetrics: false, hoverMetricStyle: 'large', hoverMetrics: ['tps', 'ttft'] }
+      ),
+    });
+    assert.equal(hoverMatrix.el.getAttribute('data-cols'), '2');
+    assert.equal(
+      hoverMatrix.el.children[0].querySelector('.cell-sparkline-svg').getAttribute('viewBox'),
+      '0 0 136 34'
+    );
+    assert.equal(
+      hoverMatrix.el.children[0].querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length,
+      default2Spec.maxPoints
+    );
+
+    hoverMatrix.refs.update({
+      data: buildStructurePreviewTelemetry(
+        {},
+        { hoverSyncOverviewMetrics: false, hoverMetricStyle: 'large', hoverMetrics: ['tps'] }
+      ),
+    });
+    assert.equal(hoverMatrix.el.getAttribute('data-cols'), '1');
+    assert.equal(hoverMatrix.el.children.length, 1);
+    assert.equal(
+      hoverMatrix.el.children[0].querySelector('.cell-sparkline-svg').getAttribute('viewBox'),
+      '0 0 248 34'
+    );
+    assert.equal(
+      hoverMatrix.el.children[0].querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length,
+      default1Spec.maxPoints
+    );
+
+    // 5) Switching back to medium restores all 4 compact metric cards from the same list
+    hoverMatrix.refs.update({
+      data: buildStructurePreviewTelemetry(
+        {},
+        {
+          hoverSyncOverviewMetrics: false,
+          hoverMetricStyle: 'medium',
+          hoverMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+        }
+      ),
+    });
+    assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), false);
+    assert.equal(hoverMatrix.el.getAttribute('data-cols'), '4');
+    assert.equal(hoverMatrix.el.children.length, 4);
+    assert.equal(hoverMatrix.el.children[0].classList.contains('is-trend-card'), false);
+  } finally {
+    globalThis.ResizeObserver = prevRO;
+  }
+
+  // 6) EditableSlotList dims item #4 (index >= 3) in Large mode and clears dim on Medium
+  const { EditableSlotList } = await import('../src/components/settings/EditableSlotList.js');
+  slotList = EditableSlotList({
+    items: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+    options: [
+      { value: 'tps', label: 'TPS' },
+      { value: 'ttft', label: 'TTFT' },
+      { value: 'avg_tps', label: 'Avg TPS' },
+      { value: 'step_cost', label: 'Cost' },
+    ],
+    minItems: 1,
+    maxItems: 4,
+    dimmedFromIndex: 3,
+    dimmedTagText: '大尺寸隐藏',
+  });
+  const dimRows = slotList.el.querySelectorAll('.editable-slot-row');
+  assert.equal(dimRows[2].classList.contains('is-dimmed'), false);
+  assert.equal(dimRows[3].classList.contains('is-dimmed'), true);
+  assert.equal(dimRows[3].querySelector('.slot-dimmed-tag').hasAttribute('hidden'), false);
+  slotList.refs.setProps({ dimmedFromIndex: null });
+  assert.equal(dimRows[3].classList.contains('is-dimmed'), false);
+  assert.equal(dimRows[3].querySelector('.slot-dimmed-tag').hasAttribute('hidden'), true);
+});
+
+test('host theme recovery parses modern CSS colors, avoids self-fallback trap, syncs fallback styles, and caches across restarts', async (t) => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const vm = await import('node:vm');
+  const {
+    HOST_THEME_FALLBACK_STYLE_ID,
+    buildHostThemeFallbackCss,
+    getHostThemeSignature,
+    injectHostThemeFallbackIntoHtml,
+    normalizeHostThemeSnapshot,
+  } = await import('../shared/host-theme.mjs');
+  const {
+    captureNativeHostThemeSnapshot,
+    hasNativeHostTheme,
+    syncHostThemeFallback,
+  } = await import('../src/core/appearance.js');
+  const {
+    getEffectiveHostTheme,
+    recordLiveCdpHostTheme,
+    recordPreloadHostTheme,
+    resetHostThemeStoreForTests,
+  } = await import('../backend/host-theme-store.mjs');
+  const { readCachedHostThemeSnapshotSync } = await import('../backend/http-helpers.mjs');
+  const { buildHostThemeProbeSnippet } = await import('../backend/window-bridge.mjs');
+
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-host-theme-test-'));
+
+  t.after(() => {
+    resetHostThemeStoreForTests();
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // ignore temp cleanup error
+    }
+  });
+
+  // 1) Modern CSS color parsing: color(srgb), oklch, oklab, and bare Tailwind HSL triplets
+  assert.ok(parseCssColorLuminance('color(srgb 0.11 0.12 0.16)') < 0.2);
+  assert.ok(parseCssColorLuminance('color(srgb 0.96 0.97 0.99)') > 0.9);
+  assert.ok(parseCssColorLuminance('oklch(0.21 0.02 260)') < 0.2);
+  assert.ok(parseCssColorLuminance('oklch(0.97 0.005 260)') > 0.9);
+  assert.ok(parseCssColorLuminance('oklab(0.22 -0.01 -0.02)') < 0.2);
+  assert.ok(parseCssColorLuminance('222 18% 10%') < 0.2);
+  assert.ok(parseCssColorLuminance('0 0% 98%') > 0.9);
+
+  // 2) Sanitization & first-paint HTML injection ordering
+  const sanitized = normalizeHostThemeSnapshot({
+    colorScheme: 'dark',
+    source: 'cdp',
+    vars: {
+      '--background': '#1e1f29',
+      '--card': '#252634',
+      '--foreground': '#e6eaf2',
+      '--primary': 'url(javascript:alert(1))',
+      '--border': '#33364a; background: red',
+      '--not-allowed': '#ff0000',
+    },
+  });
+  assert.equal(sanitized.vars['--background'], '#1e1f29');
+  assert.equal(sanitized.vars['--card'], '#252634');
+  assert.equal(sanitized.vars['--primary'], undefined);
+  assert.equal(sanitized.vars['--border'], undefined);
+  assert.equal(sanitized.vars['--not-allowed'], undefined);
+
+  const rawIndexHtml = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.ok(
+    rawIndexHtml.indexOf('<script src="/preload.js"></script>') <
+      rawIndexHtml.indexOf('rel="stylesheet"'),
+    'index.html must load /preload.js before /styles.css'
+  );
+  const injectedHtml = injectHostThemeFallbackIntoHtml(rawIndexHtml, sanitized);
+  assert.ok(injectedHtml.includes(`<style id="${HOST_THEME_FALLBACK_STYLE_ID}">`));
+  assert.ok(
+    injectedHtml.indexOf(`id="${HOST_THEME_FALLBACK_STYLE_ID}"`) <
+      injectedHtml.indexOf('rel="stylesheet"'),
+    'fallback host theme style must precede styles.css so native host styles override it'
+  );
+  assert.match(buildHostThemeFallbackCss(sanitized), /--background:#1e1f29/);
+
+  // 3) Sidecar iframe without /preload.js vars does NOT get trapped by its own white tokens.css fallback
+  const { document } = createMockDom();
+  globalThis.document = document;
+  globalThis.window = {
+    matchMedia: () => ({ matches: true }),
+    getComputedStyle: (el) => {
+      if (el === document.documentElement) {
+        return {
+          backgroundColor: 'rgb(255, 255, 255)',
+          color: 'rgb(30, 37, 48)',
+          getPropertyValue: (p) => (p === '--surface-bg' ? 'rgb(255, 255, 255)' : ''),
+        };
+      }
+      if (el === document.body) {
+        return {
+          backgroundColor: 'rgb(255, 255, 255)',
+          color: 'rgb(30, 37, 48)',
+          getPropertyValue: () => '',
+        };
+      }
+      return null;
+    },
+  };
+  assert.equal(
+    detectHostColorScheme(document.documentElement),
+    'dark',
+    'must skip own white fallback when --surface-bg exists without host vars and follow dark OS'
+  );
+  assert.equal(hasNativeHostTheme(document), false);
+
+  // 4) syncHostThemeFallback preserves SSR fallback before first telemetry arrives, updates on bridged theme,
+  //    and yields cleanly once /preload.js injects native inline :root.style tokens
+  const ssrStyle = document.createElement('style');
+  ssrStyle.id = HOST_THEME_FALLBACK_STYLE_ID;
+  ssrStyle.textContent = ':root{color-scheme:dark;--background:#1a1b26}';
+  document.head.appendChild(ssrStyle);
+
+  const preTelemetryRes = syncHostThemeFallback(undefined, {
+    doc: document,
+    win: globalThis.window,
+    isStandalone: false,
+    telemetryLoaded: false,
+  });
+  assert.equal(preTelemetryRes.mode, 'bridged');
+  assert.equal(
+    document.getElementById(HOST_THEME_FALLBACK_STYLE_ID)?.textContent,
+    ':root{color-scheme:dark;--background:#1a1b26}',
+    'SSR fallback style stays intact until telemetry resolves'
+  );
+
+  const bridgedRes = syncHostThemeFallback(sanitized, {
+    doc: document,
+    win: globalThis.window,
+    isStandalone: false,
+    telemetryLoaded: true,
+  });
+  assert.equal(bridgedRes.mode, 'bridged');
+  assert.match(
+    document.getElementById(HOST_THEME_FALLBACK_STYLE_ID)?.textContent || '',
+    /--background:#1e1f29/
+  );
+
+  // When neither native nor bridged theme exists on a dark OS, stamps data-host-theme-fallback="dark"
+  const mediaRes = syncHostThemeFallback(null, {
+    doc: document,
+    win: globalThis.window,
+    isStandalone: false,
+    telemetryLoaded: true,
+  });
+  assert.equal(mediaRes.mode, 'media-fallback');
+  assert.equal(document.getElementById(HOST_THEME_FALLBACK_STYLE_ID), null);
+  assert.equal(document.documentElement.getAttribute('data-host-theme-fallback'), 'dark');
+
+  // Native /preload.js writes inline --background onto :root.style -> wins & captures snapshot
+  document.documentElement.style.setProperty('--background', '#21252b');
+  document.documentElement.style.setProperty('--foreground', '#d7dae0');
+  const nativeRes = syncHostThemeFallback(sanitized, {
+    doc: document,
+    win: globalThis.window,
+    isStandalone: false,
+    telemetryLoaded: true,
+  });
+  assert.equal(nativeRes.mode, 'native');
+  assert.equal(document.documentElement.hasAttribute('data-host-theme-fallback'), false);
+  assert.equal(document.getElementById(HOST_THEME_FALLBACK_STYLE_ID), null);
+  assert.equal(nativeRes.snapshot?.vars['--background'], '#21252b');
+  assert.equal(captureNativeHostThemeSnapshot(document, globalThis.window)?.colorScheme, 'dark');
+
+  // 5) Store priority across CDP, leader lease, preload cache, and http-helpers sync read
+  resetHostThemeStoreForTests();
+  const cacheFile = path.join(tmpDir, 'host-theme-cache.json');
+  const leaseFile = path.join(tmpDir, 'window-bridge-lease.json');
+  recordPreloadHostTheme(
+    { colorScheme: 'dark', vars: { '--background': '#21252b', '--foreground': '#e6eaf2' } },
+    { persist: true, cacheFilePath: cacheFile, nowMs: 1000 }
+  );
+  assert.equal(
+    readCachedHostThemeSnapshotSync({ dataDir: tmpDir, nowMs: 2000 })?.vars['--background'],
+    '#21252b'
+  );
+  fs.writeFileSync(
+    leaseFile,
+    JSON.stringify({
+      pid: process.pid,
+      updatedAtMs: 5000,
+      hostTheme: {
+        colorScheme: 'dark',
+        source: 'cdp',
+        updatedAtMs: 5000,
+        vars: { '--background': '#1b1d2b', '--card': '#222436', '--foreground': '#c8d3f5' },
+      },
+    }),
+    'utf8'
+  );
+  assert.equal(
+    readCachedHostThemeSnapshotSync({ dataDir: tmpDir, nowMs: 6000 })?.vars['--background'],
+    '#1b1d2b',
+    'fresh bridge lease theme takes priority over older disk cache for zero-flash HTML injection'
+  );
+  assert.equal(
+    getEffectiveHostTheme({ cacheFilePath: cacheFile, leaseFilePath: leaseFile, nowMs: 6000 })?.vars['--background'],
+    '#1b1d2b'
+  );
+
+  recordLiveCdpHostTheme(
+    { colorScheme: 'light', vars: { '--background': '#ffffff', '--foreground': '#18181b' } },
+    { persist: true, cacheFilePath: cacheFile, nowMs: 9000 }
+  );
+  assert.equal(
+    getEffectiveHostTheme({ cacheFilePath: cacheFile, leaseFilePath: leaseFile, nowMs: 9500 })?.colorScheme,
+    'light'
+  );
+
+  // 6) isEquivalentTelemetry reacts to hostTheme changes
+  assert.equal(
+    isEquivalentTelemetry(
+      { hostTheme: { colorScheme: 'dark', vars: { '--background': '#1e1f29' } } },
+      { hostTheme: { colorScheme: 'light', vars: { '--background': '#ffffff' } } }
+    ),
+    false
+  );
+  assert.equal(
+    getHostThemeSignature({ colorScheme: 'dark', vars: { '--background': '#1e1f29' }, updatedAtMs: 1 }),
+    getHostThemeSignature({ colorScheme: 'dark', vars: { '--background': '#1e1f29' }, updatedAtMs: 999 })
+  );
+
+  // 7) CDP host theme probe snippet executes cleanly in IDE workbench DOM and extracts --vscode-* tokens
+  const ideDoc = createMockDom().document;
+  ideDoc.body.className = 'vscode-dark';
+  const probeSnippet = buildHostThemeProbeSnippet();
+  const ideResult = vm.runInNewContext(probeSnippet, {
+    document: ideDoc,
+    window: {
+      getComputedStyle: (el) => {
+        if (el === ideDoc.documentElement) {
+          return {
+            getPropertyValue: (k) =>
+              ({
+                '--vscode-sideBar-background': '#181818',
+                '--vscode-editorWidget-background': '#202020',
+                '--vscode-foreground': '#cccccc',
+              })[k] || '',
+          };
+        }
+        return null;
+      },
+    },
+  });
+  assert.equal(ideResult?.colorScheme, 'dark');
+  assert.equal(ideResult?.vars['--background'], '#181818');
+  assert.equal(ideResult?.vars['--card'], '#202020');
+  assert.equal(ideResult?.vars['--foreground'], '#cccccc');
+});
+
+test('StepTableWidget virtualized column locking unscales CSS transform animations and respects pane padding', (t) => {
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRaf = globalThis.requestAnimationFrame;
+  const prevCancelRaf = globalThis.cancelAnimationFrame;
+  const prevGetComputedStyle = globalThis.getComputedStyle;
+
+  let currentScale = 0.975;
+  let panePadRight = 10;
+  const colWidths = [86, 62, 76, 44, 134, 48, 46]; // sum = 496px (> 488 contentW, < 498 clientW)
+  const trueTableW = colWidths.reduce((a, b) => a + b, 0);
+
+  const { document } = createMockDom({
+    resolveRect: (el) => {
+      if (el.tagName === 'TH') {
+        const siblings = el.parentNode?.children || [];
+        const idx = siblings.indexOf(el);
+        const baseW = colWidths[idx] || 60;
+        return { left: 0, top: 0, right: baseW * currentScale, bottom: 28 * currentScale, width: baseW * currentScale, height: 28 * currentScale };
+      }
+      if (el.classList?.contains('steps-data-table')) {
+        return { left: 0, top: 0, right: trueTableW * currentScale, bottom: 400 * currentScale, width: trueTableW * currentScale, height: 400 * currentScale };
+      }
+      if (el.tagName === 'TR') {
+        return { left: 0, top: 0, right: trueTableW * currentScale, bottom: 28 * currentScale, width: trueTableW * currentScale, height: 28 * currentScale };
+      }
+      return { left: 0, top: 0, right: 498 * currentScale, bottom: 400 * currentScale, width: 498 * currentScale, height: 400 * currentScale };
+    },
+  });
+
+  const popAncestor = document.createElement('div');
+  popAncestor.className = 'wm-popover-panel';
+  document.body.appendChild(popAncestor);
+
+  const mockGetComputedStyle = (el) => {
+    if (el === popAncestor) {
+      return {
+        transform: currentScale === 1 ? 'none' : `matrix(${currentScale}, 0, 0, ${currentScale}, 0, -4)`,
+        getPropertyValue: () => '',
+      };
+    }
+    if (el?.classList?.contains('is-step-table')) {
+      return {
+        paddingLeft: '0px',
+        paddingRight: `${panePadRight}px`,
+        transform: 'none',
+        getPropertyValue: () => '',
+      };
+    }
+    return { transform: 'none', getPropertyValue: () => '' };
+  };
+
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 820,
+    getComputedStyle: mockGetComputedStyle,
+  };
+  globalThis.getComputedStyle = mockGetComputedStyle;
+  globalThis.requestAnimationFrame = (fn) => {
+    fn();
+    return 1;
+  };
+  globalThis.cancelAnimationFrame = () => {};
+  t.after(() => {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.requestAnimationFrame = prevRaf;
+    globalThis.cancelAnimationFrame = prevCancelRaf;
+    globalThis.getComputedStyle = prevGetComputedStyle;
+  });
+
+  const stepTable = StepTableWidget({});
+  const { stepsTablePane, stepsTableEl, stepsTheadRow, renderStepTable, refreshViewport } = stepTable.refs;
+  popAncestor.appendChild(stepTable.el);
+  stepsTablePane.clientWidth = 498;
+  stepsTablePane.clientHeight = 400;
+
+  const cols = ['time', 'model', 'tps', 'ttft', 'tokens_combo', 'cache', 'cost'];
+  const steps = Array.from({ length: 138 }, (_, i) => ({
+    stepIndex: 138 - i,
+    createdAtMs: 1795600000000 - i * 10000,
+    modelShort: '4-carbon',
+    modelLabel: 'Gemini 4 Carbon',
+    tokPerSec: 32.6,
+    ttftSec: 44.3,
+    contextTokens: 312200,
+    inputTokens: 1000,
+    cacheReadTokens: 309000,
+    outputTokens: 2225,
+    thinkingTokens: 25,
+    responseTokens: 2200,
+    cacheHitPct: 98.9,
+    costUsd: 0.62,
+  }));
+
+  // 1. Render during pop-in animation (scale=0.975) with pane clientWidth=498 & paddingRight=10 (contentW=488 < 496)
+  renderStepTable(steps, 'conv-138', cols, 'zh-CN', { allConversationSteps: steps });
+  assert.equal(stepsTableEl.classList.contains('is-cols-locked'), true, 'Virtualized table locks columns');
+  const ths = stepsTheadRow.children;
+  for (let i = 0; i < cols.length; i++) {
+    assert.equal(
+      ths[i].style.width,
+      `${colWidths[i].toFixed(2)}px`,
+      `Column ${cols[i]} must unscale transform(0.975) back to true layout width ${colWidths[i]}px`
+    );
+  }
+  assert.equal(
+    stepsTableEl.style.minWidth,
+    `${trueTableW}px`,
+    'Table exceeding pane content width (496 > 488) must keep minWidth even when < clientWidth (498)'
+  );
+
+  // 2. Animation settles to scale=1.0 without clientWidth changing -> refreshViewport re-locks cleanly at native scale
+  currentScale = 1;
+  colWidths[1] = 64; // simulate slight native width change once settled
+  refreshViewport();
+  assert.equal(
+    ths[1].style.width,
+    '64.00px',
+    'Settling from animated scale to 1.0 must re-measure & re-lock columns even when clientWidth is unchanged'
+  );
+
+  // 3. When popover widens so pane content width (560 - 10 = 550) fits table (498), minWidth clears cleanly
+  stepsTablePane.clientWidth = 560;
+  refreshViewport();
+  assert.equal(stepsTableEl.style.minWidth, '', 'Wide enough pane clears horizontal minWidth');
+
+  // 4. Changing fontScale re-syncs virtualized row heights and unlocks stale column widths immediately
+  colWidths[1] = 82;
+  renderStepTable(steps, 'conv-138', cols, 'zh-CN', {
+    allConversationSteps: steps,
+    fontScale: 'xl',
+  });
+  assert.equal(
+    ths[1].style.width,
+    '82.00px',
+    'Changing fontScale must unlock and re-measure virtualized step column widths'
+  );
+
+  stepTable.destroy();
+});
+
+test('Host typography parity: Sidebar mirrors bridged host fonts in native mode and preserves CDP fonts across preload updates', async (t) => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const vm = await import('node:vm');
+  const {
+    HOST_THEME_FALLBACK_STYLE_ID,
+    buildHostThemeFallbackCss,
+  } = await import('../shared/host-theme.mjs');
+  const { syncHostThemeFallback } = await import('../src/core/appearance.js');
+  const {
+    getEffectiveHostTheme,
+    recordLiveCdpHostTheme,
+    recordPreloadHostTheme,
+    resetHostThemeStoreForTests,
+  } = await import('../backend/host-theme-store.mjs');
+  const { readCachedHostThemeSnapshotSync } = await import('../backend/http-helpers.mjs');
+  const { buildHostThemeProbeSnippet } = await import('../backend/window-bridge.mjs');
+
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-host-font-parity-'));
+  t.after(() => {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    resetHostThemeStoreForTests();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const hostSans = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  const hostMono = "'Google Sans Code', ui-monospace, SFMono-Regular, monospace";
+  const panelFallbackSans = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif';
+  const panelFallbackMono = 'ui-monospace, SFMono-Regular, Consolas, monospace';
+
+  // 1) buildHostThemeFallbackCss emits both --font-* and --host-font-* so tokens.css var(--host-font-*, ...) wins on SSR
+  const css = buildHostThemeFallbackCss({
+    colorScheme: 'dark',
+    vars: {
+      '--background': '#1A1B26',
+      '--font-sans': hostSans,
+      '--font-mono': hostMono,
+    },
+  });
+  assert.match(css, /--host-font-sans:system-ui/);
+  assert.match(css, /--host-font-mono:'Google Sans Code'/);
+
+  // 2) Sidebar native mode (/preload.js sets inline colors only, no inline font vars):
+  //    - captureNativeHostThemeSnapshot must NOT capture our own tokens.css computed --font-sans/--font-mono
+  //    - syncHostThemeFallback must mirror CDP host --font-sans/--font-mono onto --host-font-sans/--host-font-mono
+  const { document } = createMockDom();
+  document.documentElement.style.setProperty('--background', '#1A1B26');
+  document.documentElement.style.setProperty('--foreground', '#A9B1D6');
+
+  const ssrStyle = document.createElement('style');
+  ssrStyle.id = HOST_THEME_FALLBACK_STYLE_ID;
+  ssrStyle.textContent = css;
+  document.head.appendChild(ssrStyle);
+
+  let ssrComputedSans = hostSans;
+  let ssrComputedMono = hostMono;
+  globalThis.document = document;
+  globalThis.window = {
+    matchMedia: () => ({ matches: true }),
+    getComputedStyle: (el) => {
+      if (el === document.documentElement) {
+        return {
+          getPropertyValue: (prop) => {
+            if (prop === '--font-sans') return panelFallbackSans;
+            if (prop === '--font-mono') return panelFallbackMono;
+            if (prop === '--host-font-sans') return ssrComputedSans;
+            if (prop === '--host-font-mono') return ssrComputedMono;
+            return '';
+          },
+        };
+      }
+      return { getPropertyValue: () => '' };
+    },
+  };
+
+  // Pre-telemetry first boot in native mode preserves SSR bridged fonts without flashing back to fallback
+  const preRes = syncHostThemeFallback(undefined, {
+    doc: document,
+    win: globalThis.window,
+    isStandalone: false,
+    telemetryLoaded: false,
+  });
+  assert.equal(preRes.mode, 'native');
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-sans'), hostSans);
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-mono'), hostMono);
+  assert.equal(
+    preRes.snapshot?.vars?.['--font-sans'],
+    undefined,
+    'captureNativeHostThemeSnapshot must ignore computed tokens.css --font-sans when not inline'
+  );
+  assert.equal(
+    preRes.snapshot?.vars?.['--font-mono'],
+    undefined,
+    'captureNativeHostThemeSnapshot must ignore computed tokens.css --font-mono when not inline'
+  );
+
+  // Telemetry loaded with CDP hostTheme keeps --host-font-sans & --host-font-mono synced in native mode
+  ssrComputedSans = '';
+  ssrComputedMono = '';
+  const nativeWithBridge = syncHostThemeFallback(
+    {
+      colorScheme: 'dark',
+      source: 'cdp',
+      vars: { '--background': '#1A1B26', '--font-sans': hostSans, '--font-mono': hostMono },
+    },
+    { doc: document, win: globalThis.window, isStandalone: false, telemetryLoaded: true }
+  );
+  assert.equal(nativeWithBridge.mode, 'native');
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-sans'), hostSans);
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-mono'), hostMono);
+
+  // If /preload.js ever injects inline --font-sans natively, --host-font-sans yields & clears cleanly
+  document.documentElement.style.setProperty('--font-sans', '"Custom Preload Sans", sans-serif');
+  const nativeWithInlineFont = syncHostThemeFallback(
+    {
+      colorScheme: 'dark',
+      source: 'cdp',
+      vars: { '--background': '#1A1B26', '--font-sans': hostSans, '--font-mono': hostMono },
+    },
+    { doc: document, win: globalThis.window, isStandalone: false, telemetryLoaded: true }
+  );
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-sans'), '');
+  assert.equal(nativeWithInlineFont.snapshot?.vars?.['--font-sans'], '"Custom Preload Sans", sans-serif');
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-mono'), hostMono);
+
+  // Standalone browser clears bridged host typography overrides
+  const standaloneRes = syncHostThemeFallback(
+    { colorScheme: 'dark', vars: { '--background': '#1A1B26', '--font-sans': hostSans } },
+    { doc: document, win: globalThis.window, isStandalone: true, telemetryLoaded: true }
+  );
+  assert.equal(standaloneRes.mode, 'standalone');
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-sans'), '');
+  assert.equal(document.documentElement.style.getPropertyValue('--host-font-mono'), '');
+
+  // 3) Host theme store merges CDP typography into newer preload color snapshots (memory + persisted cache)
+  resetHostThemeStoreForTests();
+  const cacheFile = path.join(tmpDir, 'host-theme-cache.json');
+  const leaseFile = path.join(tmpDir, 'window-bridge-lease.json');
+  recordLiveCdpHostTheme(
+    {
+      colorScheme: 'dark',
+      vars: { '--background': '#1A1B26', '--font-sans': hostSans, '--font-mono': hostMono },
+    },
+    { persist: true, cacheFilePath: cacheFile, nowMs: 1000 }
+  );
+  recordPreloadHostTheme(
+    {
+      colorScheme: 'dark',
+      vars: { '--background': '#161722', '--foreground': '#E0E6F8' },
+    },
+    { persist: true, cacheFilePath: cacheFile, nowMs: 2000 }
+  );
+  const merged = getEffectiveHostTheme({ cacheFilePath: cacheFile, leaseFilePath: leaseFile, nowMs: 2500 });
+  assert.equal(merged?.vars?.['--background'], '#161722', 'newer preload colors win');
+  assert.equal(merged?.vars?.['--font-sans'], hostSans, 'CDP --font-sans survives newer preload update');
+  assert.equal(merged?.vars?.['--font-mono'], hostMono, 'CDP --font-mono survives newer preload update');
+  const persisted = readCachedHostThemeSnapshotSync({ dataDir: tmpDir, nowMs: 2500 });
+  assert.equal(persisted?.vars?.['--font-sans'], hostSans, 'persisted cache retains CDP --font-sans');
+  assert.equal(persisted?.vars?.['--background'], '#161722', 'persisted cache updates preload colors');
+
+  // 4) CDP probe extracts --vscode-font-family & --vscode-editor-font-family even when --background exists,
+  //    and falls back to usable body fontFamily when no CSS font vars exist
+  const probeSnippet = buildHostThemeProbeSnippet();
+  const hybridDoc = createMockDom().document;
+  hybridDoc.body.className = 'dark';
+  const hybridRes = vm.runInNewContext(probeSnippet, {
+    document: hybridDoc,
+    window: {
+      getComputedStyle: (el) => {
+        if (el === hybridDoc.documentElement) {
+          return {
+            getPropertyValue: (k) =>
+              ({
+                '--background': '#1A1B26',
+                '--vscode-font-family': '"Segoe UI", sans-serif',
+                '--vscode-editor-font-family': '"Cascadia Code", monospace',
+              })[k] || '',
+          };
+        }
+        return null;
+      },
+    },
+  });
+  assert.equal(hybridRes?.vars?.['--font-sans'], '"Segoe UI", sans-serif');
+  assert.equal(hybridRes?.vars?.['--font-mono'], '"Cascadia Code", monospace');
+
+  const bodyFontDoc = createMockDom().document;
+  bodyFontDoc.body.className = 'dark';
+  const bodyFontRes = vm.runInNewContext(probeSnippet, {
+    document: bodyFontDoc,
+    window: {
+      getComputedStyle: (el) => {
+        if (el === bodyFontDoc.documentElement) {
+          return { getPropertyValue: (k) => (k === '--background' ? '#1A1B26' : ''), fontFamily: '' };
+        }
+        if (el === bodyFontDoc.body) {
+          return { getPropertyValue: () => '', fontFamily: 'Inter, system-ui, sans-serif' };
+        }
+        return null;
+      },
+    },
+  });
+  assert.equal(bodyFontRes?.vars?.['--font-sans'], 'Inter, system-ui, sans-serif');
+});
+
+test('CapsuleBarWidget supports direct horizontal slot drag-to-reorder with variable widths, live preview, deferred update, and Escape cancel', (t) => {
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRaf = globalThis.requestAnimationFrame;
+  const prevCancelRaf = globalThis.cancelAnimationFrame;
+
+  const { document } = createMockDom();
+  const winListeners = new Map();
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    addEventListener(type, fn) {
+      if (!winListeners.has(type)) winListeners.set(type, new Set());
+      winListeners.get(type).add(fn);
+    },
+    removeEventListener(type, fn) {
+      winListeners.get(type)?.delete(fn);
+    },
+  };
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+
+  let widget = null;
+  let readonlyWidget = null;
+  t.after(() => {
+    widget?.destroy?.();
+    readonlyWidget?.destroy?.();
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.requestAnimationFrame = prevRaf;
+    globalThis.cancelAnimationFrame = prevCancelRaf;
+  });
+
+  // Read-only widget without callbacks never activates drag affordances
+  readonlyWidget = CapsuleBarWidget({});
+  readonlyWidget.refs.update({
+    data: { settings: { topbarCapsuleSlots: ['tps', 'ttft', 'context'] } },
+  });
+  assert.equal(readonlyWidget.refs.hostBarEl.classList.contains('is-slot-reorderable'), false);
+
+  const previews = [];
+  const commits = [];
+  widget = CapsuleBarWidget({
+    onPreviewSlots: (keys) => previews.push(keys),
+    onReorderSlots: (keys) => commits.push(keys),
+  });
+  document.body.appendChild(widget.el);
+
+  const makeData = (slots) => ({
+    settings: { windowMountMode: 'dual', topbarCapsuleSlots: slots },
+    activeConversation: {
+      cascadeId: 'c-drag',
+      latestTokPerSec: 68.4,
+      latestTtftSec: 1.1,
+      context: { totalTokens: 143360, limitTokens: 256000 },
+    },
+  });
+
+  widget.refs.update({ data: makeData(['tps', 'ttft', 'context']) });
+  const { hostBarEl, capsuleBtn, capsuleSlots, capsuleSeps } = widget.refs;
+  assert.equal(hostBarEl.classList.contains('is-slot-reorderable'), true);
+  assert.ok(capsuleSlots[0].el.getAttribute('title'), 'Reorderable capsule slot exposes drag hint title');
+
+  // Variable widths: slot 0 = 58px [100..158], sep 0 = 1px [166..167], slot 1 = 46px [175..221], sep 1 = 1px [229..230], slot 2 = 58px [238..296]
+  capsuleBtn.getBoundingClientRect = () => ({ left: 91, top: 20, right: 305, bottom: 48, width: 214, height: 28 });
+  const slotRects = [
+    { left: 100, right: 158, top: 25, bottom: 43, width: 58, height: 18 },
+    { left: 175, right: 221, top: 25, bottom: 43, width: 46, height: 18 },
+    { left: 238, right: 296, top: 25, bottom: 43, width: 58, height: 18 },
+  ];
+  const sepRects = [
+    { left: 166, right: 167, top: 28, bottom: 40, width: 1, height: 12 },
+    { left: 229, right: 230, top: 28, bottom: 40, width: 1, height: 12 },
+  ];
+  for (let i = 0; i < 3; i += 1) {
+    capsuleSlots[i].el.getBoundingClientRect = () => slotRects[i];
+  }
+  for (let s = 0; s < 2; s += 1) {
+    capsuleSeps[s].getBoundingClientRect = () => sepRects[s];
+  }
+
+  // 1) Drag slot 1 ('ttft', width 46) left past slot 0 ('tps', width 58, centerX 129) -> ['ttft', 'tps', 'context']
+  capsuleSlots[1].el.dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 198,
+    clientY: 34,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 115, clientY: 34, preventDefault() {} });
+  assert.equal(hostBarEl.classList.contains('is-dragging-capsule'), true);
+  assert.equal(capsuleSlots[1].el.classList.contains('is-dragging'), true);
+  assert.equal(capsuleSlots[0].el.classList.contains('is-drag-sibling'), true);
+  assert.deepEqual(previews[previews.length - 1], ['ttft', 'tps', 'context']);
+  assert.equal(commits.length, 0, 'Must not commit before pointerup');
+  // Sibling slot 0 (58px) must displace right by 46 + 17 = +63px; sep 0 must shift left by -12px
+  assert.equal(capsuleSlots[0].el.style.transform, 'translate3d(63.00px, 0px, 0)');
+  assert.equal(capsuleSeps[0].style.transform, 'translate3d(-12.00px, 0px, 0)');
+  assert.equal(capsuleSlots[2].el.style.transform, 'translate3d(0px, 0px, 0)');
+
+  // Mid-drag update() is deferred so DOM slots never jump under the pointer
+  widget.refs.update({ data: makeData(['tps', 'ttft', 'context']) });
+  assert.equal(capsuleSlots[1].el.getAttribute('data-metric'), 'ttft');
+
+  // Pressing Escape cancels cleanly and reverts preview without committing
+  document.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.equal(hostBarEl.classList.contains('is-dragging-capsule'), false);
+  assert.equal(commits.length, 0);
+  assert.deepEqual(previews[previews.length - 1], ['tps', 'ttft', 'context']);
+
+  // 2) Drag slot 2 ('context', centerX 267) all the way left to index 0 (clientX 110) and release -> commits once
+  capsuleSlots[2].el.dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 267,
+    clientY: 34,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 110, clientY: 34, preventDefault() {} });
+  assert.deepEqual(previews[previews.length - 1], ['context', 'tps', 'ttft']);
+  document.dispatchEvent({ type: 'pointerup', clientX: 110, clientY: 34 });
+  assert.equal(hostBarEl.classList.contains('is-dragging-capsule'), false);
+  assert.equal(commits.length, 1);
+  assert.deepEqual(commits[0], ['context', 'tps', 'ttft']);
+  assert.equal(capsuleSlots[0].el.getAttribute('data-metric'), 'context');
+  assert.equal(capsuleSlots[1].el.getAttribute('data-metric'), 'tps');
+  assert.equal(capsuleSlots[2].el.getAttribute('data-metric'), 'ttft');
+
+  // 3) Single-slot capsule disables drag affordance
+  widget.refs.update({ data: makeData(['tps']) });
+  assert.equal(hostBarEl.classList.contains('is-slot-reorderable'), false);
+  assert.equal(capsuleSlots[0].el.getAttribute('title'), null);
+});
+
+test('Direct preview drag-to-reorder works for module stacks, 1D/2D metric grids (with vertical handoff & large-mode tail preservation), and step table columns', async (t) => {
+  const { createDynamicWidgetHost } = await import('../src/registries/widgetRegistry.js');
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRaf = globalThis.requestAnimationFrame;
+  const prevCancelRaf = globalThis.cancelAnimationFrame;
+
+  const { document } = createMockDom();
+  const winListeners = new Map();
+  globalThis.document = document;
+  globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    addEventListener(type, fn) {
+      if (!winListeners.has(type)) winListeners.set(type, new Set());
+      winListeners.get(type).add(fn);
+    },
+    removeEventListener(type, fn) {
+      winListeners.get(type)?.delete(fn);
+    },
+  };
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+
+  let host = null;
+  let stepPreview = null;
+  let sortableStepTable = null;
+  t.after(() => {
+    host?.destroy?.();
+    stepPreview?.destroy?.();
+    sortableStepTable?.destroy?.();
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.requestAnimationFrame = prevRaf;
+    globalThis.cancelAnimationFrame = prevCancelRaf;
+  });
+
+  // --- A) Dynamic Widget Host (Hover / Overview preview): vertical module drag + metric cell drag + vertical handoff ---
+  const modPreviews = [];
+  const modCommits = [];
+  const metPreviews = [];
+  const metCommits = [];
+  const containerEl = document.createElement('div');
+  document.body.appendChild(containerEl);
+
+  host = createDynamicWidgetHost({
+    containerEl,
+    mode: 'overview',
+    preview: true,
+    onPreviewModules: (keys) => modPreviews.push(keys),
+    onReorderModules: (keys) => modCommits.push(keys),
+    onPreviewMetrics: (keys) => metPreviews.push(keys),
+    onReorderMetrics: (keys) => metCommits.push(keys),
+  });
+
+  const makeOverviewData = (style = 'large', metrics = ['tps', 'ttft', 'avg_tps', 'step_cost']) => ({
+    settings: {
+      overviewMetricStyle: style,
+      overviewMetrics: metrics,
+      overviewModules: ['metrics', 'context', 'quotas'],
+    },
+    activeConversation: {
+      cascadeId: 'conv-prev',
+      latestTokPerSec: 68.4,
+      latestTtftSec: 1.1,
+      avgTokPerSec: 52.3,
+      latestStepCostUsd: 0.04,
+      context: { totalTokens: 128000, limitTokens: 256000 },
+      recentSteps: [],
+    },
+    quotas: {},
+  });
+
+  host.update({ moduleKeys: ['metrics', 'context', 'quotas'], data: makeOverviewData('large') });
+  assert.equal(containerEl.classList.contains('is-modules-reorderable'), true);
+  const metricsEl = host.getInstance('metrics').el;
+  const contextEl = host.getInstance('context').el;
+  const quotasEl = host.getInstance('quotas').el;
+  assert.equal(metricsEl.classList.contains('is-metrics-reorderable'), true);
+  assert.equal(metricsEl.children.length, 3, 'Large mode renders first 3 metric cards');
+
+  // Assign realistic variable-height module rects: metrics [0..80], context [88..248], quotas [256..366] (gap = 8)
+  containerEl.getBoundingClientRect = () => ({ left: 0, top: 0, right: 360, bottom: 366, width: 360, height: 366 });
+  metricsEl.getBoundingClientRect = () => ({ left: 0, top: 0, right: 360, bottom: 80, width: 360, height: 80 });
+  contextEl.getBoundingClientRect = () => ({ left: 0, top: 88, right: 360, bottom: 248, width: 360, height: 160 });
+  quotasEl.getBoundingClientRect = () => ({ left: 0, top: 256, right: 360, bottom: 366, width: 360, height: 110 });
+
+  // Interactive button inside module never triggers module drag
+  const fakeBtn = document.createElement('button');
+  contextEl.appendChild(fakeBtn);
+  contextEl.dispatchEvent({ type: 'pointerdown', target: fakeBtn, button: 0, clientX: 50, clientY: 120, preventDefault() {} });
+  document.dispatchEvent({ type: 'pointermove', clientX: 50, clientY: 320, preventDefault() {} });
+  assert.equal(containerEl.classList.contains('is-dragging-modules'), false, 'Interactive sub-control ignores module drag');
+  document.dispatchEvent({ type: 'pointerup', clientX: 50, clientY: 320 });
+  fakeBtn.remove();
+
+  // 1) Drag 'quotas' (height 110) up above 'metrics' (height 80) -> ['quotas', 'metrics', 'context']
+  quotasEl.dispatchEvent({ type: 'pointerdown', button: 0, clientX: 120, clientY: 310, preventDefault() {} });
+  document.dispatchEvent({ type: 'pointermove', clientX: 120, clientY: 20, preventDefault() {} });
+  assert.equal(containerEl.classList.contains('is-dragging-modules'), true);
+  assert.equal(quotasEl.classList.contains('is-module-dragging'), true);
+  assert.deepEqual(modPreviews[modPreviews.length - 1], ['quotas', 'metrics', 'context']);
+  // Sibling 'metrics' must shift down by quotas(110) + gap(8) = +118px
+  assert.equal(metricsEl.style.transform, 'translate3d(0px, 118.00px, 0)');
+  assert.equal(modCommits.length, 0);
+
+  // Escape cancels and reverts module preview
+  document.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.equal(containerEl.classList.contains('is-dragging-modules'), false);
+  assert.equal(modCommits.length, 0);
+  assert.deepEqual(modPreviews[modPreviews.length - 1], ['metrics', 'context', 'quotas']);
+
+  // 2) Horizontal metric cell drag in Large mode preserves hidden 4th metric ('step_cost')
+  const cellRects1Row = [
+    { left: 0, right: 114, top: 0, bottom: 80, width: 114, height: 80 },
+    { left: 120, right: 234, top: 0, bottom: 80, width: 114, height: 80 },
+    { left: 240, right: 354, top: 0, bottom: 80, width: 114, height: 80 },
+  ];
+  for (let i = 0; i < 3; i += 1) {
+    metricsEl.children[i].getBoundingClientRect = () => cellRects1Row[i];
+  }
+  metricsEl.children[2].dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 297,
+    clientY: 40,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 30, clientY: 42, preventDefault() {} });
+  assert.equal(metricsEl.classList.contains('is-dragging-matrix'), true);
+  assert.equal(containerEl.classList.contains('is-dragging-modules'), false);
+  assert.deepEqual(metPreviews[metPreviews.length - 1], ['avg_tps', 'tps', 'ttft', 'step_cost']);
+  document.dispatchEvent({ type: 'pointerup', clientX: 30, clientY: 42 });
+  assert.equal(metCommits.length, 1);
+  assert.deepEqual(metCommits[0], ['avg_tps', 'tps', 'ttft', 'step_cost']);
+  assert.equal(metricsEl.children[0].getAttribute('data-metric-key'), 'avg_tps');
+
+  // 3) Vertical drag intent on a single-row metric card seamlessly hands off to vertical module drag!
+  for (let i = 0; i < 3; i += 1) {
+    metricsEl.children[i].getBoundingClientRect = () => cellRects1Row[i];
+  }
+  metricsEl.children[0].dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 57,
+    clientY: 40,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 58, clientY: 220, preventDefault() {} });
+  assert.equal(metricsEl.classList.contains('is-dragging-matrix'), false, 'Horizontal cell drag yielded to vertical module drag');
+  assert.equal(containerEl.classList.contains('is-dragging-modules'), true, 'Vertical intent on metric card activates module drag');
+  assert.equal(metricsEl.classList.contains('is-module-dragging'), true);
+  document.dispatchEvent({ type: 'pointerup', clientX: 58, clientY: 220 });
+  assert.equal(modCommits.length, 1);
+  assert.deepEqual(modCommits[0], ['context', 'metrics', 'quotas']);
+
+  // 4) 2x2 wrapped grid drag in Medium mode moves cell diagonally across rows and columns
+  host.update({
+    moduleKeys: ['metrics', 'context', 'quotas'],
+    data: makeOverviewData('medium', ['tps', 'ttft', 'avg_tps', 'step_cost']),
+  });
+  const gridRects = [
+    { left: 0, right: 170, top: 0, bottom: 60, width: 170, height: 60 },
+    { left: 176, right: 346, top: 0, bottom: 60, width: 170, height: 60 },
+    { left: 0, right: 170, top: 66, bottom: 126, width: 170, height: 60 },
+    { left: 176, right: 346, top: 66, bottom: 126, width: 170, height: 60 },
+  ];
+  for (let i = 0; i < 4; i += 1) {
+    metricsEl.children[i].getBoundingClientRect = () => gridRects[i];
+  }
+  metricsEl.children[3].dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 261,
+    clientY: 96,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 85, clientY: 30, preventDefault() {} });
+  assert.equal(metricsEl.classList.contains('is-dragging-matrix'), true);
+  assert.deepEqual(metPreviews[metPreviews.length - 1], ['step_cost', 'tps', 'ttft', 'avg_tps']);
+  document.dispatchEvent({ type: 'pointerup', clientX: 85, clientY: 30 });
+  assert.deepEqual(metCommits[1], ['step_cost', 'tps', 'ttft', 'avg_tps']);
+
+  // --- B) StepTableWidget preview direct column drag ---
+  const colPreviews = [];
+  const colCommits = [];
+  stepPreview = StepTableWidget({
+    standalone: true,
+    interactiveBadges: false,
+    onPreviewColumns: (cols) => colPreviews.push(cols),
+    onReorderColumns: (cols) => colCommits.push(cols),
+  });
+  document.body.appendChild(stepPreview.el);
+  const sampleSteps = [
+    { stepIndex: 2, createdAtMs: 1795600020000, modelShort: '4-neon', tokPerSec: 68.4, ttftSec: 1.1, costUsd: 0.04 },
+    { stepIndex: 1, createdAtMs: 1795600010000, modelShort: '4-neon', tokPerSec: 42.1, ttftSec: 1.9, costUsd: 0.02 },
+  ];
+  stepPreview.refs.renderStepTable(sampleSteps, 'prev-steps', ['time', 'model', 'tps', 'cost'], 'zh-CN');
+  const { stepsTableEl, stepsTheadRow, stepsTbody } = stepPreview.refs;
+  assert.equal(stepsTableEl.classList.contains('is-col-reorderable'), true);
+  stepsTableEl.getBoundingClientRect = () => ({ left: 0, top: 0, right: 320, bottom: 120, width: 320, height: 120 });
+  const thRects = [
+    { left: 0, right: 80, top: 0, bottom: 26, width: 80, height: 26 },
+    { left: 80, right: 160, top: 0, bottom: 26, width: 80, height: 26 },
+    { left: 160, right: 250, top: 0, bottom: 26, width: 90, height: 26 },
+    { left: 250, right: 320, top: 0, bottom: 26, width: 70, height: 26 },
+  ];
+  for (let i = 0; i < 4; i += 1) {
+    stepsTheadRow.children[i].getBoundingClientRect = () => thRects[i];
+  }
+
+  // Drag column 2 ('tps', width 90) left to index 0 ('time') -> ['tps', 'time', 'model', 'cost']
+  stepsTheadRow.children[2].dispatchEvent({
+    type: 'pointerdown',
+    button: 0,
+    clientX: 205,
+    clientY: 13,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  document.dispatchEvent({ type: 'pointermove', clientX: 20, clientY: 13, preventDefault() {} });
+  assert.equal(stepsTableEl.classList.contains('is-dragging-cols'), true);
+  assert.equal(stepsTheadRow.children[2].classList.contains('is-col-dragging'), true);
+  assert.equal(stepsTbody.children[0].children[2].classList.contains('is-col-dragging'), true, 'Column body cells glide together with header');
+  assert.equal(stepsTheadRow.children[0].style.transform, 'translate3d(90.00px, 0px, 0)');
+  assert.equal(stepsTbody.children[0].children[0].style.transform, 'translate3d(90.00px, 0px, 0)');
+  assert.deepEqual(colPreviews[colPreviews.length - 1], ['tps', 'time', 'model', 'cost']);
+  assert.equal(colCommits.length, 0);
+
+  // Drop commits once and reorders headers + cells
+  document.dispatchEvent({ type: 'pointerup', clientX: 20, clientY: 13 });
+  assert.equal(stepsTableEl.classList.contains('is-dragging-cols'), false);
+  assert.equal(colCommits.length, 1);
+  assert.deepEqual(colCommits[0], ['tps', 'time', 'model', 'cost']);
+  assert.equal(stepsTheadRow.children[0].getAttribute('data-col-key'), 'tps');
+  assert.equal(stepsTheadRow.children[1].getAttribute('data-col-key'), 'time');
+
+  // Sortable StepTableWidget (real StepsDetailView) never activates column drag
+  sortableStepTable = StepTableWidget({ onSortChange: () => {} });
+  sortableStepTable.refs.renderStepTable(sampleSteps, 'live-steps', ['time', 'model', 'tps'], 'zh-CN');
+  assert.equal(sortableStepTable.refs.stepsTableEl.classList.contains('is-col-reorderable'), false);
 });

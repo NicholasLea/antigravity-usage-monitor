@@ -428,6 +428,28 @@
   font-weight: 600;
 }
 
+.data-table tbody tr.is-reverted {
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+.data-table tbody tr.is-reverted:hover {
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+}
+
+.data-table tbody tr.is-reverted td {
+  color: var(--text-muted);
+  opacity: 0.62;
+}
+
+.data-table tbody tr.is-reverted td:first-child {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--text-muted) 52%, transparent);
+}
+
+.data-table tbody tr.is-reverted td span:not(.agent-badge):not(.turn-rail),
+.data-table tbody tr.is-reverted td .step-model-compact {
+  color: var(--text-muted);
+}
+
 .step-anomaly-tag {
   display: inline-flex;
   align-items: center;
@@ -501,6 +523,10 @@
   border-color: color-mix(in srgb, var(--accent-primary) 46%, var(--border-strong));
 }
 
+.step-anomaly-tip.is-reverted {
+  border-color: var(--border-strong);
+}
+
 .step-anomaly-tip.is-timing {
   border-color: var(--border-strong);
 }
@@ -531,6 +557,10 @@
 
 .step-anomaly-tip.is-compaction .step-anomaly-tip-title {
   color: var(--accent-primary);
+}
+
+.step-anomaly-tip.is-reverted .step-anomaly-tip-title {
+  color: var(--text-muted);
 }
 
 .step-anomaly-tip.is-timing .step-anomaly-tip-title {
@@ -853,7 +883,8 @@
 
 .sstep-axis-label {
   fill: var(--text-muted);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-2xs);
   user-select: none;
   pointer-events: none;
@@ -1303,11 +1334,9 @@
 }
 
 .steps-quick-chips {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
   flex: 0 1 auto;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .steps-quick-chips[hidden] {
@@ -1316,63 +1345,4 @@
 
 .steps-export-menu {
   flex-shrink: 0;
-}
-
-.steps-chip-btn {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-hairline);
-  background: var(--surface-subtle);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background var(--dur-instant) var(--ease-fast),
-    color var(--dur-instant) var(--ease-fast),
-    border-color var(--dur-instant) var(--ease-fast);
-}
-
-.steps-chip-btn[hidden] {
-  display: none !important;
-}
-
-.steps-chip-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.steps-chip-btn.is-active {
-  background: var(--accent-primary-soft);
-  border-color: var(--accent-primary-border);
-  color: var(--accent-primary);
-  font-weight: 600;
-}
-
-.steps-chip-btn.is-warn.is-active {
-  background: var(--metric-warn-soft);
-  border-color: color-mix(in srgb, var(--metric-warn) 42%, var(--border-hairline));
-  color: var(--metric-warn);
-}
-
-.steps-chip-btn.is-danger.is-active {
-  background: var(--metric-danger-soft);
-  border-color: color-mix(in srgb, var(--metric-danger) 42%, var(--border-hairline));
-  color: var(--metric-danger);
-}
-
-.steps-chip-btn.is-info.is-active {
-  background: var(--metric-info-soft);
-  border-color: color-mix(in srgb, var(--metric-info) 42%, var(--border-hairline));
-  color: var(--metric-info);
-}
-
-[data-modern-ui="true"] .steps-chip-btn {
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--modern-surface-subtle);
 }

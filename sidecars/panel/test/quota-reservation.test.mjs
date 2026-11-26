@@ -1524,16 +1524,16 @@ test('QuotaPoolsWidget renders circle-? hover popover for account-isolated model
     assert.equal(rows.length, 2);
     assert.match(rows[0].textContent, /Gemini 4 Carbon/);
     assert.match(rows[0].textContent, /3x/);
-    assert.match(rows[0].textContent, /5h 满池≈ \$50/);
-    assert.match(rows[0].textContent, /周限满池≈ \$200/);
+    assert.match(rows[0].textContent, /5h≈ \$50/);
+    assert.match(rows[0].textContent, /周限≈ \$200/);
     assert.match(rows[0].textContent, /5h 2%\/\$ · 26 样本/);
     assert.equal(rows[0].querySelector('.quota-rate-mult-badge').classList.contains('is-high'), true);
     assert.equal(rows[0].querySelector('.quota-rate-eq-grid').classList.contains('is-single'), false);
 
     assert.match(rows[1].textContent, /Gemini 4 Neon/);
     assert.match(rows[1].textContent, /1x/);
-    assert.match(rows[1].textContent, /5h 满池≈ \$150/);
-    assert.match(rows[1].textContent, /周限满池≈ \$600/);
+    assert.match(rows[1].textContent, /5h≈ \$150/);
+    assert.match(rows[1].textContent, /周限≈ \$600/);
     assert.match(rows[1].textContent, /5h 0\.67%\/\$ · 12 样本/);
     assert.equal(rows[1].querySelector('.quota-rate-mult-badge').classList.contains('is-high'), false);
 
@@ -1569,7 +1569,7 @@ test('QuotaPoolsWidget renders circle-? hover popover for account-isolated model
     const fallbackRow = popover.querySelector('.quota-rate-model-row.is-fallback');
     assert.ok(fallbackRow, 'renders pool-average fallback before per-model reaches 3 samples');
     assert.match(fallbackRow.textContent, /池综合均值/);
-    assert.match(fallbackRow.textContent, /周限满池≈ \$200/);
+    assert.match(fallbackRow.textContent, /周限≈ \$200/);
     assert.match(fallbackRow.textContent, /周限 0\.5%\/\$ · 8 样本/);
     assert.equal(fallbackRow.querySelector('.quota-rate-eq-grid').classList.contains('is-single'), true);
 
@@ -1578,8 +1578,8 @@ test('QuotaPoolsWidget renders circle-? hover popover for account-isolated model
     widget.refs.update({ data: dualData, minuteTick: 3 });
     assert.match(popover.textContent, /Estimated Burn Rates/);
     assert.equal(acctPill.textContent, 'sj***43@gmail.com');
-    assert.match(popover.textContent, /5h full≈ \$50/);
-    assert.match(popover.textContent, /Weekly full≈ \$200/);
+    assert.match(popover.textContent, /5h≈ \$50/);
+    assert.match(popover.textContent, /Weekly≈ \$200/);
 
     // Escape closes popover; click toggles open/close; mouseleave closes after grace delay
     helpBtn.dispatchEvent({ type: 'keydown', key: 'Escape', stopPropagation() {} });
@@ -1920,8 +1920,7 @@ test('QuotaPoolsWidget ? popover renders family-group/external usage banner and 
     assert.equal(sharedBadge.textContent, '共享活跃');
     assert.ok(extBanner, 'external usage banner rendered');
     assert.equal(extBanner.classList.contains('is-active'), true);
-    assert.match(extBanner.textContent, /家庭组 \/ 其他设备消耗/);
-    assert.match(extBanner.textContent, /5h 2\.4% · 周限 0\.6%/);
+    assert.equal(extBanner.textContent, '检测到家庭组 / 其他设备消耗');
     assert.equal(extBanner.textContent.includes('与'), false);
 
     // 3. Baseline-only external detection before any model samples exist
@@ -1969,9 +1968,9 @@ test('QuotaPoolsWidget ? popover renders family-group/external usage banner and 
     setI18nLanguage('en-US');
     widget.refs.update({ data: familyData, minuteTick: 4 });
     assert.equal(popover.querySelector('.quota-rate-shared-badge').textContent, 'Shared active');
-    assert.match(
+    assert.equal(
       popover.querySelector('.quota-rate-ext-banner').textContent,
-      /Family group \/ other-device usage detected.*5h 2\.4% · Weekly 0\.6%/
+      'Family group / other-device usage detected'
     );
 
     widget.destroy();
@@ -2287,7 +2286,7 @@ test('QuotaPoolsWidget ? popover renders preliminary labels and full-pool token 
     assert.ok(fallbackRow);
     assert.match(fallbackRow.textContent, /池综合均值/);
     assert.match(fallbackRow.textContent, /周限 2\.08%\/\$ · 斜率初估/);
-    assert.match(fallbackRow.textContent, /周限满池≈ \$48· 9\.9M/);
+    assert.match(fallbackRow.textContent, /周限≈ \$48· 9\.9M/);
 
     const wkRowLeft = widget.refs.poolsListEl.querySelectorAll('.quota-win-left')[1];
     assert.match(wkRowLeft.getAttribute('title') || '', /满池约 \$48 \(9\.9M\)/);
@@ -2367,15 +2366,15 @@ test('QuotaPoolsWidget ? popover renders preliminary labels and full-pool token 
       },
     };
     widget.refs.update({ data: allReadyData, minuteTick: 2 });
-    assert.match(popover.textContent, /Claude Sonnet 4\.6.*5h 满池≈ \$50· 10\.3M.*周限满池≈ \$50· 10\.3M/);
-    assert.match(popover.textContent, /Gemini.*池综合均值.*5h 满池≈ \$35· 14\.2M/);
+    assert.match(popover.textContent, /Claude Sonnet 4\.6.*5h≈ \$50· 10\.3M.*周限≈ \$50· 10\.3M/);
+    assert.match(popover.textContent, /Gemini.*池综合均值.*5h≈ \$35· 14\.2M/);
 
     // 4. English locale switch updates model cards and row title tooltip without reload
     setI18nLanguage('en-US');
     widget.refs.update({ data: allReadyData, minuteTick: 3 });
     assert.doesNotMatch(popover.textContent, /Est\. Weekly Quota/);
     assert.doesNotMatch(popover.textContent, /lowest in pool/);
-    assert.match(popover.textContent, /5h full≈ \$50· 10\.3M.*Weekly full≈ \$50· 10\.3M/);
+    assert.match(popover.textContent, /5h≈ \$50· 10\.3M.*Weekly≈ \$50· 10\.3M/);
     assert.match(
       widget.refs.poolsListEl.querySelectorAll('.quota-win-left')[1].getAttribute('title') || '',
       /Full ~\$50 \(10\.3M\)/
@@ -2433,8 +2432,8 @@ test('QuotaPoolsWidget ? popover renders preliminary labels and full-pool token 
     });
     const mixedRows = popover.querySelectorAll('.quota-rate-model-row');
     assert.equal(mixedRows.length, 2, 'renders 5h model card + supplementary pool weekly fallback row');
-    assert.match(mixedRows[0].textContent, /Gemini 3\.1 Pro.*5h 满池≈ \$150/);
-    assert.match(mixedRows[1].textContent, /池综合均值.*斜率初估.*周限满池≈ \$600· 200\.0M/);
+    assert.match(mixedRows[0].textContent, /Gemini 3\.1 Pro.*5h≈ \$150/);
+    assert.match(mixedRows[1].textContent, /池综合均值.*斜率初估.*周限≈ \$600· 200\.0M/);
 
     widget.destroy();
   } finally {
@@ -2865,4 +2864,503 @@ test('quota-reservation: suppresses post-refund idle replica ping-pong and self-
     'genuine shared pool with 17% unexplained burn retains externalUsage detection'
   );
   assert.equal(pShared.get('Gemini').rateEstimate?.externalUsage?.usedWeeklyPct, 0.6);
+});
+
+test('quota-reservation: prevents solo hypersensitivity (high-usage self-heal, scan lag, idle jitter, pricing variance, delayed rollback, incomplete scan)', () => {
+  // 1. High-usage solo polluted bucket (40% used, 30.3% stale externalUsedPct, local explains ~98%) must self-heal immediately
+  const highUsagePersisted = {
+    version: 2,
+    savedAt: new Date(T0).toISOString(),
+    buckets: {
+      'local::solo-high@example.com::Gemini::5h': {
+        resetTimeMs: RESET_5H,
+        lastQuotaTs: T0,
+        lastOfficialUsedPct: 40.0,
+        lastCycleCostUsd: 54.0,
+        lastCycleCalls: 95,
+        lastPricedTokens: 80_000_000,
+        lastUnpricedCalls: 0,
+        usdPerMTok: 0.675,
+        ratePctPerUsd: 0.67,
+        rateSamples: 21,
+        rateWindow: [0.67, 0.67, 0.67, 0.67, 0.67],
+        hasExternalUsage: true,
+        lastExternalUsageAtMs: T0 - 20 * 60 * 1000,
+        externalUsedPct: 30.3,
+        externalEvents: 14,
+      },
+      'local::solo-high@example.com::Gemini::weekly': {
+        resetTimeMs: RESET_WK,
+        lastQuotaTs: T0,
+        lastOfficialUsedPct: 20.0,
+        lastCycleCostUsd: 120.0,
+        lastCycleCalls: 210,
+        lastPricedTokens: 160_000_000,
+        lastUnpricedCalls: 0,
+        usdPerMTok: 0.75,
+        ratePctPerUsd: 0.1667,
+        rateSamples: 21,
+        rateWindow: [0.1667, 0.1667, 0.1667, 0.1667, 0.1667],
+        hasExternalUsage: true,
+        lastExternalUsageAtMs: T0 - 2 * 60 * 1000, // even recentExt self-heals when local covers 100%
+        externalUsedPct: 19.6,
+        externalEvents: 12,
+      },
+    },
+    events: [],
+  };
+  let savedHigh = null;
+  const highHealer = createQuotaReservationTracker({
+    loadState: () => highUsagePersisted,
+    saveState: (p) => {
+      savedHigh = p;
+    },
+  });
+  const highPools = new Map([
+    [
+      'Gemini',
+      {
+        poolKey: 'Gemini',
+        poolLabel: 'Gemini',
+        family: 'Gemini',
+        has5h: true,
+        hasWeekly: true,
+        usedPct: 40.0,
+        weeklyUsedPct: 20.0,
+        resetTime: new Date(RESET_5H).toISOString(),
+        weeklyResetTime: new Date(RESET_WK).toISOString(),
+      },
+    ],
+  ]);
+  highHealer.updatePools({
+    endpointId: 'local',
+    accountScope: 'solo-high@example.com',
+    quotaPoolsMap: highPools,
+    poolCycleStats: new Map([
+      [
+        'Gemini',
+        {
+          cycle5h: { costUsd: 54.0, calls: 95, tokens: 80_000_000, unpricedCalls: 0 },
+          cycleWeekly: { costUsd: 120.0, calls: 210, tokens: 160_000_000, unpricedCalls: 0 },
+          exactCost5hUsd: 54.0,
+          exactCostWeeklyUsd: 120.0,
+          pricedTokens5h: 80_000_000,
+          pricedTokensWeekly: 160_000_000,
+        },
+      ],
+    ]),
+    quotaFetchedAtMs: T0,
+    nowMs: T0 + 30_000,
+  });
+  assert.equal(
+    highPools.get('Gemini').rateEstimate?.externalUsage ?? null,
+    null,
+    'polluted high-usage solo buckets (40% 5h / 20% weekly) self-heal false externalUsage immediately'
+  );
+  assert.equal(savedHigh?.buckets?.['local::solo-high@example.com::Gemini::5h']?.hasExternalUsage, false);
+  assert.equal(savedHigh?.buckets?.['local::solo-high@example.com::Gemini::weekly']?.hasExternalUsage, false);
+
+  // 2. Solo calibrated tracker: in-flight scan lag, pricing variance, delayed settlement, idle micro-jitter, and delayed rollback
+  const tracker = createQuotaReservationTracker();
+  let ts = T0;
+  let u5 = 6.7;
+  let uw = 1.67;
+  let c5 = 10.0;
+  let cw = 10.0;
+  const mkPools = (p5, pw) =>
+    new Map([
+      [
+        'Gemini',
+        {
+          poolKey: 'Gemini',
+          poolLabel: 'Gemini',
+          family: 'Gemini',
+          has5h: true,
+          hasWeekly: true,
+          usedPct: p5,
+          weeklyUsedPct: pw,
+          resetTime: new Date(RESET_5H).toISOString(),
+          weeklyResetTime: new Date(RESET_WK).toISOString(),
+        },
+      ],
+    ]);
+  const mkStats = (cost5, costW, lastActMs, { sess = 1, unpriced = 0 } = {}) =>
+    new Map([
+      [
+        'Gemini',
+        {
+          cycle5h: { costUsd: cost5, calls: 20, unpricedCalls: unpriced },
+          cycleWeekly: { costUsd: costW, calls: 20, unpricedCalls: unpriced },
+          exactCost5hUsd: cost5,
+          exactCostWeeklyUsd: costW,
+          recent10m: { lastActivityMs: lastActMs, activeSessionCount: sess, costUsd: sess > 0 ? 1.0 : 0 },
+        },
+      ],
+    ]);
+
+  // Baseline + 3 clean calibration ticks (5h = 0.67 %/$, weekly = 0.167 %/$)
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'solo-clean@example.com',
+    quotaPoolsMap: mkPools(u5, uw),
+    poolCycleStats: mkStats(c5, cw, ts),
+    runningPoolKeys: new Set(['Gemini']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  for (let i = 0; i < 3; i += 1) {
+    ts += 20_000;
+    c5 = +(c5 + 0.3).toFixed(4);
+    cw = +(cw + 0.3).toFixed(4);
+    u5 = +(u5 + 0.201).toFixed(4);
+    uw = +(uw + 0.0501).toFixed(4);
+    tracker.updatePools({
+      endpointId: 'local',
+      accountScope: 'solo-clean@example.com',
+      quotaPoolsMap: mkPools(u5, uw),
+      poolCycleStats: mkStats(c5, cw, ts),
+      runningPoolKeys: new Set(['Gemini']),
+      quotaFetchedAtMs: ts,
+      nowMs: ts,
+    });
+  }
+
+  // 2a. In-flight local turn deducts +1.005% 5h & +0.2505% weekly BEFORE local .pb step flushes ($0 delta)
+  ts += 15_000;
+  u5 = +(u5 + 1.005).toFixed(4);
+  uw = +(uw + 0.2505).toFixed(4);
+  const pLag = mkPools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'solo-clean@example.com',
+    quotaPoolsMap: pLag,
+    poolCycleStats: mkStats(c5, cw, ts - 15_000),
+    runningPoolKeys: new Set(['Gemini']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(
+    pLag.get('Gemini').rateEstimate?.externalUsage ?? null,
+    null,
+    'in-flight running local turn with proportional 5h+weekly quota tick must NOT trigger external_usage'
+  );
+
+  // 15s later local step flushes $1.50 while official stays flat -> absorbed cleanly after lag grace
+  ts += 15_000;
+  c5 = +(c5 + 1.5).toFixed(4);
+  cw = +(cw + 1.5).toFixed(4);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'solo-clean@example.com',
+    quotaPoolsMap: mkPools(u5, uw),
+    poolCycleStats: mkStats(c5, cw, ts),
+    runningPoolKeys: new Set(['Gemini']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  ts += QR_CONSUME_LAG_GRACE_MS + 1_000;
+  const pAfterFlush = mkPools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'solo-clean@example.com',
+    quotaPoolsMap: pAfterFlush,
+    poolCycleStats: mkStats(c5, cw, ts - QR_CONSUME_LAG_GRACE_MS),
+    runningPoolKeys: new Set(['Gemini']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(pAfterFlush.get('Gemini').rateEstimate?.externalUsage ?? null, null);
+  assert.equal(pAfterFlush.get('Gemini').reservedPct, 0);
+
+  // 2b. Solo 2x pricing variance turn ($1.00 local -> upstream bills $2.00 = +1.34% 5h & +0.334% weekly)
+  ts += 20_000;
+  c5 = +(c5 + 1.0).toFixed(4);
+  cw = +(cw + 1.0).toFixed(4);
+  u5 = +(u5 + 1.34).toFixed(4);
+  uw = +(uw + 0.334).toFixed(4);
+  const pPriceVar = mkPools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'solo-clean@example.com',
+    quotaPoolsMap: pPriceVar,
+    poolCycleStats: mkStats(c5, cw, ts),
+    runningPoolKeys: new Set(['Gemini']),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(
+    pPriceVar.get('Gemini').rateEstimate?.externalUsage ?? null,
+    null,
+    '2x local pricing variance must not trigger co-movement external_usage'
+  );
+
+  // 2c. Delayed upstream settlement after user goes idle for 5 min (local cost already on disk covers official)
+  ts += 20_000;
+  c5 = +(c5 + 2.0).toFixed(4);
+  cw = +(cw + 2.0).toFixed(4);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'solo-clean@example.com',
+    quotaPoolsMap: mkPools(u5, uw),
+    poolCycleStats: mkStats(c5, cw, ts),
+    runningPoolKeys: new Set(),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  const lastTurnMs = ts;
+  ts += 5 * 60 * 1000;
+  u5 = +(u5 + 0.67).toFixed(4);
+  uw = +(uw + 0.167).toFixed(4);
+  const pDelayedSettle = mkPools(u5, uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'solo-clean@example.com',
+    quotaPoolsMap: pDelayedSettle,
+    poolCycleStats: mkStats(c5, cw, lastTurnMs, { sess: 0 }),
+    runningPoolKeys: new Set(),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(
+    pDelayedSettle.get('Gemini').rateEstimate?.externalUsage ?? null,
+    null,
+    'idle upstream catch-up already covered by local cycle spend must not flag external_usage'
+  );
+
+  // 2d. Isolated idle micro-jitter (+0.08% 5h) followed by replica drop must NOT flag external_usage
+  ts += 6 * 60 * 1000;
+  const pJitter = mkPools(+(u5 + 0.08).toFixed(4), uw);
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'solo-clean@example.com',
+    quotaPoolsMap: pJitter,
+    poolCycleStats: mkStats(c5, cw, lastTurnMs, { sess: 0 }),
+    runningPoolKeys: new Set(),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+  assert.equal(
+    pJitter.get('Gemini').rateEstimate?.externalUsage ?? null,
+    null,
+    'single isolated +0.08% idle blip must not trigger external_usage'
+  );
+  ts += 20_000;
+  tracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'solo-clean@example.com',
+    quotaPoolsMap: mkPools(u5, uw),
+    poolCycleStats: mkStats(c5, cw, lastTurnMs, { sess: 0 }),
+    runningPoolKeys: new Set(),
+    quotaFetchedAtMs: ts,
+    nowMs: ts,
+  });
+
+  // 2e. Delayed local step flush rolls back a single temporary external_usage event (e.g. model switch mid-chat)
+  const rollbackTracker = createQuotaReservationTracker();
+  let rt = T0;
+  let ru5 = 10.0;
+  let rc5 = 10.0;
+  const rKey = 'local::switch-model@example.com::Gemini::5h';
+  rollbackTracker.observeBucket({
+    bucketKey: rKey,
+    poolKey: 'Gemini',
+    win: '5h',
+    officialUsedPct: ru5,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: rt,
+    cycleCostUsd: rc5,
+    cycleCalls: 10,
+    poolLastActivityMs: rt,
+    activeSessionCount10m: 1,
+    nowMs: rt,
+  });
+  for (let i = 0; i < 3; i += 1) {
+    rt += 20_000;
+    rc5 = +(rc5 + 0.2).toFixed(4);
+    ru5 = +(ru5 + 0.2).toFixed(4);
+    rollbackTracker.observeBucket({
+      bucketKey: rKey,
+      poolKey: 'Gemini',
+      win: '5h',
+      officialUsedPct: ru5,
+      resetTimeMs: RESET_5H,
+      quotaFetchedAtMs: rt,
+      cycleCostUsd: rc5,
+      cycleCalls: 11 + i,
+      poolLastActivityMs: rt,
+      activeSessionCount10m: 1,
+      nowMs: rt,
+    });
+  }
+  const rLastAct = rt;
+  // User switches into Gemini while pool looked idle -> +0.8% arrives before local step flushes
+  rt += 6 * 60 * 1000;
+  ru5 = +(ru5 + 0.8).toFixed(4);
+  rollbackTracker.observeBucket({
+    bucketKey: rKey,
+    poolKey: 'Gemini',
+    win: '5h',
+    officialUsedPct: ru5,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: rt,
+    cycleCostUsd: rc5,
+    cycleCalls: 13,
+    poolLastActivityMs: rLastAct,
+    activeSessionCount10m: 0,
+    nowMs: rt,
+  });
+  assert.equal(rollbackTracker._buckets.get(rKey).hasExternalUsage, true);
+  // 15s later the local $0.80 Gemini step flushes while official stays flat -> cancels temporary flag
+  rt += 15_000;
+  rc5 = +(rc5 + 0.8).toFixed(4);
+  rollbackTracker.observeBucket({
+    bucketKey: rKey,
+    poolKey: 'Gemini',
+    win: '5h',
+    officialUsedPct: ru5,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: rt,
+    cycleCostUsd: rc5,
+    cycleCalls: 14,
+    poolLastActivityMs: rt,
+    activeSessionCount10m: 1,
+    nowMs: rt,
+  });
+  assert.equal(
+    rollbackTracker._buckets.get(rKey).hasExternalUsage,
+    false,
+    'delayed local step flush within reconcile window cancels false temporary external_usage'
+  );
+  assert.equal(rollbackTracker._buckets.get(rKey).externalUsedPct, 0);
+
+  // 2f. Incomplete local progressive scan must not stamp baseline hasExternalUsage
+  const scanTracker = createQuotaReservationTracker();
+  const scanPools = mkPools(15.0, 22.0);
+  scanTracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'rebuilding@example.com',
+    quotaPoolsMap: scanPools,
+    poolCycleStats: mkStats(0, 0, 0, { sess: 0 }),
+    localScanIncomplete: true,
+    quotaFetchedAtMs: T0,
+    nowMs: T0,
+  });
+  assert.equal(
+    scanPools.get('Gemini').rateEstimate?.externalUsage ?? null,
+    null,
+    'baseline poll while local cache scan is incomplete must not flag external_usage'
+  );
+
+  // 2g. Real-log regressions:
+  // (i) Uncalibrated Pro cold-start lease_rejected must not stamp hasExternalUsage or deadlock rate=null
+  const proTracker = createQuotaReservationTracker();
+  const pKey = 'local::solo-pro@example.com::Gemini::5h';
+  let pt = T0;
+  proTracker.observeBucket({
+    bucketKey: pKey,
+    poolKey: 'Gemini',
+    win: '5h',
+    officialUsedPct: 4.5,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: pt,
+    cycleCostUsd: 1.4,
+    cycleCalls: 12,
+    poolLastActivityMs: pt,
+    activeSessionCount10m: 1,
+    nowMs: pt,
+  });
+  // Cold-start lease jumps +0.626% while ratePctPerUsd is still null (reset ratePctPerUsd to simulate Pro cold start)
+  proTracker._buckets.get(pKey).ratePctPerUsd = null;
+  proTracker._buckets.get(pKey).rateSamples = 0;
+  pt += 15_000;
+  proTracker.observeBucket({
+    bucketKey: pKey,
+    poolKey: 'Gemini',
+    win: '5h',
+    officialUsedPct: 5.126,
+    resetTimeMs: RESET_5H,
+    quotaFetchedAtMs: pt,
+    cycleCostUsd: 1.4,
+    cycleCalls: 12,
+    poolLastActivityMs: pt,
+    activeSessionCount10m: 1,
+    nowMs: pt,
+  });
+  // 3 normal Pro 1:1 turns (~3.33 %/$) evict the cold-start lease WITHOUT poisoning hasExternalUsage
+  let pu = 5.126;
+  let pc = 1.4;
+  for (let i = 0; i < 3; i += 1) {
+    pt += 20_000;
+    pc = +(pc + 0.07).toFixed(4);
+    pu = +(pu + 0.233).toFixed(4);
+    proTracker.observeBucket({
+      bucketKey: pKey,
+      poolKey: 'Gemini',
+      win: '5h',
+      officialUsedPct: pu,
+      resetTimeMs: RESET_5H,
+      quotaFetchedAtMs: pt,
+      cycleCostUsd: pc,
+      cycleCalls: 13 + i,
+      poolLastActivityMs: pt,
+      activeSessionCount10m: 1,
+      nowMs: pt,
+    });
+  }
+  assert.equal(
+    proTracker._buckets.get(pKey).hasExternalUsage,
+    false,
+    'evicting an uncalibrated cold-start lease on a Pro account must not stamp hasExternalUsage'
+  );
+
+  // (ii) 5h-only +1.0% jump with 0.0% weekly movement on calibrated 4:1 pool is a 5h-only server lease, not external_usage
+  const fiveHLeaseTracker = createQuotaReservationTracker();
+  let ft = T0;
+  let fu5 = 10.0;
+  let fuw = 2.5;
+  let fc5 = 15.0;
+  let fcw = 15.0;
+  fiveHLeaseTracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'fiveh-lease@example.com',
+    quotaPoolsMap: mkPools(fu5, fuw),
+    poolCycleStats: mkStats(fc5, fcw, ft),
+    runningPoolKeys: new Set(['Gemini']),
+    quotaFetchedAtMs: ft,
+    nowMs: ft,
+  });
+  for (let i = 0; i < 3; i += 1) {
+    ft += 20_000;
+    fc5 = +(fc5 + 0.3).toFixed(4);
+    fcw = +(fcw + 0.3).toFixed(4);
+    fu5 = +(fu5 + 0.2).toFixed(4);
+    fuw = +(fuw + 0.05).toFixed(4);
+    fiveHLeaseTracker.updatePools({
+      endpointId: 'local',
+      accountScope: 'fiveh-lease@example.com',
+      quotaPoolsMap: mkPools(fu5, fuw),
+      poolCycleStats: mkStats(fc5, fcw, ft),
+      runningPoolKeys: new Set(['Gemini']),
+      quotaFetchedAtMs: ft,
+      nowMs: ft,
+    });
+  }
+  const fLastAct = ft;
+  ft += 5 * 60 * 1000; // past idle grace, yet weekly moves 0.000% while 5h jumps +1.000%
+  fu5 = +(fu5 + 1.0).toFixed(4);
+  const pFiveHOnly = mkPools(fu5, fuw);
+  fiveHLeaseTracker.updatePools({
+    endpointId: 'local',
+    accountScope: 'fiveh-lease@example.com',
+    quotaPoolsMap: pFiveHOnly,
+    poolCycleStats: mkStats(fc5, fcw, fLastAct, { sess: 0 }),
+    runningPoolKeys: new Set(),
+    quotaFetchedAtMs: ft,
+    nowMs: ft,
+  });
+  assert.equal(
+    pFiveHOnly.get('Gemini').rateEstimate?.externalUsage ?? null,
+    null,
+    '5h-only +1.0% jump with 0.000% weekly movement must not trigger external_usage'
+  );
 });

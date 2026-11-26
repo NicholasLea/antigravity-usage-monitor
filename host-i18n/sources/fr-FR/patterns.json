@@ -1,0 +1,5214 @@
+{
+  "base": [
+    {
+      "source": "^Thought for (\\d+(?:\\.\\d+)?(?:ms|s|m|h))$",
+      "replace": "Réflexion de $1",
+      "hint": "Thought for "
+    },
+    {
+      "source": "^Thought for (\\d+) seconds?$",
+      "flags": "i",
+      "replace": "Réflexion de $1 s",
+      "hint": "Thought for "
+    },
+    {
+      "source": "^Thought for (\\d+) minutes?$",
+      "flags": "i",
+      "replace": "Réflexion de $1 min",
+      "hint": "Thought for "
+    },
+    {
+      "source": "^Thinking for (\\d+(?:\\.\\d+)?(?:ms|s|m|h))$",
+      "replace": "Réflexion en cours ($1)",
+      "hint": "Thinking for "
+    },
+    {
+      "source": "^(\\d+) files? changed$",
+      "flags": "i",
+      "replace": "$1 fichier(s) modifié(s)",
+      "hint": "changed"
+    },
+    {
+      "source": "^(\\d+) files?$",
+      "flags": "i",
+      "replace": "$1 fichier(s)",
+      "hint": "file"
+    },
+    {
+      "source": "^(\\d+) steps?$",
+      "flags": "i",
+      "replace": "$1 étape(s)",
+      "hint": "step"
+    },
+    {
+      "source": "^Step (\\d+) of (\\d+)$",
+      "replace": "Étape $1 sur $2",
+      "hint": "Step "
+    },
+    {
+      "source": "^(\\d+) results?$",
+      "flags": "i",
+      "replace": "$1 résultat(s)",
+      "hint": "result"
+    },
+    {
+      "source": "^(\\d+) items?$",
+      "flags": "i",
+      "replace": "$1 élément(s)",
+      "hint": "item"
+    },
+    {
+      "source": "^(\\d+) errors?$",
+      "flags": "i",
+      "replace": "$1 erreur(s)",
+      "hint": "error"
+    },
+    {
+      "source": "^(\\d+) warnings?$",
+      "flags": "i",
+      "replace": "$1 avertissement(s)",
+      "hint": "warning"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:s|sec|secs|second|seconds) ago$",
+      "flags": "i",
+      "replace": "il y a $1 s",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:m|min|mins|minute|minutes) ago$",
+      "flags": "i",
+      "replace": "il y a $1 min",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:h|hr|hrs|hour|hours) ago$",
+      "flags": "i",
+      "replace": "il y a $1 h",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:d|day|days) ago$",
+      "flags": "i",
+      "replace": "il y a $1 j",
+      "hint": "ago"
+    },
+    {
+      "source": "^Updated (\\d+(?:\\.\\d+)?[smhd]) ago$",
+      "flags": "i",
+      "replace": "Mis à jour il y a $1",
+      "hint": "Updated "
+    },
+    {
+      "source": "^(\\d+) lines? added$",
+      "flags": "i",
+      "replace": "$1 ligne(s) ajoutée(s)",
+      "hint": "added"
+    },
+    {
+      "source": "^(\\d+) lines? removed$",
+      "flags": "i",
+      "replace": "$1 ligne(s) supprimée(s)",
+      "hint": "removed"
+    },
+    {
+      "source": "^Show (\\d+) more$",
+      "flags": "i",
+      "replace": "Afficher $1 de plus",
+      "hint": "more"
+    },
+    {
+      "source": "^(\\d+) running$",
+      "flags": "i",
+      "replace": "$1 en cours",
+      "hint": "running"
+    },
+    {
+      "source": "^(\\d+) queued$",
+      "flags": "i",
+      "replace": "$1 en file d'attente",
+      "hint": "queued"
+    },
+    {
+      "source": "^(\\d+) selected$",
+      "flags": "i",
+      "replace": "$1 sélectionné(s)",
+      "hint": "selected"
+    },
+    {
+      "source": "^Version (\\d+\\.\\d+\\.\\d+(?:-[\\w.-]+)?)$",
+      "replace": "Version $1",
+      "hint": "Version "
+    },
+    {
+      "source": "^\"(.+?)\" does not support standalone self matching; constrain (.+?)$",
+      "replace": "« $1 » ne prend pas en charge l'auto-correspondance autonome ; contraignez $2",
+      "hint": "\" does not support standalone se"
+    },
+    {
+      "source": "^\\(filtered from (\\d+(?:\\.\\d+)?)\\)$",
+      "replace": "(filtré sur $1)",
+      "hint": "(filtered from"
+    },
+    {
+      "source": "^\\((\\d+(?:\\.\\d+)?) steps?\\)$",
+      "replace": "($1 étape(s))",
+      "hint": "step"
+    },
+    {
+      "source": "^\\+(.+?) attachments$",
+      "replace": "+$1 pièces jointes",
+      "hint": "attachments"
+    },
+    {
+      "source": "^\\+(.+?) more$",
+      "replace": "+$1 de plus",
+      "hint": "more"
+    },
+    {
+      "source": "^\\+(.+?) more \\(Show all\\)$",
+      "replace": "+$1 de plus (Tout afficher)",
+      "hint": "more (Show all)"
+    },
+    {
+      "source": "^\\+(.+?) more options via locator\\('datalist option'\\)$",
+      "replace": "+$1 options supplémentaires via locator('datalist option')",
+      "hint": "more options via locator('datali"
+    },
+    {
+      "source": "^@(.+?) is currently unavailable$",
+      "replace": "@$1 est actuellement indisponible",
+      "hint": "is currently unavailable"
+    },
+    {
+      "source": "^A file already exists at (.+?)\\.$",
+      "replace": "Un fichier existe déjà à l'emplacement $1.",
+      "hint": "A file already exists at"
+    },
+    {
+      "source": "^A project's private resources must all belong to one owner \\((.+?)\\)\\.$",
+      "replace": "Les ressources privées d'un projet doivent toutes appartenir au même propriétaire ($1).",
+      "hint": "A project's private resources mu"
+    },
+    {
+      "source": "^Add \\((\\d+(?:\\.\\d+)?)\\)$",
+      "replace": "Ajouter ($1)",
+      "hint": "Add ("
+    },
+    {
+      "source": "^Add all · (.+?)$",
+      "replace": "Tout ajouter · $1",
+      "hint": "Add all ·"
+    },
+    {
+      "source": "^Add bundle (.+?)$",
+      "replace": "Ajouter le lot $1",
+      "hint": "Add bundle"
+    },
+    {
+      "source": "^Add new (.+?) item$",
+      "replace": "Ajouter un nouvel élément $1",
+      "hint": "Add new"
+    },
+    {
+      "source": "^Add shortcut for (.+?)$",
+      "replace": "Ajouter un raccourci pour $1",
+      "hint": "Add shortcut for"
+    },
+    {
+      "source": "^Add (.+?)$",
+      "replace": "Ajouter $1",
+      "hint": "Add"
+    },
+    {
+      "source": "^Add (.+?) (.+?) from (.+?)$",
+      "replace": "Ajouter $1 $2 depuis $3",
+      "hint": "from"
+    },
+    {
+      "source": "^Added (.+?)\\.$",
+      "replace": "$1 ajouté.",
+      "hint": "Added"
+    },
+    {
+      "source": "^Adding (.+?)$",
+      "replace": "Ajout de $1",
+      "hint": "Adding"
+    },
+    {
+      "source": "^All changes since (.+?)$",
+      "replace": "Toutes les modifications depuis $1",
+      "hint": "All changes since"
+    },
+    {
+      "source": "^All (.+?)$",
+      "replace": "Tous les $1",
+      "hint": "All"
+    },
+    {
+      "source": "^Allow (.+?)$",
+      "replace": "Autoriser $1",
+      "hint": "Allow"
+    },
+    {
+      "source": "^Allow (.+?) to (.+?)\\?$",
+      "replace": "Autoriser $1 à $2 ?",
+      "hint": "Allow"
+    },
+    {
+      "source": "^Allow (.+?)\\?$",
+      "replace": "Autoriser $1 ?",
+      "hint": "Allow"
+    },
+    {
+      "source": "^Allowed in (.+?)$",
+      "replace": "Autorisé dans $1",
+      "hint": "Allowed in"
+    },
+    {
+      "source": "^An error occurred while resolving reference to '(.+?)': (.+?)$",
+      "replace": "Une erreur s'est produite lors de la résolution de la référence « $1 » : $2",
+      "hint": "An error occurred while resolvin"
+    },
+    {
+      "source": "^App view for (.+?)$",
+      "replace": "Vue d'application pour $1",
+      "hint": "App view for"
+    },
+    {
+      "source": "^Applied (.+?)$",
+      "replace": "$1 appliqué",
+      "hint": "Applied"
+    },
+    {
+      "source": "^Apply (.+?)$",
+      "replace": "Appliquer $1",
+      "hint": "Apply"
+    },
+    {
+      "source": "^Attachment error: (.+?)$",
+      "replace": "Erreur de pièce jointe : $1",
+      "hint": "Attachment error:"
+    },
+    {
+      "source": "^Attribute: (.+?) was dropped$",
+      "replace": "Attribut $1 ignoré",
+      "hint": "was dropped"
+    },
+    {
+      "source": "^Audio file size exceeds (.+?)MB limit$",
+      "replace": "La taille du fichier audio dépasse la limite de $1 Mo",
+      "hint": "Audio file size exceeds"
+    },
+    {
+      "source": "^Auth code for (.+?)$",
+      "replace": "Code d'authentification pour $1",
+      "hint": "Auth code for"
+    },
+    {
+      "source": "^Authorization code for (.+?)$",
+      "replace": "Code d'autorisation pour $1",
+      "hint": "Authorization code for"
+    },
+    {
+      "source": "^Automation (.+?)$",
+      "replace": "Automatisation $1",
+      "hint": "Automation"
+    },
+    {
+      "source": "^Aux pane (.+?)$",
+      "replace": "Volet auxiliaire $1",
+      "hint": "Aux pane"
+    },
+    {
+      "source": "^Available AI Credits: (.+?)$",
+      "replace": "Crédits IA disponibles : $1",
+      "hint": "Available AI Credits:"
+    },
+    {
+      "source": "^Available AI credits: (.+?)$",
+      "replace": "Crédits IA disponibles : $1",
+      "hint": "Available AI credits:"
+    },
+    {
+      "source": "^Back (.+?)s \\(←\\)$",
+      "replace": "Reculer de $1 s (←)",
+      "hint": "Back"
+    },
+    {
+      "source": "^Bad response from host: (.+?)$",
+      "replace": "Réponse incorrecte de l'hôte : $1",
+      "hint": "Bad response from host:"
+    },
+    {
+      "source": "^Blocked navigation to \"(.+?)\"$",
+      "replace": "Navigation vers « $1 » bloquée",
+      "hint": "Blocked navigation to \""
+    },
+    {
+      "source": "^Blocked: (.+?)$",
+      "replace": "Bloqué : $1",
+      "hint": "Blocked:"
+    },
+    {
+      "source": "^Bounding box on page (.+?)$",
+      "replace": "Zone englobante sur la page $1",
+      "hint": "Bounding box on page"
+    },
+    {
+      "source": "^CEL: (.+?)$",
+      "replace": "CEL : $1",
+      "hint": "CEL:"
+    },
+    {
+      "source": "^Cancel (.+?)$",
+      "replace": "Annuler $1",
+      "hint": "Cancel"
+    },
+    {
+      "source": "^Cannot add folder: \"(.+?)\" is not a valid folder location\\.$",
+      "replace": "Impossible d'ajouter le dossier : « $1 » n'est pas un emplacement de dossier valide.",
+      "hint": "\" is not a valid folder location"
+    },
+    {
+      "source": "^Can’t create this path — “(.+?)” is a file, not a folder\\.$",
+      "replace": "Impossible de créer ce chemin — « $1 » est un fichier, pas un dossier.",
+      "hint": "Can’t create this path — “"
+    },
+    {
+      "source": "^Changes Overview \\((.+?)\\)$",
+      "replace": "Aperçu des modifications ($1)",
+      "hint": "Changes Overview ("
+    },
+    {
+      "source": "^Channel name '(.+?)' timed out after (.+?)ms$",
+      "replace": "Le canal « $1 » a expiré après $2 ms",
+      "hint": "' timed out after"
+    },
+    {
+      "source": "^Check if there is a typo in (.+?), or open the page in your external browser\\.$",
+      "replace": "Vérifiez s'il y a une faute de frappe dans $1 ou ouvrez la page dans votre navigateur externe.",
+      "hint": ", or open the page in your exter"
+    },
+    {
+      "source": "^Checked out in (.+?)$",
+      "replace": "Extrait dans $1",
+      "hint": "Checked out in"
+    },
+    {
+      "source": "^Choose (.+?)'s Voice$",
+      "replace": "Choisir la voix de $1",
+      "hint": "'s Voice"
+    },
+    {
+      "source": "^Chunk (.+?)$",
+      "replace": "Bloc $1",
+      "hint": "Chunk"
+    },
+    {
+      "source": "^Close (.+?)$",
+      "replace": "Fermer $1",
+      "hint": "Close"
+    },
+    {
+      "source": "^Column (.+?)$",
+      "replace": "Colonne $1",
+      "hint": "Column"
+    },
+    {
+      "source": "^Comment on page (.+?)$",
+      "replace": "Commentaire sur la page $1",
+      "hint": "Comment on page"
+    },
+    {
+      "source": "^Committed to (.+?)\\.$",
+      "replace": "Validé dans $1.",
+      "hint": "Committed to"
+    },
+    {
+      "source": "^Compare responses from (.+?) models side-by-side to find the best result\\.$",
+      "replace": "Comparez côte à côte les réponses de $1 modèles pour trouver le meilleur résultat.",
+      "hint": "models side-by-side to find the "
+    },
+    {
+      "source": "^Configure (.+?)$",
+      "replace": "Configurer $1",
+      "hint": "Configure"
+    },
+    {
+      "source": "^Configure (.+?), values missing$",
+      "replace": "Configurer $1, valeurs manquantes",
+      "hint": ", values missing"
+    },
+    {
+      "source": "^Confirm add (.+?) item$",
+      "replace": "Confirmer l'ajout de l'élément $1",
+      "hint": "Confirm add"
+    },
+    {
+      "source": "^Conflicts with \"(.+?)\"$",
+      "replace": "Conflit avec « $1 »",
+      "hint": "Conflicts with \""
+    },
+    {
+      "source": "^Conflicts with \"(.+?)\" \\((.+?)\\)$",
+      "replace": "Conflit avec « $1 » ($2)",
+      "hint": "Conflicts with \""
+    },
+    {
+      "source": "^Connect GitHub: (.+?)$",
+      "replace": "Connecter GitHub : $1",
+      "hint": "Connect GitHub:"
+    },
+    {
+      "source": "^Connect (.+?)$",
+      "replace": "Connecter $1",
+      "hint": "Connect"
+    },
+    {
+      "source": "^Connected to (.+?)$",
+      "replace": "Connecté à $1",
+      "hint": "Connected to"
+    },
+    {
+      "source": "^Connecting to (.+?)…$",
+      "replace": "Connexion à $1…",
+      "hint": "Connecting to"
+    },
+    {
+      "source": "^ConsoleErrors:\n(.+?)$",
+      "replace": "Erreurs de console :\\n$1",
+      "hint": "ConsoleErrors:"
+    },
+    {
+      "source": "^Content is (\\d+(?:\\.\\d+)?) bytes, exceeds limit of 10485760$",
+      "replace": "Le contenu mesure $1 octets et dépasse la limite de 10485760",
+      "hint": "bytes, exceeds limit of 10485760"
+    },
+    {
+      "source": "^Continue(\\s+\\(.+?\\))$",
+      "replace": "Continuer$1",
+      "hint": "Continue"
+    },
+    {
+      "source": "^Conversation (.+?)$",
+      "replace": "Conversation $1",
+      "hint": "Conversation"
+    },
+    {
+      "source": "^Copy (.+?)$",
+      "replace": "Copier $1",
+      "hint": "Copy"
+    },
+    {
+      "source": "^Copy (.+?) Name$",
+      "replace": "Copier le nom de $1",
+      "hint": "Copy"
+    },
+    {
+      "source": "^Cost summary: (.+?)$",
+      "replace": "Résumé des coûts : $1",
+      "hint": "Cost summary:"
+    },
+    {
+      "source": "^Could not attach folder \"(.+?)\": (.+?)$",
+      "replace": "Impossible de joindre le dossier « $1 » : $2",
+      "hint": "Could not attach folder \""
+    },
+    {
+      "source": "^Could not attach image: (.+?)$",
+      "replace": "Impossible de joindre l'image : $1",
+      "hint": "Could not attach image:"
+    },
+    {
+      "source": "^Could not find match for matchId \"(.+?)\"\\. Please file an issue!$",
+      "replace": "Correspondance introuvable pour matchId « $1 ». Veuillez signaler un problème !",
+      "hint": "Could not find match for matchId"
+    },
+    {
+      "source": "^Could not find parent match for matchId \"(.+?)\"$",
+      "replace": "Correspondance parente introuvable pour matchId « $1 »",
+      "hint": "Could not find parent match for "
+    },
+    {
+      "source": "^Could not find (.+?)$",
+      "replace": "$1 introuvable",
+      "hint": "Could not find"
+    },
+    {
+      "source": "^Could not open folder: (.+?)$",
+      "replace": "Impossible d'ouvrir le dossier : $1",
+      "hint": "Could not open folder:"
+    },
+    {
+      "source": "^Could not read (.+?)\\.$",
+      "replace": "Impossible de lire $1.",
+      "hint": "Could not read"
+    },
+    {
+      "source": "^Could not resolve reference to (.+?) named '(.+?)'\\.$",
+      "replace": "Impossible de résoudre la référence vers $1 nommé « $2 ».",
+      "hint": "Could not resolve reference to"
+    },
+    {
+      "source": "^Couldn't connect to (.+?)$",
+      "replace": "Impossible de se connecter à $1",
+      "hint": "Couldn't connect to"
+    },
+    {
+      "source": "^Couldn't connect to (.+?)\\. (.+?)$",
+      "replace": "Impossible de se connecter à $1. $2",
+      "hint": "Couldn't connect to"
+    },
+    {
+      "source": "^Couldn't disconnect (.+?): (.+?)$",
+      "replace": "Impossible de déconnecter $1 : $2",
+      "hint": "Couldn't disconnect"
+    },
+    {
+      "source": "^Couldn't load apps: (.+?)$",
+      "replace": "Impossible de charger les applications : $1",
+      "hint": "Couldn't load apps:"
+    },
+    {
+      "source": "^Couldn't remove (.+?) from Recent$",
+      "replace": "Impossible de supprimer $1 des éléments récents",
+      "hint": "Couldn't remove"
+    },
+    {
+      "source": "^Couldn't switch to (.+?): (.+?)$",
+      "replace": "Impossible de basculer vers $1 : $2",
+      "hint": "Couldn't switch to"
+    },
+    {
+      "source": "^Couldn't (.+?) conversation$",
+      "replace": "Impossible de $1 la conversation",
+      "hint": "conversation"
+    },
+    {
+      "source": "^Couldn't (.+?) (.+?) from (.+?)\\.$",
+      "replace": "Impossible de $1 $2 depuis $3.",
+      "hint": "Couldn't"
+    },
+    {
+      "source": "^Created automation \"(.+?)\"\\.$",
+      "replace": "Automatisation « $1 » créée.",
+      "hint": "Created automation \""
+    },
+    {
+      "source": "^Created (.+?)$",
+      "replace": "$1 créé",
+      "hint": "Created"
+    },
+    {
+      "source": "^Creating (.+?)$",
+      "replace": "Création de $1",
+      "hint": "Creating"
+    },
+    {
+      "source": "^Daily at (.+?)$",
+      "replace": "Chaque jour à $1",
+      "hint": "Daily at"
+    },
+    {
+      "source": "^Data cannot be received because the stream is in (.+?) state\\.$",
+      "replace": "Impossible de recevoir des données car le flux est à l'état $1.",
+      "hint": "Data cannot be received because "
+    },
+    {
+      "source": "^Data cannot be sent because the stream is in (.+?) state\\.$",
+      "replace": "Impossible d'envoyer des données car le flux est à l'état $1.",
+      "hint": "Data cannot be sent because the "
+    },
+    {
+      "source": "^Debug Mode (.+?)$",
+      "replace": "Mode débogage $1",
+      "hint": "Debug Mode"
+    },
+    {
+      "source": "^Decide between using a controlled or uncontrolled (.+?) element for the lifetime of the component\\.$",
+      "replace": "Choisissez d'utiliser un élément $1 contrôlé ou non contrôlé de manière cohérente pendant toute la durée de vie du composant.",
+      "hint": "Decide between using a controlle"
+    },
+    {
+      "source": "^Delete cookies for (.+?)$",
+      "replace": "Supprimer les cookies pour $1",
+      "hint": "Delete cookies for"
+    },
+    {
+      "source": "^Delete side question: (.+?)$",
+      "replace": "Supprimer la question annexe : $1",
+      "hint": "Delete side question:"
+    },
+    {
+      "source": "^Delete (.+?)$",
+      "replace": "Supprimer $1",
+      "hint": "Delete"
+    },
+    {
+      "source": "^Deleted \"(.+?)\"\\.$",
+      "replace": "« $1 » supprimé.",
+      "hint": "Deleted \""
+    },
+    {
+      "source": "^Deleted cookies for (.+?)$",
+      "replace": "Cookies supprimés pour $1",
+      "hint": "Deleted cookies for"
+    },
+    {
+      "source": "^Deleted (.+?)$",
+      "replace": "$1 supprimé",
+      "hint": "Deleted"
+    },
+    {
+      "source": "^Deleted (.+?) \\((.+?)\\)$",
+      "replace": "$1 ($2) supprimé",
+      "hint": "Deleted"
+    },
+    {
+      "source": "^Detached at (.+?)$",
+      "replace": "Détaché sur $1",
+      "hint": "Detached at"
+    },
+    {
+      "source": "^Details for (.+?)$",
+      "replace": "Détails pour $1",
+      "hint": "Details for"
+    },
+    {
+      "source": "^Detected on the page: (.+?) compatible editor\\(s\\) with version (.+?)$",
+      "replace": "Détecté sur la page : $1 éditeur(s) compatible(s) en version $2",
+      "hint": "compatible editor(s) with versio"
+    },
+    {
+      "source": "^Diagram (.+?) not found\\.$",
+      "replace": "Diagramme $1 introuvable.",
+      "hint": "not found."
+    },
+    {
+      "source": "^Disable Word Wrap(\\s+\\(.+?\\))$",
+      "replace": "Désactiver le retour à la ligne$1",
+      "hint": "Disable Word Wrap"
+    },
+    {
+      "source": "^Disconnect (.+?)$",
+      "replace": "Déconnecter $1",
+      "hint": "Disconnect"
+    },
+    {
+      "source": "^Dismiss: (.+?)$",
+      "replace": "Ignorer : $1",
+      "hint": "Dismiss:"
+    },
+    {
+      "source": "^Dismissed: (.+?)$",
+      "replace": "Ignoré : $1",
+      "hint": "Dismissed:"
+    },
+    {
+      "source": "^Document file size exceeds (.+?)MB limit$",
+      "replace": "La taille du fichier document dépasse la limite de $1 Mo",
+      "hint": "Document file size exceeds"
+    },
+    {
+      "source": "^Downloads, (\\d+(?:\\.\\d+)?)% complete$",
+      "replace": "Téléchargements, $1 % terminé",
+      "hint": "Downloads,"
+    },
+    {
+      "source": "^Duplicate routes found with id: (.+?)$",
+      "replace": "Routes en double détectées pour l'ID : $1",
+      "hint": "Duplicate routes found with id:"
+    },
+    {
+      "source": "^Duplicate (.+?) name$",
+      "replace": "Nom de $1 en double",
+      "hint": "Duplicate"
+    },
+    {
+      "source": "^Edit comment: (.+?)$",
+      "replace": "Modifier le commentaire : $1",
+      "hint": "Edit comment:"
+    },
+    {
+      "source": "^Edit side question title: (.+?)$",
+      "replace": "Modifier le titre de la question annexe : $1",
+      "hint": "Edit side question title:"
+    },
+    {
+      "source": "^Edit (.+?)$",
+      "replace": "Modifier $1",
+      "hint": "Edit"
+    },
+    {
+      "source": "^Edit (.+?) name$",
+      "replace": "Modifier le nom de $1",
+      "hint": "Edit"
+    },
+    {
+      "source": "^Editing (.+?)$",
+      "replace": "Modification de $1",
+      "hint": "Editing"
+    },
+    {
+      "source": "^Element: (.+?) was dropped$",
+      "replace": "Élément $1 ignoré",
+      "hint": "was dropped"
+    },
+    {
+      "source": "^Enable Word Wrap(\\s+\\(.+?\\))$",
+      "replace": "Activer le retour à la ligne$1",
+      "hint": "Enable Word Wrap"
+    },
+    {
+      "source": "^Enable (.+?)$",
+      "replace": "Activer $1",
+      "hint": "Enable"
+    },
+    {
+      "source": "^Enabled \"(.+?)\"\\.$",
+      "replace": "« $1 » activé.",
+      "hint": "Enabled \""
+    },
+    {
+      "source": "^Encountered unidirectional transform during encode: (.+?)$",
+      "replace": "Transformation unidirectionnelle rencontrée lors de l'encodage : $1",
+      "hint": "Encountered unidirectional trans"
+    },
+    {
+      "source": "^Endpoint (.+?) not implemented$",
+      "replace": "Point de terminaison $1 non implémenté",
+      "hint": "not implemented"
+    },
+    {
+      "source": "^Enter (.+?) name\\.\\.\\.$",
+      "replace": "Saisissez le nom de $1...",
+      "hint": "name..."
+    },
+    {
+      "source": "^Enter (.+?)\\.\\.\\.$",
+      "replace": "Saisissez $1...",
+      "hint": "Enter"
+    },
+    {
+      "source": "^Environment: (.+?)$",
+      "replace": "Environnement : $1",
+      "hint": "Environment:"
+    },
+    {
+      "source": "^Error in route match: (.+?)$",
+      "replace": "Erreur de correspondance de route : $1",
+      "hint": "Error in route match:"
+    },
+    {
+      "source": "^Error restarting (.+?): (.+?)$",
+      "replace": "Erreur lors du redémarrage de $1 : $2",
+      "hint": "Error restarting"
+    },
+    {
+      "source": "^Error starting sign-in: (.+?)$",
+      "replace": "Erreur lors du démarrage de la connexion : $1",
+      "hint": "Error starting sign-in:"
+    },
+    {
+      "source": "^Error submitting auth code: (.+?)$",
+      "replace": "Erreur lors de l'envoi du code d'authentification : $1",
+      "hint": "Error submitting auth code:"
+    },
+    {
+      "source": "^Error toggling tool: (.+?)$",
+      "replace": "Erreur lors du basculement de l'outil : $1",
+      "hint": "Error toggling tool:"
+    },
+    {
+      "source": "^Error while running: (.+?)$",
+      "replace": "Erreur pendant l'exécution : $1",
+      "hint": "Error while running:"
+    },
+    {
+      "source": "^Error while (.+?)$",
+      "replace": "Erreur pendant $1",
+      "hint": "Error while"
+    },
+    {
+      "source": "^Error: (.+?)$",
+      "replace": "Erreur : $1",
+      "hint": "Error:"
+    },
+    {
+      "source": "^Event not found: (.+?)$",
+      "replace": "Événement introuvable : $1",
+      "hint": "Event not found:"
+    },
+    {
+      "source": "^Every (.+?) hours(.+?)$",
+      "replace": "Toutes les $1 heures$2",
+      "hint": "Every"
+    },
+    {
+      "source": "^Every (.+?) minutes(.+?)$",
+      "replace": "Toutes les $1 minutes$2",
+      "hint": "minutes"
+    },
+    {
+      "source": "^Exited with code (.+?)\\.$",
+      "replace": "Terminé avec le code $1.",
+      "hint": "Exited with code"
+    },
+    {
+      "source": "^Expected (.+?), received (.+?)$",
+      "replace": "Attendu $1, reçu $2",
+      "hint": ", received"
+    },
+    {
+      "source": "^Expression only constrains non-indexed fields; click a Target chip below or add a positive \"&&\" match on (.+?)$",
+      "replace": "L'expression ne contraint que des champs non indexés ; cliquez sur une puce Cible ci-dessous ou ajoutez une condition positive « && » sur $1",
+      "hint": "Expression only constrains non-i"
+    },
+    {
+      "source": "^Failed to archive (.+?)$",
+      "replace": "Échec de l'archivage de $1",
+      "hint": "Failed to archive"
+    },
+    {
+      "source": "^Failed to create project: (.+?)$",
+      "replace": "Échec de la création du projet : $1",
+      "hint": "Failed to create project:"
+    },
+    {
+      "source": "^Failed to create (.+?)$",
+      "replace": "Échec de la création de $1",
+      "hint": "Failed to create"
+    },
+    {
+      "source": "^Failed to create (.+?)\\.$",
+      "replace": "Échec de la création de $1.",
+      "hint": "Failed to create"
+    },
+    {
+      "source": "^Failed to delete \"(.+?)\"$",
+      "replace": "Échec de la suppression de « $1 »",
+      "hint": "Failed to delete \""
+    },
+    {
+      "source": "^Failed to delete recordings: (.+?)$",
+      "replace": "Échec de la suppression des enregistrements : $1",
+      "hint": "Failed to delete recordings:"
+    },
+    {
+      "source": "^Failed to delete (.+?)$",
+      "replace": "Échec de la suppression de $1",
+      "hint": "Failed to delete"
+    },
+    {
+      "source": "^Failed to delete (.+?): (.+?)$",
+      "replace": "Échec de la suppression de $1 : $2",
+      "hint": "Failed to delete"
+    },
+    {
+      "source": "^Failed to establish WebSocket connection to (.+?)$",
+      "replace": "Échec de l'établissement de la connexion WebSocket vers $1",
+      "hint": "Failed to establish WebSocket co"
+    },
+    {
+      "source": "^Failed to evict annotation index for page (.+?)$",
+      "replace": "Échec de l'éviction de l'index d'annotations de la page $1",
+      "hint": "Failed to evict annotation index"
+    },
+    {
+      "source": "^Failed to load annotations for page (.+?): (.+?)$",
+      "replace": "Échec du chargement des annotations de la page $1 : $2",
+      "hint": "Failed to load annotations for p"
+    },
+    {
+      "source": "^Failed to load instances: (.+?)$",
+      "replace": "Échec du chargement des instances : $1",
+      "hint": "Failed to load instances:"
+    },
+    {
+      "source": "^Failed to load page (.+?): (.+?)$",
+      "replace": "Échec du chargement de la page $1 : $2",
+      "hint": "Failed to load page"
+    },
+    {
+      "source": "^Failed to load trajectory: (.+?)$",
+      "replace": "Échec du chargement de la trajectoire : $1",
+      "hint": "Failed to load trajectory:"
+    },
+    {
+      "source": "^Failed to read (.+?)$",
+      "replace": "Échec de la lecture de $1",
+      "hint": "Failed to read"
+    },
+    {
+      "source": "^Failed to resolve folder: (.+?)$",
+      "replace": "Échec de la résolution du dossier : $1",
+      "hint": "Failed to resolve folder:"
+    },
+    {
+      "source": "^Failed to resolve folder: (.+?) \\((.+?)\\)$",
+      "replace": "Échec de la résolution du dossier : $1 ($2)",
+      "hint": "Failed to resolve folder:"
+    },
+    {
+      "source": "^Failed to save \"(.+?)\"$",
+      "replace": "Échec de l'enregistrement de « $1 »",
+      "hint": "Failed to save \""
+    },
+    {
+      "source": "^Failed to save VCS preference: (.+?)$",
+      "replace": "Échec de l'enregistrement de la préférence VCS : $1",
+      "hint": "Failed to save VCS preference:"
+    },
+    {
+      "source": "^Failed to save cloud permission settings: (.+?)$",
+      "replace": "Échec de l'enregistrement des autorisations cloud : $1",
+      "hint": "Failed to save cloud permission "
+    },
+    {
+      "source": "^Failed to save configuration: (.+?)$",
+      "replace": "Échec de l'enregistrement de la configuration : $1",
+      "hint": "Failed to save configuration:"
+    },
+    {
+      "source": "^Failed to save project Google3 configuration: (.+?)$",
+      "replace": "Échec de l'enregistrement de la configuration Google3 du projet : $1",
+      "hint": "Failed to save project Google3 c"
+    },
+    {
+      "source": "^Failed to save project permissions: (.+?)$",
+      "replace": "Échec de l'enregistrement des autorisations du projet : $1",
+      "hint": "Failed to save project permissio"
+    },
+    {
+      "source": "^Failed to save project settings: (.+?)$",
+      "replace": "Échec de l'enregistrement des paramètres du projet : $1",
+      "hint": "Failed to save project settings:"
+    },
+    {
+      "source": "^Failed to save project: (.+?)$",
+      "replace": "Échec de l'enregistrement du projet : $1",
+      "hint": "Failed to save project:"
+    },
+    {
+      "source": "^Failed to save settings: (.+?)$",
+      "replace": "Échec de l'enregistrement des paramètres : $1",
+      "hint": "Failed to save settings:"
+    },
+    {
+      "source": "^Failed to send interaction: (.+?)$",
+      "replace": "Échec de l'envoi de l'interaction : $1",
+      "hint": "Failed to send interaction:"
+    },
+    {
+      "source": "^Failed to send response: (.+?)$",
+      "replace": "Échec de l'envoi de la réponse : $1",
+      "hint": "Failed to send response:"
+    },
+    {
+      "source": "^Failed to setup chat: (.+?)$",
+      "replace": "Échec de la configuration du chat : $1",
+      "hint": "Failed to setup chat:"
+    },
+    {
+      "source": "^Failed to start \"(.+?)\"\\.$",
+      "replace": "Échec du démarrage de « $1 ».",
+      "hint": "Failed to start \""
+    },
+    {
+      "source": "^Failed to unarchive project: (.+?)$",
+      "replace": "Échec du désarchivage du projet : $1",
+      "hint": "Failed to unarchive project:"
+    },
+    {
+      "source": "^Failed to update \"(.+?)\"$",
+      "replace": "Échec de la mise à jour de « $1 »",
+      "hint": "Failed to update \""
+    },
+    {
+      "source": "^Failed to write MCP config: (.+?)$",
+      "replace": "Échec de l'écriture de la configuration MCP : $1",
+      "hint": "Failed to write MCP config:"
+    },
+    {
+      "source": "^Failed to write (.+?)$",
+      "replace": "Échec de l'écriture de $1",
+      "hint": "Failed to write"
+    },
+    {
+      "source": "^Failed to (.+?) conversation$",
+      "replace": "Échec de $1 de la conversation",
+      "hint": "conversation"
+    },
+    {
+      "source": "^File exceeds 262144 bytes \\((\\d+(?:\\.\\d+)?) bytes\\)$",
+      "replace": "Le fichier dépasse 262144 octets ($1 octets)",
+      "hint": "File exceeds 262144 bytes ("
+    },
+    {
+      "source": "^Filter does not apply to (.+?) \\(supported on (.+?)\\)$",
+      "replace": "Le filtre ne s'applique pas à $1 (pris en charge pour $2)",
+      "hint": "Filter does not apply to"
+    },
+    {
+      "source": "^Filter only applies to (.+?)$",
+      "replace": "Le filtre s'applique uniquement à $1",
+      "hint": "Filter only applies to"
+    },
+    {
+      "source": "^Fold lines (.+?)-(.+?)$",
+      "replace": "Replier les lignes $1-$2",
+      "hint": "Fold lines"
+    },
+    {
+      "source": "^Forked from (.+?)$",
+      "replace": "Dupliqué depuis $1",
+      "hint": "Forked from"
+    },
+    {
+      "source": "^Forward (.+?)s \\(→\\)$",
+      "replace": "Avancer de $1 s (→)",
+      "hint": "Forward"
+    },
+    {
+      "source": "^Further action is required to use (.+?)$",
+      "replace": "Une action supplémentaire est requise pour utiliser $1",
+      "hint": "Further action is required to us"
+    },
+    {
+      "source": "^Generate with (.+?) 🍌$",
+      "replace": "Générer avec $1 🍌",
+      "hint": "Generate with"
+    },
+    {
+      "source": "^GitHub: (.+?)$",
+      "replace": "GitHub : $1",
+      "hint": "GitHub:"
+    },
+    {
+      "source": "^Go to page (.+?)$",
+      "replace": "Aller à la page $1",
+      "hint": "Go to page"
+    },
+    {
+      "source": "^Go to slide (.+?)$",
+      "replace": "Aller à la diapositive $1",
+      "hint": "Go to slide"
+    },
+    {
+      "source": "^Go to turn (.+?) of (.+?)$",
+      "replace": "Aller au tour $1 sur $2",
+      "hint": "Go to turn"
+    },
+    {
+      "source": "^Good to see you, (.+?)\\. What's next\\?$",
+      "replace": "Ravi de vous voir, $1. Quelle est la suite ?",
+      "hint": "Good to see you,"
+    },
+    {
+      "source": "^Google Chat (.+?)$",
+      "replace": "Google Chat $1",
+      "hint": "Google Chat"
+    },
+    {
+      "source": "^Google Chat: (.+?)$",
+      "replace": "Google Chat : $1",
+      "hint": "Google Chat:"
+    },
+    {
+      "source": "^HTTP ERROR (.+?)$",
+      "replace": "ERREUR HTTP $1",
+      "hint": "HTTP ERROR"
+    },
+    {
+      "source": "^Help us improve (.+?)\\.$",
+      "replace": "Aidez-nous à améliorer $1.",
+      "hint": "Help us improve"
+    },
+    {
+      "source": "^Hey (.+?)!$",
+      "replace": "Bonjour $1 !",
+      "hint": "Hey"
+    },
+    {
+      "source": "^Hey (.+?), what should we build today\\?$",
+      "replace": "Bonjour $1, que construisons-nous aujourd'hui ?",
+      "hint": ", what should we build today?"
+    },
+    {
+      "source": "^Hide (.+?) from this list$",
+      "replace": "Masquer $1 de cette liste",
+      "hint": "from this list"
+    },
+    {
+      "source": "^Honors standard VS Code shortcuts without collisions \\(e\\.g\\. (.+?)\\)\\.$",
+      "replace": "Respecte les raccourcis VS Code standard sans collision (ex. $1).",
+      "hint": "Honors standard VS Code shortcut"
+    },
+    {
+      "source": "^Host stopped responding after (\\d+(?:\\.\\d+)?)ms$",
+      "replace": "L'hôte ne répond plus après $1 ms",
+      "hint": "Host stopped responding after"
+    },
+    {
+      "source": "^IDE Name: (.+?)$",
+      "replace": "Nom de l'IDE : $1",
+      "hint": "IDE Name:"
+    },
+    {
+      "source": "^If (.+?) is a Cloudtop, open it in$",
+      "replace": "Si $1 est un Cloudtop, ouvrez-le dans",
+      "hint": "is a Cloudtop, open it in"
+    },
+    {
+      "source": "^Image (.+?)$",
+      "replace": "Image $1",
+      "hint": "Image"
+    },
+    {
+      "source": "^Image: (.+?)$",
+      "replace": "Image : $1",
+      "hint": "Image:"
+    },
+    {
+      "source": "^In review · Code-Review (.+?)$",
+      "replace": "En vérification · Code-Review $1",
+      "hint": "In review · Code-Review"
+    },
+    {
+      "source": "^Input must match (.+?)$",
+      "replace": "La saisie doit correspondre à $1",
+      "hint": "Input must match"
+    },
+    {
+      "source": "^Install folder \"(.+?)\" is already in use$",
+      "replace": "Le dossier d'installation « $1 » est déjà utilisé",
+      "hint": "\" is already in use"
+    },
+    {
+      "source": "^Install (.+?)$",
+      "replace": "Installer $1",
+      "hint": "Install"
+    },
+    {
+      "source": "^Invalid dedent level (.+?) at offset: (.+?)\\. Current indentation stack: (.+?)$",
+      "replace": "Niveau de désindentation $1 invalide à la position $2. Pile d'indentation actuelle : $3",
+      "hint": ". Current indentation stack:"
+    },
+    {
+      "source": "^Invalid discriminator value\\. Expected (.+?)$",
+      "replace": "Valeur de discriminateur invalide. Attendu : $1",
+      "hint": "Invalid discriminator value. Exp"
+    },
+    {
+      "source": "^Invalid enum value\\. Expected (.+?), received '(.+?)'$",
+      "replace": "Valeur d'énumération invalide. Attendu $1, reçu « $2 »",
+      "hint": "Invalid enum value. Expected"
+    },
+    {
+      "source": "^Invalid input: must include \"(.+?)\"$",
+      "replace": "Saisie invalide : doit inclure « $1 »",
+      "hint": "Invalid input: must include \""
+    },
+    {
+      "source": "^Invalid literal value, expected (.+?)$",
+      "replace": "Valeur littérale invalide, attendu : $1",
+      "hint": "Invalid literal value, expected"
+    },
+    {
+      "source": "^Is Google User Reported: (.+?)$",
+      "replace": "Signalé par un utilisateur Google : $1",
+      "hint": "Is Google User Reported:"
+    },
+    {
+      "source": "^JavaScriptDialogs:\n(.+?)$",
+      "replace": "Boîtes de dialogue JavaScript :\\n$1",
+      "hint": "JavaScriptDialogs:"
+    },
+    {
+      "source": "^Keep: (.+?)$",
+      "replace": "Conserver : $1",
+      "hint": "Keep:"
+    },
+    {
+      "source": "^Label for (.+?)$",
+      "replace": "Libellé pour $1",
+      "hint": "Label for"
+    },
+    {
+      "source": "^Language server: (.+?)$",
+      "replace": "Serveur de langage : $1",
+      "hint": "Language server:"
+    },
+    {
+      "source": "^Line (.+?)$",
+      "replace": "Ligne $1",
+      "hint": "Line"
+    },
+    {
+      "source": "^Line (.+?) → (.+?)$",
+      "replace": "Ligne $1 → $2",
+      "hint": "Line"
+    },
+    {
+      "source": "^Listed directory (.+?)$",
+      "replace": "Répertoire $1 listé",
+      "hint": "Listed directory"
+    },
+    {
+      "source": "^Load older messages, showing (.+?) of (.+?)$",
+      "replace": "Charger les messages plus anciens, $1 sur $2 affichés",
+      "hint": "Load older messages, showing"
+    },
+    {
+      "source": "^Loading (.+?)\\.\\.\\.$",
+      "replace": "Chargement de $1...",
+      "hint": "Loading"
+    },
+    {
+      "source": "^MCP error (.+?): (.+?)$",
+      "replace": "Erreur MCP $1 : $2",
+      "hint": "MCP error"
+    },
+    {
+      "source": "^MCP error: (.+?)$",
+      "replace": "Erreur MCP : $1",
+      "hint": "MCP error:"
+    },
+    {
+      "source": "^Make (.+?) the default (.+?) account$",
+      "replace": "Définir $1 comme compte $2 par défaut",
+      "hint": "the default"
+    },
+    {
+      "source": "^Manage (.+?) app settings\\.$",
+      "replace": "Gérer les paramètres de l'application $1.",
+      "hint": "app settings."
+    },
+    {
+      "source": "^Manage (.+?) (.+?) and settings\\.$",
+      "replace": "Gérer $1 $2 et les paramètres.",
+      "hint": "and settings."
+    },
+    {
+      "source": "^Marked (.+?) conversations as read$",
+      "replace": "$1 conversations marquées comme lues",
+      "hint": "conversations as read"
+    },
+    {
+      "source": "^Maximum length is (\\d+(?:\\.\\d+)?)$",
+      "replace": "La longueur maximale est $1",
+      "hint": "Maximum length is"
+    },
+    {
+      "source": "^Maximum value is (.+?)$",
+      "replace": "La valeur maximale est $1",
+      "hint": "Maximum value is"
+    },
+    {
+      "source": "^Media upload failed after (.+?) attempts\\.$",
+      "replace": "Échec de l'importation du média après $1 tentatives.",
+      "hint": "Media upload failed after"
+    },
+    {
+      "source": "^Message from (.+?)$",
+      "replace": "Message de $1",
+      "hint": "Message from"
+    },
+    {
+      "source": "^Message queued\\. (.+?) messages in queue\\.$",
+      "replace": "Message mis en file d'attente. $1 messages en file d'attente.",
+      "hint": "messages in queue."
+    },
+    {
+      "source": "^Method not found: (.+?)$",
+      "replace": "Méthode introuvable : $1",
+      "hint": "Method not found:"
+    },
+    {
+      "source": "^Minified Redux error #(.+?); visit https://redux\\.js\\.org/Errors\\?code=(.+?) for the full message or use the non-minified dev environment for full errors\\.$",
+      "replace": "Erreur Redux minifiée #$1 ; consultez https://redux.js.org/Errors?code=$2 pour le message complet ou utilisez l'environnement de développement non minifié.",
+      "hint": "for the full message or use the "
+    },
+    {
+      "source": "^Minimum length is (\\d+(?:\\.\\d+)?)$",
+      "replace": "La longueur minimale est $1",
+      "hint": "Minimum length is"
+    },
+    {
+      "source": "^Minimum value is (.+?)$",
+      "replace": "La valeur minimale est $1",
+      "hint": "Minimum value is"
+    },
+    {
+      "source": "^Model #(.+?)$",
+      "replace": "Modèle #$1",
+      "hint": "Model #"
+    },
+    {
+      "source": "^Model unavailable, retrying(.+?)$",
+      "replace": "Modèle indisponible, nouvelle tentative$1",
+      "hint": "Model unavailable, retrying"
+    },
+    {
+      "source": "^Model: (.+?), (.+?)$",
+      "replace": "Modèle : $1, $2",
+      "hint": "Model:"
+    },
+    {
+      "source": "^More actions for (.+?)$",
+      "replace": "Plus d'actions pour $1",
+      "hint": "More actions for"
+    },
+    {
+      "source": "^More for (.+?)$",
+      "replace": "Plus pour $1",
+      "hint": "More for"
+    },
+    {
+      "source": "^More options for (.+?)$",
+      "replace": "Plus d'options pour $1",
+      "hint": "More options for"
+    },
+    {
+      "source": "^Move this conversation to \"(.+?)\"\\?$",
+      "replace": "Déplacer cette conversation vers « $1 » ?",
+      "hint": "Move this conversation to \""
+    },
+    {
+      "source": "^Move to Group: (.+?)$",
+      "replace": "Déplacer vers le groupe : $1",
+      "hint": "Move to Group:"
+    },
+    {
+      "source": "^Move to (.+?)$",
+      "replace": "Déplacer vers $1",
+      "hint": "Move to"
+    },
+    {
+      "source": "^Moved conversation (.+?)$",
+      "replace": "Conversation $1 déplacée",
+      "hint": "Moved conversation"
+    },
+    {
+      "source": "^Multiple markers near page (.+?)$",
+      "replace": "Plusieurs marqueurs près de la page $1",
+      "hint": "Multiple markers near page"
+    },
+    {
+      "source": "^Multiple search matches near page (.+?)$",
+      "replace": "Plusieurs résultats de recherche près de la page $1",
+      "hint": "Multiple search matches near pag"
+    },
+    {
+      "source": "^Mute (.+?)$",
+      "replace": "Couper le son de $1",
+      "hint": "Mute"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Cross-origin subframe \\((.+?)\\) requires domain permission$",
+      "replace": "NAVIGATION_BLOCKED : le sous-cadre cross-origin ($1) requiert une autorisation de domaine",
+      "hint": "NAVIGATION_BLOCKED: Cross-origin"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Cross-site subframe \\((.+?)\\) requires domain permission$",
+      "replace": "NAVIGATION_BLOCKED : le sous-cadre cross-site ($1) requiert une autorisation de domaine",
+      "hint": "NAVIGATION_BLOCKED: Cross-site s"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: No subframe policy is configured for (.+?)$",
+      "replace": "NAVIGATION_BLOCKED : aucune politique de sous-cadre configurée pour $1",
+      "hint": "NAVIGATION_BLOCKED: No subframe "
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Parent subframe \\((.+?)\\) is not pierceable$",
+      "replace": "NAVIGATION_BLOCKED : le sous-cadre parent ($1) ne peut pas être traversé",
+      "hint": "NAVIGATION_BLOCKED: Parent subfr"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Protected Identity Provider subframe \\((.+?)\\) cannot be inspected or actuated$",
+      "replace": "NAVIGATION_BLOCKED : le sous-cadre protégé du fournisseur d'identité ($1) ne peut être ni inspecté ni contrôlé",
+      "hint": "NAVIGATION_BLOCKED: Protected Id"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Redirect from non-local origin \"(.+?)\" to private/loopback host \"(.+?)\" \\((.+?)\\) is blocked$",
+      "replace": "NAVIGATION_BLOCKED : redirection bloquée depuis l'origine non locale « $1 » vers l'hôte privé/loopback « $2 » ($3)",
+      "hint": "NAVIGATION_BLOCKED: Redirect fro"
+    },
+    {
+      "source": "^NAVIGATION_BLOCKED: Subframe \\((.+?)\\) is past the tracked-subframe limit and cannot be inspected or actuated$",
+      "replace": "NAVIGATION_BLOCKED : le sous-cadre ($1) dépasse la limite suivie et ne peut être ni inspecté ni contrôlé",
+      "hint": ") is past the tracked-subframe l"
+    },
+    {
+      "source": "^NUX location (.+?) is mounted$",
+      "replace": "Emplacement NUX $1 monté",
+      "hint": "NUX location"
+    },
+    {
+      "source": "^NUX trigger (.+?) has been fired$",
+      "replace": "Déclencheur NUX $1 activé",
+      "hint": "has been fired"
+    },
+    {
+      "source": "^NUX (.+?) has been dismissed$",
+      "replace": "NUX $1 fermé",
+      "hint": "has been dismissed"
+    },
+    {
+      "source": "^Negated condition on \"(.+?)\" \\(\"!=\" or \"!\"\\) cannot be indexed up front; add a positive \"&&\" anchor on (.+?)$",
+      "replace": "Une condition niée sur « $1 » (« != » ou « ! ») ne peut pas être indexée à l'avance ; ajoutez un ancrage positif « && » sur $2",
+      "hint": "\" (\"!=\" or \"!\") cannot be indexe"
+    },
+    {
+      "source": "^New secret for (.+?)$",
+      "replace": "Nouveau secret pour $1",
+      "hint": "New secret for"
+    },
+    {
+      "source": "^New (.+?)$",
+      "replace": "Nouveau $1",
+      "hint": "New"
+    },
+    {
+      "source": "^New (.+?)\\.\\.\\.$",
+      "replace": "Nouveau $1...",
+      "hint": "New"
+    },
+    {
+      "source": "^No connectors match “(.+?)”$",
+      "replace": "Aucun connecteur ne correspond à « $1 »",
+      "hint": "No connectors match “"
+    },
+    {
+      "source": "^No diagram type detected matching given configuration for text: (.+?)$",
+      "replace": "Aucun type de diagramme correspondant à la configuration détecté pour le texte : $1",
+      "hint": "No diagram type detected matchin"
+    },
+    {
+      "source": "^No grammar found for scope (.+?)$",
+      "replace": "Aucune grammaire trouvée pour la portée $1",
+      "hint": "No grammar found for scope"
+    },
+    {
+      "source": "^No matching languages for \"(.+?)\"$",
+      "replace": "Aucune langue correspondante pour « $1 »",
+      "hint": "No matching languages for \""
+    },
+    {
+      "source": "^No messages in last (.+?) steps · Load more$",
+      "replace": "Aucun message dans les $1 dernières étapes · Charger plus",
+      "hint": "No messages in last"
+    },
+    {
+      "source": "^No messages in last (.+?) steps — load older$",
+      "replace": "Aucun message dans les $1 dernières étapes — charger plus anciens",
+      "hint": "No messages in last"
+    },
+    {
+      "source": "^No messages in last (.+?) steps, load older$",
+      "replace": "Aucun message dans les $1 dernières étapes, charger plus anciens",
+      "hint": "No messages in last"
+    },
+    {
+      "source": "^No more older messages, showing (.+?) of (.+?)$",
+      "replace": "Aucun autre message plus ancien, $1 sur $2 affichés",
+      "hint": "No more older messages, showing"
+    },
+    {
+      "source": "^No remote (.+?)$",
+      "replace": "Aucun(e) $1 distant(e)",
+      "hint": "No remote"
+    },
+    {
+      "source": "^No visible messages in last (\\d+(?:\\.\\d+)?) steps\\. Activate Load older messages to continue\\.$",
+      "replace": "Aucun message visible dans les $1 dernières étapes. Activez Charger les messages plus anciens pour continuer.",
+      "hint": "steps. Activate Load older messa"
+    },
+    {
+      "source": "^No (.+?) configured\\.$",
+      "replace": "Aucun(e) $1 configuré(e).",
+      "hint": "configured."
+    },
+    {
+      "source": "^No (.+?) found$",
+      "replace": "Aucun(e) $1 trouvé(e)",
+      "hint": "found"
+    },
+    {
+      "source": "^No (.+?) found for$",
+      "replace": "Aucun(e) $1 trouvé(e) pour",
+      "hint": "found for"
+    },
+    {
+      "source": "^No (.+?) matching your search$",
+      "replace": "Aucun(e) $1 ne correspond à votre recherche",
+      "hint": "matching your search"
+    },
+    {
+      "source": "^Node name was null for node: (.+?)$",
+      "replace": "Le nom du nœud est nul pour le nœud : $1",
+      "hint": "Node name was null for node:"
+    },
+    {
+      "source": "^Not all conditions satisfied for attribute: (.+?)\\.$",
+      "replace": "Toutes les conditions ne sont pas remplies pour l'attribut : $1.",
+      "hint": "Not all conditions satisfied for"
+    },
+    {
+      "source": "^Nothing is running on port (.+?)$",
+      "replace": "Rien ne s'exécute sur le port $1",
+      "hint": "Nothing is running on port"
+    },
+    {
+      "source": "^Number must be a multiple of (.+?)$",
+      "replace": "Le nombre doit être un multiple de $1",
+      "hint": "Number must be a multiple of"
+    },
+    {
+      "source": "^Numpad(.+?)$",
+      "replace": "Pavé numérique $1",
+      "hint": "Numpad"
+    },
+    {
+      "source": "^On top of those defaults, (.+?) requests the access below\\.$",
+      "replace": "En plus de ces valeurs par défaut, $1 demande les accès ci-dessous.",
+      "hint": "requests the access below."
+    },
+    {
+      "source": "^Open Google Chrome on (.+?)\\.$",
+      "replace": "Ouvrez Google Chrome sur $1.",
+      "hint": "Open Google Chrome on"
+    },
+    {
+      "source": "^Open URL in system browser: (.+?)$",
+      "replace": "Ouvrir l'URL dans le navigateur système : $1",
+      "hint": "Open URL in system browser:"
+    },
+    {
+      "source": "^Open conversation (.+?)$",
+      "replace": "Ouvrir la conversation $1",
+      "hint": "Open conversation"
+    },
+    {
+      "source": "^Open image (.+?) of (\\d+(?:\\.\\d+)?)$",
+      "replace": "Ouvrir l'image $1 sur $2",
+      "hint": "Open image"
+    },
+    {
+      "source": "^Open in (.+?)$",
+      "replace": "Ouvrir dans $1",
+      "hint": "Open in"
+    },
+    {
+      "source": "^Open (.+?)$",
+      "replace": "Ouvrir $1",
+      "hint": "Open"
+    },
+    {
+      "source": "^Open (.+?) link\\?$",
+      "replace": "Ouvrir le lien $1 ?",
+      "hint": "link?"
+    },
+    {
+      "source": "^Open (.+?) settings$",
+      "replace": "Ouvrir les paramètres $1",
+      "hint": "settings"
+    },
+    {
+      "source": "^Open (.+?), (.+?)$",
+      "replace": "Ouvrir $1, $2",
+      "hint": "Open"
+    },
+    {
+      "source": "^Open (.+?), (.+?)\\. Summarizing call$",
+      "replace": "Ouvrir $1, $2. Synthèse de l'appel",
+      "hint": ". Summarizing call"
+    },
+    {
+      "source": "^Open (.+?), (.+?)\\. (.+?)$",
+      "replace": "Ouvrir $1, $2. $3",
+      "hint": "Open"
+    },
+    {
+      "source": "^Opened URI (.+?)$",
+      "replace": "URI $1 ouverte",
+      "hint": "Opened URI"
+    },
+    {
+      "source": "^Opens external link: (.+?)$",
+      "replace": "Ouvre un lien externe : $1",
+      "hint": "Opens external link:"
+    },
+    {
+      "source": "^Opens the New Conversation screen for this (.+?)$",
+      "replace": "Ouvre l'écran Nouvelle conversation pour ce $1",
+      "hint": "Opens the New Conversation scree"
+    },
+    {
+      "source": "^Other (.+?)$",
+      "replace": "Autres $1",
+      "hint": "Other"
+    },
+    {
+      "source": "^PDF file size exceeds (.+?)MB limit$",
+      "replace": "La taille du fichier PDF dépasse la limite de $1 Mo",
+      "hint": "PDF file size exceeds"
+    },
+    {
+      "source": "^Page (.+?) failed to load$",
+      "replace": "Échec du chargement de la page $1",
+      "hint": "failed to load"
+    },
+    {
+      "source": "^Pause (.+?)$",
+      "replace": "Mettre $1 en pause",
+      "hint": "Pause"
+    },
+    {
+      "source": "^Pick at most (.+?) reasons$",
+      "replace": "Choisissez au maximum $1 raisons",
+      "hint": "Pick at most"
+    },
+    {
+      "source": "^Pin Entire (.+?)$",
+      "replace": "Épingler tout $1",
+      "hint": "Pin Entire"
+    },
+    {
+      "source": "^Plan, (.+?) of (.+?) steps done$",
+      "replace": "Plan, $1 sur $2 étapes terminées",
+      "hint": "steps done"
+    },
+    {
+      "source": "^Playback speed (.+?)x$",
+      "replace": "Vitesse de lecture $1x",
+      "hint": "Playback speed"
+    },
+    {
+      "source": "^Please fill in all required fields: (.+?)$",
+      "replace": "Veuillez remplir tous les champs obligatoires : $1",
+      "hint": "Please fill in all required fiel"
+    },
+    {
+      "source": "^Preview unavailable — (.+?)$",
+      "replace": "Aperçu indisponible — $1",
+      "hint": "Preview unavailable —"
+    },
+    {
+      "source": "^Property not found: (.+?)$",
+      "replace": "Propriété introuvable : $1",
+      "hint": "Property not found:"
+    },
+    {
+      "source": "^Publish (.+?) to origin$",
+      "replace": "Publier $1 vers origin",
+      "hint": "to origin"
+    },
+    {
+      "source": "^Published (.+?) to origin\\.$",
+      "replace": "$1 publié vers origin.",
+      "hint": "to origin."
+    },
+    {
+      "source": "^Pushed to (.+?)\\.$",
+      "replace": "Poussé vers $1.",
+      "hint": "Pushed to"
+    },
+    {
+      "source": "^Question (.+?) of (\\d+(?:\\.\\d+)?)$",
+      "replace": "Question $1 sur $2",
+      "hint": "Question"
+    },
+    {
+      "source": "^Range or zero comparison on \"(.+?)\" cannot extract an exact index key; use \"==\" or \"in \\[\\.\\.\\.\\]\" with a positive value, or add a positive \"&&\" anchor on (.+?)$",
+      "replace": "Une comparaison d'intervalle ou à zéro sur « $1 » ne permet pas d'extraire une clé d'index exacte ; utilisez « == » ou « in [...] » avec une valeur positive, ou ajoutez un ancrage positif « && » sur $2",
+      "hint": "\" cannot extract an exact index "
+    },
+    {
+      "source": "^Receive product updates, tips, and promotions from Google (.+?) via email\\.$",
+      "replace": "Recevoir par e-mail les nouveautés, astuces et promotions de Google $1.",
+      "hint": "Receive product updates, tips, a"
+    },
+    {
+      "source": "^Reconnect (.+?)$",
+      "replace": "Reconnecter $1",
+      "hint": "Reconnect"
+    },
+    {
+      "source": "^Recording exceeds 15MB limit \\((.+?)MB\\)$",
+      "replace": "L'enregistrement dépasse la limite de 15 Mo ($1 Mo)",
+      "hint": "Recording exceeds 15MB limit ("
+    },
+    {
+      "source": "^Recording exceeds (.+?)MB limit \\((.+?)MB\\)$",
+      "replace": "L'enregistrement dépasse la limite de $1 Mo ($2 Mo)",
+      "hint": "Recording exceeds"
+    },
+    {
+      "source": "^Recording shortcut for (.+?)\\. Press keys to bind, Enter to save, Escape to cancel\\.$",
+      "replace": "Enregistrement du raccourci pour $1. Appuyez sur les touches, Entrée pour enregistrer, Échap pour annuler.",
+      "hint": ". Press keys to bind, Enter to s"
+    },
+    {
+      "source": "^Relaunch (.+?) to finish Screen Recording\\.$",
+      "replace": "Relancez $1 pour finaliser l'enregistrement d'écran.",
+      "hint": "to finish Screen Recording."
+    },
+    {
+      "source": "^Remove from (.+?)$",
+      "replace": "Retirer de $1",
+      "hint": "Remove from"
+    },
+    {
+      "source": "^Remove shortcut (.+?) for (.+?)$",
+      "replace": "Supprimer le raccourci $1 pour $2",
+      "hint": "Remove shortcut"
+    },
+    {
+      "source": "^Remove this conversation from its (.+?)\\?$",
+      "replace": "Retirer cette conversation de son $1 ?",
+      "hint": "Remove this conversation from it"
+    },
+    {
+      "source": "^Remove (.+?)$",
+      "replace": "Supprimer $1",
+      "hint": "Remove"
+    },
+    {
+      "source": "^Remove (.+?) from Recent$",
+      "replace": "Retirer $1 des récents",
+      "hint": "from Recent"
+    },
+    {
+      "source": "^Remove (.+?) from list$",
+      "replace": "Retirer $1 de la liste",
+      "hint": "from list"
+    },
+    {
+      "source": "^Removed (.+?) from Recent$",
+      "replace": "$1 retiré des récents",
+      "hint": "from Recent"
+    },
+    {
+      "source": "^Removed (.+?)\\.$",
+      "replace": "$1 supprimé.",
+      "hint": "Removed"
+    },
+    {
+      "source": "^Reopen (.+?) settings$",
+      "replace": "Rouvrir les paramètres $1",
+      "hint": "settings"
+    },
+    {
+      "source": "^Requesting permission to (.+?) (.+?)$",
+      "replace": "Demande d'autorisation pour $1 $2",
+      "hint": "Requesting permission to"
+    },
+    {
+      "source": "^Reset (.+?) overrides?$",
+      "replace": "Réinitialiser $1 remplacement(s)",
+      "hint": "override"
+    },
+    {
+      "source": "^Reset (.+?) to default$",
+      "replace": "Rétablir $1 par défaut",
+      "hint": "to default"
+    },
+    {
+      "source": "^Resets in (.+?)$",
+      "replace": "Réinitialisation dans $1",
+      "hint": "Resets in"
+    },
+    {
+      "source": "^Resource not found: (.+?)$",
+      "replace": "Ressource introuvable : $1",
+      "hint": "Resource not found:"
+    },
+    {
+      "source": "^Restart (.+?)$",
+      "replace": "Redémarrer $1",
+      "hint": "Restart"
+    },
+    {
+      "source": "^Restarted \"(.+?)\"\\.$",
+      "replace": "« $1 » redémarré.",
+      "hint": "Restarted \""
+    },
+    {
+      "source": "^Resume (.+?)$",
+      "replace": "Reprendre $1",
+      "hint": "Resume"
+    },
+    {
+      "source": "^Retrying transcription \\(attempt (.+?)\\)…$",
+      "replace": "Nouvelle tentative de transcription (essai $1)…",
+      "hint": "Retrying transcription (attempt"
+    },
+    {
+      "source": "^Review permissions for (.+?)$",
+      "replace": "Vérifier les autorisations pour $1",
+      "hint": "Review permissions for"
+    },
+    {
+      "source": "^Review (.+?) before installing$",
+      "replace": "Vérifiez $1 avant d'installer",
+      "hint": "before installing"
+    },
+    {
+      "source": "^Revoke all: (.+?)$",
+      "replace": "Tout révoquer : $1",
+      "hint": "Revoke all:"
+    },
+    {
+      "source": "^Revoke: (.+?)$",
+      "replace": "Révoquer : $1",
+      "hint": "Revoke:"
+    },
+    {
+      "source": "^Run (.+?) now$",
+      "replace": "Exécuter $1 maintenant",
+      "hint": "Run"
+    },
+    {
+      "source": "^Running for (.+?)$",
+      "replace": "En cours depuis $1",
+      "hint": "Running for"
+    },
+    {
+      "source": "^Runs even when your computer is off\\. (.+?)$",
+      "replace": "S'exécute même lorsque votre ordinateur est éteint. $1",
+      "hint": "Runs even when your computer is "
+    },
+    {
+      "source": "^SCM state for (.+?)$",
+      "replace": "État SCM pour $1",
+      "hint": "SCM state for"
+    },
+    {
+      "source": "^SSH config: (.+?)$",
+      "replace": "Configuration SSH : $1",
+      "hint": "SSH config:"
+    },
+    {
+      "source": "^SSH: (.+?)$",
+      "replace": "SSH : $1",
+      "hint": "SSH:"
+    },
+    {
+      "source": "^Scroll to: (.+?) on page (.+?)$",
+      "replace": "Défiler vers : $1 sur la page $2",
+      "hint": "Scroll to:"
+    },
+    {
+      "source": "^Search Google for \"(.+?)\"$",
+      "replace": "Rechercher « $1 » sur Google",
+      "hint": "Search Google for \""
+    },
+    {
+      "source": "^Search failed: (.+?)$",
+      "replace": "Échec de la recherche : $1",
+      "hint": "Search failed:"
+    },
+    {
+      "source": "^Search match on page (.+?)$",
+      "replace": "Résultat de recherche sur la page $1",
+      "hint": "Search match on page"
+    },
+    {
+      "source": "^Secret for a new (.+?) account$",
+      "replace": "Secret pour un nouveau compte $1",
+      "hint": "Secret for a new"
+    },
+    {
+      "source": "^Secret for (.+?)$",
+      "replace": "Secret pour $1",
+      "hint": "Secret for"
+    },
+    {
+      "source": "^See \\[(.+?)\\]\\((.+?)\\)\\.$",
+      "replace": "Voir [$1]($2).",
+      "hint": "See ["
+    },
+    {
+      "source": "^See all \\((.+?)\\)$",
+      "replace": "Tout voir ($1)",
+      "hint": "See all ("
+    },
+    {
+      "source": "^See less in (.+?)$",
+      "replace": "Voir moins dans $1",
+      "hint": "See less in"
+    },
+    {
+      "source": "^See more in (.+?)$",
+      "replace": "Voir plus dans $1",
+      "hint": "See more in"
+    },
+    {
+      "source": "^See more (.+?)$",
+      "replace": "Voir plus de $1",
+      "hint": "See more"
+    },
+    {
+      "source": "^See (.+?) more$",
+      "replace": "Voir $1 de plus",
+      "hint": "more"
+    },
+    {
+      "source": "^See (.+?) more (.+?)$",
+      "replace": "Voir $1 $2 de plus",
+      "hint": "more"
+    },
+    {
+      "source": "^See (.+?)\\.$",
+      "replace": "Voir $1.",
+      "hint": "See"
+    },
+    {
+      "source": "^See (.+?): (.+?)$",
+      "replace": "Voir $1 : $2",
+      "hint": "See"
+    },
+    {
+      "source": "^Select at least (\\d+(?:\\.\\d+)?) items$",
+      "replace": "Sélectionnez au moins $1 éléments",
+      "hint": "Select at least"
+    },
+    {
+      "source": "^Select at most (\\d+(?:\\.\\d+)?) items$",
+      "replace": "Sélectionnez au maximum $1 éléments",
+      "hint": "Select at most"
+    },
+    {
+      "source": "^Select harnesses, current: (.+?)$",
+      "replace": "Sélectionner les harnais, actuel : $1",
+      "hint": "Select harnesses, current:"
+    },
+    {
+      "source": "^Select model with (.+?)$",
+      "replace": "Sélectionner un modèle avec $1",
+      "hint": "Select model with"
+    },
+    {
+      "source": "^Select model, current: (.+?)$",
+      "replace": "Sélectionner un modèle, actuel : $1",
+      "hint": "Select model, current:"
+    },
+    {
+      "source": "^Select modes, current: (.+?)$",
+      "replace": "Sélectionner les modes, actuel : $1",
+      "hint": "Select modes, current:"
+    },
+    {
+      "source": "^Select project, current: (.+?)$",
+      "replace": "Sélectionner un projet, actuel : $1",
+      "hint": "Select project, current:"
+    },
+    {
+      "source": "^Select (.+?) Theme$",
+      "replace": "Sélectionner le thème $1",
+      "hint": "Select"
+    },
+    {
+      "source": "^Selected event types \\((.+?)\\) share no compatible target field$",
+      "replace": "Les types d'événements sélectionnés ($1) ne partagent aucun champ cible compatible",
+      "hint": ") share no compatible target fie"
+    },
+    {
+      "source": "^Self \\((.+?)\\)$",
+      "replace": "Soi-même ($1)",
+      "hint": "Self ("
+    },
+    {
+      "source": "^Send Message (.+?)$",
+      "replace": "Envoyer le message $1",
+      "hint": "Send Message"
+    },
+    {
+      "source": "^Send all \\((\\d+(?:\\.\\d+)?)\\)$",
+      "replace": "Tout envoyer ($1)",
+      "hint": "Send all ("
+    },
+    {
+      "source": "^Send feedback as (.+?)$",
+      "replace": "Envoyer un retour en tant que $1",
+      "hint": "Send feedback as"
+    },
+    {
+      "source": "^Send now: (.+?)$",
+      "replace": "Envoyer maintenant : $1",
+      "hint": "Send now:"
+    },
+    {
+      "source": "^Sending (.+?) to command$",
+      "replace": "Envoi de $1 à la commande",
+      "hint": "to command"
+    },
+    {
+      "source": "^Sent response: (.+?)$",
+      "replace": "Réponse envoyée : $1",
+      "hint": "Sent response:"
+    },
+    {
+      "source": "^Server \"(.+?)\" not found in config$",
+      "replace": "Serveur « $1 » introuvable dans la configuration",
+      "hint": "\" not found in config"
+    },
+    {
+      "source": "^Set up (.+?)$",
+      "replace": "Configurer $1",
+      "hint": "Set up"
+    },
+    {
+      "source": "^Setting (.+?)$",
+      "replace": "Configuration de $1",
+      "hint": "Setting"
+    },
+    {
+      "source": "^Shared with: (.+?)$",
+      "replace": "Partagé avec : $1",
+      "hint": "Shared with:"
+    },
+    {
+      "source": "^Shortcut (.+?) for (.+?)$",
+      "replace": "Raccourci $1 pour $2",
+      "hint": "Shortcut"
+    },
+    {
+      "source": "^Show (.+?)$",
+      "replace": "Afficher $1",
+      "hint": "Show"
+    },
+    {
+      "source": "^Show (\\d+(?:\\.\\d+)?) More$",
+      "replace": "Afficher $1 de plus",
+      "hint": "Show"
+    },
+    {
+      "source": "^Show (\\d+(?:\\.\\d+)?) breakdowns?$",
+      "replace": "Afficher $1 détail(s)",
+      "hint": "breakdown"
+    },
+    {
+      "source": "^Show (.+?) earlier steps$",
+      "replace": "Afficher $1 étapes précédentes",
+      "hint": "earlier steps"
+    },
+    {
+      "source": "^Show (.+?) in folder$",
+      "replace": "Afficher $1 dans le dossier",
+      "hint": "in folder"
+    },
+    {
+      "source": "^Show (.+?) in the list again$",
+      "replace": "Afficher à nouveau $1 dans la liste",
+      "hint": "in the list again"
+    },
+    {
+      "source": "^Showing first (.+?) references$",
+      "replace": "Affichage des $1 premières références",
+      "hint": "Showing first"
+    },
+    {
+      "source": "^Showing (.+?) again$",
+      "replace": "Affichage renouvelé de $1",
+      "hint": "Showing"
+    },
+    {
+      "source": "^Side Question: (.+?)$",
+      "replace": "Question annexe : $1",
+      "hint": "Side Question:"
+    },
+    {
+      "source": "^Side panel (.+?)$",
+      "replace": "Panneau latéral $1",
+      "hint": "Side panel"
+    },
+    {
+      "source": "^Side question \\(conversation (.+?)\\): (.+?)$",
+      "replace": "Question annexe (conversation $1) : $2",
+      "hint": "Side question (conversation"
+    },
+    {
+      "source": "^Side question failed: (.+?)$",
+      "replace": "Échec de la question annexe : $1",
+      "hint": "Side question failed:"
+    },
+    {
+      "source": "^Sign in from the (.+?) panel\\.$",
+      "replace": "Connectez-vous depuis le panneau $1.",
+      "hint": "Sign in from the"
+    },
+    {
+      "source": "^Sign in to use (.+?)!$",
+      "replace": "Connectez-vous pour utiliser $1 !",
+      "hint": "Sign in to use"
+    },
+    {
+      "source": "^Sign in to (.+?)$",
+      "replace": "Se connecter à $1",
+      "hint": "Sign in to"
+    },
+    {
+      "source": "^Sign in to (.+?) remotely$",
+      "replace": "Se connecter à distance à $1",
+      "hint": "Sign in to"
+    },
+    {
+      "source": "^Sign-ins to (.+?) are kept in the cloud with your account\\.$",
+      "replace": "Les connexions à $1 sont conservées dans le cloud avec votre compte.",
+      "hint": "are kept in the cloud with your "
+    },
+    {
+      "source": "^Signed in: (.+?)$",
+      "replace": "Connecté : $1",
+      "hint": "Signed in:"
+    },
+    {
+      "source": "^Skip \\((.+?)\\), Skip All \\((.+?)\\)$",
+      "replace": "Ignorer ($1), Tout ignorer ($2)",
+      "hint": "), Skip All ("
+    },
+    {
+      "source": "^Skipped WebSocket redial to (.+?): priming fetch unhealthy$",
+      "replace": "Reconnexion WebSocket vers $1 ignorée : requête d'amorçage défaillante",
+      "hint": "Skipped WebSocket redial to"
+    },
+    {
+      "source": "^Sort and filter conversations \\((\\d+(?:\\.\\d+)?) active\\)$",
+      "replace": "Trier et filtrer les conversations ($1 actif(s))",
+      "hint": "Sort and filter conversations ("
+    },
+    {
+      "source": "^Source (.+?)$",
+      "replace": "Source $1",
+      "hint": "Source"
+    },
+    {
+      "source": "^Started \"(.+?)\"\\.$",
+      "replace": "« $1 » démarré.",
+      "hint": "Started \""
+    },
+    {
+      "source": "^Step at index (.+?) not found$",
+      "replace": "Étape à l'index $1 introuvable",
+      "hint": "Step at index"
+    },
+    {
+      "source": "^Step (.+?) of (\\d+(?:\\.\\d+)?)$",
+      "replace": "Étape $1 sur $2",
+      "hint": "Step"
+    },
+    {
+      "source": "^Steps to Reproduce:\n(.+?)$",
+      "replace": "Étapes de reproduction :\\n$1",
+      "hint": "Steps to Reproduce:"
+    },
+    {
+      "source": "^Still thinking, (.+?) seconds$",
+      "replace": "Réflexion toujours en cours, $1 secondes",
+      "hint": "Still thinking,"
+    },
+    {
+      "source": "^Stop (.+?)$",
+      "replace": "Arrêter $1",
+      "hint": "Stop"
+    },
+    {
+      "source": "^Stop (\\d+(?:\\.\\d+)?) selected$",
+      "replace": "Arrêter $1 sélectionné(s)",
+      "hint": "selected"
+    },
+    {
+      "source": "^Stop (.+?)\\?$",
+      "replace": "Arrêter $1 ?",
+      "hint": "Stop"
+    },
+    {
+      "source": "^Stopped voice chat · (.+?)$",
+      "replace": "Chat vocal arrêté · $1",
+      "hint": "Stopped voice chat ·"
+    },
+    {
+      "source": "^Stream is in unsupported state: (.+?)$",
+      "replace": "Le flux est dans un état non pris en charge : $1",
+      "hint": "Stream is in unsupported state:"
+    },
+    {
+      "source": "^Submit(\\s+\\(.+?\\))$",
+      "replace": "Envoyer$1",
+      "hint": "Submit"
+    },
+    {
+      "source": "^Substring or regex match on \"(.+?)\" cannot be indexed up front; use exact \"==\", \"in \\[\\.\\.\\.\\]\", or prefix matching, or add a positive \"&&\" anchor on (.+?)$",
+      "replace": "Une correspondance de sous-chaîne ou regex sur « $1 » ne peut pas être indexée à l'avance ; utilisez « == », « in [...] » ou un préfixe, ou ajoutez un ancrage positif « && » sur $2",
+      "hint": "\" cannot be indexed up front; us"
+    },
+    {
+      "source": "^Successfully created (.+?)$",
+      "replace": "$1 créé avec succès",
+      "hint": "Successfully created"
+    },
+    {
+      "source": "^Switch environment \\((.+?)\\)$",
+      "replace": "Changer d'environnement ($1)",
+      "hint": "Switch environment ("
+    },
+    {
+      "source": "^System default \\((.+?)\\)$",
+      "replace": "Valeur par défaut du système ($1)",
+      "hint": "System default ("
+    },
+    {
+      "source": "^Text file size exceeds (.+?)MB limit$",
+      "replace": "La taille du fichier texte dépasse la limite de $1 Mo",
+      "hint": "Text file size exceeds"
+    },
+    {
+      "source": "^The `render` prop received a function named `(.+?)` that starts with an uppercase letter\\.$",
+      "replace": "La prop `render` a reçu une fonction nommée `$1` commençant par une majuscule.",
+      "hint": "The `render` prop received a fun"
+    },
+    {
+      "source": "^The certificate was rejected \\((.+?)\\)\\.$",
+      "replace": "Le certificat a été rejeté ($1).",
+      "hint": "The certificate was rejected ("
+    },
+    {
+      "source": "^The folder “(.+?)” does not exist\\. Would you like to create it\\?$",
+      "replace": "Le dossier « $1 » n'existe pas. Voulez-vous le créer ?",
+      "hint": "” does not exist. Would you like"
+    },
+    {
+      "source": "^The preview did not respond on port (.+?)\\.$",
+      "replace": "L'aperçu n'a pas répondu sur le port $1.",
+      "hint": "The preview did not respond on p"
+    },
+    {
+      "source": "^The selected (.+?) can't be found\\. Pick another (.+?) from the (.+?) selector to send\\.$",
+      "replace": "L'élément $1 sélectionné est introuvable. Choisissez un autre $2 dans le sélecteur $3 pour envoyer.",
+      "hint": "can't be found. Pick another"
+    },
+    {
+      "source": "^Thinking \\((.+?)s\\)…$",
+      "replace": "Réflexion ($1 s)…",
+      "hint": "Thinking ("
+    },
+    {
+      "source": "^Thinking for (\\d+(?:\\.\\d+)?)s$",
+      "replace": "Réflexion de $1 s",
+      "hint": "Thinking for"
+    },
+    {
+      "source": "^This deletes (.+?) \\((.+?)\\) from your machine\\. You can't undo this\\.$",
+      "replace": "Ceci supprime $1 ($2) de votre machine. Cette action est irréversible.",
+      "hint": ") from your machine. You can't u"
+    },
+    {
+      "source": "^This page wants to connect to (.+?)$",
+      "replace": "Cette page souhaite se connecter à $1",
+      "hint": "This page wants to connect to"
+    },
+    {
+      "source": "^This (.+?) overrides your global permission settings\\.$",
+      "replace": "Ce $1 remplace vos paramètres d'autorisation globaux.",
+      "hint": "overrides your global permission"
+    },
+    {
+      "source": "^This (.+?)'s source is in (\\d+(?:\\.\\d+)?), which can have looser review standards than standard Google code\\. Review its contents before installing\\.$",
+      "replace": "La source de ce $1 provient de $2, dont les critères de revue peuvent être moins stricts que le code Google standard. Vérifiez son contenu avant installation.",
+      "hint": ", which can have looser review s"
+    },
+    {
+      "source": "^Today (.+?)$",
+      "replace": "Aujourd'hui $1",
+      "hint": "Today"
+    },
+    {
+      "source": "^Toggle Word Wrap(\\s+\\(.+?\\))$",
+      "replace": "Basculer le retour à la ligne$1",
+      "hint": "Toggle Word Wrap"
+    },
+    {
+      "source": "^Toggle (.+?)$",
+      "replace": "Basculer $1",
+      "hint": "Toggle"
+    },
+    {
+      "source": "^Tomorrow (.+?)$",
+      "replace": "Demain $1",
+      "hint": "Tomorrow"
+    },
+    {
+      "source": "^Tot: (.+?)/(.+?)$",
+      "replace": "Tot. : $1/$2",
+      "hint": "Tot:"
+    },
+    {
+      "source": "^Total media size exceeds (.+?)MB limit$",
+      "replace": "La taille totale des médias dépasse la limite de $1 Mo",
+      "hint": "Total media size exceeds"
+    },
+    {
+      "source": "^Trajectory not found \\((.+?)\\)\\.$",
+      "replace": "Trajectoire introuvable ($1).",
+      "hint": "Trajectory not found ("
+    },
+    {
+      "source": "^Triggered (.+?)$",
+      "replace": "$1 déclenché",
+      "hint": "Triggered"
+    },
+    {
+      "source": "^Turn (\\d+(?:\\.\\d+)?)$",
+      "replace": "Tour $1",
+      "hint": "Turn"
+    },
+    {
+      "source": "^Turn (.+?) of (.+?)$",
+      "replace": "Tour $1 sur $2",
+      "hint": "Turn"
+    },
+    {
+      "source": "^Turn: (.+?)/(.+?)$",
+      "replace": "Tour : $1/$2",
+      "hint": "Turn:"
+    },
+    {
+      "source": "^Turns (.+?)–(.+?)$",
+      "replace": "Tours $1–$2",
+      "hint": "Turns"
+    },
+    {
+      "source": "^UNSUPPORTED_IN_CROSS_ORIGIN_FRAME: Cross-site subframe \\((.+?)\\) is redacted and raw input cannot be delivered there\\. Act on it through page\\.frameLocator\\(\\.\\.\\.\\) or its fN\\.\\* refs, which reveal it\\.$",
+      "replace": "UNSUPPORTED_IN_CROSS_ORIGIN_FRAME : le sous-cadre cross-site ($1) est masqué et ne peut pas recevoir d'entrée brute. Agissez via page.frameLocator(...) ou ses références fN.* pour le révéler.",
+      "hint": ") is redacted and raw input cann"
+    },
+    {
+      "source": "^Unable to load and parse grammar for scope (.+?) from (.+?)$",
+      "replace": "Impossible de charger et d'analyser la grammaire pour la portée $1 depuis $2",
+      "hint": "Unable to load and parse grammar"
+    },
+    {
+      "source": "^Unable to search @(.+?)$",
+      "replace": "Impossible de rechercher @$1",
+      "hint": "Unable to search @"
+    },
+    {
+      "source": "^Unfold lines (.+?)-(.+?)$",
+      "replace": "Déplier les lignes $1-$2",
+      "hint": "Unfold lines"
+    },
+    {
+      "source": "^Unpin (.+?)$",
+      "replace": "Désépingler $1",
+      "hint": "Unpin"
+    },
+    {
+      "source": "^Unrecognized key\\(s\\) in object: (.+?)$",
+      "replace": "Clé(s) non reconnue(s) dans l'objet : $1",
+      "hint": "Unrecognized key(s) in object:"
+    },
+    {
+      "source": "^Updated (.+?), (.+?)$",
+      "replace": "$1 mis à jour, $2",
+      "hint": "Updated"
+    },
+    {
+      "source": "^Upload error: (.+?)$",
+      "replace": "Erreur d'importation : $1",
+      "hint": "Upload error:"
+    },
+    {
+      "source": "^Upstream stream error: HTTP (.+?)$",
+      "replace": "Erreur de flux en amont : HTTP $1",
+      "hint": "Upstream stream error: HTTP"
+    },
+    {
+      "source": "^Url in attribute (.+?) was modified during sanitization\\. Original url:\"(.+?)\" was sanitized to: \"(.+?)\"$",
+      "replace": "L'URL de l'attribut $1 a été modifiée lors du nettoyage. L'URL d'origine « $2 » a été nettoyée en : « $3 »",
+      "hint": "was modified during sanitization"
+    },
+    {
+      "source": "^Use custom repository: \"(.+?)\"$",
+      "replace": "Utiliser le dépôt personnalisé : « $1 »",
+      "hint": "Use custom repository: \""
+    },
+    {
+      "source": "^User uploaded media (.+?)$",
+      "replace": "Média importé par l'utilisateur $1",
+      "hint": "User uploaded media"
+    },
+    {
+      "source": "^Uses standalone Antigravity chords \\(e\\.g\\. (.+?)$",
+      "replace": "Utilise les raccourcis Antigravity autonomes (ex. $1",
+      "hint": "Uses standalone Antigravity chor"
+    },
+    {
+      "source": "^Using default (.+?) name$",
+      "replace": "Utilisation du nom $1 par défaut",
+      "hint": "Using default"
+    },
+    {
+      "source": "^Version (.+?)$",
+      "replace": "Version $1",
+      "hint": "Version"
+    },
+    {
+      "source": "^View (.+?)$",
+      "replace": "Afficher $1",
+      "hint": "View"
+    },
+    {
+      "source": "^View (.+?) side questions?$",
+      "replace": "Afficher $1 question(s) annexe(s)",
+      "hint": "side question"
+    },
+    {
+      "source": "^Viewed (.+?)$",
+      "replace": "$1 consulté",
+      "hint": "Viewed"
+    },
+    {
+      "source": "^Voice Speed, (.+?)$",
+      "replace": "Vitesse vocale, $1",
+      "hint": "Voice Speed,"
+    },
+    {
+      "source": "^Voice speed, (.+?)$",
+      "replace": "Vitesse vocale, $1",
+      "hint": "Voice speed,"
+    },
+    {
+      "source": "^Waiting for command completion \\(up to (\\d+(?:\\.\\d+)?) seconds\\)$",
+      "replace": "En attente de fin de commande (jusqu'à $1 secondes)",
+      "hint": "Waiting for command completion ("
+    },
+    {
+      "source": "^Waiting on (.+?)$",
+      "replace": "En attente de $1",
+      "hint": "Waiting on"
+    },
+    {
+      "source": "^WebSocket connection closed unexpectedly \\((.+?)\\)$",
+      "replace": "Connexion WebSocket fermée de manière inattendue ($1)",
+      "hint": "WebSocket connection closed unex"
+    },
+    {
+      "source": "^WebSocket connection to (.+?) closed before opening$",
+      "replace": "La connexion WebSocket vers $1 s'est fermée avant ouverture",
+      "hint": "WebSocket connection to"
+    },
+    {
+      "source": "^WebSocket connection to (.+?) timed out after (.+?)ms$",
+      "replace": "La connexion WebSocket vers $1 a expiré après $2 ms",
+      "hint": "WebSocket connection to"
+    },
+    {
+      "source": "^Welcome back, (.+?)\\. Where should we pick up\\?$",
+      "replace": "Bon retour, $1. Où reprenons-nous ?",
+      "hint": ". Where should we pick up?"
+    },
+    {
+      "source": "^Welcome to (.+?)$",
+      "replace": "Bienvenue dans $1",
+      "hint": "Welcome to"
+    },
+    {
+      "source": "^Welcome to (.+?)!$",
+      "replace": "Bienvenue dans $1 !",
+      "hint": "Welcome to"
+    },
+    {
+      "source": "^When toggled on, (.+?) collects usage data to help Google enhance performance and features\\.$",
+      "replace": "Une fois activé, $1 collecte des données d'utilisation pour aider Google à améliorer les performances et fonctionnalités.",
+      "hint": "collects usage data to help Goog"
+    },
+    {
+      "source": "^When toggled on, (.+?) will use your AI credits to fulfill model requests once you're out of model quota\\. (.+?) will always use your model quota first before using AI credits\\.$",
+      "replace": "Une fois activé, $1 utilise vos crédits IA pour répondre aux requêtes lorsque votre quota de modèle est épuisé. $2 utilise toujours votre quota de modèle en priorité.",
+      "hint": "will use your AI credits to fulf"
+    },
+    {
+      "source": "^Work in (.+?)$",
+      "replace": "Travailler dans $1",
+      "hint": "Work in"
+    },
+    {
+      "source": "^Worked for (.+?)$",
+      "replace": "A travaillé pendant $1",
+      "hint": "Worked for"
+    },
+    {
+      "source": "^Working · (.+?)s$",
+      "replace": "En cours · $1 s",
+      "hint": "Working ·"
+    },
+    {
+      "source": "^Yes, and always allow (.+?)$",
+      "replace": "Oui, et toujours autoriser $1",
+      "hint": "Yes, and always allow"
+    },
+    {
+      "source": "^Yesterday (.+?)$",
+      "replace": "Hier $1",
+      "hint": "Yesterday"
+    },
+    {
+      "source": "^You have (\\d+(?:\\.\\d+)?) conversations in progress\\. Updating will cancel them and you'll need to manually restart them\\.$",
+      "replace": "Vous avez $1 conversations en cours. La mise à jour les annulera et vous devrez les relancer manuellement.",
+      "hint": "conversations in progress. Updat"
+    },
+    {
+      "source": "^You have (\\d+(?:\\.\\d+)?) conversations in progress\\. Updating will interrupt them, and they will automatically resume once the update completes\\.$",
+      "replace": "Vous avez $1 conversations en cours. La mise à jour les interrompra et elles reprendront automatiquement une fois terminée.",
+      "hint": "conversations in progress. Updat"
+    },
+    {
+      "source": "^You need (.+?) AI Credits to send messages\\. To continue using (.+?) now, purchase more AI Credits\\.$",
+      "replace": "Il vous faut $1 crédits IA pour envoyer des messages. Achetez-en davantage pour continuer à utiliser $2 dès maintenant.",
+      "hint": "AI Credits to send messages. To "
+    },
+    {
+      "source": "^You're signing in on (.+?)\\. Your sign-in stays on that machine\\.$",
+      "replace": "Vous vous connectez sur $1. Votre session reste sur cette machine.",
+      "hint": ". Your sign-in stays on that mac"
+    },
+    {
+      "source": "^Your plan's baseline quota will refresh on (.+?)\\.$",
+      "replace": "Le quota de base de votre forfait sera renouvelé le $1.",
+      "hint": "Your plan's baseline quota will "
+    },
+    {
+      "source": "^Your plan: (.+?)$",
+      "replace": "Votre forfait : $1",
+      "hint": "Your plan:"
+    },
+    {
+      "source": "^Your quota for (.+?) has been reached\\. Switch to another available model to continue\\.$",
+      "replace": "Votre quota pour $1 est atteint. Passez à un autre modèle disponible pour continuer.",
+      "hint": "has been reached. Switch to anot"
+    },
+    {
+      "source": "^Zip file size exceeds (.+?)MB limit$",
+      "replace": "La taille du fichier Zip dépasse la limite de $1 Mo",
+      "hint": "Zip file size exceeds"
+    },
+    {
+      "source": "^Zoom (.+?)%, reset to fit$",
+      "replace": "Zoom $1 %, réinitialiser pour ajuster",
+      "hint": "%, reset to fit"
+    },
+    {
+      "source": "^\\[\\.\\.\\. \\+(.+?) more options; read via page\\.locator\\('select option'\\)\\]$",
+      "replace": "[... +$1 options supplémentaires ; lisez via page.locator('select option')]",
+      "hint": "more options; read via page.loca"
+    },
+    {
+      "source": "^\\[File Watcher \\((.+?)\\)\\] (.+?)$",
+      "replace": "[Observateur de fichiers ($1)] $2",
+      "hint": "[File Watcher ("
+    },
+    {
+      "source": "^\\[InteractiveFolderPickerFeature\\] Failed to parse URI (.+?) with error: (.+?)$",
+      "replace": "[InteractiveFolderPickerFeature] Échec de l'analyse de l'URI $1 : $2",
+      "hint": "[InteractiveFolderPickerFeature]"
+    },
+    {
+      "source": "^cannot use (.+?) with message (.+?)$",
+      "replace": "impossible d'utiliser $1 avec le message $2",
+      "hint": "with message"
+    },
+    {
+      "source": "^cherry-picked (.+?) into (.+?)$",
+      "replace": "$1 appliqué (cherry-pick) dans $2",
+      "hint": "cherry-picked"
+    },
+    {
+      "source": "^compatible (.+?) event types$",
+      "replace": "types d'événements $1 compatibles",
+      "hint": "event types"
+    },
+    {
+      "source": "^fulfill is (.+?) B, max (.+?) B$",
+      "replace": "fulfill fait $1 o, max $2 o",
+      "hint": "fulfill is"
+    },
+    {
+      "source": "^handler hello\\(\\) did not settle within (.+?) ms$",
+      "replace": "le gestionnaire hello() n'a pas répondu dans un délai de $1 ms",
+      "hint": "handler hello() did not settle w"
+    },
+    {
+      "source": "^hello is (.+?) B, max (.+?) B$",
+      "replace": "hello fait $1 o, max $2 o",
+      "hint": "hello is"
+    },
+    {
+      "source": "^payload is (.+?) B, max (.+?) B$",
+      "replace": "la charge utile fait $1 o, max $2 o",
+      "hint": "payload is"
+    },
+    {
+      "source": "^script return value is not JSON-serializable: (.+?)$",
+      "replace": "la valeur de retour du script n'est pas sérialisable en JSON : $1",
+      "hint": "script return value is not JSON-"
+    },
+    {
+      "source": "^script timed out after (.+?)ms$",
+      "replace": "le script a expiré après $1 ms",
+      "hint": "script timed out after"
+    },
+    {
+      "source": "^valid (.+?) filter$",
+      "replace": "filtre $1 valide",
+      "hint": "filter"
+    },
+    {
+      "source": "^(.+?)  dependencies:$",
+      "replace": "dépendances de $1 :",
+      "hint": "dependencies:"
+    },
+    {
+      "source": "^(.+?) \\(Default\\)$",
+      "replace": "$1 (Par défaut)",
+      "hint": "(Default)"
+    },
+    {
+      "source": "^(.+?) \\(Experimental\\)$",
+      "replace": "$1 (Expérimental)",
+      "hint": "(Experimental)"
+    },
+    {
+      "source": "^(.+?) \\(Remote\\)$",
+      "replace": "$1 (Distant)",
+      "hint": "(Remote)"
+    },
+    {
+      "source": "^(.+?) \\(excluded by current filter\\)$",
+      "replace": "$1 (exclu par le filtre actuel)",
+      "hint": "(excluded by current filter)"
+    },
+    {
+      "source": "^(.+?) \\(experimental\\)$",
+      "replace": "$1 (expérimental)",
+      "hint": "(experimental)"
+    },
+    {
+      "source": "^(.+?) \\(incompatible with current filter\\)$",
+      "replace": "$1 (incompatible avec le filtre actuel)",
+      "hint": "(incompatible with current filte"
+    },
+    {
+      "source": "^(.+?) \\(latest\\)$",
+      "replace": "$1 (dernier)",
+      "hint": "(latest)"
+    },
+    {
+      "source": "^(.+?) \\(unavailable\\)$",
+      "replace": "$1 (indisponible)",
+      "hint": "(unavailable)"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) / (\\d+(?:\\.\\d+)?) rows$",
+      "replace": "$1 / $2 lignes",
+      "hint": "rows"
+    },
+    {
+      "source": "^(.+?) Background Process(?:es)? Running$",
+      "replace": "$1 processus en arrière-plan actif(s)",
+      "hint": "Background Process"
+    },
+    {
+      "source": "^(.+?) CEL values$",
+      "replace": "$1 valeurs CEL",
+      "hint": "CEL values"
+    },
+    {
+      "source": "^(.+?) Comments$",
+      "replace": "$1 commentaires",
+      "hint": "Comments"
+    },
+    {
+      "source": "^(.+?) Failed$",
+      "replace": "$1 en échec",
+      "hint": "Failed"
+    },
+    {
+      "source": "^(.+?) Files? With Changes$",
+      "replace": "$1 fichier(s) modifié(s)",
+      "hint": "With Changes"
+    },
+    {
+      "source": "^(.+?) Name$",
+      "replace": "Nom de $1",
+      "hint": "Name"
+    },
+    {
+      "source": "^(.+?) Queues after the turn$",
+      "replace": "$1 Met en file d'attente après ce tour",
+      "hint": "Queues after the turn"
+    },
+    {
+      "source": "^(.+?) Sends immediately$",
+      "replace": "$1 Envoie immédiatement",
+      "hint": "Sends immediately"
+    },
+    {
+      "source": "^(.+?) Settings$",
+      "replace": "Paramètres de $1",
+      "hint": "Settings"
+    },
+    {
+      "source": "^(.+?) Side Questions?$",
+      "replace": "$1 question(s) annexe(s)",
+      "hint": "Side Question"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) accounts$",
+      "replace": "$1 comptes",
+      "hint": "accounts"
+    },
+    {
+      "source": "^(.+?) active conversations$",
+      "replace": "$1 conversations actives",
+      "hint": "active conversations"
+    },
+    {
+      "source": "^(.+?) active modes?$",
+      "replace": "$1 mode(s) actif(s)",
+      "hint": "active mode"
+    },
+    {
+      "source": "^(.+?) added$",
+      "replace": "$1 ajouté",
+      "hint": "added"
+    },
+    {
+      "source": "^(.+?) annotation on page (.+?)$",
+      "replace": "$1 annotation sur la page $2",
+      "hint": "annotation on page"
+    },
+    {
+      "source": "^(.+?) archived$",
+      "replace": "$1 archivé",
+      "hint": "archived"
+    },
+    {
+      "source": "^(.+?) archived conversations$",
+      "replace": "$1 conversations archivées",
+      "hint": "archived conversations"
+    },
+    {
+      "source": "^(.+?) at one or more positions greater than or equal to (.+?)$",
+      "replace": "$1 à une ou plusieurs positions supérieures ou égales à $2",
+      "hint": "at one or more positions greater"
+    },
+    {
+      "source": "^(.+?) audio attachments$",
+      "replace": "$1 pièces jointes audio",
+      "hint": "audio attachments"
+    },
+    {
+      "source": "^(.+?) background tasks$",
+      "replace": "$1 tâches en arrière-plan",
+      "hint": "background tasks"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) blobs, max (.+?)$",
+      "replace": "$1 blobs, max $2",
+      "hint": "blobs, max"
+    },
+    {
+      "source": "^(.+?) blocked$",
+      "replace": "$1 bloqué",
+      "hint": "blocked"
+    },
+    {
+      "source": "^(.+?) cannot be used with intent (.+?)$",
+      "replace": "$1 ne peut pas être utilisé avec l'intention $2",
+      "hint": "cannot be used with intent"
+    },
+    {
+      "source": "^(.+?) comments? in (.+?)$",
+      "replace": "$1 commentaire(s) dans $2",
+      "hint": "comment"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) comments$",
+      "replace": "$1 commentaires",
+      "hint": "comments"
+    },
+    {
+      "source": "^(.+?) could not find the requested page\\.$",
+      "replace": "$1 n'a pas pu trouver la page demandée.",
+      "hint": "could not find the requested pag"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) customizations failed to load$",
+      "replace": "$1 personnalisations n'ont pas pu être chargées",
+      "hint": "customizations failed to load"
+    },
+    {
+      "source": "^(.+?) days$",
+      "replace": "$1 jours",
+      "hint": "days"
+    },
+    {
+      "source": "^(.+?) deleted$",
+      "replace": "$1 supprimé",
+      "hint": "deleted"
+    },
+    {
+      "source": "^(.+?) does not apply to (.+?) \\(supported on (.+?)\\)$",
+      "replace": "$1 ne s'applique pas à $2 (pris en charge pour $3)",
+      "hint": "does not apply to"
+    },
+    {
+      "source": "^(.+?) download progress$",
+      "replace": "Progression du téléchargement de $1",
+      "hint": "download progress"
+    },
+    {
+      "source": "^(.+?) error #(.+?); visit (.+?) for the full message\\.$",
+      "replace": "Erreur $1 #$2 ; consultez $3 pour le message complet.",
+      "hint": "for the full message."
+    },
+    {
+      "source": "^(.+?) failed$",
+      "replace": "$1 a échoué",
+      "hint": "failed"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) folders in this project could not be loaded because their locations are invalid\\.$",
+      "replace": "$1 dossiers de ce projet n'ont pas pu être chargés car leurs emplacements sont invalides.",
+      "hint": "folders in this project could no"
+    },
+    {
+      "source": "^(.+?) header$",
+      "replace": "En-tête $1",
+      "hint": "header"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) hidden hosts$",
+      "replace": "$1 hôtes masqués",
+      "hint": "hidden hosts"
+    },
+    {
+      "source": "^(.+?) image attachments$",
+      "replace": "$1 pièces jointes image",
+      "hint": "image attachments"
+    },
+    {
+      "source": "^(.+?) installed$",
+      "replace": "$1 installé",
+      "hint": "installed"
+    },
+    {
+      "source": "^(.+?) installed: (.+?)$",
+      "replace": "$1 installé : $2",
+      "hint": "installed:"
+    },
+    {
+      "source": "^(.+?) is currently unable to handle this request\\.$",
+      "replace": "$1 ne peut pas traiter cette requête pour le moment.",
+      "hint": "is currently unable to handle th"
+    },
+    {
+      "source": "^(.+?) is no longer available\\. Runs will fail until you pick another model\\.$",
+      "replace": "$1 n'est plus disponible. Les exécutions échoueront jusqu'à ce que vous choisissiez un autre modèle.",
+      "hint": "is no longer available. Runs wil"
+    },
+    {
+      "source": "^(.+?) is paused in (.+?); its view keeps playing here\\. Resume to let it continue\\.$",
+      "replace": "$1 est en pause dans $2 ; sa vue reste affichée ici. Reprenez pour continuer.",
+      "hint": "; its view keeps playing here. R"
+    },
+    {
+      "source": "^(.+?) is read-only$",
+      "replace": "$1 est en lecture seule",
+      "hint": "is read-only"
+    },
+    {
+      "source": "^(.+?) is (\\d+(?:\\.\\d+)?) bytes, exceeds limit of 10485760$",
+      "replace": "$1 mesure $2 octets et dépasse la limite de 10485760",
+      "hint": "bytes, exceeds limit of 10485760"
+    },
+    {
+      "source": "^(.+?) is (.+?) bytes; the limit is 64$",
+      "replace": "$1 mesure $2 octets ; la limite est de 64",
+      "hint": "bytes; the limit is 64"
+    },
+    {
+      "source": "^(.+?) item (.+?)$",
+      "replace": "$1 élément $2",
+      "hint": "item"
+    },
+    {
+      "source": "^(.+?) lines added, (.+?) lines removed$",
+      "replace": "$1 lignes ajoutées, $2 lignes supprimées",
+      "hint": "lines removed"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) matching (\\d+(?:\\.\\d+)?)$",
+      "replace": "$1 correspondant(s) sur $2",
+      "hint": "matching"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) may have looser code review\\. Review (\\d+(?:\\.\\d+)?) contents before adding the bundle\\.$",
+      "replace": "$1 peut faire l'objet d'une revue de code moins stricte. Vérifiez le contenu de $2 avant d'ajouter le lot.",
+      "hint": "may have looser code review. Rev"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) models selected$",
+      "replace": "$1 modèles sélectionnés",
+      "hint": "models selected"
+    },
+    {
+      "source": "^(.+?) needs you to sign in before it can be used\\.$",
+      "replace": "$1 nécessite une connexion avant de pouvoir être utilisé.",
+      "hint": "needs you to sign in before it c"
+    },
+    {
+      "source": "^(.+?) needs (.+?) to use your computer\\.$",
+      "replace": "$1 a besoin de $2 pour utiliser votre ordinateur.",
+      "hint": "to use your computer."
+    },
+    {
+      "source": "^(.+?) notebook$",
+      "replace": "Notebook $1",
+      "hint": "notebook"
+    },
+    {
+      "source": "^(.+?) notebook cells$",
+      "replace": "$1 cellules de notebook",
+      "hint": "notebook cells"
+    },
+    {
+      "source": "^(.+?) only applies to (.+?)$",
+      "replace": "$1 s'applique uniquement à $2",
+      "hint": "only applies to"
+    },
+    {
+      "source": "^(.+?) out of range$",
+      "replace": "$1 hors limites",
+      "hint": "out of range"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) questions?$",
+      "replace": "$1 question(s)",
+      "hint": "question"
+    },
+    {
+      "source": "^(.+?) requires (.+?)\\.$",
+      "replace": "$1 requiert $2.",
+      "hint": "requires"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) rows$",
+      "replace": "$1 lignes",
+      "hint": "rows"
+    },
+    {
+      "source": "^(.+?) seconds$",
+      "replace": "$1 secondes",
+      "hint": "seconds"
+    },
+    {
+      "source": "^(.+?) settings$",
+      "replace": "Paramètres $1",
+      "hint": "settings"
+    },
+    {
+      "source": "^(.+?) tab$",
+      "replace": "Onglet $1",
+      "hint": "tab"
+    },
+    {
+      "source": "^(.+?) target filter$",
+      "replace": "Filtre cible $1",
+      "hint": "target filter"
+    },
+    {
+      "source": "^(.+?) took too long to respond\\.$",
+      "replace": "$1 a mis trop de temps à répondre.",
+      "hint": "took too long to respond."
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) tools? disabled$",
+      "replace": "$1 outil(s) désactivé(s)",
+      "hint": "disabled"
+    },
+    {
+      "source": "^(.+?) tools? enabled$",
+      "replace": "$1 outil(s) activé(s)",
+      "hint": "enabled"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) tools$",
+      "replace": "$1 outils",
+      "hint": "tools"
+    },
+    {
+      "source": "^(.+?) video attachments$",
+      "replace": "$1 pièces jointes vidéo",
+      "hint": "video attachments"
+    },
+    {
+      "source": "^(.+?) waiting on you$",
+      "replace": "$1 attend votre action",
+      "hint": "waiting on you"
+    },
+    {
+      "source": "^(.+?) was requested as a (.+?), but the response Content-Type, \"(.+?) is not appropriate for this type of content\\.$",
+      "replace": "$1 a été demandé en tant que $2, mais le Content-Type « $3 ne convient pas à ce type de contenu.",
+      "hint": "is not appropriate for this type"
+    },
+    {
+      "source": "^(.+?) (.+?) tool for (.+?)$",
+      "replace": "Outil $1 $2 pour $3",
+      "hint": "tool for"
+    },
+    {
+      "source": "^(.+?) · target$",
+      "replace": "$1 · cible",
+      "hint": "· target"
+    },
+    {
+      "source": "^(.+?), error$",
+      "replace": "$1, erreur",
+      "hint": ", error"
+    },
+    {
+      "source": "^(.+?), from (.+?)$",
+      "replace": "$1, depuis $2",
+      "hint": ", from"
+    },
+    {
+      "source": "^(.+?), setup required$",
+      "replace": "$1, configuration requise",
+      "hint": ", setup required"
+    },
+    {
+      "source": "^(.+?), showing (.+?) of (.+?)$",
+      "replace": "$1, affichage de $2 sur $3",
+      "hint": ", showing"
+    },
+    {
+      "source": "^(.+?), voice (.+?) of (\\d+(?:\\.\\d+)?)$",
+      "replace": "$1, voix $2 sur $3",
+      "hint": ", voice"
+    },
+    {
+      "source": "^(.+?)\\. Disabling or removing the bundle applies only to the ones it installed\\.$",
+      "replace": "$1. La désactivation ou suppression du lot ne s'applique qu'aux éléments qu'il a installés.",
+      "hint": ". Disabling or removing the bund"
+    },
+    {
+      "source": "^(.+?)\\. Show in (.+?)$",
+      "replace": "$1. Afficher dans $2",
+      "hint": ". Show in"
+    },
+    {
+      "source": "^(.+?)\\. Switch mic$",
+      "replace": "$1. Changer de micro",
+      "hint": ". Switch mic"
+    },
+    {
+      "source": "^(.+?)\\. Switch microphone\\.$",
+      "replace": "$1. Changer de microphone.",
+      "hint": ". Switch microphone."
+    },
+    {
+      "source": "^(.+?)\\. View site information$",
+      "replace": "$1. Afficher les informations du site",
+      "hint": ". View site information"
+    },
+    {
+      "source": "^(.+?)\\. (.+?) plan$",
+      "replace": "$1. Forfait $2",
+      "hint": "plan"
+    },
+    {
+      "source": "^(.+?): Connect GitHub$",
+      "replace": "$1 : Connecter GitHub",
+      "hint": ": Connect GitHub"
+    },
+    {
+      "source": "^“(.+?)” isn’t a valid folder name\\.$",
+      "replace": "« $1 » n'est pas un nom de dossier valide.",
+      "hint": "” isn’t a valid folder name."
+    },
+    {
+      "source": "^, \\+(.+?) more$",
+      "replace": ", +$1 de plus",
+      "hint": "more"
+    },
+    {
+      "source": "^Added (.+?) and installed (.+?)\\.$",
+      "replace": "$1 ajouté et $2 installé.",
+      "hint": "and installed"
+    },
+    {
+      "source": "^An embedded page at (.+?) says$",
+      "replace": "Une page intégrée sur $1 indique",
+      "hint": "An embedded page at"
+    },
+    {
+      "source": "^An embedded page at (.+?) wants to connect to (.+?)$",
+      "replace": "Une page intégrée sur $1 souhaite se connecter à $2",
+      "hint": "An embedded page at"
+    },
+    {
+      "source": "^An embedded page on this page wants to connect to (.+?)$",
+      "replace": "Une page intégrée dans cette page souhaite se connecter à $1",
+      "hint": "An embedded page on this page wa"
+    },
+    {
+      "source": "^Archive (.+?)$",
+      "replace": "Archiver $1",
+      "hint": "Archive"
+    },
+    {
+      "source": "^Array must contain (.+?) (.+?) element\\(s\\)$",
+      "replace": "Le tableau doit contenir $1 $2 élément(s)",
+      "hint": "Array must contain"
+    },
+    {
+      "source": "^Back to (.+?)$",
+      "replace": "Retour à $1",
+      "hint": "Back to"
+    },
+    {
+      "source": "^BigInt must be (.+?) (.+?)$",
+      "replace": "BigInt doit être $1 $2",
+      "hint": "BigInt must be"
+    },
+    {
+      "source": "^Can't access \"(.+?)\"\\. (.+?)$",
+      "replace": "Impossible d'accéder à « $1 ». $2",
+      "hint": "Can't access \""
+    },
+    {
+      "source": "^Closed (.+?)$",
+      "replace": "$1 fermé",
+      "hint": "Closed"
+    },
+    {
+      "source": "^Code search: \"(.+?)\"$",
+      "replace": "Recherche de code : « $1 »",
+      "hint": "Code search: \""
+    },
+    {
+      "source": "^Comment \\((.+?)\\)$",
+      "replace": "Commentaire ($1)",
+      "hint": "Comment ("
+    },
+    {
+      "source": "^Conflict: also assigned to (.+?)$",
+      "replace": "Conflit : également attribué à $1",
+      "hint": "Conflict: also assigned to"
+    },
+    {
+      "source": "^Conflicts with \"(.+?)\" \\(press Enter to replace\\)$",
+      "replace": "Conflit avec « $1 » (Entrée pour remplacer)",
+      "hint": "\" (press Enter to replace)"
+    },
+    {
+      "source": "^Conflicts with your configured Ask permission: (.+?)$",
+      "replace": "Conflit avec votre autorisation Demander configurée : $1",
+      "hint": "Conflicts with your configured A"
+    },
+    {
+      "source": "^Credentials expire in (.+?)\\. Refresh credentials to keep this automation running$",
+      "replace": "Les identifiants expirent dans $1. Actualisez-les pour maintenir cette automatisation active",
+      "hint": ". Refresh credentials to keep th"
+    },
+    {
+      "source": "^Date must be (.+?) (.+?)$",
+      "replace": "La date doit être $1 $2",
+      "hint": "Date must be"
+    },
+    {
+      "source": "^Delete: (.+?)$",
+      "replace": "Supprimer : $1",
+      "hint": "Delete:"
+    },
+    {
+      "source": "^Edit: (.+?)$",
+      "replace": "Modifier : $1",
+      "hint": "Edit:"
+    },
+    {
+      "source": "^Edited (.+?)$",
+      "replace": "$1 modifié",
+      "hint": "Edited"
+    },
+    {
+      "source": "^Enlarged media: (.+?)$",
+      "replace": "Média agrandi : $1",
+      "hint": "Enlarged media:"
+    },
+    {
+      "source": "^Environment paused\\. Click to resume it and load the (.+?)\\.$",
+      "replace": "Environnement en pause. Cliquez pour reprendre et charger $1.",
+      "hint": "Environment paused. Click to res"
+    },
+    {
+      "source": "^Error sending (.+?) to command$",
+      "replace": "Erreur lors de l'envoi de $1 à la commande",
+      "hint": "Error sending"
+    },
+    {
+      "source": "^Error while running (.+?)$",
+      "replace": "Erreur lors de l'exécution de $1",
+      "hint": "Error while running"
+    },
+    {
+      "source": "^Executing task: (.+?)$",
+      "replace": "Exécution de la tâche : $1",
+      "hint": "Executing task:"
+    },
+    {
+      "source": "^Explored (.+?)$",
+      "replace": "$1 exploré",
+      "hint": "Explored"
+    },
+    {
+      "source": "^Failed to create directory (.+?): (.+?)$",
+      "replace": "Échec de la création du répertoire $1 : $2",
+      "hint": "Failed to create directory"
+    },
+    {
+      "source": "^Failed to fetch directory contents: (.+?)$",
+      "replace": "Échec de la récupération du contenu du répertoire : $1",
+      "hint": "Failed to fetch directory conten"
+    },
+    {
+      "source": "^Failed to load (.+?)$",
+      "replace": "Échec du chargement de $1",
+      "hint": "Failed to load"
+    },
+    {
+      "source": "^Failed: (.+?)$",
+      "replace": "Échec : $1",
+      "hint": "Failed:"
+    },
+    {
+      "source": "^For (.+?), telemetry is force disabled\\.$",
+      "replace": "Pour $1, la télémétrie est désactivée de force.",
+      "hint": ", telemetry is force disabled."
+    },
+    {
+      "source": "^For (.+?), this setting is disabled\\.$",
+      "replace": "Pour $1, ce paramètre est désactivé.",
+      "hint": ", this setting is disabled."
+    },
+    {
+      "source": "^Generated image: \"(.+?)\"$",
+      "replace": "Image générée : « $1 »",
+      "hint": "Generated image: \""
+    },
+    {
+      "source": "^Generated with (.+?) 🍌$",
+      "replace": "Généré avec $1 🍌",
+      "hint": "Generated with"
+    },
+    {
+      "source": "^Generating with (.+?) 🍌$",
+      "replace": "Génération avec $1 🍌",
+      "hint": "Generating with"
+    },
+    {
+      "source": "^Help: (.+?)$",
+      "replace": "Aide : $1",
+      "hint": "Help:"
+    },
+    {
+      "source": "^Hid (.+?)$",
+      "replace": "$1 masqué",
+      "hint": "Hid"
+    },
+    {
+      "source": "^Hidden by policy \\((.+?)\\)\\.$",
+      "replace": "Masqué par la stratégie ($1).",
+      "hint": "Hidden by policy ("
+    },
+    {
+      "source": "^In review · (\\d+(?:\\.\\d+)?) LGTMs?$",
+      "replace": "En vérification · $1 LGTM",
+      "hint": "In review ·"
+    },
+    {
+      "source": "^Inherits your Global Permissions when working (.+?)\\.$",
+      "replace": "Hérite de vos autorisations globales lors du travail dans $1.",
+      "hint": "Inherits your Global Permissions"
+    },
+    {
+      "source": "^Internal search: \"(.+?)\"$",
+      "replace": "Recherche interne : « $1 »",
+      "hint": "Internal search: \""
+    },
+    {
+      "source": "^Invalid input: must end with \"(.+?)\"$",
+      "replace": "Saisie invalide : doit se terminer par « $1 »",
+      "hint": "Invalid input: must end with \""
+    },
+    {
+      "source": "^Invalid input: must start with \"(.+?)\"$",
+      "replace": "Saisie invalide : doit commencer par « $1 »",
+      "hint": "Invalid input: must start with \""
+    },
+    {
+      "source": "^Invalid notebook JSON: (.+?)$",
+      "replace": "JSON de notebook invalide : $1",
+      "hint": "Invalid notebook JSON:"
+    },
+    {
+      "source": "^Invalid (.+?)$",
+      "replace": "$1 invalide",
+      "hint": "Invalid"
+    },
+    {
+      "source": "^Listing (.+?)$",
+      "replace": "Listage de $1",
+      "hint": "Listing"
+    },
+    {
+      "source": "^Live preview unavailable · (.+?)$",
+      "replace": "Aperçu en direct indisponible · $1",
+      "hint": "Live preview unavailable ·"
+    },
+    {
+      "source": "^Low contrast ratio \\((.+?):1\\)\\. Text may be hard to read\\.$",
+      "replace": "Faible rapport de contraste ($1:1). Le texte peut être difficile à lire.",
+      "hint": ":1). Text may be hard to read."
+    },
+    {
+      "source": "^Managed by the (.+?) automation$",
+      "replace": "Géré par l'automatisation $1",
+      "hint": "Managed by the"
+    },
+    {
+      "source": "^Matches (.+?)$",
+      "replace": "Correspond à $1",
+      "hint": "Matches"
+    },
+    {
+      "source": "^Matches (\\d+(?:\\.\\d+)?) of (\\d+(?:\\.\\d+)?) event types$",
+      "replace": "Correspond à $1 sur $2 types d'événements",
+      "hint": "event types"
+    },
+    {
+      "source": "^Microphone access for (.+?) was denied\\. Quit and reopen the app to be asked again\\.$",
+      "replace": "L'accès au microphone pour $1 a été refusé. Quittez et rouvrez l'application pour redemander l'autorisation.",
+      "hint": "was denied. Quit and reopen the"
+    },
+    {
+      "source": "^Microphone blocked\\. Allow in (.+?)\\.$",
+      "replace": "Microphone bloqué. Autorisez-le dans $1.",
+      "hint": "Microphone blocked. Allow in"
+    },
+    {
+      "source": "^Model unavailable, retrying in (.+?)s(.+?)$",
+      "replace": "Modèle indisponible, nouvelle tentative dans $1 s$2",
+      "hint": "Model unavailable, retrying in"
+    },
+    {
+      "source": "^Monthly on the (.+?) at (.+?)$",
+      "replace": "Chaque mois le $1 à $2",
+      "hint": "Monthly on the"
+    },
+    {
+      "source": "^No apps found for \"(.+?)\"\\.$",
+      "replace": "Aucune application trouvée pour « $1 ».",
+      "hint": "No apps found for \""
+    },
+    {
+      "source": "^No audio from (.+?)$",
+      "replace": "Aucun audio détecté depuis $1",
+      "hint": "No audio from"
+    },
+    {
+      "source": "^Number must be (.+?) (.+?)$",
+      "replace": "Le nombre doit être $1 $2",
+      "hint": "Number must be"
+    },
+    {
+      "source": "^Ran command: `(.+?)`$",
+      "replace": "Commande exécutée : `$1`",
+      "hint": "Ran command: `"
+    },
+    {
+      "source": "^Ran command: (.+?) \\(`(.+?)`\\)$",
+      "replace": "Commande exécutée : $1 (`$2`)",
+      "hint": "Ran command:"
+    },
+    {
+      "source": "^Reading (.+?)$",
+      "replace": "Lecture de $1",
+      "hint": "Reading"
+    },
+    {
+      "source": "^Rejected sending (.+?) to command$",
+      "replace": "Envoi de $1 à la commande refusé",
+      "hint": "Rejected sending"
+    },
+    {
+      "source": "^Required to (.+?): (.+?)$",
+      "replace": "Requis pour $1 : $2",
+      "hint": "Required to"
+    },
+    {
+      "source": "^Requires manual confirmation: (.+?)$",
+      "replace": "Confirmation manuelle requise : $1",
+      "hint": "Requires manual confirmation:"
+    },
+    {
+      "source": "^Resolved \"(.+?)\"$",
+      "replace": "« $1 » résolu",
+      "hint": "Resolved \""
+    },
+    {
+      "source": "^Running (.+?)$",
+      "replace": "Exécution de $1",
+      "hint": "Running"
+    },
+    {
+      "source": "^SSH Config \\((.+?)\\)$",
+      "replace": "Configuration SSH ($1)",
+      "hint": "SSH Config ("
+    },
+    {
+      "source": "^Searched for \"(.+?)\"$",
+      "replace": "Recherche effectuée pour « $1 »",
+      "hint": "Searched for \""
+    },
+    {
+      "source": "^Searched for files: (.+?)$",
+      "replace": "Fichiers recherchés : $1",
+      "hint": "Searched for files:"
+    },
+    {
+      "source": "^Searched web: \"(.+?)\"$",
+      "replace": "Recherche Web effectuée : « $1 »",
+      "hint": "Searched web: \""
+    },
+    {
+      "source": "^Searching as (.+?)$",
+      "replace": "Recherche en tant que $1",
+      "hint": "Searching as"
+    },
+    {
+      "source": "^Searching (.+?)$",
+      "replace": "Recherche de $1",
+      "hint": "Searching"
+    },
+    {
+      "source": "^Sent (.+?) to command$",
+      "replace": "$1 envoyé à la commande",
+      "hint": "to command"
+    },
+    {
+      "source": "^Settings for conversations outside of (.+?)\\.$",
+      "replace": "Paramètres des conversations hors de $1.",
+      "hint": "Settings for conversations outsi"
+    },
+    {
+      "source": "^Sign-in failed: (.+?)$",
+      "replace": "Échec de la connexion : $1",
+      "hint": "Sign-in failed:"
+    },
+    {
+      "source": "^Sorry, this account is ineligible to use (.+?)$",
+      "replace": "Désolé, ce compte n'est pas éligible pour utiliser $1",
+      "hint": "Sorry, this account is ineligibl"
+    },
+    {
+      "source": "^Started voice chat · (.+?)$",
+      "replace": "Chat vocal démarré · $1",
+      "hint": "Started voice chat ·"
+    },
+    {
+      "source": "^Stopping (.+?)$",
+      "replace": "Arrêt de $1",
+      "hint": "Stopping"
+    },
+    {
+      "source": "^Storage: Application & Profile \\(path: (.+?), default profile\\)$",
+      "replace": "Stockage : Application et profil (chemin : $1, profil par défaut)",
+      "hint": "Storage: Application & Profile ("
+    },
+    {
+      "source": "^Storage: Application \\(path: (.+?)\\)$",
+      "replace": "Stockage : Application (chemin : $1)",
+      "hint": "Storage: Application (path:"
+    },
+    {
+      "source": "^Storage: Profile \\(path: (.+?), profile specific\\)$",
+      "replace": "Stockage : Profil (chemin : $1, spécifique au profil)",
+      "hint": "Storage: Profile (path:"
+    },
+    {
+      "source": "^String must contain (.+?) (.+?) character\\(s\\)$",
+      "replace": "La chaîne doit contenir $1 $2 caractère(s)",
+      "hint": "String must contain"
+    },
+    {
+      "source": "^Suggested sending (.+?) to command$",
+      "replace": "Envoi suggéré de $1 à la commande",
+      "hint": "Suggested sending"
+    },
+    {
+      "source": "^There was an error determining the code changes that this undo action will make: (.+?)$",
+      "replace": "Erreur lors de l'identification des modifications de code de cette annulation : $1",
+      "hint": "There was an error determining t"
+    },
+    {
+      "source": "^Thought for (\\d+(?:\\.\\d+)?)s$",
+      "replace": "Réflexion de $1 s",
+      "hint": "Thought for"
+    },
+    {
+      "source": "^UI Extension (.+?)$",
+      "replace": "Extension d'interface $1",
+      "hint": "UI Extension"
+    },
+    {
+      "source": "^Unmute (.+?)$",
+      "replace": "Rétablir le son de $1",
+      "hint": "Unmute"
+    },
+    {
+      "source": "^Updated (.+?)$",
+      "replace": "$1 mis à jour",
+      "hint": "Updated"
+    },
+    {
+      "source": "^Used MCP tool: (.+?)$",
+      "replace": "Outil MCP utilisé : $1",
+      "hint": "Used MCP tool:"
+    },
+    {
+      "source": "^Used MCP tool: (.+?)/(.+?)$",
+      "replace": "Outil MCP utilisé : $1/$2",
+      "hint": "Used MCP tool:"
+    },
+    {
+      "source": "^Used tool: (.+?)$",
+      "replace": "Outil utilisé : $1",
+      "hint": "Used tool:"
+    },
+    {
+      "source": "^View (.+?) help(\\s+\\(.+?\\))$",
+      "replace": "Afficher l'aide de $1$2",
+      "hint": "help"
+    },
+    {
+      "source": "^Viewed (.+?):(.+?)-(.+?)$",
+      "replace": "$1:$2-$3 consulté",
+      "hint": "Viewed"
+    },
+    {
+      "source": "^Waiting for your input(\\s+.+?|[.:…·—–-].+?)$",
+      "replace": "En attente de votre saisie$1",
+      "hint": "Waiting for your input"
+    },
+    {
+      "source": "^Waiting for (.+?)$",
+      "replace": "En attente de $1",
+      "hint": "Waiting for"
+    },
+    {
+      "source": "^Waiting for (.+?) timers$",
+      "replace": "En attente de $1 minuteurs",
+      "hint": "Waiting for"
+    },
+    {
+      "source": "^Wants to run: (.+?)$",
+      "replace": "Souhaite exécuter : $1",
+      "hint": "Wants to run:"
+    },
+    {
+      "source": "^Work locally on (.+?)$",
+      "replace": "Travailler localement sur $1",
+      "hint": "Work locally on"
+    },
+    {
+      "source": "^Worked for (.+?) · (.+?)$",
+      "replace": "A travaillé $1 · $2",
+      "hint": "Worked for"
+    },
+    {
+      "source": "^Yes, and always allow '(.+?)'$",
+      "replace": "Oui, et toujours autoriser « $1 »",
+      "hint": "Yes, and always allow '"
+    },
+    {
+      "source": "^Yes, and always allow '(.+?)' in this conversation$",
+      "replace": "Oui, et toujours autoriser « $1 » dans cette conversation",
+      "hint": "Yes, and always allow '"
+    },
+    {
+      "source": "^Yes, and always allow '(.+?)' (.+?)$",
+      "replace": "Oui, et toujours autoriser « $1 » ($2)",
+      "hint": "Yes, and always allow '"
+    },
+    {
+      "source": "^You: (.+?)$",
+      "replace": "Vous : $1",
+      "hint": "You:"
+    },
+    {
+      "source": "^Your quota for (.+?) will reset on (.+?)\\. Switch to another available model to continue\\.$",
+      "replace": "Votre quota pour $1 sera réinitialisé le $2. Passez à un autre modèle disponible pour continuer.",
+      "hint": ". Switch to another available mo"
+    },
+    {
+      "source": "^(.+?) Dev$",
+      "replace": "$1 Dév.",
+      "hint": "Dev"
+    },
+    {
+      "source": "^(.+?) Help$",
+      "replace": "Aide $1",
+      "hint": "Help"
+    },
+    {
+      "source": "^(.+?) Help · (.+?) Side Questions?$",
+      "replace": "Aide $1 · $2 question(s) annexe(s)",
+      "hint": "Side Question"
+    },
+    {
+      "source": "^(.+?) Hold$",
+      "replace": "Maintenir $1",
+      "hint": "Hold"
+    },
+    {
+      "source": "^(.+?) Release$",
+      "replace": "Relâcher $1",
+      "hint": "Release"
+    },
+    {
+      "source": "^(.+?) attachment\\(s\\)$",
+      "replace": "$1 pièce(s) jointe(s)",
+      "hint": "attachment(s)"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) chunks$",
+      "replace": "$1 blocs",
+      "hint": "chunks"
+    },
+    {
+      "source": "^(.+?) color picker$",
+      "replace": "Sélecteur de couleur $1",
+      "hint": "color picker"
+    },
+    {
+      "source": "^(.+?) could not be stopped: (.+?)$",
+      "replace": "Impossible d'arrêter $1 : $2",
+      "hint": "could not be stopped:"
+    },
+    {
+      "source": "^(.+?) demoted$",
+      "replace": "$1 rétrogradé",
+      "hint": "demoted"
+    },
+    {
+      "source": "^(.+?) excluded$",
+      "replace": "$1 exclu",
+      "hint": "excluded"
+    },
+    {
+      "source": "^(.+?) is no longer available\\. Runs use (.+?) instead\\.$",
+      "replace": "$1 n'est plus disponible. Les exécutions utilisent $2 à la place.",
+      "hint": "is no longer available. Runs use"
+    },
+    {
+      "source": "^(.+?) limit$",
+      "replace": "Limite $1",
+      "hint": "limit"
+    },
+    {
+      "source": "^(.+?) more$",
+      "replace": "$1 de plus",
+      "hint": "more"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) pinned (\\d+(?:\\.\\d+)?)$",
+      "replace": "$1 / $2 épinglé(s)",
+      "hint": "pinned"
+    },
+    {
+      "source": "^(.+?) refused to connect\\.$",
+      "replace": "$1 a refusé la connexion.",
+      "hint": "refused to connect."
+    },
+    {
+      "source": "^(.+?) says$",
+      "replace": "$1 indique",
+      "hint": "says"
+    },
+    {
+      "source": "^(.+?) setting$",
+      "replace": "Paramètre $1",
+      "hint": "setting"
+    },
+    {
+      "source": "^(.+?) skipped$",
+      "replace": "$1 ignoré",
+      "hint": "skipped"
+    },
+    {
+      "source": "^(.+?) tasks? running$",
+      "replace": "$1 tâche(s) en cours",
+      "hint": "running"
+    },
+    {
+      "source": "^(\\d+(?:\\.\\d+)?) unresolved$",
+      "replace": "$1 non résolu(s)",
+      "hint": "unresolved"
+    },
+    {
+      "source": "^(.+?) wants to connect to (.+?)$",
+      "replace": "$1 souhaite se connecter à $2",
+      "hint": "wants to connect to"
+    },
+    {
+      "source": "^(.+?) (.+?) changed$",
+      "replace": "$1 $2 modifié",
+      "hint": "changed"
+    },
+    {
+      "source": "^(.+?) will be removed from Antigravity on (.+?)\\.$",
+      "replace": "$1 sera retiré d'Antigravity le $2.",
+      "hint": "will be removed from Antigravity"
+    },
+    {
+      "source": "^(.+?) is being removed from Antigravity on (.+?)\\.$",
+      "replace": "$1 est en cours de retrait d'Antigravity le $2.",
+      "hint": "being removed from Antigravity"
+    },
+    {
+      "source": "^(.+?) will be removed on (.+?)\\.$",
+      "replace": "$1 sera retiré le $2.",
+      "hint": "will be removed on"
+    },
+    {
+      "source": "^(.+?) will be deprecated on (.+?)\\.$",
+      "replace": "$1 sera obsolète le $2.",
+      "hint": "will be deprecated on"
+    },
+    {
+      "source": "^(.+?) is being deprecated on (.+?)\\.$",
+      "replace": "$1 est en cours d'obsolescence le $2.",
+      "hint": "is being deprecated on"
+    },
+    {
+      "source": "^(.+?) will be retired on (.+?)\\.$",
+      "replace": "$1 sera retiré du service le $2.",
+      "hint": "will be retired on"
+    },
+    {
+      "source": "^(.+?) is leaving Antigravity on (.+?)\\.$",
+      "replace": "$1 quittera Antigravity le $2.",
+      "hint": "is leaving Antigravity on"
+    },
+    {
+      "source": "^(.+?) will no longer be available after (.+?)\\.$",
+      "replace": "$1 ne sera plus disponible après le $2.",
+      "hint": "no longer be available after"
+    },
+    {
+      "source": "^(.+?) will no longer be available on (.+?)\\.$",
+      "replace": "$1 ne sera plus disponible à compter du $2.",
+      "hint": "no longer be available on"
+    },
+    {
+      "source": "^(.+?) is no longer supported\\.$",
+      "replace": "$1 n'est plus pris en charge.",
+      "hint": "is no longer supported."
+    },
+    {
+      "source": "^This model will be removed from Antigravity on (.+?)\\.$",
+      "replace": "Ce modèle sera retiré d'Antigravity le $1.",
+      "hint": "This model will be removed from"
+    },
+    {
+      "source": "^This model will be deprecated on (.+?)\\.$",
+      "replace": "Ce modèle sera obsolète le $1.",
+      "hint": "This model will be deprecated on"
+    },
+    {
+      "source": "^Try (.+?) instead\\.$",
+      "replace": "Essayez $1 à la place.",
+      "hint": "instead."
+    },
+    {
+      "source": "^Switch to (.+?) instead\\.$",
+      "replace": "Passez plutôt à $1.",
+      "hint": "Switch to"
+    },
+    {
+      "source": "^Use (.+?) instead\\.$",
+      "replace": "Utilisez $1 à la place.",
+      "hint": "instead."
+    },
+    {
+      "source": "^ABFS workspace (.+?) created and selected\\.$",
+      "replace": "Espace de travail ABFS $1 créé et sélectionné.",
+      "hint": "created and selected."
+    },
+    {
+      "source": "^Automatically create a new (.+?) workspace when the conversation starts$",
+      "replace": "Créer automatiquement un nouvel espace de travail $1 au début de la conversation",
+      "hint": "workspace when the conversation "
+    },
+    {
+      "source": "^Creating ABFS workspace (.+?)\\.\\.\\.$",
+      "replace": "Création de l'espace de travail ABFS $1...",
+      "hint": "Creating ABFS workspace"
+    },
+    {
+      "source": "^Creating workspace \"(.+?)\"\\.\\.\\.$",
+      "replace": "Création de l'espace de travail « $1 »...",
+      "hint": "Creating workspace \""
+    },
+    {
+      "source": "^Delete workspace (.+?)$",
+      "replace": "Supprimer l'espace de travail $1",
+      "hint": "Delete workspace"
+    },
+    {
+      "source": "^Deleted workspace (.+?)$",
+      "replace": "Espace de travail $1 supprimé",
+      "hint": "Deleted workspace"
+    },
+    {
+      "source": "^Failed to create workspace: (.+?)$",
+      "replace": "Échec de la création de l'espace de travail : $1",
+      "hint": "Failed to create workspace:"
+    },
+    {
+      "source": "^Failed to select workspace: (.+?)$",
+      "replace": "Échec de la sélection de l'espace de travail : $1",
+      "hint": "Failed to select workspace:"
+    },
+    {
+      "source": "^Parent workspace not found for battle (.+?)$",
+      "replace": "Espace de travail parent introuvable pour le combat $1",
+      "hint": "Parent workspace not found for b"
+    },
+    {
+      "source": "^Remount workspace (.+?)$",
+      "replace": "Remonter l'espace de travail $1",
+      "hint": "Remount workspace"
+    },
+    {
+      "source": "^Remounted workspace (.+?)$",
+      "replace": "Espace de travail $1 remonté",
+      "hint": "Remounted workspace"
+    },
+    {
+      "source": "^Resume the conversation to start its workspace again, then start the server on port (.+?) and retry\\.$",
+      "replace": "Reprenez la conversation pour redémarrer son espace de travail, puis lancez le serveur sur le port $1 et réessayez.",
+      "hint": "Resume the conversation to start"
+    },
+    {
+      "source": "^Total Active Workspace Windows: (.+?)$",
+      "replace": "Nombre total de fenêtres d'espace de travail actives : $1",
+      "hint": "Total Active Workspace Windows:"
+    },
+    {
+      "source": "^Unmount workspace (.+?)$",
+      "replace": "Démonter l'espace de travail $1",
+      "hint": "Unmount workspace"
+    },
+    {
+      "source": "^Unmounted workspace (.+?)$",
+      "replace": "Espace de travail $1 démonté",
+      "hint": "Unmounted workspace"
+    },
+    {
+      "source": "^Workspace URI not found for battle arm (.+?)$",
+      "replace": "URI d'espace de travail introuvable pour la branche de combat $1",
+      "hint": "Workspace URI not found for batt"
+    },
+    {
+      "source": "^(.+?)\\. Starting in local workspace\\.$",
+      "replace": "$1. Démarrage dans l'espace de travail local.",
+      "hint": ". Starting in local workspace."
+    },
+    {
+      "source": "^Failed to open workspace: (.+?)$",
+      "replace": "Échec de l'ouverture de l'espace de travail : $1",
+      "hint": "Failed to open workspace:"
+    },
+    {
+      "source": "^Storage: Workspace \\(path: (.+?)\\)$",
+      "replace": "Stockage : Espace de travail (chemin : $1)",
+      "hint": "Storage: Workspace (path:"
+    },
+    {
+      "source": "^Yes, and always allow '(.+?)' in this workspace$",
+      "replace": "Oui, et toujours autoriser « $1 » dans cet espace de travail",
+      "hint": "Yes, and always allow '"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps$",
+      "replace": "$1/$2 étapes",
+      "hint": "steps"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps · (\\d+) failed$",
+      "replace": "$1/$2 étapes · $3 en échec",
+      "hint": "steps ·"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps · (\\d+) skipped$",
+      "replace": "$1/$2 étapes · $3 ignorée(s)",
+      "hint": "steps ·"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps · (\\d+) failed · (\\d+) skipped$",
+      "replace": "$1/$2 étapes · $3 en échec · $4 ignorée(s)",
+      "hint": "steps ·"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps\\. Show plan$",
+      "replace": "$1/$2 étapes. Afficher le plan",
+      "hint": "steps. Show plan"
+    },
+    {
+      "source": "^(\\d+)/(\\d+) steps\\. Hide plan$",
+      "replace": "$1/$2 étapes. Masquer le plan",
+      "hint": "steps. Hide plan"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:w|wk|wks|week|weeks) ago$",
+      "flags": "i",
+      "replace": "il y a $1 sem.",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:mo|mos|month|months) ago$",
+      "flags": "i",
+      "replace": "il y a $1 mois",
+      "hint": "ago"
+    },
+    {
+      "source": "^(\\d+)\\s*(?:y|yr|yrs|year|years) ago$",
+      "flags": "i",
+      "replace": "il y a $1 an(s)",
+      "hint": "ago"
+    },
+    {
+      "source": "^(.+?) \\(single edit\\)$",
+      "replace": "$1 (modification unique)",
+      "hint": "(single edit)"
+    },
+    {
+      "source": "^(.+?) \\(uncommitted\\)$",
+      "replace": "$1 (non validé)",
+      "hint": "(uncommitted)"
+    },
+    {
+      "source": "^(.+?) \\(staged\\)$",
+      "replace": "$1 (indexé)",
+      "hint": "(staged)"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. Applies to /btw and messages sent after this turn$",
+      "replace": "Sélectionner un modèle, actuel : $1. S'applique à /btw et aux messages envoyés après ce tour",
+      "hint": "Applies to /btw"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. Applies to messages sent after this turn$",
+      "replace": "Sélectionner un modèle, actuel : $1. S'applique aux messages envoyés après ce tour",
+      "hint": "Applies to messages sent after"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. (.+?)$",
+      "replace": "Sélectionner un modèle, actuel : $1. $2",
+      "hint": "Select model, current:"
+    },
+    {
+      "source": "^Agent needs permission to act on (.+?)$",
+      "replace": "L'agent a besoin d'une autorisation pour agir sur $1",
+      "hint": "Agent needs permission to act on"
+    },
+    {
+      "source": "^Agent needs permission to execute JavaScript on (.+?)$",
+      "replace": "L'agent a besoin d'une autorisation pour exécuter JavaScript sur $1",
+      "hint": "Agent needs permission to execut"
+    },
+    {
+      "source": "^Agent permissions preset selector, current: (.+?)$",
+      "replace": "Sélecteur de préréglage d'autorisations d'agent, actuel : $1",
+      "hint": "Agent permissions preset selecto"
+    },
+    {
+      "source": "^Agent permissions preset: (.+?), (.+?)$",
+      "replace": "Préréglage d'autorisations d'agent : $1, $2",
+      "hint": "Agent permissions preset:"
+    },
+    {
+      "source": "^Agent: (.+?)$",
+      "replace": "Agent : $1",
+      "hint": "Agent:"
+    },
+    {
+      "source": "^Agents created by this (.+?) run in a dedicated (.+?) with its own permissions\\. You can change the permissions in the (.+?) settings page\\.$",
+      "replace": "Les agents créés par ce $1 s'exécutent dans un $2 dédié avec ses propres autorisations. Vous pouvez les modifier sur la page des paramètres $3.",
+      "hint": "with its own permissions. You ca"
+    },
+    {
+      "source": "^Cancel Questionnaire and Stop the Agent \\((.+?)\\)$",
+      "replace": "Annuler le questionnaire et arrêter l'agent ($1)",
+      "hint": "Cancel Questionnaire and Stop th"
+    },
+    {
+      "source": "^Connect an account for (.+?) so the agent can run automations\\.$",
+      "replace": "Connectez un compte pour $1 afin que l'agent puisse exécuter des automatisations.",
+      "hint": "so the agent can run automations"
+    },
+    {
+      "source": "^Error updating agent: (.+?)$",
+      "replace": "Erreur lors de la mise à jour de l'agent : $1",
+      "hint": "Error updating agent:"
+    },
+    {
+      "source": "^Failed to remove agent: (.+?)$",
+      "replace": "Échec de la suppression de l'agent : $1",
+      "hint": "Failed to remove agent:"
+    },
+    {
+      "source": "^Failed to update agent: (.+?)$",
+      "replace": "Échec de la mise à jour de l'agent : $1",
+      "hint": "Failed to update agent:"
+    },
+    {
+      "source": "^Fix with Agent: (.+?)$",
+      "replace": "Corriger avec l'agent : $1",
+      "hint": "Fix with Agent:"
+    },
+    {
+      "source": "^Manage (.+?) (.+?), agent settings, and permissions\\.$",
+      "replace": "Gérer $1 $2, les paramètres d'agent et les autorisations.",
+      "hint": ", agent settings, and permission"
+    },
+    {
+      "source": "^No server is listening on port (.+?) inside the remote workspace\\. Start it, or ask the agent to, then retry\\.$",
+      "replace": "Aucun serveur n'écoute sur le port $1 dans l'espace de travail distant. Démarrez-le ou demandez à l'agent de le faire, puis réessayez.",
+      "hint": "inside the remote workspace. Sta"
+    },
+    {
+      "source": "^Terminal \\((.+?)\\)$",
+      "replace": "Terminal ($1)",
+      "hint": "Terminal ("
+    },
+    {
+      "source": "^This window's agents, files, and terminals are on (.+?)\\.$",
+      "replace": "Les agents, fichiers et terminaux de cette fenêtre se trouvent sur $1.",
+      "hint": "This window's agents, files, and"
+    },
+    {
+      "source": "^Unnamed Agent (.+?)$",
+      "replace": "Agent sans nom $1",
+      "hint": "Unnamed Agent"
+    },
+    {
+      "source": "^Where the agent runs, current: (.+?)$",
+      "replace": "Emplacement d'exécution de l'agent, actuel : $1",
+      "hint": "Where the agent runs, current:"
+    },
+    {
+      "source": "^Worktree from (.+?)$",
+      "replace": "Arbre de travail depuis $1",
+      "hint": "Worktree from"
+    },
+    {
+      "source": "^(.+?) Sends after agent finishes working\\. Actions available: Send Now, Edit, Delete\\.$",
+      "replace": "$1 Envoi une fois que l'agent a terminé. Actions disponibles : Envoyer maintenant, Modifier, Supprimer.",
+      "hint": "Sends after agent finishes worki"
+    },
+    {
+      "source": "^(.+?) terminal:$",
+      "replace": "Terminal $1 :",
+      "hint": "terminal:"
+    },
+    {
+      "source": "^Agent settings and permissions for conversations outside of (.+?)\\.$",
+      "replace": "Paramètres et autorisations d'agent pour les conversations hors de $1.",
+      "hint": "Agent settings and permissions f"
+    },
+    {
+      "source": "^Checkpoint #(.+?)$",
+      "replace": "Point de contrôle #$1",
+      "hint": "Checkpoint #"
+    },
+    {
+      "source": "^Where the agent runs, current: (.+?) \\((.+?)\\)$",
+      "replace": "Emplacement d'exécution de l'agent, actuel : $1 ($2)",
+      "hint": "Where the agent runs, current:"
+    },
+    {
+      "source": "^(.+?) \\(all agent edits\\)$",
+      "replace": "$1 (toutes les modifications de l'agent)",
+      "hint": "(all agent edits)"
+    }
+  ],
+  "light": [
+    {
+      "source": "^(\\d+) plugins? installed$",
+      "flags": "i",
+      "replace": "$1 Plugins installées",
+      "hint": "installed"
+    },
+    {
+      "source": "^(\\d+) skills? enabled$",
+      "flags": "i",
+      "replace": "$1 Skills activées",
+      "hint": "enabled"
+    },
+    {
+      "source": "^(\\d+) subagents? running$",
+      "flags": "i",
+      "replace": "$1 Subagents en cours",
+      "hint": "subagent"
+    },
+    {
+      "source": "^(\\d+) MCP servers? connected$",
+      "flags": "i",
+      "replace": "$1 MCP Servers connectés",
+      "hint": "MCP"
+    },
+    {
+      "source": "^Account this MCP server uses: (.+?)$",
+      "replace": "Compte utilisé par ce MCP Server : $1",
+      "hint": "Account this MCP server uses:"
+    },
+    {
+      "source": "^Added MCP server \"(.+?)\", but it failed to start: (.+?)$",
+      "replace": "MCP Server « $1 » ajouté, mais échec du démarrage : $2",
+      "hint": "\", but it failed to start:"
+    },
+    {
+      "source": "^Adding plugins from (.+?)$",
+      "replace": "Ajout d'Plugins depuis $1",
+      "hint": "Adding plugins from"
+    },
+    {
+      "source": "^All (\\d+(?:\\.\\d+)?) will be revoked\\. The plugin will ask before doing this again\\.$",
+      "replace": "Tous les $1 seront révoqués. L'Plugin demandera avant de recommencer.",
+      "hint": "will be revoked. The plugin will"
+    },
+    {
+      "source": "^Amended commit on (.+?)\\.$",
+      "replace": "Commit amendée sur $1.",
+      "hint": "Amended commit on"
+    },
+    {
+      "source": "^Are you sure you want to delete the hook \"(.+?)\"\\?$",
+      "replace": "Voulez-vous vraiment supprimer le Hook « $1 » ?",
+      "hint": "Are you sure you want to delete "
+    },
+    {
+      "source": "^Artifact image (.+?)$",
+      "replace": "Image d'Artifact $1",
+      "hint": "Artifact image"
+    },
+    {
+      "source": "^Artifacts \\((\\d+(?:\\.\\d+)?) Files for Conversation\\)$",
+      "replace": "Artifacts ($1 fichiers pour la conversation)",
+      "hint": "Files for Conversation)"
+    },
+    {
+      "source": "^Branch (.+?) no longer exists$",
+      "replace": "La Branch $1 n'existe plus",
+      "hint": "no longer exists"
+    },
+    {
+      "source": "^Build with (.+?) Plugins$",
+      "replace": "Construire avec $1 Plugins",
+      "hint": "Build with"
+    },
+    {
+      "source": "^Changes the base URL for marketplace search results\\. You must restart (.+?) to use the new marketplace after changing this value\\.$",
+      "replace": "Modifie l'URL de base des résultats de la Marketplace. Vous devez redémarrer $1 après modification pour utiliser la nouvelle Marketplace.",
+      "hint": "Changes the base URL for marketp"
+    },
+    {
+      "source": "^Changes the base URL on each extension page\\. You must restart (.+?) to use the new marketplace after changing this value\\.$",
+      "replace": "Modifie l'URL de base sur chaque page d'Plugin. Vous devez redémarrer $1 après modification pour utiliser la nouvelle Marketplace.",
+      "hint": "Changes the base URL on each ext"
+    },
+    {
+      "source": "^Commit (.+?)$",
+      "replace": "Commit $1",
+      "hint": "Commit"
+    },
+    {
+      "source": "^Couldn't save base branch: (.+?)$",
+      "replace": "Impossible d'enregistrer la Branch de base : $1",
+      "hint": "Couldn't save base branch:"
+    },
+    {
+      "source": "^Error deleting MCP server: (.+?)$",
+      "replace": "Erreur lors de la suppression du MCP Server : $1",
+      "hint": "Error deleting MCP server:"
+    },
+    {
+      "source": "^Error disconnecting MCP server: (.+?)$",
+      "replace": "Erreur lors de la déconnexion du MCP Server : $1",
+      "hint": "Error disconnecting MCP server:"
+    },
+    {
+      "source": "^Error installing MCP server: (.+?)$",
+      "replace": "Erreur lors de l'installation du MCP Server : $1",
+      "hint": "Error installing MCP server:"
+    },
+    {
+      "source": "^Error refreshing MCP servers: (.+?)$",
+      "replace": "Erreur lors de l'actualisation des MCP Servers : $1",
+      "hint": "Error refreshing MCP servers:"
+    },
+    {
+      "source": "^Error restarting MCP server: (.+?)$",
+      "replace": "Erreur lors du redémarrage du MCP Server : $1",
+      "hint": "Error restarting MCP server:"
+    },
+    {
+      "source": "^Error signing in to MCP server: (.+?)$",
+      "replace": "Erreur lors de la connexion au MCP Server : $1",
+      "hint": "Error signing in to MCP server:"
+    },
+    {
+      "source": "^Error toggling MCP server: (.+?)$",
+      "replace": "Erreur lors du basculement du MCP Server : $1",
+      "hint": "Error toggling MCP server:"
+    },
+    {
+      "source": "^Exceeded the customization token budget \\((.+?) tokens\\) and was excluded from context\\.$",
+      "replace": "Budget de tokens de personnalisation dépassé ($1 tokens) et exclu du Context.",
+      "hint": "Exceeded the customization token"
+    },
+    {
+      "source": "^Exceeded the rules token budget\\. Full rule content \\((.+?) tokens\\) was replaced with a lightweight file-path pointer in context\\.$",
+      "replace": "Budget de tokens des Rules dépassé. Le contenu complet de la Rule ($1 tokens) a été remplacé par un pointeur de chemin léger dans le Context.",
+      "hint": "tokens) was replaced with a ligh"
+    },
+    {
+      "source": "^Failed to load skills: (.+?)$",
+      "replace": "Échec du chargement des Skills : $1",
+      "hint": "Failed to load skills:"
+    },
+    {
+      "source": "^Failed to remove plugin: (.+?)$",
+      "replace": "Échec de la suppression de l'Plugin : $1",
+      "hint": "Failed to remove plugin:"
+    },
+    {
+      "source": "^Failed to save project branch: (.+?)$",
+      "replace": "Échec de l'enregistrement de la Branch du projet : $1",
+      "hint": "Failed to save project branch:"
+    },
+    {
+      "source": "^Failed to scan skills config file: (.+?)$",
+      "replace": "Échec de l'analyse du fichier de configuration des Skills : $1",
+      "hint": "Failed to scan skills config fil"
+    },
+    {
+      "source": "^Failed to toggle plugin: (.+?)$",
+      "replace": "Échec du basculement de l'Plugin : $1",
+      "hint": "Failed to toggle plugin:"
+    },
+    {
+      "source": "^Failed to (.+?) skill paths:$",
+      "replace": "Échec de $1 des chemins de Skills :",
+      "hint": "skill paths:"
+    },
+    {
+      "source": "^Filter skills and rules: (.+?)$",
+      "replace": "Filtrer les Skills et Rules : $1",
+      "hint": "Filter skills and rules:"
+    },
+    {
+      "source": "^For (.+?), this setting is disabled\\. This means (.+?) does not collect any of your prompts, content, or model responses, but will still collect general usage patterns \\(e\\.g\\., feature adoption, active user counts\\)\\.$",
+      "replace": "Pour $1, ce paramètre est désactivé. Cela signifie que $2 ne collecte aucune de vos Prompts, aucun contenu ni réponse de modèle, mais continue de collecter des tendances générales d'utilisation (ex. adoption de fonctionnalités, nombre d'utilisateurs actifs).",
+      "hint": "does not collect any of your pro"
+    },
+    {
+      "source": "^GitHub token validation failed \\(status (.+?)\\)\\.$",
+      "replace": "Échec de la Commit du token GitHub (statut $1).",
+      "hint": "GitHub token validation failed ("
+    },
+    {
+      "source": "^Give each Best of N fork a full clone of your workspace, including its local commit history\\. Choosing a winner then gives your workspace that fork's state, so the commits it made are kept\\. Forks take longer to create than the default CitC clone\\.(.+?)$",
+      "replace": "Donnez à chaque duplication Best of N un clone complet de votre espace de travail, y compris son historique local de Commits. Le choix du gagnant applique ensuite son état et conserve ses Commits. Plus long que le clone CitC par défaut. $1",
+      "hint": "Give each Best of N fork a full "
+    },
+    {
+      "source": "^In addition to the custom skills folder, (.+?) will search the following paths in order to find skills for the agent\\.(.+?)$",
+      "replace": "En plus du dossier de Skills personnalisé, $1 recherche dans les chemins suivants dans l'ordre pour trouver des Skills pour l'agent. $2",
+      "hint": "will search the following paths "
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have a remote configuration\\.$",
+      "replace": "Le MCP Server « $1 » n'a pas de configuration distante.",
+      "hint": "\" does not have a remote configu"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have a supported configuration\\.$",
+      "replace": "Le MCP Server « $1 » n'a pas de configuration prise en charge.",
+      "hint": "\" does not have a supported conf"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have any installation commands\\.$",
+      "replace": "Le MCP Server « $1 » n'a aucune commande d'installation.",
+      "hint": "\" does not have any installation"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" not found in the store\\.$",
+      "replace": "MCP Server « $1 » introuvable dans la boutique.",
+      "hint": "\" not found in the store."
+    },
+    {
+      "source": "^Managed by the (.+?) plugin$",
+      "replace": "Géré par l'Plugin $1",
+      "hint": "Managed by the"
+    },
+    {
+      "source": "^Missing Worker RPC batch result for (.+?) \\(id=(.+?)\\)$",
+      "replace": "Résultat de lot RPC du Worker manquant pour $1 (id=$2)",
+      "hint": "Missing Worker RPC batch result "
+    },
+    {
+      "source": "^No MCP servers found for \"(.+?)\"$",
+      "replace": "Aucun MCP Server trouvé pour « $1 »",
+      "hint": "No MCP servers found for \""
+    },
+    {
+      "source": "^No installation command found for MCP server \"(.+?)\"\\.$",
+      "replace": "Aucune commande d'installation trouvée pour le MCP Server « $1 ».",
+      "hint": "No installation command found fo"
+    },
+    {
+      "source": "^No plugins found for \"(.+?)\"\\.$",
+      "replace": "Aucune Plugin trouvée pour « $1 ».",
+      "hint": "No plugins found for \""
+    },
+    {
+      "source": "^Open Subagent: (.+?)$",
+      "replace": "Ouvrir le Subagent : $1",
+      "hint": "Open Subagent:"
+    },
+    {
+      "source": "^Open the (.+?) plugin$",
+      "replace": "Ouvrir l'Plugin $1",
+      "hint": "Open the"
+    },
+    {
+      "source": "^Open (.+?) skill$",
+      "replace": "Ouvrir la Skill $1",
+      "hint": "skill"
+    },
+    {
+      "source": "^Plugins in (.+?)$",
+      "replace": "Plugins dans $1",
+      "hint": "Plugins in"
+    },
+    {
+      "source": "^Proceed with implementation plan and (\\d+(?:\\.\\d+)?) comments?$",
+      "replace": "Poursuivre avec le Implementation Plan et $1 commentaire(s)",
+      "hint": "Proceed with implementation plan"
+    },
+    {
+      "source": "^Push (.+?) commits? to (.+?)$",
+      "replace": "Pousser $1 Commits vers $2",
+      "hint": "commit"
+    },
+    {
+      "source": "^Pushed (.+?) commits? to (.+?)\\.$",
+      "replace": "$1 Commits poussées vers $2.",
+      "hint": "Pushed"
+    },
+    {
+      "source": "^Remove context from (.+?)$",
+      "replace": "Supprimer le Context de $1",
+      "hint": "Remove context from"
+    },
+    {
+      "source": "^Rule (.+?)$",
+      "replace": "Rule $1",
+      "hint": "Rule"
+    },
+    {
+      "source": "^Search for \"(.+?)\" in the Marketplace$",
+      "replace": "Rechercher « $1 » dans la Marketplace",
+      "hint": "\" in the Marketplace"
+    },
+    {
+      "source": "^Show (\\d+(?:\\.\\d+)?) more subagents?$",
+      "replace": "Afficher $1 Subagents supplémentaires",
+      "hint": "more subagent"
+    },
+    {
+      "source": "^Showing latest (\\d+(?:\\.\\d+)?) browser steps$",
+      "replace": "Affichage des $1 dernières étapes du Browser",
+      "hint": "Showing latest"
+    },
+    {
+      "source": "^Specifies Agent's behavior when asking for review on artifacts, which are documents it creates to enable a richer conversation experience\\.\n(.+?)$",
+      "replace": "Définit le comportement de l'agent lorsqu'il demande la vérification d'Artifacts, documents créés pour enrichir la conversation.\\n$1",
+      "hint": "Specifies Agent's behavior when "
+    },
+    {
+      "source": "^Telemetry is turned off for your account\\. This means (.+?) does not collect any of your prompts, content, or model responses, but will still collect general usage patterns \\(e\\.g\\., feature adoption, active user counts\\)\\.$",
+      "replace": "La Telemetry est désactivée pour votre compte. Cela signifie que $1 ne collecte aucune de vos Prompts, aucun contenu ni réponse de modèle, mais continue de collecter des tendances générales d'utilisation (ex. adoption de fonctionnalités, utilisateurs actifs).",
+      "hint": "does not collect any of your pro"
+    },
+    {
+      "source": "^The MCP server \"(.+?)\"(.+?) failed to start\\.$",
+      "replace": "Le MCP Server « $1 »$2 n'a pas pu démarrer.",
+      "hint": "The MCP server \""
+    },
+    {
+      "source": "^The agent asks for permission before executing commands matched by a deny list entry\\.(.+?) The deny list follows the same matching rules as the allow list and takes precedence over the allow list\\.$",
+      "replace": "L'agent demande l'autorisation avant d'exécuter les commandes de la Denylist. $1 La Denylist suit les mêmes Rules que la Allowlist et prévaut sur elle.",
+      "hint": "The deny list follows the same m"
+    },
+    {
+      "source": "^The user signed in to the plugin \"(.+?)\" \\(catalog id: (.+?)\\) from the card in your last reply\\. Retry the task with it\\.$",
+      "replace": "L'utilisateur s'est connecté à l'Plugin « $1 » (ID catalogue : $2) depuis la carte de votre dernière réponse. Réessayez la tâche avec celle-ci.",
+      "hint": ") from the card in your last rep"
+    },
+    {
+      "source": "^The (.+?) MCP server requires configuration parameters before it can be started\\.$",
+      "replace": "Le MCP Server $1 requiert des paramètres de configuration avant de pouvoir démarrer.",
+      "hint": "MCP server requires configuratio"
+    },
+    {
+      "source": "^These plugins in (.+?) may have looser code review\\. Review their contents before adding the bundle\\.$",
+      "replace": "Ces Plugins dans $1 peuvent faire l'objet d'une Code-Review moins stricte. Vérifiez leur contenu avant d'ajouter le lot.",
+      "hint": "may have looser code review. Rev"
+    },
+    {
+      "source": "^This plugin in (.+?) may have looser code review\\. Review its contents before adding the bundle\\.$",
+      "replace": "Cette Plugin dans $1 peut faire l'objet d'une Code-Review moins stricte. Vérifiez son contenu avant d'ajouter le lot.",
+      "hint": "may have looser code review. Rev"
+    },
+    {
+      "source": "^Typed '(.+?)' in Browser$",
+      "replace": "« $1 » saisi dans le Browser",
+      "hint": "' in Browser"
+    },
+    {
+      "source": "^Unnamed skill (.+?)$",
+      "replace": "Skill sans nom $1",
+      "hint": "Unnamed skill"
+    },
+    {
+      "source": "^Using browser \\((.+?)s\\)$",
+      "replace": "Utilisation du Browser ($1 s)",
+      "hint": "Using browser ("
+    },
+    {
+      "source": "^Using browser · (.+?)$",
+      "replace": "Utilisation du Browser · $1",
+      "hint": "Using browser ·"
+    },
+    {
+      "source": "^View Diff for (.+?)$",
+      "replace": "Afficher la Diff pour $1",
+      "hint": "View Diff for"
+    },
+    {
+      "source": "^Worker sandbox initialization failed: (.+?)$",
+      "replace": "Échec de l'initialisation du Sandbox du Worker : $1",
+      "hint": "Worker sandbox initialization fa"
+    },
+    {
+      "source": "^merged branch (.+?) into (.+?)$",
+      "replace": "Branch $1 fusionnée dans $2",
+      "hint": "merged branch"
+    },
+    {
+      "source": "^the (.+?) plugin$",
+      "replace": "l'Plugin $1",
+      "hint": "plugin"
+    },
+    {
+      "source": "^(.+?) MCP servers failed to start$",
+      "replace": "$1 MCP Servers n'ont pas pu démarrer",
+      "hint": "MCP servers failed to start"
+    },
+    {
+      "source": "^(.+?) On empty prompt, sends next in queue$",
+      "replace": "$1 Si l'Prompt est vide, envoie l'élément suivant en file d'attente",
+      "hint": "On empty prompt, sends next in q"
+    },
+    {
+      "source": "^(.+?) Rule$",
+      "replace": "Rule $1",
+      "hint": "Rule"
+    },
+    {
+      "source": "^(.+?) Rule Lookahead$",
+      "replace": "Prélecture de Rule $1",
+      "hint": "Rule Lookahead"
+    },
+    {
+      "source": "^(.+?) browser steps$",
+      "replace": "$1 étapes du Browser",
+      "hint": "browser steps"
+    },
+    {
+      "source": "^(.+?) subagents$",
+      "replace": "$1 Subagents",
+      "hint": "subagents"
+    },
+    {
+      "source": "^(.+?) · Context window$",
+      "replace": "$1 · Fenêtre de Context",
+      "hint": "· Context window"
+    },
+    {
+      "source": "^(.+?)\\. This commit is already pushed; amending will require a force push\\.$",
+      "replace": "$1. Cette Commit a déjà été poussée ; l'amender nécessitera un push forcé.",
+      "hint": ". This commit is already pushed;"
+    },
+    {
+      "source": "^(.+?): (.+?) tokens$",
+      "replace": "$1 : $2 tokens",
+      "hint": "tokens"
+    },
+    {
+      "source": "^All tools in this MCP server \\((.+?) tokens\\) exceeded the customization budget and were excluded from context\\.$",
+      "replace": "Tous les outils de ce MCP Server ($1 tokens) dépassaient le budget de personnalisation et ont été exclus du Context.",
+      "hint": "tokens) exceeded the customizati"
+    },
+    {
+      "source": "^Approved · Code-Review \\+(.+?)$",
+      "replace": "Approuvé · Code-Review +$1",
+      "hint": "Approved · Code-Review +"
+    },
+    {
+      "source": "^Browser task: \"(.+?)\"$",
+      "replace": "Tâche Browser : « $1 »",
+      "hint": "Browser task: \""
+    },
+    {
+      "source": "^Browser tools run on (.+?), the SSH host this window is connected to, and Chrome there isn't accepting remote debugging\\. Complete these steps on (.+?), not on this computer:$",
+      "replace": "Les outils Browser s'exécutent sur $1, l'hôte SSH connecté à cette fenêtre, où Chrome n'accepte pas le débogage distant. Effectuez ces étapes sur $2, et non sur cet ordinateur :",
+      "hint": ", the SSH host this window is co"
+    },
+    {
+      "source": "^Invoked subagent: (.+?)$",
+      "replace": "Subagent invoqué : $1",
+      "hint": "Invoked subagent:"
+    },
+    {
+      "source": "^MCP server (.+?) requires authentication$",
+      "replace": "Le MCP Server $1 requiert une authentification",
+      "hint": "requires authentication"
+    },
+    {
+      "source": "^MCP server (.+?) requires authentication: sign in to \"(.+?)\" in the Accounts section of plugin \"(.+?)\"$",
+      "replace": "Le MCP Server $1 requiert une authentification : connectez-vous à « $2 » dans la section Comptes de l'Plugin « $3 »",
+      "hint": "requires authentication: sign in"
+    },
+    {
+      "source": "^Open Subagent: (.+?) \\((.+?)\\)$",
+      "replace": "Ouvrir le Subagent : $1 ($2)",
+      "hint": "Open Subagent:"
+    },
+    {
+      "source": "^Opened browser: (.+?)$",
+      "replace": "Browser ouvert : $1",
+      "hint": "Opened browser:"
+    },
+    {
+      "source": "^Read URL: (.+?)$",
+      "replace": "URL lue : $1",
+      "hint": "Read URL:"
+    },
+    {
+      "source": "^Save rule to always allow (.+?)\\?$",
+      "replace": "Enregistrer une Rule pour toujours autoriser $1 ?",
+      "hint": "Save rule to always allow"
+    },
+    {
+      "source": "^Typing '(.+?)' in Browser$",
+      "replace": "Saisie de « $1 » dans le Browser",
+      "hint": "' in Browser"
+    },
+    {
+      "source": "^UI Plugin (.+?)$",
+      "replace": "Plugin d'interface $1",
+      "hint": "UI Plugin"
+    },
+    {
+      "source": "^Using browser · (.+?) \\((.+?)s\\)$",
+      "replace": "Utilisation du Browser · $1 ($2 s)",
+      "hint": "Using browser ·"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' globally$",
+      "replace": "Oui, enregistrer globalement la Rule pour « $1 »",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' in this conversation$",
+      "replace": "Oui, enregistrer la Rule pour « $1 » dans cette conversation",
+      "hint": "' in this conversation"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' in this workspace$",
+      "replace": "Oui, enregistrer la Rule pour « $1 » dans cet espace de travail",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' (.+?)$",
+      "replace": "Oui, enregistrer la Rule pour « $1 » ($2)",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule (.+?)$",
+      "replace": "Oui, enregistrer la Rule $1",
+      "hint": "Yes, save rule"
+    },
+    {
+      "source": "^(.+?) \\(branch changes\\)$",
+      "replace": "$1 (modifications de Branch)",
+      "hint": "(branch changes)"
+    }
+  ],
+  "deep": [
+    {
+      "source": "^(\\d+) plugins? installed$",
+      "flags": "i",
+      "replace": "$1 extensions installées",
+      "hint": "installed"
+    },
+    {
+      "source": "^(\\d+) skills? enabled$",
+      "flags": "i",
+      "replace": "$1 compétences activées",
+      "hint": "enabled"
+    },
+    {
+      "source": "^(\\d+) subagents? running$",
+      "flags": "i",
+      "replace": "$1 sous-agents en cours",
+      "hint": "subagent"
+    },
+    {
+      "source": "^(\\d+) MCP servers? connected$",
+      "flags": "i",
+      "replace": "$1 serveurs MCP connectés",
+      "hint": "MCP"
+    },
+    {
+      "source": "^Account this MCP server uses: (.+?)$",
+      "replace": "Compte utilisé par ce serveur MCP : $1",
+      "hint": "Account this MCP server uses:"
+    },
+    {
+      "source": "^Added MCP server \"(.+?)\", but it failed to start: (.+?)$",
+      "replace": "Serveur MCP « $1 » ajouté, mais échec du démarrage : $2",
+      "hint": "\", but it failed to start:"
+    },
+    {
+      "source": "^Adding plugins from (.+?)$",
+      "replace": "Ajout d'extensions depuis $1",
+      "hint": "Adding plugins from"
+    },
+    {
+      "source": "^All (\\d+(?:\\.\\d+)?) will be revoked\\. The plugin will ask before doing this again\\.$",
+      "replace": "Tous les $1 seront révoqués. L'extension demandera avant de recommencer.",
+      "hint": "will be revoked. The plugin will"
+    },
+    {
+      "source": "^Amended commit on (.+?)\\.$",
+      "replace": "Validation amendée sur $1.",
+      "hint": "Amended commit on"
+    },
+    {
+      "source": "^Are you sure you want to delete the hook \"(.+?)\"\\?$",
+      "replace": "Voulez-vous vraiment supprimer le crochet « $1 » ?",
+      "hint": "Are you sure you want to delete "
+    },
+    {
+      "source": "^Artifact image (.+?)$",
+      "replace": "Image d'artefact $1",
+      "hint": "Artifact image"
+    },
+    {
+      "source": "^Artifacts \\((\\d+(?:\\.\\d+)?) Files for Conversation\\)$",
+      "replace": "Artefacts ($1 fichiers pour la conversation)",
+      "hint": "Files for Conversation)"
+    },
+    {
+      "source": "^Branch (.+?) no longer exists$",
+      "replace": "La branche $1 n'existe plus",
+      "hint": "no longer exists"
+    },
+    {
+      "source": "^Build with (.+?) Plugins$",
+      "replace": "Construire avec $1 extensions",
+      "hint": "Build with"
+    },
+    {
+      "source": "^Changes the base URL for marketplace search results\\. You must restart (.+?) to use the new marketplace after changing this value\\.$",
+      "replace": "Modifie l'URL de base des résultats de la place de marché. Vous devez redémarrer $1 après modification pour utiliser la nouvelle place de marché.",
+      "hint": "Changes the base URL for marketp"
+    },
+    {
+      "source": "^Changes the base URL on each extension page\\. You must restart (.+?) to use the new marketplace after changing this value\\.$",
+      "replace": "Modifie l'URL de base sur chaque page d'extension. Vous devez redémarrer $1 après modification pour utiliser la nouvelle place de marché.",
+      "hint": "Changes the base URL on each ext"
+    },
+    {
+      "source": "^Commit (.+?)$",
+      "replace": "Validation $1",
+      "hint": "Commit"
+    },
+    {
+      "source": "^Couldn't save base branch: (.+?)$",
+      "replace": "Impossible d'enregistrer la branche de base : $1",
+      "hint": "Couldn't save base branch:"
+    },
+    {
+      "source": "^Error deleting MCP server: (.+?)$",
+      "replace": "Erreur lors de la suppression du serveur MCP : $1",
+      "hint": "Error deleting MCP server:"
+    },
+    {
+      "source": "^Error disconnecting MCP server: (.+?)$",
+      "replace": "Erreur lors de la déconnexion du serveur MCP : $1",
+      "hint": "Error disconnecting MCP server:"
+    },
+    {
+      "source": "^Error installing MCP server: (.+?)$",
+      "replace": "Erreur lors de l'installation du serveur MCP : $1",
+      "hint": "Error installing MCP server:"
+    },
+    {
+      "source": "^Error refreshing MCP servers: (.+?)$",
+      "replace": "Erreur lors de l'actualisation des serveurs MCP : $1",
+      "hint": "Error refreshing MCP servers:"
+    },
+    {
+      "source": "^Error restarting MCP server: (.+?)$",
+      "replace": "Erreur lors du redémarrage du serveur MCP : $1",
+      "hint": "Error restarting MCP server:"
+    },
+    {
+      "source": "^Error signing in to MCP server: (.+?)$",
+      "replace": "Erreur lors de la connexion au serveur MCP : $1",
+      "hint": "Error signing in to MCP server:"
+    },
+    {
+      "source": "^Error toggling MCP server: (.+?)$",
+      "replace": "Erreur lors du basculement du serveur MCP : $1",
+      "hint": "Error toggling MCP server:"
+    },
+    {
+      "source": "^Exceeded the customization token budget \\((.+?) tokens\\) and was excluded from context\\.$",
+      "replace": "Budget de jetons de personnalisation dépassé ($1 jetons) et exclu du contexte.",
+      "hint": "Exceeded the customization token"
+    },
+    {
+      "source": "^Exceeded the rules token budget\\. Full rule content \\((.+?) tokens\\) was replaced with a lightweight file-path pointer in context\\.$",
+      "replace": "Budget de jetons des règles dépassé. Le contenu complet de la règle ($1 jetons) a été remplacé par un pointeur de chemin léger dans le contexte.",
+      "hint": "tokens) was replaced with a ligh"
+    },
+    {
+      "source": "^Failed to load skills: (.+?)$",
+      "replace": "Échec du chargement des compétences : $1",
+      "hint": "Failed to load skills:"
+    },
+    {
+      "source": "^Failed to remove plugin: (.+?)$",
+      "replace": "Échec de la suppression de l'extension : $1",
+      "hint": "Failed to remove plugin:"
+    },
+    {
+      "source": "^Failed to save project branch: (.+?)$",
+      "replace": "Échec de l'enregistrement de la branche du projet : $1",
+      "hint": "Failed to save project branch:"
+    },
+    {
+      "source": "^Failed to scan skills config file: (.+?)$",
+      "replace": "Échec de l'analyse du fichier de configuration des compétences : $1",
+      "hint": "Failed to scan skills config fil"
+    },
+    {
+      "source": "^Failed to toggle plugin: (.+?)$",
+      "replace": "Échec du basculement de l'extension : $1",
+      "hint": "Failed to toggle plugin:"
+    },
+    {
+      "source": "^Failed to (.+?) skill paths:$",
+      "replace": "Échec de $1 des chemins de compétences :",
+      "hint": "skill paths:"
+    },
+    {
+      "source": "^Filter skills and rules: (.+?)$",
+      "replace": "Filtrer les compétences et règles : $1",
+      "hint": "Filter skills and rules:"
+    },
+    {
+      "source": "^For (.+?), this setting is disabled\\. This means (.+?) does not collect any of your prompts, content, or model responses, but will still collect general usage patterns \\(e\\.g\\., feature adoption, active user counts\\)\\.$",
+      "replace": "Pour $1, ce paramètre est désactivé. Cela signifie que $2 ne collecte aucune de vos invites, aucun contenu ni réponse de modèle, mais continue de collecter des tendances générales d'utilisation (ex. adoption de fonctionnalités, nombre d'utilisateurs actifs).",
+      "hint": "does not collect any of your pro"
+    },
+    {
+      "source": "^GitHub token validation failed \\(status (.+?)\\)\\.$",
+      "replace": "Échec de la validation du jeton GitHub (statut $1).",
+      "hint": "GitHub token validation failed ("
+    },
+    {
+      "source": "^Give each Best of N fork a full clone of your workspace, including its local commit history\\. Choosing a winner then gives your workspace that fork's state, so the commits it made are kept\\. Forks take longer to create than the default CitC clone\\.(.+?)$",
+      "replace": "Donnez à chaque duplication Best of N un clone complet de votre espace de travail, y compris son historique local de validations. Le choix du gagnant applique ensuite son état et conserve ses validations. Plus long que le clone CitC par défaut. $1",
+      "hint": "Give each Best of N fork a full "
+    },
+    {
+      "source": "^In addition to the custom skills folder, (.+?) will search the following paths in order to find skills for the agent\\.(.+?)$",
+      "replace": "En plus du dossier de compétences personnalisé, $1 recherche dans les chemins suivants dans l'ordre pour trouver des compétences pour l'agent. $2",
+      "hint": "will search the following paths "
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have a remote configuration\\.$",
+      "replace": "Le serveur MCP « $1 » n'a pas de configuration distante.",
+      "hint": "\" does not have a remote configu"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have a supported configuration\\.$",
+      "replace": "Le serveur MCP « $1 » n'a pas de configuration prise en charge.",
+      "hint": "\" does not have a supported conf"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" does not have any installation commands\\.$",
+      "replace": "Le serveur MCP « $1 » n'a aucune commande d'installation.",
+      "hint": "\" does not have any installation"
+    },
+    {
+      "source": "^MCP server \"(.+?)\" not found in the store\\.$",
+      "replace": "Serveur MCP « $1 » introuvable dans la boutique.",
+      "hint": "\" not found in the store."
+    },
+    {
+      "source": "^Managed by the (.+?) plugin$",
+      "replace": "Géré par l'extension $1",
+      "hint": "Managed by the"
+    },
+    {
+      "source": "^Missing Worker RPC batch result for (.+?) \\(id=(.+?)\\)$",
+      "replace": "Résultat de lot RPC du travailleur manquant pour $1 (id=$2)",
+      "hint": "Missing Worker RPC batch result "
+    },
+    {
+      "source": "^No MCP servers found for \"(.+?)\"$",
+      "replace": "Aucun serveur MCP trouvé pour « $1 »",
+      "hint": "No MCP servers found for \""
+    },
+    {
+      "source": "^No installation command found for MCP server \"(.+?)\"\\.$",
+      "replace": "Aucune commande d'installation trouvée pour le serveur MCP « $1 ».",
+      "hint": "No installation command found fo"
+    },
+    {
+      "source": "^No plugins found for \"(.+?)\"\\.$",
+      "replace": "Aucune extension trouvée pour « $1 ».",
+      "hint": "No plugins found for \""
+    },
+    {
+      "source": "^Open Subagent: (.+?)$",
+      "replace": "Ouvrir le sous-agent : $1",
+      "hint": "Open Subagent:"
+    },
+    {
+      "source": "^Open the (.+?) plugin$",
+      "replace": "Ouvrir l'extension $1",
+      "hint": "Open the"
+    },
+    {
+      "source": "^Open (.+?) skill$",
+      "replace": "Ouvrir la compétence $1",
+      "hint": "skill"
+    },
+    {
+      "source": "^Plugins in (.+?)$",
+      "replace": "Extensions dans $1",
+      "hint": "Plugins in"
+    },
+    {
+      "source": "^Proceed with implementation plan and (\\d+(?:\\.\\d+)?) comments?$",
+      "replace": "Poursuivre avec le plan d'implémentation et $1 commentaire(s)",
+      "hint": "Proceed with implementation plan"
+    },
+    {
+      "source": "^Push (.+?) commits? to (.+?)$",
+      "replace": "Pousser $1 validations vers $2",
+      "hint": "commit"
+    },
+    {
+      "source": "^Pushed (.+?) commits? to (.+?)\\.$",
+      "replace": "$1 validations poussées vers $2.",
+      "hint": "Pushed"
+    },
+    {
+      "source": "^Remove context from (.+?)$",
+      "replace": "Supprimer le contexte de $1",
+      "hint": "Remove context from"
+    },
+    {
+      "source": "^Rule (.+?)$",
+      "replace": "Règle $1",
+      "hint": "Rule"
+    },
+    {
+      "source": "^Search for \"(.+?)\" in the Marketplace$",
+      "replace": "Rechercher « $1 » dans la place de marché",
+      "hint": "\" in the Marketplace"
+    },
+    {
+      "source": "^Show (\\d+(?:\\.\\d+)?) more subagents?$",
+      "replace": "Afficher $1 sous-agents supplémentaires",
+      "hint": "more subagent"
+    },
+    {
+      "source": "^Showing latest (\\d+(?:\\.\\d+)?) browser steps$",
+      "replace": "Affichage des $1 dernières étapes du navigateur",
+      "hint": "Showing latest"
+    },
+    {
+      "source": "^Specifies Agent's behavior when asking for review on artifacts, which are documents it creates to enable a richer conversation experience\\.\n(.+?)$",
+      "replace": "Définit le comportement de l'agent lorsqu'il demande la vérification d'artefacts, documents créés pour enrichir la conversation.\\n$1",
+      "hint": "Specifies Agent's behavior when "
+    },
+    {
+      "source": "^Telemetry is turned off for your account\\. This means (.+?) does not collect any of your prompts, content, or model responses, but will still collect general usage patterns \\(e\\.g\\., feature adoption, active user counts\\)\\.$",
+      "replace": "La télémétrie est désactivée pour votre compte. Cela signifie que $1 ne collecte aucune de vos invites, aucun contenu ni réponse de modèle, mais continue de collecter des tendances générales d'utilisation (ex. adoption de fonctionnalités, utilisateurs actifs).",
+      "hint": "does not collect any of your pro"
+    },
+    {
+      "source": "^The MCP server \"(.+?)\"(.+?) failed to start\\.$",
+      "replace": "Le serveur MCP « $1 »$2 n'a pas pu démarrer.",
+      "hint": "The MCP server \""
+    },
+    {
+      "source": "^The agent asks for permission before executing commands matched by a deny list entry\\.(.+?) The deny list follows the same matching rules as the allow list and takes precedence over the allow list\\.$",
+      "replace": "L'agent demande l'autorisation avant d'exécuter les commandes de la liste de refus. $1 La liste de refus suit les mêmes règles que la liste autorisée et prévaut sur elle.",
+      "hint": "The deny list follows the same m"
+    },
+    {
+      "source": "^The user signed in to the plugin \"(.+?)\" \\(catalog id: (.+?)\\) from the card in your last reply\\. Retry the task with it\\.$",
+      "replace": "L'utilisateur s'est connecté à l'extension « $1 » (ID catalogue : $2) depuis la carte de votre dernière réponse. Réessayez la tâche avec celle-ci.",
+      "hint": ") from the card in your last rep"
+    },
+    {
+      "source": "^The (.+?) MCP server requires configuration parameters before it can be started\\.$",
+      "replace": "Le serveur MCP $1 requiert des paramètres de configuration avant de pouvoir démarrer.",
+      "hint": "MCP server requires configuratio"
+    },
+    {
+      "source": "^These plugins in (.+?) may have looser code review\\. Review their contents before adding the bundle\\.$",
+      "replace": "Ces extensions dans $1 peuvent faire l'objet d'une revue de code moins stricte. Vérifiez leur contenu avant d'ajouter le lot.",
+      "hint": "may have looser code review. Rev"
+    },
+    {
+      "source": "^This plugin in (.+?) may have looser code review\\. Review its contents before adding the bundle\\.$",
+      "replace": "Cette extension dans $1 peut faire l'objet d'une revue de code moins stricte. Vérifiez son contenu avant d'ajouter le lot.",
+      "hint": "may have looser code review. Rev"
+    },
+    {
+      "source": "^Typed '(.+?)' in Browser$",
+      "replace": "« $1 » saisi dans le navigateur",
+      "hint": "' in Browser"
+    },
+    {
+      "source": "^Unnamed skill (.+?)$",
+      "replace": "Compétence sans nom $1",
+      "hint": "Unnamed skill"
+    },
+    {
+      "source": "^Using browser \\((.+?)s\\)$",
+      "replace": "Utilisation du navigateur ($1 s)",
+      "hint": "Using browser ("
+    },
+    {
+      "source": "^Using browser · (.+?)$",
+      "replace": "Utilisation du navigateur · $1",
+      "hint": "Using browser ·"
+    },
+    {
+      "source": "^View Diff for (.+?)$",
+      "replace": "Afficher la différence pour $1",
+      "hint": "View Diff for"
+    },
+    {
+      "source": "^Worker sandbox initialization failed: (.+?)$",
+      "replace": "Échec de l'initialisation du bac à sable du travailleur : $1",
+      "hint": "Worker sandbox initialization fa"
+    },
+    {
+      "source": "^merged branch (.+?) into (.+?)$",
+      "replace": "Branche $1 fusionnée dans $2",
+      "hint": "merged branch"
+    },
+    {
+      "source": "^the (.+?) plugin$",
+      "replace": "l'extension $1",
+      "hint": "plugin"
+    },
+    {
+      "source": "^(.+?) MCP servers failed to start$",
+      "replace": "$1 serveurs MCP n'ont pas pu démarrer",
+      "hint": "MCP servers failed to start"
+    },
+    {
+      "source": "^(.+?) On empty prompt, sends next in queue$",
+      "replace": "$1 Si l'invite est vide, envoie l'élément suivant en file d'attente",
+      "hint": "On empty prompt, sends next in q"
+    },
+    {
+      "source": "^(.+?) Rule$",
+      "replace": "Règle $1",
+      "hint": "Rule"
+    },
+    {
+      "source": "^(.+?) Rule Lookahead$",
+      "replace": "Prélecture de règle $1",
+      "hint": "Rule Lookahead"
+    },
+    {
+      "source": "^(.+?) browser steps$",
+      "replace": "$1 étapes du navigateur",
+      "hint": "browser steps"
+    },
+    {
+      "source": "^(.+?) subagents$",
+      "replace": "$1 sous-agents",
+      "hint": "subagents"
+    },
+    {
+      "source": "^(.+?) · Context window$",
+      "replace": "$1 · Fenêtre de contexte",
+      "hint": "· Context window"
+    },
+    {
+      "source": "^(.+?)\\. This commit is already pushed; amending will require a force push\\.$",
+      "replace": "$1. Cette validation a déjà été poussée ; l'amender nécessitera un push forcé.",
+      "hint": ". This commit is already pushed;"
+    },
+    {
+      "source": "^(.+?): (.+?) tokens$",
+      "replace": "$1 : $2 jetons",
+      "hint": "tokens"
+    },
+    {
+      "source": "^All tools in this MCP server \\((.+?) tokens\\) exceeded the customization budget and were excluded from context\\.$",
+      "replace": "Tous les outils de ce serveur MCP ($1 jetons) dépassaient le budget de personnalisation et ont été exclus du contexte.",
+      "hint": "tokens) exceeded the customizati"
+    },
+    {
+      "source": "^Approved · Code-Review \\+(.+?)$",
+      "replace": "Approuvé · Revue de code +$1",
+      "hint": "Approved · Code-Review +"
+    },
+    {
+      "source": "^Browser task: \"(.+?)\"$",
+      "replace": "Tâche navigateur : « $1 »",
+      "hint": "Browser task: \""
+    },
+    {
+      "source": "^Browser tools run on (.+?), the SSH host this window is connected to, and Chrome there isn't accepting remote debugging\\. Complete these steps on (.+?), not on this computer:$",
+      "replace": "Les outils navigateur s'exécutent sur $1, l'hôte SSH connecté à cette fenêtre, où Chrome n'accepte pas le débogage distant. Effectuez ces étapes sur $2, et non sur cet ordinateur :",
+      "hint": ", the SSH host this window is co"
+    },
+    {
+      "source": "^Invoked subagent: (.+?)$",
+      "replace": "Sous-agent invoqué : $1",
+      "hint": "Invoked subagent:"
+    },
+    {
+      "source": "^MCP server (.+?) requires authentication$",
+      "replace": "Le serveur MCP $1 requiert une authentification",
+      "hint": "requires authentication"
+    },
+    {
+      "source": "^MCP server (.+?) requires authentication: sign in to \"(.+?)\" in the Accounts section of plugin \"(.+?)\"$",
+      "replace": "Le serveur MCP $1 requiert une authentification : connectez-vous à « $2 » dans la section Comptes de l'extension « $3 »",
+      "hint": "requires authentication: sign in"
+    },
+    {
+      "source": "^Open Subagent: (.+?) \\((.+?)\\)$",
+      "replace": "Ouvrir le sous-agent : $1 ($2)",
+      "hint": "Open Subagent:"
+    },
+    {
+      "source": "^Opened browser: (.+?)$",
+      "replace": "Navigateur ouvert : $1",
+      "hint": "Opened browser:"
+    },
+    {
+      "source": "^Read URL: (.+?)$",
+      "replace": "Lien lu : $1",
+      "hint": "Read URL:"
+    },
+    {
+      "source": "^Save rule to always allow (.+?)\\?$",
+      "replace": "Enregistrer une règle pour toujours autoriser $1 ?",
+      "hint": "Save rule to always allow"
+    },
+    {
+      "source": "^Typing '(.+?)' in Browser$",
+      "replace": "Saisie de « $1 » dans le navigateur",
+      "hint": "' in Browser"
+    },
+    {
+      "source": "^UI Plugin (.+?)$",
+      "replace": "Extension d'interface $1",
+      "hint": "UI Plugin"
+    },
+    {
+      "source": "^Using browser · (.+?) \\((.+?)s\\)$",
+      "replace": "Utilisation du navigateur · $1 ($2 s)",
+      "hint": "Using browser ·"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' globally$",
+      "replace": "Oui, enregistrer globalement la règle pour « $1 »",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' in this conversation$",
+      "replace": "Oui, enregistrer la règle pour « $1 » dans cette conversation",
+      "hint": "' in this conversation"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' in this workspace$",
+      "replace": "Oui, enregistrer la règle pour « $1 » dans cet espace de travail",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule for '(.+?)' (.+?)$",
+      "replace": "Oui, enregistrer la règle pour « $1 » ($2)",
+      "hint": "Yes, save rule for '"
+    },
+    {
+      "source": "^Yes, save rule (.+?)$",
+      "replace": "Oui, enregistrer la règle $1",
+      "hint": "Yes, save rule"
+    },
+    {
+      "source": "^(.+?) \\(branch changes\\)$",
+      "replace": "$1 (modifications de branche)",
+      "hint": "(branch changes)"
+    }
+  ]
+}

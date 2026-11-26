@@ -13,9 +13,10 @@ import {
   patchText,
 } from '../../core/domPatch.js';
 import {
-  formatCnyApprox,
+  formatFxRateCaption,
   formatMetric,
   formatPctNumber,
+  formatSecondaryCostApprox,
   formatSpeedMetric,
   formatTokensPrecise,
   formatUsd,
@@ -364,7 +365,25 @@ export function updateBreakdownItemRow(refs, item, totalsCtx, sortMode = 'tokens
     patchAttr(refs.pctBadge, 'hidden', false);
     patchAttr(refs.pctBadge, 'title', null);
     patchText(refs.pctBadge, formatPctNumber(costShare, { withSymbol: true }));
-    patchText(refs.totalTokEl, isAllUnpriced ? '' : formatCnyApprox(costVal));
+    const secondaryCostText = isAllUnpriced
+      ? ''
+      : formatSecondaryCostApprox(costVal, {
+          displayCurrency: totalsCtx?.displayCurrency,
+          locale: totalsCtx?.locale,
+          fxStatus: totalsCtx?.fxStatus,
+        });
+    patchText(refs.totalTokEl, secondaryCostText);
+    patchAttr(
+      refs.totalTokEl,
+      'title',
+      secondaryCostText
+        ? formatFxRateCaption({
+            displayCurrency: totalsCtx?.displayCurrency,
+            locale: totalsCtx?.locale,
+            fxStatus: totalsCtx?.fxStatus,
+          })
+        : null
+    );
     patchText(refs.costEl, costText);
 
     patchAttr(refs.segBar.el, 'hidden', true);

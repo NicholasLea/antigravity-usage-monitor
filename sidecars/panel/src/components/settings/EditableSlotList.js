@@ -7,7 +7,16 @@
  */
 
 import { defineComponent } from '../../core/component.js';
-import { h, patchAttr, patchClasses, patchText } from '../../core/domPatch.js';
+import {
+  areSlotListsEqual,
+  buildReorderedItems,
+  createDropSettleAnimator,
+  h,
+  patchAttr,
+  patchClasses,
+  patchText,
+  startLinearDragReorder,
+} from '../../core/domPatch.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 import { t } from '../../i18n/index.js';
 import { CustomSelect } from '../ui/CustomSelect.js';
@@ -21,14 +30,6 @@ function isNodeWithin(target, container) {
   return false;
 }
 
-function areSlotListsEqual(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
-}
-
 export const EditableSlotList = defineComponent({
   name: 'EditableSlotList',
   setup({ props, onCleanup }) {
@@ -38,7 +39,16 @@ export const EditableSlotList = defineComponent({
     let currentOptions = Array.isArray(props.options) ? [...props.options] : [];
     let emptyHintText = String(props.emptyHintText || '');
     let addBtnTextFn = typeof props.addBtnTextFn === 'function' ? props.addBtnTextFn : null;
+    let dimmedFromIndex =
+      Number.isInteger(props.dimmedFromIndex) && props.dimmedFromIndex >= 0
+        ? props.dimmedFromIndex
+        : null;
+    let dimmedTagText = String(props.dimmedTagText || '');
     let activeDrag = null;
+    const settleAnimator = createDropSettleAnimator('is-settling', ' scale(1.015)');
+    let suppressClickTimer = null;
+    let suppressNextClick = false;
+    let pendingSyncAfterDrag = false;
 
     const listEl = h('div', { className: 'editable-slot-list' });
     const emptyEl = h('div', {
@@ -69,148 +79,130 @@ export const EditableSlotList = defineComponent({
 
     const rowPool = [];
 
+    function clearSettleAnimation() {
+      settleAnimator.clear();
+    }
+
+    function clearClickSuppression() {
+      if (suppressClickTimer) {
+        clearTimeout(suppressClickTimer);
+        suppressClickTimer = null;
+      }
+      suppressNextClick = false;
+    }
+
+    function armClickSuppression() {
+      clearClickSuppression();
+      suppressNextClick = true;
+      suppressClickTimer = setTimeout(() => {
+        suppressClickTimer = null;
+        suppressNextClick = false;
+      }, 120);
+    }
+
     function emitChange(nextItems) {
       currentItems = [...nextItems];
       syncRows();
-      if (typeof props.onPreview === 'function') {
-        props.onPreview([...currentItems]);
-      }
-      if (typeof props.onChange === 'function') {
-        props.onChange([...currentItems]);
+      props.onPreview?.([...currentItems]);
+      props.onChange?.([...currentItems]);
+    }
+
+    function resetRowDragStyles() {
+      for (const r of rowPool) {
+        patchClasses(r.rowEl, { 'is-dragging': false, 'is-drag-sibling': false });
+        if (r.rowEl?.style) {
+          r.rowEl.style.transition = '';
+          r.rowEl.style.transform = '';
+        }
       }
     }
 
     function teardownActiveDrag({ revert = false } = {}) {
       if (!activeDrag) return;
-      const { startItems, hasMoved, cleanupListeners } = activeDrag;
+      const { startItems, session } = activeDrag;
+      const moved = session.isMoved();
       activeDrag = null;
-      cleanupListeners();
+      session.cancel(true);
       patchClasses(listEl, { 'is-dragging-list': false });
-      for (const r of rowPool) {
-        patchClasses(r.rowEl, { 'is-dragging': false });
-      }
-      if (revert && hasMoved && !areSlotListsEqual(startItems, currentItems)) {
+      resetRowDragStyles();
+      if (revert && moved && !areSlotListsEqual(startItems, currentItems)) {
         currentItems = [...startItems];
+        pendingSyncAfterDrag = false;
         syncRows();
-        if (typeof props.onPreview === 'function') {
-          props.onPreview([...currentItems]);
-        }
+        props.onPreview?.([...currentItems]);
+      } else if (pendingSyncAfterDrag) {
+        pendingSyncAfterDrag = false;
+        syncRows();
       }
     }
 
-    function startPointerDrag(e, initialRowIdx) {
+    function startPointerDrag(e, initialRowIdx, { threshold = 3 } = {}) {
       if (e && e.button != null && e.button !== 0) return;
       if (currentItems.length <= 1) return;
-      if (activeDrag) {
-        teardownActiveDrag({ revert: false });
-      }
+      if (activeDrag) teardownActiveDrag({ revert: false });
+      clearSettleAnimation();
 
-      const startY = Number(e?.clientY ?? 0);
       const startItems = [...currentItems];
-      let dragIdx = initialRowIdx;
-      let hasMoved = false;
+      const count = startItems.length;
+      const startIdx = initialRowIdx;
 
-      const onPointerMove = (ev) => {
-        if (!activeDrag) return;
-        const clientY = Number(ev?.clientY ?? startY);
-        if (!hasMoved) {
-          if (Math.abs(clientY - startY) < 4) return;
-          hasMoved = true;
-          activeDrag.hasMoved = true;
-          for (let k = 0; k < currentItems.length; k += 1) {
-            rowPool[k]?.selectComp?.close?.();
-          }
-          patchClasses(listEl, { 'is-dragging-list': true });
-          if (rowPool[dragIdx]) {
-            patchClasses(rowPool[dragIdx].rowEl, { 'is-dragging': true });
-          }
-        }
-        ev?.preventDefault?.();
-
-        let targetIdx = dragIdx;
-        const count = currentItems.length;
-        for (let i = 0; i < dragIdx; i += 1) {
-          const rect = rowPool[i]?.rowEl?.getBoundingClientRect?.();
-          if (rect && rect.height > 0 && clientY < rect.top + rect.height * 0.5) {
-            targetIdx = i;
-            break;
-          }
-        }
-        if (targetIdx === dragIdx) {
-          for (let i = count - 1; i > dragIdx; i -= 1) {
-            const rect = rowPool[i]?.rowEl?.getBoundingClientRect?.();
-            if (rect && rect.height > 0 && clientY > rect.top + rect.height * 0.5) {
-              targetIdx = i;
-              break;
-            }
-          }
-        }
-
-        if (targetIdx !== dragIdx) {
-          if (rowPool[dragIdx]) {
-            patchClasses(rowPool[dragIdx].rowEl, { 'is-dragging': false });
-          }
-          const next = [...currentItems];
-          const [moved] = next.splice(dragIdx, 1);
-          next.splice(targetIdx, 0, moved);
-          dragIdx = targetIdx;
-          activeDrag.dragIdx = dragIdx;
-          currentItems = next;
-          syncRows();
-          if (rowPool[dragIdx]) {
-            patchClasses(rowPool[dragIdx].rowEl, { 'is-dragging': true });
-          }
-          if (typeof props.onPreview === 'function') {
-            props.onPreview([...currentItems]);
-          }
-        }
-      };
-
-      const onPointerUp = () => {
-        if (!activeDrag) return;
-        const moved = activeDrag.hasMoved;
-        const changed = !areSlotListsEqual(startItems, currentItems);
-        teardownActiveDrag({ revert: false });
-        if (moved && changed) {
-          emitChange([...currentItems]);
-        }
-      };
-
-      const onPointerCancel = () => {
-        teardownActiveDrag({ revert: true });
-      };
-
-      const onKeyDown = (ev) => {
-        if (ev?.key === 'Escape') {
-          teardownActiveDrag({ revert: true });
-        }
-      };
-
-      const docTarget =
-        typeof document !== 'undefined' && typeof document.addEventListener === 'function'
-          ? document
-          : null;
-
-      if (docTarget) {
-        docTarget.addEventListener('pointermove', onPointerMove);
-        docTarget.addEventListener('pointerup', onPointerUp);
-        docTarget.addEventListener('pointercancel', onPointerCancel);
-        docTarget.addEventListener('keydown', onKeyDown);
+      function applySlotDimState(entry, visualSlot) {
+        const isDimmed = dimmedFromIndex !== null && visualSlot >= dimmedFromIndex;
+        patchClasses(entry.rowEl, { 'is-dimmed': isDimmed });
+        patchAttr(entry.dimmedTagEl, 'hidden', !isDimmed || !dimmedTagText);
+        if (dimmedTagText) patchText(entry.dimmedTagEl, dimmedTagText);
       }
 
-      activeDrag = {
-        startItems,
-        dragIdx,
-        hasMoved: false,
-        cleanupListeners: () => {
-          if (docTarget && typeof docTarget.removeEventListener === 'function') {
-            docTarget.removeEventListener('pointermove', onPointerMove);
-            docTarget.removeEventListener('pointerup', onPointerUp);
-            docTarget.removeEventListener('pointercancel', onPointerCancel);
-            docTarget.removeEventListener('keydown', onKeyDown);
+      const session = startLinearDragReorder(e, {
+        axis: 'y',
+        items: startItems,
+        startIdx,
+        itemEls: rowPool.slice(0, count).map((r) => r?.rowEl),
+        containerEl: listEl,
+        fallbackSize: 28,
+        fallbackGap: 5,
+        threshold,
+        autoScroll: true,
+        rubberBandMax: 26,
+        crossMax: 18,
+        crossRatio: 0.22,
+        dragScale: ' scale(1.015)',
+        onStart: () => {
+          for (let k = 0; k < count; k += 1) rowPool[k]?.selectComp?.close?.();
+          patchClasses(listEl, { 'is-dragging-list': true });
+          for (let k = 0; k < count; k += 1) {
+            if (!rowPool[k]) continue;
+            patchClasses(rowPool[k].rowEl, {
+              'is-dragging': k === startIdx,
+              'is-drag-sibling': k !== startIdx,
+            });
           }
         },
-      };
+        onLayout: ({ perm }) => {
+          for (let visualSlot = 0; visualSlot < perm.length; visualSlot += 1) {
+            const entry = rowPool[perm[visualSlot]];
+            if (!entry) continue;
+            patchText(entry.indexBadge, String(visualSlot + 1));
+            applySlotDimState(entry, visualSlot);
+          }
+        },
+        onPreview: (working) => {
+          currentItems = working;
+          props.onPreview?.([...currentItems]);
+        },
+        onCancel: () => teardownActiveDrag({ revert: true }),
+        onFinish: ({ moved, changed, targetIdx, finalItems, residualX, residualY }) => {
+          teardownActiveDrag({ revert: false });
+          if (moved) armClickSuppression();
+          if (changed) emitChange(finalItems);
+          else if (moved) syncRows();
+          if (moved && rowPool[targetIdx]?.rowEl) {
+            settleAnimator.trigger(rowPool[targetIdx].rowEl, residualX, residualY);
+          }
+        },
+      });
+
+      activeDrag = { startItems, session };
     }
 
     function createSlotRow() {
@@ -292,6 +284,8 @@ export const EditableSlotList = defineComponent({
         [createSvgIcon('minus', { size: 12 })]
       );
 
+      const selectMenuEl = selectComp.el?.querySelector?.('.select-menu') || null;
+      const dimmedTagEl = h('span', { className: 'slot-dimmed-tag', hidden: true, text: '' });
       const orderBtnsEl = h('span', { className: 'slot-order-btns' }, [upBtn, downBtn, removeBtn]);
 
       const rowEl = h(
@@ -299,19 +293,32 @@ export const EditableSlotList = defineComponent({
         {
           className: 'editable-slot-row',
           onPointerdown: (e) => {
-            if (isNodeWithin(e?.target, selectComp.el) || isNodeWithin(e?.target, orderBtnsEl)) {
-              return;
-            }
-            startPointerDrag(e, rowIndex);
+            if (isNodeWithin(e?.target, orderBtnsEl)) return;
+            if (selectMenuEl && isNodeWithin(e?.target, selectMenuEl)) return;
+            const onSelectTrigger = isNodeWithin(e?.target, selectComp.el);
+            startPointerDrag(e, rowIndex, { threshold: onSelectTrigger ? 5 : 3 });
           },
         },
-        [dragHandle, indexBadge, selectComp.el, orderBtnsEl]
+        [dragHandle, indexBadge, selectComp.el, dimmedTagEl, orderBtnsEl]
       );
+      if (typeof rowEl.addEventListener === 'function') {
+        rowEl.addEventListener(
+          'click',
+          (e) => {
+            if (!suppressNextClick) return;
+            clearClickSuppression();
+            e.preventDefault?.();
+            e.stopPropagation?.();
+          },
+          true
+        );
+      }
 
       return {
         rowEl,
         dragHandle,
         indexBadge,
+        dimmedTagEl,
         selectComp,
         upBtn,
         downBtn,
@@ -351,8 +358,14 @@ export const EditableSlotList = defineComponent({
         const entry = rowPool[i];
         const itemVal = currentItems[i];
         entry.setIndex(i);
+        const isDimmed = dimmedFromIndex !== null && i >= dimmedFromIndex;
         patchAttr(entry.rowEl, 'data-slot-row', String(i));
+        patchClasses(entry.rowEl, { 'is-dimmed': isDimmed });
         patchText(entry.indexBadge, String(i + 1));
+        patchAttr(entry.dimmedTagEl, 'hidden', !isDimmed || !dimmedTagText);
+        if (dimmedTagText) {
+          patchText(entry.dimmedTagEl, dimmedTagText);
+        }
         patchClasses(entry.dragHandle, { 'is-disabled': !canDrag });
         patchAttr(entry.dragHandle, 'title', dragTitle || null);
 
@@ -418,6 +431,19 @@ export const EditableSlotList = defineComponent({
       if (typeof next.addBtnTextFn === 'function') {
         addBtnTextFn = next.addBtnTextFn;
       }
+      if (next.dimmedFromIndex !== undefined) {
+        dimmedFromIndex =
+          Number.isInteger(next.dimmedFromIndex) && next.dimmedFromIndex >= 0
+            ? next.dimmedFromIndex
+            : null;
+      }
+      if (next.dimmedTagText !== undefined) {
+        dimmedTagText = String(next.dimmedTagText || '');
+      }
+      if (activeDrag) {
+        pendingSyncAfterDrag = true;
+        return;
+      }
       syncRows();
     }
 
@@ -425,6 +451,8 @@ export const EditableSlotList = defineComponent({
 
     onCleanup(() => {
       teardownActiveDrag({ revert: false });
+      clearSettleAnimation();
+      clearClickSuppression();
       for (const entry of rowPool) {
         entry.selectComp.destroy();
       }

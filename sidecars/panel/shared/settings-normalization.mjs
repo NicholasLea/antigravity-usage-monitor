@@ -2,7 +2,16 @@
  * @fileoverview 前后端与 CLI 共用的偏好设置枚举常量、默认值与无状态纯函数归一化规则。
  */
 
-export const SUPPORTED_LANGUAGES = Object.freeze(['auto', 'zh-CN', 'en-US']);
+export const SUPPORTED_LOCALES = Object.freeze([
+  'zh-CN',
+  'zh-TW',
+  'en-US',
+  'ja-JP',
+  'ko-KR',
+  'de-DE',
+  'fr-FR',
+]);
+export const SUPPORTED_LANGUAGES = Object.freeze(['auto', ...SUPPORTED_LOCALES]);
 
 export const THEME_ACCENT_KEYS = Object.freeze([
   'host',
@@ -68,6 +77,13 @@ export const DEFAULT_OVERVIEW_MODULES = Object.freeze([
 
 export const DEFAULT_HOVER_MODULES = Object.freeze(['metrics', 'context', 'quotas']);
 
+export const METRIC_CARD_STYLES = Object.freeze(['medium', 'large']);
+export const HOVER_METRIC_STYLES = METRIC_CARD_STYLES;
+export const DEFAULT_OVERVIEW_METRIC_STYLE = 'medium';
+export const DEFAULT_HOVER_METRIC_STYLE = 'medium';
+export const DEFAULT_HOVER_SYNC_OVERVIEW_METRICS = true;
+export const MAX_LARGE_METRIC_SLOTS = 3;
+
 export const OVERVIEW_METRIC_KEYS = Object.freeze([
   'tps',
   'ttft',
@@ -86,6 +102,7 @@ export const DEFAULT_OVERVIEW_METRICS = Object.freeze([
   'avg_tps',
   'step_cost',
 ]);
+export const DEFAULT_HOVER_METRICS = DEFAULT_OVERVIEW_METRICS;
 
 export const STEP_TABLE_COLUMN_KEYS = Object.freeze([
   'step',
@@ -158,19 +175,49 @@ export const MAX_POPOVER_WIDTH = 1080;
 export const DEFAULT_POPOVER_WIDTH = 580;
 
 /**
- * 归一化界面语言枚举（默认 `'auto'`，支持 `'zh-CN'` 及 `'en-US'`）。
+ * 将任意 BCP-47 / POSIX 语言标签映射到受支持的 7 种界面 Locale 之一。
+ *
+ * @param {unknown} rawTag
+ * @param {'zh-CN'|'zh-TW'|'en-US'|'ja-JP'|'ko-KR'|'de-DE'|'fr-FR'} [fallback='en-US']
+ * @returns {'zh-CN'|'zh-TW'|'en-US'|'ja-JP'|'ko-KR'|'de-DE'|'fr-FR'}
+ */
+export function resolveLocaleFromLanguageTag(rawTag, fallback = 'en-US') {
+  const clean = String(rawTag ?? '')
+    .trim()
+    .replace(/_/g, '-')
+    .replace(/\..*$/, '')
+    .toLowerCase();
+  if (!clean || clean === 'c' || clean === 'posix') return fallback;
+  if (
+    clean === 'zh-tw' ||
+    clean === 'zh-hk' ||
+    clean === 'zh-mo' ||
+    clean.startsWith('zh-hant')
+  ) {
+    return 'zh-TW';
+  }
+  if (clean === 'zh' || clean.startsWith('zh-')) return 'zh-CN';
+  if (clean === 'ja' || clean.startsWith('ja-')) return 'ja-JP';
+  if (clean === 'ko' || clean.startsWith('ko-')) return 'ko-KR';
+  if (clean === 'de' || clean.startsWith('de-')) return 'de-DE';
+  if (clean === 'fr' || clean.startsWith('fr-')) return 'fr-FR';
+  if (clean === 'en' || clean.startsWith('en-')) return 'en-US';
+  return fallback;
+}
+
+/**
+ * 归一化界面语言枚举（默认 `'auto'`，支持 7 国界面语言）。
  *
  * @param {unknown} lang
- * @returns {'auto'|'zh-CN'|'en-US'}
+ * @returns {'auto'|'zh-CN'|'zh-TW'|'en-US'|'ja-JP'|'ko-KR'|'de-DE'|'fr-FR'}
  */
 export function normalizeLanguageSetting(lang) {
   const raw = String(lang ?? '').trim();
   if (!raw) return 'auto';
-  const lower = raw.toLowerCase();
+  const lower = raw.toLowerCase().replace(/_/g, '-');
   if (lower === 'auto' || lower === 'system') return 'auto';
-  if (lower === 'en' || lower === 'en-us' || lower.startsWith('en-')) return 'en-US';
-  if (lower === 'zh' || lower === 'zh-cn' || lower.startsWith('zh')) return 'zh-CN';
-  return 'auto';
+  const resolved = resolveLocaleFromLanguageTag(lower, /** @type {any} */ (''));
+  return resolved || 'auto';
 }
 
 /**
@@ -211,16 +258,6 @@ export function normalizeModelDisplayMode(mode, legacyShowUpstream) {
   if (m === 'short') return 'short';
   if (legacyShowUpstream === true) return 'upstream';
   return 'short';
-}
-
-/**
- * 归一化 Orchestrator 系列模型 ID 显示风格（`'compact'` vs `'full'`，默认 `'compact'`）。
- *
- * @param {unknown} mode
- * @returns {'compact'|'full'}
- */
-export function normalizeOrchestratorIdMode(mode) {
-  return String(mode ?? '').trim().toLowerCase() === 'full' ? 'full' : 'compact';
 }
 
 /**
@@ -483,6 +520,75 @@ export function normalizeHoverModules(raw) {
 }
 
 /**
+ * 归一化鼠标悬浮窗实时指标卡片尺寸（`'medium'` 标准 1~4 项 | `'large'` 趋势折线 1~2 项，默认 `'medium'`）。
+ *
+ * @param {unknown} raw
+ * @returns {'medium'|'large'}
+ */
+/**
+ * 归一化实时指标卡片展示尺寸（`'medium'` 紧凑数值 1~4 项，`'large'` 大号数值+趋势折线 1~3 项）。
+ *
+ * @param {unknown} raw
+ * @returns {'medium'|'large'}
+ */
+export function normalizeMetricCardStyle(raw) {
+  const val = String(raw ?? '').trim().toLowerCase();
+  return val === 'large' || val === 'sparkline' || val === 'trend' ? 'large' : 'medium';
+}
+
+export const normalizeOverviewMetricStyle = normalizeMetricCardStyle;
+export const normalizeHoverMetricStyle = normalizeMetricCardStyle;
+
+/**
+ * 归一化鼠标悬浮窗是否同步「实时监控」的实时指标尺寸与列表（默认开启）。
+ *
+ * @param {unknown} raw
+ * @returns {boolean}
+ */
+export function normalizeHoverSyncOverviewMetrics(raw) {
+  return raw !== false;
+}
+
+/**
+ * 归一化鼠标悬浮窗独立实时指标列表及左右顺序（1~4 项，与 `overviewMetrics` 共用完整候选集）。
+ *
+ * @param {unknown} raw
+ * @returns {string[]}
+ */
+export function normalizeHoverMetrics(raw) {
+  return normalizeOverviewMetrics(raw);
+}
+
+/**
+ * 解析实时监控 (`overview`) 或鼠标悬浮窗 (`hover`) 当前生效的实时指标尺寸与展示项：
+ * - `hover` 且开启 `hoverSyncOverviewMetrics` 时直接复用 `overviewMetricStyle` + `overviewMetrics`；
+ * - 切至 `'large'` 时保留完整 1~4 项配置，仅截取前 `MAX_LARGE_METRIC_SLOTS`（3）项渲染，第 4 项在设置页自动置灰。
+ *
+ * @param {'overview'|'hover'|string} mode
+ * @param {Record<string, any>|null|undefined} [settings]
+ */
+export function resolveEffectiveMetricMatrixConfig(mode, settings = {}) {
+  const s = settings && typeof settings === 'object' ? settings : {};
+  const isHover = mode === 'hover';
+  const syncOverview = !isHover || normalizeHoverSyncOverviewMetrics(s.hoverSyncOverviewMetrics);
+  const style = syncOverview
+    ? normalizeOverviewMetricStyle(s.overviewMetricStyle)
+    : normalizeHoverMetricStyle(s.hoverMetricStyle);
+  const allMetrics = syncOverview
+    ? normalizeOverviewMetrics(s.overviewMetrics)
+    : normalizeHoverMetrics(s.hoverMetrics);
+  const isLarge = style === 'large';
+  const metrics = isLarge ? allMetrics.slice(0, MAX_LARGE_METRIC_SLOTS) : allMetrics;
+  return {
+    syncOverview,
+    style,
+    isLarge,
+    allMetrics,
+    metrics,
+  };
+}
+
+/**
  * 归一化调用明细「按步查看」表格列配置与左右顺序（2~14 列，默认保留现有 7 列）。
  *
  * @param {unknown} raw
@@ -546,6 +652,20 @@ export function normalizeModernUi(val) {
 export const CONTEXT_AGENT_MODES = Object.freeze(['main', 'auto']);
 export const DEFAULT_CONTEXT_AGENT_MODE = 'main';
 
+export const QUOTA_DISPLAY_MODES = Object.freeze(['used', 'remaining']);
+export const DEFAULT_QUOTA_DISPLAY_MODE = 'used';
+
+/**
+ * 归一化可用额度进度条与百分比显示口径（默认 `'used'` 显示已用，可选 `'remaining'` 显示剩余）。
+ *
+ * @param {unknown} raw
+ * @returns {'used'|'remaining'}
+ */
+export function normalizeQuotaDisplayMode(raw) {
+  const val = String(raw || '').trim().toLowerCase();
+  return val === 'remaining' ? 'remaining' : 'used';
+}
+
 export const ACCOUNT_QUOTA_REFRESH_MINUTES = Object.freeze([10, 30, 60, 180, 360, 720, 1440]);
 export const DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES = 60;
 
@@ -602,4 +722,97 @@ export function normalizeExperimentalModernUi(val) {
     return lower === 'true' || lower === '1' || lower === 'on';
   }
   return Boolean(val);
+}
+
+/**
+ * 归一化宿主启动参数自动维护开关（默认 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+export function normalizeAutoConfigureLaunch(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on' || lower === 'auto') return true;
+    return true;
+  }
+  return Boolean(val);
+}
+
+/**
+ * 归一化 IDE Remote-SSH 远端守护发现与独立端点遥测开关（默认 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+export function normalizeEnableRemoteSshTelemetry(val) {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'string') {
+    const lower = val.trim().toLowerCase();
+    if (lower === 'false' || lower === '0' || lower === 'off') return false;
+    if (lower === 'true' || lower === '1' || lower === 'on') return true;
+    return true;
+  }
+  return Boolean(val);
+}
+
+/**
+ * 归一化开发者模式开关（默认 `false`，严格仅接受显式 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+export function normalizeDeveloperModeEnabled(val) {
+  return val === true;
+}
+
+/**
+ * 归一化高风险功能总开关（必须同时开启开发者模式，默认 `false`）。
+ *
+ * @param {unknown} val
+ * @param {unknown} [developerModeEnabled=false]
+ * @returns {boolean}
+ */
+export function normalizeRiskyFeaturesEnabled(val, developerModeEnabled = false) {
+  return developerModeEnabled === true && val === true;
+}
+
+/**
+ * 判断「开发者模式 -> 高风险功能」双层显示闸门是否已开启。
+ *
+ * @param {Record<string, unknown> | null | undefined} settings
+ * @returns {boolean}
+ */
+export function isRiskyFeaturesGateOpen(settings) {
+  return Boolean(
+    settings &&
+      settings.developerModeEnabled === true &&
+      settings.riskyFeaturesEnabled === true
+  );
+}
+
+/**
+ * 判断非官方模型上下文覆写能力是否已同时通过双层闸门与风险确认。
+ *
+ * @param {Record<string, unknown> | null | undefined} settings
+ * @returns {boolean}
+ */
+export function isContextWindowFeatureActive(settings) {
+  return Boolean(
+    isRiskyFeaturesGateOpen(settings) && settings.contextWindowRiskAccepted === true
+  );
+}
+
+/**
+ * 判断非官方多账号凭证切换能力是否已同时通过双层闸门与风险确认。
+ *
+ * @param {Record<string, unknown> | null | undefined} settings
+ * @returns {boolean}
+ */
+export function isAccountSwitchFeatureActive(settings) {
+  return Boolean(
+    isRiskyFeaturesGateOpen(settings) && settings.accountSwitchRiskAccepted === true
+  );
 }

@@ -4,13 +4,72 @@
  * 独立于 `./config.mjs` 与 `./api-actions.mjs`，使宿主入口 `main.mjs` 在生产环境下无需加载完整后端图谱与轨迹缓存。
  */
 
-import { readFileSync, promises as fsPromises } from 'node:fs';
+import { existsSync, readFileSync, promises as fsPromises } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { normalizeHostThemeSnapshot } from '../shared/host-theme.mjs';
 
 function resolveHttpHelperPanelDir() {
   const modDir = dirname(fileURLToPath(import.meta.url));
   return /[\\/]backend$/i.test(modDir) ? dirname(modDir) : modDir;
+}
+
+function resolveHttpHelperDataDir() {
+  const explicitDataDir = String(process?.env?.USAGE_MONITOR_DATA_DIR || '').trim();
+  if (explicitDataDir) return explicitDataDir;
+  if (process?.env?.ANTIGRAVITY_EXECUTABLE_DATA_DIR) {
+    return process.env.ANTIGRAVITY_EXECUTABLE_DATA_DIR;
+  }
+  const geminiBase = String(process?.env?.ANTIGRAVITY_GEMINI_DIR || '').trim() || join(homedir(), '.gemini');
+  const candidates = [
+    join(geminiBase, 'antigravity', 'sidecar_data', 'usage-monitor', 'panel', 'data'),
+    join(geminiBase, 'antigravity', 'sidecar_data', 'usage-monitor', 'data'),
+    join(geminiBase, 'antigravity-cli', 'sidecar_data', 'usage-monitor', 'panel', 'data'),
+  ];
+  for (const dir of candidates) {
+    if (existsSync(dir)) return dir;
+  }
+  return '';
+}
+
+/**
+ * 轻量同步读取最近一次采集到的宿主主题快照（优先新鲜的桥接租约，其次持久化缓存），
+ * 供 `main.mjs` 在 `GET /` 阶段零延迟注入首帧兜底样式，不引入重型后端依赖。
+ *
+ * @param {{ dataDir?: string, nowMs?: number }} [options]
+ */
+export function readCachedHostThemeSnapshotSync({
+  dataDir = '',
+  nowMs = Date.now(),
+} = {}) {
+  const baseDir = String(dataDir || '').trim() || resolveHttpHelperDataDir();
+  if (!baseDir) return null;
+
+  try {
+    const leasePath = join(baseDir, 'window-bridge-lease.json');
+    if (existsSync(leasePath)) {
+      const lease = JSON.parse(readFileSync(leasePath, 'utf8'));
+      const updatedAtMs = Number(lease?.updatedAtMs || 0);
+      if (updatedAtMs > 0 && nowMs - updatedAtMs >= -5000 && nowMs - updatedAtMs <= 45_000) {
+        const leaseTheme = normalizeHostThemeSnapshot(lease?.hostTheme);
+        if (leaseTheme) return leaseTheme;
+      }
+    }
+  } catch {
+    // 忽略租约读取或瞬态解析错误
+  }
+
+  try {
+    const cachePath = join(baseDir, 'host-theme-cache.json');
+    if (existsSync(cachePath)) {
+      return normalizeHostThemeSnapshot(JSON.parse(readFileSync(cachePath, 'utf8')));
+    }
+  } catch {
+    // 忽略缓存文件损坏或不存在
+  }
+
+  return null;
 }
 
 /**

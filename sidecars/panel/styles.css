@@ -1,22 +1,16 @@
 /* --- src/styles/tokens.css --- */
-/*
- * Semantic Design Tokens for Antigravity Usage & Speed Monitor.
- * All visual tokens derive from host CSS variables and perceptual color-mix(),
- * eliminating hardcoded hex colors across components and views.
- */
-
 :root,
 :host {
-  /* Cross-Platform Typography Stacks (macOS SF Pro / SF Mono + Windows / Linux Fallbacks) */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
+  
+  --font-sans: var(--host-font-sans, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif);
+  --font-mono: var(--host-font-mono, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, "Cascadia Mono", Consolas, monospace);
 
-  /* Architectural Geometry: Only Top Nav uses --radius-pill */
+  
   --radius-pill: 999px;
   --radius-sm: 4px;
   --radius-xs: 2px;
 
-  /* Host-Bridged Surfaces (Antigravity 2.0 + Antigravity IDE --vscode-* + safe fallback) */
+  
   --surface-bg: var(--background, var(--vscode-sideBar-background, var(--vscode-editor-background, hsl(0 0% 100%))));
   --surface-panel: var(
     --card,
@@ -30,7 +24,7 @@
   --surface-hover: color-mix(in srgb, var(--accent-primary) 6%, var(--surface-panel));
   --surface-active: color-mix(in srgb, var(--accent-primary) 12%, var(--surface-panel));
 
-  /* Crisp 1px Hairline Borders */
+  
   --border-hairline: color-mix(
     in srgb,
     var(
@@ -47,7 +41,7 @@
   );
   --border-strong: color-mix(in srgb, var(--border-hairline) 72%, var(--text-primary) 28%);
 
-  /* Typography Hierarchy & Scalable Font Tokens */
+  
   --fs-2xs: calc(10.5px * var(--ui-font-scale, 1));
   --fs-xs: calc(11px * var(--ui-font-scale, 1));
   --fs-sm: calc(11.5px * var(--ui-font-scale, 1));
@@ -63,7 +57,7 @@
   --text-muted: color-mix(in srgb, var(--text-secondary) 74%, var(--surface-panel) 26%);
   --text-inverse: var(--user-accent-contrast, var(--surface-panel));
 
-  /* Semantic Telemetry Accents */
+  
   --accent-primary: var(
     --user-accent-primary,
     var(
@@ -93,7 +87,7 @@
   --quota-reserved-soft: color-mix(in srgb, var(--quota-reserved) 13%, transparent);
   --quota-reserved-border: color-mix(in srgb, var(--quota-reserved) 34%, transparent);
 
-  /* Context Window 10-Channel Palette */
+  
   --ctx-assistant: hsl(215 62% 52%);
   --ctx-tool-results: hsl(172 68% 40%);
   --ctx-user-input: hsl(256 76% 62%);
@@ -105,23 +99,23 @@
   --ctx-system-prompt: hsl(214 26% 54%);
   --ctx-user-rules: hsl(352 78% 56%);
 
-  /* Legacy 4-Channel Palette (retained for compatibility) */
+  
   --ctx-cached: hsl(217 82% 51%);
   --ctx-input: hsl(22 86% 50%);
   --ctx-thinking: hsl(145 64% 38%);
   --ctx-output: hsl(190 80% 38%);
 
-  /* Elevation & Shadows */
+  
   --shadow-popover: 0 4px 12px rgb(0 0 0 / 0.22);
   --shadow-overlay: 0 16px 38px rgb(0 0 0 / 0.38), 0 3px 10px rgb(0 0 0 / 0.22);
 
-  /* Fast Hardware-Accelerated Motion Tokens */
+  
   --ease-fast: cubic-bezier(0.22, 1, 0.36, 1);
   --dur-instant: 90ms;
   --dur-fast: 140ms;
   --dur-normal: 180ms;
 
-  /* Spacing & Density */
+  
   --space-2: 6px;
   --space-3: 8px;
   --space-4: 10px;
@@ -185,6 +179,16 @@
   --fs-hero: calc(18px * var(--ui-font-scale, 1));
 }
 
+html[data-host-theme-fallback="dark"] {
+  color-scheme: dark;
+  --background: hsl(222 18% 10%);
+  --card: hsl(222 16% 13%);
+  --border: hsl(220 14% 21%);
+  --foreground: hsl(214 24% 92%);
+  --muted-foreground: hsl(215 14% 63%);
+  --primary: hsl(217 86% 61%);
+}
+
 @media (prefers-color-scheme: dark) {
   html[data-standalone="true"] {
     color-scheme: dark;
@@ -198,11 +202,6 @@
 }
 
 /* --- src/styles/base.css --- */
-/*
- * Base reset, viewport-locked shell (preventing ultra-long px scroll pages),
- * and precision tabular typography.
- */
-
 * {
   box-sizing: border-box;
   scrollbar-width: none;
@@ -347,10 +346,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/animations.css --- */
-/*
- * Fast, hardware-accelerated transitions (120ms-160ms) with zero sluggish bounce.
- */
-
 @keyframes anim-spin {
   from {
     transform: rotate(0deg);
@@ -403,20 +398,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/controls.css --- */
-/*
- * 通用交互控件与顶栏导航样式表 (controls.css).
- * 包含：
- * 1. 顶部会话控制栏 (.session-header, .status-tag, .icon-btn, .update-badge-btn)
- * 2. 顶部唯一长药丸导航栏 (.long-pill-nav, .pill-glider, .pill-tab)
- * 3. 定制下拉选择器 (.custom-select)
- * 4. 定制步进数字输入框 (.number-input)
- * 5. 定制日期时间选择器 (.datetime-picker)
- * 6. 微边框分段控制器 (.segmented)
- * 7. 独立轨道槽自定义滚动条 (.custom-scroll-host)
- * 8. 设置表单行与主次操作按钮 (.form-row, .btn-primary, .btn-secondary, .cloud-actions-row)
- */
-
-/* --- 1. 顶部会话控制栏与二级代理切换条 (Top Session Control Header & Agent Scope Bar) --- */
 .top-session-stack {
   display: flex;
   flex-direction: column;
@@ -485,7 +466,7 @@ html[data-standalone="true"] .app-shell {
   display: inline-flex;
   align-items: center;
   padding: 2px 5px;
-  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-sm);
   font-weight: 600;
   line-height: 1.2;
@@ -572,7 +553,6 @@ html[data-standalone="true"] .app-shell {
   transform: scale(0.95);
 }
 
-/* --- 2. 顶部药丸导航栏 (Top Long-Pill Navigation Bar) --- */
 .long-pill-nav {
   position: relative;
   container-type: inline-size;
@@ -707,7 +687,6 @@ html[data-standalone="true"] .app-shell {
   opacity: 0.92;
 }
 
-/* --- 3. 定制下拉选择器 (Bespoke Custom Select，零原生 <select>) --- */
 .custom-select {
   position: relative;
   display: inline-flex;
@@ -959,7 +938,7 @@ html[data-standalone="true"] .app-shell {
 .select-option-sub {
   font-size: var(--fs-xs);
   line-height: 1.25;
-  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-weight: 400;
   opacity: 0.72;
   overflow: hidden;
@@ -991,7 +970,6 @@ html[data-standalone="true"] .app-shell {
 .select-option-meta {
   font-size: var(--fs-md);
   flex-shrink: 0;
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
@@ -1030,7 +1008,6 @@ html[data-standalone="true"] .app-shell {
   stroke-width: 2.4;
 }
 
-/* --- 4. 定制步进数字框 (Bespoke Custom Number Input，零原生 <input type="number">) --- */
 .number-input {
   display: inline-flex;
   align-items: stretch;
@@ -1080,7 +1057,6 @@ html[data-standalone="true"] .app-shell {
   outline: none;
 }
 
-/* --- 5. 定制日期时间选择器 (Bespoke Custom DateTime Picker) --- */
 .datetime-picker {
   position: relative;
   display: inline-flex;
@@ -1209,7 +1185,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-primary);
 }
 
-/* --- 6. 微边框分段控制器 (Micro-Bezel Sliding Segmented Control) --- */
 .segmented {
   position: relative;
   display: inline-flex;
@@ -1312,7 +1287,6 @@ html[data-standalone="true"] .app-shell {
   transform: translate3d(calc(var(--seg-active-idx, 0) * (100% + 2px)), 0, 0);
 }
 
-/* --- 7. 独立槽位自定义滚动条 (Bespoke Custom Scrollbar) --- */
 .custom-scroll-host {
   position: relative;
   display: flex;
@@ -1384,7 +1358,6 @@ html[data-standalone="true"] .app-shell {
   background: color-mix(in srgb, var(--accent-primary) 72%, transparent);
 }
 
-/* --- 8. 设置表单与按钮控件 (Settings Form & Buttons) --- */
 .form-row {
   display: flex;
   flex-direction: column;
@@ -1487,7 +1460,6 @@ html[data-standalone="true"] .app-shell {
   transform: scale(0.96);
 }
 
-/* --- 9. 顶部栏定制面板专属表单与排序槽位控件 (Topbar Customization Controls) --- */
 .settings-inline-row {
   display: flex;
   align-items: center;
@@ -1581,7 +1553,6 @@ html[data-standalone="true"] .app-shell {
   cursor: default;
 }
 
-/* --- 紧凑竖向三点操作菜单 (ActionMenu) --- */
 .action-menu {
   position: relative;
   display: inline-flex;
@@ -1681,7 +1652,6 @@ html[data-standalone="true"] .app-shell {
   text-overflow: ellipsis;
 }
 
-/* --- 全局底部轻量导出 / 复制提示条 (App Toast) --- */
 .app-toast {
   position: absolute;
   left: 12px;
@@ -1791,17 +1761,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/views-overview.css --- */
-/*
- * 实时概览视图与通用面板卡片样式表 (views-overview.css).
- * 包含：
- * 1. 通用面板容器与标题头 (.panel, .panel-header, .panel-title, .panel-meta)
- * 2. 4 格实时测速指标矩阵 (.telemetry-matrix, .matrix-cell, .cell-*)
- * 3. 10 段上下文窗口进度条与配额填充条 (.progress-track, .progress-seg, .progress-fill)
- * 4. 上下文双列图例网格与色块 (.ctx-legend-grid, .legend-*, .swatch)
- * 5. 双栏布局网格与窄屏响应式断点 (.dual-grid)
- */
-
-/* --- 1. 通用微边框面板卡片 (Architectural Precision Panels) --- */
 .panel {
   display: flex;
   flex-direction: column;
@@ -1846,7 +1805,6 @@ html[data-standalone="true"] .app-shell {
   white-space: nowrap;
 }
 
-/* 配额池分组行及池间分隔线（暗黑模式保留原分割色，浅色模式使用柔和细线） */
 .quota-pool-row {
   display: flex;
   flex-direction: column;
@@ -1865,7 +1823,6 @@ html[data-standalone="true"] .app-shell {
   border-top-color: color-mix(in srgb, var(--text-primary) 7%, transparent);
 }
 
-/* 配额池窗口行头：标题 + 周期用量内联（窄栏自适应截断，零额外纵向行高） */
 .quota-win-head {
   gap: 8px;
   min-width: 0;
@@ -1889,7 +1846,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 .quota-win-usage {
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-sm);
   font-weight: 400;
@@ -1905,7 +1861,6 @@ html[data-standalone="true"] .app-shell {
   flex-shrink: 0;
 }
 
-/* --- 2. 多任务实时运行卡片列表与 4 格测速指标矩阵 (Live Running Tasks List & 4-Cell Telemetry Matrix) --- */
 .overview-modules-host {
   display: flex;
   flex-direction: column;
@@ -2246,7 +2201,123 @@ html[data-standalone="true"] .app-shell {
   text-overflow: ellipsis;
 }
 
-/* --- 3. 10 段上下文进度条与配额池填充条 (Context Segment Meter & Quota Progress Bars) --- */
+.matrix-cell.is-trend-card {
+  gap: 5px;
+  padding: 8px 11px 9px;
+}
+
+.cell-trend-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cell-trend-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.cell-trend-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.cell-trend-num {
+  font-size: var(--fs-hero);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-trend-num:not([class*="tone-"]):not([class*="accent-"]) {
+  color: var(--text-primary);
+}
+
+.cell-trend-unit {
+  font-size: var(--fs-md);
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.cell-trend-sub {
+  font-size: var(--fs-sm);
+  line-height: 1.25;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-sparkline-wrap {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  flex: 1 1 0%;
+  min-width: 64px;
+  max-width: none;
+  height: 34px;
+}
+
+.cell-sparkline-wrap:not([class*="tone-"]):not([class*="accent-"]) {
+  color: var(--accent-primary);
+}
+
+.telemetry-matrix.is-large-trend[data-cols="1"] .cell-trend-left {
+  max-width: 48%;
+}
+
+.telemetry-matrix.is-large-trend[data-cols="1"] .cell-sparkline-wrap {
+  flex: 1 1 0%;
+  min-width: 112px;
+  max-width: none;
+}
+
+.telemetry-matrix.is-large-trend[data-cols="2"] .cell-trend-left {
+  max-width: 54%;
+}
+
+.telemetry-matrix.is-large-trend[data-cols="3"] .matrix-cell.is-trend-card {
+  padding: 8px 8px 9px;
+}
+
+.telemetry-matrix.is-large-trend[data-cols="3"] .cell-trend-row {
+  gap: 6px;
+}
+
+.telemetry-matrix.is-large-trend[data-cols="3"] .cell-trend-metric {
+  gap: 2px;
+}
+
+.telemetry-matrix.is-large-trend[data-cols="3"] .cell-trend-unit {
+  font-size: var(--fs-xs);
+}
+
+.telemetry-matrix.is-large-trend[data-cols="3"] .cell-sparkline-wrap {
+  flex: 1 1 0%;
+  min-width: 34px;
+  max-width: none;
+}
+
+.cell-sparkline-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
 .progress-track {
   width: 100%;
   height: 6px;
@@ -2270,7 +2341,6 @@ html[data-standalone="true"] .app-shell {
     width var(--dur-normal) var(--ease-fast) 0.05s;
 }
 
-/* 块状微圆角风格上下文进度条（保持 6px 紧凑高度 + 色块间 2px 轻间隙 + 每段 2px 边缘圆润处理） */
 .progress-track.ctx-segment-meter {
   height: 6px;
   border-radius: 3px;
@@ -2433,7 +2503,6 @@ html[data-standalone="true"] .app-shell {
   );
 }
 
-/* 可用额度标题旁圈问号触发器及实测倍率预估悬浮卡片 */
 .quota-panel {
   position: relative;
 }
@@ -2503,7 +2572,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 .quota-rate-pop-account {
-  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--text-muted);
   white-space: nowrap;
@@ -2582,15 +2650,15 @@ html[data-standalone="true"] .app-shell {
 .quota-rate-model-row {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
   min-width: 0;
 }
 
 .quota-rate-row-top {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -2599,7 +2667,7 @@ html[data-standalone="true"] .app-shell {
   align-items: baseline;
   gap: 6px;
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
 }
 
 .quota-rate-model-name {
@@ -2618,7 +2686,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 .quota-rate-mult-badge {
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
   font-weight: 600;
@@ -2642,8 +2709,8 @@ html[data-standalone="true"] .app-shell {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  justify-content: space-between;
-  column-gap: 10px;
+  justify-content: flex-start;
+  column-gap: 14px;
   row-gap: 3px;
 }
 
@@ -2686,7 +2753,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-secondary);
 }
 
-/* --- 4. 上下文双列图例网格 (Context 10-Channel Legend Grid) --- */
 .ctx-legend-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2731,14 +2797,12 @@ html[data-standalone="true"] .app-shell {
 .swatch.seg-system-prompt { background: var(--ctx-system-prompt); }
 .swatch.seg-user-rules { background: var(--ctx-user-rules); }
 
-/* --- 5. 双栏网格与窄视口响应式折叠 (Dual Grid & Responsive Breakpoints) --- */
 .dual-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-3);
 }
 
-/* --- 6. 上下文窗口内联代理切换器与代理徽章 (Scheme B Context Inspector & Agent Badges) --- */
 .ctx-inspector-bar {
   display: flex;
   align-items: flex-start;
@@ -2872,17 +2936,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/views-consumption.css --- */
-/*
- * 全景消耗统计视图样式表 (views-consumption.css).
- * 包含：
- * 1. 消费概览顶栏与 3+3 统一指标矩阵 (.cons-overview-head, .cons-unified-matrix, .cons-split-3, .cons-col)
- * 2. 4 段比例条与圆点色块 (.dot-swatch, .cons-seg-bar)
- * 3. 热门模型与数据来源列表项样式 (.cons-row-*, .cons-share-pill, .cons-item-*)
- * 4. 历史趋势纯 SVG 平滑曲线图与峰值胶囊 (.trend-*)
- * 5. 12 个月垂直堆叠柱状图与月度图例 (.monthly-*, .month-*)
- */
-
-/* --- 1. 消费概览顶栏与 3+3 组合指标矩阵 (Consumption Overview Matrix) --- */
 .cons-overview-head {
   flex-wrap: wrap;
   gap: 6px;
@@ -3096,7 +3149,6 @@ html[data-standalone="true"] .app-shell {
   white-space: nowrap;
 }
 
-/* --- 2. 4 段比例条与圆点色块 (Four-Segment Bar & Dot Swatches) --- */
 .dot-swatch {
   width: 6px;
   height: 6px;
@@ -3121,7 +3173,6 @@ html[data-standalone="true"] .app-shell {
   background-color: var(--seg-color, var(--accent-primary));
 }
 
-/* --- 3. 热门模型与数据来源行头部对齐 (Popular Models & Sources Row Header) --- */
 .cons-row-title {
   display: inline-flex;
   align-items: center;
@@ -3225,7 +3276,6 @@ html[data-standalone="true"] .app-shell {
   margin-left: auto;
 }
 
-/* --- 4. 历史趋势交互式 SVG 平滑曲线图 (Interactive Historical Trend SVG Chart) --- */
 .cons-trend-head {
   flex-wrap: wrap;
   gap: 6px;
@@ -3571,7 +3621,6 @@ html[data-standalone="true"] .app-shell {
   font-weight: 600;
 }
 
-/* --- 4b. 类 GitHub 每日小格子热力图 (> 90 天自动启用，一格一天) --- */
 .trend-heatmap-stage {
   display: flex;
   flex-direction: column;
@@ -3759,7 +3808,6 @@ html[data-standalone="true"] .app-shell {
   box-sizing: border-box;
 }
 
-/* --- 5. 模型与数据来源明细行容器 (Popular Models & Sources Item Rows) --- */
 .cons-ranking-head {
   flex-wrap: wrap;
   row-gap: 6px;
@@ -4042,7 +4090,6 @@ html[data-standalone="true"] .app-shell {
   font-weight: 600;
 }
 
-/* --- 共享模型构成悬浮详情卡 (Trend Heatmap / Client Sources / Sessions / Monthly Popover) --- */
 .cons-breakdown-popover {
   position: absolute;
   left: 0;
@@ -4293,7 +4340,6 @@ html[data-standalone="true"] .app-shell {
   white-space: nowrap;
 }
 
-/* --- 6. 12 个月垂直堆叠柱状图 (12-Month Stacked Bar Chart) --- */
 .monthly-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -4389,15 +4435,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/views-tables.css --- */
-/*
- * 步骤明细与模型汇总数据表样式表 (views-tables.css).
- * 包含：
- * 1. 表格专属自定义滚动容器修饰 (.table-scroll-host)
- * 2. 表格滚动视口 (.table-viewport)
- * 3. 粘性表头与紧凑高密度数据表 (.data-table)
- */
-
-/* --- 1. 表格专属滚动容器与视口 (Table Scroll Host & Viewport) --- */
 .table-scroll-host {
   flex: 1;
   min-height: 0;
@@ -4431,7 +4468,6 @@ html[data-standalone="true"] .app-shell {
   overflow-anchor: none;
 }
 
-/* --- 2. 粘性表头数据表 (Sticky-Header Data Table) --- */
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -4652,7 +4688,6 @@ html[data-standalone="true"] .app-shell {
   background: color-mix(in srgb, var(--text-primary) 14%, var(--surface-panel));
 }
 
-/* --- 2.5 极简对话轮次导轨与起点圆点 (Minimalist Turn Rail & Prompt Preview) --- */
 .steps-data-table.has-turn-rail th:first-child,
 .steps-data-table.has-turn-rail td:first-child {
   padding-left: 17px;
@@ -4744,7 +4779,6 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
-/* 极简紧凑提问文本悬停预览气泡 */
 .turn-prompt-tip {
   position: absolute;
   z-index: 45;
@@ -4767,7 +4801,6 @@ html[data-standalone="true"] .app-shell {
   animation: anim-popover-in var(--dur-instant) var(--ease-fast);
 }
 
-/* --- 2.6 单步压缩 / 异常整行语义着色、模型汇总微标、筛选条与悬停诊断卡 --- */
 .data-table tbody tr.is-compaction {
   background: color-mix(in srgb, var(--accent-primary) 11%, transparent);
 }
@@ -4817,6 +4850,28 @@ html[data-standalone="true"] .app-shell {
 .data-table tbody tr.is-anomaly-danger td:first-child > span:not(.agent-badge):not(.turn-rail) {
   color: var(--metric-danger);
   font-weight: 600;
+}
+
+.data-table tbody tr.is-reverted {
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+.data-table tbody tr.is-reverted:hover {
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+}
+
+.data-table tbody tr.is-reverted td {
+  color: var(--text-muted);
+  opacity: 0.62;
+}
+
+.data-table tbody tr.is-reverted td:first-child {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--text-muted) 52%, transparent);
+}
+
+.data-table tbody tr.is-reverted td span:not(.agent-badge):not(.turn-rail),
+.data-table tbody tr.is-reverted td .step-model-compact {
+  color: var(--text-muted);
 }
 
 .step-anomaly-tag {
@@ -4892,6 +4947,10 @@ html[data-standalone="true"] .app-shell {
   border-color: color-mix(in srgb, var(--accent-primary) 46%, var(--border-strong));
 }
 
+.step-anomaly-tip.is-reverted {
+  border-color: var(--border-strong);
+}
+
 .step-anomaly-tip.is-timing {
   border-color: var(--border-strong);
 }
@@ -4922,6 +4981,10 @@ html[data-standalone="true"] .app-shell {
 
 .step-anomaly-tip.is-compaction .step-anomaly-tip-title {
   color: var(--accent-primary);
+}
+
+.step-anomaly-tip.is-reverted .step-anomaly-tip-title {
+  color: var(--text-muted);
 }
 
 .step-anomaly-tip.is-timing .step-anomaly-tip-title {
@@ -5113,7 +5176,6 @@ html[data-standalone="true"] .app-shell {
   background: color-mix(in srgb, var(--metric-danger) 15%, transparent);
 }
 
-/* --- 3. 按模型汇总分析视图：双趋势图与极简模型总览 (Models Analytics Pane) --- */
 .models-analytics-pane {
   display: flex;
   flex-direction: column;
@@ -5244,7 +5306,8 @@ html[data-standalone="true"] .app-shell {
 
 .sstep-axis-label {
   fill: var(--text-muted);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-2xs);
   user-select: none;
   pointer-events: none;
@@ -5526,7 +5589,6 @@ html[data-standalone="true"] .app-shell {
   font-size: var(--fs-xs);
 }
 
-/* --- 4. 极简高密度模型总览列表 (Minimalist Session Model Summary Cards) --- */
 .smodel-section {
   display: flex;
   flex-direction: column;
@@ -5670,7 +5732,6 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
-/* --- 步骤搜索栏、快捷诊断筛选芯片及单步透视抽屉 --- */
 .steps-filter-toolbar {
   display: flex;
   align-items: center;
@@ -5694,11 +5755,9 @@ html[data-standalone="true"] .app-shell {
 }
 
 .steps-quick-chips {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
   flex: 0 1 auto;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .steps-quick-chips[hidden] {
@@ -5709,76 +5768,7 @@ html[data-standalone="true"] .app-shell {
   flex-shrink: 0;
 }
 
-.steps-chip-btn {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-hairline);
-  background: var(--surface-subtle);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background var(--dur-instant) var(--ease-fast),
-    color var(--dur-instant) var(--ease-fast),
-    border-color var(--dur-instant) var(--ease-fast);
-}
-
-.steps-chip-btn[hidden] {
-  display: none !important;
-}
-
-.steps-chip-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.steps-chip-btn.is-active {
-  background: var(--accent-primary-soft);
-  border-color: var(--accent-primary-border);
-  color: var(--accent-primary);
-  font-weight: 600;
-}
-
-.steps-chip-btn.is-warn.is-active {
-  background: var(--metric-warn-soft);
-  border-color: color-mix(in srgb, var(--metric-warn) 42%, var(--border-hairline));
-  color: var(--metric-warn);
-}
-
-.steps-chip-btn.is-danger.is-active {
-  background: var(--metric-danger-soft);
-  border-color: color-mix(in srgb, var(--metric-danger) 42%, var(--border-hairline));
-  color: var(--metric-danger);
-}
-
-.steps-chip-btn.is-info.is-active {
-  background: var(--metric-info-soft);
-  border-color: color-mix(in srgb, var(--metric-info) 42%, var(--border-hairline));
-  color: var(--metric-info);
-}
-
-[data-modern-ui="true"] .steps-chip-btn {
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--modern-surface-subtle);
-}
-
 /* --- src/styles/views-settings.css --- */
-/*
- * 模块化偏好设置样式表 (views-settings.css).
- * 包含：
- * 1. 顶部偏好设置切换导航条 (.settings-view-root, .settings-subnav-bar)
- * 2. 主题强调色色卡选择器 (.theme-color-picker, .theme-host-chip, .theme-swatch-btn)
- * 3. 结构页手风琴折叠面板 (.collapsible-section, .collapsible-trigger, .collapsible-body)
- * 4. 通用 + / - / ↑ / ↓ 自添加排序列表 (.editable-slot-list, .editable-slot-row, .slot-add-btn)
- * 5. 其他页维护操作行与二次确认危险态按钮 (.settings-action-row, .btn-danger-confirm)
- */
-
 .settings-view-root {
   flex: 1;
   min-height: 0;
@@ -5814,11 +5804,10 @@ html[data-standalone="true"] .app-shell {
   font-weight: 500;
 }
 
-/* --- 结构页三级子导航菜单 (.settings-thirdnav-bar) --- */
 .settings-thirdnav-bar {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--thirdnav-count, 4), minmax(0, 1fr));
   align-items: center;
   padding: 3px;
   gap: 0;
@@ -5829,12 +5818,16 @@ html[data-standalone="true"] .app-shell {
   user-select: none;
 }
 
+.settings-thirdnav-bar[hidden] {
+  display: none !important;
+}
+
 .thirdnav-glider {
   position: absolute;
   top: 3px;
   bottom: 3px;
   left: 3px;
-  width: calc((100% - 6px) / 4);
+  width: calc((100% - 6px) / var(--thirdnav-count, 4));
   background: var(--accent-primary-soft);
   border: 1px solid var(--accent-primary-border);
   border-radius: var(--radius-xs);
@@ -5899,7 +5892,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-muted);
 }
 
-/* --- 主题色色卡选择器 (ThemeColorPicker) --- */
 .theme-color-picker {
   display: flex;
   align-items: center;
@@ -5978,7 +5970,6 @@ html[data-standalone="true"] .app-shell {
   stroke-width: 2.5;
 }
 
-/* --- 手风琴折叠面板 (CollapsibleSection) --- */
 .collapsible-section {
   gap: 0;
   padding: 0;
@@ -6025,7 +6016,6 @@ html[data-standalone="true"] .app-shell {
   font-weight: 600;
 }
 
-/* --- 结构页真实 UI 实时预览画布（1:1 零缩放、零套娃外框，直接呈现真实组件） --- */
 .structure-preview-canvas {
   position: relative;
   display: flex;
@@ -6044,8 +6034,10 @@ html[data-standalone="true"] .app-shell {
   border: none;
   border-radius: 0;
   background: transparent;
-  z-index: 1;
+  z-index: auto;
   pointer-events: auto;
+  overflow: visible;
+  contain: none;
   box-shadow: none;
   animation: none;
 }
@@ -6118,6 +6110,37 @@ html[data-standalone="true"] .app-shell {
   filter: grayscale(0.35);
 }
 
+.preview-capsule-bar.is-slot-reorderable .wm-capsule-btn {
+  cursor: default;
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-cap-slot {
+  border-radius: 3px;
+}
+
+.preview-capsule-bar.is-slot-reorderable:not(.is-dragging-capsule) .wm-cap-slot:hover {
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 12%, transparent);
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-sep.is-drag-sep {
+  opacity: 0.32;
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1), opacity 140ms ease-out;
+  will-change: transform;
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-dragging {
+  z-index: 45;
+  background: color-mix(in srgb, var(--accent-primary) 18%, var(--surface-panel));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, var(--surface-panel)),
+    0 0 0 4px var(--accent-primary-border),
+    var(--shadow-popover);
+  pointer-events: none;
+  will-change: transform;
+  transition: box-shadow 140ms ease-out, background-color 140ms ease-out;
+}
+
 .preview-capsule-cluster {
   display: inline-flex;
   align-items: center;
@@ -6184,6 +6207,107 @@ html[data-standalone="true"] .app-shell {
   border-bottom: none;
 }
 
+.preview-capsule-bar.is-dragging-capsule,
+.preview-capsule-bar.is-dragging-capsule *,
+.is-dragging-modules,
+.is-dragging-modules *,
+.telemetry-matrix.is-dragging-matrix,
+.telemetry-matrix.is-dragging-matrix *,
+.step-table-preview-host.is-dragging-cols,
+.step-table-preview-host.is-dragging-cols * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-cap-slot,
+.is-modules-reorderable > .is-reorderable-module,
+.telemetry-matrix.is-metrics-reorderable .matrix-cell,
+.step-table-preview-host.is-col-reorderable .steps-data-table th.is-col-reorderable {
+  position: relative;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition:
+    background-color var(--dur-instant) var(--ease-fast),
+    border-color var(--dur-instant) var(--ease-fast),
+    box-shadow var(--dur-instant) var(--ease-fast),
+    color var(--dur-instant) var(--ease-fast);
+}
+
+.is-modules-reorderable:not(.is-dragging-modules) > .is-reorderable-module:not(.telemetry-matrix):hover {
+  border-color: var(--accent-primary-border);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-primary) 22%, transparent);
+}
+
+.telemetry-matrix.is-metrics-reorderable.is-dragging-matrix {
+  overflow: visible;
+}
+
+.telemetry-matrix.is-metrics-reorderable:not(.is-dragging-matrix) .matrix-cell:hover {
+  box-shadow: inset 0 0 0 1px var(--accent-primary-border);
+  background: color-mix(in srgb, var(--accent-primary) 7%, var(--surface-panel));
+}
+
+.step-table-preview-host.is-col-reorderable:not(.is-dragging-cols) .steps-data-table th.is-col-reorderable:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--surface-panel));
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-drag-sibling,
+.is-modules-reorderable > .is-module-drag-sibling,
+.telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-drag-sibling,
+.step-table-preview-host.is-col-reorderable .steps-data-table .is-col-drag-sibling {
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  will-change: transform;
+}
+
+.is-modules-reorderable > .is-module-dragging,
+.telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-dragging {
+  z-index: 45;
+  border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--surface-panel));
+  box-shadow: var(--shadow-popover), 0 0 0 1.5px var(--accent-primary-border);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.step-table-preview-host.is-col-reorderable .steps-data-table .is-col-dragging {
+  position: relative;
+  z-index: 45;
+  background: color-mix(in srgb, var(--accent-primary) 13%, var(--surface-panel));
+  pointer-events: none;
+  will-change: transform;
+}
+
+.step-table-preview-host.is-col-reorderable .steps-data-table th.is-col-dragging {
+  color: var(--accent-primary);
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
+}
+
+.preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-settling,
+.is-modules-reorderable > .is-module-settling,
+.telemetry-matrix.is-metrics-reorderable .matrix-cell.is-settling,
+.step-table-preview-host.is-col-reorderable .steps-data-table .is-col-settling {
+  position: relative;
+  z-index: 42;
+  will-change: transform;
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 180ms ease-out, background-color 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-drag-sibling,
+  .preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-settling,
+  .preview-capsule-bar.is-slot-reorderable .wm-sep.is-drag-sep,
+  .is-modules-reorderable > .is-module-drag-sibling,
+  .is-modules-reorderable > .is-module-settling,
+  .telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-drag-sibling,
+  .telemetry-matrix.is-metrics-reorderable .matrix-cell.is-settling,
+  .step-table-preview-host.is-col-reorderable .steps-data-table .is-col-drag-sibling,
+  .step-table-preview-host.is-col-reorderable .steps-data-table .is-col-settling {
+    transition: none !important;
+  }
+}
+
 .collapsible-chevron {
   color: var(--text-secondary);
   transition: transform var(--dur-fast) var(--ease-fast);
@@ -6241,7 +6365,6 @@ html[data-standalone="true"] .app-shell {
   margin: 2px 0;
 }
 
-/* --- 通用可增删排序槽位列表 (EditableSlotList) --- */
 .editable-slot-wrap {
   display: flex;
   flex-direction: column;
@@ -6273,7 +6396,29 @@ html[data-standalone="true"] .app-shell {
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-xs);
   background: var(--surface-panel);
-  transition: border-color var(--dur-instant) var(--ease-fast);
+  transition:
+    border-color var(--dur-instant) var(--ease-fast),
+    opacity var(--dur-fast) var(--ease-fast);
+}
+
+.editable-slot-row.is-dimmed:not(.is-dragging) {
+  opacity: 0.46;
+}
+
+.editable-slot-row.is-dimmed:not(.is-dragging):hover,
+.editable-slot-row.is-dimmed:not(.is-dragging):focus-within {
+  opacity: 0.78;
+}
+
+.slot-dimmed-tag {
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-2xs);
+  line-height: 1.35;
+  color: var(--text-muted);
+  background: var(--surface-track);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .editable-slot-row:focus-within,
@@ -6323,15 +6468,43 @@ html[data-standalone="true"] .app-shell {
   user-select: none !important;
 }
 
+.editable-slot-row.is-drag-sibling {
+  transition: transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  will-change: transform;
+}
+
 .editable-slot-row.is-dragging {
-  z-index: 40;
+  z-index: 45;
   border-color: var(--accent-primary);
-  background: color-mix(in srgb, var(--accent-primary) 9%, var(--surface-panel));
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--surface-panel));
   box-shadow: var(--shadow-popover);
+  will-change: transform;
+  pointer-events: none;
+  transition:
+    box-shadow 150ms ease-out,
+    background-color 150ms ease-out,
+    border-color 150ms ease-out;
+}
+
+.editable-slot-row.is-settling {
+  z-index: 42;
+  will-change: transform;
+  transition:
+    transform 190ms cubic-bezier(0.2, 0.9, 0.3, 1),
+    box-shadow 190ms ease-out,
+    background-color 190ms ease-out,
+    border-color 190ms ease-out;
 }
 
 .editable-slot-row.is-dragging .slot-drag-handle {
   color: var(--accent-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editable-slot-row.is-drag-sibling,
+  .editable-slot-row.is-settling {
+    transition: none;
+  }
 }
 
 .slot-remove-btn {
@@ -6378,7 +6551,6 @@ html[data-standalone="true"] .app-shell {
   cursor: default;
 }
 
-/* --- 其他页：维护操作行 --- */
 .settings-action-block {
   display: flex;
   align-items: center;
@@ -6455,6 +6627,14 @@ html[data-standalone="true"] .app-shell {
   background: var(--accent-primary-soft);
 }
 
+.account-toolbar-panel .settings-bridge-actions .settings-account-login-cancel {
+  min-height: calc(24px * var(--ui-font-scale, 1));
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-xs);
+  line-height: 1.2;
+}
+
 .account-refresh-select {
   flex: 0 0 auto;
   width: auto;
@@ -6525,7 +6705,6 @@ html[data-standalone="true"] .app-shell {
   gap: var(--space-3);
 }
 
-/* Optically symmetrical vertical padding: 11px + 3px header leading == 14px bottom bar-to-edge */
 .account-card {
   gap: 10px;
   padding: 11px var(--space-5) 14px;
@@ -6613,7 +6792,6 @@ html[data-standalone="true"] .app-shell {
   min-width: 0;
 }
 
-/* Quota Trend Card minor layout helpers */
 .account-trend-toprow {
   gap: var(--space-2);
   flex-wrap: wrap;
@@ -6721,7 +6899,7 @@ html[data-standalone="true"] .app-shell {
   background: var(--surface-subtle);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-xs);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-md);
   color: var(--text-primary);
   outline: none;
@@ -6757,7 +6935,7 @@ html[data-standalone="true"] .app-shell {
   min-width: 48px;
   padding: 0 4px;
   text-align: center;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-md);
 }
 
@@ -6766,7 +6944,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-secondary);
 }
 
-/* --- 其他页：模型上下文设置风险警告遮罩 --- */
 .ctx-risk-stage {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -6852,7 +7029,6 @@ html[data-standalone="true"] .app-shell {
   font-size: var(--fs-md);
 }
 
-/* 设置页卡片头部右侧状态提示（长路径自动单行省略，防止把左侧标题挤成 0px 造成文字重叠） */
 .settings-panel-header > .panel-title {
   flex: 0 0 auto;
 }
@@ -6867,7 +7043,6 @@ html[data-standalone="true"] .app-shell {
   font-size: var(--fs-md);
 }
 
-/* --- CDP / 双栖桥接端口诊断与一键重拉卡片 (.settings-bridge-notice) --- */
 .app-bridge-banner-slot {
   padding: 0 var(--space-4) var(--space-2);
   flex-shrink: 0;
@@ -6968,6 +7143,7 @@ html[data-standalone="true"] .app-shell {
   color: var(--accent-primary);
   font-size: var(--fs-xs);
   font-weight: 600;
+  text-decoration: none;
   cursor: pointer;
   max-width: 100%;
   transition:
@@ -6998,7 +7174,6 @@ html[data-standalone="true"] .app-shell {
   min-height: calc(24px * var(--ui-font-scale, 1));
   padding: 2px var(--space-3);
   font-size: var(--fs-xs);
-  font-family: var(--font-mono);
   max-width: 100%;
 }
 
@@ -7020,7 +7195,6 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
-/* --- 其他页：跨端会话按需迁移卡片 (.smig-panel) --- */
 .smig-panel[hidden] {
   display: none !important;
 }
@@ -7131,6 +7305,12 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-secondary);
 }
 
+.smig-load-more-btn {
+  width: 100%;
+  margin-top: 4px;
+  justify-content: center;
+}
+
 .smig-item {
   display: flex;
   align-items: flex-start;
@@ -7221,7 +7401,6 @@ html[data-standalone="true"] .app-shell {
 
 .smig-item-ws {
   font-size: var(--fs-xs);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7329,13 +7508,7 @@ html[data-standalone="true"] .app-shell {
   font-size: var(--fs-xs);
 }
 
-/* --- Antigravity CLI 底部状态胶囊专属配置块（仅检测到 CLI 时展示） --- */
-.cli-statusline-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
+.collapsible-section[hidden],
 .cli-statusline-group[hidden],
 .cli-statusline-detail[hidden] {
   display: none !important;
@@ -7546,7 +7719,6 @@ html[data-standalone="true"] .app-shell {
   flex-shrink: 0;
 }
 
-/* --- Decoupled Antigravity Host UI Language Card (HostI18nCard) --- */
 .host-i18n-status-msg {
   font-size: var(--fs-sm);
   margin-left: auto;
@@ -7560,102 +7732,648 @@ html[data-standalone="true"] .app-shell {
   color: var(--metric-danger);
 }
 
-.host-i18n-select-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-width: 0;
-}
-
-.host-i18n-select-row > .custom-select {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.host-i18n-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: calc(28px * var(--ui-font-scale, 1));
-  height: calc(28px * var(--ui-font-scale, 1));
-  padding: 0;
-  flex-shrink: 0;
-}
-
 .host-i18n-pack-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
   padding-top: 2px;
 }
 
-.host-i18n-pack-meta {
-  font-size: var(--fs-xs);
-  line-height: 1.4;
+.host-i18n-collect-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 2px;
 }
 
-.host-i18n-pack-actions {
+.host-i18n-collect-result .is-error {
+  color: var(--metric-danger);
+}
+
+.host-i18n-collect-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.currency-control-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.currency-control-row > .custom-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.currency-fx-refresh-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.view-pane.is-full-height-tab > .custom-scroll-content {
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+  padding-right: 0;
+}
+
+.view-pane.is-full-height-tab > .scrollbar-rail {
+  display: none;
+}
+
+.sessions-hub-stack {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  padding-bottom: 2px;
+}
+
+.sessions-migrate-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sessions-migrate-wrap .smig-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sessions-migrate-wrap .smig-panel > :not(.smig-scroll-host) {
+  flex-shrink: 0;
+}
+
+.sessions-migrate-wrap .smig-scroll-host {
+  flex: 1 1 140px;
+  min-height: 140px;
+}
+
+.sessions-migrate-wrap .smig-list {
+  max-height: none;
+  height: 100%;
+}
+
+.smig-item {
+  user-select: none;
+}
+
+.sessions-migrate-wrap[hidden],
+.smgr-panel[hidden] {
+  display: none !important;
+}
+
+.btn-danger-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: calc(24px * var(--ui-font-scale, 1));
+  padding: 2px 9px;
+  border-radius: var(--radius-xs);
+  border: 1px solid color-mix(in srgb, var(--metric-danger) 42%, transparent);
+  background: var(--metric-danger-soft);
+  color: var(--metric-danger);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-instant) var(--ease-fast),
+    opacity var(--dur-instant) var(--ease-fast);
+}
+
+.btn-danger-sm:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--metric-danger) 22%, transparent);
+}
+
+.btn-danger-sm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-danger-sm[hidden] {
+  display: none !important;
+}
+
+.smgr-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow: hidden;
+}
+
+.smgr-header,
+.smgr-source-seg,
+.smgr-guard-notice,
+.smgr-prefs-drawer,
+.smgr-result,
+.smgr-toolbar {
+  flex-shrink: 0;
+}
+
+.smgr-header-actions {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
-.host-i18n-dev-drawer {
-  border-top: 1px solid var(--border-hairline);
-  padding-top: 8px;
-  margin-top: 2px;
-}
-
-.host-i18n-dev-toggle {
+.smgr-title-count {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: var(--fs-2xs);
   font-weight: 600;
-  padding: 2px 0;
-  cursor: pointer;
+  font-variant-numeric: tabular-nums;
 }
 
-.host-i18n-dev-toggle:hover {
+.smgr-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+}
+
+.smgr-source-seg {
+  width: 100%;
+}
+
+.smgr-guard-notice {
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+
+.smgr-guard-notice.is-warn {
+  border-color: color-mix(in srgb, var(--metric-warn) 38%, var(--border-hairline));
+  background: var(--metric-warn-soft);
   color: var(--text-primary);
 }
 
-.host-i18n-dev-chevron {
-  transition: transform var(--dur-fast) var(--ease-standard);
+.smgr-guard-notice[hidden],
+.smgr-prefs-drawer[hidden],
+.smgr-confirm-box[hidden],
+.smgr-result[hidden],
+.smgr-clear-sel-btn[hidden] {
+  display: none !important;
 }
 
-.host-i18n-dev-drawer.is-expanded .host-i18n-dev-chevron {
-  transform: rotate(90deg);
-}
-
-.host-i18n-dev-body {
+.smgr-prefs-drawer {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 6px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-subtle);
 }
 
-.host-i18n-dev-actions {
+.smgr-pref-row {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.smgr-pref-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.smgr-pref-title {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.smgr-pref-desc {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.smgr-toolbar {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 
-/* --- src/styles/overlay.css --- */
-/*
- * 双栖模式顶栏胶囊与悬浮面板样式表 (overlay.css).
- * 严格遵循单层微边框与语义变量规范（零硬编码色值、零 Emoji、硬件加速合成层动画）。
- */
+.smgr-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 
-/* --- 1. 顶栏胶囊宿主容器 (Titlebar Capsule Host) --- */
+.smgr-search-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: calc(28px * var(--ui-font-scale, 1));
+}
+
+.smgr-sort-select {
+  flex-shrink: 0;
+  width: 112px;
+}
+
+.smgr-sort-select .select-trigger {
+  min-height: calc(28px * var(--ui-font-scale, 1));
+  font-size: var(--fs-xs);
+}
+
+.smgr-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 10px 6px 14px;
+  min-height: calc(26px * var(--ui-font-scale, 1));
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.smgr-action-left,
+.smgr-action-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.smgr-select-all-btn,
+.smgr-inline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    background-color var(--dur-instant) var(--ease-fast),
+    color var(--dur-instant) var(--ease-fast);
+}
+
+.smgr-select-all-btn:hover:not(:disabled),
+.smgr-inline-toggle:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.smgr-select-all-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.smgr-select-all-box,
+.smgr-inline-check {
+  margin-top: 0;
+}
+
+.smgr-select-all-box.is-partial {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary-soft);
+}
+
+.smgr-partial-dash {
+  width: 6px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--accent-primary);
+}
+
+.smgr-inline-toggle.is-active {
+  color: var(--text-primary);
+}
+
+.smgr-inline-link-btn {
+  border: none;
+  background: transparent;
+  padding: 2px 5px;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-instant) var(--ease-fast),
+    color var(--dur-instant) var(--ease-fast);
+}
+
+.smgr-inline-link-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.smgr-batch-delete-btn {
+  flex-shrink: 0;
+}
+
+.smgr-confirm-box {
+  flex-shrink: 0;
+  max-height: 45%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--metric-danger) 42%, var(--border-hairline));
+  background: var(--metric-danger-soft);
+}
+
+.smgr-confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--metric-danger);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.smgr-confirm-list {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.smgr-confirm-orphan-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-panel);
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.smgr-confirm-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.smgr-result {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.smgr-result.is-ok {
+  border-color: color-mix(in srgb, var(--metric-ok) 40%, var(--border-hairline));
+  background: var(--metric-ok-soft);
+}
+
+.smgr-result.is-err {
+  border-color: color-mix(in srgb, var(--metric-danger) 40%, var(--border-hairline));
+  background: var(--metric-danger-soft);
+}
+
+.smgr-result-msg {
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.smgr-result-detail {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.smgr-list-scroll-host {
+  flex: 1;
+  min-height: 80px;
+  min-width: 0;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-bg);
+}
+
+.smgr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 10px 4px 4px;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.smgr-empty {
+  padding: var(--space-4) var(--space-2);
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.smgr-load-more-btn {
+  width: 100%;
+  margin-top: 4px;
+  justify-content: center;
+}
+
+.smgr-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    border-color var(--dur-instant) var(--ease-fast),
+    background-color var(--dur-instant) var(--ease-fast);
+}
+
+.smgr-item:hover:not(.is-blocked) {
+  background: var(--surface-hover);
+}
+
+.smgr-item.is-blocked {
+  cursor: default;
+}
+
+.smgr-item.is-checked {
+  border-color: var(--accent-primary-border);
+  background: var(--accent-primary-soft);
+}
+
+.smgr-checkbox {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border-radius: 4px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.smgr-checkbox:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.smgr-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.smgr-item-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.smgr-item-title {
+  font-size: var(--fs-base-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.smgr-item-meta {
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.smgr-item-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.smgr-item-ws {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.smgr-item-tel {
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  color: var(--accent-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.smgr-item-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.smgr-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  min-height: 16px;
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+.smgr-badge.is-client-desktop {
+  background: var(--accent-primary-soft);
+  color: var(--accent-primary);
+}
+
+.smgr-badge.is-client-cli {
+  background: var(--metric-ok-soft);
+  color: var(--metric-ok);
+}
+
+.smgr-badge.is-client-ide_legacy {
+  background: var(--metric-info-soft);
+  color: var(--metric-info);
+}
+
+.smgr-badge.is-warn {
+  background: var(--metric-warn-soft);
+  color: var(--metric-warn);
+}
+
+.smgr-badge.is-accent {
+  background: var(--accent-primary-soft);
+  color: var(--accent-primary);
+}
+
+.smgr-badge.is-info {
+  background: var(--metric-info-soft);
+  color: var(--metric-info);
+}
+
+/* --- src/styles/overlay.css --- */
 :host(.wm-capsule-host) {
   --ui-font-scale: 1 !important;
   display: inline-flex;
@@ -7743,7 +8461,6 @@ html[data-standalone="true"] .app-shell {
   }
 }
 
-/* 左侧多会话实时状态触发器（无边框、与宿主顶栏按钮同高 28px、整数行高防压扁） */
 .wm-multi-btn {
   position: relative;
   display: inline-flex;
@@ -7862,7 +8579,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-primary);
 }
 
-/* 右侧胶囊通用槽位容器与按指标预占定宽（严格防止动态数值跳动，保留舒展字间距） */
 .wm-cap-slot {
   display: inline-flex;
   align-items: center;
@@ -7884,7 +8600,6 @@ html[data-standalone="true"] .app-shell {
   flex-shrink: 0;
 }
 
-/* 环形上下文指示器（固定预占宽度 58px：14px 环 + 5px 间距 + 完整容纳四字符 100%） */
 .wm-ctx-seg {
   justify-content: center;
   gap: 5px;
@@ -7947,7 +8662,6 @@ html[data-standalone="true"] .app-shell {
   flex-shrink: 0;
 }
 
-/* 速度槽位（固定预占宽度 58px 居中对齐） */
 .wm-seg-speed {
   width: 58px;
 }
@@ -7962,7 +8676,6 @@ html[data-standalone="true"] .app-shell {
   font-weight: 500;
 }
 
-/* 首字延迟槽位（固定预占宽度 46px 居中对齐，覆盖 0.85s ~ 105s） */
 .wm-seg-ttft {
   width: 46px;
 }
@@ -7972,7 +8685,6 @@ html[data-standalone="true"] .app-shell {
   text-align: center;
 }
 
-/* 本次费用槽位（固定预占宽度 52px 居中对齐，覆盖 <$0.001 ~ $99.99） */
 .wm-seg-cost {
   width: 52px;
 }
@@ -7984,7 +8696,6 @@ html[data-standalone="true"] .app-shell {
   font-weight: 500;
 }
 
-/* 配额槽位（环形剩余进度圈 + 池/窗口短标 + 清晰百分比，零嵌套边框） */
 .wm-seg-quota {
   justify-content: center;
   gap: 4px;
@@ -8015,7 +8726,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-primary);
 }
 
-/* 缓存命中率槽位（固定预占宽度 44px 居中对齐） */
 .wm-seg-cache {
   width: 44px;
 }
@@ -8025,7 +8735,6 @@ html[data-standalone="true"] .app-shell {
   text-align: center;
 }
 
-/* 会话总 Token 槽位（固定预占宽度 52px 居中对齐） */
 .wm-seg-tokens {
   width: 52px;
 }
@@ -8064,7 +8773,6 @@ html[data-standalone="true"] .app-shell {
   color: var(--text-muted);
 }
 
-/* 仅在超窄 ring-only 折叠态下使用右上角 5px 提示圆点；常规态由柔和微胶囊 .wm-update-btn 承载 */
 .wm-update-dot {
   position: absolute;
   top: 3px;
@@ -8080,7 +8788,6 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
-/* 顶栏右侧柔和半透明新版本胶囊按钮（20px 矮胶囊嵌套于 28px 顶栏，克制不突兀，左键一键升级） */
 .wm-update-btn {
   display: inline-flex;
   align-items: center;
@@ -8149,7 +8856,6 @@ html[data-standalone="true"] .app-shell {
   display: none !important;
 }
 
-/* 四级响应式迟滞折叠（基于可见槽位次序 data-vis-rank 1..5 与分隔线次序 data-sep-for-rank 动态折叠） */
 :host(.wm-capsule-host[data-layout="compact"]) .wm-cap-slot[data-vis-rank="3"],
 :host(.wm-capsule-host[data-layout="compact"]) .wm-cap-slot[data-vis-rank="4"],
 :host(.wm-capsule-host[data-layout="compact"]) .wm-cap-slot[data-vis-rank="5"],
@@ -8202,7 +8908,6 @@ html[data-standalone="true"] .app-shell {
   padding: 0;
 }
 
-/* --- 2. 顶层浮层传送门宿主 (Body Portal Host: Multi-Session HUD, Tooltip & Full 4-Tab Popover) --- */
 :host(.wm-portal-host) {
   position: fixed;
   inset: 0;
@@ -8275,7 +8980,6 @@ html[data-standalone="true"] .app-shell {
   max-width: none;
 }
 
-/* 顶栏胶囊悬停全景概览浮层（复用实时概览三卡片架构，全槽位预占，仅就地更新节点不跳动） */
 .wm-hover-tip {
   position: fixed;
   top: 42px;
@@ -8299,7 +9003,6 @@ html[data-standalone="true"] .app-shell {
   animation: wm-popover-in var(--dur-instant) var(--ease-fast);
 }
 
-/* 左侧在线多会话实时看板浮层（单层无套娃细线卡片，宽度与排版密度与侧边栏保持一致） */
 .wm-multi-panel {
   position: fixed;
   top: 42px;
@@ -8452,7 +9155,6 @@ html[data-standalone="true"] .app-shell {
   border-bottom: 1px solid var(--border-hairline);
 }
 
-/* 多会话单层面板内去除重复边框与底色，对齐侧边栏任务卡片间距与左侧基线 */
 .wm-multi-panel .live-activity-list {
   gap: 0;
 }
@@ -8504,17 +9206,6 @@ html[data-standalone="true"] .app-shell {
 }
 
 /* --- src/styles/modern-ui.css --- */
-/*
- * 实验性现代化无边框主题与流畅动画样式层 (modern-ui.css).
- * 仅在根容器或 Shadow Host 携带 [data-modern-ui="true"] 时激活：
- * 1. 移除绝大部分面板、矩阵、表格、徽章、按钮、输入框与悬浮窗的 1px 线框及分隔线；
- * 2. 面板内部子数据块（如版本更新价格表/当前版本、消费矩阵指标格、汇总折线区）保持透明扁平，绝不套叠二层背景卡片；
- * 3. 区分深色与浅色极性 ([data-color-scheme="light" | "dark"])：
- *    - 深色模式采用柔和提亮顶层卡片与轻薄半透雾面滑槽（绝不混入重黑色块）；
- *    - 浅色模式采用微凉白瓷画布 (#f7f9fb) + 纯白悬浮顶层卡片 (#ffffff) + 纯白立体滑块；
- * 4. 全局分段切换器 (.segmented / .long-pill-nav / .settings-thirdnav-bar) 按内容宽度贴合滑动。
- */
-
 :root[data-modern-ui="true"],
 :host([data-modern-ui="true"]),
 [data-modern-ui="true"] {
@@ -8655,7 +9346,6 @@ html[data-standalone="true"] .app-shell {
   }
 }
 
-/* --- 1. 外壳画布、顶层卡片与按量贴合滑动轨道 (Canvas, Top-Level Cards & Fit-Content Sliding Tracks) --- */
 html[data-standalone="true"][data-modern-ui="true"] #app-root {
   min-height: 100dvh;
   background: var(--modern-canvas-bg);
@@ -8757,7 +9447,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   transform: scale(0.97);
 }
 
-/* --- 2. 按钮、状态标签、代理徽章与胶囊全面去边框 --- */
 [data-modern-ui="true"] .status-tag,
 [data-modern-ui="true"] .status-tag.state-running,
 [data-modern-ui="true"] .status-tag.state-synced,
@@ -8856,6 +9545,25 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
     transform 140ms var(--ease-modern);
 }
 
+[data-modern-ui="true"] .btn-danger-sm {
+  border: none;
+  background: var(--metric-danger-soft);
+  color: var(--metric-danger);
+  transition:
+    background-color 160ms var(--ease-modern),
+    opacity 160ms var(--ease-modern),
+    transform 140ms var(--ease-modern);
+}
+
+[data-modern-ui="true"] .btn-danger-sm:hover:not(:disabled) {
+  border: none;
+  background: color-mix(in srgb, var(--metric-danger) 20%, transparent);
+}
+
+[data-modern-ui="true"] .btn-danger-sm:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
 [data-modern-ui="true"] .agent-badge,
 [data-modern-ui="true"] .agent-badge.is-clickable:hover,
 [data-modern-ui="true"] .step-anomaly-tag {
@@ -8866,7 +9574,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: var(--modern-surface-subtle);
 }
 
-/* --- 3. 实时概览矩阵与任务卡片：顶层独立卡片，面板内子块绝不叠套背景 --- */
 [data-modern-ui="true"] .telemetry-matrix {
   border: none;
   background: transparent;
@@ -8882,7 +9589,14 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   transition: background-color 160ms var(--ease-modern);
 }
 
-/* 面板内的双栏信息项（如版本更新中的「价格表 / 当前版本」）不套二层背景 */
+[data-modern-ui="true"] .matrix-cell.is-trend-card {
+  padding: 9px 12px 10px;
+}
+
+[data-modern-ui="true"] .telemetry-matrix.is-large-trend[data-cols="3"] .matrix-cell.is-trend-card {
+  padding: 9px 9px 10px;
+}
+
 [data-modern-ui="true"] .dual-grid > .matrix-cell {
   background: transparent;
   box-shadow: none;
@@ -8890,7 +9604,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   padding: 2px 0;
 }
 
-/* 结构页预览画布内的测速卡与任务卡保持轻微层次以呈现真实预览布局 */
 [data-modern-ui="true"] .structure-preview-canvas .matrix-cell {
   background: var(--modern-surface-subtle);
   box-shadow: none;
@@ -8931,7 +9644,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: var(--modern-progress-track);
 }
 
-/* --- 4. 用量统计矩阵、热力格与详情卡去边框且不叠内层背景 --- */
 [data-modern-ui="true"] .cons-box,
 [data-modern-ui="true"] .cons-custom-range-bar {
   border: none;
@@ -9004,7 +9716,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
     filter 150ms var(--ease-modern);
 }
 
-/* --- 5. 调用记录表格与模型分析区去横线边框且不套内层背景 --- */
 [data-modern-ui="true"] .table-scroll-host {
   border-top: none;
   background: transparent;
@@ -9075,6 +9786,17 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: color-mix(in srgb, var(--metric-danger) 21%, transparent);
 }
 
+[data-modern-ui="true"] .data-table tbody tr.is-reverted,
+[data-modern-ui="true"] .data-table:not(.is-virtualized) tbody tr.is-reverted:nth-child(even),
+[data-modern-ui="true"] .data-table.is-virtualized tbody tr.is-stripe-even.is-reverted {
+  background: color-mix(in srgb, var(--text-muted) 13%, transparent);
+}
+
+[data-modern-ui="true"] .data-table tbody tr.is-reverted:hover,
+[data-modern-ui="true"] .data-table.is-virtualized tbody tr.is-stripe-even.is-reverted:hover {
+  background: color-mix(in srgb, var(--text-muted) 19%, transparent);
+}
+
 [data-modern-ui="true"] .form-row > .custom-select > .select-trigger,
 [data-modern-ui="true"] .cons-cycle-pool-select .select-trigger,
 [data-modern-ui="true"] .steps-inline-scope-select .select-trigger,
@@ -9141,7 +9863,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: transparent;
 }
 
-/* --- 6. 设置表单、折叠面板、槽位排序与输入控件去边框 --- */
 [data-modern-ui="true"] .collapsible-body,
 [data-modern-ui="true"] .settings-action-block + .settings-action-block,
 [data-modern-ui="true"] .dt-time-row {
@@ -9163,6 +9884,43 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 [data-modern-ui="true"] .preview-composer-chip {
   border: none;
   background: var(--modern-surface-subtle);
+}
+
+[data-modern-ui="true"] .editable-slot-row.is-dragging {
+  border: none;
+  background: color-mix(in srgb, var(--accent-primary) 13%, var(--modern-surface-card));
+}
+
+[data-modern-ui="true"] .editable-slot-row.is-dragging,
+[data-modern-ui="true"] .structure-preview-canvas .is-modules-reorderable > .is-module-dragging,
+[data-modern-ui="true"] .structure-preview-canvas .telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-dragging {
+  box-shadow: var(--shadow-popover), 0 0 0 1.5px var(--accent-primary-border);
+}
+
+[data-modern-ui="true"] .preview-capsule-bar.is-slot-reorderable .wm-cap-slot.is-dragging {
+  background: color-mix(in srgb, var(--accent-primary) 18%, var(--modern-surface-card));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, var(--modern-surface-card)),
+    0 0 0 4px var(--accent-primary-border),
+    var(--shadow-popover);
+}
+
+[data-modern-ui="true"] .structure-preview-canvas .is-modules-reorderable:not(.is-dragging-modules) > .is-reorderable-module:not(.telemetry-matrix):hover {
+  box-shadow: 0 0 0 1px var(--accent-primary-border);
+}
+
+[data-modern-ui="true"] .structure-preview-canvas .telemetry-matrix.is-metrics-reorderable:not(.is-dragging-matrix) .matrix-cell:hover {
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--modern-surface-subtle));
+  box-shadow: inset 0 0 0 1px var(--accent-primary-border);
+}
+
+[data-modern-ui="true"] .step-table-preview-host.is-col-reorderable:not(.is-dragging-cols) .steps-data-table th.is-col-reorderable:hover {
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--modern-surface-subtle));
+}
+
+[data-modern-ui="true"] .structure-preview-canvas .telemetry-matrix.is-metrics-reorderable .matrix-cell.is-cell-dragging,
+[data-modern-ui="true"] .step-table-preview-host.is-col-reorderable .steps-data-table .is-col-dragging {
+  background: color-mix(in srgb, var(--accent-primary) 15%, var(--modern-surface-card));
 }
 
 [data-modern-ui="true"][data-color-scheme="light"] .quota-pool-row.has-divider {
@@ -9301,7 +10059,65 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   background: var(--modern-surface-subtle);
 }
 
-/* --- 7. 全景悬浮窗与工具提示浮层：零边框 + 空气阴影 + 0.15s 平滑跟随过渡 --- */
+[data-modern-ui="true"] .smgr-list-scroll-host {
+  border: none;
+  background: transparent;
+}
+
+[data-modern-ui="true"] .smgr-action-bar {
+  border-bottom: none;
+  padding: 2px 8px;
+}
+
+[data-modern-ui="true"] .smgr-select-all-btn:hover:not(:disabled),
+[data-modern-ui="true"] .smgr-inline-toggle:hover:not(:disabled),
+[data-modern-ui="true"] .smgr-inline-link-btn:hover:not(:disabled) {
+  background: var(--modern-surface-hover);
+}
+
+[data-modern-ui="true"] .smgr-list {
+  padding: 2px 6px 2px 0;
+}
+
+[data-modern-ui="true"] .smgr-item {
+  border: none;
+  border-radius: var(--radius-sm);
+}
+
+[data-modern-ui="true"] .smgr-item:hover:not(.is-blocked) {
+  background: var(--modern-surface-hover);
+}
+
+[data-modern-ui="true"] .smgr-item.is-checked {
+  background: var(--accent-primary-soft);
+}
+
+[data-modern-ui="true"] .smgr-item.is-checked .smgr-item-title {
+  color: var(--modern-active-accent);
+}
+
+[data-modern-ui="true"] .smgr-prefs-drawer,
+[data-modern-ui="true"] .smgr-guard-notice,
+[data-modern-ui="true"] .smgr-result,
+[data-modern-ui="true"] .smgr-confirm-orphan-toggle {
+  border: none;
+  background: var(--modern-surface-subtle);
+}
+
+[data-modern-ui="true"] .smgr-guard-notice.is-warn {
+  background: var(--metric-warn-soft);
+}
+
+[data-modern-ui="true"] .smgr-result.is-ok {
+  background: var(--metric-ok-soft);
+}
+
+[data-modern-ui="true"] .smgr-result.is-err,
+[data-modern-ui="true"] .smgr-confirm-box {
+  border: none;
+  background: var(--metric-danger-soft);
+}
+
 [data-modern-ui="true"] .select-menu,
 [data-modern-ui="true"] .action-menu-popover,
 [data-modern-ui="true"] .app-toast,
@@ -9418,10 +10234,10 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"].wm-popover-panel,
-[data-modern-ui="true"].wm-hover-tip,
+[data-modern-ui="true"].wm-hover-tip:not(.is-preview),
 [data-modern-ui="true"].wm-multi-panel,
 :host([data-modern-ui="true"]) .wm-popover-panel,
-:host([data-modern-ui="true"]) .wm-hover-tip,
+:host([data-modern-ui="true"]) .wm-hover-tip:not(.is-preview),
 :host([data-modern-ui="true"]) .wm-multi-panel {
   border: none;
   border-radius: 12px;
@@ -9431,10 +10247,10 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
 }
 
 [data-modern-ui="true"].wm-popover-panel.is-above,
-[data-modern-ui="true"].wm-hover-tip.is-above,
+[data-modern-ui="true"].wm-hover-tip.is-above:not(.is-preview),
 [data-modern-ui="true"].wm-multi-panel.is-above,
 :host([data-modern-ui="true"]) .wm-popover-panel.is-above,
-:host([data-modern-ui="true"]) .wm-hover-tip.is-above,
+:host([data-modern-ui="true"]) .wm-hover-tip.is-above:not(.is-preview),
 :host([data-modern-ui="true"]) .wm-multi-panel.is-above {
   animation-name: anim-modern-pop-in-up;
 }
@@ -9478,7 +10294,6 @@ html[data-standalone="true"][data-modern-ui="true"] .app-shell {
   padding-bottom: 0;
 }
 
-/* --- 8. 顶栏胶囊老虎机滚动数字 (0.15s) 与语义色平滑渐变 (0.1s)，严格限定实验性新 UI --- */
 :host([data-modern-ui="true"]) .wm-cap-slot,
 :host([data-modern-ui="true"]) .wm-cap-slot .wm-slot-text,
 :host([data-modern-ui="true"]) .wm-multi-label,

@@ -768,12 +768,18 @@ test('Feature 6: model ranking multi-metric sort with efficiency footer & valida
     fontScale: 'lg',
     modernUi: true,
     stepTableColumns: ['step', 'model', 'cost'],
+    developerModeEnabled: true,
+    riskyFeaturesEnabled: true,
+    accountSwitchRiskAccepted: true,
     contextWindowRiskAccepted: true,
     modelContextWindows: { 'model:foo': '1000000' },
   });
   const parsedRaw = JSON.parse(exportedJson);
   assert.equal(parsedRaw.schema, 'antigravity-usage-monitor.settings');
   assert.equal(parsedRaw.settings.themeAccent, 'emerald');
+  assert.equal(parsedRaw.settings.developerModeEnabled, undefined, 'Developer mode flag must not be exported');
+  assert.equal(parsedRaw.settings.riskyFeaturesEnabled, undefined, 'Risky features flag must not be exported');
+  assert.equal(parsedRaw.settings.accountSwitchRiskAccepted, undefined, 'Account risk flag must not be exported');
   assert.equal(parsedRaw.settings.contextWindowRiskAccepted, undefined, 'Risk flag must not be exported');
   assert.equal(parsedRaw.settings.modelContextWindows, undefined, 'Context overrides must not be exported');
 
@@ -786,6 +792,9 @@ test('Feature 6: model ranking multi-metric sort with efficiency footer & valida
         themeAccent: 'violet',
         fontScale: 'INVALID_SCALE',
         popoverWidth: 99999,
+        developerModeEnabled: true,
+        riskyFeaturesEnabled: true,
+        accountSwitchRiskAccepted: true,
         contextWindowRiskAccepted: true,
         unknownSecret: 'nope',
       },
@@ -796,6 +805,9 @@ test('Feature 6: model ranking multi-metric sort with efficiency footer & valida
   assert.equal(imported.patch.themeAccent, 'violet');
   assert.equal(imported.patch.fontScale, 'md', 'Invalid scale normalizes safely');
   assert.equal(imported.patch.popoverWidth, 1080, 'Oversized popover width clamps safely');
+  assert.equal(imported.patch.developerModeEnabled, undefined);
+  assert.equal(imported.patch.riskyFeaturesEnabled, undefined);
+  assert.equal(imported.patch.accountSwitchRiskAccepted, undefined);
   assert.equal(imported.patch.contextWindowRiskAccepted, undefined);
   assert.equal(imported.patch.unknownSecret, undefined);
 
@@ -1408,20 +1420,24 @@ test('Feature 10: StepsDetailView live search, dynamic diagnostic chips, and cli
     { sync: true }
   );
   assert.equal(view.refs.stepsFilterToolbarEl.hasAttribute('hidden'), false);
-  const chipBtns = view.refs.stepQuickChipsEl.querySelectorAll('.steps-chip-btn');
-  assert.equal(chipBtns.length, 4);
-  assert.equal(chipBtns.every((b) => !b.hasAttribute('hidden')), true);
+  assert.equal(view.refs.stepQuickChipsEl.classList.contains('segmented'), true);
+  const chipBtns = view.refs.stepQuickChipsEl.querySelectorAll('.seg-btn');
+  assert.equal(chipBtns.length, 5);
+  assert.equal(chipBtns[0].getAttribute('data-seg-value'), '');
+  assert.equal(chipBtns[0].classList.contains('is-active'), true);
 
-  // Click Low Cache chip -> narrows table to step #4
-  chipBtns[2].dispatchEvent({ type: 'click' });
+  // Click Low Cache segment -> narrows table to step #4
+  const lowCacheBtn = chipBtns.find((b) => b.getAttribute('data-seg-value') === 'low_cache');
+  lowCacheBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
   let rows = view.el.querySelectorAll('tbody tr');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].children[0].textContent, '#4');
 
-  // Toggle chip off -> restores all 3 rows
-  chipBtns[2].dispatchEvent({ type: 'click' });
+  // Toggle active segment off -> returns to All and restores all 3 rows
+  lowCacheBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
   rows = view.el.querySelectorAll('tbody tr');
   assert.equal(rows.length, 3);
+  assert.equal(chipBtns[0].classList.contains('is-active'), true);
 
   // Type search query "quota" -> narrows to step #2
   view.refs.stepSearchInput.value = 'quota';
@@ -2334,7 +2350,8 @@ test('P0 regression: V4 display-projected steps open inspector, preserve waterfa
   assert.equal(diag.rows.length, 3);
   assert.match(diag.rows[1].text, /流式返回/);
   assert.match(diag.rows[2].text, /原生思考计时/);
-  assert.match(diag.hint, /重叠/);
+  assert.doesNotMatch(diag.hint, /重叠/);
+  assert.match(diag.hint, /含 1 次异常/);
 
   // B-05: Speed aggregation matches official summarizeSpeed (18.2 tok/s, not 55.0 tok/s) and skips <50 tok short samples
   const stepSlow = {
@@ -2879,21 +2896,41 @@ test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic 
   assert.equal(latestQuery, '');
   assert.equal(sBox.clearBtnEl.hasAttribute('hidden'), true);
 
-  // 4. Declarative settingsBackup round-trips all 31 portable keys + coupled legacy flags
+  // 4. Declarative settingsBackup round-trips all 38 portable keys + coupled legacy flags
   const exported = buildExportableSettingsJson({
     language: 'en-US',
+    displayCurrency: 'MYR',
     modernUi: false,
     modelDisplayMode: 'upstream_compact',
     pluginUpdateMode: 'auto',
     windowMountMode: 'composer',
+    hoverSyncOverviewMetrics: false,
+    hoverMetricStyle: 'large',
+    hoverMetrics: ['tps', 'cache_hit', 'ttft', 'step_cost'],
+    overviewMetricStyle: 'large',
+    quotaDisplayMode: 'remaining',
     showStepFilterToolbar: true,
     experimentalQuotaReservation: true,
     accountQuotaRefreshMinutes: 180,
   });
   const parsedExport = JSON.parse(exported);
-  assert.equal(Object.keys(parsedExport.settings).length, 31);
-  const reimported = parseImportedSettingsJson(exported);
+  assert.equal(Object.keys(parsedExport.settings).length, 38);
+  assert.equal(parsedExport.settings.displayCurrency, 'MYR');
+  assert.equal(parsedExport.settings.quotaDisplayMode, 'remaining');
+  assert.equal('orchestratorIdMode' in parsedExport.settings, false);
+  const reimported = parseImportedSettingsJson(
+    JSON.stringify({
+      ...parsedExport,
+      settings: { ...parsedExport.settings, orchestratorIdMode: 'full' },
+    })
+  );
   assert.equal(reimported.ok, true);
+  assert.equal('orchestratorIdMode' in reimported.patch, false);
+  assert.equal(reimported.patch.hoverSyncOverviewMetrics, false);
+  assert.equal(reimported.patch.hoverMetricStyle, 'large');
+  assert.deepEqual(reimported.patch.hoverMetrics, ['tps', 'cache_hit', 'ttft', 'step_cost']);
+  assert.equal(reimported.patch.overviewMetricStyle, 'large');
+  assert.equal(reimported.patch.quotaDisplayMode, 'remaining');
   assert.equal(reimported.patch.modernUi, false);
   assert.equal(reimported.patch.experimentalModernUi, false);
   assert.equal(reimported.patch.modelDisplayMode, 'upstream_compact');

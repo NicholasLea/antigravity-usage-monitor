@@ -9,6 +9,7 @@ import {
   formatAgentBadgeText,
   formatCachePct,
   formatMetric,
+  formatQuotaPoolLabel,
   formatTokens,
   formatUsd,
   getCacheToneClass,
@@ -19,8 +20,11 @@ import {
   sampleSummary,
   speedReasonText,
 } from '../core/formatters.js';
-import { isEnglishLocale, t } from '../i18n/index.js';
-import { OVERVIEW_METRIC_KEYS, TOPBAR_SLOT_KEYS } from '../../shared/settings-normalization.mjs';
+import { t } from '../i18n/index.js';
+import {
+  OVERVIEW_METRIC_KEYS,
+  TOPBAR_SLOT_KEYS,
+} from '../../shared/settings-normalization.mjs';
 import {
   formatCompactCapsuleCost,
   formatCompactCapsuleTtft,
@@ -55,39 +59,286 @@ export function getOverviewMetricOptions() {
   }));
 }
 
+/**
+ * 将格式化后的指标文本拆分为主体数值与尾随单位（如 `'68.4 tok/s'` → `{ main: '68.4', unit: 'tok/s' }`），
+ * 便于大尺寸趋势卡片将数值加粗放大、单位轻量化排版。
+ *
+ * @param {string} valueText
+ * @returns {{ main: string, unit: string }}
+ */
+export function splitMetricValueAndUnit(valueText) {
+  const str = String(valueText ?? '—').trim();
+  if (!str) return { main: '—', unit: '' };
+  const match = str.match(/^([+-]?\$?[\d.,]+[kKmMbB]?)(?:\s*(tok\/s|t\/s|ms|s|%))$/);
+  if (match) {
+    return { main: match[1], unit: match[2] };
+  }
+  return { main: str, unit: '' };
+}
+
+const SPARKLINE_DEFAULT_WIDTH_BY_COLS = Object.freeze({ 1: 248, 2: 136, 3: 74 });
+const SPARKLINE_MIN_WIDTH = 28;
+const SPARKLINE_MAX_WIDTH = 640;
+const SPARKLINE_PAD_X = 4;
+const SPARKLINE_TARGET_PITCH_PX = 7.5;
+const SPARKLINE_MIN_POINTS = 5;
+const SPARKLINE_MAX_POINTS = 48;
+
+/**
+ * 根据折线容器实际可用像素宽度，自适应计算 SVG 画布尺寸、采样步数上限与笔触粗细：
+ * - 保持约 7.5px / 步的均衡节奏：极窄 3 列悬浮卡收敛为 5~7 步避免锯齿拥挤，
+ *   宽卡 / 单列 / 宽屏面板则平滑扩展至最多 48 步以展示更长趋势；
+ * - 未挂载或无法测宽时（如首帧 / 无头测试）按列数回退至默认基准宽度。
+ *
+ * @param {number} [availableWidth]
+ * @param {number} [colCount=3]
+ */
+export function resolveAdaptiveSparklineSpec(availableWidth, colCount = 3) {
+  const safeCols = colCount === 1 || colCount === 2 ? colCount : 3;
+  const fallbackWidth = SPARKLINE_DEFAULT_WIDTH_BY_COLS[safeCols];
+  const rawWidth = Number(availableWidth);
+  const width =
+    Number.isFinite(rawWidth) && rawWidth > 0
+      ? Math.max(SPARKLINE_MIN_WIDTH, Math.min(SPARKLINE_MAX_WIDTH, Math.round(rawWidth)))
+      : fallbackWidth;
+  const plotWidth = Math.max(8, width - SPARKLINE_PAD_X * 2);
+  const maxPoints = Math.max(
+    SPARKLINE_MIN_POINTS,
+    Math.min(SPARKLINE_MAX_POINTS, Math.floor(plotWidth / SPARKLINE_TARGET_PITCH_PX) + 1)
+  );
+  return {
+    width,
+    height: 34,
+    maxPoints,
+    strokeWidth: width < 64 ? '1.5' : width < 100 ? '1.55' : '1.65',
+    dotRadius: width < 64 ? '2.25' : width < 100 ? '2.5' : '2.75',
+  };
+}
+
+/**
+ * 从 `recentSteps`（默认按时间倒序）提取指定指标的时间顺序序列（从旧到新，最多取末 `maxPoints` 点），
+ * 用于驱动悬浮窗大尺寸实时指标卡片右侧的迷你走势折线图。
+ *
+ * @param {string} metricKey
+ * @param {Array<Record<string, any>>} [steps=[]]
+ * @param {{ maxPoints?: number, limitTokens?: number }} [options]
+ * @returns {number[]}
+ */
+export function extractOverviewMetricSeries(
+  metricKey,
+  steps = [],
+  { maxPoints = 16, limitTokens = 256000 } = {}
+) {
+  if (!Array.isArray(steps) || steps.length === 0) return [];
+  const cap = Math.max(2, Number(maxPoints) || 16);
+  const safeLimit = Number(limitTokens) > 0 ? Number(limitTokens) : 256000;
+  const series = [];
+
+  if (metricKey === 'avg_tps') {
+    let sum = 0;
+    let count = 0;
+    for (let i = steps.length - 1; i >= 0; i -= 1) {
+      const v = Number(steps[i]?.tokPerSec);
+      if (Number.isFinite(v) && v > 0) {
+        sum += v;
+        count += 1;
+        series.push(+(sum / count).toFixed(2));
+      }
+    }
+    return series.slice(-cap);
+  }
+
+  if (metricKey === 'session_cost') {
+    let acc = 0;
+    for (let i = steps.length - 1; i >= 0; i -= 1) {
+      const raw = steps[i]?.costUsd;
+      if (raw != null && Number.isFinite(Number(raw)) && Number(raw) >= 0) {
+        acc += Number(raw);
+        series.push(+acc.toFixed(4));
+      }
+    }
+    return series.slice(-cap);
+  }
+
+  if (metricKey === 'session_tokens') {
+    let acc = 0;
+    for (let i = steps.length - 1; i >= 0; i -= 1) {
+      const s = steps[i];
+      if (!s) continue;
+      const inTok = Math.max(0, Number(s.inputTokens || 0));
+      const cacheTok = Math.max(0, Number(s.cacheReadTokens || 0));
+      const outTok = Math.max(0, Number(s.outputTokens || 0));
+      const stepTotal = inTok + cacheTok + outTok || Math.max(0, Number(s.contextTokens || 0));
+      if (stepTotal > 0) {
+        acc += stepTotal;
+        series.push(acc);
+      }
+    }
+    return series.slice(-cap);
+  }
+
+  // Non-cumulative per-step metrics: collect at most `cap` most recent valid points in O(cap)
+  const rev = [];
+  for (let i = 0; i < steps.length && rev.length < cap; i += 1) {
+    const s = steps[i];
+    if (!s) continue;
+    let val = null;
+    if (metricKey === 'tps') {
+      const v = Number(s.tokPerSec);
+      if (Number.isFinite(v) && v > 0) val = v;
+    } else if (metricKey === 'ttft') {
+      if (s.ttftSec != null && Number.isFinite(Number(s.ttftSec)) && Number(s.ttftSec) >= 0) {
+        val = Number(s.ttftSec);
+      }
+    } else if (metricKey === 'step_cost') {
+      if (s.costUsd != null && Number.isFinite(Number(s.costUsd)) && Number(s.costUsd) >= 0) {
+        val = Number(s.costUsd);
+      }
+    } else if (metricKey === 'cache_hit') {
+      if (
+        s.cacheHitPct != null &&
+        Number.isFinite(Number(s.cacheHitPct)) &&
+        Number(s.cacheHitPct) >= 0
+      ) {
+        val = Math.min(100, Number(s.cacheHitPct));
+      }
+    } else if (metricKey === 'context_usage') {
+      const v = Number(s.contextTokens);
+      if (Number.isFinite(v) && v > 0) {
+        val = Math.min(100, +((v / safeLimit) * 100).toFixed(2));
+      }
+    }
+    if (val !== null) rev.push(val);
+  }
+  rev.reverse();
+  return rev;
+}
+
+/**
+ * 将数值序列映射为轻量迷你折线图 SVG 几何路径（含折线坐标、底部渐变面积闭合路径与末端圆点坐标）。
+ *
+ * @param {number[]} values
+ * @param {{ width?: number, height?: number, padTop?: number, padBottom?: number, padX?: number }} [dims]
+ */
+export function buildSparklineGeometry(
+  values = [],
+  { width = 108, height = 34, padTop = 4, padBottom = 5, padX = 4 } = {}
+) {
+  const pts = Array.isArray(values)
+    ? values.map(Number).filter((n) => Number.isFinite(n))
+    : [];
+  const baselineY = +(height - 2).toFixed(1);
+  const plotTop = padTop;
+  const plotBottom = height - padBottom;
+  const plotH = Math.max(4, plotBottom - plotTop);
+  const plotW = Math.max(8, width - padX * 2);
+
+  if (pts.length === 0) {
+    return {
+      hasLine: false,
+      hasDot: false,
+      linePoints: '',
+      areaPath: '',
+      lastX: 0,
+      lastY: 0,
+      baselineY,
+    };
+  }
+
+  if (pts.length === 1) {
+    const midY = +(plotTop + plotH * 0.5).toFixed(1);
+    const startX = +(padX + plotW * 0.52).toFixed(1);
+    const endX = +(width - padX).toFixed(1);
+    return {
+      hasLine: true,
+      hasDot: true,
+      linePoints: `${startX},${midY} ${endX},${midY}`,
+      areaPath: `M ${startX},${midY} L ${endX},${midY} L ${endX},${baselineY} L ${startX},${baselineY} Z`,
+      lastX: endX,
+      lastY: midY,
+      baselineY,
+    };
+  }
+
+  let min = pts[0];
+  let max = pts[0];
+  for (let i = 1; i < pts.length; i += 1) {
+    if (pts[i] < min) min = pts[i];
+    if (pts[i] > max) max = pts[i];
+  }
+  const span = max - min;
+  const coords = [];
+  for (let i = 0; i < pts.length; i += 1) {
+    const x = +(padX + (i / (pts.length - 1)) * plotW).toFixed(1);
+    const y =
+      span > 1e-9
+        ? +(plotBottom - ((pts[i] - min) / span) * plotH).toFixed(1)
+        : +(plotTop + plotH * 0.5).toFixed(1);
+    coords.push([x, y]);
+  }
+
+  const linePoints = coords.map(([x, y]) => `${x},${y}`).join(' ');
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  const lineSegments = coords
+    .slice(1)
+    .map(([x, y]) => `L ${x},${y}`)
+    .join(' ');
+  const areaPath = `M ${first[0]},${first[1]} ${lineSegments} L ${last[0]},${baselineY} L ${first[0]},${baselineY} Z`;
+
+  return {
+    hasLine: true,
+    hasDot: true,
+    linePoints,
+    areaPath,
+    lastX: last[0],
+    lastY: last[1],
+    baselineY,
+  };
+}
+
 export function resolveQuotaCapsuleSummary(quotas) {
   if (!quotas) return null;
   const activePool = quotas.activePool;
   const weekly = quotas.weekly;
   const pools = Array.isArray(quotas.pools) ? quotas.pools : [];
   const candidates = [];
-  const defaultPoolName = isEnglishLocale() ? 'Active Pool' : '当前池';
-  const wkTag = isEnglishLocale() ? 'Wk' : '周';
+  const defaultPoolName = t('fmt.activePool');
+  const wkTag = t('fmt.weekTag');
+  const wkCompact = t('fmt.weekCompact');
 
   if (activePool && Number.isFinite(Number(activePool.remainingPct))) {
     candidates.push({
       pct: Number(activePool.remainingPct),
-      label: activePool.poolLabel || activePool.family || defaultPoolName,
+      label: formatQuotaPoolLabel(activePool.poolLabel || activePool.family, {
+        fallback: defaultPoolName,
+      }),
       windowTag: '5h',
     });
   }
   if (activePool && Number.isFinite(Number(activePool.weeklyRemainingPct))) {
     candidates.push({
       pct: Number(activePool.weeklyRemainingPct),
-      label: activePool.poolLabel || activePool.family || defaultPoolName,
+      label: formatQuotaPoolLabel(activePool.poolLabel || activePool.family, {
+        fallback: defaultPoolName,
+      }),
       windowTag: wkTag,
     });
   }
   if (!candidates.length && weekly && Number.isFinite(Number(weekly.remainingPct))) {
     candidates.push({
       pct: Number(weekly.remainingPct),
-      label: weekly.poolFamily || (isEnglishLocale() ? 'Weekly' : '周限额'),
+      label: formatQuotaPoolLabel(weekly.poolFamily, {
+        fallback: t('fmt.weeklyQuota'),
+      }),
       windowTag: wkTag,
     });
   }
   if (!candidates.length && pools.length > 0) {
     for (const p of pools) {
-      const pLabel = p?.poolLabel || p?.family || defaultPoolName;
+      const pLabel = formatQuotaPoolLabel(p?.poolLabel || p?.family, {
+        fallback: defaultPoolName,
+      });
       if (p && Number.isFinite(Number(p.remainingPct))) {
         candidates.push({ pct: Number(p.remainingPct), label: pLabel, windowTag: '5h' });
       }
@@ -111,7 +362,7 @@ export function resolveQuotaCapsuleSummary(quotas) {
   const tightestIsArgon = !tightestIsClaude && /\bargon\b/i.test(String(tightest.label || ''));
   const tightestIsGemini =
     !tightestIsClaude && !tightestIsArgon && /gemini|carbon|neon|flash|pro/i.test(String(tightest.label || ''));
-  const tightestWinShort = tightest.windowTag === '5h' ? '5h' : isEnglishLocale() ? 'w' : '周';
+  const tightestWinShort = tightest.windowTag === '5h' ? '5h' : wkCompact;
   const poolPrefix = tightestIsClaude
     ? `C${tightestWinShort}`
     : tightestIsArgon
@@ -120,9 +371,7 @@ export function resolveQuotaCapsuleSummary(quotas) {
         ? `G${tightestWinShort}`
         : tightest.windowTag === '5h'
           ? '5h'
-          : isEnglishLocale()
-            ? 'Wk'
-            : '周';
+          : wkTag;
   return {
     roundedPct: rounded,
     shortText: t('capsule.quotaLeft', { pct: rounded }),
@@ -138,14 +387,14 @@ export function resolveQuotaCapsuleSummary(quotas) {
 }
 
 function resolveQuotaCapsulePrefix(metricKey, quotaSum) {
-  const isEn = isEnglishLocale();
+  const wkCompact = t('fmt.weekCompact');
   if (metricKey === 'gemini_5h') return 'G5h';
-  if (metricKey === 'gemini_weekly') return isEn ? 'Gw' : 'G周';
-  if (metricKey === 'argon_weekly') return isEn ? 'Aw' : 'A周';
+  if (metricKey === 'gemini_weekly') return `G${wkCompact}`;
+  if (metricKey === 'argon_weekly') return `A${wkCompact}`;
   if (metricKey === 'claude_5h') return 'C5h';
-  if (metricKey === 'claude_weekly') return isEn ? 'Cw' : 'C周';
+  if (metricKey === 'claude_weekly') return `C${wkCompact}`;
   if (quotaSum?.poolPrefix) return quotaSum.poolPrefix;
-  return isEn ? 'Q' : '余';
+  return t('fmt.quotaPrefix');
 }
 
 /**

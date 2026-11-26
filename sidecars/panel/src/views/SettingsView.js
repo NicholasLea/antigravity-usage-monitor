@@ -1,12 +1,13 @@
 /**
- * @fileoverview View 4: Modular preferences ("常规" / "结构" / "账号" / "其他").
- * Orchestrates the four preference tabs
+ * @fileoverview View 4: Control Center ("常规" / "结构" / "会话" / "账号" / "其他").
+ * Orchestrates the five modular Control Center tabs
  * with top sub-navigation and a shared `CustomScrollbar` viewport.
  */
 
 import { defineComponent } from '../core/component.js';
-import { h, patchAttr } from '../core/domPatch.js';
+import { h, patchAttr, patchClasses } from '../core/domPatch.js';
 import { i18nStore, t } from '../i18n/index.js';
+import { isRiskyFeaturesGateOpen } from '../../shared/settings-normalization.mjs';
 import { telemetryStore } from '../store/telemetryStore.js';
 import { getVisibleMonitorView, uiStore } from '../store/uiStore.js';
 import { CustomScrollbar } from '../components/ui/CustomScrollbar.js';
@@ -14,15 +15,21 @@ import { SegmentedControl } from '../components/ui/SegmentedControl.js';
 import { SettingsAccountTab } from './settings/SettingsAccountTab.js';
 import { SettingsGeneralTab } from './settings/SettingsGeneralTab.js';
 import { SettingsOtherTab } from './settings/SettingsOtherTab.js';
+import { SettingsSessionsTab } from './settings/SettingsSessionsTab.js';
 import { SettingsStructureTab } from './settings/SettingsStructureTab.js';
 
 export const SHOW_ACCOUNT_TAB = true;
 
-function getSettingsSubTabOptions() {
+function isAccountTabVisible(settings) {
+  return Boolean(SHOW_ACCOUNT_TAB && isRiskyFeaturesGateOpen(settings));
+}
+
+function getSettingsSubTabOptions(showAccount) {
   return [
     { value: 'general', label: t('settings.subTab.general') },
     { value: 'structure', label: t('settings.subTab.structure') },
-    ...(SHOW_ACCOUNT_TAB ? [{ value: 'account', label: t('settings.subTab.account') }] : []),
+    { value: 'sessions', label: t('settings.subTab.sessions') },
+    ...(showAccount ? [{ value: 'account', label: t('settings.subTab.account') }] : []),
     { value: 'other', label: t('settings.subTab.other') },
   ];
 }
@@ -30,12 +37,15 @@ function getSettingsSubTabOptions() {
 export const SettingsView = defineComponent({
   name: 'SettingsView',
   setup({ onCleanup }) {
-    const initialSubTab = uiStore.getState().settingsSubTab || 'general';
+    let accountTabVisible = isAccountTabVisible(telemetryStore.getState().telemetry?.settings);
+    const rawInitialSubTab = uiStore.getState().settingsSubTab || 'general';
+    const initialSubTab =
+      rawInitialSubTab === 'account' && !accountTabVisible ? 'general' : rawInitialSubTab;
 
     const subNavSwitch = SegmentedControl({
       ariaLabel: t('settings.subTab.aria'),
       modelValue: initialSubTab,
-      options: getSettingsSubTabOptions(),
+      options: getSettingsSubTabOptions(accountTabVisible),
       onUpdateModelValue: (nextSubTab) => {
         uiStore.setState({ settingsSubTab: nextSubTab }, { sync: true });
       },
@@ -52,6 +62,7 @@ export const SettingsView = defineComponent({
 
     const generalTab = SettingsGeneralTab({ onLayoutChange: refreshScroll });
     const structureTab = SettingsStructureTab({ onLayoutChange: refreshScroll });
+    const sessionsTab = SettingsSessionsTab({ onLayoutChange: refreshScroll });
     const accountTab = SettingsAccountTab({ onLayoutChange: refreshScroll });
     const otherTab = SettingsOtherTab({ onLayoutChange: refreshScroll });
 
@@ -60,34 +71,75 @@ export const SettingsView = defineComponent({
     function applyActiveSubTab(subTab, activeView) {
       const target =
         subTab === 'structure' ||
+        subTab === 'sessions' ||
         subTab === 'other' ||
-        (accountTab && subTab === 'account')
+        (accountTab && accountTabVisible && subTab === 'account')
           ? subTab
           : 'general';
       subNavSwitch.setValue(target);
       patchAttr(generalTab.el, 'hidden', target !== 'general');
       patchAttr(structureTab.el, 'hidden', target !== 'structure');
       patchAttr(structureTab.refs.thirdNavBar, 'hidden', target !== 'structure');
+      patchAttr(sessionsTab.el, 'hidden', target !== 'sessions');
+      patchAttr(sessionsTab.refs.thirdNavBar, 'hidden', target !== 'sessions');
+      patchClasses(viewScrollbar?.el, { 'is-full-height-tab': target === 'sessions' });
       patchAttr(otherTab.el, 'hidden', target !== 'other');
+      if (target === 'sessions' && activeView === 'settings') {
+        void sessionsTab.refs.ensureLoaded();
+      }
       if (accountTab) {
-        patchAttr(accountTab.el, 'hidden', target !== 'account');
-        if (activeView === 'settings' && !preloadedAccountOnce) {
+        patchAttr(accountTab.el, 'hidden', !accountTabVisible || target !== 'account');
+        if (accountTabVisible && activeView === 'settings' && !preloadedAccountOnce) {
           preloadedAccountOnce = true;
           void accountTab.refs.preload?.();
         }
-        const nextShowingAccount = target === 'account' && activeView === 'settings';
+        const nextShowingAccount =
+          accountTabVisible && target === 'account' && activeView === 'settings';
         if (nextShowingAccount && !showingAccount) void accountTab.refs.load();
         showingAccount = nextShowingAccount;
       }
       refreshScroll();
     }
 
+    function syncAccountTabVisibility(settings, { forceNavRefresh = false } = {}) {
+      const nextVisible = isAccountTabVisible(settings);
+      const changed = nextVisible !== accountTabVisible;
+      if (!changed && !forceNavRefresh) return;
+      accountTabVisible = nextVisible;
+      const ui = uiStore.getState();
+      const activeView = getVisibleMonitorView(ui);
+      let nextSubTab = ui.settingsSubTab || 'general';
+      if (!accountTabVisible) {
+        showingAccount = false;
+        preloadedAccountOnce = false;
+        if (nextSubTab === 'account') {
+          nextSubTab = 'general';
+          uiStore.setState({ settingsSubTab: 'general' }, { sync: true });
+        }
+      }
+      const normalizedTarget =
+        nextSubTab === 'structure' ||
+        nextSubTab === 'sessions' ||
+        nextSubTab === 'other' ||
+        (accountTabVisible && nextSubTab === 'account')
+          ? nextSubTab
+          : 'general';
+      subNavSwitch.setProps({
+        ariaLabel: t('settings.subTab.aria'),
+        modelValue: normalizedTarget,
+        options: getSettingsSubTabOptions(accountTabVisible),
+      });
+      if (changed) {
+        applyActiveSubTab(normalizedTarget, activeView);
+      }
+    }
+
     const contentContainer = h(
       'div',
       {},
       accountTab
-        ? [generalTab.el, structureTab.el, accountTab.el, otherTab.el]
-        : [generalTab.el, structureTab.el, otherTab.el]
+        ? [generalTab.el, structureTab.el, sessionsTab.el, accountTab.el, otherTab.el]
+        : [generalTab.el, structureTab.el, sessionsTab.el, otherTab.el]
     );
     viewScrollbar = CustomScrollbar({
       contentEl: contentContainer,
@@ -99,15 +151,23 @@ export const SettingsView = defineComponent({
     const rootEl = h('div', { className: 'settings-view-root' }, [
       subNavBar,
       structureTab.refs.thirdNavBar,
+      sessionsTab.refs.thirdNavBar,
       viewScrollbar.el,
     ]);
 
+    let lastEndpointId = telemetryStore.getState().telemetry?.endpoint?.id || '';
     function syncActiveTab() {
       const ui = uiStore.getState();
-      const { settingsSubTab } = ui;
-      if (getVisibleMonitorView(ui) !== 'settings') return;
       const telemetry = telemetryStore.getState().telemetry;
+      const curEndpointId = telemetry?.endpoint?.id || '';
+      if (curEndpointId && curEndpointId !== lastEndpointId) {
+        lastEndpointId = curEndpointId;
+        sessionsTab.refs.markStale?.();
+      }
       const settings = telemetry?.settings;
+      syncAccountTabVisibility(settings);
+      if (getVisibleMonitorView(ui) !== 'settings') return;
+      const settingsSubTab = uiStore.getState().settingsSubTab;
       if (accountTab) {
         accountTab.refs.renderAccount(telemetry?.account, telemetry?.quotas, settings);
       }
@@ -121,6 +181,8 @@ export const SettingsView = defineComponent({
             telemetry?.quotas
           );
         }
+      } else if (settingsSubTab === 'sessions') {
+        void sessionsTab.refs.ensureLoaded();
       } else if (settingsSubTab === 'other') {
         if (settings) {
           otherTab.refs.renderSettings(
@@ -128,7 +190,8 @@ export const SettingsView = defineComponent({
             telemetry.contextWindowModels || [],
             telemetry?.windowBridge,
             telemetry?.hostPlatform,
-            telemetry?.cloudCodeProxy
+            telemetry?.cloudCodeProxy,
+            telemetry?.cacheRebuild
           );
         }
       } else if (settingsSubTab !== 'account') {
@@ -140,6 +203,7 @@ export const SettingsView = defineComponent({
           );
         }
         void generalTab.refs.loadHostI18n?.(false);
+        if (telemetry?.fxStatus) generalTab.refs.renderFxStatus?.(telemetry.fxStatus);
         if (telemetry?.cloudStatus) generalTab.refs.renderCloudStatus(telemetry.cloudStatus);
       }
       refreshScroll();
@@ -147,15 +211,18 @@ export const SettingsView = defineComponent({
 
     const unsubTelemetry = telemetryStore.subscribe(
       (st) => ({
+        endpointId: st.telemetry?.endpoint?.id,
         settings: st.telemetry?.settings,
         windowBridge: st.telemetry?.windowBridge,
         cloudCodeProxy: st.telemetry?.cloudCodeProxy,
         cliStatusLine: st.telemetry?.cliStatusLine,
         hostPlatform: st.telemetry?.hostPlatform,
         cloudStatus: st.telemetry?.cloudStatus,
+        fxStatus: st.telemetry?.fxStatus,
         contextWindowModels: st.telemetry?.contextWindowModels,
         account: st.telemetry?.account,
         quotas: st.telemetry?.quotas,
+        cacheRebuild: st.telemetry?.cacheRebuild,
       }),
       syncActiveTab
     );
@@ -174,12 +241,12 @@ export const SettingsView = defineComponent({
     const unsubI18n = i18nStore.subscribe(
       (st) => st.locale,
       () => {
-        subNavSwitch.setProps({
-          modelValue: uiStore.getState().settingsSubTab || 'general',
-          options: getSettingsSubTabOptions(),
+        syncAccountTabVisibility(telemetryStore.getState().telemetry?.settings, {
+          forceNavRefresh: true,
         });
         generalTab.refs.refreshLabels();
         structureTab.refs.refreshLabels();
+        sessionsTab.refs.refreshLabels();
         accountTab?.refs.refreshLabels();
         otherTab.refs.refreshLabels();
         refreshScroll();
@@ -193,6 +260,7 @@ export const SettingsView = defineComponent({
       subNavSwitch.destroy();
       generalTab.destroy();
       structureTab.destroy();
+      sessionsTab.destroy();
       accountTab?.destroy();
       otherTab.destroy();
       viewScrollbar.destroy();
@@ -204,6 +272,7 @@ export const SettingsView = defineComponent({
         subNavSwitch,
         generalTab,
         structureTab,
+        sessionsTab,
         accountTab,
         otherTab,
         viewScrollbar,
@@ -211,8 +280,8 @@ export const SettingsView = defineComponent({
         windowMountSelect: structureTab.refs.windowMountSelect,
         multiSessionToggle: structureTab.refs.multiSessionToggle,
         topbarSlotsList: structureTab.refs.topbarSlotsList,
+        sessionMigrationCard: sessionsTab.refs.sessionMigrationCard,
         stepModelSelect: otherTab.refs.stepModelSelect,
-        orchestratorIdSelect: otherTab.refs.orchestratorIdSelect,
         autoUpdateSelect: generalTab.refs.autoUpdateSelect,
       },
     };

@@ -3,22 +3,29 @@
  * 通过单一声明式字段描述符表同时驱动导出与导入归一化，消除双遍手写 30 个键的漏同步风险。
  */
 
+import { normalizeDisplayCurrency } from '../../shared/currency-catalog.mjs';
 import {
   normalizeAccountQuotaRefreshMinutes,
+  normalizeAutoConfigureLaunch,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeEnableRemoteSshTelemetry,
   normalizeExperimentalQuotaReservation,
   normalizeFontScale,
+  normalizeHoverMetricStyle,
+  normalizeHoverMetrics,
   normalizeHoverModules,
+  normalizeHoverSyncOverviewMetrics,
   normalizeLanguageSetting,
   normalizeModelDisplayMode,
   normalizeModernUi,
-  normalizeOrchestratorIdMode,
+  normalizeOverviewMetricStyle,
   normalizeOverviewMetrics,
   normalizeOverviewModules,
   normalizePluginUpdateMode,
   normalizePopoverWidth,
   normalizePopoverWidthMode,
+  normalizeQuotaDisplayMode,
   normalizeStandalonePort,
   normalizeStepTableColumns,
   normalizeStepTokenComboFormat,
@@ -139,6 +146,7 @@ const positiveBudgetField = (key, fallbackVal) => ({
 
 const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
   normField('language', normalizeLanguageSetting),
+  normField('displayCurrency', normalizeDisplayCurrency),
   normField('themeAccent', normalizeThemeAccent),
   normField('fontScale', normalizeFontScale),
   {
@@ -170,7 +178,6 @@ const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
       }
     },
   },
-  normField('orchestratorIdMode', normalizeOrchestratorIdMode),
   {
     exportTo: (src, out) => {
       out.pluginUpdateMode = normalizePluginUpdateMode(src.pluginUpdateMode, src.autoUpdatePlugin);
@@ -200,12 +207,19 @@ const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
   boolField('enableCliStatusLine', true),
   normField('cliStatusLineSlots', normalizeCliStatusLineSlots),
   normField('standalonePort', normalizeStandalonePort),
+  normField('autoConfigureLaunch', normalizeAutoConfigureLaunch),
+  normField('enableRemoteSshTelemetry', normalizeEnableRemoteSshTelemetry),
   boolField('showTopbarMultiSession', true),
   normField('contextAgentMode', normalizeContextAgentMode),
   arrayField('topbarCapsuleSlots', normalizeTopbarCapsuleSlots),
   arrayField('hoverModules', normalizeHoverModules),
+  boolField('hoverSyncOverviewMetrics', true),
+  normField('hoverMetricStyle', normalizeHoverMetricStyle),
+  arrayField('hoverMetrics', normalizeHoverMetrics),
   arrayField('overviewModules', normalizeOverviewModules),
+  normField('overviewMetricStyle', normalizeOverviewMetricStyle),
   arrayField('overviewMetrics', normalizeOverviewMetrics),
+  normField('quotaDisplayMode', normalizeQuotaDisplayMode),
   boolField('showStepTurnRail', false),
   boolField('showStepAgentBadge', true),
   boolField('showStepSpeedColor', false),

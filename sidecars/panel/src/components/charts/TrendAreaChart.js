@@ -20,7 +20,7 @@ import {
   formatUsd,
 } from '../../core/formatters.js';
 import { SVG_NS } from '../../icons/SvgIcon.js';
-import { getEffectiveLocale, isEnglishLocale, t } from '../../i18n/index.js';
+import { getEffectiveLocale, t } from '../../i18n/index.js';
 import { createConsumptionBreakdownContent } from '../ui/ConsumptionTooltipContent.js';
 import {
   createCubicCurveMorphController,
@@ -205,20 +205,11 @@ function buildHeatmapMonthTicks(slots, firstDow, totalWeeks) {
   return ticks;
 }
 
-const EN_SHORT_MONTHS = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
+const LOCALE_SHORT_MONTHS = Object.freeze({
+  'en-US': Object.freeze(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
+  'de-DE': Object.freeze(['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']),
+  'fr-FR': Object.freeze(['janv', 'févr', 'mars', 'avr', 'mai', 'juin', 'juil', 'août', 'sept', 'oct', 'nov', 'déc']),
+});
 
 function normalizeHeatmapMode(mode) {
   return mode === 'week' || mode === 'month' || mode === 'all' ? mode : 'day';
@@ -449,7 +440,8 @@ function buildHeatmapBarView(slots, firstDow, totalWeeks, mode, buildSegmentsFn)
     let peakIdx = 0;
     let activeMonths = 0;
     const nonZero = [];
-    const en = isEnglishLocale();
+    const activeLocale = getEffectiveLocale();
+    const shortMonths = LOCALE_SHORT_MONTHS[activeLocale] || null;
     const buckets = monthAccs.map((acc, idx) => {
       if (acc.tokens > 0) {
         activeMonths++;
@@ -460,9 +452,11 @@ function buildHeatmapBarView(slots, firstDow, totalWeeks, mode, buildSegmentsFn)
         peakIdx = idx;
       }
       const mNum = acc.month || 1;
-      const enShort = EN_SHORT_MONTHS[mNum - 1] || `M${mNum}`;
-      const fullTitle = en ? `${enShort} ${acc.year}` : t('cons.monthFullLabel', { year: acc.year, m: mNum });
-      const shortLbl = en ? enShort : t('cons.monthLabel', { m: mNum });
+      const monShort = shortMonths ? shortMonths[mNum - 1] || `M${mNum}` : '';
+      const fullTitle = shortMonths
+        ? `${monShort} ${acc.year}`
+        : t('cons.monthFullLabel', { year: acc.year, m: mNum });
+      const shortLbl = shortMonths ? monShort : t('cons.monthLabel', { m: mNum });
       return finalizeHeatmapBucket(acc, fullTitle, shortLbl, buildSegmentsFn);
     });
     nonZero.sort((a, b) => a - b);

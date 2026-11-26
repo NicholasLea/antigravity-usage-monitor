@@ -120,9 +120,16 @@ export const SegmentedControl = defineComponent({
     }
 
     function selectValue(nextVal) {
-      if (getProps().modelValue !== nextVal) {
-        setProps({ modelValue: nextVal });
-        emit('update:modelValue', nextVal);
+      const { modelValue, deselectToValue } = getProps();
+      const targetVal =
+        modelValue === nextVal &&
+        deselectToValue !== undefined &&
+        nextVal !== deselectToValue
+          ? deselectToValue
+          : nextVal;
+      if (modelValue !== targetVal) {
+        setProps({ modelValue: targetVal });
+        emit('update:modelValue', targetVal);
       }
     }
 
@@ -184,6 +191,7 @@ export const SegmentedControl = defineComponent({
         patchClasses(btn, { 'is-active': active });
         patchAttr(btn, 'aria-pressed', active ? 'true' : 'false');
         patchAttr(btn, 'data-seg-value', opt.value);
+        patchAttr(btn, 'title', opt.title || null);
         orderedBtns.push(btn);
         if (active) {
           nextActiveBtn = btn;

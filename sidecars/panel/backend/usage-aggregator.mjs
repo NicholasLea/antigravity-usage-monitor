@@ -288,6 +288,23 @@ function finalizeUsageBucket(bucket) {
   };
 }
 
+function resolvePrimaryShortName(shortNameCounts, fallback = '') {
+  if (!(shortNameCounts instanceof Map) || shortNameCounts.size === 0) return fallback;
+  let bestName = fallback;
+  let bestCount = -1;
+  for (const [name, count] of shortNameCounts.entries()) {
+    if (
+      count > bestCount ||
+      (count === bestCount &&
+        (name.length < bestName.length || (name.length === bestName.length && name < bestName)))
+    ) {
+      bestName = name;
+      bestCount = count;
+    }
+  }
+  return bestName;
+}
+
 /**
  * 将单步统计数据累加至按模型分组的映射表中（供单代理、主+子汇总与全局时间范围共用）。
  *
@@ -313,6 +330,7 @@ function accumulateStepIntoModelMap(perModelStats, st, mInfo, stepCost) {
     perModelStats.set(modelGroupKey, {
       label: modelGroupKey,
       shortName: mInfo.shortName,
+      shortNameCounts: new Map(),
       fallbackModelId:
         mInfo.modelId && mInfo.modelId !== 'unknown'
           ? formatUpstreamModelId(mInfo.modelId, mInfo)
@@ -338,6 +356,9 @@ function accumulateStepIntoModelMap(perModelStats, st, mInfo, stepCost) {
     });
   }
   const agg = perModelStats.get(modelGroupKey);
+  if (mInfo.shortName) {
+    agg.shortNameCounts.set(mInfo.shortName, (agg.shortNameCounts.get(mInfo.shortName) || 0) + 1);
+  }
   if (st.responseModel) {
     const formattedResp = formatUpstreamModelId(st.responseModel, mInfo);
     agg.upstreamModelCounts.set(
@@ -405,6 +426,7 @@ function finalizeModelBreakdownMap(perModelStats) {
     .map(
       ({
         speedAccumulator,
+        shortNameCounts,
         upstreamModelCounts,
         fallbackModelId,
         ttftSumSec,
@@ -416,11 +438,14 @@ function finalizeModelBreakdownMap(perModelStats) {
         anomalyByKind,
         ...m
       }) => {
+        const primaryShortName = resolvePrimaryShortName(shortNameCounts, m.shortName);
         const sortedUpstream = Array.from((upstreamModelCounts || new Map()).entries())
           .sort((a, b) => b[1] - a[1])
           .map(([name]) => name);
         const primaryUpstream =
-          sortedUpstream.length > 0 ? sortedUpstream[0] : fallbackModelId || m.shortName || m.label;
+          sortedUpstream.length > 0
+            ? sortedUpstream[0]
+            : fallbackModelId || primaryShortName || m.label;
         const finishedSpeed = finishSpeed(speedAccumulator);
         const promptTokens = m.inputTokens + m.cacheReadTokens;
         const cacheHitPct =
@@ -430,6 +455,7 @@ function finalizeModelBreakdownMap(perModelStats) {
         const hasAnomalies = Number(anomalyCount || 0) > 0;
         return {
           ...m,
+          shortName: primaryShortName,
           upstreamName: primaryUpstream,
           upstreamModels: sortedUpstream,
           costUsd: +m.costUsd.toFixed(6),
@@ -1093,6 +1119,7 @@ function buildUsageTrendSeries(
           bModel = {
             label: modelGroupKey,
             shortName: mInfo.shortName,
+            shortNameCounts: new Map(),
             fallbackModelId:
               mInfo.modelId && mInfo.modelId !== 'unknown'
                 ? formatUpstreamModelId(mInfo.modelId, mInfo)
@@ -1110,6 +1137,12 @@ function buildUsageTrendSeries(
             unpricedCalls: 0,
           };
           bucket.perModelStats.set(modelGroupKey, bModel);
+        }
+        if (mInfo.shortName) {
+          bModel.shortNameCounts.set(
+            mInfo.shortName,
+            (bModel.shortNameCounts.get(mInfo.shortName) || 0) + 1
+          );
         }
         if (item.responseModel) {
           const formattedResp = formatUpstreamModelId(item.responseModel, mInfo);
@@ -1134,14 +1167,18 @@ function buildUsageTrendSeries(
       if (b.perModelStats) {
         b.models = Array.from(b.perModelStats.values())
           .sort((a, c) => c.totalTokens - a.totalTokens || c.calls - a.calls)
-          .map(({ upstreamModelCounts, fallbackModelId, ...m }) => {
+          .map(({ shortNameCounts, upstreamModelCounts, fallbackModelId, ...m }) => {
+            const primaryShortName = resolvePrimaryShortName(shortNameCounts, m.shortName);
             const sortedUpstream = Array.from(upstreamModelCounts.entries())
               .sort((a, c) => c[1] - a[1])
               .map(([name]) => name);
             const primaryUpstream =
-              sortedUpstream.length > 0 ? sortedUpstream[0] : fallbackModelId || m.shortName || m.label;
+              sortedUpstream.length > 0
+                ? sortedUpstream[0]
+                : fallbackModelId || primaryShortName || m.label;
             return {
               ...m,
+              shortName: primaryShortName,
               upstreamName: primaryUpstream,
               upstreamModels: sortedUpstream,
               costUsd: +m.costUsd.toFixed(6),

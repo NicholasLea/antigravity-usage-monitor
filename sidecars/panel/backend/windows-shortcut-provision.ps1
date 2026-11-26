@@ -1,10 +1,23 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = 'SilentlyContinue'
 $enableFlag = $env:AGY_LAUNCH_ENABLED -eq '1'
+$targetProduct = if ($env:AGY_LAUNCH_PRODUCT) { [string]$env:AGY_LAUNCH_PRODUCT.Trim().ToLowerInvariant() } else { 'desktop' }
 $updated = New-Object System.Collections.Generic.List[string]
 $configured = New-Object System.Collections.Generic.List[string]
 $readOnly = New-Object System.Collections.Generic.List[string]
+$readOnlyDesktop = New-Object System.Collections.Generic.List[string]
+$readOnlyIde = New-Object System.Collections.Generic.List[string]
 $discoveredDirs = New-Object System.Collections.Generic.List[string]
+
+function Add-ReadOnlyEntry([string]$entryPath, [string]$exeLeaf) {
+  if (-not $entryPath) { return }
+  $readOnly.Add($entryPath)
+  if ($exeLeaf -ieq 'Antigravity IDE.exe') {
+    $readOnlyIde.Add($entryPath)
+  } else {
+    $readOnlyDesktop.Add($entryPath)
+  }
+}
 $ws = $null
 $userDesktopDir = [Environment]::GetFolderPath('Desktop')
 $commonDesktopDir = [Environment]::GetFolderPath('CommonDesktopDirectory')
@@ -12,6 +25,32 @@ $userProgramsDir = [Environment]::GetFolderPath('Programs')
 $commonProgramsDir = [Environment]::GetFolderPath('CommonPrograms')
 $userStartupDir = [Environment]::GetFolderPath('Startup')
 $zhDesktop = ([string][char]0x684C + [string][char]0x9762)
+
+function Test-AgyRawBytesMatch([string]$u16, [string]$lat) {
+  if ($targetProduct -eq 'ide') {
+    return ($u16.IndexOf('antigravity ide.exe', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $lat.IndexOf('antigravity ide.exe', [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+  }
+  if ($targetProduct -eq 'both') {
+    return ($u16.IndexOf('antigravity.exe', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $lat.IndexOf('antigravity.exe', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $u16.IndexOf('antigravity ide.exe', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $lat.IndexOf('antigravity ide.exe', [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+  }
+  return ($u16.IndexOf('antigravity.exe', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+          $lat.IndexOf('antigravity.exe', [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+}
+
+function Test-AgyExeLeaf([string]$exeLeaf) {
+  if (-not $exeLeaf) { return $false }
+  if ($targetProduct -eq 'ide') {
+    return ($exeLeaf -ieq 'Antigravity IDE.exe')
+  }
+  if ($targetProduct -eq 'both') {
+    return ($exeLeaf -ieq 'Antigravity.exe' -or $exeLeaf -ieq 'Antigravity IDE.exe')
+  }
+  return ($exeLeaf -ieq 'Antigravity.exe')
+}
 
 $flatSpecs = New-Object System.Collections.Generic.List[object]
 $seenScanDir = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
@@ -74,14 +113,13 @@ foreach ($spec in $flatSpecs) {
       $rawBytes = [System.IO.File]::ReadAllBytes($lnkPath)
       $u16 = [System.Text.Encoding]::Unicode.GetString($rawBytes)
       $lat = [System.Text.Encoding]::GetEncoding(28591).GetString($rawBytes)
-      if ($u16.IndexOf('antigravity.exe', [System.StringComparison]::OrdinalIgnoreCase) -lt 0 -and
-          $lat.IndexOf('antigravity.exe', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+      if (-not (Test-AgyRawBytesMatch $u16 $lat)) {
         continue
       }
       if (-not $ws) { $ws = New-Object -ComObject WScript.Shell }
       $sc = $ws.CreateShortcut($lnkPath)
       $target = [string]$sc.TargetPath
-      if ([System.IO.Path]::GetFileName($target) -ine 'Antigravity.exe') { continue }
+      if (-not (Test-AgyExeLeaf ([System.IO.Path]::GetFileName($target)))) { continue }
       $curArgs = [string]$sc.Arguments
       if ($enableFlag) {
         if ($curArgs -match '(?:^|\s)--remote-debugging-port(?:=|\s|$)') {
@@ -95,7 +133,7 @@ foreach ($spec in $flatSpecs) {
           $updated.Add($lnkPath)
           $configured.Add($lnkPath)
         } catch {
-          $readOnly.Add($lnkPath)
+          Add-ReadOnlyEntry $lnkPath ([System.IO.Path]::GetFileName($target))
           if ($spec.IsCommon -and $spec.Kind -eq 'programs' -and $userProgramsDir -and (Test-Path -LiteralPath $userProgramsDir -ErrorAction SilentlyContinue)) {
             $fallbackLnk = Join-Path $userProgramsDir ([System.IO.Path]::GetFileName($lnkPath))
             if (-not (Test-Path -LiteralPath $fallbackLnk -ErrorAction SilentlyContinue)) {
@@ -121,7 +159,7 @@ foreach ($spec in $flatSpecs) {
             $sc.Save()
             $updated.Add($lnkPath)
           } catch {
-            $readOnly.Add($lnkPath)
+            Add-ReadOnlyEntry $lnkPath ([System.IO.Path]::GetFileName($target))
           }
         }
         if ($stripped -match '(?:^|\s)--remote-debugging-port(?:=|\s|$)') {
@@ -152,7 +190,7 @@ foreach ($rt in $runTargets) {
       if ($rawCmd -notmatch '^\s*(?:"([^"]+)"|([^\s"]+))(.*)$') { continue }
       $exeCandidate = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
       $restPart = [string]$Matches[3]
-      if ([System.IO.Path]::GetFileName($exeCandidate) -ine 'Antigravity.exe') { continue }
+      if (-not (Test-AgyExeLeaf ([System.IO.Path]::GetFileName($exeCandidate)))) { continue }
       $quotedExe = if ($Matches[1] -or $exeCandidate -match '\s') { '"' + $exeCandidate + '"' } else { $exeCandidate }
       $entryId = if ($rt.Label -eq 'HKLM') { "HKLM:Run:$($rt.SubPath)|$valName" } else { "HKCU:Run:$valName" }
       if ($enableFlag) {
@@ -175,7 +213,7 @@ foreach ($rt in $runTargets) {
           $updated.Add($entryId)
           $configured.Add($entryId)
         } elseif ($rt.Label -eq 'HKLM') {
-          $readOnly.Add($entryId)
+          Add-ReadOnlyEntry $entryId ([System.IO.Path]::GetFileName($exeCandidate))
         }
       } else {
         $strippedRest = ([regex]::Replace($restPart, '(?:^|\s+)--remote-debugging-port=(?:"0"|''0''|0)(?=\s|$)', ' ')).Trim()
@@ -193,7 +231,7 @@ foreach ($rt in $runTargets) {
           if ($saved) {
             $updated.Add($entryId)
           } elseif ($rt.Label -eq 'HKLM') {
-            $readOnly.Add($entryId)
+            Add-ReadOnlyEntry $entryId ([System.IO.Path]::GetFileName($exeCandidate))
           }
         }
         if ($strippedRest -match '(?:^|\s)--remote-debugging-port(?:=|\s|$)') {
@@ -204,11 +242,23 @@ foreach ($rt in $runTargets) {
   } catch {}
 }
 
-$exactClassSubKeys = @(
+$desktopClassSubKeys = @(
   'Software\Classes\antigravity\shell\open\command',
   'Software\Classes\Applications\Antigravity.exe\shell\open\command',
   'Software\Classes\AntigravitySourceFile\shell\open\command'
 )
+$ideClassSubKeys = @(
+  'Software\Classes\antigravity-ide\shell\open\command',
+  'Software\Classes\Applications\Antigravity IDE.exe\shell\open\command',
+  'Software\Classes\AntigravityIDESourceFile\shell\open\command'
+)
+$exactClassSubKeys = if ($targetProduct -eq 'ide') {
+  $ideClassSubKeys
+} elseif ($targetProduct -eq 'both') {
+  $desktopClassSubKeys + $ideClassSubKeys
+} else {
+  $desktopClassSubKeys
+}
 $classRoots = @(
   @{ Root = [Microsoft.Win32.Registry]::CurrentUser; Label = 'HKCU'; FullPrefix = 'HKEY_CURRENT_USER' },
   @{ Root = [Microsoft.Win32.Registry]::LocalMachine; Label = 'HKLM'; FullPrefix = 'HKEY_LOCAL_MACHINE' }
@@ -224,7 +274,7 @@ foreach ($cr in $classRoots) {
       if ($rawOpen -notmatch '^\s*(?:"([^"]+)"|([^\s"]+))(.*)$') { continue }
       $exeCand = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
       $restOpen = ([string]$Matches[3]).Trim()
-      if ([System.IO.Path]::GetFileName($exeCand) -ine 'Antigravity.exe') { continue }
+      if (-not (Test-AgyExeLeaf ([System.IO.Path]::GetFileName($exeCand)))) { continue }
       $quotedOpenExe = if ($Matches[1] -or $exeCand -match '\s') { '"' + $exeCand + '"' } else { $exeCand }
       $fullKeyName = if ($cr.Label -eq 'HKLM') { "HKLM:Class:$relSubKey" } else { "$($cr.FullPrefix)\$relSubKey" }
       if ($enableFlag) {
@@ -246,7 +296,7 @@ foreach ($cr in $classRoots) {
           $updated.Add($fullKeyName)
           $configured.Add($fullKeyName)
         } elseif ($cr.Label -eq 'HKLM') {
-          $readOnly.Add($fullKeyName)
+          Add-ReadOnlyEntry $fullKeyName ([System.IO.Path]::GetFileName($exeCand))
         }
       } else {
         $strippedOpen = ([regex]::Replace($restOpen, '(?:^|\s+)--remote-debugging-port=(?:"0"|''0''|0)(?=\s|$)', ' ')).Trim()
@@ -264,7 +314,7 @@ foreach ($cr in $classRoots) {
           if ($saved) {
             $updated.Add($fullKeyName)
           } elseif ($cr.Label -eq 'HKLM') {
-            $readOnly.Add($fullKeyName)
+            Add-ReadOnlyEntry $fullKeyName ([System.IO.Path]::GetFileName($exeCand))
           }
         }
         if ($strippedOpen -match '(?:^|\s)--remote-debugging-port(?:=|\s|$)') {
@@ -280,5 +330,7 @@ foreach ($cr in $classRoots) {
   updatedPaths = @($updated)
   configuredPaths = @($configured)
   readOnlyPaths = @($readOnly)
+  readOnlyDesktopPaths = @($readOnlyDesktop)
+  readOnlyIdePaths = @($readOnlyIde)
   discoveredDirs = @($discoveredDirs)
 } | ConvertTo-Json -Compress

@@ -80,7 +80,7 @@
   display: inline-flex;
   align-items: center;
   padding: 2px 5px;
-  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-sm);
   font-weight: 600;
   line-height: 1.2;
@@ -554,7 +554,7 @@
 .select-option-sub {
   font-size: var(--fs-xs);
   line-height: 1.25;
-  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-weight: 400;
   opacity: 0.72;
   overflow: hidden;
@@ -586,7 +586,6 @@
 .select-option-meta {
   font-size: var(--fs-md);
   flex-shrink: 0;
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;

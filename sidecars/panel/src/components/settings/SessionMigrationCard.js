@@ -8,7 +8,7 @@ import { h, patchAttr, patchClasses, patchText } from '../../core/domPatch.js';
 import { isWindowOverlayMode } from '../../core/httpClient.js';
 import { copyPlainTextToClipboard } from '../../core/stepInspector.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
-import { isEnglishLocale, t } from '../../i18n/index.js';
+import { t } from '../../i18n/index.js';
 import {
   executeSessionMigration,
   fetchSessionMigrationCatalog,
@@ -19,6 +19,8 @@ import { createSearchInput } from '../ui/SearchInput.js';
 import { SegmentedControl } from '../ui/SegmentedControl.js';
 
 const SMIG_OUTSIDE_PROJECT_ID = 'outside-of-project';
+const SMIG_PAGE_SIZE = 100;
+const SMIG_BATCH_CHUNK_SIZE = 50;
 
 function smigGetClientLabel(clientId) {
   if (clientId === 'cli') return t('settings.oth.migClientCli');
@@ -37,14 +39,13 @@ function smigFormatAge(epochMs) {
   const ts = Number(epochMs || 0);
   if (!Number.isFinite(ts) || ts <= 0) return '';
   const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  const isEn = isEnglishLocale();
-  if (diffSec < 60) return isEn ? 'just now' : '刚刚';
+  if (diffSec < 60) return t('fmt.ageJustNow');
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return isEn ? `${diffMin}m ago` : `${diffMin}分钟前`;
+  if (diffMin < 60) return t('fmt.ageMins', { n: diffMin });
   const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return isEn ? `${diffHr}h ago` : `${diffHr}小时前`;
+  if (diffHr < 24) return t('fmt.ageHours', { n: diffHr });
   const diffDay = Math.floor(diffHr / 24);
-  return isEn ? `${diffDay}d ago` : `${diffDay}天前`;
+  return t('fmt.ageDays', { n: diffDay });
 }
 
 export const SessionMigrationCard = defineComponent({
@@ -66,7 +67,9 @@ export const SessionMigrationCard = defineComponent({
     let migrationMode = 'move';
     let targetProjectId = '';
     let searchQuery = '';
+    let visibleLimit = SMIG_PAGE_SIZE;
     const selectedIds = new Set();
+    let lastAnchorId = '';
     let lastResult = null;
     let copiedCmdId = '';
     let copiedTimer = null;
@@ -145,6 +148,7 @@ export const SessionMigrationCard = defineComponent({
         onUpdateModelValue: (val) => {
           if (!val || val === sourceClient) return;
           sourceClient = val;
+          visibleLimit = SMIG_PAGE_SIZE;
           selectedIds.clear();
           lastResult = null;
           ensureValidTarget();
@@ -189,10 +193,12 @@ export const SessionMigrationCard = defineComponent({
         closeIconSize: 10,
         onInput: (val) => {
           searchQuery = String(val || '').trim();
+          visibleLimit = SMIG_PAGE_SIZE;
           renderSessionList();
         },
         onClear: () => {
           searchQuery = '';
+          visibleLimit = SMIG_PAGE_SIZE;
           renderSessionList();
           searchInput.focus?.();
         },
@@ -373,6 +379,7 @@ export const SessionMigrationCard = defineComponent({
     function syncControlsAndList() {
       const visible = Boolean(catalog?.available);
       patchAttr(rootEl, 'hidden', !visible);
+      props?.onStateChange?.({ status: visible ? 'available' : 'unavailable' });
       if (!visible) {
         props?.onLayoutChange?.();
         return;
@@ -462,7 +469,8 @@ export const SessionMigrationCard = defineComponent({
           h('div', { className: 'smig-empty', text: t('settings.oth.migNoMatch') })
         );
       } else {
-        for (const item of filtered) {
+        const visibleItems = filtered.slice(0, visibleLimit);
+        for (const item of visibleItems) {
           const checked = selectedIds.has(item.cascadeId);
           const disabled = Boolean(item.isRunning || isMigrating);
           const checkIcon = createSvgIcon('check', { size: 10 });
@@ -476,13 +484,32 @@ export const SessionMigrationCard = defineComponent({
             [checkIcon]
           );
 
-          const toggleItem = () => {
+          const toggleItem = (e) => {
             if (item.isRunning || isMigrating) return;
-            if (selectedIds.has(item.cascadeId)) {
-              selectedIds.delete(item.cascadeId);
-            } else {
-              selectedIds.add(item.cascadeId);
+            const willSelect = !selectedIds.has(item.cascadeId);
+            if (Boolean(e?.shiftKey) && lastAnchorId) {
+              const anchorIdx = filtered.findIndex((it) => it.cascadeId === lastAnchorId);
+              const curIdx = filtered.findIndex((it) => it.cascadeId === item.cascadeId);
+              if (anchorIdx >= 0 && curIdx >= 0) {
+                e?.preventDefault?.();
+                const start = Math.min(anchorIdx, curIdx);
+                const end = Math.max(anchorIdx, curIdx);
+                for (let i = start; i <= end; i += 1) {
+                  const candidate = filtered[i];
+                  if (candidate.isRunning) continue;
+                  if (willSelect) selectedIds.add(candidate.cascadeId);
+                  else selectedIds.delete(candidate.cascadeId);
+                }
+                renderSessionList();
+                return;
+              }
             }
+            if (willSelect) {
+              selectedIds.add(item.cascadeId);
+            } else {
+              selectedIds.delete(item.cascadeId);
+            }
+            lastAnchorId = item.cascadeId;
             renderSessionList();
           };
 
@@ -537,6 +564,21 @@ export const SessionMigrationCard = defineComponent({
             ]
           );
           listEl.appendChild(rowEl);
+        }
+        if (filtered.length > visibleLimit) {
+          const loadMoreBtn = h('button', {
+            type: 'button',
+            className: 'btn-ghost-sm smig-load-more-btn',
+            text: t('settings.oth.migLoadMore', {
+              shown: visibleItems.length,
+              total: filtered.length,
+            }),
+            onClick: () => {
+              visibleLimit += SMIG_PAGE_SIZE;
+              renderSessionList();
+            },
+          });
+          listEl.appendChild(loadMoreBtn);
         }
       }
 
@@ -652,27 +694,81 @@ export const SessionMigrationCard = defineComponent({
       }
     }
 
+    let catalogLoadSeq = 0;
+    let activeCatalogLoads = 0;
+
+    function applyCatalog(nextCatalog) {
+      if (destroyed) return;
+      catalogLoadSeq += 1;
+      hasLoadedOnce = true;
+      isLoading = false;
+      if (refreshBtn) patchAttr(refreshBtn, 'disabled', false);
+      if (nextCatalog && typeof nextCatalog === 'object') {
+        catalog = nextCatalog;
+        ensureValidSelectionDefaults();
+        syncControlsAndList();
+      } else {
+        catalog = null;
+        patchAttr(rootEl, 'hidden', true);
+        props?.onStateChange?.({ status: 'unavailable' });
+      }
+    }
+
     async function loadCatalog(force = false) {
-      if (isLoading || (hasLoadedOnce && !force)) return;
+      if (!force && (isLoading || hasLoadedOnce)) return;
+      if (force && typeof props?.onRequestRefresh === 'function') {
+        isLoading = true;
+        if (refreshBtn) patchAttr(refreshBtn, 'disabled', true);
+        try {
+          await props.onRequestRefresh();
+        } finally {
+          isLoading = false;
+          if (refreshBtn) patchAttr(refreshBtn, 'disabled', false);
+        }
+        return;
+      }
+      const seq = ++catalogLoadSeq;
+      activeCatalogLoads += 1;
       isLoading = true;
+      if (!catalog) {
+        props?.onStateChange?.({ status: 'loading' });
+      }
       if (refreshBtn) patchAttr(refreshBtn, 'disabled', true);
       try {
         const res = await loadCatalogFn();
-        if (destroyed) return;
+        if (destroyed || seq !== catalogLoadSeq) return;
         hasLoadedOnce = true;
         if (res && typeof res === 'object') {
           catalog = res;
           ensureValidSelectionDefaults();
           syncControlsAndList();
+        } else {
+          patchAttr(rootEl, 'hidden', true);
+          props?.onStateChange?.({ status: 'unavailable' });
         }
       } catch {
         // 本地目录或 API 暂不可用时静默隐藏卡片，避免干扰其他设置项
-        if (!destroyed && !catalog) {
+        if (!destroyed && seq === catalogLoadSeq && !catalog) {
           patchAttr(rootEl, 'hidden', true);
+          props?.onStateChange?.({ status: 'error' });
         }
       } finally {
-        isLoading = false;
-        if (refreshBtn) patchAttr(refreshBtn, 'disabled', false);
+        activeCatalogLoads = Math.max(0, activeCatalogLoads - 1);
+        if (activeCatalogLoads === 0) {
+          isLoading = false;
+          if (refreshBtn) patchAttr(refreshBtn, 'disabled', false);
+        }
+      }
+    }
+
+    function markStale() {
+      catalogLoadSeq += 1;
+      hasLoadedOnce = false;
+      catalog = null;
+      selectedIds.clear();
+      lastResult = null;
+      if (bodyMounted) {
+        renderResultBox();
       }
     }
 
@@ -683,17 +779,50 @@ export const SessionMigrationCard = defineComponent({
       renderSessionList();
       renderResultBox();
       try {
-        const payload = {
-          sourceClient,
-          targetClient,
-          mode: migrationMode,
-          cascadeIds: [...selectedIds],
-          ...(targetClient === 'desktop' ? { targetProjectId } : {}),
-        };
-        const res = await runMigrateFn(payload);
-        if (destroyed) return;
-        lastResult = res || { ok: false, error: 'empty_response' };
-        if (res?.ok) {
+        const allIds = [...selectedIds];
+        let aggMigrated = 0;
+        let aggFailed = 0;
+        const aggResults = [];
+        let lastRes = null;
+        let needsWindowReload = false;
+        let firstError = '';
+        for (let offset = 0; offset < allIds.length; offset += SMIG_BATCH_CHUNK_SIZE) {
+          const chunk = allIds.slice(offset, offset + SMIG_BATCH_CHUNK_SIZE);
+          const payload = {
+            sourceClient,
+            targetClient,
+            mode: migrationMode,
+            cascadeIds: chunk,
+            ...(targetClient === 'desktop' ? { targetProjectId } : {}),
+          };
+          const res = await runMigrateFn(payload);
+          if (destroyed) return;
+          lastRes = res || { ok: false, error: 'empty_response' };
+          aggMigrated += Number(lastRes.migratedCount || 0);
+          aggFailed += Number(lastRes.failedCount || 0);
+          if (Array.isArray(lastRes.results)) aggResults.push(...lastRes.results);
+          if (lastRes.needsWindowReload) needsWindowReload = true;
+          if (!lastRes.ok && !firstError) {
+            firstError = lastRes.error || 'migrate_failed';
+            if (aggMigrated === 0) break;
+          }
+        }
+        lastResult =
+          allIds.length <= SMIG_BATCH_CHUNK_SIZE
+            ? lastRes || { ok: false, error: 'empty_response' }
+            : {
+                ...(lastRes || {}),
+                ok: aggMigrated > 0,
+                ...(aggMigrated === 0 && firstError ? { error: firstError } : {}),
+                sourceClient,
+                targetClient,
+                targetProjectId: lastRes?.targetProjectId || targetProjectId,
+                migratedCount: aggMigrated,
+                failedCount: aggFailed,
+                needsWindowReload,
+                results: aggResults,
+              };
+        if (lastResult.ok) {
           selectedIds.clear();
           void loadCatalog(true);
         }
@@ -744,8 +873,11 @@ export const SessionMigrationCard = defineComponent({
     return {
       el: rootEl,
       refs: {
+        applyCatalog,
+        hasCatalog: () => Boolean(hasLoadedOnce && catalog),
         ensureLoaded: () => loadCatalog(false),
         reload: () => loadCatalog(true),
+        markStale,
         refreshLabels,
       },
     };

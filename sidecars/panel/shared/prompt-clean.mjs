@@ -3,12 +3,18 @@
  */
 
 const PROMPT_CLEAN_CONTEXT_SUMMARY_RE = /<CONTEXT_SUMMARY>[\s\S]*?<\/CONTEXT_SUMMARY>/gi;
-const PROMPT_CLEAN_SYSTEM_MSG_RE = /<SYSTEM_MESSAGE>[\s\S]*$/i;
+const PROMPT_CLEAN_SYSTEM_MSG_RE =
+  /(?:(?:^|\r?\n)+The following is a <SYSTEM_MESSAGE> not actually sent by the user\.[^\n]*\r?\n+)?<SYSTEM_MESSAGE>[\s\S]*$/i;
 const PROMPT_CLEAN_METADATA_RE = /<ADDITIONAL_METADATA>[\s\S]*$/i;
+const PROMPT_CLEAN_AUX_BLOCKS_RE =
+  /<(USER_SETTINGS_CHANGE|SYSTEM_CONTEXT|SYSTEM_REMINDER)>[\s\S]*?<\/\1>/gi;
+const PROMPT_CLEAN_AUX_TRAILING_RE =
+  /<(USER_SETTINGS_CHANGE|SYSTEM_CONTEXT|SYSTEM_REMINDER)>[\s\S]*$/i;
 const PROMPT_CLEAN_USER_REQ_RE = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/gi;
 
 /**
- * Strips `<CONTEXT_SUMMARY>`, `<SYSTEM_MESSAGE>`, and `<ADDITIONAL_METADATA>` wrapper blocks
+ * Strips `<CONTEXT_SUMMARY>`, `<SYSTEM_MESSAGE>`, `<ADDITIONAL_METADATA>`,
+ * `<USER_SETTINGS_CHANGE>`, `<SYSTEM_CONTEXT>`, and `<SYSTEM_REMINDER>` wrapper blocks
  * and returns the innermost `<USER_REQUEST>` body when present.
  *
  * @param {unknown} rawText
@@ -18,13 +24,19 @@ export function extractCleanUserRequestBody(rawText) {
   if (typeof rawText !== 'string' || !rawText.trim()) return '';
   const withoutSummary = rawText
     .replace(PROMPT_CLEAN_CONTEXT_SUMMARY_RE, '')
+    .replace(PROMPT_CLEAN_AUX_BLOCKS_RE, '')
     .replace(PROMPT_CLEAN_SYSTEM_MSG_RE, '');
   const reqMatches = [...withoutSummary.matchAll(PROMPT_CLEAN_USER_REQ_RE)];
   const target =
     reqMatches.length > 0
       ? reqMatches[reqMatches.length - 1][1]
-      : withoutSummary.replace(PROMPT_CLEAN_METADATA_RE, '');
-  return String(target || '').replace(PROMPT_CLEAN_METADATA_RE, '');
+      : withoutSummary
+          .replace(PROMPT_CLEAN_METADATA_RE, '')
+          .replace(PROMPT_CLEAN_AUX_TRAILING_RE, '');
+  return String(target || '')
+    .replace(PROMPT_CLEAN_METADATA_RE, '')
+    .replace(PROMPT_CLEAN_AUX_BLOCKS_RE, '')
+    .replace(PROMPT_CLEAN_AUX_TRAILING_RE, '');
 }
 
 /**

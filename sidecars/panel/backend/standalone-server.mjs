@@ -17,9 +17,15 @@ import {
 } from './api-actions.mjs';
 import { loadSettings, lsRuntimeEndpoint, setLsRuntimeEndpoint } from './config.mjs';
 import { flushAllEndpointCachesNow } from './endpoint-registry.mjs';
+import { stopLocalBackgroundCacheRebuild } from './local-scanner.mjs';
 import { ensureLsEndpointDiscovered } from './ls-discovery.mjs';
 import { ensureCliStatusLineConfigured } from './cli-statusline-config.mjs';
 import { syncCloudCatalog } from './plugin-updater.mjs';
+import { syncFxRates } from './fx-rates.mjs';
+import {
+  normalizeLanguageSetting,
+  resolveLocaleFromLanguageTag,
+} from '../shared/settings-normalization.mjs';
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
 const AUTH_COOKIE_NAME = 'ag_um_token';
@@ -98,16 +104,122 @@ function extractBearerToken(authHeader) {
   return m ? m[1].trim() : '';
 }
 
-function renderTokenLoginHtml(hasError = false) {
-  const errHtml = hasError
-    ? '<p class="err">访问令牌无效，请核对后重新输入。</p>'
-    : '';
+const STANDALONE_LOCALE_COPY = Object.freeze({
+  'zh-CN': {
+    htmlLang: 'zh-CN',
+    title: '用量监控',
+    authTitle: '用量监控 · 访问验证',
+    desc: '当前独立监控服务已启用访问令牌保护，请输入 Token 继续。',
+    err: '访问令牌无效，请核对后重新输入。',
+    placeholder: '输入 --token 访问密钥',
+    submit: '验证并进入面板',
+  },
+  'zh-TW': {
+    htmlLang: 'zh-TW',
+    title: '用量監控',
+    authTitle: '用量監控 · 存取驗證',
+    desc: '目前獨立監控服務已啟用存取權杖保護，請輸入 Token 繼續。',
+    err: '存取權杖無效，請核對後重新輸入。',
+    placeholder: '輸入 --token 存取金鑰',
+    submit: '驗證並進入面板',
+  },
+  'en-US': {
+    htmlLang: 'en-US',
+    title: 'Usage & Speed Monitor',
+    authTitle: 'Usage & Speed Monitor · Access Verification',
+    desc: 'Access token protection is enabled for this standalone monitor. Enter your token to continue.',
+    err: 'Invalid access token. Please verify and try again.',
+    placeholder: 'Enter --token access secret',
+    submit: 'Verify and Open Monitor',
+  },
+  'ja-JP': {
+    htmlLang: 'ja-JP',
+    title: '使用量・速度モニター',
+    authTitle: '使用量・速度モニター · アクセス認証',
+    desc: 'このスタンドアロンモニターはアクセストークン保護が有効です。続行するにはトークンを入力してください。',
+    err: 'アクセストークンが無効です。確認してもう一度入力してください。',
+    placeholder: '--token アクセスキーを入力',
+    submit: '認証してモニターを開く',
+  },
+  'ko-KR': {
+    htmlLang: 'ko-KR',
+    title: '사용량 및 속도 모니터',
+    authTitle: '사용량 및 속도 모니터 · 접근 인증',
+    desc: '이 독립 실행형 모니터는 액세스 토큰 보호가 활성화되어 있습니다. 계속하려면 토큰을 입력하세요.',
+    err: '액세스 토큰이 올바르지 않습니다. 확인 후 다시 입력하세요.',
+    placeholder: '--token 액세스 키 입력',
+    submit: '인증하고 모니터 열기',
+  },
+  'de-DE': {
+    htmlLang: 'de-DE',
+    title: 'Nutzungs- & Geschwindigkeitsmonitor',
+    authTitle: 'Nutzungs- & Geschwindigkeitsmonitor · Zugriffsprüfung',
+    desc: 'Für diesen eigenständigen Monitor ist der Zugriffstoken-Schutz aktiviert. Geben Sie Ihr Token ein, um fortzufahren.',
+    err: 'Ungültiges Zugriffstoken. Bitte prüfen und erneut eingeben.',
+    placeholder: '--token Zugriffsschlüssel eingeben',
+    submit: 'Bestätigen und Monitor öffnen',
+  },
+  'fr-FR': {
+    htmlLang: 'fr-FR',
+    title: 'Moniteur d’utilisation et de vitesse',
+    authTitle: 'Moniteur d’utilisation et de vitesse · Vérification d’accès',
+    desc: 'La protection par jeton d’accès est activée pour ce moniteur autonome. Saisissez votre jeton pour continuer.',
+    err: 'Jeton d’accès invalide. Veuillez vérifier et réessayer.',
+    placeholder: 'Saisir la clé d’accès --token',
+    submit: 'Vérifier et ouvrir le moniteur',
+  },
+});
+
+export function resolveStandaloneRequestLocale(req, settingsLanguage = 'auto') {
+  const normalized = normalizeLanguageSetting(settingsLanguage);
+  if (normalized !== 'auto') return normalized;
+  const rawHeader = String(req?.headers?.['accept-language'] || '').trim();
+  if (!rawHeader) return 'zh-CN';
+  let bestTag = '';
+  let bestQ = -1;
+  for (const part of rawHeader.split(',')) {
+    const pieces = part.trim().split(';');
+    const tag = String(pieces[0] || '').trim().toLowerCase();
+    if (!tag || tag === '*') continue;
+    let q = 1;
+    for (let i = 1; i < pieces.length; i += 1) {
+      const m = pieces[i].trim().match(/^q=([0-9.]+)$/i);
+      if (m) {
+        const parsed = Number(m[1]);
+        if (Number.isFinite(parsed)) q = parsed;
+      }
+    }
+    if (q > bestQ) {
+      bestQ = q;
+      bestTag = tag;
+    }
+  }
+  if (!bestTag) return 'zh-CN';
+  return resolveLocaleFromLanguageTag(bestTag, 'en-US');
+}
+
+export function localizeStandaloneIndexHtml(html, locale = 'zh-CN') {
+  if (typeof html !== 'string' || locale === 'zh-CN') return html;
+  const copy = STANDALONE_LOCALE_COPY[locale] || STANDALONE_LOCALE_COPY['en-US'];
+  return html
+    .replace('<html lang="zh-CN">', `<html lang="${copy.htmlLang}">`)
+    .replace('<title>用量监控</title>', `<title>${copy.title}</title>`);
+}
+
+function renderTokenLoginHtml(hasError = false, locale = 'zh-CN') {
+  const copy = STANDALONE_LOCALE_COPY[locale] || STANDALONE_LOCALE_COPY['zh-CN'];
+  const htmlLang = copy.htmlLang;
+  const pageTitle = copy.authTitle;
+  const descText = copy.desc;
+  const errHtml = hasError ? `<p class="err">${copy.err}</p>` : '';
+  const placeholderText = copy.placeholder;
+  const submitText = copy.submit;
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>用量监控 · 访问验证</title>
+  <title>${pageTitle}</title>
   <style>
     :root { color-scheme: dark light; }
     * { box-sizing: border-box; }
@@ -162,10 +274,10 @@ function renderTokenLoginHtml(hasError = false) {
 <body>
   <form class="card" method="POST" action="/api/standalone-auth">
     <h1>Antigravity Usage Monitor</h1>
-    <p>当前独立监控服务已启用访问令牌保护，请输入 Token 继续。</p>
+    <p>${descText}</p>
     ${errHtml}
-    <input type="password" name="token" placeholder="输入 --token 访问密钥" autocomplete="current-password" required autofocus>
-    <button type="submit">验证并进入面板</button>
+    <input type="password" name="token" placeholder="${placeholderText}" autocomplete="current-password" required autofocus>
+    <button type="submit">${submitText}</button>
   </form>
 </body>
 </html>`;
@@ -368,6 +480,16 @@ export function createStandaloneWebServer(options = {}) {
     ((pathname, method, data) =>
       dispatchBridgeApiRequest(pathname, method, data, { onRestart }));
   const readAsset = options.readAssetFn || readLocalAsync;
+  const getSettings = typeof options.getSettingsFn === 'function' ? options.getSettingsFn : loadSettings;
+
+  function resolveReqLocale(req) {
+    try {
+      const cfg = getSettings();
+      return resolveStandaloneRequestLocale(req, cfg?.language);
+    } catch {
+      return resolveStandaloneRequestLocale(req, 'auto');
+    }
+  }
 
   let server = null;
   let boundPort = 0;
@@ -439,7 +561,12 @@ export function createStandaloneWebServer(options = {}) {
         const formParams = new URLSearchParams(formRaw);
         const submitted = String(formParams.get('token') || '').trim();
         if (!safeEqualSecret(submitted, token)) {
-          sendResponse(res, 401, 'text/html; charset=utf-8', renderTokenLoginHtml(true));
+          sendResponse(
+            res,
+            401,
+            'text/html; charset=utf-8',
+            renderTokenLoginHtml(true, resolveReqLocale(req))
+          );
           return;
         }
         res.writeHead(303, {
@@ -454,7 +581,12 @@ export function createStandaloneWebServer(options = {}) {
       const auth = checkRequestAuthorized(req, urlObj);
       if (!auth.ok) {
         if (auth.status === 401 && (pathname === '/' || pathname === '/index.html') && method === 'GET') {
-          sendResponse(res, 401, 'text/html; charset=utf-8', renderTokenLoginHtml(false));
+          sendResponse(
+            res,
+            401,
+            'text/html; charset=utf-8',
+            renderTokenLoginHtml(false, resolveReqLocale(req))
+          );
           return;
         }
         sendResponse(
@@ -481,7 +613,8 @@ export function createStandaloneWebServer(options = {}) {
 
       if (method === 'GET' || method === 'HEAD') {
         if (pathname === '/' || pathname === '/index.html') {
-          const html = await readAsset('index.html');
+          const rawHtml = await readAsset('index.html');
+          const html = localizeStandaloneIndexHtml(rawHtml, resolveReqLocale(req));
           sendResponse(res, 200, 'text/html; charset=utf-8', method === 'HEAD' ? '' : html);
           return;
         }
@@ -556,6 +689,18 @@ export function createStandaloneWebServer(options = {}) {
           );
           return;
         }
+        if (pathname === '/api/sessions/reveal' && !isLoopbackClient) {
+          sendResponse(
+            res,
+            403,
+            'application/json; charset=utf-8',
+            JSON.stringify({
+              ok: false,
+              error: 'Session file reveal is only allowed from loopback clients',
+            })
+          );
+          return;
+        }
         let data = undefined;
         if (method === 'GET') {
           data = Object.fromEntries(urlObj.searchParams.entries());
@@ -592,6 +737,24 @@ export function createStandaloneWebServer(options = {}) {
               JSON.stringify({
                 ok: false,
                 error: 'Host I18n mutations are only allowed from loopback clients',
+              })
+            );
+            return;
+          }
+          if (
+            pathname === '/api/settings' &&
+            data &&
+            typeof data === 'object' &&
+            data.__sessionManagerAction === 'reveal' &&
+            !isLoopbackClient
+          ) {
+            sendResponse(
+              res,
+              403,
+              'application/json; charset=utf-8',
+              JSON.stringify({
+                ok: false,
+                error: 'Session file reveal is only allowed from loopback clients',
               })
             );
             return;
@@ -667,6 +830,7 @@ export function createStandaloneWebServer(options = {}) {
           })
           .catch(() => {});
       }
+      syncFxRates({ force: false }).catch(() => {});
     }
 
     const srv = http.createServer((req, res) => {
@@ -694,6 +858,11 @@ export function createStandaloneWebServer(options = {}) {
   }
 
   async function stop() {
+    try {
+      await stopLocalBackgroundCacheRebuild();
+    } catch {
+      // Ignore background rebuild cancellation errors during shutdown
+    }
     flushAllEndpointCachesNow();
     const srv = server;
     server = null;

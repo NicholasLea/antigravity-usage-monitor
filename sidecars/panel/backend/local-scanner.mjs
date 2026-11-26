@@ -63,12 +63,14 @@ let knownBrainCascadeSetRootsKey = '';
 
 /**
  * 联合扫描本地多端（Desktop / CLI / IDE）的 `conversations` 与 `brain/<id>/.system_generated/logs/transcript.jsonl`，
- * 按小写 `cascadeId` 归并关联磁盘文件路径。
+ * 按小写 `cascadeId` 归并关联磁盘文件路径，并汇报目录可读性与扫描完整性。
  *
- * @returns {Map<string, string[]>}
+ * @returns {{ map: Map<string, string[]>, complete: boolean, readableDirs: Set<string> }}
  */
-function discoverLocalConversationFiles() {
+function scanLocalConversationFiles() {
   const map = new Map();
+  const readableDirs = new Set();
+  let complete = true;
   const convDirs =
     Array.isArray(CONVERSATION_DIRS) && CONVERSATION_DIRS.length > 0
       ? CONVERSATION_DIRS
@@ -76,7 +78,9 @@ function discoverLocalConversationFiles() {
   for (const dir of convDirs) {
     if (!dir || !existsSync(dir)) continue;
     try {
-      for (const rawName of readdirSync(dir)) {
+      const names = readdirSync(dir);
+      readableDirs.add(dir);
+      for (const rawName of names) {
         const name = String(rawName || '');
         const m = name.match(CONV_FILE_RE);
         if (!m) continue;
@@ -84,8 +88,10 @@ function discoverLocalConversationFiles() {
         if (!map.has(cascadeId)) map.set(cascadeId, []);
         map.get(cascadeId).push(join(dir, name));
       }
-    } catch {
-      // 忽略目录读取异常
+    } catch (err) {
+      if (err?.code !== 'ENOENT') {
+        complete = false;
+      }
     }
   }
 
@@ -111,6 +117,7 @@ function discoverLocalConversationFiles() {
           brainDirListingMemo.set(dir, cachedListing);
         }
       }
+      readableDirs.add(dir);
       for (const { name, cascadeId } of cachedListing.uuidItems) {
         nextBrainUuidSet.add(cascadeId);
         const transcriptPath = join(dir, name, '.system_generated', 'logs', 'transcript.jsonl');
@@ -123,8 +130,10 @@ function discoverLocalConversationFiles() {
         if (!map.has(cascadeId)) map.set(cascadeId, []);
         map.get(cascadeId).push(transcriptPath);
       }
-    } catch {
-      // 忽略目录读取异常
+    } catch (err) {
+      if (err?.code !== 'ENOENT') {
+        complete = false;
+      }
     }
   }
   knownBrainCascadeSet = nextBrainUuidSet.size > 0 ? nextBrainUuidSet : null;
@@ -149,7 +158,11 @@ function discoverLocalConversationFiles() {
       }
     }
   }
-  return map;
+  return { map, complete, readableDirs };
+}
+
+function discoverLocalConversationFiles() {
+  return scanLocalConversationFiles().map;
 }
 
 function readConversationMtime(files = []) {
@@ -394,6 +407,105 @@ function isSameHistoricalStep(nextStep, prevStep) {
   return true;
 }
 
+function isSameStepSlot(nextStep, prevStep) {
+  if (!nextStep || !prevStep || typeof nextStep !== 'object' || typeof prevStep !== 'object') {
+    return false;
+  }
+  if (Number(nextStep.stepIndex) !== Number(prevStep.stepIndex)) return false;
+  if (Boolean(nextStep.isCompactionStep) !== Boolean(prevStep.isCompactionStep)) return false;
+  if (Boolean(nextStep.isImageGenStep) !== Boolean(prevStep.isImageGenStep)) return false;
+  const nextTs = Number(nextStep.createdAtMs || 0);
+  const prevTs = Number(prevStep.createdAtMs || 0);
+  if (nextTs > 0 && prevTs > 0) {
+    if (Math.abs(nextTs - prevTs) > 2000) return false;
+    if (
+      nextTs !== prevTs &&
+      prevStep.isComplete === true &&
+      nextStep.isComplete === true &&
+      (Number(nextStep.inputTokens || 0) !== Number(prevStep.inputTokens || 0) ||
+        Number(nextStep.cacheReadTokens || 0) !== Number(prevStep.cacheReadTokens || 0) ||
+        Number(nextStep.outputTokens || 0) !== Number(prevStep.outputTokens || 0))
+    ) {
+      return false;
+    }
+    return true;
+  }
+  const prevHasTokens =
+    Number(prevStep.inputTokens || 0) +
+      Number(prevStep.cacheReadTokens || 0) +
+      Number(prevStep.outputTokens || 0) >
+    0;
+  if (
+    prevHasTokens &&
+    prevStep.isComplete !== false &&
+    (Number(nextStep.inputTokens || 0) !== Number(prevStep.inputTokens || 0) ||
+      Number(nextStep.cacheReadTokens || 0) !== Number(prevStep.cacheReadTokens || 0) ||
+      Number(nextStep.outputTokens || 0) !== Number(prevStep.outputTokens || 0))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * 宿主执行「撤销到此处」回退对话分支时，保留已发生过的历史调用步骤并标记 `isReverted: true`，
+ * 确保历史 Token / 费用 / 额度统计不回缩，同时支持回退后继续在同一 `stepIndex` 上分叉产生新步骤。
+ */
+function mergeRetainedRevertedSteps(liveSteps, prev) {
+  const safeLive = Array.isArray(liveSteps) ? liveSteps : [];
+  if (!prev || prev.offlineTranscriptFallback) return safeLive;
+  const isLegacySchemaPrev =
+    !prev.contextLimitTelemetry ||
+    !prev.speedClearedTelemetry ||
+    !prev.turnRailTelemetry ||
+    Number(prev.contextGroupsTelemetry || 0) < 3 ||
+    !prev.anomalyTelemetry ||
+    !prev.imageGenTelemetry;
+  if (isLegacySchemaPrev) return safeLive;
+  const prevSteps = Array.isArray(prev.steps) ? prev.steps : [];
+  if (prevSteps.length === 0) return safeLive;
+
+  const liveByIndex = new Map();
+  for (const st of safeLive) {
+    if (!st || typeof st !== 'object') continue;
+    const idx = Number(st.stepIndex);
+    if (Number.isFinite(idx)) {
+      liveByIndex.set(idx, st);
+    }
+  }
+
+  const retainedReverted = [];
+  for (const ps of prevSteps) {
+    if (!ps || typeof ps !== 'object') continue;
+    const idx = Number(ps.stepIndex);
+    const liveMatch = Number.isFinite(idx) ? liveByIndex.get(idx) : null;
+    if (ps.isReverted) {
+      if (liveMatch && isSameHistoricalStep(liveMatch, ps)) {
+        continue;
+      }
+      retainedReverted.push(ps);
+      continue;
+    }
+    if (!liveMatch || !isSameStepSlot(liveMatch, ps)) {
+      retainedReverted.push({ ...ps, isReverted: true });
+    }
+  }
+
+  if (retainedReverted.length === 0) return safeLive;
+
+  const merged = [...safeLive, ...retainedReverted];
+  merged.sort((a, b) => {
+    const ta = Number(a?.createdAtMs || 0);
+    const tb = Number(b?.createdAtMs || 0);
+    if (ta !== tb) return ta - tb;
+    const ia = Number(a?.stepIndex ?? 0);
+    const ib = Number(b?.stepIndex ?? 0);
+    if (ia !== ib) return ia - ib;
+    return (a?.isReverted ? 0 : 1) - (b?.isReverted ? 0 : 1);
+  });
+  return merged;
+}
+
 /**
  * 宿主只保留末尾一条完整 `gen_metadata` 并裁剪历史拆解；对话运行或回退重扫时，
  * 为当前活跃窗口内（最近压缩前锚点至末尾，最多保留 64 步）完全匹配的未变更历史步保留已缓存的 `contextBreakdown`，
@@ -414,7 +526,7 @@ function preserveCachedContextTelemetry(steps, prev) {
     for (const ps of prevSteps) {
       if (!ps || typeof ps !== 'object' || !ps.contextBreakdown) continue;
       const idx = Number(ps.stepIndex);
-      if (Number.isFinite(idx)) {
+      if (Number.isFinite(idx) && (!ps.isReverted || !prevWithBdByIdx.has(idx))) {
         prevWithBdByIdx.set(idx, ps);
       }
     }
@@ -496,7 +608,9 @@ function attachStepAccountOwners(steps, prev, currentAccountName, entryAccountNa
     if (!ps || typeof ps !== 'object') continue;
     const idx = Number(ps.stepIndex);
     if (Number.isFinite(idx)) {
-      prevByIndex.set(idx, ps);
+      if (!ps.isReverted) {
+        prevByIndex.set(idx, ps);
+      }
       if (idx > maxPrevStepIndex) maxPrevStepIndex = idx;
     }
     const cMs = Number(ps.createdAtMs || 0);
@@ -506,14 +620,15 @@ function attachStepAccountOwners(steps, prev, currentAccountName, entryAccountNa
   let mutated = false;
   const out = steps.map((s) => {
     const idx = Number(s?.stepIndex);
-    const matchedPrev = Number.isFinite(idx) ? prevByIndex.get(idx) : null;
+    const candidatePrev = Number.isFinite(idx) ? prevByIndex.get(idx) : null;
+    const matchedPrev = candidatePrev && isSameStepSlot(s, candidatePrev) ? candidatePrev : null;
     let stepOwner = '';
     if (matchedPrev) {
       stepOwner = normalizeOwnerAccount(matchedPrev.accountName) || prevOwner;
     } else {
       const cMs = Number(s?.createdAtMs || 0);
       const isHistoricalBackfill =
-        (Number.isFinite(idx) && maxPrevStepIndex >= 0 && idx <= maxPrevStepIndex) ||
+        (!candidatePrev && Number.isFinite(idx) && maxPrevStepIndex >= 0 && idx <= maxPrevStepIndex) ||
         (cMs > 0 && maxPrevCreatedAtMs > 0 && cMs <= maxPrevCreatedAtMs);
       stepOwner = isHistoricalBackfill ? prevOwner || activeOwner : activeOwner || prevOwner;
     }
@@ -554,12 +669,178 @@ const REMOTE_BACKGROUND_FETCH_LIMIT = 2;
 const REMOTE_CONSECUTIVE_TIMEOUT_BREAKER = 2;
 const TRANSCRIPT_TAIL_MAX_BYTES = 96 * 1024;
 const MAX_TRANSCRIPT_MEMO_ENTRIES = 64;
+const LS_SCAN_TIME_SLICE_MS = 12;
+const LS_SCAN_CHUNK_FLUSH_SIZE = 20;
+const LS_SCAN_FOREGROUND_BUDGET = 16;
+const LS_SCAN_BG_DRAIN_BATCH = 16;
+const LS_SCAN_BG_INTER_BATCH_DELAY_MS = 4;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const failedFetchCooldownMap = new Map();
 const liveActivityMemo = new Map();
 const transcriptTailMemo = new Map();
 const swarmManifestMemo = new Map();
 let lastKnownLocalLiveCascadeIds = null;
+
+let localRebuildGeneration = 0;
+let localBackgroundDrainStopped = false;
+let activeLocalBackgroundDrain = null;
+let localRebuildBatchHook = null;
+let localRebuildState = {
+  armed: false,
+  active: false,
+  generation: 0,
+  completed: 0,
+  total: 0,
+  remaining: 0,
+  updatedAtMs: 0,
+};
+
+function lsScanCanYieldMacrotask() {
+  return typeof setImmediate === 'function';
+}
+
+function lsScanYieldMacrotask() {
+  if (typeof setImmediate === 'function') {
+    return new Promise((resolve) => setImmediate(resolve));
+  }
+  return Promise.resolve();
+}
+
+const pendingBgDrainDelayWakers = new Set();
+
+function wakePendingBackgroundDrainDelays() {
+  if (pendingBgDrainDelayWakers.size === 0) return;
+  for (const wake of [...pendingBgDrainDelayWakers]) {
+    wake();
+  }
+}
+
+function lsScanWaitUnrefDelay(delayMs = LS_SCAN_BG_INTER_BATCH_DELAY_MS) {
+  if (typeof setTimeout === 'function') {
+    return new Promise((resolve) => {
+      let settled = false;
+      let timer = null;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        pendingBgDrainDelayWakers.delete(done);
+        resolve();
+      };
+      pendingBgDrainDelayWakers.add(done);
+      timer = setTimeout(done, delayMs);
+      timer?.unref?.();
+    });
+  }
+  return lsScanYieldMacrotask();
+}
+
+function lsScanCreateTimeSliceYielder(budgetMs = LS_SCAN_TIME_SLICE_MS) {
+  if (!lsScanCanYieldMacrotask()) {
+    return {
+      maybeYield: () => null,
+      forceYield: () => Promise.resolve(),
+    };
+  }
+  const nowFn =
+    typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? () => performance.now()
+      : () => Date.now();
+  let sliceStartMs = nowFn();
+  let pendingYield = null;
+  async function waitForSliceTurn() {
+    while (nowFn() - sliceStartMs >= budgetMs) {
+      if (!pendingYield) {
+        pendingYield = lsScanYieldMacrotask().finally(() => {
+          pendingYield = null;
+          sliceStartMs = nowFn();
+        });
+      }
+      await pendingYield;
+    }
+  }
+  return {
+    maybeYield() {
+      if (nowFn() - sliceStartMs < budgetMs) return null;
+      return waitForSliceTurn();
+    },
+    forceYield() {
+      if (!pendingYield) {
+        pendingYield = lsScanYieldMacrotask().finally(() => {
+          pendingYield = null;
+          sliceStartMs = nowFn();
+        });
+      }
+      return pendingYield;
+    },
+  };
+}
+
+export function getLocalRebuildGeneration() {
+  return localRebuildGeneration;
+}
+
+export function setLocalBackgroundRebuildHook(hookFn) {
+  localRebuildBatchHook = typeof hookFn === 'function' ? hookFn : null;
+}
+
+export function getLocalCacheRebuildStatus() {
+  return {
+    active: Boolean(localRebuildState.active),
+    completed: Number(localRebuildState.completed || 0),
+    total: Number(localRebuildState.total || 0),
+    remaining: Number(localRebuildState.remaining || 0),
+    updatedAtMs: Number(localRebuildState.updatedAtMs || 0),
+  };
+}
+
+export function isLocalBackgroundRebuildActive() {
+  return Boolean(
+    localRebuildState.active || localRebuildState.armed || activeLocalBackgroundDrain
+  );
+}
+
+export function resetLocalCacheRebuildState({ totalHint = 0, armed = false } = {}) {
+  localRebuildGeneration += 1;
+  localBackgroundDrainStopped = false;
+  activeLocalBackgroundDrain = null;
+  wakePendingBackgroundDrainDelays();
+  const cleanTotal = Math.max(0, Math.floor(Number(totalHint) || 0));
+  localRebuildState = {
+    armed: Boolean(armed),
+    active: false,
+    generation: localRebuildGeneration,
+    completed: 0,
+    total: cleanTotal,
+    remaining: cleanTotal,
+    updatedAtMs: Date.now(),
+  };
+}
+
+export async function stopLocalBackgroundCacheRebuild() {
+  localBackgroundDrainStopped = true;
+  localRebuildGeneration += 1;
+  const pending = activeLocalBackgroundDrain;
+  activeLocalBackgroundDrain = null;
+  wakePendingBackgroundDrainDelays();
+  localRebuildState = {
+    ...localRebuildState,
+    armed: false,
+    active: false,
+    remaining: 0,
+    updatedAtMs: Date.now(),
+  };
+  if (pending) {
+    try {
+      await pending;
+    } catch {
+      // Ignore background drain cancellation errors during shutdown
+    }
+  }
+}
 
 /**
  * 收集目标端点当前仍存活的原始会话源 ID 集合（供「重建缓存」区分“存活待重扫会话”和“原对话已被删除需永久归档留存会话”）。
@@ -626,7 +907,7 @@ export function collectAuthoritativeLiveCascadeIds(endpoint = null) {
   return liveIds;
 }
 
-export function clearScannerRuntimeMemos(endpointId = null) {
+export function clearScannerRuntimeMemos(endpointId = null, { totalHint = 0, armed = false } = {}) {
   if (endpointId && endpointId !== 'local') {
     const ep = getRegisteredRemoteEndpoint(endpointId);
     if (ep) {
@@ -636,6 +917,7 @@ export function clearScannerRuntimeMemos(endpointId = null) {
     }
     return;
   }
+  resetLocalCacheRebuildState({ totalHint, armed });
   failedFetchCooldownMap.clear();
   liveActivityMemo.clear();
   transcriptTailMemo.clear();
@@ -1214,7 +1496,12 @@ function loadOfflineTranscriptConversation(
   if (!cidLower) return null;
   const extMatch = externalByLower?.get(cidLower) || null;
   const sqliteDbPath = skipSqlite ? '' : findBestSqliteDbPath(diskFiles);
-  const sqliteTraj = sqliteDbPath ? readLocalSqliteTrajectory(sqliteDbPath) : null;
+  const sqliteTraj = sqliteDbPath
+    ? readLocalSqliteTrajectory(sqliteDbPath, {
+        cascadeId: cidLower,
+        includeForeignStepBounds: true,
+      })
+    : null;
   const transcriptPath = findTranscriptPath(cidLower);
 
   const transcriptLines = transcriptPath ? readTranscriptJsonlLines(transcriptPath) : [];
@@ -1245,10 +1532,12 @@ function loadOfflineTranscriptConversation(
   let steps = [];
   let fromSqlite = false;
 
-  if (sqliteTraj && sqliteTraj.steps.length > 0) {
+  if (sqliteTraj && (sqliteTraj.steps.length > 0 || sqliteTraj.hasForeignOriginSteps)) {
     fromSqlite = true;
     const sqliteRawSteps = [];
-    let maxSqliteStepIdx = -1;
+    let maxSqliteStepIdx = Number.isFinite(sqliteTraj.maxForeignOriginStepIndex)
+      ? Number(sqliteTraj.maxForeignOriginStepIndex)
+      : -1;
     let modelOrdinal = 0;
 
     for (const sq of sqliteTraj.steps) {
@@ -1381,7 +1670,7 @@ function loadOfflineTranscriptConversation(
     steps = extractModelSteps(sqliteRawSteps, sqliteTraj.generatorMetadata || []);
   }
 
-  if (steps.length === 0 && transcriptLines.length > 0) {
+  if (!fromSqlite && steps.length === 0 && transcriptLines.length > 0) {
     const syntheticSteps = [];
     let modelOrdinal = 0;
 
@@ -1832,24 +2121,49 @@ function extractTrajectorySubagentMeta(trajRes, fallback = {}) {
 export async function enumerateAndSyncConversations({
   summariesObj = {},
   summariesFromLocalDb = false,
+  summariesAvailable = false,
   sideQuestionParents = {},
   currentAccountName = '',
   requestedConvId = '',
   forceRefresh = false,
+  progressiveLocalSync = false,
+  expectedGeneration = null,
   endpoint = null,
 }) {
   const isRemote = Boolean(endpoint && endpoint.isRemote);
+  const scanGeneration =
+    !isRemote && Number.isInteger(expectedGeneration)
+      ? expectedGeneration
+      : localRebuildGeneration;
+  const isStaleLocalGeneration = () => !isRemote && scanGeneration !== localRebuildGeneration;
+  const fgShouldAbort = isRemote ? null : isStaleLocalGeneration;
+  const sliceYielder = lsScanCreateTimeSliceYielder(LS_SCAN_TIME_SLICE_MS);
   const cacheStore = getEndpointCacheStore(endpoint);
   const getEntry = cacheStore.getCachedTrajectory;
   const getHydratedEntry =
     typeof cacheStore.getHydratedTrajectory === 'function'
       ? cacheStore.getHydratedTrajectory
       : getEntry;
-  const setEntry = cacheStore.setCachedTrajectory;
-  const removeEntry = cacheStore.removeCachedTrajectory;
+  const setEntry = isRemote
+    ? cacheStore.setCachedTrajectory
+    : (cid, entry) => {
+        if (isStaleLocalGeneration()) return;
+        cacheStore.setCachedTrajectory(cid, entry);
+      };
+  const removeEntry = isRemote
+    ? cacheStore.removeCachedTrajectory
+    : (cid) => {
+        if (isStaleLocalGeneration()) return;
+        cacheStore.removeCachedTrajectory(cid);
+      };
   const listEntries = cacheStore.listCachedTrajectoryEntries;
   const hasPendingSave = cacheStore.hasPendingTrajectoryCacheSave;
-  const persistCacheIfNeeded = cacheStore.persistTrajectoryCacheIfNeeded;
+  const persistCacheIfNeeded = isRemote
+    ? cacheStore.persistTrajectoryCacheIfNeeded
+    : (opts) => {
+        if (isStaleLocalGeneration()) return;
+        cacheStore.persistTrajectoryCacheIfNeeded(opts);
+      };
   const activeCooldownMap = isRemote ? endpoint.failedFetchCooldownMap : failedFetchCooldownMap;
   const activeLiveActivityMemo = isRemote ? endpoint.liveActivityMemo : liveActivityMemo;
   const maxConcurrentRpc = isRemote ? 1 : MAX_CONCURRENT_RPC;
@@ -1882,7 +2196,10 @@ export async function enumerateAndSyncConversations({
   }
 
   let cacheDirty = hasPendingSave();
-  const diskConvMap = isRemote ? new Map() : discoverLocalConversationFiles();
+  const diskScan = isRemote
+    ? { map: new Map(), complete: true, readableDirs: new Set() }
+    : scanLocalConversationFiles();
+  const diskConvMap = diskScan.map;
 
   // 构建大小写不敏感索引，将同一会话的不同大小写键合并至唯一规范键（优先保留 summariesObj 中的原始键以兼容 RPC）
   const mergedSideQuestionParents = { ...(sideQuestionParents || {}) };
@@ -1966,8 +2283,9 @@ export async function enumerateAndSyncConversations({
     }
   }
 
-  // 从所有本地缓存会话收集 subagentRefs，确保跨账号切换时历史会话与派生子代理均不丢失
+  // 从未归档的本地缓存会话收集 subagentRefs，确保跨账号切换时活跃历史会话与派生子代理均不丢失
   for (const [, entry] of listEntries()) {
+    if (!isRemote && entry?.archived) continue;
     for (const ref of entry?.subagentRefs || []) {
       const refCid = String(ref?.cascadeId || '').trim().toLowerCase();
       if (refCid && !canonicalIdByLower.has(refCid)) {
@@ -1987,12 +2305,26 @@ export async function enumerateAndSyncConversations({
     if (!observedLiveIds.has(lower)) continue;
     for (const ref of entry?.subagentRefs || []) {
       const refCid = String(ref?.cascadeId || '').trim().toLowerCase();
-      if (refCid) observedLiveIds.add(refCid);
+      if (refCid) {
+        const refEntry = getEntry(canonicalIdByLower.get(refCid) || refCid);
+        if (!refEntry?.archived) {
+          observedLiveIds.add(refCid);
+        }
+      }
     }
   }
   const hasAuthoritativeSourceSnapshot = isRemote
     ? summariesByLower.size > 0
     : summariesByLower.size > 0 || localSummaryByLower.size > 0 || diskConvMap.size > 0;
+  const hasReadableLocalStore = !isRemote && diskScan.readableDirs.size > 0;
+  const hasConfirmedLocalAuthority = Boolean(
+    !isRemote &&
+      diskScan.complete &&
+      (hasReadableLocalStore
+        ? summariesAvailable || hasAuthoritativeSourceSnapshot
+        : hasAuthoritativeSourceSnapshot)
+  );
+  const hiddenArchivedIds = new Set();
   if (hasAuthoritativeSourceSnapshot) {
     if (isRemote && endpoint) {
       endpoint.lastKnownLiveCascadeIds = observedLiveIds;
@@ -2004,10 +2336,16 @@ export async function enumerateAndSyncConversations({
   const STALE_LOCAL_RUNNING_MAX_AGE_MS = 10 * 60_000;
   const reqLower = String(requestedConvId || '').trim().toLowerCase();
   const rawConversations = [];
+  let enumCount = 0;
   for (const [cidLower, cascadeId] of canonicalIdByLower.entries()) {
+    enumCount += 1;
+    if ((enumCount & 31) === 0) {
+      const ypEnum = sliceYielder.maybeYield();
+      if (ypEnum) await ypEnum;
+    }
     const item = summariesByLower.get(cidLower);
     const localSum = localSummaryByLower.get(cidLower) || null;
-    const cached = getEntry(cascadeId);
+    let cached = getEntry(cascadeId);
     const diskFiles = diskConvMap.get(cidLower) || [];
     const sqliteDbInfo = sqliteAvailable
       ? resolveBestSqliteDbInfo(diskFiles, { skipMissingWalFromListing: true })
@@ -2119,6 +2457,45 @@ export async function enumerateAndSyncConversations({
     const workspaceUri = String(
       rpcWorkspaceUri || localSum?.workspaceUri || cached?.workspaceUri || ''
     ).trim();
+
+    const hasLiveBacking = Boolean(
+      item ||
+        localSum ||
+        diskFiles.length > 0 ||
+        observedLiveIds.has(cidLower)
+    );
+    if (!isRemote && cached) {
+      if (cached.archived && hasLiveBacking) {
+        const unarchived = { ...cached };
+        delete unarchived.archived;
+        setEntry(cascadeId, unarchived);
+        cached = getEntry(cascadeId) || unarchived;
+        cacheDirty = true;
+      } else if (!hasLiveBacking) {
+        if (cached.archived) {
+          hiddenArchivedIds.add(cidLower);
+          continue;
+        }
+        const cachedOwner = normalizeOwnerAccount(cached.accountName);
+        const sameOrUnknownAccount =
+          currentAccountName !== null &&
+          (!normalizedPollAccount || !cachedOwner || cachedOwner === normalizedPollAccount);
+        const parentRefLower = String(
+          rootConversationId || parentConversationId || ''
+        ).toLowerCase();
+        const linkedToLiveParent = Boolean(parentRefLower && observedLiveIds.has(parentRefLower));
+        if (hasConfirmedLocalAuthority && sameOrUnknownAccount && !linkedToLiveParent) {
+          if ((cached.steps?.length || 0) > 0) {
+            setEntry(cascadeId, { ...cached, archived: true });
+          } else {
+            removeEntry(cascadeId);
+          }
+          cacheDirty = true;
+          hiddenArchivedIds.add(cidLower);
+          continue;
+        }
+      }
+    }
 
     if (item) {
       const lastModifiedMs =
@@ -2321,7 +2698,7 @@ export async function enumerateAndSyncConversations({
    *
    * @param {object[]} targetConvs
    */
-  async function fetchTrajectoryBatch(targetConvs) {
+  async function fetchTrajectoryBatch(targetConvs, { shouldAbort = null } = {}) {
     if (!Array.isArray(targetConvs) || targetConvs.length === 0) return;
     if (isRemote && remoteFetchStartedAtMs <= 0) {
       remoteFetchStartedAtMs = Date.now();
@@ -2330,12 +2707,20 @@ export async function enumerateAndSyncConversations({
       attemptedFetchIds.add(c.cascadeId.toLowerCase());
     }
     for (let i = 0; i < targetConvs.length; i += maxConcurrentRpc) {
-      if (isRemoteFetchHalted()) {
+      if (isRemoteFetchHalted() || shouldAbort?.()) {
+        break;
+      }
+      const ypBatch = sliceYielder.maybeYield();
+      if (ypBatch) await ypBatch;
+      if (shouldAbort?.()) {
         break;
       }
       const batch = targetConvs.slice(i, i + maxConcurrentRpc);
       await Promise.all(
         batch.map(async (conv) => {
+          const ypItem = sliceYielder.maybeYield();
+          if (ypItem) await ypItem;
+          if (shouldAbort?.()) return;
           const sig = buildConvSig(conv);
           const cooldownKey = `${conv.cascadeId.toLowerCase()}::${sig}`;
           const isRunning = conv.status === 'CASCADE_RUN_STATUS_RUNNING';
@@ -2402,6 +2787,7 @@ export async function enumerateAndSyncConversations({
                 rpcTimeoutMs,
                 endpoint
               );
+              if (shouldAbort?.()) return;
             }
             if (isRemote) {
               remoteConsecutiveTimeouts = 0;
@@ -2586,6 +2972,10 @@ export async function enumerateAndSyncConversations({
               currentAccountName,
               entryAccountName
             );
+            const mergedSteps = mergeRetainedRevertedSteps(stepsWithOwners, prev);
+            const preservedRawStepCount = conv.rawStepCount ?? steps.length;
+            conv.rawStepCount = preservedRawStepCount;
+            conv.stepCount = mergedSteps.length;
             const cacheEntry = {
               signature: finalSig,
               accountName: entryAccountName,
@@ -2593,7 +2983,7 @@ export async function enumerateAndSyncConversations({
               lastModifiedMs: resolvedLastModMs,
               diskMtimeMs:
                 conv.diskMtimeMs ?? readConversationMtime(diskConvMap.get(cidLower)),
-              rawStepCount: conv.rawStepCount ?? stepsWithOwners.length,
+              rawStepCount: preservedRawStepCount,
               wasRunning: conv.status === 'CASCADE_RUN_STATUS_RUNNING',
               contextLimitTelemetry: true,
               speedClearedTelemetry: true,
@@ -2602,7 +2992,7 @@ export async function enumerateAndSyncConversations({
               contextGroupsTelemetry: 3,
               anomalyTelemetry: 1,
               imageGenTelemetry: 1,
-              steps: stepsWithOwners,
+              steps: mergedSteps,
               ...(contextPreserved.lastKnownStaticContext
                 ? { lastKnownStaticContext: contextPreserved.lastKnownStaticContext }
                 : {}),
@@ -2650,7 +3040,7 @@ export async function enumerateAndSyncConversations({
               !prev.anomalyTelemetry ||
               !prev.imageGenTelemetry ||
               metaChanged ||
-              !isDeepStrictEqual(prev.steps, stepsWithOwners);
+              !isDeepStrictEqual(prev.steps, mergedSteps);
 
             if (!stepsChanged) cacheEntry.steps = prev.steps;
             setEntry(conv.cascadeId, cacheEntry);
@@ -2833,6 +3223,20 @@ export async function enumerateAndSyncConversations({
           }
         })
       );
+      if (
+        !isRemote &&
+        cacheDirty &&
+        cacheStore.isSqliteBacked &&
+        typeof cacheStore.getDirtySessionCount === 'function' &&
+        cacheStore.getDirtySessionCount() >= LS_SCAN_CHUNK_FLUSH_SIZE &&
+        !shouldAbort?.() &&
+        !isStaleLocalGeneration()
+      ) {
+        if (cacheStore.flushTrajectoryCacheNow()) {
+          cacheDirty = false;
+        }
+        await sliceYielder.forceYield();
+      }
     }
   }
 
@@ -3052,6 +3456,11 @@ export async function enumerateAndSyncConversations({
   });
 
   let fetchQueue = toFetch;
+  const useProgressiveLocal =
+    !isRemote && Boolean(progressiveLocalSync) && lsScanCanYieldMacrotask();
+  let deferredConvs = [];
+  const deferredCidSet = new Set();
+
   if (isRemote && toFetch.length > 0) {
     const priorityConvs = [];
     const backgroundConvs = [];
@@ -3071,20 +3480,98 @@ export async function enumerateAndSyncConversations({
       }
     }
     fetchQueue = [...priorityConvs, ...backgroundConvs];
+  } else if (useProgressiveLocal && toFetch.length > 0) {
+    const priorityConvs = [];
+    const nonPriorityConvs = [];
+    for (const conv of toFetch) {
+      const lowerCid = conv.cascadeId.toLowerCase();
+      const parentLower = String(conv.parentConversationId || '').toLowerCase();
+      const rootLower = String(conv.rootConversationId || '').toLowerCase();
+      const isPriority =
+        conv.status === 'CASCADE_RUN_STATUS_RUNNING' ||
+        lowerCid === reqLower ||
+        lowerCid === contextTelemetryCascadeId ||
+        lowerCid === selectedRootId ||
+        Boolean(parentLower && parentLower === selectedRootId) ||
+        Boolean(rootLower && rootLower === selectedRootId);
+      if (isPriority) {
+        priorityConvs.push(conv);
+      } else {
+        nonPriorityConvs.push(conv);
+      }
+    }
+    const drainAlreadyRunning =
+      Boolean(activeLocalBackgroundDrain) && localRebuildState.generation === scanGeneration;
+    if (drainAlreadyRunning) {
+      fetchQueue = priorityConvs;
+      deferredConvs = nonPriorityConvs;
+    } else if (nonPriorityConvs.length > LS_SCAN_FOREGROUND_BUDGET) {
+      fetchQueue = [
+        ...priorityConvs,
+        ...nonPriorityConvs.slice(0, LS_SCAN_FOREGROUND_BUDGET),
+      ];
+      deferredConvs = nonPriorityConvs.slice(LS_SCAN_FOREGROUND_BUDGET);
+    } else {
+      fetchQueue = toFetch;
+    }
+    for (const dc of deferredConvs) {
+      deferredCidSet.add(dc.cascadeId.toLowerCase());
+    }
   }
 
-  await fetchTrajectoryBatch(fetchQueue);
+  await fetchTrajectoryBatch(fetchQueue, { shouldAbort: fgShouldAbort });
+
+  if (deferredCidSet.size > 0 && reqLower && !isStaleLocalGeneration()) {
+    const rawByLower = new Map(rawConversations.map((c) => [c.cascadeId.toLowerCase(), c]));
+    const visitedAnc = new Set([reqLower]);
+    let frontier = [rawByLower.get(reqLower)].filter(Boolean);
+    for (let hop = 0; hop < 8 && frontier.length > 0 && deferredCidSet.size > 0; hop++) {
+      if (isStaleLocalGeneration()) break;
+      const promotedBatch = [];
+      const nextFrontier = [];
+      for (const cur of frontier) {
+        for (const rawAnc of [cur.parentConversationId, cur.rootConversationId]) {
+          const cleanAnc = String(rawAnc || '').trim().toLowerCase();
+          if (!cleanAnc || visitedAnc.has(cleanAnc)) continue;
+          visitedAnc.add(cleanAnc);
+          const ancConv = rawByLower.get(cleanAnc);
+          if (!ancConv) continue;
+          nextFrontier.push(ancConv);
+          if (deferredCidSet.has(cleanAnc)) {
+            deferredCidSet.delete(cleanAnc);
+            promotedBatch.push(ancConv);
+          }
+        }
+      }
+      if (promotedBatch.length > 0) {
+        await fetchTrajectoryBatch(promotedBatch, { shouldAbort: fgShouldAbort });
+      }
+      frontier = nextFrontier;
+    }
+  }
 
   /**
    * 阶段 2：根据父会话的 `subagentRefs` 将子代理归属关系、角色名称与启动顺序回填至子代理会话，
    * 支持多层嵌套子代理（主会话 -> 子代理 -> 二级子代理）逐层补拉与归属收敛。
    */
-  async function reconcileParentSubagentRefs() {
+  async function reconcileParentSubagentRefs({
+    candidateParents = null,
+    skipDeferredSet = null,
+    shouldAbort = null,
+  } = {}) {
+    let currentParents = candidateParents ? [...candidateParents] : null;
     for (let depth = 0; depth < MAX_SUBAGENT_RECONCILE_DEPTH; depth++) {
+      if (shouldAbort?.()) break;
       const byLowerId = new Map(rawConversations.map((c) => [c.cascadeId.toLowerCase(), c]));
       const missingSubagentsToFetch = [];
+      const parentsToInspect = currentParents || [...rawConversations];
 
-      for (const parentConv of [...rawConversations]) {
+      for (const parentConv of parentsToInspect) {
+        if (shouldAbort?.()) break;
+        const parentId = parentConv.cascadeId.toLowerCase();
+        if (skipDeferredSet && skipDeferredSet.has(parentId)) {
+          continue;
+        }
         const parentCached = getEntry(parentConv.cascadeId);
         const baseRefs = parentConv.subagentRefs || parentCached?.subagentRefs || [];
         const swarmManifest =
@@ -3105,7 +3592,6 @@ export async function enumerateAndSyncConversations({
         }
         if (!Array.isArray(refs) || refs.length === 0) continue;
 
-        const parentId = parentConv.cascadeId.toLowerCase();
         const rootId = (
           parentConv.rootConversationId ||
           parentConv.parentConversationId ||
@@ -3114,7 +3600,10 @@ export async function enumerateAndSyncConversations({
 
         for (const ref of refs) {
           const subCid = String(ref?.cascadeId || '').trim().toLowerCase();
-          if (!subCid || subCid === parentId) continue;
+          if (!subCid || subCid === parentId || hiddenArchivedIds.has(subCid)) continue;
+          if (skipDeferredSet) {
+            skipDeferredSet.delete(subCid);
+          }
 
           const canonSubId = canonicalIdByLower.get(subCid) || subCid;
           canonicalIdByLower.set(subCid, canonSubId);
@@ -3283,19 +3772,27 @@ export async function enumerateAndSyncConversations({
         }
         subagentFetchQueue = [...prioritySubs, ...backgroundSubs];
       }
-      if (subagentFetchQueue.length === 0) break;
-      await fetchTrajectoryBatch(subagentFetchQueue);
+      if (subagentFetchQueue.length === 0 || shouldAbort?.()) break;
+      await fetchTrajectoryBatch(subagentFetchQueue, { shouldAbort });
+      if (currentParents) {
+        currentParents = subagentFetchQueue;
+      }
     }
   }
 
-  await reconcileParentSubagentRefs();
+  await reconcileParentSubagentRefs({
+    skipDeferredSet: deferredCidSet.size > 0 ? deferredCidSet : null,
+    shouldAbort: fgShouldAbort,
+  });
 
   // 阶段 3：对剩余尚未标记 subagentRefs 的纯磁盘历史会话每次增量迁移最多 8 个（远端共享整轮背景额度），避免单次轮询阻塞
   const legacyBatchCap = isRemote
     ? isRemoteFetchHalted()
       ? 0
       : Math.min(LEGACY_MIGRATION_BATCH_SIZE, remainingRemoteBackgroundBudget)
-    : LEGACY_MIGRATION_BATCH_SIZE;
+    : deferredCidSet.size > 0
+      ? 0
+      : LEGACY_MIGRATION_BATCH_SIZE;
   const remainingLegacyDiskConvs =
     legacyBatchCap > 0
       ? rawConversations
@@ -3310,54 +3807,240 @@ export async function enumerateAndSyncConversations({
           .slice(0, legacyBatchCap)
       : [];
 
-  if (remainingLegacyDiskConvs.length > 0) {
+  if (remainingLegacyDiskConvs.length > 0 && !isStaleLocalGeneration()) {
     if (isRemote) {
       remainingRemoteBackgroundBudget = Math.max(
         0,
         remainingRemoteBackgroundBudget - remainingLegacyDiskConvs.length
       );
     }
-    await fetchTrajectoryBatch(remainingLegacyDiskConvs);
-    await reconcileParentSubagentRefs();
+    await fetchTrajectoryBatch(remainingLegacyDiskConvs, { shouldAbort: fgShouldAbort });
+    await reconcileParentSubagentRefs({ shouldAbort: fgShouldAbort });
   }
 
   // 阶段 4：将多层嵌套子代理的 rootConversationId 沿着父链向上收敛至最顶层根会话，防止二级子代理丢失
-  const byId = new Map(rawConversations.map((c) => [c.cascadeId.toLowerCase(), c]));
-  for (const conv of rawConversations) {
-    if (!conv.isSubagent) continue;
-    const cid = conv.cascadeId.toLowerCase();
-    let candidate = (conv.rootConversationId || conv.parentConversationId || '').toLowerCase();
-    if (candidate === cid) {
-      candidate = (conv.parentConversationId || '').toLowerCase();
-    }
-    const visited = new Set([cid]);
-    while (candidate && !visited.has(candidate)) {
-      visited.add(candidate);
-      const ancestor = byId.get(candidate);
-      if (!ancestor || !ancestor.isSubagent) break;
-      const nextUp = (
-        ancestor.parentConversationId ||
-        ancestor.rootConversationId ||
-        ''
-      ).toLowerCase();
-      if (!nextUp || nextUp === candidate) break;
-      candidate = nextUp;
-    }
-    if (candidate && candidate !== conv.rootConversationId) {
-      conv.rootConversationId = candidate;
-      const cached = getEntry(conv.cascadeId);
-      if (cached && cached.rootConversationId !== candidate) {
-        setEntry(conv.cascadeId, { ...cached, rootConversationId: candidate });
-        cacheDirty = true;
+  function convergeSubagentRootChain(targetConvs, lookupById) {
+    for (const conv of targetConvs) {
+      if (!conv?.isSubagent) continue;
+      const cid = conv.cascadeId.toLowerCase();
+      let candidate = (conv.rootConversationId || conv.parentConversationId || '').toLowerCase();
+      if (candidate === cid) {
+        candidate = (conv.parentConversationId || '').toLowerCase();
+      }
+      const visited = new Set([cid]);
+      while (candidate && !visited.has(candidate)) {
+        visited.add(candidate);
+        const ancestor = lookupById.get(candidate);
+        if (!ancestor || !ancestor.isSubagent) break;
+        const nextUp = (
+          ancestor.parentConversationId ||
+          ancestor.rootConversationId ||
+          ''
+        ).toLowerCase();
+        if (!nextUp || nextUp === candidate) break;
+        candidate = nextUp;
+      }
+      if (candidate && candidate !== conv.rootConversationId) {
+        conv.rootConversationId = candidate;
+        const cached = getEntry(conv.cascadeId);
+        if (cached && cached.rootConversationId !== candidate) {
+          setEntry(conv.cascadeId, { ...cached, rootConversationId: candidate });
+          cacheDirty = true;
+        }
       }
     }
   }
+
+  const byId = new Map(rawConversations.map((c) => [c.cascadeId.toLowerCase(), c]));
+  convergeSubagentRootChain(rawConversations, byId);
 
   const hasRunningSessions = rawConversations.some(
     (c) => c.status === 'CASCADE_RUN_STATUS_RUNNING'
   );
   if (cacheDirty || (hasPendingSave() && !hasRunningSessions)) {
     persistCacheIfNeeded({ hasRunningSessions });
+    cacheDirty = false;
+  }
+
+  function isDeferredConvAlreadySynced(conv) {
+    if (!conv) return true;
+    const curCached = getEntry(conv.cascadeId);
+    if (!curCached || curCached.offlineTranscriptFallback || curCached.wasRunning) {
+      return false;
+    }
+    const sig = buildConvSig(conv);
+    if (curCached.signature !== sig) return false;
+    if (
+      conv.dbPath &&
+      sqliteAvailable &&
+      !String(curCached.signature || '').startsWith(`${CACHE_SCHEMA_VERSION}:sqlite:`)
+    ) {
+      return false;
+    }
+    if (hasMissingStepFields(curCached) || !Array.isArray(curCached.subagentRefs)) {
+      return false;
+    }
+    const hasIncompleteTiming = curCached._stepFlags
+      ? Boolean(curCached._stepFlags.hasIncompleteTiming)
+      : readStepFieldChecks(curCached.steps).hasIncompleteTiming;
+    if (!curCached.speedClearedTelemetry && hasIncompleteTiming) {
+      return false;
+    }
+    return true;
+  }
+
+  let snapshotDeferredCascadeIds = null;
+  if (!isRemote && useProgressiveLocal) {
+    const remainingDeferred =
+      deferredCidSet.size > 0
+        ? deferredConvs.filter(
+            (c) =>
+              deferredCidSet.has(c.cascadeId.toLowerCase()) &&
+              !isDeferredConvAlreadySynced(c) &&
+              !isFetchInCooldown(c, buildConvSig(c))
+          )
+        : [];
+    if (remainingDeferred.length > 0) {
+      snapshotDeferredCascadeIds = new Set(
+        remainingDeferred.map((c) => c.cascadeId.toLowerCase())
+      );
+    }
+    const trackRebuildProgress =
+      scanGeneration === localRebuildGeneration &&
+      Boolean(localRebuildState.armed || localRebuildState.active);
+    if (
+      remainingDeferred.length > 0 &&
+      !activeLocalBackgroundDrain &&
+      scanGeneration === localRebuildGeneration &&
+      !localBackgroundDrainStopped
+    ) {
+      if (trackRebuildProgress) {
+        const totalToRebuild = Math.max(rawConversations.length, localRebuildState.total || 0);
+        localRebuildState = {
+          armed: false,
+          active: true,
+          generation: scanGeneration,
+          completed: Math.max(0, totalToRebuild - remainingDeferred.length),
+          total: Math.max(totalToRebuild, remainingDeferred.length),
+          remaining: remainingDeferred.length,
+          updatedAtMs: Date.now(),
+        };
+      }
+      const shouldAbortBg = () =>
+        scanGeneration !== localRebuildGeneration || localBackgroundDrainStopped;
+      const drainQueue = remainingDeferred.slice();
+      const drainTask = (async () => {
+        for (let off = 0; off < drainQueue.length; off += LS_SCAN_BG_DRAIN_BATCH) {
+          if (shouldAbortBg()) return;
+          await lsScanWaitUnrefDelay(LS_SCAN_BG_INTER_BATCH_DELAY_MS);
+          if (shouldAbortBg()) return;
+          const rawChunk = drainQueue.slice(off, off + LS_SCAN_BG_DRAIN_BATCH);
+          for (let j = off; j < Math.min(drainQueue.length, off + LS_SCAN_BG_DRAIN_BATCH); j++) {
+            drainQueue[j] = null;
+          }
+          const pendingChunk = [];
+          for (const conv of rawChunk) {
+            if (!conv || isDeferredConvAlreadySynced(conv)) {
+              continue;
+            }
+            attemptedFetchIds.delete(conv.cascadeId.toLowerCase());
+            pendingChunk.push(conv);
+          }
+          if (pendingChunk.length > 0) {
+            const rawLenBefore = rawConversations.length;
+            await fetchTrajectoryBatch(pendingChunk, { shouldAbort: shouldAbortBg });
+            if (shouldAbortBg()) return;
+            await reconcileParentSubagentRefs({
+              candidateParents: pendingChunk,
+              shouldAbort: shouldAbortBg,
+            });
+            if (shouldAbortBg()) return;
+            const latestById = new Map(rawConversations.map((c) => [c.cascadeId.toLowerCase(), c]));
+            const touchedSubs = [
+              ...pendingChunk.filter((c) => c.isSubagent),
+              ...rawConversations.slice(rawLenBefore),
+            ];
+            if (touchedSubs.length > 0) {
+              convergeSubagentRootChain(touchedSubs, latestById);
+            }
+            if (!shouldAbortBg() && (cacheDirty || hasPendingSave())) {
+              cacheStore.flushTrajectoryCacheNow();
+              cacheDirty = false;
+            }
+            localRebuildBatchHook?.({ finished: false });
+          }
+          if (shouldAbortBg()) return;
+          if (trackRebuildProgress) {
+            const rem = Math.max(0, drainQueue.length - (off + LS_SCAN_BG_DRAIN_BATCH));
+            const tot = Math.max(localRebuildState.total || 0, rawConversations.length);
+            localRebuildState = {
+              armed: false,
+              active: rem > 0,
+              generation: scanGeneration,
+              completed: Math.max(0, tot - rem),
+              total: tot,
+              remaining: rem,
+              updatedAtMs: Date.now(),
+            };
+          }
+        }
+        if (!shouldAbortBg()) {
+          if (cacheDirty || hasPendingSave()) {
+            cacheStore.flushTrajectoryCacheNow();
+            cacheDirty = false;
+          }
+          if (trackRebuildProgress) {
+            const finalTotal = Math.max(localRebuildState.total || 0, rawConversations.length);
+            localRebuildState = {
+              armed: false,
+              active: false,
+              generation: scanGeneration,
+              completed: finalTotal,
+              total: finalTotal,
+              remaining: 0,
+              updatedAtMs: Date.now(),
+            };
+          }
+          localRebuildBatchHook?.({ finished: true });
+        }
+      })().finally(() => {
+        if (activeLocalBackgroundDrain === drainTask) {
+          activeLocalBackgroundDrain = null;
+        }
+      });
+      activeLocalBackgroundDrain = drainTask;
+    } else if (
+      remainingDeferred.length === 0 &&
+      !activeLocalBackgroundDrain &&
+      trackRebuildProgress
+    ) {
+      const doneTotal = Math.max(rawConversations.length, localRebuildState.total || 0);
+      localRebuildState = {
+        armed: false,
+        active: false,
+        generation: scanGeneration,
+        completed: doneTotal,
+        total: doneTotal,
+        remaining: 0,
+        updatedAtMs: Date.now(),
+      };
+    }
+  } else if (
+    !isRemote &&
+    !activeLocalBackgroundDrain &&
+    (localRebuildState.armed || localRebuildState.active) &&
+    scanGeneration === localRebuildGeneration
+  ) {
+    const doneTotal = Math.max(rawConversations.length, localRebuildState.total || 0);
+    localRebuildState = {
+      armed: false,
+      active: false,
+      generation: scanGeneration,
+      completed: doneTotal,
+      total: doneTotal,
+      remaining: 0,
+      updatedAtMs: Date.now(),
+    };
   }
 
   // 确保所有处于 RUNNING 状态的会话（含本轮未触发 RPC 拉取的会话）都同步了最新的实时动作摘要，并剔除已进入 swarm_wait 待命的假运行态
@@ -3439,10 +4122,18 @@ export async function enumerateAndSyncConversations({
   }
 
   let titleBackfillDirty = false;
+  let titleLoopCount = 0;
   for (const rootConv of conversations) {
+    titleLoopCount += 1;
+    if ((titleLoopCount & 23) === 0) {
+      const ypTitle = sliceYielder.maybeYield();
+      if (ypTitle) await ypTitle;
+    }
     const cid = rootConv.cascadeId.toLowerCase();
+    const isDeferredRoot = deferredCidSet.has(cid);
     const rootCached = getEntry(rootConv.cascadeId);
-    const swarmManifest = isRemote ? null : getPollSwarmManifest(cid);
+    const swarmManifest =
+      isRemote || (isDeferredRoot && titleLoopCount > 30) ? null : getPollSwarmManifest(cid);
     const swarmTitle = String(swarmManifest?.title || rootCached?.swarmMeta?.title || '').trim();
     if (swarmTitle) {
       rootConv.swarmTitle = swarmTitle;
@@ -3464,7 +4155,7 @@ export async function enumerateAndSyncConversations({
           extractFirstStepTurnTitle(titleSourceEntry?.steps),
         ]);
       }
-      if (!recoveredTitle && !isRemote) {
+      if (!recoveredTitle && !isRemote && (!isDeferredRoot || titleLoopCount <= 30)) {
         recoveredTitle = probeLocalFallbackTitle(
           cid,
           rootConv.diskMtimeMs || rootConv.lastModifiedMs || 0
@@ -3628,11 +4319,14 @@ export async function enumerateAndSyncConversations({
     null;
   const safeReqId =
     requestedConvId && !/[\\/]|\.\./.test(String(requestedConvId)) ? requestedConvId : null;
-  const activeCascadeId = activeConvSummary?.cascadeId || safeReqId || null;
+  const activeCascadeId =
+    activeConvSummary?.cascadeId ||
+    (safeReqId && !hiddenArchivedIds.has(reqLower) ? safeReqId : null);
 
   return {
     conversations,
     activeConvSummary,
     activeCascadeId,
+    deferredCascadeIds: snapshotDeferredCascadeIds,
   };
 }
