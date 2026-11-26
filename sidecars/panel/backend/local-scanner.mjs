@@ -63,12 +63,14 @@ let knownBrainCascadeSetRootsKey = '';
 
 /**
  * 联合扫描本地多端（Desktop / CLI / IDE）的 `conversations` 与 `brain/<id>/.system_generated/logs/transcript.jsonl`，
- * 按小写 `cascadeId` 归并关联磁盘文件路径。
+ * 按小写 `cascadeId` 归并关联磁盘文件路径，并汇报目录可读性与扫描完整性。
  *
- * @returns {Map<string, string[]>}
+ * @returns {{ map: Map<string, string[]>, complete: boolean, readableDirs: Set<string> }}
  */
-function discoverLocalConversationFiles() {
+function scanLocalConversationFiles() {
   const map = new Map();
+  const readableDirs = new Set();
+  let complete = true;
   const convDirs =
     Array.isArray(CONVERSATION_DIRS) && CONVERSATION_DIRS.length > 0
       ? CONVERSATION_DIRS
@@ -76,7 +78,9 @@ function discoverLocalConversationFiles() {
   for (const dir of convDirs) {
     if (!dir || !existsSync(dir)) continue;
     try {
-      for (const rawName of readdirSync(dir)) {
+      const names = readdirSync(dir);
+      readableDirs.add(dir);
+      for (const rawName of names) {
         const name = String(rawName || '');
         const m = name.match(CONV_FILE_RE);
         if (!m) continue;
@@ -84,8 +88,10 @@ function discoverLocalConversationFiles() {
         if (!map.has(cascadeId)) map.set(cascadeId, []);
         map.get(cascadeId).push(join(dir, name));
       }
-    } catch {
-      // 忽略目录读取异常
+    } catch (err) {
+      if (err?.code !== 'ENOENT') {
+        complete = false;
+      }
     }
   }
 
@@ -111,6 +117,7 @@ function discoverLocalConversationFiles() {
           brainDirListingMemo.set(dir, cachedListing);
         }
       }
+      readableDirs.add(dir);
       for (const { name, cascadeId } of cachedListing.uuidItems) {
         nextBrainUuidSet.add(cascadeId);
         const transcriptPath = join(dir, name, '.system_generated', 'logs', 'transcript.jsonl');
@@ -123,8 +130,10 @@ function discoverLocalConversationFiles() {
         if (!map.has(cascadeId)) map.set(cascadeId, []);
         map.get(cascadeId).push(transcriptPath);
       }
-    } catch {
-      // 忽略目录读取异常
+    } catch (err) {
+      if (err?.code !== 'ENOENT') {
+        complete = false;
+      }
     }
   }
   knownBrainCascadeSet = nextBrainUuidSet.size > 0 ? nextBrainUuidSet : null;
@@ -149,7 +158,11 @@ function discoverLocalConversationFiles() {
       }
     }
   }
-  return map;
+  return { map, complete, readableDirs };
+}
+
+function discoverLocalConversationFiles() {
+  return scanLocalConversationFiles().map;
 }
 
 function readConversationMtime(files = []) {
@@ -2108,6 +2121,7 @@ function extractTrajectorySubagentMeta(trajRes, fallback = {}) {
 export async function enumerateAndSyncConversations({
   summariesObj = {},
   summariesFromLocalDb = false,
+  summariesAvailable = false,
   sideQuestionParents = {},
   currentAccountName = '',
   requestedConvId = '',
@@ -2182,7 +2196,10 @@ export async function enumerateAndSyncConversations({
   }
 
   let cacheDirty = hasPendingSave();
-  const diskConvMap = isRemote ? new Map() : discoverLocalConversationFiles();
+  const diskScan = isRemote
+    ? { map: new Map(), complete: true, readableDirs: new Set() }
+    : scanLocalConversationFiles();
+  const diskConvMap = diskScan.map;
 
   // 构建大小写不敏感索引，将同一会话的不同大小写键合并至唯一规范键（优先保留 summariesObj 中的原始键以兼容 RPC）
   const mergedSideQuestionParents = { ...(sideQuestionParents || {}) };
@@ -2266,8 +2283,9 @@ export async function enumerateAndSyncConversations({
     }
   }
 
-  // 从所有本地缓存会话收集 subagentRefs，确保跨账号切换时历史会话与派生子代理均不丢失
+  // 从未归档的本地缓存会话收集 subagentRefs，确保跨账号切换时活跃历史会话与派生子代理均不丢失
   for (const [, entry] of listEntries()) {
+    if (!isRemote && entry?.archived) continue;
     for (const ref of entry?.subagentRefs || []) {
       const refCid = String(ref?.cascadeId || '').trim().toLowerCase();
       if (refCid && !canonicalIdByLower.has(refCid)) {
@@ -2287,12 +2305,26 @@ export async function enumerateAndSyncConversations({
     if (!observedLiveIds.has(lower)) continue;
     for (const ref of entry?.subagentRefs || []) {
       const refCid = String(ref?.cascadeId || '').trim().toLowerCase();
-      if (refCid) observedLiveIds.add(refCid);
+      if (refCid) {
+        const refEntry = getEntry(canonicalIdByLower.get(refCid) || refCid);
+        if (!refEntry?.archived) {
+          observedLiveIds.add(refCid);
+        }
+      }
     }
   }
   const hasAuthoritativeSourceSnapshot = isRemote
     ? summariesByLower.size > 0
     : summariesByLower.size > 0 || localSummaryByLower.size > 0 || diskConvMap.size > 0;
+  const hasReadableLocalStore = !isRemote && diskScan.readableDirs.size > 0;
+  const hasConfirmedLocalAuthority = Boolean(
+    !isRemote &&
+      diskScan.complete &&
+      (hasReadableLocalStore
+        ? summariesAvailable || hasAuthoritativeSourceSnapshot
+        : hasAuthoritativeSourceSnapshot)
+  );
+  const hiddenArchivedIds = new Set();
   if (hasAuthoritativeSourceSnapshot) {
     if (isRemote && endpoint) {
       endpoint.lastKnownLiveCascadeIds = observedLiveIds;
@@ -2313,7 +2345,7 @@ export async function enumerateAndSyncConversations({
     }
     const item = summariesByLower.get(cidLower);
     const localSum = localSummaryByLower.get(cidLower) || null;
-    const cached = getEntry(cascadeId);
+    let cached = getEntry(cascadeId);
     const diskFiles = diskConvMap.get(cidLower) || [];
     const sqliteDbInfo = sqliteAvailable
       ? resolveBestSqliteDbInfo(diskFiles, { skipMissingWalFromListing: true })
@@ -2425,6 +2457,45 @@ export async function enumerateAndSyncConversations({
     const workspaceUri = String(
       rpcWorkspaceUri || localSum?.workspaceUri || cached?.workspaceUri || ''
     ).trim();
+
+    const hasLiveBacking = Boolean(
+      item ||
+        localSum ||
+        diskFiles.length > 0 ||
+        observedLiveIds.has(cidLower)
+    );
+    if (!isRemote && cached) {
+      if (cached.archived && hasLiveBacking) {
+        const unarchived = { ...cached };
+        delete unarchived.archived;
+        setEntry(cascadeId, unarchived);
+        cached = getEntry(cascadeId) || unarchived;
+        cacheDirty = true;
+      } else if (!hasLiveBacking) {
+        if (cached.archived) {
+          hiddenArchivedIds.add(cidLower);
+          continue;
+        }
+        const cachedOwner = normalizeOwnerAccount(cached.accountName);
+        const sameOrUnknownAccount =
+          currentAccountName !== null &&
+          (!normalizedPollAccount || !cachedOwner || cachedOwner === normalizedPollAccount);
+        const parentRefLower = String(
+          rootConversationId || parentConversationId || ''
+        ).toLowerCase();
+        const linkedToLiveParent = Boolean(parentRefLower && observedLiveIds.has(parentRefLower));
+        if (hasConfirmedLocalAuthority && sameOrUnknownAccount && !linkedToLiveParent) {
+          if ((cached.steps?.length || 0) > 0) {
+            setEntry(cascadeId, { ...cached, archived: true });
+          } else {
+            removeEntry(cascadeId);
+          }
+          cacheDirty = true;
+          hiddenArchivedIds.add(cidLower);
+          continue;
+        }
+      }
+    }
 
     if (item) {
       const lastModifiedMs =
@@ -3529,7 +3600,7 @@ export async function enumerateAndSyncConversations({
 
         for (const ref of refs) {
           const subCid = String(ref?.cascadeId || '').trim().toLowerCase();
-          if (!subCid || subCid === parentId) continue;
+          if (!subCid || subCid === parentId || hiddenArchivedIds.has(subCid)) continue;
           if (skipDeferredSet) {
             skipDeferredSet.delete(subCid);
           }
@@ -4248,7 +4319,9 @@ export async function enumerateAndSyncConversations({
     null;
   const safeReqId =
     requestedConvId && !/[\\/]|\.\./.test(String(requestedConvId)) ? requestedConvId : null;
-  const activeCascadeId = activeConvSummary?.cascadeId || safeReqId || null;
+  const activeCascadeId =
+    activeConvSummary?.cascadeId ||
+    (safeReqId && !hiddenArchivedIds.has(reqLower) ? safeReqId : null);
 
   return {
     conversations,

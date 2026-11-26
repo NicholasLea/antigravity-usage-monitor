@@ -179,6 +179,7 @@ export function backendHarness({
     mkdirSync:()=>{},
     readdirSync:p=>{
       const norm = String(p).replace(/\\/g, '/');
+      if (diskDirs?.[norm] instanceof Error) throw diskDirs[norm];
       if (diskDirs && Array.isArray(diskDirs[norm])) return diskDirs[norm];
       return [];
     },
