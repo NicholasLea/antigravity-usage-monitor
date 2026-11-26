@@ -4,6 +4,9 @@
  */
 
 export const I18N_MESSAGES_EN_US = Object.freeze({
+  // Application / Document Metadata
+  'app.title': 'Usage & Speed Monitor',
+
   // Top Navigation
   'nav.overview': 'Live',
   'nav.consumption': 'Usage',

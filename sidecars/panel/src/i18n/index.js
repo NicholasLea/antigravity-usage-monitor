@@ -52,6 +52,30 @@ export function isEnglishLocale() {
 }
 
 /**
+ * Sync `<html lang>` and `<title>` on the panel / standalone document to the active locale.
+ * Uses equality guards so repeated calls avoid redundant DOM mutations on `<head>`.
+ *
+ * @param {Document | null} [doc]
+ * @returns {string}
+ */
+export function syncDocumentLocale(doc = typeof document !== 'undefined' ? document : null) {
+  const locale = getEffectiveLocale();
+  if (!doc) return locale;
+  try {
+    if (doc.documentElement && doc.documentElement.lang !== locale) {
+      doc.documentElement.lang = locale;
+    }
+    const nextTitle = t('app.title');
+    if (nextTitle && doc.title !== nextTitle) {
+      doc.title = nextTitle;
+    }
+  } catch {
+    // Ignore read-only document environments in constrained webviews/tests
+  }
+  return locale;
+}
+
+/**
  * Translate a message key with optional `{name}` variable interpolation.
  *
  * @param {string} key

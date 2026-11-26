@@ -4845,6 +4845,135 @@ test('Standalone Web server enforces loopback/non-loopback security boundaries, 
   }
 });
 
+test('Issue #44: standalone Web UI & panel sync <html lang> and <title> across en-US/zh-CN/auto without mutating overlay host title', async () => {
+  const { setI18nLanguage, syncDocumentLocale } = await import('../src/i18n/index.js');
+  const {
+    resolveStandaloneRequestLocale,
+    localizeStandaloneIndexHtml,
+  } = await import('../backend/standalone-server.mjs');
+
+  // 1. Pure helper equality guard & locale sync
+  let titleWrites = 0;
+  let langWrites = 0;
+  let curTitle = '用量监控';
+  let curLang = 'zh-CN';
+  const fakeDoc = {
+    documentElement: {
+      get lang() {
+        return curLang;
+      },
+      set lang(v) {
+        langWrites += 1;
+        curLang = v;
+      },
+    },
+    get title() {
+      return curTitle;
+    },
+    set title(v) {
+      titleWrites += 1;
+      curTitle = v;
+    },
+  };
+
+  try {
+    setI18nLanguage('en-US');
+    syncDocumentLocale(fakeDoc);
+    assert.equal(curLang, 'en-US');
+    assert.equal(curTitle, 'Usage & Speed Monitor');
+    assert.equal(langWrites, 1);
+    assert.equal(titleWrites, 1);
+
+    // Repeated sync with same locale must not mutate DOM again (prevents head observer churn)
+    syncDocumentLocale(fakeDoc);
+    assert.equal(langWrites, 1);
+    assert.equal(titleWrites, 1);
+
+    setI18nLanguage('zh-CN');
+    syncDocumentLocale(fakeDoc);
+    assert.equal(curLang, 'zh-CN');
+    assert.equal(curTitle, '用量监控');
+    assert.equal(langWrites, 2);
+    assert.equal(titleWrites, 2);
+  } finally {
+    setI18nLanguage('zh-CN');
+  }
+
+  // 2. Standalone HTTP server localizes both index.html and token login HTML via settings.language + Accept-Language
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'en-US,en;q=0.9' } }, 'auto'), 'en-US');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'en;q=0.5, zh-CN;q=0.9' } }, 'auto'), 'zh-CN');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'zh-CN' } }, 'en-US'), 'en-US');
+  assert.equal(resolveStandaloneRequestLocale({ headers: { 'accept-language': 'en-US' } }, 'zh-CN'), 'zh-CN');
+
+  const rawIndexHtml = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const enIndexHtml = localizeStandaloneIndexHtml(rawIndexHtml, 'en-US');
+  assert.match(enIndexHtml, /<html lang="en-US">/);
+  assert.match(enIndexHtml, /<title>Usage & Speed Monitor<\/title>/);
+
+  let mockLang = 'auto';
+  const i18nSrv = createStandaloneWebServer({
+    host: '127.0.0.1',
+    port: 0,
+    token: 'i18n-secret',
+    skipStartupDiscovery: true,
+    getSettingsFn: () => ({ language: mockLang }),
+    readAssetFn: async (rel) => (rel === 'index.html' ? rawIndexHtml : ''),
+    handleApiRequest: async () => ({ status: 200, contentType: 'application/json', body: '{}' }),
+  });
+
+  try {
+    const st = await i18nSrv.start();
+
+    // Unauthenticated English browser -> localized English login page
+    const enLogin = await fetch(`${st.url}/`, { headers: { 'Accept-Language': 'en-US,en;q=0.9' } });
+    assert.equal(enLogin.status, 401);
+    const enLoginHtml = await enLogin.text();
+    assert.match(enLoginHtml, /<html lang="en-US">/);
+    assert.match(enLoginHtml, /<title>Usage & Speed Monitor · Access Verification<\/title>/);
+    assert.match(enLoginHtml, /Verify and Open Monitor/);
+
+    // Invalid token POST from English browser -> English error message
+    const enBadPost = await fetch(`${st.url}/api/standalone-auth`, {
+      method: 'POST',
+      headers: {
+        Origin: st.url,
+        'Accept-Language': 'en-US',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'token=wrong',
+    });
+    assert.equal(enBadPost.status, 401);
+    assert.match(await enBadPost.text(), /Invalid access token/);
+
+    // Authenticated English browser with auto language -> localized index.html on first byte
+    const enAuthed = await fetch(`${st.url}/`, {
+      headers: {
+        Authorization: 'Bearer i18n-secret',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    assert.equal(enAuthed.status, 200);
+    const enPage = await enAuthed.text();
+    assert.match(enPage, /<html lang="en-US">/);
+    assert.match(enPage, /<title>Usage & Speed Monitor<\/title>/);
+
+    // Explicit zh-CN setting overrides English Accept-Language header
+    mockLang = 'zh-CN';
+    const zhOverride = await fetch(`${st.url}/`, {
+      headers: {
+        Authorization: 'Bearer i18n-secret',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    assert.equal(zhOverride.status, 200);
+    const zhPage = await zhOverride.text();
+    assert.match(zhPage, /<html lang="zh-CN">/);
+    assert.match(zhPage, /<title>用量监控<\/title>/);
+  } finally {
+    await i18nSrv.stop();
+  }
+});
+
 test('v1.5 feedback E2E: sticky bridge port/token across hot-reloads, CDP->HTTP self-healing, trimmed raw model IDs, non-truncating compaction suffix, custom token combo DSL, and adaptive popover width', async () => {
   const stickyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-wm-sticky-'));
   const leaseFile = path.join(stickyDir, 'window-bridge-lease.json');

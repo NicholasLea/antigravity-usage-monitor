@@ -12,16 +12,24 @@ import { App } from './App.js';
 import { mountWindowOverlay } from './components/layout/WindowOverlayShell.js';
 import { applyAppearanceToRoot, syncHostThemeFallback } from './core/appearance.js';
 import { callSidecarApi, isWindowOverlayMode } from './core/httpClient.js';
-import { setI18nLanguage } from './i18n/index.js';
+import { i18nStore, setI18nLanguage, syncDocumentLocale } from './i18n/index.js';
 import { startAsyncTelemetryLoop, telemetryStore } from './store/telemetryStore.js';
 
-function isFallbackStyleMutation(record) {
+function isTitleNode(node) {
+  return String(node?.tagName || '').toUpperCase() === 'TITLE';
+}
+
+function isOwnHeadMutation(record) {
   if (!record) return false;
   if (record.target?.id === HOST_THEME_FALLBACK_STYLE_ID) return true;
   if (record.target?.parentNode?.id === HOST_THEME_FALLBACK_STYLE_ID) return true;
+  if (isTitleNode(record.target) || isTitleNode(record.target?.parentNode)) return true;
   if (record.type === 'childList') {
     const nodes = [...(record.addedNodes || []), ...(record.removedNodes || [])];
-    if (nodes.length > 0 && nodes.every((n) => n?.id === HOST_THEME_FALLBACK_STYLE_ID)) {
+    if (
+      nodes.length > 0 &&
+      nodes.every((n) => n?.id === HOST_THEME_FALLBACK_STYLE_ID || isTitleNode(n))
+    ) {
       return true;
     }
   }
@@ -60,6 +68,7 @@ async function bootstrapApp(mountTarget = document.getElementById('app-root')) {
     syncingAppearance = true;
     try {
       setI18nLanguage(settings?.language);
+      syncDocumentLocale(typeof document !== 'undefined' ? document : null);
       if (typeof document !== 'undefined' && document.documentElement) {
         const isStandalone = document.documentElement.getAttribute?.('data-standalone') === 'true';
         const telemetryLoaded = Boolean(telemetryStore.getState().telemetry);
@@ -85,6 +94,10 @@ async function bootstrapApp(mountTarget = document.getElementById('app-root')) {
   const initialTel = telemetryStore.getState().telemetry;
   syncDocAppearance(initialTel?.settings, initialTel?.hostTheme);
 
+  const unsubDocLocale = i18nStore.subscribe(
+    (st) => st.locale,
+    () => syncDocumentLocale(typeof document !== 'undefined' ? document : null)
+  );
   const unsubAppearance = telemetryStore.subscribe(
     (st) => st.telemetry?.settings,
     (settings) => syncDocAppearance(settings, telemetryStore.getState().telemetry?.hostTheme)
@@ -97,7 +110,7 @@ async function bootstrapApp(mountTarget = document.getElementById('app-root')) {
   let hostThemeObserver = null;
   let colorSchemeMql = null;
   const onHostThemeChange = (records) => {
-    if (Array.isArray(records) && records.length > 0 && records.every(isFallbackStyleMutation)) {
+    if (Array.isArray(records) && records.length > 0 && records.every(isOwnHeadMutation)) {
       return;
     }
     const tel = telemetryStore.getState().telemetry;
@@ -144,6 +157,7 @@ async function bootstrapApp(mountTarget = document.getElementById('app-root')) {
       }
       hostThemeObserver?.disconnect?.();
       colorSchemeMql?.removeEventListener?.('change', onHostThemeChange);
+      unsubDocLocale();
       unsubAppearance();
       unsubHostTheme();
       stopPolling();

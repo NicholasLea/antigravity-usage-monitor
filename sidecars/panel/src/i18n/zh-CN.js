@@ -4,6 +4,9 @@
  */
 
 export const I18N_MESSAGES_ZH_CN = Object.freeze({
+  // Application / Document Metadata
+  'app.title': '用量监控',
+
   // Top Navigation
   'nav.overview': '实时监控',
   'nav.consumption': '用量统计',

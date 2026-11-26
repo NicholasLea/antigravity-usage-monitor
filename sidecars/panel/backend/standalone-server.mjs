@@ -21,6 +21,7 @@ import { stopLocalBackgroundCacheRebuild } from './local-scanner.mjs';
 import { ensureLsEndpointDiscovered } from './ls-discovery.mjs';
 import { ensureCliStatusLineConfigured } from './cli-statusline-config.mjs';
 import { syncCloudCatalog } from './plugin-updater.mjs';
+import { normalizeLanguageSetting } from '../shared/settings-normalization.mjs';
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
 const AUTH_COOKIE_NAME = 'ag_um_token';
@@ -99,16 +100,63 @@ function extractBearerToken(authHeader) {
   return m ? m[1].trim() : '';
 }
 
-function renderTokenLoginHtml(hasError = false) {
+export function resolveStandaloneRequestLocale(req, settingsLanguage = 'auto') {
+  const normalized = normalizeLanguageSetting(settingsLanguage);
+  if (normalized === 'en-US' || normalized === 'zh-CN') return normalized;
+  const rawHeader = String(req?.headers?.['accept-language'] || '').trim();
+  if (!rawHeader) return 'zh-CN';
+  let bestTag = '';
+  let bestQ = -1;
+  for (const part of rawHeader.split(',')) {
+    const pieces = part.trim().split(';');
+    const tag = String(pieces[0] || '').trim().toLowerCase();
+    if (!tag || tag === '*') continue;
+    let q = 1;
+    for (let i = 1; i < pieces.length; i += 1) {
+      const m = pieces[i].trim().match(/^q=([0-9.]+)$/i);
+      if (m) {
+        const parsed = Number(m[1]);
+        if (Number.isFinite(parsed)) q = parsed;
+      }
+    }
+    if (q > bestQ) {
+      bestQ = q;
+      bestTag = tag;
+    }
+  }
+  if (!bestTag) return 'zh-CN';
+  return bestTag.startsWith('zh') ? 'zh-CN' : 'en-US';
+}
+
+export function localizeStandaloneIndexHtml(html, locale = 'zh-CN') {
+  if (typeof html !== 'string' || locale !== 'en-US') return html;
+  return html
+    .replace('<html lang="zh-CN">', '<html lang="en-US">')
+    .replace('<title>用量监控</title>', '<title>Usage & Speed Monitor</title>');
+}
+
+function renderTokenLoginHtml(hasError = false, locale = 'zh-CN') {
+  const isEn = locale === 'en-US';
+  const htmlLang = isEn ? 'en-US' : 'zh-CN';
+  const pageTitle = isEn
+    ? 'Usage & Speed Monitor · Access Verification'
+    : '用量监控 · 访问验证';
+  const descText = isEn
+    ? 'Access token protection is enabled for this standalone monitor. Enter your token to continue.'
+    : '当前独立监控服务已启用访问令牌保护，请输入 Token 继续。';
   const errHtml = hasError
-    ? '<p class="err">访问令牌无效，请核对后重新输入。</p>'
+    ? `<p class="err">${
+        isEn ? 'Invalid access token. Please verify and try again.' : '访问令牌无效，请核对后重新输入。'
+      }</p>`
     : '';
+  const placeholderText = isEn ? 'Enter --token access secret' : '输入 --token 访问密钥';
+  const submitText = isEn ? 'Verify and Open Monitor' : '验证并进入面板';
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>用量监控 · 访问验证</title>
+  <title>${pageTitle}</title>
   <style>
     :root { color-scheme: dark light; }
     * { box-sizing: border-box; }
@@ -163,10 +211,10 @@ function renderTokenLoginHtml(hasError = false) {
 <body>
   <form class="card" method="POST" action="/api/standalone-auth">
     <h1>Antigravity Usage Monitor</h1>
-    <p>当前独立监控服务已启用访问令牌保护，请输入 Token 继续。</p>
+    <p>${descText}</p>
     ${errHtml}
-    <input type="password" name="token" placeholder="输入 --token 访问密钥" autocomplete="current-password" required autofocus>
-    <button type="submit">验证并进入面板</button>
+    <input type="password" name="token" placeholder="${placeholderText}" autocomplete="current-password" required autofocus>
+    <button type="submit">${submitText}</button>
   </form>
 </body>
 </html>`;
@@ -369,6 +417,16 @@ export function createStandaloneWebServer(options = {}) {
     ((pathname, method, data) =>
       dispatchBridgeApiRequest(pathname, method, data, { onRestart }));
   const readAsset = options.readAssetFn || readLocalAsync;
+  const getSettings = typeof options.getSettingsFn === 'function' ? options.getSettingsFn : loadSettings;
+
+  function resolveReqLocale(req) {
+    try {
+      const cfg = getSettings();
+      return resolveStandaloneRequestLocale(req, cfg?.language);
+    } catch {
+      return resolveStandaloneRequestLocale(req, 'auto');
+    }
+  }
 
   let server = null;
   let boundPort = 0;
@@ -440,7 +498,12 @@ export function createStandaloneWebServer(options = {}) {
         const formParams = new URLSearchParams(formRaw);
         const submitted = String(formParams.get('token') || '').trim();
         if (!safeEqualSecret(submitted, token)) {
-          sendResponse(res, 401, 'text/html; charset=utf-8', renderTokenLoginHtml(true));
+          sendResponse(
+            res,
+            401,
+            'text/html; charset=utf-8',
+            renderTokenLoginHtml(true, resolveReqLocale(req))
+          );
           return;
         }
         res.writeHead(303, {
@@ -455,7 +518,12 @@ export function createStandaloneWebServer(options = {}) {
       const auth = checkRequestAuthorized(req, urlObj);
       if (!auth.ok) {
         if (auth.status === 401 && (pathname === '/' || pathname === '/index.html') && method === 'GET') {
-          sendResponse(res, 401, 'text/html; charset=utf-8', renderTokenLoginHtml(false));
+          sendResponse(
+            res,
+            401,
+            'text/html; charset=utf-8',
+            renderTokenLoginHtml(false, resolveReqLocale(req))
+          );
           return;
         }
         sendResponse(
@@ -482,7 +550,8 @@ export function createStandaloneWebServer(options = {}) {
 
       if (method === 'GET' || method === 'HEAD') {
         if (pathname === '/' || pathname === '/index.html') {
-          const html = await readAsset('index.html');
+          const rawHtml = await readAsset('index.html');
+          const html = localizeStandaloneIndexHtml(rawHtml, resolveReqLocale(req));
           sendResponse(res, 200, 'text/html; charset=utf-8', method === 'HEAD' ? '' : html);
           return;
         }

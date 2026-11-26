@@ -1613,6 +1613,9 @@ return { createReactiveStore };
 // --- src/i18n/zh-CN.js ---
 const { I18N_MESSAGES_ZH_CN } = (() => {
 const I18N_MESSAGES_ZH_CN = Object.freeze({
+  // Application / Document Metadata
+  'app.title': '用量监控',
+
   // Top Navigation
   'nav.overview': '实时监控',
   'nav.consumption': '用量统计',
@@ -2749,6 +2752,9 @@ return { I18N_MESSAGES_ZH_CN };
 // --- src/i18n/en-US.js ---
 const { I18N_MESSAGES_EN_US } = (() => {
 const I18N_MESSAGES_EN_US = Object.freeze({
+  // Application / Document Metadata
+  'app.title': 'Usage & Speed Monitor',
+
   // Top Navigation
   'nav.overview': 'Live',
   'nav.consumption': 'Usage',
@@ -3883,7 +3889,7 @@ return { I18N_MESSAGES_EN_US };
 })();
 
 // --- src/i18n/index.js ---
-const { I18N_DICTIONARIES, normalizeI18nLanguage, detectHostSystemLocale, i18nStore, setI18nLanguage, getEffectiveLocale, isEnglishLocale, t } = (() => {
+const { I18N_DICTIONARIES, normalizeI18nLanguage, detectHostSystemLocale, i18nStore, setI18nLanguage, getEffectiveLocale, isEnglishLocale, syncDocumentLocale, t } = (() => {
 const I18N_DICTIONARIES = Object.freeze({
   'zh-CN': I18N_MESSAGES_ZH_CN,
   'en-US': I18N_MESSAGES_EN_US,
@@ -3928,6 +3934,30 @@ function isEnglishLocale() {
 }
 
 /**
+ * Sync `<html lang>` and `<title>` on the panel / standalone document to the active locale.
+ * Uses equality guards so repeated calls avoid redundant DOM mutations on `<head>`.
+ *
+ * @param {Document | null} [doc]
+ * @returns {string}
+ */
+function syncDocumentLocale(doc = typeof document !== 'undefined' ? document : null) {
+  const locale = getEffectiveLocale();
+  if (!doc) return locale;
+  try {
+    if (doc.documentElement && doc.documentElement.lang !== locale) {
+      doc.documentElement.lang = locale;
+    }
+    const nextTitle = t('app.title');
+    if (nextTitle && doc.title !== nextTitle) {
+      doc.title = nextTitle;
+    }
+  } catch {
+    // Ignore read-only document environments in constrained webviews/tests
+  }
+  return locale;
+}
+
+/**
  * Translate a message key with optional `{name}` variable interpolation.
  *
  * @param {string} key
@@ -3943,7 +3973,7 @@ function t(key, vars = undefined) {
     vars[k] !== undefined && vars[k] !== null ? String(vars[k]) : ''
   );
 }
-return { I18N_DICTIONARIES, normalizeI18nLanguage, detectHostSystemLocale, i18nStore, setI18nLanguage, getEffectiveLocale, isEnglishLocale, t };
+return { I18N_DICTIONARIES, normalizeI18nLanguage, detectHostSystemLocale, i18nStore, setI18nLanguage, getEffectiveLocale, isEnglishLocale, syncDocumentLocale, t };
 })();
 
 // --- src/core/appearance.js ---
@@ -49018,13 +49048,21 @@ return { mountWindowOverlay };
 
 // --- src/main.js ---
 (() => {
-function isFallbackStyleMutation(record) {
+function isTitleNode(node) {
+  return String(node?.tagName || '').toUpperCase() === 'TITLE';
+}
+
+function isOwnHeadMutation(record) {
   if (!record) return false;
   if (record.target?.id === HOST_THEME_FALLBACK_STYLE_ID) return true;
   if (record.target?.parentNode?.id === HOST_THEME_FALLBACK_STYLE_ID) return true;
+  if (isTitleNode(record.target) || isTitleNode(record.target?.parentNode)) return true;
   if (record.type === 'childList') {
     const nodes = [...(record.addedNodes || []), ...(record.removedNodes || [])];
-    if (nodes.length > 0 && nodes.every((n) => n?.id === HOST_THEME_FALLBACK_STYLE_ID)) {
+    if (
+      nodes.length > 0 &&
+      nodes.every((n) => n?.id === HOST_THEME_FALLBACK_STYLE_ID || isTitleNode(n))
+    ) {
       return true;
     }
   }
@@ -49063,6 +49101,7 @@ async function bootstrapApp(mountTarget = document.getElementById('app-root')) {
     syncingAppearance = true;
     try {
       setI18nLanguage(settings?.language);
+      syncDocumentLocale(typeof document !== 'undefined' ? document : null);
       if (typeof document !== 'undefined' && document.documentElement) {
         const isStandalone = document.documentElement.getAttribute?.('data-standalone') === 'true';
         const telemetryLoaded = Boolean(telemetryStore.getState().telemetry);
@@ -49088,6 +49127,10 @@ async function bootstrapApp(mountTarget = document.getElementById('app-root')) {
   const initialTel = telemetryStore.getState().telemetry;
   syncDocAppearance(initialTel?.settings, initialTel?.hostTheme);
 
+  const unsubDocLocale = i18nStore.subscribe(
+    (st) => st.locale,
+    () => syncDocumentLocale(typeof document !== 'undefined' ? document : null)
+  );
   const unsubAppearance = telemetryStore.subscribe(
     (st) => st.telemetry?.settings,
     (settings) => syncDocAppearance(settings, telemetryStore.getState().telemetry?.hostTheme)
@@ -49100,7 +49143,7 @@ async function bootstrapApp(mountTarget = document.getElementById('app-root')) {
   let hostThemeObserver = null;
   let colorSchemeMql = null;
   const onHostThemeChange = (records) => {
-    if (Array.isArray(records) && records.length > 0 && records.every(isFallbackStyleMutation)) {
+    if (Array.isArray(records) && records.length > 0 && records.every(isOwnHeadMutation)) {
       return;
     }
     const tel = telemetryStore.getState().telemetry;
@@ -49147,6 +49190,7 @@ async function bootstrapApp(mountTarget = document.getElementById('app-root')) {
       }
       hostThemeObserver?.disconnect?.();
       colorSchemeMql?.removeEventListener?.('change', onHostThemeChange);
+      unsubDocLocale();
       unsubAppearance();
       unsubHostTheme();
       stopPolling();
