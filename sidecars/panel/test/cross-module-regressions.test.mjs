@@ -1939,3 +1939,99 @@ test('ConsumptionView and TrendAreaChart patch text DOM nodes in-place without o
     globalThis.window = prevWin;
   }
 });
+
+test('Issue #45: grouped modelBreakdown, trend bucket models, and merged agent units pick dominant shortName (tie-breaking to shorter base alias)', async () => {
+  const { buildScopedModelBreakdown, aggregateSelectedWindowUsage } = await import(
+    '../backend/usage-aggregator.mjs'
+  );
+  const { mergeSelectedAgentUnits } = await import('../src/views/StepsDetailView.js');
+
+  const mkStep = (tier, createdAtMs) => ({
+    modelKey: tier,
+    inputTokens: 1000,
+    cacheReadTokens: 2000,
+    outputTokens: 300,
+    thinkingTokens: 100,
+    createdAtMs,
+  });
+  const resolveTier = (st) => {
+    if (st.modelKey === 'low') {
+      return {
+        label: 'Gemini 4 Neon (Low)',
+        baseLabel: 'Gemini 4 Neon',
+        shortName: 'neon-4-low',
+        modelId: 'gemini-4-neon',
+        family: 'Gemini',
+        pricing: null,
+      };
+    }
+    return {
+      label: 'Gemini 4 Neon (Medium)',
+      baseLabel: 'Gemini 4 Neon',
+      shortName: 'neon-4',
+      modelId: 'gemini-4-neon',
+      family: 'Gemini',
+      pricing: null,
+    };
+  };
+
+  // 1. Dominant tier wins even when minority tier appears first
+  const now = Date.now();
+  const mixedSteps = [
+    mkStep('low', now - 5000),
+    mkStep('medium', now - 4000),
+    mkStep('medium', now - 3000),
+    mkStep('medium', now - 2000),
+    mkStep('medium', now - 1000),
+  ];
+  const dominantBreakdown = buildScopedModelBreakdown(mixedSteps, resolveTier);
+  assert.equal(dominantBreakdown.length, 1);
+  assert.equal(dominantBreakdown[0].calls, 5);
+  assert.equal(dominantBreakdown[0].shortName, 'neon-4');
+
+  // 2. Tie breaks in favor of shorter base alias regardless of scan order
+  const tiedSteps = [
+    mkStep('low', now - 4000),
+    mkStep('low', now - 3000),
+    mkStep('medium', now - 2000),
+    mkStep('medium', now - 1000),
+  ];
+  const tiedBreakdown = buildScopedModelBreakdown(tiedSteps, resolveTier);
+  assert.equal(tiedBreakdown[0].shortName, 'neon-4');
+
+  // 3. Trend series bucket perModelStats also resolves dominant shortName
+  const rangeRes = aggregateSelectedWindowUsage({
+    precollectedEntries: [
+      {
+        cascadeId: 'cid-issue-45',
+        steps: mixedSteps,
+        stepCount: mixedSteps.length,
+        lastModifiedMs: now,
+      },
+    ],
+    filterOpts: { range: 'today' },
+    resolveStepModel: resolveTier,
+  });
+  assert.equal(rangeRes.modelBreakdown[0].shortName, 'neon-4');
+  const activeTrendBuckets = (rangeRes.trendSeries || []).filter(
+    (b) => Array.isArray(b.models) && b.models.length > 0
+  );
+  assert.ok(activeTrendBuckets.length > 0, 'Trend bucket populated');
+  assert.equal(activeTrendBuckets[0].models[0].shortName, 'neon-4');
+
+  // 4. StepsDetailView mergeSelectedAgentUnits weights shortName by calls
+  const merged = mergeSelectedAgentUnits([
+    {
+      modelBreakdown: [
+        { label: 'Gemini 4 Neon', shortName: 'neon-4-low', calls: 2, inputTokens: 2000, outputTokens: 400, totalTokens: 2400, costUsd: 0.01 },
+      ],
+    },
+    {
+      modelBreakdown: [
+        { label: 'Gemini 4 Neon', shortName: 'neon-4', calls: 10, inputTokens: 10000, outputTokens: 2000, totalTokens: 12000, costUsd: 0.05 },
+      ],
+    },
+  ]);
+  assert.equal(merged.models.length, 1);
+  assert.equal(merged.models[0].shortName, 'neon-4');
+});

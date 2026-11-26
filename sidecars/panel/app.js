@@ -43584,6 +43584,7 @@ function mergeSelectedAgentUnits(units) {
         acc = {
           label: m.label || gk,
           shortName: m.shortName || gk,
+          shortNameCounts: new Map(),
           rawModel: m.rawModel || '',
           upstreamName: m.upstreamName || m.upstreamModel || '',
           upstreamSet: new Set(
@@ -43626,6 +43627,12 @@ function mergeSelectedAgentUnits(units) {
         }
       }
       const calls = Math.max(0, Number(m.calls || 0));
+      if (m.shortName) {
+        acc.shortNameCounts.set(
+          m.shortName,
+          (acc.shortNameCounts.get(m.shortName) || 0) + Math.max(1, calls)
+        );
+      }
       const inTok = Math.max(0, Number(m.inputTokens || 0));
       const cacheTok = Math.max(0, Number(m.cacheReadTokens || 0));
       const outTok = Math.max(0, Number(m.outputTokens || 0));
@@ -43710,9 +43717,22 @@ function mergeSelectedAgentUnits(units) {
     .map((acc) => {
       const promptTok = acc.inputTokens + acc.cacheReadTokens;
       const rawAvgTps = acc._speedSeconds > 0 ? acc._speedTokens / acc._speedSeconds : null;
+      let primaryShortName = acc.shortName;
+      let bestShortCount = -1;
+      for (const [sn, cnt] of acc.shortNameCounts.entries()) {
+        if (
+          cnt > bestShortCount ||
+          (cnt === bestShortCount &&
+            (sn.length < primaryShortName.length ||
+              (sn.length === primaryShortName.length && sn < primaryShortName)))
+        ) {
+          primaryShortName = sn;
+          bestShortCount = cnt;
+        }
+      }
       return {
         label: acc.label,
-        shortName: acc.shortName,
+        shortName: primaryShortName,
         rawModel: acc.rawModel,
         upstreamName: acc.upstreamName,
         upstreamModels: Array.from(acc.upstreamSet),
