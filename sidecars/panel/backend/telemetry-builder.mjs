@@ -1996,11 +1996,7 @@ export async function buildTelemetryPayloadInternal(
       const steps = Array.isArray(entry?.steps) ? entry.steps : [];
       const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
       if (!lastStep) {
-        if (activePoolKey && activePoolKey !== 'Unknown') {
-          runningPoolKeys.add(activePoolKey);
-        } else {
-          hasUnknownRunningPool = true;
-        }
+        hasUnknownRunningPool = true;
         return;
       }
       const mInfo = resolveStepModel(lastStep);
@@ -2027,6 +2023,11 @@ export async function buildTelemetryPayloadInternal(
     }
   }
 
+  const localScanIncomplete = Boolean(
+    (!isRemote && getLocalCacheRebuildStatus()?.active) ||
+      (deferredCascadeIds instanceof Set && deferredCascadeIds.size > 0)
+  );
+
   updatePoolQuotaReservationEstimates({
     endpointId,
     accountScope: accountScope || '',
@@ -2034,6 +2035,7 @@ export async function buildTelemetryPayloadInternal(
     poolCycleStats,
     runningPoolKeys,
     hasUnknownRunningPool,
+    localScanIncomplete,
     quotaFetchedAtMs: officialQuotaInfo?.fetchedAtMs || 0,
     nowMs: Date.now(),
   });
