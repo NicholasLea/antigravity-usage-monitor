@@ -3,6 +3,7 @@
  * 通过单一声明式字段描述符表同时驱动导出与导入归一化，消除双遍手写 30 个键的漏同步风险。
  */
 
+import { normalizeDisplayCurrency } from '../../shared/currency-catalog.mjs';
 import {
   normalizeAccountQuotaRefreshMinutes,
   normalizeAutoConfigureLaunch,
@@ -144,6 +145,7 @@ const positiveBudgetField = (key, fallbackVal) => ({
 
 const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
   normField('language', normalizeLanguageSetting),
+  normField('displayCurrency', normalizeDisplayCurrency),
   normField('themeAccent', normalizeThemeAccent),
   normField('fontScale', normalizeFontScale),
   {

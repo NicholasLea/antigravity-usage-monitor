@@ -160,6 +160,7 @@ export const SettingsView = defineComponent({
           );
         }
         void generalTab.refs.loadHostI18n?.(false);
+        if (telemetry?.fxStatus) generalTab.refs.renderFxStatus?.(telemetry.fxStatus);
         if (telemetry?.cloudStatus) generalTab.refs.renderCloudStatus(telemetry.cloudStatus);
       }
       refreshScroll();
@@ -174,6 +175,7 @@ export const SettingsView = defineComponent({
         cliStatusLine: st.telemetry?.cliStatusLine,
         hostPlatform: st.telemetry?.hostPlatform,
         cloudStatus: st.telemetry?.cloudStatus,
+        fxStatus: st.telemetry?.fxStatus,
         contextWindowModels: st.telemetry?.contextWindowModels,
         account: st.telemetry?.account,
         quotas: st.telemetry?.quotas,

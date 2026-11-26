@@ -28,6 +28,7 @@ export {
   CONTEXT_AGENT_MODES,
   DEFAULT_CLI_STATUSLINE_SLOTS,
   DEFAULT_CONTEXT_AGENT_MODE,
+  DEFAULT_DISPLAY_CURRENCY,
   DEFAULT_HOVER_METRICS,
   DEFAULT_HOVER_METRIC_STYLE,
   DEFAULT_HOVER_MODULES,
@@ -53,6 +54,7 @@ export {
   OVERVIEW_METRIC_KEYS,
   OVERVIEW_MODULE_KEYS,
   STEP_TABLE_COLUMN_KEYS,
+  SUPPORTED_DISPLAY_CURRENCIES,
   SUPPORTED_LANGUAGES,
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
@@ -60,6 +62,7 @@ export {
   normalizeAutoConfigureLaunch,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeDisplayCurrency,
   normalizeEnableRemoteSshTelemetry,
   normalizeExperimentalQuotaReservation,
   normalizeFontScale,
@@ -184,6 +187,7 @@ export const SETTINGS_FILE = join(DATA_DIR, 'settings.json');
 export const CACHE_FILE = join(DATA_DIR, 'trajectory_usage_cache.json');
 export const TRAJECTORY_DB_FILE = join(DATA_DIR, 'trajectory_store.sqlite');
 export const REMOTE_CATALOG_CACHE_FILE = join(DATA_DIR, 'remote_pricing_cache.json');
+export const FX_RATES_CACHE_FILE = join(DATA_DIR, 'fx_rates_cache.json');
 export const CLI_STATUS_SNAPSHOT_FILE = join(DATA_DIR, 'cli-status-snapshot.json');
 export const QUOTA_RESERVATION_STATE_FILE = join(DATA_DIR, 'quota_reservation_state.json');
 export const ACCOUNT_QUOTA_HISTORY_FILE = join(DATA_DIR, 'account_quota_history.json');

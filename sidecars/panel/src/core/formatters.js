@@ -9,6 +9,13 @@ import {
   resolveLocaleFromLanguageTag,
 } from '../../shared/settings-normalization.mjs';
 import {
+  DEFAULT_DISPLAY_CURRENCY,
+  formatConvertedApprox,
+  formatFxRateValue,
+  resolveCurrencyRateInfo,
+  resolveEffectiveCurrency,
+} from '../../shared/currency-catalog.mjs';
+import {
   classifyCacheTier,
   classifySpeedTier,
   classifyStepCostTier,
@@ -105,10 +112,56 @@ export function formatTokensPrecise(num) {
 }
 
 export function formatCnyApprox(usdAmount, rate = 7.2) {
-  const rmb = Number(usdAmount || 0) * rate;
-  if (rmb <= 0) return '≈ ¥0';
-  if (rmb >= 10) return `≈ ¥${Math.round(rmb)}`;
-  return `≈ ¥${rmb.toFixed(1)}`;
+  return formatConvertedApprox(usdAmount, {
+    displayCurrency: 'CNY',
+    rateOverride: rate,
+  });
+}
+
+/**
+ * 按当前设置（或 `'auto'` 随语言映射）及实时/兜底汇率，格式化 USD 旁边的参考货币近似值。
+ * 生效货币为 `USD` 时返回 `''`（由调用方隐藏副标签）。
+ */
+export function formatSecondaryCostApprox(
+  usdAmount,
+  { displayCurrency = DEFAULT_DISPLAY_CURRENCY, locale, fxStatus = null } = {}
+) {
+  return formatConvertedApprox(usdAmount, {
+    displayCurrency,
+    locale: resolveFormatterLocale(locale),
+    fxStatus,
+  });
+}
+
+/**
+ * 格式化当前生效参考货币的汇率与来源说明（供「常规设置」提示行与「用量」副标 tooltip 复用）。
+ */
+export function formatFxRateCaption({
+  displayCurrency = DEFAULT_DISPLAY_CURRENCY,
+  locale,
+  fxStatus = null,
+} = {}) {
+  const loc = resolveFormatterLocale(locale);
+  const code = resolveEffectiveCurrency(displayCurrency, loc);
+  if (code === 'USD') {
+    return tForLocale(loc, 'settings.gen.currencyUsdOnlyHint');
+  }
+  const info = resolveCurrencyRateInfo(code, fxStatus);
+  const rateText = formatFxRateValue(info.rate, info.zeroDecimal);
+  const sourceLabel =
+    info.source === 'frankfurter'
+      ? 'Frankfurter'
+      : info.source === 'er-api'
+        ? 'ExchangeRate-API'
+        : info.source === 'mixed'
+          ? 'Frankfurter / ER-API'
+          : tForLocale(loc, 'settings.gen.currencySrcBuiltin');
+  const meta = info.date ? `${sourceLabel} · ${info.date}` : sourceLabel;
+  return tForLocale(loc, 'settings.gen.currencyRateMeta', {
+    rate: rateText,
+    code: info.code,
+    meta,
+  });
 }
 
 function formatLocalizedDayDate(dateObj, locale, includeYear) {

@@ -20,11 +20,12 @@ import {
 } from '../core/domPatch.js';
 import {
   buildDeterministicModelColorMap,
-  formatCnyApprox,
   formatDateSpanBadge,
+  formatFxRateCaption,
   formatMetric,
   formatPctNumber,
   formatQuotaPoolLabel,
+  formatSecondaryCostApprox,
   formatSpeedMetric,
   formatTokensPrecise,
   formatUsd,
@@ -33,6 +34,7 @@ import {
   normalizeModelDisplayMode,
   resolveDeterministicModelColor,
 } from '../core/formatters.js';
+import { normalizeDisplayCurrency } from '../../shared/currency-catalog.mjs';
 import { scaleBucketsExact } from '../../shared/telemetry-display-rules.mjs';
 import {
   buildConsumptionExportBaseName,
@@ -310,8 +312,14 @@ export const ConsumptionView = defineComponent({
     patchAttr(cyclePoolSelect.refs.triggerBtn, 'aria-label', t('cons.cyclePoolAria'));
     const heroTotalTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
     const heroTotalCalls = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.callsCount', { calls: 0 }) });
+    const initialSecondaryCost = formatSecondaryCostApprox(0);
     const heroCostUsd = h('strong', { className: 'cons-hero-cost text-mono', text: '$0.00' });
-    const heroCostCny = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '≈ ¥0' });
+    const heroCostCny = h('span', {
+      className: 'text-muted text-mono',
+      style: 'font-size: var(--fs-md);',
+      text: initialSecondaryCost,
+      hidden: !initialSecondaryCost,
+    });
 
     const cacheHitPctEl = h('strong', { className: 'cons-hero-cache text-mono', text: '0%' });
     const cacheTokensEl = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.cacheHitTokens', { tokens: 0 }) });
@@ -1071,8 +1079,15 @@ export const ConsumptionView = defineComponent({
       const currentMonthIdx = now.getMonth();
       const monthlyYear = cons.monthlyYear || now.getFullYear();
       const locale = i18nStore.getState().locale;
+      const displayCurrency = normalizeDisplayCurrency(slice.displayCurrency);
+      const fxStatus = slice.fxStatus || null;
+      const fxStatusSig = fxStatus
+        ? `${fxStatus.source || 'builtin'}|${fxStatus.date || ''}|${Number(fxStatus.fetchedAtMs || 0)}`
+        : 'builtin||0';
       const renderTuple = [
         locale,
+        displayCurrency,
+        fxStatusSig,
         slice.range,
         activePoolFilter,
         cycleOptionsSig,
@@ -1137,7 +1152,24 @@ export const ConsumptionView = defineComponent({
       patchText(heroTotalTokens, formatTokensPrecise(totalTokens));
       patchText(heroTotalCalls, t('cons.callsCount', { calls: acct.calls || 0 }));
       patchText(heroCostUsd, formatUsd(costUsd));
-      patchText(heroCostCny, formatCnyApprox(costUsd));
+      const heroSecondaryCost = formatSecondaryCostApprox(costUsd, {
+        displayCurrency: slice.displayCurrency,
+        locale: i18nStore.getState().locale,
+        fxStatus: slice.fxStatus,
+      });
+      patchText(heroCostCny, heroSecondaryCost);
+      patchAttr(heroCostCny, 'hidden', !heroSecondaryCost);
+      patchAttr(
+        heroCostCny,
+        'title',
+        heroSecondaryCost
+          ? formatFxRateCaption({
+              displayCurrency: slice.displayCurrency,
+              locale: i18nStore.getState().locale,
+              fxStatus: slice.fxStatus,
+            })
+          : null
+      );
 
       patchText(cacheHitPctEl, formatPctNumber(acct.cacheHitPct ?? 0, { withSymbol: true }));
       patchText(cacheTokensEl, t('cons.cacheHitTokens', { tokens: formatTokensPrecise(cacheTokens) }));
@@ -1220,7 +1252,11 @@ export const ConsumptionView = defineComponent({
         totalCost: modelsTotalCost,
         totalCalls: modelsTotalCalls,
         maxAvgTps: modelsMaxAvgTps,
+        displayCurrency: normalizeDisplayCurrency(slice.displayCurrency),
+        locale: localeSig,
+        fxStatus: slice.fxStatus || null,
       };
+      const modelsCurrencySig = `${modelsTotalsCtx.displayCurrency}|${slice.fxStatus?.source || 'builtin'}|${Number(slice.fxStatus?.fetchedAtMs || 0)}`;
 
       const rawTopConvs = Array.isArray(cons.topConversations) ? cons.topConversations : [];
       const allTopConvMergedModels = [];
@@ -1427,7 +1463,7 @@ export const ConsumptionView = defineComponent({
       patchKeyedList(modelsListEl, models, {
         keyFn: (m) => m.displayText || m.label || m.shortName,
         sigFn: (m) =>
-          `${localeSig}:${modelsSortBy}:${m.displayText}:${m.displayTitle}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${m.avgTokPerSec ?? ''}:${m.avgTtftSec ?? ''}:${m.cacheHitPct ?? ''}:${modelsTotalTok}:${modelsTotalCost.toFixed(4)}:${modelsTotalCalls}:${modelsMaxAvgTps}`,
+          `${localeSig}:${modelsCurrencySig}:${modelsSortBy}:${m.displayText}:${m.displayTitle}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${m.avgTokPerSec ?? ''}:${m.avgTtftSec ?? ''}:${m.cacheHitPct ?? ''}:${modelsTotalTok}:${modelsTotalCost.toFixed(4)}:${modelsTotalCalls}:${modelsMaxAvgTps}`,
         createRow: createBreakdownItemRow,
         updateRow: (refs, m) => {
           updateBreakdownItemRow(
@@ -1629,6 +1665,8 @@ export const ConsumptionView = defineComponent({
           st.telemetry?.settings?.showUpstreamModel
         ),
         showUpstreamModel: Boolean(st.telemetry?.settings?.showUpstreamModel),
+        displayCurrency: normalizeDisplayCurrency(st.telemetry?.settings?.displayCurrency),
+        fxStatus: st.telemetry?.fxStatus || null,
       }),
       (slice) => {
         latestSlice = slice;

@@ -545,6 +545,157 @@ function normalizeEnableRemoteSshTelemetry(val) {
 return { SUPPORTED_LOCALES, SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, resolveLocaleFromLanguageTag, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi, normalizeAutoConfigureLaunch, normalizeEnableRemoteSshTelemetry };
 })();
 
+// --- shared/currency-catalog.mjs ---
+const { DEFAULT_DISPLAY_CURRENCY, LOCALE_DEFAULT_CURRENCY, CURRENCY_CATALOG, SUPPORTED_CURRENCY_CODES, SUPPORTED_DISPLAY_CURRENCIES, BUILTIN_FX_RATES, normalizeDisplayCurrency, resolveEffectiveCurrency, resolveCurrencyRateInfo, formatFxRateValue, formatConvertedApprox } = (() => {
+const DEFAULT_DISPLAY_CURRENCY = 'auto';
+
+const LOCALE_DEFAULT_CURRENCY = Object.freeze({
+  'zh-CN': 'CNY',
+  'zh-TW': 'TWD',
+  'en-US': 'USD',
+  'ja-JP': 'JPY',
+  'ko-KR': 'KRW',
+  'de-DE': 'EUR',
+  'fr-FR': 'EUR',
+});
+
+const CURRENCY_CATALOG = Object.freeze({
+  USD: Object.freeze({ code: 'USD', symbol: '$', fallbackRate: 1, zeroDecimal: false }),
+  CNY: Object.freeze({ code: 'CNY', symbol: '¥', fallbackRate: 7.2, zeroDecimal: false }),
+  TWD: Object.freeze({ code: 'TWD', symbol: 'NT$', fallbackRate: 32.5, zeroDecimal: true }),
+  JPY: Object.freeze({ code: 'JPY', symbol: '¥', fallbackRate: 152, zeroDecimal: true }),
+  KRW: Object.freeze({ code: 'KRW', symbol: '₩', fallbackRate: 1380, zeroDecimal: true }),
+  EUR: Object.freeze({ code: 'EUR', symbol: '€', fallbackRate: 0.92, zeroDecimal: false }),
+  GBP: Object.freeze({ code: 'GBP', symbol: '£', fallbackRate: 0.79, zeroDecimal: false }),
+  HKD: Object.freeze({ code: 'HKD', symbol: 'HK$', fallbackRate: 7.8, zeroDecimal: false }),
+  SGD: Object.freeze({ code: 'SGD', symbol: 'S$', fallbackRate: 1.34, zeroDecimal: false }),
+  MYR: Object.freeze({ code: 'MYR', symbol: 'RM', fallbackRate: 4.45, zeroDecimal: false }),
+  AUD: Object.freeze({ code: 'AUD', symbol: 'A$', fallbackRate: 1.54, zeroDecimal: false }),
+  CAD: Object.freeze({ code: 'CAD', symbol: 'C$', fallbackRate: 1.39, zeroDecimal: false }),
+  CHF: Object.freeze({ code: 'CHF', symbol: 'CHF ', fallbackRate: 0.88, zeroDecimal: false }),
+  INR: Object.freeze({ code: 'INR', symbol: '₹', fallbackRate: 84.5, zeroDecimal: false }),
+  THB: Object.freeze({ code: 'THB', symbol: '฿', fallbackRate: 34.5, zeroDecimal: false }),
+  IDR: Object.freeze({ code: 'IDR', symbol: 'Rp', fallbackRate: 15800, zeroDecimal: true }),
+  VND: Object.freeze({ code: 'VND', symbol: '₫', fallbackRate: 25400, zeroDecimal: true }),
+  PHP: Object.freeze({ code: 'PHP', symbol: '₱', fallbackRate: 58.5, zeroDecimal: false }),
+  BRL: Object.freeze({ code: 'BRL', symbol: 'R$', fallbackRate: 5.8, zeroDecimal: false }),
+  MXN: Object.freeze({ code: 'MXN', symbol: 'MX$', fallbackRate: 20.2, zeroDecimal: false }),
+});
+
+const SUPPORTED_CURRENCY_CODES = Object.freeze(Object.keys(CURRENCY_CATALOG));
+const SUPPORTED_DISPLAY_CURRENCIES = Object.freeze([
+  DEFAULT_DISPLAY_CURRENCY,
+  ...SUPPORTED_CURRENCY_CODES,
+]);
+
+const SUPPORTED_CURRENCY_CODE_SET = new Set(SUPPORTED_CURRENCY_CODES);
+
+const BUILTIN_FX_RATES = Object.freeze(
+  Object.fromEntries(
+    SUPPORTED_CURRENCY_CODES.map((code) => [code, CURRENCY_CATALOG[code].fallbackRate])
+  )
+);
+
+function normalizeDisplayCurrency(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return DEFAULT_DISPLAY_CURRENCY;
+  const lower = s.toLowerCase();
+  if (lower === 'auto' || lower === 'system' || lower === 'locale') {
+    return DEFAULT_DISPLAY_CURRENCY;
+  }
+  const upper = s.toUpperCase();
+  if (SUPPORTED_CURRENCY_CODE_SET.has(upper)) {
+    return upper;
+  }
+  return DEFAULT_DISPLAY_CURRENCY;
+}
+
+function resolveEffectiveCurrency(displayCurrency, locale = 'zh-CN') {
+  const normalized = normalizeDisplayCurrency(displayCurrency);
+  if (normalized !== DEFAULT_DISPLAY_CURRENCY) {
+    return normalized;
+  }
+  const resolvedLocale = resolveLocaleFromLanguageTag(locale, 'zh-CN');
+  return LOCALE_DEFAULT_CURRENCY[resolvedLocale] || 'USD';
+}
+
+function resolveCurrencyRateInfo(currencyCode, fxStatus = null, rateOverride = null) {
+  const code = SUPPORTED_CURRENCY_CODE_SET.has(String(currencyCode || '').toUpperCase())
+    ? String(currencyCode).toUpperCase()
+    : 'CNY';
+  const profile = CURRENCY_CATALOG[code] || CURRENCY_CATALOG.CNY;
+  const overrideNum = Number(rateOverride);
+  if (Number.isFinite(overrideNum) && overrideNum > 0) {
+    return {
+      code,
+      symbol: profile.symbol,
+      zeroDecimal: profile.zeroDecimal,
+      rate: overrideNum,
+      isLive: false,
+      source: 'override',
+      date: null,
+    };
+  }
+  const liveCandidate = Number(fxStatus?.rates?.[code]);
+  const hasLiveRate =
+    code !== 'USD' &&
+    fxStatus?.source &&
+    fxStatus.source !== 'builtin' &&
+    Number.isFinite(liveCandidate) &&
+    liveCandidate > 0;
+  return {
+    code,
+    symbol: profile.symbol,
+    zeroDecimal: profile.zeroDecimal,
+    rate: hasLiveRate ? liveCandidate : profile.fallbackRate,
+    isLive: Boolean(hasLiveRate),
+    source: hasLiveRate ? String(fxStatus.source) : 'builtin',
+    date: hasLiveRate && typeof fxStatus.date === 'string' && fxStatus.date ? fxStatus.date : null,
+  };
+}
+
+function formatFxRateValue(rate, zeroDecimal = false) {
+  const num = Number(rate);
+  if (!Number.isFinite(num) || num <= 0) return '—';
+  if (zeroDecimal || num >= 100) {
+    const rounded = Math.round(num);
+    return rounded >= 1000 ? rounded.toLocaleString('en-US') : String(rounded);
+  }
+  return num.toFixed(2);
+}
+
+function formatConvertedApprox(
+  usdAmount,
+  { displayCurrency = DEFAULT_DISPLAY_CURRENCY, locale = 'zh-CN', fxStatus = null, rateOverride = null } = {}
+) {
+  const code = resolveEffectiveCurrency(displayCurrency, locale);
+  if (code === 'USD') return '';
+  const info = resolveCurrencyRateInfo(code, fxStatus, rateOverride);
+  const amount = Number(usdAmount || 0) * info.rate;
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return `≈ ${info.symbol}0`;
+  }
+  if (info.zeroDecimal) {
+    const rounded = Math.round(amount);
+    if (rounded >= 10_000) {
+      return `≈ ${info.symbol}${rounded.toLocaleString('en-US')}`;
+    }
+    if (rounded >= 1) {
+      return `≈ ${info.symbol}${rounded}`;
+    }
+    return `≈ ${info.symbol}${amount.toFixed(1)}`;
+  }
+  if (amount >= 10_000) {
+    return `≈ ${info.symbol}${Math.round(amount).toLocaleString('en-US')}`;
+  }
+  if (amount >= 10) {
+    return `≈ ${info.symbol}${Math.round(amount)}`;
+  }
+  return `≈ ${info.symbol}${amount.toFixed(1)}`;
+}
+return { DEFAULT_DISPLAY_CURRENCY, LOCALE_DEFAULT_CURRENCY, CURRENCY_CATALOG, SUPPORTED_CURRENCY_CODES, SUPPORTED_DISPLAY_CURRENCIES, BUILTIN_FX_RATES, normalizeDisplayCurrency, resolveEffectiveCurrency, resolveCurrencyRateInfo, formatFxRateValue, formatConvertedApprox };
+})();
+
 // --- shared/telemetry-display-rules.mjs ---
 const { THIRD_PARTY_POOL_RE, isThirdPartyPoolText, classifySpeedTier, classifyCacheTier, classifyStepCostTier, classifyTtftTier, formatCompactTokens, formatCompactCapsuleCost, formatCompactCapsuleTtft, hasArgonWeeklyQuotaPool, resolveCapsuleQuotaSlotPct, scaleBucketsExact } = (() => {
 const THIRD_PARTY_POOL_RE =
@@ -821,6 +972,7 @@ const BRIDGE_API_ROUTE_DEFS = Object.freeze([
   Object.freeze({ path: '/api/settings/reset', method: 'POST', action: 'settings_reset' }),
   Object.freeze({ path: '/api/cache/rebuild', method: 'POST', action: 'cache_rebuild' }),
   Object.freeze({ path: '/api/cloud-sync', method: 'POST', action: 'cloud_sync' }),
+  Object.freeze({ path: '/api/fx-sync', method: 'POST', action: 'fx_sync' }),
   Object.freeze({ path: '/api/plugin-update', method: 'POST', action: 'plugin_update' }),
   Object.freeze({ path: '/api/bridge/relaunch', method: 'POST', action: 'bridge_relaunch' }),
   Object.freeze({
@@ -2081,6 +2233,19 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.gen.langDe': 'Deutsch',
   'settings.gen.langFr': 'Français',
   'settings.gen.langAuto': '跟随系统',
+  'settings.gen.currencyLabel': '参考货币',
+  'settings.gen.currencyAuto': '跟随界面语言（{code} {symbol}）',
+  'settings.gen.currencyAutoUsd': '跟随界面语言（仅 USD）',
+  'settings.gen.currencyUsdOnly': '仅显示美元 (USD · 隐藏副标)',
+  'settings.gen.currencyUsdOnlyHint': '主金额已是美元，已隐藏次级换算副标',
+  'settings.gen.currencyRateMeta': '1 USD ≈ {rate} {code}（{meta}）',
+  'settings.gen.currencySrcBuiltin': '内置参考汇率',
+  'settings.gen.currencyRefreshBtn': '刷新汇率',
+  'settings.gen.currencyRefreshingBtn': '刷新中…',
+  'settings.gen.currencyRefreshTip': '立即从公共汇率源同步最新汇率',
+  'settings.gen.currencySyncingMsg': '正在同步最新汇率…',
+  'settings.gen.currencySyncedMsg': '汇率已更新',
+  'settings.gen.currencySyncFallbackMsg': '汇率同步失败，继续使用缓存或内置参考汇率',
   'settings.gen.themeAccent': '主题色',
   'settings.gen.accentHost': '跟随宿主',
   'settings.gen.accentBlue': '经典蓝',
@@ -3319,6 +3484,19 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "settings.gen.langDe": "Deutsch",
   "settings.gen.langFr": "Français",
   "settings.gen.langAuto": "跟隨系統",
+  "settings.gen.currencyLabel": "參考貨幣",
+  "settings.gen.currencyAuto": "跟隨介面語言（{code} {symbol}）",
+  "settings.gen.currencyAutoUsd": "跟隨介面語言（僅 USD）",
+  "settings.gen.currencyUsdOnly": "僅顯示美元 (USD · 隱藏副標)",
+  "settings.gen.currencyUsdOnlyHint": "主金額已是美元，已隱藏次級換算副標",
+  "settings.gen.currencyRateMeta": "1 USD ≈ {rate} {code}（{meta}）",
+  "settings.gen.currencySrcBuiltin": "內建參考匯率",
+  "settings.gen.currencyRefreshBtn": "更新匯率",
+  "settings.gen.currencyRefreshingBtn": "更新中…",
+  "settings.gen.currencyRefreshTip": "立即從公開匯率來源同步最新匯率",
+  "settings.gen.currencySyncingMsg": "正在同步最新匯率…",
+  "settings.gen.currencySyncedMsg": "匯率已更新",
+  "settings.gen.currencySyncFallbackMsg": "匯率同步失敗，繼續使用快取或內建參考匯率",
   "settings.gen.themeAccent": "主題色",
   "settings.gen.accentHost": "跟隨宿主",
   "settings.gen.accentBlue": "經典藍",
@@ -4568,6 +4746,19 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.gen.langDe': 'Deutsch',
   'settings.gen.langFr': 'Français',
   'settings.gen.langAuto': 'Follow System',
+  'settings.gen.currencyLabel': 'Display Currency',
+  'settings.gen.currencyAuto': 'Follow UI Language ({code} {symbol})',
+  'settings.gen.currencyAutoUsd': 'Follow UI Language (USD Only)',
+  'settings.gen.currencyUsdOnly': 'USD Only (Hide Secondary)',
+  'settings.gen.currencyUsdOnlyHint': 'Primary totals are already in USD; secondary estimate hidden',
+  'settings.gen.currencyRateMeta': '1 USD ≈ {rate} {code} ({meta})',
+  'settings.gen.currencySrcBuiltin': 'Built-in fallback rate',
+  'settings.gen.currencyRefreshBtn': 'Refresh FX',
+  'settings.gen.currencyRefreshingBtn': 'Refreshing…',
+  'settings.gen.currencyRefreshTip': 'Sync latest live exchange rates',
+  'settings.gen.currencySyncingMsg': 'Syncing exchange rates…',
+  'settings.gen.currencySyncedMsg': 'Exchange rates updated',
+  'settings.gen.currencySyncFallbackMsg': 'FX sync failed; using cached or built-in rates',
   'settings.gen.themeAccent': 'Accent Color',
   'settings.gen.accentHost': 'Host',
   'settings.gen.accentBlue': 'Blue',
@@ -5806,6 +5997,19 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "settings.gen.langDe": "Deutsch",
   "settings.gen.langFr": "Français",
   "settings.gen.langAuto": "システムに合わせる",
+  "settings.gen.currencyLabel": "参考通貨",
+  "settings.gen.currencyAuto": "表示言語に合わせる（{code} {symbol}）",
+  "settings.gen.currencyAutoUsd": "表示言語に合わせる（USD のみ）",
+  "settings.gen.currencyUsdOnly": "USD のみ（換算表示を隠す）",
+  "settings.gen.currencyUsdOnlyHint": "メイン表示が USD のため、換算サブ表示を非表示にしています",
+  "settings.gen.currencyRateMeta": "1 USD ≈ {rate} {code}（{meta}）",
+  "settings.gen.currencySrcBuiltin": "内蔵参考レート",
+  "settings.gen.currencyRefreshBtn": "レート更新",
+  "settings.gen.currencyRefreshingBtn": "更新中…",
+  "settings.gen.currencyRefreshTip": "最新の公開為替レートを取得します",
+  "settings.gen.currencySyncingMsg": "為替レートを同期しています…",
+  "settings.gen.currencySyncedMsg": "為替レートを更新しました",
+  "settings.gen.currencySyncFallbackMsg": "同期に失敗しました。キャッシュまたは内蔵レートを使用します",
   "settings.gen.themeAccent": "アクセントカラー",
   "settings.gen.accentHost": "ホスト準拠",
   "settings.gen.accentBlue": "ブルー",
@@ -7037,6 +7241,19 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "settings.gen.langDe": "Deutsch",
   "settings.gen.langFr": "Français",
   "settings.gen.langAuto": "시스템 설정 따르기",
+  "settings.gen.currencyLabel": "참고 통화",
+  "settings.gen.currencyAuto": "인터페이스 언어 따르기 ({code} {symbol})",
+  "settings.gen.currencyAutoUsd": "인터페이스 언어 따르기 (USD만 표시)",
+  "settings.gen.currencyUsdOnly": "USD만 표시 (보조 환산 숨김)",
+  "settings.gen.currencyUsdOnlyHint": "기본 금액이 이미 USD이므로 보조 환산 표시를 숨깁니다",
+  "settings.gen.currencyRateMeta": "1 USD ≈ {rate} {code} ({meta})",
+  "settings.gen.currencySrcBuiltin": "내장 참고 환율",
+  "settings.gen.currencyRefreshBtn": "환율 새로고침",
+  "settings.gen.currencyRefreshingBtn": "새로고침 중…",
+  "settings.gen.currencyRefreshTip": "최신 공개 환율을 즉시 동기화합니다",
+  "settings.gen.currencySyncingMsg": "최신 환율 동기화 중…",
+  "settings.gen.currencySyncedMsg": "환율이 업데이트되었습니다",
+  "settings.gen.currencySyncFallbackMsg": "환율 동기화 실패; 캐시 또는 내장 환율을 사용합니다",
   "settings.gen.themeAccent": "강조 색상",
   "settings.gen.accentHost": "호스트 따르기",
   "settings.gen.accentBlue": "블루",
@@ -8268,6 +8485,19 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "settings.gen.langDe": "Deutsch",
   "settings.gen.langFr": "Français",
   "settings.gen.langAuto": "System folgen",
+  "settings.gen.currencyLabel": "Referenzwährung",
+  "settings.gen.currencyAuto": "UI-Sprache folgen ({code} {symbol})",
+  "settings.gen.currencyAutoUsd": "UI-Sprache folgen (nur USD)",
+  "settings.gen.currencyUsdOnly": "Nur USD (Umrechnung ausblenden)",
+  "settings.gen.currencyUsdOnlyHint": "Hauptbeträge sind bereits in USD; Zweitwährung ausgeblendet",
+  "settings.gen.currencyRateMeta": "1 USD ≈ {rate} {code} ({meta})",
+  "settings.gen.currencySrcBuiltin": "Integrierter Referenzkurs",
+  "settings.gen.currencyRefreshBtn": "Kurs aktualisieren",
+  "settings.gen.currencyRefreshingBtn": "Aktualisiere…",
+  "settings.gen.currencyRefreshTip": "Aktuelle Wechselkurse sofort synchronisieren",
+  "settings.gen.currencySyncingMsg": "Wechselkurse werden synchronisiert…",
+  "settings.gen.currencySyncedMsg": "Wechselkurse aktualisiert",
+  "settings.gen.currencySyncFallbackMsg": "Synchronisierung fehlgeschlagen; gespeicherter oder integrierter Kurs aktiv",
   "settings.gen.themeAccent": "Akzentfarbe",
   "settings.gen.accentHost": "Host",
   "settings.gen.accentBlue": "Blau",
@@ -9499,6 +9729,19 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "settings.gen.langDe": "Deutsch",
   "settings.gen.langFr": "Français",
   "settings.gen.langAuto": "Système",
+  "settings.gen.currencyLabel": "Devise de référence",
+  "settings.gen.currencyAuto": "Suivre la langue ({code} {symbol})",
+  "settings.gen.currencyAutoUsd": "Suivre la langue (USD uniquement)",
+  "settings.gen.currencyUsdOnly": "USD uniquement (masquer la conversion)",
+  "settings.gen.currencyUsdOnlyHint": "Les montants principaux sont déjà en USD ; conversion masquée",
+  "settings.gen.currencyRateMeta": "1 USD ≈ {rate} {code} ({meta})",
+  "settings.gen.currencySrcBuiltin": "Taux de référence intégré",
+  "settings.gen.currencyRefreshBtn": "Actualiser taux",
+  "settings.gen.currencyRefreshingBtn": "Actualisation…",
+  "settings.gen.currencyRefreshTip": "Synchroniser les derniers taux de change",
+  "settings.gen.currencySyncingMsg": "Synchronisation des taux de change…",
+  "settings.gen.currencySyncedMsg": "Taux de change mis à jour",
+  "settings.gen.currencySyncFallbackMsg": "Échec de synchronisation ; taux en cache ou intégré utilisé",
   "settings.gen.themeAccent": "Couleur d'accent",
   "settings.gen.accentHost": "Hôte",
   "settings.gen.accentBlue": "Bleu",
@@ -11968,7 +12211,7 @@ return { defineComponent };
 })();
 
 // --- src/core/formatters.js ---
-const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildStepRevertedDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatQuotaPoolLabel, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
+const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatSecondaryCostApprox, formatFxRateCaption, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildStepRevertedDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatQuotaPoolLabel, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
 const LOCALE_MONTH_SHORT = Object.freeze({
   'en-US': Object.freeze(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
   'de-DE': Object.freeze(['Jan.', 'Feb.', 'Mär.', 'Apr.', 'Mai', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Okt.', 'Nov.', 'Dez.']),
@@ -12051,10 +12294,49 @@ function formatTokensPrecise(num) {
 }
 
 function formatCnyApprox(usdAmount, rate = 7.2) {
-  const rmb = Number(usdAmount || 0) * rate;
-  if (rmb <= 0) return '≈ ¥0';
-  if (rmb >= 10) return `≈ ¥${Math.round(rmb)}`;
-  return `≈ ¥${rmb.toFixed(1)}`;
+  return formatConvertedApprox(usdAmount, {
+    displayCurrency: 'CNY',
+    rateOverride: rate,
+  });
+}
+
+function formatSecondaryCostApprox(
+  usdAmount,
+  { displayCurrency = DEFAULT_DISPLAY_CURRENCY, locale, fxStatus = null } = {}
+) {
+  return formatConvertedApprox(usdAmount, {
+    displayCurrency,
+    locale: resolveFormatterLocale(locale),
+    fxStatus,
+  });
+}
+
+function formatFxRateCaption({
+  displayCurrency = DEFAULT_DISPLAY_CURRENCY,
+  locale,
+  fxStatus = null,
+} = {}) {
+  const loc = resolveFormatterLocale(locale);
+  const code = resolveEffectiveCurrency(displayCurrency, loc);
+  if (code === 'USD') {
+    return tForLocale(loc, 'settings.gen.currencyUsdOnlyHint');
+  }
+  const info = resolveCurrencyRateInfo(code, fxStatus);
+  const rateText = formatFxRateValue(info.rate, info.zeroDecimal);
+  const sourceLabel =
+    info.source === 'frankfurter'
+      ? 'Frankfurter'
+      : info.source === 'er-api'
+        ? 'ExchangeRate-API'
+        : info.source === 'mixed'
+          ? 'Frankfurter / ER-API'
+          : tForLocale(loc, 'settings.gen.currencySrcBuiltin');
+  const meta = info.date ? `${sourceLabel} · ${info.date}` : sourceLabel;
+  return tForLocale(loc, 'settings.gen.currencyRateMeta', {
+    rate: rateText,
+    code: info.code,
+    meta,
+  });
 }
 
 function formatLocalizedDayDate(dateObj, locale, includeYear) {
@@ -13343,7 +13625,7 @@ function buildDeterministicModelColorMap(models = []) {
 
   return colorMap;
 }
-return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildStepRevertedDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatQuotaPoolLabel, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatSecondaryCostApprox, formatFxRateCaption, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildStepRevertedDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatQuotaPoolLabel, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
 })();
 
 // --- src/core/stepInspector.js ---
@@ -13791,6 +14073,7 @@ const positiveBudgetField = (key, fallbackVal) => ({
 
 const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
   normField('language', normalizeLanguageSetting),
+  normField('displayCurrency', normalizeDisplayCurrency),
   normField('themeAccent', normalizeThemeAccent),
   normField('fontScale', normalizeFontScale),
   {
@@ -16590,7 +16873,7 @@ return { fetchHostI18nStatus, refreshHostI18nManifest, selectHostI18nLanguage, u
 })();
 
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, normalizeClientAutoConfigureLaunch, normalizeClientEnableRemoteSshTelemetry, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, fetchLocalSessionsList, fetchSessionCleanupPreview, deleteLocalSessionsAction, redactLocalLedgerPrivacy, revealLocalSessionPathAction, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, normalizeClientDisplayCurrency, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerFxSync, normalizeClientAutoConfigureLaunch, normalizeClientEnableRemoteSshTelemetry, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, fetchLocalSessionsList, fetchSessionCleanupPreview, deleteLocalSessionsAction, redactLocalLedgerPrivacy, revealLocalSessionPathAction, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 const CASCADE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function extractHostRouteCascadeId() {
@@ -17043,6 +17326,7 @@ const resolveEffectiveClientMetricMatrixConfig = resolveEffectiveMetricMatrixCon
 const normalizeClientStepColumns = normalizeStepTableColumns;
 const normalizeClientUpdateMode = normalizePluginUpdateMode;
 const normalizeClientWindowMountMode = normalizeWindowMountMode;
+const normalizeClientDisplayCurrency = normalizeDisplayCurrency;
 
 function isEquivalentTelemetry(prev, next) {
   if (!prev || !next) return false;
@@ -17064,6 +17348,12 @@ function isEquivalentTelemetry(prev, next) {
   const nSet = next.settings;
 
   if ((pSet?.language ?? 'auto') !== (nSet?.language ?? 'auto')) return false;
+  if (
+    normalizeDisplayCurrency(pSet?.displayCurrency) !==
+    normalizeDisplayCurrency(nSet?.displayCurrency)
+  ) {
+    return false;
+  }
   if ((pSet?.themeAccent ?? 'host') !== (nSet?.themeAccent ?? 'host')) return false;
   if ((pSet?.fontScale ?? 'md') !== (nSet?.fontScale ?? 'md')) return false;
   if (resolveSettingsModernUi(pSet) !== resolveSettingsModernUi(nSet)) return false;
@@ -17254,6 +17544,18 @@ function isEquivalentTelemetry(prev, next) {
     pCloud?.lastSyncError !== nCloud?.lastSyncError ||
     pCloud?.lastUpdateError !== nCloud?.lastUpdateError ||
     pCloud?.lastUpdateResult?.updatedAtMs !== nCloud?.lastUpdateResult?.updatedAtMs
+  ) {
+    return false;
+  }
+
+  const pFx = prev.fxStatus;
+  const nFx = next.fxStatus;
+  if (
+    pFx?.source !== nFx?.source ||
+    pFx?.date !== nFx?.date ||
+    Number(pFx?.fetchedAtMs || 0) !== Number(nFx?.fetchedAtMs || 0) ||
+    Boolean(pFx?.isSyncing) !== Boolean(nFx?.isSyncing) ||
+    (pFx?.lastError || null) !== (nFx?.lastError || null)
   ) {
     return false;
   }
@@ -18747,6 +19049,27 @@ async function triggerCloudSync() {
   return res;
 }
 
+async function triggerFxSync() {
+  let res;
+  try {
+    res = await callSidecarApi('/api/fx-sync', { method: 'POST', body: {} });
+  } catch {
+    res = await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __fxAction: 'sync' },
+    });
+  }
+  if (res?.fxStatus) {
+    const cur = telemetryStore.getState().telemetry;
+    if (cur) {
+      telemetryStore.setState({
+        telemetry: { ...cur, fxStatus: res.fxStatus },
+      });
+    }
+  }
+  return res;
+}
+
 const normalizeClientAutoConfigureLaunch = normalizeAutoConfigureLaunch;
 const normalizeClientEnableRemoteSshTelemetry = normalizeEnableRemoteSshTelemetry;
 
@@ -19175,7 +19498,7 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, normalizeClientAutoConfigureLaunch, normalizeClientEnableRemoteSshTelemetry, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, fetchLocalSessionsList, fetchSessionCleanupPreview, deleteLocalSessionsAction, redactLocalLedgerPrivacy, revealLocalSessionPathAction, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, normalizeClientDisplayCurrency, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerFxSync, normalizeClientAutoConfigureLaunch, normalizeClientEnableRemoteSshTelemetry, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, fetchLocalSessionsList, fetchSessionCleanupPreview, deleteLocalSessionsAction, redactLocalLedgerPrivacy, revealLocalSessionPathAction, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
@@ -36218,7 +36541,25 @@ function updateBreakdownItemRow(refs, item, totalsCtx, sortMode = 'tokens') {
     patchAttr(refs.pctBadge, 'hidden', false);
     patchAttr(refs.pctBadge, 'title', null);
     patchText(refs.pctBadge, formatPctNumber(costShare, { withSymbol: true }));
-    patchText(refs.totalTokEl, isAllUnpriced ? '' : formatCnyApprox(costVal));
+    const secondaryCostText = isAllUnpriced
+      ? ''
+      : formatSecondaryCostApprox(costVal, {
+          displayCurrency: totalsCtx?.displayCurrency,
+          locale: totalsCtx?.locale,
+          fxStatus: totalsCtx?.fxStatus,
+        });
+    patchText(refs.totalTokEl, secondaryCostText);
+    patchAttr(
+      refs.totalTokEl,
+      'title',
+      secondaryCostText
+        ? formatFxRateCaption({
+            displayCurrency: totalsCtx?.displayCurrency,
+            locale: totalsCtx?.locale,
+            fxStatus: totalsCtx?.fxStatus,
+          })
+        : null
+    );
     patchText(refs.costEl, costText);
 
     patchAttr(refs.segBar.el, 'hidden', true);
@@ -41036,6 +41377,51 @@ function getLanguageOptions() {
   ];
 }
 
+const currencyDisplayNameCache = new Map();
+
+function getLocalizedCurrencyName(code, locale) {
+  const key = `${locale}:${code}`;
+  if (currencyDisplayNameCache.has(key)) return currencyDisplayNameCache.get(key);
+  let resolved = '';
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function') {
+      const dn = new Intl.DisplayNames([locale], { type: 'currency' });
+      const name = dn.of(code);
+      if (name && name !== code) resolved = name;
+    }
+  } catch {
+
+  }
+  currencyDisplayNameCache.set(key, resolved);
+  return resolved;
+}
+
+function getDisplayCurrencyOptions() {
+  const locale = getEffectiveLocale();
+  const autoCode = resolveEffectiveCurrency(DEFAULT_DISPLAY_CURRENCY, locale);
+  const autoProfile = CURRENCY_CATALOG[autoCode] || CURRENCY_CATALOG.USD;
+  const autoLabel =
+    autoCode === 'USD'
+      ? t('settings.gen.currencyAutoUsd')
+      : t('settings.gen.currencyAuto', {
+          code: autoCode,
+          symbol: autoProfile.symbol.trim(),
+        });
+  const opts = [
+    { value: DEFAULT_DISPLAY_CURRENCY, label: autoLabel },
+    { value: 'USD', label: t('settings.gen.currencyUsdOnly') },
+  ];
+  for (const code of SUPPORTED_CURRENCY_CODES) {
+    if (code === 'USD') continue;
+    const profile = CURRENCY_CATALOG[code];
+    const sym = profile?.symbol ? profile.symbol.trim() : '';
+    const locName = getLocalizedCurrencyName(code, locale);
+    const label = locName ? `${code} (${sym}) · ${locName}` : `${code} (${sym})`;
+    opts.push({ value: code, label });
+  }
+  return opts;
+}
+
 function getFontScaleOptions() {
   return [
     { value: 'sm', label: t('settings.gen.fontSm') },
@@ -41070,12 +41456,14 @@ const SettingsGeneralTab = defineComponent({
   name: 'SettingsGeneralTab',
   setup({ props, onCleanup }) {
     let draftLanguage = 'auto';
+    let draftDisplayCurrency = DEFAULT_DISPLAY_CURRENCY;
     let draftThemeAccent = 'host';
     let draftFontScale = 'md';
     let draftModernUi = true;
     let draftPluginUpdateMode = 'manual';
     let latestSettings = null;
     let latestCloudStatus = null;
+    let latestFxStatus = null;
     let appearanceTimer = null;
     let appearanceSaveSeq = 0;
     let cloudTimer = null;
@@ -41121,6 +41509,17 @@ const SettingsGeneralTab = defineComponent({
 
     const appearanceTitleEl = h('span', { text: t('settings.gen.appearanceTitle') });
     const langLabelEl = h('span', { className: 'form-label', text: t('settings.gen.language') });
+    const currencyLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.gen.currencyLabel'),
+    });
+    const currencyHintEl = h('span', {
+      className: 'settings-hint-text',
+      text: formatFxRateCaption({
+        displayCurrency: draftDisplayCurrency,
+        fxStatus: latestFxStatus,
+      }),
+    });
     const accentLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.gen.themeAccent'),
@@ -41145,6 +41544,7 @@ const SettingsGeneralTab = defineComponent({
         draftLanguage = nextLang;
         setI18nLanguage(nextLang);
         languageSwitch.setValue(nextLang);
+        syncCurrencyControls();
         const saveToken = ++appearanceSaveSeq;
         showAppearanceFeedback(t('settings.saving'), 0);
         try {
@@ -41160,6 +41560,86 @@ const SettingsGeneralTab = defineComponent({
         }
       },
     });
+
+    const currencySelect = CustomSelect({
+      ariaLabel: t('settings.gen.currencyLabel'),
+      modelValue: draftDisplayCurrency,
+      options: getDisplayCurrencyOptions(),
+      onUpdateModelValue: async (val) => {
+        const nextCurrency = normalizeClientDisplayCurrency(val);
+        draftDisplayCurrency = nextCurrency;
+        syncCurrencyControls();
+        const saveToken = ++appearanceSaveSeq;
+        showAppearanceFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ displayCurrency: nextCurrency });
+          if (saveToken === appearanceSaveSeq) {
+            showAppearanceFeedback(t('settings.saved'), 1500);
+          }
+        } catch {
+          if (latestSettings) renderSettings(latestSettings);
+          if (saveToken === appearanceSaveSeq) {
+            showAppearanceFeedback(t('settings.saveFailed'), 2500);
+          }
+        }
+      },
+    });
+
+    const refreshFxBtnText = h('span', { text: t('settings.gen.currencyRefreshBtn') });
+    const refreshFxBtn = h(
+      'button',
+      {
+        type: 'button',
+        className: 'btn-secondary currency-fx-refresh-btn',
+        title: t('settings.gen.currencyRefreshTip'),
+        onClick: async () => {
+          patchAttr(refreshFxBtn, 'disabled', true);
+          patchText(refreshFxBtnText, t('settings.gen.currencyRefreshingBtn'));
+          showAppearanceFeedback(t('settings.gen.currencySyncingMsg'), 0);
+          try {
+            const res = await triggerFxSync();
+            if (res?.fxStatus) {
+              latestFxStatus = res.fxStatus;
+              syncCurrencyControls();
+            }
+            if (res?.ok && res?.fxStatus && res.fxStatus.source !== 'builtin') {
+              showAppearanceFeedback(t('settings.gen.currencySyncedMsg'), 2600);
+            } else {
+              showAppearanceFeedback(t('settings.gen.currencySyncFallbackMsg'), 3500);
+            }
+          } catch {
+            showAppearanceFeedback(t('settings.gen.currencySyncFallbackMsg'), 3500);
+          } finally {
+            patchAttr(refreshFxBtn, 'disabled', false);
+            patchText(refreshFxBtnText, t('settings.gen.currencyRefreshBtn'));
+          }
+        },
+      },
+      [createSvgIcon('refresh', { size: 12 }), refreshFxBtnText]
+    );
+
+    function syncCurrencyControls() {
+      const effectiveCode = resolveEffectiveCurrency(draftDisplayCurrency, getEffectiveLocale());
+      currencySelect.setProps({
+        ariaLabel: t('settings.gen.currencyLabel'),
+        modelValue: draftDisplayCurrency,
+        options: getDisplayCurrencyOptions(),
+      });
+      patchAttr(refreshFxBtn, 'hidden', effectiveCode === 'USD');
+      patchAttr(refreshFxBtn, 'title', t('settings.gen.currencyRefreshTip'));
+      if (!refreshFxBtn.hasAttribute('disabled')) {
+        patchText(refreshFxBtnText, t('settings.gen.currencyRefreshBtn'));
+      }
+      patchText(
+        currencyHintEl,
+        formatFxRateCaption({
+          displayCurrency: draftDisplayCurrency,
+          fxStatus: latestFxStatus,
+        })
+      );
+    }
+
+    syncCurrencyControls();
 
     const themeColorPicker = ThemeColorPicker({
       modelValue: draftThemeAccent,
@@ -41255,6 +41735,11 @@ const SettingsGeneralTab = defineComponent({
         appearanceStatusText,
       ]),
       h('div', { className: 'form-row' }, [langLabelEl, languageSwitch.el]),
+      h('div', { className: 'form-row' }, [
+        currencyLabelEl,
+        h('div', { className: 'currency-control-row' }, [currencySelect.el, refreshFxBtn]),
+        currencyHintEl,
+      ]),
       h('div', { className: 'form-row' }, [accentLabelEl, themeColorPicker.el]),
       h('div', { className: 'form-row' }, [fontLabelEl, fontScaleSwitch.el]),
       h('div', { className: 'form-row' }, [modernUiLabelEl, modernUiSwitch.el, modernUiHintEl]),
@@ -41424,6 +41909,7 @@ const SettingsGeneralTab = defineComponent({
       if (!settings) return;
       latestSettings = settings;
       draftLanguage = normalizeI18nLanguage(settings.language);
+      draftDisplayCurrency = normalizeClientDisplayCurrency(settings.displayCurrency);
       draftThemeAccent = normalizeClientThemeAccent(settings.themeAccent);
       draftFontScale = normalizeClientFontScale(settings.fontScale);
       draftModernUi = resolveSettingsModernUi(settings);
@@ -41437,6 +41923,7 @@ const SettingsGeneralTab = defineComponent({
         modelValue: draftLanguage,
         options: getLanguageOptions(),
       });
+      syncCurrencyControls();
       themeColorPicker.refs.setValue(draftThemeAccent);
       fontScaleSwitch.setProps({
         modelValue: draftFontScale,
@@ -41449,6 +41936,12 @@ const SettingsGeneralTab = defineComponent({
         modelValue: draftPluginUpdateMode,
         options: getUpdateModeOptions(),
       });
+    }
+
+    function renderFxStatus(fx) {
+      if (!fx) return;
+      latestFxStatus = fx;
+      syncCurrencyControls();
     }
 
     function renderCloudStatus(cs) {
@@ -41503,6 +41996,7 @@ const SettingsGeneralTab = defineComponent({
     function refreshLabels() {
       patchText(appearanceTitleEl, t('settings.gen.appearanceTitle'));
       patchText(langLabelEl, t('settings.gen.language'));
+      patchText(currencyLabelEl, t('settings.gen.currencyLabel'));
       patchText(accentLabelEl, t('settings.gen.themeAccent'));
       patchText(fontLabelEl, t('settings.gen.fontScale'));
       patchText(modernUiLabelEl, t('settings.gen.modernUi'));
@@ -41519,6 +42013,7 @@ const SettingsGeneralTab = defineComponent({
         modelValue: draftLanguage,
         options: getLanguageOptions(),
       });
+      syncCurrencyControls();
       themeColorPicker.refs.refreshLabels();
       fontScaleSwitch.setProps({
         modelValue: draftFontScale,
@@ -41543,6 +42038,7 @@ const SettingsGeneralTab = defineComponent({
       if (appearanceTimer) clearTimeout(appearanceTimer);
       if (cloudTimer) clearTimeout(cloudTimer);
       languageSwitch.destroy();
+      currencySelect.destroy();
       themeColorPicker.destroy();
       fontScaleSwitch.destroy();
       modernUiSwitch.destroy();
@@ -41554,6 +42050,8 @@ const SettingsGeneralTab = defineComponent({
       el: rootEl,
       refs: {
         languageSwitch,
+        currencySelect,
+        refreshFxBtn,
         themeColorPicker,
         fontScaleSwitch,
         modernUiSwitch,
@@ -41563,6 +42061,7 @@ const SettingsGeneralTab = defineComponent({
         hostI18nCard,
         loadHostI18n: (force = false) => hostI18nCard.refs.load(force),
         renderSettings,
+        renderFxStatus,
         renderCloudStatus,
         refreshLabels,
       },
@@ -47296,8 +47795,14 @@ const ConsumptionView = defineComponent({
     patchAttr(cyclePoolSelect.refs.triggerBtn, 'aria-label', t('cons.cyclePoolAria'));
     const heroTotalTokens = h('strong', { className: 'cons-hero-num text-mono', text: '0' });
     const heroTotalCalls = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.callsCount', { calls: 0 }) });
+    const initialSecondaryCost = formatSecondaryCostApprox(0);
     const heroCostUsd = h('strong', { className: 'cons-hero-cost text-mono', text: '$0.00' });
-    const heroCostCny = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: '≈ ¥0' });
+    const heroCostCny = h('span', {
+      className: 'text-muted text-mono',
+      style: 'font-size: var(--fs-md);',
+      text: initialSecondaryCost,
+      hidden: !initialSecondaryCost,
+    });
 
     const cacheHitPctEl = h('strong', { className: 'cons-hero-cache text-mono', text: '0%' });
     const cacheTokensEl = h('span', { className: 'text-muted text-mono', style: 'font-size: var(--fs-md);', text: t('cons.cacheHitTokens', { tokens: 0 }) });
@@ -48048,8 +48553,15 @@ const ConsumptionView = defineComponent({
       const currentMonthIdx = now.getMonth();
       const monthlyYear = cons.monthlyYear || now.getFullYear();
       const locale = i18nStore.getState().locale;
+      const displayCurrency = normalizeDisplayCurrency(slice.displayCurrency);
+      const fxStatus = slice.fxStatus || null;
+      const fxStatusSig = fxStatus
+        ? `${fxStatus.source || 'builtin'}|${fxStatus.date || ''}|${Number(fxStatus.fetchedAtMs || 0)}`
+        : 'builtin||0';
       const renderTuple = [
         locale,
+        displayCurrency,
+        fxStatusSig,
         slice.range,
         activePoolFilter,
         cycleOptionsSig,
@@ -48114,7 +48626,24 @@ const ConsumptionView = defineComponent({
       patchText(heroTotalTokens, formatTokensPrecise(totalTokens));
       patchText(heroTotalCalls, t('cons.callsCount', { calls: acct.calls || 0 }));
       patchText(heroCostUsd, formatUsd(costUsd));
-      patchText(heroCostCny, formatCnyApprox(costUsd));
+      const heroSecondaryCost = formatSecondaryCostApprox(costUsd, {
+        displayCurrency: slice.displayCurrency,
+        locale: i18nStore.getState().locale,
+        fxStatus: slice.fxStatus,
+      });
+      patchText(heroCostCny, heroSecondaryCost);
+      patchAttr(heroCostCny, 'hidden', !heroSecondaryCost);
+      patchAttr(
+        heroCostCny,
+        'title',
+        heroSecondaryCost
+          ? formatFxRateCaption({
+              displayCurrency: slice.displayCurrency,
+              locale: i18nStore.getState().locale,
+              fxStatus: slice.fxStatus,
+            })
+          : null
+      );
 
       patchText(cacheHitPctEl, formatPctNumber(acct.cacheHitPct ?? 0, { withSymbol: true }));
       patchText(cacheTokensEl, t('cons.cacheHitTokens', { tokens: formatTokensPrecise(cacheTokens) }));
@@ -48196,7 +48725,11 @@ const ConsumptionView = defineComponent({
         totalCost: modelsTotalCost,
         totalCalls: modelsTotalCalls,
         maxAvgTps: modelsMaxAvgTps,
+        displayCurrency: normalizeDisplayCurrency(slice.displayCurrency),
+        locale: localeSig,
+        fxStatus: slice.fxStatus || null,
       };
+      const modelsCurrencySig = `${modelsTotalsCtx.displayCurrency}|${slice.fxStatus?.source || 'builtin'}|${Number(slice.fxStatus?.fetchedAtMs || 0)}`;
 
       const rawTopConvs = Array.isArray(cons.topConversations) ? cons.topConversations : [];
       const allTopConvMergedModels = [];
@@ -48401,7 +48934,7 @@ const ConsumptionView = defineComponent({
       patchKeyedList(modelsListEl, models, {
         keyFn: (m) => m.displayText || m.label || m.shortName,
         sigFn: (m) =>
-          `${localeSig}:${modelsSortBy}:${m.displayText}:${m.displayTitle}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${m.avgTokPerSec ?? ''}:${m.avgTtftSec ?? ''}:${m.cacheHitPct ?? ''}:${modelsTotalTok}:${modelsTotalCost.toFixed(4)}:${modelsTotalCalls}:${modelsMaxAvgTps}`,
+          `${localeSig}:${modelsCurrencySig}:${modelsSortBy}:${m.displayText}:${m.displayTitle}:${m.totalTokens}:${m.inputTokens}:${m.cacheReadTokens}:${m.responseTokens}:${m.thinkingTokens}:${m.costUsd}:${m.unpricedCalls}:${m.calls}:${m.avgTokPerSec ?? ''}:${m.avgTtftSec ?? ''}:${m.cacheHitPct ?? ''}:${modelsTotalTok}:${modelsTotalCost.toFixed(4)}:${modelsTotalCalls}:${modelsMaxAvgTps}`,
         createRow: createBreakdownItemRow,
         updateRow: (refs, m) => {
           updateBreakdownItemRow(
@@ -48601,6 +49134,8 @@ const ConsumptionView = defineComponent({
           st.telemetry?.settings?.showUpstreamModel
         ),
         showUpstreamModel: Boolean(st.telemetry?.settings?.showUpstreamModel),
+        displayCurrency: normalizeDisplayCurrency(st.telemetry?.settings?.displayCurrency),
+        fxStatus: st.telemetry?.fxStatus || null,
       }),
       (slice) => {
         latestSlice = slice;
@@ -50692,6 +51227,7 @@ const SettingsView = defineComponent({
           );
         }
         void generalTab.refs.loadHostI18n?.(false);
+        if (telemetry?.fxStatus) generalTab.refs.renderFxStatus?.(telemetry.fxStatus);
         if (telemetry?.cloudStatus) generalTab.refs.renderCloudStatus(telemetry.cloudStatus);
       }
       refreshScroll();
@@ -50706,6 +51242,7 @@ const SettingsView = defineComponent({
         cliStatusLine: st.telemetry?.cliStatusLine,
         hostPlatform: st.telemetry?.hostPlatform,
         cloudStatus: st.telemetry?.cloudStatus,
+        fxStatus: st.telemetry?.fxStatus,
         contextWindowModels: st.telemetry?.contextWindowModels,
         account: st.telemetry?.account,
         quotas: st.telemetry?.quotas,

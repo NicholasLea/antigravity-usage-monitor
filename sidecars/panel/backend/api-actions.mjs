@@ -66,6 +66,7 @@ import {
   syncCloudCatalog,
 } from './plugin-updater.mjs';
 import { getCloudStatus } from './pricing-catalog.mjs';
+import { syncFxRates } from './fx-rates.mjs';
 import { buildTelemetryPayload, clearTelemetryBuilderMemo } from './telemetry-builder.mjs';
 import {
   createMacOsLaunchWrapper,
@@ -287,6 +288,7 @@ export async function executeTelemetryAction(data, opts = {}) {
       } else {
         syncCloudCatalog({ force: false }).catch(() => {});
       }
+      syncFxRates({ force: false }).catch(() => {});
     }
   }
   const rawScope = String(data?.scope || '').trim();
@@ -662,6 +664,18 @@ export async function executeCloudSyncAction() {
     contentType: 'application/json',
     headers: { 'Cache-Control': 'no-store' },
     body: JSON.stringify({ ok: !cloudStatus.lastSyncError, cloudStatus }),
+  };
+}
+
+export async function executeFxSyncAction(opts = {}) {
+  const syncFn = typeof opts?.syncFxRatesFn === 'function' ? opts.syncFxRatesFn : syncFxRates;
+  const fxStatus = await syncFn({ force: true });
+  clearTelemetryBuilderMemo();
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify({ ok: !fxStatus.lastError, fxStatus }),
   };
 }
 
@@ -1260,6 +1274,9 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
           opts
         );
       }
+      if (isPlainObject(data) && data.__fxAction === 'sync') {
+        return executeFxSyncAction(opts);
+      }
       if (isPlainObject(data) && data.__hostThemeAction === 'cache') {
         const saved = recordPreloadHostTheme(data.payload);
         return {
@@ -1285,6 +1302,8 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executeRebuildCacheAction(data, opts);
     case 'cloud_sync':
       return executeCloudSyncAction();
+    case 'fx_sync':
+      return executeFxSyncAction(opts);
     case 'plugin_update':
       return executePluginUpdateAction();
     case 'bridge_relaunch':
@@ -1356,6 +1375,7 @@ export function bootWindowBridgeRuntime({ allowDynamicLs = false, onRestart = nu
       })
       .catch(() => {});
   }
+  syncFxRates({ force: false }).catch(() => {});
 
   return startDefaultWindowBridge({
     handleApiRequest: (pathname, method, data, ctx) =>

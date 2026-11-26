@@ -2012,6 +2012,24 @@
   gap: 6px;
 }
 
+/* --- Display Currency Inline Row (SettingsGeneralTab) --- */
+.currency-control-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.currency-control-row > .custom-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.currency-fx-refresh-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* --- 会话页 100% 视口全高与本地会话管理工作台 (.smgr-*) --- */
 .view-pane.is-full-height-tab > .custom-scroll-content {
   display: flex;

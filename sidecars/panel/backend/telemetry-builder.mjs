@@ -50,6 +50,7 @@ import {
   isCarbonModelIdentifier,
 } from './model-pricing.mjs';
 import { getCloudStatus, getPricingPhaseEpoch, pricingCatalogRevision } from './pricing-catalog.mjs';
+import { getFxStatus } from './fx-rates.mjs';
 import { buildOfficialQuotaPools } from './quota-pools.mjs';
 import { recordAccountQuotaSnapshot } from './account-quota-history.mjs';
 import { updatePoolQuotaReservationEstimates } from './quota-reservation.mjs';
@@ -2443,6 +2444,7 @@ export async function buildTelemetryPayloadInternal(
       return { ...group, reportedLimitTokens: latest?.tokens ?? null };
     }),
     cloudStatus: getCloudStatus(),
+    fxStatus: getFxStatus(),
     account: {
       status: accountStatus,
       email: userStatus?.email || '',

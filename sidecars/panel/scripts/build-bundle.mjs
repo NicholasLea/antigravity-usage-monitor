@@ -598,6 +598,7 @@ export function buildBundle(panelDir = PANEL_DIR) {
 
   const jsOrder = [
     'shared/settings-normalization.mjs',
+    'shared/currency-catalog.mjs',
     'shared/telemetry-display-rules.mjs',
     'shared/window-bridge-protocol.mjs',
     'shared/host-i18n-protocol.mjs',

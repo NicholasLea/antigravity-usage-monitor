@@ -21,6 +21,7 @@ import { stopLocalBackgroundCacheRebuild } from './local-scanner.mjs';
 import { ensureLsEndpointDiscovered } from './ls-discovery.mjs';
 import { ensureCliStatusLineConfigured } from './cli-statusline-config.mjs';
 import { syncCloudCatalog } from './plugin-updater.mjs';
+import { syncFxRates } from './fx-rates.mjs';
 import {
   normalizeLanguageSetting,
   resolveLocaleFromLanguageTag,
@@ -829,6 +830,7 @@ export function createStandaloneWebServer(options = {}) {
           })
           .catch(() => {});
       }
+      syncFxRates({ force: false }).catch(() => {});
     }
 
     const srv = http.createServer((req, res) => {

@@ -19,6 +19,7 @@ import {
   getAgentBadgeClass,
 } from '../core/formatters.js';
 import { normalizeI18nLanguage, t } from '../i18n/index.js';
+import { normalizeDisplayCurrency } from '../../shared/currency-catalog.mjs';
 import {
   normalizeClientFontScale,
   normalizeClientModernUi,
@@ -556,6 +557,7 @@ export const resolveEffectiveClientMetricMatrixConfig = resolveEffectiveMetricMa
 export const normalizeClientStepColumns = normalizeStepTableColumns;
 export const normalizeClientUpdateMode = normalizePluginUpdateMode;
 export const normalizeClientWindowMountMode = normalizeWindowMountMode;
+export const normalizeClientDisplayCurrency = normalizeDisplayCurrency;
 
 export function isEquivalentTelemetry(prev, next) {
   if (!prev || !next) return false;
@@ -577,6 +579,12 @@ export function isEquivalentTelemetry(prev, next) {
   const nSet = next.settings;
 
   if ((pSet?.language ?? 'auto') !== (nSet?.language ?? 'auto')) return false;
+  if (
+    normalizeDisplayCurrency(pSet?.displayCurrency) !==
+    normalizeDisplayCurrency(nSet?.displayCurrency)
+  ) {
+    return false;
+  }
   if ((pSet?.themeAccent ?? 'host') !== (nSet?.themeAccent ?? 'host')) return false;
   if ((pSet?.fontScale ?? 'md') !== (nSet?.fontScale ?? 'md')) return false;
   if (resolveSettingsModernUi(pSet) !== resolveSettingsModernUi(nSet)) return false;
@@ -768,6 +776,18 @@ export function isEquivalentTelemetry(prev, next) {
     pCloud?.lastSyncError !== nCloud?.lastSyncError ||
     pCloud?.lastUpdateError !== nCloud?.lastUpdateError ||
     pCloud?.lastUpdateResult?.updatedAtMs !== nCloud?.lastUpdateResult?.updatedAtMs
+  ) {
+    return false;
+  }
+
+  const pFx = prev.fxStatus;
+  const nFx = next.fxStatus;
+  if (
+    pFx?.source !== nFx?.source ||
+    pFx?.date !== nFx?.date ||
+    Number(pFx?.fetchedAtMs || 0) !== Number(nFx?.fetchedAtMs || 0) ||
+    Boolean(pFx?.isSyncing) !== Boolean(nFx?.isSyncing) ||
+    (pFx?.lastError || null) !== (nFx?.lastError || null)
   ) {
     return false;
   }
@@ -2283,6 +2303,27 @@ export async function triggerCloudSync() {
   clearConsumptionRangeCache();
   clearConversationViewCache();
   await fetchTelemetry({ force: true });
+  return res;
+}
+
+export async function triggerFxSync() {
+  let res;
+  try {
+    res = await callSidecarApi('/api/fx-sync', { method: 'POST', body: {} });
+  } catch {
+    res = await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: { __fxAction: 'sync' },
+    });
+  }
+  if (res?.fxStatus) {
+    const cur = telemetryStore.getState().telemetry;
+    if (cur) {
+      telemetryStore.setState({
+        telemetry: { ...cur, fxStatus: res.fxStatus },
+      });
+    }
+  }
   return res;
 }
 

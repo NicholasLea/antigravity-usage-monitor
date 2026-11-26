@@ -1515,9 +1515,15 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(capsuleHost.getAttribute('data-modern-ui'), 'true');
     assert.equal(popoverEl.getAttribute('data-modern-ui'), 'true');
     const generalSelects = generalPane.querySelectorAll('.custom-select');
-    assert.equal(generalSelects.length, 3, 'General tab has UI Language, Host I18n Language, and Update Mode selects');
+    assert.equal(
+      generalSelects.length,
+      4,
+      'General tab has UI Language, Display Currency, Host I18n Language, and Update Mode selects'
+    );
     const langSelectEl = generalSelects[0];
-    const updateModeSelectEl = generalSelects[2];
+    const currencySelectEl = generalSelects[1];
+    const updateModeSelectEl = generalSelects[3];
+    assert.match(currencySelectEl.querySelector('.select-label').textContent, /CNY/);
     assert.equal(langSelectEl.querySelector('.select-label').textContent, '简体中文');
     langSelectEl.querySelector('.select-trigger').dispatchEvent({ type: 'click', stopPropagation() {} });
     const langOpts = langSelectEl.querySelectorAll('.select-option');
@@ -1571,6 +1577,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     };
     await selectUiLangByIndex(3);
     assert.equal(mockSettings.language, 'en-US');
+    assert.match(currencySelectEl.querySelector('.select-label').textContent, /USD Only/i);
     assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, 'Live');
     assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, 'Controls');
     assert.equal(subNavBtns[0].textContent, 'General');
@@ -1580,6 +1587,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(subNavBtns[4].textContent, 'Other');
     await selectUiLangByIndex(4);
     assert.equal(mockSettings.language, 'ja-JP');
+    assert.match(currencySelectEl.querySelector('.select-label').textContent, /JPY/);
     assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, 'ライブ');
     assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, '設定');
     assert.equal(subNavBtns[0].textContent, '一般');
@@ -1587,6 +1595,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(mockSettings.language, 'auto');
     await selectUiLangByIndex(1);
     assert.equal(mockSettings.language, 'zh-CN');
+    assert.match(currencySelectEl.querySelector('.select-label').textContent, /CNY/);
     assert.equal(pillTabs[0].querySelector('.pill-tab-label').textContent, '实时监控');
     assert.equal(pillTabs[3].querySelector('.pill-tab-label').textContent, '控制中心');
     assert.equal(subNavBtns[0].textContent, '常规');

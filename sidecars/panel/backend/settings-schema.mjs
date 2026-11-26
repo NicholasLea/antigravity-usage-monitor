@@ -6,6 +6,11 @@
 
 import { isContextWindowSettingId, isContextWindowOption } from './context-windows.mjs';
 import {
+  DEFAULT_DISPLAY_CURRENCY,
+  SUPPORTED_DISPLAY_CURRENCIES,
+  normalizeDisplayCurrency,
+} from '../shared/currency-catalog.mjs';
+import {
   ACCOUNT_QUOTA_REFRESH_MINUTES,
   CLI_STATUSLINE_PRESETS,
   CONTEXT_AGENT_MODES,
@@ -82,6 +87,7 @@ export {
   DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES,
   DEFAULT_CLI_STATUSLINE_SLOTS,
   DEFAULT_CONTEXT_AGENT_MODE,
+  DEFAULT_DISPLAY_CURRENCY,
   DEFAULT_HOVER_METRICS,
   DEFAULT_HOVER_METRIC_STYLE,
   DEFAULT_HOVER_MODULES,
@@ -108,6 +114,7 @@ export {
   POPOVER_WIDTH_MODES,
   STEP_TABLE_COLUMN_KEYS,
   STEP_TOKEN_SEGMENT_ALIASES,
+  SUPPORTED_DISPLAY_CURRENCIES,
   SUPPORTED_LANGUAGES,
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
@@ -115,6 +122,7 @@ export {
   normalizeAutoConfigureLaunch,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeDisplayCurrency,
   normalizeEnableRemoteSshTelemetry,
   normalizeExperimentalModernUi,
   normalizeExperimentalQuotaReservation,
@@ -164,6 +172,7 @@ export function normalizeModelContextWindows(value) {
 
 export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
   language: 'auto',
+  displayCurrency: DEFAULT_DISPLAY_CURRENCY,
   themeAccent: 'host',
   fontScale: 'md',
   modernUi: true,
@@ -248,6 +257,7 @@ export function normalizeFullSettings(rawInput) {
     safeRaw.modernUi !== undefined ? normalizeModernUi(safeRaw.modernUi) : true;
   return {
     language: normalizeLanguageSetting(safeRaw.language),
+    displayCurrency: normalizeDisplayCurrency(safeRaw.displayCurrency),
     themeAccent: normalizeThemeAccent(safeRaw.themeAccent),
     fontScale: normalizeFontScale(safeRaw.fontScale),
     modernUi,

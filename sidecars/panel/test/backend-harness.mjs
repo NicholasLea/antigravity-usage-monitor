@@ -27,6 +27,7 @@ const DEFAULT_BUNDLED_CATALOG = {
 
 const BACKEND_MODULE_FILES = [
   '../shared/settings-normalization.mjs',
+  '../shared/currency-catalog.mjs',
   '../shared/telemetry-display-rules.mjs',
   '../shared/window-bridge-protocol.mjs',
   '../shared/host-i18n-protocol.mjs',
@@ -57,6 +58,7 @@ const BACKEND_MODULE_FILES = [
   '../backend/ls-discovery.mjs',
   '../backend/ide-remote-ssh.mjs',
   '../backend/pricing-catalog.mjs',
+  '../backend/fx-rates.mjs',
   '../backend/plugin-updater.mjs',
   '../backend/ls-rpc.mjs',
   '../backend/cloudcode-proxy.mjs',

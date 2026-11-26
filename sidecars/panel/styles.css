@@ -7758,6 +7758,23 @@ html[data-standalone="true"] .app-shell {
   gap: 6px;
 }
 
+.currency-control-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.currency-control-row > .custom-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.currency-fx-refresh-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .view-pane.is-full-height-tab > .custom-scroll-content {
   display: flex;
   flex-direction: column;
