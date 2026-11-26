@@ -465,7 +465,7 @@ export const SettingsStructureTab = defineComponent({
         const actionToRun = activeCliStatusAction;
         patchAttr(cliStatusActionBtn, 'disabled', true);
         patchText(cliStatusActionBtn, t('settings.str.cliRestoringBtn'));
-        mountSection.refs.showStatus(t('settings.saving'), 0);
+        cliSection.refs.showStatus(t('settings.saving'), 0);
         try {
           const res = await triggerCliStatusLineAction(actionToRun);
           if (res?.cliStatusLine) {
@@ -475,16 +475,16 @@ export const SettingsStructureTab = defineComponent({
             latestSettings = { ...(latestSettings || {}), ...res.settings };
             draftEnableCliStatusLine = latestSettings.enableCliStatusLine !== false;
           }
-          mountSection.refs.showStatus(
+          cliSection.refs.showStatus(
             res?.ok === false ? t('settings.saveFailed') : t('settings.saved'),
             1800
           );
         } catch {
-          mountSection.refs.showStatus(t('settings.saveFailed'), 2500);
+          cliSection.refs.showStatus(t('settings.saveFailed'), 2500);
         } finally {
           cliActionBusy = false;
           patchAttr(cliStatusActionBtn, 'disabled', false);
-          syncMountSectionMeta();
+          syncCliSectionMeta();
           props.onLayoutChange?.();
         }
       },
@@ -584,9 +584,9 @@ export const SettingsStructureTab = defineComponent({
       modelValue: 'on',
       onUpdateModelValue: (val) => {
         draftEnableCliStatusLine = val !== 'off';
-        syncMountSectionMeta();
+        syncCliSectionMeta();
         props.onLayoutChange?.();
-        void persistStructurePatch(mountSection, {
+        void persistStructurePatch(cliSection, {
           enableCliStatusLine: draftEnableCliStatusLine,
         });
       },
@@ -635,9 +635,9 @@ export const SettingsStructureTab = defineComponent({
       },
       onChange: (nextItems) => {
         draftCliStatusLineSlots = normalizeClientCliStatusLineSlots(nextItems);
-        syncMountSectionMeta();
+        syncCliSectionMeta();
         props.onLayoutChange?.();
-        void persistStructurePatch(mountSection, {
+        void persistStructurePatch(cliSection, {
           cliStatusLineSlots: draftCliStatusLineSlots,
         });
       },
@@ -650,15 +650,38 @@ export const SettingsStructureTab = defineComponent({
 
     const cliStatusDetailEl = h('div', { className: 'cli-statusline-detail' }, [
       cliPreviewEl,
+      h('div', { className: 'settings-divider' }),
       h('div', { className: 'form-row' }, [cliSlotsLabelEl, cliSlotsList.el]),
       cliStatusFooterEl,
     ]);
 
-    const cliStatusGroupEl = h('div', { className: 'cli-statusline-group', hidden: true }, [
-      h('div', { className: 'settings-divider' }),
-      h('div', { className: 'settings-inline-row' }, [cliCapsuleLabelEl, cliCapsuleToggle.el]),
-      cliStatusDetailEl,
-    ]);
+    const cliSection = CollapsibleSection({
+      collapsible: false,
+      icon: 'terminal',
+      title: t('settings.str.cliSection'),
+      badgeText: t('settings.str.cliBadge', { count: getEffectiveDraftCliSlots().length }),
+      onReset: () => {
+        draftEnableCliStatusLine = true;
+        draftCliStatusLineSlots = null;
+        syncCliSectionMeta();
+        props.onLayoutChange?.();
+        void persistStructurePatch(
+          cliSection,
+          {
+            enableCliStatusLine: true,
+            cliStatusLineSlots: null,
+          },
+          'settings.resetDone'
+        );
+      },
+      children: [
+        h('div', { className: 'settings-inline-row' }, [cliCapsuleLabelEl, cliCapsuleToggle.el]),
+        cliStatusDetailEl,
+      ],
+    });
+    patchClasses(cliSection.el, { 'cli-statusline-group': true });
+    patchAttr(cliSection.el, 'hidden', true);
+    const cliStatusGroupEl = cliSection.el;
 
     const topbarSlotsList = EditableSlotList({
       items: draftTopbarSlots,
@@ -692,8 +715,6 @@ export const SettingsStructureTab = defineComponent({
         draftPopoverWidthMode = 'auto';
         draftPopoverWidth = DEFAULT_CLIENT_POPOVER_WIDTH;
         popoverWidthStepper.setProps({ modelValue: DEFAULT_CLIENT_POPOVER_WIDTH });
-        draftEnableCliStatusLine = true;
-        draftCliStatusLineSlots = null;
         draftShowTopbarMulti = true;
         draftContextAgentMode = DEFAULT_CLIENT_CONTEXT_AGENT_MODE;
         draftTopbarSlots = [...DEFAULT_CLIENT_TOPBAR_SLOTS];
@@ -707,8 +728,6 @@ export const SettingsStructureTab = defineComponent({
             enableWindowOverlay: true,
             popoverWidthMode: 'auto',
             popoverWidth: DEFAULT_CLIENT_POPOVER_WIDTH,
-            enableCliStatusLine: true,
-            cliStatusLineSlots: null,
             showTopbarMultiSession: true,
             contextAgentMode: DEFAULT_CLIENT_CONTEXT_AGENT_MODE,
             topbarCapsuleSlots: [...DEFAULT_CLIENT_TOPBAR_SLOTS],
@@ -737,7 +756,6 @@ export const SettingsStructureTab = defineComponent({
           contextAgentModeToggle.el,
         ]),
         h('div', { className: 'form-row' }, [capsuleSlotsLabelEl, topbarSlotsList.el]),
-        cliStatusGroupEl,
       ],
     });
 
@@ -789,37 +807,14 @@ export const SettingsStructureTab = defineComponent({
       refreshCliPreview(mockData);
     }
 
-    function syncMountSectionMeta() {
-      windowMountSelect.setProps({
-        modelValue: draftWindowMountMode,
-        options: getMountModeOptions(),
-      });
-      mountBridgeNotice.refs.update({
-        visible: draftWindowMountMode !== 'sidebar',
-        windowBridge: latestWindowBridge,
-        hostPlatform: latestHostPlatform,
-      });
-      popoverWidthModeToggle.setProps({
-        modelValue: draftPopoverWidthMode,
-        options: getPopoverWidthModeOptions(),
-      });
-      patchAttr(popoverWidthNumWrap, 'hidden', draftPopoverWidthMode !== 'custom');
-      if (document?.activeElement !== popoverWidthStepper.refs.textField) {
-        popoverWidthStepper.setProps({
-          modelValue: draftPopoverWidth,
-          ariaLabel: t('settings.str.popoverWidthLabel'),
-        });
-      }
-      multiSessionToggle.setProps({
-        modelValue: draftShowTopbarMulti ? 'show' : 'hide',
-      });
-      contextAgentModeToggle.setProps({
-        modelValue: draftContextAgentMode,
-        options: getContextAgentModeOptions(),
-        ariaLabel: t('settings.str.contextAgentModeLabel'),
-      });
+    function syncCliSectionVisibility() {
       const cliInstalled = Boolean(latestCliStatusLine?.installed);
-      patchAttr(cliStatusGroupEl, 'hidden', !cliInstalled);
+      patchAttr(cliSection.el, 'hidden', !(activeThirdTab === 'mount' && cliInstalled));
+    }
+
+    function syncCliSectionMeta() {
+      const cliInstalled = Boolean(latestCliStatusLine?.installed);
+      syncCliSectionVisibility();
       cliCapsuleToggle.setProps({
         modelValue: draftEnableCliStatusLine ? 'on' : 'off',
       });
@@ -833,6 +828,14 @@ export const SettingsStructureTab = defineComponent({
         }),
         addBtnTextFn: (count, max) => t('settings.str.addCliSlot', { count, max }),
       });
+      cliSection.refs.setBadge(
+        draftEnableCliStatusLine
+          ? t('settings.str.cliBadge', { count: effectiveCliSlots.length })
+          : t('settings.str.cliBadgeOff')
+      );
+      cliSection.refs.setResetDisabled(
+        draftEnableCliStatusLine === true && draftCliStatusLineSlots === null
+      );
       const preservedCustom = Boolean(latestCliStatusLine?.preservedCustom);
       const isConfigured = Boolean(latestCliStatusLine?.configured);
       const hasInlineSlotFlags = /(?:^|\s)--(?:slots|preset)(?:=|\s|$)/i.test(
@@ -867,6 +870,37 @@ export const SettingsStructureTab = defineComponent({
         );
       }
       refreshCliPreview();
+    }
+
+    function syncMountSectionMeta() {
+      windowMountSelect.setProps({
+        modelValue: draftWindowMountMode,
+        options: getMountModeOptions(),
+      });
+      mountBridgeNotice.refs.update({
+        visible: draftWindowMountMode !== 'sidebar',
+        windowBridge: latestWindowBridge,
+        hostPlatform: latestHostPlatform,
+      });
+      popoverWidthModeToggle.setProps({
+        modelValue: draftPopoverWidthMode,
+        options: getPopoverWidthModeOptions(),
+      });
+      patchAttr(popoverWidthNumWrap, 'hidden', draftPopoverWidthMode !== 'custom');
+      if (document?.activeElement !== popoverWidthStepper.refs.textField) {
+        popoverWidthStepper.setProps({
+          modelValue: draftPopoverWidth,
+          ariaLabel: t('settings.str.popoverWidthLabel'),
+        });
+      }
+      multiSessionToggle.setProps({
+        modelValue: draftShowTopbarMulti ? 'show' : 'hide',
+      });
+      contextAgentModeToggle.setProps({
+        modelValue: draftContextAgentMode,
+        options: getContextAgentModeOptions(),
+        ariaLabel: t('settings.str.contextAgentModeLabel'),
+      });
       syncTopbarList();
       mountSection.refs.setBadge(
         t('settings.str.mountBadge', { count: draftTopbarSlots.length })
@@ -875,8 +909,6 @@ export const SettingsStructureTab = defineComponent({
         draftWindowMountMode === 'dual' &&
         draftPopoverWidthMode === 'auto' &&
         draftPopoverWidth === DEFAULT_CLIENT_POPOVER_WIDTH &&
-        draftEnableCliStatusLine === true &&
-        draftCliStatusLineSlots === null &&
         draftShowTopbarMulti === true &&
         draftContextAgentMode === DEFAULT_CLIENT_CONTEXT_AGENT_MODE &&
         isSameList(draftTopbarSlots, DEFAULT_CLIENT_TOPBAR_SLOTS);
@@ -1734,6 +1766,7 @@ export const SettingsStructureTab = defineComponent({
         patchAttr(entry.btn, 'aria-selected', isActive ? 'true' : 'false');
       }
       patchAttr(mountSection.el, 'hidden', nextTab !== 'mount');
+      syncCliSectionVisibility();
       patchAttr(hoverSection.el, 'hidden', nextTab !== 'hover');
       patchAttr(overviewSection.el, 'hidden', nextTab !== 'overview');
       patchAttr(stepsSection.el, 'hidden', nextTab !== 'steps');
@@ -1744,6 +1777,7 @@ export const SettingsStructureTab = defineComponent({
 
     const rootEl = h('div', { className: 'settings-tab-stack' }, [
       mountSection.el,
+      cliSection.el,
       hoverSection.el,
       overviewSection.el,
       stepsSection.el,
@@ -1793,6 +1827,7 @@ export const SettingsStructureTab = defineComponent({
       draftStepColumns = normalizeClientStepColumns(settings.stepTableColumns);
 
       syncMountSectionMeta();
+      syncCliSectionMeta();
       syncHoverSectionMeta();
       syncOverviewSectionMeta();
       syncStepsSectionMeta();
@@ -1806,6 +1841,8 @@ export const SettingsStructureTab = defineComponent({
 
       mountSection.refs.setTitle(t('settings.str.mountSection'));
       mountSection.refs.setResetLabel(t('settings.resetBtn'));
+      cliSection.refs.setTitle(t('settings.str.cliSection'));
+      cliSection.refs.setResetLabel(t('settings.resetBtn'));
       patchText(mountModeLabelEl, t('settings.str.mountMode'));
       patchText(popoverWidthLabelEl, t('settings.str.popoverWidthLabel'));
       popoverWidthStepper.setProps({ ariaLabel: t('settings.str.popoverWidthLabel') });
@@ -1843,6 +1880,7 @@ export const SettingsStructureTab = defineComponent({
       patchText(stepColsLabelEl, t('settings.str.stepsColsLabel'));
 
       syncMountSectionMeta();
+      syncCliSectionMeta();
       syncHoverSectionMeta();
       syncOverviewSectionMeta();
       syncStepsSectionMeta();
@@ -1872,6 +1910,7 @@ export const SettingsStructureTab = defineComponent({
     );
 
     syncMountSectionMeta();
+    syncCliSectionMeta();
     syncHoverSectionMeta();
     syncOverviewSectionMeta();
     syncStepsSectionMeta();
@@ -1905,6 +1944,7 @@ export const SettingsStructureTab = defineComponent({
       stepFilterToolbarToggle.destroy();
       stepColumnsList.destroy();
       mountSection.destroy();
+      cliSection.destroy();
       hoverSection.destroy();
       overviewSection.destroy();
       stepsSection.destroy();
@@ -1923,6 +1963,7 @@ export const SettingsStructureTab = defineComponent({
         multiSessionToggle,
         contextAgentModeToggle,
         cliCapsuleToggle,
+        cliSection,
         cliStatusGroupEl,
         cliStatusDetailEl,
         cliPreviewEl,

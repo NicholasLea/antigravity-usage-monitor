@@ -1747,13 +1747,8 @@
   font-size: var(--fs-xs);
 }
 
-/* --- Antigravity CLI 底部状态胶囊专属配置块（仅检测到 CLI 时展示） --- */
-.cli-statusline-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
+/* --- Antigravity CLI 底部状态胶囊独立配置卡片（仅检测到 CLI 时展示） --- */
+.collapsible-section[hidden],
 .cli-statusline-group[hidden],
 .cli-statusline-detail[hidden] {
   display: none !important;

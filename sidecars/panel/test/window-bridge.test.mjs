@@ -1650,13 +1650,15 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(thirdNavBtns[0].classList.contains('is-active'), true, 'First 3rd-level tab active by default');
 
     const accordionSections = structurePane.querySelectorAll('.collapsible-section');
-    assert.equal(accordionSections.length, 4, 'Structure tab has 4 static pane sections');
-    assert.equal(accordionSections[0].hasAttribute('hidden'), false, 'Pane 0 visible by default');
-    assert.equal(accordionSections[1].hasAttribute('hidden'), true, 'Pane 1 hidden until selected');
-    assert.equal(accordionSections[2].hasAttribute('hidden'), true, 'Pane 2 hidden until selected');
-    assert.equal(accordionSections[3].hasAttribute('hidden'), true, 'Pane 3 hidden until selected');
+    assert.equal(accordionSections.length, 5, 'Structure tab has 5 static section cards (App mount + CLI + 3 other panes)');
+    assert.equal(accordionSections[0].hasAttribute('hidden'), false, 'App mount card visible by default');
+    assert.equal(accordionSections[1].hasAttribute('hidden'), true, 'CLI card hidden until CLI is installed');
+    assert.equal(accordionSections[2].hasAttribute('hidden'), true, 'Pane 1 hidden until selected');
+    assert.equal(accordionSections[3].hasAttribute('hidden'), true, 'Pane 2 hidden until selected');
+    assert.equal(accordionSections[4].hasAttribute('hidden'), true, 'Pane 3 hidden until selected');
 
     const sec0 = accordionSections[0];
+    const cliSec = accordionSections[1];
     assert.equal(sec0.querySelector('.structure-preview-stage'), null, 'No outer preview wrapper box');
     assert.equal(sec0.querySelector('.structure-preview-head'), null, 'No redundant mock data label header');
     const previewCapsuleBar = sec0.querySelector('.preview-capsule-bar');
@@ -1705,9 +1707,11 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(mockSettings.enableWindowOverlay, true, 'enableWindowOverlay persisted back to true');
     assert.equal(previewCapsuleBar.getAttribute('data-mount-mode'), 'dual');
 
-    // Toggle popover width mode (auto -> custom 640px -> step +10px -> auto), topbar multi-session switch, capsule/hover context agent mode (main -> auto -> main), and CLI bottom capsule switch
+    // Toggle popover width mode (auto -> custom 640px -> step +10px -> auto), topbar multi-session switch, capsule/hover context agent mode (main -> auto -> main), and separate CLI bottom capsule switch
     const topbarSegBtns = sec0.querySelectorAll('.seg-btn');
-    assert.equal(topbarSegBtns.length, 8, 'Popover width + Topbar multi-session + Capsule/Hover context mode + CLI bottom capsule toggles render 8 buttons');
+    assert.equal(topbarSegBtns.length, 6, 'App mount card renders 6 segmented buttons (Popover width + Topbar multi-session + Capsule/Hover context mode)');
+    const cliSegBtns = cliSec.querySelectorAll('.seg-btn');
+    assert.equal(cliSegBtns.length, 2, 'Separate CLI section card renders 2 segmented buttons for CLI bottom capsule toggle');
     const popWidthInput = sec0.querySelector('.num-field');
     const popWidthStepBtns = sec0.querySelectorAll('.num-step-btn');
     assert.ok(popWidthInput, 'CustomNumberInput field exists without native <input type="number">');
@@ -1747,10 +1751,10 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.contextAgentMode, 'main', 'Capsule/Hover context mode switches back to lock main agent');
 
-    topbarSegBtns[7].dispatchEvent({ type: 'click', stopPropagation() {} });
+    cliSegBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.enableCliStatusLine, false, 'CLI bottom capsule toggle turns off enableCliStatusLine');
-    topbarSegBtns[6].dispatchEvent({ type: 'click', stopPropagation() {} });
+    cliSegBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(mockSettings.enableCliStatusLine, true, 'CLI bottom capsule toggle restores enableCliStatusLine');
 
@@ -1920,7 +1924,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(readCapVal(capSlots[2].querySelector('.wm-ctx-pct')), '50%');
 
     // Pane 1 (3rd-level tab 'hover'): Hover Popup Modules (0..4) + real hover UI preview
-    const sec1 = accordionSections[1];
+    const sec1 = accordionSections[2];
     thirdNavBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(thirdNavBtns[1].classList.contains('is-active'), true, 'Hover 3rd-level tab active');
@@ -2018,7 +2022,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(mockSettings.hoverMetricStyle, 'medium');
 
     // Pane 2 (3rd-level tab 'overview'): Live Overview Layout + real overview UI preview
-    const sec2 = accordionSections[2];
+    const sec2 = accordionSections[3];
     thirdNavBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(thirdNavBtns[2].classList.contains('is-active'), true, 'Overview 3rd-level tab active');
@@ -2096,7 +2100,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.deepEqual(mockSettings.overviewMetrics, ['tps', 'ttft', 'avg_tps', 'step_cost']);
 
     // Pane 3 (3rd-level tab 'steps'): Step Table Columns (2..12) + real StepTableWidget preview
-    const sec3 = accordionSections[3];
+    const sec3 = accordionSections[4];
     thirdNavBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(thirdNavBtns[3].classList.contains('is-active'), true, 'Steps 3rd-level tab active');
@@ -6584,6 +6588,32 @@ test('SettingsStructureTab CLI statusLine controls stay hidden unless CLI is det
     assert.match(hintEl.textContent, /命令行参数将优先/);
     assert.equal(actionBtn.hasAttribute('hidden'), false);
     assert.equal(actionBtn.textContent, '清除命令行覆盖');
+
+    // 7. App/IDE card and CLI card are distinct sibling sections with independent resets and tab visibility
+    assert.equal(strTab.refs.cliSection.el, groupEl, 'CLI controls render in dedicated sibling section card');
+    assert.equal(strTab.refs.mountSection.el.contains(groupEl), false, 'CLI card is decoupled from App/IDE mount card');
+    assert.equal(groupEl.parentNode, strTab.el, 'CLI card sits directly inside settings-tab-stack');
+    const hoverTabBtn = strTab.refs.thirdNavBar.querySelector('[data-structure-tab="hover"]');
+    hoverTabBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    assert.equal(strTab.refs.mountSection.el.hasAttribute('hidden'), true, 'App card hides on non-mount tab');
+    assert.equal(groupEl.hasAttribute('hidden'), true, 'CLI card hides on non-mount tab');
+    const mountTabBtn = strTab.refs.thirdNavBar.querySelector('[data-structure-tab="mount"]');
+    mountTabBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    assert.equal(groupEl.hasAttribute('hidden'), false, 'CLI card reappears when returning to mount tab');
+
+    // Resetting CLI card only patches CLI keys without touching App mount settings
+    strTab.refs.renderSettings(
+      { windowMountMode: 'composer', enableCliStatusLine: false, cliStatusLineSlots: ['tps', 'context'] },
+      { state: 'active' },
+      'win32',
+      { installed: true, configured: false, preservedCustom: false, managedFlags: '' }
+    );
+    strTab.refs.cliSection.refs.resetBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 25));
+    const cliResetPatch = savedPatches[savedPatches.length - 1];
+    assert.equal(cliResetPatch.enableCliStatusLine, true);
+    assert.equal(cliResetPatch.cliStatusLineSlots, null);
+    assert.equal('windowMountMode' in cliResetPatch, false, 'CLI reset never overwrites App mount mode');
 
     strTab.destroy();
   } finally {

@@ -145,4 +145,8 @@ export const SVG_ICON_DEFS = Object.freeze({
     { tag: 'ellipse', attrs: { cx: '8', cy: '8', rx: '2.7', ry: '6' } },
     { tag: 'path', attrs: { d: 'M2.3 6h11.4M2.3 10h11.4' } },
   ],
+  terminal: [
+    { tag: 'rect', attrs: { x: '2', y: '3', width: '12', height: '10', rx: '1.8' } },
+    { tag: 'path', attrs: { d: 'M4.8 6.4 7 8.2 4.8 10M8.4 10h2.8' } },
+  ],
 });
