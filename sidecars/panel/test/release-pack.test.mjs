@@ -102,6 +102,10 @@ test('pack-release-zip ships only runtime-essential files, excludes dev bloat, a
   const manifest = JSON.parse(readFileSync(join(pluginRoot, 'plugin.json'), 'utf8'));
   assert.equal(manifest.name, 'usage-monitor');
   assert.ok(existsSync(join(pluginRoot, manifest.logo)));
+  const sidecarManifest = JSON.parse(readFileSync(join(pluginRoot, 'sidecars/panel/sidecar.json'), 'utf8'));
+  assert.equal(sidecarManifest.display_name, 'Usage Monitor');
+  assert.equal(sidecarManifest.ui_config?.display_name, 'Usage Monitor');
+  assert.equal(sidecarManifest.ui_config?.views?.[0]?.title, 'Usage Monitor');
 
   // Verify zero broken syntax and clean standalone ESM load from the extracted clean tree (no src/, test/, package.json)
   for (const rel of relFiles) {
