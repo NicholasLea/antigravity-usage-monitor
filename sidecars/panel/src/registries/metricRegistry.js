@@ -9,6 +9,7 @@ import {
   formatAgentBadgeText,
   formatCachePct,
   formatMetric,
+  formatQuotaPoolLabel,
   formatTokens,
   formatUsd,
   getCacheToneClass,
@@ -308,27 +309,35 @@ export function resolveQuotaCapsuleSummary(quotas) {
   if (activePool && Number.isFinite(Number(activePool.remainingPct))) {
     candidates.push({
       pct: Number(activePool.remainingPct),
-      label: activePool.poolLabel || activePool.family || defaultPoolName,
+      label: formatQuotaPoolLabel(activePool.poolLabel || activePool.family, {
+        fallback: defaultPoolName,
+      }),
       windowTag: '5h',
     });
   }
   if (activePool && Number.isFinite(Number(activePool.weeklyRemainingPct))) {
     candidates.push({
       pct: Number(activePool.weeklyRemainingPct),
-      label: activePool.poolLabel || activePool.family || defaultPoolName,
+      label: formatQuotaPoolLabel(activePool.poolLabel || activePool.family, {
+        fallback: defaultPoolName,
+      }),
       windowTag: wkTag,
     });
   }
   if (!candidates.length && weekly && Number.isFinite(Number(weekly.remainingPct))) {
     candidates.push({
       pct: Number(weekly.remainingPct),
-      label: weekly.poolFamily || (isEnglishLocale() ? 'Weekly' : '周限额'),
+      label: formatQuotaPoolLabel(weekly.poolFamily, {
+        fallback: isEnglishLocale() ? 'Weekly' : '周限额',
+      }),
       windowTag: wkTag,
     });
   }
   if (!candidates.length && pools.length > 0) {
     for (const p of pools) {
-      const pLabel = p?.poolLabel || p?.family || defaultPoolName;
+      const pLabel = formatQuotaPoolLabel(p?.poolLabel || p?.family, {
+        fallback: defaultPoolName,
+      });
       if (p && Number.isFinite(Number(p.remainingPct))) {
         candidates.push({ pct: Number(p.remainingPct), label: pLabel, windowTag: '5h' });
       }

@@ -8,6 +8,7 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'app.title': '用量监控',
 
   // Top Navigation
+  'nav.ariaMain': '主功能视图分割导航',
   'nav.overview': '实时监控',
   'nav.consumption': '用量统计',
   'nav.steps': '调用明细',
@@ -67,6 +68,7 @@ export const I18N_MESSAGES_ZH_CN = Object.freeze({
   'fmt.resetMins': '{m}分钟后重置',
   'fmt.selectTime': '选择时间',
   'fmt.unknownModel': '模型未知',
+  'fmt.unknownPool': '未知',
   'fmt.compactionSuffix': '·压缩',
   'fmt.mainAgent': '主代理',
   'fmt.mainBadge': '主',

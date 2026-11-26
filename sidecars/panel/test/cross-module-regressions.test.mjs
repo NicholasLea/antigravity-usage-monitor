@@ -1529,10 +1529,17 @@ test('i18n static t(...) key completeness guard, scopeAll formatters, and locali
   const {
     formatAgentBadgeText,
     formatAgentLabel,
+    formatQuotaPoolLabel,
     formatTrendSlotFullLabel,
   } = await import('../src/core/formatters.js');
   const { buildStructurePreviewTelemetry } = await import('../src/components/settings/structurePreviewMock.js');
-  const { buildConsumptionCsv } = await import('../src/core/reportExporter.js');
+  const {
+    buildConsumptionCsv,
+    buildStepsCsv,
+    buildStepsMarkdownReport,
+    buildStepsXlsx,
+  } = await import('../src/core/reportExporter.js');
+  const { TopLongPillNav } = await import('../src/components/ui/TopLongPillNav.js');
   const { createTrendAreaChart } = await import('../src/components/charts/TrendAreaChart.js');
   const { createMockDom } = await import('./mock-dom.mjs');
 
@@ -1649,6 +1656,78 @@ test('i18n static t(...) key completeness guard, scopeAll formatters, and locali
     assert.match(csvEn, /summary,Current Cycle,/);
     assert.match(csvEn, /trend,"Nov 24, 10:00 - 11:00",/);
     assert.doesNotMatch(csvEn, /[\u4e00-\u9fff]/);
+
+    // 4. TopLongPillNav aria-label, structurePreviewMock, formatQuotaPoolLabel & explicit en-US step exports never leak Chinese
+    setI18nLanguage('zh-CN');
+    const pillNav = TopLongPillNav({
+      modelValue: 'overview',
+      items: [{ value: 'overview', label: '实时监控' }],
+    });
+    assert.equal(pillNav.el.getAttribute('aria-label'), '主功能视图分割导航');
+    assert.equal(formatQuotaPoolLabel('未知'), '未知');
+
+    setI18nLanguage('en-US');
+    pillNav.setProps({ items: [{ value: 'overview', label: 'Live' }] });
+    assert.equal(pillNav.el.getAttribute('aria-label'), 'Main navigation views');
+    assert.equal(formatQuotaPoolLabel('未知'), 'Unknown');
+    pillNav.destroy();
+
+    const enPreview = buildStructurePreviewTelemetry();
+    assert.doesNotMatch(JSON.stringify(enPreview), /[\u4e00-\u9fff]/);
+
+    // Even when global i18nStore is zh-CN, explicit { locale: 'en-US' } step exports must not leak Chinese agent/compaction labels
+    setI18nLanguage('zh-CN');
+    const backendLikeSteps = [
+      {
+        stepIndex: 1,
+        createdAtMs: localStart,
+        agentKind: 'main',
+        agentLabel: '主代理',
+        agentBadge: '主',
+        isSubagent: false,
+        isCompactionStep: true,
+        modelLabel: 'Gemini 4 Carbon (High) [自动压缩]',
+        modelShort: 'carbon-4-high·压缩',
+        modelUpstream: 'gemini-4-carbon-high·压缩',
+        inputTokens: 1000,
+        cacheReadTokens: 4000,
+        outputTokens: 300,
+        costUsd: 0.02,
+      },
+      {
+        stepIndex: 2,
+        createdAtMs: localStart + 5000,
+        agentKind: 'subagent',
+        agentOrdinal: 1,
+        agentLabel: '子代理 #1',
+        agentBadge: '子1',
+        isSubagent: true,
+        modelLabel: 'Gemini 3.8 Flash',
+        modelShort: 'flash-3.8',
+        inputTokens: 500,
+        cacheReadTokens: 1500,
+        outputTokens: 200,
+        costUsd: 0.005,
+      },
+    ];
+    const stepsCsvEn = buildStepsCsv(backendLikeSteps, { locale: 'en-US', includeBom: false });
+    assert.match(stepsCsvEn, /,Main,carbon-4-high·compact,/);
+    assert.match(stepsCsvEn, /,Subagent #1,flash-3\.8,/);
+    assert.doesNotMatch(stepsCsvEn, /[\u4e00-\u9fff]/);
+
+    const stepsMdEn = buildStepsMarkdownReport(backendLikeSteps, {
+      title: 'Session Audit',
+      locale: 'en-US',
+    });
+    assert.match(stepsMdEn, /carbon-4-high·compact/);
+    assert.doesNotMatch(stepsMdEn, /[\u4e00-\u9fff]/);
+
+    const stepsXlsxEnBytes = buildStepsXlsx(backendLikeSteps, { locale: 'en-US' });
+    const stepsXlsxEnRaw = Buffer.from(stepsXlsxEnBytes).toString('utf8');
+    assert.match(stepsXlsxEnRaw, /carbon-4-high·compact/);
+    assert.match(stepsXlsxEnRaw, />Main</);
+    assert.match(stepsXlsxEnRaw, />Subagent #1</);
+    assert.doesNotMatch(stepsXlsxEnRaw, /[\u4e00-\u9fff]/);
   } finally {
     setI18nLanguage('zh-CN');
     globalThis.document = prevDoc;

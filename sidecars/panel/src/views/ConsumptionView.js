@@ -24,6 +24,7 @@ import {
   formatDateSpanBadge,
   formatMetric,
   formatPctNumber,
+  formatQuotaPoolLabel,
   formatSpeedMetric,
   formatTokensPrecise,
   formatUsd,
@@ -1304,7 +1305,7 @@ export const ConsumptionView = defineComponent({
         slice.range === 'cycle'
           ? `${rangeInfo.isFallbackWeek || slice.weeklyLimitMode === 'custom_tokens' || slice.weeklyLimitMode === 'custom_cost' ? t('cons.cycleFallbackWeek') : t('cons.currentCycle')}${
               activePoolFilter && activePoolFilter !== 'all'
-                ? ` · ${rangeInfo.poolLabel || activePoolFilter}`
+                ? ` · ${formatQuotaPoolLabel(rangeInfo.poolLabel || activePoolFilter)}`
                 : ''
             }`
           : isEnglishLocale()

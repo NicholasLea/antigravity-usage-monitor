@@ -9,6 +9,7 @@ import {
   formatCompactDateTime,
   formatMetric,
   formatPctNumber,
+  formatQuotaPoolLabel,
   formatSpeedMetric,
   formatTokensPrecise,
   formatTrendSlotFullLabel,
@@ -99,8 +100,11 @@ function formatExportDate(ms) {
 function resolveLocalizedRangeLabel(range, en) {
   const r = range || {};
   const key = String(r.key || '').trim().toLowerCase();
+  const exportLocale = en ? 'en-US' : 'zh-CN';
   const poolSuffix =
-    key === 'cycle' && r.pool && r.pool !== 'all' ? ` · ${r.poolLabel || r.pool}` : '';
+    key === 'cycle' && r.pool && r.pool !== 'all'
+      ? ` · ${formatQuotaPoolLabel(r.poolLabel || r.pool, { locale: exportLocale })}`
+      : '';
   if (en) {
     const baseEn =
       key === 'cycle' && r.isFallbackWeek
@@ -153,15 +157,66 @@ function formatStepAnomaliesText(st, en, explicitLocale) {
     return kinds
       .filter(([, v]) => Number(v || 0) > 0)
       .map(([k, v]) => `${formatLocalizedAnomalyKind(k, en, explicitLocale)} ×${Number(v)}`)
-      .join('；');
+      .join(en ? '; ' : '；');
   }
   return formatLocalizedAnomalyKind(anom?.primaryKind || 'error', en, explicitLocale);
 }
 
 function formatStepAgentLabel(st, en) {
+  const kind = String(st?.agentKind || '').trim();
   const explicit = String(st?.agentLabel || st?.agentBadge || '').trim();
-  if (explicit) return explicit;
+  const customRole = String(st?.agentCustomRole || '').trim();
+
+  if (kind === 'main' || (!kind && !st?.isSubagent && (!explicit || /^(?:主代理|主|Main Agent|Main)$/i.test(explicit)))) {
+    return en ? 'Main' : '主会话';
+  }
+
+  const ord = Number(
+    st?.agentOrdinal || (st?.isSideQuestion ? st?.sideIndex || 0 : st?.agentIndex || 0)
+  );
+  if (kind === 'side_question' || st?.isSideQuestion) {
+    const base = ord > 0 ? `${en ? 'Side Question' : '旁路提问'} #${ord}` : en ? 'Side Question' : '旁路提问';
+    return customRole ? `${base} · ${customRole}` : base;
+  }
+  if (kind === 'swarm_worker') {
+    const base = ord > 0 ? `${en ? 'Swarm' : '蜂群'} #${ord}` : en ? 'Swarm' : '蜂群';
+    return customRole ? `${base} · ${customRole}` : base;
+  }
+
+  if (explicit) {
+    const subPrefixMatch = explicit.match(/^(?:子代理|Subagent)(?:\s*#(\d+))?(?:\s*·\s*(.+))?$/i);
+    if (subPrefixMatch) {
+      const idx = subPrefixMatch[1] || (ord > 0 ? String(ord) : '');
+      const rest = String(subPrefixMatch[2] || '').trim();
+      const base = idx ? `${en ? 'Subagent' : '子代理'} #${idx}` : en ? 'Subagent' : '子代理';
+      return rest ? `${base} · ${rest}` : base;
+    }
+    const swarmPrefixMatch = explicit.match(/^(?:蜂群|Swarm)(?:\s*#(\d+))?(?:\s*·\s*(.+))?$/i);
+    if (swarmPrefixMatch) {
+      const idx = swarmPrefixMatch[1] || (ord > 0 ? String(ord) : '');
+      const rest = String(swarmPrefixMatch[2] || '').trim();
+      const base = idx ? `${en ? 'Swarm' : '蜂群'} #${idx}` : en ? 'Swarm' : '蜂群';
+      return rest ? `${base} · ${rest}` : base;
+    }
+    const sidePrefixMatch = explicit.match(/^(?:旁路提问|Side Question)(?:\s*#(\d+))?(?:\s*·\s*(.+))?$/i);
+    if (sidePrefixMatch) {
+      const idx = sidePrefixMatch[1] || (ord > 0 ? String(ord) : '');
+      const rest = String(sidePrefixMatch[2] || '').trim();
+      const base = idx ? `${en ? 'Side Question' : '旁路提问'} #${idx}` : en ? 'Side Question' : '旁路提问';
+      return rest ? `${base} · ${rest}` : base;
+    }
+    const shortBadgeMatch = explicit.match(/^(子|蜂|旁)(\d+)$/);
+    if (shortBadgeMatch) {
+      const idx = shortBadgeMatch[2];
+      if (shortBadgeMatch[1] === '蜂') return `${en ? 'Swarm' : '蜂群'} #${idx}`;
+      if (shortBadgeMatch[1] === '旁') return `${en ? 'Side Question' : '旁路提问'} #${idx}`;
+      return `${en ? 'Subagent' : '子代理'} #${idx}`;
+    }
+    return explicit;
+  }
+
   if (st?.isSubagent) {
+    if (ord > 0) return `${en ? 'Subagent' : '子代理'} #${ord}`;
     return st?.agentId ? String(st.agentId) : en ? 'Subagent' : '子代理';
   }
   return en ? 'Main' : '主会话';
@@ -176,7 +231,7 @@ function formatTrendWindowLabel(slot, isHourly) {
   return String(slot?.fullLabel || slot?.label || '');
 }
 
-function summarizeStepsForExport(list, displaySettings) {
+function summarizeStepsForExport(list, displaySettings, locale) {
   let sumIn = 0;
   let sumCache = 0;
   let sumOut = 0;
@@ -254,7 +309,7 @@ function summarizeStepsForExport(list, displaySettings) {
       anomTotal += ac;
     }
 
-    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const mInfo = resolveModelDisplayInfo(st, displaySettings, { locale });
     const mKey = mInfo.text || 'Unknown';
     let mAcc = byModel.get(mKey);
     if (!mAcc) {
@@ -424,7 +479,9 @@ function escapeMdCell(value) {
  * @param {{ displaySettings?: object, includeBom?: boolean }} [opts]
  * @returns {string}
  */
-export function buildStepsCsv(steps, { displaySettings = {}, includeBom = true } = {}) {
+export function buildStepsCsv(steps, { displaySettings = {}, includeBom = true, locale } = {}) {
+  const en = resolveExportEnglish(locale);
+  const exportLocale = en ? 'en-US' : 'zh-CN';
   const list = Array.isArray(steps) ? steps : [];
   const header = csvRow([
     'step',
@@ -453,7 +510,7 @@ export function buildStepsCsv(steps, { displaySettings = {}, includeBom = true }
   for (let i = 0; i < list.length; i += 1) {
     const st = list[i];
     if (!st) continue;
-    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const mInfo = resolveModelDisplayInfo(st, displaySettings, { locale: exportLocale });
     const inTok = Number(st.inputTokens || 0);
     const cacheTok = Number(st.cacheReadTokens || 0);
     const outTok = Number(st.outputTokens || 0);
@@ -479,7 +536,7 @@ export function buildStepsCsv(steps, { displaySettings = {}, includeBom = true }
       csvRow([
         st.stepIndex ?? '',
         st.createdAtMs ? new Date(st.createdAtMs).toISOString() : '',
-        st.agentLabel || st.agentBadge || (st.isSubagent ? st.agentId || 'subagent' : 'main'),
+        formatStepAgentLabel(st, en),
         mInfo.text,
         st.rawModelId || st.modelKey || '',
         st.tokPerSec != null && Number.isFinite(Number(st.tokPerSec))
@@ -525,14 +582,15 @@ export function buildStepsXlsx(
   { displaySettings = {}, locale } = {}
 ) {
   const en = resolveExportEnglish(locale);
+  const exportLocale = en ? 'en-US' : 'zh-CN';
   const explicitLocale = typeof locale === 'string' && locale.trim().length > 0;
   const list = Array.isArray(steps) ? steps.filter(Boolean) : [];
-  const agg = summarizeStepsForExport(list, displaySettings);
+  const agg = summarizeStepsForExport(list, displaySettings, exportLocale);
 
   const stepRows = [];
   for (let i = 0; i < list.length; i += 1) {
     const st = list[i];
-    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const mInfo = resolveModelDisplayInfo(st, displaySettings, { locale: exportLocale });
     const inTok = Math.max(0, Number(st.inputTokens || 0));
     const cacheTok = Math.max(0, Number(st.cacheReadTokens || 0));
     const outTok = Math.max(0, Number(st.outputTokens || 0));
@@ -728,9 +786,10 @@ export function buildStepsMarkdownReport(
   { title = '', cascadeId = '', displaySettings = {}, filterNote = '', locale } = {}
 ) {
   const en = resolveExportEnglish(locale);
+  const exportLocale = en ? 'en-US' : 'zh-CN';
   const explicitLocale = typeof locale === 'string' && locale.trim().length > 0;
   const list = Array.isArray(steps) ? steps.filter(Boolean) : [];
-  const agg = summarizeStepsForExport(list, displaySettings);
+  const agg = summarizeStepsForExport(list, displaySettings, exportLocale);
 
   const totalTok = agg.sumIn + agg.sumCache + agg.sumOut;
   const cacheHitPct = formatPctNumber(computeCacheHitRatio(agg.sumIn, agg.sumCache) * 100);
@@ -802,7 +861,7 @@ export function buildStepsMarkdownReport(
       '| ---: | --- | --- | ---: | ---: | ---: | ---: |'
     );
     for (const st of topCostly) {
-      const mInfo = resolveModelDisplayInfo(st, displaySettings);
+      const mInfo = resolveModelDisplayInfo(st, displaySettings, { locale: exportLocale });
       const timeStr = st.createdAtMs ? formatCompactDateTime(st.createdAtMs) : '—';
       const ctxTok = Number(
         st.contextTokens ||

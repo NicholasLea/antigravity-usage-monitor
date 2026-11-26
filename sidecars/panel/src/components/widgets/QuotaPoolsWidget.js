@@ -16,6 +16,7 @@ import {
 import {
   formatCountdown,
   formatPctNumber,
+  formatQuotaPoolLabel,
   formatTokens,
   formatUsd,
 } from '../../core/formatters.js';
@@ -47,7 +48,7 @@ export function buildQuotaPoolItems(
   const weekly = safeQuotas.weekly || {};
   const poolItems = rawPools.map((p) => {
     const key = p.poolKey || p.family || p.poolLabel || 'Other';
-    const poolLabel = p.poolLabel || p.family || key;
+    const poolLabel = formatQuotaPoolLabel(p.poolLabel || p.family || key);
     const isActivePool =
       Boolean(activePool.family) &&
       (activePool.poolKey === key ||

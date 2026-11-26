@@ -1334,6 +1334,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
 
   'app.title': '用量监控',
 
+  'nav.ariaMain': '主功能视图分割导航',
   'nav.overview': '实时监控',
   'nav.consumption': '用量统计',
   'nav.steps': '调用明细',
@@ -1391,6 +1392,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'fmt.resetMins': '{m}分钟后重置',
   'fmt.selectTime': '选择时间',
   'fmt.unknownModel': '模型未知',
+  'fmt.unknownPool': '未知',
   'fmt.compactionSuffix': '·压缩',
   'fmt.mainAgent': '主代理',
   'fmt.mainBadge': '主',
@@ -2453,6 +2455,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
 
   'app.title': 'Usage & Speed Monitor',
 
+  'nav.ariaMain': 'Main navigation views',
   'nav.overview': 'Live',
   'nav.consumption': 'Usage',
   'nav.steps': 'Steps',
@@ -2510,6 +2513,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'fmt.resetMins': 'Resets in {m}m',
   'fmt.selectTime': 'Select time',
   'fmt.unknownModel': 'Unknown model',
+  'fmt.unknownPool': 'Unknown',
   'fmt.compactionSuffix': '·compact',
   'fmt.mainAgent': 'Main Agent',
   'fmt.mainBadge': 'Main',
@@ -5495,7 +5499,7 @@ return { defineComponent };
 })();
 
 // --- src/core/formatters.js ---
-const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildStepRevertedDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
+const { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildStepRevertedDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatQuotaPoolLabel, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap } = (() => {
 const EN_MONTH_SHORT = Object.freeze([
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -6136,7 +6140,13 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
       : normalizeModelDisplayMode(settings?.modelDisplayMode, settings?.showUpstreamModel);
   const showUpstream = modelDisplayMode !== 'short';
   const preferLabelInShort = Boolean(options?.preferLabelInShort);
-  const fallback = options?.fallback ?? t('fmt.unknownModel');
+  const explicitLocale = typeof options?.locale === 'string' && options.locale.trim().length > 0;
+  const useEn = explicitLocale
+    ? options.locale.trim().toLowerCase().startsWith('en')
+    : isEnglishLocale();
+  const fallback =
+    options?.fallback ??
+    (explicitLocale ? (useEn ? 'Unknown model' : '模型未知') : t('fmt.unknownModel'));
 
   if (!target || typeof target !== 'object') {
     return {
@@ -6181,7 +6191,13 @@ function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     Boolean(target.isCompactionStep) ||
     /·(?:压缩|compact)(?=\s|$)|\[自动压缩\]/iu.test(rawCompactionText);
 
-  const compactionSuffix = isCompaction ? t('fmt.compactionSuffix') : '';
+  const compactionSuffix = isCompaction
+    ? explicitLocale
+      ? useEn
+        ? '·compact'
+        : '·压缩'
+      : t('fmt.compactionSuffix')
+    : '';
 
   const fields = [labelText, shortText, upstreamText, responseText, modelKeyText];
   const combined = `${modelKeyText} ${shortText} ${labelText} ${upstreamText} ${responseText}`;
@@ -6586,6 +6602,18 @@ function normalizeSwarmMemberHandle(rawText) {
   return `@${inner}`;
 }
 
+function formatQuotaPoolLabel(rawLabel, { fallback = '', locale } = {}) {
+  const text = String(rawLabel || '').trim();
+  const explicitLocale = typeof locale === 'string' && locale.trim().length > 0;
+  const useEn = explicitLocale
+    ? locale.trim().toLowerCase().startsWith('en')
+    : isEnglishLocale();
+  const unknownText = explicitLocale ? (useEn ? 'Unknown' : '未知') : t('fmt.unknownPool');
+  if (!text) return fallback || unknownText;
+  if (text === '未知' || text.toLowerCase() === 'unknown') return unknownText;
+  return text;
+}
+
 function formatAgentBadgeText(agent) {
   if (!agent) return t('fmt.mainBadge');
   const kind = resolveStructuredAgentKind(agent);
@@ -6834,7 +6862,7 @@ function buildDeterministicModelColorMap(models = []) {
 
   return colorMap;
 }
-return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildStepRevertedDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
+return { formatMetric, formatSpeedMetric, formatCachePct, formatPctNumber, getSpeedToneClass, getCacheToneClass, getStepCostToneClass, getTtftToneClass, formatTokens, formatTokensPrecise, formatCnyApprox, formatDateSpanBadge, formatTrendSlotFullLabel, formatUsd, speedReasonText, formatAnomalyKindLabel, formatAnomalyTagText, resolveModelAnomalySummary, formatStepAnomalyInlineSummary, buildStepAnomalyDiagnostic, buildStepCompactionDiagnostic, buildStepRevertedDiagnostic, formatTimingDetailSec, hasStepTimingData, buildStepTimingDiagnostic, buildModelAnomalyDiagnostic, sampleSummary, formatCountdown, formatCompactDateTime, formatElapsedSec, stripVendorModelPrefix, resolveModelDisplayInfo, mergeModelsByDisplayName, getAgentBadgeClass, formatQuotaPoolLabel, formatAgentBadgeText, formatAgentLabel, formatConversationMeta, formatLiveActivityLabel, formatLiveActivityDetail, getCanonicalModelColorSeed, resolveDeterministicModelColor, buildDeterministicModelColorMap };
 })();
 
 // --- src/core/stepInspector.js ---
@@ -8123,8 +8151,11 @@ function formatExportDate(ms) {
 function resolveLocalizedRangeLabel(range, en) {
   const r = range || {};
   const key = String(r.key || '').trim().toLowerCase();
+  const exportLocale = en ? 'en-US' : 'zh-CN';
   const poolSuffix =
-    key === 'cycle' && r.pool && r.pool !== 'all' ? ` · ${r.poolLabel || r.pool}` : '';
+    key === 'cycle' && r.pool && r.pool !== 'all'
+      ? ` · ${formatQuotaPoolLabel(r.poolLabel || r.pool, { locale: exportLocale })}`
+      : '';
   if (en) {
     const baseEn =
       key === 'cycle' && r.isFallbackWeek
@@ -8177,15 +8208,66 @@ function formatStepAnomaliesText(st, en, explicitLocale) {
     return kinds
       .filter(([, v]) => Number(v || 0) > 0)
       .map(([k, v]) => `${formatLocalizedAnomalyKind(k, en, explicitLocale)} ×${Number(v)}`)
-      .join('；');
+      .join(en ? '; ' : '；');
   }
   return formatLocalizedAnomalyKind(anom?.primaryKind || 'error', en, explicitLocale);
 }
 
 function formatStepAgentLabel(st, en) {
+  const kind = String(st?.agentKind || '').trim();
   const explicit = String(st?.agentLabel || st?.agentBadge || '').trim();
-  if (explicit) return explicit;
+  const customRole = String(st?.agentCustomRole || '').trim();
+
+  if (kind === 'main' || (!kind && !st?.isSubagent && (!explicit || /^(?:主代理|主|Main Agent|Main)$/i.test(explicit)))) {
+    return en ? 'Main' : '主会话';
+  }
+
+  const ord = Number(
+    st?.agentOrdinal || (st?.isSideQuestion ? st?.sideIndex || 0 : st?.agentIndex || 0)
+  );
+  if (kind === 'side_question' || st?.isSideQuestion) {
+    const base = ord > 0 ? `${en ? 'Side Question' : '旁路提问'} #${ord}` : en ? 'Side Question' : '旁路提问';
+    return customRole ? `${base} · ${customRole}` : base;
+  }
+  if (kind === 'swarm_worker') {
+    const base = ord > 0 ? `${en ? 'Swarm' : '蜂群'} #${ord}` : en ? 'Swarm' : '蜂群';
+    return customRole ? `${base} · ${customRole}` : base;
+  }
+
+  if (explicit) {
+    const subPrefixMatch = explicit.match(/^(?:子代理|Subagent)(?:\s*#(\d+))?(?:\s*·\s*(.+))?$/i);
+    if (subPrefixMatch) {
+      const idx = subPrefixMatch[1] || (ord > 0 ? String(ord) : '');
+      const rest = String(subPrefixMatch[2] || '').trim();
+      const base = idx ? `${en ? 'Subagent' : '子代理'} #${idx}` : en ? 'Subagent' : '子代理';
+      return rest ? `${base} · ${rest}` : base;
+    }
+    const swarmPrefixMatch = explicit.match(/^(?:蜂群|Swarm)(?:\s*#(\d+))?(?:\s*·\s*(.+))?$/i);
+    if (swarmPrefixMatch) {
+      const idx = swarmPrefixMatch[1] || (ord > 0 ? String(ord) : '');
+      const rest = String(swarmPrefixMatch[2] || '').trim();
+      const base = idx ? `${en ? 'Swarm' : '蜂群'} #${idx}` : en ? 'Swarm' : '蜂群';
+      return rest ? `${base} · ${rest}` : base;
+    }
+    const sidePrefixMatch = explicit.match(/^(?:旁路提问|Side Question)(?:\s*#(\d+))?(?:\s*·\s*(.+))?$/i);
+    if (sidePrefixMatch) {
+      const idx = sidePrefixMatch[1] || (ord > 0 ? String(ord) : '');
+      const rest = String(sidePrefixMatch[2] || '').trim();
+      const base = idx ? `${en ? 'Side Question' : '旁路提问'} #${idx}` : en ? 'Side Question' : '旁路提问';
+      return rest ? `${base} · ${rest}` : base;
+    }
+    const shortBadgeMatch = explicit.match(/^(子|蜂|旁)(\d+)$/);
+    if (shortBadgeMatch) {
+      const idx = shortBadgeMatch[2];
+      if (shortBadgeMatch[1] === '蜂') return `${en ? 'Swarm' : '蜂群'} #${idx}`;
+      if (shortBadgeMatch[1] === '旁') return `${en ? 'Side Question' : '旁路提问'} #${idx}`;
+      return `${en ? 'Subagent' : '子代理'} #${idx}`;
+    }
+    return explicit;
+  }
+
   if (st?.isSubagent) {
+    if (ord > 0) return `${en ? 'Subagent' : '子代理'} #${ord}`;
     return st?.agentId ? String(st.agentId) : en ? 'Subagent' : '子代理';
   }
   return en ? 'Main' : '主会话';
@@ -8200,7 +8282,7 @@ function formatTrendWindowLabel(slot, isHourly) {
   return String(slot?.fullLabel || slot?.label || '');
 }
 
-function summarizeStepsForExport(list, displaySettings) {
+function summarizeStepsForExport(list, displaySettings, locale) {
   let sumIn = 0;
   let sumCache = 0;
   let sumOut = 0;
@@ -8278,7 +8360,7 @@ function summarizeStepsForExport(list, displaySettings) {
       anomTotal += ac;
     }
 
-    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const mInfo = resolveModelDisplayInfo(st, displaySettings, { locale });
     const mKey = mInfo.text || 'Unknown';
     let mAcc = byModel.get(mKey);
     if (!mAcc) {
@@ -8411,7 +8493,9 @@ function escapeMdCell(value) {
     .trim();
 }
 
-function buildStepsCsv(steps, { displaySettings = {}, includeBom = true } = {}) {
+function buildStepsCsv(steps, { displaySettings = {}, includeBom = true, locale } = {}) {
+  const en = resolveExportEnglish(locale);
+  const exportLocale = en ? 'en-US' : 'zh-CN';
   const list = Array.isArray(steps) ? steps : [];
   const header = csvRow([
     'step',
@@ -8440,7 +8524,7 @@ function buildStepsCsv(steps, { displaySettings = {}, includeBom = true } = {}) 
   for (let i = 0; i < list.length; i += 1) {
     const st = list[i];
     if (!st) continue;
-    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const mInfo = resolveModelDisplayInfo(st, displaySettings, { locale: exportLocale });
     const inTok = Number(st.inputTokens || 0);
     const cacheTok = Number(st.cacheReadTokens || 0);
     const outTok = Number(st.outputTokens || 0);
@@ -8466,7 +8550,7 @@ function buildStepsCsv(steps, { displaySettings = {}, includeBom = true } = {}) 
       csvRow([
         st.stepIndex ?? '',
         st.createdAtMs ? new Date(st.createdAtMs).toISOString() : '',
-        st.agentLabel || st.agentBadge || (st.isSubagent ? st.agentId || 'subagent' : 'main'),
+        formatStepAgentLabel(st, en),
         mInfo.text,
         st.rawModelId || st.modelKey || '',
         st.tokPerSec != null && Number.isFinite(Number(st.tokPerSec))
@@ -8504,14 +8588,15 @@ function buildStepsXlsx(
   { displaySettings = {}, locale } = {}
 ) {
   const en = resolveExportEnglish(locale);
+  const exportLocale = en ? 'en-US' : 'zh-CN';
   const explicitLocale = typeof locale === 'string' && locale.trim().length > 0;
   const list = Array.isArray(steps) ? steps.filter(Boolean) : [];
-  const agg = summarizeStepsForExport(list, displaySettings);
+  const agg = summarizeStepsForExport(list, displaySettings, exportLocale);
 
   const stepRows = [];
   for (let i = 0; i < list.length; i += 1) {
     const st = list[i];
-    const mInfo = resolveModelDisplayInfo(st, displaySettings);
+    const mInfo = resolveModelDisplayInfo(st, displaySettings, { locale: exportLocale });
     const inTok = Math.max(0, Number(st.inputTokens || 0));
     const cacheTok = Math.max(0, Number(st.cacheReadTokens || 0));
     const outTok = Math.max(0, Number(st.outputTokens || 0));
@@ -8700,9 +8785,10 @@ function buildStepsMarkdownReport(
   { title = '', cascadeId = '', displaySettings = {}, filterNote = '', locale } = {}
 ) {
   const en = resolveExportEnglish(locale);
+  const exportLocale = en ? 'en-US' : 'zh-CN';
   const explicitLocale = typeof locale === 'string' && locale.trim().length > 0;
   const list = Array.isArray(steps) ? steps.filter(Boolean) : [];
-  const agg = summarizeStepsForExport(list, displaySettings);
+  const agg = summarizeStepsForExport(list, displaySettings, exportLocale);
 
   const totalTok = agg.sumIn + agg.sumCache + agg.sumOut;
   const cacheHitPct = formatPctNumber(computeCacheHitRatio(agg.sumIn, agg.sumCache) * 100);
@@ -8774,7 +8860,7 @@ function buildStepsMarkdownReport(
       '| ---: | --- | --- | ---: | ---: | ---: | ---: |'
     );
     for (const st of topCostly) {
-      const mInfo = resolveModelDisplayInfo(st, displaySettings);
+      const mInfo = resolveModelDisplayInfo(st, displaySettings, { locale: exportLocale });
       const timeStr = st.createdAtMs ? formatCompactDateTime(st.createdAtMs) : '—';
       const ctxTok = Number(
         st.contextTokens ||
@@ -12725,7 +12811,7 @@ const TopLongPillNav = defineComponent({
       {
         className: 'long-pill-nav',
         role: 'tablist',
-        'aria-label': '主功能视图分割导航',
+        'aria-label': t('nav.ariaMain'),
       },
       [glider]
     );
@@ -12741,6 +12827,7 @@ const TopLongPillNav = defineComponent({
 
     function syncTabs() {
       const { items = [], modelValue } = getProps();
+      patchAttr(navEl, 'aria-label', t('nav.ariaMain'));
       patchStyleVar(navEl, '--pill-count', Math.max(1, items.length));
 
       const validValues = new Set(items.map((it) => it.value));
@@ -20986,27 +21073,35 @@ function resolveQuotaCapsuleSummary(quotas) {
   if (activePool && Number.isFinite(Number(activePool.remainingPct))) {
     candidates.push({
       pct: Number(activePool.remainingPct),
-      label: activePool.poolLabel || activePool.family || defaultPoolName,
+      label: formatQuotaPoolLabel(activePool.poolLabel || activePool.family, {
+        fallback: defaultPoolName,
+      }),
       windowTag: '5h',
     });
   }
   if (activePool && Number.isFinite(Number(activePool.weeklyRemainingPct))) {
     candidates.push({
       pct: Number(activePool.weeklyRemainingPct),
-      label: activePool.poolLabel || activePool.family || defaultPoolName,
+      label: formatQuotaPoolLabel(activePool.poolLabel || activePool.family, {
+        fallback: defaultPoolName,
+      }),
       windowTag: wkTag,
     });
   }
   if (!candidates.length && weekly && Number.isFinite(Number(weekly.remainingPct))) {
     candidates.push({
       pct: Number(weekly.remainingPct),
-      label: weekly.poolFamily || (isEnglishLocale() ? 'Weekly' : '周限额'),
+      label: formatQuotaPoolLabel(weekly.poolFamily, {
+        fallback: isEnglishLocale() ? 'Weekly' : '周限额',
+      }),
       windowTag: wkTag,
     });
   }
   if (!candidates.length && pools.length > 0) {
     for (const p of pools) {
-      const pLabel = p?.poolLabel || p?.family || defaultPoolName;
+      const pLabel = formatQuotaPoolLabel(p?.poolLabel || p?.family, {
+        fallback: defaultPoolName,
+      });
       if (p && Number.isFinite(Number(p.remainingPct))) {
         candidates.push({ pct: Number(p.remainingPct), label: pLabel, windowTag: '5h' });
       }
@@ -22794,7 +22889,7 @@ function buildQuotaPoolItems(
   const weekly = safeQuotas.weekly || {};
   const poolItems = rawPools.map((p) => {
     const key = p.poolKey || p.family || p.poolLabel || 'Other';
-    const poolLabel = p.poolLabel || p.family || key;
+    const poolLabel = formatQuotaPoolLabel(p.poolLabel || p.family || key);
     const isActivePool =
       Boolean(activePool.family) &&
       (activePool.poolKey === key ||
@@ -25644,10 +25739,18 @@ const LiveActivityWidget = defineComponent({
                     : sub.agentKind === 'swarm_worker'
                       ? `${t('fmt.swarmAgent')}${sub.agentOrdinal || sub.index ? ` #${sub.agentOrdinal || sub.index}` : ''}`
                       : `${t('fmt.subAgent')}${sub.agentOrdinal || sub.index ? ` #${sub.agentOrdinal || sub.index}` : ''}`;
+                const rawFallbackRole = String(sub.role || sub.shortLabel || '').trim();
+                const isGenericBackendRole =
+                  !rawFallbackRole ||
+                  /^(?:主代理|子代理(?:\s*#\d+)?|蜂群(?:\s*#\d+)?|旁路提问(?:\s*#\d+)?|Main Agent|Subagent(?:\s*#\d+)?|Swarm(?:\s*#\d+)?|Side Question(?:\s*#\d+)?)$/i.test(
+                    rawFallbackRole
+                  );
                 const roleText =
                   sub.customRole !== undefined
                     ? sub.customRole || fallbackRole
-                    : sub.role || sub.shortLabel || fallbackRole;
+                    : isGenericBackendRole
+                      ? fallbackRole
+                      : rawFallbackRole;
                 patchText(subRefs.subRole, roleText);
 
                 const idleFallbackKey = isKilledSub
@@ -30286,6 +30389,9 @@ function buildStructurePreviewTelemetry(
   const subRole = t('settings.mock.subRole');
   const promptLatest = t('settings.mock.turnPromptLatest');
   const promptPrev = t('settings.mock.turnPromptPrev');
+  const mainBadge = t('fmt.mainBadge');
+  const subBadge1 = t('fmt.subBadge', { index: 1 });
+  const compactionSuffix = t('fmt.compactionSuffix');
 
   const mainContext = {
     totalTokens: 142800,
@@ -30330,9 +30436,11 @@ function buildStructurePreviewTelemetry(
       stepIndex: 24,
       agentCascadeId: 'mock-main',
       agentId: 'main',
+      agentKind: 'main',
+      agentOrdinal: 0,
       agentIndex: 0,
       isSubagent: false,
-      agentBadge: '主',
+      agentBadge: mainBadge,
       agentLabel: t('fmt.mainAgent'),
       modelLabel: 'Gemini 4 Carbon (High)',
       modelShort: 'carbon-4-high',
@@ -30368,9 +30476,11 @@ function buildStructurePreviewTelemetry(
       stepIndex: 8,
       agentCascadeId: 'mock-sub-1',
       agentId: 'sub-1',
+      agentKind: 'subagent',
+      agentOrdinal: 1,
       agentIndex: 1,
       isSubagent: true,
-      agentBadge: '子1',
+      agentBadge: subBadge1,
       agentRole: subRole,
       agentLabel: subRole,
       modelLabel: 'Gemini 3.8 Flash',
@@ -30407,15 +30517,20 @@ function buildStructurePreviewTelemetry(
       stepIndex: 22,
       agentCascadeId: 'mock-main',
       agentId: 'main',
+      agentKind: 'main',
+      agentOrdinal: 0,
       agentIndex: 0,
       isSubagent: false,
-      agentBadge: '主',
+      agentBadge: mainBadge,
       agentLabel: t('fmt.mainAgent'),
       isCompactionStep: true,
-      modelLabel: 'Gemini 4 Carbon (High) [自动压缩]',
-      modelShort: 'carbon-4-high·压缩',
+      baseModelLabel: 'Gemini 4 Carbon (High)',
+      baseModelShort: 'carbon-4-high',
+      baseModelUpstream: 'gemini-4-carbon-high',
+      modelLabel: `Gemini 4 Carbon (High)${compactionSuffix}`,
+      modelShort: `carbon-4-high${compactionSuffix}`,
       rawModel: 'MODEL_PLACEHOLDER_M37',
-      modelUpstream: 'gemini-4-carbon-high·压缩',
+      modelUpstream: `gemini-4-carbon-high${compactionSuffix}`,
       upstreamModel: 'gemini-4-carbon-high',
       tokPerSec: 46.5,
       ttftSec: 3.4,
@@ -30446,9 +30561,11 @@ function buildStructurePreviewTelemetry(
       stepIndex: 19,
       agentCascadeId: 'mock-main',
       agentId: 'main',
+      agentKind: 'main',
+      agentOrdinal: 0,
       agentIndex: 0,
       isSubagent: false,
-      agentBadge: '主',
+      agentBadge: mainBadge,
       agentLabel: t('fmt.mainAgent'),
       modelKey: 'MODEL_PLACEHOLDER_M667',
       modelLabel: 'Gemini Pro Orchestrator (Carbon)',
@@ -30526,8 +30643,10 @@ function buildStructurePreviewTelemetry(
     agentId: 'main',
     cascadeId: 'mock-main',
     isMain: true,
+    agentKind: 'main',
+    agentOrdinal: 0,
     index: 0,
-    badgeText: '主',
+    badgeText: mainBadge,
     role: t('fmt.mainAgent'),
     isRunning: true,
     stepCount: 16,
@@ -30584,7 +30703,7 @@ function buildStructurePreviewTelemetry(
     agentKind: 'subagent',
     agentOrdinal: 1,
     index: 1,
-    badgeText: '子1',
+    badgeText: subBadge1,
     shortLabel: `${t('fmt.subAgent')} #1`,
     role: subRole,
     isRunning: false,
@@ -30657,7 +30776,7 @@ function buildStructurePreviewTelemetry(
     cacheReadTokens: 1540000,
     outputTokens: 28400,
     totalTokens: 1754800,
-    activeAgentBadge: '子1',
+    activeAgentBadge: subBadge1,
     modelBreakdown: [...mainAgent.modelBreakdown, ...subAgent1.modelBreakdown],
     recentSteps: mockSteps,
     sparklineSteps: mockSparklineSteps,
@@ -30769,7 +30888,9 @@ function buildStructurePreviewTelemetry(
           {
             cascadeId: 'mock-sub-1',
             index: 1,
-            badgeText: '子1',
+            agentKind: 'subagent',
+            agentOrdinal: 1,
+            badgeText: subBadge1,
             shortLabel: `${t('fmt.subAgent')} #1`,
             role: subRole,
             isRunning: false,
@@ -41780,7 +41901,7 @@ const ConsumptionView = defineComponent({
         slice.range === 'cycle'
           ? `${rangeInfo.isFallbackWeek || slice.weeklyLimitMode === 'custom_tokens' || slice.weeklyLimitMode === 'custom_cost' ? t('cons.cycleFallbackWeek') : t('cons.currentCycle')}${
               activePoolFilter && activePoolFilter !== 'all'
-                ? ` · ${rangeInfo.poolLabel || activePoolFilter}`
+                ? ` · ${formatQuotaPoolLabel(rangeInfo.poolLabel || activePoolFilter)}`
                 : ''
             }`
           : isEnglishLocale()

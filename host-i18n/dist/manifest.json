@@ -5,19 +5,19 @@
       "locale": "zh-CN",
       "name": "Chinese (Simplified)",
       "nativeName": "简体中文",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "file": "packs/zh-CN.json",
-      "sha256": "1f3ec6f2baa1900831c362d99caabe9ab661482593542becfeb4ab7375969449",
-      "bytes": 557324,
+      "sha256": "7d7c53e762864e1be8f49528365361b6b6f7e158702348b23f2739ef570e4453",
+      "bytes": 558614,
       "depths": [
         "light",
         "deep"
       ],
       "stats": {
-        "baseExact": 4311,
+        "baseExact": 4319,
         "lightExact": 978,
         "deepExact": 978,
-        "basePatterns": 799,
+        "basePatterns": 802,
         "lightPatterns": 129,
         "deepPatterns": 129
       }

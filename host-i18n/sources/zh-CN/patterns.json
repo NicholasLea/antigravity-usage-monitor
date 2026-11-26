@@ -4793,6 +4793,24 @@
       "flags": "",
       "replace": "$1（已暂存）",
       "hint": "(staged)"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. Applies to /btw and messages sent after this turn$",
+      "flags": "",
+      "replace": "选择模型，当前：$1。适用于 /btw 及本轮之后发送的消息",
+      "hint": "Applies to /btw"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. Applies to messages sent after this turn$",
+      "flags": "",
+      "replace": "选择模型，当前：$1。适用于本轮之后发送的消息",
+      "hint": "Applies to messages sent after"
+    },
+    {
+      "source": "^Select model, current: (.+?)\\. (.+?)$",
+      "flags": "",
+      "replace": "选择模型，当前：$1。$2",
+      "hint": "Select model, current:"
     }
   ],
   "light": [

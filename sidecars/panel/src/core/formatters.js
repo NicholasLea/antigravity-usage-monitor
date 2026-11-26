@@ -684,7 +684,13 @@ export function resolveModelDisplayInfo(target, settings = {}, options = {}) {
       : normalizeModelDisplayMode(settings?.modelDisplayMode, settings?.showUpstreamModel);
   const showUpstream = modelDisplayMode !== 'short';
   const preferLabelInShort = Boolean(options?.preferLabelInShort);
-  const fallback = options?.fallback ?? t('fmt.unknownModel');
+  const explicitLocale = typeof options?.locale === 'string' && options.locale.trim().length > 0;
+  const useEn = explicitLocale
+    ? options.locale.trim().toLowerCase().startsWith('en')
+    : isEnglishLocale();
+  const fallback =
+    options?.fallback ??
+    (explicitLocale ? (useEn ? 'Unknown model' : '模型未知') : t('fmt.unknownModel'));
 
   if (!target || typeof target !== 'object') {
     return {
@@ -729,7 +735,13 @@ export function resolveModelDisplayInfo(target, settings = {}, options = {}) {
     Boolean(target.isCompactionStep) ||
     /·(?:压缩|compact)(?=\s|$)|\[自动压缩\]/iu.test(rawCompactionText);
 
-  const compactionSuffix = isCompaction ? t('fmt.compactionSuffix') : '';
+  const compactionSuffix = isCompaction
+    ? explicitLocale
+      ? useEn
+        ? '·compact'
+        : '·压缩'
+      : t('fmt.compactionSuffix')
+    : '';
 
   const fields = [labelText, shortText, upstreamText, responseText, modelKeyText];
   const combined = `${modelKeyText} ${shortText} ${labelText} ${upstreamText} ${responseText}`;
@@ -1149,6 +1161,26 @@ function normalizeSwarmMemberHandle(rawText) {
     return '';
   }
   return `@${inner}`;
+}
+
+/**
+ * 格式化后端配额池展示名称，将默认兜底的 `'未知'` / `'Unknown'` 本地化为当前语言文本，
+ * 保留真实配额池名（如 `'Gemini'`、`'Claude & GPT'`、`'Gemini 4 Argon'`）不变。
+ *
+ * @param {string|null|undefined} rawLabel
+ * @param {{ fallback?: string, locale?: string }} [options]
+ * @returns {string}
+ */
+export function formatQuotaPoolLabel(rawLabel, { fallback = '', locale } = {}) {
+  const text = String(rawLabel || '').trim();
+  const explicitLocale = typeof locale === 'string' && locale.trim().length > 0;
+  const useEn = explicitLocale
+    ? locale.trim().toLowerCase().startsWith('en')
+    : isEnglishLocale();
+  const unknownText = explicitLocale ? (useEn ? 'Unknown' : '未知') : t('fmt.unknownPool');
+  if (!text) return fallback || unknownText;
+  if (text === '未知' || text.toLowerCase() === 'unknown') return unknownText;
+  return text;
 }
 
 /**

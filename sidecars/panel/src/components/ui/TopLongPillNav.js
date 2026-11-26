@@ -6,6 +6,7 @@
 
 import { defineComponent } from '../../core/component.js';
 import { h, patchAttr, patchClasses, patchStyleVar, patchText } from '../../core/domPatch.js';
+import { t } from '../../i18n/index.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 
 export const TopLongPillNav = defineComponent({
@@ -17,7 +18,7 @@ export const TopLongPillNav = defineComponent({
       {
         className: 'long-pill-nav',
         role: 'tablist',
-        'aria-label': '主功能视图分割导航',
+        'aria-label': t('nav.ariaMain'),
       },
       [glider]
     );
@@ -33,6 +34,7 @@ export const TopLongPillNav = defineComponent({
 
     function syncTabs() {
       const { items = [], modelValue } = getProps();
+      patchAttr(navEl, 'aria-label', t('nav.ariaMain'));
       patchStyleVar(navEl, '--pill-count', Math.max(1, items.length));
 
       const validValues = new Set(items.map((it) => it.value));

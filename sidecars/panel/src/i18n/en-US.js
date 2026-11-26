@@ -8,6 +8,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'app.title': 'Usage & Speed Monitor',
 
   // Top Navigation
+  'nav.ariaMain': 'Main navigation views',
   'nav.overview': 'Live',
   'nav.consumption': 'Usage',
   'nav.steps': 'Steps',
@@ -67,6 +68,7 @@ export const I18N_MESSAGES_EN_US = Object.freeze({
   'fmt.resetMins': 'Resets in {m}m',
   'fmt.selectTime': 'Select time',
   'fmt.unknownModel': 'Unknown model',
+  'fmt.unknownPool': 'Unknown',
   'fmt.compactionSuffix': '·compact',
   'fmt.mainAgent': 'Main Agent',
   'fmt.mainBadge': 'Main',
