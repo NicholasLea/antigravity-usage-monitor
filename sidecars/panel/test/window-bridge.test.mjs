@@ -45,7 +45,11 @@ import {
   isLoopbackBindHost,
   parseStandaloneCliArgs,
 } from '../backend/standalone-server.mjs';
-import { handleMcpJsonRpcMessage } from '../mcp-entry.mjs';
+import {
+  handleMcpJsonRpcMessage,
+  isOneShotCliParentCommand,
+  shouldSkipDaemonForParentProcess,
+} from '../mcp-entry.mjs';
 import { computeCapsuleLayoutMode } from '../src/components/layout/WindowOverlayShell.js';
 import {
   getCacheToneClass,
@@ -7618,5 +7622,275 @@ test('WindowOverlayShell mirrors host --font-sans and --font-mono onto portalHos
     globalThis.ResizeObserver = prevRo;
     globalThis.MutationObserver = prevMo;
     globalThis.fetch = prevFetch;
+  }
+});
+
+test('isOneShotCliParentCommand & shouldSkipDaemonForParentProcess detect one-shot agy CLI across direct and shell-wrapped parents', async () => {
+  assert.equal(
+    isOneShotCliParentCommand(
+      'agy --model gemini-4-neon-medium --sandbox --disable-slash-commands --print-timeout 210s --output-format json -p hello'
+    ),
+    true
+  );
+  assert.equal(isOneShotCliParentCommand('/usr/local/bin/agy --print "summarize diff"'), true);
+  assert.equal(
+    isOneShotCliParentCommand('"C:\\Program Files\\Antigravity\\antigravity-cli.exe" --output-format=json -p test'),
+    true
+  );
+  assert.equal(isOneShotCliParentCommand('agy'), false);
+  assert.equal(isOneShotCliParentCommand('agy --model gemini-4-neon-high'), false);
+  assert.equal(isOneShotCliParentCommand('agy --sandbox'), false);
+  assert.equal(isOneShotCliParentCommand('agy --hub --http-port 5387'), false);
+  assert.equal(isOneShotCliParentCommand('agy remote-control serve --output-format json'), false);
+  assert.equal(
+    isOneShotCliParentCommand(
+      '/Applications/Antigravity.app/Contents/Resources/bin/language_server --standalone --subclient_type hub'
+    ),
+    false
+  );
+  assert.equal(isOneShotCliParentCommand(''), false);
+
+  // Linux: shell wrapper parent -> walks /proc/<pid>/stat to grandparent agy -p
+  const linuxFs = new Map([
+    ['/proc', ''],
+    ['/proc/4200/cmdline', '/bin/sh\0-c\0node mcp-entry.mjs'],
+    ['/proc/4200/stat', '4200 (sh) S 4100 4100 4100 0 -1 4194304'],
+    ['/proc/4100/cmdline', '/usr/local/bin/agy\0--output-format\0json\0-p\0hi'],
+  ]);
+  assert.equal(
+    await shouldSkipDaemonForParentProcess(4200, {
+      platform: 'linux',
+      existsSyncFn: (p) => linuxFs.has(p),
+      readFileSyncFn: (p) => linuxFs.get(p) || '',
+    }),
+    true
+  );
+
+  // Windows: single async PowerShell call returning [parent, grandparent] catches cmd.exe wrapper
+  assert.equal(
+    await shouldSkipDaemonForParentProcess(5200, {
+      platform: 'win32',
+      execFileFn: (_file, _args, _opts, cb) => {
+        cb(
+          null,
+          JSON.stringify([
+            'C:\\Windows\\System32\\cmd.exe /d /s /c node mcp-entry.mjs',
+            '"C:\\Program Files\\Antigravity\\agy.exe" --sandbox --output-format json -p hi',
+          ])
+        );
+      },
+    }),
+    true
+  );
+  assert.equal(
+    await shouldSkipDaemonForParentProcess(5201, {
+      platform: 'win32',
+      execFileFn: (_file, _args, _opts, cb) => {
+        cb(null, JSON.stringify('C:\\Program Files\\Antigravity\\agy.exe --hub --http-port 5387'));
+      },
+    }),
+    false
+  );
+
+  // macOS: ps -o ppid=,command= catches shell-wrapped grandparent agy --print
+  assert.equal(
+    await shouldSkipDaemonForParentProcess(6200, {
+      platform: 'darwin',
+      execFileFn: (_file, args, _opts, cb) => {
+        if (args.includes('6200')) {
+          cb(null, '6100 /bin/zsh -c node mcp-entry.mjs\n');
+        } else {
+          cb(null, '/usr/local/bin/agy --print "hello"\n');
+        }
+      },
+    }),
+    true
+  );
+});
+
+test('window-bridge stop({ disposeWindows: true }) preserves Desktop overlay using lease peers & leader checks across concurrent exits', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-um-lease-dispose-'));
+  const agUserDataDir = path.join(tmpDir, 'Antigravity');
+  const leaseFilePath = path.join(tmpDir, 'window-bridge-lease.json');
+  fs.mkdirSync(agUserDataDir, { recursive: true });
+
+  const liveExternalPid = process.ppid > 1 && process.ppid !== process.pid ? process.ppid : 1;
+  let disposeCalls = 0;
+  let overlayAlive = false;
+  const cdpServer = http.createServer((req, res) => {
+    if (req.url === '/json/list') {
+      const addr = cdpServer.address();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify([
+          {
+            id: 'main-win',
+            type: 'page',
+            title: 'Antigravity',
+            url: 'https://127.0.0.1:51234/c/11111111-2222-3333-4444-555555555555',
+            webSocketDebuggerUrl: `ws://127.0.0.1:${addr.port}/devtools/page/main-win`,
+          },
+        ])
+      );
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise((resolve) => cdpServer.listen(0, '127.0.0.1', resolve));
+  const cdpPort = cdpServer.address().port;
+  fs.writeFileSync(path.join(agUserDataDir, 'DevToolsActivePort'), `${cdpPort}\n/devtools/browser/test\n`, 'utf8');
+
+  class FakeCdpWebSocket extends EventTarget {
+    constructor() {
+      super();
+      queueMicrotask(() => this.dispatchEvent(new Event('open')));
+    }
+    send(raw) {
+      const msg = JSON.parse(String(raw));
+      const expr = String(msg?.params?.expression || '');
+      let value = true;
+      if (expr.includes('delete window["__AGUsageMonitorOverlay"]')) {
+        disposeCalls += 1;
+        overlayAlive = false;
+      } else if (expr.includes('window["__AGUsageMonitorBridge"] =')) {
+        overlayAlive = true;
+      } else if (expr.includes('ensureAlive')) {
+        value = {
+          injected: overlayAlive,
+          alive: overlayAlive,
+          bundleVersion: 'v-test',
+          mountMode: 'dual',
+          dockKind: 'titlebar',
+        };
+      }
+      queueMicrotask(() => {
+        this.dispatchEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({ id: msg.id, result: { result: { value } } }),
+          })
+        );
+      });
+    }
+    close() {}
+  }
+
+  const makeController = (extra = {}) =>
+    createWindowBridgeController({
+      handleApiRequest: async () => ({ status: 200, contentType: 'application/json', body: '{}' }),
+      readAssetFn: (name) =>
+        name === 'styles.css' ? '' : 'window.__AGUsageMonitorOverlay={ensureAlive:()=>true,dispose:()=>{}};',
+      getSettingsFn: () => ({ enableWindowOverlay: true, windowMountMode: 'dual' }),
+      getBundleVersionFn: () => 'v-test',
+      bootBundleVersion: 'v-test',
+      env: { APPDATA: tmpDir, USAGE_MONITOR_HOST_PPID: '99999,88888' },
+      platform: 'win32',
+      homeDir: tmpDir,
+      leaseFilePath,
+      WebSocketImpl: FakeCdpWebSocket,
+      ...extra,
+    });
+
+  try {
+    // Case 1: Exiting daemon holds lease while Desktop sidecar is registered in lease.peers -> release lease, skip CDP dispose.
+    const ctrl1 = makeController();
+    await ctrl1.syncAllWindows();
+    assert.equal(overlayAlive, true);
+    const lease1 = JSON.parse(fs.readFileSync(leaseFilePath, 'utf8'));
+    assert.equal(lease1.pid, process.pid);
+    lease1.peers[String(liveExternalPid)] = { role: 'sidecar', updatedAtMs: Date.now() };
+    fs.writeFileSync(leaseFilePath, JSON.stringify(lease1), 'utf8');
+
+    await ctrl1.stop({ disposeWindows: true });
+    assert.equal(disposeCalls, 0, 'Must not dispose Desktop overlay while another live peer is in lease.peers');
+    assert.equal(overlayAlive, true);
+    const lease1After = JSON.parse(fs.readFileSync(leaseFilePath, 'utf8'));
+    assert.equal(lease1After.pid, 0, 'Exiting leader releases lease immediately for zero-delay takeover');
+    assert.equal(lease1After.peers?.[String(process.pid)], undefined, 'Exiting host unregisters itself from peers');
+    assert.ok(lease1After.peers?.[String(liveExternalPid)], 'Surviving Desktop peer stays registered');
+
+    // Case 2: Another live PID owns lease.pid (even if hasOtherHostAliveFn returns false) -> do not dispose or clobber lease.
+    const ctrl2 = makeController({ hasOtherHostAliveFn: () => false });
+    fs.rmSync(leaseFilePath, { force: true });
+    await ctrl2.syncAllWindows();
+    fs.writeFileSync(
+      leaseFilePath,
+      JSON.stringify({ pid: liveExternalPid, bundleVersion: 'v-test', updatedAtMs: Date.now(), peers: {} }),
+      'utf8'
+    );
+    await ctrl2.stop({ disposeWindows: true });
+    assert.equal(disposeCalls, 0, 'Must not dispose overlay when another live leader holds lease.pid');
+    assert.equal(overlayAlive, true);
+    const lease2After = JSON.parse(fs.readFileSync(leaseFilePath, 'utf8'));
+    assert.equal(lease2After.pid, liveExternalPid, 'Exiting follower preserves active leader lease.pid');
+
+    // Case 3: Concurrent exit race where lease.pid was already cleared to 0, but Desktop peer is still alive in peers.
+    const ctrl3 = makeController();
+    fs.rmSync(leaseFilePath, { force: true });
+    await ctrl3.syncAllWindows();
+    fs.writeFileSync(
+      leaseFilePath,
+      JSON.stringify({
+        pid: 0,
+        bundleVersion: 'v-test',
+        updatedAtMs: 0,
+        peers: {
+          [String(process.pid)]: { role: 'daemon', updatedAtMs: Date.now() },
+          [String(liveExternalPid)]: { role: 'sidecar', updatedAtMs: Date.now() },
+        },
+      }),
+      'utf8'
+    );
+    await ctrl3.stop({ disposeWindows: true });
+    assert.equal(disposeCalls, 0, 'Must not dispose overlay when lease.pid is 0 but surviving peer is alive');
+    assert.equal(overlayAlive, true);
+
+    // Case 4: No other live host (only dead PID + expired peer) -> cleanly disposes Desktop overlay.
+    const ctrl4 = makeController();
+    fs.rmSync(leaseFilePath, { force: true });
+    await ctrl4.syncAllWindows();
+    fs.writeFileSync(
+      leaseFilePath,
+      JSON.stringify({
+        pid: process.pid,
+        bundleVersion: 'v-test',
+        updatedAtMs: Date.now(),
+        peers: {
+          [String(process.pid)]: { role: 'daemon', updatedAtMs: Date.now() },
+          '999999999': { role: 'sidecar', updatedAtMs: Date.now() },
+          [String(liveExternalPid)]: { role: 'sidecar', updatedAtMs: Date.now() - 60_000 },
+        },
+      }),
+      'utf8'
+    );
+    await ctrl4.stop({ disposeWindows: true });
+    assert.equal(disposeCalls, 1, 'Disposes overlay cleanly when no other live usage-monitor host remains');
+    assert.equal(overlayAlive, false);
+    const lease4After = JSON.parse(fs.readFileSync(leaseFilePath, 'utf8'));
+    assert.equal(lease4After.pid, 0);
+    assert.deepEqual(lease4After.peers, {});
+
+    // Case 5: follower_yield records self in lease.peers without overriding leader pid.
+    fs.writeFileSync(
+      leaseFilePath,
+      JSON.stringify({
+        pid: liveExternalPid,
+        bundleVersion: 'v-test',
+        updatedAtMs: Date.now(),
+        peers: { [String(liveExternalPid)]: { role: 'sidecar', updatedAtMs: Date.now() } },
+      }),
+      'utf8'
+    );
+    const ctrl5 = makeController();
+    const syncRes = await ctrl5.syncAllWindows();
+    assert.equal(syncRes.reason, 'follower_yield');
+    const lease5 = JSON.parse(fs.readFileSync(leaseFilePath, 'utf8'));
+    assert.equal(lease5.pid, liveExternalPid);
+    assert.equal(lease5.peers?.[String(process.pid)]?.role, 'daemon');
+    await ctrl5.stop({ disposeWindows: false });
+  } finally {
+    await new Promise((resolve) => cdpServer.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

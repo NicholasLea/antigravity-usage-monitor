@@ -1505,6 +1505,7 @@ export function createWindowBridgeController(options) {
     cloudCodeProxy = null,
     manageCloudCodeProxy = false,
     resolveLocalContextRulesFn = null,
+    hasOtherHostAliveFn = null,
     portProberOptions = null,
     ideRemoteSshOptions = null,
     activeTransientMissTolerance = 2,
@@ -1629,6 +1630,98 @@ export function createWindowBridgeController(options) {
     if (desktopExecInfo.found && !ideExecInfo.found && !argvConfigured) return 'desktop';
     return 'auto';
   }
+  const hostRole = env?.USAGE_MONITOR_HOST_PPID ? 'daemon' : 'sidecar';
+  const LEASE_PEER_TTL_MS = 30_000;
+  const LEASE_PEER_HEARTBEAT_MS = 10_000;
+  const MAX_LEASE_PEERS = 32;
+  let lastPeerTouchMs = 0;
+
+  function pruneLeasePeers(rawPeers, now = Date.now(), { excludePid = 0 } = {}) {
+    if (!rawPeers || typeof rawPeers !== 'object') return {};
+    const valid = [];
+    for (const [key, entry] of Object.entries(rawPeers)) {
+      const pid = Number(key);
+      if (!Number.isInteger(pid) || pid <= 0 || pid === excludePid) continue;
+      const updatedAtMs = Number(entry?.updatedAtMs || 0);
+      const ageMs = now - updatedAtMs;
+      if (!(updatedAtMs > 0 && ageMs >= 0 && ageMs < LEASE_PEER_TTL_MS)) continue;
+      if (!isPidAlive(pid)) continue;
+      valid.push([
+        String(pid),
+        {
+          role: entry?.role === 'daemon' ? 'daemon' : 'sidecar',
+          updatedAtMs,
+        },
+      ]);
+    }
+    if (valid.length > MAX_LEASE_PEERS) {
+      valid.sort((a, b) => b[1].updatedAtMs - a[1].updatedAtMs);
+      valid.length = MAX_LEASE_PEERS;
+    }
+    return Object.fromEntries(valid);
+  }
+
+  function buildMergedLeasePeers(baseLease = null, { includeSelf = true, now = Date.now() } = {}) {
+    const diskLease = leaseFilePath ? loadJson(leaseFilePath, null) : null;
+    const mergedRaw = {
+      ...(baseLease?.peers && typeof baseLease.peers === 'object' ? baseLease.peers : {}),
+      ...(diskLease?.peers && typeof diskLease.peers === 'object' ? diskLease.peers : {}),
+    };
+    const peers = pruneLeasePeers(mergedRaw, now, { excludePid: includeSelf ? 0 : process.pid });
+    if (includeSelf) {
+      peers[String(process.pid)] = { role: hostRole, updatedAtMs: now };
+      lastPeerTouchMs = now;
+    }
+    return peers;
+  }
+
+  function saveLeaseWithPeers(payload, { includeSelf = true, baseLease = null } = {}) {
+    if (!leaseFilePath) return;
+    const now = Date.now();
+    const peers = buildMergedLeasePeers(baseLease, { includeSelf, now });
+    saveJson(leaseFilePath, {
+      ...payload,
+      peers,
+    });
+  }
+
+  function touchSelfPeerInLease({ force = false } = {}) {
+    if (!leaseFilePath) return;
+    const now = Date.now();
+    const curLease = loadJson(leaseFilePath, null);
+    const selfEntry = curLease?.peers?.[String(process.pid)];
+    const selfAgeMs = selfEntry ? now - Number(selfEntry.updatedAtMs || 0) : Infinity;
+    if (!force && selfAgeMs >= 0 && selfAgeMs < LEASE_PEER_HEARTBEAT_MS && now - lastPeerTouchMs < LEASE_PEER_HEARTBEAT_MS) {
+      return;
+    }
+    try {
+      saveLeaseWithPeers(curLease && typeof curLease === 'object' ? curLease : { pid: 0, updatedAtMs: 0 }, {
+        includeSelf: true,
+        baseLease: curLease,
+      });
+    } catch {
+      // 忽略租约心跳写入失败
+    }
+  }
+
+  function hasOtherLiveUsageMonitorHost(currentLease = null) {
+    const lease = currentLease ?? (leaseFilePath ? loadJson(leaseFilePath, null) : null);
+    const leasePid = Number(lease?.pid || 0);
+    if (leasePid > 0 && leasePid !== process.pid && isPidAlive(leasePid)) {
+      return true;
+    }
+    if (typeof hasOtherHostAliveFn === 'function') {
+      try {
+        return Boolean(hasOtherHostAliveFn());
+      } catch {
+        return false;
+      }
+    }
+    if (!lease || typeof lease !== 'object') return false;
+    const liveOtherPeers = pruneLeasePeers(lease.peers, Date.now(), { excludePid: process.pid });
+    return Object.keys(liveOtherPeers).length > 0;
+  }
+
   function hasActiveExternalLeaderLease(curBundleVersion = '') {
     if (!leaseFilePath) return false;
     const lease = loadJson(leaseFilePath, null);
@@ -1991,7 +2084,7 @@ export function createWindowBridgeController(options) {
       bridgePort = typeof addr === 'object' && addr ? Number(addr.port || 0) : 0;
       server = srv;
       if (leaseFilePath && bridgePort > 0 && !hasActiveExternalLeaderLease()) {
-        saveJson(leaseFilePath, {
+        saveLeaseWithPeers({
           pid: process.pid,
           bundleVersion: String(getBundleVersionFn() || ''),
           bridgePort,
@@ -2215,24 +2308,27 @@ export function createWindowBridgeController(options) {
       const sig = computeLeaseSignature(lastBridgeStatus, lastDetectedHostTheme);
       if (sig !== lastPersistedLeaseSig) {
         lastPersistedLeaseSig = sig;
-        saveJson(leaseFilePath, {
-          pid: process.pid,
-          bundleVersion,
-          bridgePort: bridgePort > 0 ? bridgePort : Number(prevLease?.bridgePort || 0) || undefined,
-          bridgeToken: bridgeToken || String(prevLease?.bridgeToken || '') || undefined,
-          syncState: lastBridgeStatus.state,
-          aliveCount: lastBridgeStatus.aliveCount,
-          targets: lastBridgeStatus.targets,
-          argvUpdatedThisBoot: lastBridgeStatus.argvUpdatedThisBoot,
-          argvConfigured: lastBridgeStatus.argvConfigured,
-          launcherConfigured: lastBridgeStatus.launcherConfigured,
-          hasReadOnlyShortcuts: lastBridgeStatus.hasReadOnlyShortcuts,
-          stalePortDetected: lastBridgeStatus.stalePortDetected,
-          targetProduct: lastBridgeStatus.targetProduct,
-          canRelaunch: lastBridgeStatus.canRelaunch,
-          ...(lastDetectedHostTheme ? { hostTheme: lastDetectedHostTheme } : {}),
-          updatedAtMs: Date.now(),
-        });
+        saveLeaseWithPeers(
+          {
+            pid: process.pid,
+            bundleVersion,
+            bridgePort: bridgePort > 0 ? bridgePort : Number(prevLease?.bridgePort || 0) || undefined,
+            bridgeToken: bridgeToken || String(prevLease?.bridgeToken || '') || undefined,
+            syncState: lastBridgeStatus.state,
+            aliveCount: lastBridgeStatus.aliveCount,
+            targets: lastBridgeStatus.targets,
+            argvUpdatedThisBoot: lastBridgeStatus.argvUpdatedThisBoot,
+            argvConfigured: lastBridgeStatus.argvConfigured,
+            launcherConfigured: lastBridgeStatus.launcherConfigured,
+            hasReadOnlyShortcuts: lastBridgeStatus.hasReadOnlyShortcuts,
+            stalePortDetected: lastBridgeStatus.stalePortDetected,
+            targetProduct: lastBridgeStatus.targetProduct,
+            canRelaunch: lastBridgeStatus.canRelaunch,
+            ...(lastDetectedHostTheme ? { hostTheme: lastDetectedHostTheme } : {}),
+            updatedAtMs: Date.now(),
+          },
+          { baseLease: prevLease }
+        );
       }
     }
   }
@@ -2444,6 +2540,7 @@ export function createWindowBridgeController(options) {
             const hydratedTheme = recordLiveCdpHostTheme(lease.hostTheme, { persist: false });
             if (hydratedTheme) lastDetectedHostTheme = hydratedTheme;
           }
+          touchSelfPeerInLease();
           return { ok: true, enabled: true, reason: 'follower_yield', leaderPid: leasePid, injected: 0 };
         }
       }
@@ -2469,24 +2566,27 @@ export function createWindowBridgeController(options) {
         !lastPersistedLeaseSig
       ) {
         lastPersistedLeaseSig = topSig;
-        saveJson(leaseFilePath, {
-          pid: process.pid,
-          bundleVersion,
-          bridgePort: bridgePort > 0 ? bridgePort : Number(lease?.bridgePort || 0) || undefined,
-          bridgeToken: bridgeToken || String(lease?.bridgeToken || '') || undefined,
-          syncState: topLeaseStatus.state,
-          aliveCount: topLeaseStatus.aliveCount,
-          targets: topLeaseStatus.targets,
-          argvUpdatedThisBoot: topLeaseStatus.argvUpdatedThisBoot,
-          argvConfigured: mergedLauncherConfigured,
-          launcherConfigured: mergedLauncherConfigured,
-          hasReadOnlyShortcuts: topLeaseStatus.hasReadOnlyShortcuts,
-          stalePortDetected: topLeaseStatus.stalePortDetected,
-          targetProduct: topLeaseStatus.targetProduct,
-          canRelaunch: topLeaseStatus.canRelaunch,
-          ...(lastDetectedHostTheme ? { hostTheme: lastDetectedHostTheme } : {}),
-          updatedAtMs: Date.now(),
-        });
+        saveLeaseWithPeers(
+          {
+            pid: process.pid,
+            bundleVersion,
+            bridgePort: bridgePort > 0 ? bridgePort : Number(lease?.bridgePort || 0) || undefined,
+            bridgeToken: bridgeToken || String(lease?.bridgeToken || '') || undefined,
+            syncState: topLeaseStatus.state,
+            aliveCount: topLeaseStatus.aliveCount,
+            targets: topLeaseStatus.targets,
+            argvUpdatedThisBoot: topLeaseStatus.argvUpdatedThisBoot,
+            argvConfigured: mergedLauncherConfigured,
+            launcherConfigured: mergedLauncherConfigured,
+            hasReadOnlyShortcuts: topLeaseStatus.hasReadOnlyShortcuts,
+            stalePortDetected: topLeaseStatus.stalePortDetected,
+            targetProduct: topLeaseStatus.targetProduct,
+            canRelaunch: topLeaseStatus.canRelaunch,
+            ...(lastDetectedHostTheme ? { hostTheme: lastDetectedHostTheme } : {}),
+            updatedAtMs: Date.now(),
+          },
+          { baseLease: lease }
+        );
       }
     }
 
@@ -3708,6 +3808,10 @@ export function createWindowBridgeController(options) {
     if (initialTimer) clearTimeout(initialTimer);
     if (pollTimer) clearTimeout(pollTimer);
 
+    if (leaseFilePath) {
+      touchSelfPeerInLease({ force: true });
+    }
+
     if (leaseFilePath && !hasActiveExternalLeaderLease()) {
       const curSettings = getSettingsFn() || {};
       const mountMode = normalizeWindowMountMode(
@@ -3739,10 +3843,35 @@ export function createWindowBridgeController(options) {
       clearTimeout(pollTimer);
       pollTimer = null;
     }
-    if (
+    let shouldDisposeWindows = Boolean(
       disposeWindows &&
-      (hadInjectedTargets || hadInjectedChatFrames || hadContextWindows || hadHostI18n)
-    ) {
+        (hadInjectedTargets || hadInjectedChatFrames || hadContextWindows || hadHostI18n)
+    );
+    let leaseReleasedInStop = false;
+    if (leaseFilePath) {
+      const currentLease = loadJson(leaseFilePath, null);
+      const leasePid = Number(currentLease?.pid || 0);
+      const otherHostAlive = hasOtherLiveUsageMonitorHost(currentLease);
+      if (otherHostAlive) {
+        shouldDisposeWindows = false;
+      }
+      if (currentLease && typeof currentLease === 'object') {
+        const isSelfLeader = leasePid === process.pid;
+        const hadSelfPeer = Boolean(currentLease?.peers?.[String(process.pid)]);
+        if (isSelfLeader || hadSelfPeer) {
+          try {
+            saveLeaseWithPeers(
+              isSelfLeader ? { ...currentLease, pid: 0, updatedAtMs: 0 } : currentLease,
+              { includeSelf: false, baseLease: currentLease }
+            );
+            leaseReleasedInStop = true;
+          } catch {
+            // 忽略租约释放失败
+          }
+        }
+      }
+    }
+    if (shouldDisposeWindows) {
       const prevStopped = stopped;
       stopped = false;
       try {
@@ -3786,14 +3915,17 @@ export function createWindowBridgeController(options) {
     consecutiveActiveCdpMisses = 0;
     portProber.clearCache();
     ideSshCoordinator.disposeAll();
-    if (leaseFilePath) {
+    if (leaseFilePath && !leaseReleasedInStop) {
       const curLease = loadJson(leaseFilePath, null);
       if (curLease && Number(curLease.pid || 0) === process.pid) {
-        saveJson(leaseFilePath, {
-          ...curLease,
-          pid: 0,
-          updatedAtMs: 0,
-        });
+        saveLeaseWithPeers(
+          {
+            ...curLease,
+            pid: 0,
+            updatedAtMs: 0,
+          },
+          { includeSelf: false, baseLease: curLease }
+        );
       }
     }
     if (activeCloudCodeProxy) {

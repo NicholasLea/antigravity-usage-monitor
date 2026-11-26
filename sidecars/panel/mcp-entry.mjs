@@ -10,7 +10,7 @@
  *    本进程立即通知 `bridge-daemon.mjs` 卸载窗口顶栏组件并干净退出。
  */
 
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -106,6 +106,163 @@ export function handleMcpJsonRpcMessage(msg, serverVersion = '1.4.4') {
       message: `Method not found: ${method}`,
     },
   };
+}
+
+/**
+ * 判断父进程（或包裹外壳的祖父进程）命令行是否属于一次性无头 `agy` CLI 调用
+ * （如 `agy -p ... --output-format json`）。
+ * 此类短命 CLI 子进程无需派生独立的 `bridge-daemon.mjs`，避免争抢桌面端顶栏租约或在退出时卸载桌面胶囊。
+ *
+ * @param {string} cmdLine
+ * @returns {boolean}
+ */
+export function isOneShotCliParentCommand(cmdLine) {
+  const cmd = String(cmdLine || '').trim();
+  if (!cmd) return false;
+  const isAgyCli = /(?:^|[\s/\\"'])(?:agy|antigravity-cli)(?:\.exe)?(?:["'\s]|$)/i.test(cmd);
+  if (!isAgyCli) return false;
+  if (/(?:^|\s)(?:--hub\b|remote-control\b)/i.test(cmd)) return false;
+  return /(?:^|\s)(?:-p\b|--print\b|--print-timeout\b|--output-format\b)/.test(cmd);
+}
+
+function isShellWrapperCommand(cmdLine) {
+  return /(?:^|[\s/\\"'])(?:cmd|powershell|pwsh|sh|bash|zsh|dash|env|node)(?:\.exe)?(?:["'\s]|$)/i.test(
+    String(cmdLine || '')
+  );
+}
+
+function execFileStdoutAsync(execFileFn, file, args, options) {
+  return new Promise((resolve) => {
+    try {
+      execFileFn(file, args, options, (err, stdout) => {
+        if (err) {
+          resolve('');
+          return;
+        }
+        resolve(String(stdout || '').trim());
+      });
+    } catch {
+      resolve('');
+    }
+  });
+}
+
+function parseLinuxProcParentPid(statText) {
+  const s = String(statText || '');
+  const rp = s.lastIndexOf(')');
+  if (rp < 0) return 0;
+  const fields = s
+    .slice(rp + 1)
+    .trim()
+    .split(/\s+/);
+  // `/proc/<pid>/stat` 右括号后的第 1 项是 state，第 2 项是 ppid
+  const ppid = Number(fields[1]);
+  return Number.isInteger(ppid) && ppid > 1 ? ppid : 0;
+}
+
+async function readAncestorCommandLinesAsync(
+  ppid,
+  {
+    platform = process.platform,
+    execFileFn = execFile,
+    readFileSyncFn = readFileSync,
+    existsSyncFn = existsSync,
+  } = {}
+) {
+  const pid = Number(ppid);
+  if (!Number.isInteger(pid) || pid <= 1) return [];
+  try {
+    if (platform === 'linux' && existsSyncFn('/proc')) {
+      const cmds = [];
+      const parentCmdPath = `/proc/${pid}/cmdline`;
+      let parentCmd = '';
+      if (existsSyncFn(parentCmdPath)) {
+        parentCmd = String(readFileSyncFn(parentCmdPath, 'utf8') || '')
+          .replace(/\0+/g, ' ')
+          .trim();
+        if (parentCmd) cmds.push(parentCmd);
+      }
+      if (!isOneShotCliParentCommand(parentCmd) && (!parentCmd || isShellWrapperCommand(parentCmd))) {
+        const statPath = `/proc/${pid}/stat`;
+        if (existsSyncFn(statPath)) {
+          const grandPid = parseLinuxProcParentPid(readFileSyncFn(statPath, 'utf8'));
+          const grandCmdPath = grandPid > 1 ? `/proc/${grandPid}/cmdline` : '';
+          if (grandCmdPath && existsSyncFn(grandCmdPath)) {
+            const grandCmd = String(readFileSyncFn(grandCmdPath, 'utf8') || '')
+              .replace(/\0+/g, ' ')
+              .trim();
+            if (grandCmd) cmds.push(grandCmd);
+          }
+        }
+      }
+      return cmds;
+    }
+
+    if (platform === 'win32') {
+      const psScript =
+        `$p = Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}'; ` +
+        `if ($p) { $out = @(); if ($p.CommandLine) { $out += [string]$p.CommandLine }; ` +
+        `if ($p.ParentProcessId -gt 1) { $g = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $p.ParentProcessId); ` +
+        `if ($g -and $g.CommandLine) { $out += [string]$g.CommandLine } }; ` +
+        `if ($out.Count -gt 0) { $out | ConvertTo-Json -Compress } }`;
+      const raw = await execFileStdoutAsync(
+        execFileFn,
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', psScript],
+        {
+          encoding: 'utf8',
+          timeout: 1500,
+          windowsHide: true,
+        }
+      );
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return (Array.isArray(parsed) ? parsed : [parsed])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean);
+    }
+
+    const firstOut = await execFileStdoutAsync(
+      execFileFn,
+      'ps',
+      ['-o', 'ppid=,command=', '-p', String(pid)],
+      { encoding: 'utf8', timeout: 500 }
+    );
+    const match = firstOut.match(/^(\d+)\s+(.+)$/);
+    if (!match) return firstOut ? [firstOut] : [];
+    const grandPid = Number(match[1]);
+    const parentCmd = match[2].trim();
+    const cmds = parentCmd ? [parentCmd] : [];
+    if (
+      grandPid > 1 &&
+      !isOneShotCliParentCommand(parentCmd) &&
+      (!parentCmd || isShellWrapperCommand(parentCmd))
+    ) {
+      const grandCmd = await execFileStdoutAsync(
+        execFileFn,
+        'ps',
+        ['-o', 'command=', '-p', String(grandPid)],
+        { encoding: 'utf8', timeout: 500 }
+      );
+      if (grandCmd) cmds.push(grandCmd);
+    }
+    return cmds;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 异步检测父进程（及单层外壳祖父进程）是否属于一次性无头 `agy` CLI。
+ * 保持完全异步，确保 Windows 上 `powershell.exe` 探测不会阻塞 MCP Stdio `initialize` 握手。
+ *
+ * @param {number} [ppid=process.ppid]
+ * @param {object} [options]
+ * @returns {Promise<boolean>}
+ */
+export async function shouldSkipDaemonForParentProcess(ppid = process.ppid, options = {}) {
+  const cmdLines = await readAncestorCommandLinesAsync(ppid, options);
+  return cmdLines.some((cmd) => isOneShotCliParentCommand(cmd));
 }
 
 function startMcpHostSupervisor() {
@@ -290,7 +447,17 @@ function startMcpHostSupervisor() {
   process.on('SIGINT', shutdownSupervisor);
   process.stdin.resume();
 
-  spawnDaemon();
+  void shouldSkipDaemonForParentProcess(process.ppid, { platform: process.platform })
+    .then((skipDaemon) => {
+      if (!shuttingDown && !skipDaemon) {
+        spawnDaemon();
+      }
+    })
+    .catch(() => {
+      if (!shuttingDown) {
+        spawnDaemon();
+      }
+    });
 }
 
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : '';
