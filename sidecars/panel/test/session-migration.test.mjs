@@ -9,6 +9,7 @@ import {
   encodeProtoStringField,
   encodeProtoTimestamp,
   encodeProtoVarintField,
+  parseSummaryProtoIndexIds,
   splitProtoRawFields,
 } from '../backend/proto-wire.mjs';
 import {
@@ -398,11 +399,11 @@ test('Cross-client session migration clones CLI/Legacy-IDE/Desktop SQLite sessio
     );
     cliSum.close();
 
-    // Legacy IDE (.db without conversation_summaries.db), including subagent & side-question .db files
+    // Legacy IDE (.db without conversation_summaries.db), including a /fork session (allowed) and subagent & side-question .db files (excluded)
     const legacyRoot = join(geminiDir, 'antigravity-ide');
     mkdirSync(join(legacyRoot, 'conversations'), { recursive: true });
     const legacyCid = '33333333-3333-4333-8333-333333333331';
-    const legacySubFn5Cid = '33333333-3333-4333-8333-333333333332';
+    const legacyForkCid = '33333333-3333-4333-8333-333333333332';
     const legacySubFn8Cid = '33333333-3333-4333-8333-333333333333';
     const legacySubFn17Cid = '33333333-3333-4333-8333-333333333334';
     const legacySubSrc16Cid = '33333333-3333-4333-8333-333333333335';
@@ -419,12 +420,13 @@ test('Cross-client session migration clones CLI/Legacy-IDE/Desktop SQLite sessio
       promptText: 'Refactor legacy sidebar',
       stepCount: 4,
     });
-    createConvDb(join(legacyRoot, 'conversations', `${legacySubFn5Cid}.db`), {
-      cid: legacySubFn5Cid,
+    createConvDb(join(legacyRoot, 'conversations', `${legacyForkCid}.db`), {
+      cid: legacyForkCid,
       tid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
       source: 1,
       parentConversationId: legacyCid,
-      promptText: 'Subagent via fn=5 parentConversationId',
+      nestingDepth: 0,
+      promptText: 'Forked session via fn=5 parentConversationId with nestingDepth=0',
       stepCount: 2,
     });
     createConvDb(join(legacyRoot, 'conversations', `${legacySubFn8Cid}.db`), {
@@ -535,11 +537,13 @@ test('Cross-client session migration clones CLI/Legacy-IDE/Desktop SQLite sessio
     assert.equal(runItem.isRunning, true);
     assert.equal(
       cat.sessionsByClient.ide_legacy.length,
-      1,
-      'Excludes fn=5, fn=8, fn=17, source=16 subagents and trajectory_type=22 side-questions in summaryless ide_legacy'
+      2,
+      'Allows /fork session (parentConversationId with nestingDepth=0) while excluding fn=8, fn=17, source=16 subagents and trajectory_type=22 side-questions'
     );
-    assert.equal(cat.sessionsByClient.ide_legacy[0].cascadeId, legacyCid);
-    assert.equal(cat.sessionsByClient.ide_legacy[0].title, 'Refactor legacy sidebar');
+    const legacyRootItem = cat.sessionsByClient.ide_legacy.find((s) => s.cascadeId === legacyCid);
+    const legacyForkItem = cat.sessionsByClient.ide_legacy.find((s) => s.cascadeId === legacyForkCid);
+    assert.ok(legacyRootItem && legacyForkItem);
+    assert.equal(legacyRootItem.title, 'Refactor legacy sidebar');
 
     // Direct migrateSessions call rejects non-root subagent / side-question IDs even without summary DB
     const nonRootMigRes = migrateSessions(
@@ -547,17 +551,31 @@ test('Cross-client session migration clones CLI/Legacy-IDE/Desktop SQLite sessio
         sourceClient: 'ide_legacy',
         targetClient: 'desktop',
         mode: 'clone',
-        cascadeIds: [legacySubFn5Cid, legacySubFn8Cid, legacySubFn17Cid, legacySubSrc16Cid, legacySideQCid],
+        cascadeIds: [legacySubFn8Cid, legacySubFn17Cid, legacySubSrc16Cid, legacySideQCid],
       },
       { geminiDir, backupDir }
     );
     assert.equal(nonRootMigRes.ok, false);
     assert.equal(nonRootMigRes.migratedCount, 0);
-    assert.equal(nonRootMigRes.results.length, 5);
+    assert.equal(nonRootMigRes.results.length, 4);
     for (const r of nonRootMigRes.results) {
       assert.equal(r.ok, false);
       assert.equal(r.error, 'non_root_session');
     }
+
+    // /fork session migrates cleanly instead of being rejected as a subagent
+    const forkMigRes = migrateSessions(
+      {
+        sourceClient: 'ide_legacy',
+        targetClient: 'desktop',
+        mode: 'clone',
+        cascadeIds: [legacyForkCid],
+        targetProjectId: 'outside-of-project',
+      },
+      { geminiDir, backupDir }
+    );
+    assert.equal(forkMigRes.ok, true);
+    assert.equal(forkMigRes.migratedCount, 1);
     assert.ok(cat.desktopProjects.some((p) => p.projectId === projId && p.name === 'antigravity-usage-monitor'));
     assert.ok(cat.desktopProjects.some((p) => p.projectId === 'outside-of-project' && p.isOutsideProject));
 
@@ -1093,5 +1111,350 @@ test('getSessionMigrationCatalog ignores 0-byte .db-wal mtime noise and respects
     );
   } finally {
     rmSync(tmpGemini, { recursive: true, force: true });
+  }
+});
+
+test('move mode cleans source FTS5, conversation_parents, proto index, cache JSONs, presence lock, and migrates /fork summary rows', () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'ag-mig-move-clean-'));
+  const geminiDir = join(tempRoot, '.gemini');
+  const backupDir = join(tempRoot, 'backups');
+
+  try {
+    const cliRoot = join(geminiDir, 'antigravity-cli');
+    const deskRoot = join(geminiDir, 'antigravity');
+    for (const r of [cliRoot, deskRoot]) {
+      mkdirSync(join(r, 'conversations'), { recursive: true });
+      mkdirSync(join(r, 'annotations'), { recursive: true });
+      mkdirSync(join(r, 'brain'), { recursive: true });
+      mkdirSync(join(r, 'cache'), { recursive: true });
+      mkdirSync(join(r, 'presence'), { recursive: true });
+    }
+
+    const parentCid = '44444444-4444-4444-8444-444444444441';
+    const forkCid = '44444444-4444-4444-8444-444444444442';
+    const keepCid = '44444444-4444-4444-8444-444444444443';
+
+    createConvDb(join(cliRoot, 'conversations', `${forkCid}.db`), {
+      cid: forkCid,
+      tid: 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1',
+      source: 17,
+      parentConversationId: parentCid,
+      nestingDepth: 0,
+      promptText: 'Forked CLI investigation',
+      stepCount: 4,
+    });
+    createConvDb(join(cliRoot, 'conversations', `${keepCid}.db`), {
+      cid: keepCid,
+      tid: 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2',
+      source: 17,
+      promptText: 'Remaining CLI chat',
+      stepCount: 2,
+    });
+
+    mkdirSync(join(cliRoot, 'brain', forkCid), { recursive: true });
+    writeFileSync(join(cliRoot, 'brain', forkCid, 'diagram.png'), 'img', 'utf8');
+    writeFileSync(join(cliRoot, 'presence', `${forkCid}.lock`), 'locked', 'utf8');
+    writeFileSync(join(cliRoot, 'presence', `${keepCid}.lock`), 'locked', 'utf8');
+
+    // Summary DB with FTS5 + conversation_parents
+    const cliSum = initSummaryDb(join(cliRoot, 'conversation_summaries.db'));
+    cliSum.exec(`
+      CREATE VIRTUAL TABLE conversations_fts USING fts5(conversation_id UNINDEXED, title, preview);
+      CREATE TABLE conversation_parents (
+        conversation_id text PRIMARY KEY,
+        parent_id text NOT NULL
+      );
+    `);
+    const insCli = cliSum.prepare(
+      `INSERT INTO conversation_summaries (
+        conversation_id, title, preview, step_count, last_modified_time,
+        workspace_uris, status, source, project_id, parent_conversation_id,
+        nesting_depth, last_user_input_time, last_user_input_step_index, app_data_dir
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    insCli.run(
+      forkCid,
+      'Forked CLI investigation',
+      'SecretForkToken123',
+      4,
+      '2026-11-22 10:00:00.000000+00:00',
+      '["file:///C:/repo"]',
+      'CASCADE_RUN_STATUS_IDLE',
+      '',
+      'default-cli-project',
+      parentCid,
+      0,
+      '2026-11-22 10:00:00.000000+00:00',
+      2,
+      'antigravity-cli'
+    );
+    insCli.run(
+      keepCid,
+      'Remaining CLI chat',
+      'KeepToken456',
+      2,
+      '2026-11-22 09:00:00.000000+00:00',
+      '["file:///C:/repo"]',
+      'CASCADE_RUN_STATUS_IDLE',
+      '',
+      'default-cli-project',
+      '',
+      0,
+      '2026-11-22 09:00:00.000000+00:00',
+      0,
+      'antigravity-cli'
+    );
+    cliSum
+      .prepare('INSERT INTO conversations_fts (conversation_id, title, preview) VALUES (?, ?, ?)')
+      .run(forkCid, 'Forked CLI investigation', 'SecretForkToken123');
+    cliSum
+      .prepare('INSERT INTO conversations_fts (conversation_id, title, preview) VALUES (?, ?, ?)')
+      .run(keepCid, 'Remaining CLI chat', 'KeepToken456');
+    cliSum
+      .prepare('INSERT INTO conversation_parents (conversation_id, parent_id) VALUES (?, ?)')
+      .run(forkCid, parentCid);
+    cliSum.close();
+
+    // CLI jetbox_summaries_proto.pb containing both forkCid & keepCid
+    const makeMapEntry = (id) =>
+      encodeProtoBytesField(
+        1,
+        Buffer.concat([encodeProtoStringField(1, id), encodeProtoBytesField(2, Buffer.from([0x0a, 0x01, 0x41]))])
+      );
+    writeFileSync(
+      join(cliRoot, 'jetbox_summaries_proto.pb'),
+      Buffer.concat([makeMapEntry(forkCid), makeMapEntry(keepCid)])
+    );
+
+    // Cache JSON files referencing forkCid & keepCid
+    writeFileSync(
+      join(cliRoot, 'cache', 'last_conversations.json'),
+      JSON.stringify({ '/repo/a': forkCid, '/repo/b': keepCid }, null, 2),
+      'utf8'
+    );
+    writeFileSync(
+      join(cliRoot, 'cache', 'conversation_metadata.json'),
+      JSON.stringify(
+        {
+          conversations: {
+            [forkCid]: { summary: { Title: 'Forked CLI investigation' } },
+            [keepCid]: { summary: { Title: 'Remaining CLI chat' } },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const deskSum = initSummaryDb(join(deskRoot, 'conversation_summaries.db'));
+    deskSum.close();
+
+    // Catalog includes /fork session
+    const cat = getSessionMigrationCatalog({ geminiDir });
+    assert.ok(cat.sessionsByClient.cli.some((s) => s.cascadeId === forkCid));
+
+    const moveRes = migrateSessions(
+      {
+        sourceClient: 'cli',
+        targetClient: 'desktop',
+        mode: 'move',
+        cascadeIds: [forkCid],
+        targetProjectId: 'outside-of-project',
+      },
+      { geminiDir, backupDir }
+    );
+    assert.equal(moveRes.ok, true);
+    assert.equal(moveRes.migratedCount, 1);
+
+    // Verify source FTS5, conversation_parents, proto index, caches, and presence lock are all cleaned
+    assert.equal(existsSync(join(cliRoot, 'presence', `${forkCid}.lock`)), false);
+    assert.equal(existsSync(join(cliRoot, 'presence', `${keepCid}.lock`)), true);
+    assert.equal(existsSync(join(cliRoot, 'brain', forkCid, 'diagram.png')), true, 'Preserves source brain media');
+
+    const verifySum = new DatabaseSync(join(cliRoot, 'conversation_summaries.db'), { readOnly: true });
+    assert.equal(
+      verifySum.prepare('SELECT count(*) AS c FROM conversation_parents WHERE conversation_id = ?').get(forkCid).c,
+      0
+    );
+    assert.equal(
+      verifySum.prepare("SELECT count(*) AS c FROM conversations_fts WHERE conversations_fts MATCH 'SecretForkToken123'").get().c,
+      0
+    );
+    assert.equal(
+      verifySum.prepare("SELECT count(*) AS c FROM conversations_fts WHERE conversations_fts MATCH 'KeepToken456'").get().c,
+      1
+    );
+    verifySum.close();
+
+    const remainingProtoIds = parseSummaryProtoIndexIds(
+      readFileSync(join(cliRoot, 'jetbox_summaries_proto.pb')),
+      { isDesktop: false, strict: true }
+    );
+    assert.equal(remainingProtoIds.has(forkCid), false);
+    assert.equal(remainingProtoIds.has(keepCid), true);
+
+    const lastConv = JSON.parse(readFileSync(join(cliRoot, 'cache', 'last_conversations.json'), 'utf8'));
+    assert.equal(lastConv['/repo/a'], undefined);
+    assert.equal(lastConv['/repo/b'], keepCid);
+
+    const metaCache = JSON.parse(readFileSync(join(cliRoot, 'cache', 'conversation_metadata.json'), 'utf8'));
+    assert.equal(metaCache.conversations[forkCid], undefined);
+    assert.ok(metaCache.conversations[keepCid]);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('Session migration re-keys permanent SQLite ledger, blocks running/locked stores, and cascades source subagents/history/sidecar cleanup', async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'ag-mig-hardening-'));
+  const geminiDir = join(tempRoot, 'gemini');
+  const backupDir = join(tempRoot, 'backups');
+
+  try {
+    const { createTrajectoryCacheStore } = await import('../backend/trajectory-cache-store.mjs');
+    const { acquireStoreLock } = await import('../backend/session-cleaner.mjs');
+    const { scanLocalSessions } = await import('../backend/session-manager.mjs');
+
+    const cliRoot = join(geminiDir, 'antigravity-cli');
+    const deskRoot = join(geminiDir, 'antigravity');
+    for (const r of [cliRoot, deskRoot]) {
+      mkdirSync(join(r, 'conversations'), { recursive: true });
+      mkdirSync(join(r, 'annotations'), { recursive: true });
+      mkdirSync(join(r, 'brain'), { recursive: true });
+      mkdirSync(join(r, 'sidecar_data', 'p', 'panel', 'events'), { recursive: true });
+      const sdb = initSummaryDb(join(r, 'conversation_summaries.db'));
+      sdb.close();
+    }
+
+    const parentCid = 'b1111111-1111-4111-8111-111111111101';
+    const subCid = 'b1111111-1111-4111-8111-111111111102';
+    const cloneSrcCid = 'b1111111-1111-4111-8111-111111111103';
+
+    createConvDb(join(cliRoot, 'conversations', `${parentCid}.db`), {
+      cid: parentCid,
+      tid: parentCid,
+      source: 17,
+      promptText: 'Parent CLI session',
+      stepCount: 2,
+    });
+    createConvDb(join(cliRoot, 'conversations', `${subCid}.db`), {
+      cid: subCid,
+      tid: subCid,
+      source: 16,
+      parentConversationId: parentCid,
+      rootConversationId: parentCid,
+      nestingDepth: 1,
+      promptText: 'Nested CLI subagent',
+      stepCount: 2,
+    });
+    createConvDb(join(cliRoot, 'conversations', `${cloneSrcCid}.db`), {
+      cid: cloneSrcCid,
+      tid: cloneSrcCid,
+      source: 17,
+      promptText: 'Clone CLI session',
+      stepCount: 2,
+    });
+
+    mkdirSync(join(cliRoot, 'brain', cloneSrcCid, '.system_generated', 'logs'), { recursive: true });
+    writeFileSync(join(cliRoot, 'brain', cloneSrcCid, 'diagram.png'), 'IMG', 'utf8');
+    writeFileSync(
+      join(cliRoot, 'brain', cloneSrcCid, '.system_generated', 'logs', 'transcript.jsonl'),
+      `${JSON.stringify({ step_index: 1, type: 'PLANNER_RESPONSE', input_tokens: 5000, output_tokens: 500, content: 'ok' })}\n`,
+      'utf8'
+    );
+    writeFileSync(
+      join(cliRoot, 'history.jsonl'),
+      `${JSON.stringify({ conversationId: parentCid, prompt: 'secret' })}\n${JSON.stringify({ conversationId: cloneSrcCid, prompt: 'keep' })}\n`,
+      'utf8'
+    );
+    writeFileSync(
+      join(cliRoot, 'sidecar_data', 'p', 'panel', 'events', 'evt-parent.json'),
+      JSON.stringify({ conversationId: parentCid }),
+      'utf8'
+    );
+
+    const ledgerStore = createTrajectoryCacheStore({
+      sqliteFilePath: join(tempRoot, 'ledger.sqlite'),
+      enableSqlite: true,
+    });
+    ledgerStore.setCachedTrajectory(parentCid, {
+      title: 'Parent CLI session',
+      appSource: 'cli',
+      steps: [{ stepIndex: 1, createdAtMs: 1795000000000, inputTokens: 12000, outputTokens: 3000, isComplete: true }],
+    });
+    ledgerStore.flushTrajectoryCacheNow();
+
+    // 1. Source running guard blocks move mode with 409 source_locked
+    const blockedRun = migrateSessions(
+      { sourceClient: 'cli', targetClient: 'desktop', mode: 'move', cascadeIds: [parentCid] },
+      {
+        geminiDir,
+        backupDir,
+        runningClientsOverride: { desktop: true, cli: true, ide_legacy: false, checked: true },
+      }
+    );
+    assert.equal(blockedRun.ok, false);
+    assert.equal(blockedRun.status, 409);
+    assert.equal(blockedRun.error, 'source_locked');
+
+    // 2. Store lock guard blocks concurrent move with 409 store_locked
+    const releaseCliLock = acquireStoreLock(cliRoot);
+    const blockedLock = migrateSessions(
+      { sourceClient: 'cli', targetClient: 'desktop', mode: 'move', cascadeIds: [parentCid] },
+      { geminiDir, backupDir }
+    );
+    releaseCliLock();
+    assert.equal(blockedLock.ok, false);
+    assert.equal(blockedLock.status, 409);
+    assert.equal(blockedLock.error, 'store_locked');
+
+    // 3. Move parentCid -> Desktop while Desktop is open and CLI is idle: re-keys ledger & cleans nested subagent + history + sidecar
+    const moveRes = migrateSessions(
+      { sourceClient: 'cli', targetClient: 'desktop', mode: 'move', cascadeIds: [parentCid] },
+      {
+        geminiDir,
+        backupDir,
+        cacheStore: ledgerStore,
+        runningClientsOverride: { desktop: true, cli: false, ide_legacy: false, checked: true },
+      }
+    );
+    assert.equal(moveRes.ok, true);
+    const newParentCid = moveRes.results[0].newCascadeId;
+    assert.equal(ledgerStore.getCachedTrajectory(parentCid), undefined);
+    assert.ok(ledgerStore.getCachedTrajectory(newParentCid));
+    ledgerStore.clearCache({ liveCascadeIds: [newParentCid] });
+    assert.equal(ledgerStore.listCachedTrajectoryEntries().length, 0);
+
+    assert.equal(existsSync(join(cliRoot, 'conversations', `${subCid}.db`)), false, 'Cascades nested subagent DB cleanup');
+    assert.equal(readFileSync(join(cliRoot, 'history.jsonl'), 'utf8').includes(parentCid), false);
+    assert.equal(existsSync(join(cliRoot, 'sidecar_data', 'p', 'panel', 'events', 'evt-parent.json')), false);
+
+    const afterScan = scanLocalSessions({
+      geminiDir,
+      backupDir,
+      runningClientsOverride: { desktop: false, cli: false, ide_legacy: false, checked: true },
+    });
+    assert.equal(afterScan.sessions.some((s) => s.sessionId === subCid), false);
+
+    // 4. Clone cloneSrcCid -> Desktop excludes .system_generated logs and exposes foreign step bounds
+    const cloneRes = migrateSessions(
+      { sourceClient: 'cli', targetClient: 'desktop', mode: 'clone', cascadeIds: [cloneSrcCid] },
+      { geminiDir, backupDir }
+    );
+    assert.equal(cloneRes.ok, true);
+    const clonedCid = cloneRes.results[0].newCascadeId;
+    assert.equal(existsSync(join(deskRoot, 'brain', clonedCid, 'diagram.png')), true);
+    assert.equal(existsSync(join(deskRoot, 'brain', clonedCid, '.system_generated')), false);
+    const clonedDbPath = join(deskRoot, 'conversations', `${clonedCid}.db`);
+    assert.equal(readLocalSqliteTrajectory(clonedDbPath, { cascadeId: clonedCid }), null);
+    const withBounds = readLocalSqliteTrajectory(clonedDbPath, {
+      cascadeId: clonedCid,
+      includeForeignStepBounds: true,
+    });
+    assert.equal(withBounds?.hasForeignOriginSteps, true);
+    assert.ok(Number(withBounds?.maxForeignOriginStepIndex) >= 1);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
   }
 });

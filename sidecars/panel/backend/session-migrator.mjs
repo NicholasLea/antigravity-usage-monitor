@@ -23,21 +23,21 @@ import {
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, join } from 'node:path';
-import { homedir } from 'node:os';
 import { parseIsoMs } from '../trajectory-metrics.mjs';
-import { DATA_DIR } from './config.mjs';
+import { getLocalTrajectoryCacheStore } from './config.mjs';
+import { writeJsonAtomicSync } from './fs-atomic.mjs';
 import {
-  getNodeSqliteDatabaseSync,
   hasBuiltinNodeSqlite,
-  isSqliteBusyError,
   normalizeSqliteIsoTime,
   withReadOnlySqliteDb,
 } from './sqlite-client.mjs';
@@ -46,6 +46,7 @@ import {
   encodeProtoStringField,
   encodeProtoTimestamp,
   encodeProtoVarintField,
+  filterSummaryProtoIndex,
   patchProtoMessageFields,
   readProtoString,
   readProtoVarint,
@@ -55,56 +56,41 @@ import {
   toUint8Array,
 } from './proto-wire.mjs';
 import { parseAnnotationPbtxtTitle } from './cli-sqlite-reader.mjs';
+import {
+  MAX_SIDECAR_LOG_BYTES,
+  acquireStoreLock,
+  expandStoreCascadeTargets,
+  filterHistoryJsonlBuffer,
+  filterLogLinesContainingIds,
+  findMatchingSidecarEventRelPaths,
+} from './session-cleaner.mjs';
+import {
+  SESSION_CLIENT_DEFS,
+  SESSION_UUID_RE,
+  decodeMetaBlobLight,
+  deleteConversationParentsByIds,
+  detectRunningClients,
+  extractDesktopProjectsFromSummaryMap,
+  getSessionClientDef,
+  isDbLightSubagent,
+  isSummarySubagent,
+  normalizeSessionUuid,
+  recordMigrationProtectionLink,
+  resolveGeminiDir,
+  resolveMigrationBackupRoot,
+  resolveNoFollowFile,
+  resolveNoFollowPath,
+  resolveScopedTrajectoryCacheStore,
+  withWritableSqliteDb,
+} from './session-store.mjs';
 
-const MIGRATOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MIGRATOR_MAX_SESSIONS_PER_CLIENT = 5000;
 const MIGRATOR_MAX_COLD_DB_INSPECTS = 120;
 const MIGRATOR_MAX_BATCH_SIZE = 50;
 const MIGRATOR_MAX_BACKUPS = 5;
+const MIGRATOR_MAX_ARCHIVED_SOURCES = 20;
 const MIGRATOR_OUTSIDE_PROJECT_ID = 'outside-of-project';
 const MIGRATOR_CLI_PROJECT_ID = 'default-cli-project';
-
-const MIGRATOR_CLIENT_DEFS = Object.freeze([
-  Object.freeze({
-    id: 'desktop',
-    dirName: 'antigravity',
-    appDataDir: 'antigravity',
-    trajectorySourceNum: 1,
-    allowTarget: true,
-  }),
-  Object.freeze({
-    id: 'cli',
-    dirName: 'antigravity-cli',
-    appDataDir: 'antigravity-cli',
-    trajectorySourceNum: 17,
-    allowTarget: true,
-  }),
-  Object.freeze({
-    id: 'ide_legacy',
-    dirName: 'antigravity-ide',
-    appDataDir: 'antigravity-ide',
-    trajectorySourceNum: 1,
-    allowTarget: false,
-  }),
-]);
-
-function migratorResolveGeminiDir(explicitGeminiDir) {
-  const override = String(explicitGeminiDir || '').trim();
-  if (override) return override;
-  const envDir = String(process.env.ANTIGRAVITY_GEMINI_DIR || '').trim();
-  return envDir || join(homedir(), '.gemini');
-}
-
-function migratorResolveBackupRoot(explicitBackupDir) {
-  const override = String(explicitBackupDir || '').trim();
-  if (override) return override;
-  return join(DATA_DIR, 'session-migration-backups');
-}
-
-function migratorGetClientDef(clientId) {
-  const id = String(clientId || '').trim().toLowerCase();
-  return MIGRATOR_CLIENT_DEFS.find((item) => item.id === id) || null;
-}
 
 function migratorFormatSqliteUtcTime(epochMs) {
   const date = new Date(Number.isFinite(Number(epochMs)) && Number(epochMs) > 0 ? Number(epochMs) : Date.now());
@@ -198,102 +184,6 @@ function migratorDecodeUserPromptFromStepPayload(rawBlob) {
   return '';
 }
 
-function migratorDecodeMetaBlobLight(rawBlob) {
-  const fields = splitProtoRawFields(rawBlob);
-  let workspaceUri = '';
-  let projectId = '';
-  let parentConversationId = '';
-  let nestingDepth = 0;
-  let hasSubagentSpec = false;
-  let createdMs = 0;
-  for (const field of fields) {
-    if (field.fn === 7 && field.wt === 2 && !workspaceUri) {
-      workspaceUri = field.payload.toString('utf8').trim();
-    } else if (field.fn === 1 && field.wt === 2 && !workspaceUri) {
-      const wsFields = splitProtoRawFields(field.payload);
-      const fn1 = wsFields.find((item) => item.fn === 1 && item.wt === 2);
-      if (fn1) workspaceUri = fn1.payload.toString('utf8').trim();
-    } else if (field.fn === 18 && field.wt === 2) {
-      projectId = field.payload.toString('utf8').trim();
-    } else if (field.fn === 5 && field.wt === 2) {
-      parentConversationId = field.payload.toString('utf8').trim().toLowerCase();
-    } else if (field.fn === 8 && field.wt === 2 && field.payload.length > 0) {
-      const specFields = splitProtoRawFields(field.payload);
-      if (
-        specFields.some(
-          (sf) =>
-            (sf.fn === 1 || sf.fn === 2) &&
-            sf.wt === 2 &&
-            sf.payload.toString('utf8').trim().length > 0
-        )
-      ) {
-        hasSubagentSpec = true;
-      }
-    } else if (field.fn === 17 && field.wt === 0) {
-      const st = { off: 0 };
-      const depth = Number(BigInt.asIntN(32, readProtoVarint(field.payload, st, field.payload.length)));
-      if (Number.isFinite(depth) && depth > 0) nestingDepth = depth;
-    } else if (field.fn === 2 && field.wt === 2 && !createdMs) {
-      const tsFields = splitProtoRawFields(field.payload);
-      const secField = tsFields.find((item) => item.fn === 1 && item.wt === 0);
-      if (secField) {
-        const st = { off: 0 };
-        const sec = Number(BigInt.asIntN(64, readProtoVarint(secField.payload, st, secField.payload.length)));
-        if (Number.isFinite(sec) && sec > 0) createdMs = sec * 1000;
-      }
-    }
-  }
-  return {
-    workspaceUri,
-    projectId,
-    parentConversationId,
-    nestingDepth,
-    hasSubagentSpec,
-    createdMs,
-  };
-}
-
-function migratorIsDbLightNonRoot(dbLight) {
-  if (!dbLight) return false;
-  return Boolean(
-    dbLight.trajectoryType === 22 ||
-      dbLight.sourceNum === 16 ||
-      dbLight.parentConversationId ||
-      Number(dbLight.nestingDepth || 0) > 0 ||
-      dbLight.hasSubagentSpec
-  );
-}
-
-function migratorIsSummaryNonRoot(summary) {
-  if (!summary) return false;
-  const parentId = String(summary.parent_conversation_id || '').trim();
-  const depth = Number(summary.nesting_depth || 0);
-  const sourceStr = String(summary.source || '').trim();
-  if (parentId || depth > 0 || sourceStr === 'CORTEX_TRAJECTORY_SOURCE_SUBAGENT') {
-    return true;
-  }
-  if (summary.raw_summary) {
-    const rawFields = splitProtoRawFields(summary.raw_summary);
-    for (const f of rawFields) {
-      if (f.fn === 22 && f.wt === 0) {
-        const st = { off: 0 };
-        const ttVal = Number(BigInt.asUintN(32, readProtoVarint(f.payload, st, f.payload.length)));
-        if (ttVal === 22) return true; // 旁路提问
-      } else if (f.fn === 20 && f.wt === 0) {
-        const st = { off: 0 };
-        const srcVal = Number(BigInt.asUintN(32, readProtoVarint(f.payload, st, f.payload.length)));
-        if (srcVal === 16) return true; // CORTEX_TRAJECTORY_SOURCE_SUBAGENT
-      } else if (f.fn === 17 && f.wt === 2) {
-        const sumMeta = migratorDecodeMetaBlobLight(f.payload);
-        if (sumMeta.parentConversationId || sumMeta.nestingDepth > 0 || sumMeta.hasSubagentSpec) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-
 function migratorInspectConversationDbLight(dbPath, { needPromptTitle = false } = {}) {
   try {
     return withReadOnlySqliteDb(dbPath, (db) => {
@@ -342,6 +232,7 @@ function migratorInspectConversationDbLight(dbPath, { needPromptTitle = false } 
         workspaceUri: '',
         projectId: '',
         parentConversationId: '',
+        rootConversationId: '',
         nestingDepth: 0,
         hasSubagentSpec: false,
         createdMs: 0,
@@ -351,7 +242,7 @@ function migratorInspectConversationDbLight(dbPath, { needPromptTitle = false } 
           .prepare("SELECT data FROM trajectory_metadata_blob WHERE id = 'main' LIMIT 1")
           .get();
         if (blobRow?.data) {
-          metaBlobInfo = migratorDecodeMetaBlobLight(blobRow.data);
+          metaBlobInfo = decodeMetaBlobLight(blobRow.data);
         }
       } catch {
         // 忽略 blob 缺失
@@ -427,7 +318,7 @@ function migratorReadClientSummaryMap(clientRoot, expectedAppDataDir) {
       }
       for (const row of rows || []) {
         const cid = String(row?.conversation_id || '').trim().toLowerCase();
-        if (!cid || !MIGRATOR_UUID_RE.test(cid)) continue;
+        if (!cid || !SESSION_UUID_RE.test(cid)) continue;
         const rowDir = String(row?.app_data_dir || '').trim().toLowerCase();
         const isNative = !rowDir || rowDir === expectedAppDataDir;
         const prev = map.get(cid);
@@ -443,87 +334,39 @@ function migratorReadClientSummaryMap(clientRoot, expectedAppDataDir) {
 }
 
 function migratorExtractDesktopProjects(summaryMap) {
-  const byProjectId = new Map();
-  for (const row of summaryMap.values()) {
-    const source = String(row?.source || '').trim();
-    const projectId = String(row?.project_id || '').trim();
-    if (source === 'CORTEX_TRAJECTORY_SOURCE_CLI') continue;
-    if (!projectId || projectId === MIGRATOR_CLI_PROJECT_ID || projectId === MIGRATOR_OUTSIDE_PROJECT_ID) {
-      continue;
-    }
-    const uris = migratorParseWorkspaceUrisColumn(row?.workspace_uris);
-    const primaryUri = uris[0] || '';
-    const lastModifiedMs = parseIsoMs(normalizeSqliteIsoTime(row?.last_modified_time)) || 0;
-    const prev = byProjectId.get(projectId);
-    if (!prev) {
-      const { name, displayPath } = migratorParseWorkspaceLabel(primaryUri);
-      byProjectId.set(projectId, {
-        projectId,
-        name: name || projectId.slice(0, 8),
-        workspaceUri: primaryUri,
-        workspacePath: displayPath,
-        conversationCount: 1,
-        lastModifiedMs,
-      });
-    } else {
-      prev.conversationCount += 1;
-      if (lastModifiedMs > prev.lastModifiedMs) {
-        prev.lastModifiedMs = lastModifiedMs;
-        if (primaryUri) {
-          const { name, displayPath } = migratorParseWorkspaceLabel(primaryUri);
-          prev.workspaceUri = primaryUri;
-          prev.workspacePath = displayPath;
-          if (name) prev.name = name;
-        }
-      }
-    }
-  }
-  const sorted = [...byProjectId.values()].sort(
-    (a, b) => b.lastModifiedMs - a.lastModifiedMs || b.conversationCount - a.conversationCount
-  );
-  sorted.push({
-    projectId: MIGRATOR_OUTSIDE_PROJECT_ID,
-    name: '',
-    workspaceUri: '',
-    workspacePath: '',
-    conversationCount: 0,
-    lastModifiedMs: 0,
-    isOutsideProject: true,
-  });
-  return sorted;
+  return extractDesktopProjectsFromSummaryMap(summaryMap);
 }
 
 function migratorReadAnnotationTitle(clientRoot, cid) {
-  const annPath = join(clientRoot, 'annotations', `${cid}.pbtxt`);
-  if (!existsSync(annPath)) return '';
+  const annCheck = resolveNoFollowFile(clientRoot, ['annotations', `${cid}.pbtxt`]);
+  if (!annCheck.ok || !annCheck.exists) return '';
   try {
-    return parseAnnotationPbtxtTitle(readFileSync(annPath, 'utf8'));
+    return parseAnnotationPbtxtTitle(readFileSync(annCheck.path, 'utf8'));
   } catch {
     return '';
   }
 }
 
-function migratorComputeDbFileInfo(convDir, cid, walSet = null) {
-  const dbPath = join(convDir, `${cid}.db`);
+function migratorComputeDbFileInfo(clientRoot, cid, walSet = null) {
+  const dbCheck = resolveNoFollowFile(clientRoot, ['conversations', `${cid}.db`]);
+  if (!dbCheck.ok || !dbCheck.exists || !dbCheck.stat) return null;
+  const dbPath = dbCheck.path;
   try {
-    const dbStat = statSync(dbPath);
+    const dbStat = dbCheck.stat;
     let sizeBytes = Number(dbStat.size || 0);
     let mtimeMs = Number(dbStat.mtimeMs || 0);
     let hasNonEmptyWal = false;
     const hasWal = walSet ? walSet.has(`${cid}.db-wal`) : existsSync(`${dbPath}-wal`);
     if (hasWal) {
-      const walPath = `${dbPath}-wal`;
-      try {
-        const walStat = statSync(walPath);
-        const walSize = Number(walStat.size || 0);
+      const walCheck = resolveNoFollowFile(clientRoot, ['conversations', `${cid}.db-wal`]);
+      if (walCheck.ok && walCheck.exists && walCheck.stat) {
+        const walSize = Number(walCheck.stat.size || 0);
         sizeBytes += walSize;
         // 0 字节的空 .db-wal 仅由只读打开/checkpoint 残留，不含真实写入，忽略其 mtime 避免拉平老会话时间
         if (walSize > 0) {
           hasNonEmptyWal = true;
-          mtimeMs = Math.max(mtimeMs, Number(walStat.mtimeMs || 0));
+          mtimeMs = Math.max(mtimeMs, Number(walCheck.stat.mtimeMs || 0));
         }
-      } catch {
-        // 忽略 WAL stat 异常
       }
     }
     return { dbPath, sizeBytes, mtimeMs, hasNonEmptyWal };
@@ -567,8 +410,8 @@ function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSe
   for (const name of entries) {
     if (!name.endsWith('.db')) continue;
     const cid = name.slice(0, -3).toLowerCase();
-    if (!MIGRATOR_UUID_RE.test(cid)) continue;
-    const info = migratorComputeDbFileInfo(convDir, cid, walSet);
+    if (!SESSION_UUID_RE.test(cid)) continue;
+    const info = migratorComputeDbFileInfo(clientRoot, cid, walSet);
     if (!info) continue;
     const summary = summaryMap.get(cid) || null;
     const summaryLastModMs = summary
@@ -596,7 +439,7 @@ function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSe
     if (sessions.length >= MIGRATOR_MAX_SESSIONS_PER_CLIENT) break;
     const { cid, summary, info } = cand;
 
-    if (migratorIsSummaryNonRoot(summary)) continue;
+    if (isSummarySubagent(summary)) continue;
 
     const annTitle = annFileSet.has(`${cid}.pbtxt`)
       ? migratorReadAnnotationTitle(clientRoot, cid)
@@ -617,7 +460,7 @@ function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSe
       });
     }
 
-    if (migratorIsDbLightNonRoot(dbLight)) continue;
+    if (isDbLightSubagent(dbLight)) continue;
 
     const stepCount =
       summaryStepCount >= 0 ? summaryStepCount : Math.max(0, Number(dbLight?.stepCount || 0));
@@ -673,7 +516,7 @@ function migratorListClientSessions(clientDef, clientRoot, summaryMap, runningSe
  */
 export function getSessionMigrationCatalog(options = {}) {
   const sqliteSupported = hasBuiltinNodeSqlite();
-  const geminiDir = migratorResolveGeminiDir(options.geminiDir);
+  const geminiDir = resolveGeminiDir(options.geminiDir);
   const runningSet = new Set();
   if (options.runningCascadeIds) {
     for (const id of options.runningCascadeIds) {
@@ -686,7 +529,7 @@ export function getSessionMigrationCatalog(options = {}) {
   const sessionsByClient = {};
   let desktopProjects = [];
 
-  for (const def of MIGRATOR_CLIENT_DEFS) {
+  for (const def of SESSION_CLIENT_DEFS) {
     const root = join(geminiDir, def.dirName);
     const convDir = join(root, 'conversations');
     const sumDbPath = join(root, 'conversation_summaries.db');
@@ -991,33 +834,295 @@ function migratorBuildPatchedRawSummary({
   return Buffer.concat(parts);
 }
 
-function migratorOpenWritableDbWithRetry(dbPath, fn) {
-  const DatabaseSync = getNodeSqliteDatabaseSync();
-  if (!DatabaseSync) {
-    throw new Error('Built-in node:sqlite is unavailable');
-  }
-  for (let attempt = 0; attempt < 3; attempt++) {
-    let db = null;
-    try {
-      db = new DatabaseSync(dbPath);
-      db.exec('PRAGMA busy_timeout = 3000;');
-      return fn(db);
-    } catch (err) {
-      if (attempt < 2 && isSqliteBusyError(err)) {
-        continue;
+function migratorWriteBufferAtomic(filePath, buf) {
+  const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  let renamed = false;
+  try {
+    writeFileSync(tmpPath, buf);
+    renameSync(tmpPath, filePath);
+    renamed = true;
+  } catch {
+    if (!renamed) {
+      try {
+        rmSync(tmpPath, { force: true });
+      } catch {
+        // 忽略临时文件清理异常
       }
-      throw err;
-    } finally {
-      if (db) {
+    }
+    writeFileSync(filePath, buf);
+  }
+}
+
+function migratorPruneArchivedSourceDbs(archiveSrcDir) {
+  if (!archiveSrcDir || !existsSync(archiveSrcDir)) return;
+  let dbFiles = [];
+  try {
+    dbFiles = readdirSync(archiveSrcDir)
+      .filter((name) => name.toLowerCase().endsWith('.db'))
+      .map((name) => {
+        const full = join(archiveSrcDir, name);
+        let mtimeMs = 0;
         try {
-          db.close();
+          mtimeMs = Number(statSync(full).mtimeMs || 0);
         } catch {
-          // 忽略关闭异常
+          mtimeMs = 0;
+        }
+        return { name, full, mtimeMs };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name));
+  } catch {
+    return;
+  }
+  if (dbFiles.length <= MIGRATOR_MAX_ARCHIVED_SOURCES) return;
+  for (const oldItem of dbFiles.slice(MIGRATOR_MAX_ARCHIVED_SOURCES)) {
+    const cidMatch = oldItem.name.match(
+      /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_/i
+    );
+    if (cidMatch) {
+      const cid = cidMatch[1].toLowerCase();
+      const markerPath = join(archiveSrcDir, `${cid}.protected.json`);
+      if (!existsSync(markerPath)) {
+        try {
+          writeFileSync(
+            markerPath,
+            `${JSON.stringify({ cascadeId: cid, prunedAtMs: Date.now() })}\n`,
+            'utf8'
+          );
+        } catch {
+          // 忽略标记写入异常
         }
       }
     }
+    try {
+      rmSync(oldItem.full, { force: true });
+    } catch {
+      // 忽略超额归档淘汰异常
+    }
   }
-  return null;
+}
+
+/**
+ * 在 `move` 模式下彻底清理源端残留索引、级联嵌套子代理、CLI 历史与 sidecar 事件，
+ * 防止源客户端列表出现「仅索引」幽灵条目或失去父会话折叠的孤儿嵌套子代理。
+ * 故意保留源端主会话 `brain/<cid>/` 媒体目录及 `archived-sources/` 归档保护。
+ *
+ * @param {string} srcRoot
+ * @param {typeof SESSION_CLIENT_DEFS[number]} srcDef
+ * @param {string[]} movedIds
+ * @param {string[]} cascadeSubagentIds
+ * @param {string[]} warnings
+ */
+function migratorCleanupMovedSourceIndexes(
+  srcRoot,
+  srcDef,
+  movedIds,
+  cascadeSubagentIds,
+  warnings
+) {
+  if (!srcRoot || !srcDef || !Array.isArray(movedIds) || movedIds.length === 0) return;
+  const movedSet = new Set();
+  for (const id of movedIds) {
+    const norm = normalizeSessionUuid(id);
+    if (norm) movedSet.add(norm);
+  }
+  const subSet = new Set();
+  for (const subId of cascadeSubagentIds || []) {
+    const norm = normalizeSessionUuid(subId);
+    if (norm && !movedSet.has(norm)) subSet.add(norm);
+  }
+  const allRemovedSet = new Set([...movedSet, ...subSet]);
+  if (allRemovedSet.size === 0) return;
+
+  // 0. 清理失去父会话的同源嵌套子代理实体文件（绝不触碰 /fork 独立会话）
+  for (const subCid of subSet) {
+    for (const relSegs of [
+      ['conversations', `${subCid}.db`],
+      ['conversations', `${subCid}.db-wal`],
+      ['conversations', `${subCid}.db-shm`],
+      ['conversations', `${subCid}.db-journal`],
+      ['conversations', `${subCid}.pb`],
+      ['annotations', `${subCid}.pbtxt`],
+      ['presence', `${subCid}.lock`],
+    ]) {
+      const fCheck = resolveNoFollowFile(srcRoot, relSegs);
+      if (fCheck.ok && fCheck.exists) {
+        try {
+          rmSync(fCheck.path, { force: true });
+        } catch {
+          // 忽略子代理文件移除异常
+        }
+      }
+    }
+    const subBrainCheck = resolveNoFollowPath(srcRoot, ['brain', subCid]);
+    if (subBrainCheck.ok && subBrainCheck.exists) {
+      try {
+        rmSync(subBrainCheck.path, { recursive: true, force: true });
+      } catch {
+        // 忽略子代理 brain 移除异常
+      }
+    }
+  }
+
+  // 1. 清理源端 conversation_summaries.db（含 conversation_parents + FTS5 rebuild）
+  const srcSumDbPath = join(srcRoot, 'conversation_summaries.db');
+  if (existsSync(srcSumDbPath)) {
+    try {
+      withWritableSqliteDb(srcSumDbPath, (srcSumDb) => {
+        const delSum = srcSumDb.prepare('DELETE FROM conversation_summaries WHERE conversation_id = ?');
+        let delFts = null;
+        try {
+          delFts = srcSumDb.prepare('DELETE FROM conversations_fts WHERE conversation_id = ?');
+        } catch {
+          delFts = null;
+        }
+        srcSumDb.exec('BEGIN IMMEDIATE');
+        try {
+          for (const cid of allRemovedSet) {
+            delSum.run(cid);
+            if (delFts) delFts.run(cid);
+          }
+          deleteConversationParentsByIds(srcSumDb, allRemovedSet);
+          if (delFts) {
+            try {
+              srcSumDb.exec("INSERT INTO conversations_fts(conversations_fts) VALUES ('rebuild')");
+            } catch {
+              // 非 FTS5 表或无 rebuild 触发时忽略
+            }
+          }
+          srcSumDb.exec('COMMIT');
+        } catch (txErr) {
+          try {
+            srcSumDb.exec('ROLLBACK');
+          } catch {
+            // 忽略回滚异常
+          }
+          throw txErr;
+        }
+      });
+    } catch (err) {
+      warnings.push(`source_summary_cleanup_failed: ${err?.message || 'unknown'}`);
+    }
+  }
+
+  // 2. 清理 presence/<cid>.lock
+  for (const cid of movedSet) {
+    const lockCheck = resolveNoFollowFile(srcRoot, ['presence', `${cid}.lock`]);
+    if (lockCheck.ok && lockCheck.exists) {
+      try {
+        rmSync(lockCheck.path, { force: true });
+      } catch {
+        // 忽略锁文件移除异常
+      }
+    }
+  }
+
+  // 3. 过滤源端 .pb 摘要索引（agyhub_summaries_proto.pb / jetbox_summaries_proto.pb）
+  if (srcDef.summaryProtoFile) {
+    const protoCheck = resolveNoFollowFile(srcRoot, [srcDef.summaryProtoFile]);
+    if (protoCheck.ok && protoCheck.exists) {
+      try {
+        const rawBuf = readFileSync(protoCheck.path);
+        const filtered = filterSummaryProtoIndex(rawBuf, allRemovedSet, {
+          isDesktop: Boolean(srcDef.isDesktopProto),
+        });
+        if (filtered.changed) {
+          migratorWriteBufferAtomic(protoCheck.path, filtered.buffer);
+        }
+      } catch (err) {
+        warnings.push(`source_proto_cleanup_failed: ${err?.message || 'unknown'}`);
+      }
+    }
+  }
+
+  // 4. 清理 cache/last_conversations.json
+  const lastConvCheck = resolveNoFollowFile(srcRoot, ['cache', 'last_conversations.json']);
+  if (lastConvCheck.ok && lastConvCheck.exists) {
+    try {
+      const parsed = JSON.parse(readFileSync(lastConvCheck.path, 'utf8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        let changed = false;
+        const nextObj = {};
+        for (const [wsKey, val] of Object.entries(parsed)) {
+          const normId = normalizeSessionUuid(val);
+          if (normId && allRemovedSet.has(normId)) {
+            changed = true;
+            continue;
+          }
+          nextObj[wsKey] = val;
+        }
+        if (changed) {
+          writeJsonAtomicSync(lastConvCheck.path, nextObj);
+        }
+      }
+    } catch (err) {
+      warnings.push(`source_last_conversations_cleanup_failed: ${err?.message || 'unknown'}`);
+    }
+  }
+
+  // 5. 清理 cache/conversation_metadata.json
+  const metaCacheCheck = resolveNoFollowFile(srcRoot, ['cache', 'conversation_metadata.json']);
+  if (metaCacheCheck.ok && metaCacheCheck.exists) {
+    try {
+      const parsed = JSON.parse(readFileSync(metaCacheCheck.path, 'utf8'));
+      if (parsed && typeof parsed === 'object' && parsed.conversations && typeof parsed.conversations === 'object') {
+        let changed = false;
+        const nextConvs = {};
+        for (const [k, v] of Object.entries(parsed.conversations)) {
+          const normId = normalizeSessionUuid(k);
+          if (normId && allRemovedSet.has(normId)) {
+            changed = true;
+            continue;
+          }
+          nextConvs[k] = v;
+        }
+        if (changed) {
+          writeJsonAtomicSync(metaCacheCheck.path, { ...parsed, conversations: nextConvs });
+        }
+      }
+    } catch (err) {
+      warnings.push(`source_metadata_cache_cleanup_failed: ${err?.message || 'unknown'}`);
+    }
+  }
+
+  // 6. 清理源端 history.jsonl（如 CLI 明文历史提问）
+  const histCheck = resolveNoFollowFile(srcRoot, ['history.jsonl']);
+  if (histCheck.ok && histCheck.exists) {
+    try {
+      const rawHist = readFileSync(histCheck.path);
+      const filteredHist = filterHistoryJsonlBuffer(rawHist, allRemovedSet);
+      if (filteredHist.changed) {
+        migratorWriteBufferAtomic(histCheck.path, filteredHist.buffer);
+      }
+    } catch (err) {
+      warnings.push(`source_history_cleanup_failed: ${err?.message || 'unknown'}`);
+    }
+  }
+
+  // 7. 清理源端归属已迁出会话及嵌套子代理的 sidecar_data 事件（自动保护 /fork）
+  for (const relSegments of findMatchingSidecarEventRelPaths(srcRoot, allRemovedSet)) {
+    const evtCheck = resolveNoFollowFile(srcRoot, relSegments);
+    if (evtCheck.ok && evtCheck.exists) {
+      try {
+        rmSync(evtCheck.path, { force: true });
+      } catch {
+        // 忽略事件文件移除异常
+      }
+    }
+  }
+
+  // 8. 过滤源端 logs/sidecar.log 中的残留会话 ID 行
+  const logCheck = resolveNoFollowFile(srcRoot, ['logs', 'sidecar.log']);
+  if (logCheck.ok && logCheck.exists && Number(logCheck.stat?.size || 0) <= MAX_SIDECAR_LOG_BYTES) {
+    try {
+      const rawLog = readFileSync(logCheck.path);
+      const filteredLog = filterLogLinesContainingIds(rawLog, Array.from(allRemovedSet));
+      if (filteredLog.changed) {
+        migratorWriteBufferAtomic(logCheck.path, filteredLog.buffer);
+      }
+    } catch {
+      // 忽略日志行过滤异常
+    }
+  }
 }
 
 function migratorIsFileLockError(err) {
@@ -1072,8 +1177,8 @@ export function migrateSessions(params = {}, options = {}) {
   }
 
   const mode = String(params.mode || '').trim().toLowerCase() === 'clone' ? 'clone' : 'move';
-  const srcDef = migratorGetClientDef(params.sourceClient);
-  const dstDef = migratorGetClientDef(params.targetClient);
+  const srcDef = getSessionClientDef(params.sourceClient);
+  const dstDef = getSessionClientDef(params.targetClient);
   if (!srcDef || !dstDef || srcDef.id === dstDef.id || !dstDef.allowTarget) {
     return { ok: false, status: 400, error: 'invalid_client_direction', results: [] };
   }
@@ -1083,7 +1188,7 @@ export function migrateSessions(params = {}, options = {}) {
   const seenIds = new Set();
   for (const item of rawIds) {
     const cid = String(item || '').trim().toLowerCase();
-    if (!MIGRATOR_UUID_RE.test(cid) || seenIds.has(cid)) continue;
+    if (!SESSION_UUID_RE.test(cid) || seenIds.has(cid)) continue;
     seenIds.add(cid);
     uniqueIds.push(cid);
     if (uniqueIds.length >= MIGRATOR_MAX_BATCH_SIZE) break;
@@ -1092,7 +1197,7 @@ export function migrateSessions(params = {}, options = {}) {
     return { ok: false, status: 400, error: 'no_sessions_selected', results: [] };
   }
 
-  const geminiDir = migratorResolveGeminiDir(options.geminiDir);
+  const geminiDir = resolveGeminiDir(options.geminiDir);
   const srcRoot = join(geminiDir, srcDef.dirName);
   const dstRoot = join(geminiDir, dstDef.dirName);
   const srcConvDir = join(srcRoot, 'conversations');
@@ -1103,7 +1208,48 @@ export function migrateSessions(params = {}, options = {}) {
   if (!existsSync(srcConvDir) || !existsSync(dstRoot) || !existsSync(dstSumDbPath)) {
     return { ok: false, status: 400, error: 'client_storage_missing', results: [] };
   }
-  mkdirSync(dstConvDir, { recursive: true });
+
+  // 移动模式进程守卫：真实本机目录或显式传入进程探测配置时，禁止从正在运行的源端直接拆走会话
+  const shouldCheckProcesses = Boolean(
+    options.runningClientsOverride ||
+      typeof options.processListProvider === 'function' ||
+      options.enforceRunningClients === true ||
+      !options.geminiDir
+  );
+  if (mode === 'move' && shouldCheckProcesses) {
+    const runningClients = detectRunningClients(options);
+    if (runningClients.checked && runningClients[srcDef.id]) {
+      return { ok: false, status: 409, error: 'source_locked', results: [] };
+    }
+    if (
+      !runningClients.checked &&
+      (options.runningClientsOverride || options.enforceRunningClients === true)
+    ) {
+      return { ok: false, status: 409, error: 'process_check_failed', results: [] };
+    }
+  }
+
+  // 按规范字典序获取客户端目录互斥锁，防止与会话清理器或反向迁移并发交错/死锁
+  const lockRoots = mode === 'move' ? [srcRoot, dstRoot].sort() : [dstRoot];
+  const releaseLocks = [];
+  try {
+    for (const rootToLock of lockRoots) {
+      releaseLocks.push(acquireStoreLock(rootToLock));
+    }
+  } catch (lockErr) {
+    while (releaseLocks.length > 0) {
+      releaseLocks.pop()?.();
+    }
+    return {
+      ok: false,
+      status: 409,
+      error: lockErr?.code === 'STORE_LOCKED' ? 'store_locked' : lockErr?.message || 'store_locked',
+      results: [],
+    };
+  }
+
+  try {
+    mkdirSync(dstConvDir, { recursive: true });
 
   const runningSet = new Set();
   if (options.runningCascadeIds) {
@@ -1135,7 +1281,7 @@ export function migrateSessions(params = {}, options = {}) {
   const titlePrefix = String(params.titlePrefix || '').trim();
 
   // 写入目标摘要库前自动留存滚动备份（移动模式同时备份源摘要库）
-  const backupRoot = migratorResolveBackupRoot(options.backupDir);
+  const backupRoot = resolveMigrationBackupRoot(options.backupDir, options.geminiDir);
   let backupPath = '';
   const warnings = [];
   try {
@@ -1163,11 +1309,26 @@ export function migrateSessions(params = {}, options = {}) {
 
   for (let i = 0; i < uniqueIds.length; i += 1) {
     const srcCid = uniqueIds[i];
-    const srcDbPath = join(srcConvDir, `${srcCid}.db`);
-    if (!existsSync(srcDbPath)) {
+    const srcDbCheck = resolveNoFollowFile(srcRoot, ['conversations', `${srcCid}.db`]);
+    if (!srcDbCheck.ok) {
+      results.push({ ok: false, sourceCascadeId: srcCid, error: srcDbCheck.error || 'unsafe_source_path' });
+      continue;
+    }
+    if (!srcDbCheck.exists) {
       results.push({ ok: false, sourceCascadeId: srcCid, error: 'source_not_found' });
       continue;
     }
+    const srcAnnCheck = resolveNoFollowFile(srcRoot, ['annotations', `${srcCid}.pbtxt`]);
+    if (!srcAnnCheck.ok) {
+      results.push({ ok: false, sourceCascadeId: srcCid, error: srcAnnCheck.error || 'unsafe_source_path' });
+      continue;
+    }
+    const srcBrainCheck = resolveNoFollowPath(srcRoot, ['brain', srcCid]);
+    if (!srcBrainCheck.ok) {
+      results.push({ ok: false, sourceCascadeId: srcCid, error: srcBrainCheck.error || 'unsafe_source_path' });
+      continue;
+    }
+    const srcDbPath = srcDbCheck.path;
 
     const srcSummary = srcSummaryMap.get(srcCid) || null;
     const rawStatus = String(srcSummary?.status || '').trim();
@@ -1187,7 +1348,7 @@ export function migrateSessions(params = {}, options = {}) {
     const dbLight = migratorInspectConversationDbLight(srcDbPath, {
       needPromptTitle: !annTitle && !srcSummary?.title && !srcSummary?.preview,
     });
-    if (migratorIsSummaryNonRoot(srcSummary) || migratorIsDbLightNonRoot(dbLight)) {
+    if (isSummarySubagent(srcSummary) || isDbLightSubagent(dbLight)) {
       results.push({ ok: false, sourceCascadeId: srcCid, error: 'non_root_session' });
       continue;
     }
@@ -1238,6 +1399,10 @@ export function migrateSessions(params = {}, options = {}) {
     const srcAnnPath = join(srcRoot, 'annotations', `${srcCid}.pbtxt`);
     const archivedSrcDbPath =
       mode === 'move' ? join(archiveSrcDir, `${srcCid}_${batchStamp}.db`) : '';
+    const cascadeSubagentIds =
+      mode === 'move'
+        ? expandStoreCascadeTargets(srcRoot, new Set([srcCid])).cascadeSubagentIds
+        : [];
 
     try {
       // 1. SQLite VACUUM INTO 一致性脱机快照（移动模式先留一份完整归档备份，再写入目标端）
@@ -1254,7 +1419,7 @@ export function migrateSessions(params = {}, options = {}) {
       //    移动模式同步把属于源会话的历史步 metadata 及 gen_metadata 归属 ID 重写为 newCid，
       //    使迁入后的全部历史步序（#1/#3/#5…）在目标端完整连贯呈现且不撞跨端摘要镜像。
       let sourceMetaBlob = null;
-      migratorOpenWritableDbWithRetry(dstDbPath, (dstDb) => {
+      withWritableSqliteDb(dstDbPath, (dstDb) => {
         const origMeta = dstDb.prepare('SELECT trajectory_id FROM trajectory_meta LIMIT 1').get();
         const srcTid = String(origMeta?.trajectory_id || '').trim().toLowerCase();
 
@@ -1331,10 +1496,27 @@ export function migrateSessions(params = {}, options = {}) {
         }
       });
 
-      // 3. 拷贝 brain/<srcCid> -> brain/<newCid>（保留源 brain 中的媒体文件不删，确保历史图片绝对路径持续有效）
-      const srcBrainDir = join(srcRoot, 'brain', srcCid);
-      if (existsSync(srcBrainDir)) {
-        cpSync(srcBrainDir, dstBrainDir, { recursive: true, force: true });
+      // 3. 拷贝 brain/<srcCid> -> brain/<newCid>（严格跳过任何嵌套符号链接）
+      //    - move：完整拷贝至目标端，源端随后剥离整个 .system_generated 与 scratch，仅留媒体附件；
+      //    - clone：仅拷贝媒体与人工制品，排除源会话 .system_generated / scratch，杜绝无归属 transcript 触发克隆双计费。
+      const srcBrainDir = srcBrainCheck.path;
+      if (srcBrainCheck.exists && srcBrainCheck.stat?.isDirectory()) {
+        cpSync(srcBrainDir, dstBrainDir, {
+          recursive: true,
+          force: true,
+          filter: (srcPath) => {
+            try {
+              if (lstatSync(srcPath).isSymbolicLink()) return false;
+            } catch {
+              return false;
+            }
+            if (mode === 'clone') {
+              const leaf = basename(srcPath);
+              return leaf !== '.system_generated' && leaf !== 'scratch';
+            }
+            return true;
+          },
+        });
       }
 
       // 4. 写入 annotations/<newCid>.pbtxt，保障标题立即可见
@@ -1349,16 +1531,28 @@ export function migrateSessions(params = {}, options = {}) {
       if (mode === 'move') {
         try {
           rmSync(srcDbPath, { force: true });
-          for (const sidecarFile of [`${srcDbPath}-wal`, `${srcDbPath}-shm`]) {
-            if (existsSync(sidecarFile)) {
-              rmSync(sidecarFile, { force: true });
+          for (const suffix of ['.db-wal', '.db-shm', '.db-journal']) {
+            const scCheck = resolveNoFollowFile(srcRoot, ['conversations', `${srcCid}${suffix}`]);
+            if (scCheck.ok && scCheck.exists) {
+              rmSync(scCheck.path, { force: true });
             }
           }
-          if (existsSync(srcAnnPath)) {
+          if (srcAnnCheck.exists) {
             try {
-              rmSync(srcAnnPath, { force: true });
+              rmSync(srcAnnCheck.path, { force: true });
             } catch {
               // 忽略源注释清理失败
+            }
+          }
+          // 移动模式下日志与运行产物已完整拷入目标端 brain/<newCid>，逐级防软链移除源端整个 .system_generated 与 scratch 明文目录
+          for (const subSeg of ['.system_generated', 'scratch']) {
+            const subCheck = resolveNoFollowPath(srcRoot, ['brain', srcCid, subSeg]);
+            if (subCheck.ok && subCheck.exists) {
+              try {
+                rmSync(subCheck.path, { recursive: true, force: true });
+              } catch {
+                // 忽略源临时运行目录清理异常
+              }
             }
           }
         } catch (unlinkErr) {
@@ -1368,6 +1562,13 @@ export function migrateSessions(params = {}, options = {}) {
             dstBrainDir,
             removeBrain: !dstBrainExistedBefore,
           });
+          if (archivedSrcDbPath && existsSync(archivedSrcDbPath)) {
+            try {
+              rmSync(archivedSrcDbPath, { force: true });
+            } catch {
+              // ignore
+            }
+          }
           results.push({
             ok: false,
             sourceCascadeId: srcCid,
@@ -1430,6 +1631,7 @@ export function migrateSessions(params = {}, options = {}) {
         patchedRawSummary,
         srcDbPath,
         archivedSrcDbPath,
+        cascadeSubagentIds,
         dstDbPath,
         dstBrainDir,
         dstBrainExistedBefore,
@@ -1453,42 +1655,48 @@ export function migrateSessions(params = {}, options = {}) {
   // 7. 在单事务中把成功迁移的会话摘要写入目标 conversation_summaries.db（移动模式同步从源摘要库移除）
   if (pendingSummaryInserts.length > 0) {
     try {
-      migratorOpenWritableDbWithRetry(dstSumDbPath, (dstSumDb) => {
+      withWritableSqliteDb(dstSumDbPath, (dstSumDb) => {
+        const tableCols = new Set(
+          (dstSumDb.prepare('PRAGMA table_info(conversation_summaries)').all() || []).map((c) =>
+            String(c?.name || '').trim().toLowerCase()
+          )
+        );
+        const allColBuilders = [
+          ['conversation_id', (it) => it.newCid],
+          ['title', (it) => it.title],
+          ['preview', (it) => it.title],
+          ['step_count', (it) => it.stepCount],
+          ['last_modified_time', (it) => it.nowSql],
+          ['workspace_uris', (it) => it.workspaceUrisCol],
+          ['status', () => 'CASCADE_RUN_STATUS_IDLE'],
+          ['source', () => ''],
+          ['project_id', (it) => it.projectId],
+          ['agent_name', () => ''],
+          ['parent_conversation_id', () => ''],
+          ['nesting_depth', () => 0],
+          ['battle_id', () => ''],
+          ['winning_conversation_id', () => ''],
+          ['not_fully_idle', () => 0],
+          ['killed', () => 0],
+          ['last_user_input_time', (it) => it.lastUserInputSql],
+          ['last_user_input_step_index', (it) => it.lastUserInputStepIndex],
+          ['app_data_dir', (it) => it.appDataDir],
+          ['raw_summary', (it) => it.patchedRawSummary],
+          ['group_id', () => ''],
+        ];
+        const activeBuilders =
+          tableCols.size > 0
+            ? allColBuilders.filter(([col]) => tableCols.has(col))
+            : allColBuilders;
+        const colSql = activeBuilders.map(([col]) => col).join(', ');
+        const placeholdersSql = activeBuilders.map(() => '?').join(', ');
         const insertStmt = dstSumDb.prepare(
-          `INSERT OR REPLACE INTO conversation_summaries (
-            conversation_id, title, preview, step_count, last_modified_time,
-            workspace_uris, status, source, project_id, agent_name,
-            parent_conversation_id, nesting_depth, battle_id, winning_conversation_id,
-            not_fully_idle, killed, last_user_input_time, last_user_input_step_index,
-            app_data_dir, raw_summary, group_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT OR REPLACE INTO conversation_summaries (${colSql}) VALUES (${placeholdersSql})`
         );
         dstSumDb.exec('BEGIN IMMEDIATE');
         try {
           for (const item of pendingSummaryInserts) {
-            insertStmt.run(
-              item.newCid,
-              item.title,
-              item.title,
-              item.stepCount,
-              item.nowSql,
-              item.workspaceUrisCol,
-              'CASCADE_RUN_STATUS_IDLE',
-              '',
-              item.projectId,
-              '',
-              '',
-              0,
-              '',
-              '',
-              0,
-              0,
-              item.lastUserInputSql,
-              item.lastUserInputStepIndex,
-              item.appDataDir,
-              item.patchedRawSummary,
-              ''
-            );
+            insertStmt.run(...activeBuilders.map(([, getVal]) => getVal(item)));
           }
           dstSumDb.exec('COMMIT');
         } catch (txErr) {
@@ -1501,34 +1709,45 @@ export function migrateSessions(params = {}, options = {}) {
         }
       });
 
-      if (mode === 'move' && existsSync(srcSumDbPath)) {
-        try {
-          migratorOpenWritableDbWithRetry(srcSumDbPath, (srcSumDb) => {
-            const delSum = srcSumDb.prepare('DELETE FROM conversation_summaries WHERE conversation_id = ?');
-            let delFts = null;
-            try {
-              delFts = srcSumDb.prepare('DELETE FROM conversations_fts WHERE conversation_id = ?');
-            } catch {
-              delFts = null;
-            }
-            srcSumDb.exec('BEGIN IMMEDIATE');
-            try {
-              for (const item of pendingSummaryInserts) {
-                delSum.run(item.srcCid);
-                if (delFts) delFts.run(item.srcCid);
-              }
-              srcSumDb.exec('COMMIT');
-            } catch (txErr) {
-              try {
-                srcSumDb.exec('ROLLBACK');
-              } catch {
-                // 忽略回滚异常
-              }
-              throw txErr;
-            }
+      if (mode === 'move') {
+        const allCascadeSubs = [];
+        for (const item of pendingSummaryInserts) {
+          if (Array.isArray(item.cascadeSubagentIds)) {
+            allCascadeSubs.push(...item.cascadeSubagentIds);
+          }
+        }
+        migratorCleanupMovedSourceIndexes(
+          srcRoot,
+          srcDef,
+          pendingSummaryInserts.map((item) => item.srcCid),
+          allCascadeSubs,
+          warnings
+        );
+        for (const item of pendingSummaryInserts) {
+          recordMigrationProtectionLink({
+            backupDir: backupRoot,
+            geminiDir,
+            sourceClientId: srcDef.id,
+            sourceSessionId: item.srcCid,
+            targetClientId: dstDef.id,
+            targetSessionId: item.newCid,
           });
-        } catch {
-          // 源摘要库清理失败不影响目标端正常使用（源实体 .db 已移出）
+        }
+        migratorPruneArchivedSourceDbs(archiveSrcDir);
+
+        const ledgerStore = resolveScopedTrajectoryCacheStore(options, getLocalTrajectoryCacheStore);
+        if (ledgerStore && typeof ledgerStore.rekeyConversations === 'function') {
+          try {
+            ledgerStore.rekeyConversations(
+              pendingSummaryInserts.map((item) => ({
+                fromCascadeId: item.srcCid,
+                toCascadeId: item.newCid,
+                patchMeta: { title: item.title, archived: false },
+              }))
+            );
+          } catch (rekeyErr) {
+            warnings.push(`ledger_rekey_failed: ${rekeyErr?.message || 'unknown'}`);
+          }
         }
       }
 
@@ -1573,19 +1792,24 @@ export function migrateSessions(params = {}, options = {}) {
   const migratedCount = results.filter((r) => r.ok).length;
   const failedCount = results.length - migratedCount;
   const firstError = migratedCount === 0 ? results.find((r) => !r.ok)?.error || 'migrate_failed' : '';
-  return {
-    ok: migratedCount > 0,
-    status: migratedCount > 0 ? 200 : 400,
-    ...(firstError ? { error: firstError } : {}),
-    mode,
-    sourceClient: srcDef.id,
-    targetClient: dstDef.id,
-    targetProjectId: resolvedProjectId,
-    migratedCount,
-    failedCount,
-    backupPath,
-    ...(warnings.length > 0 ? { warnings } : {}),
-    needsWindowReload: dstDef.id === 'desktop' && migratedCount > 0,
-    results,
-  };
+    return {
+      ok: migratedCount > 0,
+      status: migratedCount > 0 ? 200 : 400,
+      ...(firstError ? { error: firstError } : {}),
+      mode,
+      sourceClient: srcDef.id,
+      targetClient: dstDef.id,
+      targetProjectId: resolvedProjectId,
+      migratedCount,
+      failedCount,
+      backupPath,
+      ...(warnings.length > 0 ? { warnings } : {}),
+      needsWindowReload: dstDef.id === 'desktop' && migratedCount > 0,
+      results,
+    };
+  } finally {
+    while (releaseLocks.length > 0) {
+      releaseLocks.pop()?.();
+    }
+  }
 }

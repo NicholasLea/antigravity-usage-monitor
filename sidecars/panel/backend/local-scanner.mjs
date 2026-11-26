@@ -1357,7 +1357,12 @@ function loadOfflineTranscriptConversation(
   if (!cidLower) return null;
   const extMatch = externalByLower?.get(cidLower) || null;
   const sqliteDbPath = skipSqlite ? '' : findBestSqliteDbPath(diskFiles);
-  const sqliteTraj = sqliteDbPath ? readLocalSqliteTrajectory(sqliteDbPath) : null;
+  const sqliteTraj = sqliteDbPath
+    ? readLocalSqliteTrajectory(sqliteDbPath, {
+        cascadeId: cidLower,
+        includeForeignStepBounds: true,
+      })
+    : null;
   const transcriptPath = findTranscriptPath(cidLower);
 
   const transcriptLines = transcriptPath ? readTranscriptJsonlLines(transcriptPath) : [];
@@ -1388,10 +1393,12 @@ function loadOfflineTranscriptConversation(
   let steps = [];
   let fromSqlite = false;
 
-  if (sqliteTraj && sqliteTraj.steps.length > 0) {
+  if (sqliteTraj && (sqliteTraj.steps.length > 0 || sqliteTraj.hasForeignOriginSteps)) {
     fromSqlite = true;
     const sqliteRawSteps = [];
-    let maxSqliteStepIdx = -1;
+    let maxSqliteStepIdx = Number.isFinite(sqliteTraj.maxForeignOriginStepIndex)
+      ? Number(sqliteTraj.maxForeignOriginStepIndex)
+      : -1;
     let modelOrdinal = 0;
 
     for (const sq of sqliteTraj.steps) {
@@ -1524,7 +1531,7 @@ function loadOfflineTranscriptConversation(
     steps = extractModelSteps(sqliteRawSteps, sqliteTraj.generatorMetadata || []);
   }
 
-  if (steps.length === 0 && transcriptLines.length > 0) {
+  if (!fromSqlite && steps.length === 0 && transcriptLines.length > 0) {
     const syntheticSteps = [];
     let modelOrdinal = 0;
 

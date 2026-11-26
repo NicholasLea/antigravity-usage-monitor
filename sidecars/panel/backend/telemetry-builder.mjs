@@ -78,6 +78,7 @@ const conversationAssemblyCache = new Map();
 const lastCompletedTelemetrySnapshotsByEndpoint = new Map();
 
 export function clearTelemetryBuilderMemo(endpointId = null) {
+  agentStepPrepCache = new WeakMap();
   if (endpointId) {
     const epKey = String(endpointId);
     lastCompletedTelemetrySnapshotsByEndpoint.delete(epKey);
@@ -96,7 +97,6 @@ export function clearTelemetryBuilderMemo(endpointId = null) {
     clearUsageAggregatorMemo(epKey);
     return;
   }
-  agentStepPrepCache = new WeakMap();
   inFlightTelemetrySources.clear();
   conversationAssemblyCache.clear();
   lastCompletedTelemetrySnapshotsByEndpoint.clear();

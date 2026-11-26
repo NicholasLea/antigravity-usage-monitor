@@ -5,10 +5,12 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DATA_DIR } from './config.mjs';
+import { decodeWorkspaceFileUriToPath } from '../shared/workspace-uri.mjs';
+import { isPathInsideRoot, resolveNoFollowPath } from './session-store.mjs';
 
 export const MAX_EXPORT_FILE_BYTES = 8 * 1024 * 1024;
 export const ALLOWED_EXPORT_EXTENSIONS = Object.freeze(['.json', '.csv', '.md', '.txt', '.xlsx']);
@@ -250,6 +252,150 @@ export function revealLocalExportFile(
     child?.on?.('error', () => {});
     child?.unref?.();
     return { ok: true, status: 200, filePath: resolved };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 500,
+      error: err?.message || 'Failed to open file manager',
+    };
+  }
+}
+
+function isExplicitAbsolutePath(rawPath, platform = process.platform) {
+  const str = String(rawPath || '').trim();
+  if (!str) return false;
+  if (str.startsWith('//') || str.startsWith('\\\\')) {
+    return false;
+  }
+  if (
+    /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(str) &&
+    !/^[a-zA-Z]:[\\/]/.test(str)
+  ) {
+    return false;
+  }
+  if (platform === 'win32') {
+    return /^[a-zA-Z]:[\\/]/.test(str);
+  }
+  return str.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(str);
+}
+
+function normalizeRevealComparePath(targetPath, platform = process.platform) {
+  const abs = path.resolve(String(targetPath || ''));
+  return platform === 'win32' ? abs.toLowerCase() : abs;
+}
+
+/**
+ * 在系统文件管理器中受控定位会话产物文件、已扫描项目目录或当前阅读消息中提取的本地文件路径。
+ * 严格校验白名单边界与非符号链接，杜绝任意路径探测与命令参数注入。
+ *
+ * @param {string} rawPath
+ * @param {{
+ *   allowedRoots?: string[],
+ *   allowedPaths?: Iterable<string>,
+ *   platform?: string,
+ *   spawnFn?: typeof spawn,
+ * }} [options={}]
+ * @returns {{ ok: boolean, status: number, filePath?: string, isDirectory?: boolean, error?: string }}
+ */
+export function revealLocalSessionPath(
+  rawPath,
+  { allowedRoots = [], allowedPaths = [], platform = process.platform, spawnFn = spawn } = {}
+) {
+  const clean = String(rawPath || '').trim();
+  if (!clean || /[\r\n"\0]/.test(clean)) {
+    return { ok: false, status: 400, error: 'Invalid session path' };
+  }
+
+  let candidate = clean;
+  if (/^file:\/\//i.test(candidate)) {
+    const hashIdx = candidate.indexOf('#');
+    if (hashIdx >= 0) {
+      candidate = candidate.slice(0, hashIdx);
+    }
+    candidate = decodeWorkspaceFileUriToPath(candidate);
+  }
+  if (!isExplicitAbsolutePath(candidate, platform)) {
+    return { ok: false, status: 400, error: 'Invalid session path' };
+  }
+  const resolved = path.resolve(candidate);
+
+  // 1. 校验是否在受控存储根目录内（逐级无符号链接）或命中精确授权路径白名单
+  let authorized = false;
+  for (const root of allowedRoots || []) {
+    if (!root) continue;
+    const absRoot = path.resolve(String(root));
+    if (!isPathInsideRoot(resolved, absRoot, platform)) continue;
+    const rel = path.relative(absRoot, resolved);
+    const segments = rel ? rel.split(/[\\/]+/).filter(Boolean) : [];
+    const check = resolveNoFollowPath(absRoot, segments);
+    if (check.ok) {
+      authorized = true;
+      break;
+    }
+  }
+
+  if (!authorized) {
+    const cmpTarget = normalizeRevealComparePath(resolved, platform);
+    for (const allowed of allowedPaths || []) {
+      if (!allowed || !isExplicitAbsolutePath(allowed, platform)) continue;
+      if (normalizeRevealComparePath(allowed, platform) === cmpTarget) {
+        authorized = true;
+        break;
+      }
+    }
+  }
+
+  if (!authorized) {
+    return { ok: false, status: 403, error: 'Path is outside authorized session scope' };
+  }
+
+  let st;
+  try {
+    st = lstatSync(resolved);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      return { ok: false, status: 404, error: 'Target path no longer exists' };
+    }
+    return { ok: false, status: 500, error: err?.message || 'Failed to inspect target path' };
+  }
+
+  if (st.isSymbolicLink()) {
+    return { ok: false, status: 403, error: 'Symbolic links are not allowed' };
+  }
+
+  const isDirectory = st.isDirectory();
+  try {
+    let child = null;
+    if (platform === 'win32') {
+      if (isDirectory) {
+        child = spawnFn('explorer.exe', [`"${resolved}"`], {
+          detached: true,
+          stdio: 'ignore',
+          windowsVerbatimArguments: true,
+          windowsHide: false,
+        });
+      } else {
+        child = spawnFn('explorer.exe', [`/select,"${resolved}"`], {
+          detached: true,
+          stdio: 'ignore',
+          windowsVerbatimArguments: true,
+          windowsHide: false,
+        });
+      }
+    } else if (platform === 'darwin') {
+      child = spawnFn('open', isDirectory ? [resolved] : ['-R', resolved], {
+        detached: true,
+        stdio: 'ignore',
+      });
+    } else {
+      child = spawnFn('xdg-open', [isDirectory ? resolved : path.dirname(resolved)], {
+        detached: true,
+        stdio: 'ignore',
+      });
+    }
+    child?.on?.('error', () => {});
+    child?.unref?.();
+    return { ok: true, status: 200, filePath: resolved, isDirectory };
   } catch (err) {
     return {
       ok: false,

@@ -2389,6 +2389,94 @@ export async function executeSessionMigration(payload) {
   return res;
 }
 
+function isUnregisteredSessionRouteError(err) {
+  if (!err || Number(err.httpStatus) !== 404) return false;
+  if (err.data && typeof err.data === 'object' && err.data.ok === false) return false;
+  const msg = String(err.message || '').trim();
+  return /^(?:not found|http 404|unknown.*route)$/i.test(msg);
+}
+
+async function callSessionManagerEndpoint(path, method, fallbackAction, payload = undefined) {
+  try {
+    return await callSidecarApi(path, {
+      method,
+      ...(method === 'POST' ? { body: payload || {} } : {}),
+    });
+  } catch (err) {
+    if (!isUnregisteredSessionRouteError(err)) {
+      if (err?.data && typeof err.data === 'object' && err.data.ok === false) {
+        return err.data;
+      }
+      throw err;
+    }
+  }
+  try {
+    return await callSidecarApi('/api/settings', {
+      method: 'POST',
+      body: {
+        __sessionManagerAction: fallbackAction,
+        ...(payload !== undefined ? { payload } : {}),
+      },
+    });
+  } catch (fallbackErr) {
+    if (
+      fallbackErr?.data &&
+      typeof fallbackErr.data === 'object' &&
+      fallbackErr.data.ok === false
+    ) {
+      return fallbackErr.data;
+    }
+    throw fallbackErr;
+  }
+}
+
+export async function fetchLocalSessionsList() {
+  return callSessionManagerEndpoint('/api/sessions/list', 'GET', 'list');
+}
+
+export async function fetchSessionCleanupPreview(payload) {
+  return callSessionManagerEndpoint(
+    '/api/sessions/cleanup-preview',
+    'POST',
+    'cleanup_preview',
+    payload || {}
+  );
+}
+
+export async function deleteLocalSessionsAction(payload) {
+  const res = await callSessionManagerEndpoint(
+    '/api/sessions/delete',
+    'POST',
+    'delete',
+    payload || {}
+  );
+  if (res?.deletedCount > 0 || (res?.ledgerRedaction?.redactedConversations || 0) > 0) {
+    void fetchTelemetry({ force: true }).catch(() => {});
+  }
+  return res;
+}
+
+export async function redactLocalLedgerPrivacy() {
+  const res = await callSessionManagerEndpoint(
+    '/api/sessions/redact-ledger',
+    'POST',
+    'redact_ledger',
+    {}
+  );
+  if ((res?.redactedConversations || 0) > 0 || (res?.redactedSteps || 0) > 0) {
+    void fetchTelemetry({ force: true }).catch(() => {});
+  }
+  return res;
+}
+
+export async function revealLocalSessionPathAction(targetPath, context = undefined) {
+  return callSessionManagerEndpoint('/api/sessions/reveal', 'POST', 'reveal', {
+    path: String(targetPath || ''),
+    ...(context?.clientId ? { clientId: String(context.clientId) } : {}),
+    ...(context?.sessionId ? { sessionId: String(context.sessionId) } : {}),
+  });
+}
+
 export async function triggerPluginUpdate() {
   const res = await callSidecarApi('/api/plugin-update', { method: 'POST', body: {} });
   if (res?.ok && res?.restarting) {

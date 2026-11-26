@@ -39,7 +39,7 @@ export function setLoopbackHttpsRequester(requester) {
   customLoopbackHttpsRequester = typeof requester === 'function' ? requester : null;
 }
 
-function isStrictLoopbackUrl(rawUrl) {
+export function isStrictLoopbackUrl(rawUrl) {
   try {
     const parsed = new URL(String(rawUrl || ''));
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
@@ -63,19 +63,27 @@ async function getLoopbackHttpsRequestFn() {
   return loopbackHttpsModulePromise;
 }
 
-async function postLoopbackHttpsJson(urlStr, csrfToken, bodyText, timeoutMs) {
+export async function postLoopbackHttpsJson(
+  urlStr,
+  csrfToken,
+  bodyText,
+  timeoutMs,
+  extraHeaders = null
+) {
   const parsed = new URL(urlStr);
   if (!isStrictLoopbackUrl(urlStr) || parsed.protocol !== 'https:') {
     throw new Error('Refusing non-loopback HTTPS request');
   }
+  const baseHeaders = {
+    'Content-Type': 'application/json',
+    ...(csrfToken ? { 'x-codeium-csrf-token': csrfToken } : {}),
+    ...(extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : {}),
+  };
   const requestFn = await getLoopbackHttpsRequestFn();
   if (typeof requestFn !== 'function') {
     return fetch(urlStr, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(csrfToken ? { 'x-codeium-csrf-token': csrfToken } : {}),
-      },
+      headers: baseHeaders,
       body: bodyText,
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -105,9 +113,8 @@ async function postLoopbackHttpsJson(urlStr, csrfToken, bodyText, timeoutMs) {
         method: 'POST',
         rejectUnauthorized: false,
         headers: {
-          'Content-Type': 'application/json',
+          ...baseHeaders,
           'Content-Length': bodyBuf.length,
-          ...(csrfToken ? { 'x-codeium-csrf-token': csrfToken } : {}),
         },
       },
       (res) => {

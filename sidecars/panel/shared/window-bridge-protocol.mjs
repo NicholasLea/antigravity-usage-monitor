@@ -47,6 +47,19 @@ export const BRIDGE_API_ROUTE_DEFS = Object.freeze([
   }),
   Object.freeze({ path: '/api/host-i18n', method: 'GET', action: 'host_i18n_get' }),
   Object.freeze({ path: '/api/host-i18n', method: 'POST', action: 'host_i18n_action' }),
+  Object.freeze({ path: '/api/sessions/list', method: 'GET', action: 'sessions_list' }),
+  Object.freeze({
+    path: '/api/sessions/cleanup-preview',
+    method: 'POST',
+    action: 'sessions_cleanup_preview',
+  }),
+  Object.freeze({ path: '/api/sessions/delete', method: 'POST', action: 'sessions_delete' }),
+  Object.freeze({
+    path: '/api/sessions/redact-ledger',
+    method: 'POST',
+    action: 'sessions_redact_ledger',
+  }),
+  Object.freeze({ path: '/api/sessions/reveal', method: 'POST', action: 'sessions_reveal' }),
 ]);
 
 export const BRIDGE_API_PATHS = Object.freeze(BRIDGE_API_ROUTE_DEFS.map((r) => r.path));

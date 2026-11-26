@@ -1745,6 +1745,7 @@ export function createWindowBridgeController(options) {
             ok: false,
             status,
             error: parsedBody?.error || `HTTP ${status}`,
+            data: parsedBody,
           });
         }
       } catch (err) {

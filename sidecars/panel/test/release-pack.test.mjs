@@ -34,6 +34,10 @@ test('pack-release-zip ships only runtime-essential files, excludes dev bloat, a
     'sidecars/panel/backend/api-actions.mjs',
     'sidecars/panel/backend/devtools-port-probe.mjs',
     'sidecars/panel/backend/ide-remote-ssh.mjs',
+    'sidecars/panel/backend/session-store.mjs',
+    'sidecars/panel/backend/session-cleaner.mjs',
+    'sidecars/panel/backend/session-manager.mjs',
+    'sidecars/panel/backend/session-online-delete.mjs',
     'sidecars/panel/backend/host-i18n/index.mjs',
     'sidecars/panel/backend/account-credentials.ps1',
     'sidecars/panel/shared/settings-normalization.mjs',
@@ -70,8 +74,8 @@ test('pack-release-zip ships only runtime-essential files, excludes dev bloat, a
   assert.ok(existsSync(zipPath));
   assert.ok(summary.zipBytes > 100 * 1024, 'ZIP should contain compiled assets and backend');
   assert.ok(
-    summary.zipBytes < 900 * 1024,
-    `Runtime-only ZIP should stay compact (<900 KB), got ${(summary.zipBytes / 1024).toFixed(1)} KB`
+    summary.zipBytes < 1050 * 1024,
+    `Runtime-only ZIP should stay compact (<1050 KB), got ${(summary.zipBytes / 1024).toFixed(1)} KB`
   );
 
   // Extract via OS-native expander (same path used by plugin-updater.mjs, where extractDir already exists)

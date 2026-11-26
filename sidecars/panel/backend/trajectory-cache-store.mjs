@@ -8,15 +8,19 @@
  * - JSON/in-memory fallback for environments without `node:sqlite` or VM unit-test sandboxes.
  */
 
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { inferCompactionStepModels, normalizeCachedStep } from '../trajectory-metrics.mjs';
+import { writeJsonAtomicSync } from './fs-atomic.mjs';
 import { isPlainObject } from './http-helpers.mjs';
 import { hasBuiltinNodeSqlite } from './sqlite-client.mjs';
 import { writeTrajectoryCacheFile } from './trajectory-cache-file.mjs';
 import {
+  DEFAULT_REDACTED_SESSION_TITLE,
   computePrecomputedStepFlags,
   createTrajectorySqliteLedger,
+  redactLedgerMetaObject,
+  redactLedgerStepDetailObject,
 } from './trajectory-sqlite-ledger.mjs';
 
 export const CACHE_RUNNING_SAVE_INTERVAL_MS = 30_000;
@@ -641,6 +645,288 @@ export function createTrajectoryCacheStore({
     hasPendingTrajectoryCacheSave() {
       ensureLoaded();
       return state.needsSave;
+    },
+    /**
+     * 在线隐私脱敏指定已删会话的标题与用户输入提示词（保留 100% Token 与费用统计），
+     * 同步刷新 SQLite 账本、内存热缓存以及旧版 `.json.bak` 备份文件。
+     *
+     * @param {Iterable<string>} targetIds
+     * @param {{ placeholderTitle?: string }} [options={}]
+     */
+    redactConversations(targetIds, { placeholderTitle = DEFAULT_REDACTED_SESSION_TITLE } = {}) {
+      ensureLoaded();
+      syncExternalChangesNow();
+
+      const targetLowerSet = new Set();
+      for (const raw of targetIds || []) {
+        const lower = String(raw || '').trim().toLowerCase();
+        if (lower) targetLowerSet.add(lower);
+      }
+      if (targetLowerSet.size === 0) {
+        return {
+          ok: true,
+          redactedConversations: 0,
+          redactedSteps: 0,
+          redactedBakConversations: 0,
+          changedIds: [],
+        };
+      }
+
+      if (useSqlite && sqliteLedger) {
+        // 先刷盘任何待落盘脏数据，避免后续脱敏漏掉内存中的最新标题/提示词
+        flushTrajectoryCacheNow();
+      }
+
+      let dbResult = { redactedConversations: 0, redactedSteps: 0, changedIds: [] };
+      if (useSqlite && sqliteLedger) {
+        dbResult = sqliteLedger.redactConversations(targetLowerSet, { placeholderTitle });
+      }
+
+      // 同步脱敏内存热缓存对象
+      let memConvsChanged = 0;
+      let memStepsChanged = 0;
+      const changedIdSet = new Set(dbResult.changedIds || []);
+
+      for (const lower of targetLowerSet) {
+        const canon = byLower.get(lower);
+        const entry = canon ? cacheObj[canon] : null;
+        if (!entry || typeof entry !== 'object') continue;
+        const isCold = tcsIsColdEntry(entry);
+        const preFlags = entry._stepFlags || null;
+        const { meta: redactedMeta, changed: metaChanged } = redactLedgerMetaObject(entry, {
+          placeholderTitle,
+        });
+        let entryStepsChanged = 0;
+        let nextSteps = entry.steps;
+        if (Array.isArray(entry.steps)) {
+          const clonedSteps = entry.steps.slice();
+          for (let i = 0; i < clonedSteps.length; i += 1) {
+            const st = clonedSteps[i];
+            if (!st || typeof st !== 'object') continue;
+            const { detail: cleanedStep, changed: stChanged } = redactLedgerStepDetailObject(st);
+            if (stChanged && cleanedStep) {
+              clonedSteps[i] = cleanedStep;
+              entryStepsChanged += 1;
+            }
+          }
+          if (metaChanged || entryStepsChanged > 0) {
+            nextSteps = clonedSteps;
+          }
+        }
+        if (metaChanged || entryStepsChanged > 0) {
+          const nextEntry = { ...redactedMeta, steps: nextSteps };
+          if (isCold) {
+            tcsDefineHiddenProp(nextEntry, '_coldSteps', true);
+            tcsMarkColdSlimSteps(nextEntry.steps);
+          } else {
+            tcsDefineHiddenProp(nextEntry, '_coldSteps', false);
+          }
+          if (preFlags) {
+            tcsDefineHiddenProp(nextEntry, '_stepFlags', preFlags);
+          }
+          cacheObj[canon] = nextEntry;
+          dirtyUpserts.delete(lower);
+          memConvsChanged += 1;
+          memStepsChanged += entryStepsChanged;
+          changedIdSet.add(canon);
+        }
+      }
+
+      if (!useSqlite && cacheFilePath && (memConvsChanged > 0 || memStepsChanged > 0)) {
+        doWriteJson(cacheFilePath, cacheObj);
+        state.needsSave = false;
+        state.lastSavedAtMs = Date.now();
+      }
+
+      // 同步脱敏历史迁移残留的 trajectory_usage_cache.json.bak（若存在）
+      let redactedBakConversations = 0;
+      const bakPath = cacheFilePath ? `${cacheFilePath}.bak` : '';
+      if (bakPath && !tcsIsVirtualSandboxPath(bakPath) && existsSync(bakPath)) {
+        try {
+          const parsedBak = JSON.parse(readFileSync(bakPath, 'utf8'));
+          if (isPlainObject(parsedBak)) {
+            let bakDirty = false;
+            const nextBak = { ...parsedBak };
+            for (const [rawKey, rawEntry] of Object.entries(parsedBak)) {
+              const lower = String(rawKey || '').trim().toLowerCase();
+              if (!targetLowerSet.has(lower) || !isPlainObject(rawEntry)) continue;
+              const { meta: nextMeta, changed: mChanged } = redactLedgerMetaObject(rawEntry, {
+                placeholderTitle,
+              });
+              let sChangedCount = 0;
+              const origSteps = Array.isArray(rawEntry.steps) ? rawEntry.steps : [];
+              const nextSteps = origSteps.map((st) => {
+                if (!isPlainObject(st)) return st;
+                const { detail: cleaned, changed: sc } = redactLedgerStepDetailObject(st);
+                if (sc && cleaned) {
+                  sChangedCount += 1;
+                  return cleaned;
+                }
+                return st;
+              });
+              if (mChanged || sChangedCount > 0) {
+                nextBak[rawKey] = { ...nextMeta, steps: nextSteps };
+                redactedBakConversations += 1;
+                bakDirty = true;
+              }
+            }
+            if (bakDirty) {
+              writeJsonAtomicSync(bakPath, nextBak);
+            }
+          }
+        } catch {
+          // 忽略损坏的旧 .bak 文件
+        }
+      }
+
+      return {
+        ok: true,
+        redactedConversations: useSqlite
+          ? Math.max(dbResult.redactedConversations, memConvsChanged)
+          : memConvsChanged,
+        redactedSteps: useSqlite
+          ? Math.max(dbResult.redactedSteps, memStepsChanged)
+          : memStepsChanged,
+        redactedBakConversations,
+        changedIds: Array.from(changedIdSet),
+      };
+    },
+    /**
+     * 将跨端完整迁移 (`mode: "move"`) 的源会话缓存与永久 SQLite 账本无损重绑至目标新 UUID，
+     * 防止源会话在 `clearCache` / 扫描后以 `archived: true` 残留造成历史 Token 与费用翻倍。
+     *
+     * @param {Array<{ fromCascadeId: string, toCascadeId: string, patchMeta?: Record<string, any> }>} rekeySpecs
+     */
+    rekeyConversations(rekeySpecs = []) {
+      ensureLoaded();
+      syncExternalChangesNow();
+
+      const validSpecs = [];
+      const seenFrom = new Set();
+      for (const raw of Array.isArray(rekeySpecs) ? rekeySpecs : []) {
+        const fromLower = String(raw?.fromCascadeId || '').trim().toLowerCase();
+        const toCid = String(raw?.toCascadeId || '').trim();
+        const toLower = toCid.toLowerCase();
+        if (!fromLower || !toLower || fromLower === toLower || seenFrom.has(fromLower)) continue;
+        seenFrom.add(fromLower);
+        validSpecs.push({
+          fromCascadeId: String(raw?.fromCascadeId || '').trim(),
+          fromLower,
+          toCascadeId: toCid,
+          toLower,
+          patchMeta: isPlainObject(raw?.patchMeta) ? raw.patchMeta : null,
+        });
+      }
+      if (validSpecs.length === 0) {
+        return { ok: true, rekeyedCount: 0, pairs: [] };
+      }
+
+      if (useSqlite && sqliteLedger) {
+        flushTrajectoryCacheNow();
+      }
+
+      let dbRes = { rekeyedCount: 0, pairs: [] };
+      if (useSqlite && sqliteLedger) {
+        dbRes = sqliteLedger.rekeyConversations(validSpecs);
+      }
+
+      let memMoved = 0;
+      const movedPairs = [...(dbRes.pairs || [])];
+      const recordedPairLowers = new Set(
+        movedPairs.map((p) => String(p.fromCascadeId || '').toLowerCase())
+      );
+
+      for (const { fromLower, toCascadeId, toLower, patchMeta } of validSpecs) {
+        const fromCanon = byLower.get(fromLower);
+        const srcEntry = fromCanon ? cacheObj[fromCanon] : null;
+        if (!srcEntry || typeof srcEntry !== 'object') continue;
+
+        const existingDstCanon = byLower.get(toLower);
+        const existingDstEntry = existingDstCanon ? cacheObj[existingDstCanon] : null;
+        const srcStepsLen = Array.isArray(srcEntry.steps) ? srcEntry.steps.length : 0;
+        const dstStepsLen = Array.isArray(existingDstEntry?.steps) ? existingDstEntry.steps.length : 0;
+
+        delete cacheObj[fromCanon];
+        byLower.delete(fromLower);
+        const wasHot = hotLru.has(fromLower);
+        hotLru.delete(fromLower);
+        dirtyUpserts.delete(fromLower);
+        dirtyRemovals.delete(fromLower);
+
+        if (!existingDstEntry || srcStepsLen > dstStepsLen) {
+          if (existingDstCanon && existingDstCanon !== toCascadeId) {
+            delete cacheObj[existingDstCanon];
+          }
+          const isCold = tcsIsColdEntry(srcEntry);
+          const preFlags = srcEntry._stepFlags || null;
+          const nextEntry = patchMeta ? { ...srcEntry, ...patchMeta } : { ...srcEntry };
+          delete nextEntry.signature;
+          if (patchMeta && patchMeta.archived === false) {
+            delete nextEntry.archived;
+          }
+          tcsDefineHiddenProp(nextEntry, '_coldSteps', isCold);
+          if (isCold) {
+            tcsMarkColdSlimSteps(nextEntry.steps);
+          }
+          if (preFlags) {
+            tcsDefineHiddenProp(nextEntry, '_stepFlags', preFlags);
+          }
+          cacheObj[toCascadeId] = nextEntry;
+          byLower.set(toLower, toCascadeId);
+          dirtyRemovals.delete(toLower);
+          if (wasHot && !isCold) {
+            touchHotSession(toLower);
+          }
+        }
+
+        memMoved += 1;
+        if (!recordedPairLowers.has(fromLower)) {
+          movedPairs.push({ fromCascadeId: fromCanon, toCascadeId });
+          recordedPairLowers.add(fromLower);
+        }
+      }
+
+      if (!useSqlite && cacheFilePath && memMoved > 0) {
+        doWriteJson(cacheFilePath, cacheObj);
+        state.needsSave = false;
+        state.lastSavedAtMs = Date.now();
+      }
+
+      const bakPath = cacheFilePath ? `${cacheFilePath}.bak` : '';
+      if (bakPath && !tcsIsVirtualSandboxPath(bakPath) && existsSync(bakPath)) {
+        try {
+          const parsedBak = JSON.parse(readFileSync(bakPath, 'utf8'));
+          if (isPlainObject(parsedBak)) {
+            const specByFromLower = new Map(validSpecs.map((s) => [s.fromLower, s]));
+            let bakDirty = false;
+            const nextBak = { ...parsedBak };
+            for (const [rawKey, rawEntry] of Object.entries(parsedBak)) {
+              const lower = String(rawKey || '').trim().toLowerCase();
+              const spec = specByFromLower.get(lower);
+              if (!spec || !isPlainObject(rawEntry)) continue;
+              delete nextBak[rawKey];
+              if (!nextBak[spec.toCascadeId]) {
+                const nextEntry = spec.patchMeta ? { ...rawEntry, ...spec.patchMeta } : { ...rawEntry };
+                delete nextEntry.signature;
+                if (spec.patchMeta?.archived === false) delete nextEntry.archived;
+                nextBak[spec.toCascadeId] = nextEntry;
+              }
+              bakDirty = true;
+            }
+            if (bakDirty) {
+              writeJsonAtomicSync(bakPath, nextBak);
+            }
+          }
+        } catch {
+          // 忽略损坏的旧 .bak 文件
+        }
+      }
+
+      return {
+        ok: true,
+        rekeyedCount: Math.max(dbRes.rekeyedCount, memMoved),
+        pairs: movedPairs,
+      };
     },
     persistTrajectoryCacheIfNeeded,
     flushTrajectoryCacheNow,

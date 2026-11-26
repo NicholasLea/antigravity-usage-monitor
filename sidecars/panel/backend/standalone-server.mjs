@@ -557,6 +557,18 @@ export function createStandaloneWebServer(options = {}) {
           );
           return;
         }
+        if (pathname === '/api/sessions/reveal' && !isLoopbackClient) {
+          sendResponse(
+            res,
+            403,
+            'application/json; charset=utf-8',
+            JSON.stringify({
+              ok: false,
+              error: 'Session file reveal is only allowed from loopback clients',
+            })
+          );
+          return;
+        }
         let data = undefined;
         if (method === 'GET') {
           data = Object.fromEntries(urlObj.searchParams.entries());
@@ -593,6 +605,24 @@ export function createStandaloneWebServer(options = {}) {
               JSON.stringify({
                 ok: false,
                 error: 'Host I18n mutations are only allowed from loopback clients',
+              })
+            );
+            return;
+          }
+          if (
+            pathname === '/api/settings' &&
+            data &&
+            typeof data === 'object' &&
+            data.__sessionManagerAction === 'reveal' &&
+            !isLoopbackClient
+          ) {
+            sendResponse(
+              res,
+              403,
+              'application/json; charset=utf-8',
+              JSON.stringify({
+                ok: false,
+                error: 'Session file reveal is only allowed from loopback clients',
               })
             );
             return;

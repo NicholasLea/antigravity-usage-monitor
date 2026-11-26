@@ -168,7 +168,11 @@ async function readLinuxProcListeningPorts(pid, customProcFs = null) {
   }
 }
 
-function readHubDaemonCandidates(daemonDirs, preferredPids, isPidAliveFn) {
+export function readHubDaemonCandidates(
+  daemonDirs,
+  preferredPids = new Set(),
+  isPidAliveFn = defaultIsLsPidAlive
+) {
   const candidates = [];
   const seenKeys = new Set();
   for (const dir of Array.isArray(daemonDirs) ? daemonDirs : []) {

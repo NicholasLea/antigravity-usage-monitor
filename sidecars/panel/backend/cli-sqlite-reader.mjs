@@ -2090,6 +2090,8 @@ export function readLocalSqliteTrajectory(dbFilePath, options = {}) {
         .prepare('SELECT idx, step_type, status, metadata FROM steps ORDER BY idx ASC')
         .all();
       const ownStepRecords = [];
+      let foreignOriginStepCount = 0;
+      let maxForeignOriginStepIndex = -1;
       for (const row of stepRows || []) {
         const idx = Number.isFinite(Number(row?.idx)) ? Number(row.idx) : ownStepRecords.length;
         const stepTypeNum = Number(row?.step_type || 0);
@@ -2106,7 +2108,12 @@ export function readLocalSqliteTrajectory(dbFilePath, options = {}) {
           .trim()
           .toLowerCase();
         if (originCid && normCid && originCid !== normCid) {
-          // 过滤克隆自父会话的步骤，防止双倍重复计费
+          // 过滤克隆自父会话的步骤，防止双倍重复计费，同时记录跨源克隆步序上界以拦截 transcript 回退
+          foreignOriginStepCount += 1;
+          const foreignIdx = Number(metadata.sourceTrajectoryStepInfo?.stepIndex ?? idx);
+          if (Number.isFinite(foreignIdx) && foreignIdx > maxForeignOriginStepIndex) {
+            maxForeignOriginStepIndex = foreignIdx;
+          }
           continue;
         }
         ownStepRecords.push({ idx, stepTypeNum, statusNum, metadata });
@@ -2247,15 +2254,37 @@ export function readLocalSqliteTrajectory(dbFilePath, options = {}) {
         steps.push(stepObj);
       }
 
-      if (steps.length === 0 && generatorMetadata.length === 0 && !isSideQuestion) {
-        return null;
-      }
-
       const mergedMetadata = {
         ...trajectoryMetadata,
         parentConversationId: trajectoryMetadata.parentConversationId || parentConversationId,
         rootConversationId: trajectoryMetadata.rootConversationId || rootConversationId,
       };
+
+      if (steps.length === 0 && generatorMetadata.length === 0 && !isSideQuestion) {
+        if (options?.includeForeignStepBounds && foreignOriginStepCount > 0) {
+          return {
+            cascadeId: normCid,
+            numTotalSteps: 0,
+            rawTableStepCount: stepRows.length,
+            trajectoryType,
+            isSideQuestion: false,
+            forkParentConversationId,
+            firstOwnUserPrompt: '',
+            steps: [],
+            generatorMetadata: [],
+            rootConversationId: mergedMetadata.rootConversationId,
+            parentConversationId: mergedMetadata.parentConversationId,
+            hasForeignOriginSteps: true,
+            maxForeignOriginStepIndex,
+            trajectory: {
+              metadata: mergedMetadata,
+              steps: [],
+              generatorMetadata: [],
+            },
+          };
+        }
+        return null;
+      }
 
       return {
         cascadeId: normCid,
@@ -2269,6 +2298,9 @@ export function readLocalSqliteTrajectory(dbFilePath, options = {}) {
         generatorMetadata,
         rootConversationId: mergedMetadata.rootConversationId,
         parentConversationId: mergedMetadata.parentConversationId,
+        ...(foreignOriginStepCount > 0
+          ? { hasForeignOriginSteps: true, maxForeignOriginStepIndex }
+          : {}),
         trajectory: {
           metadata: mergedMetadata,
           steps,

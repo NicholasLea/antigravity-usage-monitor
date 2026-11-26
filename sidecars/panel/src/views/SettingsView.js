@@ -5,7 +5,7 @@
  */
 
 import { defineComponent } from '../core/component.js';
-import { h, patchAttr } from '../core/domPatch.js';
+import { h, patchAttr, patchClasses } from '../core/domPatch.js';
 import { i18nStore, t } from '../i18n/index.js';
 import { telemetryStore } from '../store/telemetryStore.js';
 import { getVisibleMonitorView, uiStore } from '../store/uiStore.js';
@@ -73,6 +73,8 @@ export const SettingsView = defineComponent({
       patchAttr(structureTab.el, 'hidden', target !== 'structure');
       patchAttr(structureTab.refs.thirdNavBar, 'hidden', target !== 'structure');
       patchAttr(sessionsTab.el, 'hidden', target !== 'sessions');
+      patchAttr(sessionsTab.refs.thirdNavBar, 'hidden', target !== 'sessions');
+      patchClasses(viewScrollbar?.el, { 'is-full-height-tab': target === 'sessions' });
       patchAttr(otherTab.el, 'hidden', target !== 'other');
       if (target === 'sessions' && activeView === 'settings') {
         void sessionsTab.refs.ensureLoaded();
@@ -107,14 +109,21 @@ export const SettingsView = defineComponent({
     const rootEl = h('div', { className: 'settings-view-root' }, [
       subNavBar,
       structureTab.refs.thirdNavBar,
+      sessionsTab.refs.thirdNavBar,
       viewScrollbar.el,
     ]);
 
+    let lastEndpointId = telemetryStore.getState().telemetry?.endpoint?.id || '';
     function syncActiveTab() {
       const ui = uiStore.getState();
       const { settingsSubTab } = ui;
-      if (getVisibleMonitorView(ui) !== 'settings') return;
       const telemetry = telemetryStore.getState().telemetry;
+      const curEndpointId = telemetry?.endpoint?.id || '';
+      if (curEndpointId && curEndpointId !== lastEndpointId) {
+        lastEndpointId = curEndpointId;
+        sessionsTab.refs.markStale?.();
+      }
+      if (getVisibleMonitorView(ui) !== 'settings') return;
       const settings = telemetry?.settings;
       if (accountTab) {
         accountTab.refs.renderAccount(telemetry?.account, telemetry?.quotas, settings);
@@ -158,6 +167,7 @@ export const SettingsView = defineComponent({
 
     const unsubTelemetry = telemetryStore.subscribe(
       (st) => ({
+        endpointId: st.telemetry?.endpoint?.id,
         settings: st.telemetry?.settings,
         windowBridge: st.telemetry?.windowBridge,
         cloudCodeProxy: st.telemetry?.cloudCodeProxy,

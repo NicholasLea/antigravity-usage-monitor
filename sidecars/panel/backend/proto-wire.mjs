@@ -337,3 +337,225 @@ export function patchProtoMessageFields(raw, replacements) {
   }
   return Buffer.concat(out);
 }
+
+// ---------------------------------------------------------------------------
+// 严格模式 Protobuf 摘要索引（agyhub/jetbox_summaries_proto.pb）读取与无损过滤原语
+// ---------------------------------------------------------------------------
+
+const PROTO_SUMMARY_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function readStrictProtoVarint(buf, state, limit) {
+  let result = 0n;
+  let shift = 0n;
+  for (let i = 0; i < 10; i += 1) {
+    if (state.off >= limit) {
+      throw new Error('Truncated protobuf varint');
+    }
+    const byte = buf[state.off++];
+    if (i === 9 && byte > 1) {
+      throw new Error('Protobuf varint overflow');
+    }
+    result |= BigInt(byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) {
+      return result;
+    }
+    shift += 7n;
+  }
+  throw new Error('Malformed protobuf varint');
+}
+
+function readStrictProtoLengthEnd(buf, state, limit) {
+  const lenBig = readStrictProtoVarint(buf, state, limit);
+  const len = Number(lenBig);
+  if (!Number.isSafeInteger(len) || len < 0 || state.off + len > limit) {
+    throw new Error('Truncated protobuf length-delimited field');
+  }
+  return state.off + len;
+}
+
+function skipStrictProtoField(buf, state, wireType, limit, depth = 0) {
+  if (depth > 32) {
+    throw new Error('Protobuf group nesting limit exceeded');
+  }
+  if (wireType === 0) {
+    readStrictProtoVarint(buf, state, limit);
+  } else if (wireType === 1) {
+    if (state.off + 8 > limit) throw new Error('Truncated protobuf 64-bit field');
+    state.off += 8;
+  } else if (wireType === 2) {
+    state.off = readStrictProtoLengthEnd(buf, state, limit);
+  } else if (wireType === 5) {
+    if (state.off + 4 > limit) throw new Error('Truncated protobuf 32-bit field');
+    state.off += 4;
+  } else if (wireType === 3) {
+    while (state.off < limit) {
+      const innerTag = readStrictProtoVarint(buf, state, limit);
+      const innerFn = Number(innerTag >> 3n);
+      const innerWt = Number(innerTag & 7n);
+      if (innerFn === 0) throw new Error('Invalid protobuf field number 0 in group');
+      if (innerWt === 4) return;
+      skipStrictProtoField(buf, state, innerWt, limit, depth + 1);
+    }
+    throw new Error('Unterminated protobuf group');
+  } else {
+    throw new Error(`Invalid protobuf wire type ${wireType}`);
+  }
+}
+
+function decodeStrictSummaryMapEntryKey(entryBuf, expectedValueWireType) {
+  const state = { off: 0 };
+  const limit = entryBuf.length;
+  let key = null;
+  let sawValue = false;
+  while (state.off < limit) {
+    const tag = readStrictProtoVarint(entryBuf, state, limit);
+    const fn = Number(tag >> 3n);
+    const wt = Number(tag & 7n);
+    if (fn === 0) throw new Error('Invalid protobuf map entry field number 0');
+    if (fn === 1 && wt === 2) {
+      const end = readStrictProtoLengthEnd(entryBuf, state, limit);
+      key = decodeUtf8Slice(entryBuf, state.off, end);
+      state.off = end;
+    } else if (fn === 2 && wt === expectedValueWireType) {
+      skipStrictProtoField(entryBuf, state, wt, limit);
+      sawValue = true;
+    } else {
+      skipStrictProtoField(entryBuf, state, wt, limit);
+    }
+  }
+  if (typeof key !== 'string' || !PROTO_SUMMARY_UUID_RE.test(key)) {
+    throw new Error('Summary proto map entry key is missing or not a valid UUID');
+  }
+  if (!sawValue && expectedValueWireType === 0) {
+    // proto3 map<string, int64> omits value=0 on the wire, which is valid
+  }
+  return key.toLowerCase();
+}
+
+function rawSliceMentionsAnyId(sliceBuf, targetIds) {
+  if (!sliceBuf || sliceBuf.length < 36 || !targetIds || targetIds.length === 0) return false;
+  const asciiLower = sliceBuf.toString('latin1').toLowerCase();
+  for (const id of targetIds) {
+    if (asciiLower.includes(id)) return true;
+  }
+  return false;
+}
+
+/**
+ * 解析 Antigravity 摘要索引文件（`agyhub_summaries_proto.pb` / `jetbox_summaries_proto.pb`）中的全部会话 UUID。
+ *
+ * @param {Uint8Array | Buffer} rawBuf
+ * @param {{ isDesktop?: boolean, strict?: boolean }} [options={}]
+ * @returns {Set<string>} 小写 36 位 UUID 集合
+ */
+export function parseSummaryProtoIndexIds(rawBuf, { isDesktop = false, strict = false } = {}) {
+  const ids = new Set();
+  const u8 = toUint8Array(rawBuf);
+  if (!u8 || u8.byteLength === 0) return ids;
+  const buf = Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength);
+  const state = { off: 0 };
+  const limit = buf.length;
+
+  try {
+    while (state.off < limit) {
+      const tag = readStrictProtoVarint(buf, state, limit);
+      const fn = Number(tag >> 3n);
+      const wt = Number(tag & 7n);
+      if (fn === 0) throw new Error('Invalid protobuf top-level field number 0');
+      if (fn === 1 && wt === 2) {
+        const end = readStrictProtoLengthEnd(buf, state, limit);
+        const key = decodeStrictSummaryMapEntryKey(buf.subarray(state.off, end), 2);
+        ids.add(key);
+        state.off = end;
+      } else if (isDesktop && fn === 2 && wt === 2) {
+        const end = readStrictProtoLengthEnd(buf, state, limit);
+        const key = decodeStrictSummaryMapEntryKey(buf.subarray(state.off, end), 0);
+        ids.add(key);
+        state.off = end;
+      } else {
+        skipStrictProtoField(buf, state, wt, limit);
+      }
+    }
+    return ids;
+  } catch (err) {
+    if (strict) throw err;
+    return ids;
+  }
+}
+
+/**
+ * 从 Antigravity 摘要索引文件中严格过滤掉目标会话 UUID，其余已知/未知字段按原始字节无损透传。
+ * 遇到畸形 varint、截断字段、或未知字段引用目标 UUID 时直接抛错，严禁写入损坏索引。
+ *
+ * @param {Uint8Array | Buffer} rawBuf
+ * @param {Set<string> | Iterable<string>} removeIds
+ * @param {{ isDesktop?: boolean }} [options={}]
+ * @returns {{ buffer: Buffer, removedCount: number, changed: boolean }}
+ */
+export function filterSummaryProtoIndex(rawBuf, removeIds, { isDesktop = false } = {}) {
+  const u8 = toUint8Array(rawBuf);
+  if (!u8 || u8.byteLength === 0) {
+    return { buffer: Buffer.alloc(0), removedCount: 0, changed: false };
+  }
+  const buf = Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength);
+  const removeSet = new Set();
+  for (const id of removeIds || []) {
+    const norm = String(id || '').trim().toLowerCase();
+    if (PROTO_SUMMARY_UUID_RE.test(norm)) removeSet.add(norm);
+  }
+  if (removeSet.size === 0) {
+    return { buffer: buf, removedCount: 0, changed: false };
+  }
+  const removeList = Array.from(removeSet);
+
+  const state = { off: 0 };
+  const limit = buf.length;
+  const keptSlices = [];
+  let removedCount = 0;
+
+  while (state.off < limit) {
+    const fieldStart = state.off;
+    const tag = readStrictProtoVarint(buf, state, limit);
+    const fn = Number(tag >> 3n);
+    const wt = Number(tag & 7n);
+    if (fn === 0) throw new Error('Invalid protobuf top-level field number 0');
+
+    if (fn === 1 && wt === 2) {
+      const end = readStrictProtoLengthEnd(buf, state, limit);
+      const key = decodeStrictSummaryMapEntryKey(buf.subarray(state.off, end), 2);
+      state.off = end;
+      if (removeSet.has(key)) {
+        removedCount += 1;
+      } else {
+        keptSlices.push(buf.subarray(fieldStart, end));
+      }
+    } else if (isDesktop && fn === 2 && wt === 2) {
+      const end = readStrictProtoLengthEnd(buf, state, limit);
+      const key = decodeStrictSummaryMapEntryKey(buf.subarray(state.off, end), 0);
+      state.off = end;
+      if (removeSet.has(key)) {
+        removedCount += 1;
+      } else {
+        keptSlices.push(buf.subarray(fieldStart, end));
+      }
+    } else {
+      skipStrictProtoField(buf, state, wt, limit);
+      const rawField = buf.subarray(fieldStart, state.off);
+      if (rawSliceMentionsAnyId(rawField, removeList)) {
+        throw new Error(
+          `Unsupported summary protobuf field #${fn} (wireType=${wt}) references a target session UUID`
+        );
+      }
+      keptSlices.push(rawField);
+    }
+  }
+
+  if (removedCount === 0) {
+    return { buffer: buf, removedCount: 0, changed: false };
+  }
+  return {
+    buffer: Buffer.concat(keptSlices),
+    removedCount,
+    changed: true,
+  };
+}

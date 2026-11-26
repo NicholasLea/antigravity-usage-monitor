@@ -66,7 +66,10 @@ export function deliverCdpBridgeResponses(responses) {
     if (item.ok) {
       entry.resolve(item.data);
     } else {
-      entry.reject(new Error(item.error || `HTTP ${item.status || 500}`));
+      const cdpErr = new Error(item.error || `HTTP ${item.status || 500}`);
+      if (item.status) cdpErr.httpStatus = item.status;
+      if (item.data !== undefined) cdpErr.data = item.data;
+      entry.reject(cdpErr);
     }
   }
   return delivered;
@@ -209,6 +212,7 @@ export async function callSidecarApi(path, { method = 'GET', body, abortKey = ''
       const httpErr = new Error(data.error || `HTTP ${res.status}`);
       httpErr.httpStatus = res.status;
       httpErr.retryable = Boolean(data?.retryable);
+      httpErr.data = data;
       throw httpErr;
     }
     if (activeBridge) {
@@ -227,10 +231,10 @@ export async function callSidecarApi(path, { method = 'GET', body, abortKey = ''
         cdpTimeoutMs,
       });
     } catch (cdpErr) {
-      if (signal?.aborted || cdpErr?.name === 'AbortError') {
+      if (signal?.aborted || cdpErr?.name === 'AbortError' || cdpErr?.httpStatus) {
         throw cdpErr;
       }
-      // 热更新或守护重启期间若 CDP 尚未轮询投递，自动重置回 HTTP 并用最新桥接端口重试一次；
+      // 热更新或守护重启期间若 CDP 尚未轮询投递（超时/队列取代，无 httpStatus），自动重置回 HTTP 并用最新桥接端口重试一次；
       // 但若端点已切换（例如本地 <-> SSH），绝不将旧端点请求重放至新端点
       const latestBridge = getWindowBridgeConfig() || initialBridge;
       ensureEndpointUnchanged(latestBridge);

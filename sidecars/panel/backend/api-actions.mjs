@@ -22,7 +22,11 @@ import {
   trackEndpointRequestStart,
 } from './endpoint-registry.mjs';
 import { isLocalHostRequest, readLocalAsync } from './http-helpers.mjs';
-import { revealLocalExportFile, writeLocalExportFile } from './file-exporter.mjs';
+import {
+  revealLocalExportFile,
+  revealLocalSessionPath,
+  writeLocalExportFile,
+} from './file-exporter.mjs';
 import {
   clearScannerRuntimeMemos,
   collectAuthoritativeLiveCascadeIds,
@@ -85,7 +89,21 @@ import {
 } from './host-i18n/index.mjs';
 import { getEffectiveHostTheme, recordPreloadHostTheme } from './host-theme-store.mjs';
 import { getQuotaReservationLogSnapshot } from './quota-reservation.mjs';
+import {
+  authorizeSessionPathsForReveal,
+  clearSessionManagerScanCaches,
+  deleteLocalSessions,
+  deleteLocalSessionsAsync,
+  getAuthorizedRevealSnapshot,
+  previewSessionCleanup,
+  previewSessionCleanupAsync,
+  scanLocalSessions,
+  scanLocalSessionsAsync,
+  sweepLedgerPrivacy,
+} from './session-manager.mjs';
 import { getSessionMigrationCatalog, migrateSessions } from './session-migrator.mjs';
+import { SESSION_CLIENT_DEFS, resolveClientRoot } from './session-store.mjs';
+import { clearUsageAggregatorMemo } from './usage-aggregator.mjs';
 import {
   ensureCliStatusLineConfigured,
   getCliStatusLineRuntimeStatus,
@@ -896,7 +914,7 @@ export function executeSessionMigrationCatalogAction(data = undefined, opts = {}
       }),
     };
   }
-  const catalog = getSessionMigrationCatalog();
+  const catalog = getSessionMigrationCatalog(opts?.sessionOptions || {});
   return {
     status: 200,
     contentType: 'application/json',
@@ -919,10 +937,10 @@ export function executeSessionMigrationMigrateAction(data = undefined, opts = {}
     };
   }
   const cleanData = stripEndpointField(data);
-  const result = migrateSessions(cleanData);
+  const result = migrateSessions(cleanData, opts?.sessionOptions || {});
   if (result.migratedCount > 0) {
-    clearScannerRuntimeMemos(LOCAL_ENDPOINT_ID);
-    clearTelemetryBuilderMemo(LOCAL_ENDPOINT_ID);
+    clearSessionManagerScanCaches();
+    invalidateLocalSessionDisplayCaches();
   }
   return {
     status: Number(result.status || (result.ok ? 200 : 400)),
@@ -1000,6 +1018,187 @@ export function executeRevealFileAction(data, opts = {}) {
   };
 }
 
+let inFlightSessionsListPromise = null;
+
+export async function executeSessionsListAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        ok: false,
+        error: 'unsupported_remote',
+        clients: [],
+        sessions: [],
+        counts: { total: 0, indexOnly: 0, byClient: { desktop: 0, cli: 0, ide_legacy: 0 } },
+        warnings: [],
+      }),
+    };
+  }
+  const sessionOpts = opts?.sessionOptions || {};
+  const isDefaultLocal = !opts?.sessionOptions;
+  let result;
+  if (isDefaultLocal) {
+    if (!inFlightSessionsListPromise) {
+      inFlightSessionsListPromise = scanLocalSessionsAsync(sessionOpts).finally(() => {
+        inFlightSessionsListPromise = null;
+      });
+    }
+    result = await inFlightSessionsListPromise;
+  } else {
+    result = await scanLocalSessionsAsync(sessionOpts);
+  }
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+export async function executeSessionsCleanupPreviewAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'unsupported_remote' }),
+    };
+  }
+  const cleanData = stripEndpointField(data);
+  const result = await previewSessionCleanupAsync(cleanData || {}, opts?.sessionOptions || {});
+  return {
+    status: 200,
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+function invalidateLocalSessionDisplayCaches() {
+  const localPrefix = `${LOCAL_ENDPOINT_ID}::`;
+  for (const key of Array.from(displayStepsCache.keys())) {
+    if (key.startsWith(localPrefix)) {
+      displayStepsCache.delete(key);
+    }
+  }
+  clearScannerRuntimeMemos(LOCAL_ENDPOINT_ID);
+  clearTelemetryBuilderMemo(LOCAL_ENDPOINT_ID);
+  clearUsageAggregatorMemo(LOCAL_ENDPOINT_ID);
+}
+
+export async function executeSessionsDeleteAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'unsupported_remote', deletedCount: 0, failedCount: 0 }),
+    };
+  }
+  const cleanData = stripEndpointField(data);
+  const result = await deleteLocalSessionsAsync(cleanData || {}, opts?.sessionOptions || {});
+  if (result.deletedCount > 0 || (result.ledgerRedaction?.redactedConversations || 0) > 0) {
+    invalidateLocalSessionDisplayCaches();
+  }
+  return {
+    status: Number(result.status || (result.ok ? 200 : 400)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+export function executeSessionsRedactLedgerAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'unsupported_remote' }),
+    };
+  }
+  const sessionOpts = opts?.sessionOptions || {};
+  const extraLiveIds =
+    !sessionOpts.geminiDir && !sessionOpts.extraLiveIds
+      ? collectAuthoritativeLiveCascadeIds(null)
+      : sessionOpts.extraLiveIds;
+  const result = sweepLedgerPrivacy({
+    ...sessionOpts,
+    ...(extraLiveIds ? { extraLiveIds } : {}),
+  });
+  if ((result.redactedConversations || 0) > 0 || (result.redactedSteps || 0) > 0) {
+    invalidateLocalSessionDisplayCaches();
+  }
+  return {
+    status: Number(result.status || (result.ok ? 200 : 500)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
+export function executeSessionsRevealAction(data = undefined, opts = {}) {
+  const epCtx = resolveActionEndpoint(data, opts);
+  if (!epCtx.ok) {
+    return buildEndpointErrorResponse(epCtx);
+  }
+  if (epCtx.isRemote) {
+    return {
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: false, error: 'unsupported_remote' }),
+    };
+  }
+  const cleanData = stripEndpointField(data);
+  const explicitGeminiDir = opts?.sessionOptions?.geminiDir;
+  const allowedRoots = SESSION_CLIENT_DEFS.map((def) => resolveClientRoot(def, explicitGeminiDir)).filter(Boolean);
+  const targetRawPath = cleanData?.path || cleanData?.filePath || '';
+  const revealBaseOpts = {
+    allowedRoots,
+    ...(opts?.platform ? { platform: opts.platform } : {}),
+    ...(typeof opts?.spawnFn === 'function' ? { spawnFn: opts.spawnFn } : {}),
+  };
+  let result = revealLocalSessionPath(targetRawPath, {
+    ...revealBaseOpts,
+    allowedPaths: getAuthorizedRevealSnapshot(),
+  });
+  if (!result.ok && result.status === 403 && cleanData?.clientId && cleanData?.sessionId) {
+    const refreshedPaths = authorizeSessionPathsForReveal(
+      { clientId: cleanData.clientId, sessionId: cleanData.sessionId },
+      opts?.sessionOptions || {}
+    );
+    result = revealLocalSessionPath(targetRawPath, {
+      ...revealBaseOpts,
+      allowedPaths: refreshedPaths,
+    });
+  }
+  return {
+    status: Number(result.status || (result.ok ? 200 : 400)),
+    contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-store' },
+    body: JSON.stringify(result),
+  };
+}
+
 const BRIDGE_ROUTE_LOOKUP = new Map(
   BRIDGE_API_ROUTE_DEFS.map((r) => [`${r.method}:${r.path}`, r.action])
 );
@@ -1021,6 +1220,24 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       }
       if (isPlainObject(data) && data.__sessionMigrationAction === 'migrate') {
         return executeSessionMigrationMigrateAction(data.payload || data, opts);
+      }
+      if (isPlainObject(data) && typeof data.__sessionManagerAction === 'string') {
+        const smPayload = isPlainObject(data.payload) ? data.payload : data;
+        if (data.__sessionManagerAction === 'list') {
+          return executeSessionsListAction(smPayload, opts);
+        }
+        if (data.__sessionManagerAction === 'cleanup_preview') {
+          return executeSessionsCleanupPreviewAction(smPayload, opts);
+        }
+        if (data.__sessionManagerAction === 'delete') {
+          return executeSessionsDeleteAction(smPayload, opts);
+        }
+        if (data.__sessionManagerAction === 'redact_ledger') {
+          return executeSessionsRedactLedgerAction(smPayload, opts);
+        }
+        if (data.__sessionManagerAction === 'reveal') {
+          return executeSessionsRevealAction(smPayload, opts);
+        }
       }
       if (isPlainObject(data) && data.__exportFileAction === 'save') {
         return executeExportFileAction(data.payload || data, opts);
@@ -1083,6 +1300,16 @@ export async function dispatchBridgeApiRequest(pathname, method, data, opts = un
       return executeHostI18nGetAction(opts);
     case 'host_i18n_action':
       return executeHostI18nPostAction(data, opts);
+    case 'sessions_list':
+      return executeSessionsListAction(data, opts);
+    case 'sessions_cleanup_preview':
+      return executeSessionsCleanupPreviewAction(data, opts);
+    case 'sessions_delete':
+      return executeSessionsDeleteAction(data, opts);
+    case 'sessions_redact_ledger':
+      return executeSessionsRedactLedgerAction(data, opts);
+    case 'sessions_reveal':
+      return executeSessionsRevealAction(data, opts);
     default:
       return {
         status: 404,

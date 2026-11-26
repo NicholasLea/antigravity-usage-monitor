@@ -70,6 +70,7 @@ export const SessionMigrationCard = defineComponent({
     let searchQuery = '';
     let visibleLimit = SMIG_PAGE_SIZE;
     const selectedIds = new Set();
+    let lastAnchorId = '';
     let lastResult = null;
     let copiedCmdId = '';
     let copiedTimer = null;
@@ -484,13 +485,32 @@ export const SessionMigrationCard = defineComponent({
             [checkIcon]
           );
 
-          const toggleItem = () => {
+          const toggleItem = (e) => {
             if (item.isRunning || isMigrating) return;
-            if (selectedIds.has(item.cascadeId)) {
-              selectedIds.delete(item.cascadeId);
-            } else {
-              selectedIds.add(item.cascadeId);
+            const willSelect = !selectedIds.has(item.cascadeId);
+            if (Boolean(e?.shiftKey) && lastAnchorId) {
+              const anchorIdx = filtered.findIndex((it) => it.cascadeId === lastAnchorId);
+              const curIdx = filtered.findIndex((it) => it.cascadeId === item.cascadeId);
+              if (anchorIdx >= 0 && curIdx >= 0) {
+                e?.preventDefault?.();
+                const start = Math.min(anchorIdx, curIdx);
+                const end = Math.max(anchorIdx, curIdx);
+                for (let i = start; i <= end; i += 1) {
+                  const candidate = filtered[i];
+                  if (candidate.isRunning) continue;
+                  if (willSelect) selectedIds.add(candidate.cascadeId);
+                  else selectedIds.delete(candidate.cascadeId);
+                }
+                renderSessionList();
+                return;
+              }
             }
+            if (willSelect) {
+              selectedIds.add(item.cascadeId);
+            } else {
+              selectedIds.delete(item.cascadeId);
+            }
+            lastAnchorId = item.cascadeId;
             renderSessionList();
           };
 
@@ -675,8 +695,41 @@ export const SessionMigrationCard = defineComponent({
       }
     }
 
+    let catalogLoadSeq = 0;
+    let activeCatalogLoads = 0;
+
+    function applyCatalog(nextCatalog) {
+      if (destroyed) return;
+      catalogLoadSeq += 1;
+      hasLoadedOnce = true;
+      isLoading = false;
+      if (refreshBtn) patchAttr(refreshBtn, 'disabled', false);
+      if (nextCatalog && typeof nextCatalog === 'object') {
+        catalog = nextCatalog;
+        ensureValidSelectionDefaults();
+        syncControlsAndList();
+      } else {
+        catalog = null;
+        patchAttr(rootEl, 'hidden', true);
+        props?.onStateChange?.({ status: 'unavailable' });
+      }
+    }
+
     async function loadCatalog(force = false) {
-      if (isLoading || (hasLoadedOnce && !force)) return;
+      if (!force && (isLoading || hasLoadedOnce)) return;
+      if (force && typeof props?.onRequestRefresh === 'function') {
+        isLoading = true;
+        if (refreshBtn) patchAttr(refreshBtn, 'disabled', true);
+        try {
+          await props.onRequestRefresh();
+        } finally {
+          isLoading = false;
+          if (refreshBtn) patchAttr(refreshBtn, 'disabled', false);
+        }
+        return;
+      }
+      const seq = ++catalogLoadSeq;
+      activeCatalogLoads += 1;
       isLoading = true;
       if (!catalog) {
         props?.onStateChange?.({ status: 'loading' });
@@ -684,7 +737,7 @@ export const SessionMigrationCard = defineComponent({
       if (refreshBtn) patchAttr(refreshBtn, 'disabled', true);
       try {
         const res = await loadCatalogFn();
-        if (destroyed) return;
+        if (destroyed || seq !== catalogLoadSeq) return;
         hasLoadedOnce = true;
         if (res && typeof res === 'object') {
           catalog = res;
@@ -696,13 +749,27 @@ export const SessionMigrationCard = defineComponent({
         }
       } catch {
         // 本地目录或 API 暂不可用时静默隐藏卡片，避免干扰其他设置项
-        if (!destroyed && !catalog) {
+        if (!destroyed && seq === catalogLoadSeq && !catalog) {
           patchAttr(rootEl, 'hidden', true);
           props?.onStateChange?.({ status: 'error' });
         }
       } finally {
-        isLoading = false;
-        if (refreshBtn) patchAttr(refreshBtn, 'disabled', false);
+        activeCatalogLoads = Math.max(0, activeCatalogLoads - 1);
+        if (activeCatalogLoads === 0) {
+          isLoading = false;
+          if (refreshBtn) patchAttr(refreshBtn, 'disabled', false);
+        }
+      }
+    }
+
+    function markStale() {
+      catalogLoadSeq += 1;
+      hasLoadedOnce = false;
+      catalog = null;
+      selectedIds.clear();
+      lastResult = null;
+      if (bodyMounted) {
+        renderResultBox();
       }
     }
 
@@ -807,8 +874,11 @@ export const SessionMigrationCard = defineComponent({
     return {
       el: rootEl,
       refs: {
+        applyCatalog,
+        hasCatalog: () => Boolean(hasLoadedOnce && catalog),
         ensureLoaded: () => loadCatalog(false),
         reload: () => loadCatalog(true),
+        markStale,
         refreshLabels,
       },
     };

@@ -226,22 +226,28 @@ export function isSqliteBusyError(err) {
  * @param {(db: any) => T} queryFn
  * @returns {T | null}
  */
-export function withReadOnlySqliteDb(dbPath, queryFn) {
+export function withReadOnlySqliteDb(
+  dbPath,
+  queryFn,
+  { busyTimeoutMs = 1000, maxAttempts = 2, dbStat = null, walStat = null, skipWalStat = false } = {}
+) {
   const DatabaseSync = getNodeSqliteDatabaseSync();
   if (!DatabaseSync) return null;
-  if (!isSqliteDbReadyForRead(dbPath)) return null;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  if (!isSqliteDbReadyForRead(dbPath, { dbStat, walStat, skipWalStat })) return null;
+  const attempts = Math.max(1, Math.floor(Number(maxAttempts) || 2));
+  const timeout = Math.max(50, Math.floor(Number(busyTimeoutMs) || 1000));
+  for (let attempt = 0; attempt < attempts; attempt++) {
     let db = null;
     try {
       db = new DatabaseSync(dbPath, { readOnly: true });
       try {
-        db.exec('PRAGMA busy_timeout = 1000;');
+        db.exec(`PRAGMA busy_timeout = ${timeout};`);
       } catch {
         // 兼容最小测试桩
       }
       return queryFn(db);
     } catch (err) {
-      if (attempt === 0 && isSqliteBusyError(err)) {
+      if (attempt + 1 < attempts && isSqliteBusyError(err)) {
         continue;
       }
       throw err;

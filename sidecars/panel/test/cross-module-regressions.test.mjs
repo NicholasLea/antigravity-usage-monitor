@@ -1136,7 +1136,7 @@ test('P1 audit fixes: shared third-party pool & route single-source, pure frozen
 
   assert.equal(normalizeI18nLanguage('system'), 'auto');
   assert.equal(typeof isEquivalentTelemetry, 'function');
-  assert.equal(BRIDGE_API_ROUTE_DEFS.length, 17);
+  assert.equal(BRIDGE_API_ROUTE_DEFS.length, 22);
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/bridge/relaunch'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/session-migration/catalog'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/session-migration/migrate'));
@@ -1145,6 +1145,11 @@ test('P1 audit fixes: shared third-party pool & route single-source, pure frozen
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/quota-reservation/log'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/host-i18n' && r.method === 'GET'));
   assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/host-i18n' && r.method === 'POST'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/sessions/list' && r.method === 'GET'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/sessions/cleanup-preview' && r.method === 'POST'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/sessions/delete' && r.method === 'POST'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/sessions/redact-ledger' && r.method === 'POST'));
+  assert.ok(BRIDGE_API_ROUTE_DEFS.some((r) => r.path === '/api/sessions/reveal' && r.method === 'POST'));
 
   // 1. Third-party pool parity across backend, CLI statusline, and frontend metricRegistry
   const h = backendHarness();
