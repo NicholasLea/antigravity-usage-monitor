@@ -1929,3 +1929,130 @@ test('deep cross-platform regressions: 0B lock contention, D-Bus secret-service 
     assert.deepEqual(machoClients, [{ id: machoId, secret: machoSec }]);
   }
 });
+
+test('macOS go-keyring-base64 Keychain entries work for capture, manual import, hex stdout, and pre-switch auto-backup', async (t) => {
+  const dir = await mkdtemp(fileURLToPath(new URL('../.account-mac-gokeyring-', import.meta.url)));
+  t.after(async () => {
+    clearAccountVaultRuntimeState();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const makeHostCred = (email, rt) =>
+    JSON.stringify({
+      token: {
+        access_token: `access-${rt}`,
+        token_type: 'Bearer',
+        refresh_token: rt,
+        expiry: new Date(Date.now() + 3600_000).toISOString(),
+        expires_in: 3599,
+      },
+      auth_method: 'consumer',
+      id_token_email: email,
+      writer_id: 'language_server_macos_arm64',
+    });
+
+  const oldCredJson = makeHostCred('old-mac@gmail.com', '1//old-mac-refresh-token-1234567890');
+  const goKeyringRaw = `go-keyring-base64:${Buffer.from(oldCredJson, 'utf8').toString('base64')}`;
+
+  // 1. Direct manual import and email extraction accept go-keyring-base64: wrapper
+  assert.equal(extractHostCredentialEmail(goKeyringRaw), 'old-mac@gmail.com');
+  const normalizedManual = normalizeAccountCredential(goKeyringRaw);
+  assert.ok(normalizedManual, 'normalizeAccountCredential must unwrap go-keyring-base64:');
+  assert.equal(JSON.parse(normalizedManual).token.refresh_token, '1//old-mac-refresh-token-1234567890');
+
+  // 2. Capture from macOS Keychain (both direct ASCII and hex-encoded go-keyring-base64:)
+  const keychain = new Map();
+  keychain.set('gemini:antigravity', goKeyringRaw);
+  let returnHexForHost = false;
+  const runSpawn = (cmd, args, opts = {}) => {
+    assert.equal(cmd, '/usr/bin/security');
+    if (args[0] === 'find-generic-password') {
+      const sIdx = args.indexOf('-s');
+      const aIdx = args.indexOf('-a');
+      const k = `${args[sIdx + 1]}:${args[aIdx + 1]}`;
+      if (!keychain.has(k)) return { status: 44, stdout: '', stderr: 'SecKeychainSearchCopyNext' };
+      const val = keychain.get(k);
+      const out =
+        returnHexForHost && k === 'gemini:antigravity'
+          ? Buffer.from(`${val}\n`, 'utf8').toString('hex')
+          : val;
+      return { status: 0, stdout: `${out}\n`, stderr: '' };
+    }
+    if (args[0] === '-i') {
+      const m = String(opts.input || '').match(
+        /add-generic-password -U -s "([^"]+)" -a "([^"]+)" -X ([0-9a-fA-F]+)/
+      );
+      if (m) {
+        keychain.set(`${m[1]}:${m[2]}`, Buffer.from(m[3], 'hex').toString('utf8'));
+        return { status: 0, stdout: '', stderr: '' };
+      }
+    }
+    return { status: 1, stdout: '', stderr: 'unexpected' };
+  };
+
+  const vaultPath = join(dir, 'accounts.vault.json');
+  const statusFile = join(dir, 'switch-state.json');
+  const fallbackToken = join(dir, 'jetski-standalone-oauth-token');
+  const store = (req) =>
+    runPosixCredentialStore(
+      { ...req, vault: vaultPath, statusFile, fallbacks: [fallbackToken] },
+      { platform: 'darwin', homeDir: dir, env: {}, runSpawn, spawnBackgroundWorker: async () => {} }
+    );
+
+  const mkOpts = (activeEmail) => ({
+    platform: 'darwin',
+    store,
+    rpc: async () => ({ userStatus: { email: activeEmail } }),
+    resolveCredential: async (cred) => {
+      const rt = cred.token.refresh_token;
+      const email = rt.includes('old-mac') ? 'old-mac@gmail.com' : 'new-mac@gmail.com';
+      return {
+        email,
+        credential: {
+          token: {
+            access_token: `verified-${rt}`,
+            refresh_token: rt,
+            token_type: 'Bearer',
+            expiry: new Date(Date.now() + 3600_000).toISOString(),
+          },
+          auth_method: 'consumer',
+          id_token_email: email,
+        },
+      };
+    },
+  });
+
+  // Direct ASCII go-keyring-base64: capture
+  const captured = await handleAccountCredentialAction({ action: 'capture' }, mkOpts('old-mac@gmail.com'));
+  assert.equal(captured.error, undefined);
+  assert.deepEqual(captured.accounts, ['old-mac@gmail.com']);
+
+  // Hex-encoded go-keyring-base64: capture after removing
+  await handleAccountCredentialAction({ action: 'remove', email: 'old-mac@gmail.com' }, mkOpts('old-mac@gmail.com'));
+  returnHexForHost = true;
+  const capturedHex = await handleAccountCredentialAction({ action: 'capture' }, mkOpts('old-mac@gmail.com'));
+  assert.equal(capturedHex.error, undefined);
+  assert.deepEqual(capturedHex.accounts, ['old-mac@gmail.com']);
+
+  // 3. Pre-switch auto-backup preserves unsaved old macOS account stored with go-keyring-base64:
+  await handleAccountCredentialAction({ action: 'remove', email: 'old-mac@gmail.com' }, mkOpts('old-mac@gmail.com'));
+  const savedNew = await handleAccountCredentialAction(
+    { action: 'save', credential: '1//new-mac-refresh-token-1234567890' },
+    mkOpts('old-mac@gmail.com')
+  );
+  assert.deepEqual(savedNew.accounts, ['new-mac@gmail.com']);
+  returnHexForHost = false;
+  keychain.set('gemini:antigravity', goKeyringRaw);
+
+  const switched = await handleAccountCredentialAction(
+    { action: 'switch', email: 'new-mac@gmail.com', activeEmail: 'old-mac@gmail.com' },
+    mkOpts('old-mac@gmail.com')
+  );
+  assert.equal(switched.error, undefined);
+  assert.equal(switched.restarting, true);
+  assert.deepEqual(
+    switched.accounts.sort(),
+    ['new-mac@gmail.com', 'old-mac@gmail.com'],
+    'Unsaved macOS old account in go-keyring-base64: format must be auto-backed-up before switching'
+  );
+});

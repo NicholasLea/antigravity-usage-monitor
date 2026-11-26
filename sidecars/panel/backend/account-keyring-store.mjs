@@ -39,6 +39,7 @@ export const HOST_CREDENTIAL_ACCOUNT = 'antigravity';
 export const HOST_CREDENTIAL_TARGET = 'gemini:antigravity';
 export const MONITOR_VAULT_SERVICE = 'antigravity-usage-monitor';
 export const MONITOR_MASTER_KEY_ACCOUNT = 'vault-master-key';
+export const GO_KEYRING_BASE64_PREFIX = 'go-keyring-base64:';
 
 const KEYRING_EMAIL_RE = /^[^\s@"\\'`$;|<>]{1,120}@[^\s@"\\'`$;|<>]{1,120}\.[^\s@"\\'`$;|<>]{1,63}$/;
 const MASTER_KEY_LEN = 32;
@@ -71,24 +72,47 @@ function normalizeStoreErrorCode(rawError) {
   return KNOWN_STORE_ERRORS.has(code) ? code : 'storeFailed';
 }
 
+/**
+ * Decodes `zalando/go-keyring`'s `go-keyring-base64:<base64>` wrapper used by
+ * Antigravity's Go `language_server` when storing >128B OAuth JSON in macOS Keychain.
+ */
+export function unwrapGoKeyringBase64(rawText) {
+  if (typeof rawText !== 'string') return '';
+  const trimmed = rawText.replace(/^\uFEFF/, '').trim();
+  if (!trimmed.startsWith(GO_KEYRING_BASE64_PREFIX)) return rawText;
+  const b64 = trimmed.slice(GO_KEYRING_BASE64_PREFIX.length).replace(/\s+/g, '');
+  if (!b64 || b64.length > 32768 || !/^[A-Za-z0-9+/=_-]+$/.test(b64)) {
+    return rawText;
+  }
+  const decodedBuf = Buffer.from(b64, 'base64');
+  try {
+    const decodedUtf8 = decodedBuf.toString('utf8').replace(/\0+$/, '');
+    return decodedUtf8 || rawText;
+  } finally {
+    decodedBuf.fill(0);
+  }
+}
+
 function decodeDarwinKeychainStdout(rawStdout) {
   const raw = Buffer.from(rawStdout).toString('utf8').replace(/[\r\n]+$/, '');
+  let candidate = raw;
   if (raw.length >= 4 && raw.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(raw)) {
     const decodedBuf = Buffer.from(raw, 'hex');
     try {
       const decodedUtf8 = decodedBuf.toString('utf8');
       const trimmed = decodedUtf8.replace(/^\uFEFF/, '').trim();
       if (
+        trimmed.startsWith(GO_KEYRING_BASE64_PREFIX) ||
         (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
         /^1\/{1,2}[\w.-]{20,}$/.test(trimmed)
       ) {
-        return decodedUtf8;
+        candidate = decodedUtf8;
       }
     } finally {
       decodedBuf.fill(0);
     }
   }
-  return raw;
+  return unwrapGoKeyringBase64(candidate);
 }
 
 function compactCredentialBufferForDarwin(rawBuf) {
@@ -204,9 +228,11 @@ export function extractHostCredentialEmail(rawBufferOrText) {
   if (!rawBufferOrText) return '';
   let innerBuf = null;
   try {
-    const text = Buffer.isBuffer(rawBufferOrText)
-      ? rawBufferOrText.toString('utf8')
-      : String(rawBufferOrText);
+    const text = unwrapGoKeyringBase64(
+      Buffer.isBuffer(rawBufferOrText)
+        ? rawBufferOrText.toString('utf8')
+        : String(rawBufferOrText)
+    );
     const trimmed = text.replace(/^\uFEFF/, '').trim();
     if (!trimmed.startsWith('{') || trimmed.length > 32768) return '';
     const parsed = JSON.parse(trimmed);
@@ -234,9 +260,11 @@ export function extractHostCredentialEmail(rawBufferOrText) {
 export function computeCredentialShortHash(rawCredential) {
   if (!rawCredential) return '';
   try {
-    const text = Buffer.isBuffer(rawCredential)
-      ? rawCredential.toString('utf8')
-      : String(rawCredential);
+    const text = unwrapGoKeyringBase64(
+      Buffer.isBuffer(rawCredential)
+        ? rawCredential.toString('utf8')
+        : String(rawCredential)
+    );
     let canonical = text.trim();
     if (canonical.startsWith('{')) {
       const parsed = JSON.parse(canonical);
@@ -774,7 +802,7 @@ export function createPosixKeyringAdapter({
         }
         return { ok: true, exists: false, value: '' };
       }
-      const value = Buffer.from(res.stdout).toString('utf8');
+      const value = unwrapGoKeyringBase64(Buffer.from(res.stdout).toString('utf8'));
       return { ok: true, exists: Boolean(value), value };
     }
     return { ok: false, exists: false, error: 'unsupported' };
@@ -1261,7 +1289,9 @@ export function readPosixActiveHostCredential(
     try {
       if (assertSafeAccountFile(fbPath, { existsFn, lstatFn })) {
         const rawBuf = readFn(fbPath);
-        const text = Buffer.from(rawBuf).toString('utf8').replace(/^\uFEFF/, '').trim();
+        const text = unwrapGoKeyringBase64(Buffer.from(rawBuf).toString('utf8'))
+          .replace(/^\uFEFF/, '')
+          .trim();
         if (Buffer.isBuffer(rawBuf)) rawBuf.fill(0);
         if (text) {
           if (!fallbackCandidate) fallbackCandidate = text;

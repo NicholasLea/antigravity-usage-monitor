@@ -10,6 +10,7 @@ import {
   isAccountPlatformSupported,
   resolvePosixAccountStoragePaths,
   runPosixCredentialStore,
+  unwrapGoKeyringBase64,
 } from './account-keyring-store.mjs';
 import { accountLoginController } from './account-login.mjs';
 import {
@@ -103,8 +104,10 @@ export function normalizeAccountEmail(value) {
 }
 
 export function normalizeAccountCredential(input, { allowedClientIds = null } = {}) {
-  if (typeof input !== 'string' || Buffer.byteLength(input, 'utf8') > 16384) return null;
-  const text = input.trim();
+  if (typeof input !== 'string' || Buffer.byteLength(input, 'utf8') > 24576) return null;
+  const unwrapped = unwrapGoKeyringBase64(input);
+  if (Buffer.byteLength(unwrapped, 'utf8') > 16384) return null;
+  const text = unwrapped.replace(/^\uFEFF/, '').trim();
   let source;
   try {
     source = JSON.parse(text);
