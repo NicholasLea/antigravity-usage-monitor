@@ -1132,7 +1132,8 @@ test('regressions: protected brain non-zombie & log purge, multi-hop /fork subag
     writeFileSync(jsFile, '1;', 'utf8');
     writeFileSync(sharpFile, '# C#', 'utf8');
     const repoSlash = repoDir.replace(/\\/g, '/');
-    for (const href of [`file:///${repoSlash}/app.js`, `file:///${repoSlash}/C%23-notes.md#L8`]) {
+    const repoUriBase = repoSlash.startsWith('/') ? `file://${repoSlash}` : `file:///${repoSlash}`;
+    for (const href of [`${repoUriBase}/app.js`, `${repoUriBase}/C%23-notes.md#L8`]) {
       const rev = revealLocalSessionPath(href, {
         allowedRoots: [cliRoot],
         allowedPaths: [jsFile, sharpFile],
@@ -1764,9 +1765,10 @@ test('vsim audit regressions: move->delete linked source scrub, evicted step_ind
     mkdirSync(repoDir, { recursive: true });
     const cjkCid = 'b4000000-0000-4000-8000-000000000004';
     const repoSlash = repoDir.replace(/\\/g, '/');
+    const repoUri = repoSlash.startsWith('/') ? `file://${repoSlash}` : `file:///${repoSlash}`;
     createMinimalConvDb(join(cliRoot, 'conversations', `${cjkCid}.db`), {
       cid: cjkCid,
-      wsUri: `file:///${repoSlash}`,
+      wsUri: repoUri,
     });
 
     const selfHealOut = await dispatchBridgeApiRequest(

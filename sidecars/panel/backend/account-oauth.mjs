@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, promises as fsPromises } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { join, win32 as winPath } from 'node:path';
 import { fetchGoogleAccount } from './account-http.mjs';
 import { buildOfficialQuotaPools } from './quota-pools.mjs';
 
@@ -183,8 +183,18 @@ export function collectNativeOAuthBinaryCandidates({
   };
   const addFromInstallRoot = (installRoot) => {
     if (!installRoot) return;
-    add(join(installRoot, 'resources', 'bin', 'language_server.exe'));
-    add(join(installRoot, 'resources', 'app', 'extensions', 'antigravity', 'bin', 'language_server_windows_x64.exe'));
+    add(winPath.join(installRoot, 'resources', 'bin', 'language_server.exe'));
+    add(
+      winPath.join(
+        installRoot,
+        'resources',
+        'app',
+        'extensions',
+        'antigravity',
+        'bin',
+        'language_server_windows_x64.exe'
+      )
+    );
   };
 
   add(env?.ANTIGRAVITY_LS_BIN);
@@ -196,32 +206,34 @@ export function collectNativeOAuthBinaryCandidates({
   for (const rawHint of hints) {
     const hint = String(rawHint || '').trim();
     if (!hint) continue;
-    const leaf = basename(hint).toLowerCase();
+    const leaf = winPath.basename(hint).toLowerCase();
     if (/^(?:language_server.*|agy)\.exe$/i.test(leaf)) {
       add(hint);
       continue;
     }
     if (/\.exe$/i.test(leaf)) {
-      addFromInstallRoot(dirname(hint));
+      addFromInstallRoot(winPath.dirname(hint));
     }
     let cur = hint;
-    for (let depth = 0; depth < 8 && cur && dirname(cur) !== cur; depth += 1) {
-      if (basename(cur).toLowerCase() === 'resources') {
-        addFromInstallRoot(dirname(cur));
+    for (let depth = 0; depth < 8 && cur && winPath.dirname(cur) !== cur; depth += 1) {
+      if (winPath.basename(cur).toLowerCase() === 'resources') {
+        addFromInstallRoot(winPath.dirname(cur));
         break;
       }
-      cur = dirname(cur);
+      cur = winPath.dirname(cur);
     }
   }
 
-  const localAppData = String(env?.LOCALAPPDATA || '').trim() || join(homeDir, 'AppData', 'Local');
+  const localAppData =
+    String(env?.LOCALAPPDATA || '').trim() || winPath.join(homeDir, 'AppData', 'Local');
   const programFiles = String(env?.ProgramFiles || '').trim() || 'C:\\Program Files';
-  const geminiBase = String(env?.ANTIGRAVITY_GEMINI_DIR || '').trim() || join(homeDir, '.gemini');
-  addFromInstallRoot(join(localAppData, 'Programs', 'Antigravity'));
-  addFromInstallRoot(join(localAppData, 'Programs', 'Antigravity IDE'));
-  addFromInstallRoot(join(programFiles, 'Antigravity'));
-  addFromInstallRoot(join(programFiles, 'Antigravity IDE'));
-  add(join(geminiBase, 'bin', 'agy.exe'));
+  const geminiBase =
+    String(env?.ANTIGRAVITY_GEMINI_DIR || '').trim() || winPath.join(homeDir, '.gemini');
+  addFromInstallRoot(winPath.join(localAppData, 'Programs', 'Antigravity'));
+  addFromInstallRoot(winPath.join(localAppData, 'Programs', 'Antigravity IDE'));
+  addFromInstallRoot(winPath.join(programFiles, 'Antigravity'));
+  addFromInstallRoot(winPath.join(programFiles, 'Antigravity IDE'));
+  add(winPath.join(geminiBase, 'bin', 'agy.exe'));
 
   if (typeof existsFn !== 'function') return candidates;
   return candidates.filter((p) => {

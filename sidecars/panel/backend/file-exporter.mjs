@@ -273,7 +273,7 @@ function isExplicitAbsolutePath(rawPath, platform = process.platform) {
   ) {
     return false;
   }
-  if (platform === 'win32') {
+  if (platform === 'win32' && process.platform === 'win32') {
     return /^[a-zA-Z]:[\\/]/.test(str);
   }
   return str.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(str);

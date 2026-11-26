@@ -190,9 +190,20 @@ test(
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-linux-smoke-'));
     let child = null;
     try {
-      const sleepTarget = fs.existsSync('/bin/sleep') ? '/bin/sleep' : '/usr/bin/sleep';
+      // Avoid /bin/sleep which on Ubuntu 25.10+/26.04 is a uutils multi-call coreutils binary
+      // that dispatches on argv[0] and exits immediately when invoked via a symlink named "antigravity".
+      const candidateSpecs = [
+        { bin: '/usr/bin/python3', args: ['-c', 'import time; time.sleep(30)'] },
+        { bin: '/usr/bin/perl', args: ['-e', 'sleep 30'] },
+        { bin: '/usr/bin/bash', args: ['-c', 'while :; do read -t 30 <> <(:) 2>/dev/null || sleep 1; done'] },
+        { bin: '/bin/bash', args: ['-c', 'while :; do read -t 30 <> <(:) 2>/dev/null || sleep 1; done'] },
+        { bin: '/bin/sleep', args: ['30'] },
+        { bin: '/usr/bin/sleep', args: ['30'] },
+      ];
+      const chosen = candidateSpecs.find((c) => fs.existsSync(c.bin));
+      assert.ok(chosen, 'Expected a standalone Linux binary for symlink process smoke test');
       const symlinkBin = path.join(tmpDir, 'antigravity');
-      fs.symlinkSync(sleepTarget, symlinkBin);
+      fs.symlinkSync(chosen.bin, symlinkBin);
 
       let capturedLinux = null;
       const relaunchPlan = await triggerDesktopHostRelaunch({
@@ -211,8 +222,13 @@ test(
       assert.equal(relaunchPlan.ok, true);
       assert.equal(capturedLinux?.env?.AGY_RELAUNCH_EXE, symlinkBin);
 
-      child = spawn(symlinkBin, ['30'], { stdio: 'ignore' });
-      await waitMs(120);
+      child = spawn(symlinkBin, chosen.args, { stdio: 'ignore' });
+      await waitMs(150);
+      assert.equal(
+        child.exitCode,
+        null,
+        `Spawned symlinked test process (${chosen.bin}) exited prematurely with code ${child.exitCode}`
+      );
 
       const fnPrefix = capturedLinux.script.split('; pids=')[0].replace(/^sleep [^;]+;\s*/, '');
       const foundPids = execFileSync('/bin/sh', ['-c', `${fnPrefix}; collect_pids`], {
@@ -225,7 +241,7 @@ test(
       assert.equal(
         foundPids.includes(String(child.pid)),
         true,
-        `collect_pids() must match symlinked process PID ${child.pid} via readlink -f, got: ${JSON.stringify(foundPids)}`
+        `collect_pids() must match symlinked process PID ${child.pid} (${chosen.bin}) via readlink -f, got: ${JSON.stringify(foundPids)}`
       );
       assert.equal(
         foundPids.includes(String(process.pid)),

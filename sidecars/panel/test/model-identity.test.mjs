@@ -190,8 +190,15 @@ test('empty session does not invent an Argon model or a model quota pool', async
 });
 
 test('unknown single-step cost renders as pending while aggregate subtotals omit pending suffix', () => {
-  assert.equal(formatUsd(null),'待定'); assert.equal(formatUsd(0),'$0.00');
-  assert.equal(formatUsd(0.1,{unpricedCalls:1}),'$0.10');
+  const prevLang = i18nStore.getState().language;
+  setI18nLanguage('zh-CN');
+  try {
+    assert.equal(formatUsd(null), '待定');
+    assert.equal(formatUsd(0), '$0.00');
+    assert.equal(formatUsd(0.1, { unpricedCalls: 1 }), '$0.10');
+  } finally {
+    setI18nLanguage(prevLang);
+  }
 });
 
 test('custom cost budget cannot claim a complete remaining percentage when prices are missing', async () => {
@@ -841,54 +848,60 @@ test('Orchestrator series display follows modelDisplayMode cleanly and legacy or
     modelUpstream: 'gemini-4-hydrogen-xhigh',
   };
 
-  for (const compactMode of ['short', 'upstream_compact']) {
-    assert.equal(
-      resolveModelDisplayInfo(orchCarbon, { modelDisplayMode: compactMode }).text,
-      'orchestrator-carbon'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchArgon, { modelDisplayMode: compactMode }).text,
-      'orchestrator-argon'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchNeon, { modelDisplayMode: compactMode }).text,
-      'orchestrator-neon'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchNeonCompaction, { modelDisplayMode: compactMode }).text,
-      'orchestrator-neon·压缩'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchWorkerCompaction, { modelDisplayMode: compactMode }).text,
-      'worker-agy-hydrogen·压缩'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchCarbon, { modelDisplayMode: compactMode }).title,
-      'gemini-pro-orchestrator (carbon-4)'
-    );
-  }
+  const prevLang = i18nStore.getState().language;
+  setI18nLanguage('zh-CN');
+  try {
+    for (const compactMode of ['short', 'upstream_compact']) {
+      assert.equal(
+        resolveModelDisplayInfo(orchCarbon, { modelDisplayMode: compactMode }).text,
+        'orchestrator-carbon'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchArgon, { modelDisplayMode: compactMode }).text,
+        'orchestrator-argon'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchNeon, { modelDisplayMode: compactMode }).text,
+        'orchestrator-neon'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchNeonCompaction, { modelDisplayMode: compactMode }).text,
+        'orchestrator-neon·压缩'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchWorkerCompaction, { modelDisplayMode: compactMode }).text,
+        'worker-agy-hydrogen·压缩'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchCarbon, { modelDisplayMode: compactMode }).title,
+        'gemini-pro-orchestrator (carbon-4)'
+      );
+    }
 
-  for (const fullSettings of [{ modelDisplayMode: 'upstream' }, { showUpstreamModel: true }, true]) {
-    assert.equal(
-      resolveModelDisplayInfo(orchCarbon, fullSettings).text,
-      'gemini-pro-orchestrator (carbon-4)'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchArgon, fullSettings).text,
-      'gemini-pro-orchestrator-argon (argon-4)'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchNeon, fullSettings).text,
-      'gemini-pro-orchestrator-neon (neon-4)'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchNeonCompaction, fullSettings).text,
-      'gemini-pro-orchestrator-neon (neon-4)·压缩'
-    );
-    assert.equal(
-      resolveModelDisplayInfo(orchWorkerCompaction, fullSettings).text,
-      'gemini-flash-worker-agy (hydrogen-4)·压缩'
-    );
+    for (const fullSettings of [{ modelDisplayMode: 'upstream' }, { showUpstreamModel: true }, true]) {
+      assert.equal(
+        resolveModelDisplayInfo(orchCarbon, fullSettings).text,
+        'gemini-pro-orchestrator (carbon-4)'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchArgon, fullSettings).text,
+        'gemini-pro-orchestrator-argon (argon-4)'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchNeon, fullSettings).text,
+        'gemini-pro-orchestrator-neon (neon-4)'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchNeonCompaction, fullSettings).text,
+        'gemini-pro-orchestrator-neon (neon-4)·压缩'
+      );
+      assert.equal(
+        resolveModelDisplayInfo(orchWorkerCompaction, fullSettings).text,
+        'gemini-flash-worker-agy (hydrogen-4)·压缩'
+      );
+    }
+  } finally {
+    setI18nLanguage(prevLang);
   }
 
   // Non-Orchestrator direct Hydrogen continues to follow modelDisplayMode cleanly
