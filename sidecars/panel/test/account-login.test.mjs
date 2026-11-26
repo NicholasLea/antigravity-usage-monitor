@@ -69,8 +69,26 @@ test('login offers a usable browser link when opening fails, and cancellation cl
   assert.match(session.url, /^https:\/\/accounts\.google\.com\//);
   assert.equal((await controller.start(async () => {})).id, session.id);
   assert.equal(controller.cancel(session.id).status, 'cancelled');
+  assert.equal(controller.getStatus(), null, 'ambient list status must not resurface manual cancellation');
+  assert.equal(controller.getStatus(session.id)?.status, 'cancelled', 'explicit id lookup still reports cancellation');
   await delay(10);
   await assert.rejects(fetch(callbackUrl(session, { code: 'unused' })));
+});
+
+test('ambient getStatus expires terminal login notices after terminalTtlMs while preserving explicit id lookup', async () => {
+  const controller = createAccountLoginController({
+    getClients: TEST_OAUTH_CLIENTS,
+    openBrowser: async () => true,
+    timeoutMs: 30,
+    terminalTtlMs: 40,
+  });
+  const expired = await controller.start(async () => { assert.fail('expired authorization'); });
+  await delay(45);
+  assert.equal(controller.getStatus(expired.id)?.status, 'expired');
+  assert.equal(controller.getStatus()?.status, 'expired');
+  await delay(55);
+  assert.equal(controller.getStatus(), null, 'ambient status clears after terminalTtlMs');
+  assert.equal(controller.getStatus(expired.id)?.status, 'expired', 'explicit id lookup stays readable');
 });
 
 test('denied authorization and expired sessions never save an account', async () => {

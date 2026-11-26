@@ -2288,13 +2288,30 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     await new Promise((r) => setTimeout(r, 20));
     assert.ok(accountRequests.some((item) => item.action === 'loginStart' && item.language === 'zh-CN'));
     assert.ok(accountPane.querySelectorAll('.settings-action-desc').some((el) => el.textContent.includes('请在浏览器中选择 Google 账号')));
-    assert.equal(accountPane.querySelector('.settings-account-login-cancel').hasAttribute('hidden'), false);
+    const cancelBtn = accountPane.querySelector('.settings-account-login-cancel');
+    assert.equal(cancelBtn.hasAttribute('hidden'), false);
+    assert.equal(
+      accountPane.querySelector('.account-toolbar-left .settings-account-login-cancel'),
+      null,
+      'cancelLogin must live inside login notice actions rather than crowding .account-toolbar-left'
+    );
+    assert.equal(
+      accountPane.querySelector('.settings-bridge-notice .settings-bridge-actions .settings-account-login-cancel'),
+      cancelBtn,
+      'cancelLogin must sit beside the reopen authorization link inside .settings-bridge-actions'
+    );
     assert.equal(accountPane.querySelector('a').getAttribute('href'), 'https://accounts.google.com/o/oauth2/v2/auth?state=synthetic');
-    accountPane.querySelector('.settings-account-login-cancel').dispatchEvent({ type: 'click', stopPropagation() {} });
+    cancelBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 20));
     assert.ok(accountRequests.some((item) => item.action === 'loginCancel' && item.id === 'browser-login'));
-    assert.equal(accountPane.querySelector('.settings-account-login-cancel').hasAttribute('hidden'), true);
+    assert.equal(cancelBtn.hasAttribute('hidden'), true);
     assert.equal(googleLogin.hasAttribute('disabled'), false);
+    // Opening a drawer immediately clears an idle terminal cancelled notice instead of keeping it stuck
+    const importBtn = accountPane.querySelectorAll('.account-toolbar-left .btn-secondary')[0];
+    importBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
+    const cancelledNotice = accountPane.querySelector('.settings-bridge-notice.is-restart');
+    assert.equal(cancelledNotice.hasAttribute('hidden'), true, 'terminal cancelled login notice dismisses cleanly');
+    importBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
     googleLogin.dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 20));
     assert.ok(accountPane.querySelectorAll('.settings-account-identity').some((el) => el.textContent === 'browser@example.com'));

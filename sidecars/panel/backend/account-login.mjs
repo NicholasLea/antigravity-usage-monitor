@@ -99,6 +99,7 @@ export function createAccountLoginController({
   exchangeCode = exchangeGoogleAccountCode,
   getClients,
   timeoutMs = 10 * 60 * 1000,
+  terminalTtlMs = 10_000,
 } = {}) {
   let current = null;
   let starting = null;
@@ -114,8 +115,19 @@ export function createAccountLoginController({
     clearTimeout(flow.timer);
     flow.status = status;
     flow.error = error;
+    flow.finishedAt = Date.now();
     flow.server?.close();
     flow.codeVerifier = '';
+  }
+
+  function getStatus(id) {
+    if (!current) return null;
+    if (id) return current.id === id ? snapshot() : null;
+    if (current.finishedAt) {
+      if (current.status === 'cancelled' && !current.error) return null;
+      if (Date.now() - current.finishedAt > terminalTtlMs) return null;
+    }
+    return snapshot();
   }
 
   function cancel(id) {
@@ -237,7 +249,7 @@ export function createAccountLoginController({
     }
   }
 
-  return { start, cancel, getStatus: (id) => !id || current?.id === id ? snapshot() : null };
+  return { start, cancel, getStatus };
 }
 
 export const accountLoginController = createAccountLoginController();

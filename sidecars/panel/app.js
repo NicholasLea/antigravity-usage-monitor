@@ -37329,6 +37329,23 @@ const key = (name) => `settings.account.${name}`;
 const fmtPct = (v) => String(+Number(v).toFixed(1));
 
 let warmAccountCache = null;
+const ACTIVE_LOGIN_STATUSES = new Set(['waiting', 'exchanging', 'saving']);
+const MAX_DISMISSED_TERMINAL_LOGINS = 32;
+const dismissedTerminalLogins = new Set();
+
+function getTerminalLoginKey(session) {
+  if (!session?.status || ACTIVE_LOGIN_STATUSES.has(session.status)) return '';
+  return `${session.id || ''}:${session.status}:${session.error || ''}`;
+}
+
+function rememberDismissedTerminalLogin(termKey) {
+  if (!termKey) return;
+  if (!dismissedTerminalLogins.has(termKey) && dismissedTerminalLogins.size >= MAX_DISMISSED_TERMINAL_LOGINS) {
+    const oldest = dismissedTerminalLogins.values().next().value;
+    if (oldest !== undefined) dismissedTerminalLogins.delete(oldest);
+  }
+  dismissedTerminalLogins.add(termKey);
+}
 
 const errors = new Set([
   'unsupported', 'invalidEmail', 'invalidCredential', 'credentialTooLarge', 'notFound',
@@ -37517,6 +37534,7 @@ const SettingsAccountTab = defineComponent({
     let disposed = false;
     let loginSession = null;
     let loginTimer;
+    let loginDismissTimer = null;
     let loginGeneration = 0;
     let loginRefreshEmail = '';
     const savedQuotas = new Map(warmAccountCache ? warmAccountCache.savedQuotasEntries : []);
@@ -37583,6 +37601,21 @@ const SettingsAccountTab = defineComponent({
       }
     }
 
+    function clearLoginDismissTimer() {
+      if (loginDismissTimer) {
+        clearTimeout(loginDismissTimer);
+        loginDismissTimer = null;
+      }
+    }
+
+    function dismissTerminalLoginIfIdle() {
+      const termKey = getTerminalLoginKey(loginSession);
+      if (!termKey) return;
+      clearLoginDismissTimer();
+      rememberDismissedTerminalLogin(termKey);
+      loginSession = null;
+    }
+
     function clearPasswordInputs() {
       unlockInput.value = '';
       pwdCurrentInput.value = '';
@@ -37621,6 +37654,7 @@ const SettingsAccountTab = defineComponent({
         className: 'btn-secondary',
         onClick: () => {
           clearConfirmTarget(false);
+          dismissTerminalLoginIfIdle();
           importOpen = !importOpen;
           if (importOpen) {
             pwdDrawerOpen = false;
@@ -37642,6 +37676,7 @@ const SettingsAccountTab = defineComponent({
         className: 'btn-secondary settings-account-pwd-toggle',
         onClick: () => {
           clearConfirmTarget(false);
+          dismissTerminalLoginIfIdle();
           pwdDrawerOpen = !pwdDrawerOpen;
           if (pwdDrawerOpen) {
             importOpen = false;
@@ -37869,7 +37904,7 @@ const SettingsAccountTab = defineComponent({
     const loginStrip = h(
       'div',
       { className: 'settings-bridge-notice is-restart', hidden: true },
-      [loginMessage, h('div', { className: 'settings-bridge-actions' }, [loginLink])]
+      [loginMessage, h('div', { className: 'settings-bridge-actions' }, [loginLink, cancelLogin])]
     );
     const loginLinkWrap = loginLink.parentElement;
 
@@ -37880,7 +37915,6 @@ const SettingsAccountTab = defineComponent({
       h('div', { className: 'account-toolbar-row' }, [
         h('div', { className: 'account-toolbar-left' }, [
           loginButton,
-          cancelLogin,
           importToggleBtn,
           pwdToggleBtn,
           lockNowBtn,
@@ -38360,7 +38394,7 @@ const SettingsAccountTab = defineComponent({
       patchText(loginLink, t(key('openLoginPage')));
       patchAttr(loginLink, 'href', authUrl || null);
       patchAttr(loginLink, 'hidden', !authUrl);
-      patchAttr(loginLinkWrap, 'hidden', !authUrl);
+      patchAttr(loginLinkWrap, 'hidden', !authUrl && !loginActive);
       patchClasses(loginStrip, { 'is-restart': !loginIsError });
       patchAttr(loginStrip, 'hidden', !hasLoginSession || !loginMessageKey);
 
@@ -38530,7 +38564,11 @@ const SettingsAccountTab = defineComponent({
           importOpen = false;
           pwdDrawerOpen = true;
         }
-        if (result.login) applyLogin(result.login);
+        if (result.login) {
+          applyLogin(result.login);
+        } else if (!ACTIVE_LOGIN_STATUSES.has(loginSession?.status) && !loginDismissTimer) {
+          loginSession = null;
+        }
         if (action === 'resetVault') {
           savedQuotas.clear();
           quotaErrors.clear();
@@ -38551,7 +38589,10 @@ const SettingsAccountTab = defineComponent({
           syncWarmCache();
           setTransientStatus('removed', 2600);
         } else if (action === 'switch') {
-          setTransientStatus(result.restarting ? 'restarting' : 'switchStartFailed');
+          setTransientStatus(
+            result.restarting ? 'restarting' : 'switchStartFailed',
+            result.restarting ? 0 : 4500
+          );
         } else if (action === 'setPassword') {
           pwdDrawerOpen = false;
           setTransientStatus('pwdEnabledToast', 2600);
@@ -38601,10 +38642,42 @@ const SettingsAccountTab = defineComponent({
     }
 
     function applyLogin(session) {
-      loginSession = session;
       clearTimeout(loginTimer);
-      if (['waiting', 'exchanging', 'saving'].includes(session?.status)) {
+      const termKey = getTerminalLoginKey(session);
+      if (termKey && dismissedTerminalLogins.has(termKey)) {
+        clearLoginDismissTimer();
+        loginSession = null;
+        return;
+      }
+      const prevTermKey = getTerminalLoginKey(loginSession);
+      loginSession = session || null;
+      if (ACTIVE_LOGIN_STATUSES.has(session?.status)) {
+        clearLoginDismissTimer();
         loginTimer = setTimeout(() => pollLogin(session.id, loginGeneration), 1000);
+        loginTimer.unref?.();
+        return;
+      }
+      if (termKey) {
+        if (prevTermKey === termKey && loginDismissTimer) {
+          return;
+        }
+        clearLoginDismissTimer();
+        const isErr =
+          session.status === 'error' ||
+          session.status === 'expired' ||
+          session.error === 'loginDenied';
+        const autoHideMs = isErr ? 4500 : 2800;
+        loginDismissTimer = setTimeout(() => {
+          loginDismissTimer = null;
+          rememberDismissedTerminalLogin(termKey);
+          if (!disposed && getTerminalLoginKey(loginSession) === termKey) {
+            loginSession = null;
+            render();
+          }
+        }, autoHideMs);
+        loginDismissTimer.unref?.();
+      } else {
+        clearLoginDismissTimer();
       }
     }
 
@@ -38624,7 +38697,7 @@ const SettingsAccountTab = defineComponent({
         if (loginSession?.status === 'success') await refreshLoginAccount(loginSession.email);
       } catch {
         if (disposed || generation !== loginGeneration) return;
-        loginSession = { id, status: 'error', error: 'loginStartFailed' };
+        applyLogin({ id, status: 'error', error: 'loginStartFailed' });
       }
       if (!disposed) render();
     }
@@ -38825,6 +38898,7 @@ const SettingsAccountTab = defineComponent({
     onCleanup(() => {
       disposed = true;
       clearTimeout(loginTimer);
+      clearLoginDismissTimer();
       clearInterval(quotaScheduleTimer);
       if (statusClearTimer) clearTimeout(statusClearTimer);
       if (confirmClearTimer) clearTimeout(confirmClearTimer);
