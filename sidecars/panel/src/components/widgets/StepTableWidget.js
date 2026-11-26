@@ -31,7 +31,6 @@ import {
   formatUsd,
   hasStepTimingData,
   resolveModelDisplayInfo,
-  speedReasonText,
 } from '../../core/formatters.js';
 import { getStepSelectionKey } from '../../core/stepInspector.js';
 import { getEffectiveLocale, t } from '../../i18n/index.js';
@@ -62,7 +61,6 @@ const VIRTUAL_REFILL_MARGIN = 6;
 const MAX_ROW_POOL_SIZE = 96;
 const FALLBACK_VIEWPORT_H = 560;
 const BASE_SINGLE_ROW_H = 28;
-const BASE_REASON_ROW_H = 42;
 const SIZER_ROW_KEY = '__vsizer__';
 const SPACER_TOP_KEY = '__vspacer_top__';
 const SPACER_BOTTOM_KEY = '__vspacer_bottom__';
@@ -177,7 +175,6 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
   const modelCandidates = needModel ? new Map() : null;
   let maxTpsVal = -1;
   let maxTpsObj = null;
-  const reasonCandidates = needTps ? new Set() : null;
   let maxTtftVal = -1;
   let bestTtftObj = firstStep;
   let maxDurVal = -1;
@@ -256,9 +253,6 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
           maxTpsVal = tpsScore;
           maxTpsObj = st;
         }
-      }
-      if (st.selectedSpeedReason) {
-        reasonCandidates.add(st.selectedSpeedReason);
       }
     }
 
@@ -390,22 +384,10 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
     colSteps.model = bestModelObj;
   }
   if (needTps) {
-    let longestReasonKey = null;
-    let longestReasonWidth = 0;
-    if (reasonCandidates) {
-      for (const rk of reasonCandidates) {
-        const txt = speedReasonText(rk);
-        const w = txt ? estProportionalTextWidth(txt) : 0;
-        if (w > longestReasonWidth) {
-          longestReasonWidth = w;
-          longestReasonKey = rk;
-        }
-      }
-    }
     colSteps.tps = {
       ...(maxTpsObj || firstStep),
       tokPerSec: maxTpsObj ? maxTpsObj.tokPerSec : firstStep.tokPerSec,
-      selectedSpeedReason: longestReasonKey,
+      selectedSpeedReason: null,
     };
   }
   if (needTtft) colSteps.ttft = bestTtftObj;
@@ -835,7 +817,6 @@ export const StepTableWidget = defineComponent({
     let calibrateRafId = 0;
     let lastFontScale = 1;
     let calibratedSingleRowH = 0;
-    let calibratedReasonRowH = 0;
     let lockedColKey = '';
     let lockedPaneWidth = 0;
     let lockedWhileScaled = false;
@@ -942,20 +923,16 @@ export const StepTableWidget = defineComponent({
         calibratedSingleRowH > 0
           ? calibratedSingleRowH
           : Math.round(BASE_SINGLE_ROW_H * lastFontScale);
-      const reason =
-        calibratedReasonRowH > 0
-          ? calibratedReasonRowH
-          : Math.round(BASE_REASON_ROW_H * lastFontScale);
-      return { single, reason };
+      return { single };
     }
 
-    function buildRowTops(n, hasReasonFlags) {
-      const { single, reason } = getEstRowHeights();
+    function buildRowTops(n) {
+      const { single } = getEstRowHeights();
       const tops = new Float64Array(n + 1);
       let acc = 0;
       for (let i = 0; i < n; i++) {
         tops[i] = acc;
-        acc += hasReasonFlags && hasReasonFlags[i] ? reason : single;
+        acc += single;
       }
       tops[n] = acc;
       return { rowTops: tops, totalBodyH: acc };
@@ -979,10 +956,9 @@ export const StepTableWidget = defineComponent({
       if (Math.abs(nextScale - lastFontScale) < 0.005) return false;
       lastFontScale = nextScale;
       calibratedSingleRowH = 0;
-      calibratedReasonRowH = 0;
       unlockColumnWidths();
       if (activeDataset?.isVirtualized) {
-        const rebuilt = buildRowTops(activeDataset.tableSteps.length, activeDataset.hasReasonFlags);
+        const rebuilt = buildRowTops(activeDataset.tableSteps.length);
         activeDataset.rowTops = rebuilt.rowTops;
         activeDataset.totalBodyH = rebuilt.totalBodyH;
       }
@@ -1153,13 +1129,11 @@ export const StepTableWidget = defineComponent({
       if (Number(stepsTablePane.clientHeight || 0) <= 0) return;
       lockColumnWidthsIfNeeded();
       const needSingle = calibratedSingleRowH <= 0;
-      const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
-      if (!needSingle && !needReason) return;
+      if (!needSingle) return;
 
       const { scaleY } = getVisualTransformScale(stepsTableEl);
       let measuredSingle = 0;
-      let measuredReason = 0;
-      // Measure contiguous run of normal rows to eliminate single-row subpixel/border-collapse drift.
+      // Measure contiguous run of rows to eliminate single-row subpixel/border-collapse drift.
       let runStartTop = 0;
       let runEndBottom = 0;
       let runCount = 0;
@@ -1173,37 +1147,27 @@ export const StepTableWidget = defineComponent({
           runCount = 0;
           continue;
         }
-        const isReason = tr.dataset?.hasReason === '1';
-        if (!isReason && needSingle) {
-          const rect = tr.getBoundingClientRect?.();
-          const rawRectH = Number(rect?.height || 0);
-          const hVal = rawRectH > 0 ? rawRectH / scaleY : Number(tr.offsetHeight || 0);
-          if (hVal >= 14 && hVal <= 120) {
-            if (!measuredSingle) measuredSingle = hVal;
-            if (rect && Number.isFinite(rect.top) && Number.isFinite(rect.bottom) && rect.bottom > rect.top) {
-              if (runCount === 0) {
-                runStartTop = rect.top;
-              }
-              runEndBottom = rect.bottom;
-              runCount += 1;
-              if (runCount > bestRunCount && runCount >= 2) {
-                const stride = (runEndBottom - runStartTop) / (runCount * scaleY);
-                if (stride >= 14 && stride <= 120) {
-                  bestRunCount = runCount;
-                  bestRunStride = stride;
-                }
+        const rect = tr.getBoundingClientRect?.();
+        const rawRectH = Number(rect?.height || 0);
+        const hVal = rawRectH > 0 ? rawRectH / scaleY : Number(tr.offsetHeight || 0);
+        if (hVal >= 14 && hVal <= 120) {
+          if (!measuredSingle) measuredSingle = hVal;
+          if (rect && Number.isFinite(rect.top) && Number.isFinite(rect.bottom) && rect.bottom > rect.top) {
+            if (runCount === 0) {
+              runStartTop = rect.top;
+            }
+            runEndBottom = rect.bottom;
+            runCount += 1;
+            if (runCount > bestRunCount && runCount >= 2) {
+              const stride = (runEndBottom - runStartTop) / (runCount * scaleY);
+              if (stride >= 14 && stride <= 120) {
+                bestRunCount = runCount;
+                bestRunStride = stride;
               }
             }
           }
-        } else {
-          runCount = 0;
-          if (isReason && needReason && !measuredReason) {
-            const rawRectH = Number(tr.getBoundingClientRect?.()?.height || 0);
-            const hVal = rawRectH > 0 ? rawRectH / scaleY : Number(tr.offsetHeight || 0);
-            if (hVal >= 18 && hVal <= 160) measuredReason = hVal;
-          }
         }
-        if ((!needSingle || bestRunCount >= 12) && (!needReason || measuredReason > 0)) {
+        if (bestRunCount >= 12) {
           break;
         }
       }
@@ -1218,17 +1182,12 @@ export const StepTableWidget = defineComponent({
         calibratedSingleRowH = measuredSingle;
         if (Math.abs(measuredSingle - prev) >= 0.25) changed = true;
       }
-      if (measuredReason > 0) {
-        const prev = getEstRowHeights().reason;
-        calibratedReasonRowH = measuredReason;
-        if (Math.abs(measuredReason - prev) >= 0.25) changed = true;
-      }
 
       if (changed && activeDataset) {
         const prevTops = activeDataset.rowTops;
         const anchorIdx = renderedSliceStart > 0 ? renderedSliceStart : 0;
         const prevAnchorTop = prevTops ? prevTops[anchorIdx] : 0;
-        const rebuilt = buildRowTops(activeDataset.tableSteps.length, activeDataset.hasReasonFlags);
+        const rebuilt = buildRowTops(activeDataset.tableSteps.length);
         activeDataset.rowTops = rebuilt.rowTops;
         activeDataset.totalBodyH = rebuilt.totalBodyH;
         const curScrollTop = Number(stepsTablePane.scrollTop || 0);
@@ -1246,7 +1205,6 @@ export const StepTableWidget = defineComponent({
     function scheduleCalibrateRowHeights() {
       if (!activeDataset?.isVirtualized) return;
       const needSingle = calibratedSingleRowH <= 0;
-      const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
       const paneW = getPaneContentWidth();
       const scaleSettled =
         lockedWhileScaled && Math.abs(getVisualTransformScale(stepsTableEl).scaleX - 1) <= 0.001;
@@ -1255,7 +1213,7 @@ export const StepTableWidget = defineComponent({
         lockedColKey !== computeColLockKey(activeDataset) ||
         scaleSettled ||
         (paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1);
-      if (!needSingle && !needReason && !needColLock) return;
+      if (!needSingle && !needColLock) return;
       if (calibrateRafId) return;
       if (typeof requestAnimationFrame === 'function') {
         let ranSync = false;
@@ -1287,7 +1245,6 @@ export const StepTableWidget = defineComponent({
         showStepTurnRail,
         useRootTurn,
         isVirtualized,
-        hasReasonFlags,
         rowTops,
         totalBodyH,
         sizerSpec,
@@ -1411,7 +1368,6 @@ export const StepTableWidget = defineComponent({
           st,
           logicalIdx: idx,
           isStripeEven: (idx & 1) === 1,
-          hasReason: Boolean(hasReasonFlags && hasReasonFlags[idx]),
           rowKey: getStepSelectionKey(st, cascadeId),
           hasTurn,
           hasUp,
@@ -1565,10 +1521,6 @@ export const StepTableWidget = defineComponent({
           }
           const { st, hasTurn, hasUp, hasDown, isStart, isLatest, prompt } = item;
           patchClasses(tr, { 'is-stripe-even': Boolean(isVirtualized && item.isStripeEven) });
-          if (tr.dataset) {
-            tr.dataset.hasReason = item.hasReason ? '1' : '0';
-          }
-
           if (refs.colOrderSig !== colOrderSig) {
             if (refs.hoverTd) {
               clearCellHover(refs.hoverTd);
@@ -2058,24 +2010,11 @@ export const StepTableWidget = defineComponent({
         'is-virtualized': isVirtualized,
       });
 
-      let hasReasonFlags = null;
-      let hasAnyReason = false;
       let rowTops = null;
       let totalBodyH = 0;
       let sizerSpec = null;
       if (isVirtualized) {
-        const hasTpsCol = wantedSet.has('tps');
-        if (hasTpsCol) {
-          hasReasonFlags = new Uint8Array(tableSteps.length);
-          for (let i = 0; i < tableSteps.length; i++) {
-            const rawReason = tableSteps[i]?.selectedSpeedReason;
-            if (rawReason && speedReasonText(rawReason)) {
-              hasReasonFlags[i] = 1;
-              hasAnyReason = true;
-            }
-          }
-        }
-        const built = buildRowTops(tableSteps.length, hasReasonFlags);
+        const built = buildRowTops(tableSteps.length);
         rowTops = built.rowTops;
         totalBodyH = built.totalBodyH;
         sizerSpec = buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx);
@@ -2094,8 +2033,6 @@ export const StepTableWidget = defineComponent({
         showStepTurnRail: effectiveTurnRail,
         useRootTurn,
         isVirtualized,
-        hasReasonFlags,
-        hasAnyReason,
         rowTops,
         totalBodyH,
         sizerSpec,

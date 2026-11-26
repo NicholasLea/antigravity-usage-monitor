@@ -1725,7 +1725,7 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.anomalyDelayPart': '退避 {sec}s',
   'steps.compactionStepTitle': '#{step} · 自动压缩',
   'steps.compactionSummaryRow': '输入 {input} → 摘要输出 {output}',
-  'steps.compactionDetailHint': '系统自动触发的上下文压缩步骤，用于折叠历史对话以释放窗口空间',
+  'steps.compactionDetailHint': '系统自动触发的上下文压缩步骤',
   'steps.compactionAnomalyHint': '该步骤同时为系统自动压缩步骤',
   'steps.revertedStepTitle': '#{step} · 已回退',
   'steps.revertedDetailHint': '该步骤已在对话中撤销回退，实际消耗的 Token 和费用仍计入统计',
@@ -1737,7 +1737,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'steps.timingAfterTtftLabel': '首字后耗时',
   'steps.timingThinkLabel': '原生思考计时',
   'steps.timingTotalLabel': '端到端总耗时',
-  'steps.timingOverlapHint': '原生思考计时可能重叠首字或流式阶段，不可直接相加',
   'steps.timingToolBufferedHint': '含工具调用，缓冲返回时流式耗时较短',
   'steps.timingAnomalyHint': '含 {count} 次异常',
   'steps.timingAnomalyDelayHint': '含 {count} 次异常 · 退避 {sec}s',
@@ -2041,7 +2040,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.gen.fontMd': '标准',
   'settings.gen.fontLg': '大',
   'settings.gen.fontXl': '特大',
-  'settings.gen.fontHint': '等比缩放侧边栏与展开面板字号，顶栏及输入框内嵌胶囊保持紧凑定高',
   'settings.gen.modernUi': '现代化 UI',
   'settings.gen.modernUiOff': '关闭',
   'settings.gen.modernUiOn': '开启',
@@ -2846,7 +2844,7 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.anomalyDelayPart': 'Backoff {sec}s',
   'steps.compactionStepTitle': '#{step} · Auto-Compaction',
   'steps.compactionSummaryRow': 'Input {input} → Summary {output}',
-  'steps.compactionDetailHint': 'Automatic context compaction step triggered to summarize history and free window space',
+  'steps.compactionDetailHint': 'Automatic context compaction step',
   'steps.compactionAnomalyHint': 'This step is also an auto-compaction step',
   'steps.revertedStepTitle': '#{step} · Reverted',
   'steps.revertedDetailHint': 'Reverted via conversation undo; consumed tokens and cost remain in usage totals',
@@ -2858,7 +2856,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'steps.timingAfterTtftLabel': 'After First Token',
   'steps.timingThinkLabel': 'Native Thinking',
   'steps.timingTotalLabel': 'Total Duration',
-  'steps.timingOverlapHint': 'Native thinking timing may overlap TTFT/streaming; not additive',
   'steps.timingToolBufferedHint': 'Tool call step (buffered return yields short stream)',
   'steps.timingAnomalyHint': '{count} retries/errors',
   'steps.timingAnomalyDelayHint': '{count} retries/errors · backoff {sec}s',
@@ -3162,7 +3159,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.gen.fontMd': 'Default',
   'settings.gen.fontLg': 'Large',
   'settings.gen.fontXl': 'XL',
-  'settings.gen.fontHint': 'Scales sidebar and popover typography while keeping the inline capsule compact',
   'settings.gen.modernUi': 'Modern UI',
   'settings.gen.modernUiOff': 'Off',
   'settings.gen.modernUiOn': 'On',
@@ -5931,15 +5927,6 @@ function buildStepTimingDiagnostic(st) {
   }
 
   const hints = [];
-  const hasOverlap =
-    think !== null &&
-    total !== null &&
-    ((ttft !== null && ttft + think > total + 0.05) ||
-      (nativeStream !== null && ttft !== null && ttft + nativeStream + think > total + 0.05) ||
-      think > total + 0.05);
-  if (hasOverlap) {
-    hints.push(t('steps.timingOverlapHint'));
-  }
   const streamForToolCheck = nativeStream ?? afterTtft;
   if (
     st.hasToolCalls &&
@@ -26297,20 +26284,15 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
     thLabel: () => t('stepCol.tps.th'),
     optLabel: () => t('stepCol.tps.opt'),
     sigPart: (st, ctx) =>
-      `${st.tokPerSec}:${st.selectedSpeedReason || ''}:${ctx?.showStepSpeedColor === true ? 1 : 0}`,
+      `${st.tokPerSec}:${st.selectedSpeedReason || ''}:${st.anomaly?.count ? 1 : 0}:${isCompactionStepItem(st) ? 1 : 0}:${ctx?.showStepSpeedColor === true ? 1 : 0}`,
     sortValue: (st) => finiteSortNum(st?.tokPerSec, { allowZero: false }),
     createCell: () => {
       const speedMain = h('strong', {
         className: 'cell-value tone-muted',
         style: 'font-size: var(--fs-base-sm);',
       });
-      const wrapEl = h(
-        'span',
-        { style: 'display: inline-block; vertical-align: middle;' },
-        [speedMain]
-      );
-      const td = h('td', {}, [wrapEl]);
-      return { td, refs: { wrapEl, speedMain, speedReason: null } };
+      const td = h('td', {}, [speedMain]);
+      return { td, refs: { td, speedMain } };
     },
     updateCell: (refs, st, ctx) => {
       patchText(refs.speedMain, formatSpeedMetric(st.tokPerSec, ' tok/s'));
@@ -26323,18 +26305,9 @@ const STEP_COLUMN_REGISTRY = Object.freeze({
             ? ''
             : 'tone-muted';
       patchAttr(refs.speedMain, 'class', toneCls ? `cell-value ${toneCls}` : 'cell-value');
-      const reason = speedReasonText(st.selectedSpeedReason);
-      if (reason && !refs.speedReason) {
-        refs.speedReason = h('div', {
-          className: 'text-muted',
-          style: 'font-size: var(--fs-xs);',
-        });
-        refs.wrapEl.appendChild(refs.speedReason);
-      }
-      if (refs.speedReason) {
-        patchText(refs.speedReason, reason);
-        patchAttr(refs.speedReason, 'hidden', !reason);
-      }
+      const hasCustomRowTip = Boolean(Number(st.anomaly?.count) > 0 || isCompactionStepItem(st));
+      const reasonTip = !hasValidSpeed && !hasCustomRowTip ? speedReasonText(st.selectedSpeedReason) : '';
+      patchAttr(refs.td, 'title', reasonTip || null);
     },
   },
 
@@ -27404,7 +27377,6 @@ const VIRTUAL_REFILL_MARGIN = 6;
 const MAX_ROW_POOL_SIZE = 96;
 const FALLBACK_VIEWPORT_H = 560;
 const BASE_SINGLE_ROW_H = 28;
-const BASE_REASON_ROW_H = 42;
 const SIZER_ROW_KEY = '__vsizer__';
 const SPACER_TOP_KEY = '__vspacer_top__';
 const SPACER_BOTTOM_KEY = '__vspacer_bottom__';
@@ -27519,7 +27491,6 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
   const modelCandidates = needModel ? new Map() : null;
   let maxTpsVal = -1;
   let maxTpsObj = null;
-  const reasonCandidates = needTps ? new Set() : null;
   let maxTtftVal = -1;
   let bestTtftObj = firstStep;
   let maxDurVal = -1;
@@ -27598,9 +27569,6 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
           maxTpsVal = tpsScore;
           maxTpsObj = st;
         }
-      }
-      if (st.selectedSpeedReason) {
-        reasonCandidates.add(st.selectedSpeedReason);
       }
     }
 
@@ -27732,22 +27700,10 @@ function buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx) {
     colSteps.model = bestModelObj;
   }
   if (needTps) {
-    let longestReasonKey = null;
-    let longestReasonWidth = 0;
-    if (reasonCandidates) {
-      for (const rk of reasonCandidates) {
-        const txt = speedReasonText(rk);
-        const w = txt ? estProportionalTextWidth(txt) : 0;
-        if (w > longestReasonWidth) {
-          longestReasonWidth = w;
-          longestReasonKey = rk;
-        }
-      }
-    }
     colSteps.tps = {
       ...(maxTpsObj || firstStep),
       tokPerSec: maxTpsObj ? maxTpsObj.tokPerSec : firstStep.tokPerSec,
-      selectedSpeedReason: longestReasonKey,
+      selectedSpeedReason: null,
     };
   }
   if (needTtft) colSteps.ttft = bestTtftObj;
@@ -28176,7 +28132,6 @@ const StepTableWidget = defineComponent({
     let calibrateRafId = 0;
     let lastFontScale = 1;
     let calibratedSingleRowH = 0;
-    let calibratedReasonRowH = 0;
     let lockedColKey = '';
     let lockedPaneWidth = 0;
     let lockedWhileScaled = false;
@@ -28282,20 +28237,16 @@ const StepTableWidget = defineComponent({
         calibratedSingleRowH > 0
           ? calibratedSingleRowH
           : Math.round(BASE_SINGLE_ROW_H * lastFontScale);
-      const reason =
-        calibratedReasonRowH > 0
-          ? calibratedReasonRowH
-          : Math.round(BASE_REASON_ROW_H * lastFontScale);
-      return { single, reason };
+      return { single };
     }
 
-    function buildRowTops(n, hasReasonFlags) {
-      const { single, reason } = getEstRowHeights();
+    function buildRowTops(n) {
+      const { single } = getEstRowHeights();
       const tops = new Float64Array(n + 1);
       let acc = 0;
       for (let i = 0; i < n; i++) {
         tops[i] = acc;
-        acc += hasReasonFlags && hasReasonFlags[i] ? reason : single;
+        acc += single;
       }
       tops[n] = acc;
       return { rowTops: tops, totalBodyH: acc };
@@ -28319,10 +28270,9 @@ const StepTableWidget = defineComponent({
       if (Math.abs(nextScale - lastFontScale) < 0.005) return false;
       lastFontScale = nextScale;
       calibratedSingleRowH = 0;
-      calibratedReasonRowH = 0;
       unlockColumnWidths();
       if (activeDataset?.isVirtualized) {
-        const rebuilt = buildRowTops(activeDataset.tableSteps.length, activeDataset.hasReasonFlags);
+        const rebuilt = buildRowTops(activeDataset.tableSteps.length);
         activeDataset.rowTops = rebuilt.rowTops;
         activeDataset.totalBodyH = rebuilt.totalBodyH;
       }
@@ -28493,12 +28443,10 @@ const StepTableWidget = defineComponent({
       if (Number(stepsTablePane.clientHeight || 0) <= 0) return;
       lockColumnWidthsIfNeeded();
       const needSingle = calibratedSingleRowH <= 0;
-      const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
-      if (!needSingle && !needReason) return;
+      if (!needSingle) return;
 
       const { scaleY } = getVisualTransformScale(stepsTableEl);
       let measuredSingle = 0;
-      let measuredReason = 0;
 
       let runStartTop = 0;
       let runEndBottom = 0;
@@ -28513,37 +28461,27 @@ const StepTableWidget = defineComponent({
           runCount = 0;
           continue;
         }
-        const isReason = tr.dataset?.hasReason === '1';
-        if (!isReason && needSingle) {
-          const rect = tr.getBoundingClientRect?.();
-          const rawRectH = Number(rect?.height || 0);
-          const hVal = rawRectH > 0 ? rawRectH / scaleY : Number(tr.offsetHeight || 0);
-          if (hVal >= 14 && hVal <= 120) {
-            if (!measuredSingle) measuredSingle = hVal;
-            if (rect && Number.isFinite(rect.top) && Number.isFinite(rect.bottom) && rect.bottom > rect.top) {
-              if (runCount === 0) {
-                runStartTop = rect.top;
-              }
-              runEndBottom = rect.bottom;
-              runCount += 1;
-              if (runCount > bestRunCount && runCount >= 2) {
-                const stride = (runEndBottom - runStartTop) / (runCount * scaleY);
-                if (stride >= 14 && stride <= 120) {
-                  bestRunCount = runCount;
-                  bestRunStride = stride;
-                }
+        const rect = tr.getBoundingClientRect?.();
+        const rawRectH = Number(rect?.height || 0);
+        const hVal = rawRectH > 0 ? rawRectH / scaleY : Number(tr.offsetHeight || 0);
+        if (hVal >= 14 && hVal <= 120) {
+          if (!measuredSingle) measuredSingle = hVal;
+          if (rect && Number.isFinite(rect.top) && Number.isFinite(rect.bottom) && rect.bottom > rect.top) {
+            if (runCount === 0) {
+              runStartTop = rect.top;
+            }
+            runEndBottom = rect.bottom;
+            runCount += 1;
+            if (runCount > bestRunCount && runCount >= 2) {
+              const stride = (runEndBottom - runStartTop) / (runCount * scaleY);
+              if (stride >= 14 && stride <= 120) {
+                bestRunCount = runCount;
+                bestRunStride = stride;
               }
             }
           }
-        } else {
-          runCount = 0;
-          if (isReason && needReason && !measuredReason) {
-            const rawRectH = Number(tr.getBoundingClientRect?.()?.height || 0);
-            const hVal = rawRectH > 0 ? rawRectH / scaleY : Number(tr.offsetHeight || 0);
-            if (hVal >= 18 && hVal <= 160) measuredReason = hVal;
-          }
         }
-        if ((!needSingle || bestRunCount >= 12) && (!needReason || measuredReason > 0)) {
+        if (bestRunCount >= 12) {
           break;
         }
       }
@@ -28558,17 +28496,12 @@ const StepTableWidget = defineComponent({
         calibratedSingleRowH = measuredSingle;
         if (Math.abs(measuredSingle - prev) >= 0.25) changed = true;
       }
-      if (measuredReason > 0) {
-        const prev = getEstRowHeights().reason;
-        calibratedReasonRowH = measuredReason;
-        if (Math.abs(measuredReason - prev) >= 0.25) changed = true;
-      }
 
       if (changed && activeDataset) {
         const prevTops = activeDataset.rowTops;
         const anchorIdx = renderedSliceStart > 0 ? renderedSliceStart : 0;
         const prevAnchorTop = prevTops ? prevTops[anchorIdx] : 0;
-        const rebuilt = buildRowTops(activeDataset.tableSteps.length, activeDataset.hasReasonFlags);
+        const rebuilt = buildRowTops(activeDataset.tableSteps.length);
         activeDataset.rowTops = rebuilt.rowTops;
         activeDataset.totalBodyH = rebuilt.totalBodyH;
         const curScrollTop = Number(stepsTablePane.scrollTop || 0);
@@ -28586,7 +28519,6 @@ const StepTableWidget = defineComponent({
     function scheduleCalibrateRowHeights() {
       if (!activeDataset?.isVirtualized) return;
       const needSingle = calibratedSingleRowH <= 0;
-      const needReason = calibratedReasonRowH <= 0 && activeDataset.hasAnyReason;
       const paneW = getPaneContentWidth();
       const scaleSettled =
         lockedWhileScaled && Math.abs(getVisualTransformScale(stepsTableEl).scaleX - 1) <= 0.001;
@@ -28595,7 +28527,7 @@ const StepTableWidget = defineComponent({
         lockedColKey !== computeColLockKey(activeDataset) ||
         scaleSettled ||
         (paneW > 0 && Math.abs(paneW - lockedPaneWidth) >= 1);
-      if (!needSingle && !needReason && !needColLock) return;
+      if (!needSingle && !needColLock) return;
       if (calibrateRafId) return;
       if (typeof requestAnimationFrame === 'function') {
         let ranSync = false;
@@ -28627,7 +28559,6 @@ const StepTableWidget = defineComponent({
         showStepTurnRail,
         useRootTurn,
         isVirtualized,
-        hasReasonFlags,
         rowTops,
         totalBodyH,
         sizerSpec,
@@ -28751,7 +28682,6 @@ const StepTableWidget = defineComponent({
           st,
           logicalIdx: idx,
           isStripeEven: (idx & 1) === 1,
-          hasReason: Boolean(hasReasonFlags && hasReasonFlags[idx]),
           rowKey: getStepSelectionKey(st, cascadeId),
           hasTurn,
           hasUp,
@@ -28905,10 +28835,6 @@ const StepTableWidget = defineComponent({
           }
           const { st, hasTurn, hasUp, hasDown, isStart, isLatest, prompt } = item;
           patchClasses(tr, { 'is-stripe-even': Boolean(isVirtualized && item.isStripeEven) });
-          if (tr.dataset) {
-            tr.dataset.hasReason = item.hasReason ? '1' : '0';
-          }
-
           if (refs.colOrderSig !== colOrderSig) {
             if (refs.hoverTd) {
               clearCellHover(refs.hoverTd);
@@ -29398,24 +29324,11 @@ const StepTableWidget = defineComponent({
         'is-virtualized': isVirtualized,
       });
 
-      let hasReasonFlags = null;
-      let hasAnyReason = false;
       let rowTops = null;
       let totalBodyH = 0;
       let sizerSpec = null;
       if (isVirtualized) {
-        const hasTpsCol = wantedSet.has('tps');
-        if (hasTpsCol) {
-          hasReasonFlags = new Uint8Array(tableSteps.length);
-          for (let i = 0; i < tableSteps.length; i++) {
-            const rawReason = tableSteps[i]?.selectedSpeedReason;
-            if (rawReason && speedReasonText(rawReason)) {
-              hasReasonFlags[i] = 1;
-              hasAnyReason = true;
-            }
-          }
-        }
-        const built = buildRowTops(tableSteps.length, hasReasonFlags);
+        const built = buildRowTops(tableSteps.length);
         rowTops = built.rowTops;
         totalBodyH = built.totalBodyH;
         sizerSpec = buildColumnSizerSpec(tableSteps, colKeys, wantedSet, cellCtx);
@@ -29434,8 +29347,6 @@ const StepTableWidget = defineComponent({
         showStepTurnRail: effectiveTurnRail,
         useRootTurn,
         isVirtualized,
-        hasReasonFlags,
-        hasAnyReason,
         rowTops,
         totalBodyH,
         sizerSpec,
@@ -34719,10 +34630,6 @@ const SettingsGeneralTab = defineComponent({
       text: t('settings.gen.themeAccent'),
     });
     const fontLabelEl = h('span', { className: 'form-label', text: t('settings.gen.fontScale') });
-    const fontHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.gen.fontHint'),
-    });
     const modernUiLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.gen.modernUi'),
@@ -34852,7 +34759,7 @@ const SettingsGeneralTab = defineComponent({
       ]),
       h('div', { className: 'form-row' }, [langLabelEl, languageSwitch.el]),
       h('div', { className: 'form-row' }, [accentLabelEl, themeColorPicker.el]),
-      h('div', { className: 'form-row' }, [fontLabelEl, fontScaleSwitch.el, fontHintEl]),
+      h('div', { className: 'form-row' }, [fontLabelEl, fontScaleSwitch.el]),
       h('div', { className: 'form-row' }, [modernUiLabelEl, modernUiSwitch.el, modernUiHintEl]),
     ]);
 
@@ -35100,7 +35007,6 @@ const SettingsGeneralTab = defineComponent({
       patchText(langLabelEl, t('settings.gen.language'));
       patchText(accentLabelEl, t('settings.gen.themeAccent'));
       patchText(fontLabelEl, t('settings.gen.fontScale'));
-      patchText(fontHintEl, t('settings.gen.fontHint'));
       patchText(modernUiLabelEl, t('settings.gen.modernUi'));
       patchText(modernUiHintEl, t('settings.gen.modernUiHint'));
       patchText(updateTitleEl, t('settings.gen.updateTitle'));

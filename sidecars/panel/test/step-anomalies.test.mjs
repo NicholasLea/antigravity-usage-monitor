@@ -400,11 +400,28 @@ test('formatSpeedMetric drops decimals at >= 100 tok/s and STEP_COLUMN_REGISTRY.
 
     STEP_COLUMN_REGISTRY.tps.updateCell(
       fastCell.refs,
-      { tokPerSec: null, selectedSpeedReason: 'error' },
+      { tokPerSec: null, selectedSpeedReason: 'short_timing' },
       { showStepSpeedColor: false }
     );
     assert.equal(fastCell.refs.speedMain.textContent, '—');
-    assert.equal(fastCell.refs.speedReason.textContent, '调用报错');
+    assert.equal(fastCell.refs.speedReason, undefined, 'tps cell must stay strictly single-line without a sub-reason row');
+    assert.equal(fastCell.td.getAttribute('title'), '耗时过短 (<0.5s)');
+
+    STEP_COLUMN_REGISTRY.tps.updateCell(
+      fastCell.refs,
+      { tokPerSec: null, selectedSpeedReason: 'compaction_timing_unavailable', isCompactionStep: true },
+      { showStepSpeedColor: false }
+    );
+    assert.equal(fastCell.refs.speedMain.textContent, '—');
+    assert.equal(fastCell.td.getAttribute('title'), null, 'compaction rows rely on custom hover popover without native title overlap');
+
+    STEP_COLUMN_REGISTRY.tps.updateCell(
+      fastCell.refs,
+      { tokPerSec: null, selectedSpeedReason: 'canceled', anomaly: { count: 1 } },
+      { showStepSpeedColor: false }
+    );
+    assert.equal(fastCell.refs.speedMain.textContent, '—');
+    assert.equal(fastCell.td.getAttribute('title'), null, 'anomaly/canceled rows rely on custom hover popover without native title overlap');
 
     // Seconds >= 100s also drop decimals in ttft & duration columns
     assert.equal(formatMetric(100, 's'), '100s');
@@ -972,7 +989,7 @@ test('buildStepTimingDiagnostic and StepTableWidget TTFT/duration hover tooltips
     assert.equal(slowDiag.rows[0].toneClass, 'tone-danger');
     assert.equal(slowDiag.rows[1].value, '0.20s');
     assert.equal(slowDiag.rows[2].value, '119.3s');
-    assert.match(slowDiag.hint, /重叠/);
+    assert.doesNotMatch(slowDiag.hint, /重叠/);
     assert.match(slowDiag.hint, /工具调用/);
 
     // 2. Legacy step without nativeStreamSec derives after-TTFT cleanly; inconsistent timing avoids bogus share

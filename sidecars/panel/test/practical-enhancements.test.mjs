@@ -2338,7 +2338,8 @@ test('P0 regression: V4 display-projected steps open inspector, preserve waterfa
   assert.equal(diag.rows.length, 3);
   assert.match(diag.rows[1].text, /流式返回/);
   assert.match(diag.rows[2].text, /原生思考计时/);
-  assert.match(diag.hint, /重叠/);
+  assert.doesNotMatch(diag.hint, /重叠/);
+  assert.match(diag.hint, /含 1 次异常/);
 
   // B-05: Speed aggregation matches official summarizeSpeed (18.2 tok/s, not 55.0 tok/s) and skips <50 tok short samples
   const stepSlow = {

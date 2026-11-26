@@ -451,15 +451,6 @@ export function buildStepTimingDiagnostic(st) {
   }
 
   const hints = [];
-  const hasOverlap =
-    think !== null &&
-    total !== null &&
-    ((ttft !== null && ttft + think > total + 0.05) ||
-      (nativeStream !== null && ttft !== null && ttft + nativeStream + think > total + 0.05) ||
-      think > total + 0.05);
-  if (hasOverlap) {
-    hints.push(t('steps.timingOverlapHint'));
-  }
   const streamForToolCheck = nativeStream ?? afterTtft;
   if (
     st.hasToolCalls &&

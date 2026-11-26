@@ -29,7 +29,6 @@ import {
   normalizeModelDisplayMode,
   resolveModelAnomalySummary,
   resolveModelDisplayInfo,
-  speedReasonText,
 } from '../core/formatters.js';
 import {
   computeStepQuickChipCounts,

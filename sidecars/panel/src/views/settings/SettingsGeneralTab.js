@@ -126,10 +126,6 @@ export const SettingsGeneralTab = defineComponent({
       text: t('settings.gen.themeAccent'),
     });
     const fontLabelEl = h('span', { className: 'form-label', text: t('settings.gen.fontScale') });
-    const fontHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.gen.fontHint'),
-    });
     const modernUiLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.gen.modernUi'),
@@ -259,7 +255,7 @@ export const SettingsGeneralTab = defineComponent({
       ]),
       h('div', { className: 'form-row' }, [langLabelEl, languageSwitch.el]),
       h('div', { className: 'form-row' }, [accentLabelEl, themeColorPicker.el]),
-      h('div', { className: 'form-row' }, [fontLabelEl, fontScaleSwitch.el, fontHintEl]),
+      h('div', { className: 'form-row' }, [fontLabelEl, fontScaleSwitch.el]),
       h('div', { className: 'form-row' }, [modernUiLabelEl, modernUiSwitch.el, modernUiHintEl]),
     ]);
 
@@ -508,7 +504,6 @@ export const SettingsGeneralTab = defineComponent({
       patchText(langLabelEl, t('settings.gen.language'));
       patchText(accentLabelEl, t('settings.gen.themeAccent'));
       patchText(fontLabelEl, t('settings.gen.fontScale'));
-      patchText(fontHintEl, t('settings.gen.fontHint'));
       patchText(modernUiLabelEl, t('settings.gen.modernUi'));
       patchText(modernUiHintEl, t('settings.gen.modernUiHint'));
       patchText(updateTitleEl, t('settings.gen.updateTitle'));
