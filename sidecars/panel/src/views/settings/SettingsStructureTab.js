@@ -32,6 +32,7 @@ import {
   DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE,
   DEFAULT_CLIENT_OVERVIEW_MODULES,
   DEFAULT_CLIENT_POPOVER_WIDTH,
+  DEFAULT_CLIENT_QUOTA_DISPLAY_MODE,
   DEFAULT_CLIENT_STEP_COLUMNS,
   DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_CLIENT_TOPBAR_SLOTS,
@@ -49,6 +50,7 @@ import {
   normalizeClientOverviewModules,
   normalizeClientPopoverWidth,
   normalizeClientPopoverWidthMode,
+  normalizeClientQuotaDisplayMode,
   normalizeClientStepColumns,
   normalizeClientStepTokenComboFormat,
   normalizeClientTopbarSlots,
@@ -112,6 +114,13 @@ function getHoverMetricStyleOptions() {
   return [
     { value: 'medium', label: t('settings.str.hoverMetricStyleMedium') },
     { value: 'large', label: t('settings.str.hoverMetricStyleLarge') },
+  ];
+}
+
+function getQuotaDisplayModeOptions() {
+  return [
+    { value: 'used', label: t('settings.str.quotaDisplayUsed') },
+    { value: 'remaining', label: t('settings.str.quotaDisplayRemaining') },
   ];
 }
 
@@ -262,6 +271,7 @@ export const SettingsStructureTab = defineComponent({
     let draftOverviewModules = [...DEFAULT_CLIENT_OVERVIEW_MODULES];
     let draftOverviewMetricStyle = DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE;
     let draftOverviewMetrics = [...DEFAULT_CLIENT_OVERVIEW_METRICS];
+    let draftQuotaDisplayMode = DEFAULT_CLIENT_QUOTA_DISPLAY_MODE;
     let draftShowStepTurnRail = false;
     let draftShowStepAgentBadge = true;
     let draftShowStepSpeedColor = false;
@@ -311,6 +321,7 @@ export const SettingsStructureTab = defineComponent({
           overviewModules: draftOverviewModules,
           overviewMetricStyle: draftOverviewMetricStyle,
           overviewMetrics: draftOverviewMetrics,
+          quotaDisplayMode: draftQuotaDisplayMode,
           showStepTurnRail: draftShowStepTurnRail,
           showStepAgentBadge: draftShowStepAgentBadge,
           showStepSpeedColor: draftShowStepSpeedColor,
@@ -1268,6 +1279,10 @@ export const SettingsStructureTab = defineComponent({
       hidden: true,
       text: t('settings.str.overviewMetricsInactiveHint'),
     });
+    const quotaDisplayModeLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.quotaDisplayModeLabel'),
+    });
 
     const overviewMetricStyleSwitch = SegmentedControl({
       ariaLabel: t('settings.str.hoverMetricStyleLabel'),
@@ -1284,6 +1299,23 @@ export const SettingsStructureTab = defineComponent({
         props.onLayoutChange?.();
         void persistStructurePatch(overviewSection, {
           overviewMetricStyle: draftOverviewMetricStyle,
+        });
+      },
+    });
+
+    const quotaDisplayModeToggle = SegmentedControl({
+      ariaLabel: t('settings.str.quotaDisplayModeLabel'),
+      modelValue: draftQuotaDisplayMode,
+      options: getQuotaDisplayModeOptions(),
+      onUpdateModelValue: (val) => {
+        const nextMode = normalizeClientQuotaDisplayMode(val);
+        if (nextMode === draftQuotaDisplayMode) return;
+        draftQuotaDisplayMode = nextMode;
+        syncOverviewSectionMeta();
+        refreshHoverPreview();
+        props.onLayoutChange?.();
+        void persistStructurePatch(overviewSection, {
+          quotaDisplayMode: draftQuotaDisplayMode,
         });
       },
     });
@@ -1340,9 +1372,12 @@ export const SettingsStructureTab = defineComponent({
         draftOverviewModules = [...DEFAULT_CLIENT_OVERVIEW_MODULES];
         draftOverviewMetricStyle = DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE;
         draftOverviewMetrics = [...DEFAULT_CLIENT_OVERVIEW_METRICS];
+        draftQuotaDisplayMode = DEFAULT_CLIENT_QUOTA_DISPLAY_MODE;
         syncOverviewSectionMeta();
         if (draftHoverSyncOverview) {
           syncHoverSectionMeta();
+        } else {
+          refreshHoverPreview();
         }
         props.onLayoutChange?.();
         void persistStructurePatch(
@@ -1351,6 +1386,7 @@ export const SettingsStructureTab = defineComponent({
             overviewModules: [...DEFAULT_CLIENT_OVERVIEW_MODULES],
             overviewMetricStyle: DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE,
             overviewMetrics: [...DEFAULT_CLIENT_OVERVIEW_METRICS],
+            quotaDisplayMode: DEFAULT_CLIENT_QUOTA_DISPLAY_MODE,
           },
           'settings.resetDone'
         );
@@ -1362,6 +1398,10 @@ export const SettingsStructureTab = defineComponent({
           h('div', { className: 'settings-inline-row' }, [
             overviewMetricStyleLabelEl,
             overviewMetricStyleSwitch.el,
+          ]),
+          h('div', { className: 'settings-inline-row' }, [
+            quotaDisplayModeLabelEl,
+            quotaDisplayModeToggle.el,
           ]),
           overviewMetricsHintEl,
           overviewMetricsLabelEl,
@@ -1387,6 +1427,11 @@ export const SettingsStructureTab = defineComponent({
         options: getHoverMetricStyleOptions(),
         ariaLabel: t('settings.str.hoverMetricStyleLabel'),
       });
+      quotaDisplayModeToggle.setProps({
+        modelValue: draftQuotaDisplayMode,
+        options: getQuotaDisplayModeOptions(),
+        ariaLabel: t('settings.str.quotaDisplayModeLabel'),
+      });
       overviewModulesList.refs.setProps({
         items: draftOverviewModules,
         options: getOverviewModuleOptions(),
@@ -1407,7 +1452,8 @@ export const SettingsStructureTab = defineComponent({
       const isDefault =
         isSameList(draftOverviewModules, DEFAULT_CLIENT_OVERVIEW_MODULES) &&
         draftOverviewMetricStyle === DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE &&
-        isSameList(draftOverviewMetrics, DEFAULT_CLIENT_OVERVIEW_METRICS);
+        isSameList(draftOverviewMetrics, DEFAULT_CLIENT_OVERVIEW_METRICS) &&
+        draftQuotaDisplayMode === DEFAULT_CLIENT_QUOTA_DISPLAY_MODE;
       overviewSection.refs.setResetDisabled(isDefault);
       refreshOverviewPreview();
     }
@@ -1800,6 +1846,7 @@ export const SettingsStructureTab = defineComponent({
       draftOverviewModules = normalizeClientOverviewModules(settings.overviewModules);
       draftOverviewMetricStyle = normalizeClientOverviewMetricStyle(settings.overviewMetricStyle);
       draftOverviewMetrics = normalizeClientOverviewMetrics(settings.overviewMetrics);
+      draftQuotaDisplayMode = normalizeClientQuotaDisplayMode(settings.quotaDisplayMode);
       draftShowStepTurnRail = settings.showStepTurnRail === true;
       draftShowStepAgentBadge = settings.showStepAgentBadge !== false;
       draftShowStepSpeedColor = settings.showStepSpeedColor === true;
@@ -1847,6 +1894,7 @@ export const SettingsStructureTab = defineComponent({
       patchText(overviewModulesLabelEl, t('settings.str.overviewModulesLabel'));
       patchText(overviewMetricsLabelEl, t('settings.str.overviewMetricsLabel'));
       patchText(overviewMetricsHintEl, t('settings.str.overviewMetricsInactiveHint'));
+      patchText(quotaDisplayModeLabelEl, t('settings.str.quotaDisplayModeLabel'));
 
       stepsSection.refs.setTitle(t('settings.str.stepsSection'));
       stepsSection.refs.setResetLabel(t('settings.resetBtn'));
@@ -1918,6 +1966,7 @@ export const SettingsStructureTab = defineComponent({
       hoverSyncOverviewToggle.destroy();
       hoverMetricsList.destroy();
       overviewMetricStyleSwitch.destroy();
+      quotaDisplayModeToggle.destroy();
       overviewModulesList.destroy();
       overviewMetricsList.destroy();
       stepTurnRailToggle.destroy();
@@ -1959,6 +2008,7 @@ export const SettingsStructureTab = defineComponent({
         hoverSyncOverviewToggle,
         hoverMetricsList,
         overviewMetricStyleSwitch,
+        quotaDisplayModeToggle,
         overviewModulesList,
         overviewMetricsList,
         stepTurnRailToggle,

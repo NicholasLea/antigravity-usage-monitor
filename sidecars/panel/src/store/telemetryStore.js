@@ -38,6 +38,7 @@ import {
   DEFAULT_OVERVIEW_METRIC_STYLE,
   DEFAULT_OVERVIEW_MODULES,
   DEFAULT_POPOVER_WIDTH,
+  DEFAULT_QUOTA_DISPLAY_MODE,
   DEFAULT_STEP_TABLE_COLUMNS,
   DEFAULT_STEP_TOKEN_COMBO_FORMAT,
   DEFAULT_TOPBAR_SLOTS,
@@ -67,6 +68,7 @@ import {
   normalizePluginUpdateMode,
   normalizePopoverWidth,
   normalizePopoverWidthMode,
+  normalizeQuotaDisplayMode,
   normalizeRiskyFeaturesEnabled,
   normalizeStepTableColumns,
   normalizeStepTokenComboFormat,
@@ -511,6 +513,7 @@ export const DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT = DEFAULT_STEP_TOKEN_COMBO_F
 export const MIN_CLIENT_POPOVER_WIDTH = MIN_POPOVER_WIDTH;
 export const MAX_CLIENT_POPOVER_WIDTH = MAX_POPOVER_WIDTH;
 export const DEFAULT_CLIENT_POPOVER_WIDTH = DEFAULT_POPOVER_WIDTH;
+export const DEFAULT_CLIENT_QUOTA_DISPLAY_MODE = DEFAULT_QUOTA_DISPLAY_MODE;
 
 export const parseClientStepTokenComboSegments = parseStepTokenComboSegments;
 export const normalizeClientStepTokenComboFormat = normalizeStepTokenComboFormat;
@@ -519,6 +522,7 @@ export const normalizeClientPopoverWidth = normalizePopoverWidth;
 export const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 export const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
 export const normalizeClientContextAgentMode = normalizeContextAgentMode;
+export const normalizeClientQuotaDisplayMode = normalizeQuotaDisplayMode;
 export const normalizeClientExperimentalQuotaReservation = normalizeExperimentalQuotaReservation;
 export const normalizeClientAccountQuotaRefreshMinutes = normalizeAccountQuotaRefreshMinutes;
 export const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
@@ -683,6 +687,12 @@ export function isEquivalentTelemetry(prev, next) {
     return false;
   }
   if (Boolean(pSet?.showStepFilterToolbar) !== Boolean(nSet?.showStepFilterToolbar)) {
+    return false;
+  }
+  if (
+    normalizeClientQuotaDisplayMode(pSet?.quotaDisplayMode) !==
+    normalizeClientQuotaDisplayMode(nSet?.quotaDisplayMode)
+  ) {
     return false;
   }
   if (
@@ -2032,6 +2042,9 @@ export async function saveSettingsPatch(patch) {
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepFilterToolbar')) {
     safePatch.showStepFilterToolbar = Boolean(safePatch.showStepFilterToolbar);
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'quotaDisplayMode')) {
+    safePatch.quotaDisplayMode = normalizeClientQuotaDisplayMode(safePatch.quotaDisplayMode);
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalQuotaReservation')) {
     safePatch.experimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(

@@ -2,7 +2,7 @@
 'use strict';
 
 // --- shared/settings-normalization.mjs ---
-const { SUPPORTED_LOCALES, SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, resolveLocaleFromLanguageTag, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi, normalizeAutoConfigureLaunch, normalizeEnableRemoteSshTelemetry, normalizeDeveloperModeEnabled, normalizeRiskyFeaturesEnabled, isRiskyFeaturesGateOpen, isContextWindowFeatureActive, isAccountSwitchFeatureActive } = (() => {
+const { SUPPORTED_LOCALES, SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, resolveLocaleFromLanguageTag, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, QUOTA_DISPLAY_MODES, DEFAULT_QUOTA_DISPLAY_MODE, normalizeQuotaDisplayMode, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi, normalizeAutoConfigureLaunch, normalizeEnableRemoteSshTelemetry, normalizeDeveloperModeEnabled, normalizeRiskyFeaturesEnabled, isRiskyFeaturesGateOpen, isContextWindowFeatureActive, isAccountSwitchFeatureActive } = (() => {
 const SUPPORTED_LOCALES = Object.freeze([
   'zh-CN',
   'zh-TW',
@@ -487,6 +487,14 @@ function normalizeModernUi(val) {
 const CONTEXT_AGENT_MODES = Object.freeze(['main', 'auto']);
 const DEFAULT_CONTEXT_AGENT_MODE = 'main';
 
+const QUOTA_DISPLAY_MODES = Object.freeze(['used', 'remaining']);
+const DEFAULT_QUOTA_DISPLAY_MODE = 'used';
+
+function normalizeQuotaDisplayMode(raw) {
+  const val = String(raw || '').trim().toLowerCase();
+  return val === 'remaining' ? 'remaining' : 'used';
+}
+
 const ACCOUNT_QUOTA_REFRESH_MINUTES = Object.freeze([10, 30, 60, 180, 360, 720, 1440]);
 const DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES = 60;
 
@@ -570,7 +578,7 @@ function isAccountSwitchFeatureActive(settings) {
     isRiskyFeaturesGateOpen(settings) && settings.accountSwitchRiskAccepted === true
   );
 }
-return { SUPPORTED_LOCALES, SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, resolveLocaleFromLanguageTag, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi, normalizeAutoConfigureLaunch, normalizeEnableRemoteSshTelemetry, normalizeDeveloperModeEnabled, normalizeRiskyFeaturesEnabled, isRiskyFeaturesGateOpen, isContextWindowFeatureActive, isAccountSwitchFeatureActive };
+return { SUPPORTED_LOCALES, SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, resolveLocaleFromLanguageTag, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, QUOTA_DISPLAY_MODES, DEFAULT_QUOTA_DISPLAY_MODE, normalizeQuotaDisplayMode, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi, normalizeAutoConfigureLaunch, normalizeEnableRemoteSshTelemetry, normalizeDeveloperModeEnabled, normalizeRiskyFeaturesEnabled, isRiskyFeaturesGateOpen, isContextWindowFeatureActive, isAccountSwitchFeatureActive };
 })();
 
 // --- shared/currency-catalog.mjs ---
@@ -1740,9 +1748,11 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'quota.loading': '读取中...',
   'quota.failed': '获取失败 (--%)',
   'quota.usedAndLeft': '{reset} · 已用 {used}%',
+  'quota.remainingAndReset': '{reset} · 剩余 {remaining}%',
   'quota.reservedTip': '预占估算（试验性）：约 {rsv}%（实际已用约 {actual}%），静默约 10 分钟后未用差额自动退还',
   'quota.reservedTipMulti': '预占估算（试验性）：约 {rsv}%（检测到 {leases} 笔叠加租约，实际已用约 {actual}%），静默约 10 分钟后未用差额自动退还',
   'quota.legendActual': '实占',
+  'quota.legendRemaining': '剩余',
   'quota.legendReserved': '预占',
   'quota.cycle5hTitle': '当前 5h 周期累计 ({pool})：{tok} Tokens · {cost} · {calls} 次调用',
   'quota.cycleWkCustomTitle': '本周自然周累计：{tok} Tokens · {cost} · {calls} 次调用',
@@ -2443,6 +2453,9 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.overviewMetricsLabel': '实时指标',
   'settings.str.overviewMetricsInactiveHint': '当前已移出「实时指标」模块，此配置将在悬浮窗启用或重新添加模块时生效',
   'settings.str.addOverviewMetric': '添加指标 ({count}/{max})',
+  'settings.str.quotaDisplayModeLabel': '额度显示',
+  'settings.str.quotaDisplayUsed': '已用',
+  'settings.str.quotaDisplayRemaining': '剩余',
   'settings.str.stepsSection': '调用明细字段',
   'settings.str.stepsBadge': '{count} 列',
   'settings.str.stepTurnRailToggle': '对话轮次导轨',
@@ -2996,9 +3009,11 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "quota.loading": "讀取中...",
   "quota.failed": "取得失敗 (--%)",
   "quota.usedAndLeft": "{reset} · 已用 {used}%",
+  "quota.remainingAndReset": "{reset} · 剩餘 {remaining}%",
   "quota.reservedTip": "預佔估算（實驗性）：約 {rsv}%（實際已用約 {actual}%），閒置約 10 分鐘後未用差額自動退還",
   "quota.reservedTipMulti": "預佔估算（實驗性）：約 {rsv}%（偵測到 {leases} 筆疊加租約，實際已用約 {actual}%），閒置約 10 分鐘後未用差額自動退還",
   "quota.legendActual": "實佔",
+  "quota.legendRemaining": "剩餘",
   "quota.legendReserved": "預佔",
   "quota.cycle5hTitle": "目前 5h 週期累計 ({pool})：{tok} Tokens · {cost} · {calls} 次呼叫",
   "quota.cycleWkCustomTitle": "本自然週累計：{tok} Tokens · {cost} · {calls} 次呼叫",
@@ -3689,6 +3704,9 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "settings.str.overviewMetricsLabel": "即時指標",
   "settings.str.overviewMetricsInactiveHint": "目前已隱藏「即時指標」模組，此設定仍會套用至滑鼠懸浮速覽或於重新新增模組時生效",
   "settings.str.addOverviewMetric": "新增指標 ({count}/{max})",
+  "settings.str.quotaDisplayModeLabel": "額度顯示",
+  "settings.str.quotaDisplayUsed": "已用",
+  "settings.str.quotaDisplayRemaining": "剩餘",
   "settings.str.stepsSection": "呼叫明細欄位",
   "settings.str.stepsBadge": "{count} 欄",
   "settings.str.stepTurnRailToggle": "對話輪次導軌與預覽",
@@ -4247,9 +4265,11 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'quota.loading': 'Loading...',
   'quota.failed': 'Unavailable (--%)',
   'quota.usedAndLeft': '{reset} · Used {used}%',
+  'quota.remainingAndReset': '{reset} · {remaining}% left',
   'quota.reservedTip': 'Estimated lease reservation (Experimental): ~{rsv}% (~{actual}% actual used); unused share refunds after ~10 min idle',
   'quota.reservedTipMulti': 'Estimated lease reservation (Experimental): ~{rsv}% ({leases} stacked leases, ~{actual}% actual used); unused share refunds after ~10 min idle',
   'quota.legendActual': 'Actual',
+  'quota.legendRemaining': 'Remaining',
   'quota.legendReserved': 'Reserved',
   'quota.cycle5hTitle': 'Current 5h cycle ({pool}): {tok} Tokens · {cost} · {calls} calls',
   'quota.cycleWkCustomTitle': 'Current calendar week: {tok} Tokens · {cost} · {calls} calls',
@@ -4950,6 +4970,9 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.overviewMetricsLabel': 'Live Metrics',
   'settings.str.overviewMetricsInactiveHint': '"Live Metrics" is hidden here; these cells still apply to Hover Quick-View or when re-added',
   'settings.str.addOverviewMetric': 'Add Metric ({count}/{max})',
+  'settings.str.quotaDisplayModeLabel': 'Quota Display',
+  'settings.str.quotaDisplayUsed': 'Used',
+  'settings.str.quotaDisplayRemaining': 'Remaining',
   'settings.str.stepsSection': 'Step Table Columns',
   'settings.str.stepsBadge': '{count} cols',
   'settings.str.stepTurnRailToggle': 'Turn Rail & Preview',
@@ -5503,9 +5526,11 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "quota.loading": "読み込み中...",
   "quota.failed": "取得失敗 (--%)",
   "quota.usedAndLeft": "{reset} · 使用済み {used}%",
+  "quota.remainingAndReset": "{reset} · 残り {remaining}%",
   "quota.reservedTip": "予約リース推定（実験的）：約 {rsv}%（実使用約 {actual}%）。約10分のアイドル後に未使用分が返還されます",
   "quota.reservedTipMulti": "予約リース推定（実験的）：約 {rsv}%（重複リース {leases} 件、実使用約 {actual}%）。約10分のアイドル後に未使用分が返還されます",
   "quota.legendActual": "実使用",
+  "quota.legendRemaining": "残り",
   "quota.legendReserved": "予約",
   "quota.cycle5hTitle": "現在の 5h サイクル ({pool})：{tok} トークン · {cost} · {calls} 回",
   "quota.cycleWkCustomTitle": "今週の暦週合計：{tok} トークン · {cost} · {calls} 回",
@@ -6196,6 +6221,9 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "settings.str.overviewMetricsLabel": "ライブ指標",
   "settings.str.overviewMetricsInactiveHint": "「ライブ指標」は現在非表示ですが、ホバー表示や再追加時にこの設定が使われます",
   "settings.str.addOverviewMetric": "指標追加 ({count}/{max})",
+  "settings.str.quotaDisplayModeLabel": "クォータ表示",
+  "settings.str.quotaDisplayUsed": "使用済み",
+  "settings.str.quotaDisplayRemaining": "残り",
   "settings.str.stepsSection": "ステップ表の列設定",
   "settings.str.stepsBadge": "{count} 列",
   "settings.str.stepTurnRailToggle": "ターン導線とプレビュー",
@@ -6744,9 +6772,11 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "quota.loading": "불러오는 중...",
   "quota.failed": "사용 불가 (--%)",
   "quota.usedAndLeft": "{reset} · 사용 {used}%",
+  "quota.remainingAndReset": "{reset} · 잔여 {remaining}%",
   "quota.reservedTip": "예상 임대 예약 (실험적): 약 {rsv}% (실제 사용 약 {actual}%); 약 10분 유휴 시 미사용분 자동 반환",
   "quota.reservedTipMulti": "예상 임대 예약 (실험적): 약 {rsv}% (중첩 임대 {leases}건, 실제 사용 약 {actual}%); 약 10분 유휴 시 미사용분 자동 반환",
   "quota.legendActual": "실사용",
+  "quota.legendRemaining": "잔여",
   "quota.legendReserved": "예약",
   "quota.cycle5hTitle": "현재 5시간 주기 ({pool}): {tok} 토큰 · {cost} · {calls}회 호출",
   "quota.cycleWkCustomTitle": "이번 주 (달력 기준): {tok} 토큰 · {cost} · {calls}회 호출",
@@ -7437,6 +7467,9 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "settings.str.overviewMetricsLabel": "실시간 지표",
   "settings.str.overviewMetricsInactiveHint": "여기서 \"실시간 지표\"가 숨겨져 있습니다. 이 설정은 호버 빠른 보기나 모듈을 다시 추가할 때 적용됩니다",
   "settings.str.addOverviewMetric": "지표 추가 ({count}/{max})",
+  "settings.str.quotaDisplayModeLabel": "할당량 표시",
+  "settings.str.quotaDisplayUsed": "사용",
+  "settings.str.quotaDisplayRemaining": "잔여",
   "settings.str.stepsSection": "스텝 테이블 열",
   "settings.str.stepsBadge": "{count}열",
   "settings.str.stepTurnRailToggle": "턴 레일 및 미리보기",
@@ -7985,9 +8018,11 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "quota.loading": "Lädt...",
   "quota.failed": "Nicht verfügbar (--%)",
   "quota.usedAndLeft": "{reset} · Genutzt {used}%",
+  "quota.remainingAndReset": "{reset} · {remaining}% frei",
   "quota.reservedTip": "Geschätzte Lease-Reservierung (Experimentell): ~{rsv}% (~{actual}% real genutzt); ungenutzter Anteil wird nach ~10 Min. Leerlauf erstattet",
   "quota.reservedTipMulti": "Geschätzte Lease-Reservierung (Experimentell): ~{rsv}% ({leases} gestapelte Leases, ~{actual}% real genutzt); ungenutzter Anteil wird nach ~10 Min. Leerlauf erstattet",
   "quota.legendActual": "Real",
+  "quota.legendRemaining": "Verbleibend",
   "quota.legendReserved": "Reserviert",
   "quota.cycle5hTitle": "Aktueller 5h-Zyklus ({pool}): {tok} Tokens · {cost} · {calls} Aufrufe",
   "quota.cycleWkCustomTitle": "Aktuelle Kalenderwoche: {tok} Tokens · {cost} · {calls} Aufrufe",
@@ -8678,6 +8713,9 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "settings.str.overviewMetricsLabel": "Live-Metriken",
   "settings.str.overviewMetricsInactiveHint": "„Live-Metriken“ ist hier ausgeblendet; Felder gelten weiter für Hover oder beim Wiederhinzufügen",
   "settings.str.addOverviewMetric": "Metrik hinzufügen ({count}/{max})",
+  "settings.str.quotaDisplayModeLabel": "Kontingentanzeige",
+  "settings.str.quotaDisplayUsed": "Genutzt",
+  "settings.str.quotaDisplayRemaining": "Verbleibend",
   "settings.str.stepsSection": "Schritttabellen-Spalten",
   "settings.str.stepsBadge": "{count} Spalten",
   "settings.str.stepTurnRailToggle": "Rundenleiste & Vorschau",
@@ -9226,9 +9264,11 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "quota.loading": "Chargement...",
   "quota.failed": "Indisponible (--%)",
   "quota.usedAndLeft": "{reset} · Utilisé {used}%",
+  "quota.remainingAndReset": "{reset} · {remaining}% restant",
   "quota.reservedTip": "Réservation de bail estimée (Expérimental) : ~{rsv}% (~{actual}% utilisé) ; le reste inutilisé est restitué après ~10 min d'inactivité",
   "quota.reservedTipMulti": "Réservation de bail estimée (Expérimental) : ~{rsv}% ({leases} baux cumulés, ~{actual}% utilisé) ; le reste inutilisé est restitué après ~10 min d'inactivité",
   "quota.legendActual": "Réel",
+  "quota.legendRemaining": "Restant",
   "quota.legendReserved": "Réservé",
   "quota.cycle5hTitle": "Cycle 5h actuel ({pool}) : {tok} Tokens · {cost} · {calls} appels",
   "quota.cycleWkCustomTitle": "Semaine civile en cours : {tok} Tokens · {cost} · {calls} appels",
@@ -9919,6 +9959,9 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "settings.str.overviewMetricsLabel": "Métriques temps réel",
   "settings.str.overviewMetricsInactiveHint": "« Métriques temps réel » est masqué ici ; ces cellules restent actives pour le survol ou si réajoutées",
   "settings.str.addOverviewMetric": "Ajouter métrique ({count}/{max})",
+  "settings.str.quotaDisplayModeLabel": "Affichage du quota",
+  "settings.str.quotaDisplayUsed": "Utilisé",
+  "settings.str.quotaDisplayRemaining": "Restant",
   "settings.str.stepsSection": "Colonnes table d’étapes",
   "settings.str.stepsBadge": "{count} col.",
   "settings.str.stepTurnRailToggle": "Rail de tours & aperçu",
@@ -14153,6 +14196,7 @@ const PORTABLE_SETTING_DESCRIPTORS = Object.freeze([
   arrayField('overviewModules', normalizeOverviewModules),
   normField('overviewMetricStyle', normalizeOverviewMetricStyle),
   arrayField('overviewMetrics', normalizeOverviewMetrics),
+  normField('quotaDisplayMode', normalizeQuotaDisplayMode),
   boolField('showStepTurnRail', false),
   boolField('showStepAgentBadge', true),
   boolField('showStepSpeedColor', false),
@@ -16880,7 +16924,7 @@ return { fetchHostI18nStatus, refreshHostI18nManifest, selectHostI18nLanguage, u
 })();
 
 // --- src/store/telemetryStore.js ---
-const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, normalizeClientDisplayCurrency, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerFxSync, normalizeClientAutoConfigureLaunch, normalizeClientEnableRemoteSshTelemetry, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, fetchLocalSessionsList, fetchSessionCleanupPreview, deleteLocalSessionsAction, redactLocalLedgerPrivacy, revealLocalSessionPathAction, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
+const { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_QUOTA_DISPLAY_MODE, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientQuotaDisplayMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, normalizeClientDisplayCurrency, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerFxSync, normalizeClientAutoConfigureLaunch, normalizeClientEnableRemoteSshTelemetry, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, fetchLocalSessionsList, fetchSessionCleanupPreview, deleteLocalSessionsAction, redactLocalLedgerPrivacy, revealLocalSessionPathAction, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform } = (() => {
 const CASCADE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function extractHostRouteCascadeId() {
@@ -17299,6 +17343,7 @@ const DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT = DEFAULT_STEP_TOKEN_COMBO_FORMAT;
 const MIN_CLIENT_POPOVER_WIDTH = MIN_POPOVER_WIDTH;
 const MAX_CLIENT_POPOVER_WIDTH = MAX_POPOVER_WIDTH;
 const DEFAULT_CLIENT_POPOVER_WIDTH = DEFAULT_POPOVER_WIDTH;
+const DEFAULT_CLIENT_QUOTA_DISPLAY_MODE = DEFAULT_QUOTA_DISPLAY_MODE;
 
 const parseClientStepTokenComboSegments = parseStepTokenComboSegments;
 const normalizeClientStepTokenComboFormat = normalizeStepTokenComboFormat;
@@ -17307,6 +17352,7 @@ const normalizeClientPopoverWidth = normalizePopoverWidth;
 const normalizeClientModelDisplayMode = normalizeModelDisplayMode;
 const normalizeClientTopbarSlots = normalizeTopbarCapsuleSlots;
 const normalizeClientContextAgentMode = normalizeContextAgentMode;
+const normalizeClientQuotaDisplayMode = normalizeQuotaDisplayMode;
 const normalizeClientExperimentalQuotaReservation = normalizeExperimentalQuotaReservation;
 const normalizeClientAccountQuotaRefreshMinutes = normalizeAccountQuotaRefreshMinutes;
 const normalizeClientCliStatusLineSlots = normalizeCliStatusLineSlots;
@@ -17456,6 +17502,12 @@ function isEquivalentTelemetry(prev, next) {
     return false;
   }
   if (Boolean(pSet?.showStepFilterToolbar) !== Boolean(nSet?.showStepFilterToolbar)) {
+    return false;
+  }
+  if (
+    normalizeClientQuotaDisplayMode(pSet?.quotaDisplayMode) !==
+    normalizeClientQuotaDisplayMode(nSet?.quotaDisplayMode)
+  ) {
     return false;
   }
   if (
@@ -18780,6 +18832,9 @@ async function saveSettingsPatch(patch) {
   if (Object.prototype.hasOwnProperty.call(safePatch, 'showStepFilterToolbar')) {
     safePatch.showStepFilterToolbar = Boolean(safePatch.showStepFilterToolbar);
   }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'quotaDisplayMode')) {
+    safePatch.quotaDisplayMode = normalizeClientQuotaDisplayMode(safePatch.quotaDisplayMode);
+  }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'experimentalQuotaReservation')) {
     safePatch.experimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
       safePatch.experimentalQuotaReservation
@@ -19534,7 +19589,7 @@ function isMacHostPlatform(telemetry) {
   }
   return false;
 }
-return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, normalizeClientDisplayCurrency, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerFxSync, normalizeClientAutoConfigureLaunch, normalizeClientEnableRemoteSshTelemetry, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, fetchLocalSessionsList, fetchSessionCleanupPreview, deleteLocalSessionsAction, redactLocalLedgerPrivacy, revealLocalSessionPathAction, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
+return { extractHostRouteCascadeId, telemetryStore, clearConsumptionRangeCache, clearConversationViewCache, CLIENT_TOPBAR_SLOT_KEYS, DEFAULT_CLIENT_TOPBAR_SLOTS, DEFAULT_CLIENT_CONTEXT_AGENT_MODE, CLIENT_CLI_STATUSLINE_PRESETS, DEFAULT_CLIENT_CLI_STATUSLINE_SLOTS, CLIENT_OVERVIEW_MODULE_KEYS, DEFAULT_CLIENT_OVERVIEW_MODULES, DEFAULT_CLIENT_HOVER_MODULES, DEFAULT_CLIENT_HOVER_SYNC_OVERVIEW_METRICS, DEFAULT_CLIENT_HOVER_METRIC_STYLE, DEFAULT_CLIENT_HOVER_METRICS, DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE, MAX_CLIENT_LARGE_METRIC_SLOTS, CLIENT_OVERVIEW_METRIC_KEYS, DEFAULT_CLIENT_OVERVIEW_METRICS, CLIENT_STEP_COLUMN_KEYS, DEFAULT_CLIENT_STEP_COLUMNS, DEFAULT_CLIENT_STEP_TOKEN_COMBO_FORMAT, MIN_CLIENT_POPOVER_WIDTH, MAX_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_POPOVER_WIDTH, DEFAULT_CLIENT_QUOTA_DISPLAY_MODE, parseClientStepTokenComboSegments, normalizeClientStepTokenComboFormat, normalizeClientPopoverWidthMode, normalizeClientPopoverWidth, normalizeClientModelDisplayMode, normalizeClientTopbarSlots, normalizeClientContextAgentMode, normalizeClientQuotaDisplayMode, normalizeClientExperimentalQuotaReservation, normalizeClientAccountQuotaRefreshMinutes, normalizeClientCliStatusLineSlots, getDefaultCtxInspectorAgentId, resolveOverlayCtxInspectorAgentId, resolveEffectiveClientCliStatusLineSlots, normalizeClientHoverModules, normalizeClientHoverSyncOverviewMetrics, normalizeClientHoverMetricStyle, normalizeClientHoverMetrics, normalizeClientOverviewModules, normalizeClientOverviewMetricStyle, normalizeClientOverviewMetrics, resolveEffectiveClientMetricMatrixConfig, normalizeClientStepColumns, normalizeClientUpdateMode, normalizeClientWindowMountMode, normalizeClientDisplayCurrency, isEquivalentTelemetry, resetTelemetryForEndpointSwitch, fetchTelemetry, selectConversation, selectConsumptionTimeRange, selectConsumptionCyclePool, prefetchConsumptionPresets, saveSettingsPatch, saveModelContextWindow, resetAllSettings, rebuildTrajectoryCache, triggerCloudSync, triggerFxSync, normalizeClientAutoConfigureLaunch, normalizeClientEnableRemoteSshTelemetry, triggerBridgeHostRelaunch, triggerCliStatusLineAction, fetchSessionMigrationCatalog, fetchQuotaReservationLog, executeSessionMigration, fetchLocalSessionsList, fetchSessionCleanupPreview, deleteLocalSessionsAction, redactLocalLedgerPrivacy, revealLocalSessionPathAction, triggerPluginUpdate, startAsyncTelemetryLoop, stopAsyncTelemetryLoop, resolveHostRouteMatch, resolveScopedConversation, isMacHostPlatform };
 })();
 
 // --- src/components/ui/TopLongPillNav.js ---
@@ -29605,7 +29660,7 @@ const { buildQuotaPoolItems, createPoolQuotaRow, formatQuotaSummaryFooter, syncP
 function buildQuotaPoolItems(
   quotas,
   minuteTick = 0,
-  { isPending = false, showReserved = false } = {}
+  { isPending = false, showReserved = false, quotaDisplayMode = 'used' } = {}
 ) {
   const safeQuotas = quotas || {};
   const activePool = safeQuotas.activePool || {};
@@ -29617,6 +29672,7 @@ function buildQuotaPoolItems(
           { poolKey: 'Claude & GPT', poolLabel: 'Claude & GPT', family: 'Claude & GPT' },
         ];
   const weekly = safeQuotas.weekly || {};
+  const effDisplayMode = quotaDisplayMode === 'remaining' ? 'remaining' : 'used';
   const poolItems = rawPools.map((p) => {
     const key = p.poolKey || p.family || p.poolLabel || 'Other';
     const poolLabel = formatQuotaPoolLabel(p.poolLabel || p.family || key);
@@ -29634,6 +29690,7 @@ function buildQuotaPoolItems(
       minuteTick,
       isPending,
       showReserved: Boolean(showReserved),
+      quotaDisplayMode: effDisplayMode,
     };
   });
   if (
@@ -29720,6 +29777,8 @@ function formatQuotaSummaryFooter(quotas, account) {
 function syncQuotaWindowMeter({
   hasData,
   usedVal,
+  remainingVal,
+  quotaDisplayMode = 'used',
   resetTime,
   fallbackMetaText,
   showReserved,
@@ -29730,6 +29789,10 @@ function syncQuotaWindowMeter({
   fillEl,
   fillReservedEl,
 }) {
+  const isRemaining = quotaDisplayMode === 'remaining';
+  const remVal = Number.isFinite(Number(remainingVal))
+    ? Math.max(0, Math.min(100, Number(remainingVal)))
+    : Math.max(0, Math.min(100, 100 - usedVal));
   const numReserved = showReserved && hasData ? Number(rawReservedPct || 0) : 0;
   const rsvVal =
     Number.isFinite(numReserved) && numReserved >= 0.05 ? Math.min(usedVal, numReserved) : 0;
@@ -29739,10 +29802,15 @@ function syncQuotaWindowMeter({
   patchText(
     metaEl,
     hasData
-      ? t('quota.usedAndLeft', {
-          reset: resetStr,
-          used: formatPctNumber(usedVal),
-        })
+      ? isRemaining
+        ? t('quota.remainingAndReset', {
+            reset: resetStr,
+            remaining: formatPctNumber(remVal),
+          })
+        : t('quota.usedAndLeft', {
+            reset: resetStr,
+            used: formatPctNumber(usedVal),
+          })
       : fallbackMetaText
   );
 
@@ -29756,15 +29824,22 @@ function syncQuotaWindowMeter({
         : t('quota.reservedTip', { rsv: rsvStr, actual: actualStr });
     patchAttr(metaEl, 'title', tipText);
     patchAttr(trackEl, 'title', tipText);
-    const actualWidth = +Math.min(100, actualVal).toFixed(2);
-    const rsvWidth = +Math.min(Math.max(0, 100 - actualWidth), rsvVal).toFixed(2);
-    patchStyleVar(fillEl, '--fill-w', `${actualWidth}%`);
+    const primaryWidth = isRemaining
+      ? +Math.min(100, remVal).toFixed(2)
+      : +Math.min(100, actualVal).toFixed(2);
+    const rsvWidth = +Math.min(Math.max(0, 100 - primaryWidth), rsvVal).toFixed(2);
+    patchStyleVar(fillEl, '--fill-w', `${primaryWidth}%`);
     patchStyleVar(fillReservedEl, '--reserved-w', `${rsvWidth}%`);
-    patchClasses(fillReservedEl, { 'is-active': true, 'has-sep': actualWidth > 0 });
+    patchClasses(fillReservedEl, { 'is-active': true, 'has-sep': primaryWidth > 0 });
   } else {
     patchAttr(metaEl, 'title', null);
     patchAttr(trackEl, 'title', null);
-    patchStyleVar(fillEl, '--fill-w', `${Math.min(100, usedVal)}%`);
+    const barWidth = isRemaining
+      ? hasData
+        ? Math.min(100, remVal)
+        : 0
+      : Math.min(100, usedVal);
+    patchStyleVar(fillEl, '--fill-w', `${barWidth}%`);
     patchStyleVar(fillReservedEl, '--reserved-w', '0%');
     patchClasses(fillReservedEl, { 'is-active': false, 'has-sep': false });
   }
@@ -29776,11 +29851,20 @@ function syncQuotaWindowMeter({
 }
 
 function syncPoolQuotaRow(refs, item, idx, rowEl) {
-  const { poolData, poolLabel, fallbackWeekly, isActivePool, isPending, showReserved } = item;
+  const {
+    poolData,
+    poolLabel,
+    fallbackWeekly,
+    isActivePool,
+    isPending,
+    showReserved,
+    quotaDisplayMode = 'used',
+  } = item;
   patchClasses(rowEl, { 'quota-pool-row': true, 'has-divider': idx > 0 });
 
   const has5h = poolData?.usedPct != null && poolData?.remainingPct != null;
   const used5hVal = has5h ? Number(poolData.usedPct) : 0;
+  const rem5hVal = has5h ? Number(poolData.remainingPct) : 0;
 
   const useCustomWeekly = Boolean(isActivePool && fallbackWeekly?.isOfficial === false);
   const wkUsedRaw = useCustomWeekly
@@ -29794,6 +29878,7 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
     : poolData?.weeklyResetTime || (isActivePool ? fallbackWeekly?.resetTime : null);
   const hasWk = wkUsedRaw != null && wkRemRaw != null;
   const usedWkVal = hasWk ? Number(wkUsedRaw) : 0;
+  const remWkVal = hasWk ? Number(wkRemRaw) : 0;
 
   const hide5h = !has5h && hasWk;
   const hideWk = !hasWk && has5h;
@@ -29834,6 +29919,8 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
   syncQuotaWindowMeter({
     hasData: has5h,
     usedVal: used5hVal,
+    remainingVal: rem5hVal,
+    quotaDisplayMode,
     resetTime: poolData?.resetTime,
     fallbackMetaText,
     showReserved: allowReserved,
@@ -29883,6 +29970,8 @@ function syncPoolQuotaRow(refs, item, idx, rowEl) {
   syncQuotaWindowMeter({
     hasData: hasWk,
     usedVal: usedWkVal,
+    remainingVal: remWkVal,
+    quotaDisplayMode,
     resetTime: wkResetRaw,
     fallbackMetaText,
     showReserved: allowReserved && !useCustomWeekly,
@@ -29900,7 +29989,7 @@ function quotaPoolRowSig(item, idx) {
   const cWk = item.poolData?.cycleWeekly;
   const est = item.poolData?.rateEstimate;
   const fw = item.fallbackWeekly;
-  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${est?.eqFull5hUsd}:${est?.eqFull5hTokens}:${est?.eqFullWeeklyUsd}:${est?.eqFullWeeklyTokens}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
+  return `${getEffectiveLocale()}:${idx}:${item.poolLabel}:${item.isActivePool}:${Boolean(item.isPending)}:${Boolean(item.showReserved)}:${item.quotaDisplayMode || 'used'}:${item.minuteTick}:${item.poolData?.usedPct}:${item.poolData?.remainingPct}:${item.poolData?.reservedPct}:${item.poolData?.reservedLeaseCount}:${item.poolData?.resetTime}:${item.poolData?.weeklyUsedPct}:${item.poolData?.weeklyRemainingPct}:${item.poolData?.weeklyReservedPct}:${item.poolData?.weeklyReservedLeaseCount}:${item.poolData?.weeklyResetTime}:${c5h?.tokens}:${c5h?.costUsd}:${c5h?.calls}:${cWk?.tokens}:${cWk?.costUsd}:${cWk?.calls}:${est?.eqFull5hUsd}:${est?.eqFull5hTokens}:${est?.eqFullWeeklyUsd}:${est?.eqFullWeeklyTokens}:${fw?.isOfficial}:${fw?.usedPct}:${fw?.remainingPct}:${fw?.resetTime}:${fw?.title}:${fw?.tokens}:${fw?.costUsd}:${fw?.calls}`;
 }
 
 function formatAccountTierBadge(account) {
@@ -30394,8 +30483,12 @@ const QuotaPoolsWidget = defineComponent({
     syncRatePopoverContent(null);
 
     function update({ data, minuteTick } = {}) {
+      const quotaDisplayMode = data?.settings?.quotaDisplayMode === 'remaining' ? 'remaining' : 'used';
       patchText(titleTextEl, t('module.quotas'));
-      patchText(legendActualTextEl, t('quota.legendActual'));
+      patchText(
+        legendActualTextEl,
+        quotaDisplayMode === 'remaining' ? t('quota.legendRemaining') : t('quota.legendActual')
+      );
       patchText(legendReservedTextEl, t('quota.legendReserved'));
       syncRatePopoverContent(data);
       if (!data) {
@@ -30416,12 +30509,16 @@ const QuotaPoolsWidget = defineComponent({
       reserveLegendEl.hidden = !showReserved;
       const effTick = Number.isFinite(minuteTick) ? minuteTick : Math.floor(Date.now() / 30000);
       patchText(tierBadge, formatAccountTierBadge(data.account));
-      patchKeyedList(poolsListEl, buildQuotaPoolItems(quotas, effTick, { showReserved }), {
-        keyFn: (item) => item.key,
-        sigFn: quotaPoolRowSig,
-        createRow: createPoolQuotaRow,
-        updateRow: syncPoolQuotaRow,
-      });
+      patchKeyedList(
+        poolsListEl,
+        buildQuotaPoolItems(quotas, effTick, { showReserved, quotaDisplayMode }),
+        {
+          keyFn: (item) => item.key,
+          sigFn: quotaPoolRowSig,
+          createRow: createPoolQuotaRow,
+          updateRow: syncPoolQuotaRow,
+        }
+      );
     }
 
     return {
@@ -42128,6 +42225,13 @@ function getHoverMetricStyleOptions() {
   ];
 }
 
+function getQuotaDisplayModeOptions() {
+  return [
+    { value: 'used', label: t('settings.str.quotaDisplayUsed') },
+    { value: 'remaining', label: t('settings.str.quotaDisplayRemaining') },
+  ];
+}
+
 function isSameList(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -42275,6 +42379,7 @@ const SettingsStructureTab = defineComponent({
     let draftOverviewModules = [...DEFAULT_CLIENT_OVERVIEW_MODULES];
     let draftOverviewMetricStyle = DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE;
     let draftOverviewMetrics = [...DEFAULT_CLIENT_OVERVIEW_METRICS];
+    let draftQuotaDisplayMode = DEFAULT_CLIENT_QUOTA_DISPLAY_MODE;
     let draftShowStepTurnRail = false;
     let draftShowStepAgentBadge = true;
     let draftShowStepSpeedColor = false;
@@ -42324,6 +42429,7 @@ const SettingsStructureTab = defineComponent({
           overviewModules: draftOverviewModules,
           overviewMetricStyle: draftOverviewMetricStyle,
           overviewMetrics: draftOverviewMetrics,
+          quotaDisplayMode: draftQuotaDisplayMode,
           showStepTurnRail: draftShowStepTurnRail,
           showStepAgentBadge: draftShowStepAgentBadge,
           showStepSpeedColor: draftShowStepSpeedColor,
@@ -43277,6 +43383,10 @@ const SettingsStructureTab = defineComponent({
       hidden: true,
       text: t('settings.str.overviewMetricsInactiveHint'),
     });
+    const quotaDisplayModeLabelEl = h('span', {
+      className: 'form-label',
+      text: t('settings.str.quotaDisplayModeLabel'),
+    });
 
     const overviewMetricStyleSwitch = SegmentedControl({
       ariaLabel: t('settings.str.hoverMetricStyleLabel'),
@@ -43293,6 +43403,23 @@ const SettingsStructureTab = defineComponent({
         props.onLayoutChange?.();
         void persistStructurePatch(overviewSection, {
           overviewMetricStyle: draftOverviewMetricStyle,
+        });
+      },
+    });
+
+    const quotaDisplayModeToggle = SegmentedControl({
+      ariaLabel: t('settings.str.quotaDisplayModeLabel'),
+      modelValue: draftQuotaDisplayMode,
+      options: getQuotaDisplayModeOptions(),
+      onUpdateModelValue: (val) => {
+        const nextMode = normalizeClientQuotaDisplayMode(val);
+        if (nextMode === draftQuotaDisplayMode) return;
+        draftQuotaDisplayMode = nextMode;
+        syncOverviewSectionMeta();
+        refreshHoverPreview();
+        props.onLayoutChange?.();
+        void persistStructurePatch(overviewSection, {
+          quotaDisplayMode: draftQuotaDisplayMode,
         });
       },
     });
@@ -43349,9 +43476,12 @@ const SettingsStructureTab = defineComponent({
         draftOverviewModules = [...DEFAULT_CLIENT_OVERVIEW_MODULES];
         draftOverviewMetricStyle = DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE;
         draftOverviewMetrics = [...DEFAULT_CLIENT_OVERVIEW_METRICS];
+        draftQuotaDisplayMode = DEFAULT_CLIENT_QUOTA_DISPLAY_MODE;
         syncOverviewSectionMeta();
         if (draftHoverSyncOverview) {
           syncHoverSectionMeta();
+        } else {
+          refreshHoverPreview();
         }
         props.onLayoutChange?.();
         void persistStructurePatch(
@@ -43360,6 +43490,7 @@ const SettingsStructureTab = defineComponent({
             overviewModules: [...DEFAULT_CLIENT_OVERVIEW_MODULES],
             overviewMetricStyle: DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE,
             overviewMetrics: [...DEFAULT_CLIENT_OVERVIEW_METRICS],
+            quotaDisplayMode: DEFAULT_CLIENT_QUOTA_DISPLAY_MODE,
           },
           'settings.resetDone'
         );
@@ -43371,6 +43502,10 @@ const SettingsStructureTab = defineComponent({
           h('div', { className: 'settings-inline-row' }, [
             overviewMetricStyleLabelEl,
             overviewMetricStyleSwitch.el,
+          ]),
+          h('div', { className: 'settings-inline-row' }, [
+            quotaDisplayModeLabelEl,
+            quotaDisplayModeToggle.el,
           ]),
           overviewMetricsHintEl,
           overviewMetricsLabelEl,
@@ -43396,6 +43531,11 @@ const SettingsStructureTab = defineComponent({
         options: getHoverMetricStyleOptions(),
         ariaLabel: t('settings.str.hoverMetricStyleLabel'),
       });
+      quotaDisplayModeToggle.setProps({
+        modelValue: draftQuotaDisplayMode,
+        options: getQuotaDisplayModeOptions(),
+        ariaLabel: t('settings.str.quotaDisplayModeLabel'),
+      });
       overviewModulesList.refs.setProps({
         items: draftOverviewModules,
         options: getOverviewModuleOptions(),
@@ -43416,7 +43556,8 @@ const SettingsStructureTab = defineComponent({
       const isDefault =
         isSameList(draftOverviewModules, DEFAULT_CLIENT_OVERVIEW_MODULES) &&
         draftOverviewMetricStyle === DEFAULT_CLIENT_OVERVIEW_METRIC_STYLE &&
-        isSameList(draftOverviewMetrics, DEFAULT_CLIENT_OVERVIEW_METRICS);
+        isSameList(draftOverviewMetrics, DEFAULT_CLIENT_OVERVIEW_METRICS) &&
+        draftQuotaDisplayMode === DEFAULT_CLIENT_QUOTA_DISPLAY_MODE;
       overviewSection.refs.setResetDisabled(isDefault);
       refreshOverviewPreview();
     }
@@ -43808,6 +43949,7 @@ const SettingsStructureTab = defineComponent({
       draftOverviewModules = normalizeClientOverviewModules(settings.overviewModules);
       draftOverviewMetricStyle = normalizeClientOverviewMetricStyle(settings.overviewMetricStyle);
       draftOverviewMetrics = normalizeClientOverviewMetrics(settings.overviewMetrics);
+      draftQuotaDisplayMode = normalizeClientQuotaDisplayMode(settings.quotaDisplayMode);
       draftShowStepTurnRail = settings.showStepTurnRail === true;
       draftShowStepAgentBadge = settings.showStepAgentBadge !== false;
       draftShowStepSpeedColor = settings.showStepSpeedColor === true;
@@ -43855,6 +43997,7 @@ const SettingsStructureTab = defineComponent({
       patchText(overviewModulesLabelEl, t('settings.str.overviewModulesLabel'));
       patchText(overviewMetricsLabelEl, t('settings.str.overviewMetricsLabel'));
       patchText(overviewMetricsHintEl, t('settings.str.overviewMetricsInactiveHint'));
+      patchText(quotaDisplayModeLabelEl, t('settings.str.quotaDisplayModeLabel'));
 
       stepsSection.refs.setTitle(t('settings.str.stepsSection'));
       stepsSection.refs.setResetLabel(t('settings.resetBtn'));
@@ -43926,6 +44069,7 @@ const SettingsStructureTab = defineComponent({
       hoverSyncOverviewToggle.destroy();
       hoverMetricsList.destroy();
       overviewMetricStyleSwitch.destroy();
+      quotaDisplayModeToggle.destroy();
       overviewModulesList.destroy();
       overviewMetricsList.destroy();
       stepTurnRailToggle.destroy();
@@ -43967,6 +44111,7 @@ const SettingsStructureTab = defineComponent({
         hoverSyncOverviewToggle,
         hoverMetricsList,
         overviewMetricStyleSwitch,
+        quotaDisplayModeToggle,
         overviewModulesList,
         overviewMetricsList,
         stepTurnRailToggle,

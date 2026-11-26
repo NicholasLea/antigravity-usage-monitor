@@ -2896,7 +2896,7 @@ test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic 
   assert.equal(latestQuery, '');
   assert.equal(sBox.clearBtnEl.hasAttribute('hidden'), true);
 
-  // 4. Declarative settingsBackup round-trips all 37 portable keys + coupled legacy flags
+  // 4. Declarative settingsBackup round-trips all 38 portable keys + coupled legacy flags
   const exported = buildExportableSettingsJson({
     language: 'en-US',
     displayCurrency: 'MYR',
@@ -2908,13 +2908,15 @@ test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic 
     hoverMetricStyle: 'large',
     hoverMetrics: ['tps', 'cache_hit', 'ttft', 'step_cost'],
     overviewMetricStyle: 'large',
+    quotaDisplayMode: 'remaining',
     showStepFilterToolbar: true,
     experimentalQuotaReservation: true,
     accountQuotaRefreshMinutes: 180,
   });
   const parsedExport = JSON.parse(exported);
-  assert.equal(Object.keys(parsedExport.settings).length, 37);
+  assert.equal(Object.keys(parsedExport.settings).length, 38);
   assert.equal(parsedExport.settings.displayCurrency, 'MYR');
+  assert.equal(parsedExport.settings.quotaDisplayMode, 'remaining');
   assert.equal('orchestratorIdMode' in parsedExport.settings, false);
   const reimported = parseImportedSettingsJson(
     JSON.stringify({
@@ -2928,6 +2930,7 @@ test('P2 regressions: bundler regex-after-paren lexer, shared URI/prompt/atomic 
   assert.equal(reimported.patch.hoverMetricStyle, 'large');
   assert.deepEqual(reimported.patch.hoverMetrics, ['tps', 'cache_hit', 'ttft', 'step_cost']);
   assert.equal(reimported.patch.overviewMetricStyle, 'large');
+  assert.equal(reimported.patch.quotaDisplayMode, 'remaining');
   assert.equal(reimported.patch.modernUi, false);
   assert.equal(reimported.patch.experimentalModernUi, false);
   assert.equal(reimported.patch.modelDisplayMode, 'upstream_compact');
