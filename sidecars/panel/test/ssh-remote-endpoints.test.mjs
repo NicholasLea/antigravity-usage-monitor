@@ -667,6 +667,11 @@ test('httpClient attaches X-Usage-Monitor-Endpoint and does NOT downgrade to CDP
 test('Remote executeModelContextWindowAction & executeAccountCredentialAction enforce strict endpoint boundaries', async () => {
   const carbon = 'MODEL_PLACEHOLDER_M427';
   const h = backendHarness({
+    settings: {
+      developerModeEnabled: true,
+      riskyFeaturesEnabled: true,
+      contextWindowRiskAccepted: true,
+    },
     availableModels: {
       'gemini-4-carbon-high': { model: carbon, maxTokens: 1048576, maxOutputTokens: 262144 },
     },

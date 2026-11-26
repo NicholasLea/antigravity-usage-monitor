@@ -743,3 +743,62 @@ export function normalizeEnableRemoteSshTelemetry(val) {
   }
   return Boolean(val);
 }
+
+/**
+ * 归一化开发者模式开关（默认 `false`，严格仅接受显式 `true`）。
+ *
+ * @param {unknown} val
+ * @returns {boolean}
+ */
+export function normalizeDeveloperModeEnabled(val) {
+  return val === true;
+}
+
+/**
+ * 归一化高风险功能总开关（必须同时开启开发者模式，默认 `false`）。
+ *
+ * @param {unknown} val
+ * @param {unknown} [developerModeEnabled=false]
+ * @returns {boolean}
+ */
+export function normalizeRiskyFeaturesEnabled(val, developerModeEnabled = false) {
+  return developerModeEnabled === true && val === true;
+}
+
+/**
+ * 判断「开发者模式 -> 高风险功能」双层显示闸门是否已开启。
+ *
+ * @param {Record<string, unknown> | null | undefined} settings
+ * @returns {boolean}
+ */
+export function isRiskyFeaturesGateOpen(settings) {
+  return Boolean(
+    settings &&
+      settings.developerModeEnabled === true &&
+      settings.riskyFeaturesEnabled === true
+  );
+}
+
+/**
+ * 判断非官方模型上下文覆写能力是否已同时通过双层闸门与风险确认。
+ *
+ * @param {Record<string, unknown> | null | undefined} settings
+ * @returns {boolean}
+ */
+export function isContextWindowFeatureActive(settings) {
+  return Boolean(
+    isRiskyFeaturesGateOpen(settings) && settings.contextWindowRiskAccepted === true
+  );
+}
+
+/**
+ * 判断非官方多账号凭证切换能力是否已同时通过双层闸门与风险确认。
+ *
+ * @param {Record<string, unknown> | null | undefined} settings
+ * @returns {boolean}
+ */
+export function isAccountSwitchFeatureActive(settings) {
+  return Boolean(
+    isRiskyFeaturesGateOpen(settings) && settings.accountSwitchRiskAccepted === true
+  );
+}

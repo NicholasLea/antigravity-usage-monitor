@@ -46,10 +46,14 @@ import {
   SUPPORTED_LANGUAGES,
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
+  isAccountSwitchFeatureActive,
+  isContextWindowFeatureActive,
+  isRiskyFeaturesGateOpen,
   normalizeAccountQuotaRefreshMinutes,
   normalizeAutoConfigureLaunch,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeDeveloperModeEnabled,
   normalizeEnableRemoteSshTelemetry,
   normalizeExperimentalModernUi,
   normalizeExperimentalQuotaReservation,
@@ -68,6 +72,7 @@ import {
   normalizePluginUpdateMode,
   normalizePopoverWidth,
   normalizePopoverWidthMode,
+  normalizeRiskyFeaturesEnabled,
   normalizeStandalonePort,
   normalizeStepTableColumns,
   normalizeStepTokenComboFormat,
@@ -118,10 +123,14 @@ export {
   SUPPORTED_LANGUAGES,
   THEME_ACCENT_KEYS,
   TOPBAR_SLOT_KEYS,
+  isAccountSwitchFeatureActive,
+  isContextWindowFeatureActive,
+  isRiskyFeaturesGateOpen,
   normalizeAccountQuotaRefreshMinutes,
   normalizeAutoConfigureLaunch,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeDeveloperModeEnabled,
   normalizeDisplayCurrency,
   normalizeEnableRemoteSshTelemetry,
   normalizeExperimentalModernUi,
@@ -141,6 +150,7 @@ export {
   normalizePluginUpdateMode,
   normalizePopoverWidth,
   normalizePopoverWidthMode,
+  normalizeRiskyFeaturesEnabled,
   normalizeStandalonePort,
   normalizeStepTableColumns,
   normalizeStepTokenComboFormat,
@@ -211,6 +221,8 @@ export const DEFAULT_SETTINGS_SCHEMA = Object.freeze({
   stepTableColumns: DEFAULT_STEP_TABLE_COLUMNS,
   experimentalQuotaReservation: true,
   accountQuotaRefreshMinutes: DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES,
+  developerModeEnabled: false,
+  riskyFeaturesEnabled: false,
   accountSwitchRiskAccepted: false,
   contextWindowRiskAccepted: false,
   contextWindowMainEnabled: true,
@@ -255,6 +267,11 @@ export function normalizeFullSettings(rawInput) {
   );
   const modernUi =
     safeRaw.modernUi !== undefined ? normalizeModernUi(safeRaw.modernUi) : true;
+  const developerModeEnabled = normalizeDeveloperModeEnabled(safeRaw.developerModeEnabled);
+  const riskyFeaturesEnabled = normalizeRiskyFeaturesEnabled(
+    safeRaw.riskyFeaturesEnabled,
+    developerModeEnabled
+  );
   return {
     language: normalizeLanguageSetting(safeRaw.language),
     displayCurrency: normalizeDisplayCurrency(safeRaw.displayCurrency),
@@ -312,10 +329,12 @@ export function normalizeFullSettings(rawInput) {
     accountQuotaRefreshMinutes: normalizeAccountQuotaRefreshMinutes(
       safeRaw.accountQuotaRefreshMinutes
     ),
-    accountSwitchRiskAccepted: safeRaw.accountSwitchRiskAccepted === true,
-    contextWindowRiskAccepted: safeRaw.contextWindowRiskAccepted === true,
+    developerModeEnabled,
+    riskyFeaturesEnabled,
+    accountSwitchRiskAccepted: riskyFeaturesEnabled && safeRaw.accountSwitchRiskAccepted === true,
+    contextWindowRiskAccepted: riskyFeaturesEnabled && safeRaw.contextWindowRiskAccepted === true,
     contextWindowMainEnabled: safeRaw.contextWindowMainEnabled !== false,
-    contextWindowSwarmEnabled: safeRaw.contextWindowSwarmEnabled === true,
+    contextWindowSwarmEnabled: riskyFeaturesEnabled && safeRaw.contextWindowSwarmEnabled === true,
     modelContextWindows: normalizeModelContextWindows(safeRaw.modelContextWindows),
   };
 }

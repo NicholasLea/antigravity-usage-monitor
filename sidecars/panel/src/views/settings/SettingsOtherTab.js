@@ -8,6 +8,7 @@ import { defineComponent } from '../../core/component.js';
 import { h, patchAttr, patchClasses, patchText } from '../../core/domPatch.js';
 import { createSvgIcon } from '../../icons/SvgIcon.js';
 import { setI18nLanguage, t } from '../../i18n/index.js';
+import { isRiskyFeaturesGateOpen } from '../../../shared/settings-normalization.mjs';
 import {
   buildExportableSettingsJson,
   parseImportedSettingsJson,
@@ -63,6 +64,9 @@ export const SettingsOtherTab = defineComponent({
     let draftAutoConfigureLaunch = true;
     let draftEnableRemoteSshTelemetry = true;
     let draftExperimentalQuotaReservation = true;
+    let draftDeveloperModeEnabled = false;
+    let draftRiskyFeaturesEnabled = false;
+    let savingDeveloperGate = false;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
     let draftContextMainEnabled = true;
@@ -80,6 +84,7 @@ export const SettingsOtherTab = defineComponent({
     let modelTimer = null;
     let hostTimer = null;
     let expTimer = null;
+    let devTimer = null;
     let maintTimer = null;
     let resetConfirmTimer = null;
     let resetConfirmArmed = false;
@@ -102,10 +107,30 @@ export const SettingsOtherTab = defineComponent({
       style: 'font-size: var(--fs-md);',
       text: '',
     });
+    const devStatusText = h('span', {
+      className: 'text-muted settings-panel-status',
+      text: '',
+    });
     const maintStatusText = h('span', {
       className: 'text-muted settings-panel-status',
       text: '',
     });
+
+    function showDevFeedback(text, autoClearMs = 1500) {
+      if (devTimer) {
+        clearTimeout(devTimer);
+        devTimer = null;
+      }
+      patchText(devStatusText, text);
+      patchAttr(devStatusText, 'title', text || null);
+      if (text && autoClearMs > 0) {
+        devTimer = setTimeout(() => {
+          devTimer = null;
+          patchText(devStatusText, '');
+          patchAttr(devStatusText, 'title', null);
+        }, autoClearMs);
+      }
+    }
 
     function showExpFeedback(text, autoClearMs = 1500) {
       if (expTimer) {
@@ -447,6 +472,154 @@ export const SettingsOtherTab = defineComponent({
       ]),
     ]);
 
+    // --- Card 2.5: 开发者选项与高风险功能双层开关 ---
+    const devTitleEl = h('span', { text: t('settings.oth.devTitle') });
+    const devModeLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.devModeLabel'),
+    });
+    const riskyFeaturesLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.riskyFeaturesLabel'),
+    });
+    const riskyFeaturesDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.riskyFeaturesDesc'),
+    });
+
+    const developerModeToggle = ToggleSwitch({
+      modelValue: 'off',
+      ariaLabelKey: 'settings.oth.devModeLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        if (savingDeveloperGate) return;
+        const nextDev = val === 'on';
+        const prevDev = draftDeveloperModeEnabled;
+        const prevRisky = draftRiskyFeaturesEnabled;
+        const prevCtxRisk = draftContextRiskAccepted;
+        const prevSwarm = draftContextSwarmEnabled;
+        const prevSettings = latestSettings;
+        savingDeveloperGate = true;
+        draftDeveloperModeEnabled = nextDev;
+        if (!nextDev) {
+          draftRiskyFeaturesEnabled = false;
+          draftContextRiskAccepted = false;
+          draftContextSwarmEnabled = false;
+          latestSettings = {
+            ...(latestSettings || {}),
+            developerModeEnabled: false,
+            riskyFeaturesEnabled: false,
+            accountSwitchRiskAccepted: false,
+            contextWindowRiskAccepted: false,
+            contextWindowSwarmEnabled: false,
+          };
+        } else {
+          latestSettings = { ...(latestSettings || {}), developerModeEnabled: true };
+        }
+        renderDeveloperOptions();
+        renderContextWindows();
+        showDevFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ developerModeEnabled: nextDev });
+          showDevFeedback(t('settings.saved'), 1500);
+        } catch {
+          draftDeveloperModeEnabled = prevDev;
+          draftRiskyFeaturesEnabled = prevRisky;
+          draftContextRiskAccepted = prevCtxRisk;
+          draftContextSwarmEnabled = prevSwarm;
+          latestSettings = prevSettings;
+          showDevFeedback(t('settings.saveFailed'), 2500);
+        } finally {
+          savingDeveloperGate = false;
+          renderDeveloperOptions();
+          renderContextWindows();
+        }
+      },
+    });
+
+    const riskyFeaturesToggle = ToggleSwitch({
+      modelValue: 'off',
+      ariaLabelKey: 'settings.oth.riskyFeaturesLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        if (savingDeveloperGate || !draftDeveloperModeEnabled) return;
+        const nextRisky = val === 'on';
+        const prevRisky = draftRiskyFeaturesEnabled;
+        const prevCtxRisk = draftContextRiskAccepted;
+        const prevSwarm = draftContextSwarmEnabled;
+        const prevSettings = latestSettings;
+        savingDeveloperGate = true;
+        draftRiskyFeaturesEnabled = nextRisky;
+        if (!nextRisky) {
+          draftContextRiskAccepted = false;
+          draftContextSwarmEnabled = false;
+          latestSettings = {
+            ...(latestSettings || {}),
+            riskyFeaturesEnabled: false,
+            accountSwitchRiskAccepted: false,
+            contextWindowRiskAccepted: false,
+            contextWindowSwarmEnabled: false,
+          };
+        } else {
+          latestSettings = { ...(latestSettings || {}), riskyFeaturesEnabled: true };
+        }
+        renderDeveloperOptions();
+        renderContextWindows();
+        showDevFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ riskyFeaturesEnabled: nextRisky });
+          showDevFeedback(t('settings.saved'), 1500);
+        } catch {
+          draftRiskyFeaturesEnabled = prevRisky;
+          draftContextRiskAccepted = prevCtxRisk;
+          draftContextSwarmEnabled = prevSwarm;
+          latestSettings = prevSettings;
+          showDevFeedback(t('settings.saveFailed'), 2500);
+        } finally {
+          savingDeveloperGate = false;
+          renderDeveloperOptions();
+          renderContextWindows();
+        }
+      },
+    });
+
+    const devModeRow = h('div', { className: 'settings-action-block settings-dev-mode-row' }, [
+      h('div', { className: 'settings-action-info' }, [devModeLabelEl]),
+      developerModeToggle.el,
+    ]);
+    const riskyFeaturesRow = h(
+      'div',
+      { className: 'settings-action-block settings-risky-features-row', hidden: true },
+      [
+        h('div', { className: 'settings-action-info' }, [
+          riskyFeaturesLabelEl,
+          riskyFeaturesDescEl,
+        ]),
+        riskyFeaturesToggle.el,
+      ]
+    );
+
+    function renderDeveloperOptions() {
+      const devEnabled = Boolean(draftDeveloperModeEnabled);
+      const riskyEnabled = devEnabled && Boolean(draftRiskyFeaturesEnabled);
+      developerModeToggle.setProps({ modelValue: devEnabled ? 'on' : 'off' });
+      riskyFeaturesToggle.setProps({ modelValue: riskyEnabled ? 'on' : 'off' });
+      patchAttr(riskyFeaturesRow, 'hidden', !devEnabled);
+      getProps().onLayoutChange?.();
+    }
+
+    const developerPanel = h('section', { className: 'panel settings-developer-panel' }, [
+      h('div', { className: 'panel-header settings-panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('terminal', { size: 13 }),
+          devTitleEl,
+        ]),
+        devStatusText,
+      ]),
+      devModeRow,
+      riskyFeaturesRow,
+    ]);
+
     // --- Card 2: 按模型设置上下文窗口 ---
     const baselineTitleEl = h('span', { text: t('settings.oth.baselineTitle') });
     const ctxModelLabel = h('span', { className: 'form-label' });
@@ -581,7 +754,16 @@ export const SettingsOtherTab = defineComponent({
         type: 'button',
         className: 'btn-secondary btn-danger-confirm ctx-risk-accept-btn',
         onClick: async () => {
-          if (acceptingContextRisk || draftContextRiskAccepted) return;
+          if (
+            acceptingContextRisk ||
+            draftContextRiskAccepted ||
+            !isRiskyFeaturesGateOpen({
+              developerModeEnabled: draftDeveloperModeEnabled,
+              riskyFeaturesEnabled: draftRiskyFeaturesEnabled,
+            })
+          ) {
+            return;
+          }
           acceptingContextRisk = true;
           draftContextRiskAccepted = true;
           latestSettings = { ...(latestSettings || {}), contextWindowRiskAccepted: true };
@@ -621,7 +803,12 @@ export const SettingsOtherTab = defineComponent({
     const ctxRiskStage = h('div', { className: 'ctx-risk-stage' }, [ctxControlsBody, ctxRiskMask]);
 
     function renderContextWindows() {
-      const unlocked = Boolean(draftContextRiskAccepted);
+      const gateOpen = isRiskyFeaturesGateOpen({
+        developerModeEnabled: draftDeveloperModeEnabled,
+        riskyFeaturesEnabled: draftRiskyFeaturesEnabled,
+      });
+      patchAttr(baselinePanel, 'hidden', !gateOpen);
+      const unlocked = gateOpen && Boolean(draftContextRiskAccepted);
       if (!unlocked) {
         ctxModelSelect.close();
         ctxWindowSelect.close();
@@ -744,7 +931,7 @@ export const SettingsOtherTab = defineComponent({
       getProps().onLayoutChange?.();
     }
 
-    const baselinePanel = h('section', { className: 'panel' }, [
+    const baselinePanel = h('section', { className: 'panel settings-context-panel', hidden: true }, [
       h('div', { className: 'panel-header settings-panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('layers', { size: 13 }),
@@ -754,6 +941,7 @@ export const SettingsOtherTab = defineComponent({
       ]),
       ctxRiskStage,
     ]);
+    renderDeveloperOptions();
     renderContextWindows();
 
     // --- Card 3: 缓存与重置 ---
@@ -1026,6 +1214,7 @@ export const SettingsOtherTab = defineComponent({
       modelPanel,
       hostIntegrationPanel,
       experimentalPanel,
+      developerPanel,
       baselinePanel,
       maintPanel,
     ]);
@@ -1057,12 +1246,23 @@ export const SettingsOtherTab = defineComponent({
       draftExperimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
         settings.experimentalQuotaReservation
       );
+      if (!savingDeveloperGate) {
+        draftDeveloperModeEnabled = settings.developerModeEnabled === true;
+        draftRiskyFeaturesEnabled =
+          draftDeveloperModeEnabled && settings.riskyFeaturesEnabled === true;
+      }
       if (!acceptingContextRisk) {
-        draftContextRiskAccepted = Boolean(settings.contextWindowRiskAccepted);
+        draftContextRiskAccepted =
+          draftDeveloperModeEnabled &&
+          draftRiskyFeaturesEnabled &&
+          Boolean(settings.contextWindowRiskAccepted);
       }
       if (!savingContextScope) {
         draftContextMainEnabled = settings.contextWindowMainEnabled !== false;
-        draftContextSwarmEnabled = settings.contextWindowSwarmEnabled === true;
+        draftContextSwarmEnabled =
+          draftDeveloperModeEnabled &&
+          draftRiskyFeaturesEnabled &&
+          settings.contextWindowSwarmEnabled === true;
       }
       stepModelSelect.setProps({
         ariaLabel: t('settings.oth.modelTitle'),
@@ -1079,6 +1279,7 @@ export const SettingsOtherTab = defineComponent({
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
+      renderDeveloperOptions();
       renderContextWindows();
     }
 
@@ -1109,6 +1310,11 @@ export const SettingsOtherTab = defineComponent({
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
+      patchText(devTitleEl, t('settings.oth.devTitle'));
+      patchText(devModeLabelEl, t('settings.oth.devModeLabel'));
+      patchText(riskyFeaturesLabelEl, t('settings.oth.riskyFeaturesLabel'));
+      patchText(riskyFeaturesDescEl, t('settings.oth.riskyFeaturesDesc'));
+      renderDeveloperOptions();
       patchText(baselineTitleEl, t('settings.oth.baselineTitle'));
       renderContextWindows();
       patchText(maintTitleEl, t('settings.oth.maintTitle'));
@@ -1140,12 +1346,15 @@ export const SettingsOtherTab = defineComponent({
       if (modelTimer) clearTimeout(modelTimer);
       if (hostTimer) clearTimeout(hostTimer);
       if (expTimer) clearTimeout(expTimer);
+      if (devTimer) clearTimeout(devTimer);
       if (maintTimer) clearTimeout(maintTimer);
       if (resetConfirmTimer) clearTimeout(resetConfirmTimer);
       stepModelSelect.destroy();
       autoLaunchToggle.destroy();
       remoteSshToggle.destroy();
       quotaReserveToggle.destroy();
+      developerModeToggle.destroy();
+      riskyFeaturesToggle.destroy();
       ctxBridgeNotice.destroy();
       ctxMainToggle.destroy();
       ctxSwarmToggle.destroy();
@@ -1162,6 +1371,10 @@ export const SettingsOtherTab = defineComponent({
         macWrapperRemoveBtn,
         quotaReserveToggle,
         exportReserveLogBtn,
+        developerPanel,
+        developerModeToggle,
+        riskyFeaturesToggle,
+        baselinePanel,
         ctxBridgeNotice,
         ctxMainToggle,
         ctxSwarmToggle,

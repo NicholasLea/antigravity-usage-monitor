@@ -768,12 +768,18 @@ test('Feature 6: model ranking multi-metric sort with efficiency footer & valida
     fontScale: 'lg',
     modernUi: true,
     stepTableColumns: ['step', 'model', 'cost'],
+    developerModeEnabled: true,
+    riskyFeaturesEnabled: true,
+    accountSwitchRiskAccepted: true,
     contextWindowRiskAccepted: true,
     modelContextWindows: { 'model:foo': '1000000' },
   });
   const parsedRaw = JSON.parse(exportedJson);
   assert.equal(parsedRaw.schema, 'antigravity-usage-monitor.settings');
   assert.equal(parsedRaw.settings.themeAccent, 'emerald');
+  assert.equal(parsedRaw.settings.developerModeEnabled, undefined, 'Developer mode flag must not be exported');
+  assert.equal(parsedRaw.settings.riskyFeaturesEnabled, undefined, 'Risky features flag must not be exported');
+  assert.equal(parsedRaw.settings.accountSwitchRiskAccepted, undefined, 'Account risk flag must not be exported');
   assert.equal(parsedRaw.settings.contextWindowRiskAccepted, undefined, 'Risk flag must not be exported');
   assert.equal(parsedRaw.settings.modelContextWindows, undefined, 'Context overrides must not be exported');
 
@@ -786,6 +792,9 @@ test('Feature 6: model ranking multi-metric sort with efficiency footer & valida
         themeAccent: 'violet',
         fontScale: 'INVALID_SCALE',
         popoverWidth: 99999,
+        developerModeEnabled: true,
+        riskyFeaturesEnabled: true,
+        accountSwitchRiskAccepted: true,
         contextWindowRiskAccepted: true,
         unknownSecret: 'nope',
       },
@@ -796,6 +805,9 @@ test('Feature 6: model ranking multi-metric sort with efficiency footer & valida
   assert.equal(imported.patch.themeAccent, 'violet');
   assert.equal(imported.patch.fontScale, 'md', 'Invalid scale normalizes safely');
   assert.equal(imported.patch.popoverWidth, 1080, 'Oversized popover width clamps safely');
+  assert.equal(imported.patch.developerModeEnabled, undefined);
+  assert.equal(imported.patch.riskyFeaturesEnabled, undefined);
+  assert.equal(imported.patch.accountSwitchRiskAccepted, undefined);
   assert.equal(imported.patch.contextWindowRiskAccepted, undefined);
   assert.equal(imported.patch.unknownSecret, undefined);
 

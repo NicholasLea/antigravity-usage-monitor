@@ -42,6 +42,7 @@ import { parseIdeRemoteAuthority } from '../shared/workspace-uri.mjs';
 import {
   DATA_DIR,
   computeRuntimeCodeVersion,
+  isContextWindowFeatureActive,
   loadJson,
   loadSettings,
   lsRuntimeEndpoint,
@@ -2468,10 +2469,11 @@ export function createWindowBridgeController(options) {
       curSettings.enableWindowOverlay
     );
     const enabled = Boolean(curSettings.enableWindowOverlay !== false && mountMode !== 'sidebar');
-    const contextWindows = curSettings.modelContextWindows || {};
+    const contextWindowAllowed = isContextWindowFeatureActive(curSettings);
+    const contextWindows = contextWindowAllowed ? curSettings.modelContextWindows || {} : {};
     const hasContextWindows = Object.keys(contextWindows).length > 0;
-    const ctxMainEnabled = curSettings.contextWindowMainEnabled !== false;
-    const ctxSwarmEnabled = curSettings.contextWindowSwarmEnabled === true;
+    const ctxMainEnabled = contextWindowAllowed && curSettings.contextWindowMainEnabled !== false;
+    const ctxSwarmEnabled = contextWindowAllowed && curSettings.contextWindowSwarmEnabled === true;
     const needsMainCdpContext = hasContextWindows && ctxMainEnabled;
     const needsCloudCodeProxy = hasContextWindows && ctxSwarmEnabled;
     const needsAnyCdpContext = hasContextWindows && (ctxMainEnabled || ctxSwarmEnabled);
@@ -3965,6 +3967,7 @@ export function createWindowBridgeController(options) {
       hadInjectedTargets = true;
       hadInjectedChatFrames = true;
       const hasCtx =
+        isContextWindowFeatureActive(cur) &&
         Object.keys(cur.modelContextWindows || {}).length > 0 &&
         cur.contextWindowMainEnabled !== false;
       const hasHostI18n = Boolean(
@@ -3989,6 +3992,7 @@ export function createWindowBridgeController(options) {
     const mountMode = normalizeWindowMountMode(cur.windowMountMode, cur.enableWindowOverlay);
     const overlayOn = Boolean(cur.enableWindowOverlay !== false && mountMode !== 'sidebar');
     const hasCtx =
+      isContextWindowFeatureActive(cur) &&
       Object.keys(cur.modelContextWindows || {}).length > 0 &&
       cur.contextWindowMainEnabled !== false;
     const hasHostI18n = Boolean(
@@ -4009,6 +4013,7 @@ export function createWindowBridgeController(options) {
     const mountMode = normalizeWindowMountMode(cur.windowMountMode, cur.enableWindowOverlay);
     const overlayOn = Boolean(cur.enableWindowOverlay !== false && mountMode !== 'sidebar');
     const hasCtx =
+      isContextWindowFeatureActive(cur) &&
       Object.keys(cur.modelContextWindows || {}).length > 0 &&
       cur.contextWindowMainEnabled !== false;
     const hasHostI18n = Boolean(

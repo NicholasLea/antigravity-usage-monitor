@@ -48,10 +48,12 @@ import {
   OVERVIEW_MODULE_KEYS,
   STEP_TABLE_COLUMN_KEYS,
   TOPBAR_SLOT_KEYS,
+  isRiskyFeaturesGateOpen,
   normalizeAccountQuotaRefreshMinutes,
   normalizeAutoConfigureLaunch,
   normalizeCliStatusLineSlots,
   normalizeContextAgentMode,
+  normalizeDeveloperModeEnabled,
   normalizeEnableRemoteSshTelemetry,
   normalizeExperimentalQuotaReservation,
   normalizeHoverMetricStyle,
@@ -65,6 +67,7 @@ import {
   normalizePluginUpdateMode,
   normalizePopoverWidth,
   normalizePopoverWidthMode,
+  normalizeRiskyFeaturesEnabled,
   normalizeStepTableColumns,
   normalizeStepTokenComboFormat,
   normalizeTopbarCapsuleSlots,
@@ -594,6 +597,12 @@ export function isEquivalentTelemetry(prev, next) {
     (prev.endpoint?.id || LOCAL_ENDPOINT_ID) !== (next.endpoint?.id || LOCAL_ENDPOINT_ID) ||
     Boolean(prev.endpoint?.isRemote) !== Boolean(next.endpoint?.isRemote) ||
     (prev.endpoint?.label || '') !== (next.endpoint?.label || '')
+  ) {
+    return false;
+  }
+  if (
+    Boolean(pSet?.developerModeEnabled) !== Boolean(nSet?.developerModeEnabled) ||
+    Boolean(pSet?.riskyFeaturesEnabled) !== Boolean(nSet?.riskyFeaturesEnabled)
   ) {
     return false;
   }
@@ -2033,6 +2042,29 @@ export async function saveSettingsPatch(patch) {
     safePatch.accountQuotaRefreshMinutes = normalizeClientAccountQuotaRefreshMinutes(
       safePatch.accountQuotaRefreshMinutes
     );
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'developerModeEnabled')) {
+    safePatch.developerModeEnabled = normalizeDeveloperModeEnabled(safePatch.developerModeEnabled);
+    if (!safePatch.developerModeEnabled) {
+      safePatch.riskyFeaturesEnabled = false;
+      safePatch.accountSwitchRiskAccepted = false;
+      safePatch.contextWindowRiskAccepted = false;
+      safePatch.contextWindowSwarmEnabled = false;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'riskyFeaturesEnabled')) {
+    const effectiveDevMode = Object.prototype.hasOwnProperty.call(safePatch, 'developerModeEnabled')
+      ? safePatch.developerModeEnabled
+      : telemetryStore.getState().telemetry?.settings?.developerModeEnabled === true;
+    safePatch.riskyFeaturesEnabled = normalizeRiskyFeaturesEnabled(
+      safePatch.riskyFeaturesEnabled,
+      effectiveDevMode
+    );
+    if (!safePatch.riskyFeaturesEnabled) {
+      safePatch.accountSwitchRiskAccepted = false;
+      safePatch.contextWindowRiskAccepted = false;
+      safePatch.contextWindowSwarmEnabled = false;
+    }
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'accountSwitchRiskAccepted')) {
     safePatch.accountSwitchRiskAccepted = Boolean(safePatch.accountSwitchRiskAccepted);

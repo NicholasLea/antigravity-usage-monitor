@@ -7,6 +7,7 @@
 import { defineComponent } from '../core/component.js';
 import { h, patchAttr, patchClasses } from '../core/domPatch.js';
 import { i18nStore, t } from '../i18n/index.js';
+import { isRiskyFeaturesGateOpen } from '../../shared/settings-normalization.mjs';
 import { telemetryStore } from '../store/telemetryStore.js';
 import { getVisibleMonitorView, uiStore } from '../store/uiStore.js';
 import { CustomScrollbar } from '../components/ui/CustomScrollbar.js';
@@ -19,12 +20,16 @@ import { SettingsStructureTab } from './settings/SettingsStructureTab.js';
 
 export const SHOW_ACCOUNT_TAB = true;
 
-function getSettingsSubTabOptions() {
+function isAccountTabVisible(settings) {
+  return Boolean(SHOW_ACCOUNT_TAB && isRiskyFeaturesGateOpen(settings));
+}
+
+function getSettingsSubTabOptions(showAccount) {
   return [
     { value: 'general', label: t('settings.subTab.general') },
     { value: 'structure', label: t('settings.subTab.structure') },
     { value: 'sessions', label: t('settings.subTab.sessions') },
-    ...(SHOW_ACCOUNT_TAB ? [{ value: 'account', label: t('settings.subTab.account') }] : []),
+    ...(showAccount ? [{ value: 'account', label: t('settings.subTab.account') }] : []),
     { value: 'other', label: t('settings.subTab.other') },
   ];
 }
@@ -32,12 +37,15 @@ function getSettingsSubTabOptions() {
 export const SettingsView = defineComponent({
   name: 'SettingsView',
   setup({ onCleanup }) {
-    const initialSubTab = uiStore.getState().settingsSubTab || 'general';
+    let accountTabVisible = isAccountTabVisible(telemetryStore.getState().telemetry?.settings);
+    const rawInitialSubTab = uiStore.getState().settingsSubTab || 'general';
+    const initialSubTab =
+      rawInitialSubTab === 'account' && !accountTabVisible ? 'general' : rawInitialSubTab;
 
     const subNavSwitch = SegmentedControl({
       ariaLabel: t('settings.subTab.aria'),
       modelValue: initialSubTab,
-      options: getSettingsSubTabOptions(),
+      options: getSettingsSubTabOptions(accountTabVisible),
       onUpdateModelValue: (nextSubTab) => {
         uiStore.setState({ settingsSubTab: nextSubTab }, { sync: true });
       },
@@ -65,7 +73,7 @@ export const SettingsView = defineComponent({
         subTab === 'structure' ||
         subTab === 'sessions' ||
         subTab === 'other' ||
-        (accountTab && subTab === 'account')
+        (accountTab && accountTabVisible && subTab === 'account')
           ? subTab
           : 'general';
       subNavSwitch.setValue(target);
@@ -80,16 +88,50 @@ export const SettingsView = defineComponent({
         void sessionsTab.refs.ensureLoaded();
       }
       if (accountTab) {
-        patchAttr(accountTab.el, 'hidden', target !== 'account');
-        if (activeView === 'settings' && !preloadedAccountOnce) {
+        patchAttr(accountTab.el, 'hidden', !accountTabVisible || target !== 'account');
+        if (accountTabVisible && activeView === 'settings' && !preloadedAccountOnce) {
           preloadedAccountOnce = true;
           void accountTab.refs.preload?.();
         }
-        const nextShowingAccount = target === 'account' && activeView === 'settings';
+        const nextShowingAccount =
+          accountTabVisible && target === 'account' && activeView === 'settings';
         if (nextShowingAccount && !showingAccount) void accountTab.refs.load();
         showingAccount = nextShowingAccount;
       }
       refreshScroll();
+    }
+
+    function syncAccountTabVisibility(settings, { forceNavRefresh = false } = {}) {
+      const nextVisible = isAccountTabVisible(settings);
+      const changed = nextVisible !== accountTabVisible;
+      if (!changed && !forceNavRefresh) return;
+      accountTabVisible = nextVisible;
+      const ui = uiStore.getState();
+      const activeView = getVisibleMonitorView(ui);
+      let nextSubTab = ui.settingsSubTab || 'general';
+      if (!accountTabVisible) {
+        showingAccount = false;
+        preloadedAccountOnce = false;
+        if (nextSubTab === 'account') {
+          nextSubTab = 'general';
+          uiStore.setState({ settingsSubTab: 'general' }, { sync: true });
+        }
+      }
+      const normalizedTarget =
+        nextSubTab === 'structure' ||
+        nextSubTab === 'sessions' ||
+        nextSubTab === 'other' ||
+        (accountTabVisible && nextSubTab === 'account')
+          ? nextSubTab
+          : 'general';
+      subNavSwitch.setProps({
+        ariaLabel: t('settings.subTab.aria'),
+        modelValue: normalizedTarget,
+        options: getSettingsSubTabOptions(accountTabVisible),
+      });
+      if (changed) {
+        applyActiveSubTab(normalizedTarget, activeView);
+      }
     }
 
     const contentContainer = h(
@@ -116,15 +158,16 @@ export const SettingsView = defineComponent({
     let lastEndpointId = telemetryStore.getState().telemetry?.endpoint?.id || '';
     function syncActiveTab() {
       const ui = uiStore.getState();
-      const { settingsSubTab } = ui;
       const telemetry = telemetryStore.getState().telemetry;
       const curEndpointId = telemetry?.endpoint?.id || '';
       if (curEndpointId && curEndpointId !== lastEndpointId) {
         lastEndpointId = curEndpointId;
         sessionsTab.refs.markStale?.();
       }
-      if (getVisibleMonitorView(ui) !== 'settings') return;
       const settings = telemetry?.settings;
+      syncAccountTabVisibility(settings);
+      if (getVisibleMonitorView(ui) !== 'settings') return;
+      const settingsSubTab = uiStore.getState().settingsSubTab;
       if (accountTab) {
         accountTab.refs.renderAccount(telemetry?.account, telemetry?.quotas, settings);
       }
@@ -198,10 +241,8 @@ export const SettingsView = defineComponent({
     const unsubI18n = i18nStore.subscribe(
       (st) => st.locale,
       () => {
-        subNavSwitch.setProps({
-          ariaLabel: t('settings.subTab.aria'),
-          modelValue: uiStore.getState().settingsSubTab || 'general',
-          options: getSettingsSubTabOptions(),
+        syncAccountTabVisibility(telemetryStore.getState().telemetry?.settings, {
+          forceNavRefresh: true,
         });
         generalTab.refs.refreshLabels();
         structureTab.refs.refreshLabels();

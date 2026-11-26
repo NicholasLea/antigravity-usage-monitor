@@ -40,6 +40,8 @@ import {
   computeRuntimeCodeVersion,
   createDefaultSettingsObject,
   inFlightRequests,
+  isAccountSwitchFeatureActive,
+  isContextWindowFeatureActive,
   isPlainObject,
   loadSettings,
   lsRuntimeEndpoint,
@@ -426,7 +428,15 @@ export function executeSettingsAction(data) {
     current.windowMountMode,
     current.enableWindowOverlay
   );
+  const prevContextActive = isContextWindowFeatureActive(current);
+  const nextContextActive = isContextWindowFeatureActive(updated);
+  const riskyGateChanged =
+    Boolean(updated.developerModeEnabled) !== Boolean(current.developerModeEnabled) ||
+    Boolean(updated.riskyFeaturesEnabled) !== Boolean(current.riskyFeaturesEnabled) ||
+    Boolean(updated.accountSwitchRiskAccepted) !== Boolean(current.accountSwitchRiskAccepted) ||
+    Boolean(updated.contextWindowRiskAccepted) !== Boolean(current.contextWindowRiskAccepted);
   const contextWindowScopeChanged =
+    prevContextActive !== nextContextActive ||
     (updated.contextWindowMainEnabled !== false) !== (current.contextWindowMainEnabled !== false) ||
     (updated.contextWindowSwarmEnabled === true) !== (current.contextWindowSwarmEnabled === true);
   const bridgeAuxChanged =
@@ -439,6 +449,7 @@ export function executeSettingsAction(data) {
     updated.enableWindowOverlay !== (current.enableWindowOverlay !== false) ||
     updated.windowMountMode !== prevMountMode ||
     bridgeAuxChanged ||
+    riskyGateChanged ||
     contextWindowScopeChanged;
   inFlightRequests.clear();
   if (affectsBackendTelemetry) {
@@ -488,6 +499,9 @@ export async function executeModelContextWindowAction(data, opts = {}) {
     headers: { 'Cache-Control': 'no-store' },
     body: JSON.stringify(payload),
   });
+  if (opts?.bypassRiskCheck !== true && !isContextWindowFeatureActive(loadSettings())) {
+    return respond(403, { error: 'riskNotAccepted' });
+  }
   if (!isContextWindowSettingId(modelId) || (option !== null && !isContextWindowOption(option))) {
     return respond(400, { error: 'Invalid model context window' });
   }
@@ -580,6 +594,7 @@ export function executeResetSettingsAction() {
   ) {
     void notifyWindowOverlaySetting(updated.enableWindowOverlay);
   } else if (
+    isContextWindowFeatureActive(current) ||
     Object.keys(current.modelContextWindows).length ||
     current.contextWindowMainEnabled === false ||
     current.contextWindowSwarmEnabled === true
@@ -719,7 +734,7 @@ export async function executeAccountCredentialAction(data, opts = {}) {
   const cleanData = stripEndpointField(data);
   const action = cleanData?.action || 'list';
   const riskAccepted =
-    opts?.bypassRiskCheck === true || loadSettings().accountSwitchRiskAccepted === true;
+    opts?.bypassRiskCheck === true || isAccountSwitchFeatureActive(loadSettings());
   if (!riskAccepted) {
     if (action !== 'list') {
       return {
@@ -1352,7 +1367,7 @@ export function bootWindowBridgeRuntime({ allowDynamicLs = false, onRestart = nu
 
   const bootSettings = loadSettings();
   ensureCliStatusLineConfigured({ enabled: bootSettings.enableCliStatusLine !== false });
-  if (allowDynamicLs && bootSettings.accountSwitchRiskAccepted === true) {
+  if (allowDynamicLs && isAccountSwitchFeatureActive(bootSettings)) {
     setTimeout(() => {
       void warmAccountPublicListCache();
     }, 80).unref?.();

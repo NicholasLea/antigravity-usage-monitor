@@ -722,6 +722,9 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     weeklyLimitMode: 'official',
     weeklyTokenBudget: 150000000,
     weeklyCostBudget: 100,
+    developerModeEnabled: false,
+    riskyFeaturesEnabled: false,
+    accountSwitchRiskAccepted: false,
     contextWindowRiskAccepted: false,
     modelContextWindows: {},
   };
@@ -1467,7 +1470,11 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     const allPanes = popoverEl.querySelectorAll('.view-pane');
     const settingsRoot = popoverEl.querySelector('.settings-view-root');
     const subNavBtns = settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn');
-    assert.deepEqual(subNavBtns.map((button) => button.textContent), ['常规', '结构', '会话', '账号', '其他']);
+    assert.deepEqual(
+      subNavBtns.map((button) => button.textContent),
+      ['常规', '结构', '会话', '其他'],
+      'Account tab stays hidden until Developer Mode and High-Risk Features are both enabled'
+    );
     assert.match(
       stylesCss,
       /\.settings-subnav-bar\s+\.segmented\s*\{[^}]*grid-auto-flow:\s*column;[^}]*grid-auto-columns:\s*minmax\(0,\s*1fr\);/,
@@ -1480,6 +1487,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(generalPane.hasAttribute('hidden'), false, 'General tab active by default');
     assert.equal(structurePane.hasAttribute('hidden'), true);
     assert.equal(sessionsPane.hasAttribute('hidden'), true);
+    assert.equal(accountPane.hasAttribute('hidden'), true);
     assert.equal(otherPane.hasAttribute('hidden'), true);
 
     // --- Tab 0: 常规 (languageSwitch, themeAccent, fontScaleSwitch, modernUiSwitch, hostI18nDepth, pluginUpdateMode) ---
@@ -1583,8 +1591,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.equal(subNavBtns[0].textContent, 'General');
     assert.equal(subNavBtns[1].textContent, 'Structure');
     assert.equal(subNavBtns[2].textContent, 'Sessions');
-    assert.equal(subNavBtns[3].textContent, 'Account');
-    assert.equal(subNavBtns[4].textContent, 'Other');
+    assert.equal(subNavBtns[3].textContent, 'Other');
     await selectUiLangByIndex(4);
     assert.equal(mockSettings.language, 'ja-JP');
     assert.match(currencySelectEl.querySelector('.select-label').textContent, /JPY/);
@@ -2267,12 +2274,52 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     // --- 会话 (dedicated Sessions tab housing SessionMigrationCard) ---
     subNavBtns[2].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 25));
-    assert.equal(sessionsPane.hasAttribute('hidden'), false, 'Sessions tab visible directly left of Account');
+    assert.equal(sessionsPane.hasAttribute('hidden'), false, 'Sessions tab visible directly left of Other by default');
     assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden on Sessions tab');
     assert.ok(sessionsPane.querySelector('.smig-panel'), 'SessionMigrationCard mounted inside Sessions tab');
     assert.equal(otherPane.querySelector('.smig-panel'), null, 'SessionMigrationCard removed from Other tab');
 
+    // --- Two-level Developer Mode -> High-Risk Features gate inside Other tab ---
     subNavBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(otherPane.hasAttribute('hidden'), false);
+    const devPanel = otherPane.querySelector('.settings-developer-panel');
+    const devModeRow = otherPane.querySelector('.settings-dev-mode-row');
+    const riskyFeaturesRow = otherPane.querySelector('.settings-risky-features-row');
+    const contextPanel = otherPane.querySelector('.settings-context-panel');
+    assert.ok(devPanel && devModeRow && riskyFeaturesRow && contextPanel, 'Developer & Context panels exist in Other tab');
+    assert.equal(riskyFeaturesRow.hasAttribute('hidden'), true, 'High-Risk toggle hidden while Developer Mode is off');
+    assert.equal(contextPanel.hasAttribute('hidden'), true, 'Model Context Settings hidden by default');
+    assert.equal(accountRequests.length, 0, 'No account API calls occur while High-Risk gate is closed');
+
+    // Step 1: Turn ON Developer Mode -> reveals High-Risk Features switch, but Account & Context stay hidden
+    const devModeBtns = devModeRow.querySelectorAll('.seg-btn');
+    devModeBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(mockSettings.developerModeEnabled, true);
+    assert.equal(mockSettings.riskyFeaturesEnabled, false);
+    assert.equal(riskyFeaturesRow.hasAttribute('hidden'), false, 'High-Risk toggle appears after Developer Mode is enabled');
+    assert.equal(contextPanel.hasAttribute('hidden'), true, 'Model Context Settings stays hidden until High-Risk Features is enabled');
+    assert.deepEqual(
+      settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn').map((b) => b.textContent),
+      ['常规', '结构', '会话', '其他'],
+      'Account tab still hidden when only Developer Mode is enabled'
+    );
+
+    // Step 2: Turn ON High-Risk Features -> reveals Account tab & Model Context Settings (BOTH still keeping risk warning masks!)
+    const riskyFeaturesBtns = riskyFeaturesRow.querySelectorAll('.seg-btn');
+    riskyFeaturesBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(mockSettings.riskyFeaturesEnabled, true);
+    assert.equal(contextPanel.hasAttribute('hidden'), false, 'Model Context Settings visible once High-Risk Features is enabled');
+    const expandedSubNavBtns = settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn');
+    assert.deepEqual(
+      expandedSubNavBtns.map((button) => button.textContent),
+      ['常规', '结构', '会话', '账号', '其他'],
+      'Account tab appears once Developer Mode and High-Risk Features are both enabled'
+    );
+
+    expandedSubNavBtns[3].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 35));
     assert.equal(accountPane.hasAttribute('hidden'), false);
     assert.equal(accountPane.querySelector('.settings-account-identity').textContent, 'test@example.com');
@@ -2349,7 +2396,7 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     assert.ok(accountPane.querySelectorAll('.settings-action-desc').some((el) => el.textContent.includes('正在重启 Antigravity')));
 
     // --- 其他 (model format, context limits, cache rebuild, reset) ---
-    subNavBtns[4].dispatchEvent({ type: 'click', stopPropagation() {} });
+    expandedSubNavBtns[4].dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(otherPane.hasAttribute('hidden'), false);
     assert.equal(thirdNavBar.hasAttribute('hidden'), true, '3rd-level menu hidden when switching to Other tab');
@@ -2416,6 +2463,34 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     selectOption(contextModel, 3);
     assert.equal(contextWindow.querySelector('.select-trigger').hasAttribute('disabled'), true);
 
+    // Turning OFF High-Risk Features immediately hides & re-locks BOTH Account and Context Windows
+    riskyFeaturesBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(mockSettings.riskyFeaturesEnabled, false);
+    assert.equal(mockSettings.accountSwitchRiskAccepted, false);
+    assert.equal(mockSettings.contextWindowRiskAccepted, false);
+    assert.equal(contextPanel.hasAttribute('hidden'), true, 'Model Context Settings immediately hides when High-Risk is turned off');
+    assert.deepEqual(
+      settingsRoot.querySelector('.settings-subnav-bar').querySelectorAll('.seg-btn').map((b) => b.textContent),
+      ['常规', '结构', '会话', '其他'],
+      'Account tab immediately hides when High-Risk is turned off'
+    );
+
+    // Re-enabling High-Risk Features brings both back STILL locked behind their warning masks
+    riskyFeaturesBtns[0].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(contextPanel.hasAttribute('hidden'), false);
+    assert.equal(ctxRiskMask.hasAttribute('hidden'), false, 'Context risk mask reappears after re-enabling High-Risk');
+    assert.equal(accountRiskMask.hasAttribute('hidden'), false, 'Account risk mask reappears after re-enabling High-Risk');
+
+    // Turning OFF Developer Mode cascades High-Risk Features OFF as well
+    devModeBtns[1].dispatchEvent({ type: 'click', stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 35));
+    assert.equal(mockSettings.developerModeEnabled, false);
+    assert.equal(mockSettings.riskyFeaturesEnabled, false);
+    assert.equal(riskyFeaturesRow.hasAttribute('hidden'), true);
+    assert.equal(contextPanel.hasAttribute('hidden'), true);
+
     const maintBtns = otherPane
       .querySelectorAll('.btn-secondary')
       .filter((btn) => !btn.classList.contains('ctx-risk-accept-btn'));
@@ -2434,8 +2509,11 @@ test('Compiled app.js mounts dual Shadow DOM hosts, tracks /c/<uuid> routes, pro
     resetAllBtn.dispatchEvent({ type: 'click', stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 260));
     assert.equal(mockSettings.modelDisplayMode, 'short', '2nd click resets modelDisplayMode to default');
+    assert.equal(mockSettings.developerModeEnabled, false, 'Reset restores developerModeEnabled to false');
+    assert.equal(mockSettings.riskyFeaturesEnabled, false, 'Reset restores riskyFeaturesEnabled to false');
     assert.equal(mockSettings.contextWindowRiskAccepted, false, 'Reset restores contextWindowRiskAccepted to false');
     assert.equal(ctxRiskMask.hasAttribute('hidden'), false, 'Risk mask re-locks after factory reset');
+    assert.equal(contextPanel.hasAttribute('hidden'), true, 'Model Context Settings stays hidden after factory reset');
 
     // Verify ConsumptionView omits "+ 待定" / "3993 步费用待定" and StepsDetailView protects header title
     pillTabs[1].dispatchEvent({ type: 'click', stopPropagation() {} });
@@ -3290,7 +3368,13 @@ test('Multi-port CDP discovery tolerates stale 2.0 DevToolsActivePort while inje
   );
 
   const prefetchedConvIds = [];
-  const settings = { enableWindowOverlay: true, modelContextWindows: { [modelId]: '900K' } };
+  const settings = {
+    enableWindowOverlay: true,
+    developerModeEnabled: true,
+    riskyFeaturesEnabled: true,
+    contextWindowRiskAccepted: true,
+    modelContextWindows: { [modelId]: '900K' },
+  };
   const mockAppJs = `
     (() => {
       const br = window.__AGUsageMonitorBridge;
@@ -6553,7 +6637,12 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
 
     // Locked risk mask -> notice stays hidden
     othTab.refs.renderSettings(
-      { contextWindowRiskAccepted: false, modelContextWindows: {} },
+      {
+        developerModeEnabled: true,
+        riskyFeaturesEnabled: true,
+        contextWindowRiskAccepted: false,
+        modelContextWindows: {},
+      },
       mockCtxModels,
       { state: 'no_devtools_port', launcherConfigured: true, canRelaunch: true },
       'win32'
@@ -6563,6 +6652,8 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
     // Unlocked + no_devtools_port -> notice immediately visible AND saved option meta shows "待重启生效" instead of "已设置"
     othTab.refs.renderSettings(
       {
+        developerModeEnabled: true,
+        riskyFeaturesEnabled: true,
         contextWindowRiskAccepted: true,
         modelContextWindows: { 'model:gemini-4-carbon': '256000' },
       },
@@ -6583,6 +6674,8 @@ test('Issue #26: Antigravity Desktop 2.33.0+ automatic shortcut/launcher provisi
 
     othTab.refs.renderSettings(
       {
+        developerModeEnabled: true,
+        riskyFeaturesEnabled: true,
         contextWindowRiskAccepted: true,
         modelContextWindows: { 'model:gemini-4-carbon': '256000' },
       },

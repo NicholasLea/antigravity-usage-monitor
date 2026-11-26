@@ -9,6 +9,7 @@ import { h, patchAttr, patchClasses, patchText } from './core/domPatch.js';
 import { isWindowOverlayMode } from './core/httpClient.js';
 import { createSvgIcon } from './icons/SvgIcon.js';
 import { i18nStore, t } from './i18n/index.js';
+import { isContextWindowFeatureActive } from '../shared/settings-normalization.mjs';
 import {
   fetchTelemetry,
   getDefaultCtxInspectorAgentId,
@@ -80,7 +81,10 @@ export const App = defineComponent({
         ? normalizeClientWindowMountMode(settings.windowMountMode, settings.enableWindowOverlay)
         : 'sidebar';
       const hasCtxOverrides = Boolean(
-        settings?.modelContextWindows && Object.keys(settings.modelContextWindows).length > 0
+        isContextWindowFeatureActive(settings) &&
+          settings?.contextWindowMainEnabled !== false &&
+          settings?.modelContextWindows &&
+          Object.keys(settings.modelContextWindows).length > 0
       );
       const shouldOfferGlobal =
         !isWindowOverlayMode() &&
@@ -322,6 +326,10 @@ export const App = defineComponent({
         windowMountMode: st.telemetry?.settings?.windowMountMode,
         enableWindowOverlay: st.telemetry?.settings?.enableWindowOverlay,
         contextAgentMode: st.telemetry?.settings?.contextAgentMode,
+        developerModeEnabled: st.telemetry?.settings?.developerModeEnabled,
+        riskyFeaturesEnabled: st.telemetry?.settings?.riskyFeaturesEnabled,
+        contextWindowRiskAccepted: st.telemetry?.settings?.contextWindowRiskAccepted,
+        contextWindowMainEnabled: st.telemetry?.settings?.contextWindowMainEnabled,
         modelContextWindows: st.telemetry?.settings?.modelContextWindows,
         windowBridge: st.telemetry?.windowBridge,
         hostPlatform: st.telemetry?.hostPlatform,

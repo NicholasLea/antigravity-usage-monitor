@@ -447,6 +447,42 @@ test('enforces OAuth client_id allowlist, minimizes at-rest vault payload, and v
   assert.equal(riskLockedList.riskLocked, true);
   assert.deepEqual(riskLockedList.accounts, []);
 
+  // Even if accountSwitchRiskAccepted were spoofed while Developer Mode / High-Risk gate is closed,
+  // backend still treats account credentials as risk-locked
+  const { isAccountSwitchFeatureActive } = await import('../shared/settings-normalization.mjs');
+  assert.equal(
+    isAccountSwitchFeatureActive({
+      developerModeEnabled: false,
+      riskyFeaturesEnabled: false,
+      accountSwitchRiskAccepted: true,
+    }),
+    false
+  );
+  assert.equal(
+    isAccountSwitchFeatureActive({
+      developerModeEnabled: true,
+      riskyFeaturesEnabled: false,
+      accountSwitchRiskAccepted: true,
+    }),
+    false
+  );
+  assert.equal(
+    isAccountSwitchFeatureActive({
+      developerModeEnabled: true,
+      riskyFeaturesEnabled: true,
+      accountSwitchRiskAccepted: false,
+    }),
+    false
+  );
+  assert.equal(
+    isAccountSwitchFeatureActive({
+      developerModeEnabled: true,
+      riskyFeaturesEnabled: true,
+      accountSwitchRiskAccepted: true,
+    }),
+    true
+  );
+
   // Once risk check passes, mutations still require a valid HMAC actionNonce
   const missingNonceRes = await executeAccountCredentialAction(
     { action: 'remove', email: 'a@example.com' },

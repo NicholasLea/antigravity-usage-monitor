@@ -2,7 +2,7 @@
 'use strict';
 
 // --- shared/settings-normalization.mjs ---
-const { SUPPORTED_LOCALES, SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, resolveLocaleFromLanguageTag, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi, normalizeAutoConfigureLaunch, normalizeEnableRemoteSshTelemetry } = (() => {
+const { SUPPORTED_LOCALES, SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, resolveLocaleFromLanguageTag, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi, normalizeAutoConfigureLaunch, normalizeEnableRemoteSshTelemetry, normalizeDeveloperModeEnabled, normalizeRiskyFeaturesEnabled, isRiskyFeaturesGateOpen, isContextWindowFeatureActive, isAccountSwitchFeatureActive } = (() => {
 const SUPPORTED_LOCALES = Object.freeze([
   'zh-CN',
   'zh-TW',
@@ -542,7 +542,35 @@ function normalizeEnableRemoteSshTelemetry(val) {
   }
   return Boolean(val);
 }
-return { SUPPORTED_LOCALES, SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, resolveLocaleFromLanguageTag, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi, normalizeAutoConfigureLaunch, normalizeEnableRemoteSshTelemetry };
+
+function normalizeDeveloperModeEnabled(val) {
+  return val === true;
+}
+
+function normalizeRiskyFeaturesEnabled(val, developerModeEnabled = false) {
+  return developerModeEnabled === true && val === true;
+}
+
+function isRiskyFeaturesGateOpen(settings) {
+  return Boolean(
+    settings &&
+      settings.developerModeEnabled === true &&
+      settings.riskyFeaturesEnabled === true
+  );
+}
+
+function isContextWindowFeatureActive(settings) {
+  return Boolean(
+    isRiskyFeaturesGateOpen(settings) && settings.contextWindowRiskAccepted === true
+  );
+}
+
+function isAccountSwitchFeatureActive(settings) {
+  return Boolean(
+    isRiskyFeaturesGateOpen(settings) && settings.accountSwitchRiskAccepted === true
+  );
+}
+return { SUPPORTED_LOCALES, SUPPORTED_LANGUAGES, THEME_ACCENT_KEYS, FONT_SCALE_KEYS, TOPBAR_SLOT_KEYS, DEFAULT_TOPBAR_SLOTS, MIN_TOPBAR_SLOTS, MAX_TOPBAR_SLOTS, DEFAULT_CLI_STATUSLINE_SLOTS, MIN_CLI_STATUSLINE_SLOTS, MAX_CLI_STATUSLINE_SLOTS, CLI_STATUSLINE_PRESETS, OVERVIEW_MODULE_KEYS, DEFAULT_OVERVIEW_MODULES, DEFAULT_HOVER_MODULES, METRIC_CARD_STYLES, HOVER_METRIC_STYLES, DEFAULT_OVERVIEW_METRIC_STYLE, DEFAULT_HOVER_METRIC_STYLE, DEFAULT_HOVER_SYNC_OVERVIEW_METRICS, MAX_LARGE_METRIC_SLOTS, OVERVIEW_METRIC_KEYS, DEFAULT_OVERVIEW_METRICS, DEFAULT_HOVER_METRICS, STEP_TABLE_COLUMN_KEYS, DEFAULT_STEP_TABLE_COLUMNS, DEFAULT_STEP_TOKEN_COMBO_FORMAT, STEP_TOKEN_SEGMENT_ALIASES, POPOVER_WIDTH_MODES, MIN_POPOVER_WIDTH, MAX_POPOVER_WIDTH, DEFAULT_POPOVER_WIDTH, resolveLocaleFromLanguageTag, normalizeLanguageSetting, normalizeThemeAccent, normalizeFontScale, normalizeModelDisplayMode, normalizePopoverWidthMode, normalizePopoverWidth, parseStepTokenComboSegments, normalizeStepTokenComboFormat, normalizePluginUpdateMode, normalizeWindowMountMode, normalizeWeeklyLimitMode, normalizeTopbarCapsuleSlots, normalizeCliStatusLineSlots, resolveEffectiveCliStatusLineSlots, normalizeOverviewMetrics, normalizeOverviewModules, normalizeHoverModules, normalizeMetricCardStyle, normalizeOverviewMetricStyle, normalizeHoverMetricStyle, normalizeHoverSyncOverviewMetrics, normalizeHoverMetrics, resolveEffectiveMetricMatrixConfig, normalizeStepTableColumns, normalizeStandalonePort, normalizeModernUi, CONTEXT_AGENT_MODES, DEFAULT_CONTEXT_AGENT_MODE, ACCOUNT_QUOTA_REFRESH_MINUTES, DEFAULT_ACCOUNT_QUOTA_REFRESH_MINUTES, normalizeAccountQuotaRefreshMinutes, normalizeContextAgentMode, normalizeExperimentalQuotaReservation, normalizeExperimentalModernUi, normalizeAutoConfigureLaunch, normalizeEnableRemoteSshTelemetry, normalizeDeveloperModeEnabled, normalizeRiskyFeaturesEnabled, isRiskyFeaturesGateOpen, isContextWindowFeatureActive, isAccountSwitchFeatureActive };
 })();
 
 // --- shared/currency-catalog.mjs ---
@@ -2445,9 +2473,9 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.modelUpstreamCompact': '去前缀原始 ID (如 3.8-flash-n / sonnet-4-6 / 5.4-mini)',
   'settings.oth.hostTitle': '宿主启动与远端连接',
   'settings.oth.autoLaunchLabel': '自动维护宿主启动参数',
-  'settings.oth.autoLaunchDesc': '自动为 Antigravity Desktop 与 IDE 维护调试端口参数（argv.json 及桌面/菜单快捷方式），彼此严格隔离',
+  'settings.oth.autoLaunchDesc': '自动为 Antigravity Desktop 与 IDE 维护调试端口参数',
   'settings.oth.remoteSshLabel': 'IDE Remote-SSH 远端遥测',
-  'settings.oth.remoteSshDesc': '自动识别 IDE Remote-SSH 窗口，以非交互方式配对远端守护进程并按主机隔离统计账本',
+  'settings.oth.remoteSshDesc': '自动识别 IDE Remote-SSH 窗口',
   'settings.oth.macWrapperLabel': 'macOS 受管启动器 (.app)',
   'settings.oth.macWrapperDesc': '当前已在 ~/Applications 下创建带参启动器，可在此随时一键清理',
   'settings.oth.macRemoveWrapperBtn': '移除 macOS 启动器',
@@ -2462,6 +2490,10 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.oth.exportReserveLogCopied': '已复制 {count} 条观测日志到剪贴板',
   'settings.oth.exportReserveLogEmpty': '暂无跳变记录，已复制当前摘要到剪贴板',
   'settings.oth.exportReserveLogFailed': '获取或复制预占日志失败',
+  'settings.oth.devTitle': '开发者选项',
+  'settings.oth.devModeLabel': '开发者模式',
+  'settings.oth.riskyFeaturesLabel': '高风险功能',
+  'settings.oth.riskyFeaturesDesc': '显示「账号」凭证管理与「模型上下文设置」入口（仍需逐项确认风险提示）；关闭后立即停用并重锁',
   'settings.oth.baselineTitle': '模型上下文设置',
   'settings.oth.ctxRiskTitle': '非官方能力风险提示',
   'settings.oth.ctxRiskBody': 'Google 官方并未授权在 Antigravity App / IDE 中修改模型上下文上限。擅自修改可能导致 Antigravity 或 GCP 服务被禁用，甚至触发账号封禁；启用该功能即默认由你自行承担全部风险。你最好清楚自己在做什么！',
@@ -3688,9 +3720,9 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "settings.oth.modelUpstreamCompact": "去前綴原始 ID (隱藏 gemini- / claude- / gpt-)",
   "settings.oth.hostTitle": "宿主啟動與遠端 SSH 連線",
   "settings.oth.autoLaunchLabel": "自動維護宿主啟動參數",
-  "settings.oth.autoLaunchDesc": "自動為 Antigravity Desktop 與 IDE 維護偵錯連接埠參數（argv.json 及桌面/選單捷徑），彼此嚴格隔離",
+  "settings.oth.autoLaunchDesc": "自動為 Antigravity Desktop 與 IDE 維護偵錯連接埠參數",
   "settings.oth.remoteSshLabel": "IDE Remote-SSH 遠端遙測",
-  "settings.oth.remoteSshDesc": "自動辨識 IDE Remote-SSH 視窗，以非互動方式配對遠端常駐程式並依主機隔離統計帳本",
+  "settings.oth.remoteSshDesc": "自動辨識 IDE Remote-SSH 視窗",
   "settings.oth.macWrapperLabel": "macOS 受管啟動器 (.app)",
   "settings.oth.macWrapperDesc": "目前已於 ~/Applications 下安裝受管偵錯連接埠啟動器，可隨時在此一鍵移除",
   "settings.oth.macRemoveWrapperBtn": "移除 macOS 啟動器",
@@ -3705,6 +3737,10 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "settings.oth.exportReserveLogCopied": "已複製 {count} 筆觀測日誌到剪貼簿",
   "settings.oth.exportReserveLogEmpty": "暫無跳變記錄，已複製目前摘要到剪貼簿",
   "settings.oth.exportReserveLogFailed": "取得或複製預佔日誌失敗",
+  "settings.oth.devTitle": "開發者選項",
+  "settings.oth.devModeLabel": "開發者模式",
+  "settings.oth.riskyFeaturesLabel": "高風險功能",
+  "settings.oth.riskyFeaturesDesc": "顯示「帳號」憑證管理與「模型上下文設定」入口（仍須逐項確認風險提示）；關閉後立即停用並重新鎖定",
   "settings.oth.baselineTitle": "模型上下文設定",
   "settings.oth.ctxRiskTitle": "非官方覆寫風險提示",
   "settings.oth.ctxRiskBody": "Google 官方並未授權在 Antigravity App / IDE 中修改模型上下文上限。擅自修改可能導致您的 Antigravity 存取權限、GCP 服務或 Google 帳號遭到停用或封鎖；啟用此功能即代表您自行承擔所有相關風險。請務必確認您清楚自己在做什麼！",
@@ -4948,9 +4984,9 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.modelUpstreamCompact': 'Trimmed Raw ID (hide gemini- / claude- / gpt-)',
   'settings.oth.hostTitle': 'Host Launch & Remote SSH',
   'settings.oth.autoLaunchLabel': 'Auto-Maintain Host Launch Flags',
-  'settings.oth.autoLaunchDesc': 'Automatically maintain debug-port flags for Antigravity Desktop and IDE (argv.json and shortcuts) in strict isolation',
+  'settings.oth.autoLaunchDesc': 'Automatically maintain debug-port flags for Antigravity Desktop and IDE',
   'settings.oth.remoteSshLabel': 'IDE Remote-SSH Telemetry',
-  'settings.oth.remoteSshDesc': 'Detect IDE Remote-SSH windows and pair remote daemons non-interactively with per-host isolated ledgers',
+  'settings.oth.remoteSshDesc': 'Automatically detect IDE Remote-SSH windows',
   'settings.oth.macWrapperLabel': 'Managed macOS Launcher (.app)',
   'settings.oth.macWrapperDesc': 'A managed debug-port launcher is currently installed in ~/Applications and can be removed anytime',
   'settings.oth.macRemoveWrapperBtn': 'Remove macOS Launcher',
@@ -4965,6 +5001,10 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.oth.exportReserveLogCopied': 'Copied {count} log entries to clipboard',
   'settings.oth.exportReserveLogEmpty': 'No events yet; copied current summary to clipboard',
   'settings.oth.exportReserveLogFailed': 'Failed to copy reservation log',
+  'settings.oth.devTitle': 'Developer Options',
+  'settings.oth.devModeLabel': 'Developer Mode',
+  'settings.oth.riskyFeaturesLabel': 'High-Risk Features',
+  'settings.oth.riskyFeaturesDesc': 'Shows Account credentials & Model Context Settings (each still requires risk confirmation); turning off disables and re-locks them',
   'settings.oth.baselineTitle': 'Model Context Settings',
   'settings.oth.ctxRiskTitle': 'Unofficial Override Risk Warning',
   'settings.oth.ctxRiskBody': 'Google has not authorized modifying model context limits in Antigravity App / IDE. Altering context limits may get your Antigravity access, GCP services, or Google account disabled or banned; enabling this feature means you assume all associated risks. Make sure you know what you are doing!',
@@ -6191,9 +6231,9 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "settings.oth.modelUpstreamCompact": "接頭辞省略 ID (gemini- / claude- / gpt- を省略)",
   "settings.oth.hostTitle": "ホスト起動と Remote-SSH",
   "settings.oth.autoLaunchLabel": "ホスト起動引数を自動管理",
-  "settings.oth.autoLaunchDesc": "Antigravity Desktop と IDE のデバッグポート引数（argv.json とショートカット）を厳密に分離して自動管理します",
+  "settings.oth.autoLaunchDesc": "Antigravity Desktop と IDE のデバッグポート引数を自動管理します",
   "settings.oth.remoteSshLabel": "IDE Remote-SSH リモート計測",
-  "settings.oth.remoteSshDesc": "IDE Remote-SSH ウィンドウを自動検出し、非対話でリモートデーモンと連携してホスト別に統計を分離します",
+  "settings.oth.remoteSshDesc": "IDE Remote-SSH ウィンドウを自動検出します",
   "settings.oth.macWrapperLabel": "管理下の macOS ランチャー (.app)",
   "settings.oth.macWrapperDesc": "~/Applications にデバッグポート付きランチャーが作成済みです。いつでも削除できます",
   "settings.oth.macRemoveWrapperBtn": "macOS ランチャーを削除",
@@ -6208,6 +6248,10 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "settings.oth.exportReserveLogCopied": "{count} 件の観測ログをコピーしました",
   "settings.oth.exportReserveLogEmpty": "変動記録はまだありません。現在のサマリーをコピーしました",
   "settings.oth.exportReserveLogFailed": "予約ログのコピーに失敗しました",
+  "settings.oth.devTitle": "開発者向けオプション",
+  "settings.oth.devModeLabel": "開発者モード",
+  "settings.oth.riskyFeaturesLabel": "高リスク機能",
+  "settings.oth.riskyFeaturesDesc": "「アカウント」管理と「モデルコンテキスト設定」を表示します（各機能のリスク確認は維持）。オフにすると即座に無効化・再ロックされます",
   "settings.oth.baselineTitle": "モデルコンテキスト設定",
   "settings.oth.ctxRiskTitle": "非公式上書きのリスク警告",
   "settings.oth.ctxRiskBody": "Google は Antigravity App / IDE のモデルコンテキスト上限変更を公式に認可していません。変更すると Antigravity・GCP サービス・Google アカウントの停止や凍結につながる恐れがあります。有効化するとすべてのリスクを自己責任で負うことになります。十分ご理解のうえ操作してください。",
@@ -7430,9 +7474,9 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "settings.oth.modelUpstreamCompact": "접두사 생략 원본 ID (gemini- / claude- / gpt- 숨김)",
   "settings.oth.hostTitle": "호스트 실행 및 원격 SSH",
   "settings.oth.autoLaunchLabel": "호스트 실행 플래그 자동 유지",
-  "settings.oth.autoLaunchDesc": "Antigravity Desktop 및 IDE의 디버그 포트 플래그(argv.json 및 바로 가기)를 엄격히 격리하여 자동 유지",
+  "settings.oth.autoLaunchDesc": "Antigravity Desktop 및 IDE의 디버그 포트 플래그를 자동 유지",
   "settings.oth.remoteSshLabel": "IDE Remote-SSH 원격 텔레메트리",
-  "settings.oth.remoteSshDesc": "IDE Remote-SSH 창을 자동 감지하고 호스트별로 격리된 원장에 원격 데몬을 비대화형으로 페어링",
+  "settings.oth.remoteSshDesc": "IDE Remote-SSH 창을 자동 감지",
   "settings.oth.macWrapperLabel": "macOS 관리형 런처 (.app)",
   "settings.oth.macWrapperDesc": "현재 ~/Applications에 디버그 포트 관리형 런처가 설치되어 있으며 언제든 제거할 수 있습니다",
   "settings.oth.macRemoveWrapperBtn": "macOS 런처 제거",
@@ -7447,6 +7491,10 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "settings.oth.exportReserveLogCopied": "관측 로그 {count}건을 클립보드에 복사했습니다",
   "settings.oth.exportReserveLogEmpty": "아직 기록이 없어 현재 요약을 클립보드에 복사했습니다",
   "settings.oth.exportReserveLogFailed": "예약 로그 복사 실패",
+  "settings.oth.devTitle": "개발자 옵션",
+  "settings.oth.devModeLabel": "개발자 모드",
+  "settings.oth.riskyFeaturesLabel": "고위험 기능",
+  "settings.oth.riskyFeaturesDesc": "「계정」 자격 증명 관리와 「모델 컨텍스트 설정」을 표시합니다(각 위험 확인은 유지). 끄면 즉시 비활성화 및 재잠금됩니다",
   "settings.oth.baselineTitle": "모델 컨텍스트 설정",
   "settings.oth.ctxRiskTitle": "비공식 기능 위험 안내",
   "settings.oth.ctxRiskBody": "Google은 Antigravity App / IDE에서 모델 컨텍스트 제한을 수정하는 것을 공식 승인하지 않았습니다. 컨텍스트 제한을 임의로 변경하면 Antigravity 접근, GCP 서비스 또는 Google 계정이 비활성화되거나 정지될 수 있으며, 이 기능을 활성화하면 모든 위험을 사용자가 부담하게 됩니다. 위험을 충분히 인지한 상태에서 사용하세요.",
@@ -8669,9 +8717,9 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "settings.oth.modelUpstreamCompact": "Gekürzte Roh-ID (ohne gemini- / claude- / gpt-)",
   "settings.oth.hostTitle": "Host-Start & Remote-SSH",
   "settings.oth.autoLaunchLabel": "Host-Startflags automatisch pflegen",
-  "settings.oth.autoLaunchDesc": "Debug-Port-Flags für Antigravity Desktop und IDE (argv.json und Verknüpfungen) strikt isoliert automatisch pflegen",
+  "settings.oth.autoLaunchDesc": "Debug-Port-Flags für Antigravity Desktop und IDE automatisch pflegen",
   "settings.oth.remoteSshLabel": "IDE-Remote-SSH-Telemetrie",
-  "settings.oth.remoteSshDesc": "IDE-Remote-SSH-Fenster erkennen und Remote-Daemons nicht-interaktiv mit hostisolierten Ledgern koppeln",
+  "settings.oth.remoteSshDesc": "IDE-Remote-SSH-Fenster automatisch erkennen",
   "settings.oth.macWrapperLabel": "Verwalteter macOS-Launcher (.app)",
   "settings.oth.macWrapperDesc": "Ein verwalteter Debug-Port-Launcher ist derzeit in ~/Applications installiert und kann jederzeit entfernt werden",
   "settings.oth.macRemoveWrapperBtn": "macOS-Launcher entfernen",
@@ -8686,6 +8734,10 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "settings.oth.exportReserveLogCopied": "{count} Log-Einträge in die Zwischenablage kopiert",
   "settings.oth.exportReserveLogEmpty": "Noch keine Ereignisse; aktuelle Zusammenfassung in die Zwischenablage kopiert",
   "settings.oth.exportReserveLogFailed": "Kopieren des Reservierungslogs fehlgeschlagen",
+  "settings.oth.devTitle": "Entwickleroptionen",
+  "settings.oth.devModeLabel": "Entwicklermodus",
+  "settings.oth.riskyFeaturesLabel": "Hochrisiko-Funktionen",
+  "settings.oth.riskyFeaturesDesc": "Zeigt „Konto“-Verwaltung und „Modell-Kontexteinstellungen“ an (Risikohinweise bleiben aktiv); beim Ausschalten sofort deaktiviert und neu gesperrt",
   "settings.oth.baselineTitle": "Modell-Kontexteinstellungen",
   "settings.oth.ctxRiskTitle": "Risikohinweis für inoffizielle Überschreibung",
   "settings.oth.ctxRiskBody": "Google hat das Ändern von Modell-Kontextlimits in Antigravity App / IDE nicht autorisiert. Eine Änderung kann zur Sperrung oder Deaktivierung Ihres Antigravity-Zugangs, von GCP-Diensten oder Ihres Google-Kontos führen; mit der Aktivierung tragen Sie alle Risiken selbst. Stellen Sie sicher, dass Sie wissen, was Sie tun!",
@@ -9908,9 +9960,9 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "settings.oth.modelUpstreamCompact": "ID brut court (masquer gemini- / claude- / gpt-)",
   "settings.oth.hostTitle": "Lancement hôte & SSH distant",
   "settings.oth.autoLaunchLabel": "Maintien auto des options de lancement",
-  "settings.oth.autoLaunchDesc": "Maintient automatiquement les options de port de débogage pour Antigravity Desktop et l'IDE (argv.json et raccourcis) en isolation stricte",
+  "settings.oth.autoLaunchDesc": "Maintient automatiquement les options de port de débogage pour Antigravity Desktop et l'IDE",
   "settings.oth.remoteSshLabel": "Télémétrie IDE Remote-SSH",
-  "settings.oth.remoteSshDesc": "Détecte les fenêtres IDE Remote-SSH et appaire les démons distants sans interaction avec journaux isolés par hôte",
+  "settings.oth.remoteSshDesc": "Détecte automatiquement les fenêtres IDE Remote-SSH",
   "settings.oth.macWrapperLabel": "Lanceur macOS géré (.app)",
   "settings.oth.macWrapperDesc": "Un lanceur géré avec port de débogage est installé dans ~/Applications et peut être supprimé à tout moment",
   "settings.oth.macRemoveWrapperBtn": "Supprimer le lanceur macOS",
@@ -9925,6 +9977,10 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "settings.oth.exportReserveLogCopied": "{count} entrées de journal copiées dans le presse-papiers",
   "settings.oth.exportReserveLogEmpty": "Aucun événement ; résumé actuel copié dans le presse-papiers",
   "settings.oth.exportReserveLogFailed": "Échec de la copie du journal de réservation",
+  "settings.oth.devTitle": "Options développeur",
+  "settings.oth.devModeLabel": "Mode développeur",
+  "settings.oth.riskyFeaturesLabel": "Fonctions à haut risque",
+  "settings.oth.riskyFeaturesDesc": "Affiche la gestion « Compte » et les « Paramètres de contexte » (les avertissements restent requis) ; la désactivation les coupe et les reverrouille",
   "settings.oth.baselineTitle": "Paramètres de contexte du modèle",
   "settings.oth.ctxRiskTitle": "Avertissement : surcharge non officielle",
   "settings.oth.ctxRiskBody": "Google n'autorise pas la modification des limites de contexte dans Antigravity App / IDE. Modifier ces limites peut entraîner la désactivation ou le bannissement de votre accès Antigravity, de vos services GCP ou de votre compte Google ; activer cette fonction implique d'en assumer tous les risques. Assurez-vous de savoir ce que vous faites !",
@@ -17331,6 +17387,12 @@ function isEquivalentTelemetry(prev, next) {
   ) {
     return false;
   }
+  if (
+    Boolean(pSet?.developerModeEnabled) !== Boolean(nSet?.developerModeEnabled) ||
+    Boolean(pSet?.riskyFeaturesEnabled) !== Boolean(nSet?.riskyFeaturesEnabled)
+  ) {
+    return false;
+  }
   if (Boolean(pSet?.contextWindowRiskAccepted) !== Boolean(nSet?.contextWindowRiskAccepted)) {
     return false;
   }
@@ -18741,6 +18803,29 @@ async function saveSettingsPatch(patch) {
     safePatch.accountQuotaRefreshMinutes = normalizeClientAccountQuotaRefreshMinutes(
       safePatch.accountQuotaRefreshMinutes
     );
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'developerModeEnabled')) {
+    safePatch.developerModeEnabled = normalizeDeveloperModeEnabled(safePatch.developerModeEnabled);
+    if (!safePatch.developerModeEnabled) {
+      safePatch.riskyFeaturesEnabled = false;
+      safePatch.accountSwitchRiskAccepted = false;
+      safePatch.contextWindowRiskAccepted = false;
+      safePatch.contextWindowSwarmEnabled = false;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(safePatch, 'riskyFeaturesEnabled')) {
+    const effectiveDevMode = Object.prototype.hasOwnProperty.call(safePatch, 'developerModeEnabled')
+      ? safePatch.developerModeEnabled
+      : telemetryStore.getState().telemetry?.settings?.developerModeEnabled === true;
+    safePatch.riskyFeaturesEnabled = normalizeRiskyFeaturesEnabled(
+      safePatch.riskyFeaturesEnabled,
+      effectiveDevMode
+    );
+    if (!safePatch.riskyFeaturesEnabled) {
+      safePatch.accountSwitchRiskAccepted = false;
+      safePatch.contextWindowRiskAccepted = false;
+      safePatch.contextWindowSwarmEnabled = false;
+    }
   }
   if (Object.prototype.hasOwnProperty.call(safePatch, 'accountSwitchRiskAccepted')) {
     safePatch.accountSwitchRiskAccepted = Boolean(safePatch.accountSwitchRiskAccepted);
@@ -45803,6 +45888,9 @@ const SettingsOtherTab = defineComponent({
     let draftAutoConfigureLaunch = true;
     let draftEnableRemoteSshTelemetry = true;
     let draftExperimentalQuotaReservation = true;
+    let draftDeveloperModeEnabled = false;
+    let draftRiskyFeaturesEnabled = false;
+    let savingDeveloperGate = false;
     let draftContextRiskAccepted = false;
     let acceptingContextRisk = false;
     let draftContextMainEnabled = true;
@@ -45820,6 +45908,7 @@ const SettingsOtherTab = defineComponent({
     let modelTimer = null;
     let hostTimer = null;
     let expTimer = null;
+    let devTimer = null;
     let maintTimer = null;
     let resetConfirmTimer = null;
     let resetConfirmArmed = false;
@@ -45842,10 +45931,30 @@ const SettingsOtherTab = defineComponent({
       style: 'font-size: var(--fs-md);',
       text: '',
     });
+    const devStatusText = h('span', {
+      className: 'text-muted settings-panel-status',
+      text: '',
+    });
     const maintStatusText = h('span', {
       className: 'text-muted settings-panel-status',
       text: '',
     });
+
+    function showDevFeedback(text, autoClearMs = 1500) {
+      if (devTimer) {
+        clearTimeout(devTimer);
+        devTimer = null;
+      }
+      patchText(devStatusText, text);
+      patchAttr(devStatusText, 'title', text || null);
+      if (text && autoClearMs > 0) {
+        devTimer = setTimeout(() => {
+          devTimer = null;
+          patchText(devStatusText, '');
+          patchAttr(devStatusText, 'title', null);
+        }, autoClearMs);
+      }
+    }
 
     function showExpFeedback(text, autoClearMs = 1500) {
       if (expTimer) {
@@ -46184,6 +46293,153 @@ const SettingsOtherTab = defineComponent({
       ]),
     ]);
 
+    const devTitleEl = h('span', { text: t('settings.oth.devTitle') });
+    const devModeLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.devModeLabel'),
+    });
+    const riskyFeaturesLabelEl = h('span', {
+      className: 'settings-action-title',
+      text: t('settings.oth.riskyFeaturesLabel'),
+    });
+    const riskyFeaturesDescEl = h('span', {
+      className: 'settings-action-desc',
+      text: t('settings.oth.riskyFeaturesDesc'),
+    });
+
+    const developerModeToggle = ToggleSwitch({
+      modelValue: 'off',
+      ariaLabelKey: 'settings.oth.devModeLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        if (savingDeveloperGate) return;
+        const nextDev = val === 'on';
+        const prevDev = draftDeveloperModeEnabled;
+        const prevRisky = draftRiskyFeaturesEnabled;
+        const prevCtxRisk = draftContextRiskAccepted;
+        const prevSwarm = draftContextSwarmEnabled;
+        const prevSettings = latestSettings;
+        savingDeveloperGate = true;
+        draftDeveloperModeEnabled = nextDev;
+        if (!nextDev) {
+          draftRiskyFeaturesEnabled = false;
+          draftContextRiskAccepted = false;
+          draftContextSwarmEnabled = false;
+          latestSettings = {
+            ...(latestSettings || {}),
+            developerModeEnabled: false,
+            riskyFeaturesEnabled: false,
+            accountSwitchRiskAccepted: false,
+            contextWindowRiskAccepted: false,
+            contextWindowSwarmEnabled: false,
+          };
+        } else {
+          latestSettings = { ...(latestSettings || {}), developerModeEnabled: true };
+        }
+        renderDeveloperOptions();
+        renderContextWindows();
+        showDevFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ developerModeEnabled: nextDev });
+          showDevFeedback(t('settings.saved'), 1500);
+        } catch {
+          draftDeveloperModeEnabled = prevDev;
+          draftRiskyFeaturesEnabled = prevRisky;
+          draftContextRiskAccepted = prevCtxRisk;
+          draftContextSwarmEnabled = prevSwarm;
+          latestSettings = prevSettings;
+          showDevFeedback(t('settings.saveFailed'), 2500);
+        } finally {
+          savingDeveloperGate = false;
+          renderDeveloperOptions();
+          renderContextWindows();
+        }
+      },
+    });
+
+    const riskyFeaturesToggle = ToggleSwitch({
+      modelValue: 'off',
+      ariaLabelKey: 'settings.oth.riskyFeaturesLabel',
+      preset: 'enable',
+      onUpdateModelValue: async (val) => {
+        if (savingDeveloperGate || !draftDeveloperModeEnabled) return;
+        const nextRisky = val === 'on';
+        const prevRisky = draftRiskyFeaturesEnabled;
+        const prevCtxRisk = draftContextRiskAccepted;
+        const prevSwarm = draftContextSwarmEnabled;
+        const prevSettings = latestSettings;
+        savingDeveloperGate = true;
+        draftRiskyFeaturesEnabled = nextRisky;
+        if (!nextRisky) {
+          draftContextRiskAccepted = false;
+          draftContextSwarmEnabled = false;
+          latestSettings = {
+            ...(latestSettings || {}),
+            riskyFeaturesEnabled: false,
+            accountSwitchRiskAccepted: false,
+            contextWindowRiskAccepted: false,
+            contextWindowSwarmEnabled: false,
+          };
+        } else {
+          latestSettings = { ...(latestSettings || {}), riskyFeaturesEnabled: true };
+        }
+        renderDeveloperOptions();
+        renderContextWindows();
+        showDevFeedback(t('settings.saving'), 0);
+        try {
+          await saveSettingsPatch({ riskyFeaturesEnabled: nextRisky });
+          showDevFeedback(t('settings.saved'), 1500);
+        } catch {
+          draftRiskyFeaturesEnabled = prevRisky;
+          draftContextRiskAccepted = prevCtxRisk;
+          draftContextSwarmEnabled = prevSwarm;
+          latestSettings = prevSettings;
+          showDevFeedback(t('settings.saveFailed'), 2500);
+        } finally {
+          savingDeveloperGate = false;
+          renderDeveloperOptions();
+          renderContextWindows();
+        }
+      },
+    });
+
+    const devModeRow = h('div', { className: 'settings-action-block settings-dev-mode-row' }, [
+      h('div', { className: 'settings-action-info' }, [devModeLabelEl]),
+      developerModeToggle.el,
+    ]);
+    const riskyFeaturesRow = h(
+      'div',
+      { className: 'settings-action-block settings-risky-features-row', hidden: true },
+      [
+        h('div', { className: 'settings-action-info' }, [
+          riskyFeaturesLabelEl,
+          riskyFeaturesDescEl,
+        ]),
+        riskyFeaturesToggle.el,
+      ]
+    );
+
+    function renderDeveloperOptions() {
+      const devEnabled = Boolean(draftDeveloperModeEnabled);
+      const riskyEnabled = devEnabled && Boolean(draftRiskyFeaturesEnabled);
+      developerModeToggle.setProps({ modelValue: devEnabled ? 'on' : 'off' });
+      riskyFeaturesToggle.setProps({ modelValue: riskyEnabled ? 'on' : 'off' });
+      patchAttr(riskyFeaturesRow, 'hidden', !devEnabled);
+      getProps().onLayoutChange?.();
+    }
+
+    const developerPanel = h('section', { className: 'panel settings-developer-panel' }, [
+      h('div', { className: 'panel-header settings-panel-header' }, [
+        h('span', { className: 'panel-title' }, [
+          createSvgIcon('terminal', { size: 13 }),
+          devTitleEl,
+        ]),
+        devStatusText,
+      ]),
+      devModeRow,
+      riskyFeaturesRow,
+    ]);
+
     const baselineTitleEl = h('span', { text: t('settings.oth.baselineTitle') });
     const ctxModelLabel = h('span', { className: 'form-label' });
     const ctxWindowLabel = h('span', { className: 'form-label' });
@@ -46317,7 +46573,16 @@ const SettingsOtherTab = defineComponent({
         type: 'button',
         className: 'btn-secondary btn-danger-confirm ctx-risk-accept-btn',
         onClick: async () => {
-          if (acceptingContextRisk || draftContextRiskAccepted) return;
+          if (
+            acceptingContextRisk ||
+            draftContextRiskAccepted ||
+            !isRiskyFeaturesGateOpen({
+              developerModeEnabled: draftDeveloperModeEnabled,
+              riskyFeaturesEnabled: draftRiskyFeaturesEnabled,
+            })
+          ) {
+            return;
+          }
           acceptingContextRisk = true;
           draftContextRiskAccepted = true;
           latestSettings = { ...(latestSettings || {}), contextWindowRiskAccepted: true };
@@ -46357,7 +46622,12 @@ const SettingsOtherTab = defineComponent({
     const ctxRiskStage = h('div', { className: 'ctx-risk-stage' }, [ctxControlsBody, ctxRiskMask]);
 
     function renderContextWindows() {
-      const unlocked = Boolean(draftContextRiskAccepted);
+      const gateOpen = isRiskyFeaturesGateOpen({
+        developerModeEnabled: draftDeveloperModeEnabled,
+        riskyFeaturesEnabled: draftRiskyFeaturesEnabled,
+      });
+      patchAttr(baselinePanel, 'hidden', !gateOpen);
+      const unlocked = gateOpen && Boolean(draftContextRiskAccepted);
       if (!unlocked) {
         ctxModelSelect.close();
         ctxWindowSelect.close();
@@ -46480,7 +46750,7 @@ const SettingsOtherTab = defineComponent({
       getProps().onLayoutChange?.();
     }
 
-    const baselinePanel = h('section', { className: 'panel' }, [
+    const baselinePanel = h('section', { className: 'panel settings-context-panel', hidden: true }, [
       h('div', { className: 'panel-header settings-panel-header' }, [
         h('span', { className: 'panel-title' }, [
           createSvgIcon('layers', { size: 13 }),
@@ -46490,6 +46760,7 @@ const SettingsOtherTab = defineComponent({
       ]),
       ctxRiskStage,
     ]);
+    renderDeveloperOptions();
     renderContextWindows();
 
     const maintTitleEl = h('span', { text: t('settings.oth.maintTitle') });
@@ -46761,6 +47032,7 @@ const SettingsOtherTab = defineComponent({
       modelPanel,
       hostIntegrationPanel,
       experimentalPanel,
+      developerPanel,
       baselinePanel,
       maintPanel,
     ]);
@@ -46792,12 +47064,23 @@ const SettingsOtherTab = defineComponent({
       draftExperimentalQuotaReservation = normalizeClientExperimentalQuotaReservation(
         settings.experimentalQuotaReservation
       );
+      if (!savingDeveloperGate) {
+        draftDeveloperModeEnabled = settings.developerModeEnabled === true;
+        draftRiskyFeaturesEnabled =
+          draftDeveloperModeEnabled && settings.riskyFeaturesEnabled === true;
+      }
       if (!acceptingContextRisk) {
-        draftContextRiskAccepted = Boolean(settings.contextWindowRiskAccepted);
+        draftContextRiskAccepted =
+          draftDeveloperModeEnabled &&
+          draftRiskyFeaturesEnabled &&
+          Boolean(settings.contextWindowRiskAccepted);
       }
       if (!savingContextScope) {
         draftContextMainEnabled = settings.contextWindowMainEnabled !== false;
-        draftContextSwarmEnabled = settings.contextWindowSwarmEnabled === true;
+        draftContextSwarmEnabled =
+          draftDeveloperModeEnabled &&
+          draftRiskyFeaturesEnabled &&
+          settings.contextWindowSwarmEnabled === true;
       }
       stepModelSelect.setProps({
         ariaLabel: t('settings.oth.modelTitle'),
@@ -46814,6 +47097,7 @@ const SettingsOtherTab = defineComponent({
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
+      renderDeveloperOptions();
       renderContextWindows();
     }
 
@@ -46844,6 +47128,11 @@ const SettingsOtherTab = defineComponent({
       quotaReserveToggle.setProps({
         modelValue: draftExperimentalQuotaReservation ? 'on' : 'off',
       });
+      patchText(devTitleEl, t('settings.oth.devTitle'));
+      patchText(devModeLabelEl, t('settings.oth.devModeLabel'));
+      patchText(riskyFeaturesLabelEl, t('settings.oth.riskyFeaturesLabel'));
+      patchText(riskyFeaturesDescEl, t('settings.oth.riskyFeaturesDesc'));
+      renderDeveloperOptions();
       patchText(baselineTitleEl, t('settings.oth.baselineTitle'));
       renderContextWindows();
       patchText(maintTitleEl, t('settings.oth.maintTitle'));
@@ -46875,12 +47164,15 @@ const SettingsOtherTab = defineComponent({
       if (modelTimer) clearTimeout(modelTimer);
       if (hostTimer) clearTimeout(hostTimer);
       if (expTimer) clearTimeout(expTimer);
+      if (devTimer) clearTimeout(devTimer);
       if (maintTimer) clearTimeout(maintTimer);
       if (resetConfirmTimer) clearTimeout(resetConfirmTimer);
       stepModelSelect.destroy();
       autoLaunchToggle.destroy();
       remoteSshToggle.destroy();
       quotaReserveToggle.destroy();
+      developerModeToggle.destroy();
+      riskyFeaturesToggle.destroy();
       ctxBridgeNotice.destroy();
       ctxMainToggle.destroy();
       ctxSwarmToggle.destroy();
@@ -46897,6 +47189,10 @@ const SettingsOtherTab = defineComponent({
         macWrapperRemoveBtn,
         quotaReserveToggle,
         exportReserveLogBtn,
+        developerPanel,
+        developerModeToggle,
+        riskyFeaturesToggle,
+        baselinePanel,
         ctxBridgeNotice,
         ctxMainToggle,
         ctxSwarmToggle,
@@ -51020,12 +51316,16 @@ return { mergeSelectedAgentUnits, StepsDetailView };
 const { SHOW_ACCOUNT_TAB, SettingsView } = (() => {
 const SHOW_ACCOUNT_TAB = true;
 
-function getSettingsSubTabOptions() {
+function isAccountTabVisible(settings) {
+  return Boolean(SHOW_ACCOUNT_TAB && isRiskyFeaturesGateOpen(settings));
+}
+
+function getSettingsSubTabOptions(showAccount) {
   return [
     { value: 'general', label: t('settings.subTab.general') },
     { value: 'structure', label: t('settings.subTab.structure') },
     { value: 'sessions', label: t('settings.subTab.sessions') },
-    ...(SHOW_ACCOUNT_TAB ? [{ value: 'account', label: t('settings.subTab.account') }] : []),
+    ...(showAccount ? [{ value: 'account', label: t('settings.subTab.account') }] : []),
     { value: 'other', label: t('settings.subTab.other') },
   ];
 }
@@ -51033,12 +51333,15 @@ function getSettingsSubTabOptions() {
 const SettingsView = defineComponent({
   name: 'SettingsView',
   setup({ onCleanup }) {
-    const initialSubTab = uiStore.getState().settingsSubTab || 'general';
+    let accountTabVisible = isAccountTabVisible(telemetryStore.getState().telemetry?.settings);
+    const rawInitialSubTab = uiStore.getState().settingsSubTab || 'general';
+    const initialSubTab =
+      rawInitialSubTab === 'account' && !accountTabVisible ? 'general' : rawInitialSubTab;
 
     const subNavSwitch = SegmentedControl({
       ariaLabel: t('settings.subTab.aria'),
       modelValue: initialSubTab,
-      options: getSettingsSubTabOptions(),
+      options: getSettingsSubTabOptions(accountTabVisible),
       onUpdateModelValue: (nextSubTab) => {
         uiStore.setState({ settingsSubTab: nextSubTab }, { sync: true });
       },
@@ -51066,7 +51369,7 @@ const SettingsView = defineComponent({
         subTab === 'structure' ||
         subTab === 'sessions' ||
         subTab === 'other' ||
-        (accountTab && subTab === 'account')
+        (accountTab && accountTabVisible && subTab === 'account')
           ? subTab
           : 'general';
       subNavSwitch.setValue(target);
@@ -51081,16 +51384,50 @@ const SettingsView = defineComponent({
         void sessionsTab.refs.ensureLoaded();
       }
       if (accountTab) {
-        patchAttr(accountTab.el, 'hidden', target !== 'account');
-        if (activeView === 'settings' && !preloadedAccountOnce) {
+        patchAttr(accountTab.el, 'hidden', !accountTabVisible || target !== 'account');
+        if (accountTabVisible && activeView === 'settings' && !preloadedAccountOnce) {
           preloadedAccountOnce = true;
           void accountTab.refs.preload?.();
         }
-        const nextShowingAccount = target === 'account' && activeView === 'settings';
+        const nextShowingAccount =
+          accountTabVisible && target === 'account' && activeView === 'settings';
         if (nextShowingAccount && !showingAccount) void accountTab.refs.load();
         showingAccount = nextShowingAccount;
       }
       refreshScroll();
+    }
+
+    function syncAccountTabVisibility(settings, { forceNavRefresh = false } = {}) {
+      const nextVisible = isAccountTabVisible(settings);
+      const changed = nextVisible !== accountTabVisible;
+      if (!changed && !forceNavRefresh) return;
+      accountTabVisible = nextVisible;
+      const ui = uiStore.getState();
+      const activeView = getVisibleMonitorView(ui);
+      let nextSubTab = ui.settingsSubTab || 'general';
+      if (!accountTabVisible) {
+        showingAccount = false;
+        preloadedAccountOnce = false;
+        if (nextSubTab === 'account') {
+          nextSubTab = 'general';
+          uiStore.setState({ settingsSubTab: 'general' }, { sync: true });
+        }
+      }
+      const normalizedTarget =
+        nextSubTab === 'structure' ||
+        nextSubTab === 'sessions' ||
+        nextSubTab === 'other' ||
+        (accountTabVisible && nextSubTab === 'account')
+          ? nextSubTab
+          : 'general';
+      subNavSwitch.setProps({
+        ariaLabel: t('settings.subTab.aria'),
+        modelValue: normalizedTarget,
+        options: getSettingsSubTabOptions(accountTabVisible),
+      });
+      if (changed) {
+        applyActiveSubTab(normalizedTarget, activeView);
+      }
     }
 
     const contentContainer = h(
@@ -51117,15 +51454,16 @@ const SettingsView = defineComponent({
     let lastEndpointId = telemetryStore.getState().telemetry?.endpoint?.id || '';
     function syncActiveTab() {
       const ui = uiStore.getState();
-      const { settingsSubTab } = ui;
       const telemetry = telemetryStore.getState().telemetry;
       const curEndpointId = telemetry?.endpoint?.id || '';
       if (curEndpointId && curEndpointId !== lastEndpointId) {
         lastEndpointId = curEndpointId;
         sessionsTab.refs.markStale?.();
       }
-      if (getVisibleMonitorView(ui) !== 'settings') return;
       const settings = telemetry?.settings;
+      syncAccountTabVisibility(settings);
+      if (getVisibleMonitorView(ui) !== 'settings') return;
+      const settingsSubTab = uiStore.getState().settingsSubTab;
       if (accountTab) {
         accountTab.refs.renderAccount(telemetry?.account, telemetry?.quotas, settings);
       }
@@ -51199,10 +51537,8 @@ const SettingsView = defineComponent({
     const unsubI18n = i18nStore.subscribe(
       (st) => st.locale,
       () => {
-        subNavSwitch.setProps({
-          ariaLabel: t('settings.subTab.aria'),
-          modelValue: uiStore.getState().settingsSubTab || 'general',
-          options: getSettingsSubTabOptions(),
+        syncAccountTabVisibility(telemetryStore.getState().telemetry?.settings, {
+          forceNavRefresh: true,
         });
         generalTab.refs.refreshLabels();
         structureTab.refs.refreshLabels();
@@ -51307,7 +51643,10 @@ const App = defineComponent({
         ? normalizeClientWindowMountMode(settings.windowMountMode, settings.enableWindowOverlay)
         : 'sidebar';
       const hasCtxOverrides = Boolean(
-        settings?.modelContextWindows && Object.keys(settings.modelContextWindows).length > 0
+        isContextWindowFeatureActive(settings) &&
+          settings?.contextWindowMainEnabled !== false &&
+          settings?.modelContextWindows &&
+          Object.keys(settings.modelContextWindows).length > 0
       );
       const shouldOfferGlobal =
         !isWindowOverlayMode() &&
@@ -51549,6 +51888,10 @@ const App = defineComponent({
         windowMountMode: st.telemetry?.settings?.windowMountMode,
         enableWindowOverlay: st.telemetry?.settings?.enableWindowOverlay,
         contextAgentMode: st.telemetry?.settings?.contextAgentMode,
+        developerModeEnabled: st.telemetry?.settings?.developerModeEnabled,
+        riskyFeaturesEnabled: st.telemetry?.settings?.riskyFeaturesEnabled,
+        contextWindowRiskAccepted: st.telemetry?.settings?.contextWindowRiskAccepted,
+        contextWindowMainEnabled: st.telemetry?.settings?.contextWindowMainEnabled,
         modelContextWindows: st.telemetry?.settings?.modelContextWindows,
         windowBridge: st.telemetry?.windowBridge,
         hostPlatform: st.telemetry?.hostPlatform,

@@ -2856,11 +2856,27 @@ test('v1.5 feedback settings schema: custom token combo DSL, 3-way model display
   assert.equal(h.normalizeModelDisplayMode(undefined, true), 'upstream');
   assert.equal(h.normalizeModelDisplayMode(undefined, false), 'short');
 
+  assert.equal(h.loadSettings().developerModeEnabled, false);
+  assert.equal(h.loadSettings().riskyFeaturesEnabled, false);
   assert.equal(h.loadSettings().contextWindowRiskAccepted, false);
+
+  // Without developerModeEnabled + riskyFeaturesEnabled, risk flags stay hard-locked false
+  const blockedRiskRes = h.executeSettingsAction({
+    contextWindowRiskAccepted: true,
+    accountSwitchRiskAccepted: true,
+    contextWindowSwarmEnabled: true,
+  });
+  assert.equal(blockedRiskRes.ok, true);
+  assert.equal(blockedRiskRes.updated.contextWindowRiskAccepted, false);
+  assert.equal(blockedRiskRes.updated.accountSwitchRiskAccepted, false);
+  assert.equal(blockedRiskRes.updated.contextWindowSwarmEnabled, false);
+
   const compactRes = h.executeSettingsAction({
     modelDisplayMode: 'upstream_compact',
     popoverWidthMode: 'custom',
     popoverWidth: 1500,
+    developerModeEnabled: true,
+    riskyFeaturesEnabled: true,
     contextWindowRiskAccepted: true,
     stepTokenComboFormat: 'in:out:cache',
     stepTableColumns: ['step', 'model', 'tokens_io_cache', 'tokens_custom', 'cost'],
@@ -2870,6 +2886,8 @@ test('v1.5 feedback settings schema: custom token combo DSL, 3-way model display
   assert.equal(compactRes.updated.showUpstreamModel, true);
   assert.equal(compactRes.updated.popoverWidthMode, 'custom');
   assert.equal(compactRes.updated.popoverWidth, 1080, 'Clamped to MAX_POPOVER_WIDTH 1080');
+  assert.equal(compactRes.updated.developerModeEnabled, true);
+  assert.equal(compactRes.updated.riskyFeaturesEnabled, true);
   assert.equal(compactRes.updated.contextWindowRiskAccepted, true);
   assert.equal(compactRes.updated.stepTokenComboFormat, 'in:out:cache');
   assert.deepEqual([...compactRes.updated.stepTableColumns], [
@@ -2879,6 +2897,15 @@ test('v1.5 feedback settings schema: custom token combo DSL, 3-way model display
     'tokens_custom',
     'cost',
   ]);
+
+  // Disabling developerModeEnabled cascades riskyFeaturesEnabled & risk acceptance flags back to false
+  const relockRes = h.executeSettingsAction({ developerModeEnabled: false });
+  assert.equal(relockRes.ok, true);
+  assert.equal(relockRes.updated.developerModeEnabled, false);
+  assert.equal(relockRes.updated.riskyFeaturesEnabled, false);
+  assert.equal(relockRes.updated.contextWindowRiskAccepted, false);
+  assert.equal(relockRes.updated.accountSwitchRiskAccepted, false);
+  assert.equal(relockRes.updated.contextWindowSwarmEnabled, false);
 
   // Legacy caller passing { showUpstreamModel: false } cleanly resets modelDisplayMode -> 'short'
   const legacyReset = h.executeSettingsAction({ showUpstreamModel: false, popoverWidth: 320 });
