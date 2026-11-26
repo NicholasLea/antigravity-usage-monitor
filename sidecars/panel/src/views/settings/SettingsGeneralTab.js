@@ -207,10 +207,6 @@ export const SettingsGeneralTab = defineComponent({
       className: 'form-label',
       text: t('settings.gen.modernUi'),
     });
-    const modernUiHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.gen.modernUiHint'),
-    });
 
     const languageSwitch = CustomSelect({
       ariaLabel: t('settings.gen.language'),
@@ -420,7 +416,7 @@ export const SettingsGeneralTab = defineComponent({
       ]),
       h('div', { className: 'form-row' }, [accentLabelEl, themeColorPicker.el]),
       h('div', { className: 'form-row' }, [fontLabelEl, fontScaleSwitch.el]),
-      h('div', { className: 'form-row' }, [modernUiLabelEl, modernUiSwitch.el, modernUiHintEl]),
+      h('div', { className: 'form-row' }, [modernUiLabelEl, modernUiSwitch.el]),
     ]);
 
     // --- Card 2: 版本更新 ---
@@ -679,7 +675,6 @@ export const SettingsGeneralTab = defineComponent({
       patchText(accentLabelEl, t('settings.gen.themeAccent'));
       patchText(fontLabelEl, t('settings.gen.fontScale'));
       patchText(modernUiLabelEl, t('settings.gen.modernUi'));
-      patchText(modernUiHintEl, t('settings.gen.modernUiHint'));
       patchText(updateTitleEl, t('settings.gen.updateTitle'));
       patchText(updateModeLabelEl, t('settings.gen.updateMode'));
       patchText(pricingCellLabelEl, t('settings.gen.pricingLabel'));

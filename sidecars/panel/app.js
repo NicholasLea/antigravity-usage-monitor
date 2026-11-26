@@ -2262,7 +2262,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.gen.modernUi': '现代化 UI',
   'settings.gen.modernUiOff': '关闭',
   'settings.gen.modernUiOn': '开启',
-  'settings.gen.modernUiHint': '去除大部分线框，采用柔和分层底色及更流畅的现代过渡动画',
   'settings.gen.updateTitle': '版本更新',
   'settings.gen.updateMode': '更新方式',
   'settings.gen.updateManual': '仅提示新版本，手动更新',
@@ -2300,7 +2299,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.hostI18n.title': 'Antigravity 界面语言',
   'settings.hostI18n.langLabel': '目标语言',
   'settings.hostI18n.langOff': '原始语言（不翻译）',
-  'settings.hostI18n.langHint': '从仓库按需独立下载语言包并在渲染层无损应用，不修改宿主安装包，不影响聊天内容与代码',
   'settings.hostI18n.optInstalled': '已下载 v{ver}',
   'settings.hostI18n.optRemote': '仓库拉取 · {size}',
   'settings.hostI18n.depthLabel': '翻译深度',
@@ -2380,7 +2378,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.cliBadge': '{count}/6 项',
   'settings.str.cliBadgeOff': '已关闭',
   'settings.str.cliCapsuleToggle': '启用终端状态栏',
-  'settings.str.cliSlotsLabel': 'CLI 槽位顺序 (左 → 右，1~6 项，可拖拽)',
   'settings.str.addCliSlot': '添加 CLI 槽位 ({count}/{max})',
   'settings.str.cliCustomCmdHint': '检测到自定义 statusLine 命令，为避免误覆盖默认不会自动改写',
   'settings.str.cliPausedHint': 'CLI 端当前已暂停或未写入 statusLine 配置',
@@ -2394,7 +2391,6 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.hide': '隐藏',
   'settings.str.on': '开启',
   'settings.str.off': '关闭',
-  'settings.str.capsuleSlotsLabel': '胶囊数值与顺序 (左 → 右，1~5 项，可拖拽)',
   'settings.str.capsuleDragHint': '按住左右拖动调整顺序',
   'settings.str.moduleDragHint': '按住上下拖动调整模块顺序',
   'settings.str.metricDragHint': '按住拖动调整指标顺序',
@@ -2404,22 +2400,21 @@ const I18N_MESSAGES_ZH_CN = Object.freeze({
   'settings.str.hoverSection': '鼠标悬浮窗',
   'settings.str.hoverBadgeOff': '已关闭',
   'settings.str.hoverBadgeCount': '{count} 模块',
-  'settings.str.hoverModulesLabel': '悬浮窗展示模块 (上 → 下，0~4 项，可拖拽)',
+  'settings.str.hoverModulesLabel': '悬浮窗展示模块',
   'settings.str.hoverEmptyHint': '已关闭悬浮速览窗（点击胶囊仍可展开完整面板）',
   'settings.str.addHoverModule': '添加模块 ({count}/{max})',
   'settings.str.hoverMetricStyleLabel': '实时指标尺寸',
   'settings.str.hoverMetricStyleMedium': '中 · 紧凑数值',
   'settings.str.hoverMetricStyleLarge': '大 · 趋势折线',
   'settings.str.hoverSyncOverviewLabel': '与实时监控同步',
-  'settings.str.hoverSyncOverviewHint': '当前与「实时监控布局」共用实时指标，修改将双向同步',
-  'settings.str.hoverMetricsLabel': '实时指标 (左 → 右，1~4 项，可拖拽)',
+  'settings.str.hoverMetricsLabel': '实时指标',
   'settings.str.hoverMetricsInactiveHint': '当前悬浮窗已移出「实时指标」模块，重新添加模块后即生效',
   'settings.str.metricOverflowTag': '大尺寸隐藏',
   'settings.str.overviewSection': '实时监控布局',
   'settings.str.overviewBadge': '{modCount} 模块 · {metCount} 指标',
-  'settings.str.overviewModulesLabel': '监控模块与顺序 (上 → 下，至少 1 项，可拖拽)',
+  'settings.str.overviewModulesLabel': '监控模块',
   'settings.str.addOverviewModule': '添加模块 ({count}/{max})',
-  'settings.str.overviewMetricsLabel': '第一行实时指标 (左 → 右，1~4 项，可拖拽)',
+  'settings.str.overviewMetricsLabel': '实时指标',
   'settings.str.overviewMetricsInactiveHint': '当前已移出「实时指标」模块，此配置将在悬浮窗启用或重新添加模块时生效',
   'settings.str.addOverviewMetric': '添加指标 ({count}/{max})',
   'settings.str.stepsSection': '调用明细字段',
@@ -3513,7 +3508,6 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "settings.gen.modernUi": "現代化 UI",
   "settings.gen.modernUiOff": "關閉",
   "settings.gen.modernUiOn": "開啟",
-  "settings.gen.modernUiHint": "去除大部分線框，採用柔和分層底色與更流暢的現代過渡動畫",
   "settings.gen.updateTitle": "版本更新",
   "settings.gen.updateMode": "更新方式",
   "settings.gen.updateManual": "僅提示新版本，手動更新",
@@ -3550,7 +3544,6 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "settings.hostI18n.title": "Antigravity 介面語言",
   "settings.hostI18n.langLabel": "目標語言",
   "settings.hostI18n.langOff": "原始語言（不翻譯）",
-  "settings.hostI18n.langHint": "從存放庫依需求獨立下載語言套件並於渲染層無損套用，不修改宿主安裝檔，不影響對話內容與程式碼",
   "settings.hostI18n.optInstalled": "已下載 v{ver}",
   "settings.hostI18n.optRemote": "存放庫下載 · {size}",
   "settings.hostI18n.depthLabel": "翻譯深度",
@@ -3629,7 +3622,6 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "settings.str.cliBadge": "{count}/6 項目",
   "settings.str.cliBadgeOff": "已關閉",
   "settings.str.cliCapsuleToggle": "啟用終端機狀態列",
-  "settings.str.cliSlotsLabel": "CLI 槽位順序 (左 → 右，1–6 項，可拖曳)",
   "settings.str.addCliSlot": "新增 CLI 槽位 ({count}/{max})",
   "settings.str.cliCustomCmdHint": "偵測到自訂 statusLine 指令；除非選擇接管，否則將自動保留不改寫",
   "settings.str.cliPausedHint": "CLI 端目前暫停或尚未寫入 statusLine 設定",
@@ -3643,7 +3635,6 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "settings.str.hide": "隱藏",
   "settings.str.on": "開啟",
   "settings.str.off": "關閉",
-  "settings.str.capsuleSlotsLabel": "膠囊指標與順序 (左 → 右，1–5 項，可拖曳)",
   "settings.str.capsuleDragHint": "按住左右拖曳調整順序",
   "settings.str.moduleDragHint": "按住上下拖曳調整模組順序",
   "settings.str.metricDragHint": "按住拖曳調整指標順序",
@@ -3653,22 +3644,21 @@ const I18N_MESSAGES_ZH_TW = Object.freeze({
   "settings.str.hoverSection": "滑鼠懸浮速覽",
   "settings.str.hoverBadgeOff": "已關閉",
   "settings.str.hoverBadgeCount": "{count} 模組",
-  "settings.str.hoverModulesLabel": "懸浮窗顯示模組 (上 → 下，0–4 項，可拖曳)",
+  "settings.str.hoverModulesLabel": "懸浮窗顯示模組",
   "settings.str.hoverEmptyHint": "已關閉懸浮速覽（點擊膠囊仍可開啟完整面板）",
   "settings.str.addHoverModule": "新增模組 ({count}/{max})",
   "settings.str.hoverMetricStyleLabel": "即時指標尺寸",
   "settings.str.hoverMetricStyleMedium": "中 · 精簡數值",
   "settings.str.hoverMetricStyleLarge": "大 · 趨勢折線",
   "settings.str.hoverSyncOverviewLabel": "與即時監控同步",
-  "settings.str.hoverSyncOverviewHint": "目前與「即時監控版面」共用即時指標尺寸與順序，修改將雙向同步",
-  "settings.str.hoverMetricsLabel": "即時指標 (左 → 右，1–4 項，可拖曳)",
+  "settings.str.hoverMetricsLabel": "即時指標",
   "settings.str.hoverMetricsInactiveHint": "目前懸浮窗已隱藏「即時指標」模組，於下方重新新增模組後即可顯示",
   "settings.str.metricOverflowTag": "大尺寸隱藏",
   "settings.str.overviewSection": "即時監控版面",
   "settings.str.overviewBadge": "{modCount} 模組 · {metCount} 指標",
-  "settings.str.overviewModulesLabel": "監控模組與順序 (上 → 下，至少 1 項，可拖曳)",
+  "settings.str.overviewModulesLabel": "監控模組",
   "settings.str.addOverviewModule": "新增模組 ({count}/{max})",
-  "settings.str.overviewMetricsLabel": "第一列即時指標 (左 → 右，1–4 項，可拖曳)",
+  "settings.str.overviewMetricsLabel": "即時指標",
   "settings.str.overviewMetricsInactiveHint": "目前已隱藏「即時指標」模組，此設定仍會套用至滑鼠懸浮速覽或於重新新增模組時生效",
   "settings.str.addOverviewMetric": "新增指標 ({count}/{max})",
   "settings.str.stepsSection": "呼叫明細欄位",
@@ -4775,7 +4765,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.gen.modernUi': 'Modern UI',
   'settings.gen.modernUiOff': 'Off',
   'settings.gen.modernUiOn': 'On',
-  'settings.gen.modernUiHint': 'Removes most borders in favor of soft tonal surfaces and smoother animations',
   'settings.gen.updateTitle': 'Updates & Pricing',
   'settings.gen.updateMode': 'Update Policy',
   'settings.gen.updateManual': 'Notify only, update manually',
@@ -4813,7 +4802,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.hostI18n.title': 'Antigravity UI Language',
   'settings.hostI18n.langLabel': 'Host Language',
   'settings.hostI18n.langOff': 'Original (Off)',
-  'settings.hostI18n.langHint': 'Downloads built language packs on demand from the repository and applies lossless runtime UI translation without patching app files or chat content',
   'settings.hostI18n.optInstalled': 'Installed v{ver}',
   'settings.hostI18n.optRemote': 'Download · {size}',
   'settings.hostI18n.depthLabel': 'Translation Depth',
@@ -4893,7 +4881,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.cliBadge': '{count}/6 slots',
   'settings.str.cliBadgeOff': 'Off',
   'settings.str.cliCapsuleToggle': 'Enable Status Line',
-  'settings.str.cliSlotsLabel': 'CLI Slot Order (Left → Right, 1–6, draggable)',
   'settings.str.addCliSlot': 'Add CLI Slot ({count}/{max})',
   'settings.str.cliCustomCmdHint': 'Custom statusLine command detected; preserved automatically unless you take over',
   'settings.str.cliPausedHint': 'CLI statusLine is currently paused or not yet configured',
@@ -4907,7 +4894,6 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.hide': 'Hide',
   'settings.str.on': 'On',
   'settings.str.off': 'Off',
-  'settings.str.capsuleSlotsLabel': 'Capsule Metrics & Order (Left → Right, 1–5, draggable)',
   'settings.str.capsuleDragHint': 'Drag left or right to reorder',
   'settings.str.moduleDragHint': 'Drag up or down to reorder modules',
   'settings.str.metricDragHint': 'Drag to reorder metrics',
@@ -4917,22 +4903,21 @@ const I18N_MESSAGES_EN_US = Object.freeze({
   'settings.str.hoverSection': 'Hover Quick-View',
   'settings.str.hoverBadgeOff': 'Off',
   'settings.str.hoverBadgeCount': '{count} modules',
-  'settings.str.hoverModulesLabel': 'Hover Popup Modules (Top → Bottom, 0–4, draggable)',
+  'settings.str.hoverModulesLabel': 'Hover Popup Modules',
   'settings.str.hoverEmptyHint': 'Hover quick-view disabled (click capsule to open full panel)',
   'settings.str.addHoverModule': 'Add Module ({count}/{max})',
   'settings.str.hoverMetricStyleLabel': 'Live Metrics Size',
   'settings.str.hoverMetricStyleMedium': 'Medium · Compact',
   'settings.str.hoverMetricStyleLarge': 'Large · Sparkline',
   'settings.str.hoverSyncOverviewLabel': 'Sync with Live Overview',
-  'settings.str.hoverSyncOverviewHint': 'Shares metrics size and order with Live Overview Layout (edits sync both ways)',
-  'settings.str.hoverMetricsLabel': 'Live Metrics (Left → Right, 1–4, draggable)',
+  'settings.str.hoverMetricsLabel': 'Live Metrics',
   'settings.str.hoverMetricsInactiveHint': '"Live Metrics" is hidden in Hover modules; add it below to display',
   'settings.str.metricOverflowTag': 'Hidden in Large',
   'settings.str.overviewSection': 'Live Overview Layout',
   'settings.str.overviewBadge': '{modCount} mod · {metCount} cells',
-  'settings.str.overviewModulesLabel': 'Overview Modules & Order (Top → Bottom, min 1, draggable)',
+  'settings.str.overviewModulesLabel': 'Overview Modules',
   'settings.str.addOverviewModule': 'Add Module ({count}/{max})',
-  'settings.str.overviewMetricsLabel': 'First-Row Metrics (Left → Right, 1–4, draggable)',
+  'settings.str.overviewMetricsLabel': 'Live Metrics',
   'settings.str.overviewMetricsInactiveHint': '"Live Metrics" is hidden here; these cells still apply to Hover Quick-View or when re-added',
   'settings.str.addOverviewMetric': 'Add Metric ({count}/{max})',
   'settings.str.stepsSection': 'Step Table Columns',
@@ -6026,7 +6011,6 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "settings.gen.modernUi": "モダン UI",
   "settings.gen.modernUiOff": "オフ",
   "settings.gen.modernUiOn": "オン",
-  "settings.gen.modernUiHint": "枠線を減らし、柔らかな階層サーフェスと滑らかなアニメーションを採用します",
   "settings.gen.updateTitle": "更新と料金表",
   "settings.gen.updateMode": "更新ポリシー",
   "settings.gen.updateManual": "通知のみ（手動で更新）",
@@ -6063,7 +6047,6 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "settings.hostI18n.title": "Antigravity 画面言語",
   "settings.hostI18n.langLabel": "ホスト言語",
   "settings.hostI18n.langOff": "元の言語（オフ）",
-  "settings.hostI18n.langHint": "ビルド済み言語パックをリポジトリからオンデマンド取得し、本体ファイルやチャット内容を変更せず描画層で無損翻訳を適用します",
   "settings.hostI18n.optInstalled": "導入済み v{ver}",
   "settings.hostI18n.optRemote": "ダウンロード · {size}",
   "settings.hostI18n.depthLabel": "翻訳深度",
@@ -6142,7 +6125,6 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "settings.str.cliBadge": "{count}/6 枠",
   "settings.str.cliBadgeOff": "オフ",
   "settings.str.cliCapsuleToggle": "ステータスラインを有効化",
-  "settings.str.cliSlotsLabel": "CLI スロット順（左 → 右、1〜6 枠、ドラッグ可）",
   "settings.str.addCliSlot": "CLI スロット追加 ({count}/{max})",
   "settings.str.cliCustomCmdHint": "カスタム statusLine コマンドを検出しました。引き継ぐまで自動上書きしません",
   "settings.str.cliPausedHint": "CLI statusLine は一時停止中または未設定です",
@@ -6156,7 +6138,6 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "settings.str.hide": "非表示",
   "settings.str.on": "オン",
   "settings.str.off": "オフ",
-  "settings.str.capsuleSlotsLabel": "カプセル項目と順序（左 → 右、1〜5 枠、ドラッグ可）",
   "settings.str.capsuleDragHint": "左右にドラッグして並び替え",
   "settings.str.moduleDragHint": "上下にドラッグしてモジュール順を変更",
   "settings.str.metricDragHint": "ドラッグして指標順を変更",
@@ -6166,22 +6147,21 @@ const I18N_MESSAGES_JA_JP = Object.freeze({
   "settings.str.hoverSection": "ホバークイック表示",
   "settings.str.hoverBadgeOff": "オフ",
   "settings.str.hoverBadgeCount": "{count} モジュール",
-  "settings.str.hoverModulesLabel": "ホバー表示モジュール（上 → 下、0〜4 項目、ドラッグ可）",
+  "settings.str.hoverModulesLabel": "ホバー表示モジュール",
   "settings.str.hoverEmptyHint": "ホバークイック表示は無効です（カプセルクリックで全パネルを開けます）",
   "settings.str.addHoverModule": "モジュール追加 ({count}/{max})",
   "settings.str.hoverMetricStyleLabel": "ライブ指標サイズ",
   "settings.str.hoverMetricStyleMedium": "中 · コンパクト",
   "settings.str.hoverMetricStyleLarge": "大 · スパークライン",
   "settings.str.hoverSyncOverviewLabel": "ライブ配置と同期",
-  "settings.str.hoverSyncOverviewHint": "ライブ配置と指標サイズ・順序を共有します（変更は双方向同期）",
-  "settings.str.hoverMetricsLabel": "ライブ指標（左 → 右、1〜4 項目、ドラッグ可）",
+  "settings.str.hoverMetricsLabel": "ライブ指標",
   "settings.str.hoverMetricsInactiveHint": "「ライブ指標」はホバーモジュールから外れています。下から追加すると表示されます",
   "settings.str.metricOverflowTag": "大サイズ時は非表示",
   "settings.str.overviewSection": "ライブ画面レイアウト",
   "settings.str.overviewBadge": "{modCount} モジュール · {metCount} 指標",
-  "settings.str.overviewModulesLabel": "表示モジュールと順序（上 → 下、最低 1 つ、ドラッグ可）",
+  "settings.str.overviewModulesLabel": "表示モジュール",
   "settings.str.addOverviewModule": "モジュール追加 ({count}/{max})",
-  "settings.str.overviewMetricsLabel": "1行目のライブ指標（左 → 右、1〜4 項目、ドラッグ可）",
+  "settings.str.overviewMetricsLabel": "ライブ指標",
   "settings.str.overviewMetricsInactiveHint": "「ライブ指標」は現在非表示ですが、ホバー表示や再追加時にこの設定が使われます",
   "settings.str.addOverviewMetric": "指標追加 ({count}/{max})",
   "settings.str.stepsSection": "ステップ表の列設定",
@@ -7270,7 +7250,6 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "settings.gen.modernUi": "모던 UI",
   "settings.gen.modernUiOff": "끔",
   "settings.gen.modernUiOn": "켬",
-  "settings.gen.modernUiHint": "대부분의 테두리를 제거하고 부드러운 톤의 표면과 매끄러운 애니메이션을 적용합니다",
   "settings.gen.updateTitle": "업데이트 및 요금표",
   "settings.gen.updateMode": "업데이트 정책",
   "settings.gen.updateManual": "알림만 표시, 수동 업데이트",
@@ -7307,7 +7286,6 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "settings.hostI18n.title": "Antigravity UI 언어",
   "settings.hostI18n.langLabel": "호스트 언어",
   "settings.hostI18n.langOff": "원본 언어 (끄기)",
-  "settings.hostI18n.langHint": "저장소에서 빌드된 언어 팩을 필요 시 다운로드하여 앱 파일이나 채팅 내용을 수정하지 않고 런타임 UI를 무손실 번역합니다",
   "settings.hostI18n.optInstalled": "설치됨 v{ver}",
   "settings.hostI18n.optRemote": "다운로드 · {size}",
   "settings.hostI18n.depthLabel": "번역 깊이",
@@ -7386,7 +7364,6 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "settings.str.cliBadge": "{count}/6 슬롯",
   "settings.str.cliBadgeOff": "꺼짐",
   "settings.str.cliCapsuleToggle": "상태 줄 활성화",
-  "settings.str.cliSlotsLabel": "CLI 슬롯 순서 (왼쪽 → 오른쪽, 1~6개, 드래그 가능)",
   "settings.str.addCliSlot": "CLI 슬롯 추가 ({count}/{max})",
   "settings.str.cliCustomCmdHint": "사용자 지정 statusLine 명령이 감지되어 직접 전환하기 전까지 자동으로 유지됩니다",
   "settings.str.cliPausedHint": "CLI statusLine이 현재 일시 중지되었거나 아직 설정되지 않았습니다",
@@ -7400,7 +7377,6 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "settings.str.hide": "숨김",
   "settings.str.on": "켜짐",
   "settings.str.off": "꺼짐",
-  "settings.str.capsuleSlotsLabel": "캡슐 지표 및 순서 (왼쪽 → 오른쪽, 1~5개, 드래그 가능)",
   "settings.str.capsuleDragHint": "좌우로 드래그하여 순서 변경",
   "settings.str.moduleDragHint": "상하로 드래그하여 모듈 순서 변경",
   "settings.str.metricDragHint": "드래그하여 지표 순서 변경",
@@ -7410,22 +7386,21 @@ const I18N_MESSAGES_KO_KR = Object.freeze({
   "settings.str.hoverSection": "호버 빠른 보기",
   "settings.str.hoverBadgeOff": "꺼짐",
   "settings.str.hoverBadgeCount": "{count}개 모듈",
-  "settings.str.hoverModulesLabel": "호버 팝업 모듈 (위 → 아래, 0~4개, 드래그 가능)",
+  "settings.str.hoverModulesLabel": "호버 팝업 모듈",
   "settings.str.hoverEmptyHint": "호버 빠른 보기가 비활성화되었습니다 (캡슐 클릭 시 전체 패널 열기)",
   "settings.str.addHoverModule": "모듈 추가 ({count}/{max})",
   "settings.str.hoverMetricStyleLabel": "실시간 지표 크기",
   "settings.str.hoverMetricStyleMedium": "중간 · 컴팩트",
   "settings.str.hoverMetricStyleLarge": "크게 · 스파크라인",
   "settings.str.hoverSyncOverviewLabel": "실시간 개요와 동기화",
-  "settings.str.hoverSyncOverviewHint": "실시간 개요 레이아웃과 지표 크기 및 순서를 공유합니다 (변경 사항 양방향 동기화)",
-  "settings.str.hoverMetricsLabel": "실시간 지표 (왼쪽 → 오른쪽, 1~4개, 드래그 가능)",
+  "settings.str.hoverMetricsLabel": "실시간 지표",
   "settings.str.hoverMetricsInactiveHint": "호버 모듈에서 \"실시간 지표\"가 숨겨져 있습니다. 표시하려면 아래에서 추가하세요",
   "settings.str.metricOverflowTag": "큰 크기에서 숨김",
   "settings.str.overviewSection": "실시간 개요 레이아웃",
   "settings.str.overviewBadge": "{modCount} 모듈 · {metCount} 지표",
-  "settings.str.overviewModulesLabel": "개요 모듈 및 순서 (위 → 아래, 최소 1개, 드래그 가능)",
+  "settings.str.overviewModulesLabel": "개요 모듈",
   "settings.str.addOverviewModule": "모듈 추가 ({count}/{max})",
-  "settings.str.overviewMetricsLabel": "첫 번째 행 지표 (왼쪽 → 오른쪽, 1~4개, 드래그 가능)",
+  "settings.str.overviewMetricsLabel": "실시간 지표",
   "settings.str.overviewMetricsInactiveHint": "여기서 \"실시간 지표\"가 숨겨져 있습니다. 이 설정은 호버 빠른 보기나 모듈을 다시 추가할 때 적용됩니다",
   "settings.str.addOverviewMetric": "지표 추가 ({count}/{max})",
   "settings.str.stepsSection": "스텝 테이블 열",
@@ -8514,7 +8489,6 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "settings.gen.modernUi": "Moderne UI",
   "settings.gen.modernUiOff": "Aus",
   "settings.gen.modernUiOn": "Ein",
-  "settings.gen.modernUiHint": "Entfernt die meisten Rahmen zugunsten weicher Flächen und flüssigerer Animationen",
   "settings.gen.updateTitle": "Updates & Preise",
   "settings.gen.updateMode": "Update-Richtlinie",
   "settings.gen.updateManual": "Nur benachrichtigen, manuell aktualisieren",
@@ -8551,7 +8525,6 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "settings.hostI18n.title": "Antigravity-UI-Sprache",
   "settings.hostI18n.langLabel": "Host-Sprache",
   "settings.hostI18n.langOff": "Original (Aus)",
-  "settings.hostI18n.langHint": "Lädt fertige Sprachpakete bei Bedarf aus dem Repository und übersetzt die UI verlustfrei zur Laufzeit, ohne App-Dateien oder Chatinhalte zu ändern",
   "settings.hostI18n.optInstalled": "Installiert v{ver}",
   "settings.hostI18n.optRemote": "Laden · {size}",
   "settings.hostI18n.depthLabel": "Übersetzungstiefe",
@@ -8630,7 +8603,6 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "settings.str.cliBadge": "{count}/6 Slots",
   "settings.str.cliBadgeOff": "Aus",
   "settings.str.cliCapsuleToggle": "Statuszeile aktivieren",
-  "settings.str.cliSlotsLabel": "CLI-Slot-Reihenfolge (Links → Rechts, 1–6, ziehbar)",
   "settings.str.addCliSlot": "CLI-Slot hinzufügen ({count}/{max})",
   "settings.str.cliCustomCmdHint": "Eigener statusLine-Befehl erkannt; bleibt erhalten, sofern nicht übernommen",
   "settings.str.cliPausedHint": "CLI-statusLine ist pausiert oder noch nicht konfiguriert",
@@ -8644,7 +8616,6 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "settings.str.hide": "Ausblenden",
   "settings.str.on": "Ein",
   "settings.str.off": "Aus",
-  "settings.str.capsuleSlotsLabel": "Kapselwerte & Reihenfolge (Links → Rechts, 1–5, ziehbar)",
   "settings.str.capsuleDragHint": "Zum Sortieren nach links/rechts ziehen",
   "settings.str.moduleDragHint": "Zum Sortieren nach oben/unten ziehen",
   "settings.str.metricDragHint": "Zum Sortieren der Metriken ziehen",
@@ -8654,22 +8625,21 @@ const I18N_MESSAGES_DE_DE = Object.freeze({
   "settings.str.hoverSection": "Hover-Schnellansicht",
   "settings.str.hoverBadgeOff": "Aus",
   "settings.str.hoverBadgeCount": "{count} Module",
-  "settings.str.hoverModulesLabel": "Hover-Popup-Module (Oben → Unten, 0–4, ziehbar)",
+  "settings.str.hoverModulesLabel": "Hover-Popup-Module",
   "settings.str.hoverEmptyHint": "Hover-Schnellansicht aus (Kapselklick öffnet Vollpanel)",
   "settings.str.addHoverModule": "Modul hinzufügen ({count}/{max})",
   "settings.str.hoverMetricStyleLabel": "Live-Metrikgröße",
   "settings.str.hoverMetricStyleMedium": "Mittel · Kompakt",
   "settings.str.hoverMetricStyleLarge": "Groß · Sparkline",
   "settings.str.hoverSyncOverviewLabel": "Mit Live-Übersicht synchr.",
-  "settings.str.hoverSyncOverviewHint": "Teilt Metrikgröße und -reihenfolge mit der Live-Übersicht (beidseitige Synchronisation)",
-  "settings.str.hoverMetricsLabel": "Live-Metriken (Links → Rechts, 1–4, ziehbar)",
+  "settings.str.hoverMetricsLabel": "Live-Metriken",
   "settings.str.hoverMetricsInactiveHint": "„Live-Metriken“ ist in Hover-Modulen ausgeblendet; unten zur Anzeige hinzufügen",
   "settings.str.metricOverflowTag": "In Groß verborgen",
   "settings.str.overviewSection": "Live-Übersichtslayout",
   "settings.str.overviewBadge": "{modCount} Mod. · {metCount} Felder",
-  "settings.str.overviewModulesLabel": "Übersichtsmodule & Reihenfolge (Oben → Unten, min. 1, ziehbar)",
+  "settings.str.overviewModulesLabel": "Übersichtsmodule",
   "settings.str.addOverviewModule": "Modul hinzufügen ({count}/{max})",
-  "settings.str.overviewMetricsLabel": "Metriken 1. Zeile (Links → Rechts, 1–4, ziehbar)",
+  "settings.str.overviewMetricsLabel": "Live-Metriken",
   "settings.str.overviewMetricsInactiveHint": "„Live-Metriken“ ist hier ausgeblendet; Felder gelten weiter für Hover oder beim Wiederhinzufügen",
   "settings.str.addOverviewMetric": "Metrik hinzufügen ({count}/{max})",
   "settings.str.stepsSection": "Schritttabellen-Spalten",
@@ -9758,7 +9728,6 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "settings.gen.modernUi": "Interface moderne",
   "settings.gen.modernUiOff": "Désactivé",
   "settings.gen.modernUiOn": "Activé",
-  "settings.gen.modernUiHint": "Supprime la plupart des bordures au profit de surfaces douces et d'animations fluides",
   "settings.gen.updateTitle": "Mises à jour et tarifs",
   "settings.gen.updateMode": "Mises à jour",
   "settings.gen.updateManual": "Notifier, mise à jour manuelle",
@@ -9795,7 +9764,6 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "settings.hostI18n.title": "Langue de l’interface Antigravity",
   "settings.hostI18n.langLabel": "Langue cible",
   "settings.hostI18n.langOff": "Originale (Désactivé)",
-  "settings.hostI18n.langHint": "Télécharge les packs de langue à la demande depuis le dépôt et applique une traduction UI sans perte à l’exécution, sans patcher l’app ni le chat",
   "settings.hostI18n.optInstalled": "Installé v{ver}",
   "settings.hostI18n.optRemote": "Télécharger · {size}",
   "settings.hostI18n.depthLabel": "Niveau de traduction",
@@ -9874,7 +9842,6 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "settings.str.cliBadge": "{count}/6 empl.",
   "settings.str.cliBadgeOff": "Désactivé",
   "settings.str.cliCapsuleToggle": "Activer barre d’état",
-  "settings.str.cliSlotsLabel": "Ordre des emplacements CLI (Gauche → Droite, 1–6, glissable)",
   "settings.str.addCliSlot": "Ajouter ({count}/{max})",
   "settings.str.cliCustomCmdHint": "Commande statusLine personnalisée détectée ; conservée par défaut sauf prise en main",
   "settings.str.cliPausedHint": "statusLine CLI est actuellement en pause ou non configuré",
@@ -9888,7 +9855,6 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "settings.str.hide": "Masquer",
   "settings.str.on": "Activé",
   "settings.str.off": "Désactivé",
-  "settings.str.capsuleSlotsLabel": "Métriques et ordre capsule (Gauche → Droite, 1–5, glissable)",
   "settings.str.capsuleDragHint": "Glisser à gauche ou droite pour réorganiser",
   "settings.str.moduleDragHint": "Glisser haut ou bas pour réorganiser les modules",
   "settings.str.metricDragHint": "Glisser pour réorganiser les métriques",
@@ -9898,22 +9864,21 @@ const I18N_MESSAGES_FR_FR = Object.freeze({
   "settings.str.hoverSection": "Aperçu au survol",
   "settings.str.hoverBadgeOff": "Désactivé",
   "settings.str.hoverBadgeCount": "{count} modules",
-  "settings.str.hoverModulesLabel": "Modules du survol (Haut → Bas, 0–4, glissable)",
+  "settings.str.hoverModulesLabel": "Modules du survol",
   "settings.str.hoverEmptyHint": "Aperçu au survol désactivé (cliquer la capsule ouvre le panneau)",
   "settings.str.addHoverModule": "Ajouter module ({count}/{max})",
   "settings.str.hoverMetricStyleLabel": "Taille métriques temps réel",
   "settings.str.hoverMetricStyleMedium": "Moyenne · Compact",
   "settings.str.hoverMetricStyleLarge": "Grande · Courbe",
   "settings.str.hoverSyncOverviewLabel": "Synchro avec Vue globale",
-  "settings.str.hoverSyncOverviewHint": "Partage taille et ordre des métriques avec Vue globale (modifications bidirectionnelles)",
-  "settings.str.hoverMetricsLabel": "Métriques temps réel (Gauche → Droite, 1–4, glissable)",
+  "settings.str.hoverMetricsLabel": "Métriques temps réel",
   "settings.str.hoverMetricsInactiveHint": "« Métriques temps réel » est masqué dans le survol ; ajoutez-le ci-dessous pour l’afficher",
   "settings.str.metricOverflowTag": "Masqué en Grand",
   "settings.str.overviewSection": "Disposition Vue globale",
   "settings.str.overviewBadge": "{modCount} mod · {metCount} ind.",
-  "settings.str.overviewModulesLabel": "Modules et ordre (Haut → Bas, min 1, glissable)",
+  "settings.str.overviewModulesLabel": "Modules",
   "settings.str.addOverviewModule": "Ajouter module ({count}/{max})",
-  "settings.str.overviewMetricsLabel": "Métriques 1re ligne (Gauche → Droite, 1–4, glissable)",
+  "settings.str.overviewMetricsLabel": "Métriques temps réel",
   "settings.str.overviewMetricsInactiveHint": "« Métriques temps réel » est masqué ici ; ces cellules restent actives pour le survol ou si réajoutées",
   "settings.str.addOverviewMetric": "Ajouter métrique ({count}/{max})",
   "settings.str.stepsSection": "Colonnes table d’étapes",
@@ -40984,11 +40949,6 @@ const HostI18nCard = defineComponent({
       },
     });
 
-    const langHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.hostI18n.langHint'),
-    });
-
     const depthLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.hostI18n.depthLabel'),
@@ -41222,7 +41182,6 @@ const HostI18nCard = defineComponent({
       h('div', { className: 'form-row' }, [
         langLabelEl,
         langSelect.el,
-        langHintEl,
       ]),
       depthRowEl,
       packBarEl,
@@ -41326,7 +41285,6 @@ const HostI18nCard = defineComponent({
     function refreshLabels() {
       patchText(titleEl, t('settings.hostI18n.title'));
       patchText(langLabelEl, t('settings.hostI18n.langLabel'));
-      patchText(langHintEl, t('settings.hostI18n.langHint'));
       patchText(depthLabelEl, t('settings.hostI18n.depthLabel'));
       if (!isCollecting) patchText(collectBtnText, t('settings.hostI18n.collectBtn'));
       patchText(copyCollectedBtnText, t('settings.hostI18n.copyJsonBtn'));
@@ -41528,10 +41486,6 @@ const SettingsGeneralTab = defineComponent({
     const modernUiLabelEl = h('span', {
       className: 'form-label',
       text: t('settings.gen.modernUi'),
-    });
-    const modernUiHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.gen.modernUiHint'),
     });
 
     const languageSwitch = CustomSelect({
@@ -41742,7 +41696,7 @@ const SettingsGeneralTab = defineComponent({
       ]),
       h('div', { className: 'form-row' }, [accentLabelEl, themeColorPicker.el]),
       h('div', { className: 'form-row' }, [fontLabelEl, fontScaleSwitch.el]),
-      h('div', { className: 'form-row' }, [modernUiLabelEl, modernUiSwitch.el, modernUiHintEl]),
+      h('div', { className: 'form-row' }, [modernUiLabelEl, modernUiSwitch.el]),
     ]);
 
     const updateTitleEl = h('span', { text: t('settings.gen.updateTitle') });
@@ -42000,7 +41954,6 @@ const SettingsGeneralTab = defineComponent({
       patchText(accentLabelEl, t('settings.gen.themeAccent'));
       patchText(fontLabelEl, t('settings.gen.fontScale'));
       patchText(modernUiLabelEl, t('settings.gen.modernUi'));
-      patchText(modernUiHintEl, t('settings.gen.modernUiHint'));
       patchText(updateTitleEl, t('settings.gen.updateTitle'));
       patchText(updateModeLabelEl, t('settings.gen.updateMode'));
       patchText(pricingCellLabelEl, t('settings.gen.pricingLabel'));
@@ -42443,10 +42396,6 @@ const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.cliCapsuleToggle'),
     });
-    const cliSlotsLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.str.cliSlotsLabel'),
-    });
     const cliStatusHintEl = h('span', {
       className: 'settings-hint-text cli-status-hint',
     });
@@ -42487,11 +42436,6 @@ const SettingsStructureTab = defineComponent({
         }
       },
     });
-    const capsuleSlotsLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.str.capsuleSlotsLabel'),
-    });
-
     const windowMountSelect = CustomSelect({
       modelValue: draftWindowMountMode,
       icon: 'dock',
@@ -42649,7 +42593,7 @@ const SettingsStructureTab = defineComponent({
     const cliStatusDetailEl = h('div', { className: 'cli-statusline-detail' }, [
       cliPreviewEl,
       h('div', { className: 'settings-divider' }),
-      h('div', { className: 'form-row' }, [cliSlotsLabelEl, cliSlotsList.el]),
+      h('div', { className: 'form-row' }, [cliSlotsList.el]),
       cliStatusFooterEl,
     ]);
 
@@ -42753,7 +42697,7 @@ const SettingsStructureTab = defineComponent({
           contextAgentModeLabelEl,
           contextAgentModeToggle.el,
         ]),
-        h('div', { className: 'form-row' }, [capsuleSlotsLabelEl, topbarSlotsList.el]),
+        h('div', { className: 'form-row' }, [topbarSlotsList.el]),
       ],
     });
 
@@ -43014,11 +42958,6 @@ const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.hoverSyncOverviewLabel'),
     });
-    const hoverSyncOverviewHintEl = h('span', {
-      className: 'settings-hint-text',
-      hidden: true,
-      text: t('settings.str.hoverSyncOverviewHint'),
-    });
     const hoverMetricsInactiveHintEl = h('span', {
       className: 'settings-hint-text',
       hidden: true,
@@ -43172,7 +43111,6 @@ const SettingsStructureTab = defineComponent({
             hoverSyncOverviewLabelEl,
             hoverSyncOverviewToggle.el,
           ]),
-          hoverSyncOverviewHintEl,
           hoverMetricsInactiveHintEl,
           hoverMetricsLabelEl,
           hoverMetricsList.el,
@@ -43206,8 +43144,6 @@ const SettingsStructureTab = defineComponent({
       hoverSyncOverviewToggle.setProps({
         modelValue: draftHoverSyncOverview ? 'on' : 'off',
       });
-      patchAttr(hoverSyncOverviewHintEl, 'hidden', !draftHoverSyncOverview);
-      patchText(hoverSyncOverviewHintEl, t('settings.str.hoverSyncOverviewHint'));
       patchAttr(hoverMetricsInactiveHintEl, 'hidden', metricsEnabled);
       patchText(hoverMetricsInactiveHintEl, t('settings.str.hoverMetricsInactiveHint'));
       syncHoverMetricListProps();
@@ -43844,8 +43780,6 @@ const SettingsStructureTab = defineComponent({
       patchText(multiToggleLabelEl, t('settings.str.multiToggle'));
       patchText(contextAgentModeLabelEl, t('settings.str.contextAgentModeLabel'));
       patchText(cliCapsuleLabelEl, t('settings.str.cliCapsuleToggle'));
-      patchText(cliSlotsLabelEl, t('settings.str.cliSlotsLabel'));
-      patchText(capsuleSlotsLabelEl, t('settings.str.capsuleSlotsLabel'));
 
       hoverSection.refs.setTitle(t('settings.str.hoverSection'));
       hoverSection.refs.setResetLabel(t('settings.resetBtn'));

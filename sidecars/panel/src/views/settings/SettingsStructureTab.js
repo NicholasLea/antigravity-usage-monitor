@@ -446,10 +446,6 @@ export const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.cliCapsuleToggle'),
     });
-    const cliSlotsLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.str.cliSlotsLabel'),
-    });
     const cliStatusHintEl = h('span', {
       className: 'settings-hint-text cli-status-hint',
     });
@@ -490,11 +486,6 @@ export const SettingsStructureTab = defineComponent({
         }
       },
     });
-    const capsuleSlotsLabelEl = h('span', {
-      className: 'form-label',
-      text: t('settings.str.capsuleSlotsLabel'),
-    });
-
     const windowMountSelect = CustomSelect({
       modelValue: draftWindowMountMode,
       icon: 'dock',
@@ -652,7 +643,7 @@ export const SettingsStructureTab = defineComponent({
     const cliStatusDetailEl = h('div', { className: 'cli-statusline-detail' }, [
       cliPreviewEl,
       h('div', { className: 'settings-divider' }),
-      h('div', { className: 'form-row' }, [cliSlotsLabelEl, cliSlotsList.el]),
+      h('div', { className: 'form-row' }, [cliSlotsList.el]),
       cliStatusFooterEl,
     ]);
 
@@ -756,7 +747,7 @@ export const SettingsStructureTab = defineComponent({
           contextAgentModeLabelEl,
           contextAgentModeToggle.el,
         ]),
-        h('div', { className: 'form-row' }, [capsuleSlotsLabelEl, topbarSlotsList.el]),
+        h('div', { className: 'form-row' }, [topbarSlotsList.el]),
       ],
     });
 
@@ -1018,11 +1009,6 @@ export const SettingsStructureTab = defineComponent({
       className: 'form-label',
       text: t('settings.str.hoverSyncOverviewLabel'),
     });
-    const hoverSyncOverviewHintEl = h('span', {
-      className: 'settings-hint-text',
-      hidden: true,
-      text: t('settings.str.hoverSyncOverviewHint'),
-    });
     const hoverMetricsInactiveHintEl = h('span', {
       className: 'settings-hint-text',
       hidden: true,
@@ -1176,7 +1162,6 @@ export const SettingsStructureTab = defineComponent({
             hoverSyncOverviewLabelEl,
             hoverSyncOverviewToggle.el,
           ]),
-          hoverSyncOverviewHintEl,
           hoverMetricsInactiveHintEl,
           hoverMetricsLabelEl,
           hoverMetricsList.el,
@@ -1210,8 +1195,6 @@ export const SettingsStructureTab = defineComponent({
       hoverSyncOverviewToggle.setProps({
         modelValue: draftHoverSyncOverview ? 'on' : 'off',
       });
-      patchAttr(hoverSyncOverviewHintEl, 'hidden', !draftHoverSyncOverview);
-      patchText(hoverSyncOverviewHintEl, t('settings.str.hoverSyncOverviewHint'));
       patchAttr(hoverMetricsInactiveHintEl, 'hidden', metricsEnabled);
       patchText(hoverMetricsInactiveHintEl, t('settings.str.hoverMetricsInactiveHint'));
       syncHoverMetricListProps();
@@ -1850,8 +1833,6 @@ export const SettingsStructureTab = defineComponent({
       patchText(multiToggleLabelEl, t('settings.str.multiToggle'));
       patchText(contextAgentModeLabelEl, t('settings.str.contextAgentModeLabel'));
       patchText(cliCapsuleLabelEl, t('settings.str.cliCapsuleToggle'));
-      patchText(cliSlotsLabelEl, t('settings.str.cliSlotsLabel'));
-      patchText(capsuleSlotsLabelEl, t('settings.str.capsuleSlotsLabel'));
 
       hoverSection.refs.setTitle(t('settings.str.hoverSection'));
       hoverSection.refs.setResetLabel(t('settings.resetBtn'));

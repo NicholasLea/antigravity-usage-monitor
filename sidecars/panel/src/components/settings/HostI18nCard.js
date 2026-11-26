@@ -180,11 +180,6 @@ export const HostI18nCard = defineComponent({
       },
     });
 
-    const langHintEl = h('span', {
-      className: 'settings-hint-text',
-      text: t('settings.hostI18n.langHint'),
-    });
-
     // --- Conditional Depth Row (visible only when locale !== 'off') ---
     const depthLabelEl = h('span', {
       className: 'form-label',
@@ -421,7 +416,6 @@ export const HostI18nCard = defineComponent({
       h('div', { className: 'form-row' }, [
         langLabelEl,
         langSelect.el,
-        langHintEl,
       ]),
       depthRowEl,
       packBarEl,
@@ -525,7 +519,6 @@ export const HostI18nCard = defineComponent({
     function refreshLabels() {
       patchText(titleEl, t('settings.hostI18n.title'));
       patchText(langLabelEl, t('settings.hostI18n.langLabel'));
-      patchText(langHintEl, t('settings.hostI18n.langHint'));
       patchText(depthLabelEl, t('settings.hostI18n.depthLabel'));
       if (!isCollecting) patchText(collectBtnText, t('settings.hostI18n.collectBtn'));
       patchText(copyCollectedBtnText, t('settings.hostI18n.copyJsonBtn'));
