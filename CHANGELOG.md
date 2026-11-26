@@ -2,6 +2,23 @@
 
 All notable changes to **Antigravity Usage & Speed Monitor** are documented in this file.
 
+## [1.5.6] - 2026-11
+
+### Added
+- **7-Locale Full-Stack Localization**: Added `zh-TW`, `ja-JP`, `ko-KR`, `de-DE`, and `fr-FR` alongside `zh-CN` and `en-US` across the panel UI, CLI statusLine, standalone Web views, OAuth callback page, CSV/XLSX/Markdown exports, and repository-hosted `host-i18n/` packs (`zh-CN@1.0.3` plus 5 new locale packs).
+- **Locale-Linked Multi-Currency Display (#50)**: Added `shared/currency-catalog.mjs`, `backend/fx-rates.mjs`, and `/api/fx-sync` with 20 selectable currencies (`auto` locale mapping, 24h cached Frankfurter / ExchangeRate-API keyless FX sync with offline fallback, and portable backup support).
+- **Local 3-Client Session Hub, Online Deletion & Chunked Migration**: Renamed **Settings** to **Control Center**, added the **Sessions** tab (`SettingsSessionsTab.js`, `session-store.mjs`, `session-cleaner.mjs`, `session-manager.mjs`, `session-online-delete.mjs`, `SessionManagerCard.js`) with shared Desktop/CLI/Legacy IDE scanning, loopback `DeleteConversation` online deletion, offline deep cleanup with ledger privacy redaction, and 5,000-session chunked migration.
+- **Cross-Platform Multi-Account Management**: Extended multi-account login, keyring vaults (`account-keyring-store.mjs`, `account-switch-posix-worker.mjs`), native binary OAuth extraction (ELF64 / Mach-O / Windows ARM64), and switching across Windows, macOS Keychain, Linux `secret-tool`/passphrase vault, and WSL2.
+- **Developer Options Gate, Large Sparkline Metrics & Remaining Quota Display (#52, #55)**: Added non-portable two-stage `developerModeEnabled` / `riskyFeaturesEnabled` gate for high-risk Account & Model Context surfaces, responsive large sparkline metric cards (`overviewMetricStyle`, `hoverMetricStyle`), and `quotaDisplayMode` (`used` / `remaining`) synced across Overview and Hover previews.
+- **Direct Canvas Drag-Sorting, IDE Remote-SSH & CI Matrix**: Enabled direct drag-to-reorder on all Structure preview canvases (`EditableSlotList.js`, `domPatch.js`), added host launch isolation & Antigravity IDE Remote-SSH discovery (`devtools-port-probe.mjs`, `ide-remote-ssh.mjs`), progressive non-blocking trajectory cache rebuild, reverted-step usage retention, and a 3-OS GitHub Actions test matrix.
+
+### Fixed
+- **Host UI Translation Exemptions (#54)**: Exempted AI replies, KaTeX math formulas, code/diff viewers, terminals, and lowercase prose words across frontend/backend skip configs, added SemVer anti-downgrade guard, and updated bundled `zh-CN` pack to `1.0.3`.
+- **Non-Chinese Locale Leaks & Document Localization (#44, #49)**: Switched manifest defaults to neutral English and synchronized `<html lang>`, `document.title`, standalone Web/Token auth pages, and unknown quota pool / export labels with active locale.
+- **Deleted Local Session Picker Visibility (#39)**: Tracked local directory readability and scan completeness in `local-scanner.mjs` to hide confirmed-missing and archived local sessions from the conversation picker while preserving SQLite ledger usage stats and restoring automatically without double counting.
+- **One-Shot Headless CLI Lease & Dominant Model ShortName (#45, #46)**: Prevented `-p` / `--print` headless CLI runs from hijacking bridge leases or detaching the desktop capsule on sibling exits, and resolved dominant multi-tier model short names by call count.
+- **External Quota Detection, Host Theme/Font Sync & UI Layout**: Eliminated false solo external-usage triggers (`quota-reservation.mjs` high-usage self-healing, scan-lag / 5h-only lease / cold-start & stacked-lease guards), preserved host theme/fonts across plugin restarts, and fixed virtual step table width locking, transient `cdp_unreachable` alerts, empty `.db-wal` migration timestamps, and lingering login notices.
+
 ## [1.5.5] - 2026-11
 
 ### Added

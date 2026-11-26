@@ -1,7 +1,7 @@
 {
   "name": "usage-monitor",
   "displayName": "Usage & Speed Monitor",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "Monitor live generation speed, TTFT, context window usage, quota pools, and historical consumption.",
   "logo": "assets/logo.svg",
   "suggestedPrompts": [
