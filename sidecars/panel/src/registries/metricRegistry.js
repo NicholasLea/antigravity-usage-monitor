@@ -75,6 +75,45 @@ export function splitMetricValueAndUnit(valueText) {
   return { main: str, unit: '' };
 }
 
+const SPARKLINE_DEFAULT_WIDTH_BY_COLS = Object.freeze({ 1: 248, 2: 136, 3: 74 });
+const SPARKLINE_MIN_WIDTH = 28;
+const SPARKLINE_MAX_WIDTH = 640;
+const SPARKLINE_PAD_X = 4;
+const SPARKLINE_TARGET_PITCH_PX = 7.5;
+const SPARKLINE_MIN_POINTS = 5;
+const SPARKLINE_MAX_POINTS = 48;
+
+/**
+ * 根据折线容器实际可用像素宽度，自适应计算 SVG 画布尺寸、采样步数上限与笔触粗细：
+ * - 保持约 7.5px / 步的均衡节奏：极窄 3 列悬浮卡收敛为 5~7 步避免锯齿拥挤，
+ *   宽卡 / 单列 / 宽屏面板则平滑扩展至最多 48 步以展示更长趋势；
+ * - 未挂载或无法测宽时（如首帧 / 无头测试）按列数回退至默认基准宽度。
+ *
+ * @param {number} [availableWidth]
+ * @param {number} [colCount=3]
+ */
+export function resolveAdaptiveSparklineSpec(availableWidth, colCount = 3) {
+  const safeCols = colCount === 1 || colCount === 2 ? colCount : 3;
+  const fallbackWidth = SPARKLINE_DEFAULT_WIDTH_BY_COLS[safeCols];
+  const rawWidth = Number(availableWidth);
+  const width =
+    Number.isFinite(rawWidth) && rawWidth > 0
+      ? Math.max(SPARKLINE_MIN_WIDTH, Math.min(SPARKLINE_MAX_WIDTH, Math.round(rawWidth)))
+      : fallbackWidth;
+  const plotWidth = Math.max(8, width - SPARKLINE_PAD_X * 2);
+  const maxPoints = Math.max(
+    SPARKLINE_MIN_POINTS,
+    Math.min(SPARKLINE_MAX_POINTS, Math.floor(plotWidth / SPARKLINE_TARGET_PITCH_PX) + 1)
+  );
+  return {
+    width,
+    height: 34,
+    maxPoints,
+    strokeWidth: width < 64 ? '1.5' : width < 100 ? '1.55' : '1.65',
+    dotRadius: width < 64 ? '2.25' : width < 100 ? '2.5' : '2.75',
+  };
+}
+
 /**
  * 从 `recentSteps`（默认按时间倒序）提取指定指标的时间顺序序列（从旧到新，最多取末 `maxPoints` 点），
  * 用于驱动悬浮窗大尺寸实时指标卡片右侧的迷你走势折线图。

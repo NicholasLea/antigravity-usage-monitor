@@ -21864,7 +21864,7 @@ return { createSessionLineChart, createModelFitChart };
 })();
 
 // --- src/registries/metricRegistry.js ---
-const { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions, splitMetricValueAndUnit, extractOverviewMetricSeries, buildSparklineGeometry, resolveQuotaCapsuleSummary, resolveSpecificQuotaSlotSummary, resolveCapsuleMetricPresentation, resolveOverviewMetricCell } = (() => {
+const { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions, splitMetricValueAndUnit, resolveAdaptiveSparklineSpec, extractOverviewMetricSeries, buildSparklineGeometry, resolveQuotaCapsuleSummary, resolveSpecificQuotaSlotSummary, resolveCapsuleMetricPresentation, resolveOverviewMetricCell } = (() => {
 const CAPSULE_METRIC_KEYS = TOPBAR_SLOT_KEYS;
 
 function getCapsuleMetricOptions({ quotas = null, selectedSlots = [] } = {}) {
@@ -21901,6 +21901,45 @@ function splitMetricValueAndUnit(valueText) {
     return { main: match[1], unit: match[2] };
   }
   return { main: str, unit: '' };
+}
+
+const SPARKLINE_DEFAULT_WIDTH_BY_COLS = Object.freeze({ 1: 248, 2: 136, 3: 74 });
+const SPARKLINE_MIN_WIDTH = 28;
+const SPARKLINE_MAX_WIDTH = 640;
+const SPARKLINE_PAD_X = 4;
+const SPARKLINE_TARGET_PITCH_PX = 7.5;
+const SPARKLINE_MIN_POINTS = 5;
+const SPARKLINE_MAX_POINTS = 48;
+
+/**
+ * 根据折线容器实际可用像素宽度，自适应计算 SVG 画布尺寸、采样步数上限与笔触粗细：
+ * - 保持约 7.5px / 步的均衡节奏：极窄 3 列悬浮卡收敛为 5~7 步避免锯齿拥挤，
+ *   宽卡 / 单列 / 宽屏面板则平滑扩展至最多 48 步以展示更长趋势；
+ * - 未挂载或无法测宽时（如首帧 / 无头测试）按列数回退至默认基准宽度。
+ *
+ * @param {number} [availableWidth]
+ * @param {number} [colCount=3]
+ */
+function resolveAdaptiveSparklineSpec(availableWidth, colCount = 3) {
+  const safeCols = colCount === 1 || colCount === 2 ? colCount : 3;
+  const fallbackWidth = SPARKLINE_DEFAULT_WIDTH_BY_COLS[safeCols];
+  const rawWidth = Number(availableWidth);
+  const width =
+    Number.isFinite(rawWidth) && rawWidth > 0
+      ? Math.max(SPARKLINE_MIN_WIDTH, Math.min(SPARKLINE_MAX_WIDTH, Math.round(rawWidth)))
+      : fallbackWidth;
+  const plotWidth = Math.max(8, width - SPARKLINE_PAD_X * 2);
+  const maxPoints = Math.max(
+    SPARKLINE_MIN_POINTS,
+    Math.min(SPARKLINE_MAX_POINTS, Math.floor(plotWidth / SPARKLINE_TARGET_PITCH_PX) + 1)
+  );
+  return {
+    width,
+    height: 34,
+    maxPoints,
+    strokeWidth: width < 64 ? '1.5' : width < 100 ? '1.55' : '1.65',
+    dotRadius: width < 64 ? '2.25' : width < 100 ? '2.5' : '2.75',
+  };
 }
 
 /**
@@ -22660,7 +22699,7 @@ function resolveOverviewMetricCell(metricKey, cellCtx = {}) {
     subClass: 'cell-sub',
   };
 }
-return { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions, splitMetricValueAndUnit, extractOverviewMetricSeries, buildSparklineGeometry, resolveQuotaCapsuleSummary, resolveSpecificQuotaSlotSummary, resolveCapsuleMetricPresentation, resolveOverviewMetricCell };
+return { CAPSULE_METRIC_KEYS, getCapsuleMetricOptions, getOverviewMetricOptions, splitMetricValueAndUnit, resolveAdaptiveSparklineSpec, extractOverviewMetricSeries, buildSparklineGeometry, resolveQuotaCapsuleSummary, resolveSpecificQuotaSlotSummary, resolveCapsuleMetricPresentation, resolveOverviewMetricCell };
 })();
 
 // --- src/components/widgets/MetricMatrixWidget.js ---
@@ -22693,17 +22732,10 @@ function createSparklineSvg(gradId) {
   const stopBot = document.createElementNS(SVG_NS, 'stop');
   stopBot.setAttribute('offset', '100%');
   stopBot.setAttribute('stop-color', 'currentColor');
-  stopBot.setAttribute('stop-opacity', '0.02');
+  stopBot.setAttribute('stop-opacity', '0');
   grad.appendChild(stopTop);
   grad.appendChild(stopBot);
   defs.appendChild(grad);
-
-  const axisLine = document.createElementNS(SVG_NS, 'line');
-  axisLine.setAttribute('class', 'cell-sparkline-axis');
-  axisLine.setAttribute('x1', '4');
-  axisLine.setAttribute('y1', '32');
-  axisLine.setAttribute('x2', '104');
-  axisLine.setAttribute('y2', '32');
 
   const areaPath = document.createElementNS(SVG_NS, 'path');
   areaPath.setAttribute('class', 'cell-sparkline-area');
@@ -22723,12 +22755,11 @@ function createSparklineSvg(gradId) {
   dot.setAttribute('fill', 'currentColor');
 
   svg.appendChild(defs);
-  svg.appendChild(axisLine);
   svg.appendChild(areaPath);
   svg.appendChild(polyline);
   svg.appendChild(dot);
 
-  return { svg, axisLine, areaPath, polyline, dot };
+  return { svg, areaPath, polyline, dot };
 }
 
 const MetricMatrixWidget = defineComponent({
@@ -22757,7 +22788,98 @@ const MetricMatrixWidget = defineComponent({
     let lastUpdatePayload = null;
     let pendingUpdatePayload = null;
     let activeDrag = null;
+    let lastColCount = 0;
+    let lastIsLargeTrend = false;
+    let pendingSparkResizeRafId = 0;
+    let pendingSparkResizeMicrotask = false;
+    const measuredWrapWidthByKey = new Map();
+    const observedWrapToKey = new Map();
     const settleAnimator = createDropSettleAnimator('is-settling', ' scale(1.02)');
+
+    function scheduleAdaptiveSparklineRepaint() {
+      if (activeDrag || !lastUpdatePayload) return;
+      if (typeof requestAnimationFrame === 'function') {
+        if (pendingSparkResizeRafId) return;
+        pendingSparkResizeRafId = requestAnimationFrame(() => {
+          pendingSparkResizeRafId = 0;
+          if (!activeDrag && lastUpdatePayload) {
+            applyUpdatePayload(lastUpdatePayload);
+          }
+        });
+        return;
+      }
+      if (pendingSparkResizeMicrotask) return;
+      pendingSparkResizeMicrotask = true;
+      queueMicrotask(() => {
+        pendingSparkResizeMicrotask = false;
+        if (!activeDrag && lastUpdatePayload) {
+          applyUpdatePayload(lastUpdatePayload);
+        }
+      });
+    }
+
+    const sparkResizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver((entries) => {
+            if (!Array.isArray(entries) || entries.length === 0) return;
+            let changed = false;
+            for (const entry of entries) {
+              const wrapEl = entry?.target;
+              if (!wrapEl) continue;
+              const key = observedWrapToKey.get(wrapEl);
+              if (!key) continue;
+              const rawW = Number(entry?.contentRect?.width || wrapEl.clientWidth || 0);
+              if (!Number.isFinite(rawW) || rawW <= 0) continue;
+              const nextW = Math.round(rawW);
+              const prevW = measuredWrapWidthByKey.get(key) || 0;
+              if (Math.abs(nextW - prevW) >= 2) {
+                measuredWrapWidthByKey.set(key, nextW);
+                changed = true;
+              }
+            }
+            if (changed) {
+              scheduleAdaptiveSparklineRepaint();
+            }
+          })
+        : null;
+
+    function syncObservedSparklineWraps(activeKeys) {
+      if (!sparkResizeObserver) return;
+      const activeKeySet = new Set(activeKeys);
+      for (const [wrapEl, key] of observedWrapToKey.entries()) {
+        if (!activeKeySet.has(key) || !matrixEl.contains?.(wrapEl)) {
+          sparkResizeObserver.unobserve(wrapEl);
+          observedWrapToKey.delete(wrapEl);
+        }
+      }
+    }
+
+    function readLiveSparklineWidths(colCount, isLargeTrend, metricKeys) {
+      if (!isLargeTrend) {
+        measuredWrapWidthByKey.clear();
+        return;
+      }
+      if (colCount !== lastColCount || !lastIsLargeTrend) {
+        measuredWrapWidthByKey.clear();
+        return;
+      }
+      const keySet = new Set(metricKeys);
+      for (const key of Array.from(measuredWrapWidthByKey.keys())) {
+        if (!keySet.has(key)) measuredWrapWidthByKey.delete(key);
+      }
+      for (const cellEl of matrixEl.children || []) {
+        const key = cellEl?.getAttribute?.('data-metric-key');
+        if (!key || !keySet.has(key)) continue;
+        const wrapEl = cellEl.querySelector?.('.cell-sparkline-wrap');
+        const liveW = Math.round(Number(wrapEl?.clientWidth || 0));
+        if (Number.isFinite(liveW) && liveW > 0) {
+          const prevW = measuredWrapWidthByKey.get(key) || 0;
+          if (Math.abs(liveW - prevW) >= 2 || prevW === 0) {
+            measuredWrapWidthByKey.set(key, liveW);
+          }
+        }
+      }
+    }
 
     function resetDragVisuals() {
       patchClasses(matrixEl, { 'is-dragging-matrix': false });
@@ -23045,6 +23167,10 @@ const MetricMatrixWidget = defineComponent({
         : null;
       const maxCols = isLargeTrend ? 3 : 4;
       const colCount = Math.max(1, Math.min(maxCols, metricKeys.length));
+      readLiveSparklineWidths(colCount, isLargeTrend, metricKeys);
+      lastColCount = colCount;
+      lastIsLargeTrend = isLargeTrend;
+
       patchClasses(matrixEl, {
         'is-large-trend': isLargeTrend,
         'is-metrics-reorderable': canDragCells,
@@ -23066,10 +23192,6 @@ const MetricMatrixWidget = defineComponent({
       const seriesSteps = isLargeTrend
         ? active.sparklineSteps || active.recentSteps || data?.activeConversation?.recentSteps || []
         : [];
-      const sparkWidth = colCount === 1 ? 248 : colCount === 2 ? 136 : 74;
-      const sparkHeight = 34;
-      const sparkStrokeWidth = colCount === 3 ? '1.55' : '1.65';
-      const sparkDotRadius = colCount === 3 ? '2.5' : '2.75';
 
       const cells = metricKeys.map((key) => {
         const base = resolveOverviewMetricCell(key, {
@@ -23082,24 +23204,25 @@ const MetricMatrixWidget = defineComponent({
         if (!isLargeTrend) {
           return { ...base, isLargeTrend: false, sparkSig: '' };
         }
+        const spec = resolveAdaptiveSparklineSpec(measuredWrapWidthByKey.get(key), colCount);
         const series = extractOverviewMetricSeries(key, seriesSteps, {
-          maxPoints: 16,
+          maxPoints: spec.maxPoints,
           limitTokens,
         });
-        const geom = buildSparklineGeometry(series, { width: sparkWidth, height: sparkHeight });
+        const geom = buildSparklineGeometry(series, { width: spec.width, height: spec.height });
         const split = splitMetricValueAndUnit(base.valueText);
         const tone = extractToneClass(base.valueClass);
-        const sparkSig = `${sparkWidth}x${sparkHeight}:${geom.linePoints}:${geom.lastX},${geom.lastY}`;
+        const sparkSig = `${spec.width}x${spec.height}:${spec.maxPoints}:${geom.linePoints}:${geom.lastX},${geom.lastY}`;
         return {
           ...base,
           isLargeTrend: true,
           tone,
           trendMain: split.main,
           trendUnit: split.unit,
-          sparkWidth,
-          sparkHeight,
-          sparkStrokeWidth,
-          sparkDotRadius,
+          sparkWidth: spec.width,
+          sparkHeight: spec.height,
+          sparkStrokeWidth: spec.strokeWidth,
+          sparkDotRadius: spec.dotRadius,
           geom,
           sparkSig,
         };
@@ -23147,12 +23270,15 @@ const MetricMatrixWidget = defineComponent({
             'class',
             cell.tone ? `cell-sparkline-wrap ${cell.tone}` : 'cell-sparkline-wrap'
           );
+          if (sparkResizeObserver) {
+            if (!observedWrapToKey.has(refs.sparkWrapEl)) {
+              sparkResizeObserver.observe(refs.sparkWrapEl);
+            }
+            observedWrapToKey.set(refs.sparkWrapEl, cell.key);
+          }
           refs.spark.svg.setAttribute('viewBox', `0 0 ${cell.sparkWidth} ${cell.sparkHeight}`);
           refs.spark.polyline.setAttribute('stroke-width', cell.sparkStrokeWidth);
           refs.spark.dot.setAttribute('r', cell.sparkDotRadius);
-          refs.spark.axisLine.setAttribute('x2', String(cell.sparkWidth - 4));
-          refs.spark.axisLine.setAttribute('y1', String(cell.geom.baselineY));
-          refs.spark.axisLine.setAttribute('y2', String(cell.geom.baselineY));
 
           if (cell.geom.hasLine) {
             refs.spark.areaPath.setAttribute('d', cell.geom.areaPath);
@@ -23175,6 +23301,7 @@ const MetricMatrixWidget = defineComponent({
           }
         },
       });
+      syncObservedSparklineWraps(isLargeTrend ? metricKeys : []);
     }
 
     function update(payload = {}) {
@@ -23188,6 +23315,13 @@ const MetricMatrixWidget = defineComponent({
     onCleanup(() => {
       teardownActiveDrag({ revert: false, flushPending: false });
       settleAnimator.clear();
+      if (pendingSparkResizeRafId && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(pendingSparkResizeRafId);
+        pendingSparkResizeRafId = 0;
+      }
+      sparkResizeObserver?.disconnect();
+      observedWrapToKey.clear();
+      measuredWrapWidthByKey.clear();
     });
 
     // Initialize default 4-cell skeleton so hover/overview has zero initial height jump
@@ -31679,8 +31813,9 @@ function buildStructurePreviewTelemetry(
     },
   ];
 
-  // 14-step realistic sparkline series (newest-first) for hover Large Trend preview cards,
-  // keeping `mockSteps` at 4 compact rows for the Step Table preview.
+  // 36-step realistic sparkline series (newest-first) for Large Trend preview cards so
+  // adaptive sparklines smoothly reveal more historical steps on wider 1/2/3-col layouts,
+  // while keeping `mockSteps` at 4 compact rows for the Step Table preview.
   const mockSparklineSteps = [
     { tokPerSec: 68.4, ttftSec: 1.15, costUsd: 0.042, cacheHitPct: 94.5, contextTokens: 142800, inputTokens: 7800, cacheReadTokens: 133580, outputTokens: 1420 },
     { tokPerSec: 34.2, ttftSec: 2.35, costUsd: 0.056, cacheHitPct: 86.2, contextTokens: 139200, inputTokens: 16200, cacheReadTokens: 121800, outputTokens: 1200 },
@@ -31696,6 +31831,28 @@ function buildStructurePreviewTelemetry(
     { tokPerSec: 77.4, ttftSec: 0.96, costUsd: 0.031, cacheHitPct: 89.4, contextTokens: 106800, inputTokens: 10400, cacheReadTokens: 95400, outputTokens: 1000 },
     { tokPerSec: 86.2, ttftSec: 0.88, costUsd: 0.028, cacheHitPct: 87.2, contextTokens: 98200, inputTokens: 11600, cacheReadTokens: 85600, outputTokens: 1000 },
     { tokPerSec: 64.8, ttftSec: 1.45, costUsd: 0.044, cacheHitPct: 76.5, contextTokens: 88400, inputTokens: 19800, cacheReadTokens: 67600, outputTokens: 1000 },
+    { tokPerSec: 59.3, ttftSec: 1.62, costUsd: 0.041, cacheHitPct: 81.2, contextTokens: 84200, inputTokens: 14900, cacheReadTokens: 68200, outputTokens: 1100 },
+    { tokPerSec: 78.6, ttftSec: 1.02, costUsd: 0.032, cacheHitPct: 90.4, contextTokens: 80600, inputTokens: 7400, cacheReadTokens: 72100, outputTokens: 1100 },
+    { tokPerSec: 82.1, ttftSec: 0.91, costUsd: 0.029, cacheHitPct: 92.0, contextTokens: 77400, inputTokens: 6100, cacheReadTokens: 70200, outputTokens: 1100 },
+    { tokPerSec: 51.4, ttftSec: 1.88, costUsd: 0.049, cacheHitPct: 78.8, contextTokens: 74800, inputTokens: 15200, cacheReadTokens: 58500, outputTokens: 1100 },
+    { tokPerSec: 66.9, ttftSec: 1.24, costUsd: 0.038, cacheHitPct: 88.6, contextTokens: 71200, inputTokens: 7900, cacheReadTokens: 62200, outputTokens: 1100 },
+    { tokPerSec: 75.2, ttftSec: 1.11, costUsd: 0.035, cacheHitPct: 89.8, contextTokens: 68400, inputTokens: 6800, cacheReadTokens: 60600, outputTokens: 1000 },
+    { tokPerSec: 44.8, ttftSec: 2.15, costUsd: 0.054, cacheHitPct: 72.3, contextTokens: 65100, inputTokens: 17400, cacheReadTokens: 46700, outputTokens: 1000 },
+    { tokPerSec: 63.5, ttftSec: 1.38, costUsd: 0.04, cacheHitPct: 85.4, contextTokens: 61800, inputTokens: 8800, cacheReadTokens: 52000, outputTokens: 1000 },
+    { tokPerSec: 79.4, ttftSec: 0.98, costUsd: 0.031, cacheHitPct: 91.2, contextTokens: 58900, inputTokens: 5100, cacheReadTokens: 52800, outputTokens: 1000 },
+    { tokPerSec: 72.0, ttftSec: 1.18, costUsd: 0.036, cacheHitPct: 89.0, contextTokens: 55600, inputTokens: 6000, cacheReadTokens: 48600, outputTokens: 1000 },
+    { tokPerSec: 55.7, ttftSec: 1.66, costUsd: 0.045, cacheHitPct: 80.5, contextTokens: 52400, inputTokens: 9900, cacheReadTokens: 41500, outputTokens: 1000 },
+    { tokPerSec: 83.8, ttftSec: 0.89, costUsd: 0.028, cacheHitPct: 92.6, contextTokens: 49200, inputTokens: 3600, cacheReadTokens: 44600, outputTokens: 1000 },
+    { tokPerSec: 69.1, ttftSec: 1.29, costUsd: 0.037, cacheHitPct: 87.9, contextTokens: 46000, inputTokens: 5500, cacheReadTokens: 39600, outputTokens: 900 },
+    { tokPerSec: 47.3, ttftSec: 2.04, costUsd: 0.052, cacheHitPct: 74.1, contextTokens: 42800, inputTokens: 10800, cacheReadTokens: 31100, outputTokens: 900 },
+    { tokPerSec: 74.8, ttftSec: 1.07, costUsd: 0.034, cacheHitPct: 90.1, contextTokens: 39600, inputTokens: 3900, cacheReadTokens: 34800, outputTokens: 900 },
+    { tokPerSec: 67.2, ttftSec: 1.32, costUsd: 0.039, cacheHitPct: 86.7, contextTokens: 36200, inputTokens: 4800, cacheReadTokens: 30500, outputTokens: 900 },
+    { tokPerSec: 81.5, ttftSec: 0.95, costUsd: 0.03, cacheHitPct: 91.8, contextTokens: 32800, inputTokens: 2700, cacheReadTokens: 29200, outputTokens: 900 },
+    { tokPerSec: 61.9, ttftSec: 1.51, costUsd: 0.043, cacheHitPct: 82.0, contextTokens: 29400, inputTokens: 5200, cacheReadTokens: 23300, outputTokens: 900 },
+    { tokPerSec: 70.4, ttftSec: 1.19, costUsd: 0.036, cacheHitPct: 88.2, contextTokens: 25600, inputTokens: 3000, cacheReadTokens: 21700, outputTokens: 900 },
+    { tokPerSec: 53.6, ttftSec: 1.74, costUsd: 0.047, cacheHitPct: 77.4, contextTokens: 21800, inputTokens: 4800, cacheReadTokens: 16200, outputTokens: 800 },
+    { tokPerSec: 76.2, ttftSec: 1.04, costUsd: 0.033, cacheHitPct: 89.5, contextTokens: 17400, inputTokens: 1800, cacheReadTokens: 14800, outputTokens: 800 },
+    { tokPerSec: 62.4, ttftSec: 1.48, costUsd: 0.042, cacheHitPct: 68.0, contextTokens: 12600, inputTokens: 4000, cacheReadTokens: 7800, outputTokens: 800 },
   ];
 
   const mainAgent = {

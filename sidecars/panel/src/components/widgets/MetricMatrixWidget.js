@@ -25,6 +25,7 @@ import { getEffectiveLocale, t } from '../../i18n/index.js';
 import {
   buildSparklineGeometry,
   extractOverviewMetricSeries,
+  resolveAdaptiveSparklineSpec,
   resolveOverviewMetricCell,
   splitMetricValueAndUnit,
 } from '../../registries/metricRegistry.js';
@@ -62,17 +63,10 @@ function createSparklineSvg(gradId) {
   const stopBot = document.createElementNS(SVG_NS, 'stop');
   stopBot.setAttribute('offset', '100%');
   stopBot.setAttribute('stop-color', 'currentColor');
-  stopBot.setAttribute('stop-opacity', '0.02');
+  stopBot.setAttribute('stop-opacity', '0');
   grad.appendChild(stopTop);
   grad.appendChild(stopBot);
   defs.appendChild(grad);
-
-  const axisLine = document.createElementNS(SVG_NS, 'line');
-  axisLine.setAttribute('class', 'cell-sparkline-axis');
-  axisLine.setAttribute('x1', '4');
-  axisLine.setAttribute('y1', '32');
-  axisLine.setAttribute('x2', '104');
-  axisLine.setAttribute('y2', '32');
 
   const areaPath = document.createElementNS(SVG_NS, 'path');
   areaPath.setAttribute('class', 'cell-sparkline-area');
@@ -92,12 +86,11 @@ function createSparklineSvg(gradId) {
   dot.setAttribute('fill', 'currentColor');
 
   svg.appendChild(defs);
-  svg.appendChild(axisLine);
   svg.appendChild(areaPath);
   svg.appendChild(polyline);
   svg.appendChild(dot);
 
-  return { svg, axisLine, areaPath, polyline, dot };
+  return { svg, areaPath, polyline, dot };
 }
 
 export const MetricMatrixWidget = defineComponent({
@@ -126,7 +119,98 @@ export const MetricMatrixWidget = defineComponent({
     let lastUpdatePayload = null;
     let pendingUpdatePayload = null;
     let activeDrag = null;
+    let lastColCount = 0;
+    let lastIsLargeTrend = false;
+    let pendingSparkResizeRafId = 0;
+    let pendingSparkResizeMicrotask = false;
+    const measuredWrapWidthByKey = new Map();
+    const observedWrapToKey = new Map();
     const settleAnimator = createDropSettleAnimator('is-settling', ' scale(1.02)');
+
+    function scheduleAdaptiveSparklineRepaint() {
+      if (activeDrag || !lastUpdatePayload) return;
+      if (typeof requestAnimationFrame === 'function') {
+        if (pendingSparkResizeRafId) return;
+        pendingSparkResizeRafId = requestAnimationFrame(() => {
+          pendingSparkResizeRafId = 0;
+          if (!activeDrag && lastUpdatePayload) {
+            applyUpdatePayload(lastUpdatePayload);
+          }
+        });
+        return;
+      }
+      if (pendingSparkResizeMicrotask) return;
+      pendingSparkResizeMicrotask = true;
+      queueMicrotask(() => {
+        pendingSparkResizeMicrotask = false;
+        if (!activeDrag && lastUpdatePayload) {
+          applyUpdatePayload(lastUpdatePayload);
+        }
+      });
+    }
+
+    const sparkResizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver((entries) => {
+            if (!Array.isArray(entries) || entries.length === 0) return;
+            let changed = false;
+            for (const entry of entries) {
+              const wrapEl = entry?.target;
+              if (!wrapEl) continue;
+              const key = observedWrapToKey.get(wrapEl);
+              if (!key) continue;
+              const rawW = Number(entry?.contentRect?.width || wrapEl.clientWidth || 0);
+              if (!Number.isFinite(rawW) || rawW <= 0) continue;
+              const nextW = Math.round(rawW);
+              const prevW = measuredWrapWidthByKey.get(key) || 0;
+              if (Math.abs(nextW - prevW) >= 2) {
+                measuredWrapWidthByKey.set(key, nextW);
+                changed = true;
+              }
+            }
+            if (changed) {
+              scheduleAdaptiveSparklineRepaint();
+            }
+          })
+        : null;
+
+    function syncObservedSparklineWraps(activeKeys) {
+      if (!sparkResizeObserver) return;
+      const activeKeySet = new Set(activeKeys);
+      for (const [wrapEl, key] of observedWrapToKey.entries()) {
+        if (!activeKeySet.has(key) || !matrixEl.contains?.(wrapEl)) {
+          sparkResizeObserver.unobserve(wrapEl);
+          observedWrapToKey.delete(wrapEl);
+        }
+      }
+    }
+
+    function readLiveSparklineWidths(colCount, isLargeTrend, metricKeys) {
+      if (!isLargeTrend) {
+        measuredWrapWidthByKey.clear();
+        return;
+      }
+      if (colCount !== lastColCount || !lastIsLargeTrend) {
+        measuredWrapWidthByKey.clear();
+        return;
+      }
+      const keySet = new Set(metricKeys);
+      for (const key of Array.from(measuredWrapWidthByKey.keys())) {
+        if (!keySet.has(key)) measuredWrapWidthByKey.delete(key);
+      }
+      for (const cellEl of matrixEl.children || []) {
+        const key = cellEl?.getAttribute?.('data-metric-key');
+        if (!key || !keySet.has(key)) continue;
+        const wrapEl = cellEl.querySelector?.('.cell-sparkline-wrap');
+        const liveW = Math.round(Number(wrapEl?.clientWidth || 0));
+        if (Number.isFinite(liveW) && liveW > 0) {
+          const prevW = measuredWrapWidthByKey.get(key) || 0;
+          if (Math.abs(liveW - prevW) >= 2 || prevW === 0) {
+            measuredWrapWidthByKey.set(key, liveW);
+          }
+        }
+      }
+    }
 
     function resetDragVisuals() {
       patchClasses(matrixEl, { 'is-dragging-matrix': false });
@@ -414,6 +498,10 @@ export const MetricMatrixWidget = defineComponent({
         : null;
       const maxCols = isLargeTrend ? 3 : 4;
       const colCount = Math.max(1, Math.min(maxCols, metricKeys.length));
+      readLiveSparklineWidths(colCount, isLargeTrend, metricKeys);
+      lastColCount = colCount;
+      lastIsLargeTrend = isLargeTrend;
+
       patchClasses(matrixEl, {
         'is-large-trend': isLargeTrend,
         'is-metrics-reorderable': canDragCells,
@@ -435,10 +523,6 @@ export const MetricMatrixWidget = defineComponent({
       const seriesSteps = isLargeTrend
         ? active.sparklineSteps || active.recentSteps || data?.activeConversation?.recentSteps || []
         : [];
-      const sparkWidth = colCount === 1 ? 248 : colCount === 2 ? 136 : 74;
-      const sparkHeight = 34;
-      const sparkStrokeWidth = colCount === 3 ? '1.55' : '1.65';
-      const sparkDotRadius = colCount === 3 ? '2.5' : '2.75';
 
       const cells = metricKeys.map((key) => {
         const base = resolveOverviewMetricCell(key, {
@@ -451,24 +535,25 @@ export const MetricMatrixWidget = defineComponent({
         if (!isLargeTrend) {
           return { ...base, isLargeTrend: false, sparkSig: '' };
         }
+        const spec = resolveAdaptiveSparklineSpec(measuredWrapWidthByKey.get(key), colCount);
         const series = extractOverviewMetricSeries(key, seriesSteps, {
-          maxPoints: 16,
+          maxPoints: spec.maxPoints,
           limitTokens,
         });
-        const geom = buildSparklineGeometry(series, { width: sparkWidth, height: sparkHeight });
+        const geom = buildSparklineGeometry(series, { width: spec.width, height: spec.height });
         const split = splitMetricValueAndUnit(base.valueText);
         const tone = extractToneClass(base.valueClass);
-        const sparkSig = `${sparkWidth}x${sparkHeight}:${geom.linePoints}:${geom.lastX},${geom.lastY}`;
+        const sparkSig = `${spec.width}x${spec.height}:${spec.maxPoints}:${geom.linePoints}:${geom.lastX},${geom.lastY}`;
         return {
           ...base,
           isLargeTrend: true,
           tone,
           trendMain: split.main,
           trendUnit: split.unit,
-          sparkWidth,
-          sparkHeight,
-          sparkStrokeWidth,
-          sparkDotRadius,
+          sparkWidth: spec.width,
+          sparkHeight: spec.height,
+          sparkStrokeWidth: spec.strokeWidth,
+          sparkDotRadius: spec.dotRadius,
           geom,
           sparkSig,
         };
@@ -516,12 +601,15 @@ export const MetricMatrixWidget = defineComponent({
             'class',
             cell.tone ? `cell-sparkline-wrap ${cell.tone}` : 'cell-sparkline-wrap'
           );
+          if (sparkResizeObserver) {
+            if (!observedWrapToKey.has(refs.sparkWrapEl)) {
+              sparkResizeObserver.observe(refs.sparkWrapEl);
+            }
+            observedWrapToKey.set(refs.sparkWrapEl, cell.key);
+          }
           refs.spark.svg.setAttribute('viewBox', `0 0 ${cell.sparkWidth} ${cell.sparkHeight}`);
           refs.spark.polyline.setAttribute('stroke-width', cell.sparkStrokeWidth);
           refs.spark.dot.setAttribute('r', cell.sparkDotRadius);
-          refs.spark.axisLine.setAttribute('x2', String(cell.sparkWidth - 4));
-          refs.spark.axisLine.setAttribute('y1', String(cell.geom.baselineY));
-          refs.spark.axisLine.setAttribute('y2', String(cell.geom.baselineY));
 
           if (cell.geom.hasLine) {
             refs.spark.areaPath.setAttribute('d', cell.geom.areaPath);
@@ -544,6 +632,7 @@ export const MetricMatrixWidget = defineComponent({
           }
         },
       });
+      syncObservedSparklineWraps(isLargeTrend ? metricKeys : []);
     }
 
     function update(payload = {}) {
@@ -557,6 +646,13 @@ export const MetricMatrixWidget = defineComponent({
     onCleanup(() => {
       teardownActiveDrag({ revert: false, flushPending: false });
       settleAnimator.clear();
+      if (pendingSparkResizeRafId && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(pendingSparkResizeRafId);
+        pendingSparkResizeRafId = 0;
+      }
+      sparkResizeObserver?.disconnect();
+      observedWrapToKey.clear();
+      measuredWrapWidthByKey.clear();
     });
 
     // Initialize default 4-cell skeleton so hover/overview has zero initial height jump

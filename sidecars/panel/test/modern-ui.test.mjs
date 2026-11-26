@@ -52,6 +52,7 @@ import { MetricMatrixWidget } from '../src/components/widgets/MetricMatrixWidget
 import {
   buildSparklineGeometry,
   extractOverviewMetricSeries,
+  resolveAdaptiveSparklineSpec,
   splitMetricValueAndUnit,
 } from '../src/registries/metricRegistry.js';
 import { buildStructurePreviewTelemetry } from '../src/components/settings/structurePreviewMock.js';
@@ -1837,96 +1838,172 @@ test('Large Trend metric cards support unified 1-4 metrics across Hover & Live O
     'context_usage',
   ]) {
     const series = extractOverviewMetricSeries(key, steps, { maxPoints: 16, limitTokens: 256000 });
-    assert.equal(series.length, 14, `Metric ${key} extracts all 14 chronological points`);
+    assert.equal(series.length, 16, `Metric ${key} extracts up to maxPoints chronological points`);
     assert.ok(series.every((n) => Number.isFinite(n)), `Metric ${key} contains finite values`);
   }
   // Chronological check: oldest first -> newest last (matches latest mock step 68.4 tok/s)
-  const tpsSeries = extractOverviewMetricSeries('tps', steps);
+  const tpsSeries = extractOverviewMetricSeries('tps', steps, { maxPoints: 14 });
   assert.equal(tpsSeries.at(-1), 68.4);
   assert.equal(tpsSeries[0], 64.8);
 
+  // Adaptive spec scales step count smoothly with available pixel width
+  const narrowSpec = resolveAdaptiveSparklineSpec(38, 3);
+  const default3Spec = resolveAdaptiveSparklineSpec(0, 3);
+  const default2Spec = resolveAdaptiveSparklineSpec(0, 2);
+  const default1Spec = resolveAdaptiveSparklineSpec(0, 1);
+  const ultraWideSpec = resolveAdaptiveSparklineSpec(500, 1);
+  assert.equal(narrowSpec.width, 38);
+  assert.equal(narrowSpec.maxPoints, 5);
+  assert.equal(default3Spec.width, 74);
+  assert.equal(default3Spec.maxPoints, 9);
+  assert.equal(default2Spec.width, 136);
+  assert.equal(default2Spec.maxPoints, 18);
+  assert.equal(default1Spec.width, 248);
+  assert.equal(default1Spec.maxPoints, 33);
+  assert.equal(ultraWideSpec.maxPoints, 48);
+
   // 2) Detached Hover renders top 3 of its 4-metric list in Large mode, while Overview stays in Medium (4 cols)
-  hoverMatrix = MetricMatrixWidget({ mode: 'hover', preview: true });
-  overviewMatrix = MetricMatrixWidget({ mode: 'overview', preview: true });
-
-  hoverMatrix.refs.update({ data: mockData });
-  overviewMatrix.refs.update({ data: mockData });
-
-  assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), true);
-  assert.equal(hoverMatrix.el.getAttribute('data-cols'), '3');
-  assert.equal(hoverMatrix.el.children.length, 3);
-  const card0 = hoverMatrix.el.children[0];
-  assert.equal(card0.classList.contains('is-trend-card'), true);
-  assert.equal(card0.querySelector('.cell-trend-num').textContent, '68.4');
-  assert.equal(card0.querySelector('.cell-trend-unit').textContent, 'tok/s');
-  assert.equal(card0.querySelector('.cell-sparkline-svg').getAttribute('viewBox'), '0 0 74 34');
-  assert.ok(card0.querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length === 14);
-  assert.ok(card0.querySelector('.cell-sparkline-area').getAttribute('d').startsWith('M '));
-
-  // Overview stays in 4-column medium mode when detached
-  assert.equal(overviewMatrix.el.classList.contains('is-large-trend'), false);
-  assert.equal(overviewMatrix.el.getAttribute('data-cols'), '4');
-  assert.equal(overviewMatrix.el.children.length, 4);
-
-  // 3) Synced mode (hoverSyncOverviewMetrics: true) mirrors overviewMetricStyle === 'large' across BOTH Overview and Hover
-  const syncedLargeData = buildStructurePreviewTelemetry(
-    {},
-    {
-      hoverSyncOverviewMetrics: true,
-      hoverMetricStyle: 'medium',
-      overviewMetricStyle: 'large',
-      overviewMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+  const prevRO = globalThis.ResizeObserver;
+  const roInstances = [];
+  globalThis.ResizeObserver = class MockResizeObserver {
+    constructor(cb) {
+      this.cb = cb;
+      this.observed = new Set();
+      roInstances.push(this);
     }
-  );
-  hoverMatrix.refs.update({ data: syncedLargeData });
-  overviewMatrix.refs.update({ data: syncedLargeData });
-  assert.equal(overviewMatrix.el.classList.contains('is-large-trend'), true);
-  assert.equal(overviewMatrix.el.getAttribute('data-cols'), '3');
-  assert.equal(overviewMatrix.el.children.length, 3);
-  assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), true);
-  assert.equal(hoverMatrix.el.getAttribute('data-cols'), '3');
+    observe(el) {
+      this.observed.add(el);
+    }
+    unobserve(el) {
+      this.observed.delete(el);
+    }
+    disconnect() {
+      this.observed.clear();
+    }
+    emit(entries) {
+      this.cb(entries);
+    }
+  };
+  try {
+    hoverMatrix = MetricMatrixWidget({ mode: 'hover', preview: true });
+    overviewMatrix = MetricMatrixWidget({ mode: 'overview', preview: true });
 
-  // 4) 2-card and 1-card large modes scale viewBox cleanly (136x34 and 248x34)
-  hoverMatrix.refs.update({
-    data: buildStructurePreviewTelemetry(
-      {},
-      { hoverSyncOverviewMetrics: false, hoverMetricStyle: 'large', hoverMetrics: ['tps', 'ttft'] }
-    ),
-  });
-  assert.equal(hoverMatrix.el.getAttribute('data-cols'), '2');
-  assert.equal(
-    hoverMatrix.el.children[0].querySelector('.cell-sparkline-svg').getAttribute('viewBox'),
-    '0 0 136 34'
-  );
+    hoverMatrix.refs.update({ data: mockData });
+    overviewMatrix.refs.update({ data: mockData });
 
-  hoverMatrix.refs.update({
-    data: buildStructurePreviewTelemetry(
-      {},
-      { hoverSyncOverviewMetrics: false, hoverMetricStyle: 'large', hoverMetrics: ['tps'] }
-    ),
-  });
-  assert.equal(hoverMatrix.el.getAttribute('data-cols'), '1');
-  assert.equal(hoverMatrix.el.children.length, 1);
-  assert.equal(
-    hoverMatrix.el.children[0].querySelector('.cell-sparkline-svg').getAttribute('viewBox'),
-    '0 0 248 34'
-  );
+    assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), true);
+    assert.equal(hoverMatrix.el.getAttribute('data-cols'), '3');
+    assert.equal(hoverMatrix.el.children.length, 3);
+    const card0 = hoverMatrix.el.children[0];
+    assert.equal(card0.classList.contains('is-trend-card'), true);
+    assert.equal(card0.querySelector('.cell-trend-num').textContent, '68.4');
+    assert.equal(card0.querySelector('.cell-trend-unit').textContent, 'tok/s');
+    assert.equal(card0.querySelector('.cell-sparkline-svg').getAttribute('viewBox'), '0 0 74 34');
+    assert.equal(
+      card0.querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length,
+      default3Spec.maxPoints
+    );
+    assert.equal(card0.querySelector('.cell-sparkline-axis'), null);
+    assert.ok(card0.querySelector('.cell-sparkline-area').getAttribute('d').startsWith('M '));
 
-  // 5) Switching back to medium restores all 4 compact metric cards from the same list
-  hoverMatrix.refs.update({
-    data: buildStructurePreviewTelemetry(
+    // Live ResizeObserver adapts each card independently to narrow vs wide sparkline space
+    const hoverRO = roInstances[0];
+    const wrap0 = card0.querySelector('.cell-sparkline-wrap');
+    const wrap1 = hoverMatrix.el.children[1].querySelector('.cell-sparkline-wrap');
+    hoverRO.emit([
+      { target: wrap0, contentRect: { width: 42 } },
+      { target: wrap1, contentRect: { width: 120 } },
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(card0.querySelector('.cell-sparkline-svg').getAttribute('viewBox'), '0 0 42 34');
+    assert.equal(
+      card0.querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length,
+      resolveAdaptiveSparklineSpec(42, 3).maxPoints
+    );
+    assert.equal(
+      hoverMatrix.el.children[1].querySelector('.cell-sparkline-svg').getAttribute('viewBox'),
+      '0 0 120 34'
+    );
+    assert.equal(
+      hoverMatrix.el.children[1].querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length,
+      resolveAdaptiveSparklineSpec(120, 3).maxPoints
+    );
+
+    // Overview stays in 4-column medium mode when detached
+    assert.equal(overviewMatrix.el.classList.contains('is-large-trend'), false);
+    assert.equal(overviewMatrix.el.getAttribute('data-cols'), '4');
+    assert.equal(overviewMatrix.el.children.length, 4);
+
+    // 3) Synced mode (hoverSyncOverviewMetrics: true) mirrors overviewMetricStyle === 'large' across BOTH Overview and Hover
+    const syncedLargeData = buildStructurePreviewTelemetry(
       {},
       {
-        hoverSyncOverviewMetrics: false,
+        hoverSyncOverviewMetrics: true,
         hoverMetricStyle: 'medium',
-        hoverMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+        overviewMetricStyle: 'large',
+        overviewMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
       }
-    ),
-  });
-  assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), false);
-  assert.equal(hoverMatrix.el.getAttribute('data-cols'), '4');
-  assert.equal(hoverMatrix.el.children.length, 4);
-  assert.equal(hoverMatrix.el.children[0].classList.contains('is-trend-card'), false);
+    );
+    hoverMatrix.refs.update({ data: syncedLargeData });
+    overviewMatrix.refs.update({ data: syncedLargeData });
+    assert.equal(overviewMatrix.el.classList.contains('is-large-trend'), true);
+    assert.equal(overviewMatrix.el.getAttribute('data-cols'), '3');
+    assert.equal(overviewMatrix.el.children.length, 3);
+    assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), true);
+    assert.equal(hoverMatrix.el.getAttribute('data-cols'), '3');
+
+    // 4) 2-card and 1-card large modes reset stale col widths & scale both viewBox and step count cleanly
+    hoverMatrix.refs.update({
+      data: buildStructurePreviewTelemetry(
+        {},
+        { hoverSyncOverviewMetrics: false, hoverMetricStyle: 'large', hoverMetrics: ['tps', 'ttft'] }
+      ),
+    });
+    assert.equal(hoverMatrix.el.getAttribute('data-cols'), '2');
+    assert.equal(
+      hoverMatrix.el.children[0].querySelector('.cell-sparkline-svg').getAttribute('viewBox'),
+      '0 0 136 34'
+    );
+    assert.equal(
+      hoverMatrix.el.children[0].querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length,
+      default2Spec.maxPoints
+    );
+
+    hoverMatrix.refs.update({
+      data: buildStructurePreviewTelemetry(
+        {},
+        { hoverSyncOverviewMetrics: false, hoverMetricStyle: 'large', hoverMetrics: ['tps'] }
+      ),
+    });
+    assert.equal(hoverMatrix.el.getAttribute('data-cols'), '1');
+    assert.equal(hoverMatrix.el.children.length, 1);
+    assert.equal(
+      hoverMatrix.el.children[0].querySelector('.cell-sparkline-svg').getAttribute('viewBox'),
+      '0 0 248 34'
+    );
+    assert.equal(
+      hoverMatrix.el.children[0].querySelector('.cell-sparkline-line').getAttribute('points').split(' ').length,
+      default1Spec.maxPoints
+    );
+
+    // 5) Switching back to medium restores all 4 compact metric cards from the same list
+    hoverMatrix.refs.update({
+      data: buildStructurePreviewTelemetry(
+        {},
+        {
+          hoverSyncOverviewMetrics: false,
+          hoverMetricStyle: 'medium',
+          hoverMetrics: ['tps', 'ttft', 'avg_tps', 'step_cost'],
+        }
+      ),
+    });
+    assert.equal(hoverMatrix.el.classList.contains('is-large-trend'), false);
+    assert.equal(hoverMatrix.el.getAttribute('data-cols'), '4');
+    assert.equal(hoverMatrix.el.children.length, 4);
+    assert.equal(hoverMatrix.el.children[0].classList.contains('is-trend-card'), false);
+  } finally {
+    globalThis.ResizeObserver = prevRO;
+  }
 
   // 6) EditableSlotList dims item #4 (index >= 3) in Large mode and clears dim on Medium
   const { EditableSlotList } = await import('../src/components/settings/EditableSlotList.js');

@@ -2265,9 +2265,9 @@ html[data-standalone="true"] .app-shell {
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;
-  flex: 1 1 136px;
-  min-width: 68px;
-  max-width: 152px;
+  flex: 1 1 0%;
+  min-width: 64px;
+  max-width: none;
   height: 34px;
 }
 
@@ -2275,9 +2275,18 @@ html[data-standalone="true"] .app-shell {
   color: var(--accent-primary);
 }
 
+.telemetry-matrix.is-large-trend[data-cols="1"] .cell-trend-left {
+  max-width: 48%;
+}
+
 .telemetry-matrix.is-large-trend[data-cols="1"] .cell-sparkline-wrap {
-  flex: 1 1 248px;
-  max-width: 280px;
+  flex: 1 1 0%;
+  min-width: 112px;
+  max-width: none;
+}
+
+.telemetry-matrix.is-large-trend[data-cols="2"] .cell-trend-left {
+  max-width: 54%;
 }
 
 .telemetry-matrix.is-large-trend[data-cols="3"] .matrix-cell.is-trend-card {
@@ -2297,9 +2306,9 @@ html[data-standalone="true"] .app-shell {
 }
 
 .telemetry-matrix.is-large-trend[data-cols="3"] .cell-sparkline-wrap {
-  flex: 1 1 74px;
-  min-width: 36px;
-  max-width: 84px;
+  flex: 1 1 0%;
+  min-width: 34px;
+  max-width: none;
 }
 
 .cell-sparkline-svg {
@@ -2307,11 +2316,6 @@ html[data-standalone="true"] .app-shell {
   width: 100%;
   height: 100%;
   overflow: visible;
-}
-
-.cell-sparkline-axis {
-  stroke: color-mix(in srgb, var(--text-muted) 22%, transparent);
-  stroke-width: 1;
 }
 
 .progress-track {
