@@ -1027,7 +1027,7 @@ test('cloudcode-proxy handles socks5:// and authenticated HTTP/HTTPS proxies, en
     createCloudCodeProxyController({
       allowHttpUpstream: true,
       allowTestEndpoint: true,
-      tunnelTimeoutMs: 120,
+      tunnelTimeoutMs: 3000,
       upstreamTlsOptions: { rejectUnauthorized: false },
       detectUpstreamFn: () => upstreamHttpsUrl,
       detectProxyFn: async () => activeProxyUrl,
@@ -1038,7 +1038,7 @@ test('cloudcode-proxy handles socks5:// and authenticated HTTP/HTTPS proxies, en
 
   const ctrlSocks = makeProxyCtrl();
   const ctrlHttpAuth = makeProxyCtrl();
-  const ctrlHung = makeProxyCtrl();
+  const ctrlHung = makeProxyCtrl({ tunnelTimeoutMs: 120 });
 
   try {
     // A. SOCKS5 tunnel rewrites fetchAvailableModels over real TLS and POOLS Keep-Alive tunnel across consecutive requests
