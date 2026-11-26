@@ -7,6 +7,9 @@
  * 2. 通过 `WeakMap` 精确记录每个被改写节点/属性的原文与译文，既支持 `light ↔ deep` /
  *    `关闭` 秒级无损还原，也能自动识别 React 原地更新的新英文文案并重新翻译；
  * 3. 对齐 Antigravity 真实 DOM 结构，严格豁免用户消息正文（`user-message-content`）、
+ *    AI 回复正文（`planner-response-text` / `progress-update-response-text`）、
+ *    Markdown 内容根（`data-markdown-root` / `.md-divider-spacing` / `data-md-table`）、
+ *    KaTeX 公式可见层（`.katex` / `.katex-display` / `.katex-html` / `.katex-mathml` / `.md-math-display`）、
  *    代码块、Diff 行、编辑器、终端、可编辑区以及本插件双 Shadow Host，不误伤工具栏按钮；
  * 4. 针对数千条精确词条 + 数百条动态模板做 O(1) 精确查表 + 首词桶索引，并经
  *    `requestAnimationFrame` 分帧合批，杜绝流式输出掉帧。
@@ -15,13 +18,130 @@
 import { HOST_I18N_GLOBAL_KEY } from '../../shared/host-i18n-protocol.mjs';
 
 /**
+ * 宿主页面跳过配置（翻译引擎与未翻译采集器共用单一数据源，通过参数注入到 CDP 隔离执行环境）。
+ */
+export const HOST_I18N_SKIP_CONFIG = Object.freeze({
+  tags: Object.freeze([
+    'SCRIPT',
+    'STYLE',
+    'NOSCRIPT',
+    'CODE',
+    'PRE',
+    'TEXTAREA',
+    'SVG',
+    'MATH',
+    'KBD',
+    'SAMP',
+    'VAR',
+    'CANVAS',
+    'VIDEO',
+    'AUDIO',
+    'IFRAME',
+  ]),
+  attrs: Object.freeze([
+    'data-ag-i18n-ignore',
+    'data-markdown-root',
+    'data-markdown-block-index',
+    'data-md-table',
+    'data-quotable-inline',
+    'data-uri',
+    'data-line-tokens',
+    'data-line-number',
+    'data-diff-type',
+    'data-current-original-line',
+    'data-current-modified-line',
+  ]),
+  testIds: Object.freeze([
+    'user-message-content',
+    'user-message-bubble',
+    'user-message-document-chip',
+    'attached-context-pill',
+    'entity-pill',
+    'resource-link',
+    'file-title-name',
+    'webview-download-filename',
+    'breadcrumb-segment',
+    'planner-response-text',
+    'progress-update-response-text',
+    'planner-response-debug-error',
+    'ask-question-header-text',
+    'ask-question-option-text',
+    'side-question-followup-user',
+    'browser-subagent-thinking',
+    'live-agent-turn',
+    'live-user-turn',
+    'voice-agent-message',
+    'voice-user-message',
+    'voice-transcript-summary',
+    'coordinator-card-latest-line',
+    'comment-card-text',
+    'step-plan-item',
+    'vcs-commit-message',
+    'setup-script-output',
+    'pill-comment-anchor-text',
+    'markdown-code-block-preview',
+    'markdown-frontmatter',
+    'automation-instructions-markdown',
+    'lsp-hover-body',
+    'code-gutter',
+    'code-gutter-diff',
+    'diff-gutter-strip',
+    'artifact-pdf-view',
+    'pdf-text-layer',
+    'transcript-line-text',
+    'terminal-surface',
+    'terminal-tab-surface',
+  ]),
+  classes: Object.freeze([
+    'monaco-editor',
+    'xterm',
+    'cm-editor',
+    'cm-content',
+    'cm-line',
+    'ProseMirror',
+    'markdown-body',
+    'prose',
+    'md-divider-spacing',
+    'bleed-contain',
+    'agy-sidebar-row',
+    'katex',
+    'katex-display',
+    'katex-html',
+    'katex-mathml',
+    'md-math-display',
+    'code-block',
+    'code-line',
+    'line-content',
+    'diff-line',
+    'view-lines',
+    'shiki',
+    'prism-code',
+    'hljs',
+    'token-line',
+  ]),
+  collectorExtraClasses: Object.freeze([
+    'material-symbols-outlined',
+    'material-symbols-rounded',
+    'material-symbols-sharp',
+    'google-symbols',
+    'codicon',
+  ]),
+});
+
+/**
  * 在宿主页面执行：安装或热更新无损 DOM 翻译器，并续期 18 秒看门狗。
  *
  * @param {object} payload `{ locale, depth, revision, exact, patterns }`
  * @param {string} bootId
  * @param {string} [globalKey]
+ * @param {object} [skipConfig]
  */
-export function applyHostI18nInPage(payload, bootId, globalKey = '__AGUsageMonitorHostI18n') {
+export function applyHostI18nInPage(
+  payload,
+  bootId,
+  globalKey = '__AGUsageMonitorHostI18n',
+  skipConfig = HOST_I18N_SKIP_CONFIG
+) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return { applied: false, reason: 'no_dom' };
   }
@@ -44,71 +164,13 @@ export function applyHostI18nInPage(payload, bootId, globalKey = '__AGUsageMonit
     'aria-description',
     'aria-placeholder',
   ];
-  const SKIP_TAGS = new Set([
-    'SCRIPT',
-    'STYLE',
-    'NOSCRIPT',
-    'CODE',
-    'PRE',
-    'TEXTAREA',
-    'SVG',
-    'MATH',
-    'KBD',
-    'SAMP',
-    'VAR',
-    'CANVAS',
-    'VIDEO',
-    'AUDIO',
-    'IFRAME',
-  ]);
-  const SKIP_TESTIDS = new Set([
-    'user-message-content',
-    'user-message-bubble',
-    'user-message-document-chip',
-    'attached-context-pill',
-    'entity-pill',
-    'resource-link',
-    'file-title-name',
-    'webview-download-filename',
-    'breadcrumb-segment',
-    'step-plan-item',
-    'vcs-commit-message',
-    'setup-script-output',
-    'pill-comment-anchor-text',
-    'markdown-code-block-preview',
-    'markdown-frontmatter',
-    'automation-instructions-markdown',
-    'code-gutter',
-    'code-gutter-diff',
-    'diff-gutter-strip',
-    'artifact-pdf-view',
-    'pdf-text-layer',
-    'transcript-line-text',
-    'terminal-surface',
-    'terminal-tab-surface',
-  ]);
-  const SKIP_CLASSES = new Set([
-    'monaco-editor',
-    'xterm',
-    'cm-editor',
-    'cm-content',
-    'cm-line',
-    'ProseMirror',
-    'markdown-body',
-    'prose',
-    'bleed-contain',
-    'agy-sidebar-row',
-    'code-block',
-    'code-line',
-    'line-content',
-    'diff-line',
-    'view-lines',
-    'shiki',
-    'prism-code',
-    'hljs',
-    'token-line',
-  ]);
+  const cfg = skipConfig && typeof skipConfig === 'object' ? skipConfig : {};
+  const SKIP_TAGS = new Set(Array.isArray(cfg.tags) ? cfg.tags : []);
+  const SKIP_ATTRS = Array.isArray(cfg.attrs) ? cfg.attrs : [];
+  const SKIP_TESTIDS = new Set(Array.isArray(cfg.testIds) ? cfg.testIds : []);
+  const SKIP_CLASSES = new Set(Array.isArray(cfg.classes) ? cfg.classes : []);
   const CONVERSATION_HREF_RE = /^\/c\/[0-9a-f-]{8,}(?:[/?#]|$)/i;
+  const SINGLE_LOWER_WORD_RE = /^[a-z][a-z'-]*$/;
 
   function isSkippedSelf(el) {
     if (!el || el.nodeType !== 1) return false;
@@ -117,18 +179,8 @@ export function applyHostI18nInPage(payload, bootId, globalKey = '__AGUsageMonit
     const id = el.id;
     if (id === 'ag-usage-monitor-capsule' || id === 'ag-usage-monitor-portal') return true;
     if (typeof el.hasAttribute === 'function') {
-      if (
-        el.hasAttribute('data-ag-i18n-ignore') ||
-        el.hasAttribute('data-markdown-block-index') ||
-        el.hasAttribute('data-quotable-inline') ||
-        el.hasAttribute('data-uri') ||
-        el.hasAttribute('data-line-tokens') ||
-        el.hasAttribute('data-line-number') ||
-        el.hasAttribute('data-diff-type') ||
-        el.hasAttribute('data-current-original-line') ||
-        el.hasAttribute('data-current-modified-line')
-      ) {
-        return true;
+      for (let i = 0; i < SKIP_ATTRS.length; i += 1) {
+        if (el.hasAttribute(SKIP_ATTRS[i])) return true;
       }
     }
     if (typeof el.getAttribute === 'function') {
@@ -362,7 +414,12 @@ export function applyHostI18nInPage(payload, bootId, globalKey = '__AGUsageMonit
     const hasLetter = translatedCore === undefined ? hasAsciiLetter(trimmed) : false;
     let lowerRef = { value: null };
 
-    if (translatedCore === undefined && trimmed.length <= 80 && hasLetter) {
+    if (
+      translatedCore === undefined &&
+      trimmed.length <= 80 &&
+      hasLetter &&
+      !SINGLE_LOWER_WORD_RE.test(trimmed)
+    ) {
       lowerRef.value = trimmed.toLowerCase();
       translatedCore = matchers.exactLowerMap.get(lowerRef.value);
     }
@@ -782,7 +839,7 @@ export function createHostI18nHeartbeatExpression(bootId, revision) {
  * 生成完整注入/切换词表表达式。
  */
 export function createHostI18nApplyExpression(payload, bootId) {
-  return `(${applyHostI18nInPage.toString()})(${JSON.stringify(payload)}, ${JSON.stringify(bootId)}, ${JSON.stringify(HOST_I18N_GLOBAL_KEY)})`;
+  return `(${applyHostI18nInPage.toString()})(${JSON.stringify(payload)}, ${JSON.stringify(bootId)}, ${JSON.stringify(HOST_I18N_GLOBAL_KEY)}, ${JSON.stringify(HOST_I18N_SKIP_CONFIG)})`;
 }
 
 /**
@@ -805,7 +862,10 @@ export function createHostI18nDisposeExpression() {
  * 在宿主页面按需执行：只读采集当前已挂载 UI 中尚未翻译的英文短语
  * （与主翻译引擎对齐 `TreeWalker` + `shadowRoot` 遍历范围，严格排除聊天用户正文、代码块、Diff、编辑器、图标连字与隐私路径）。
  */
-export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHostI18n') {
+export function collectUntranslatedHostUiInPage(
+  globalKey = '__AGUsageMonitorHostI18n',
+  skipConfig = HOST_I18N_SKIP_CONFIG
+) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return { count: 0, items: [] };
   }
@@ -820,76 +880,16 @@ export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHos
     'aria-description',
     'aria-placeholder',
   ];
-  const SKIP_TAGS = new Set([
-    'SCRIPT',
-    'STYLE',
-    'NOSCRIPT',
-    'CODE',
-    'PRE',
-    'TEXTAREA',
-    'SVG',
-    'MATH',
-    'KBD',
-    'SAMP',
-    'VAR',
-    'CANVAS',
-    'VIDEO',
-    'AUDIO',
-    'IFRAME',
-  ]);
-  const SKIP_TESTIDS = new Set([
-    'user-message-content',
-    'user-message-bubble',
-    'user-message-document-chip',
-    'attached-context-pill',
-    'entity-pill',
-    'resource-link',
-    'file-title-name',
-    'webview-download-filename',
-    'breadcrumb-segment',
-    'step-plan-item',
-    'vcs-commit-message',
-    'setup-script-output',
-    'pill-comment-anchor-text',
-    'markdown-code-block-preview',
-    'markdown-frontmatter',
-    'automation-instructions-markdown',
-    'code-gutter',
-    'code-gutter-diff',
-    'diff-gutter-strip',
-    'artifact-pdf-view',
-    'pdf-text-layer',
-    'transcript-line-text',
-    'terminal-surface',
-    'terminal-tab-surface',
-  ]);
+  const cfg = skipConfig && typeof skipConfig === 'object' ? skipConfig : {};
+  const SKIP_TAGS = new Set(Array.isArray(cfg.tags) ? cfg.tags : []);
+  const SKIP_ATTRS = Array.isArray(cfg.attrs) ? cfg.attrs : [];
+  const SKIP_TESTIDS = new Set(Array.isArray(cfg.testIds) ? cfg.testIds : []);
   const SKIP_CLASSES = new Set([
-    'monaco-editor',
-    'xterm',
-    'cm-editor',
-    'cm-content',
-    'cm-line',
-    'ProseMirror',
-    'markdown-body',
-    'prose',
-    'bleed-contain',
-    'agy-sidebar-row',
-    'code-block',
-    'code-line',
-    'line-content',
-    'diff-line',
-    'view-lines',
-    'shiki',
-    'prism-code',
-    'hljs',
-    'token-line',
-    'material-symbols-outlined',
-    'material-symbols-rounded',
-    'material-symbols-sharp',
-    'google-symbols',
-    'codicon',
+    ...(Array.isArray(cfg.classes) ? cfg.classes : []),
+    ...(Array.isArray(cfg.collectorExtraClasses) ? cfg.collectorExtraClasses : []),
   ]);
   const CONVERSATION_HREF_RE = /^\/c\/[0-9a-f-]{8,}(?:[/?#]|$)/i;
+  const SINGLE_LOWER_WORD_RE = /^[a-z][a-z'-]*$/;
   const NON_LATIN_RE = /[\u3000-\u9fff\uac00-\ud7af\u0400-\u04ff\uff00-\uffef]/;
   const NOISE_RE =
     /^(?:https?:\/\/|file:\/\/|\/|~\.|[A-Za-z]:\\|[\w.+-]+@[\w.-]+\.[a-z]{2,}$|[0-9a-f]{8}-[0-9a-f]{4}-|v?\d+(?:\.\d+)+$|\/[a-z0-9_-]+$|(?:gemini|claude|gpt|o[134])\b)/i;
@@ -907,18 +907,8 @@ export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHos
     const id = el.id;
     if (id === 'ag-usage-monitor-capsule' || id === 'ag-usage-monitor-portal') return true;
     if (typeof el.hasAttribute === 'function') {
-      if (
-        el.hasAttribute('data-ag-i18n-ignore') ||
-        el.hasAttribute('data-markdown-block-index') ||
-        el.hasAttribute('data-quotable-inline') ||
-        el.hasAttribute('data-uri') ||
-        el.hasAttribute('data-line-tokens') ||
-        el.hasAttribute('data-line-number') ||
-        el.hasAttribute('data-diff-type') ||
-        el.hasAttribute('data-current-original-line') ||
-        el.hasAttribute('data-current-modified-line')
-      ) {
-        return true;
+      for (let i = 0; i < SKIP_ATTRS.length; i += 1) {
+        if (el.hasAttribute(SKIP_ATTRS[i])) return true;
       }
     }
     if (typeof el.getAttribute === 'function') {
@@ -978,7 +968,13 @@ export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHos
       return;
     }
     if (activeState?.matchers?.exactMap?.has(text)) return;
-    if (text.length <= 80 && activeState?.matchers?.exactLowerMap?.has(text.toLowerCase())) return;
+    if (
+      text.length <= 80 &&
+      !SINGLE_LOWER_WORD_RE.test(text) &&
+      activeState?.matchers?.exactLowerMap?.has(text.toLowerCase())
+    ) {
+      return;
+    }
     counts.set(text, (counts.get(text) || 0) + 1);
     if (!kinds.has(text)) kinds.set(text, kind);
   }
@@ -1076,5 +1072,5 @@ export function collectUntranslatedHostUiInPage(globalKey = '__AGUsageMonitorHos
  * 生成按需采集未命中 UI 词条的只读 CDP 表达式。
  */
 export function createHostI18nCollectExpression() {
-  return `(${collectUntranslatedHostUiInPage.toString()})(${JSON.stringify(HOST_I18N_GLOBAL_KEY)})`;
+  return `(${collectUntranslatedHostUiInPage.toString()})(${JSON.stringify(HOST_I18N_GLOBAL_KEY)}, ${JSON.stringify(HOST_I18N_SKIP_CONFIG)})`;
 }

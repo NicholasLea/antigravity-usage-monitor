@@ -41,6 +41,8 @@ export function loadIgnoreLists(ignorePath = DEFAULT_IGNORE_PATH) {
   };
 }
 
+const SINGLE_LOWER_WORD_RE = /^[a-z][a-z'-]*$/;
+
 function buildRuntimeMatcher(payload) {
   const exactMap = new Map(Object.entries(payload.exact || {}));
   const exactLowerMap = new Map();
@@ -68,7 +70,7 @@ function buildRuntimeMatcher(payload) {
       const t = String(text || '').trim();
       if (!t) return null;
       if (exactMap.has(t)) return { kind: 'exact', value: exactMap.get(t) };
-      if (t.length <= 80) {
+      if (t.length <= 80 && !SINGLE_LOWER_WORD_RE.test(t)) {
         const lv = exactLowerMap.get(t.toLowerCase());
         if (lv !== undefined) return { kind: 'exact-ci', value: lv };
       }

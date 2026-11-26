@@ -34,6 +34,7 @@ import {
   applyHostI18nInPage,
   collectUntranslatedHostUiInPage,
   createHostI18nApplyExpression,
+  createHostI18nCollectExpression,
   createHostI18nDisposeExpression,
   createHostI18nHeartbeatExpression,
 } from '../backend/host-i18n/runtime-translator.mjs';
@@ -1277,6 +1278,244 @@ test('runtime translator and collector skip Antigravity code-line/diff/code-bloc
     applyHostI18nInPage(deepPayload, 'boot-code-guard', HOST_I18N_GLOBAL_KEY);
     assert.equal(tabTitleAllEdits.nodeValue, 'views-tables.css（全部智能体编辑）');
     assert.equal(cssPropBg.nodeValue, 'background');
+
+    win[HOST_I18N_GLOBAL_KEY].dispose();
+  } finally {
+    globalThis.window = prevWindow;
+    globalThis.document = prevDocument;
+  }
+});
+
+test('Issue #54: runtime translator and collector exempt AI replies (streaming word spans), thinking markdown, KaTeX math, tables, and single lowercase prose words without breaking UI chrome or CDP serialization', () => {
+  const { win, doc, body, MockElement, MockText, observers } = createMockDom();
+  const zhPack = JSON.parse(
+    readFileSync(join(REAL_HOST_I18N_ROOT, 'dist', 'packs', 'zh-CN.json'), 'utf8')
+  );
+  const packHash = sha256(JSON.stringify(zhPack));
+  const lightPayload = compileHostI18nRuntimePayload(zhPack, 'light', packHash);
+
+  const prevWindow = globalThis.window;
+  const prevDocument = globalThis.document;
+  try {
+    globalThis.window = win;
+    globalThis.document = doc;
+
+    // 1. Streaming AI reply inside planner-response-text + [data-markdown-root] (.md-divider-spacing)
+    //    Reproduces per-word <span> split where exactMap ('for','the','waiting','result') and
+    //    exactLowerMap ('display','on','all','tasks','before') previously mangled English replies.
+    const plannerTurn = body.appendChild(new MockElement('div'));
+    const thinkingTrigger = plannerTurn.appendChild(
+      new MockElement('button', { attrs: { 'data-testid': 'thinking-collapsible-trigger' } })
+    );
+    const txtThinkingTrigger = thinkingTrigger.appendChild(new MockText('Thought for 12s'));
+    const thinkingBody = plannerTurn.appendChild(new MockElement('div', { className: 'cursor-edit pl-2' }));
+    // IDE-style markdown root (only .md-divider-spacing, no data-markdown-root)
+    const thinkingMdRoot = thinkingBody.appendChild(
+      new MockElement('div', { className: 'text-base md-divider-spacing break-words' })
+    );
+    const thinkingWordFor = thinkingMdRoot.appendChild(new MockElement('span')).appendChild(new MockText('for '));
+    const thinkingWordEffort = thinkingMdRoot
+      .appendChild(new MockElement('strong'))
+      .appendChild(new MockText('effort'));
+
+    const plannerResp = plannerTurn.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'planner-response-text' } })
+    );
+    const mdRoot = plannerResp.appendChild(
+      new MockElement('div', {
+        className: 'text-base leading-relaxed select-text md-divider-spacing break-words',
+        attrs: { 'data-markdown-root': '' },
+      })
+    );
+    const streamingParagraph = mdRoot.appendChild(new MockElement('p'));
+    const streamingWords = [
+      'Thanks ',
+      'for ',
+      'the ',
+      'proposal ',
+      'and ',
+      'reference ',
+      'implementation! ',
+      'Multi-currency ',
+      'display ',
+      'has ',
+      'long ',
+      'been ',
+      'on ',
+      'the ',
+      'v1.5.6 ',
+      'roadmap. ',
+      'Just ',
+      'waiting ',
+      'for ',
+      'all ',
+      'remaining ',
+      'tasks ',
+      'in ',
+      'that ',
+      'release ',
+      'to ',
+      'wrap ',
+      'up ',
+      'before ',
+      'shipping ',
+      '— ',
+      'should ',
+      'have ',
+      'a ',
+      'result ',
+      'today. ',
+      'Stay ',
+      'tuned 🙏',
+    ];
+    const streamingTextNodes = streamingWords.map((w) =>
+      streamingParagraph.appendChild(new MockElement('span')).appendChild(new MockText(w))
+    );
+
+    // Sibling action bar outside planner-response-text MUST keep translating
+    const actionBar = plannerTurn.appendChild(new MockElement('div'));
+    const btnCopy = actionBar.appendChild(
+      new MockElement('button', { attrs: { 'aria-label': 'Copy' } })
+    );
+    const tipGood = actionBar.appendChild(new MockElement('span')).appendChild(new MockText('Good Response'));
+    const tipBad = actionBar.appendChild(new MockElement('span')).appendChild(new MockText('Bad Response'));
+    const relTime = actionBar.appendChild(new MockElement('span')).appendChild(new MockText('just now'));
+
+    // 2. Standalone KaTeX inline & display formulas (even outside planner-response-text)
+    const katexInline = body.appendChild(new MockElement('span', { className: 'katex' }));
+    const katexMathml = katexInline.appendChild(new MockElement('span', { className: 'katex-mathml' }));
+    const katexMathTag = katexMathml.appendChild(new MockElement('math'));
+    const txtMathmlEffort = katexMathTag.appendChild(new MockText('effort'));
+    const katexHtml = katexInline.appendChild(
+      new MockElement('span', { className: 'katex-html', attrs: { 'aria-hidden': 'true' } })
+    );
+    const txtKatexHtmlEffort = katexHtml
+      .appendChild(new MockElement('span', { className: 'mord text' }))
+      .appendChild(new MockText('effort'));
+    const txtKatexHtmlTitleEffort = katexHtml
+      .appendChild(new MockElement('span', { className: 'mord text' }))
+      .appendChild(new MockText('Effort'));
+
+    const katexDisplayWrap = body.appendChild(
+      new MockElement('span', { className: 'md-math-display block my-2' })
+    );
+    const katexDisplay = katexDisplayWrap.appendChild(new MockElement('span', { className: 'katex-display' }));
+    const txtKatexDisplayFor = katexDisplay
+      .appendChild(new MockElement('span'))
+      .appendChild(new MockText('for'));
+
+    // 3. Markdown table cells ([data-md-table]) vs table menu toolbar (portal / sibling UI chrome)
+    const mdTableHost = body.appendChild(new MockElement('div', { className: 'md-table-host' }));
+    const mdTableMenuBtn = mdTableHost.appendChild(
+      new MockElement('button', { attrs: { 'data-testid': 'markdown-table-menu', 'aria-label': 'Copy' } })
+    );
+    const mdTableCopyItem = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'markdown-table-copy-markdown' } })
+    );
+    const txtMdTableCopyItem = mdTableCopyItem.appendChild(new MockText('Copy as Markdown'));
+    const mdTableBody = mdTableHost.appendChild(
+      new MockElement('div', { attrs: { 'data-md-table': 'table-1' } })
+    );
+    const txtTableCellEffort = mdTableBody
+      .appendChild(new MockElement('table'))
+      .appendChild(new MockElement('td'))
+      .appendChild(new MockText('Effort'));
+
+    // 4. Additional AI/user content containers
+    const progressUpdate = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'progress-update-response-text' } })
+    );
+    const txtProgressUpdate = progressUpdate.appendChild(new MockText('waiting'));
+    const askHeader = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'ask-question-header-text' } })
+    );
+    const txtAskHeader = askHeader.appendChild(new MockText('Effort'));
+    const askOption = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'ask-question-option-text' } })
+    );
+    const txtAskOption = askOption.appendChild(new MockText('Settings'));
+    const commentText = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'comment-card-text' } })
+    );
+    const txtComment = commentText.appendChild(new MockText('Settings'));
+    const liveAgent = body.appendChild(
+      new MockElement('div', { attrs: { 'data-testid': 'live-agent-turn' } })
+    );
+    const txtLiveAgent = liveAgent.appendChild(new MockText('Settings'));
+
+    // 5. Defense-in-depth: single lowercase words outside exempt containers MUST NOT hit Title Case exactLowerMap,
+    //    while Title Case labels & mixed-case UI phrases STILL translate accurately.
+    const bareLowerEffort = body.appendChild(new MockElement('span')).appendChild(new MockText('effort'));
+    const bareLowerDisplay = body.appendChild(new MockElement('span')).appendChild(new MockText('display'));
+    const bareLowerOn = body.appendChild(new MockElement('span')).appendChild(new MockText('on'));
+    const bareLowerAll = body.appendChild(new MockElement('span')).appendChild(new MockText('all'));
+    const bareLowerTasks = body.appendChild(new MockElement('span')).appendChild(new MockText('tasks'));
+    const bareLowerBefore = body.appendChild(new MockElement('span')).appendChild(new MockText('before'));
+
+    const uiTitleEffort = body.appendChild(new MockElement('span')).appendChild(new MockText('Effort'));
+    const uiAcceptAll = body.appendChild(new MockElement('button')).appendChild(new MockText('Accept All'));
+    const uiFontSize = body.appendChild(new MockElement('span')).appendChild(new MockText('Font size'));
+    const uiImage = body.appendChild(new MockElement('span')).appendChild(new MockText('Image'));
+
+    // Execute via isolated CDP Runtime.evaluate expression (`new Function` has ZERO access to module scope!)
+    const applyExpr = createHostI18nApplyExpression(lightPayload, 'boot-issue54');
+    const applyRes = new Function(`return (${applyExpr});`)();
+    assert.equal(applyRes.applied, true);
+
+    // Streaming AI reply & thinking body stayed 100% untouched
+    assert.equal(
+      streamingTextNodes.map((n) => n.nodeValue).join(''),
+      streamingWords.join('')
+    );
+    assert.equal(thinkingWordFor.nodeValue, 'for ');
+    assert.equal(thinkingWordEffort.nodeValue, 'effort');
+
+    // MutationObserver incremental streaming word append inside planner-response-text stays untouched
+    const streamedSpan = streamingParagraph.appendChild(new MockElement('span'));
+    const txtStreamedFor = streamedSpan.appendChild(new MockText('for '));
+    observers[0].trigger([{ type: 'childList', addedNodes: [streamedSpan] }]);
+    assert.equal(txtStreamedFor.nodeValue, 'for ');
+
+    // KaTeX math formulas, table cells, and extra AI/user content containers stayed 100% untouched
+    assert.equal(txtMathmlEffort.nodeValue, 'effort');
+    assert.equal(txtKatexHtmlEffort.nodeValue, 'effort');
+    assert.equal(txtKatexHtmlTitleEffort.nodeValue, 'Effort');
+    assert.equal(txtKatexDisplayFor.nodeValue, 'for');
+    assert.equal(txtTableCellEffort.nodeValue, 'Effort');
+    assert.equal(txtProgressUpdate.nodeValue, 'waiting');
+    assert.equal(txtAskHeader.nodeValue, 'Effort');
+    assert.equal(txtAskOption.nodeValue, 'Settings');
+    assert.equal(txtComment.nodeValue, 'Settings');
+    assert.equal(txtLiveAgent.nodeValue, 'Settings');
+
+    // Bare single lowercase words did NOT falsely trigger Title Case exactLowerMap
+    assert.equal(bareLowerEffort.nodeValue, 'effort');
+    assert.equal(bareLowerDisplay.nodeValue, 'display');
+    assert.equal(bareLowerOn.nodeValue, 'on');
+    assert.equal(bareLowerAll.nodeValue, 'all');
+    assert.equal(bareLowerTasks.nodeValue, 'tasks');
+    assert.equal(bareLowerBefore.nodeValue, 'before');
+
+    // Legitimate Antigravity UI chrome & mixed-case phrases translated cleanly
+    assert.equal(txtThinkingTrigger.nodeValue, '已思考 12s');
+    assert.equal(btnCopy.getAttribute('aria-label'), '复制');
+    assert.equal(tipGood.nodeValue, '优质回复');
+    assert.equal(tipBad.nodeValue, '回复不佳');
+    assert.equal(relTime.nodeValue, '刚刚');
+    assert.equal(mdTableMenuBtn.getAttribute('aria-label'), '复制');
+    assert.equal(txtMdTableCopyItem.nodeValue, '复制为 Markdown');
+    assert.equal(uiTitleEffort.nodeValue, '思考强度');
+    assert.equal(uiAcceptAll.nodeValue, '全部接受');
+    assert.equal(uiFontSize.nodeValue, '字号');
+    assert.equal(uiImage.nodeValue, '图片');
+
+    // Isolated CDP collect expression must NOT throw ReferenceError and must NOT leak AI prose / KaTeX
+    const collectExpr = createHostI18nCollectExpression();
+    const collected = new Function(`return (${collectExpr});`)();
+    const collectedTexts = new Set(collected.items.map((item) => item.text));
+    for (const leaked of ['Multi-currency', 'proposal', 'implementation!', 'roadmap.']) {
+      assert.equal(collectedTexts.has(leaked), false, `Collector must not report AI prose "${leaked}"`);
+    }
 
     win[HOST_I18N_GLOBAL_KEY].dispose();
   } finally {
